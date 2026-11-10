@@ -76,25 +76,6 @@ func TestPreviewRecognizesAStableWitnessKeyID(t *testing.T) {
 	}
 }
 
-func TestPreviewOfATimelockWithNoList(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "boundary.yaml")
-	// A timelock takes a rekey-to list: a spending-key rekey would leave the lock early.
-	target := types.Address{7}.String()
-	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: only_these, to: ["+target+"]}\nunlock_round: 50000000\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if preview.Recipients != 0 || preview.ListDigest != "" || preview.UnlockRound != "50000000" || preview.Rekey != boundary.RekeyOnlyThese || len(preview.RekeyTo) != 1 {
-		t.Fatalf("preview = %+v", preview)
-	}
-	if _, present := preview.Parameters[boundary.ParameterRecipients]; present {
-		t.Fatalf("parameters = %v", preview.Parameters)
-	}
-}
-
 func TestPreviewOfALimitsOnlyAccount(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "boundary.yaml")
 	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nrecipient_scope: any\n"), 0o600); err != nil {
@@ -104,7 +85,7 @@ func TestPreviewOfALimitsOnlyAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !preview.AnyRecipient || preview.Recipients != 0 || preview.UnlockRound != "" {
+	if !preview.AnyRecipient || preview.Recipients != 0 {
 		t.Fatalf("preview = %+v", preview)
 	}
 	if preview.Parameters[boundary.ParameterRecipientScope] != boundary.RecipientScopeAny {
@@ -220,7 +201,7 @@ func TestSplitGenerateOptions(t *testing.T) {
 		"flag as a value":    {"--result", "--boundary=corridor.yaml"},
 		// A forgotten file name must not swallow a parameter.
 		"parameter as a result file":   {"--result", "cosigner=ops", "rekey_authority=spending_key"},
-		"parameter as a boundary file": {"--boundary", "unlock_round=100"},
+		"parameter as a boundary file": {"--boundary", "list_encoding=merkle"},
 	} {
 		if _, _, err := SplitGenerateOptions(args); err == nil {
 			t.Fatalf("%s: SplitGenerateOptions(%v) accepted it", name, args)
@@ -290,10 +271,11 @@ func TestBoundaryFileWithoutSpendIsOverlaysOnly(t *testing.T) {
 	for name, body := range map[string]string{
 		"recipients without spend": "recipients: [" + target + "]\nrekey: {authority: spending_key}\n",
 		"a scope without spend":    "recipient_scope: any\nrekey: {authority: spending_key}\n",
-		"a timelock without spend": "unlock_round: 5\nrekey: {authority: spending_key}\n",
-		"an empty spend":           "spend: []\nrekey: {authority: spending_key}\n",
-		"no rekey":                 "cosigner: ops-cosigner\n",
-		"a list beside refused":    "rekey: {authority: refused, to: [" + target + "]}\n",
+		// The framework timelock is gone, so its field is unknown to the grammar.
+		"an unlock round":       "spend: [pay]\nrecipient_scope: any\nunlock_round: 5\nrekey: {authority: spending_key}\n",
+		"an empty spend":        "spend: []\nrekey: {authority: spending_key}\n",
+		"no rekey":              "cosigner: ops-cosigner\n",
+		"a list beside refused": "rekey: {authority: refused, to: [" + target + "]}\n",
 	} {
 		if _, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundaryBody(t, body)); err == nil {
 			t.Errorf("%s: accepted", name)

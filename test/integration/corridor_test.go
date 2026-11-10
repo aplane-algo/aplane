@@ -309,7 +309,7 @@ func newCorridorExecutionAccount(t *testing.T, provider *plainhost.Provider, rek
 	for i, target := range rekeyTo {
 		rekeyToStrings[i] = target.String()
 	}
-	account := newBoundsAccount(t, provider, corridorShape(), recipientStrings, 0, rekeyToStrings)
+	account := newBoundsAccount(t, provider, corridorShape(), recipientStrings, rekeyToStrings)
 	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
 		account.metadata.Rekey != boundedmeta.RekeyRefused || account.metadata.RekeyList == nil {
 		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q list=%v",

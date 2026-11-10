@@ -169,7 +169,7 @@ key with the fields explained.
 
 On a signer node, the default key types are native `ed25519` and
 `falcon1024` and the Falcon LogicSig plain host `aplane.falcon1024.v1`, whose
-bounds give allowlist, timelock, and Corridor accounts. To try other LogicSig key
+bounds give allowlist and Corridor accounts. To try other LogicSig key
 types, such as `aplane.ed25519.v1` or the bundled templates, open the signer
 admin pane, press `s` for settings, then press `k` for key types. The KeyType
 Library lets you enable compiled providers and templates for the product store.

@@ -254,7 +254,7 @@ picks the account:
   no transaction-type list. Every transaction that doesn't rekey is a spend, of
   any type, closes and clawback included.
 - **Bounds** (any of `spend_effects`, `recipients`, `recipient_scope`,
-  `unlock_round`, `list_encoding`) beside the same overlays: a
+  `list_encoding`) beside the same overlays: a
   [bounded account](#bounded-accounts).
 
 The overlays:
@@ -303,8 +303,7 @@ alone can spend or close everything).
 
 A bounded account is a plain host account with bounds: an `aplane.falcon1024.v1` or
 `aplane.ed25519.v1` account limited to the transfer kinds you choose, with a fee limit of
-10,000 microAlgos per transaction, and to a fixed list of recipients, a time before which
-it cannot spend, or both. A limits-only account has neither a list nor an unlock round:
+10,000 microAlgos per transaction, and to a fixed list of recipients. A limits-only account has no list:
 it can pay anyone, and only its transfer kinds and per-transaction fee limit apply. The
 overlays (a cosigner, a rekey setting, a rekey-to list) sit beside the bounds, as on any
 plain host account. `aplane.falcon1024.v1` needs no setup; `aplane.ed25519.v1` must be
@@ -323,24 +322,22 @@ Generate a key and choose a plain host, such as `aplane.falcon1024.v1`. The pres
 | Allowlist | All transfer kinds; the spending key alone can rekey it, to any address; automatic list encoding | Recipients |
 | Locked Allowlist | All transfer kinds; it can be rekeyed only to an address on its [rekey-to list](#rekey-to-lists); automatic list encoding | Recipients, rekey-to addresses |
 | Corridor | All transfer kinds; a cosigner on every spend; Merkle list; it can be rekeyed only to an address on its rekey-to list, with the spending key alone | Recipients, rekey-to addresses, cosigner |
-| Timelock | All transfer kinds; nothing can be spent before the unlock round; it can be rekeyed only to an address on its rekey-to list, which is a way around the lock; no recipient list | Unlock round, rekey-to addresses |
-| Custom bounds | Nothing fixed: every bounds field, without a file | Transfer kinds, and any of recipients, recipient scope, unlock round, list encoding |
+| Custom bounds | Nothing fixed: every bounds field, without a file | Transfer kinds, and any of recipients, recipient scope, list encoding |
 | Load boundary file | Whatever the file says | The file |
 
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
 ALGO only, or for a limits-only account, use Custom bounds or a boundary file.
 
-A bounded choice's form shows its bounds first (recipients, the unlock round, or with
+A bounded choice's form shows its bounds first (recipients, or with
 Custom bounds every bounds field), then the same three choices as No bounds: **Require a
 cosigner**, **Add rekey-to addresses**, and **Allow rekeys** or, with a list, **Rekey-to
 option**. A preset fills them in as the table says and you can change them: a cosigner
 and a rekey-to list the preset asks for are required, and the rekey choice offers every
-setting that fits, **No, never** included. A Timelock always needs its list.
+setting that fits, **No, never** included.
 
 Before generating, apadmin shows what the signer resolved, including the cosigner it will
 use. For an account with a rekey-to list, the Rekey row reads "Only these N addresses,
-spending key alone", and on a timelock it warns that a listed rekey is a way around the
-lock. A cosigned account that takes rekeys reads "Spending key and cosigner", or, with a
+spending key alone". A cosigned account that takes rekeys reads "Spending key and cosigner", or, with a
 list beside them, "These N, spending key alone; others need the cosigner". Press `d` for
 every parameter, fingerprint, and recipient; the details also say which kind of
 protection the rekey setting is (independent of the online keys, or only as strong as
@@ -378,34 +375,17 @@ These addresses are illustrations, not funding destinations.
 | Field | Meaning |
 |---|---|
 | `schema` | Required. Must be `aplane.boundary.v1`. |
-| `spend` | Any of `pay`, `axfer`, `asset_opt_in`. Leave it out for an account without bounds: the file then describes the overlays alone, and may not set `recipients`, `recipient_scope`, `encoding`, or `unlock_round`. An empty list is refused. |
-| `recipients` | With `spend`, required unless `unlock_round` or `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
-| `recipient_scope` | Optional. Left out, the file needs a list or an unlock round; written as `listed`, it needs a list. `any` makes a limits-only account: no list, and it can't be combined with `recipients`, `encoding`, or `unlock_round`. Leaving out the list never means `any`: you must write it. |
+| `spend` | Any of `pay`, `axfer`, `asset_opt_in`. Leave it out for an account without bounds: the file then describes the overlays alone, and may not set `recipients`, `recipient_scope`, or `encoding`. An empty list is refused. |
+| `recipients` | With `spend`, required unless `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
+| `recipient_scope` | Optional. Left out or written as `listed`, the file needs a list. `any` makes a limits-only account: no list, and it can't be combined with `recipients` or `encoding`. Leaving out the list never means `any`: you must write it. |
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
-| `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
 | `rekey.authority` | Required. `refused` (never rekeyed), `spending_key` (the spending key can rekey, to any address; with a cosigner, only together with the cosigner, to a target the cosigner's policy allows), `only_these` (the spending key alone can rekey, but only to an address in `rekey.to`; a cosigner is not asked), or `plus_cosigned` (needs a cosigner: the spending key alone to an address in `rekey.to`, or the spending key and the cosigner to any other target the cosigner's policy allows). |
 | `rekey.to` | Required with `only_these` and `plus_cosigned`, and refused with `refused` and `spending_key`. 1 to 16 distinct nonzero addresses, written literally. See [Rekey-to lists](#rekey-to-lists). |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. `plus_cosigned` needs one. |
 
 Every combination the fields allow is an account, and which one suits yours is your
 choice; the review says what it means. A `refused` account has no way out but its
-transfers: with `spend: [asset_opt_in]` alone it can never pay out its ALGO. An unlock
-round holds back spends only, so a timelock with any rekey setting but `refused` can leave
-the lock early: a spending-key rekey, cosigned or not, at any time, and a listed rekey to
-a listed address.
-
-```yaml
-schema: aplane.boundary.v1
-spend: [pay, axfer, asset_opt_in]
-unlock_round: "60000000"
-rekey:
-  authority: only_these
-  to:
-    - GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA
-```
-
-This timelock pays anyone once unlocked, and before then its spending key can hand it
-only to the listed address.
+transfers: with `spend: [asset_opt_in]` alone it can never pay out its ALGO.
 
 ```yaml
 schema: aplane.boundary.v1
@@ -435,7 +415,7 @@ list says, subject to its transfer kinds.
 
 With `only_these`, the account can be rekeyed only to an address on its rekey-to list,
 fixed when it is created, and only with the spending key alone. Every other rekey is
-refused by the program. It is how a Locked Allowlist, Corridor or Timelock account keeps a
+refused by the program. It is how a Locked Allowlist or Corridor account keeps a
 way out without letting the spending key send it anywhere: list a recovery key you hold
 somewhere else. On a cosigned account the cosigner is not asked for a listed rekey, so a
 Corridor account whose cosigner is gone can no longer spend, but its listed key can still
@@ -451,9 +431,6 @@ both can rekey it anywhere, out of its recipient list.
   without the cosigner. A stolen spending key can push the account onto a listed key, but
   it gains nothing unless it also holds that key. List only keys you control and keep
   apart from this signer.
-- **On a timelock, a listed rekey is a way around the lock.** No rule holds a rekey back
-  until the unlock round, so the lock holds only while the holders of the listed keys
-  refuse to spend early.
 - **The listed key decides the account's algorithm after a handover.** A native Ed25519
   key puts the account on a classical key. For a post-quantum account, list a native
   `falcon1024` account, for example one on a separate apsigner kept offline. The signer
@@ -499,8 +476,7 @@ generate aplane.ed25519.v1 spend_effects=pay,axfer rekey_authority=refused recip
 ```
 
 With `--boundary`, apshell shows a local summary and asks before creating the account.
-The summary lists a rekey-to list's addresses and says a listed rekey is a way around an
-unlock round; for a file without `spend` it says "Bounds: none". On
+The summary lists a rekey-to list's addresses; for a file without `spend` it says "Bounds: none". On
 a cosigned account it says the cosigner is not asked for a listed address, and names
 who can make any other rekey. The
 signer has not seen that summary, so a cosigner name in it is unresolved, and editing
@@ -517,8 +493,7 @@ with fingerprints and a digest.
 a minimum for new plain host accounts. `require_contained` requires new accounts to be
 contained: they must refuse every rekey or take only listed ones (`only_these`) and have a
 recipient list, so they can pay only listed recipients, and hand the account at most to a
-listed key. A timelock with no list is not contained, because it pays anyone once
-unlocked, and neither is a limits-only account, with or without a cosigner. A `spending_key` account is never
+listed key. A limits-only account is not contained, with or without a cosigner. A `spending_key` account is never
 contained, with or without a cosigner, and neither is a `plus_cosigned` one: whoever
 holds its online keys can rekey it anywhere. Fees are outside that limit: each transaction's fee is capped at 10,000
 microAlgos, but a stolen spending key can still spend the balance on fees, one
@@ -533,16 +508,14 @@ Review these points before funding an account:
   but the two keys together can still leave. This signer's `rekeys` setting applies first:
   under the default `reject_foreign_rekey`, a cosigned rekey to an address it doesn't hold
   needs `allow_rekeys` in the account's policy. A listed rekey can leave at any time too,
-  but only to a listed address, and on a timelock that includes before the unlock round.
+  but only to a listed address.
 - A `refused` account never changes its authority: whatever its transfer kinds can't
   send, and everything after a lost cosigner, stays where it is.
 - An `only_these` account can change its authority only by a handover to a listed
   address. A lost cosigner stops every spend and cosigned rekey, but not a listed rekey.
-  A lost cosigner, a mistaken recipient list, rekey-to list or unlock round cannot be
+  A lost cosigner or a mistaken recipient list or rekey-to list cannot be
   repaired: move the funds out while the account can still spend, or hand it to a listed
   key, and create a new one.
-- An unlock round means a different time on each network. It does not tie the program to
-  one network.
 - These rules limit recipients and transfer kinds. They do not limit amounts or spending
   speed. Use signer policy for that.
 
@@ -859,7 +832,7 @@ apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 Import encrypts the YAML into the product keystore and enables the key type
 for the signer.
 
-New stores install no template. For an allowlist, timelock, or Corridor account,
+New stores install no template. For an allowlist or Corridor account,
 use a [preset of a plain host](#bounded-accounts). The only bundled
 template is `aplane.htlc.v1`.
 

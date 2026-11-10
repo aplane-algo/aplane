@@ -5,8 +5,8 @@
 // overlays and the bounds. With a rekey setting, and optionally a cosigner and a
 // rekey-to list, the key type renders the plain1 contract over its own base: the
 // spending key and the overlays, with no fee ceiling and no transaction-type
-// list. With bounds as well (transfer kinds, a recipient list, a timelock, or
-// limits only), it renders a bounded2 shape over the same base. With no
+// list. With bounds as well (transfer kinds, and a recipient list or limits
+// only), it renders a bounded2 shape over the same base. With no
 // parameters it is the plain program it always was: the composition base every
 // composed account names, an account of its own, and the program of restored
 // plain keys.
@@ -247,7 +247,6 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 func creationParameters() []lsigprovider.ParameterDef {
 	cosigner := composeddsa.BoundedCosignerParameterDef()
 	cosigner.Required = false
-	minimumRound := uint64(1)
 	return []lsigprovider.ParameterDef{
 		{
 			Name:        ParameterSpendEffects,
@@ -259,7 +258,7 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRecipients,
 			Label:       "Allowed Recipients",
-			Description: "Bounds: addresses that may receive payments or asset transfers. Optional only with an unlock round; absent with recipient scope any.",
+			Description: "Bounds: addresses that may receive payments or asset transfers. Absent with recipient scope any.",
 			Type:        "address[]",
 			MaxItems:    RecipientsMax,
 		},
@@ -269,13 +268,6 @@ func creationParameters() []lsigprovider.ParameterDef {
 			Description: "Bounds: listed (default) limits transfers to the recipient list; any keeps only the fee limit and transfer kinds.",
 			Type:        "string",
 			Options:     []string{RecipientScopeListed, RecipientScopeAny},
-		},
-		{
-			Name:        ParameterUnlockRound,
-			Label:       "Unlock Round",
-			Description: "Bounds: first round the account can spend, on the network it runs on.",
-			Type:        "uint64",
-			Min:         &minimumRound,
 		},
 		{
 			Name:        ParameterListEncoding,
@@ -310,8 +302,8 @@ func creationParameters() []lsigprovider.ParameterDef {
 
 // present refuses a parameter given with an empty value. A request that names a
 // parameter but gives no value is ambiguous, and reading it as absent can create a
-// weaker account than asked for: an empty unlock round would drop the timelock,
-// an empty transfer list the bounds, an empty cosigner the cosigner. Leave a
+// weaker account than asked for: an empty transfer list would drop the bounds,
+// an empty cosigner the cosigner. Leave a
 // parameter out to leave it unset; apadmin's form sends only what was chosen.
 func present(params map[string]string) (map[string]string, error) {
 	out := make(map[string]string, len(params))
@@ -574,12 +566,6 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 		shape.Encoding = EncodingInline
 	case composeddsa.Layer3PolicyMerkleAllowlist:
 		shape.Encoding = EncodingMerkle
-	case composeddsa.Layer3PolicyTimelock:
-		shape.Timelock = true
-	case composeddsa.Layer3PolicyFixedAllowlistTimelock:
-		shape.Encoding, shape.Timelock = EncodingInline, true
-	case composeddsa.Layer3PolicyMerkleAllowlistTimelock:
-		shape.Encoding, shape.Timelock = EncodingMerkle, true
 	case composeddsa.Layer3PolicyNone:
 		shape.AnyRecipient = true
 	default:

@@ -119,9 +119,8 @@ type BoundedDerivedArgSpec struct {
 // to the parameters that policy reads. A nil value means expert-authored custom
 // TEAL.
 type TransactionLayer3Spec struct {
-	Policy               string `yaml:"policy"`
-	RecipientsParameter  string `yaml:"recipients_parameter"`
-	UnlockRoundParameter string `yaml:"unlock_round_parameter"`
+	Policy              string `yaml:"policy"`
+	RecipientsParameter string `yaml:"recipients_parameter"`
 }
 
 // templateSpecV1 deliberately has no bounded field. Keeping a separate typed

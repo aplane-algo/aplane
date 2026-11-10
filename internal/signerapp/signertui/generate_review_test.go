@@ -103,58 +103,23 @@ func TestReviewKeepsDigestsInDetails(t *testing.T) {
 	}
 }
 
-func TestTimelockPoliciesReviewHonestly(t *testing.T) {
-	for _, test := range []struct {
-		policy, encoding, note string
-	}{
-		{boundedmeta.Layer3PolicyFixedAllowlistTimelock, "inline", "whole list is public"},
-		{boundedmeta.Layer3PolicyMerkleAllowlistTimelock, "Merkle", "partly hidden"},
-	} {
-		prepared := preparedAccount(test.policy, boundary.RekeyRefused, true, 11)
-		prepared.Parameters[unlockRoundParameter] = "50000000"
-		m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
-		view := m.renderGenerateReview()
-		for _, want := range []string{"11, " + test.encoding, test.note, "round 50000000", "GENERATE"} {
-			if !strings.Contains(view, want) {
-				t.Errorf("%s review lacks %q:\n%s", test.policy, want, view)
-			}
-		}
-		if strings.Contains(view, "Panel lines") {
-			t.Errorf("%s review scrolls at 80x24:\n%s", test.policy, view)
-		}
-	}
-}
-
-func TestTimelockReviewStatesWhatTheLockDoesNot(t *testing.T) {
-	prepared := preparedAccount(boundedmeta.Layer3PolicyTimelock, boundary.RekeyRefused, false, 0)
-	prepared.Parameters = map[string]string{unlockRoundParameter: "50000000"}
-	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
-	view := strings.Join(strings.Fields(strings.ReplaceAll(m.renderGenerateReview(), "║", " ")), " ")
-	for _, want := range []string{"any, once unlocked", "None", "No rekey path", "round 50000000", "GENERATE"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("review lacks %q:\n%s", want, view)
-		}
-	}
-	if strings.Contains(view, "Panel lines") {
-		t.Errorf("review scrolls at 80x24:\n%s", view)
-	}
-}
-
 // Codex's reproduction: an imported template names its list beneficiaries. An
 // account with a list must never be described as able to pay anyone.
 func TestRestrictedAccountsNeverReadAsUnrestricted(t *testing.T) {
 	for _, policy := range []string{
 		boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.Layer3PolicyMerkleAllowlist,
 		boundedmeta.Layer3PolicyFixedAllowlistCustom, boundedmeta.Layer3PolicyMerkleAllowlistCustom,
-		boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundedmeta.Layer3PolicyMerkleAllowlistTimelock,
+		// The framework timelock's stored names are gone: each is now a policy
+		// this client does not know.
+		"timelock", "fixed_allowlist_timelock", "merkle_allowlist_timelock",
 		"a_policy_added_later",
 	} {
 		t.Run(policy, func(t *testing.T) {
 			prepared := preparedAccount(policy, boundary.RekeyRefused, false, 0)
-			prepared.Parameters = map[string]string{"beneficiaries": "A,B", unlockRoundParameter: "50"}
+			prepared.Parameters = map[string]string{"beneficiaries": "A,B", "unlock_round": "50"}
 			m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
 			view := m.renderGenerateReview()
-			if strings.Contains(view, "any, once unlocked") {
+			if strings.Contains(view, "any, once unlocked") || strings.Contains(view, "Unlocks at") {
 				t.Fatalf("a restricted account reads as unrestricted:\n%s", view)
 			}
 			// A policy this client does not know may pay anyone, so it is named
@@ -183,8 +148,9 @@ func TestParameterNamesDoNotInventAList(t *testing.T) {
 	if !strings.Contains(row, "Custom policy") || strings.Contains(row, "inline") || note != "" {
 		t.Fatalf("row = %q, note = %q", row, note)
 	}
-	row, _ = reviewRecipients(boundedmeta.Contract, boundedmeta.Layer3PolicyTimelock, false, nil)
-	if !strings.Contains(row, "any, once unlocked") {
+	// The retired timelock policy is an unknown one: named, never "any".
+	row, _ = reviewRecipients(boundedmeta.Contract, "timelock", false, nil)
+	if strings.Contains(row, "any") || !strings.Contains(row, "timelock") {
 		t.Fatalf("row = %q", row)
 	}
 }
@@ -415,16 +381,23 @@ func TestDetailsShowEveryResolvedParameter(t *testing.T) {
 	}
 }
 
-func TestCustomTimelockShowsItsUnlockRound(t *testing.T) {
+// The framework timelock is gone, so the review has no unlock row and no lock to
+// warn about. A template's own parameter of that name is a detail like any other.
+func TestReviewHasNoUnlockRow(t *testing.T) {
 	prepared := preparedAccount(boundedmeta.Layer3PolicyCustom, boundary.RekeySpendingKey, false, 0)
-	prepared.Parameters[unlockRoundParameter] = "50000000"
+	prepared.Parameters["unlock_round"] = "50000000"
 	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
-	view := m.renderGenerateReview()
-	if !strings.Contains(view, "round 50000000") {
-		t.Fatalf("review lacks the unlock round:\n%s", view)
+	view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
+	for _, gone := range []string{"Unlocks at", "once unlocked", "round 50000000", "way around the lock"} {
+		if strings.Contains(view, gone) {
+			t.Errorf("review still says %q:\n%s", gone, view)
+		}
 	}
-	if strings.Contains(view, "Panel lines") {
+	if !strings.Contains(view, "GENERATE") || strings.Contains(view, "Panel lines") {
 		t.Fatalf("review scrolls at 80x24:\n%s", view)
+	}
+	if _, note := reviewRekey(prepared); strings.Contains(note, "lock") {
+		t.Fatalf("rekey note = %q", note)
 	}
 }
 
@@ -455,7 +428,6 @@ func TestCosignedRekeySummariesFitAt80x24(t *testing.T) {
 	}{
 		{"cosigned spending key", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, false, "Spending key and cosigner", "both nodes' policies allow"},
 		{"cosigned only these", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeyRefused, true, "Only these 2 addresses, spending key alone", "at any time"},
-		{"cosigned only these timelock", boundedmeta.Layer3PolicyMerkleAllowlistTimelock, boundary.RekeyRefused, true, "Only these 2 addresses, spending key alone", "way around the lock"},
 		{"plus cosigned", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, "These 2, spending key alone; others need the cosigner", "needs both online keys"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -463,9 +435,6 @@ func TestCosignedRekeySummariesFitAt80x24(t *testing.T) {
 			if test.list {
 				prepared.Bounded.RekeyList = true
 				prepared.Parameters[boundedmeta.RekeyListEntriesParameter] = strings.Join(targets, ",")
-			}
-			if isTimelockPolicy(test.policy) {
-				prepared.Parameters[unlockRoundParameter] = "50000000"
 			}
 			label, note := reviewRekey(prepared)
 			if label != test.label || !strings.Contains(note, test.note) {
@@ -504,10 +473,13 @@ func TestBoundaryPresetScreenFitsAt80x24(t *testing.T) {
 			forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPresetIndex: index}}
 		m = sizedForTest(t, m, MinWidth, MinHeight)
 		view := stripANSI(assertFitsWindow(t, m))
-		for _, want := range []string{"No bounds", "Allowlist", "Locked Allowlist", "Corridor", "Timelock", "Custom bounds", "Load boundary file"} {
+		for _, want := range []string{"No bounds", "Allowlist", "Locked Allowlist", "Corridor", "Custom bounds", "Load boundary file"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("row %d: preset screen lacks %q:\n%s", index, want, view)
 			}
+		}
+		if strings.Contains(view, "Timelock") || strings.Contains(view, "unlock round") {
+			t.Errorf("row %d: preset screen offers a timelock:\n%s", index, view)
 		}
 		if strings.Contains(view, "Panel lines") {
 			t.Errorf("row %d: preset screen scrolls at 80x24:\n%s", index, view)
@@ -529,7 +501,6 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 		{0, []string{"recipients"}},
 		{1, []string{"recipients", boundary.ParameterRekeyTo}},
 		{2, []string{"recipients", boundary.ParameterRekeyTo, boundary.ParameterCosigner}},
-		{3, []string{boundary.ParameterUnlockRound, boundary.ParameterRekeyTo}},
 	} {
 		preset := boundary.Presets()[test.preset]
 		m := Model{forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset}}
@@ -780,40 +751,15 @@ func TestReviewRekeyProtectionNamesEachKind(t *testing.T) {
 }
 
 // An Ed25519 account's review says the spending key is classical with bounds
-// too, and a timelock says a rekey is a way around it on every rekey path.
-func TestBoundedReviewNamesTheClassicalKeyAndTheLockBypass(t *testing.T) {
-	ed := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 1)
-	ed.KeyType = "aplane.ed25519.v1"
-	ed.Bounded.Contract = boundedmeta.Contract
-	for name, test := range map[string]struct {
-		review PrepareGenerateResultMessage
-		want   string
-	}{
-		"Ed25519 with bounds": {ed, "spending key is classical"},
-		"timelock, spending key": {func() PrepareGenerateResultMessage {
-			p := preparedAccount(boundedmeta.Layer3PolicyTimelock, boundary.RekeySpendingKey, false, 0)
-			p.Parameters[unlockRoundParameter] = "100"
-			return p
-		}(), "way around the lock"},
-		"timelock, cosigned spending key": {func() PrepareGenerateResultMessage {
-			p := preparedAccount(boundedmeta.Layer3PolicyTimelock, boundary.RekeySpendingKey, true, 0)
-			p.Parameters[unlockRoundParameter] = "100"
-			return p
-		}(), "way around the lock"},
-		"timelock, plus cosigned": {func() PrepareGenerateResultMessage {
-			p := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundary.RekeySpendingKey, true, 1)
-			p.Bounded.RekeyList = true
-			p.Parameters[boundedmeta.RekeyListEntriesParameter] = "TARGET"
-			p.Parameters[unlockRoundParameter] = "100"
-			return p
-		}(), "way around the lock"},
-	} {
-		review := test.review
-		m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &review}}
-		view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
-		if !strings.Contains(view, test.want) || !strings.Contains(view, "GENERATE") {
-			t.Errorf("%s: review lacks %q or scrolls:\n%s", name, test.want, view)
-		}
+// too.
+func TestBoundedReviewNamesTheClassicalKey(t *testing.T) {
+	review := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 1)
+	review.KeyType = "aplane.ed25519.v1"
+	review.Bounded.Contract = boundedmeta.Contract
+	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &review}}
+	view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
+	if !strings.Contains(view, "spending key is classical") || !strings.Contains(view, "GENERATE") {
+		t.Errorf("review lacks the classical-key note or scrolls:\n%s", view)
 	}
 }
 

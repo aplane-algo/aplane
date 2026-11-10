@@ -82,10 +82,9 @@ func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	cosignerKey := strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
 	recipient := types.Address{1}.String()
 	field := map[string][2]string{
-		boundary.ParameterRecipients:  {boundary.ParameterRecipients, recipient},
-		boundary.ParameterUnlockRound: {boundary.ParameterUnlockRound, "100"},
-		boundary.ParameterRekeyTo:     {boundary.ParameterRekeyTo, types.Address{2}.String()},
-		boundary.ParameterCosigner:    {boundedmeta.CosignerPublicKeyParameter, cosignerKey},
+		boundary.ParameterRecipients: {boundary.ParameterRecipients, recipient},
+		boundary.ParameterRekeyTo:    {boundary.ParameterRekeyTo, types.Address{2}.String()},
+		boundary.ParameterCosigner:   {boundedmeta.CosignerPublicKeyParameter, cosignerKey},
 	}
 
 	perKey := 0

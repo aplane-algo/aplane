@@ -23,7 +23,6 @@ const (
 	ParameterSpendEffects   = boundary.ParameterSpendEffects
 	ParameterListEncoding   = boundary.ParameterListEncoding
 	ParameterRecipients     = boundary.ParameterRecipients
-	ParameterUnlockRound    = boundary.ParameterUnlockRound
 	ParameterRecipientScope = boundary.ParameterRecipientScope
 
 	RecipientScopeListed = boundary.RecipientScopeListed
@@ -54,7 +53,7 @@ const (
 
 // boundsParameters are the parameters that select a shape.
 var boundsParameters = []string{
-	ParameterSpendEffects, ParameterRecipients, ParameterRecipientScope, ParameterUnlockRound, ParameterListEncoding,
+	ParameterSpendEffects, ParameterRecipients, ParameterRecipientScope, ParameterListEncoding,
 }
 
 // hasBounds reports whether a request asks for a bounded2 shape.
@@ -83,10 +82,8 @@ type Shape struct {
 	Encoding string
 	Rekey    string
 	Cosigner bool
-	// Timelock requires an unlock round before anything can be spent.
-	Timelock bool
-	// AnyRecipient is the limits-only shape: no recipient list and no timelock,
-	// so the envelope's fee ceiling and transfer kinds are the whole rule. It is
+	// AnyRecipient is the limits-only shape: no recipient list, so the
+	// envelope's fee ceiling and transfer kinds are the whole rule. It is
 	// an explicit field, not an empty Encoding, so no zero value selects it.
 	AnyRecipient bool
 }
@@ -115,12 +112,6 @@ func (s Shape) Policy() string {
 	switch {
 	case s.AnyRecipient:
 		return composeddsa.Layer3PolicyNone
-	case s.Timelock && s.Encoding == EncodingMerkle:
-		return composeddsa.Layer3PolicyMerkleAllowlistTimelock
-	case s.Timelock && s.Encoding == EncodingInline:
-		return composeddsa.Layer3PolicyFixedAllowlistTimelock
-	case s.Timelock:
-		return composeddsa.Layer3PolicyTimelock
 	case s.Encoding == EncodingMerkle:
 		return composeddsa.Layer3PolicyMerkleAllowlist
 	default:
@@ -144,15 +135,14 @@ func (s Shape) Descriptor() string {
 }
 
 // Shapes enumerates every shape, in a stable order: inline and Merkle
-// allowlists, then timelocks alone and with each list, then limits-only. Within
-// each, every overlay arrangement in Arrangements order, and within that every
-// transfer subset. The grammar is every combination the contracts allow (ninth
-// amendment): a refused rekey, a timelock with any rekey setting and a refused
-// account that can't send what it holds are shapes too. Which one suits an
-// account is the user's choice; the review says what it means.
+// allowlists, then limits-only. Within each, every overlay arrangement in
+// Arrangements order, and within that every transfer subset. The grammar is
+// every combination the contracts allow (ninth amendment): a refused rekey and
+// a refused account that can't send what it holds are shapes too. Which one
+// suits an account is the user's choice; the review says what it means.
 func Shapes() []Shape {
 	var shapes []Shape
-	family := func(encoding string, timelock, anyRecipient bool) {
+	family := func(encoding string, anyRecipient bool) {
 		for _, arrangement := range Arrangements() {
 			for mask := 1; mask < 1<<len(spendEffectOrder); mask++ {
 				var spend []txeffects.SpendEffect
@@ -163,18 +153,15 @@ func Shapes() []Shape {
 				}
 				shapes = append(shapes, Shape{
 					Spend: spend, Encoding: encoding, Rekey: arrangement.Rekey, Cosigner: arrangement.Cosigner,
-					Timelock: timelock, AnyRecipient: anyRecipient,
+					AnyRecipient: anyRecipient,
 				})
 			}
 		}
 	}
 	for _, encoding := range []string{EncodingInline, EncodingMerkle} {
-		family(encoding, false, false)
+		family(encoding, false)
 	}
-	for _, encoding := range []string{"", EncodingInline, EncodingMerkle} {
-		family(encoding, true, false)
-	}
-	family("", false, true)
+	family("", true)
 	return shapes
 }
 
@@ -223,18 +210,6 @@ func shapeSpec(plain Plain, shape Shape) (*composeddsa.TemplateSpec, error) {
 			Required:    true,
 			MinItems:    1,
 			MaxItems:    maxItems,
-		})
-	}
-	if shape.Timelock {
-		bounded.Layer3.UnlockRoundParameter = ParameterUnlockRound
-		minRound := uint64(1)
-		parameters = append(parameters, generictemplate.ParameterSpec{
-			Name:        ParameterUnlockRound,
-			Label:       "Unlock Round",
-			Description: "First round the account can spend, on the network it runs on.",
-			Type:        "uint64",
-			Required:    true,
-			Min:         &minRound,
 		})
 	}
 	if shape.Encoding == EncodingMerkle {

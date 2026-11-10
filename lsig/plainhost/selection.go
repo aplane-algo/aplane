@@ -6,7 +6,6 @@ package plainhost
 import (
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -44,11 +43,6 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if err != nil {
 		return nil, err
 	}
-	unlockRound, err := canonicalUnlockRound(params)
-	if err != nil {
-		return nil, err
-	}
-	timelock := unlockRound != ""
 	scope, err := canonicalRecipientScope(params)
 	if err != nil {
 		return nil, err
@@ -57,27 +51,20 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	var recipients []string
 	encoding := ""
 	if anyRecipient {
-		// Limits-only: the request asked for no list, so it may not carry one,
-		// and a timelock already admits any recipient once it unlocks.
+		// Limits-only: the request asked for no list, so it may not carry one.
 		if _, present := params[ParameterRecipients]; present {
 			return nil, fmt.Errorf("%s=%s takes no %s", ParameterRecipientScope, RecipientScopeAny, ParameterRecipients)
 		}
 		if _, present := params[ParameterListEncoding]; present {
 			return nil, fmt.Errorf("%s has no list to encode", ParameterListEncoding)
 		}
-		if timelock {
-			return nil, fmt.Errorf("%s=%s does not combine with %s; a timelock alone admits any recipient once it unlocks",
-				ParameterRecipientScope, RecipientScopeAny, ParameterUnlockRound)
-		}
-	} else if _, present := params[ParameterRecipients]; present || !timelock || scope == RecipientScopeListed {
+	} else {
 		if recipients, err = canonicalRecipients(normalized[ParameterRecipients]); err != nil {
 			return nil, err
 		}
 		if encoding, err = selectEncoding(params, len(recipients)); err != nil {
 			return nil, err
 		}
-	} else if _, present := params[ParameterListEncoding]; present {
-		return nil, fmt.Errorf("%s has no list to encode", ParameterListEncoding)
 	}
 
 	values := map[string]string{ParameterSpendEffects: joinSpend(spend)}
@@ -86,9 +73,6 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		values[ParameterListEncoding] = encoding
 		values[ParameterRecipients] = strings.Join(recipients, ",")
 	}
-	if timelock {
-		values[ParameterUnlockRound] = unlockRound
-	}
 	// Only "any" is persisted: "listed" is the default.
 	if anyRecipient {
 		values[ParameterRecipientScope] = RecipientScopeAny
@@ -96,7 +80,7 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	return &selection{
 		shape: Shape{
 			Spend: spend, Encoding: encoding, Rekey: overlays.arrangement.Rekey, Cosigner: overlays.arrangement.Cosigner,
-			Timelock: timelock, AnyRecipient: anyRecipient,
+			AnyRecipient: anyRecipient,
 		},
 		values: values,
 	}, nil
@@ -195,23 +179,6 @@ func canonicalRecipientScope(params map[string]string) (string, error) {
 	default:
 		return "", fmt.Errorf("%s must be %s or %s", ParameterRecipientScope, RecipientScopeListed, RecipientScopeAny)
 	}
-}
-
-// canonicalUnlockRound returns "" when the request has no timelock. Zero is refused
-// rather than treated as absent: it would compile a timelock every round passes.
-func canonicalUnlockRound(params map[string]string) (string, error) {
-	value, present := params[ParameterUnlockRound]
-	if !present {
-		return "", nil
-	}
-	round, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64)
-	if err != nil {
-		return "", fmt.Errorf("%s must be a positive whole number: %q", ParameterUnlockRound, value)
-	}
-	if round == 0 {
-		return "", fmt.Errorf("%s must be positive", ParameterUnlockRound)
-	}
-	return strconv.FormatUint(round, 10), nil
 }
 
 func canonicalSpend(value string) ([]txeffects.SpendEffect, error) {

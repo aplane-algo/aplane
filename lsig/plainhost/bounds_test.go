@@ -97,9 +97,6 @@ func shapeRequest(shape plainhost.Shape, recipients string) map[string]string {
 	if shape.HasRekeyList() {
 		params[plainhost.ParameterRekeyTo] = listedRekeyTo
 	}
-	if shape.Timelock {
-		params[plainhost.ParameterUnlockRound] = "50000000"
-	}
 	if shape.AnyRecipient {
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
@@ -139,21 +136,19 @@ func wantRekeySetting(rekey string) boundedmeta.RekeySetting {
 }
 
 // The expected set is written out here rather than derived from the code that
-// produces it. The grammar is every combination: six policies (inline and
-// Merkle allowlists, a timelock alone and with each list, and limits only), each
-// with the seven overlay arrangements, each with all seven transfer subsets, for
-// 6 x 7 x 7 = 294. A refused rekey and a timelock beside any rekey setting are
-// shapes too; only plus_cosigned has no uncosigned arrangement, since without a
-// cosigner it would mean spending_key.
+// produces it. The grammar is every combination: three policies (inline and
+// Merkle allowlists, and limits only), each with the seven overlay arrangements,
+// each with all seven transfer subsets, for 3 x 7 x 7 = 147. A refused rekey is
+// a shape too; only plus_cosigned has no uncosigned arrangement, since without a
+// cosigner it would mean spending_key. The framework timelock is gone: no shape
+// names one.
 func TestShapesEnumerateTheGrammar(t *testing.T) {
 	policies := []string{
 		composeddsa.Layer3PolicyFixedAllowlist, composeddsa.Layer3PolicyMerkleAllowlist,
-		composeddsa.Layer3PolicyTimelock, composeddsa.Layer3PolicyFixedAllowlistTimelock, composeddsa.Layer3PolicyMerkleAllowlistTimelock,
 		composeddsa.Layer3PolicyNone,
 	}
 	encodings := map[string]string{
 		composeddsa.Layer3PolicyFixedAllowlist: plainhost.EncodingInline, composeddsa.Layer3PolicyMerkleAllowlist: plainhost.EncodingMerkle,
-		composeddsa.Layer3PolicyFixedAllowlistTimelock: plainhost.EncodingInline, composeddsa.Layer3PolicyMerkleAllowlistTimelock: plainhost.EncodingMerkle,
 	}
 	arrangements := []plainhost.Arrangement{
 		{Rekey: plainhost.RekeyRefused}, {Rekey: plainhost.RekeyRefused, Cosigner: true},
@@ -166,7 +161,7 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 	}
 	subsets := []string{"pay", "axfer", "pay,axfer", "asset_opt_in", "pay,asset_opt_in", "axfer,asset_opt_in", "pay,axfer,asset_opt_in"}
 	shapes := plainhost.Shapes()
-	if want := len(policies) * len(arrangements) * len(subsets); len(shapes) != want || want != 294 {
+	if want := len(policies) * len(arrangements) * len(subsets); len(shapes) != want || want != 147 {
 		t.Fatalf("Shapes() = %d, want %d", len(shapes), want)
 	}
 	perPolicy := len(arrangements) * len(subsets)
@@ -178,9 +173,11 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		if shape.Policy() != policy || shape.Rekey != arrangement.Rekey || shape.Cosigner != arrangement.Cosigner || joinEffects(shape.Spend) != subset {
 			t.Fatalf("shape %d is %s, want policy %s, %s, cosigner %v, spend %s", index, shape.Descriptor(), policy, arrangement.Rekey, arrangement.Cosigner, subset)
 		}
-		if shape.Encoding != encodings[policy] || shape.Timelock != strings.Contains(policy, "timelock") ||
-			shape.AnyRecipient != (policy == composeddsa.Layer3PolicyNone) {
-			t.Fatalf("shape %d %s: encoding %q, timelock %v, any recipient %v", index, shape.Descriptor(), shape.Encoding, shape.Timelock, shape.AnyRecipient)
+		if shape.Encoding != encodings[policy] || shape.AnyRecipient != (policy == composeddsa.Layer3PolicyNone) {
+			t.Fatalf("shape %d %s: encoding %q, any recipient %v", index, shape.Descriptor(), shape.Encoding, shape.AnyRecipient)
+		}
+		if strings.Contains(shape.Policy(), "timelock") || strings.Contains(shape.Descriptor(), "timelock") {
+			t.Fatalf("shape %d %s names a timelock", index, shape.Descriptor())
 		}
 		if shape.HasRekeyList() != (shape.Rekey == plainhost.RekeyOnlyThese || shape.Rekey == plainhost.RekeyPlusCosigned) {
 			t.Fatalf("%s: HasRekeyList() = %v", shape.Descriptor(), shape.HasRekeyList())
@@ -202,16 +199,16 @@ func TestShapeDescriptorFormat(t *testing.T) {
 	}{
 		{plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey},
 			"spend=pay,axfer,asset_opt_in;policy=fixed_allowlist;rekey=spending_key;cosigner=none"},
-		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: true, Timelock: true},
-			"spend=pay;policy=merkle_allowlist_timelock;rekey=refused;cosigner=required"},
+		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: true},
+			"spend=pay;policy=merkle_allowlist;rekey=refused;cosigner=required"},
 		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused},
 			"spend=pay;policy=fixed_allowlist;rekey=refused;cosigner=none"},
 		{plainhost.Shape{Spend: pay, Rekey: plainhost.RekeySpendingKey, AnyRecipient: true},
 			"spend=pay;policy=none;rekey=spending_key;cosigner=none"},
-		{plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, Rekey: plainhost.RekeyOnlyThese, Timelock: true},
-			"spend=axfer;policy=timelock;rekey=only_these;cosigner=none"},
-		{plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true, Timelock: true},
-			"spend=pay;policy=timelock;rekey=plus_cosigned;cosigner=required"},
+		{plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, Rekey: plainhost.RekeyOnlyThese, AnyRecipient: true},
+			"spend=axfer;policy=none;rekey=only_these;cosigner=none"},
+		{plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true, AnyRecipient: true},
+			"spend=pay;policy=none;rekey=plus_cosigned;cosigner=required"},
 	} {
 		if got := test.shape.Descriptor(); got != test.want {
 			t.Errorf("Descriptor() = %q, want %q", got, test.want)
@@ -324,10 +321,9 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 	}
 }
 
-// The general bounded type refused a bare rekey_authority=refused, and a
-// timelock beside any rekey setting but only_these. Those rules are lifted: each
-// combination resolves to its shape, and its metadata says what it means. A
-// cosigner on an Ed25519 bounded account is new as well.
+// The general bounded type refused a bare rekey_authority=refused. That rule is
+// lifted: each combination resolves to its shape, and its metadata says what it
+// means. A cosigner on an Ed25519 bounded account is new as well.
 func TestLiftedCombinationsResolve(t *testing.T) {
 	pay := []txeffects.SpendEffect{txeffects.SpendEffectPay}
 	for _, b := range bases(t) {
@@ -339,12 +335,6 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 			{"refused without a cosigner", plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}, true},
 			{"refused with a cosigner", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: true}, true},
 			{"limits only, refused", plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyRefused, AnyRecipient: true}, false},
-			{"timelock, refused", plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Timelock: true}, false},
-			{"listed timelock, refused with a cosigner", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused, Cosigner: true, Timelock: true}, true},
-			{"timelock, spending key", plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Timelock: true}, false},
-			{"listed timelock, spending key", plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey, Timelock: true}, false},
-			{"listed timelock, cosigned spending key", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey, Cosigner: true, Timelock: true}, false},
-			{"Merkle timelock, plus cosigned", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true, Timelock: true}, false},
 			{"allowlist, cosigned spending key", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey, Cosigner: true}, false},
 		} {
 			t.Run(b.name+"/"+test.name, func(t *testing.T) {
@@ -366,9 +356,6 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 				}
 				if got := instance.Values[plainhost.ParameterRekeyAuthority]; got != test.shape.Rekey {
 					t.Fatalf("rekey_authority = %q", got)
-				}
-				if _, present := instance.Values[plainhost.ParameterUnlockRound]; present != test.shape.Timelock {
-					t.Fatalf("values = %v", instance.Values)
 				}
 				if instance.Fingerprint != b.provider.ShapeFingerprintForTest(test.shape) {
 					t.Fatal("the request did not select its shape")
@@ -414,21 +401,20 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		{"no rekey", spendingKey, func(p map[string]string) { delete(p, plainhost.ParameterRekeyAuthority) }, "rekey_authority must be"},
 		{"bad rekey", spendingKey, func(p map[string]string) { p[plainhost.ParameterRekeyAuthority] = "none" }, "rekey_authority must be"},
 		{"no recipients", spendingKey, func(p map[string]string) { delete(p, plainhost.ParameterRecipients) }, "recipients is required"},
-		{"zero unlock round", spendingKey, func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "0" }, "must be positive"},
-		{"unreadable unlock round", spendingKey, func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "soon" }, "positive whole number"},
-		{"oversized unlock round", spendingKey, func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "18446744073709551616" }, "positive whole number"},
-		{"encoding with no list", spendingKey, func(p map[string]string) {
+		// The framework timelock is gone: its parameter is refused, with a list,
+		// with no list, and whatever it holds.
+		{"unlock round", spendingKey, func(p map[string]string) { p["unlock_round"] = "50000000" }, "unknown parameter"},
+		{"unlock round with no list", spendingKey, func(p map[string]string) {
 			delete(p, plainhost.ParameterRecipients)
-			p[plainhost.ParameterUnlockRound] = "5"
-		}, "no list to encode"},
+			delete(p, plainhost.ParameterListEncoding)
+			p["unlock_round"] = "5"
+		}, "unknown parameter"},
+		{"unlock round with any recipient", plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, AnyRecipient: true},
+			func(p map[string]string) { p["unlock_round"] = "5" }, "unknown parameter"},
 		// Without a cosigner the spending key would rekey anywhere, so the list
-		// would add nothing: that is spending_key. A timelock does not change it.
+		// would add nothing: that is spending_key.
 		{"plus cosigned without a cosigner", plusCosigned, func(p map[string]string) { delete(p, composeddsa.BoundedCosignerPublicKeyParameter) },
 			"rekey_authority=plus_cosigned needs a cosigner; without one it is rekey_authority=spending_key"},
-		{"plus cosigned without a cosigner on a timelock", plusCosigned, func(p map[string]string) {
-			delete(p, composeddsa.BoundedCosignerPublicKeyParameter)
-			p[plainhost.ParameterUnlockRound] = "5"
-		}, "rekey_authority=plus_cosigned needs a cosigner"},
 		{"plus_cosigned without rekey_to", plusCosigned, func(p map[string]string) { delete(p, plainhost.ParameterRekeyTo) },
 			"rekey_authority=plus_cosigned needs the addresses the account may be rekeyed to in rekey_to"},
 		{"only_these without rekey_to", onlyThese, func(p map[string]string) { delete(p, plainhost.ParameterRekeyTo) },
@@ -486,15 +472,15 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 }
 
 // A parameter given with an empty value is refused, never read as absent:
-// absence could make a weaker account than the request named (an empty unlock
-// round would drop the timelock, empty transfer kinds the bounds, an empty
-// cosigner the cosigner). Leave a parameter out to leave it unset.
+// absence could make a weaker account than the request named (empty transfer
+// kinds would drop the bounds, an empty cosigner the cosigner). Leave a parameter
+// out to leave it unset.
 func TestEmptyValuesAreRefused(t *testing.T) {
 	provider := falconHost(t)
 	cosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
 	for _, name := range []string{
 		plainhost.ParameterSpendEffects, plainhost.ParameterRecipients, plainhost.ParameterRecipientScope,
-		plainhost.ParameterUnlockRound, plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority,
+		plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority,
 		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter,
 	} {
 		for _, empty := range []string{"", "  "} {
@@ -513,11 +499,6 @@ func TestEmptyValuesAreRefused(t *testing.T) {
 	}
 	// The fail-open cases the rule closes.
 	for name, params := range map[string]map[string]string{
-		"an empty unlock round beside a list": func() map[string]string {
-			p := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyRefused}, testRecipients(1))
-			p[plainhost.ParameterUnlockRound] = ""
-			return p
-		}(),
 		"empty transfer kinds": {plainhost.ParameterSpendEffects: "", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused},
 	} {
 		if instance, err := provider.ResolveInstance(params); err == nil {
@@ -565,17 +546,6 @@ func TestRequestsCanonicalize(t *testing.T) {
 	}
 	if got := first.Values[plainhost.ParameterSpendEffects]; got != "pay,axfer,asset_opt_in" {
 		t.Fatalf("spend_effects = %q, want canonical order", got)
-	}
-	// A zero-padded unlock round is the same round.
-	timelock := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Timelock: true}
-	padded := shapeRequest(timelock, "")
-	padded[plainhost.ParameterUnlockRound] = " 0050000000"
-	resolved, err := provider.ResolveInstance(padded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved.Values[plainhost.ParameterUnlockRound] != "50000000" || resolved.BoundaryDigest != resolveShape(t, provider, timelock, "").BoundaryDigest {
-		t.Fatalf("unlock round = %q", resolved.Values[plainhost.ParameterUnlockRound])
 	}
 }
 
@@ -683,9 +653,6 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 		if _, ok := values[plainhost.ParameterRecipients]; ok != (shape.Encoding != "") {
 			t.Fatalf("%s: recipients reached the composer = %v", shape.Descriptor(), ok)
 		}
-		if _, ok := values[plainhost.ParameterUnlockRound]; ok != shape.Timelock {
-			t.Fatalf("%s: unlock_round reached the composer = %v", shape.Descriptor(), ok)
-		}
 	}
 }
 
@@ -727,7 +694,6 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 		"recipients": func(p map[string]string) { p[plainhost.ParameterRecipients] = testRecipients(4) },
 		"spend":      func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "pay" },
 		"encoding":   func(p map[string]string) { p[plainhost.ParameterListEncoding] = plainhost.EncodingMerkle },
-		"timelock":   func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "5" },
 		// The option is bound, not just the list: plus cosigned is the same
 		// entries with other rekeys open to the cosigner.
 		"plus cosigned": func(p map[string]string) { p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyPlusCosigned },
@@ -777,23 +743,6 @@ func TestBoundaryDigestBindsTheRekeyToList(t *testing.T) {
 		if digest(rekeyTo) == base {
 			t.Errorf("%s did not change the digest", name)
 		}
-	}
-}
-
-func TestBoundaryDigestBindsTheUnlockRound(t *testing.T) {
-	provider := falconHost(t)
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese, Timelock: true}
-	digest := func(round string) string {
-		params := shapeRequest(shape, testRecipients(2))
-		params[plainhost.ParameterUnlockRound] = round
-		instance, err := provider.ResolveInstance(params)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return instance.BoundaryDigest
-	}
-	if digest("100") == digest("101") {
-		t.Fatal("changing the unlock round did not change the digest")
 	}
 }
 
@@ -910,39 +859,39 @@ func TestStoredFingerprintRefusesWhatTheGrammarCannotProduce(t *testing.T) {
 // as a known one.
 func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 	provider := falconHost(t)
-	cosignedTimelock := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, Cosigner: true, Timelock: true}, "")
-	if cosignedTimelock.Bounded.Rekey != boundedmeta.RekeyRefused || !cosignedTimelock.Bounded.RefusesRekeys() || cosignedTimelock.Bounded.RekeyList == nil {
-		t.Fatalf("a cosigned only_these timelock stored rekey %q, list %v", cosignedTimelock.Bounded.Rekey, cosignedTimelock.Bounded.RekeyList)
+	cosignedLimits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, Cosigner: true, AnyRecipient: true}, "")
+	if cosignedLimits.Bounded.Rekey != boundedmeta.RekeyRefused || !cosignedLimits.Bounded.RefusesRekeys() || cosignedLimits.Bounded.RekeyList == nil {
+		t.Fatalf("a cosigned only_these limits-only account stored rekey %q, list %v", cosignedLimits.Bounded.Rekey, cosignedLimits.Bounded.RekeyList)
 	}
-	// A timelock beside a spending-key rekey, cosigned or plus cosigned, and a
-	// cosigned timelock that refuses every rekey, are shapes now: each mutation
-	// selects that shape, not the account it came from.
+	// A limits-only account beside a spending-key rekey, cosigned or plus
+	// cosigned, and a cosigned one that refuses every rekey, are shapes: each
+	// mutation selects that shape, not the account it came from.
 	for name, test := range map[string]struct {
 		mutate func(*boundedmeta.Metadata)
 		want   plainhost.Shape
 	}{
 		"plus cosigned": {func(m *boundedmeta.Metadata) { m.Rekey = boundedmeta.RekeySpendingKey },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true, Timelock: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true, AnyRecipient: true}},
 		"cosigned spending key": {func(m *boundedmeta.Metadata) { m.Rekey, m.RekeyList = boundedmeta.RekeySpendingKey, nil },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Cosigner: true, Timelock: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Cosigner: true, AnyRecipient: true}},
 		"refusing with no list": {func(m *boundedmeta.Metadata) { m.RekeyList = nil },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: true, Timelock: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: true, AnyRecipient: true}},
 	} {
-		stored := boundedmeta.Clone(cosignedTimelock.Bounded)
+		stored := boundedmeta.Clone(cosignedLimits.Bounded)
 		test.mutate(stored)
 		got, err := provider.StoredFingerprint(nil, stored)
 		if err != nil {
-			t.Fatalf("a stored %s timelock: %v", name, err)
+			t.Fatalf("a stored %s limits-only account: %v", name, err)
 		}
-		if got != resolveShape(t, provider, test.want, "").Fingerprint || got == cosignedTimelock.Fingerprint {
-			t.Fatalf("a stored %s timelock did not select %s", name, test.want.Descriptor())
+		if got != resolveShape(t, provider, test.want, "").Fingerprint || got == cosignedLimits.Fingerprint {
+			t.Fatalf("a stored %s limits-only account did not select %s", name, test.want.Descriptor())
 		}
 	}
-	listed := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, Timelock: true}, "")
+	listed := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, AnyRecipient: true}, "")
 	// A setting the contract does not know, such as the retired admin-key rekey,
 	// or no setting at all, is refused rather than read as either known one, with
 	// a rekey-to list or without.
-	for _, metadata := range []*boundedmeta.Metadata{cosignedTimelock.Bounded, listed.Bounded} {
+	for _, metadata := range []*boundedmeta.Metadata{cosignedLimits.Bounded, listed.Bounded} {
 		for _, rekey := range []boundedmeta.RekeySetting{"admin_key", "none", "", boundedmeta.RekeySetting(plainhost.RekeyOnlyThese)} {
 			stored := boundedmeta.Clone(metadata)
 			stored.Rekey = rekey
@@ -981,9 +930,9 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 		t.Fatalf("an only_these account without its list: StoredFingerprint() = %q, %v", got, err)
 	}
 	// A cosigned list account is its own shape, not its uncosigned twin.
-	got, err := provider.StoredFingerprint(nil, cosignedTimelock.Bounded)
-	if err != nil || got != cosignedTimelock.Fingerprint || got == listed.Fingerprint {
-		t.Fatalf("a cosigned only_these timelock: StoredFingerprint() = %q, %v", got, err)
+	got, err := provider.StoredFingerprint(nil, cosignedLimits.Bounded)
+	if err != nil || got != cosignedLimits.Fingerprint || got == listed.Fingerprint {
+		t.Fatalf("a cosigned only_these limits-only account: StoredFingerprint() = %q, %v", got, err)
 	}
 }
 
@@ -1097,10 +1046,9 @@ func TestBoundaryFileRejections(t *testing.T) {
 		{"missing schema", strings.Replace(valid, "schema: aplane.boundary.v1\n", "", 1), "schema must be"},
 		// Without spend a file has no bounds, so it may not name what only bounds take.
 		{"no spend", strings.Replace(valid, "spend: [pay]\n", "", 1), "recipients needs spend"},
-		{"no spend with a timelock", strings.Replace(valid, "spend: [pay]\nrecipients: ["+recipient+"]\n", "", 1) + "unlock_round: 5\n", "unlock_round needs spend"},
 		{"no spend with a scope", strings.Replace(valid, "spend: [pay]\nrecipients: ["+recipient+"]\n", "", 1) + "recipient_scope: any\n", "recipient_scope needs spend"},
 		{"empty spend", strings.Replace(valid, "spend: [pay]", "spend: []", 1), "spend is empty"},
-		{"no recipients or timelock", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1), "recipients is required"},
+		{"no recipients", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1), "recipients is required"},
 		{"no rekey", strings.Replace(valid, "rekey: {authority: spending_key}\n", "", 1), "rekey is required"},
 		{"bad authority", strings.Replace(valid, "spending_key", "nobody", 1), "rekey.authority must be"},
 		{"admin authority", strings.Replace(valid, "spending_key", "admin_key", 1), "rekey.authority must be"},
@@ -1114,12 +1062,14 @@ func TestBoundaryFileRejections(t *testing.T) {
 		{"scalar to", strings.Replace(onlyThese, "["+target+"]", target, 1), "cannot unmarshal"},
 		{"top-level rekey_to", valid + "rekey_to: [" + target + "]\n", "not found"},
 		{"unknown field", valid + "expires: \"5\"\n", "not found"},
-		{"empty unlock round", valid + "unlock_round: \"\"\n", "unlock_round is empty"},
-		{"null unlock round", valid + "unlock_round:\n", "must be a string"},
-		{"float unlock round", valid + "unlock_round: 1.5\n", "must be a string"},
-		{"boolean unlock round", valid + "unlock_round: true\n", "must be a string"},
-		{"empty list with a timelock", strings.Replace(valid, "["+recipient+"]", "[]", 1) + "unlock_round: 5\n", "recipients is required"},
-		{"encoding with no list", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1) + "unlock_round: 5\nencoding: auto\n", "needs a recipient list"},
+		// The framework timelock is gone: its field is unknown, whatever it holds
+		// and whatever stands beside it.
+		{"unlock round", valid + "unlock_round: \"5\"\n", "field unlock_round not found"},
+		{"numeric unlock round", valid + "unlock_round: 50000000\n", "must be a string"},
+		{"unlock round with no list", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1) + "unlock_round: \"5\"\n", "field unlock_round not found"},
+		{"unlock round with any recipient", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1) + "recipient_scope: any\nunlock_round: \"5\"\n", "field unlock_round not found"},
+		{"unlock round without spend", strings.Replace(valid, "spend: [pay]\nrecipients: ["+recipient+"]\n", "", 1) + "unlock_round: \"5\"\n", "field unlock_round not found"},
+		{"encoding with no list", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1) + "recipient_scope: any\nencoding: auto\n", "needs a recipient list"},
 		{"teal field", valid + "teal: \"int 1\"\n", "not found"},
 		{"template field", valid + "template: x\n", "not found"},
 		{"max fee field", valid + "max_fee: \"1\"\n", "not found"},
@@ -1253,8 +1203,6 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 					switch field {
 					case plainhost.ParameterRecipients:
 						form[field] = strings.Join(recipients, ",")
-					case plainhost.ParameterUnlockRound:
-						form[field] = "50000000"
 					case plainhost.ParameterRekeyTo:
 						form[field] = strings.Join(rekeyTo, ",")
 					case plainhost.ParameterCosigner:
@@ -1262,7 +1210,7 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 					}
 				}
 				path := writeBoundaryFile(t, directory, preset.SampleBoundaryFile(boundary.SampleValues{
-					Recipients: recipients, Cosigner: "ops-cosigner", UnlockRound: "50000000", RekeyTo: rekeyTo,
+					Recipients: recipients, Cosigner: "ops-cosigner", RekeyTo: rekeyTo,
 				}))
 				fromFile, err := boundary.LoadFile(path)
 				if err != nil {
@@ -1308,7 +1256,6 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 		{"allowlist", plainhost.RekeySpendingKey, plainhost.EncodingAuto, []string{plainhost.ParameterRecipients}},
 		{"locked-allowlist", plainhost.RekeyOnlyThese, plainhost.EncodingAuto, []string{plainhost.ParameterRecipients, plainhost.ParameterRekeyTo}},
 		{"corridor", plainhost.RekeyOnlyThese, plainhost.EncodingMerkle, []string{plainhost.ParameterRecipients, plainhost.ParameterRekeyTo, plainhost.ParameterCosigner}},
-		{"timelock", plainhost.RekeyOnlyThese, "", []string{plainhost.ParameterUnlockRound, plainhost.ParameterRekeyTo}},
 	} {
 		index := slices.IndexFunc(presets, func(preset boundary.Preset) bool { return preset.Name == test.name })
 		if index < 0 {
@@ -1325,56 +1272,16 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 			t.Errorf("%s fields = %v", test.name, preset.Fields)
 		}
 	}
-	if len(presets) != 4 {
+	if len(presets) != 3 {
 		t.Fatalf("%d presets", len(presets))
 	}
-}
-
-func TestUnlockRoundMayBeWrittenAsANumberOrText(t *testing.T) {
-	recipient := testAddress(1)
-	for _, written := range []string{"18446744073709551615", `"18446744073709551615"`} {
-		file, err := boundary.ParseFile([]byte("schema: aplane.boundary.v1\nspend: [pay]\nrecipients: [" + recipient + "]\nrekey: {authority: spending_key}\nunlock_round: " + written + "\n"))
-		if err != nil {
-			t.Fatalf("%s: %v", written, err)
+	// The timelock preset went with the framework timelock.
+	for _, preset := range presets {
+		if strings.Contains(preset.Name, "timelock") || slices.Contains(preset.Fields, "unlock_round") {
+			t.Fatalf("preset %s names a timelock: %v", preset.Name, preset.Fields)
 		}
-		params := file.CreationParameters()
-		if params[plainhost.ParameterUnlockRound] != "18446744073709551615" {
-			t.Fatalf("%s became %q", written, params[plainhost.ParameterUnlockRound])
-		}
-		// The largest round resolves, beside a spending-key rekey too.
-		instance, err := falconHost(t).ResolveInstance(params)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if instance.Bounded.Layer3Policy != composeddsa.Layer3PolicyFixedAllowlistTimelock || instance.Values[plainhost.ParameterUnlockRound] != "18446744073709551615" {
-			t.Fatalf("%s: policy %s, values %v", written, instance.Bounded.Layer3Policy, instance.Values)
-		}
-	}
-}
-
-func TestTimelockNeedsNoRecipientList(t *testing.T) {
-	provider := falconHost(t)
-	for authority, rekey := range map[string]string{
-		"{authority: only_these, to: [" + rekeyTarget(0x08) + "]}": plainhost.RekeyOnlyThese,
-		// A timelock beside a spending-key rekey is a shape now.
-		"{authority: spending_key}": plainhost.RekeySpendingKey,
-	} {
-		file, err := boundary.ParseFile([]byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: " + authority + "\nunlock_round: 007\n"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		instance, err := provider.ResolveInstance(file.CreationParameters())
-		if err != nil {
-			t.Fatalf("%s: %v", rekey, err)
-		}
-		if instance.Bounded.Layer3Policy != composeddsa.Layer3PolicyTimelock || instance.Bounded.Rekey != wantRekeySetting(rekey) {
-			t.Fatalf("%s: policy = %s, rekey = %s", rekey, instance.Bounded.Layer3Policy, instance.Bounded.Rekey)
-		}
-		if _, present := instance.Values[plainhost.ParameterRecipients]; present {
-			t.Fatalf("%s: values = %v", rekey, instance.Values)
-		}
-		if got := instance.Values[plainhost.ParameterUnlockRound]; got != "7" {
-			t.Fatalf("%s: unlock round = %q, want canonical 7", rekey, got)
+		if strings.Contains(preset.SampleBoundaryFile(boundary.SampleValues{}), "unlock_round") {
+			t.Fatalf("preset %s writes unlock_round into its sample file", preset.Name)
 		}
 	}
 }
@@ -1533,7 +1440,7 @@ func TestMerkleListShapesShareOneCombine(t *testing.T) {
 // review obligation, not a fixture to refresh:
 //
 //   - a programs golden changed: a renderer or the envelope changed behavior.
-//     Raise allowlistRendererRevision, timelockRendererRevision or
+//     Raise allowlistRendererRevision or
 //     limitsRendererRevision (listRendererRevision for the listed-rekey path, or
 //     shapeResolverRevision for a request-handling change), for the affected
 //     shapes only.
@@ -1545,10 +1452,13 @@ func TestMerkleListShapesShareOneCombine(t *testing.T) {
 // The grammar fingerprint is frozen by TestPlainHostGrammarGoldens. These values
 // moved on purpose when the shapes joined the plain hosts (install-fresh): they
 // now name the plain key type and its salt style, and the resolver revision is 2.
+// The spending-key value moved again when the framework timelock left the
+// grammar: it had covered the three uncosigned spending-key timelock families,
+// which are gone. The allowlist entries it still covers are unchanged.
 func TestBoundsFingerprintGoldens(t *testing.T) {
 	type goldens struct {
-		firstShape, fullShape, boundaryDigest            string
-		allowlists, timelocks, spendingKeyShapes, limits string
+		firstShape, fullShape, boundaryDigest string
+		allowlists, spendingKeyShapes, limits string
 	}
 	want := map[string]goldens{
 		"falcon": {
@@ -1556,8 +1466,7 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			fullShape:         "1:b4efb8a343077eb838ca3646354fc98e02a6bc2cc6e455048afc484ed0b9b263",
 			boundaryDigest:    "fc7c7b20998e33024636c11e56653a24320c16028330fab2b2c6e7dc8e95ff38",
 			allowlists:        "c9f373cfd2e4c8ce88f7d54b43cd41f8499b9767ff8e6b27594fc597f0fab878",
-			timelocks:         "acaab4b08ef7b1170b3b3798a75da57246da5aa7aae50e72d94f2ce2c74267e7",
-			spendingKeyShapes: "878b68d5b37527910df9efa80b5fcf7fc86b09a567ec23900ac3e5538d967b36",
+			spendingKeyShapes: "04b005aad4c708001aa709a4445d329d68c9cdf385b0c0ff101b2525afdf1fcb",
 			limits:            "ed48000cae1be962081a58fcc294d9c4fbf0847ced6b34d0e66e55403793cabb",
 		},
 		"ed25519": {
@@ -1565,18 +1474,17 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			fullShape:         "1:15c970558356419748a4e56f1f0e9b29fda4940320c2e63466901d20fc1d7d87",
 			boundaryDigest:    "42d94bb4bdaceec99f8a55c499448002a4aff488c4ab15dd39ae70e23d08e1cf",
 			allowlists:        "3ac0b4b28e9d132f37ccbd8157aa7fda8be40dd51d92a9d5419d64e751eae53f",
-			timelocks:         "da369825aeb45b69f686a3ac594461acadcf08970c2700d9b1908a8f2fe67cd8",
-			spendingKeyShapes: "5bcbe423923b4b715c8b5fb5654243ce8ac0bf01da720b4f5c96f5e230d72022",
+			spendingKeyShapes: "5096e3e3cbc549e54f153df445d884b6cbb156de09f00f1ecf8741fad176ac32",
 			limits:            "48e3e3c545e6c39d008a5dcffecb0160b76e1ee7ad66a16e59db4c0ab8899bfe",
 		},
 	}
 	shapes := plainhost.Shapes()
 	// The families' places in the grammar, which TestShapesEnumerateTheGrammar
-	// freezes: 98 allowlist shapes, then 147 timelocks, then 49 limits-only.
-	const timelockStart, limitsStart = 98, 245
+	// freezes: 98 allowlist shapes, then 49 limits-only.
+	const limitsStart = 98
 	for _, b := range bases(t) {
 		t.Run(b.name, func(t *testing.T) {
-			allowlists, timelocks := sha256.New(), sha256.New()
+			allowlists := sha256.New()
 			// The uncosigned spending-key shapes alone, with each one's fingerprint and
 			// digest. Every bounded2 release has offered them.
 			spendingKey := sha256.New()
@@ -1584,11 +1492,8 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			limits := sha256.New()
 			for index, shape := range shapes {
 				rendered := allowlists
-				switch {
-				case index >= limitsStart:
+				if index >= limitsStart {
 					rendered = limits
-				case index >= timelockStart:
-					rendered = timelocks
 				}
 				params := shapeRequest(shape, testAddress(1)+","+testAddress(2))
 				// A list shape renders with the root key generation computes; its
@@ -1623,7 +1528,6 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 				{"full shape", full.Fingerprint, golden.fullShape},
 				{"boundary digest", full.BoundaryDigest, golden.boundaryDigest},
 				{"allowlist programs", hex.EncodeToString(allowlists.Sum(nil)), golden.allowlists},
-				{"timelock programs", hex.EncodeToString(timelocks.Sum(nil)), golden.timelocks},
 				{"spending-key shapes", hex.EncodeToString(spendingKey.Sum(nil)), golden.spendingKeyShapes},
 				{"limits-only shapes", hex.EncodeToString(limits.Sum(nil)), golden.limits},
 			} {

@@ -859,7 +859,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				KeyType:     "aplane.falcon1024.v1",
 				Bounded: &PreparedBoundedProfile{
 					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(2_000)),
-					Rekey: "refused", Layer3Policy: "timelock",
+					Rekey: "refused", Layer3Policy: "none",
 				},
 			},
 			wantMap: map[string]any{
@@ -872,7 +872,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					"spend_effects": []any{"pay"},
 					"max_fee":       float64(2_000),
 					"rekey":         "refused",
-					"layer3_policy": "timelock",
+					"layer3_policy": "none",
 				},
 			},
 		},

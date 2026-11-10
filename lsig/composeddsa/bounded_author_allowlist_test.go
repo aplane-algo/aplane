@@ -6,6 +6,7 @@ package composeddsa_test
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -275,10 +276,21 @@ func TestFrameworkPolicyCombinationRejections(t *testing.T) {
 			yaml: strings.Replace(authorAllowlistYAML(merkle), "policy: merkle_allowlist", "policy: merkle_allowlist_custom", 1),
 			want: "unsupported policy",
 		},
+		// The framework timelock is gone: its three policies cannot be declared.
 		{
-			name: "only the two allowlists take author TEAL",
+			name: "retired timelock cannot be declared",
 			yaml: strings.Replace(authorAllowlistYAML(fixed), "policy: fixed_allowlist", "policy: timelock", 1),
-			want: "does not accept author TEAL",
+			want: `unsupported policy "timelock"`,
+		},
+		{
+			name: "retired fixed allowlist timelock cannot be declared",
+			yaml: strings.Replace(authorAllowlistYAML(fixed), "policy: fixed_allowlist", "policy: fixed_allowlist_timelock", 1),
+			want: `unsupported policy "fixed_allowlist_timelock"`,
+		},
+		{
+			name: "retired merkle allowlist timelock cannot be declared",
+			yaml: strings.Replace(authorAllowlistYAML(merkle), "policy: merkle_allowlist", "policy: merkle_allowlist_timelock", 1),
+			want: `unsupported policy "merkle_allowlist_timelock"`,
 		},
 		{
 			name: "extra parameter needs author TEAL",
@@ -332,4 +344,17 @@ func authorAllowlistError(yaml []byte) error {
 	}
 	_, err = provider.GenerateTEAL(bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), authorAllowlistParams(nil))
 	return err
+}
+
+// A framework policy's encoding is hashed into its compatibility fingerprint. A
+// plain allowlist must encode exactly as it always has, or installed templates
+// would report a conflict.
+func TestLayer3PolicyFingerprintEncoding(t *testing.T) {
+	encoded, err := json.Marshal(composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"policy":"fixed_allowlist","recipients_parameter":"recipients"}`; string(encoded) != want {
+		t.Fatalf("encoded policy = %s, want %s", encoded, want)
+	}
 }

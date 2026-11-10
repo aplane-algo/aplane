@@ -173,7 +173,7 @@ transaction, and the signer checks policy and signs it with your new key.
 
 On signer nodes, APlane exposes the native `ed25519` and `falcon1024` key
 types and the Falcon LogicSig plain host `aplane.falcon1024.v1`, with its
-overlays and bounds (allowlist, timelock, and Corridor presets). To try other
+overlays and bounds (allowlist and Corridor presets). To try other
 LogicSig key types, such as `aplane.ed25519.v1` or the bundled templates, open
 the signer admin pane, press `s` for settings, then press `k` for key types.
 The KeyType Library lets you enable compiled providers and templates for the

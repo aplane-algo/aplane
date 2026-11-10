@@ -45,18 +45,65 @@ const (
 	MaximumProfileFee                 = 10_000
 )
 
-// The timelock policies require FirstValid >= unlock_round. They take no author
-// TEAL, so they have no *Custom form.
-const (
-	Layer3PolicyTimelock                = "timelock"
-	Layer3PolicyFixedAllowlistTimelock  = "fixed_allowlist_timelock"
-	Layer3PolicyMerkleAllowlistTimelock = "merkle_allowlist_timelock"
-)
-
 // Layer3PolicyNone compiles no Layer 3: the envelope's transfer kinds and fee
 // ceiling, and the spending signature, are the whole spending rule. It reads no
 // parameter and takes no author TEAL.
 const Layer3PolicyNone = "none"
+
+// layer3Traits is what a stored Layer 3 policy name says about the program.
+type layer3Traits struct {
+	inlineList bool // the framework inline recipient check runs
+	merkleList bool // the framework Merkle recipient check runs
+	authorTEAL bool // author TEAL runs, alone or after the framework's check
+}
+
+// layer3Policies is the closed stored vocabulary and the one place that says
+// what each name means. The predicates below, the vocabulary check, the
+// argument rules and the _custom derivation all read it, so a new name is
+// added here and nowhere else.
+var layer3Policies = map[string]layer3Traits{
+	Layer3PolicyNone:                  {},
+	Layer3PolicyCustom:                {authorTEAL: true},
+	Layer3PolicyFixedAllowlist:        {inlineList: true},
+	Layer3PolicyMerkleAllowlist:       {merkleList: true},
+	Layer3PolicyFixedAllowlistCustom:  {inlineList: true, authorTEAL: true},
+	Layer3PolicyMerkleAllowlistCustom: {merkleList: true, authorTEAL: true},
+}
+
+// IsKnownLayer3Policy reports whether policy is in the stored vocabulary.
+func IsKnownLayer3Policy(policy string) bool {
+	_, ok := layer3Policies[policy]
+	return ok
+}
+
+// IsMerkleListPolicy reports whether a Layer 3 policy proves its recipient by
+// a Merkle proof.
+func IsMerkleListPolicy(policy string) bool { return layer3Policies[policy].merkleList }
+
+// IsCustomPolicy reports whether author TEAL runs in Layer 3, alone or after
+// a framework allowlist.
+func IsCustomPolicy(policy string) bool { return layer3Policies[policy].authorTEAL }
+
+// IsRecipientListPolicy reports whether a Layer 3 policy limits spending to a
+// framework-enforced recipient list, alone or followed by author TEAL. A
+// policy it does not know is not a list.
+func IsRecipientListPolicy(policy string) bool {
+	traits := layer3Policies[policy]
+	return traits.inlineList || traits.merkleList
+}
+
+// StoredLayer3Policy is the name stored for a framework policy: the policy
+// itself, or its _custom form when author TEAL follows it. A framework policy
+// with no _custom form is returned unchanged.
+func StoredLayer3Policy(framework string, hasAuthorTEAL bool) string {
+	if !hasAuthorTEAL {
+		return framework
+	}
+	if custom := framework + "_custom"; layer3Policies[custom].authorTEAL {
+		return custom
+	}
+	return framework
+}
 
 // SignatureArgLayout is the durable maximum shape of the spending signature
 // args emitted before any Layer-3 or cosigner args.
@@ -250,8 +297,8 @@ func (metadata *Metadata) ValidateProfile() error {
 		return err
 	}
 	// Durable validation checks structure only. Whether a combination is wise
-	// (a refused account that can't send what it holds, a timelock the
-	// spending key can rekey out of) is the user's choice; a check for it
+	// (a refused account that can't send what it holds, for one) is the
+	// user's choice; a check for it
 	// belongs at generation, never here, so accounts created without it keep
 	// loading.
 	if err := ValidateSignatureLayout(metadata.BaseSignatureArgLayout); err != nil {
@@ -267,24 +314,21 @@ func (metadata *Metadata) ValidateProfile() error {
 			recipientProofs++
 		}
 	}
-	switch metadata.Layer3Policy {
-	case Layer3PolicyFixedAllowlist, Layer3PolicyFixedAllowlistCustom,
-		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyNone:
-		if recipientProofs != 0 {
-			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
-		}
-	case Layer3PolicyMerkleAllowlist, Layer3PolicyMerkleAllowlistCustom, Layer3PolicyMerkleAllowlistTimelock:
+	// A Merkle list takes exactly one recipient proof. Author TEAL with no
+	// framework policy may declare its own; every other known policy takes none.
+	switch {
+	case IsMerkleListPolicy(metadata.Layer3Policy):
 		if recipientProofs != 1 {
 			return fmt.Errorf("%s requires exactly one derived Merkle proof argument", metadata.Layer3Policy)
 		}
-	}
-	switch metadata.Layer3Policy {
-	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
-		Layer3PolicyNone:
-		// These take no author TEAL, so nothing could read a runtime argument.
-		if len(metadata.RuntimeArgs) != 0 {
-			return fmt.Errorf("%s must not declare runtime arguments", metadata.Layer3Policy)
+	case IsKnownLayer3Policy(metadata.Layer3Policy) && metadata.Layer3Policy != Layer3PolicyCustom:
+		if recipientProofs != 0 {
+			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
 		}
+	}
+	// "none" has nothing that could read a runtime argument.
+	if metadata.Layer3Policy == Layer3PolicyNone && len(metadata.RuntimeArgs) != 0 {
+		return fmt.Errorf("%s must not declare runtime arguments", metadata.Layer3Policy)
 	}
 	return nil
 }
@@ -298,12 +342,7 @@ func (metadata *Metadata) validateBoundedHost() error {
 	if *metadata.MaxFee > MaximumProfileFee {
 		return fmt.Errorf("max_fee %d exceeds %s ceiling %d", *metadata.MaxFee, Contract, MaximumProfileFee)
 	}
-	switch metadata.Layer3Policy {
-	case Layer3PolicyCustom, Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
-		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
-		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
-		Layer3PolicyNone:
-	default:
+	if !IsKnownLayer3Policy(metadata.Layer3Policy) {
 		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)
 	}
 	return ValidateSpendEffects(metadata.SpendEffects)
@@ -437,19 +476,6 @@ func ValidateRekeySetting(setting RekeySetting) error {
 // rekey path, or, with a rekey-to list, only a pure rekey to a listed address.
 func (metadata *Metadata) RefusesRekeys() bool {
 	return metadata != nil && metadata.Rekey == RekeyRefused
-}
-
-// IsRecipientListPolicy reports whether a Layer 3 policy limits spending to a
-// framework-enforced recipient list, alone or followed by a timelock or author
-// TEAL. A policy it does not name is not a list.
-func IsRecipientListPolicy(policy string) bool {
-	switch policy {
-	case Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
-		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
-		Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
-		return true
-	}
-	return false
 }
 
 // HasRecipientList reports whether Layer 3 limits spending to a recipient list.

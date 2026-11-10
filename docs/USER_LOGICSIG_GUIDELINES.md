@@ -4,7 +4,7 @@
 
 > **TL;DR**
 > - The LogicSigs bundled with APlane (the plain hosts with their overlays and
->   their bounded allowlist and timelock shapes, HTLC, and the other
+>   their bounded allowlist shapes, HTLC, and the other
 >   signer-gated DSA providers) are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
@@ -244,12 +244,11 @@ single-use: a caller can vary unchecked fields and produce multiple valid
 transaction IDs in the same period unless the lease or another explicit
 mechanism enforces mutual exclusion.
 
-A bounded template can use the framework `timelock`, `fixed_allowlist_timelock`, or
-`merkle_allowlist_timelock` policy instead of writing this check. No rekey passes through
-Layer 3, so a time check delays spends only. The framework timelock policies therefore
-require `rekey: refused` or `only_these`, and an author-TEAL time check holds a rekey back
-only on an account that refuses rekeys. Under `only_these` a rekey to a listed address is
-accepted before the unlock round, so the lock holds only while the listed keys' holders
+The bounded framework has no timelock policy. A bounded template that needs a time
+check writes it in author TEAL, and the review reports it as a custom policy. No rekey
+passes through Layer 3, so a time check delays spends only: it holds a rekey back only
+on an account that refuses rekeys. Under `only_these` a rekey to a listed address is
+accepted before the unlock round, so the check holds only while the listed keys' holders
 cooperate.
 
 ### 10. Group Semantics
@@ -864,13 +863,11 @@ on the account's rekey-to list, fixed at creation, and never the cosigner. With
 and the proof, and any other target the spending signature and the cosigner's.
 
 Its framework recipient list constrains `Receiver`/`AssetReceiver`, inline or
-as a Merkle root, and an optional unlock round delays spending. For a Merkle list,
+as a Merkle root. For a Merkle list,
 the signer generates the 512-byte proof for a non-self receiver; callers do not
 pass it (see the
 [Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract)).
-A timelock takes any rekey setting. A spending-key rekey, cosigned or not, can
-leave the lock before the unlock round, and under `only_these` a listed rekey is
-a way around the lock; only `refused` keeps the account inside it. Asset and amount
+Asset and amount
 limits stay in signer policy, because one program is valid on every network and
 asset IDs are network-local. See
 [USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts) and
@@ -907,7 +904,7 @@ These ship as plaintext YAML install sources. New signer stores do not
 install them automatically. Enable one through apadmin's KeyType Library or
 explicitly import its YAML into the product store before generating accounts.
 
-`aplane.htlc.v1` is the only template in the library. Allowlist and timelock
+`aplane.htlc.v1` is the only template in the library. Allowlist
 accounts use the bounds of a plain host, such as a preset of
 `aplane.falcon1024.v1`.
 

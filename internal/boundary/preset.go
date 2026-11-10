@@ -58,25 +58,14 @@ func Presets() []Preset {
 			},
 			Fields: []string{ParameterRecipients, ParameterRekeyTo, ParameterCosigner},
 		},
-		{
-			Name:        "timelock",
-			Title:       "Timelock",
-			Description: "Nothing can be spent until a chosen round. It can be rekeyed only to an address on its rekey-to list, which is a way around the lock.",
-			Fixed: map[string]string{
-				ParameterSpendEffects:   allTransfers,
-				ParameterRekeyAuthority: RekeyOnlyThese,
-			},
-			Fields: []string{ParameterUnlockRound, ParameterRekeyTo},
-		},
 	}
 }
 
 // SampleValues are what an operator supplies to a preset.
 type SampleValues struct {
-	Recipients  []string
-	Cosigner    string
-	UnlockRound string
-	RekeyTo     []string
+	Recipients []string
+	Cosigner   string
+	RekeyTo    []string
 }
 
 // SampleBoundaryFile renders the preset as a boundary file with the operator's
@@ -101,9 +90,6 @@ func (p Preset) SampleBoundaryFile(values SampleValues) string {
 	}
 	if slices.Contains(p.Fields, ParameterCosigner) {
 		sb.WriteString("cosigner: " + values.Cosigner + "\n")
-	}
-	if slices.Contains(p.Fields, ParameterUnlockRound) {
-		sb.WriteString("unlock_round: " + values.UnlockRound + "\n")
 	}
 	return sb.String()
 }

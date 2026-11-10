@@ -13,7 +13,7 @@ import (
 )
 
 // The local summary describes every rekey setting the plain hosts take, a
-// refused one and a timelock beside any setting included, and claims no refusal
+// refused one included, and claims no refusal
 // the signer no longer makes.
 func TestBoundaryPreviewDescribesEveryRekeySetting(t *testing.T) {
 	for _, test := range []struct {
@@ -25,10 +25,10 @@ func TestBoundaryPreviewDescribesEveryRekeySetting(t *testing.T) {
 			[]string{"Bounds:     none", "never be rekeyed, but can still spend and close"}},
 		{"bounded, refused", apshellapp.BoundaryPreview{Transfers: []string{"pay"}, AnyRecipient: true, Rekey: boundary.RekeyRefused},
 			[]string{"Transfers:  pay", "leaves only by what it may spend"}},
-		{"timelock, spending key", apshellapp.BoundaryPreview{Transfers: []string{"pay"}, UnlockRound: "9", Rekey: boundary.RekeySpendingKey},
-			[]string{"spending key alone, which can rekey the account anywhere", "doesn't wait for the unlock round"}},
-		{"timelock, plus cosigned", apshellapp.BoundaryPreview{Transfers: []string{"pay"}, UnlockRound: "9", Rekey: boundary.RekeyPlusCosigned,
-			RekeyTo: []string{"A"}, Cosigner: "ops"}, []string{"or elsewhere with the cosigner", "way around the unlock round"}},
+		{"bounded, spending key", apshellapp.BoundaryPreview{Transfers: []string{"pay"}, AnyRecipient: true, Rekey: boundary.RekeySpendingKey},
+			[]string{"spending key alone, which can rekey the account anywhere"}},
+		{"bounded, plus cosigned", apshellapp.BoundaryPreview{Transfers: []string{"pay"}, AnyRecipient: true, Rekey: boundary.RekeyPlusCosigned,
+			RekeyTo: []string{"A"}, Cosigner: "ops"}, []string{"or elsewhere with the cosigner"}},
 	} {
 		var out bytes.Buffer
 		renderBoundaryPreview(&REPLState{Out: &out}, &test.preview)

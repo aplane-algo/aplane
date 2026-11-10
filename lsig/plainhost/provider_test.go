@@ -266,11 +266,14 @@ func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
 }
 
 // The grammar fingerprints hash configuration, so a rendering change must be
-// declared by a revision; these goldens make that review unavoidable.
+// declared by a revision; these goldens make that review unavoidable. They moved
+// when the framework timelock left the grammar: the fingerprint is over every
+// program in order, and 147 timelock shapes are no longer among them. No
+// remaining program changed.
 func TestPlainHostGrammarGoldens(t *testing.T) {
 	want := map[string]string{
-		"falcon":  "1:6828c644697fd088f3a54937bf08fef3cc584e6136216d08dd36d28dc7be02c9",
-		"ed25519": "1:67653b970886576b30a97cbd999408e7a8f83b70407334333a9c6896007c60e9",
+		"falcon":  "1:cb01dfa0fa03dcb1e45cc3a579a21fc7e058bf63651a02b6f0707472d77f2792",
+		"ed25519": "1:e5fedd47ba426dfe40f774b1f17f8858960aab0abb4570a0f602cdebc9286b30",
 	}
 	for _, b := range bases(t) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {

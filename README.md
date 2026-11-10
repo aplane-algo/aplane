@@ -32,7 +32,7 @@ contract and will continue to track the published protocol standards.
 - **Post-Quantum Ready**: Supports protocol-native Falcon-1024 accounts and
   top-level `PQsig` authorization on consensus v42+
 - **General LogicSig Capability**: Supports a variety of designs, including built-in bounded allowlists,
-  timelocks, HTLCs, cosigner-gated policies, rotating keys, and user-defined custom LogicSigs
+  HTLCs, cosigner-gated policies, rotating keys, and user-defined custom LogicSigs
 - **Enables key isolation**: Signing operations (and private keys) can be kept on dedicated purpose-built machines with restrictive firewalls and single-port exposure
 - **Supports App Interaction Primitives**: Read Algorand app state, call contracts via raw or ARC-4/ABI methods, 
 deploy apps from TEAL source or compiled AVM bytecode, execute grouped flows such as companion-payment app calls
@@ -155,8 +155,8 @@ client settings remain in `config.yaml`. See
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
 - **plain hosts**: `aplane.falcon1024.v1` (enabled by default) and
   `aplane.ed25519.v1` (opt-in) LogicSig accounts, optionally cosigned and with a
-  rekey-to list, and optionally bounded: transfer kinds, a recipient list, a
-  timelock, with allowlist, timelock, and cosigner-gated Corridor presets
+  rekey-to list, and optionally bounded: transfer kinds and a recipient list,
+  with allowlist and cosigner-gated Corridor presets
 
 ### Automation & Integration
 - JavaScript scripting with full transaction API

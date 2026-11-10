@@ -188,7 +188,7 @@ role.
 |---------|----------|----------------------|
 | `ed25519` | native | default-enabled |
 | `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
-| `aplane.falcon1024.v1` | dsa_lsig plain host (`plain1` with overlays, `bounded2` with bounds: allowlist, timelock, Corridor presets; cosigned ones use `cosigned1`) | default-enabled on signer nodes |
+| `aplane.falcon1024.v1` | dsa_lsig plain host (`plain1` with overlays, `bounded2` with bounds: allowlist and Corridor presets; cosigned ones use `cosigned1`) | default-enabled on signer nodes |
 | `aplane.ed25519.v1` | Ed25519 dsa_lsig plain host, the same grammar | library-visible |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
@@ -221,8 +221,8 @@ compatible manual-salt records retain it.
 
 ### Creation params vs runtime args
 
-- **Creation params** are baked into the address at generation time (e.g. a
-  allowlist's `recipients`, a timelock's unlock round, an HTLC's hash). Pass
+- **Creation params** are baked into the address at generation time (e.g. an
+  allowlist's `recipients`, an HTLC's hash). Pass
   them to `generate`/`generateKey`. Address-list and uint-list params are
   canonicalized (sorted) before the address is derived.
 - **Runtime args** are supplied per transaction at signing time (e.g. an HTLC
@@ -233,9 +233,7 @@ compatible manual-salt records retain it.
 - `aplane.falcon1024.v1` or `aplane.ed25519.v1` with bounds — a bounded account.
   Its presets are an allowlist (pay and asset-transfer receivers must be self or listed, with a
   signer-generated Merkle proof for a long list), a locked allowlist that can be
-  rekeyed only to an address on its rekey-to list, Corridor, and a timelock
-  (`FirstValid >= unlock_round` before any spend; it can be rekeyed only to a
-  listed address, which is a way around the lock). Close, clawback, and
+  rekeyed only to an address on its rekey-to list, and Corridor. Close, clawback, and
   non-transfer types are rejected. A rekey to a listed address needs the
   spending key alone. Any other rekey, when allowed, needs the spending key, plus
   the cosigner on a cosigned account. On an account that takes only listed

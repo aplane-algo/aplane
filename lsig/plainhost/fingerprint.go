@@ -37,9 +37,6 @@ const (
 	// allowlistRendererRevision covers the framework allowlist renderers and the
 	// bounded envelope around them.
 	allowlistRendererRevision = 1
-	// timelockRendererRevision covers the same for shapes with a timelock. It is
-	// separate so a timelock change leaves allowlist accounts' provenance alone.
-	timelockRendererRevision = 1
 	// limitsRendererRevision covers the envelope alone, for limits-only shapes.
 	limitsRendererRevision = 1
 	// listRendererRevision covers the listed-rekey path, for shapes and
@@ -89,11 +86,8 @@ func arrangementFingerprint(selected Arrangement, composer *composeddsa.Composed
 // rule added to the grammar leaves existing accounts' provenance unchanged.
 func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
 	rendererRevision := allowlistRendererRevision
-	switch {
-	case shape.AnyRecipient:
+	if shape.AnyRecipient {
 		rendererRevision = limitsRendererRevision
-	case shape.Timelock:
-		rendererRevision = timelockRendererRevision
 	}
 	// Omitted for a shape without a list, so their fingerprints don't carry it.
 	listRevision := 0
