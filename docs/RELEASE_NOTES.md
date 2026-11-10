@@ -7,6 +7,26 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The review of a mixed cosigned group no longer calls the signer's own accounts foreign
+
+- A mixed cosigned group is signed in several requests, and each shows the whole
+  group. A position signed in another request used to be headed `[FOREIGN - not
+  signing]`, even when its account was this signer's. It is now headed `[THIS SIGNER
+  HOLDS THIS ACCOUNT'S KEY - not signed in this request]`.
+- A listed rekey on such a position used to warn "YOU WILL LOSE CONTROL OF THIS
+  ACCOUNT". The warning now names it as a handover to an address on the account's
+  rekey-to list, as the request that signs it does.
+- The group line counts the positions whose key the signer holds apart from the
+  foreign ones.
+- The signer recognises a position from its own records, by the sender, not from
+  the client. What a request signs, and what its policy judges, is unchanged, and a
+  rekey still forces review.
+- Where a `/sign/component` request names one of the signer's keys as the authorizer
+  of another sender, the review says the request named it and that it isn't checked
+  against the chain. It keeps the unlisted-rekey warning.
+- Not covered: on `/sign`, a position whose sender was rekeyed to an account this
+  signer holds still shows as foreign.
+
 ## Generation: a held cosigner key is allowed, a rotating rekey target is refused
 
 - Lifted: an account's cosigner public key may now be a key this signer holds as an

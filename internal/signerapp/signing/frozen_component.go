@@ -58,6 +58,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	// the two always agree on the dummy count.
 	foreign := make(map[int]bool, len(request.ContextualPositions))
 	sizingForeign := make(map[int]bool, len(request.ContextualPositions))
+	holders := make(map[int]string, len(request.ContextualPositions))
 	sizing := append([]signerapi.SignRequest(nil), req.Requests...)
 	for _, position := range request.ContextualPositions {
 		foreign[position.TargetIndex] = true
@@ -65,6 +66,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 			sizingForeign[position.TargetIndex] = true
 			continue
 		}
+		holders[position.TargetIndex] = position.AuthAddress
 		sizing[position.TargetIndex].AuthAddress = position.AuthAddress
 		sizing[position.TargetIndex].LsigArgs = position.LsigArgs
 	}
@@ -122,6 +124,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		AllTxns: allTxns, DummyTxns: dummyTxns,
 		PassthroughIndices: map[int]bool{}, PassthroughSignedTxns: map[int][]byte{},
 		ForeignIndices: foreign, HasForeign: len(foreign) > 0,
+		HeldForeign: heldForeignPositions(snapshot, originals, foreign, holders),
 		LsigIndices: lsigIndices, DummiesNeeded: expectedDummies,
 		LogicSigResourcePlan: resourcePlan, FeeInfo: feeInfo,
 		NeedsRegroup: false, IsPreGrouped: isPreGrouped, HasPassthrough: false,

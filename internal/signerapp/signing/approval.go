@@ -235,7 +235,12 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		}
 		if plan.HasForeign {
 			signCount := len(req.Requests) - len(plan.ForeignIndices)
-			b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]\n", signCount, len(plan.ForeignIndices)))
+			if held := sendersHeld(plan.HeldForeign); held > 0 {
+				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d not signed in this request: %d whose key this signer holds, %d foreign]\n",
+					signCount, len(plan.ForeignIndices), held, len(plan.ForeignIndices)-held))
+			} else {
+				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]\n", signCount, len(plan.ForeignIndices)))
+			}
 		}
 		if plan.DummiesNeeded > 0 {
 			b.WriteString("[MODIFIED BY SERVER]\n")
@@ -264,12 +269,21 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 	totalTxns := len(req.Requests)
 	for i, txn := range allTxns[:len(req.Requests)] {
 		if !isSingleTxn {
-			if plan.PassthroughIndices[i] {
+			var under []string
+			switch held := plan.HeldForeign[i]; {
+			case plan.PassthroughIndices[i]:
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [PASSTHROUGH] ---\n", i+1, totalTxns))
-			} else if plan.ForeignIndices[i] {
+			case held != nil:
+				var label string
+				label, under = heldPositionHeading(held)
+				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [%s] ---\n", i+1, totalTxns, label))
+			case plan.ForeignIndices[i]:
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [FOREIGN - not signing] ---\n", i+1, totalTxns))
-			} else {
+			default:
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d ---\n", i+1, totalTxns))
+			}
+			for _, line := range under {
+				b.WriteString(line + "\n")
 			}
 		}
 		txReq := req.Requests[i]
@@ -494,7 +508,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 
 	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
 		KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
-	}, listedRekeyTargetsForPlan(plan))
+	}, warningRekeyTargetsForPlan(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
 
