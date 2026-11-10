@@ -256,3 +256,17 @@ func TestNormalizeCreationParamsPreservesNilWithoutDefaults(t *testing.T) {
 		t.Fatalf("NormalizeCreationParams(required) = %#v, want nil so validation rejects the missing value", got)
 	}
 }
+
+// The network refuses a LogicSig argument over 4,096 bytes, so a value that
+// large is refused when the arguments are assembled, whether or not the
+// argument declares a size.
+func TestValidateAndOrderArgsRefusesAnArgumentTheNetworkRefuses(t *testing.T) {
+	argDefs := []RuntimeArgDef{{Name: "blob", Type: "bytes", Required: true}}
+	if _, err := ValidateAndOrderArgs(argDefs, map[string][]byte{"blob": make([]byte, 4096)}); err != nil {
+		t.Fatalf("4096 bytes: %v", err)
+	}
+	_, err := ValidateAndOrderArgs(argDefs, map[string][]byte{"blob": make([]byte, 4097)})
+	if err == nil || !strings.Contains(err.Error(), "a LogicSig argument is at most 4096") {
+		t.Fatalf("4097 bytes: error = %v", err)
+	}
+}

@@ -617,6 +617,30 @@ contracts, and every runtime argument declares `required_on: [spend]`, because
 a rekey never reaches Layer 3. The one signer-derived primitive a template
 declares is `merkle_allowlist_proof`.
 
+The argument layout stays inside the network's limits on one LogicSig: at most 255
+slots, and no slot over 4,096 bytes. The whole layout counts: signatures, proofs,
+runtime arguments and the cosigner's signature. Three checks enforce this, each at
+its own time:
+
+- At install: `composeddsa.ValidateTemplateAdmission` refuses a template whose
+  layout is past either limit (`Metadata.ValidateNetworkLimits`), or that declares a
+  runtime argument `max_size` over 4,096 bytes. The same admission check refuses a
+  template that breaks its template-level contract, such as a parameter with the
+  reserved `bounded_` prefix or a `rekey_to` that isn't the framework's.
+- At key generation: `BuildBoundedAuthorizationMetadata` runs
+  `Metadata.ValidateNetworkLimits` on the account's layout, and generation enforces
+  the template-level contract as it always has.
+- At signing: a supplied runtime argument over 4,096 bytes is refused, whatever
+  maximum the account declares. An argument that isn't supplied isn't checked.
+
+None of them runs at load. `ValidateNetworkLimits` is not part of durable
+validation, and a store reload builds an installed template without the admission
+check. A stored account past a limit still loads, because a path that doesn't carry
+the oversized argument, such as a rekey, may still work. An installed template past
+a limit still loads too: reload fails closed on a template defect, so a limit
+applied there would let one template take the whole store down. A store never fails
+to load over a limit added after its contents were written.
+
 ```yaml
 schema_version: 2
 derivation_version: 3

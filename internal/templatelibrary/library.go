@@ -698,6 +698,11 @@ func parseGeneric(path string, data []byte) (ParsedTemplate, error) {
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid generic template: %w", err)
 	}
+	// Admission: a template on its way into a store. A store's own templates
+	// load without these checks.
+	if err := generictemplate.ValidateSpecAdmission(spec); err != nil {
+		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid generic template: %w", err)
+	}
 	return ParsedTemplate{
 		TemplateRef: TemplateRef{
 			KeyType:      spec.KeyType(),
@@ -717,7 +722,9 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 	if err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("failed to parse composed template: %w", err)
 	}
-	if err := composeddsa.ValidateTemplateSpec(spec); err != nil {
+	// Admission: a template on its way into a store. A store's own templates
+	// load without the checks it adds to ValidateTemplateSpec.
+	if err := composeddsa.ValidateTemplateAdmission(spec); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid composed template: %w", err)
 	}
 	return ParsedTemplate{

@@ -391,6 +391,10 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 	if err := metadata.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
 	}
+	// Checked at generation, not on load: see ValidateNetworkLimits.
+	if err := metadata.ValidateNetworkLimits(); err != nil {
+		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
+	}
 	return metadata, nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
@@ -194,6 +195,95 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Layer3:             layer3,
 		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
 	}), nil
+}
+
+// ValidateTemplateAdmission is what a composed template must pass to be
+// installed, beyond ValidateTemplateSpec: the checks that apply to a new template
+// and never to one already in a store. A store reload builds its templates
+// without them, so a template installed before a check existed keeps loading and
+// can't take the whole store down. The checks:
+//
+//   - its LogicSig arguments fit the network's limits on one LogicSig;
+//   - a bounded template satisfies its template-level contract, so a mistake
+//     key generation would refuse is refused here first.
+func ValidateTemplateAdmission(spec *TemplateSpec) error {
+	if err := ValidateTemplateSpec(spec); err != nil {
+		return err
+	}
+	if err := generictemplate.ValidateRuntimeArgLimits(spec.RuntimeArgs); err != nil {
+		return err
+	}
+	if spec.Bounded != nil {
+		for _, arg := range spec.Bounded.RuntimeArgs {
+			// The same refusal, in the same words, as a schema 1 runtime argument.
+			if arg.MaxSize > lsigresource.MaxLogicSigArgBytes {
+				return fmt.Errorf("runtime_arg %s is %d bytes: a LogicSig argument is at most %d", arg.Name, arg.MaxSize, lsigresource.MaxLogicSigArgBytes)
+			}
+		}
+	}
+	provider, err := NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		return err
+	}
+	if err := provider.validateTemplateContract(); err != nil {
+		return err
+	}
+	return provider.checkArgumentLimits()
+}
+
+// validateTemplateContract checks a bounded template against its template-level
+// contract: the profile, the framework's injected parameters, and the argument
+// layout's structure. Instance fields, such as a cosigner key, wait for key
+// generation.
+func (c *ComposedDSA) validateTemplateContract() error {
+	if c.bounded == nil {
+		return nil
+	}
+	metadata, err := c.boundedAuthorizationMetadataBase()
+	if err != nil {
+		return fmt.Errorf("invalid bounded template contract: %w", err)
+	}
+	if metadata == nil {
+		return nil
+	}
+	if err := metadata.ValidateProfile(); err != nil {
+		return fmt.Errorf("invalid bounded template contract: %w", err)
+	}
+	return nil
+}
+
+// checkArgumentLimits refuses a program whose LogicSig the network would refuse
+// on any transaction: too many arguments, or one too large. A bounded program's
+// whole layout counts (signatures, proofs, runtime arguments and the cosigner's
+// signature). Any other composed program has the base's signature arguments and
+// the template's runtime arguments.
+func (c *ComposedDSA) checkArgumentLimits() error {
+	if c.bounded != nil {
+		// validateTemplateContract has already built this without error.
+		if metadata, err := c.boundedAuthorizationMetadataBase(); err == nil && metadata != nil {
+			return metadata.ValidateNetworkLimits()
+		}
+	}
+	// A base that doesn't describe its signature arguments still carries at
+	// least one.
+	signatureArgs := 1
+	if _, described := c.SignatureArgLayout(); described {
+		layout, err := c.validatedSignatureArgLayout()
+		if err != nil {
+			return err
+		}
+		for i, size := range layout.MaxSizes {
+			if size > lsigresource.MaxLogicSigArgBytes {
+				return fmt.Errorf("base signature argument %d is %d bytes: a LogicSig argument is at most %d", i, size, lsigresource.MaxLogicSigArgBytes)
+			}
+		}
+		signatureArgs = layout.Count
+	}
+	if total := signatureArgs + len(c.runtimeArgs); total > lsigresource.MaxLogicSigArgs {
+		return fmt.Errorf("%d arguments (%d signature, %d runtime): a LogicSig carries at most %d",
+			total, signatureArgs, len(c.runtimeArgs), lsigresource.MaxLogicSigArgs)
+	}
+	return nil
 }
 
 func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, parameters []generictemplate.ParameterSpec) error {

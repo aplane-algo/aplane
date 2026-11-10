@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
 // Sentinel errors.
@@ -234,6 +236,10 @@ func ValidateAndOrderArgs(argDefs []RuntimeArgDef, runtimeArgs map[string][]byte
 		}
 		if argDef.MaxSize > 0 && len(val) > argDef.MaxSize {
 			return nil, fmt.Errorf("arg %s: maximum %d bytes, got %d", argDef.Name, argDef.MaxSize, len(val))
+		}
+		// The network's own limit, for an argument that declares no size.
+		if len(val) > lsigresource.MaxLogicSigArgBytes {
+			return nil, fmt.Errorf("arg %s: %d bytes, and a LogicSig argument is at most %d", argDef.Name, len(val), lsigresource.MaxLogicSigArgBytes)
 		}
 		args = append(args, val)
 	}

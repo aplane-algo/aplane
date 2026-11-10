@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 )
 
@@ -99,6 +100,29 @@ func slotRequirement(paths ArgumentPathMask, path string) string {
 	default:
 		return ""
 	}
+}
+
+// ValidateNetworkLimits refuses an argument layout the network would refuse on
+// any transaction: more arguments than one LogicSig carries, or one larger than
+// a LogicSig argument may be. No group shape lifts either.
+//
+// It is a check for when a template is installed and when a key is generated, not
+// part of durable validation: a stored account past a limit still loads, since
+// a path that doesn't use the oversized argument, such as a rekey, may still
+// work.
+func (metadata *Metadata) ValidateNetworkLimits() error {
+	if metadata == nil {
+		return nil
+	}
+	if len(metadata.ArgumentLayout) > lsigresource.MaxLogicSigArgs {
+		return fmt.Errorf("bounded argument_layout has %d arguments: a LogicSig carries at most %d", len(metadata.ArgumentLayout), lsigresource.MaxLogicSigArgs)
+	}
+	for i, slot := range metadata.ArgumentLayout {
+		if slot.MaxSize > lsigresource.MaxLogicSigArgBytes {
+			return fmt.Errorf("argument slot %d (%s) is %d bytes: a LogicSig argument is at most %d", i, slot.Name, slot.MaxSize, lsigresource.MaxLogicSigArgBytes)
+		}
+	}
+	return nil
 }
 
 func validateArgumentLayout(metadata *Metadata) error {

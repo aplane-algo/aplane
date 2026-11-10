@@ -4,6 +4,8 @@
 package composeddsa
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -322,6 +324,13 @@ teal: |
 	if err != nil {
 		t.Fatalf("ParseTemplateSpec() error = %v", err)
 	}
+	// Admission refuses it, so it can't be installed.
+	if err := ValidateTemplateAdmission(spec); err == nil ||
+		!strings.Contains(err.Error(), "invalid bounded template contract: ") || !strings.Contains(err.Error(), "reserved bounded_ prefix") {
+		t.Fatalf("ValidateTemplateAdmission() error = %v, want reserved-prefix rejection", err)
+	}
+	// One already in a store still loads, and the mistake is refused when a key
+	// is generated.
 	provider, err := NewProviderFromTemplateSpec(spec)
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
@@ -924,4 +933,271 @@ func indentTEALForTest(teal string) string {
 		lines = append(lines, "  "+line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// argLimitTestOps is a bounded-capable stub whose signature argument layout the
+// test chooses.
+type argLimitTestOps struct {
+	boundedTestOps
+	layout SignatureArgLayout
+}
+
+func (o argLimitTestOps) SignatureArgLayout() SignatureArgLayout { return o.layout }
+
+func runtimeArgsYAMLForTest(indent string, count, maxSize int, requiredOn bool) string {
+	var b strings.Builder
+	for i := range count {
+		fmt.Fprintf(&b, "%s- name: arg%d\n%s  type: bytes\n%s  max_size: %d\n", indent, i, indent, indent, maxSize)
+		if requiredOn {
+			fmt.Fprintf(&b, "%s  required_on: [spend]\n", indent)
+		}
+	}
+	return b.String()
+}
+
+// requireRefusedAtAdmissionOnly pins where a refusal lives. Whatever want is, the
+// load path (spec validation, the provider build, and the registration a store
+// reload prepares) accepts the template, so one installed before a check existed
+// keeps loading. Admission refuses it with want, or accepts it when want is
+// empty. It returns the provider the load path built.
+func requireRefusedAtAdmissionOnly(t *testing.T, data []byte, want string) *ComposedDSA {
+	t.Helper()
+	spec, err := ParseTemplateSpec(data)
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	if err := ValidateTemplateSpec(spec); err != nil {
+		t.Fatalf("ValidateTemplateSpec() error = %v, want none: the load path applies no limit", err)
+	}
+	provider, err := NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v, want none: the load path applies no limit", err)
+	}
+	if _, err := PrepareKeystoreTemplateRegistration(spec.KeyType(), data); err != nil {
+		t.Fatalf("PrepareKeystoreTemplateRegistration() error = %v, want none: a stored template still loads", err)
+	}
+	err = ValidateTemplateAdmission(spec)
+	if want == "" {
+		if err != nil {
+			t.Fatalf("ValidateTemplateAdmission() error = %v", err)
+		}
+		return provider
+	}
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("ValidateTemplateAdmission() error = %v, want %q", err, want)
+	}
+	return provider
+}
+
+// The network refuses a LogicSig with more than 255 arguments or one argument
+// over 4,096 bytes. A composed program carries the base's signature arguments
+// ahead of the template's, so the count is of both. The refusal is an admission
+// check: the same template still builds on the load path.
+func TestComposedTemplateAdmissionRefusesArgumentsTheNetworkRefuses(t *testing.T) {
+	oneSlot := SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
+	threeSlots := SignatureArgLayout{Count: 3, MaxSizes: []int{4, 4, 4}}
+	tests := []struct {
+		name        string
+		layout      SignatureArgLayout
+		runtimeArgs int
+		maxSize     int
+		want        string
+	}{
+		{name: "255 in total", layout: oneSlot, runtimeArgs: 254, maxSize: 8},
+		{name: "256 in total", layout: oneSlot, runtimeArgs: 255, maxSize: 8, want: "256 arguments (1 signature, 255 runtime): a LogicSig carries at most 255"},
+		{name: "255 in total with a three-argument signature", layout: threeSlots, runtimeArgs: 252, maxSize: 8},
+		{name: "256 in total with a three-argument signature", layout: threeSlots, runtimeArgs: 253, maxSize: 8, want: "256 arguments (3 signature, 253 runtime): a LogicSig carries at most 255"},
+		{name: "runtime argument at the size limit", layout: oneSlot, runtimeArgs: 1, maxSize: 4096},
+		{name: "runtime argument over the size limit", layout: oneSlot, runtimeArgs: 1, maxSize: 4097, want: "runtime_arg arg0 is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "base signature argument at the size limit", layout: SignatureArgLayout{Count: 1, MaxSizes: []int{4096}}, runtimeArgs: 1, maxSize: 8},
+		{name: "base signature argument over the size limit", layout: SignatureArgLayout{Count: 1, MaxSizes: []int{4097}}, runtimeArgs: 1, maxSize: 8, want: "base signature argument 0 is 4097 bytes: a LogicSig argument is at most 4096"},
+		// A layout whose count and sizes disagree could hide an argument from
+		// either check, so it is refused as it is for a bounded program.
+		{name: "more sizes than the count", layout: SignatureArgLayout{Count: 1, MaxSizes: []int{2000, 5000}}, runtimeArgs: 1, maxSize: 8, want: "signature"},
+		{name: "a count without sizes", layout: SignatureArgLayout{Count: 3}, runtimeArgs: 1, maxSize: 8, want: "signature"},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseKeyType := fmt.Sprintf("test.template-arg-limit-base%d.v1", i)
+			registerBaseForTest(t, BaseRegistration{
+				BaseKeyType:       baseKeyType,
+				FamilyName:        fmt.Sprintf("template-arg-limit-base%d", i),
+				Version:           1,
+				Ops:               argLimitTestOps{layout: tt.layout},
+				NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+			})
+			requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 1
+template_type: composed
+base_key_type: %s
+template_mode: generated
+publisher: test
+family: template-arg-limit
+version: 1
+display_name: "Template Arg Limit"
+max_opcode_cost: 20000
+runtime_args:
+%steal: |
+  int 1
+  assert
+`, baseKeyType, runtimeArgsYAMLForTest("  ", tt.runtimeArgs, tt.maxSize, false))), tt.want)
+		})
+	}
+}
+
+// A base that doesn't describe its signature arguments still carries at least
+// one, so the count allows for it.
+func TestComposedTemplateCountsASignatureForAnUndescribedBase(t *testing.T) {
+	for i, tt := range []struct {
+		runtimeArgs int
+		want        string
+	}{
+		{runtimeArgs: 254},
+		{runtimeArgs: 255, want: "256 arguments (1 signature, 255 runtime): a LogicSig carries at most 255"},
+	} {
+		baseKeyType := fmt.Sprintf("test.template-arg-limit-plain-base%d.v1", i)
+		registerBaseForTest(t, BaseRegistration{
+			BaseKeyType:       baseKeyType,
+			FamilyName:        fmt.Sprintf("template-arg-limit-plain-base%d", i),
+			Version:           1,
+			Ops:               testOps{construction: sigconstruction.Falcon1024()},
+			NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		})
+		requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 1
+template_type: composed
+base_key_type: %s
+template_mode: generated
+publisher: test
+family: template-arg-limit-plain
+version: 1
+display_name: "Template Arg Limit"
+max_opcode_cost: 20000
+runtime_args:
+%steal: |
+  int 1
+  assert
+`, baseKeyType, runtimeArgsYAMLForTest("  ", tt.runtimeArgs, 8, false))), tt.want)
+	}
+}
+
+// A bounded template's signature and runtime arguments are counted when the
+// template is installed, and again when a key is generated. A template already
+// in a store still builds.
+func TestComposedSchemaV2AdmissionRefusesTooManyArguments(t *testing.T) {
+	baseKeyType := "test.template-bounded-arg-count-base.v1"
+	registerBaseForTest(t, BaseRegistration{
+		BaseKeyType:       baseKeyType,
+		FamilyName:        "template-bounded-arg-count-base",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+	for _, tt := range []struct {
+		name        string
+		runtimeArgs int
+		want        string
+	}{
+		{name: "255 in total", runtimeArgs: 254},
+		{name: "256 in total", runtimeArgs: 255, want: "bounded argument_layout has 256 arguments: a LogicSig carries at most 255"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 2
+template_type: composed
+base_key_type: %s
+template_mode: strict
+publisher: test
+family: bounded-arg-count
+version: 1
+display_name: Bounded Arg Count
+max_opcode_cost: 20000
+bounded:
+  contract: bounded2
+  spend_effects: [pay]
+  max_fee: 10000
+  rekey: refused
+  runtime_args:
+%steal: |
+  int 1
+  assert
+`, baseKeyType, runtimeArgsYAMLForTest("    ", tt.runtimeArgs, 8, true))), tt.want)
+			_, err := provider.BuildBoundedAuthorizationMetadata([]byte{1}, nil, []byte{1, 2, 3})
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+				}
+				return
+			}
+			// The stored template loads, but no key can be generated from it.
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// A bounded template whose LogicSig the network would refuse can't be installed,
+// and no key can be generated from one already in a store, which still loads.
+// That covers an oversized runtime argument and a count that only the cosigner
+// slot takes past 255.
+func TestComposedSchemaV2NeverYieldsArgumentsTheNetworkRefuses(t *testing.T) {
+	registerBaseForTest(t, BaseRegistration{
+		BaseKeyType:       "aplane.falcon1024.v1",
+		FamilyName:        "falcon1024",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+	const cosigner = "  cosigner:\n    contract: cosigner1\n    required_on: [spend]\n"
+	for _, tt := range []struct {
+		name        string
+		cosigner    string
+		runtimeArgs int
+		maxSize     int
+		want        string // at admission
+		wantKeygen  string // at key generation, from a template already stored
+	}{
+		{name: "runtime argument at the size limit", runtimeArgs: 1, maxSize: 4096},
+		{name: "runtime argument over the size limit", runtimeArgs: 1, maxSize: 4097,
+			want:       "runtime_arg arg0 is 4097 bytes: a LogicSig argument is at most 4096",
+			wantKeygen: "(arg0) is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "255 in total with the cosigner slot", cosigner: cosigner, runtimeArgs: 253, maxSize: 8},
+		{name: "256 in total with the cosigner slot", cosigner: cosigner, runtimeArgs: 254, maxSize: 8,
+			want:       "bounded argument_layout has 256 arguments: a LogicSig carries at most 255",
+			wantKeygen: "bounded argument_layout has 256 arguments: a LogicSig carries at most 255"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: aplane
+family: bounded-arg-limit
+version: 1
+display_name: Bounded Arg Limit
+max_opcode_cost: 20000
+bounded:
+  contract: bounded2
+  spend_effects: [pay]
+  max_fee: 10000
+  rekey: refused
+%s  runtime_args:
+%steal: |
+  int 1
+  assert
+`, tt.cosigner, runtimeArgsYAMLForTest("    ", tt.runtimeArgs, tt.maxSize, true))), tt.want)
+			params := map[string]string{}
+			if tt.cosigner != "" {
+				params[BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1))
+			}
+			_, err := provider.BuildBoundedAuthorizationMetadata(bytes.Repeat([]byte{0x31}, boundedmeta.CosignerPublicKeySizeV1), params, []byte{1, 2, 3})
+			if tt.wantKeygen == "" {
+				if err != nil {
+					t.Fatalf("key metadata: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantKeygen) {
+				t.Fatalf("key metadata: error = %v, want %q", err, tt.wantKeygen)
+			}
+		})
+	}
 }

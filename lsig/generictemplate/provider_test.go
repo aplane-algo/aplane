@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -1830,5 +1831,119 @@ func TestRequireStringScalarsNamesAnIntegerField(t *testing.T) {
 	var out document
 	if err := DecodeStrictYAML([]byte("name: a\nlimit: 20000\n"), &out, RequireStringScalars()); err == nil || !strings.Contains(err.Error(), `value "20000" on line 2 must be a string`) {
 		t.Errorf("RequireStringScalars(): error = %v", err)
+	}
+}
+
+// The network refuses a LogicSig with more than 255 arguments or one argument
+// over 4,096 bytes, and no group shape lifts either, so a template can't declare
+// them.
+func TestValidateRuntimeArgLimits(t *testing.T) {
+	args := func(count int) []RuntimeArgSpec {
+		out := make([]RuntimeArgSpec, count)
+		for i := range out {
+			out[i] = RuntimeArgSpec{Name: fmt.Sprintf("arg%d", i), Type: "bytes"}
+		}
+		return out
+	}
+	tests := []struct {
+		name string
+		args []RuntimeArgSpec
+		want string
+	}{
+		{name: "255 arguments", args: args(255)},
+		{name: "256 arguments", args: args(256), want: "256 runtime_args: a LogicSig carries at most 255 arguments"},
+		{name: "max_size 4096", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes", MaxSize: 4096}}},
+		{name: "max_size 4097", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes", MaxSize: 4097}}, want: "runtime_arg blob is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "byte_length 4096", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes", ByteLength: 4096}}},
+		{name: "byte_length 4097", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes", ByteLength: 4097}}, want: "runtime_arg blob is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "oversized string argument", args: []RuntimeArgSpec{{Name: "note", Type: "string", MaxSize: 4097}}, want: "runtime_arg note is 4097 bytes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The structure check a store runs at load never applies a limit.
+			if err := ValidateRuntimeArgSpecs(tt.args); err != nil {
+				t.Fatalf("ValidateRuntimeArgSpecs() error = %v, want none: limits are an admission check", err)
+			}
+			err := ValidateRuntimeArgLimits(tt.args)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("ValidateRuntimeArgLimits() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ValidateRuntimeArgLimits() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// The same limits through the YAML an operator installs: refused at admission,
+// never by the validation a store runs at load.
+func TestTemplateYAMLAdmissionRefusesLogicSigArgumentsTheNetworkRefuses(t *testing.T) {
+	template := func(runtimeArgs string) []byte {
+		return []byte(`schema_version: 1
+derivation_version: 3
+template_mode: generated
+publisher: test
+family: arg-limits
+version: 1
+display_name: "Arg Limits"
+max_opcode_cost: 20000
+runtime_args:
+` + runtimeArgs + `teal: |
+  arg 0
+  len
+  return
+`)
+	}
+	sized := func(field string, size int) string {
+		return fmt.Sprintf("  - name: blob\n    type: bytes\n    %s: %d\n", field, size)
+	}
+	counted := func(count int) string {
+		var b strings.Builder
+		for i := range count {
+			fmt.Fprintf(&b, "  - name: arg%d\n    type: bytes\n", i)
+		}
+		return b.String()
+	}
+	tests := []struct {
+		name        string
+		runtimeArgs string
+		want        string
+	}{
+		{name: "max_size at the limit", runtimeArgs: sized("max_size", 4096)},
+		{name: "max_size over the limit", runtimeArgs: sized("max_size", 4097), want: "runtime_arg blob is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "byte_length at the limit", runtimeArgs: sized("byte_length", 4096)},
+		{name: "byte_length over the limit", runtimeArgs: sized("byte_length", 4097), want: "runtime_arg blob is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "255 arguments", runtimeArgs: counted(255)},
+		{name: "256 arguments", runtimeArgs: counted(256), want: "256 runtime_args: a LogicSig carries at most 255 arguments"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := template(tt.runtimeArgs)
+			spec, err := ParseTemplateSpec(data)
+			if err != nil {
+				t.Fatalf("ParseTemplateSpec() error = %v", err)
+			}
+			// Admission refuses; what a store runs at load does not, so a template
+			// installed before the limits existed keeps loading.
+			if err := ValidateSpec(spec); err != nil {
+				t.Fatalf("ValidateSpec() error = %v, want none: limits are an admission check", err)
+			}
+			if _, err := PrepareKeystoreTemplateRegistration("test.arg-limits.v1", data); err != nil {
+				t.Fatalf("PrepareKeystoreTemplateRegistration() error = %v, want none: a stored template still loads", err)
+			}
+			err = ValidateSpecAdmission(spec)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("ValidateSpecAdmission() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ValidateSpecAdmission() error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

@@ -334,6 +334,28 @@ Keep runtime arg ordering aligned with TEAL `arg N` usage. Generic LogicSig
 runtime args start at `arg 0`. Composed DSA templates reserve `arg 0` for the
 signature, so additional runtime args start after the signature.
 
+Stay inside the network's LogicSig argument limits:
+
+- no single argument over 4,096 bytes: no `byte_length` or `max_size` above 4,096, and
+  no signature slot above it (split a larger signature across arguments)
+- at most 255 arguments in all, counting signature, derived, runtime, and cosigner
+  slots
+- do not plan on dummy transactions to lift either limit; they pool program size and
+  opcode budget only
+
+Use `lsigresource.MaxLogicSigArgs` and `lsigresource.MaxLogicSigArgBytes` in Go, not
+literals.
+
+Know when each check runs. Install refuses a template past a limit (admission:
+`generictemplate.ValidateSpecAdmission`, `composeddsa.ValidateTemplateAdmission`).
+Key generation checks a bounded account's argument layout. Signing refuses a supplied
+argument over 4,096 bytes. Nothing is re-checked at load. When you add a restriction
+on templates or keys, put it in an admission check (install or generation). Do not
+add it to `ValidateSpec`, `ValidateTemplateSpec`, `ValidateRuntimeArgSpecs`, provider
+construction, or durable metadata `Validate`: a store reload runs those and fails
+closed, so a stored template or key that predates the restriction would stop the
+whole store from loading.
+
 ## User-Loaded Template Flow
 
 For a generic LogicSig YAML template:

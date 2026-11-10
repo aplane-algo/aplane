@@ -10,6 +10,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -106,6 +107,12 @@ func validateBoundedRuntimeArgs(encoded map[string]string, metadata *boundedmeta
 		}
 		if len(value) > arg.MaxSize {
 			return nil, badRequest(fmt.Sprintf("bounded runtime argument %q exceeds %d-byte maximum", arg.Name, arg.MaxSize))
+		}
+		// The network's own limit, for an account stored with a larger maximum.
+		// Only a supplied value is checked, so a path that omits the argument,
+		// such as a rekey, still works.
+		if len(value) > lsigresource.MaxLogicSigArgBytes {
+			return nil, badRequest(fmt.Sprintf("bounded runtime argument %q is %d bytes, and a LogicSig argument is at most %d", arg.Name, len(value), lsigresource.MaxLogicSigArgBytes))
 		}
 	}
 	return decoded, nil
