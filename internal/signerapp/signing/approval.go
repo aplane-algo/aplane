@@ -235,7 +235,11 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		}
 		if plan.HasForeign {
 			signCount := len(req.Requests) - len(plan.ForeignIndices)
-			b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]\n", signCount, len(plan.ForeignIndices)))
+			if held := len(plan.HeldForeign); held > 0 {
+				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d not signed in this request (%d from this signer's accounts)]\n", signCount, len(plan.ForeignIndices), held))
+			} else {
+				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]\n", signCount, len(plan.ForeignIndices)))
+			}
 		}
 		if plan.DummiesNeeded > 0 {
 			b.WriteString("[MODIFIED BY SERVER]\n")
@@ -266,6 +270,11 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		if !isSingleTxn {
 			if plan.PassthroughIndices[i] {
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [PASSTHROUGH] ---\n", i+1, totalTxns))
+			} else if plan.ForeignIndices[i] && plan.HeldForeign[i] != nil {
+				// The account is this signer's; only this request leaves it
+				// unsigned. Calling it foreign would contradict the request that
+				// signs it, which shows the same group.
+				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [THIS SIGNER'S ACCOUNT - not signed in this request] ---\n", i+1, totalTxns))
 			} else if plan.ForeignIndices[i] {
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [FOREIGN - not signing] ---\n", i+1, totalTxns))
 			} else {
@@ -494,7 +503,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 
 	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
 		KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
-	}, listedRekeyTargetsForPlan(plan))
+	}, warningRekeyTargetsForPlan(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
 

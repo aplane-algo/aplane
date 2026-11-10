@@ -329,6 +329,22 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 7. Run approval and policy evaluation on the finalized group.
    - The signer evaluates the whole group, including foreign context and passthrough entries.
    - Only sign-mode entries are candidates for actual signing by this signer.
+   - A foreign entry whose account this signer holds is shown as the signer's own
+     (`heldForeignPositions` in `internal/signerapp/signing/held_position.go`). A mixed
+     cosigned group is signed in several requests, and each carries the others'
+     positions as foreign entries, so the reviewer sees the same group more than once.
+     - The review heads such an entry `[THIS SIGNER'S ACCOUNT - not signed in this
+       request]`; any other foreign entry stays `[FOREIGN - not signing]`.
+     - Its rekey warning reads the account's rekey-to list, so a listed rekey is named
+       as a listed handover, not as a loss of control.
+     - The signer decides this from its own key records: the entry's sender, or on
+       `/sign/component` the `auth_address` a context position names. A client can't
+       claim it for an address the signer doesn't hold.
+     - Only the review text changes. The entry is still not signed here and has no
+       policy here; a rekey on it still forces review.
+     - Not recognised: an entry on `/sign` whose sender was rekeyed to an account this
+       signer holds. A foreign entry carries no `auth_address`, and the signer doesn't
+       read the chain at this step, so it stays `[FOREIGN - not signing]`.
    - Approval mode is based on the number of client-requested transactions, not the expanded finalized group length after dummy insertion.
    - Server-added dummies affect disclosure, fee impact, and final artifact construction, but they are not rendered as separate approval items.
 

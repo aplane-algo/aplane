@@ -42,13 +42,16 @@ type PlanResult struct {
 	PassthroughSignedTxns map[int][]byte
 	ForeignIndices        map[int]bool
 	HasForeign            bool
-	LsigIndices           []int
-	DummiesNeeded         int
-	LogicSigResourcePlan  lsigresource.Plan
-	FeeInfo               DummyFeeInfo
-	NeedsRegroup          bool
-	IsPreGrouped          bool
-	HasPassthrough        bool
+	// HeldForeign are the foreign positions whose account this signer holds.
+	// The review reads it; signing and policy never do.
+	HeldForeign          map[int]*heldPosition
+	LsigIndices          []int
+	DummiesNeeded        int
+	LogicSigResourcePlan lsigresource.Plan
+	FeeInfo              DummyFeeInfo
+	NeedsRegroup         bool
+	IsPreGrouped         bool
+	HasPassthrough       bool
 	// AuthKeyTypes[i] is the signing key type for req.Requests[i]. Empty when
 	// the slot is passthrough, foreign, or the auth address is unknown.
 	AuthKeyTypes []string
@@ -184,6 +187,7 @@ func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *Servi
 		PassthroughSignedTxns: passthroughSignedTxns,
 		ForeignIndices:        foreignIndices,
 		HasForeign:            hasForeign,
+		HeldForeign:           heldForeignPositions(snapshot, txns, foreignIndices, nil),
 		LsigIndices:           final.LsigIndices,
 		DummiesNeeded:         final.DummiesNeeded,
 		LogicSigResourcePlan:  final.ResourcePlan,
