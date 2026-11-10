@@ -30,9 +30,10 @@ type pluginReviewSlot struct {
 }
 
 // renderPluginGroupReview prints an honest review of a plugin-built group: per
-// slot it shows the role (who signs it), sender, type, fee, and the decodable
-// fields, marking anything APlane cannot interpret as opaque rather than as a
-// harmless transaction. It summarizes the fees paid by APlane-managed accounts.
+// slot it shows the role (who signs it), sender, type, fee, and what the
+// transaction does, including every rekey, close and clawback. Anything
+// APlane cannot interpret is marked opaque rather than shown as a harmless
+// transaction. It summarizes the fees paid by APlane-managed accounts.
 func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlot) {
 	r.printf("\n%s\n", title)
 	if len(slots) > 0 {
@@ -44,16 +45,8 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	for i, s := range slots {
 		txn := s.txn
 		r.printf("  [%d] %-13s %-4s sender=%s fee=%d\n", i+1, s.role, txnTypeLabel(txn.Type), txn.Sender.String(), txn.Fee)
-		switch txn.Type {
-		case types.PaymentTx:
-			r.printf("        pay %d microAlgo -> %s\n", txn.Amount, txn.Receiver.String())
-			if (txn.CloseRemainderTo != types.Address{}) {
-				r.printf("        close remainder -> %s\n", txn.CloseRemainderTo.String())
-			}
-		case types.ApplicationCallTx:
-			r.printf("        appl id=%d (args/proof opaque to APlane)\n", txn.ApplicationID)
-		default:
-			r.printf("        (details opaque to APlane)\n")
+		for _, line := range pluginReviewLines(txn) {
+			r.printf("        %s\n", line)
 		}
 		if s.role == slotRoleManaged {
 			managedFees += uint64(txn.Fee)
@@ -61,6 +54,113 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	}
 	if managedFees > 0 {
 		r.printf("Fees paid by APlane-managed accounts: %d microAlgo\n", managedFees)
+	}
+}
+
+// pluginReviewLines lists what one slot does, field by field. Anything that
+// hands over control or funds (a rekey, a close, a clawback) is always shown
+// and marked, whatever the transaction type: for a plugin-signed slot this
+// review can be the only one a person sees.
+func pluginReviewLines(txn types.Transaction) []string {
+	var zero types.Address
+	var lines []string
+	add := func(format string, args ...interface{}) {
+		lines = append(lines, fmt.Sprintf(format, args...))
+	}
+
+	switch txn.Type {
+	case types.PaymentTx:
+		add("pay %d microAlgo -> %s", txn.Amount, txn.Receiver.String())
+	case types.AssetTransferTx:
+		add("asset %d: transfer %d base unit(s) -> %s", txn.XferAsset, txn.AssetAmount, txn.AssetReceiver.String())
+	case types.ApplicationCallTx:
+		if txn.ApplicationID == 0 {
+			add("appl create (%s)", onCompletionLabel(txn.OnCompletion))
+		} else {
+			add("appl id=%d (%s)", txn.ApplicationID, onCompletionLabel(txn.OnCompletion))
+		}
+		add("%d argument(s), %d account(s), %d app(s), %d asset(s), %d box(es), %d access entr(ies); contents opaque to APlane",
+			len(txn.ApplicationArgs), len(txn.Accounts), len(txn.ForeignApps), len(txn.ForeignAssets),
+			len(txn.BoxReferences), len(txn.Access))
+		if len(txn.ApprovalProgram) > 0 || len(txn.ClearStateProgram) > 0 {
+			add("!! carries program code: approval %d byte(s), clear %d byte(s)",
+				len(txn.ApprovalProgram), len(txn.ClearStateProgram))
+		}
+	case types.KeyRegistrationTx:
+		switch {
+		case txn.Nonparticipation:
+			add("!! keyreg: marks the account nonparticipating (cannot be undone)")
+		case txn.VotePK == (types.VotePK{}):
+			add("keyreg: go offline")
+		default:
+			add("keyreg: go online, votes valid %d-%d, key dilution %d",
+				txn.VoteFirst, txn.VoteLast, txn.VoteKeyDilution)
+		}
+	case types.AssetConfigTx:
+		switch {
+		case txn.ConfigAsset == 0:
+			add("asset create: total %d, decimals %d", txn.AssetParams.Total, txn.AssetParams.Decimals)
+		case txn.AssetParams == (types.AssetParams{}):
+			add("!! asset %d: destroy", txn.ConfigAsset)
+		default:
+			add("asset %d: reconfigure", txn.ConfigAsset)
+		}
+		if txn.ConfigAsset == 0 || txn.AssetParams != (types.AssetParams{}) {
+			add("manager=%s reserve=%s freeze=%s clawback=%s",
+				roleAddress(txn.AssetParams.Manager), roleAddress(txn.AssetParams.Reserve),
+				roleAddress(txn.AssetParams.Freeze), roleAddress(txn.AssetParams.Clawback))
+		}
+	case types.AssetFreezeTx:
+		action := "unfreeze"
+		if txn.AssetFrozen {
+			action = "freeze"
+		}
+		add("asset %d: %s the holding of %s", txn.FreezeAsset, action, txn.FreezeAccount.String())
+	default:
+		add("(type %q: details opaque to APlane)", txnTypeLabel(txn.Type))
+	}
+
+	if txn.RekeyTo != zero {
+		add("!! REKEY: control of %s passes to %s", txn.Sender.String(), txn.RekeyTo.String())
+	}
+	if txn.CloseRemainderTo != zero {
+		add("!! CLOSE: the sender's whole ALGO balance -> %s", txn.CloseRemainderTo.String())
+	}
+	if txn.AssetCloseTo != zero {
+		add("!! CLOSE: the sender's whole holding of asset %d -> %s", txn.XferAsset, txn.AssetCloseTo.String())
+	}
+	if txn.AssetSender != zero {
+		add("!! CLAWBACK: the asset is taken from %s, not from the sender", txn.AssetSender.String())
+	}
+	if txn.Lease != ([32]byte{}) {
+		add("lease %s", base64.StdEncoding.EncodeToString(txn.Lease[:]))
+	}
+	return lines
+}
+
+func roleAddress(address types.Address) string {
+	if address == (types.Address{}) {
+		return "(none)"
+	}
+	return address.String()
+}
+
+func onCompletionLabel(onCompletion types.OnCompletion) string {
+	switch onCompletion {
+	case types.NoOpOC:
+		return "NoOp"
+	case types.OptInOC:
+		return "OptIn"
+	case types.CloseOutOC:
+		return "CloseOut"
+	case types.ClearStateOC:
+		return "ClearState"
+	case types.UpdateApplicationOC:
+		return "!! UpdateApplication"
+	case types.DeleteApplicationOC:
+		return "!! DeleteApplication"
+	default:
+		return fmt.Sprintf("on-completion %d", uint64(onCompletion))
 	}
 }
 

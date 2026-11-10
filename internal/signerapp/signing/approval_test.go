@@ -53,7 +53,8 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 	for _, want := range []string{
 		"App Call [ABI]: #123 (NoOp)",
 		"Mode: ABI",
-		"Method: increment(uint64)void",
+		"Method (the client's label, not verified): increment(uint64)void",
+		"Selector: ",
 	} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("description missing %q:\n%s", want, desc)
@@ -89,7 +90,8 @@ func TestDescribeTxnForApprovalIgnoresMismatchedAppCallMetadata(t *testing.T) {
 	for _, unwanted := range []string{
 		"App Call [ABI]:",
 		"Mode: ABI",
-		"Method: increment(uint64)void",
+		"Method (the client's label, not verified): increment(uint64)void",
+		"Selector: ",
 	} {
 		if strings.Contains(desc, unwanted) {
 			t.Fatalf("description unexpectedly contains %q:\n%s", unwanted, desc)

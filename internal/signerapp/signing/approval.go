@@ -685,8 +685,15 @@ func describeTxnForApproval(txn types.Transaction, txReq signerapi.SignRequest, 
 		return desc
 	}
 
-	// The label is the client's: the selector check binds only its hash.
-	return insertAppCallMetadata(desc, []string{"Mode: ABI", "Method: " + termsafe.Line(methodSig)})
+	// The label is the client's. The signer holds no contract for the app, so
+	// the selector is all that ties the name to the call, and a different
+	// name with the same four bytes can be found by search. The review says
+	// so, and shows the selector, the part the app acts on.
+	return insertAppCallMetadata(desc, []string{
+		"Mode: ABI",
+		abiMethodLabel + termsafe.Line(methodSig),
+		fmt.Sprintf("Selector: %x (all that ties the label to this call)", wantSelector),
+	})
 }
 
 func appendViolationHighlights(desc string, violations []signerapproval.Violation) string {
@@ -713,6 +720,9 @@ func appendViolationHighlights(desc string, violations []signerapproval.Violatio
 	}
 	return desc + strings.Join(lines, "\n")
 }
+
+// abiMethodLabel heads the method line of an ABI app call's review.
+const abiMethodLabel = "Method (the client's label, not verified): "
 
 func insertAppCallMetadata(desc string, extraLines []string) string {
 	lines := strings.Split(desc, "\n")
