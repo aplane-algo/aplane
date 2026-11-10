@@ -1310,7 +1310,7 @@ Day-to-day shortcuts:
 
 | Goal | Command |
 |------|---------|
-| Local pre-commit | `make check` (unit + contract) |
+| Before a push | `make check` (unit + contract). The pre-push hook runs the unit part |
 | Race detector pass | `make race-test` |
 | Blank-store lifecycle | `make store-lifecycle-test` |
 | Store crash/recovery | `make store-crash-test` |
