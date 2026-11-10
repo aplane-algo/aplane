@@ -484,6 +484,13 @@ integration suite. The SDK bridge reuses `.env.test`, starts a temporary
 repo, and stops the signer afterward. If `APLANE_SDKS_REPO` is unset, SDK
 integration is skipped and the ordinary APlane integration flow is unchanged.
 
+On LocalNet, the Python and TypeScript SDK suites also have the node verify a
+real native Falcon signature: each funds a fresh `falcon1024` account from the
+LocalNet KMD wallet, simulates a payment with empty signatures disallowed,
+requires a tampered signature to be rejected, and submits the transaction.
+That test is skipped when `ALGOD_URL` or `APLANE_LOCALNET_KMD_URL` is unset, as
+on TestNet.
+
 The SDK integration bridge checks the SDK language-specific test prerequisites
 before starting the signer. If the SDK checkout contains the Python SDK, pytest
 is required. Install the Python SDK development dependencies with:
