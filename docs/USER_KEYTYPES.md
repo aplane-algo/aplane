@@ -531,9 +531,11 @@ both can rekey it anywhere, out of its recipient list.
   would be a way out that doesn't exist. The check has three limits:
   - It catches only rotating accounts this signer holds, because an address doesn't
     reveal its key type. Don't list a rotating account held on another signer either.
-  - It catches only the rotating account's own address. The addresses of its later
-    stages are one-time keys too, and neither this check nor the signer's refusal at
-    signing knows them. Don't list a stage address.
+  - A rotating account's stage addresses are one-time keys too, and a list that names
+    one is refused the same way when this signer has already derived that stage. A
+    stage it hasn't derived yet isn't recognised, here or at signing. Don't list a
+    stage address, such as the authorizer a block explorer shows for a rotating
+    account.
   - It runs only when an account is created. An account that already has such an
     entry keeps working, and that entry stays a dead branch.
 - **The list can't change.** A mistaken list can't be repaired: move the funds out

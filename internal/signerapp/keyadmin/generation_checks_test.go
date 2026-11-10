@@ -6,6 +6,7 @@ package keyadmin
 import (
 	"context"
 	"encoding/hex"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"os"
 	"path/filepath"
 	"slices"
@@ -624,5 +625,57 @@ func TestHeldKeyChecksDoNotChangeTheCreation(t *testing.T) {
 		if creation.warnings[0] != before[0] {
 			t.Fatal("the returned warnings share the creation's storage")
 		}
+	}
+}
+
+// A rekey-to list that names a stage address of a held rotating account is
+// refused at generation, by the rule the signing gate applies: a stage address
+// is a one-time key as much as the account's own address is. Only a stage the
+// tables hold is known; once the rotating account's table is gone, the same
+// list is accepted.
+func TestRekeyListRefusesAStageOfAHeldRotatingAccount(t *testing.T) {
+	ir, service := setupRotatingHolder(t)
+	rotating := generateRotating(t, service)
+	selector, decodeErr := types.DecodeAddress(rotating.Address)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	stage := types.Address{0x5a, 0x01}
+	table, err := ir.StageTables().Table(selector, make([]byte, 32), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := table.RecordDerived(3, []types.Address{stage}); err != nil {
+		t.Fatal(err)
+	}
+	request := func(targets string) map[string]string {
+		params := generalParams(plainhost.RekeyOnlyThese)
+		params[plainhost.ParameterRekeyTo] = targets
+		return params
+	}
+	want := "rekey_to: " + rotatingkey.StageRekeyTargetRefusal(stage.String(), rotating.Address)
+	for name, targets := range map[string]string{
+		"alone":          stage.String(),
+		"beside another": listedTarget.String() + "," + stage.String(),
+		"before another": stage.String() + "," + listedTarget.String(),
+	} {
+		_, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, request(targets))
+		_, generateErr := service.GenerateKey(context.Background(), boundedHostKeyType, request(targets), nil)
+		for call, got := range map[string]*Error{"PrepareGenerateKey": prepareErr, "GenerateKey": generateErr} {
+			if got == nil || got.Kind != ErrorInvalidInput || got.Message != want {
+				t.Errorf("%s, %s: error = %#v, want %q", name, call, got, want)
+			}
+		}
+	}
+	// Another address is not a stage.
+	if _, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, request(listedTarget.String())); prepareErr != nil {
+		t.Fatalf("an ordinary list was refused: %#v", prepareErr)
+	}
+	// The rule knows only what the tables hold.
+	if err := ir.StageTables().Delete(rotating.Address); err != nil {
+		t.Fatal(err)
+	}
+	if _, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, request(stage.String())); prepareErr != nil {
+		t.Fatalf("a stage no table holds was refused: %#v", prepareErr)
 	}
 }

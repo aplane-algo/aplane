@@ -442,11 +442,13 @@ func cosignerHeldWarning(ir *productruntime.Runtime, cosignerPublicKeyHex string
 // would be stuck on that stage. Refusing here keeps an account from being created
 // with a way out that doesn't exist.
 //
+// It applies the rule the signing gate applies (rotatingkey.RefuseRekeyTarget),
+// so the two can't disagree: the account's own address, and any of its stage
+// addresses the stage tables hold. A stage address is a one-time key too.
+//
 // It catches only what it can see. An address doesn't reveal its type, so a
-// rotating account held elsewhere passes. Only the account's own address is
-// recognised: the addresses of its later stages are one-time keys too, and
-// neither this nor the signing gate knows them. The signing gate still refuses a
-// rekey to the account's address.
+// rotating account held elsewhere passes, and so does a stage this signer
+// hasn't derived yet. The signing gate still refuses when it is asked to sign.
 func refuseRekeyToHeldRotatingAccount(ir *productruntime.Runtime, entries string) error {
 	if strings.TrimSpace(entries) == "" {
 		return nil
@@ -461,9 +463,15 @@ func refuseRekeyToHeldRotatingAccount(ir *productruntime.Runtime, entries string
 		return fmt.Errorf("%s: %w", boundedmeta.RekeyListEntriesParameter, err)
 	}
 	keyTypes := ir.KeyStore().GetKeyTypes()
+	var stages rotatingkey.StageOwner
+	if tables := ir.StageTables(); tables != nil {
+		stages = tables.StageOwnerOf
+	}
+	// The account doesn't exist yet, so there is no sender for the rule to set
+	// against a stage's owner: no listed address is the account's own rotation.
 	for _, target := range targets {
-		if rotatingkey.IsRotatingKeyType(keyTypes[target.String()]) {
-			return fmt.Errorf("%s: %s", boundedmeta.RekeyListEntriesParameter, rotatingkey.RekeyTargetRefusal(target.String()))
+		if reason, refused := rotatingkey.RefuseRekeyTarget("", target.String(), keyTypes, stages); refused {
+			return fmt.Errorf("%s: %s", boundedmeta.RekeyListEntriesParameter, reason)
 		}
 	}
 	return nil

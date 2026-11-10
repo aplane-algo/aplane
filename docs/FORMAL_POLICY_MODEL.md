@@ -222,7 +222,8 @@ verdict.
 Always Deny rules are hard safety guards. Current deny sources include:
 
 - the signer invariant that refuses a rekey of another account to a held
-  rotating account (`signing/rotating_gate.go::rejectRekeyToRotating`, run
+  rotating account or to one of its known stage addresses
+  (`signing/rotating_gate.go::rejectRekeyToRotating`, run
   first in `gate.go::runApprovalGates`); it is not a policy setting and has no
   rule id, and it is evaluated before every policy document rule,
 - the signer invariant that refuses a nonparticipating `keyreg` at a position

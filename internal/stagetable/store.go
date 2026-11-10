@@ -128,6 +128,46 @@ func (s *Store) Delete(selector string) error {
 	return nil
 }
 
+// StageOwner reports the rotating account that has addr as one of its stage
+// addresses, and the stage, from the tables this process has open. It reads
+// memory only: no file is opened and nothing is derived.
+//
+// It answers for what the tables hold. A table is sparse and fills in the
+// background after unlock, so a stage that hasn't been derived yet, or an
+// account whose table isn't open yet, is not found. A cached entry counts
+// whether or not this process has re-derived it: the caller refuses on a match,
+// and a stale entry can only refuse too much. When two tables hold addr, the
+// lowest account is named, so the same question always gets the same answer.
+func (s *Store) StageOwner(addr types.Address) (account types.Address, stage uint64, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tables {
+		at, found := t.Lookup(addr)
+		if !found {
+			continue
+		}
+		if !ok || bytes.Compare(t.selector[:], account[:]) < 0 {
+			account, stage, ok = t.selector, at, true
+		}
+	}
+	return account, stage, ok
+}
+
+// StageOwnerOf is StageOwner over address strings, the form the rotating rekey
+// rule takes (rotatingkey.StageOwner). An address that doesn't decode has no
+// owner.
+func (s *Store) StageOwnerOf(address string) (account string, ok bool) {
+	decoded, err := types.DecodeAddress(address)
+	if err != nil {
+		return "", false
+	}
+	owner, _, ok := s.StageOwner(decoded)
+	if !ok {
+		return "", false
+	}
+	return owner.String(), true
+}
+
 // Observations snapshots available hints without reading the chain or loading
 // credentials. An empty cache simply contributes no recovery hint to a backup.
 func (s *Store) Observations() []Observation {

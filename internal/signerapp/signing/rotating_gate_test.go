@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/stagetable"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -160,5 +162,70 @@ func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
 	}
 	if want := auditSignerInvariant + err.Message; logged != want {
 		t.Fatalf("logged = %q, want %q: a signer invariant is audited as one on the signer role too", logged, want)
+	}
+}
+
+// A stage address is a one-time key as much as the account's own address is.
+// The gate refuses a rekey of another account to a stage the tables hold, and
+// leaves the rotating account's rekey to its own stage, the rotation, alone. A
+// node with no stage tables, such as a cosigner, refuses only what it did before.
+func TestRejectRekeyToAStageOfARotatingAccount(t *testing.T) {
+	plain, rotating, other := types.Address{1}, types.Address{2}, types.Address{4}
+	otherRotating := types.Address{5}
+	stage, otherStage := types.Address{0x31}, types.Address{0x32}
+	tables := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
+	genesis := make([]byte, 32)
+	for selector, address := range map[types.Address]types.Address{rotating: stage, otherRotating: otherStage} {
+		table, err := tables.Table(selector, genesis, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := table.RecordDerived(7, []types.Address{address}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot := func() PlannerRuntimeSnapshot {
+		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{
+			plain.String():         "ed25519",
+			rotating.String():      rotatingkey.RotatingTripleWotscV1,
+			otherRotating.String(): rotatingkey.RotatingTripleWotscV1,
+		}}
+	}
+	svc := &Service{Planner: &Planner{Snapshot: snapshot}, Rotating: &RotatingDeps{Tables: tables}}
+	rekey := func(sender, to types.Address) types.Transaction {
+		return types.Transaction{Header: types.Header{Sender: sender, RekeyTo: to}}
+	}
+
+	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, stage)}, []int{0, 1})
+	if want := "transaction 2: " + rotatingkey.StageRekeyTargetRefusal(stage.String(), rotating.String()); err == nil || err.HTTPStatus() != 403 || err.Message != want {
+		t.Fatalf("rekey to a stage address: err = %v, want 403 %q", err, want)
+	}
+	// The rotation: the account to its own stage.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, []int{0}); err != nil {
+		t.Fatalf("the rotation was refused: %v", err)
+	}
+	// Another rotating account's stage is not this account's rotation.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, otherStage)}, []int{0}); err == nil ||
+		!strings.Contains(err.Message, rotatingkey.StageRekeyTargetRefusal(otherStage.String(), otherRotating.String())) {
+		t.Fatalf("a rekey to another rotating account's stage: err = %v", err)
+	}
+	// A position this signer doesn't sign is not judged.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, stage)}, nil); err != nil {
+		t.Fatalf("an unsigned position was judged: %v", err)
+	}
+	// The account's own address is still refused, with its own reason.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, []int{0}); err == nil ||
+		!strings.Contains(err.Message, rotatingkey.RekeyTargetRefusal(rotating.String())) {
+		t.Fatalf("rekey to the rotating account: err = %v", err)
+	}
+
+	for name, deps := range map[string]*RotatingDeps{"no rotating flow": nil, "no tables": {}} {
+		without := &Service{Planner: &Planner{Snapshot: snapshot}, Rotating: deps}
+		if err := without.rejectRekeyToRotating([]types.Transaction{rekey(plain, stage)}, []int{0}); err != nil {
+			t.Errorf("%s: a stage it can't know was refused: %v", name, err)
+		}
+		if err := without.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, []int{0}); err == nil {
+			t.Errorf("%s: the rotating account itself was not refused", name)
+		}
 	}
 }

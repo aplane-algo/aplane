@@ -490,3 +490,56 @@ func TestDiscardOfAStaleHandleLeavesTheRebuiltTableAlone(t *testing.T) {
 		t.Fatalf("rebuilt table unusable after stale discard: %v", err)
 	}
 }
+
+// StageOwner answers from the tables the store has open: the account and the
+// stage for an address a table holds, nothing for one none holds, and nothing
+// once the account's table is deleted. Two tables holding one address name the
+// lower account, so the answer doesn't depend on map order.
+func TestStageOwnerFindsAnAddressInOpenTables(t *testing.T) {
+	store := NewStore(storepaths.NewPaths(t.TempDir()))
+	low, high := types.Address{0x01, 0x02}, types.Address{0xF1, 0x02}
+	shared := types.Address{0x55}
+	for _, selector := range []types.Address{high, low} {
+		tb, err := store.Table(selector, testGenesis, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		addrs := []types.Address{stageAddr(uint64(selector[0])), shared}
+		if err := put(tb, 3, addrs); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if account, stage, ok := store.StageOwner(stageAddr(uint64(high[0]))); !ok || account != high || stage != 3 {
+		t.Fatalf("StageOwner = %v, %d, %v; want %v at stage 3", account, stage, ok, high)
+	}
+	for i := 0; i < 20; i++ {
+		if account, stage, ok := store.StageOwner(shared); !ok || account != low || stage != 4 {
+			t.Fatalf("StageOwner(shared) = %v, %d, %v; want the lower account %v at stage 4", account, stage, ok, low)
+		}
+	}
+	if _, _, ok := store.StageOwner(types.Address{0x99}); ok {
+		t.Fatal("an address no table holds has an owner")
+	}
+	// The account's own address is stage 0 only if a table says so.
+	if _, _, ok := store.StageOwner(low); ok {
+		t.Fatal("a selector is not a stage address unless its table holds it")
+	}
+	if account, ok := store.StageOwnerOf(shared.String()); !ok || account != low.String() {
+		t.Fatalf("StageOwnerOf = %q, %v", account, ok)
+	}
+	if _, ok := store.StageOwnerOf("not-an-address"); ok {
+		t.Fatal("an address that doesn't decode has an owner")
+	}
+	if err := store.Delete(low.String()); err != nil {
+		t.Fatal(err)
+	}
+	if account, _, ok := store.StageOwner(shared); !ok || account != high {
+		t.Fatalf("after the lower account's table is deleted: %v, %v; want %v", account, ok, high)
+	}
+	if _, _, ok := store.StageOwner(stageAddr(uint64(low[0]))); ok {
+		t.Fatal("a deleted table still answers")
+	}
+	if _, _, ok := NewStore(storepaths.NewPaths(t.TempDir())).StageOwner(shared); ok {
+		t.Fatal("a store with no open table has an owner")
+	}
+}

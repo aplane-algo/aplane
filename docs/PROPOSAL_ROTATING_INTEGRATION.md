@@ -499,7 +499,7 @@ What changes, stated at its real width:
   doc says this in a sentence.
 
 Exclusions worth a test each: an owned slot that rekeys its sender to the
-rotating account (`rejectRekeyToRotating`); an owned slot whose effective
+rotating account or to one of its known stage addresses (`rejectRekeyToRotating`); an owned slot whose effective
 signing key is a witness or cosigned type (`cosignerSignRejectMessage`); an
 owned slot whose credential carries bounded-authorization metadata, which
 ordinary sign would plan rather than refuse; an owned slot sent from a

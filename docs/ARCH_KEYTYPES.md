@@ -1497,10 +1497,11 @@ There is one refusal and one warning, in this order:
   that doesn't exist.
   - It sees only accounts this signer holds, because an address doesn't reveal its key
     type. A rotating account held elsewhere passes.
-  - It recognises only the rotating account's own address. The addresses of its later
-    stages are one-time keys too, and a list that names one passes. The signing gate has
-    the same limit: it refuses a rekey to a held rotating account's address, not to one
-    of its stage addresses.
+  - It also refuses a stage address of a held rotating account, with `rekey_to: cannot
+    rekey to <address>: it is a stage key of the rotating account <account>, ...`. A
+    stage is recognised only when the signer's stage tables hold it: they are a sparse
+    cache filled after unlock, so a stage not derived yet passes. The signing gate
+    applies the same rule (`rotatingkey.RefuseRekeyTarget`) with the same limit.
   - It runs at generation only. Nothing rechecks a stored account, so an account
     already stored with such a list still loads.
   - It refuses what it can't check. A list it can't parse, or a signer whose key list

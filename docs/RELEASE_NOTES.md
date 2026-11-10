@@ -7,6 +7,18 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A rekey to a rotating account's stage address is refused
+
+- The signer already refused to rekey another account to a rotating account it holds,
+  because that address is a one-time stage key. It now refuses a rekey to any of the
+  account's stage addresses it knows, for the same reason: `cannot rekey to <address>:
+  it is a stage key of the rotating account <account>, ...`.
+- Account generation refuses a rekey-to list that names one, by the same rule.
+- A rotating account's own rotation, to its next stage, is unaffected.
+- A stage is known only once the signer's stage tables hold it. They are a cache
+  that fills in the background after unlock, as the signer derives stages, so a stage
+  it hasn't derived yet is not refused.
+
 ## The review of a mixed cosigned group no longer calls the signer's own accounts foreign
 
 - A mixed cosigned group is signed in several requests, and each shows the whole

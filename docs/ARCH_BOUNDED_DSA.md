@@ -702,16 +702,19 @@ still leaves the account an exit. A cosigner beside
 `only_these` is not asked for a listed rekey.
 
 The list may name any address, with one exception. Generation refuses a list that
-names a rotating account this signer holds (`refuseRekeyToHeldRotatingAccount` in
-`internal/signerapp/keyadmin`), because the signer never signs a rekey to one: a
-rotating account's address is a one-time stage key. The refusal has three limits:
+names a rotating account this signer holds, or one of its stage addresses
+(`refuseRekeyToHeldRotatingAccount` in `internal/signerapp/keyadmin`), because the
+signer never signs a rekey to one: a rotating account's address and each of its stage
+addresses is a one-time key. Generation and the signing gate apply one rule,
+`rotatingkey.RefuseRekeyTarget`, so they can't disagree. The refusal has these limits:
 
 - It sees only accounts this signer holds. An address doesn't reveal its key type, so
   a rotating account held elsewhere passes.
-- It recognises only the rotating account's own address. The addresses of its later
-  stages are one-time keys too, and a list that names one passes. The signing gate
-  (`rejectRekeyToRotating`) has the same limit: it refuses a rekey to a held rotating
-  account's address, not to one of its stage addresses.
+- It recognises a stage address only when the signer's stage tables hold it
+  (`stagetable.Store.StageOwner`). The tables are a sparse cache, filled in the
+  background after unlock as the signer derives stages. A stage not derived yet,
+  or an account whose table isn't open yet, passes. The signing gate
+  (`rejectRekeyToRotating`) has the same limit.
 - It is an admission check at generation. The composer and durable validation don't
   make it, so an account already stored with such a list still loads.
 - It refuses what it can't check: a list it can't parse, or a signer whose key list

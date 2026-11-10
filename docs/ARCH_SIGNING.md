@@ -1428,14 +1428,24 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   with `code:"rotating_signing_required"` on `/plan`, `/sign` and
   `/sign/component`.
 - A signed position that rekeys any other account to a rotating account this
-  signer holds is rejected with `403` before policy runs, on every path that
-  reaches the approval gates. A rotating account's address is its stage 0
-  program, a one-time stage key: an account rekeyed to it would be stuck on
-  that stage, outside the rotation, and every signature would reuse that key.
-  This is a signer invariant, not a policy setting; the rotating flow's own
-  rekeys go to stage addresses and are unaffected. apshell's `rekey` refuses
-  the same target before building the transaction, and fails closed on any
-  target whose `signing_flow` it cannot route an authorizer through.
+  signer holds, or to one of its stage addresses, is rejected with `403` before
+  policy runs, on every path that reaches the approval gates. A rotating
+  account's address is its stage 0 program, and every stage address is a
+  one-time key: an account rekeyed to one would be stuck on that stage, outside
+  the rotation, and every signature would reuse that key. This is a signer
+  invariant, not a policy setting.
+  - The rule is `rotatingkey.RefuseRekeyTarget`, which account generation also
+    applies to a rekey-to list.
+  - The rotating flow's own rekey, an account to its own next stage, is the
+    rotation and passes.
+  - A stage address is recognised only when the signer's stage tables hold it
+    (`stagetable.Store.StageOwner`, memory only). The tables are a sparse cache
+    filled after unlock as the signer derives stages, so a stage not derived yet
+    is not refused.
+  - apshell's `rekey` refuses a rotating account's own address before building
+    the transaction, and fails closed on any target whose `signing_flow` it
+    cannot route an authorizer through. It doesn't know stage addresses; the
+    signer refuses those when asked to sign.
 - A `keyreg` with `Nonparticipation` set at a position this signer signs is
   rejected with `403` before policy runs, on both node roles: on the signer
   role in the approval gates (`/sign`, bounded components, rotating sign), and
