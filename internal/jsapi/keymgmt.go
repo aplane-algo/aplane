@@ -12,6 +12,8 @@ import (
 	"fmt"
 
 	"github.com/dop251/goja"
+
+	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 // jsKeyTypes returns available key types from the signer.
@@ -98,10 +100,23 @@ func (a *API) jsGenerateKey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("generateKey() error: %v", err)))
 	}
 
-	return a.runtime.ToValue(map[string]interface{}{
-		"address": result.Address,
-		"keyType": result.KeyType,
-	})
+	return a.runtime.ToValue(generatedKeyValue(result))
+}
+
+// generatedKeyValue is what generateKey() returns to a script. warnings is
+// always an array, so a script can test its length. The signer creates the
+// account either way: a warning is the only sign that, say, the cosigner is a
+// key this signer holds.
+func generatedKeyValue(result *engine.GenerateKeyResult) map[string]interface{} {
+	warnings := result.Warnings
+	if warnings == nil {
+		warnings = []string{}
+	}
+	return map[string]interface{}{
+		"address":  result.Address,
+		"keyType":  result.KeyType,
+		"warnings": warnings,
+	}
 }
 
 // jsDeleteKey deletes a signing key from the signer.

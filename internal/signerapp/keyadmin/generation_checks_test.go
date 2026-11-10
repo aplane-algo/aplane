@@ -566,3 +566,63 @@ func TestHeldKeyChecksComeAfterTheLockAndTheGenerationChecks(t *testing.T) {
 		expect(t, ErrorLocked, "signer is not unlocked")
 	})
 }
+
+// The rotating-target check refuses what it can't check. A list it can't read,
+// or a signer whose keys it can't see, would otherwise pass on the strength of
+// a check that ran somewhere else, or didn't.
+func TestTheRotatingTargetCheckRefusesWhatItCannotRead(t *testing.T) {
+	ir, _ := setupRotatingHolder(t)
+	target := listedTarget.String()
+	if err := refuseRekeyToHeldRotatingAccount(ir, target); err != nil {
+		t.Fatalf("an address this signer doesn't hold was refused: %v", err)
+	}
+	if err := refuseRekeyToHeldRotatingAccount(ir, ""); err != nil {
+		t.Fatalf("an empty list was refused: %v", err)
+	}
+	if err := refuseRekeyToHeldRotatingAccount(nil, ""); err != nil {
+		t.Fatalf("an empty list was refused without a signer: %v", err)
+	}
+	for name, entries := range map[string]string{
+		"not an address":    "not-an-address",
+		"a lower-case form": strings.ToLower(target),
+		"a cut-off address": target[:len(target)-1],
+	} {
+		err := refuseRekeyToHeldRotatingAccount(ir, entries)
+		if err == nil || !strings.HasPrefix(err.Error(), boundedmeta.RekeyListEntriesParameter+": ") {
+			t.Errorf("%s: error = %v, want a refusal naming the parameter", name, err)
+		}
+	}
+	if err := refuseRekeyToHeldRotatingAccount(nil, target); err == nil || !strings.Contains(err.Error(), "can't be checked") {
+		t.Errorf("without a signer: error = %v, want a refusal", err)
+	}
+}
+
+// The held-key checks return their warnings and leave the creation alone, so a
+// second run gives the same warnings, not twice as many.
+func TestHeldKeyChecksDoNotChangeTheCreation(t *testing.T) {
+	ir, service := setupRotatingHolder(t)
+	_, held := generateHeldFalconKey(t, ir, service)
+	creation, err := service.resolveCreation(boundedHostKeyType, cosignedRequest(held, "0"))
+	if err != nil {
+		t.Fatalf("resolveCreation() error = %#v", err)
+	}
+	before := slices.Clone(creation.warnings)
+	first, firstErr := service.checkAgainstHeldKeys(creation)
+	second, secondErr := service.checkAgainstHeldKeys(creation)
+	if firstErr != nil || secondErr != nil {
+		t.Fatalf("errors = %#v, %#v", firstErr, secondErr)
+	}
+	if len(first) != len(before)+1 || !slices.Equal(first, second) {
+		t.Fatalf("first = %q, second = %q, the provider gave %q", first, second, before)
+	}
+	if !slices.Equal(creation.warnings, before) {
+		t.Fatalf("the creation's warnings changed: %q, was %q", creation.warnings, before)
+	}
+	// The returned list is its own: writing to it doesn't reach the creation's.
+	if len(before) > 0 {
+		first[0] = "changed"
+		if creation.warnings[0] != before[0] {
+			t.Fatal("the returned warnings share the creation's storage")
+		}
+	}
+}

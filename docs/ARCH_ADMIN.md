@@ -918,10 +918,15 @@ There are two warnings today, and one account can have both:
 The generated-account screen (`renderGenerateDisplay` in `view_forms.go`) shows
 `generate_result.warnings` again, between the account's type and the recovery note:
 
-- Each warning is named by its first sentence, which the signer writes to stand
-  alone, under its own "Warning:" label and in the signer's order. The full text
-  doesn't fit the smallest window beside the receipt prompt, and this screen has no
-  details view.
+- One or two warnings (`generatedWarningRows`) are each named by their first
+  sentence, which the signer writes to stand alone, under their own "Warning:" label
+  and in the signer's order. The full text doesn't fit the smallest window beside the
+  receipt prompt.
+- More than two show as one line, "Warning: N things to read about this account.
+  Press w.", so the screen's height doesn't grow with them.
+- `w` replaces the screen with the warnings in full (`renderGeneratedWarnings`), in
+  the signer's order, under the account's address. `w`, Esc, Enter, Space or `q` goes
+  back to the account. The footer offers `w` only when there are warnings.
 - An account without warnings shows none.
 - They come from the generation, not from the review. Generation reads the signer's
   key list again under the mutation lock, so a warning can be new since the review:

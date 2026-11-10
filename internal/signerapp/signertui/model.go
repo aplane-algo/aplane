@@ -266,7 +266,10 @@ type formsState struct {
 	// generatedWarnings are the signer's notes about the generated account,
 	// shown with it: one can be new since the review.
 	generatedWarnings []string
-	generatedKeyType  string
+	// generatedWarningsOpen shows those warnings in full in place of the
+	// account's summary.
+	generatedWarningsOpen bool
+	generatedKeyType      string
 
 	importKeyType       int // 0 = ed25519, 1 = falcon1024
 	importMnemonicInput textarea.Model

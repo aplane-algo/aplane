@@ -6,7 +6,6 @@ package keyadmin
 import (
 	"encoding/hex"
 	"fmt"
-	"slices"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -60,11 +59,12 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 	if err := s.checkGenerationRequirements(creation); err != nil {
 		return nil, err
 	}
-	if err := s.checkAgainstHeldKeys(creation); err != nil {
-		return nil, err
+	warnings, heldErr := s.checkAgainstHeldKeys(creation)
+	if heldErr != nil {
+		return nil, heldErr
 	}
 
-	prepared := &PreparedGeneration{KeyType: creation.keyType, Parameters: creation.params, Warnings: slices.Clone(creation.warnings)}
+	prepared := &PreparedGeneration{KeyType: creation.keyType, Parameters: creation.params, Warnings: warnings}
 	if provider := lsigprovider.Get(creation.keyType); provider != nil {
 		if err := provider.ValidateCreationParams(creation.params); err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}

@@ -38,10 +38,10 @@ func TestRenderGenerateDisplayLabelsSignerAddress(t *testing.T) {
 	}
 }
 
-// The generated-account screen repeats the signer's warnings in full, each
-// under its own "Warning:" label and in the signer's order: one can be new
-// since the review, whose single line showed a first sentence or a count. An
-// account without warnings shows no label.
+// The generated-account screen names the signer's warnings by their first
+// sentences, each under its own "Warning:" label and in the signer's order: one
+// can be new since the review, whose single line showed a first sentence or a
+// count. The full text is behind w. An account without warnings shows no label.
 func TestGeneratedScreenNamesEachWarning(t *testing.T) {
 	fee := feeLimitWarning(0, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
 	held := cosignerHeldWarning(testAddress(9))
@@ -254,5 +254,120 @@ func TestGeneratedScreenWithWarningsFitsAt80x24(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// More warnings than the generated-account screen has rows for become one count
+// line, so the screen's height doesn't grow with them; w still shows each one.
+func TestGeneratedScreenCountsWarningsItHasNoRowsFor(t *testing.T) {
+	warnings := []string{
+		feeLimitWarning(0, "spend (at least 2000)"),
+		cosignerHeldWarning(testAddress(9)),
+		"A third thing. With more to say about it.",
+		"A fourth thing. With more to say about it.",
+	}
+	if len(warnings) <= generatedWarningRows {
+		t.Fatalf("the test needs more than %d warnings", generatedWarningRows)
+	}
+	base, result := reviewedResult(testAddress(3), preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2))
+	base.standalone, base.connectionState = true, ConnectionConnected
+	result.Warnings = warnings
+	next, _ := base.Update(result)
+	base = next.(Model)
+	m := sizedForTest(t, base, MinWidth, MinHeight)
+	view := stripANSI(m.View())
+	tall := sizedForTest(t, base, MinWidth, 400)
+	need := strings.Count(strings.TrimRight(stripANSI(tall.renderViewContent()), "\n"), "\n") + 1
+	if strings.Contains(view, "Panel lines") || need > m.windowBodyHeight() {
+		t.Fatalf("the screen needs %d rows and has %d:\n%s", need, m.windowBodyHeight(), view)
+	}
+	flat := flatReview(view)
+	if got := strings.Count(flat, "Warning:"); got != 1 {
+		t.Fatalf("%d warning lines, want one count:\n%s", got, view)
+	}
+	if want := fmt.Sprintf("Warning: %d things to read about this account. Press w.", len(warnings)); !strings.Contains(flat, want) {
+		t.Fatalf("the screen lacks %q:\n%s", want, view)
+	}
+	if !strings.Contains(flat, "save a resolved receipt") || !strings.Contains(m.viewFooterText(), "w: Warnings in full") {
+		t.Fatalf("the receipt prompt or the footer's w is missing:\n%s\nfooter: %s", view, m.viewFooterText())
+	}
+}
+
+// w on the generated-account screen shows each warning in full, in the signer's
+// order, in the smallest window. That is the only place the whole text of a
+// warning new since the review can be read. Leaving it goes back to the
+// account, not to the key list, and w does nothing on an account without
+// warnings.
+func TestGeneratedScreenShowsWarningsInFull(t *testing.T) {
+	fee := feeLimitWarning(1999, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
+	held := cosignerHeldWarning(testAddress(9))
+	w := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")}
+	base, result := reviewedResult(testAddress(3), preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2))
+	base.standalone, base.connectionState = true, ConnectionConnected
+	result.Warnings = []string{fee, held}
+	next, _ := base.Update(result)
+	base = next.(Model)
+	if base.forms.generatedWarningsOpen {
+		t.Fatal("the warnings open by themselves")
+	}
+
+	next, _ = base.handleGenerateDisplayKeys(w)
+	open := next.(Model)
+	if !open.forms.generatedWarningsOpen || open.viewState != ViewGenerateDisplay {
+		t.Fatalf("after w: open = %v, view = %v", open.forms.generatedWarningsOpen, open.viewState)
+	}
+	m := sizedForTest(t, open, MinWidth, MinHeight)
+	view := stripANSI(m.View())
+	lines := strings.Split(view, "\n")
+	if len(lines) > MinHeight {
+		t.Errorf("%d lines in a %d-line window", len(lines), MinHeight)
+	}
+	for _, line := range lines {
+		if lipgloss.Width(line) > MinWidth {
+			t.Errorf("line wider than the window: %q", line)
+		}
+	}
+	tall := sizedForTest(t, open, MinWidth, 400)
+	need := strings.Count(strings.TrimRight(stripANSI(tall.renderViewContent()), "\n"), "\n") + 1
+	if strings.Contains(view, "Panel lines") || need > m.windowBodyHeight() {
+		t.Fatalf("the warnings need %d rows and have %d:\n%s", need, m.windowBodyHeight(), view)
+	}
+	flat := flatReview(view)
+	at := 0
+	for _, warning := range []string{fee, held} {
+		next := strings.Index(flat[at:], warning)
+		if next < 0 {
+			t.Fatalf("the full text of %q is missing or out of order:\n%s", warning, view)
+		}
+		at += next + len(warning)
+	}
+	if !strings.Contains(flat, "Address: "+testAddress(3)) || strings.Contains(flat, "…") {
+		t.Fatalf("the account is missing or a warning is cut:\n%s", view)
+	}
+	if got := m.viewFooterText(); got != "w/Esc: Back" {
+		t.Fatalf("footer = %q", got)
+	}
+
+	for _, key := range []tea.KeyMsg{w, {Type: tea.KeyEsc}, {Type: tea.KeyEnter}, {Type: tea.KeyRunes, Runes: []rune("q")}} {
+		next, _ := open.handleGenerateDisplayKeys(key)
+		back := next.(Model)
+		if back.forms.generatedWarningsOpen || back.viewState != ViewGenerateDisplay || back.forms.generatedAddress != testAddress(3) || len(back.forms.generatedWarnings) != 2 {
+			t.Fatalf("%q left the account: open = %v, view = %v", key.String(), back.forms.generatedWarningsOpen, back.viewState)
+		}
+	}
+	// s is the summary's key; here it saves nothing.
+	next, _ = open.handleGenerateDisplayKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if got := next.(Model); got.forms.receiptPath != "" || got.forms.receiptError != "" || !got.forms.generatedWarningsOpen {
+		t.Fatalf("s acted behind the warnings: path %q, error %q", got.forms.receiptPath, got.forms.receiptError)
+	}
+
+	none := base
+	none.forms.generatedWarnings = nil
+	next, _ = none.handleGenerateDisplayKeys(w)
+	if got := next.(Model); got.forms.generatedWarningsOpen {
+		t.Fatal("w opened warnings an account doesn't have")
+	}
+	if strings.Contains(none.viewFooterText(), "Warnings") {
+		t.Fatalf("footer offers warnings an account doesn't have: %q", none.viewFooterText())
 	}
 }

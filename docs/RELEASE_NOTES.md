@@ -37,8 +37,11 @@ before it was renamed `enroll`.
   Several show "Warning: N things to read before generating. See details.", and the
   details list each in full.
 - New: `generate_result` carries `warnings`, and apadmin's generated-account screen
-  names each by its first sentence. Generation reads the signer's keys again, so a warning can be
-  there that the review didn't have.
+  names each by its first sentence, or counts them when there are more than two. `w`
+  there shows them in full. Generation reads the signer's keys again, so a warning can
+  be there that the review didn't have.
+- New: the JavaScript `generateKey()` returns the signer's `warnings`, an array that is
+  empty when there are none.
 
 ## The signer refuses a few transactions the network never accepts
 

@@ -411,8 +411,10 @@ can give both signatures.
   the warning appears only when key material was copied between nodes by hand.
 
 The screen after generation names each warning again by its first sentence, under the
-new account's address. The full text is in the review's details. A warning can be there that the review didn't show, when this signer's keys
-changed between the review and the generation.
+new account's address. Press `w` there to read them in full. With more than two, the
+screen shows how many there are instead of naming each. A warning can be there that the
+review didn't show, when this signer's keys changed between the review and the
+generation; `w` is then the only place to read it.
 
 After generating, press `s` to save a receipt beside where apadmin was started. A receipt
 documents the account, including its rekey-to addresses. It cannot restore one: use

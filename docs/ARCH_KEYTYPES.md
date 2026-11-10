@@ -1503,6 +1503,8 @@ There is one refusal and one warning, in this order:
     of its stage addresses.
   - It runs at generation only. Nothing rechecks a stored account, so an account
     already stored with such a list still loads.
+  - It refuses what it can't check. A list it can't parse, or a signer whose key list
+    isn't available, is an error, not a pass.
   - Every list is checked. A request always gives the list as `rekey_to` addresses, and
     generation computes the root from them; a request can't supply a root alone.
 - **Cosigner warning.** A cosigner public key equal to a key this signer holds is
@@ -1524,8 +1526,9 @@ Warnings refuse nothing. They travel in `PreparedGeneration.Warnings` and
 - `PreparedGeneration.Warnings` reaches the apadmin review as
   `prepare_generate_result.warnings`.
 - `GenerateResult.Warnings` reaches apadmin as `generate_result.warnings`, which the
-  generated-account screen names by first sentence, and an HTTP caller as `warnings` in the
-  `/admin/generate` response.
+  generated-account screen names by first sentence and shows in full on `w`, and an HTTP
+  caller as `warnings` in the `/admin/generate` response. apshell prints them, and the
+  JavaScript `generateKey()` returns them as `warnings`.
 
 For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` then runs:
 

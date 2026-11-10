@@ -714,6 +714,8 @@ rotating account's address is a one-time stage key. The refusal has three limits
   account's address, not to one of its stage addresses.
 - It is an admission check at generation. The composer and durable validation don't
   make it, so an account already stored with such a list still loads.
+- It refuses what it can't check: a list it can't parse, or a signer whose key list
+  isn't available, is an error, not a pass.
 
 No list escapes the check for lack of addresses. A creation request always gives the
 list as `rekey_to`, and key generation computes the root from it; a request that

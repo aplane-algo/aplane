@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -218,8 +219,9 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if err := s.checkGenerationRequirements(creation); err != nil {
 		return nil, err
 	}
-	if err := s.checkAgainstHeldKeys(creation); err != nil {
-		return nil, err
+	warnings, heldErr := s.checkAgainstHeldKeys(creation)
+	if heldErr != nil {
+		return nil, heldErr
 	}
 	if err := checkReviewedValues(keyType, params, reviewed); err != nil {
 		return nil, err
@@ -236,7 +238,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 			Address:    address,
 			KeyType:    keyType,
 			Parameters: params,
-			Warnings:   creation.warnings,
+			Warnings:   warnings,
 		}, nil
 	}
 
@@ -267,7 +269,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 		IsSpendingAccount: genResult.IsSpendingAccount,
 		Mnemonic:          genResult.Mnemonic,
 		Parameters:        params,
-		Warnings:          creation.warnings,
+		Warnings:          warnings,
 	}, nil
 }
 
@@ -377,22 +379,29 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 //
 // These are admission checks for a new LogicSig account. Nothing here runs when
 // a stored account loads, and import takes no account of this kind.
-func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) *Error {
-	if creation == nil || creation.instance == nil || creation.instance.Bounded == nil {
-		return nil
+//
+// It returns the warnings to show with the account, the provider's first, and
+// leaves the creation as it found it, so running it again gives the same answer.
+func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Error) {
+	if creation == nil {
+		return nil, nil
+	}
+	warnings := slices.Clone(creation.warnings)
+	if creation.instance == nil || creation.instance.Bounded == nil {
+		return warnings, nil
 	}
 	bounded := creation.instance.Bounded
 	if bounded.RekeyList != nil {
 		if err := refuseRekeyToHeldRotatingAccount(s.Runtime, creation.params[boundedmeta.RekeyListEntriesParameter]); err != nil {
-			return &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
 	}
 	if bounded.Cosigner != nil {
 		if warning := cosignerHeldWarning(s.Runtime, creation.params[boundedmeta.CosignerPublicKeyParameter]); warning != "" {
-			creation.warnings = append(creation.warnings, warning)
+			warnings = append(warnings, warning)
 		}
 	}
-	return nil
+	return warnings, nil
 }
 
 // cosignerHeldWarning says when an account's cosigner key is also a key this
@@ -407,7 +416,9 @@ func cosignerHeldWarning(ir *productruntime.Runtime, cosignerPublicKeyHex string
 	if ir == nil || ir.KeyStore() == nil {
 		return ""
 	}
-	normalized := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cosignerPublicKeyHex), "0x")))
+	// The parameter is already canonical: the instance resolved it to lowercase
+	// hex without a prefix.
+	normalized := cosignerPublicKeyHex
 	if normalized == "" {
 		return ""
 	}
@@ -437,14 +448,17 @@ func cosignerHeldWarning(ir *productruntime.Runtime, cosignerPublicKeyHex string
 // neither this nor the signing gate knows them. The signing gate still refuses a
 // rekey to the account's address.
 func refuseRekeyToHeldRotatingAccount(ir *productruntime.Runtime, entries string) error {
-	if ir == nil || ir.KeyStore() == nil || strings.TrimSpace(entries) == "" {
+	if strings.TrimSpace(entries) == "" {
 		return nil
 	}
-	// The provider has already accepted the list, so one that doesn't parse here
-	// has nothing to check.
+	// A list this can't read, or a signer whose keys it can't see, is refused:
+	// passing it would leave the check to whatever runs later.
+	if ir == nil || ir.KeyStore() == nil {
+		return fmt.Errorf("%s: this signer's keys are unavailable, so the list can't be checked", boundedmeta.RekeyListEntriesParameter)
+	}
 	targets, err := rekeylist.ParseEntries(entries)
 	if err != nil {
-		return nil
+		return fmt.Errorf("%s: %w", boundedmeta.RekeyListEntriesParameter, err)
 	}
 	keyTypes := ir.KeyStore().GetKeyTypes()
 	for _, target := range targets {
