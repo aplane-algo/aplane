@@ -7,7 +7,13 @@
 // lives in lsig/plainhost.
 package boundary
 
-import "github.com/aplane-algo/aplane/internal/boundedmeta"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
+)
 
 const (
 	// SchemaV1 identifies the boundary file grammar.
@@ -24,12 +30,19 @@ const (
 	// asked for, and selects a limits-only account: the fee ceiling and transfer
 	// kinds, with no recipient list.
 	ParameterRecipientScope = "recipient_scope"
+	// ParameterMaxFee is a bounded account's fee ceiling per transaction, in
+	// microAlgos. Absent means DefaultMaxFee.
+	ParameterMaxFee = "max_fee"
 	// ParameterRekeyTo is a rekey-to list's addresses, required with
 	// rekey_authority=only_these or plus_cosigned and refused otherwise.
 	ParameterRekeyTo = boundedmeta.RekeyListEntriesParameter
 	// ParameterCosigner is the signer-side reference selector. It is resolved to
 	// a public key before an instance is selected.
 	ParameterCosigner = "cosigner"
+
+	// DefaultMaxFee is the fee ceiling of a bounded account whose request names
+	// none, in microAlgos.
+	DefaultMaxFee uint64 = 10_000
 
 	EncodingAuto   = "auto"
 	EncodingInline = "inline"
@@ -49,3 +62,22 @@ const (
 	RekeyPlusCosigned = boundedmeta.RekeyPlusCosigned
 	RekeyRefused      = string(boundedmeta.RekeyRefused)
 )
+
+// DefaultMaxFeeText is DefaultMaxFee as a request or a file writes it.
+var DefaultMaxFeeText = strconv.FormatUint(DefaultMaxFee, 10)
+
+// ParseMaxFee reads a fee ceiling. Only the plain decimal form is accepted: a
+// leading zero or a sign would read differently elsewhere, as YAML reads 010 as
+// octal. Any value the wire can carry is valid, zero included: an account that
+// can't pay its own fees still works with another account paying them.
+func ParseMaxFee(value string) (uint64, error) {
+	text := strings.TrimSpace(value)
+	fee, err := strconv.ParseUint(text, 10, 64)
+	if err != nil || strconv.FormatUint(fee, 10) != text {
+		return 0, fmt.Errorf("%s must be a whole number of microAlgos: %q", ParameterMaxFee, value)
+	}
+	if fee > boundedmeta.MaxFeeLimit {
+		return 0, fmt.Errorf("%s %d is above %d, the largest value every client reads exactly", ParameterMaxFee, fee, boundedmeta.MaxFeeLimit)
+	}
+	return fee, nil
+}

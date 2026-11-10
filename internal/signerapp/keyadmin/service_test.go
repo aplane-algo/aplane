@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -893,6 +894,70 @@ func TestServiceGenerateKeyResolvesThroughInstance(t *testing.T) {
 	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "not found") {
 		t.Fatalf("GenerateKey(unknown cosigner) error = %#v", err)
 	}
+}
+
+// A provider with advice about a creation request is asked once for each
+// request, after the request resolved, on the preparation and the generation
+// path alike. An error from it refuses the request as invalid input. That the
+// warnings reach the review and the result is tested with the plain hosts.
+func TestServiceAsksTheCreationAdvisorOnce(t *testing.T) {
+	ir := setupProductRuntime(t)
+	const keyType = "test.keyadmin-advisor.v1"
+	advisor := &keyadminAdvisorProvider{keyadminInstanceProvider: keyadminInstanceProvider{keyadminFingerprintProvider{keyType: keyType}}}
+	lsigprovider.RegisterIfAbsent(advisor)
+	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
+	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
+	params := map[string]string{"shape": "list"}
+	requests := map[string]func(map[string]string) *Error{
+		"PrepareGenerateKey": func(params map[string]string) *Error {
+			_, err := svc.PrepareGenerateKey(keyType, params)
+			return err
+		},
+		"GenerateKey": func(params map[string]string) *Error {
+			_, err := svc.GenerateKey(context.Background(), keyType, params, nil)
+			return err
+		},
+	}
+	for name, request := range requests {
+		// The test type can't be generated, which is decided after the advice: a
+		// warning never stands in for a later refusal.
+		advisor.warnings, advisor.err, advisor.calls, advisor.asked = []string{"some advice"}, nil, 0, nil
+		if err := request(params); err == nil || !strings.Contains(err.Message, "invalid key type") {
+			t.Fatalf("%s() error = %#v", name, err)
+		}
+		if advisor.calls != 1 || !maps.Equal(advisor.asked, params) {
+			t.Fatalf("%s(): the advisor was asked %d times, about %v", name, advisor.calls, advisor.asked)
+		}
+
+		advisor.err, advisor.calls = errors.New("advice could not be worked out"), 0
+		if err := request(params); err == nil || err.Kind != ErrorInvalidInput || err.Message != "advice could not be worked out" {
+			t.Fatalf("%s(advisor error) error = %#v", name, err)
+		}
+		if advisor.calls != 1 {
+			t.Fatalf("%s(advisor error): the advisor was asked %d times", name, advisor.calls)
+		}
+
+		// A request the provider refuses is refused for that reason, with no advice asked.
+		advisor.calls = 0
+		if err := request(map[string]string{"shape": "other"}); err == nil || !strings.Contains(err.Message, "unknown shape") || advisor.calls != 0 {
+			t.Fatalf("%s(unknown shape) error = %#v after %d calls", name, err, advisor.calls)
+		}
+	}
+}
+
+// keyadminAdvisorProvider has advice about every request it resolves.
+type keyadminAdvisorProvider struct {
+	keyadminInstanceProvider
+	warnings []string
+	err      error
+	calls    int
+	asked    map[string]string
+}
+
+func (p *keyadminAdvisorProvider) CreationWarnings(params map[string]string) ([]string, error) {
+	p.calls++
+	p.asked = maps.Clone(params)
+	return p.warnings, p.err
 }
 
 // keyadminInstanceProvider selects its contract from a "shape" parameter.

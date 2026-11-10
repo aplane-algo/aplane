@@ -160,4 +160,6 @@ type GenerateKeyResult struct {
 	CosignerKeyID string
 	// InventoryRead reports whether it came from the signer.
 	InventoryRead bool
+	// Warnings are the signer's advice about the account it created.
+	Warnings []string
 }

@@ -9,8 +9,11 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
+
+// legacyDifferentialMaxFee is the fee ceiling the Locked Allowlist oracle below
+// models: the default one.
+const legacyDifferentialMaxFee uint64 = 10_000
 
 // The replacement for the removed governed FG provider is the Locked Allowlist
 // preset of the general bounded type: a fixed allowlist that refuses every rekey.
@@ -56,7 +59,7 @@ func TestFalconBoundedReplacementNarrowsGovernedFGCorpus(t *testing.T) {
 		{name: "unsupported app call", build: func() types.Transaction { txn := basePayment(); txn.Type = types.ApplicationCallTx; return txn }, legacy: true},
 		{name: "fee above ceiling", build: func() types.Transaction {
 			txn := basePayment()
-			txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFee + 1)
+			txn.Fee = types.MicroAlgos(legacyDifferentialMaxFee + 1)
 			return txn
 		}, legacy: true},
 		{name: "pure rekey without admin proof", build: func() types.Transaction {
@@ -118,7 +121,7 @@ func legacyGovernedFGAllows(txn types.Transaction, allowed types.Address, adminP
 }
 
 func boundedLockedAllowlistAllows(txn types.Transaction, allowed types.Address) bool {
-	if uint64(txn.Fee) > composeddsa.BoundedMaxFee {
+	if uint64(txn.Fee) > legacyDifferentialMaxFee {
 		return false
 	}
 	switch txeffects.Classify(txn).Shape {

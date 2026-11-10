@@ -133,7 +133,22 @@ type Provider struct {
 
 	algodMu sync.Mutex
 	algod   *algod.Client
+
+	// custom holds shapes compiled with a fee ceiling other than the default,
+	// built when a request or a stored account first names one.
+	customMu sync.Mutex
+	custom   map[customShape]*program
 }
+
+// customShape names a shape compiled with its own fee ceiling.
+type customShape struct {
+	descriptor string
+	maxFee     uint64
+}
+
+// customShapesMax bounds the cache of custom-ceiling programs. They are rebuilt
+// on demand, so dropping one loses nothing.
+const customShapesMax = 1024
 
 // Wrap builds a plain key type's arrangements, and the shapes on first use. A
 // program that can't be built fails its first use; the tests build every shape
@@ -170,7 +185,7 @@ func (p *Provider) loadShapes() error {
 		byShape := make(map[string]*program)
 		ordered := append([]*program(nil), p.arrangements...)
 		for _, shape := range Shapes() {
-			composer, err := newShapeComposer(p.Plain, p.base, shape)
+			composer, err := newShapeComposer(p.Plain, p.base, shape, DefaultMaxFee)
 			if err != nil {
 				p.shapesErr = fmt.Errorf("plain host %s, shape %s: %w", p.KeyType(), shape.Descriptor(), err)
 				return
@@ -251,7 +266,7 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterSpendEffects,
 			Label:       "Transfer Kinds",
-			Description: "Bounds: comma-separated transfer kinds the account may make: pay, axfer, asset_opt_in. Any bounds parameter makes the account a bounded one, with a fee limit of 10,000 microAlgos per transaction.",
+			Description: "Bounds: comma-separated transfer kinds the account may make: pay, axfer, asset_opt_in. Any bounds parameter makes the account a bounded one, with a fee limit per transaction.",
 			Type:        "string",
 			Example:     "pay,axfer,asset_opt_in",
 		},
@@ -275,6 +290,13 @@ func creationParameters() []lsigprovider.ParameterDef {
 			Description: "Bounds: how the program holds the recipient list. Auto chooses inline through 10 recipients and Merkle above that.",
 			Type:        "string",
 			Options:     []string{EncodingAuto, EncodingInline, EncodingMerkle},
+		},
+		{
+			Name:        ParameterMaxFee,
+			Label:       "Fee Limit",
+			Description: "Bounds: the most the account may pay in fees on one transaction, in microAlgos. Absent means 10,000. Below what one of its transactions costs alone, it needs a group that shares the cost or another account to pay.",
+			Type:        "uint64",
+			Example:     "10000",
 		},
 		{
 			Name:        ParameterCosigner,
@@ -362,12 +384,9 @@ func (p *Provider) resolve(params map[string]string) (*program, map[string]strin
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := p.loadShapes(); err != nil {
+		shape, err := p.shapeProgram(selected.shape, selected.maxFee)
+		if err != nil {
 			return nil, nil, err
-		}
-		shape, ok := p.byShape[selected.shape.Descriptor()]
-		if !ok {
-			return nil, nil, fmt.Errorf("unsupported bounded shape %s", selected.shape.Descriptor())
 		}
 		return shape, selected.values, nil
 	}
@@ -389,6 +408,61 @@ func (p *Provider) resolve(params map[string]string) (*program, map[string]strin
 	values := map[string]string{}
 	overlays.addTo(values)
 	return selected, values, nil
+}
+
+// shapeProgram returns a shape's program at a fee ceiling. The grammar's own
+// programs carry the default; any other ceiling is the same shape compiled with
+// that value, with its own fingerprint.
+func (p *Provider) shapeProgram(shape Shape, maxFee uint64) (*program, error) {
+	if err := p.loadShapes(); err != nil {
+		return nil, err
+	}
+	standard, ok := p.byShape[shape.Descriptor()]
+	if !ok {
+		return nil, fmt.Errorf("unsupported bounded shape %s", shape.Descriptor())
+	}
+	if maxFee == DefaultMaxFee {
+		return standard, nil
+	}
+	key := customShape{shape.Descriptor(), maxFee}
+	p.customMu.Lock()
+	built, ok := p.custom[key]
+	p.customMu.Unlock()
+	if ok {
+		return built, nil
+	}
+	// Built outside the lock, so one request's build never holds up another's.
+	// Two requests may build the same program; the first stored is kept.
+	composer, err := newShapeComposer(p.Plain, p.base, shape, maxFee)
+	if err != nil {
+		return nil, fmt.Errorf("plain host %s, shape %s, %s %d: %w", p.KeyType(), shape.Descriptor(), ParameterMaxFee, maxFee, err)
+	}
+	built = &program{descriptor: shape.Descriptor(), composer: composer, fingerprint: shapeFingerprint(shape, composer)}
+	// Both locks, in SetAlgodClient's order, so a client set meanwhile reaches
+	// either this program here or the stored one there.
+	p.algodMu.Lock()
+	defer p.algodMu.Unlock()
+	p.customMu.Lock()
+	defer p.customMu.Unlock()
+	if kept, ok := p.custom[key]; ok {
+		return kept, nil
+	}
+	if p.algod != nil {
+		composer.SetAlgodClient(p.algod)
+	}
+	if p.custom == nil {
+		p.custom = make(map[customShape]*program)
+	}
+	// Full: drop one entry, any one, so a store with more ceilings than the
+	// cache holds rebuilds a few programs per pass, not all of them.
+	if len(p.custom) >= customShapesMax {
+		for stale := range p.custom {
+			delete(p.custom, stale)
+			break
+		}
+	}
+	p.custom[key] = built
+	return built, nil
 }
 
 // composerValues keeps only the parameters a program's composer declares: the
@@ -523,12 +597,12 @@ func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.
 		if err != nil {
 			return "", err
 		}
-		if err := p.loadShapes(); err != nil {
-			return "", err
+		if metadata.MaxFee == nil {
+			return "", fmt.Errorf("stored account has no fee ceiling")
 		}
-		selected, ok := p.byShape[shape.Descriptor()]
-		if !ok {
-			return "", fmt.Errorf("unsupported bounded shape %s", shape.Descriptor())
+		selected, err := p.shapeProgram(shape, *metadata.MaxFee)
+		if err != nil {
+			return "", err
 		}
 		return selected.fingerprint, nil
 	default:
@@ -656,8 +730,8 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 }
 
 // BuildBoundedAuthorizationMetadata snapshots a program's signing contract and
-// refuses one the network could not run within its fee ceiling, before the key
-// is persisted. The plain program has none.
+// refuses one the network could not run in one transaction, before the key is
+// persisted. The plain program has none.
 func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
 	if plain, err := plainRequest(params); err != nil {
 		return nil, err
@@ -697,16 +771,33 @@ func (p *Provider) SetAlgodClient(client *algod.Client) {
 	for _, selected := range p.byShape {
 		selected.composer.SetAlgodClient(client)
 	}
+	p.customMu.Lock()
+	defer p.customMu.Unlock()
+	for _, selected := range p.custom {
+		selected.composer.SetAlgodClient(client)
+	}
 }
 
 // checkResources is a generation backstop, not a promise about future networks:
-// each path the program has must fit one transaction's resources, and within a
-// bounded account's fee ceiling. Signing still checks the selected path against
-// the actual network rules.
+// each path the program has must fit one transaction's resources. Signing still
+// checks the selected path against the actual network rules. A fee ceiling below
+// what a path costs is the user's choice, which the review warns about.
 func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) error {
+	_, err := pathFees(metadata, opcodes, programBytes)
+	return err
+}
+
+// pathFee is what one of a program's paths costs the account when it pays alone.
+type pathFee struct {
+	name string
+	fee  uint64
+}
+
+// pathFees solves each path the program has as a transaction on its own.
+func pathFees(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) ([]pathFee, error) {
 	consensus, err := lsigresource.CurrentConsensus()
 	if err != nil {
-		return fmt.Errorf("read consensus profile: %w", err)
+		return nil, fmt.Errorf("read consensus profile: %w", err)
 	}
 	type path struct {
 		name   string
@@ -718,11 +809,12 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 	case boundedmeta.RekeySpendingKey:
 		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
 	default:
-		return fmt.Errorf("no resource path for rekey setting %q", metadata.Rekey)
+		return nil, fmt.Errorf("no resource path for rekey setting %q", metadata.Rekey)
 	}
 	if metadata.RekeyList != nil {
 		paths = append(paths, path{boundedmeta.PathListedRekey, opcodes.ListedRekey})
 	}
+	fees := make([]pathFee, 0, len(paths))
 	for _, path := range paths {
 		plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
 			TransactionCount: 1,
@@ -734,14 +826,62 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 			Dummy: lsigresource.Usage{ProgramBytes: uint64(len(txsigning.EmbeddedDummyTealTok)), MaxOpcodeCost: 1},
 		})
 		if err != nil {
-			return fmt.Errorf("%s path does not fit the network's resource limits: %w", path.name, err)
+			return nil, fmt.Errorf("%s path does not fit the network's resource limits: %w", path.name, err)
 		}
-		if fee := planFee(plan, consensus.MinTxnFee); metadata.MaxFee != nil && fee > *metadata.MaxFee {
-			return fmt.Errorf("%s path needs a fee of %d, above the account's ceiling of %d", path.name, fee, *metadata.MaxFee)
+		fees = append(fees, pathFee{path.name, planFee(plan, consensus.MinTxnFee)})
+	}
+	return fees, nil
+}
+
+// CreationWarnings says when a bounded account can't pay for its own
+// transactions. The program doesn't exist yet, so it is sized by what it must
+// hold: the public keys it checks and an inline recipient list. The result is a
+// lower bound, and a ceiling just above it may still fall short once the program
+// is compiled; signing reports that case when it plans the group.
+func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) {
+	request, err := present(params)
+	if err != nil {
+		return nil, err
+	}
+	if !hasBounds(request) {
+		return nil, nil
+	}
+	selected, values, err := p.resolve(request)
+	if err != nil {
+		return nil, err
+	}
+	metadata := selected.composer.BoundedAuthorizationMetadata()
+	if metadata == nil || metadata.MaxFee == nil {
+		return nil, nil
+	}
+	programBytes := p.base.Ops.PublicKeySize()
+	if metadata.Cosigner != nil {
+		programBytes += boundedmeta.CosignerPublicKeySizeV1
+	}
+	if values[ParameterListEncoding] == EncodingInline {
+		programBytes += addressBytes * (strings.Count(values[ParameterRecipients], ",") + 1)
+	}
+	fees, err := pathFees(metadata, p.BoundedLogicSigOpcodeProfile(), programBytes)
+	if err != nil {
+		return nil, err
+	}
+	var short []string
+	for _, path := range fees {
+		if path.fee > *metadata.MaxFee {
+			short = append(short, fmt.Sprintf("%s (at least %d)", path.name, path.fee))
 		}
 	}
-	return nil
+	if len(short) == 0 {
+		return nil, nil
+	}
+	// The first sentence stands alone: a review with no room shows only it.
+	return []string{fmt.Sprintf("Fee limit %d is too low to pay alone. "+
+		"A transaction on its own costs more: %s. Batch it with others that share the cost, or have another account in the group pay its fees.",
+		*metadata.MaxFee, strings.Join(short, ", "))}, nil
 }
+
+// addressBytes is what one inline recipient adds to a program.
+const addressBytes = 32
 
 // planFee is the plan's total fee, rounded up. Group size and the program fee
 // factor are both small, so the product cannot overflow.
@@ -759,6 +899,7 @@ var (
 	_ lsigprovider.SigningProvider              = (*Provider)(nil)
 	_ lsigprovider.AlgodConfigurable            = (*Provider)(nil)
 	_ lsigprovider.InstanceResolver             = (*Provider)(nil)
+	_ lsigprovider.CreationAdvisor              = (*Provider)(nil)
 	_ lsigprovider.OpcodeProfileProvider        = (*Provider)(nil)
 	_ lsigprovider.BoundedOpcodeProfileProvider = (*Provider)(nil)
 )

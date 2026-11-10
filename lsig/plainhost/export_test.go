@@ -78,3 +78,13 @@ func (p *Provider) mustLoadShapes() {
 
 // ShapesBuiltForTest reports whether the shapes have been built yet.
 func (p *Provider) ShapesBuiltForTest() bool { return p.byShape != nil }
+
+// CustomShapesMaxForTest is how many custom-ceiling programs the cache holds.
+const CustomShapesMaxForTest = customShapesMax
+
+// CustomShapeCountForTest is how many custom-ceiling programs are cached now.
+func (p *Provider) CustomShapeCountForTest() int {
+	p.customMu.Lock()
+	defer p.customMu.Unlock()
+	return len(p.custom)
+}

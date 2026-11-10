@@ -31,6 +31,7 @@ func (s Service) AdminGenerate(ctx context.Context, ir *productruntime.Runtime, 
 		IsWitnessKey:      result.IsWitnessKey,
 		IsSpendingAccount: result.IsSpendingAccount,
 		Parameters:        result.Parameters,
+		Warnings:          result.Warnings,
 	}, nil
 }
 

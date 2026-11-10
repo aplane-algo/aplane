@@ -56,6 +56,8 @@ type GenerateResult struct {
 	IsSpendingAccount *bool
 	Mnemonic          string
 	Parameters        map[string]string
+	// Warnings are the provider's advice about the account. They refused nothing.
+	Warnings []string
 }
 
 type DeleteResult struct {
@@ -111,6 +113,8 @@ type resolvedCreation struct {
 	keyType  string
 	params   map[string]string
 	instance *lsigprovider.Instance
+	// warnings are the provider's advice about the request. They refuse nothing.
+	warnings []string
 	// perKey is set for a type whose contract varies by account (the general
 	// type and the plain hosts), which the boundary requirements govern.
 	perKey bool
@@ -144,6 +148,7 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 	}
 
 	var instance *lsigprovider.Instance
+	var warnings []string
 	perKey := false
 	if provider := lsigprovider.Get(keyType); provider != nil {
 		_, perKey = provider.(lsigprovider.InstanceResolver)
@@ -160,8 +165,13 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
 		}
+		if advisor, ok := provider.(lsigprovider.CreationAdvisor); ok {
+			if warnings, err = advisor.CreationWarnings(params); err != nil {
+				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+			}
+		}
 	}
-	return &resolvedCreation{keyType: keyType, params: params, instance: instance, perKey: perKey}, nil
+	return &resolvedCreation{keyType: keyType, params: params, instance: instance, warnings: warnings, perKey: perKey}, nil
 }
 
 // ReviewedValues are what PrepareGenerateKey returned for the request an operator
@@ -225,6 +235,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 			Address:    address,
 			KeyType:    keyType,
 			Parameters: params,
+			Warnings:   creation.warnings,
 		}, nil
 	}
 
@@ -255,6 +266,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 		IsSpendingAccount: genResult.IsSpendingAccount,
 		Mnemonic:          genResult.Mnemonic,
 		Parameters:        params,
+		Warnings:          creation.warnings,
 	}, nil
 }
 

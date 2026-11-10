@@ -253,9 +253,22 @@ func (m Model) renderGenerateReview() string {
 		cosigner = "Required, " + middleEllipsize(review.CosignerKeyID, reviewIDWidth-10)
 	}
 	sb.WriteString(reviewRow("Cosigner", cosigner))
-	sb.WriteString("\n")
+	// A warning takes the two blank rows, here and above the buttons, so the
+	// longest review still fits the smallest window.
+	if len(review.Warnings) == 0 {
+		sb.WriteString("\n")
+	}
 	sb.WriteString(subtitleStyle.Render(wrapText(strings.TrimSpace(note+" "+consequence), reviewBodyWidth)))
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
+	// The signer's warnings refuse nothing; the reviewer decides. Each takes
+	// one line here, its first sentence, and the details have it in full.
+	for _, warning := range review.Warnings {
+		sb.WriteString(warningStyle.Render(reviewWarningLine(warning)))
+		sb.WriteString("\n")
+	}
+	if len(review.Warnings) == 0 {
+		sb.WriteString("\n")
+	}
 
 	buttons := []string{"CANCEL", "DETAILS", "GENERATE"}
 	rendered := make([]string, len(buttons))
@@ -268,6 +281,17 @@ func (m Model) renderGenerateReview() string {
 	}
 	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Center, rendered[0], "  ", rendered[1], "  ", rendered[2]))
 	return m.renderPopup(72, sb.String())
+}
+
+// reviewWarningLine is a warning's first sentence on one line, pointing at the
+// details for the rest.
+func reviewWarningLine(warning string) string {
+	const suffix = " See details."
+	first := warning
+	if end := strings.Index(warning, ". "); end >= 0 {
+		first = warning[:end+1]
+	}
+	return "Warning: " + middleEllipsize(first, reviewBodyWidth-len("Warning: ")-len(suffix)) + suffix
 }
 
 // renderGenerateReviewDetails has everything the main review shortens, in full.
@@ -285,6 +309,9 @@ func (m Model) renderGenerateReviewDetails() string {
 			return
 		}
 		sb.WriteString(label + ":\n  " + value + "\n")
+	}
+	for _, warning := range review.Warnings {
+		field("Warning", wrapText(warning, 64))
 	}
 	field("Policy", review.Bounded.Layer3Policy)
 	field("Rekey protection", wrapText(reviewRekeyProtection(*review), 64))

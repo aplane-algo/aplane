@@ -855,7 +855,7 @@ cosigner. Corridor's profile differs from it only in encoding `rekey: refused`,
 ### Accepted Transactions
 
 Every accepted path requires the Falcon spending signature and
-`Fee <= 10,000` microAlgos. Spend paths admit only:
+`Fee <= max_fee`, which the Corridor preset sets to 10,000 microAlgos. Spend paths admit only:
 
 - pure payments;
 - pure asset transfers; and

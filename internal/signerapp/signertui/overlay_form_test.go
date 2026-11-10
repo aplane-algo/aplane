@@ -237,6 +237,8 @@ func TestOverlayFormSendsTheChoices(t *testing.T) {
 			want: map[string]string{
 				boundary.ParameterRecipients: recipient, overlayList: target, overlayRekey: boundary.RekeyOnlyThese,
 				boundary.ParameterSpendEffects: "pay,axfer,asset_opt_in", boundary.ParameterListEncoding: boundary.EncodingAuto,
+				// The preset states the default fee limit.
+				boundary.ParameterMaxFee: "10000",
 			},
 		},
 		{
@@ -245,6 +247,8 @@ func TestOverlayFormSendsTheChoices(t *testing.T) {
 			want: map[string]string{
 				boundary.ParameterRecipients: recipient, overlayCosigner: "WITNESS", overlayRekey: boundary.RekeyRefused,
 				boundary.ParameterSpendEffects: "pay,axfer,asset_opt_in", boundary.ParameterListEncoding: boundary.EncodingAuto,
+				// The preset states the default fee limit.
+				boundary.ParameterMaxFee: "10000",
 			},
 		},
 	} {
@@ -447,8 +451,21 @@ func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
 	}{
 		"limits-only": {
 			values:  map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterRecipientScope: boundary.RecipientScopeAny, overlayRekey: boundary.RekeyRefused},
-			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, "unlock_round"},
+			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, boundary.ParameterMaxFee, "unlock_round"},
 			present: map[string]string{boundary.ParameterRecipientScope: boundary.RecipientScopeAny},
+		},
+		// The fee limit is a field of the custom form: sent when set, to any value.
+		"fee limit above the default": {
+			values: map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterRecipientScope: boundary.RecipientScopeAny,
+				boundary.ParameterMaxFee: "20000", overlayRekey: boundary.RekeyRefused},
+			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients},
+			present: map[string]string{boundary.ParameterMaxFee: "20000", boundary.ParameterRecipientScope: boundary.RecipientScopeAny},
+		},
+		"fee limit of zero": {
+			values: map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterRecipientScope: boundary.RecipientScopeAny,
+				boundary.ParameterMaxFee: "0", overlayRekey: boundary.RekeyRefused},
+			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients},
+			present: map[string]string{boundary.ParameterMaxFee: "0"},
 		},
 	} {
 		m := overlayForm(t, plainEd25519KeyType, customBounds)
@@ -459,6 +476,9 @@ func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
 		scope, _ := paramNamed(spec.Params, boundary.ParameterRecipientScope)
 		if scope.Options[0] != "" || spec.optionLabel(scope.Name, "") != "Not set" {
 			t.Fatalf("%s: recipient scope offers %v", name, scope.Options)
+		}
+		if fee, ok := paramNamed(spec.Params, boundary.ParameterMaxFee); !ok || fee.Required || fee.Label != "Fee Limit" {
+			t.Fatalf("%s: fee limit field = %+v (present %v)", name, fee, ok)
 		}
 		m.forms.generateFocus = len(spec.Params)
 		next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})

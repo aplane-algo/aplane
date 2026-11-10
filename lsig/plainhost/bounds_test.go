@@ -11,8 +11,11 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -243,7 +246,7 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if bounded.Layer3Policy != shape.Policy() || strings.Join(bounded.SpendEffects, ",") != joinEffects(shape.Spend) {
 						t.Fatalf("policy %s, spend %v", bounded.Layer3Policy, bounded.SpendEffects)
 					}
-					if bounded.MaxFee == nil || *bounded.MaxFee != plainhost.MaxFee {
+					if bounded.MaxFee == nil || *bounded.MaxFee != plainhost.DefaultMaxFee {
 						t.Fatalf("MaxFee = %v", bounded.MaxFee)
 					}
 					if bounded.Rekey != wantRekeySetting(shape.Rekey) {
@@ -453,7 +456,24 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		{"unresolved cosigner", cosignedOnlyThese, func(p map[string]string) { p[plainhost.ParameterCosigner] = "ops" }, "not resolved"},
 		{"teal", spendingKey, func(p map[string]string) { p["teal"] = "int 1" }, "unknown parameter"},
 		{"template", spendingKey, func(p map[string]string) { p["template"] = "x" }, "unknown parameter"},
-		{"max fee", spendingKey, func(p map[string]string) { p["max_fee"] = "1" }, "unknown parameter"},
+		// The fee ceiling is a whole number of microAlgos that fits a uint64.
+		{"max fee text", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "abc" }, "max_fee must be a whole number of microAlgos"},
+		{"negative max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "-1" }, "max_fee must be a whole number of microAlgos"},
+		{"signed max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "+1" }, "max_fee must be a whole number of microAlgos"},
+		{"fractional max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "1.5" }, "max_fee must be a whole number of microAlgos"},
+		{"hex max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "0x10" }, "max_fee must be a whole number of microAlgos"},
+		{"leading zero max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "010" }, "max_fee must be a whole number of microAlgos"},
+		{"max fee above uint64", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "18446744073709551616" }, "max_fee must be a whole number of microAlgos"},
+		{"empty max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "" }, "max_fee is empty"},
+		// It is a bounds parameter: alone it asks for bounds that name no transfer kind.
+		{"max fee without transfer kinds", spendingKey, func(p map[string]string) {
+			for name := range p {
+				if name != plainhost.ParameterRekeyAuthority {
+					delete(p, name)
+				}
+			}
+			p[plainhost.ParameterMaxFee] = "20000"
+		}, "spend_effects is required"},
 	}
 	for _, b := range bases(t) {
 		for _, test := range tests {
@@ -480,7 +500,7 @@ func TestEmptyValuesAreRefused(t *testing.T) {
 	cosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
 	for _, name := range []string{
 		plainhost.ParameterSpendEffects, plainhost.ParameterRecipients, plainhost.ParameterRecipientScope,
-		plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority,
+		plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority, plainhost.ParameterMaxFee,
 		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter,
 	} {
 		for _, empty := range []string{"", "  "} {
@@ -1072,7 +1092,39 @@ func TestBoundaryFileRejections(t *testing.T) {
 		{"encoding with no list", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1) + "recipient_scope: any\nencoding: auto\n", "needs a recipient list"},
 		{"teal field", valid + "teal: \"int 1\"\n", "not found"},
 		{"template field", valid + "template: x\n", "not found"},
-		{"max fee field", valid + "max_fee: \"1\"\n", "not found"},
+		// The fee ceiling is a bounds field: a whole number, written as one or as text.
+		{"max fee without spend", strings.Replace(valid, "spend: [pay]\nrecipients: ["+recipient+"]\n", "", 1) + "max_fee: 20000\n", "max_fee needs spend"},
+		{"text max fee without spend", strings.Replace(valid, "spend: [pay]\nrecipients: ["+recipient+"]\n", "", 1) + "max_fee: \"20000\"\n", "max_fee needs spend"},
+		{"empty max fee", valid + "max_fee: \"\"\n", "max_fee is empty"},
+		{"blank max fee", valid + "max_fee: \"  \"\n", "max_fee is empty"},
+		// Anything YAML reads as other than a whole number or text is named as the
+		// field's fault. A null shows as the empty value it was written as.
+		{"null max fee", valid + "max_fee:\n", `max_fee on line 5 is empty`},
+		{"tilde max fee", valid + "max_fee: ~\n", `max_fee on line 5 must be a whole number: "~"`},
+		{"word null max fee", valid + "max_fee: null\n", `max_fee on line 5 must be a whole number: "null"`},
+		{"infinite max fee", valid + "max_fee: .inf\n", `max_fee on line 5 must be a whole number: ".inf"`},
+		{"whole fraction max fee", valid + "max_fee: 1.0\n", `max_fee on line 5 must be a whole number: "1.0"`},
+		{"octal max fee", valid + "max_fee: 0o17\n", `boundary file: max_fee must be a whole number of microAlgos: "0o17"`},
+		{"negative zero max fee", valid + "max_fee: -0\n", `boundary file: max_fee must be a whole number of microAlgos: "-0"`},
+		{"fractional max fee", valid + "max_fee: 1.5\n", `max_fee on line 5 must be a whole number: "1.5"`},
+		{"exponent max fee", valid + "max_fee: 1e4\n", `max_fee on line 5 must be a whole number: "1e4"`},
+		{"boolean max fee", valid + "max_fee: true\n", `max_fee on line 5 must be a whole number: "true"`},
+		{"max fee above uint64", valid + "max_fee: 18446744073709551616\n", `max_fee on line 5 must be a whole number: "18446744073709551616"`},
+		{"leading-zero max fee", valid + "max_fee: 010\n", `boundary file: max_fee must be a whole number of microAlgos: "010"`},
+		{"negative max fee", valid + "max_fee: -1\n", `boundary file: max_fee must be a whole number of microAlgos: "-1"`},
+		{"hex max fee", valid + "max_fee: 0x10\n", `boundary file: max_fee must be a whole number of microAlgos: "0x10"`},
+		{"underscored max fee", valid + "max_fee: 10_000\n", `boundary file: max_fee must be a whole number of microAlgos: "10_000"`},
+		{"signed max fee", valid + "max_fee: +5\n", `boundary file: max_fee must be a whole number of microAlgos: "+5"`},
+		{"word max fee", valid + "max_fee: \"abc\"\n", `boundary file: max_fee must be a whole number of microAlgos: "abc"`},
+		{"fraction as text", valid + "max_fee: \"1.5\"\n", `boundary file: max_fee must be a whole number of microAlgos: "1.5"`},
+		{"above uint64 as text", valid + "max_fee: \"18446744073709551616\"\n", `boundary file: max_fee must be a whole number of microAlgos: "18446744073709551616"`},
+		{"max fee above the wire limit", valid + "max_fee: 9007199254740992\n", "boundary file: max_fee 9007199254740992 is above 9007199254740991, the largest value every client reads exactly"},
+		{"largest uint64 max fee", valid + "max_fee: 18446744073709551615\n", "boundary file: max_fee 18446744073709551615 is above 9007199254740991, the largest value every client reads exactly"},
+		{"largest uint64 max fee as text", valid + "max_fee: \"18446744073709551615\"\n", "the largest value every client reads exactly"},
+		{"list max fee", valid + "max_fee: [20000]\n", "must be a string"},
+		{"max fee under rekey", strings.Replace(valid, "{authority: spending_key}", "{authority: spending_key, max_fee: 20000}", 1), "not found"},
+		{"repeated max fee", valid + "max_fee: 20000\nmax_fee: 20000\n", "duplicate field"},
+		{"fee field", valid + "fee: 20000\n", "must be a string"},
 		{"nested unknown field", strings.Replace(valid, "{authority: spending_key}", "{authority: spending_key, gate: none}", 1), "not found"},
 		{"duplicate key", valid + "spend: [axfer]\n", "duplicate field"},
 		{"alias", "schema: aplane.boundary.v1\nspend: &s [pay]\nrecipients: *s\nrekey: {authority: spending_key}\n", "aliases"},
@@ -1096,6 +1148,96 @@ func TestBoundaryFileRejections(t *testing.T) {
 	}
 	if _, err := boundary.ParseFile(bytes.Repeat([]byte{' '}, boundary.MaxFileBytes+1)); err == nil {
 		t.Fatal("accepted an oversized file")
+	}
+}
+
+// A boundary file's fee ceiling may be written as a YAML number or as text, and
+// reaches the provider as the same parameter either way. A file that names none
+// carries no parameter, which the provider reads as the default.
+func TestBoundaryFileFeeCeiling(t *testing.T) {
+	recipient := testAddress(1)
+	valid := "schema: aplane.boundary.v1\nspend: [pay]\nrecipients: [" + recipient + "]\nrekey: {authority: spending_key}\n"
+	parse := func(t *testing.T, body string) map[string]string {
+		t.Helper()
+		file, err := boundary.ParseFile([]byte(body))
+		if err != nil {
+			t.Fatalf("ParseFile() error = %v\n%s", err, body)
+		}
+		return file.CreationParameters()
+	}
+	absent := parse(t, valid)
+	if value, present := absent[boundary.ParameterMaxFee]; present {
+		t.Fatalf("a file without max_fee carries %q", value)
+	}
+	for _, test := range []struct {
+		name, line, want string
+	}{
+		{"number", "max_fee: 20000\n", "20000"},
+		{"text", "max_fee: \"20000\"\n", "20000"},
+		{"single-quoted text", "max_fee: '20000'\n", "20000"},
+		{"zero", "max_fee: 0\n", "0"},
+		{"the default", "max_fee: 10000\n", "10000"},
+		{"surrounding spaces in text", "max_fee: \" 20000 \"\n", "20000"},
+		{"largest as a number", "max_fee: 9007199254740991\n", "9007199254740991"},
+		{"largest as text", "max_fee: \"9007199254740991\"\n", "9007199254740991"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Wherever the line stands in the file.
+			for _, body := range []string{valid + test.line, strings.Replace(valid, "recipients:", test.line+"recipients:", 1)} {
+				params := parse(t, body)
+				if got := params[boundary.ParameterMaxFee]; got != test.want {
+					t.Fatalf("max_fee = %q, want %q", got, test.want)
+				}
+				without := maps.Clone(params)
+				delete(without, boundary.ParameterMaxFee)
+				if !maps.Equal(without, absent) {
+					t.Fatalf("max_fee changed another parameter: %v, want %v", without, absent)
+				}
+			}
+		})
+	}
+
+	// The number and the text are one request, and the request the parameter
+	// makes directly.
+	directory := t.TempDir()
+	for _, b := range bases(t) {
+		direct, err := b.provider.ResolveInstance(map[string]string{
+			plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRecipients: recipient,
+			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey, plainhost.ParameterMaxFee: "20000",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if direct.Bounded.MaxFee == nil || *direct.Bounded.MaxFee != 20_000 {
+			t.Fatalf("%s: direct MaxFee = %v", b.name, direct.Bounded.MaxFee)
+		}
+		for _, line := range []string{"max_fee: 20000\n", "max_fee: \"20000\"\n"} {
+			params, err := boundary.LoadFile(writeBoundaryFile(t, directory, valid+line))
+			if err != nil {
+				t.Fatal(err)
+			}
+			fromFile, err := b.provider.ResolveInstance(params)
+			if err != nil {
+				t.Fatalf("%s: %q: %v", b.name, line, err)
+			}
+			if fromFile.Fingerprint != direct.Fingerprint || fromFile.BoundaryDigest != direct.BoundaryDigest || !maps.Equal(fromFile.Values, direct.Values) {
+				t.Fatalf("%s: %q resolved differently from the parameter", b.name, line)
+			}
+		}
+		// The file refuses at parse what the provider refuses as a parameter, with
+		// the same words, so a preview never shows a value the signer won't take.
+		for _, value := range []string{"-1", "abc", "1.5", "0x10", "010", "+5", "10_000", "18446744073709551616", "9007199254740992", "18446744073709551615"} {
+			_, fileErr := boundary.ParseFile([]byte(valid + "max_fee: \"" + value + "\"\n"))
+			params := maps.Clone(absent)
+			params[boundary.ParameterMaxFee] = value
+			_, err := b.provider.ResolveInstance(params)
+			if err == nil || fileErr == nil || fileErr.Error() != "boundary file: "+err.Error() {
+				t.Fatalf("%s: max_fee %q: ParseFile() error = %v, ResolveInstance() error = %v", b.name, value, fileErr, err)
+			}
+			if validateErr := b.provider.ValidateCreationParams(params); validateErr == nil || validateErr.Error() != err.Error() {
+				t.Fatalf("%s: max_fee %q: ValidateCreationParams() error = %v, want %v", b.name, value, validateErr, err)
+			}
+		}
 	}
 }
 
@@ -1271,6 +1413,33 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 		if strings.Join(preset.Fields, ",") != strings.Join(test.fields, ",") {
 			t.Errorf("%s fields = %v", test.name, preset.Fields)
 		}
+		// Each preset states the default fee ceiling, which its sample file writes
+		// directly after the transfer kinds and which parses back as written.
+		if got := preset.Fixed[plainhost.ParameterMaxFee]; got != "10000" || got != strconv.FormatUint(plainhost.DefaultMaxFee, 10) {
+			t.Errorf("%s max_fee = %q", test.name, got)
+		}
+		if slices.Contains(preset.Fields, plainhost.ParameterMaxFee) {
+			t.Errorf("%s asks the operator for max_fee", test.name)
+		}
+		sample := preset.SampleBoundaryFile(boundary.SampleValues{
+			Recipients: []string{testAddress(1)}, Cosigner: "ops-cosigner", RekeyTo: []string{rekeyTarget(0x08)},
+		})
+		if !strings.Contains(sample, "spend: [pay, axfer, asset_opt_in]\nmax_fee: 10000\n") || strings.Count(sample, "max_fee") != 1 {
+			t.Errorf("%s sample file does not write max_fee after spend:\n%s", test.name, sample)
+		}
+		file, err := boundary.ParseFile([]byte(sample))
+		if err != nil {
+			t.Fatalf("%s sample file: %v\n%s", test.name, err, sample)
+		}
+		parameters := file.CreationParameters()
+		if got := parameters[plainhost.ParameterMaxFee]; got != "10000" {
+			t.Errorf("%s sample file parses max_fee as %q", test.name, got)
+		}
+		for name, value := range preset.Fixed {
+			if parameters[name] != value {
+				t.Errorf("%s sample file parses %s as %q, want %q", test.name, name, parameters[name], value)
+			}
+		}
 	}
 	if len(presets) != 3 {
 		t.Fatalf("%d presets", len(presets))
@@ -1384,6 +1553,23 @@ func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 		if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, params, make([]byte, 3_000)); err != nil {
 			t.Fatalf("%s: an ordinary program was refused: %v", b.name, err)
 		}
+		// A ceiling the account's own transactions cannot meet is generated all
+		// the same, and recorded; one above the old cap of 10,000 likewise. A
+		// program too large for a group is still refused at any ceiling.
+		for _, ceiling := range []uint64{0, 1_000, 20_000} {
+			low := maps.Clone(params)
+			low[plainhost.ParameterMaxFee] = strconv.FormatUint(ceiling, 10)
+			metadata, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, low, make([]byte, 3_000))
+			if err != nil {
+				t.Fatalf("%s: ceiling %d was refused: %v", b.name, ceiling, err)
+			}
+			if metadata.MaxFee == nil || *metadata.MaxFee != ceiling {
+				t.Fatalf("%s: ceiling %d recorded as %v", b.name, ceiling, metadata.MaxFee)
+			}
+			if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, low, make([]byte, 10_000_000)); err == nil || !strings.Contains(err.Error(), "resource limits") {
+				t.Fatalf("%s: ceiling %d, oversized program: error = %v", b.name, ceiling, err)
+			}
+		}
 	}
 }
 
@@ -1397,10 +1583,14 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	if err := plainhost.CheckResources(instance.Bounded, opcodes, 10_000_000); err == nil {
 		t.Fatal("accepted a program that cannot fit a group")
 	}
-	lowCeiling := boundedmeta.Clone(instance.Bounded)
-	lowCeiling.MaxFee = new(uint64(1_000))
-	if err := plainhost.CheckResources(lowCeiling, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "above the account's ceiling") {
-		t.Fatalf("CheckResources(low ceiling) error = %v", err)
+	// A fee ceiling below what a path costs is the user's choice: the backstop
+	// no longer refuses it, and the review warns instead.
+	for _, ceiling := range []uint64{0, 1_000} {
+		lowCeiling := boundedmeta.Clone(instance.Bounded)
+		lowCeiling.MaxFee = new(ceiling)
+		if err := plainhost.CheckResources(lowCeiling, opcodes, 3_000); err != nil {
+			t.Fatalf("CheckResources(ceiling %d) error = %v", ceiling, err)
+		}
 	}
 	// A rekey setting this type does not offer, such as the retired admin-key
 	// rekey, has no path to solve.
@@ -1408,6 +1598,644 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	adminRekey.Rekey = "admin_key"
 	if err := plainhost.CheckResources(adminRekey, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "no resource path") {
 		t.Fatalf("CheckResources(admin rekey) error = %v", err)
+	}
+}
+
+// feeCeilingShapes are a few shapes across the grammar: each policy, each rekey
+// setting, with and without a cosigner.
+var feeCeilingShapes = []plainhost.Shape{
+	{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey},
+	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese},
+	{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: true},
+	{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true},
+	{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, AnyRecipient: true},
+	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn}, Rekey: plainhost.RekeySpendingKey, Cosigner: true, AnyRecipient: true},
+}
+
+// feeCheck is the fee ceiling as a program states it.
+func feeCheck(ceiling uint64) string {
+	return fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", ceiling)
+}
+
+// creationWarnings is the provider's advice about a request.
+func creationWarnings(t *testing.T, provider *plainhost.Provider, params map[string]string) []string {
+	t.Helper()
+	warnings, err := provider.CreationWarnings(params)
+	if err != nil {
+		t.Fatalf("CreationWarnings(%v) error = %v", params, err)
+	}
+	return warnings
+}
+
+// shapeTEAL renders a request's program for a base's test spending key.
+func shapeTEAL(t *testing.T, b base, params map[string]string) string {
+	t.Helper()
+	teal, err := b.provider.GenerateTEAL(b.spendingKey, withRoot(t, b.provider, params))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return teal
+}
+
+// The default fee ceiling is not a second account: naming 10,000 resolves to
+// exactly what leaving max_fee out does, so no existing account, fingerprint or
+// digest moved when the ceiling became a parameter.
+func TestDefaultFeeCeilingIsTheAccountWithoutOne(t *testing.T) {
+	for _, b := range bases(t) {
+		for _, shape := range feeCeilingShapes {
+			absent := shapeRequest(shape, testRecipients(2))
+			want, err := b.provider.ResolveInstance(absent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, persisted := want.Values[plainhost.ParameterMaxFee]; persisted {
+				t.Fatalf("%s %s: the default ceiling is persisted", b.name, shape.Descriptor())
+			}
+			if want.Bounded.MaxFee == nil || *want.Bounded.MaxFee != plainhost.DefaultMaxFee || plainhost.DefaultMaxFee != 10_000 {
+				t.Fatalf("%s %s: default MaxFee = %v", b.name, shape.Descriptor(), want.Bounded.MaxFee)
+			}
+			if want.Fingerprint != b.provider.ShapeFingerprintForTest(shape) {
+				t.Fatalf("%s %s: the default is not the grammar's own program", b.name, shape.Descriptor())
+			}
+			wantTEAL := shapeTEAL(t, b, absent)
+			if strings.Count(wantTEAL, feeCheck(10_000)) != 1 {
+				t.Fatalf("%s %s: the default program does not check the fee against 10000 once:\n%s", b.name, shape.Descriptor(), wantTEAL)
+			}
+			for _, spelling := range []string{"10000", " 10000 "} {
+				named := maps.Clone(absent)
+				named[plainhost.ParameterMaxFee] = spelling
+				got, err := b.provider.ResolveInstance(named)
+				if err != nil {
+					t.Fatalf("%s %s max_fee=%q: %v", b.name, shape.Descriptor(), spelling, err)
+				}
+				if !maps.Equal(got.Values, want.Values) {
+					t.Fatalf("%s %s max_fee=%q: values = %v, want %v", b.name, shape.Descriptor(), spelling, got.Values, want.Values)
+				}
+				if got.Fingerprint != want.Fingerprint || got.BoundaryDigest != want.BoundaryDigest || got.ReviewFingerprint != want.ReviewFingerprint {
+					t.Fatalf("%s %s max_fee=%q: resolved to another account", b.name, shape.Descriptor(), spelling)
+				}
+				if !reflect.DeepEqual(got.Bounded, want.Bounded) || !reflect.DeepEqual(got.Parameters, want.Parameters) || len(creationWarnings(t, b.provider, named)) != 0 {
+					t.Fatalf("%s %s max_fee=%q: contract, parameters or warnings differ", b.name, shape.Descriptor(), spelling)
+				}
+				if teal := shapeTEAL(t, b, named); teal != wantTEAL {
+					t.Fatalf("%s %s max_fee=%q: another program", b.name, shape.Descriptor(), spelling)
+				}
+				if err := b.provider.ValidateCreationParams(named); err != nil {
+					t.Fatalf("%s %s max_fee=%q: ValidateCreationParams() error = %v", b.name, shape.Descriptor(), spelling, err)
+				}
+			}
+		}
+	}
+}
+
+// Any other ceiling is the same shape compiled with that value: its own program,
+// provenance and boundary digest, under the unchanged grammar. The program
+// differs from the default one in the fee check alone, and the values it
+// persists select it again.
+func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
+	for _, b := range bases(t) {
+		grammar := b.provider.GrammarFingerprint()
+		_, programs := b.provider.ProgramsForTest()
+		for _, shape := range feeCeilingShapes {
+			absent := shapeRequest(shape, testRecipients(2))
+			standard, err := b.provider.ResolveInstance(absent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			standardTEAL := shapeTEAL(t, b, absent)
+			seen := map[string]uint64{standard.Fingerprint: plainhost.DefaultMaxFee}
+			digests := map[string]uint64{standard.BoundaryDigest: plainhost.DefaultMaxFee}
+			for _, ceiling := range []uint64{0, 1, 9_999, 10_001, 20_000, boundedmeta.MaxFeeLimit} {
+				name := fmt.Sprintf("%s %s max_fee=%d", b.name, shape.Descriptor(), ceiling)
+				canonical := strconv.FormatUint(ceiling, 10)
+				params := maps.Clone(absent)
+				params[plainhost.ParameterMaxFee] = " " + canonical + " "
+				instance, err := b.provider.ResolveInstance(params)
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				if err := b.provider.ValidateCreationParams(params); err != nil {
+					t.Fatalf("%s: ValidateCreationParams() error = %v", name, err)
+				}
+				if got := instance.Values[plainhost.ParameterMaxFee]; got != canonical {
+					t.Fatalf("%s: persisted max_fee = %q", name, got)
+				}
+				withoutFee := maps.Clone(instance.Values)
+				delete(withoutFee, plainhost.ParameterMaxFee)
+				if !maps.Equal(withoutFee, standard.Values) {
+					t.Fatalf("%s: the ceiling changed another value: %v, want %v", name, withoutFee, standard.Values)
+				}
+				if instance.Bounded == nil || instance.Bounded.MaxFee == nil || *instance.Bounded.MaxFee != ceiling {
+					t.Fatalf("%s: contract MaxFee = %v", name, instance.Bounded.MaxFee)
+				}
+				if err := instance.Bounded.ValidateProfile(); err != nil {
+					t.Fatalf("%s: ValidateProfile() error = %v", name, err)
+				}
+				// Apart from the ceiling it is the default account's contract.
+				sameButFee := boundedmeta.Clone(instance.Bounded)
+				sameButFee.MaxFee = new(plainhost.DefaultMaxFee)
+				if !reflect.DeepEqual(sameButFee, boundedmeta.Clone(standard.Bounded)) {
+					t.Fatalf("%s: the contract differs beyond the ceiling", name)
+				}
+				if other, ok := seen[instance.Fingerprint]; ok {
+					t.Fatalf("%s: shares a fingerprint with ceiling %d", name, other)
+				}
+				if other, ok := digests[instance.BoundaryDigest]; ok {
+					t.Fatalf("%s: shares a boundary digest with ceiling %d", name, other)
+				}
+				seen[instance.Fingerprint], digests[instance.BoundaryDigest] = ceiling, ceiling
+				if instance.ReviewFingerprint != standard.ReviewFingerprint || instance.ReviewFingerprint != grammar {
+					t.Fatalf("%s: review fingerprint = %s, want the grammar's %s", name, instance.ReviewFingerprint, grammar)
+				}
+				if slices.Contains(programs, instance.Fingerprint) {
+					t.Fatalf("%s: has the fingerprint of one of the grammar's programs", name)
+				}
+
+				teal := shapeTEAL(t, b, params)
+				if strings.Count(teal, feeCheck(ceiling)) != 1 || strings.Contains(teal, feeCheck(plainhost.DefaultMaxFee)) {
+					t.Fatalf("%s: the program does not check the fee against %d alone:\n%s", name, ceiling, teal)
+				}
+				if strings.Replace(teal, feeCheck(ceiling), feeCheck(plainhost.DefaultMaxFee), 1) != standardTEAL {
+					t.Fatalf("%s: the program differs from the default one beyond the fee check", name)
+				}
+
+				// The generator resolves the persisted values a second time.
+				again, err := b.provider.ResolveInstance(instance.Values)
+				if err != nil {
+					t.Fatalf("%s: persisted values: %v", name, err)
+				}
+				if again.Fingerprint != instance.Fingerprint || again.BoundaryDigest != instance.BoundaryDigest || !maps.Equal(again.Values, instance.Values) {
+					t.Fatalf("%s: the persisted values select another account", name)
+				}
+				if again := shapeTEAL(t, b, instance.Values); again != teal {
+					t.Fatalf("%s: the persisted values render another program", name)
+				}
+
+				// A stored account reports the same provenance from its metadata.
+				if got, err := b.provider.StoredFingerprint(nil, instance.Bounded); err != nil || got != instance.Fingerprint {
+					t.Fatalf("%s: StoredFingerprint() = %q, %v; want %s", name, got, err, instance.Fingerprint)
+				}
+				generated, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, withRoot(t, b.provider, params), make([]byte, 3_000))
+				if err != nil {
+					t.Fatalf("%s: BuildBoundedAuthorizationMetadata() error = %v", name, err)
+				}
+				if generated.MaxFee == nil || *generated.MaxFee != ceiling {
+					t.Fatalf("%s: generated MaxFee = %v", name, generated.MaxFee)
+				}
+				if got, err := b.provider.StoredFingerprint(nil, generated); err != nil || got != instance.Fingerprint {
+					t.Fatalf("%s: StoredFingerprint(generated) = %q, %v; want %s", name, got, err, instance.Fingerprint)
+				}
+			}
+			// The same stored contract at the default ceiling is the grammar's program,
+			// and one with no ceiling has no program to report.
+			if got, err := b.provider.StoredFingerprint(nil, standard.Bounded); err != nil || got != standard.Fingerprint {
+				t.Fatalf("%s %s: StoredFingerprint(default) = %q, %v", b.name, shape.Descriptor(), got, err)
+			}
+			noCeiling := boundedmeta.Clone(standard.Bounded)
+			noCeiling.MaxFee = nil
+			if _, err := b.provider.StoredFingerprint(nil, noCeiling); err == nil || !strings.Contains(err.Error(), "no fee ceiling") {
+				t.Fatalf("%s %s: StoredFingerprint(no ceiling) error = %v", b.name, shape.Descriptor(), err)
+			}
+		}
+		// Custom ceilings are built beside the grammar, never into it.
+		if _, after := b.provider.ProgramsForTest(); !slices.Equal(after, programs) || b.provider.GrammarFingerprint() != grammar {
+			t.Fatalf("%s: a custom ceiling changed the grammar", b.name)
+		}
+	}
+}
+
+// A provider that first meets an account through its stored metadata, as a
+// restarted signer does, reports the fingerprint the generating provider gave.
+func TestStoredFingerprintBuildsACustomCeilingOnDemand(t *testing.T) {
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
+	generating, restarted := bases(t), bases(t)
+	for i, b := range generating {
+		params := shapeRequest(shape, testRecipients(2))
+		params[plainhost.ParameterMaxFee] = "20000"
+		instance, err := b.provider.ResolveInstance(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fresh := restarted[i].provider
+		if fresh.ShapesBuiltForTest() {
+			t.Fatalf("%s: the fresh provider already built its shapes", b.name)
+		}
+		got, err := fresh.StoredFingerprint(nil, boundedmeta.Clone(instance.Bounded))
+		if err != nil || got != instance.Fingerprint {
+			t.Fatalf("%s: StoredFingerprint() = %q, %v; want %s", b.name, got, err, instance.Fingerprint)
+		}
+		// And it is not the default-ceiling account's.
+		standard := boundedmeta.Clone(instance.Bounded)
+		standard.MaxFee = new(plainhost.DefaultMaxFee)
+		if def, err := fresh.StoredFingerprint(nil, standard); err != nil || def == got || def != fresh.ShapeFingerprintForTest(shape) {
+			t.Fatalf("%s: StoredFingerprint(default) = %q, %v", b.name, def, err)
+		}
+	}
+}
+
+// Custom-ceiling programs are cached, and the cache is bounded. Filling it past
+// its capacity drops one program at a time, never the whole cache, and a ceiling
+// built again after it was dropped is the same program.
+func TestCustomFeeCeilingsRebuildTheSame(t *testing.T) {
+	provider := falconHost(t)
+	shape := plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: plainhost.RekeyRefused, AnyRecipient: true}
+	resolve := func(ceiling int) *lsigprovider.Instance {
+		params := shapeRequest(shape, "")
+		params[plainhost.ParameterMaxFee] = strconv.Itoa(ceiling)
+		instance, err := provider.ResolveInstance(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return instance
+	}
+	const capacity = plainhost.CustomShapesMaxForTest
+	if capacity != 1024 {
+		t.Fatalf("the cache holds %d programs, want 1024", capacity)
+	}
+	if got := provider.CustomShapeCountForTest(); got != 0 {
+		t.Fatalf("a fresh provider caches %d custom programs", got)
+	}
+	// The default ceiling is the grammar's own program, never a cached one.
+	resolve(int(plainhost.DefaultMaxFee))
+	if got := provider.CustomShapeCountForTest(); got != 0 {
+		t.Fatalf("the default ceiling cached %d programs", got)
+	}
+
+	const first, extra = 30_000, 40
+	type account struct{ fingerprint, digest string }
+	built := make([]account, 0, capacity+extra)
+	seen := map[string]bool{}
+	for i := range capacity + extra {
+		instance := resolve(first + i)
+		if seen[instance.Fingerprint] {
+			t.Fatalf("ceiling %d repeats a fingerprint", first+i)
+		}
+		seen[instance.Fingerprint] = true
+		built = append(built, account{instance.Fingerprint, instance.BoundaryDigest})
+		// Each new ceiling adds one program until the cache is full, and from
+		// then on replaces one: the cache never empties to make room.
+		if got, want := provider.CustomShapeCountForTest(), min(i+1, capacity); got != want {
+			t.Fatalf("after %d ceilings the cache holds %d programs, want %d", i+1, got, want)
+		}
+	}
+	// A cached ceiling resolves without adding to the cache.
+	resolve(first + capacity + extra - 1)
+	if got := provider.CustomShapeCountForTest(); got != capacity {
+		t.Fatalf("a cached ceiling changed the cache to %d programs", got)
+	}
+	// Every ceiling, dropped or kept, is the same account when it is asked for
+	// again, and the cache stays within its capacity while they are rebuilt.
+	for i, want := range built {
+		again := resolve(first + i)
+		if again.Fingerprint != want.fingerprint || again.BoundaryDigest != want.digest {
+			t.Fatalf("ceiling %d is another program when resolved again", first+i)
+		}
+		if got := provider.CustomShapeCountForTest(); got != capacity {
+			t.Fatalf("resolving ceiling %d again left %d programs cached, want %d", first+i, got, capacity)
+		}
+	}
+	// A provider that never cached them agrees.
+	fresh := falconHost(t)
+	for _, i := range []int{0, extra, capacity + extra - 1} {
+		params := shapeRequest(shape, "")
+		params[plainhost.ParameterMaxFee] = strconv.Itoa(first + i)
+		instance, err := fresh.ResolveInstance(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if instance.Fingerprint != built[i].fingerprint || instance.BoundaryDigest != built[i].digest {
+			t.Fatalf("ceiling %d is another program on a fresh provider", first+i)
+		}
+	}
+}
+
+// Requests for custom ceilings may arrive together, for the same ceiling and
+// for different ones, while the signer is given its algod client. Each resolves
+// to the account it resolves to alone, and a ceiling built twice is cached once.
+// Run under -race.
+func TestCustomFeeCeilingsResolveConcurrently(t *testing.T) {
+	const distinct, repeats = 24, 6
+	for _, b := range bases(t) {
+		shapes := []plainhost.Shape{
+			{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: plainhost.RekeyRefused, AnyRecipient: true},
+			{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true},
+		}
+		requestFor := func(shape plainhost.Shape, ceiling int) map[string]string {
+			params := shapeRequest(shape, testRecipients(2))
+			params[plainhost.ParameterMaxFee] = strconv.Itoa(ceiling)
+			return params
+		}
+		// What each request resolves to alone, on a provider of its own.
+		alone := bases(t)[slices.IndexFunc(bases(t), func(other base) bool { return other.name == b.name })].provider
+		type key struct{ shape, ceiling int }
+		want := map[key]*lsigprovider.Instance{}
+		for s, shape := range shapes {
+			for c := range distinct {
+				instance, err := alone.ResolveInstance(requestFor(shape, 50_000+c))
+				if err != nil {
+					t.Fatal(err)
+				}
+				want[key{s, c}] = instance
+			}
+		}
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		failures := make(chan string, len(shapes)*distinct*repeats*2)
+		for s, shape := range shapes {
+			for c := range distinct {
+				for range repeats {
+					wg.Go(func() {
+						<-start
+						params := requestFor(shape, 50_000+c)
+						instance, err := b.provider.ResolveInstance(params)
+						if err != nil {
+							failures <- fmt.Sprintf("%s max_fee=%d: %v", shape.Descriptor(), 50_000+c, err)
+							return
+						}
+						expected := want[key{s, c}]
+						if instance.Fingerprint != expected.Fingerprint || instance.BoundaryDigest != expected.BoundaryDigest ||
+							!maps.Equal(instance.Values, expected.Values) || !reflect.DeepEqual(instance.Bounded, expected.Bounded) {
+							failures <- fmt.Sprintf("%s max_fee=%d resolved to another account", shape.Descriptor(), 50_000+c)
+						}
+						if _, err := b.provider.CreationWarnings(params); err != nil {
+							failures <- fmt.Sprintf("%s max_fee=%d: CreationWarnings() error = %v", shape.Descriptor(), 50_000+c, err)
+						}
+						if got, err := b.provider.StoredFingerprint(nil, instance.Bounded); err != nil || got != expected.Fingerprint {
+							failures <- fmt.Sprintf("%s max_fee=%d: StoredFingerprint() = %q, %v", shape.Descriptor(), 50_000+c, got, err)
+						}
+					})
+				}
+			}
+		}
+		// The client arrives while they build.
+		wg.Go(func() {
+			<-start
+			for range 20 {
+				b.provider.SetAlgodClient(nil)
+			}
+		})
+		close(start)
+		wg.Wait()
+		close(failures)
+		for failure := range failures {
+			t.Errorf("%s: %s", b.name, failure)
+		}
+		if got := b.provider.CustomShapeCountForTest(); got != len(shapes)*distinct {
+			t.Fatalf("%s: %d custom programs cached, want one for each of the %d ceilings", b.name, got, len(shapes)*distinct)
+		}
+	}
+}
+
+// A ceiling below what the account's own transactions cost is the user's
+// choice: the account resolves, with one warning naming each path it can't pay
+// for. The default ceiling pays for every path of every shape, so warns of none.
+func TestFeeCeilingWarning(t *testing.T) {
+	const prefix = "Fee limit %d is too low to pay alone. A transaction on its own costs more: "
+	for _, b := range bases(t) {
+		for _, shape := range plainhost.Shapes() {
+			if warnings := creationWarnings(t, b.provider, shapeRequest(shape, testRecipients(2))); len(warnings) != 0 {
+				t.Fatalf("%s %s: the default ceiling warns: %v", b.name, shape.Descriptor(), warnings)
+			}
+		}
+		for _, shape := range feeCeilingShapes {
+			name := b.name + " " + shape.Descriptor()
+			for _, test := range []struct {
+				ceiling string
+				warns   bool
+			}{{"0", true}, {"1", true}, {"999", true}, {"10000", false}, {"20000", false}, {"9007199254740991", false}} {
+				params := shapeRequest(shape, testRecipients(2))
+				params[plainhost.ParameterMaxFee] = test.ceiling
+				instance, err := b.provider.ResolveInstance(params)
+				if err != nil {
+					t.Fatalf("%s max_fee=%s: %v", name, test.ceiling, err)
+				}
+				warnings := creationWarnings(t, b.provider, params)
+				if !test.warns {
+					if len(warnings) != 0 {
+						t.Fatalf("%s max_fee=%s warns: %v", name, test.ceiling, warnings)
+					}
+					continue
+				}
+				if len(warnings) != 1 {
+					t.Fatalf("%s max_fee=%s: %d warnings, want one: %v", name, test.ceiling, len(warnings), warnings)
+				}
+				warning := warnings[0]
+				ceiling, _ := strconv.ParseUint(test.ceiling, 10, 64)
+				if !strings.HasPrefix(warning, fmt.Sprintf(prefix, ceiling)) {
+					t.Fatalf("%s max_fee=%s: warning = %q", name, test.ceiling, warning)
+				}
+				// Below the minimum fee every path the account has is named, the spend
+				// first, and no path it does not have.
+				paths := strings.TrimPrefix(warning, fmt.Sprintf(prefix, ceiling))
+				if !strings.HasPrefix(paths, boundedmeta.PathSpend+" (at least ") {
+					t.Fatalf("%s max_fee=%s: the warning does not lead with the spend path: %q", name, test.ceiling, warning)
+				}
+				hasSpendingRekey := instance.Bounded.Rekey == boundedmeta.RekeySpendingKey
+				if strings.Contains(paths, boundedmeta.PathSpendingRekey+" (at least ") != hasSpendingRekey {
+					t.Fatalf("%s max_fee=%s: spending rekey named = %v: %q", name, test.ceiling, !hasSpendingRekey, warning)
+				}
+				if strings.Contains(paths, boundedmeta.PathListedRekey+" (at least ") != shape.HasRekeyList() {
+					t.Fatalf("%s max_fee=%s: listed rekey named = %v: %q", name, test.ceiling, !shape.HasRekeyList(), warning)
+				}
+				// The warning refuses nothing: the same request generates.
+				if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, withRoot(t, b.provider, params), make([]byte, 3_000)); err != nil {
+					t.Fatalf("%s max_fee=%s: generation refused: %v", name, test.ceiling, err)
+				}
+			}
+		}
+		// An account with no bounds has no ceiling to warn about, and no parameters
+		// at all make the plain program.
+		for _, params := range []map[string]string{nil, request(plainhost.RekeyOnlyThese)} {
+			if warnings := creationWarnings(t, b.provider, params); len(warnings) != 0 {
+				t.Fatalf("%s: an account without bounds warns: %v", b.name, warnings)
+			}
+		}
+	}
+}
+
+// The warning's threshold is a lower bound of what a lone transaction costs: one
+// minimum fee for each transaction the signature arguments need, and the
+// network's charge for the bytes beyond them. A Falcon signature alone needs
+// two transactions; an Ed25519 one needs a second only beside a cosigner's.
+func TestFeeCeilingWarningThreshold(t *testing.T) {
+	uncosigned := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, AnyRecipient: true}
+	cosigned := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: true, AnyRecipient: true}
+	hosts := bases(t)
+	for _, test := range []struct {
+		base      base
+		shape     plainhost.Shape
+		threshold uint64
+	}{
+		{hosts[0], uncosigned, 2_000},
+		{hosts[0], cosigned, 3_060},
+		{hosts[1], uncosigned, 1_000},
+		{hosts[1], cosigned, 2_000},
+	} {
+		name := test.base.name + " " + test.shape.Descriptor()
+		resolve := func(ceiling uint64) []string {
+			params := shapeRequest(test.shape, "")
+			params[plainhost.ParameterMaxFee] = strconv.FormatUint(ceiling, 10)
+			return creationWarnings(t, test.base.provider, params)
+		}
+		if warnings := resolve(test.threshold); len(warnings) != 0 {
+			t.Fatalf("%s: a ceiling of %d warns: %v", name, test.threshold, warnings)
+		}
+		warnings := resolve(test.threshold - 1)
+		want := fmt.Sprintf("Fee limit %d is too low to pay alone. A transaction on its own costs more: spend (at least %d). ", test.threshold-1, test.threshold)
+		if len(warnings) != 1 || !strings.HasPrefix(warnings[0], want) {
+			t.Fatalf("%s: a ceiling of %d: warnings = %v, want one starting %q", name, test.threshold-1, warnings, want)
+		}
+		if !strings.Contains(warnings[0], "another account in the group") {
+			t.Fatalf("%s: the warning does not say how the account can still be used: %q", name, warnings[0])
+		}
+	}
+}
+
+// An inline recipient list is part of the program, 32 bytes an address, so it
+// raises the warning's lower bound wherever those bytes cost a fee. A Merkle
+// list is one root whatever its size, and adds nothing as it grows. An Ed25519
+// account without a cosigner stays within one transaction's free bytes even
+// with the largest inline list.
+func TestFeeCeilingWarningCountsAnInlineList(t *testing.T) {
+	if plainhost.InlineMax != 30 {
+		t.Fatalf("InlineMax = %d: the thresholds below are for 30", plainhost.InlineMax)
+	}
+	hosts := bases(t)
+	for _, test := range []struct {
+		base                  base
+		cosigner              bool
+		inlineOne, inlineFull uint64
+		merkle                uint64
+	}{
+		{hosts[0], false, 2_000, 2_076, 2_000},
+		{hosts[0], true, 3_063, 3_156, 4_000},
+		{hosts[1], false, 1_000, 1_000, 1_000},
+		{hosts[1], true, 2_000, 2_080, 2_000},
+	} {
+		// threshold is the lowest ceiling a request does not warn at. It checks
+		// the warning just below it names that cost for the spend.
+		threshold := func(encoding string, recipients int, want uint64) {
+			t.Helper()
+			shape := plainhost.Shape{Spend: everyTransfer, Encoding: encoding, Rekey: plainhost.RekeyRefused, Cosigner: test.cosigner}
+			name := fmt.Sprintf("%s cosigner=%v %s, %d recipients", test.base.name, test.cosigner, encoding, recipients)
+			params := shapeRequest(shape, testRecipients(recipients))
+			params[plainhost.ParameterMaxFee] = strconv.FormatUint(want, 10)
+			if warnings := creationWarnings(t, test.base.provider, params); len(warnings) != 0 {
+				t.Fatalf("%s: a ceiling of %d warns: %v", name, want, warnings)
+			}
+			params[plainhost.ParameterMaxFee] = strconv.FormatUint(want-1, 10)
+			warnings := creationWarnings(t, test.base.provider, params)
+			prefix := fmt.Sprintf("Fee limit %d is too low to pay alone. A transaction on its own costs more: spend (at least %d). ", want-1, want)
+			if len(warnings) != 1 || !strings.HasPrefix(warnings[0], prefix) {
+				t.Fatalf("%s: a ceiling of %d: warnings = %v, want one starting %q", name, want-1, warnings, prefix)
+			}
+			// The warning is advice: the account still resolves.
+			if _, err := test.base.provider.ResolveInstance(params); err != nil {
+				t.Fatalf("%s: ResolveInstance() error = %v", name, err)
+			}
+		}
+		threshold(plainhost.EncodingInline, 1, test.inlineOne)
+		threshold(plainhost.EncodingInline, plainhost.InlineMax, test.inlineFull)
+		if test.inlineFull < test.inlineOne {
+			t.Fatalf("%s cosigner=%v: a longer inline list lowers the bound", test.base.name, test.cosigner)
+		}
+		// A Merkle list of the same sizes, and of more than inline can hold.
+		for _, recipients := range []int{1, plainhost.InlineMax, plainhost.InlineMax + 34} {
+			threshold(plainhost.EncodingMerkle, recipients, test.merkle)
+		}
+		// Auto is whichever encoding it resolves to: inline up to its limit,
+		// Merkle past it.
+		threshold(plainhost.EncodingAuto, 1, test.inlineOne)
+		threshold(plainhost.EncodingAuto, plainhost.AutoInlineMax+1, test.merkle)
+		threshold(plainhost.EncodingAuto, plainhost.InlineMax, test.merkle)
+	}
+
+	// An Ed25519 account alone, at one minimum fee: the bound does not move with
+	// the list, so a ceiling of 1,000 warns of nothing at either size.
+	for _, recipients := range []int{1, plainhost.InlineMax} {
+		shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
+		params := shapeRequest(shape, testRecipients(recipients))
+		params[plainhost.ParameterMaxFee] = "1000"
+		if warnings := creationWarnings(t, hosts[1].provider, params); len(warnings) != 0 {
+			t.Fatalf("ed25519, %d inline recipients, max_fee=1000: warnings = %v", recipients, warnings)
+		}
+	}
+}
+
+// The advice is worked out from the request, so a request the provider refuses
+// has none to give: it returns the refusal, not an empty list.
+func TestCreationWarningsRefuseWhatTheProviderRefuses(t *testing.T) {
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
+	for _, b := range bases(t) {
+		for name, mutate := range map[string]func(map[string]string){
+			"an empty parameter":     func(p map[string]string) { p[plainhost.ParameterMaxFee] = " " },
+			"a ceiling not a number": func(p map[string]string) { p[plainhost.ParameterMaxFee] = "010" },
+			"a ceiling too large":    func(p map[string]string) { p[plainhost.ParameterMaxFee] = "9007199254740992" },
+			"an unknown transfer":    func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "appl" },
+			"too long an inline list": func(p map[string]string) {
+				p[plainhost.ParameterRecipients] = testRecipients(plainhost.InlineMax + 1)
+			},
+		} {
+			params := shapeRequest(shape, testRecipients(2))
+			mutate(params)
+			_, resolveErr := b.provider.ResolveInstance(params)
+			warnings, err := b.provider.CreationWarnings(params)
+			if err == nil || resolveErr == nil || err.Error() != resolveErr.Error() || warnings != nil {
+				t.Fatalf("%s: %s: CreationWarnings() = %v, %v; ResolveInstance() error = %v", b.name, name, warnings, err, resolveErr)
+			}
+		}
+		// A request with an overlay but no bounds is valid and has no advice, even
+		// where the overlay itself would be refused: that is ResolveInstance's to say.
+		if warnings, err := b.provider.CreationWarnings(map[string]string{plainhost.ParameterRekeyAuthority: "nobody"}); err != nil || warnings != nil {
+			t.Fatalf("%s: CreationWarnings(no bounds) = %v, %v", b.name, warnings, err)
+		}
+	}
+}
+
+// ParseMaxFee is the one reader of a fee ceiling's text, for a request, a
+// boundary file and the provider: the plain decimal form alone, spaces around it
+// aside, up to the largest whole number every client reads exactly.
+func TestParseMaxFee(t *testing.T) {
+	if boundedmeta.MaxFeeLimit != 9007199254740991 {
+		t.Fatalf("MaxFeeLimit = %d", uint64(boundedmeta.MaxFeeLimit))
+	}
+	if boundary.DefaultMaxFeeText != "10000" || boundary.DefaultMaxFee != 10_000 {
+		t.Fatalf("default = %q, %d", boundary.DefaultMaxFeeText, uint64(boundary.DefaultMaxFee))
+	}
+	for _, test := range []struct {
+		text string
+		want uint64
+	}{
+		{"0", 0}, {"1", 1}, {"999", 999}, {"10000", 10_000}, {boundary.DefaultMaxFeeText, boundary.DefaultMaxFee},
+		{"20000", 20_000}, {" 20000 ", 20_000}, {"\t20000\n", 20_000},
+		{"4294967296", 1 << 32}, {"9007199254740990", 1<<53 - 2}, {"9007199254740991", boundedmeta.MaxFeeLimit},
+	} {
+		got, err := boundary.ParseMaxFee(test.text)
+		if err != nil || got != test.want {
+			t.Errorf("ParseMaxFee(%q) = %d, %v; want %d", test.text, got, err, test.want)
+		}
+		// Every accepted value survives a JSON number, which is why the limit is there.
+		if float := float64(got); uint64(float) != got {
+			t.Errorf("ParseMaxFee(%q) = %d does not survive a float64", test.text, got)
+		}
+	}
+	const notANumber = "max_fee must be a whole number of microAlgos: %q"
+	for _, text := range []string{
+		"", " ", "abc", "-1", "-0", "+5", "+0", "00", "010", "0x10", "0o17", "0b11", "10_000", "10,000", "1.5", "1.0", "1e4", "1 000",
+		"１０", "true", "null", "18446744073709551616", "99999999999999999999999999",
+	} {
+		got, err := boundary.ParseMaxFee(text)
+		if want := fmt.Sprintf(notANumber, text); err == nil || err.Error() != want || got != 0 {
+			t.Errorf("ParseMaxFee(%q) = %d, %v; want error %q", text, got, err, want)
+		}
+	}
+	for _, text := range []string{"9007199254740992", "9007199254740993", " 9007199254740992 ", "18446744073709551615"} {
+		got, err := boundary.ParseMaxFee(text)
+		want := "max_fee " + strings.TrimSpace(text) + " is above 9007199254740991, the largest value every client reads exactly"
+		if err == nil || err.Error() != want || got != 0 {
+			t.Errorf("ParseMaxFee(%q) = %d, %v; want error %q", text, got, err, want)
+		}
 	}
 }
 

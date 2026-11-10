@@ -31,6 +31,8 @@ import (
 const (
 	boundedIntegrationKeyType = "aplane.test-falcon1024-bounded.v1"
 	boundedExecutionGroupSize = 7
+	// boundedIntegrationMaxFee is the fee ceiling these profiles compile.
+	boundedIntegrationMaxFee uint64 = 10_000
 )
 
 func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
@@ -182,8 +184,8 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 				return corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, assetID, "bounded-asset-opt-in")
 			},
 		},
-		{name: "fee at profile ceiling", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFee) }, wantShape: txeffects.ShapePureSpend, wantAccept: true},
-		{name: "fee above profile", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFee + 1) }, wantShape: txeffects.ShapePureSpend},
+		{name: "fee at profile ceiling", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(boundedIntegrationMaxFee) }, wantShape: txeffects.ShapePureSpend, wantAccept: true},
+		{name: "fee above profile", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(boundedIntegrationMaxFee + 1) }, wantShape: txeffects.ShapePureSpend},
 		{name: "close remainder", mutate: func(txn *types.Transaction) { txn.CloseRemainderTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
 		{name: "asset close", build: func() types.Transaction { return assetTxn("bounded-agreement-asset-close") }, mutate: func(txn *types.Transaction) { txn.AssetCloseTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
 		{name: "clawback", build: func() types.Transaction { return assetTxn("bounded-agreement-clawback") }, mutate: func(txn *types.Transaction) { txn.AssetSender = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
@@ -244,7 +246,7 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 			}
 			classifierAccept := classification.Shape == txeffects.ShapePureSpend ||
 				classification.Shape == txeffects.ShapePureRekey
-			classifierAccept = classifierAccept && uint64(txn.Fee) <= composeddsa.BoundedMaxFee
+			classifierAccept = classifierAccept && uint64(txn.Fee) <= boundedIntegrationMaxFee
 			if classification.Shape == txeffects.ShapePureSpend {
 				switch txn.Type {
 				case types.PaymentTx:
@@ -412,7 +414,7 @@ func (account boundedExecutionAccount) signedGroup(t *testing.T, targetTxn types
 func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, targetTxn types.Transaction, layer3Args [][]byte) ([]types.SignedTxn, string) {
 	t.Helper()
 	minFee := uint64(1_000)
-	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < composeddsa.BoundedMaxFee+1 {
+	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < boundedIntegrationMaxFee+1 {
 		minFee = uint64(targetTxn.Fee)
 	}
 	minimumGroupFee := types.MicroAlgos(boundedExecutionGroupSize * 1_000)
@@ -498,7 +500,7 @@ func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizat
 func boundedIntegrationProfile(allowed []txeffects.SpendEffect, rekey boundedmeta.RekeySetting) *composeddsa.BoundedAuthorizationProfile {
 	return &composeddsa.BoundedAuthorizationProfile{
 		Contract: composeddsa.BoundedContract, SpendEffects: allowed,
-		MaxFee: new(uint64(composeddsa.BoundedMaxFee)), Rekey: rekey,
+		MaxFee: new(uint64(boundedIntegrationMaxFee)), Rekey: rekey,
 	}
 }
 

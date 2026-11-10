@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -542,9 +544,9 @@ func boundsFamilies() []boundsFamily {
 }
 
 // BuildBoundedAuthorizationMetadata runs the generation backstop, so each account
-// here, every Falcon-1024 plain host shape, passed the production solver and fee
-// ceiling at its list size. The simulation then shows the declared opcode
-// ceilings hold on the costliest path.
+// here, every Falcon-1024 plain host shape, passed the production solver at its
+// list size. The simulation then shows the declared opcode ceilings hold on the
+// costliest path.
 func TestBoundedGeneralResourceMatrix(t *testing.T) {
 	network, err := harness.NewTestnetConfig()
 	if err != nil {
@@ -576,7 +578,7 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 	fullRekeyTo := addresses(rekeylist.MaxEntries)
 	for _, shape := range plainhost.Shapes() {
 		account := newBoundsAccount(t, provider, shape, longest[shape.Encoding], fullRekeyTo)
-		if account.metadata.MaxFee == nil || *account.metadata.MaxFee != plainhost.MaxFee {
+		if account.metadata.MaxFee == nil || *account.metadata.MaxFee != plainhost.DefaultMaxFee {
 			t.Fatalf("%s MaxFee = %v", shape.Descriptor(), account.metadata.MaxFee)
 		}
 		t.Logf("%s: %d program bytes", shape.Descriptor(), len(account.bytecode))
@@ -814,4 +816,237 @@ func TestBoundsThroughSigner(t *testing.T) {
 		}
 		assertAuthorAllowlistInventory(t, client, account, policy)
 	}
+}
+
+// The fee ceiling is the account's own, through the signer as an operator gets
+// it. An account generated with max_fee=20000 signs a spend whose fee the
+// default ceiling refuses, and still does after a restart, when the signer first
+// meets its program through the stored metadata. An account generated with
+// max_fee=0 is created all the same: it cannot pay for a transaction of its own,
+// so its lone spend is refused, and the same spend goes through in a group
+// where a signer-held sponsor's payment carries every fee.
+func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
+	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
+		t.Skip("TEST_FUNDING_MNEMONIC not set, skipping funding-backed test")
+	}
+	lockOnDisconnect := false
+	harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
+	network, err := harness.NewTestnetConfig()
+	if err != nil {
+		t.Fatalf("connect to network: %v", err)
+	}
+	funder, err := harness.NewFundTestAccount(network.Client)
+	if err != nil {
+		t.Fatalf("load funding account: %v", err)
+	}
+	signerd := harness.NewSignerHarness(t)
+	if err := signerd.Start(); err != nil {
+		t.Fatalf("start signer: %v", err)
+	}
+	t.Cleanup(func() { _ = signerd.Stop() })
+	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
+	t.Cleanup(apadmin.Cleanup)
+	if err := apadmin.UnlockSigner(); err != nil {
+		t.Fatalf("unlock signer: %v", err)
+	}
+	client := signerclient.NewSignerClient(signerd.GetURL())
+	// The sponsor is a key the signer holds, so the signer can put its own
+	// authorization charge on the sponsor's payment.
+	sponsor, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC"))
+	if err != nil {
+		t.Fatalf("import the sponsor key: %v", err)
+	}
+	if sponsor != funder.GetAddress() {
+		t.Fatalf("imported sponsor %s is not the funding account %s", sponsor, funder.GetAddress())
+	}
+	if !waitForKey(t, signerd.GetURL(), sponsor, 10*time.Second) {
+		t.Fatalf("signer did not load the sponsor key %s", sponsor)
+	}
+
+	allowed := algocrypto.GenerateAccount().Address.String()
+	if err := funder.FundMicroAlgosAndWait(allowed, 200_000); err != nil {
+		t.Fatalf("fund recipient: %v", err)
+	}
+	// Each account is uncosigned: an inline allowlist of one, rekeyed by the
+	// spending key alone.
+	generate := func(maxFee string) string {
+		t.Helper()
+		params := map[string]string{
+			plainhost.ParameterSpendEffects:   "pay",
+			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+			plainhost.ParameterRecipients:     allowed,
+		}
+		if maxFee != "" {
+			params[plainhost.ParameterMaxFee] = maxFee
+		}
+		account := mustAdminGenerateKeyNoCleanup(t, client, signerd, plainFalconKeyType, params)
+		if err := funder.FundMicroAlgosAndWait(account, 1_000_000); err != nil {
+			t.Fatalf("fund account: %v", err)
+		}
+		return account
+	}
+	storedMaxFee := func(account string) uint64 {
+		t.Helper()
+		keys, err := client.GetKeys()
+		if err != nil {
+			t.Fatalf("list keys: %v", err)
+		}
+		for _, key := range keys.Keys {
+			if key.Address != account {
+				continue
+			}
+			if key.BoundedAuthorization == nil || key.BoundedAuthorization.MaxFee == nil {
+				t.Fatalf("inventory for %s has no fee ceiling: %#v", account, key.BoundedAuthorization)
+			}
+			return *key.BoundedAuthorization.MaxFee
+		}
+		t.Fatalf("inventory has no %s", account)
+		return 0
+	}
+	// spend is a payment of 0.1 ALGO from account to the allowed recipient at
+	// the given fee, never the suggested one.
+	spend := func(account string, fee uint64, note string) signerapi.SignRequest {
+		t.Helper()
+		txn := mustPaymentTxnForMatrix(t, mustSuggestedParams(t, network), account, allowed, note, "", 0)
+		txn.Amount = 100_000
+		txn.Fee = types.MicroAlgos(fee)
+		return signerapi.SignRequest{AuthAddress: account, TxnBytesHex: txnHexForMatrix(txn)}
+	}
+	// sign posts ungrouped requests, so the signer plans the group and its fees.
+	sign := func(requests ...signerapi.SignRequest) (int, signerapi.GroupSignResponse, string) {
+		t.Helper()
+		status, body := postSignRequest(t, signerd.GetURL(), signerapi.GroupSignRequest{Requests: requests})
+		var response signerapi.GroupSignResponse
+		if status == http.StatusOK {
+			if err := json.Unmarshal(body, &response); err != nil {
+				t.Fatalf("parse sign response: %v\n%s", err, body)
+			}
+		}
+		return status, response, string(body)
+	}
+	confirm := func(signed []string) {
+		t.Helper()
+		txids := submitSignedTxnGroup(t, network, signed)
+		if _, err := network.WaitForConfirmation(txids[0], 10); err != nil {
+			t.Fatalf("group %s failed to confirm: %v", txids[0], err)
+		}
+	}
+	balance := func(account string) uint64 {
+		t.Helper()
+		info, err := network.Client.AccountInformation(account).Do(context.Background())
+		if err != nil {
+			t.Fatalf("read %s: %v", account, err)
+		}
+		return info.Amount
+	}
+	minFee := mustSuggestedParams(t, network).MinFee
+	if minFee == 0 {
+		minFee = 1_000
+	}
+
+	raised := generate("20000")
+	standard := generate("")
+	unfunded := generate("0")
+	for account, want := range map[string]uint64{raised: 20_000, standard: plainhost.DefaultMaxFee, unfunded: 0} {
+		if got := storedMaxFee(account); got != want {
+			t.Fatalf("%s MaxFee = %d, want %d", account, got, want)
+		}
+	}
+
+	t.Run("a raised ceiling signs a fee above the default", func(t *testing.T) {
+		// The client's own fee is 15,000; the signer's charge goes on top, within
+		// the account's 20,000.
+		const clientFee = 15_000
+		if status, _, body := sign(spend(standard, clientFee, "fee-ceiling-default-over")); status == http.StatusOK || !strings.Contains(body, "exceeds account maximum") {
+			t.Fatalf("the default ceiling signed a fee of %d: status %d\n%s", clientFee, status, body)
+		}
+		if status, _, body := sign(spend(raised, 20_001, "fee-ceiling-raised-over")); status == http.StatusOK || !strings.Contains(body, "exceeds account maximum") {
+			t.Fatalf("a ceiling of 20000 signed a fee of 20001: status %d\n%s", status, body)
+		}
+		before := balance(allowed)
+		status, response, body := sign(spend(raised, clientFee, "fee-ceiling-raised"))
+		if status != http.StatusOK || response.Error != "" || len(response.Signed) == 0 {
+			t.Fatalf("a ceiling of 20000 refused a fee of %d: status %d\n%s", clientFee, status, body)
+		}
+		signedFee := uint64(decodeSignedTxnHex(t, response.Signed[0]).Txn.Fee)
+		if signedFee < clientFee || signedFee <= plainhost.DefaultMaxFee || signedFee > 20_000 {
+			t.Fatalf("signed fee = %d, want above %d and at most 20000", signedFee, plainhost.DefaultMaxFee)
+		}
+		confirm(response.Signed)
+		if got := balance(allowed); got != before+100_000 {
+			t.Fatalf("recipient holds %d, want %d", got, before+100_000)
+		}
+	})
+
+	t.Run("a zero ceiling needs a sponsor", func(t *testing.T) {
+		// Alone, nothing can pay: a fee of zero is below what the network asks of
+		// the group, and any fee at all is above the account's ceiling.
+		if status, _, body := sign(spend(unfunded, 0, "fee-ceiling-zero-lone")); status == http.StatusOK {
+			t.Fatalf("a lone spend at fee 0 was signed:\n%s", body)
+		} else {
+			t.Logf("lone spend at fee 0: status %d: %s", status, body)
+		}
+		if status, _, body := sign(spend(unfunded, minFee, "fee-ceiling-zero-lone-paid")); status == http.StatusOK || !strings.Contains(body, "exceeds account maximum") {
+			t.Fatalf("a zero ceiling signed a fee of %d: status %d\n%s", minFee, status, body)
+		}
+
+		// With a sponsor in the group the spend pays nothing: the sponsor's
+		// payment covers the network's fee for both transactions, and takes the
+		// signer's authorization charge as well.
+		sponsorTxn := mustPaymentTxnForMatrix(t, mustSuggestedParams(t, network), sponsor, sponsor, "fee-ceiling-zero-sponsor", "", 0)
+		sponsorTxn.Fee = types.MicroAlgos(2 * minFee)
+		accountBefore, recipientBefore := balance(unfunded), balance(allowed)
+		status, response, body := sign(
+			spend(unfunded, 0, "fee-ceiling-zero-sponsored"),
+			signerapi.SignRequest{AuthAddress: sponsor, TxnBytesHex: txnHexForMatrix(sponsorTxn)},
+		)
+		if status != http.StatusOK || response.Error != "" || len(response.Signed) < 2 {
+			t.Fatalf("the sponsored group was refused: status %d\n%s", status, body)
+		}
+		spendTxn, paid := decodeSignedTxnHex(t, response.Signed[0]).Txn, decodeSignedTxnHex(t, response.Signed[1]).Txn
+		if spendTxn.Sender.String() != unfunded || spendTxn.Fee != 0 {
+			t.Fatalf("the account's spend carries a fee of %d from %s, want 0 from %s", spendTxn.Fee, spendTxn.Sender, unfunded)
+		}
+		if paid.Sender.String() != sponsor || uint64(paid.Fee) < 2*minFee {
+			t.Fatalf("the sponsor's payment carries %d from %s, want at least %d from %s", paid.Fee, paid.Sender, 2*minFee, sponsor)
+		}
+		confirm(response.Signed)
+		if got := balance(allowed); got != recipientBefore+100_000 {
+			t.Fatalf("recipient holds %d, want %d", got, recipientBefore+100_000)
+		}
+		// The account paid the amount and not one microAlgo of fee.
+		if got := balance(unfunded); got != accountBefore-100_000 {
+			t.Fatalf("the account holds %d, want %d", got, accountBefore-100_000)
+		}
+	})
+
+	// After a restart the signer rebuilds each custom-ceiling program from the
+	// stored metadata, and each account keeps its ceiling.
+	if err := signerd.Stop(); err != nil {
+		t.Fatalf("stop signer: %v", err)
+	}
+	if err := signerd.Start(); err != nil {
+		t.Fatalf("restart signer: %v", err)
+	}
+	if err := apadmin.UnlockSigner(); err != nil {
+		t.Fatalf("unlock signer: %v", err)
+	}
+	client = signerclient.NewSignerClient(signerd.GetURL())
+	for account, want := range map[string]uint64{raised: 20_000, standard: plainhost.DefaultMaxFee, unfunded: 0} {
+		if !waitForKey(t, signerd.GetURL(), account, 10*time.Second) {
+			t.Fatalf("signer did not rescan %s", account)
+		}
+		if got := storedMaxFee(account); got != want {
+			t.Fatalf("after a restart %s MaxFee = %d, want %d", account, got, want)
+		}
+		assertAuthorAllowlistInventory(t, client, account, composeddsa.Layer3PolicyFixedAllowlist)
+	}
+	status, response, body := sign(spend(raised, 15_000, "fee-ceiling-raised-after-restart"))
+	if status != http.StatusOK || response.Error != "" || len(response.Signed) == 0 {
+		t.Fatalf("after a restart a ceiling of 20000 refused a fee of 15000: status %d\n%s", status, body)
+	}
+	if fee := uint64(decodeSignedTxnHex(t, response.Signed[0]).Txn.Fee); fee <= plainhost.DefaultMaxFee || fee > 20_000 {
+		t.Fatalf("after a restart the signed fee = %d", fee)
+	}
+	confirm(response.Signed)
 }

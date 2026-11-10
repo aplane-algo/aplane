@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // preparedAccount is a prepared bounded generation with the given rekey setting.
@@ -75,6 +76,141 @@ func TestReviewKeepsItsButtonsAt80x24(t *testing.T) {
 				t.Errorf("review scrolls at 80x24:\n%s", view)
 			}
 		})
+	}
+}
+
+// feeLimitWarning is the signer's warning for a fee limit below what the named
+// paths cost, as lsig/plainhost words it.
+func feeLimitWarning(limit uint64, paths string) string {
+	return fmt.Sprintf("Fee limit %d is too low to pay alone. A transaction on its own costs more: %s. "+
+		"Batch it with others that share the cost, or have another account in the group pay its fees.", limit, paths)
+}
+
+// flatReview is a rendered review as running text, without the frame.
+func flatReview(view string) string {
+	return strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(view), "║", " ")), " ")
+}
+
+// The signer's warnings are shown on the main review, each as one "Warning:"
+// line above the buttons that points at the details, which have it in full. A
+// result without any shows none.
+func TestReviewShowsTheSignersWarnings(t *testing.T) {
+	short := feeLimitWarning(0, "spend (at least 2000)")
+	long := feeLimitWarning(0, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
+	for _, test := range []struct {
+		name     string
+		warnings []string
+	}{
+		{"none", nil},
+		{"empty", []string{}},
+		{"one path", []string{short}},
+		{"every path", []string{long}},
+		{"two warnings", []string{short, "A second note from the signer."}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 2)
+			prepared.Bounded.MaxFee = new(uint64(0))
+			prepared.Warnings = test.warnings
+			m := Model{viewState: ViewGenerateReview, width: 80, height: 400, standalone: true, forms: formsState{review: &prepared}}
+			view := flatReview(m.renderGenerateReview())
+			if got := strings.Count(view, "Warning:"); got != len(test.warnings) {
+				t.Fatalf("%d warnings shown, want %d:\n%s", got, len(test.warnings), view)
+			}
+			position := 0
+			for _, warning := range test.warnings {
+				line := reviewWarningLine(warning)
+				if lipgloss.Width(line) > reviewBodyWidth || !strings.HasSuffix(line, " See details.") {
+					t.Fatalf("warning line %q does not fit one row of the review", line)
+				}
+				at := strings.Index(view[position:], line)
+				if at < 0 {
+					t.Fatalf("review lacks %q, or shows it out of order:\n%s", line, view)
+				}
+				position += at + 1
+				m.viewState = ViewGenerateReviewDetails
+				if details := flatReview(m.renderGenerateReviewDetails()); !strings.Contains(details, warning) {
+					t.Fatalf("details lack the full warning %q:\n%s", warning, details)
+				}
+			}
+			// A warning refuses nothing: the review still offers every button, after it.
+			for _, button := range []string{"CANCEL", "DETAILS", "GENERATE"} {
+				if at := strings.Index(view, button); at < position {
+					t.Fatalf("%s is missing or above the warning:\n%s", button, view)
+				}
+			}
+			if !strings.Contains(view, "fee limit 0") {
+				t.Fatalf("review lacks the fee limit:\n%s", view)
+			}
+		})
+	}
+}
+
+// A review with a warning still fits the smallest window: every line of it and
+// the buttons, without the panel scroller.
+func TestReviewWithAWarningFitsAt80x24(t *testing.T) {
+	onePath := feeLimitWarning(0, "spend (at least 2000)")
+	twoPaths := feeLimitWarning(999, "spend (at least 2000), spending_rekey (at least 2000)")
+	everyPath := feeLimitWarning(1999, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
+	for _, test := range []struct {
+		name          string
+		policy, rekey string
+		cosigner      bool
+		rekeyTo       int
+		classical     bool
+		warning       string
+	}{
+		{"limits only, refused", boundedmeta.Layer3PolicyNone, boundary.RekeyRefused, false, 0, false, onePath},
+		{"inline, spending key", boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 0, false, twoPaths},
+		{"inline, spending key, classical", boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 0, true, twoPaths},
+		{"merkle, refused, cosigned", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeyRefused, true, 0, false, onePath},
+		{"merkle, cosigned spending key", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, 0, false, twoPaths},
+		{"merkle, only these, cosigned", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeyRefused, true, 2, false, onePath},
+		{"merkle, plus cosigned", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, 2, false, everyPath},
+		{"merkle, plus cosigned, classical", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, 2, true, everyPath},
+	} {
+		for _, standalone := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/standalone=%v", test.name, standalone), func(t *testing.T) {
+				prepared := preparedAccount(test.policy, test.rekey, test.cosigner, 2)
+				prepared.Bounded.Contract = boundedmeta.Contract
+				prepared.Bounded.MaxFee = new(uint64(0))
+				if test.rekeyTo > 0 {
+					targets := make([]string, test.rekeyTo)
+					for i := range targets {
+						targets[i] = testAddress(byte(i + 1))
+					}
+					prepared.Bounded.RekeyList = true
+					prepared.Parameters[boundary.ParameterRekeyTo] = strings.Join(targets, ",")
+				}
+				if test.classical {
+					prepared.KeyType = "aplane.ed25519.v1"
+				}
+				prepared.Warnings = []string{test.warning}
+
+				base := Model{viewState: ViewGenerateReview, standalone: standalone, connectionState: ConnectionConnected, forms: formsState{review: &prepared}}
+				m := sizedForTest(t, base, MinWidth, MinHeight)
+				view := stripANSI(m.View())
+				lines := strings.Split(view, "\n")
+				if len(lines) > MinHeight {
+					t.Errorf("%d lines in a %d-line window", len(lines), MinHeight)
+				}
+				for _, line := range lines {
+					if lipgloss.Width(line) > MinWidth {
+						t.Errorf("line wider than the window: %q", line)
+					}
+				}
+				tall := sizedForTest(t, base, MinWidth, 400)
+				need := strings.Count(strings.TrimRight(stripANSI(tall.renderViewContent()), "\n"), "\n") + 1
+				if strings.Contains(view, "Panel lines") || need > m.windowBodyHeight() {
+					t.Fatalf("the review needs %d rows and has %d, so it scrolls or is cut off:\n%s", need, m.windowBodyHeight(), view)
+				}
+				flat := flatReview(view)
+				for _, want := range []string{reviewWarningLine(test.warning), "CANCEL", "DETAILS", "GENERATE", "fee limit 0"} {
+					if !strings.Contains(flat, want) {
+						t.Errorf("review lacks %q:\n%s", want, view)
+					}
+				}
+			})
+		}
 	}
 }
 

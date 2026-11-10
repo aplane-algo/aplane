@@ -85,8 +85,10 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 				t.Fatalf("generate request parameters = %#v, want label=alice", body.Parameters)
 			}
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.AdminGenerateResponse{
-				Address: addr,
-				KeyType: "ed25519",
+				Address:    addr,
+				KeyType:    "ed25519",
+				Parameters: map[string]string{"label": "alice", "max_fee": "0"},
+				Warnings:   []string{"Fee limit 0 is too low to pay alone.", "a second note"},
 			}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
@@ -107,6 +109,10 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 	}
 	if got.Address != addr || got.KeyType != "ed25519" {
 		t.Fatalf("GenerateKey() = %#v, want address=%s keyType=ed25519", got, addr)
+	}
+	// The signer's resolved parameters and its advice reach the caller as sent.
+	if got.Parameters["max_fee"] != "0" || len(got.Warnings) != 2 || got.Warnings[0] != "Fee limit 0 is too low to pay alone." || got.Warnings[1] != "a second note" {
+		t.Fatalf("GenerateKey() parameters = %v, warnings = %q", got.Parameters, got.Warnings)
 	}
 	if eng.SignerCache.GetKeyType(addr) != "ed25519" {
 		t.Fatalf("SignerCache key type = %q, want ed25519", eng.SignerCache.GetKeyType(addr))
@@ -185,6 +191,9 @@ func TestEngineGenerateKeyIgnoresRefreshFailure(t *testing.T) {
 	}
 	if got.Address != addr || got.KeyType != "ed25519" {
 		t.Fatalf("GenerateKey() = %#v, want address=%s keyType=ed25519", got, addr)
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("GenerateKey() warnings = %q for a response with none", got.Warnings)
 	}
 	if eng.SignerCache.Count() != 0 {
 		t.Fatalf("SignerCache.Count() = %d, want unchanged cache after ignored refresh failure", eng.SignerCache.Count())

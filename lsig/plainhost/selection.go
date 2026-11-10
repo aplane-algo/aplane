@@ -6,10 +6,12 @@ package plainhost
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -17,7 +19,9 @@ import (
 
 // selection is the shape and canonical values one bounds request resolves to.
 type selection struct {
-	shape  Shape
+	shape Shape
+	// maxFee is the fee ceiling the shape is compiled with.
+	maxFee uint64
 	values map[string]string
 }
 
@@ -44,6 +48,10 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, err
 	}
 	scope, err := canonicalRecipientScope(params)
+	if err != nil {
+		return nil, err
+	}
+	maxFee, err := canonicalMaxFee(params)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +85,12 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if anyRecipient {
 		values[ParameterRecipientScope] = RecipientScopeAny
 	}
+	// Likewise only a ceiling other than the default.
+	if maxFee != DefaultMaxFee {
+		values[ParameterMaxFee] = strconv.FormatUint(maxFee, 10)
+	}
 	return &selection{
+		maxFee: maxFee,
 		shape: Shape{
 			Spend: spend, Encoding: encoding, Rekey: overlays.arrangement.Rekey, Cosigner: overlays.arrangement.Cosigner,
 			AnyRecipient: anyRecipient,
@@ -179,6 +192,16 @@ func canonicalRecipientScope(params map[string]string) (string, error) {
 	default:
 		return "", fmt.Errorf("%s must be %s or %s", ParameterRecipientScope, RecipientScopeListed, RecipientScopeAny)
 	}
+}
+
+// canonicalMaxFee returns the fee ceiling, the default when the request names
+// none.
+func canonicalMaxFee(params map[string]string) (uint64, error) {
+	value, present := params[ParameterMaxFee]
+	if !present {
+		return DefaultMaxFee, nil
+	}
+	return boundary.ParseMaxFee(value)
 }
 
 func canonicalSpend(value string) ([]txeffects.SpendEffect, error) {

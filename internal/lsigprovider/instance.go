@@ -32,6 +32,13 @@ type Instance struct {
 	BoundaryDigest string
 }
 
+// CreationAdvisor is implemented by providers that have advice about a creation
+// request: what a reviewer should know before creating the account. A warning
+// never refuses the request; an error means the advice could not be worked out.
+type CreationAdvisor interface {
+	CreationWarnings(params map[string]string) ([]string, error)
+}
+
 // InstanceResolver is implemented by providers whose contract varies by key.
 // Providers that do not implement it have one fixed contract, and the package
 // functions below adapt them.

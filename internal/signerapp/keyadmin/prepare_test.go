@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -264,6 +265,7 @@ func TestProjectPrepareGenerateIPC(t *testing.T) {
 	result := ProjectPrepareGenerateIPC(&PreparedGeneration{
 		KeyType: "test.projected.v1", Parameters: map[string]string{"recipients": "A"}, Fingerprint: "1:abc",
 		CosignerKeyID: "COSIGNER",
+		Warnings:      []string{"first warning", "second warning"},
 		Bounded: &boundedmeta.Metadata{
 			Contract: boundedmeta.Contract, SpendEffects: []string{"pay"}, MaxFee: new(uint64(10_000)),
 			Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist,
@@ -276,8 +278,16 @@ func TestProjectPrepareGenerateIPC(t *testing.T) {
 		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
 	}
+	// The provider's warnings reach the reviewer in order; a result without any
+	// carries none, and neither does a failure.
+	if !slices.Equal(result.Warnings, []string{"first warning", "second warning"}) {
+		t.Fatalf("Warnings = %q", result.Warnings)
+	}
+	if quiet := ProjectPrepareGenerateIPC(&PreparedGeneration{KeyType: "test.projected.v1"}, nil); !quiet.Success || len(quiet.Warnings) != 0 {
+		t.Fatalf("a preparation without warnings projects %q", quiet.Warnings)
+	}
 	failed := ProjectPrepareGenerateIPC(nil, &Error{Kind: ErrorInvalidInput, Message: "bad request"})
-	if failed.Success || failed.Error != "bad request" || failed.Code == "" {
+	if failed.Success || failed.Error != "bad request" || failed.Code == "" || len(failed.Warnings) != 0 {
 		t.Fatalf("failed = %+v", failed)
 	}
 }

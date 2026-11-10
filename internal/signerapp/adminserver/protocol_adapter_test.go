@@ -29,6 +29,45 @@ func TestProtocolRestoreBackupResultOmitsProcessLocalCommitState(t *testing.T) {
 	}
 }
 
+// The signer's warnings reach the review on the wire, in order. A result without
+// any carries no warnings field at all.
+func TestProtocolPrepareGenerateResultCarriesWarnings(t *testing.T) {
+	warnings := []string{
+		"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).",
+		"a second note",
+	}
+	msg := ProtocolPrepareGenerateResultMessage("prepare-1", adminproto.PrepareGenerateKeyResult{
+		Success: true, KeyType: "aplane.falcon1024.v1", Warnings: warnings,
+		Bounded: &adminproto.PreparedBoundedProfile{Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)), Rekey: "refused"},
+	})
+	if len(msg.Warnings) != 2 || msg.Warnings[0] != warnings[0] || msg.Warnings[1] != warnings[1] {
+		t.Fatalf("Warnings = %q", msg.Warnings)
+	}
+	wire, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded protocol.PrepareGenerateResultMessage
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if !decoded.Success || len(decoded.Warnings) != 2 || decoded.Warnings[0] != warnings[0] || decoded.Warnings[1] != warnings[1] {
+		t.Fatalf("decoded = %+v from %s", decoded, wire)
+	}
+	// A fee limit of zero is a value on the wire, not an absent one.
+	if decoded.Bounded == nil || decoded.Bounded.MaxFee == nil || *decoded.Bounded.MaxFee != 0 || !strings.Contains(string(wire), `"max_fee":0`) {
+		t.Fatalf("a zero fee limit was lost: %s", wire)
+	}
+
+	quiet, err := json.Marshal(ProtocolPrepareGenerateResultMessage("prepare-2", adminproto.PrepareGenerateKeyResult{Success: true, KeyType: "aplane.falcon1024.v1"}))
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(quiet), "warnings") {
+		t.Fatalf("a result without warnings names them: %s", quiet)
+	}
+}
+
 func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
 	msg := ProtocolKeyDetailsMessage("details-1", adminproto.GetKeyDetailsResult{
 		Success:      true,

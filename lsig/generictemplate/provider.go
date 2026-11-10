@@ -611,8 +611,18 @@ func requireStringScalars(node *yaml.Node, integerFields []string) error {
 	case yaml.MappingNode:
 		for i := 0; i < len(node.Content); i += 2 {
 			key, value := node.Content[i], node.Content[i+1]
-			if value.Kind == yaml.ScalarNode && value.Tag == "!!int" && slices.Contains(integerFields, key.Value) {
-				continue
+			if value.Kind == yaml.ScalarNode && slices.Contains(integerFields, key.Value) {
+				if value.Tag == "!!int" {
+					continue
+				}
+				// A number YAML did not read as an integer: a fraction, an
+				// exponent, or one too large.
+				if value.Tag != "!!str" {
+					if value.Value == "" {
+						return fmt.Errorf("%s on line %d is empty", key.Value, value.Line)
+					}
+					return fmt.Errorf("%s on line %d must be a whole number: %q", key.Value, value.Line, value.Value)
+				}
 			}
 			if err := requireStringScalars(key, integerFields); err != nil {
 				return err

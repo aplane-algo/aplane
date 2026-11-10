@@ -482,6 +482,8 @@ type GenerateKeyCommandResult struct {
 	// Parameters are the canonical values the signer resolved and stored.
 	Parameters    map[string]string
 	CosignerKeyID string
+	// Warnings are the signer's advice about the account it created.
+	Warnings []string
 }
 
 // ValidateItemResult describes one validate attempt.

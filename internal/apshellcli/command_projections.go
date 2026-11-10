@@ -127,6 +127,7 @@ type generatedKeyProjection struct {
 	Address       string            `json:"address"`
 	Parameters    map[string]string `json:"parameters,omitempty"`
 	CosignerKeyID string            `json:"cosigner_key_id,omitempty"`
+	Warnings      []string          `json:"warnings,omitempty"`
 }
 
 type deletedKeyProjection struct {

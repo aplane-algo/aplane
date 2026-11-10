@@ -76,9 +76,9 @@ var (
 	customBoundsPreset = boundary.Preset{
 		Name:        "custom-bounds",
 		Title:       "Custom bounds",
-		Description: "Every bounds field, without a file: transfer kinds, recipients, scope, encoding.",
+		Description: "Every bounds field, without a file: transfer kinds, recipients, scope, encoding, fee limit.",
 		Fields: []string{boundary.ParameterSpendEffects, boundary.ParameterRecipients, boundary.ParameterRecipientScope,
-			boundary.ParameterListEncoding},
+			boundary.ParameterListEncoding, boundary.ParameterMaxFee},
 	}
 )
 
