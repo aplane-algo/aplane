@@ -20,7 +20,7 @@ import (
 // jsBalance returns balance info for an address or alias.
 func (a *API) jsBalance(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "balance() requires an address or alias argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 	result, err := a.engine.GetBalance(a.Context(), addressOrAlias)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("balance() error: %v", err)))
@@ -69,7 +69,7 @@ func (a *API) jsAccounts(call goja.FunctionCall) goja.Value {
 // jsResolve resolves an address or alias to canonical form.
 func (a *API) jsResolve(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "resolve() requires an address or alias argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 
 	address, alias, err := a.engine.ResolveAddress(addressOrAlias)
 	if err != nil {
@@ -85,7 +85,7 @@ func (a *API) jsResolve(call goja.FunctionCall) goja.Value {
 // jsAlias returns the address for an alias.
 func (a *API) jsAlias(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "alias() requires a name argument")
-	name := call.Arguments[0].String()
+	name := a.stringArg(call, 0)
 	info := a.engine.GetAlias(name)
 	if info == nil {
 		return goja.Null()
@@ -107,8 +107,8 @@ func (a *API) jsAliases(call goja.FunctionCall) goja.Value {
 // addAlias(name, address) - Returns {name, address, created}
 func (a *API) jsAddAlias(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "addAlias() requires name and address arguments")
-	name := call.Arguments[0].String()
-	address := call.Arguments[1].String()
+	name := a.stringArg(call, 0)
+	address := a.stringArg(call, 1)
 
 	result, err := a.engine.AddAliasWithContext(a.Context(), name, address)
 	if err != nil {
@@ -126,7 +126,7 @@ func (a *API) jsAddAlias(call goja.FunctionCall) goja.Value {
 // removeAlias(name) - Returns the address that was removed
 func (a *API) jsRemoveAlias(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "removeAlias() requires a name argument")
-	name := call.Arguments[0].String()
+	name := a.stringArg(call, 0)
 
 	address, err := a.engine.RemoveAlias(name)
 	if err != nil {
@@ -139,7 +139,7 @@ func (a *API) jsRemoveAlias(call goja.FunctionCall) goja.Value {
 // jsSet returns addresses in a set.
 func (a *API) jsSet(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "set() requires a name argument")
-	name := call.Arguments[0].String()
+	name := a.stringArg(call, 0)
 	info := a.engine.GetSet(name)
 	if info == nil {
 		return goja.Null()
@@ -165,8 +165,8 @@ func (a *API) jsSets(call goja.FunctionCall) goja.Value {
 // jsCreateSet creates or replaces a set with the given addresses.
 func (a *API) jsCreateSet(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "createSet() requires name and addresses arguments")
-	name := call.Arguments[0].String()
-	addresses := toStringArray(call.Arguments[1])
+	name := a.stringArg(call, 0)
+	addresses := a.stringArrayArg(call.Arguments[1], "addresses")
 
 	result, err := a.engine.AddSet(name, addresses)
 	if err != nil {
@@ -183,8 +183,8 @@ func (a *API) jsCreateSet(call goja.FunctionCall) goja.Value {
 // jsAddToSet adds addresses to an existing set (creates if doesn't exist).
 func (a *API) jsAddToSet(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "addToSet() requires name and addresses arguments")
-	name := call.Arguments[0].String()
-	addresses := toStringArray(call.Arguments[1])
+	name := a.stringArg(call, 0)
+	addresses := a.stringArrayArg(call.Arguments[1], "addresses")
 
 	result, err := a.engine.AddToSet(name, addresses)
 	if err != nil {
@@ -202,8 +202,8 @@ func (a *API) jsAddToSet(call goja.FunctionCall) goja.Value {
 // jsRemoveFromSet removes addresses from a set.
 func (a *API) jsRemoveFromSet(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "removeFromSet() requires name and addresses arguments")
-	name := call.Arguments[0].String()
-	addresses := toStringArray(call.Arguments[1])
+	name := a.stringArg(call, 0)
+	addresses := a.stringArrayArg(call.Arguments[1], "addresses")
 
 	result, err := a.engine.RemoveFromSet(name, addresses)
 	if err != nil {
@@ -220,7 +220,7 @@ func (a *API) jsRemoveFromSet(call goja.FunctionCall) goja.Value {
 // jsDeleteSet deletes a set entirely.
 func (a *API) jsDeleteSet(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "deleteSet() requires a name argument")
-	name := call.Arguments[0].String()
+	name := a.stringArg(call, 0)
 
 	count, err := a.engine.RemoveSet(name)
 	if err != nil {
@@ -252,7 +252,7 @@ func (a *API) jsSigners(call goja.FunctionCall) goja.Value {
 	}
 
 	// With array argument: filter to only signers
-	addresses := toStringArray(call.Arguments[0])
+	addresses := a.stringArrayArg(call.Arguments[0], "addresses")
 	result := make([]interface{}, 0)
 	for _, addr := range addresses {
 		if _, isSigner := allSigners[addr]; isSigner {
@@ -274,7 +274,7 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 			// Filter mode: holders(addresses, asset)
 			assetRef := "algo"
 			if len(call.Arguments) >= 2 {
-				assetRef = call.Arguments[1].String()
+				assetRef = a.stringArg(call, 1)
 			}
 
 			holdersResult, err := a.engine.GetHolders(a.Context(), assetRef)
@@ -290,9 +290,12 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 
 			// Filter input addresses
 			result := make([]interface{}, 0)
-			for _, item := range arr {
-				addr, ok := item.(string)
-				if ok && holderSet[addr] {
+			addresses, err := stringArray(arr)
+			if err != nil {
+				panic(a.runtime.ToValue(fmt.Sprintf("holders() addresses: %v", err)))
+			}
+			for _, addr := range addresses {
+				if holderSet[addr] {
 					result = append(result, addr)
 				}
 			}
@@ -303,7 +306,7 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 	// Normal mode: holders() or holders(asset)
 	assetRef := "algo"
 	if len(call.Arguments) >= 1 {
-		assetRef = call.Arguments[0].String()
+		assetRef = a.stringArg(call, 0)
 	}
 
 	holdersResult, err := a.engine.GetHolders(a.Context(), assetRef)
@@ -353,7 +356,7 @@ func (a *API) jsSignableAddresses(call goja.FunctionCall) goja.Value {
 // canSignFor(address) - Returns {canSign: bool, isLsig: bool, authorizationKind: string}
 func (a *API) jsCanSignFor(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "canSignFor() requires an address argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 	address, _, err := a.engine.ResolveAddress(addressOrAlias)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("canSignFor() error resolving address: %v", err)))

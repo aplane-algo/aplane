@@ -14,7 +14,8 @@ type commandLineParse struct {
 	inQuotes      bool
 }
 
-// ParseCommand tokenizes one shell command line, handling quoted strings.
+// ParseCommand tokenizes one shell command line, handling quoted strings and
+// a trailing `# comment`.
 func ParseCommand(input string) (string, []string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -70,6 +71,20 @@ func parseCommandLine(input string, allowUnterminatedQuote bool) (commandLinePar
 			} else {
 				trailingSpace = true
 			}
+		case '#':
+			// An unquoted # standing alone, followed by a space or the end of
+			// the line, starts a comment that runs to the end of the line. The
+			// documented examples carry them, and a command no longer ignores
+			// a word it does not take. A # that begins or sits inside a word
+			// (#42, note=#1) or is quoted is an ordinary character, so an
+			// argument is never dropped as a comment.
+			standsAlone := i+1 == len(input) || input[i+1] == ' ' || input[i+1] == '\t'
+			if quote == 0 && current.Len() == 0 && standsAlone {
+				i = len(input)
+				continue
+			}
+			current.WriteByte(ch)
+			trailingSpace = false
 		default:
 			current.WriteByte(ch)
 			trailingSpace = false

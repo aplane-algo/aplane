@@ -35,6 +35,7 @@ func (a *API) jsAtomicSend(call goja.FunctionCall) goja.Value {
 		if !ok {
 			panic(a.runtime.ToValue(fmt.Sprintf("atomicSend() payment %d: must be an object", i+1)))
 		}
+		a.refuseUnknownKeys(pm, fmt.Sprintf("atomicSend() payment %d key", i+1), "from", "to", "amount", "note")
 
 		from, ok := pm["from"].(string)
 		if !ok {
@@ -50,7 +51,7 @@ func (a *API) jsAtomicSend(call goja.FunctionCall) goja.Value {
 		}
 
 		var note string
-		if n, ok := pm["note"].(string); ok {
+		if n, ok := a.optionString(pm, "note", "atomicSend()"); ok {
 			note = n
 		}
 
@@ -120,6 +121,7 @@ func (a *API) jsAtomicSendAsset(call goja.FunctionCall) goja.Value {
 		if !ok {
 			panic(a.runtime.ToValue(fmt.Sprintf("atomicSendAsset() transfer %d: must be an object", i+1)))
 		}
+		a.refuseUnknownKeys(tm, fmt.Sprintf("atomicSendAsset() transfer %d key", i+1), "from", "to", "assetId", "amount", "note")
 
 		from, ok := tm["from"].(string)
 		if !ok {
@@ -139,7 +141,7 @@ func (a *API) jsAtomicSendAsset(call goja.FunctionCall) goja.Value {
 		}
 
 		var note string
-		if n, ok := tm["note"].(string); ok {
+		if n, ok := a.optionString(tm, "note", "atomicSendAsset()"); ok {
 			note = n
 		}
 

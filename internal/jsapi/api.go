@@ -277,7 +277,7 @@ func (a *API) jsConnected(call goja.FunctionCall) goja.Value {
 // waitForTx(txid, rounds) - Waits up to 'rounds' for confirmation
 func (a *API) jsWaitForTx(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "waitForTx() requires a txid argument")
-	txid := call.Arguments[0].String()
+	txid := a.stringArg(call, 0)
 
 	var rounds uint64 = 5 // Default 5 rounds
 	if len(call.Arguments) > 1 {
@@ -299,7 +299,7 @@ func (a *API) jsWaitForTx(call goja.FunctionCall) goja.Value {
 // setWriteMode(enabled) - Sets write mode
 func (a *API) jsSetWriteMode(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "setWriteMode() requires a boolean argument")
-	enabled := call.Arguments[0].ToBoolean()
+	enabled := a.boolArg(call, 0, "setWriteMode()")
 	a.engine.SetWriteMode(enabled)
 
 	return goja.Undefined()
@@ -315,7 +315,7 @@ func (a *API) jsWriteMode(call goja.FunctionCall) goja.Value {
 // setVerbose(enabled) - Sets verbose mode
 func (a *API) jsSetVerbose(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "setVerbose() requires a boolean argument")
-	enabled := call.Arguments[0].ToBoolean()
+	enabled := a.boolArg(call, 0, "setVerbose()")
 	a.engine.SetVerbose(enabled)
 	a.verbose = enabled
 
@@ -326,7 +326,7 @@ func (a *API) jsSetVerbose(call goja.FunctionCall) goja.Value {
 // setSimulate(enabled) - Sets simulate mode
 func (a *API) jsSetSimulate(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "setSimulate() requires a boolean argument")
-	enabled := call.Arguments[0].ToBoolean()
+	enabled := a.boolArg(call, 0, "setSimulate()")
 	a.engine.SetSimulate(enabled)
 
 	return goja.Undefined()
@@ -348,12 +348,12 @@ func (a *API) jsPlugin(call goja.FunctionCall) goja.Value {
 	}
 
 	// First argument is the plugin/command name
-	pluginName := call.Arguments[0].String()
+	pluginName := a.stringArg(call, 0)
 
 	// Remaining arguments are passed to the plugin
 	args := make([]string, len(call.Arguments)-1)
 	for i := 1; i < len(call.Arguments); i++ {
-		args[i-1] = call.Arguments[i].String()
+		args[i-1] = a.pluginArg(call, i)
 	}
 
 	// Execute the plugin

@@ -148,3 +148,50 @@ Effective last round:      2000`
 		t.Fatalf("error = %q, want missing-round error", err.Error())
 	}
 }
+
+// Two keys pasted together are refused: the fields would otherwise be taken
+// from whichever block has them first.
+func TestParseRefusesMoreThanOneKey(t *testing.T) {
+	first := basePartKeyInfo + `
+Effective first round:     N/A
+Effective last round:      N/A
+First round:               1
+Last round:                2`
+	second := basePartKeyInfo + `
+Effective first round:     54647336
+Effective last round:      57646714
+First round:               3
+Last round:                4`
+
+	if _, err := Parse(first + "\n\n" + second); err == nil || !strings.Contains(err.Error(), "more than one participation key") {
+		t.Fatalf("two keys: %v, want them refused", err)
+	}
+	// The paste starts below the first key's parent address, so only one
+	// parent address is present, but the first key's other fields are.
+	partial := first[strings.Index(first, "Selection key:"):]
+	if !strings.Contains(partial, "Voting key:") || strings.Contains(partial, "Parent address:") {
+		t.Fatalf("fixture: the partial block is not what the test needs:\n%s", partial)
+	}
+	if _, err := Parse(partial + "\n\n" + second); err == nil || !strings.Contains(err.Error(), "more than one participation key") {
+		t.Fatalf("part of one key and all of another: %v, want them refused", err)
+	}
+	if _, err := Parse(second); err != nil {
+		t.Fatalf("one key refused: %v", err)
+	}
+}
+
+// One key's round lines followed by another key in full is the same mix.
+func TestParseRefusesRoundLinesFromASecondKey(t *testing.T) {
+	rounds := `Effective first round:     100
+Effective last round:      200
+First round:               1
+Last round:                2`
+	complete := basePartKeyInfo + `
+Effective first round:     54647336
+Effective last round:      57646714
+First round:               3
+Last round:                4`
+	if _, err := Parse(rounds + "\n\n" + complete); err == nil || !strings.Contains(err.Error(), "more than one participation key") {
+		t.Fatalf("one key's rounds and another key: %v, want them refused", err)
+	}
+}

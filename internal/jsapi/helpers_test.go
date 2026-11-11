@@ -4,6 +4,7 @@
 package jsapi
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -395,19 +396,19 @@ func TestToUint64Interface(t *testing.T) {
 			name:    "string type",
 			input:   "not a number",
 			wantErr: true,
-			errMsg:  "unsupported type for uint64 conversion: string",
+			errMsg:  `"not a number" is not a whole number in plain decimal`,
 		},
 		{
 			name:    "nil",
 			input:   nil,
 			wantErr: true,
-			errMsg:  "unsupported type for uint64 conversion: <nil>",
+			errMsg:  "a number is needed, got null or undefined",
 		},
 		{
 			name:    "slice",
 			input:   []int{1, 2, 3},
 			wantErr: true,
-			errMsg:  "unsupported type for uint64 conversion: []int",
+			errMsg:  "a number is needed, got a []int",
 		},
 	}
 
@@ -645,74 +646,36 @@ func TestOptOutOverloadParsing(t *testing.T) {
 	}
 }
 
-// TestToStringArray tests the toStringArray helper.
-func TestToStringArray(t *testing.T) {
-	vm := goja.New()
-
-	tests := []struct {
+// TestStringArray: an array of strings is read as given; anything else is an
+// error. A non-string entry is never dropped, because that would move every
+// entry after it.
+func TestStringArray(t *testing.T) {
+	accepted := []struct {
 		name  string
 		input interface{}
 		want  []string
 	}{
-		{
-			name:  "interface slice with strings",
-			input: []interface{}{"a", "b", "c"},
-			want:  []string{"a", "b", "c"},
-		},
-		{
-			name:  "empty interface slice",
-			input: []interface{}{},
-			want:  []string{},
-		},
-		{
-			name:  "mixed types filters non-strings",
-			input: []interface{}{"a", 123, "b", true},
-			want:  []string{"a", "b"},
-		},
-		{
-			name:  "string slice",
-			input: []string{"x", "y", "z"},
-			want:  []string{"x", "y", "z"},
-		},
-		{
-			name:  "nil returns nil",
-			input: nil,
-			want:  nil,
-		},
-		{
-			name:  "non-array returns nil",
-			input: "not an array",
-			want:  nil,
-		},
-		{
-			name:  "number returns nil",
-			input: 42,
-			want:  nil,
-		},
+		{"strings", []interface{}{"a", "b", "c"}, []string{"a", "b", "c"}},
+		{"empty", []interface{}{}, []string{}},
+		{"string slice", []string{"x", "y"}, []string{"x", "y"}},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v := vm.ToValue(tt.input)
-			got := toStringArray(v)
-
-			if tt.want == nil {
-				if got != nil {
-					t.Errorf("toStringArray(%v) = %v, want nil", tt.input, got)
-				}
-				return
-			}
-
-			if len(got) != len(tt.want) {
-				t.Errorf("toStringArray(%v) len = %d, want %d", tt.input, len(got), len(tt.want))
-				return
-			}
-
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("toStringArray(%v)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
-				}
-			}
-		})
+	for _, tt := range accepted {
+		got, err := stringArray(tt.input)
+		if err != nil || !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s: stringArray() = %v, %v; want %v", tt.name, got, err, tt.want)
+		}
+	}
+	refused := map[string]interface{}{
+		"a number among strings":  []interface{}{"a", int64(123), "b"},
+		"a boolean among strings": []interface{}{"a", true},
+		"null among strings":      []interface{}{"a", nil, "b"},
+		"nil":                     nil,
+		"a string":                "not an array",
+		"a number":                int64(42),
+	}
+	for name, input := range refused {
+		if got, err := stringArray(input); err == nil {
+			t.Errorf("%s: stringArray() = %v, want an error", name, got)
+		}
 	}
 }

@@ -282,3 +282,39 @@ func TestCheckedSendTotal(t *testing.T) {
 		})
 	}
 }
+
+// An atomic send has no path that carries LogicSig arguments, so giving them
+// is refused, not dropped.
+func TestPrepareSendRefusesLogicSigArgsOnAnAtomicSend(t *testing.T) {
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	eng.AliasCache.Aliases = map[string]string{"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}
+	eng.SetCache.Sets = map[string][]string{
+		"friends": {
+			"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+		},
+	}
+	app := New(eng, config.DefaultConfig(), t.TempDir())
+	request := SendRequest{
+		AmountText: "1.5", AssetRef: "algo", FromRaw: []string{"alice"}, ToRaw: []string{"@friends"},
+		Atomic: true, LsigArgs: map[string][]byte{"preimage": []byte("x")},
+	}
+	if _, err := app.PrepareSend(context.Background(), request); err == nil || !strings.Contains(err.Error(), "atomic") {
+		t.Fatalf("atomic send with arg: %v, want it refused", err)
+	}
+	request.Atomic = false
+	if _, err := app.PrepareSend(context.Background(), request); err != nil {
+		t.Fatalf("the same send without atomic is refused: %v", err)
+	}
+	// One to one takes the ordinary path, which carries the arguments, so
+	// `atomic` there is no reason to refuse them.
+	request.Atomic = true
+	request.ToRaw = []string{"alice"}
+	plan, err := app.PrepareSend(context.Background(), request)
+	if err != nil || plan.Mode != SendModeNonAtomic {
+		t.Fatalf("one-to-one send with atomic and arg: %v (mode %v), want the ordinary path", err, plan)
+	}
+}

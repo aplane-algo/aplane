@@ -21,6 +21,15 @@ type ParsedInfo struct {
 	KeyDilution   uint64
 }
 
+// fieldLabels names each pattern as the pasted text does.
+var fieldLabels = map[string]string{
+	"parent":     "Parent address",
+	"selection":  "Selection key",
+	"voting":     "Voting key",
+	"stateproof": "State proof key",
+	"keydil":     "Key dilution",
+}
+
 // Parse parses the multiline output from `goal account partkeyinfo`.
 func Parse(input string) (*ParsedInfo, error) {
 	info := &ParsedInfo{}
@@ -37,6 +46,25 @@ func Parse(input string) (*ParsedInfo, error) {
 	effectiveLastRe := regexp.MustCompile(`(?i)Effective last round:\s*(\d+)`)
 	firstRoundRe := regexp.MustCompile(`(?i)First round:\s*(\d+)`)
 	lastRoundRe := regexp.MustCompile(`(?i)Last round:\s*(\d+)`)
+
+	// One key at a time. Each field below is the first match in the whole
+	// text, so with two keys pasted together, or part of one and all of
+	// another, the registration would mix them. Any field appearing twice
+	// means more than one key is there.
+	for name, pattern := range patterns {
+		if matches := pattern.FindAllStringIndex(input, -1); len(matches) > 1 {
+			return nil, fmt.Errorf("the input holds more than one participation key (%s appears %d times); paste only the one to register", fieldLabels[name], len(matches))
+		}
+	}
+
+	// The round lines too: one key's rounds with another's keys is the same
+	// mix. "First round" also matches inside "Effective first round", so each
+	// of those two may appear twice in one key's text and no more.
+	for label, limit := range map[*regexp.Regexp]int{effectiveFirstRe: 1, effectiveLastRe: 1, firstRoundRe: 2, lastRoundRe: 2} {
+		if matches := label.FindAllStringIndex(input, -1); len(matches) > limit {
+			return nil, fmt.Errorf("the input holds more than one participation key (its round lines repeat); paste only the one to register")
+		}
+	}
 
 	if match := patterns["parent"].FindStringSubmatch(input); match != nil {
 		info.ParentAddress = match[1]

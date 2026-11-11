@@ -3,7 +3,10 @@
 
 package shellrepl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseCommand(t *testing.T) {
 	tests := []struct {
@@ -191,5 +194,36 @@ func TestParseCompletableCommandLine(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseCommandDropsATrailingComment(t *testing.T) {
+	cases := []struct {
+		input string
+		want  []string
+	}{
+		{"sweep algo to main leaving 1   # Leave 1 ALGO in each", []string{"sweep", "algo", "to", "main", "leaving", "1"}},
+		// Only a # standing alone is a comment; #42 is an argument.
+		{"myplugin memo #42 confirm", []string{"myplugin", "memo", "#42", "confirm"}},
+		{"send 1 algo from a to b #", []string{"send", "1", "algo", "from", "a", "to", "b"}},
+		{"# a whole line", nil},
+		{"send 1 algo from a to b note=#1", []string{"send", "1", "algo", "from", "a", "to", "b", "note=#1"}},
+		{`send 1 algo from a to b note="# not a comment"`, []string{"send", "1", "algo", "from", "a", "to", "b", "note=# not a comment"}},
+		{`alias add "#team" ADDR`, []string{"alias", "add", "#team", "ADDR"}},
+		{"alias add #team ADDR", []string{"alias", "add", "#team", "ADDR"}},
+	}
+	for _, tc := range cases {
+		command, args, err := ParseCommand(tc.input)
+		if err != nil {
+			t.Errorf("%q: %v", tc.input, err)
+			continue
+		}
+		var got []string
+		if command != "" {
+			got = append([]string{command}, args...)
+		}
+		if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+			t.Errorf("%q parsed as %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }

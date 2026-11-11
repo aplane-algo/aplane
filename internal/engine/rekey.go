@@ -44,6 +44,10 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 		IsUnrekey: params.From == params.To,
 	}
 
+	if err := refuseZeroAddressTarget("rekey", params.To); err != nil {
+		return nil, checkResult, err
+	}
+
 	// A rotating account's address is its stage 0 program, a one-time stage
 	// key; the signer refuses such a rekey, so refuse it here with the reason
 	// before building anything. Any other flow this client cannot route an
@@ -110,4 +114,15 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 		SigningContext: signingCtx,
 		LsigArgs:       params.LsigArgs,
 	}, checkResult, nil
+}
+
+// refuseZeroAddressTarget refuses the zero address as the target of a rekey
+// or a close. In a transaction the zero address in that field means the
+// field is absent, so the transaction would be an ordinary payment that
+// neither rekeys nor closes, reported back as if it had.
+func refuseZeroAddressTarget(action, target string) error {
+	if target == types.ZeroAddress.String() {
+		return fmt.Errorf("cannot %s to the zero address: the network reads it as no %s at all, so nothing would change", action, action)
+	}
+	return nil
 }

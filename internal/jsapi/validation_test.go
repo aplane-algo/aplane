@@ -486,7 +486,7 @@ func TestAmountConversionsRejectImprecise(t *testing.T) {
 		// whole-number validation as a numeric float rather than truncating via
 		// ToInteger() ("1.5" -> 1).
 		{"microalgos fractional string truncates", "microalgos(\"1.5\")", "whole number"},
-		{"microalgos non-numeric string", "microalgos(\"abc\")", "finite"},
+		{"microalgos non-numeric string", "microalgos(\"abc\")", "plain decimal"},
 	}
 
 	for _, tt := range tests {

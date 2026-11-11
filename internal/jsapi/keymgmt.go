@@ -86,7 +86,7 @@ func (a *API) jsKeyTypes(call goja.FunctionCall) goja.Value {
 // generateKey(keyType, {param: value, ...}) - Generate with parameters
 func (a *API) jsGenerateKey(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "generateKey() requires a keyType argument")
-	keyType := call.Arguments[0].String()
+	keyType := a.stringArg(call, 0)
 
 	params := make(map[string]string)
 	if m := a.objectArg(call, 1, "generateKey()"); m != nil {
@@ -123,7 +123,7 @@ func generatedKeyValue(result *engine.GenerateKeyResult) map[string]interface{} 
 // deleteKey(address) - Delete key by address or alias
 func (a *API) jsDeleteKey(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "deleteKey() requires an address argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 
 	address, _, err := a.engine.ResolveAddress(addressOrAlias)
 	if err != nil {

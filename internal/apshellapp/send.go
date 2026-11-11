@@ -59,6 +59,13 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 			mode = SendModeAtomicToMultiple
 		}
 	}
+	// The atomic paths have no way to carry LogicSig arguments to each
+	// position, so they would be left out without a word. A one-to-one send
+	// takes the ordinary path, which does carry them, whether or not
+	// `atomic` was typed.
+	if mode != SendModeNonAtomic && len(req.LsigArgs) > 0 {
+		return nil, fmt.Errorf("arg: cannot be used with an atomic send to or from a set: it does not carry LogicSig arguments; send without atomic")
+	}
 
 	return &SendPlan{
 		Mode:          mode,

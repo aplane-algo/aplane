@@ -7,6 +7,59 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apshell refuses input it used to ignore or guess at
+
+More places where what was sent could differ from what was typed, all in
+apshell and its JavaScript API:
+
+- **Unknown trailing words on a command are refused.** `send`, `sweep`,
+  `optin`, `optout`, `close` and `keyreg` ignored a word they did not take, so
+  `sweep algo to main leaving=1` dropped the reserve and swept the whole
+  balance, and `send ... fee 2000` used the default fee. A fee given twice is
+  refused too, on these and on `app call` and `app deploy`. A `to` with no
+  address after it on `optout` is refused; it used to be dropped.
+- **A command line may end with `# a comment`.** The documented examples do;
+  they worked only because the trailing words were ignored. A `#` standing
+  alone, followed by a space or the end of the line, now starts a comment. A
+  word that begins with `#`, such as `#42`, is still an argument.
+- **`note <text>` is gone; write `note=<text>`.** The spaced form took the next
+  word as the note, whatever it was.
+- **A rekey or close to the zero address is refused.** The network reads the
+  zero address in that field as no rekey or close at all, so the transaction
+  did nothing and was reported as done. The same holds for closing out an
+  asset.
+- **`keyreg <account> offline eligible=true` is refused.** It paid the 2 ALGO
+  incentive fee on a registration that cannot be eligible. `eligible=` takes
+  `true` or `false` only; `eligible=yes` was read as false.
+- **Pasting more than one participation key is refused**, including part of
+  one, or only its round lines, followed by all of another. The fields of two
+  keys could be mixed.
+- **`arg:` is refused on an atomic `send` to or from a set**: that path does
+  not carry LogicSig arguments, and they were left out silently. An app call's companion
+  payment (`--pay`) now carries the call's LogicSig arguments.
+- **JavaScript numbers are not coerced.** An amount, fee or ID must be a
+  number, a `BigInt` or a plain decimal string. `null`, `undefined`, `''`,
+  `true`, `'0x10'` and `'1e6'` were read as 0, 0, 0, 1, 16 and 1000000; each
+  is now an error, as is a whole number past `Number.MAX_SAFE_INTEGER`. The
+  same forms are accepted inside option objects. `algo()` takes a number
+  only: `algo(null)` was 0 ALGO and `algo('1e6')` a million.
+- **JavaScript options are checked.** An option of the wrong type, such as
+  `{wait: 'false'}` or `{note: 123}`, is an error; it was read as not given.
+  So is an option a function does not read, such as `{Fee: 0}`,
+  `{nowait: true}` or `{lsigArgs: ...}` on `send()`; each was ignored.
+- **`setSimulate()`, `setWriteMode()` and `setVerbose()` take `true` or
+  `false` only.** `setSimulate(undefined)` switched simulation off, and
+  `setSimulate('false')` switched it on.
+- **JavaScript account lists must hold only strings.** Another kind of entry
+  was dropped, moving every entry after it.
+- **`undefined` and `null` are refused where a name is expected.** They were
+  read as the aliases "undefined" and "null". `NaN`, `Infinity` and fractions
+  are refused there too. A plugin still receives a boolean or a `BigInt` as
+  its text.
+- The MCP tool description said every amount is in human units. `fee=`,
+  `pay=` and all JavaScript amounts are in microAlgos or base units, and it
+  now says so.
+
 ## One description of a transaction, for the signer and for apshell
 
 - apshell's review of a plugin-built group and the signer's approval prompt

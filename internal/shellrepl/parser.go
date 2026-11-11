@@ -213,12 +213,13 @@ func ParseOptoutCommand(args []string) (OptOutParams, error) {
 			return params, fmt.Errorf("missing close-to address after 'to'")
 		}
 		nextArg := args[nextIdx+1]
-		if !isTrailingFlagLike(nextArg) {
-			params.CloseTo = nextArg
-			nextIdx += 2
-		} else {
-			nextIdx++
+		// `to` with no address after it is an unfinished command, not one
+		// that closes to the account itself.
+		if isTrailingFlagLike(nextArg) {
+			return params, fmt.Errorf("missing close-to address after 'to'")
 		}
+		params.CloseTo = nextArg
+		nextIdx += 2
 	}
 
 	// Parse optional flags
@@ -280,9 +281,6 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 		params.Signer = args[0] // Rekey to self
 
 		// Parse optional flags
-		if err := refuseUnknownRekeyArgs(args[1:]); err != nil {
-			return params, err
-		}
 		if err := parseWaitFeeLsigTrailingArgs(args[1:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 			return params, err
 		}
@@ -307,9 +305,6 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	}
 	params.Signer = args[2]
 
-	if err := refuseUnknownRekeyArgs(args[3:]); err != nil {
-		return params, err
-	}
 	if err := parseWaitFeeLsigTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 		return params, err
 	}
@@ -390,10 +385,21 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 				}
 				params.KeyDilution = val
 			case "eligible":
-				params.IncentiveEligible = value == "true" || value == "1"
+				// Anything but these two is a mistake, and reading it as
+				// false would register without what was asked for.
+				switch value {
+				case "true":
+					params.IncentiveEligible = true
+				case "false":
+					params.IncentiveEligible = false
+				default:
+					return params, fmt.Errorf("invalid eligible value %q: use eligible=true or eligible=false", value)
+				}
 			default:
 				return params, fmt.Errorf("unknown argument: %s", key)
 			}
+		} else {
+			return params, unexpectedArgument("keyreg", arg)
 		}
 	}
 
@@ -413,32 +419,41 @@ func parseUint64(s string) (uint64, error) {
 	return result, nil
 }
 
-// refuseUnknownRekeyArgs rejects a trailing argument rekey does not take. A rekey
-// hands the account to another key, so an option it can't honor must not be
-// dropped silently.
-func refuseUnknownRekeyArgs(args []string) error {
-	for _, arg := range args {
-		if strings.EqualFold(arg, "nowait") || strings.HasPrefix(arg, "fee=") || strings.HasPrefix(arg, "arg:") {
-			continue
-		}
-		return fmt.Errorf("unexpected argument %q: rekey takes only [fee=<microalgos>] [nowait] [arg:name=value]", arg)
+// unexpectedArgument is the refusal for a trailing word a command does not
+// take. A word that is ignored can change what is sent: `leaving=1` on a
+// sweep, read as nothing, sweeps the whole balance.
+func unexpectedArgument(command, arg string) error {
+	return fmt.Errorf("unexpected argument %q for %s; see `help %s`", arg, command, command)
+}
+
+// parseFlatFee reads a `fee=<microalgos>` argument, once.
+func parseFlatFee(arg string, seen *bool) (uint64, error) {
+	if *seen {
+		return 0, fmt.Errorf("fee given more than once")
 	}
-	return nil
+	feeStr := strings.TrimPrefix(arg, "fee=")
+	feeVal, err := parseUint64(feeStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid fee value: %s", feeStr)
+	}
+	*seen = true
+	return feeVal, nil
 }
 
 func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool, lsigArgs *map[string][]byte) error {
+	seenFee := false
 	for _, arg := range args {
-		if strings.EqualFold(arg, "nowait") {
+		switch {
+		case strings.EqualFold(arg, "nowait"):
 			*wait = false
-		} else if strings.HasPrefix(arg, "fee=") {
-			feeStr := strings.TrimPrefix(arg, "fee=")
-			feeVal, err := parseUint64(feeStr)
+		case strings.HasPrefix(arg, "fee="):
+			feeVal, err := parseFlatFee(arg, &seenFee)
 			if err != nil {
-				return fmt.Errorf("invalid fee value: %s", feeStr)
+				return err
 			}
 			*fee = feeVal
 			*useFlatFee = true
-		} else if strings.HasPrefix(arg, "arg:") && lsigArgs != nil {
+		case strings.HasPrefix(arg, "arg:") && lsigArgs != nil:
 			argName, argValue, err := cmdspec.ParseLsigArg(arg)
 			if err != nil {
 				return err
@@ -447,6 +462,8 @@ func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFla
 				*lsigArgs = make(map[string][]byte)
 			}
 			(*lsigArgs)[argName] = argValue
+		default:
+			return fmt.Errorf("unexpected argument %q: only [fee=<microalgos>] [nowait] [arg:name=value] may follow", arg)
 		}
 	}
 	return nil
@@ -555,24 +572,13 @@ func parseSendTrailingArgs(args []string, params *TransactionParams) error {
 			params.Atomic = true
 		case strings.HasPrefix(args[i], "note="):
 			params.Note = strings.TrimPrefix(args[i], "note=")
-		case strings.EqualFold(args[i], "note"):
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("missing note value")
-			}
-			params.Note = args[i]
 		case strings.HasPrefix(args[i], "fee="):
-			if seenFee {
-				return fmt.Errorf("duplicate fee flag")
-			}
-			feeStr := strings.TrimPrefix(args[i], "fee=")
-			feeVal, err := parseUint64(feeStr)
+			feeVal, err := parseFlatFee(args[i], &seenFee)
 			if err != nil {
-				return fmt.Errorf("invalid fee value: %s", feeStr)
+				return err
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
-			seenFee = true
 		case strings.HasPrefix(args[i], "arg:"):
 			argName, argValue, err := cmdspec.ParseLsigArg(args[i])
 			if err != nil {
@@ -582,12 +588,20 @@ func parseSendTrailingArgs(args []string, params *TransactionParams) error {
 				params.LsigArgs = make(map[string][]byte)
 			}
 			params.LsigArgs[argName] = argValue
+		default:
+			// The spaced form `note <text>` is gone: it took the next word
+			// as the note, whatever that word was.
+			if strings.EqualFold(args[i], "note") {
+				return fmt.Errorf("write the note as note=<text>")
+			}
+			return unexpectedArgument("send", args[i])
 		}
 	}
 	return nil
 }
 
 func parseSweepTrailingArgs(args []string, params *SweepParams) error {
+	seenFee := false
 	for i := 0; i < len(args); i++ {
 		switch {
 		case strings.EqualFold(args[i], "leaving"):
@@ -603,10 +617,9 @@ func parseSweepTrailingArgs(args []string, params *SweepParams) error {
 		case strings.EqualFold(args[i], "nowait"):
 			params.Wait = false
 		case strings.HasPrefix(args[i], "fee="):
-			feeStr := strings.TrimPrefix(args[i], "fee=")
-			feeVal, err := parseUint64(feeStr)
+			feeVal, err := parseFlatFee(args[i], &seenFee)
 			if err != nil {
-				return fmt.Errorf("invalid fee value: %s", feeStr)
+				return err
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
@@ -619,6 +632,8 @@ func parseSweepTrailingArgs(args []string, params *SweepParams) error {
 				params.LsigArgs = make(map[string][]byte)
 			}
 			params.LsigArgs[argName] = argValue
+		default:
+			return unexpectedArgument("sweep", args[i])
 		}
 	}
 	return nil

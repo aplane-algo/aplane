@@ -217,7 +217,7 @@ func TestParseSendCommand(t *testing.T) {
 		},
 		{
 			name:    "send note value does not become flag",
-			args:    []string{"1", "algo", "from", "alice", "to", "bob", "note", "atomic"},
+			args:    []string{"1", "algo", "from", "alice", "to", "bob", "note=atomic"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p TransactionParams) {
 				if p.Note != "atomic" {
@@ -227,6 +227,13 @@ func TestParseSendCommand(t *testing.T) {
 					t.Error("Atomic should remain false when note value is atomic")
 				}
 			},
+		},
+		{
+			// The spaced form took the next word as the note, so
+			// `note nowait` set a note and waited anyway.
+			name:    "send refuses the spaced note form",
+			args:    []string{"1", "algo", "from", "alice", "to", "bob", "note", "atomic"},
+			wantErr: true,
 		},
 		{
 			name:    "send allows bracketed sender named to",
@@ -438,17 +445,11 @@ func TestParseOptoutCommand(t *testing.T) {
 			},
 		},
 		{
-			name:    "optout ignores flag-like to target",
+			// `to` with nothing to close to is an unfinished command. It
+			// used to be dropped, leaving a close to the account itself.
+			name:    "optout refuses to with no address after it",
 			args:    []string{"usdc", "from", "alice", "to", "fee=1000"},
-			wantErr: false,
-			checkFunc: func(t *testing.T, p OptOutParams) {
-				if p.CloseTo != "" {
-					t.Errorf("CloseTo = %v, want empty", p.CloseTo)
-				}
-				if p.Fee != 1000 {
-					t.Errorf("Fee = %v, want 1000", p.Fee)
-				}
-			},
+			wantErr: true,
 		},
 		{
 			name:    "optout with close-to and all flags",
@@ -1133,5 +1134,82 @@ func TestParseUint64(t *testing.T) {
 				t.Errorf("parseUint64() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// A trailing word a command does not take is refused, never ignored: an
+// ignored word can change what is sent.
+func TestCommandsRefuseTrailingWordsTheyDoNotTake(t *testing.T) {
+	refused := map[string]func() error{
+		"sweep leaving=1 (the reserve, mistyped)": func() error {
+			_, err := ParseSweepCommand([]string{"algo", "to", "main", "leaving=1"})
+			return err
+		},
+		"sweep leave 1": func() error {
+			_, err := ParseSweepCommand([]string{"algo", "to", "main", "leave", "1"})
+			return err
+		},
+		"sweep fee twice": func() error {
+			_, err := ParseSweepCommand([]string{"algo", "to", "main", "fee=1000", "fee=2000"})
+			return err
+		},
+		"send fee 2000": func() error {
+			_, err := ParseSendCommand([]string{"1", "algo", "from", "alice", "to", "bob", "fee", "2000"})
+			return err
+		},
+		"send nowiat": func() error {
+			_, err := ParseSendCommand([]string{"1", "algo", "from", "alice", "to", "bob", "nowiat"})
+			return err
+		},
+		"send fee twice": func() error {
+			_, err := ParseSendCommand([]string{"1", "algo", "from", "alice", "to", "bob", "fee=1000", "fee=2000"})
+			return err
+		},
+		"keyreg eligible=yes": func() error {
+			_, err := ParseTakeCommand([]string{"alice", "online", "votekey=A", "selkey=B", "sproofkey=C", "eligible=yes"})
+			return err
+		},
+		"keyreg eligible=True": func() error {
+			_, err := ParseTakeCommand([]string{"alice", "online", "votekey=A", "selkey=B", "sproofkey=C", "eligible=True"})
+			return err
+		},
+		"optout with a dangling to": func() error {
+			_, err := ParseOptoutCommand([]string{"usdc", "from", "alice", "to", "fee=2000"})
+			return err
+		},
+		"keyreg stray word": func() error {
+			_, err := ParseTakeCommand([]string{"alice", "offline", "eligible"})
+			return err
+		},
+	}
+	for name, parse := range refused {
+		if err := parse(); err == nil {
+			t.Errorf("%s: accepted, want refused", name)
+		}
+	}
+
+	sweep, err := ParseSweepCommand([]string{"algo", "to", "main", "leaving", "1", "fee=2000", "nowait"})
+	if err != nil {
+		t.Fatalf("a well-formed sweep is refused: %v", err)
+	}
+	if sweep.Leaving != "1" || sweep.Fee != 2000 || sweep.Wait {
+		t.Fatalf("sweep parsed as %+v", sweep)
+	}
+}
+
+func TestSharedTrailingArgsRefuseUnknownWordsAndRepeatedFees(t *testing.T) {
+	parse := func(args ...string) error {
+		var wait, flat bool
+		var fee uint64
+		var lsigArgs map[string][]byte
+		return parseWaitFeeLsigTrailingArgs(args, &wait, &fee, &flat, &lsigArgs)
+	}
+	if err := parse("fee=1000", "nowait", "arg:preimage=text:x"); err != nil {
+		t.Fatalf("well-formed trailing arguments refused: %v", err)
+	}
+	for _, args := range [][]string{{"nowiat"}, {"fee", "1000"}, {"fee=1000", "fee=2000"}, {"wait=false"}} {
+		if err := parse(args...); err == nil {
+			t.Errorf("%v: accepted, want refused", args)
+		}
 	}
 }

@@ -379,7 +379,8 @@ Use the jssave tool to save a JavaScript snippet for later, and jslist to enumer
 
 Addresses can be aliases or set references (@setname, @all, @signers).
 Assets can be IDs or cached names (e.g., "usdc" instead of "10458941").
-Amounts are in human units (e.g., "5 algo" = 5 ALGO, "100 usdc" = 100 USDC).`
+Amounts written with an asset are in human units (e.g., "5 algo" = 5 ALGO, "100 usdc" = 100 USDC).
+Everything else is in the smallest unit: fee=, pay= and --pay take microAlgos (1 ALGO = 1000000), and in JavaScript every amount and fee is microAlgos or the asset's base units; use algo(5) to write 5 ALGO.`
 
 // mcpBuildDescription builds the MCP tool description by combining the base
 // command reference with any mcp.md files found in discovered plugin directories.

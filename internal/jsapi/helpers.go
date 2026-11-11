@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
+	"slices"
 	"strconv"
+	"strings"
 
 	algoutil "github.com/aplane-algo/aplane/internal/algo"
 	"github.com/dop251/goja"
@@ -39,6 +42,10 @@ func validateUint64Float(val float64) error {
 	if val >= maxSafeUint64Float {
 		return fmt.Errorf("value %v is too large", val)
 	}
+	// Past this, JavaScript has already rounded the number.
+	if val > maxSafeJSInteger {
+		return fmt.Errorf("value %.0f is past the largest whole number JavaScript holds exactly; pass a BigInt or a decimal string", val)
+	}
 	return nil
 }
 
@@ -50,7 +57,17 @@ func makeAlgoFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 			panic(vm.ToValue("algo() requires a number argument"))
 		}
 
-		val := call.Arguments[0].ToFloat()
+		// A number, and nothing coerced to one: algo(null) and algo('') would
+		// be 0 ALGO, algo(true) 1 ALGO, algo('1e6') a million.
+		var val float64
+		switch exported := call.Arguments[0].Export().(type) {
+		case int64:
+			val = float64(exported)
+		case float64:
+			val = exported
+		default:
+			panic(vm.ToValue(fmt.Sprintf("algo() requires a number, got %s", jsTypeName(exported))))
+		}
 		if math.IsNaN(val) || math.IsInf(val, 0) {
 			panic(vm.ToValue("algo() requires a finite number"))
 		}
@@ -139,15 +156,15 @@ func toUint64(vm *goja.Runtime, v goja.Value) uint64 {
 	case uint64:
 		return val
 	default:
-		// Non-numeric inputs (e.g. a string amount like "1.5") reach here. Run
-		// the same finite/integral/range validation as the float64 case via
-		// ToFloat() instead of ToInteger(), which would silently truncate
-		// "1.5" to 1.
-		f := v.ToFloat()
-		if err := validateUint64Float(f); err != nil {
+		// A decimal string or a BigInt for a value JavaScript can't hold
+		// exactly. Nothing else: null, undefined, booleans and objects
+		// would be coerced to 0, 0, 1 and NaN, and "0x10", "1e6" and ""
+		// read as numbers the script did not write.
+		parsed, err := toUint64Interface(val)
+		if err != nil {
 			panic(vm.ToValue(err.Error()))
 		}
-		return uint64(f)
+		return parsed
 	}
 }
 
@@ -175,9 +192,74 @@ func toUint64Interface(v interface{}) (uint64, error) {
 		return uint64(val), nil
 	case uint64:
 		return val, nil
+	case string:
+		// A decimal string, as toUint64 takes: the way to pass a value
+		// JavaScript can't hold exactly.
+		parsed, err := strconv.ParseUint(val, 10, 64)
+		if err != nil || (len(val) > 1 && val[0] == '0') {
+			return 0, fmt.Errorf("%q is not a whole number in plain decimal", val)
+		}
+		return parsed, nil
+	case *big.Int:
+		if val.Sign() < 0 {
+			return 0, errNegativeValue
+		}
+		if !val.IsUint64() {
+			return 0, fmt.Errorf("value %s is too large", val.String())
+		}
+		return val.Uint64(), nil
 	default:
-		return 0, fmt.Errorf("unsupported type for uint64 conversion: %T", v)
+		return 0, fmt.Errorf("a number is needed, got %s", jsTypeName(v))
 	}
+}
+
+// refuseUnknownKeys raises a JS error for a key the caller does not read.
+func (a *API) refuseUnknownKeys(m map[string]interface{}, what string, allowed ...string) {
+	for key := range m {
+		if !slices.Contains(allowed, key) {
+			known := append([]string(nil), allowed...)
+			slices.Sort(known)
+			panic(a.runtime.ToValue(fmt.Sprintf("%s %q is not known (known: %s)", what, key, strings.Join(known, ", "))))
+		}
+	}
+}
+
+// boolArg reads a function argument that must be true or false. JavaScript
+// would coerce anything else: undefined to false, and the text 'false' to
+// true.
+func (a *API) boolArg(call goja.FunctionCall, index int, funcName string) bool {
+	value, ok := call.Arguments[index].Export().(bool)
+	if !ok {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s requires true or false, got %s", funcName, jsTypeName(call.Arguments[index].Export()))))
+	}
+	return value
+}
+
+// optionBool reads a boolean option. An option that is present with another
+// type is an error: {wait: 'false'} read as "not given" would wait.
+func (a *API) optionBool(m map[string]interface{}, key, funcName string) (value, present bool) {
+	raw, exists := m[key]
+	if !exists || raw == nil {
+		return false, false
+	}
+	value, ok := raw.(bool)
+	if !ok {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s option %s must be true or false, got %s", funcName, key, jsTypeName(raw))))
+	}
+	return value, true
+}
+
+// optionString reads a string option, with the same rule as optionBool.
+func (a *API) optionString(m map[string]interface{}, key, funcName string) (value string, present bool) {
+	raw, exists := m[key]
+	if !exists || raw == nil {
+		return "", false
+	}
+	value, ok := raw.(string)
+	if !ok {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s option %s must be a string, got %s", funcName, key, jsTypeName(raw))))
+	}
+	return value, true
 }
 
 // txnOptions holds common transaction options parsed from JS call arguments.
@@ -196,12 +278,18 @@ type closeTxnOptions struct {
 // parseTxnOptions extracts {fee, wait, note} from an optional options argument.
 // argIndex is the position of the options argument in the call.
 // funcName is used for error messages.
-func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName string) txnOptions {
+//
+// extraKeys names the other options the calling function reads from the same
+// object. Any key outside {fee, wait, note} and those is refused: an option
+// that is not read is an option that was ignored, such as {Fee: 0} or
+// {nowait: true}.
+func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName string, extraKeys ...string) txnOptions {
 	opts := txnOptions{Wait: true}
 	m := a.objectArg(call, argIndex, funcName)
 	if m == nil {
 		return opts
 	}
+	a.refuseUnknownKeys(m, funcName+" option", append([]string{"fee", "wait", "note"}, extraKeys...)...)
 	if f, ok := m["fee"]; ok {
 		var err error
 		opts.Fee, err = toUint64Interface(f)
@@ -210,10 +298,10 @@ func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName str
 		}
 		opts.UseFlatFee = true
 	}
-	if w, ok := m["wait"].(bool); ok {
+	if w, ok := a.optionBool(m, "wait", funcName); ok {
 		opts.Wait = w
 	}
-	if n, ok := m["note"].(string); ok {
+	if n, ok := a.optionString(m, "note", funcName); ok {
 		opts.Note = n
 	}
 	return opts
@@ -223,7 +311,6 @@ func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName str
 // Supports: (acct, id), (acct, id, closeTo), (acct, id, opts),
 // (acct, id, closeTo, opts), and (acct, id, null, opts).
 func (a *API) parseOptOutArgs(call goja.FunctionCall) (string, txnOptions) {
-	opts := txnOptions{Wait: true}
 	if len(call.Arguments) > 2 && !goja.IsUndefined(call.Arguments[2]) && !goja.IsNull(call.Arguments[2]) {
 		arg2 := call.Arguments[2].Export()
 		if s, ok := arg2.(string); ok {
@@ -232,14 +319,15 @@ func (a *API) parseOptOutArgs(call goja.FunctionCall) (string, txnOptions) {
 		if _, ok := arg2.(map[string]interface{}); ok {
 			return "", a.parseTxnOptions(call, 2, "optOut()")
 		}
-		return "", opts
+		panic(a.runtime.ToValue(fmt.Sprintf(
+			"optOut() third argument must be a close-to address or an options object, got %s", jsTypeName(arg2))))
 	}
 	// arg2 absent, null, or undefined — check arg3 for options
 	return "", a.parseTxnOptions(call, 3, "optOut()")
 }
 
 func (a *API) parseCloseOptions(call goja.FunctionCall) closeTxnOptions {
-	opts := closeTxnOptions{txnOptions: a.parseTxnOptions(call, 2, "close()")}
+	opts := closeTxnOptions{txnOptions: a.parseTxnOptions(call, 2, "close()", "lsigArgs")}
 	m := a.objectArg(call, 2, "close()")
 	if m == nil {
 		return opts
@@ -267,25 +355,92 @@ func (a *API) parseCloseOptions(call goja.FunctionCall) closeTxnOptions {
 	return opts
 }
 
-// toStringArray converts a Goja value to []string.
-func toStringArray(v goja.Value) []string {
-	return toStringArrayValue(v.Export())
-}
-
-func toStringArrayValue(v interface{}) []string {
+// stringArray reads a JavaScript array of strings. An entry that is not a
+// string is an error: dropping it would shorten the list and move every
+// later entry, and a program reads accounts by position.
+func stringArray(v interface{}) ([]string, error) {
 	switch arr := v.(type) {
 	case []interface{}:
 		result := make([]string, 0, len(arr))
-		for _, item := range arr {
-			if s, ok := item.(string); ok {
-				result = append(result, s)
+		for i, item := range arr {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("entry %d is %s, not a string", i+1, jsTypeName(item))
 			}
+			result = append(result, s)
 		}
-		return result
+		return result, nil
 	case []string:
-		return arr
+		return arr, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("expected an array of strings, got %s", jsTypeName(v))
+	}
+}
+
+// stringArrayArg is stringArray for a function argument, raising a JS error.
+func (a *API) stringArrayArg(v goja.Value, what string) []string {
+	result, err := stringArray(v.Export())
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s: %v", what, err)))
+	}
+	return result
+}
+
+// jsTypeName names an exported JavaScript value's type for an error message.
+func jsTypeName(v interface{}) string {
+	switch v.(type) {
+	case nil:
+		return "null or undefined"
+	case string:
+		return "a string"
+	case bool:
+		return "a boolean"
+	case int64, float64, int, uint64:
+		return "a number"
+	case []interface{}:
+		return "an array"
+	case map[string]interface{}:
+		return "an object"
+	default:
+		return fmt.Sprintf("a %T", v)
+	}
+}
+
+// stringArg reads a function argument that names something: an address, an
+// alias, an asset, a method, a path. JavaScript turns undefined and null into
+// the words "undefined" and "null", which would then be looked up as an
+// alias, so those are refused, as is an object or an array. A number is
+// accepted, since an asset can be named by its ID.
+func (a *API) stringArg(call goja.FunctionCall, index int) string {
+	v := call.Arguments[index]
+	switch exported := v.Export().(type) {
+	case string:
+		return exported
+	case int64:
+		if exported >= 0 {
+			return strconv.FormatInt(exported, 10)
+		}
+	case float64:
+		// A whole number names an asset by ID. NaN, Infinity and 1e21 would
+		// become the words "NaN", "Infinity" and "1e+21".
+		if exported >= 0 && exported == math.Trunc(exported) && exported <= maxSafeJSInteger {
+			return strconv.FormatFloat(exported, 'f', 0, 64)
+		}
+	}
+	panic(a.runtime.ToValue(fmt.Sprintf("argument %d is %s; a string is needed", index+1, jsTypeName(v.Export()))))
+}
+
+// pluginArg reads one argument for a plugin, which takes its arguments as
+// text. A string, number, boolean or BigInt is passed as its text; undefined,
+// null, an object or an array is refused, since those would arrive as the
+// words "undefined", "null" and "[object Object]".
+func (a *API) pluginArg(call goja.FunctionCall, index int) string {
+	v := call.Arguments[index]
+	switch v.Export().(type) {
+	case string, bool, int64, float64, *big.Int:
+		return v.String()
+	default:
+		panic(a.runtime.ToValue(fmt.Sprintf("plugin() argument %d is %s; pass text, a number or a boolean", index+1, jsTypeName(v.Export()))))
 	}
 }
 
