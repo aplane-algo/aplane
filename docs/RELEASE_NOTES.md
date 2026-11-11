@@ -7,6 +7,25 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Reviews show more of what a transaction does
+
+- **ABI method label.** The signer never held the app's contract, so the method
+  name on an app call was always the client's claim, tied to the call by a
+  4-byte selector. The review now says so, `Method (the client's label, not
+  verified)`, and shows the selector. The label is shown only when the first
+  argument is exactly those four bytes; when a label is offered that doesn't
+  match, the review says so without showing it. The heading no longer adds
+  `[ABI]` on the client's word.
+- **Access list.** An app call that names its resources in the newer access
+  list (`al`) showed no accounts, apps, assets or boxes at all. Every entry is
+  now listed, and `RejectVersion` is shown when set.
+- **Plugin group review** (apshell). The review of a plugin-built group showed
+  a payment's amount and receiver and little else. It now shows what each
+  transaction type does, lists every account, app, asset, box and access
+  entry an app call names, and marks every rekey, close, clawback, app update
+  or delete, and asset reconfigure or destroy, whatever the type. A plugin-signed slot is not
+  reviewed at the signer, so this can be the only review it gets.
+
 ## apshell reads transaction input as it is written
 
 Five places where apshell built a transaction from input read differently from
