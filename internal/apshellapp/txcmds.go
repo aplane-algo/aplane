@@ -859,7 +859,9 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				item.Output = submit.Output
 				item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 			}
-			if !errors.Is(err, engine.ErrSimulationFailed) {
+			if errors.Is(err, engine.ErrSimulationFailed) {
+				item.SimulationFailed = true
+			} else {
 				item.Error = fmt.Sprintf("transaction failed: %v", err)
 			}
 			result.FailureCount++

@@ -42,6 +42,12 @@ func TestSweepPassesTheRequestToTheHost(t *testing.T) {
 				Leaving: 1000000, Fee: 2000, UseFlatFee: true, Wait: false},
 		},
 		{
+			name: "LogicSig arguments",
+			code: `sweep("a", "dest", {lsigArgs: {preimage: "text:secret"}})`,
+			want: SweepRequest{From: []string{"a"}, To: "dest", Wait: true,
+				LsigArgs: map[string][]byte{"preimage": []byte("secret")}},
+		},
+		{
 			name: "a large amount as text",
 			code: `sweep("a", "dest", {leaving: "9007199254740993"})`,
 			want: SweepRequest{From: []string{"a"}, To: "dest", Leaving: 9007199254740993, Wait: true},
@@ -72,6 +78,13 @@ func TestSweepRefusesWhatItCannotRead(t *testing.T) {
 		{"a leaving amount that is not a whole number", `sweep("a", "dest", {leaving: 1.5})`, "invalid leaving"},
 		{"wait that is not a boolean", `sweep("a", "dest", {wait: "false"})`, "wait"},
 		{"options in the destination's place", `sweep("a", {wait: true})`, ""},
+		{"an asset that is undefined", `sweep("a", "dest", {asset: undefined})`, "invalid asset"},
+		{"a leaving amount that is null", `sweep("a", "dest", {leaving: null})`, "invalid leaving"},
+		{"a fee that is null", `sweep("a", "dest", {fee: null})`, "invalid fee"},
+		{"an empty account in the list", `sweep(["a", ""], "dest")`, "account 2 is empty"},
+		{"an empty account", `sweep("", "dest")`, "account 1 is empty"},
+		{"an empty destination", `sweep("a", "")`, "destination is empty"},
+		{"lsigArgs that is not an object", `sweep("a", "dest", {lsigArgs: "x"})`, "invalid lsigArgs"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

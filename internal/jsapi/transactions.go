@@ -98,7 +98,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 // one destination. It is the shell's sweep command: the account stays open.
 // (It used to close the account, which close() does.)
 //
-//	sweep(from, to, {asset, leaving, fee, wait})
+//	sweep(from, to, {asset, leaving, fee, wait, lsigArgs})
 //
 // from is one account or an array of them. asset is an asset ID (0 or absent
 // is ALGO) and leaving is in base units.
@@ -119,26 +119,26 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 		from = []string{a.stringArg(call, 0)}
 	}
 	req := SweepRequest{From: from, To: a.stringArg(call, 1), Wait: true}
+	// The address resolver passes an empty name over, which would drop a
+	// source from the list or sweep to no destination.
+	for i, account := range req.From {
+		if account == "" {
+			panic(a.runtime.ToValue(fmt.Sprintf("sweep() from: account %d is empty", i+1)))
+		}
+	}
+	if req.To == "" {
+		panic(a.runtime.ToValue("sweep() to: the destination is empty"))
+	}
 
 	if m := a.objectArg(call, 2, "sweep()"); m != nil {
-		a.refuseUnknownKeys(m, "sweep() option", "asset", "leaving", "fee", "wait")
-		number := func(key string) (uint64, bool) {
-			raw, ok := m[key]
-			if !ok || raw == nil {
-				return 0, false
-			}
-			value, err := toUint64Interface(raw)
-			if err != nil {
-				panic(a.runtime.ToValue(fmt.Sprintf("sweep() invalid %s: %v", key, err)))
-			}
-			return value, true
-		}
-		req.AssetID, _ = number("asset")
-		req.Leaving, _ = number("leaving")
-		req.Fee, req.UseFlatFee = number("fee")
+		a.refuseUnknownKeys(m, "sweep() option", "asset", "leaving", "fee", "wait", "lsigArgs")
+		req.AssetID, _ = a.optionUint64(m, "asset", "sweep()")
+		req.Leaving, _ = a.optionUint64(m, "leaving", "sweep()")
+		req.Fee, req.UseFlatFee = a.optionUint64(m, "fee", "sweep()")
 		if wait, ok := a.optionBool(m, "wait", "sweep()"); ok {
 			req.Wait = wait
 		}
+		req.LsigArgs = a.lsigArgsOption(m, "sweep()")
 	}
 
 	result, err := sweeper.Sweep(a.Context(), req)

@@ -66,8 +66,15 @@ func (s jsSweeper) Sweep(ctx context.Context, req jsapi.SweepRequest) (*jsapi.Sw
 		LeavingRaw: &leaving,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
+		LsigArgs:   req.LsigArgs,
 		Wait:       req.Wait,
 	})
+	return sweepResultForScript(result, err)
+}
+
+// sweepResultForScript turns the sweep workflow's outcome into what sweep()
+// returns or raises.
+func sweepResultForScript(result *SweepCommandResult, err error) (*jsapi.SweepResult, error) {
 	if result == nil {
 		return nil, err
 	}
@@ -79,25 +86,44 @@ func (s jsSweeper) Sweep(ctx context.Context, req jsapi.SweepRequest) (*jsapi.Sw
 		Items:     make([]jsapi.SweepItem, 0, len(result.Items)),
 	}
 	for _, item := range result.Items {
+		failure := item.Error
+		if item.SimulationFailed {
+			// The shell prints the simulation's output; a script has only
+			// this field to learn the item failed, and why.
+			failure = "simulation failed"
+			if detail := strings.TrimSpace(item.Output); detail != "" {
+				failure += ": " + detail
+			}
+		}
 		out.Items = append(out.Items, jsapi.SweepItem{
 			From:      item.From,
 			Amount:    item.Amount.Raw,
 			TxID:      item.TxID,
 			Confirmed: item.Confirmed,
 			Skipped:   item.SkippedReason,
-			Error:     item.Error,
+			Error:     failure,
 		})
 	}
 	if err != nil {
 		// Every transaction failed. A script that does not read the result
-		// must not carry on as if funds had moved, so this is raised, with
-		// each account's reason. A sweep where only some failed returns its
-		// result, and the script reads `failed` and the items.
+		// must not carry on as if the sweep had worked, so this is raised,
+		// with each account's reason. A sweep where only some failed returns
+		// its result, and the script reads `failed` and the items.
+		//
+		// "Failed" includes a transaction that was sent and whose
+		// confirmation wait failed. It may still confirm, so its ID is in
+		// the message: the script must not take the error to mean that
+		// nothing moved.
 		var reasons []string
-		for _, item := range out.Items {
-			if item.Error != "" {
-				reasons = append(reasons, fmt.Sprintf("%s: %s", item.From, item.Error))
+		for i, item := range out.Items {
+			if item.Error == "" {
+				continue
 			}
+			reason := fmt.Sprintf("%s: %s", item.From, item.Error)
+			if item.TxID != "" && !result.Items[i].SimulationFailed {
+				reason += fmt.Sprintf(" [sent as %s; it may still confirm]", item.TxID)
+			}
+			reasons = append(reasons, reason)
 		}
 		return nil, fmt.Errorf("%w (%s)", err, strings.Join(reasons, "; "))
 	}

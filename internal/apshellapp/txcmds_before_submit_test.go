@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,9 @@ import (
 var (
 	beforeSubmitFrom = types.Address{1}.String()
 	beforeSubmitTo   = types.Address{2}.String()
+	// beforeSubmitRekeyed is rekeyed to beforeSubmitAuth on the fake network.
+	beforeSubmitRekeyed = types.Address{3}.String()
+	beforeSubmitAuth    = types.Address{4}.String()
 )
 
 // beforeSubmitApp is an app whose network answers enough to prepare a rekey
@@ -39,9 +43,13 @@ func beforeSubmitApp(t *testing.T) *App {
 			})
 		case strings.HasPrefix(r.URL.Path, "/v2/accounts/"):
 			address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
-			_ = json.NewEncoder(w).Encode(models.Account{
+			account := models.Account{
 				Address: address, Amount: 5_000_000, MinBalance: 100_000, Status: "Offline",
-			})
+			}
+			if address == beforeSubmitRekeyed {
+				account.AuthAddr = beforeSubmitAuth
+			}
+			_ = json.NewEncoder(w).Encode(account)
 		default:
 			http.NotFound(w, r)
 		}
@@ -55,8 +63,8 @@ func beforeSubmitApp(t *testing.T) *App {
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	// The source account's key is listed, but no signer is connected.
-	eng.SignerCache.Keys = map[string]string{beforeSubmitFrom: "ed25519"}
+	// The source accounts' keys are listed, but no signer is connected.
+	eng.SignerCache.Keys = map[string]string{beforeSubmitFrom: "ed25519", beforeSubmitAuth: "ed25519"}
 	return New(eng, config.DefaultConfig(), t.TempDir())
 }
 
@@ -86,6 +94,28 @@ func TestRekeyAnnouncesBeforeSigning(t *testing.T) {
 	text := strings.Join(announced.PreSubmitLines, "\n")
 	if !strings.Contains(text, "cannot sign for this target address") {
 		t.Fatalf("the announcement lacks the warning about a target this system cannot sign for:\n%s", text)
+	}
+}
+
+func TestUnrekeyAnnouncesBeforeSigning(t *testing.T) {
+	app := beforeSubmitApp(t)
+	var announced *RekeyCommandResult
+	_, err := app.Unrekey(context.Background(), UnrekeyRequest{
+		Account: beforeSubmitRekeyed,
+		BeforeSubmit: func(result *RekeyCommandResult) {
+			copied := *result
+			announced = &copied
+		},
+	})
+	if err == nil {
+		t.Fatal("Unrekey() succeeded without a signer")
+	}
+	if announced == nil {
+		t.Fatalf("nothing was announced before signing failed: %v", err)
+	}
+	if announced.CurrentAuthAddress != beforeSubmitAuth || len(announced.PreSubmitLines) == 0 ||
+		!strings.Contains(announced.PreSubmitLines[0], "currently rekeyed to") {
+		t.Fatalf("announcement = %+v", announced)
 	}
 }
 
@@ -130,5 +160,45 @@ func TestScriptSweepRunsTheShellsSweep(t *testing.T) {
 	}
 	if got, ok := v.Value.(string); !ok || !strings.HasPrefix(got, "0|0|balance ") {
 		t.Fatalf("sweep() result = %v, want a skipped account", v.Value)
+	}
+}
+
+// What a script is told when a sweep fails.
+func TestSweepResultForScript(t *testing.T) {
+	failed := errors.New("all 2 transaction(s) failed")
+	result := &SweepCommandResult{
+		ToAddress:    "DEST",
+		FailureCount: 2,
+		Items: []SweepItemResult{
+			// Sent, and the wait for confirmation failed: it may still confirm.
+			{From: "A", TxID: "TXA", Error: "transaction failed: timed out waiting"},
+			// A simulation failure has no Error in the shell's result.
+			{From: "B", TxID: "SIMB", SimulationFailed: true, Output: "  logic eval error\n"},
+		},
+	}
+
+	_, err := sweepResultForScript(result, failed)
+	if err == nil {
+		t.Fatal("a sweep where every transaction failed was not raised")
+	}
+	for _, want := range []string{
+		"A: transaction failed: timed out waiting [sent as TXA; it may still confirm]",
+		"B: simulation failed: logic eval error",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want it to contain %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "sent as SIMB") {
+		t.Fatalf("a simulated transaction is reported as sent: %q", err)
+	}
+
+	// Partly failed: returned, and the simulation failure has a reason.
+	out, err := sweepResultForScript(result, nil)
+	if err != nil {
+		t.Fatalf("a partly failed sweep was raised: %v", err)
+	}
+	if out.Failed != 2 || out.Items[0].TxID != "TXA" || out.Items[1].Error != "simulation failed: logic eval error" {
+		t.Fatalf("result = %+v", out)
 	}
 }

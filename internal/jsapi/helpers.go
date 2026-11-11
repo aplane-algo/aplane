@@ -249,6 +249,44 @@ func (a *API) optionBool(m map[string]interface{}, key, funcName string) (value,
 	return value, true
 }
 
+// optionUint64 reads a whole-number option: a fee, an amount, an ID. A key
+// that is present must hold a number; {leaving: undefined}, from a mistyped
+// or unset variable, read as "not given" would move a different amount than
+// the script meant.
+func (a *API) optionUint64(m map[string]interface{}, key, funcName string) (value uint64, present bool) {
+	raw, exists := m[key]
+	if !exists {
+		return 0, false
+	}
+	value, err := toUint64Interface(raw)
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s invalid %s: %v", funcName, key, err)))
+	}
+	return value, true
+}
+
+// lsigArgsOption reads the lsigArgs option: LogicSig runtime arguments by
+// name, each a byte string.
+func (a *API) lsigArgsOption(m map[string]interface{}, funcName string) map[string][]byte {
+	rawArgs, ok := m["lsigArgs"]
+	if !ok {
+		return nil
+	}
+	argMap, ok := rawArgs.(map[string]interface{})
+	if !ok {
+		panic(a.runtime.ToValue(funcName + " invalid lsigArgs: expected object"))
+	}
+	args := make(map[string][]byte, len(argMap))
+	for name, raw := range argMap {
+		value, err := parseJSByteString(raw)
+		if err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid lsigArgs[%q]: %v", funcName, name, err)))
+		}
+		args[name] = value
+	}
+	return args
+}
+
 // optionString reads a string option, with the same rule as optionBool.
 func (a *API) optionString(m map[string]interface{}, key, funcName string) (value string, present bool) {
 	raw, exists := m[key]
@@ -290,14 +328,7 @@ func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName str
 		return opts
 	}
 	a.refuseUnknownKeys(m, funcName+" option", append([]string{"fee", "wait", "note"}, extraKeys...)...)
-	if f, ok := m["fee"]; ok {
-		var err error
-		opts.Fee, err = toUint64Interface(f)
-		if err != nil {
-			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid fee: %v", funcName, err)))
-		}
-		opts.UseFlatFee = true
-	}
+	opts.Fee, opts.UseFlatFee = a.optionUint64(m, "fee", funcName)
 	if w, ok := a.optionBool(m, "wait", funcName); ok {
 		opts.Wait = w
 	}
@@ -333,25 +364,7 @@ func (a *API) parseCloseOptions(call goja.FunctionCall) closeTxnOptions {
 		return opts
 	}
 
-	rawArgs, ok := m["lsigArgs"]
-	if !ok {
-		return opts
-	}
-
-	argMap, ok := rawArgs.(map[string]interface{})
-	if !ok {
-		panic(a.runtime.ToValue("close() invalid lsigArgs: expected object"))
-	}
-
-	opts.LsigArgs = make(map[string][]byte, len(argMap))
-	for name, raw := range argMap {
-		value, err := parseJSByteString(raw)
-		if err != nil {
-			panic(a.runtime.ToValue(fmt.Sprintf("close() invalid lsigArgs[%q]: %v", name, err)))
-		}
-		opts.LsigArgs[name] = value
-	}
-
+	opts.LsigArgs = a.lsigArgsOption(m, "close()")
 	return opts
 }
 

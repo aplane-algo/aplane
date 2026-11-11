@@ -47,6 +47,7 @@ type SweepRequest struct {
 	Fee        uint64
 	UseFlatFee bool
 	Wait       bool
+	LsigArgs   map[string][]byte
 }
 
 // SweepResult is the outcome of a sweep, one item per source account.
@@ -59,7 +60,9 @@ type SweepResult struct {
 }
 
 // SweepItem is one source account's outcome. Skipped says why nothing was
-// sent (not an error); Error says why a transaction failed.
+// sent (not an error); Error says why a transaction failed. A failed item can
+// still carry a TxID: the transaction was sent and waiting for it failed, so
+// it may yet confirm.
 type SweepItem struct {
 	From      string
 	Amount    uint64
@@ -75,7 +78,7 @@ type API struct {
 	runtime        *goja.Runtime
 	verbose        bool
 	output         func(string)
-	pluginMu       sync.RWMutex
+	hostMu         sync.RWMutex
 	pluginExecutor PluginExecutor
 	sweeper        Sweeper
 	ctxMu          sync.RWMutex
@@ -121,27 +124,27 @@ func (a *API) SetContext(ctx context.Context) func() {
 
 // SetPluginExecutor sets the plugin executor for the API.
 func (a *API) SetPluginExecutor(executor PluginExecutor) {
-	a.pluginMu.Lock()
-	defer a.pluginMu.Unlock()
+	a.hostMu.Lock()
+	defer a.hostMu.Unlock()
 	a.pluginExecutor = executor
 }
 
 // SetSweeper sets the host's sweep implementation for sweep().
 func (a *API) SetSweeper(sweeper Sweeper) {
-	a.pluginMu.Lock()
-	defer a.pluginMu.Unlock()
+	a.hostMu.Lock()
+	defer a.hostMu.Unlock()
 	a.sweeper = sweeper
 }
 
 func (a *API) getSweeper() Sweeper {
-	a.pluginMu.RLock()
-	defer a.pluginMu.RUnlock()
+	a.hostMu.RLock()
+	defer a.hostMu.RUnlock()
 	return a.sweeper
 }
 
 func (a *API) getPluginExecutor() PluginExecutor {
-	a.pluginMu.RLock()
-	defer a.pluginMu.RUnlock()
+	a.hostMu.RLock()
+	defer a.hostMu.RUnlock()
 	return a.pluginExecutor
 }
 

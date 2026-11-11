@@ -311,13 +311,20 @@ close("htlc-lsig", "treasury", {
 `sweep()` is the shell's `sweep` command. It does not close the account; that
 is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
 `leaving` (what to keep in each account, in microAlgos or the asset's base
-units, default 0), `fee` and `wait`. It takes no `note`.
+units, default 0), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
+no `note`. An option that is present must have a value: `{leaving: undefined}`
+is an error, not "leave nothing".
 
 It returns `{asset, to, succeeded, failed, items}`, where each item is
 `{from, amount, txid, confirmed, skipped, error}`. An account with nothing
 above `leaving`, or one not opted into the asset, is skipped: `skipped` gives
 the reason and nothing is sent. When some transactions fail, read `failed` and
-each item's `error`. When every transaction fails, `sweep()` throws.
+each item's `error`. When every transaction fails, `sweep()` throws, with each
+account's reason.
+
+A failed item can still have a `txid`: the transaction was sent and waiting
+for its confirmation failed, so it may yet confirm. The thrown message names
+such a transaction ("sent as ..."). Check it before retrying.
 
 An ALGO sweep with `leaving: 0` tries to send the whole balance less fees,
 which the network refuses, because an open account must keep its minimum
