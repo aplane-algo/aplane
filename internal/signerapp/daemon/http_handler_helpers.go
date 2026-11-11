@@ -6,7 +6,10 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -51,11 +54,71 @@ func writeServiceErrorJSON(w http.ResponseWriter, err *svcerr.Error) {
 	writeJSON(w, err.HTTPStatus(), signerapi.ErrorResponse{Error: err.Error(), Code: err.Code()})
 }
 
+// errUnknownRequestField is a request body member the endpoint's request type
+// does not declare. It carries the member name for the refusal.
+type errUnknownRequestField struct {
+	name string
+}
+
+func (e *errUnknownRequestField) Error() string {
+	return "request has unknown field " + e.name
+}
+
+var errTrailingRequestData = errors.New("request body has data after the JSON value")
+
+// maxQuotedFieldNameBytes bounds how much of a refused member name is echoed
+// back: enough to recognize a field, never a body-sized string.
+const maxQuotedFieldNameBytes = 64
+
+// decodeStrictJSON decodes one JSON request body into v. A member v does not
+// declare is refused rather than dropped, at any depth, so a misspelled or
+// retired field can't be silently ignored; so is anything after the value.
+// Every signer HTTP endpoint that reads a body decodes it here.
+func decodeStrictJSON(body io.Reader, v any) error {
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(v); err != nil {
+		// encoding/json reports an undeclared member only as text.
+		if quoted, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			return &errUnknownRequestField{name: quoteFieldName(quoted)}
+		}
+		return err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return err
+		}
+		return errTrailingRequestData
+	}
+	return nil
+}
+
+// quoteFieldName re-quotes the decoder's quoted member name as ASCII and
+// bounds its length.
+func quoteFieldName(quoted string) string {
+	name, err := strconv.Unquote(quoted)
+	if err != nil {
+		name = quoted
+	}
+	if len(name) > maxQuotedFieldNameBytes {
+		return strconv.QuoteToASCII(name[:maxQuotedFieldNameBytes]) + "..."
+	}
+	return strconv.QuoteToASCII(name)
+}
+
 // decodeError returns the appropriate HTTP status and message for a JSON decode error.
 func decodeError(err error) (int, string) {
 	var maxBytesErr *http.MaxBytesError
 	if errors.As(err, &maxBytesErr) {
 		return http.StatusRequestEntityTooLarge, "request body too large"
+	}
+	var unknown *errUnknownRequestField
+	if errors.As(err, &unknown) {
+		return http.StatusBadRequest, unknown.Error()
+	}
+	if errors.Is(err, errTrailingRequestData) {
+		return http.StatusBadRequest, err.Error()
 	}
 	return http.StatusBadRequest, "invalid JSON"
 }
@@ -108,7 +171,7 @@ func decodeAuthenticatedJSONRequest[Req any](fs *Signer, w http.ResponseWriter, 
 
 	var req Req
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeStrictJSON(r.Body, &req); err != nil {
 		status, msg := decodeError(err)
 		writeErrorJSON(w, status, msg)
 		return nil, zero, false
