@@ -92,8 +92,9 @@ on key type:
 
 ### Signer Processing
 
-The signer hex-decodes `TxnBytesHex`, strips the leading `TX` prefix if present,
-and msgpack-decodes the remaining bytes into a `types.Transaction`. The decoded
+The signer hex-decodes `TxnBytesHex`, requires the leading `TX` prefix,
+msgpack-decodes the remaining bytes into a `types.Transaction`, and refuses
+the request unless re-encoding that transaction gives back the same bytes. The decoded
 form drives policy checks and approval rendering. The actual signing message is
 derived from the *final planned* transaction (after group ID, dummy, and fee
 canonicalization), not from the raw inbound bytes. Implementation:
@@ -131,9 +132,12 @@ sign-and-submit path. The other call sites are
 ### In Signer (server side)
 
 Request decoding lives in `internal/signerapp/signing/planner.go`: the planner
-hex-decodes `TxnBytesHex`, strips a leading `TX` prefix when present, and
-msgpack-decodes the remainder into a transaction; malformed hex or msgpack
-fails the request.
+hex-decodes `TxnBytesHex`, requires the leading `TX` prefix, msgpack-decodes
+the remainder into a transaction, and requires the bytes to be that
+transaction's canonical encoding. Malformed hex, a missing prefix, invalid
+msgpack and non-canonical bytes each fail the request with 400. A passthrough
+entry's `signed_txn_hex` is held to the same rule: it must be the canonical
+encoding of the signed transaction it decodes to.
 
 Message selection lives in `internal/signerapp/signing/execution.go`. For
 LogicSig DSA keys (those backed by TEAL bytecode), the signing message is the
@@ -145,8 +149,13 @@ The strict client-side helpers — `txnutil.EncodeWithPrefixHex` and
 `txnutil.DecodePrefixedHex` in `internal/txnutil/txn.go` — round-trip the
 canonical TX-prefixed hex form. `DecodePrefixedHex` rejects input without the
 `TX` prefix and is used by clients consuming planned unsigned transactions.
-The server request decoder remains backward-tolerant of unprefixed msgpack for
-inbound requests, but clients should send and expect the TX-prefixed form.
+The server request decoder is as strict: `/sign` and `/plan` refuse, with 400,
+sign-mode or foreign bytes that lack the `TX` prefix or are not the canonical
+encoding of the transaction they decode to (trailing data, a repeated field, a
+wrong-length address, an explicit empty field), and passthrough bytes that are
+not the canonical encoding of their signed transaction. What the signer
+reviews is then always what the bytes say: it signs the client's transaction
+apart from the changes it reports, and returns a passthrough entry unchanged.
 
 ## Coverage
 

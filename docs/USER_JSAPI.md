@@ -430,7 +430,11 @@ authorization charge, added on top of the fees you set (see
 [FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership)). To sign a single
 transaction, submit its original draft rather than the transaction `plan()`
 returned: a single transaction has no group ID, so planning the planned
-transaction again adds the charge again. Request fields:
+transaction again adds the charge again. `txnBytesHex` is the hex of the
+letters `TX` followed by the transaction's canonical msgpack encoding, and
+`signedTxnHex` the hex of a signed transaction's canonical encoding; the
+signer refuses bytes without the `TX` prefix or in any other encoding. Request
+fields:
 
 ```javascript
 {

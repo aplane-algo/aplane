@@ -19,12 +19,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -389,16 +391,22 @@ func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[
 // validatePluginSignedSlot decodes a plugin-signed blob and verifies it signs the
 // EXACT canonical transaction APlane planned — never a substitute. Returns the
 // signed transaction as hex for passthrough.
-func validatePluginSignedSlot(canonical types.Transaction, encoded string, authorization PluginSlotAuthorization) (string, error) {
+func validatePluginSignedSlot(planned types.Transaction, encoded string, authorization PluginSlotAuthorization) (string, error) {
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode signed bytes: %w", err)
 	}
-	var stxn types.SignedTxn
-	if err := msgpack.Decode(raw, &stxn); err != nil {
+	// The signer forwards these bytes as given and refuses any that are not
+	// the canonical encoding of what they decode to. The same decoder runs
+	// here, so a slot is refused before the group goes to be signed.
+	stxn, err := canonical.DecodeSignedTxn(raw)
+	if errors.Is(err, canonical.ErrNotCanonical) {
+		return "", fmt.Errorf("signed transaction bytes are not canonical (trailing data, a repeated field, or an explicit empty field)")
+	}
+	if err != nil {
 		return "", fmt.Errorf("failed to decode signed transaction: %w", err)
 	}
-	if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(canonical)) {
+	if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(planned)) {
 		return "", fmt.Errorf("signed transaction does not match the canonical bytes")
 	}
 	if err := validatePluginSignedAuthorization(stxn, authorization); err != nil {

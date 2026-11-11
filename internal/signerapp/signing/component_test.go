@@ -134,8 +134,8 @@ func TestPrepareComponentSigningRejectsMalformedGroupBytes(t *testing.T) {
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("prepareComponentSigning() error = %v, want bad request", err)
 	}
-	if !strings.Contains(err.Message, "decode transaction") {
-		t.Fatalf("prepareComponentSigning() error = %q, want decode transaction", err.Message)
+	if !strings.Contains(err.Message, "invalid msgpack") {
+		t.Fatalf("prepareComponentSigning() error = %q, want invalid msgpack", err.Message)
 	}
 }
 
@@ -625,8 +625,8 @@ func TestSigningServiceAssembleCosignedDispatchesAfterValidation(t *testing.T) {
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("AssembleCosignedWithContext() error = %#v, want bad request", err)
 	}
-	if !strings.Contains(err.Message, "decode transaction") {
-		t.Fatalf("AssembleCosignedWithContext() error = %q, want decode transaction", err.Message)
+	if !strings.Contains(err.Message, "invalid msgpack") {
+		t.Fatalf("AssembleCosignedWithContext() error = %q, want invalid msgpack", err.Message)
 	}
 
 	_, err = (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{}, nil)

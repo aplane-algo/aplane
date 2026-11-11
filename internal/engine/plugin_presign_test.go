@@ -268,6 +268,17 @@ func TestValidatePluginSignedSlot(t *testing.T) {
 		}
 	})
 
+	t.Run("signed bytes with trailing data are refused before the signer sees them", func(t *testing.T) {
+		raw, err := base64.StdEncoding.DecodeString(sign(canonical))
+		if err != nil {
+			t.Fatal(err)
+		}
+		padded := base64.StdEncoding.EncodeToString(append(raw, 0xc0))
+		if _, err := validatePluginSignedSlot(canonical, padded, PluginSlotAuthorization{}); err == nil ||
+			!strings.Contains(err.Error(), "not canonical") {
+			t.Fatalf("padded signed bytes: %v, want refused as not canonical", err)
+		}
+	})
 	t.Run("bad base64 -> error", func(t *testing.T) {
 		if _, err := validatePluginSignedSlot(canonical, "!!!", PluginSlotAuthorization{}); err == nil {
 			t.Fatal("expected error for bad base64")

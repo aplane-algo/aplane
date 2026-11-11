@@ -14,6 +14,7 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -115,6 +116,25 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 	}, nil
 }
 
+// The ways transaction bytes fail the canonical decoders. Each has fixed
+// text, so every endpoint that answers a client with one says the same thing.
+var (
+	ErrMissingTXPrefix = errors.New("missing TX prefix")
+	ErrInvalidMsgpack  = errors.New("invalid msgpack")
+	ErrNotCanonical    = errors.New("transaction bytes are not canonical")
+)
+
+// DecodeError is a codec failure. Its text is ErrInvalidMsgpack's: the
+// codec's own wording names its internals, changes with the library, and
+// quotes bytes from the input, so it is not fit to send to a client or print
+// raw. Detail holds it for a log line that escapes it first.
+type DecodeError struct {
+	Detail error
+}
+
+func (e *DecodeError) Error() string { return ErrInvalidMsgpack.Error() }
+func (e *DecodeError) Unwrap() error { return ErrInvalidMsgpack }
+
 // DecodeTXPrefixed decodes one TX-prefixed transaction and rejects any
 // encoding that does not re-encode to exactly the same bytes: trailing data,
 // non-canonical key order or explicit zero values. It checks nothing about
@@ -122,16 +142,30 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 func DecodeTXPrefixed(raw []byte) (types.Transaction, error) {
 	var txn types.Transaction
 	if len(raw) < 2 || raw[0] != 'T' || raw[1] != 'X' {
-		return txn, fmt.Errorf("missing TX prefix")
+		return txn, ErrMissingTXPrefix
 	}
 	if err := msgpack.Decode(raw[2:], &txn); err != nil {
-		return txn, fmt.Errorf("decode transaction: %w", err)
+		return txn, &DecodeError{Detail: err}
 	}
 	canonical := txnutil.EncodeWithPrefix(txn)
 	if !bytes.Equal(raw, canonical) {
-		return txn, fmt.Errorf("transaction bytes are not canonical")
+		return txn, ErrNotCanonical
 	}
 	return txn, nil
+}
+
+// DecodeSignedTxn decodes one signed transaction and rejects any encoding
+// that does not re-encode to exactly the same bytes. Signed bytes that are
+// forwarded as given have to be exactly what was decoded and reviewed.
+func DecodeSignedTxn(raw []byte) (types.SignedTxn, error) {
+	var stxn types.SignedTxn
+	if err := msgpack.Decode(raw, &stxn); err != nil {
+		return stxn, &DecodeError{Detail: err}
+	}
+	if !bytes.Equal(msgpack.Encode(stxn), raw) {
+		return stxn, ErrNotCanonical
+	}
+	return stxn, nil
 }
 
 // ValidateGroupConsistency checks the MVP pre-grouped transaction invariant.

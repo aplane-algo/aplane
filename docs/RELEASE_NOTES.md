@@ -7,6 +7,26 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The signer refuses request bytes that aren't canonical
+
+- `/sign` and `/plan` decoded a request's transaction bytes leniently: the `TX`
+  prefix was optional, and trailing data, a repeated field and a wrong-length
+  address were accepted. The signer then reviewed and signed its own
+  re-encoding, which could differ from the bytes the client sent, so the
+  client's transaction ID no longer matched.
+- Sign-mode and foreign bytes must now be `TX`-prefixed and canonical, as
+  every other signer endpoint already required. Anything else is a 400.
+- A passthrough entry's signed bytes must be canonical too. They are returned
+  as given, so they have to be exactly what was decoded and reviewed.
+- apshell holds a plugin's signed slots to the same rule, so a plugin that
+  signs is told before the group reaches the signer. The Algorand SDKs'
+  encoders already produce canonical bytes; a hand-rolled encoder that writes
+  an explicit empty field or unsorted keys is now refused.
+- Every signer endpoint answers undecodable transaction bytes with the same
+  fixed text. The codec's own wording, which quotes bytes from the request,
+  goes only to the signer's console, escaped.
+- apshell and the SDKs have always sent this form.
+
 ## Reviews show more of what a transaction does
 
 - **ABI method label.** The signer never held the app's contract, so the method

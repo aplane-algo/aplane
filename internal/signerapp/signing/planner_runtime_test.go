@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -439,7 +440,7 @@ func TestPlannerUsesSingleRuntimeSnapshot(t *testing.T) {
 	plan, planErr := planner.PlanGroup(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: authAddr,
-			TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn)),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	})
 	if planErr != nil {
@@ -487,7 +488,7 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 	planner := NewPlanner(deps, PlannerOptions{
 		AuditLog:            audit,
 		GenesisHashResolver: resolver,
-		GenerateTxnDescription: func(txnBytesHex string) string {
+		GenerateTxnDescription: func(types.Transaction) string {
 			return "decoded transaction"
 		},
 	})
@@ -496,7 +497,7 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: authAddr,
 			TxnSender:   "caller-spoofed-sender",
-			TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn)),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	})
 	if planErr != nil {
@@ -685,7 +686,7 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 		}
 		return signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 			AuthAddress: authAddr,
-			TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn)),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}}}
 	}
 

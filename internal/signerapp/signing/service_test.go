@@ -6,12 +6,10 @@ package signing
 import (
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -20,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -656,7 +655,7 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 			req := signerapi.GroupSignRequest{
 				Requests: []signerapi.SignRequest{{
 					AuthAddress: authAddress,
-					TxnBytesHex: hex.EncodeToString(msgpack.Encode(tt.draftTxn)),
+					TxnBytesHex: txnutil.EncodeWithPrefixHex(tt.draftTxn),
 				}},
 			}
 			plan := &PlanResult{

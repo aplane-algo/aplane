@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
@@ -415,30 +414,6 @@ var transactionDescribers = map[string]transactionDescriber{
 	string(types.AssetFreezeTx):     describeAssetFreezeTx,
 	string(types.ApplicationCallTx): describeApplicationCallTx,
 	string(types.KeyRegistrationTx): describeKeyRegistrationTx,
-}
-
-// DescribeHexWithResolver creates trustless human-readable
-// transaction descriptions derived directly from transaction bytes.
-func DescribeHexWithResolver(txnBytesHex string, resolver apconfig.GenesisHashNetworkResolver) string {
-	if txnBytesHex == "" {
-		return ""
-	}
-
-	txnBytes, err := hex.DecodeString(txnBytesHex)
-	if err != nil {
-		return fmt.Sprintf("[Error decoding transaction: %v]", err)
-	}
-
-	if len(txnBytes) > 2 && txnBytes[0] == 'T' && txnBytes[1] == 'X' {
-		txnBytes = txnBytes[2:]
-	}
-
-	var txn types.Transaction
-	if err := msgpack.Decode(txnBytes, &txn); err != nil {
-		return fmt.Sprintf("[Error decoding transaction structure: %v]", err)
-	}
-
-	return DescribeTxnWithResolver(txn, resolver)
 }
 
 // DescribeTxn creates a human-readable transaction description

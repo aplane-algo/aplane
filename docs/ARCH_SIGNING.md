@@ -84,7 +84,7 @@ Three distinct byte representations appear in the signing flow:
 |--------|---------|----------|
 | **Unsigned transaction encoding** | msgpack(txn) | Internal transaction representation |
 | **Signing preimage** | `"TX"` + msgpack(txn) | Ed25519 signs this directly; Falcon hashes it to derive the transaction ID |
-| **Transport field** (`txn_bytes_hex`) | Hex encoding of the signing preimage | Wire format in `/sign` and `/plan` requests. Server strips the `TX` prefix before msgpack decoding. |
+| **Transport field** (`txn_bytes_hex`) | Hex encoding of the signing preimage | Wire format in `/sign` and `/plan` requests. The server requires the `TX` prefix and the canonical encoding, and refuses anything else with 400. |
 
 ### Derivation by Key Type
 
@@ -301,7 +301,9 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 2. Decode all supplied transaction material.
    - Sign and foreign entries decode from `txn_bytes_hex`.
    - Passthrough entries decode from `signed_txn_hex`.
-   - Decode failures, malformed hex, and invalid msgpack fail the request.
+   - Malformed hex, a missing `TX` prefix on `txn_bytes_hex`, invalid msgpack,
+     and bytes that are not the canonical encoding of what they decode to
+     fail the request with 400.
 
 3. Classify the group and enforce shape rules.
    - All-foreign groups are rejected because the signer has no signer-managed work to perform.

@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -78,9 +77,14 @@ func validateCosignedPassthrough(ctx context.Context, passthrough signerapi.Asse
 		return "", err
 	}
 
-	var stxn types.SignedTxn
-	if err := msgpack.Decode(signedTxnBytes, &stxn); err != nil {
-		return "", badRequest(fmt.Sprintf("passthrough index %d: invalid signed transaction msgpack: %v", passthrough.TargetIndex, err))
+	// One rule for forwarded signed bytes, shared with /sign passthrough:
+	// they must be the canonical encoding of what they decode to. The decoder
+	// reports that here; the refusal for it stays last, after the checks
+	// below, so the order of refusals is unchanged.
+	stxn, decodeErr := canonical.DecodeSignedTxn(signedTxnBytes)
+	notCanonical := errors.Is(decodeErr, canonical.ErrNotCanonical)
+	if decodeErr != nil && !notCanonical {
+		return "", badRequest(fmt.Sprintf("passthrough index %d: invalid signed transaction msgpack", passthrough.TargetIndex))
 	}
 	txID := algocrypto.TransactionID(stxn.Txn)
 	if !bytes.Equal(txID[:], entry.TxID[:]) {
@@ -99,15 +103,11 @@ func validateCosignedPassthrough(ctx context.Context, passthrough signerapi.Asse
 	if !signedTxnHasSignature(stxn) {
 		return "", badRequest(fmt.Sprintf("passthrough index %d signed transaction carries no signature", passthrough.TargetIndex))
 	}
-	// Enforce canonical encoding on the forwarded bytes, matching the canonical
-	// round-trip the transport already applies to component targets. Re-encode
-	// and require equality so a non-canonical SignedTxn cannot be submitted, and
-	// return the canonical bytes.
-	reencoded := msgpack.Encode(stxn)
-	if !bytes.Equal(reencoded, signedTxnBytes) {
+	// A non-canonical SignedTxn cannot be submitted.
+	if notCanonical {
 		return "", badRequest(fmt.Sprintf("passthrough index %d signed transaction bytes are not canonical", passthrough.TargetIndex))
 	}
-	return hex.EncodeToString(reencoded), nil
+	return hex.EncodeToString(signedTxnBytes), nil
 }
 
 // rejectLocalCosignedPassthrough rejects a passthrough whose effective signer
