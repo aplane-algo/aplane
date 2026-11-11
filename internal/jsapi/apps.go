@@ -404,7 +404,7 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 	if boxes, ok := m["boxes"]; ok {
 		opts.ForeignBoxes = a.parseBoxRefsValue(boxes, funcName)
 	}
-	if raw, ok := m["onCompletion"].(string); ok {
+	if raw, ok := a.optionString(m, "onCompletion", funcName); ok {
 		onComp, err := parseOnCompletionString(raw)
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid onCompletion: %v", funcName, err)))

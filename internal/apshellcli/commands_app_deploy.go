@@ -170,6 +170,9 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 		case strings.HasPrefix(arg, "note="):
 			params.Note = strings.TrimPrefix(arg, "note=")
 		case strings.HasPrefix(arg, "fee="):
+			if params.UseFlatFee {
+				return nil, fmt.Errorf("fee given more than once")
+			}
 			feeVal, err := strconv.ParseUint(strings.TrimPrefix(arg, "fee="), 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid fee value: %s", strings.TrimPrefix(arg, "fee="))

@@ -290,9 +290,12 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 
 			// Filter input addresses
 			result := make([]interface{}, 0)
-			for _, item := range arr {
-				addr, ok := item.(string)
-				if ok && holderSet[addr] {
+			addresses, err := stringArray(arr)
+			if err != nil {
+				panic(a.runtime.ToValue(fmt.Sprintf("holders() addresses: %v", err)))
+			}
+			for _, addr := range addresses {
+				if holderSet[addr] {
 					result = append(result, addr)
 				}
 			}

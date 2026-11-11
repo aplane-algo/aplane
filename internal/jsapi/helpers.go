@@ -41,14 +41,11 @@ func validateUint64Float(val float64) error {
 		return fmt.Errorf("value %v is too large", val)
 	}
 	// Past this, JavaScript has already rounded the number.
-	if val > maxExactJSInteger {
+	if val > maxSafeJSInteger {
 		return fmt.Errorf("value %.0f is past the largest whole number JavaScript holds exactly; pass a BigInt or a decimal string", val)
 	}
 	return nil
 }
-
-// maxExactJSInteger is JavaScript's Number.MAX_SAFE_INTEGER.
-const maxExactJSInteger = float64(1<<53 - 1)
 
 // makeAlgoFunc creates the algo() helper function bound to a runtime.
 // algo(1.5) -> 1500000
@@ -146,28 +143,16 @@ func toUint64(vm *goja.Runtime, v goja.Value) uint64 {
 		return uint64(val)
 	case uint64:
 		return val
-	case string:
-		// A decimal string is how an amount past 2^53 is passed. Nothing
-		// else: "0x10", "1e6" and "" would each be read as a number the
-		// script did not write.
-		parsed, err := strconv.ParseUint(val, 10, 64)
-		if err != nil || (len(val) > 1 && val[0] == '0') || (len(val) > 0 && val[0] == '+') {
-			panic(vm.ToValue(fmt.Sprintf("%q is not a whole number in plain decimal", val)))
+	default:
+		// A decimal string or a BigInt for a value JavaScript can't hold
+		// exactly. Nothing else: null, undefined, booleans and objects
+		// would be coerced to 0, 0, 1 and NaN, and "0x10", "1e6" and ""
+		// read as numbers the script did not write.
+		parsed, err := toUint64Interface(val)
+		if err != nil {
+			panic(vm.ToValue(err.Error()))
 		}
 		return parsed
-	case *big.Int:
-		if val.Sign() < 0 {
-			panic(vm.ToValue("value cannot be negative"))
-		}
-		if !val.IsUint64() {
-			panic(vm.ToValue(fmt.Sprintf("value %s is too large", val.String())))
-		}
-		return val.Uint64()
-	default:
-		// null, undefined, booleans, objects: JavaScript would coerce these
-		// to 0, 0, 1 and NaN. An amount of 0 from a missing field is the
-		// case that matters.
-		panic(vm.ToValue(fmt.Sprintf("a number is needed, got %s", jsTypeName(val))))
 	}
 }
 
@@ -195,9 +180,52 @@ func toUint64Interface(v interface{}) (uint64, error) {
 		return uint64(val), nil
 	case uint64:
 		return val, nil
+	case string:
+		// A decimal string, as toUint64 takes: the way to pass a value
+		// JavaScript can't hold exactly.
+		parsed, err := strconv.ParseUint(val, 10, 64)
+		if err != nil || (len(val) > 1 && val[0] == '0') {
+			return 0, fmt.Errorf("%q is not a whole number in plain decimal", val)
+		}
+		return parsed, nil
+	case *big.Int:
+		if val.Sign() < 0 {
+			return 0, errNegativeValue
+		}
+		if !val.IsUint64() {
+			return 0, fmt.Errorf("value %s is too large", val.String())
+		}
+		return val.Uint64(), nil
 	default:
-		return 0, fmt.Errorf("unsupported type for uint64 conversion: %T", v)
+		return 0, fmt.Errorf("a number is needed, got %s", jsTypeName(v))
 	}
+}
+
+// optionBool reads a boolean option. An option that is present with another
+// type is an error: {wait: 'false'} read as "not given" would wait.
+func (a *API) optionBool(m map[string]interface{}, key, funcName string) (value, present bool) {
+	raw, exists := m[key]
+	if !exists || raw == nil {
+		return false, false
+	}
+	value, ok := raw.(bool)
+	if !ok {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s option %s must be true or false, got %s", funcName, key, jsTypeName(raw))))
+	}
+	return value, true
+}
+
+// optionString reads a string option, with the same rule as optionBool.
+func (a *API) optionString(m map[string]interface{}, key, funcName string) (value string, present bool) {
+	raw, exists := m[key]
+	if !exists || raw == nil {
+		return "", false
+	}
+	value, ok := raw.(string)
+	if !ok {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s option %s must be a string, got %s", funcName, key, jsTypeName(raw))))
+	}
+	return value, true
 }
 
 // txnOptions holds common transaction options parsed from JS call arguments.
@@ -230,10 +258,10 @@ func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName str
 		}
 		opts.UseFlatFee = true
 	}
-	if w, ok := m["wait"].(bool); ok {
+	if w, ok := a.optionBool(m, "wait", funcName); ok {
 		opts.Wait = w
 	}
-	if n, ok := m["note"].(string); ok {
+	if n, ok := a.optionString(m, "note", funcName); ok {
 		opts.Note = n
 	}
 	return opts

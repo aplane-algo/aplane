@@ -178,3 +178,58 @@ func TestJSNameArgumentsRefuseUndefinedAndNull(t *testing.T) {
 		}
 	}
 }
+
+// A value inside an options object or an entry object takes the same forms
+// as a top-level argument, so a value past 2^53 can be passed there too.
+func TestJSNumbersInOptionsTakeBigIntAndDecimalStrings(t *testing.T) {
+	vm := goja.New()
+	read := func(expr string) (uint64, error) {
+		v, err := vm.RunString(expr)
+		if err != nil {
+			t.Fatalf("run %s: %v", expr, err)
+		}
+		return toUint64Interface(v.Export())
+	}
+	for expr, want := range map[string]uint64{
+		`5`: 5, `"1000000000000000000"`: 1000000000000000000, `1000000000000000000n`: 1000000000000000000,
+	} {
+		if got, err := read(expr); err != nil || got != want {
+			t.Errorf("%s = %d, %v; want %d", expr, got, err, want)
+		}
+	}
+	for _, expr := range []string{`1e18`, `null`, `true`, `""`, `"0x10"`, `"0100"`, `-1n`, `({})`} {
+		if got, err := read(expr); err == nil {
+			t.Errorf("%s = %d, want refused", expr, got)
+		}
+	}
+}
+
+func TestJSOptionsOfTheWrongTypeAreRefused(t *testing.T) {
+	api := &API{runtime: goja.New()}
+	try := func(read func()) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("%v", r)
+			}
+		}()
+		read()
+		return nil
+	}
+	options := map[string]interface{}{"wait": "false", "note": int64(123), "absent": nil}
+	if err := try(func() { api.optionBool(options, "wait", "send()") }); err == nil {
+		t.Error(`{wait: "false"} is accepted; it would be read as not given, and wait`)
+	}
+	if err := try(func() { api.optionString(options, "note", "send()") }); err == nil {
+		t.Error("{note: 123} is accepted; it would send no note")
+	}
+	// undefined and a missing key both mean "not given".
+	for _, key := range []string{"absent", "missing"} {
+		if err := try(func() {
+			if _, present := api.optionBool(options, key, "send()"); present {
+				t.Errorf("%s reads as given", key)
+			}
+		}); err != nil {
+			t.Errorf("%s: %v", key, err)
+		}
+	}
+}

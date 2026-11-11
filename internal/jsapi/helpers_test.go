@@ -396,19 +396,19 @@ func TestToUint64Interface(t *testing.T) {
 			name:    "string type",
 			input:   "not a number",
 			wantErr: true,
-			errMsg:  "unsupported type for uint64 conversion: string",
+			errMsg:  `"not a number" is not a whole number in plain decimal`,
 		},
 		{
 			name:    "nil",
 			input:   nil,
 			wantErr: true,
-			errMsg:  "unsupported type for uint64 conversion: <nil>",
+			errMsg:  "a number is needed, got null or undefined",
 		},
 		{
 			name:    "slice",
 			input:   []int{1, 2, 3},
 			wantErr: true,
-			errMsg:  "unsupported type for uint64 conversion: []int",
+			errMsg:  "a number is needed, got a []int",
 		},
 	}
 

@@ -16,7 +16,11 @@ apshell and its JavaScript API:
   `optin`, `optout`, `close` and `keyreg` ignored a word they did not take, so
   `sweep algo to main leaving=1` dropped the reserve and swept the whole
   balance, and `send ... fee 2000` used the default fee. A fee given twice is
-  refused too.
+  refused too, on these and on `app call` and `app deploy`. A `to` with no
+  address after it on `optout` is refused; it used to be dropped.
+- **A command line may end with `# a comment`.** The documented examples do;
+  they worked only because the trailing words were ignored. An unquoted `#`
+  where a word would begin now starts a comment.
 - **`note <text>` is gone; write `note=<text>`.** The spaced form took the next
   word as the note, whatever it was.
 - **A rekey or close to the zero address is refused.** The network reads the
@@ -24,16 +28,20 @@ apshell and its JavaScript API:
   did nothing and was reported as done. The same holds for closing out an
   asset.
 - **`keyreg <account> offline eligible=true` is refused.** It paid the 2 ALGO
-  incentive fee on a registration that cannot be eligible.
-- **Pasting more than one participation key is refused.** The fields of two
-  keys could be mixed.
-- **`arg:` with `atomic` is refused** on `send`: an atomic send does not carry
-  LogicSig arguments, and they were left out silently. An app call's companion
+  incentive fee on a registration that cannot be eligible. `eligible=` takes
+  `true` or `false` only; `eligible=yes` was read as false.
+- **Pasting more than one participation key is refused**, including part of
+  one and all of another. The fields of two keys could be mixed.
+- **`arg:` is refused on an atomic `send` to or from a set**: that path does
+  not carry LogicSig arguments, and they were left out silently. An app call's companion
   payment (`--pay`) now carries the call's LogicSig arguments.
 - **JavaScript numbers are not coerced.** An amount, fee or ID must be a
   number, a `BigInt` or a plain decimal string. `null`, `undefined`, `''`,
   `true`, `'0x10'` and `'1e6'` were read as 0, 0, 0, 1, 16 and 1000000; each
-  is now an error, as is a whole number past `Number.MAX_SAFE_INTEGER`.
+  is now an error, as is a whole number past `Number.MAX_SAFE_INTEGER`. The
+  same forms are accepted inside option objects. An option of the wrong type,
+  such as `{wait: 'false'}` or `{note: 123}`, is an error; it was read as not
+  given.
 - **JavaScript account lists must hold only strings.** Another kind of entry
   was dropped, moving every entry after it.
 - **`undefined` and `null` are refused where a name is expected.** They were

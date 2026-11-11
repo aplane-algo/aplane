@@ -163,8 +163,17 @@ Effective last round:      57646714
 First round:               3
 Last round:                4`
 
-	if _, err := Parse(first + "\n\n" + second); err == nil || !strings.Contains(err.Error(), "2 participation keys") {
+	if _, err := Parse(first + "\n\n" + second); err == nil || !strings.Contains(err.Error(), "more than one participation key") {
 		t.Fatalf("two keys: %v, want them refused", err)
+	}
+	// The paste starts below the first key's parent address, so only one
+	// parent address is present, but the first key's other fields are.
+	partial := first[strings.Index(first, "Selection key:"):]
+	if !strings.Contains(partial, "Voting key:") || strings.Contains(partial, "Parent address:") {
+		t.Fatalf("fixture: the partial block is not what the test needs:\n%s", partial)
+	}
+	if _, err := Parse(partial + "\n\n" + second); err == nil || !strings.Contains(err.Error(), "more than one participation key") {
+		t.Fatalf("part of one key and all of another: %v, want them refused", err)
 	}
 	if _, err := Parse(second); err != nil {
 		t.Fatalf("one key refused: %v", err)

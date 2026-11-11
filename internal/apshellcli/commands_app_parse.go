@@ -181,6 +181,9 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		opts.Note = strings.TrimPrefix(arg, "note=")
 		return i, true, nil
 	case strings.HasPrefix(arg, "fee="):
+		if opts.UseFlatFee {
+			return i, true, fmt.Errorf("fee given more than once")
+		}
 		feeVal, err := strconv.ParseUint(strings.TrimPrefix(arg, "fee="), 10, 64)
 		if err != nil {
 			return i, true, fmt.Errorf("invalid fee value: %s", strings.TrimPrefix(arg, "fee="))

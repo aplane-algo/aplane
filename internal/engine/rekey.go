@@ -116,15 +116,12 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 	}, checkResult, nil
 }
 
-// zeroAddressText is the all-zero address as text.
-var zeroAddressText = types.Address{}.String()
-
 // refuseZeroAddressTarget refuses the zero address as the target of a rekey
 // or a close. In a transaction the zero address in that field means the
 // field is absent, so the transaction would be an ordinary payment that
 // neither rekeys nor closes, reported back as if it had.
 func refuseZeroAddressTarget(action, target string) error {
-	if target == zeroAddressText {
+	if target == types.ZeroAddress.String() {
 		return fmt.Errorf("cannot %s to the zero address: the network reads it as no %s at all, so nothing would change", action, action)
 	}
 	return nil

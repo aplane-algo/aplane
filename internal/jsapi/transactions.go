@@ -314,7 +314,7 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 			}
 			params.KeyDilution = val
 		}
-		if v, ok := opts["eligible"].(bool); ok {
+		if v, ok := a.optionBool(opts, "eligible", "keyreg()"); ok {
 			params.IncentiveEligible = v
 		}
 	}
@@ -535,7 +535,7 @@ func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 		if m == nil {
 			panic(a.runtime.ToValue("sign() options must be an object"))
 		}
-		if w, ok := m["wait"].(bool); ok {
+		if w, ok := a.optionBool(m, "wait", "sign()"); ok {
 			wait = w
 		}
 	}
@@ -574,16 +574,16 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 		if !ok {
 			panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: expected object", i+1)))
 		}
-		if v, ok := m["authAddress"].(string); ok {
+		if v, ok := a.optionString(m, "authAddress", fmt.Sprintf("plan() request %d", i+1)); ok {
 			requests[i].AuthAddress = v
 		}
-		if v, ok := m["txnSender"].(string); ok {
+		if v, ok := a.optionString(m, "txnSender", fmt.Sprintf("plan() request %d", i+1)); ok {
 			requests[i].TxnSender = v
 		}
-		if v, ok := m["txnBytesHex"].(string); ok {
+		if v, ok := a.optionString(m, "txnBytesHex", fmt.Sprintf("plan() request %d", i+1)); ok {
 			requests[i].TxnBytesHex = v
 		}
-		if v, ok := m["signedTxnHex"].(string); ok {
+		if v, ok := a.optionString(m, "signedTxnHex", fmt.Sprintf("plan() request %d", i+1)); ok {
 			requests[i].SignedTxnHex = v
 		}
 		if v, exists := m["pqScheme"]; exists {

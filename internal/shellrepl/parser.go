@@ -213,12 +213,13 @@ func ParseOptoutCommand(args []string) (OptOutParams, error) {
 			return params, fmt.Errorf("missing close-to address after 'to'")
 		}
 		nextArg := args[nextIdx+1]
-		if !isTrailingFlagLike(nextArg) {
-			params.CloseTo = nextArg
-			nextIdx += 2
-		} else {
-			nextIdx++
+		// `to` with no address after it is an unfinished command, not one
+		// that closes to the account itself.
+		if isTrailingFlagLike(nextArg) {
+			return params, fmt.Errorf("missing close-to address after 'to'")
 		}
+		params.CloseTo = nextArg
+		nextIdx += 2
 	}
 
 	// Parse optional flags
@@ -390,7 +391,16 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 				}
 				params.KeyDilution = val
 			case "eligible":
-				params.IncentiveEligible = value == "true" || value == "1"
+				// Anything but these two is a mistake, and reading it as
+				// false would register without what was asked for.
+				switch value {
+				case "true":
+					params.IncentiveEligible = true
+				case "false":
+					params.IncentiveEligible = false
+				default:
+					return params, fmt.Errorf("invalid eligible value %q: use eligible=true or eligible=false", value)
+				}
 			default:
 				return params, fmt.Errorf("unknown argument: %s", key)
 			}

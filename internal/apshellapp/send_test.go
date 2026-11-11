@@ -309,4 +309,12 @@ func TestPrepareSendRefusesLogicSigArgsOnAnAtomicSend(t *testing.T) {
 	if _, err := app.PrepareSend(context.Background(), request); err != nil {
 		t.Fatalf("the same send without atomic is refused: %v", err)
 	}
+	// One to one takes the ordinary path, which carries the arguments, so
+	// `atomic` there is no reason to refuse them.
+	request.Atomic = true
+	request.ToRaw = []string{"alice"}
+	plan, err := app.PrepareSend(context.Background(), request)
+	if err != nil || plan.Mode != SendModeNonAtomic {
+		t.Fatalf("one-to-one send with atomic and arg: %v (mode %v), want the ordinary path", err, plan)
+	}
 }

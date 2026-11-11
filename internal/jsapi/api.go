@@ -353,7 +353,7 @@ func (a *API) jsPlugin(call goja.FunctionCall) goja.Value {
 	// Remaining arguments are passed to the plugin
 	args := make([]string, len(call.Arguments)-1)
 	for i := 1; i < len(call.Arguments); i++ {
-		args[i-1] = call.Arguments[i].String()
+		args[i-1] = a.stringArg(call, i)
 	}
 
 	// Execute the plugin

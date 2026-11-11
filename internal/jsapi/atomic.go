@@ -50,7 +50,7 @@ func (a *API) jsAtomicSend(call goja.FunctionCall) goja.Value {
 		}
 
 		var note string
-		if n, ok := pm["note"].(string); ok {
+		if n, ok := a.optionString(pm, "note", "atomicSend()"); ok {
 			note = n
 		}
 
@@ -139,7 +139,7 @@ func (a *API) jsAtomicSendAsset(call goja.FunctionCall) goja.Value {
 		}
 
 		var note string
-		if n, ok := tm["note"].(string); ok {
+		if n, ok := a.optionString(tm, "note", "atomicSendAsset()"); ok {
 			note = n
 		}
 

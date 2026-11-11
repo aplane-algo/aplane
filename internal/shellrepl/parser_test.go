@@ -445,17 +445,11 @@ func TestParseOptoutCommand(t *testing.T) {
 			},
 		},
 		{
-			name:    "optout ignores flag-like to target",
+			// `to` with nothing to close to is an unfinished command. It
+			// used to be dropped, leaving a close to the account itself.
+			name:    "optout refuses to with no address after it",
 			args:    []string{"usdc", "from", "alice", "to", "fee=1000"},
-			wantErr: false,
-			checkFunc: func(t *testing.T, p OptOutParams) {
-				if p.CloseTo != "" {
-					t.Errorf("CloseTo = %v, want empty", p.CloseTo)
-				}
-				if p.Fee != 1000 {
-					t.Errorf("Fee = %v, want 1000", p.Fee)
-				}
-			},
+			wantErr: true,
 		},
 		{
 			name:    "optout with close-to and all flags",
@@ -1169,6 +1163,18 @@ func TestCommandsRefuseTrailingWordsTheyDoNotTake(t *testing.T) {
 		},
 		"send fee twice": func() error {
 			_, err := ParseSendCommand([]string{"1", "algo", "from", "alice", "to", "bob", "fee=1000", "fee=2000"})
+			return err
+		},
+		"keyreg eligible=yes": func() error {
+			_, err := ParseTakeCommand([]string{"alice", "online", "votekey=A", "selkey=B", "sproofkey=C", "eligible=yes"})
+			return err
+		},
+		"keyreg eligible=True": func() error {
+			_, err := ParseTakeCommand([]string{"alice", "online", "votekey=A", "selkey=B", "sproofkey=C", "eligible=True"})
+			return err
+		},
+		"optout with a dangling to": func() error {
+			_, err := ParseOptoutCommand([]string{"usdc", "from", "alice", "to", "fee=2000"})
 			return err
 		},
 		"keyreg stray word": func() error {

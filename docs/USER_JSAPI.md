@@ -68,7 +68,8 @@ strings such as `'0x10'` or `'1e6'` are errors, and so is a whole number past
 
 Where a name is expected (an address, alias, asset or method), `undefined`
 and `null` are errors, not the words "undefined" and "null". A list of
-addresses must hold only strings.
+addresses must hold only strings. An option of the wrong type, such as
+`{ wait: "false" }`, is an error, not an option left out.
 
 Address arguments can be full Algorand addresses or aliases known to `apshell`.
 Set names use arrays in JavaScript API calls; the `@setname` shell syntax is for

@@ -46,10 +46,11 @@ send <amount> <asset> from <sender> to <receiver> [options]
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
 | `atomic` | Send as atomic group (with sets) |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to all LSig senders in the transaction group. Not accepted with `atomic` |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to all LSig senders in the transaction group. Not accepted on an atomic send to or from a set |
 
 A word a command does not take is refused, on this and every transaction
-command, so a mistyped option can't be ignored.
+command, so a mistyped option can't be ignored. A line may end with a
+comment: an unquoted `#` where a word would begin starts one.
 
 **Examples:**
 ```
@@ -256,7 +257,7 @@ keyreg
 | `votefirst=<round>` | First round the participation key is valid for (required for `online`; no default) |
 | `votelast=<round>` | Last round the participation key is valid for (required for `online`; no default) |
 | `keydilution=<n>` | Key dilution, as reported for the participation key (required for `online`; no default) |
-| `eligible=true` | Mark as incentive-eligible, which sets a 2 ALGO fee. Only when going online; refused with `offline` |
+| `eligible=true` | Mark as incentive-eligible, which sets a 2 ALGO fee. Only when going online; refused with `offline`. The value must be `true` or `false` |
 | `nowait` | Don't wait for confirmation |
 | `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
 
