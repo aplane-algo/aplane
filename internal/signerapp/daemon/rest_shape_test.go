@@ -53,7 +53,7 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 				"signer_locked":         false,
 				"ready_for_signing":     true,
 				"key_count":             float64(0),
-				"keyset_revision":       float64(0),
+				"keyset_revision":       float64(server.runtime.KeysetRevision()),
 				"approval_wait_seconds": float64(60),
 			},
 		},

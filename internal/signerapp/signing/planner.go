@@ -82,6 +82,11 @@ type PlanResult struct {
 	BoundedItems []*boundedPlanItem
 	// Rotating describes a rotating account's spend; nil on every other path.
 	Rotating *rotatingPlanItem
+	// Frozen is set for a group checked as sent (/sign/component, and
+	// /sign/rotating/sign, which verifies the prepared group byte for byte),
+	// which nothing in the request changed. The review reads it; signing and
+	// policy never do.
+	Frozen bool
 
 	// approval is set by the approval gate and checked before signing.
 	approval approvalBinding
@@ -475,6 +480,12 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 			if decodeErr != nil {
 				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): %s",
 					i+1, requestBytesRefusal(decodeErr, i+1, console)))
+			}
+			// The signer adds no authority to a passthrough slot and returns
+			// it as signed, so it must carry an authorization of its own, the
+			// rule /sign/assemble applies to its passthrough positions.
+			if !signedTxnHasSignature(stxn) {
+				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): signed transaction carries no signature", i+1))
 			}
 
 			txns[i] = stxn.Txn

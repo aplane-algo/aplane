@@ -3,7 +3,27 @@
 
 package protocol
 
-import "github.com/aplane-algo/aplane/internal/termsafe"
+import (
+	"fmt"
+
+	"github.com/aplane-algo/aplane/internal/termsafe"
+)
+
+// ValidityWindowLine is the line an approval client shows for a request's
+// first_valid and last_valid: the rounds it can be submitted in, for a group
+// the rounds every transaction in it is valid. A window that ends before it
+// begins is said to be empty. The line is empty when the signer sent no
+// window (either round is 0).
+func ValidityWindowLine(firstValid, lastValid uint64) string {
+	switch {
+	case firstValid == 0 || lastValid == 0:
+		return ""
+	case lastValid < firstValid:
+		return fmt.Sprintf("Valid Rounds: %d - %d (empty: no round is valid)", firstValid, lastValid)
+	default:
+		return fmt.Sprintf("Valid Rounds: %d - %d (window: %d blocks)", firstValid, lastValid, lastValid-firstValid)
+	}
+}
 
 // TerminalSafe returns the request with every string an approval client shows
 // escaped for a terminal. The signer escapes them before it sends the request;

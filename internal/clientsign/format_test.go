@@ -41,3 +41,15 @@ func TestFormatTransactionSummary_AppCall(t *testing.T) {
 		}
 	}
 }
+
+// A payment summary formats microAlgos exactly: a float64 loses the last
+// microAlgo of an amount this large.
+func TestFormatTransactionSummary_PaymentIsExact(t *testing.T) {
+	txn := types.Transaction{
+		Type:             types.PaymentTx,
+		PaymentTxnFields: types.PaymentTxnFields{Amount: 9_007_199_254_740_993},
+	}
+	if summary := FormatTransactionSummary(txn, nil); !strings.HasSuffix(summary, "(9007199254.740993 ALGO)") {
+		t.Fatalf("summary = %q, want the exact amount", summary)
+	}
+}

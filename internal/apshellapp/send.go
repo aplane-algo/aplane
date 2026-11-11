@@ -379,8 +379,12 @@ func validatePreparedSendItem(item PreparedSendItem, amount asa.Amount) error {
 	assetID := amount.Meta.AssetID
 	assetName := asa.DisplayRef(amount.Meta)
 	if !item.BalanceCheck.SufficientFunds {
-		return fmt.Errorf("insufficient balance: have %.6f, need %.6f %s",
-			item.BalanceCheck.SenderBalance, item.BalanceCheck.RequiredAmount, assetName)
+		if item.BalanceCheck.RequiredOverflows {
+			return fmt.Errorf("insufficient balance: have %s %s, and the amount plus fee exceeds the largest representable amount",
+				asa.FormatDisplayAmount(item.BalanceCheck.SenderBalance, amount.Meta), assetName)
+		}
+		return fmt.Errorf("insufficient balance: have %s, need %s %s",
+			asa.FormatDisplayAmount(item.BalanceCheck.SenderBalance, amount.Meta), asa.FormatDisplayAmount(item.BalanceCheck.RequiredAmount, amount.Meta), assetName)
 	}
 	if assetID != 0 && !item.BalanceCheck.ReceiverOptedIn {
 		return fmt.Errorf("receiver %s is not opted into ASA %d (%s)",
@@ -397,11 +401,10 @@ func sendWarnings(item PreparedSendItem, amount asa.Amount) []Warning {
 		return nil
 	}
 	if item.BalanceCheck.BelowMinBalance {
-		minBalanceAlgo := float64(item.BalanceCheck.MinBalance) / 1000000.0
-		remainingAlgo := float64(item.BalanceCheck.RemainingBalance) / 1000000.0
 		return []Warning{{
-			Code:    "below_min_balance",
-			Message: fmt.Sprintf("After this transaction, balance will be %.6f ALGO, below minimum balance of %.6f ALGO", remainingAlgo, minBalanceAlgo),
+			Code: "below_min_balance",
+			Message: fmt.Sprintf("After this transaction, balance will be %s ALGO, below minimum balance of %s ALGO",
+				asa.FormatDisplayAmount(item.BalanceCheck.RemainingBalance, amount.Meta), asa.FormatDisplayAmount(item.BalanceCheck.MinBalance, amount.Meta)),
 		}}
 	}
 	return nil
@@ -432,26 +435,24 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 			if totalRaw < totalAmount {
 				return nil, fmt.Errorf("total amount plus fees overflows uint64 for %d payments", len(plan.To))
 			}
-			totalNeeded := float64(totalRaw) / 1000000.0
-			if plan.Checks[0].SenderBalance < totalNeeded {
-				return nil, fmt.Errorf("insufficient balance: have %.6f ALGO, need %.6f ALGO for %d payments",
-					plan.Checks[0].SenderBalance, totalNeeded, len(plan.To))
+			if plan.Checks[0].SenderBalance < totalRaw {
+				return nil, fmt.Errorf("insufficient balance: have %s ALGO, need %s ALGO for %d payments",
+					asa.FormatDisplayAmount(plan.Checks[0].SenderBalance, amount.Meta), asa.FormatDisplayAmount(totalRaw, amount.Meta), len(plan.To))
 			}
 			for _, check := range plan.Checks {
 				if check.NewAccount && amount.Raw < 100000 {
 					return nil, fmt.Errorf("recipient is a new account and needs at least 0.1 ALGO")
 				}
 			}
-			return []string{fmt.Sprintf("Sender has %.6f ALGO %s", plan.Checks[0].SenderBalance, checkMark())}, nil
+			return []string{fmt.Sprintf("Sender has %s ALGO %s", asa.FormatDisplayAmount(plan.Checks[0].SenderBalance, amount.Meta), checkMark())}, nil
 		}
 		totalRaw, ok := checkedSendTotal(amount.Raw, len(plan.To))
 		if !ok {
 			return nil, fmt.Errorf("total send amount overflows uint64 for %d transfers", len(plan.To))
 		}
-		totalNeeded := float64(totalRaw)
-		if plan.Checks[0].SenderBalance < totalNeeded {
-			return nil, fmt.Errorf("insufficient balance: have %.0f %s, need %.0f %s",
-				plan.Checks[0].SenderBalance, assetName, totalNeeded, assetName)
+		if plan.Checks[0].SenderBalance < totalRaw {
+			return nil, fmt.Errorf("insufficient balance: have %s %s, need %s %s",
+				asa.FormatDisplayAmount(plan.Checks[0].SenderBalance, amount.Meta), assetName, asa.FormatDisplayAmount(totalRaw, amount.Meta), assetName)
 		}
 		for _, check := range plan.Checks {
 			if !check.ReceiverOptedIn {
@@ -459,7 +460,7 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 			}
 		}
 		return []string{
-			fmt.Sprintf("Sender has %.0f %s %s", plan.Checks[0].SenderBalance, assetName, checkMark()),
+			fmt.Sprintf("Sender has %s %s %s", asa.FormatDisplayAmount(plan.Checks[0].SenderBalance, amount.Meta), assetName, checkMark()),
 			fmt.Sprintf("All receivers are opted into %s %s", assetName, checkMark()),
 		}, nil
 	case SendModeAtomicFromMultiple:
@@ -469,7 +470,7 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 				if !check.SufficientFunds {
 					return nil, fmt.Errorf("one or more senders have insufficient balance")
 				}
-				notes = append(notes, fmt.Sprintf("Sender has %.6f ALGO %s", check.SenderBalance, checkMark()))
+				notes = append(notes, fmt.Sprintf("Sender has %s ALGO %s", asa.FormatDisplayAmount(check.SenderBalance, amount.Meta), checkMark()))
 			}
 			if plan.Checks[0].NewAccount && amount.Raw < 100000 {
 				return nil, fmt.Errorf("receiver is a new account and needs at least 0.1 ALGO")
@@ -480,7 +481,7 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 			if !check.SufficientFunds {
 				return nil, fmt.Errorf("one or more senders have insufficient %s", assetName)
 			}
-			notes = append(notes, fmt.Sprintf("Sender has %.0f %s %s", check.SenderBalance, assetName, checkMark()))
+			notes = append(notes, fmt.Sprintf("Sender has %s %s %s", asa.FormatDisplayAmount(check.SenderBalance, amount.Meta), assetName, checkMark()))
 		}
 		if !plan.Checks[0].ReceiverOptedIn {
 			return nil, fmt.Errorf("receiver is not opted into ASA %d (%s)", amount.Meta.AssetID, assetName)

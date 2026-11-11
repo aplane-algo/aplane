@@ -80,10 +80,10 @@ func TestADirectApprovalWithNoRequestIDIsPromptedUnderAMintedOne(t *testing.T) {
 	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
 	txns := []types.Transaction{txn}
 
-	if err := svc.RequestSingleTxnApproval(signerapi.SignRequest{AuthAddress: "AUTH"}, txns, txns, 0, 0, 0); err != nil {
+	if err := svc.RequestSingleTxnApproval(signerapi.SignRequest{AuthAddress: "AUTH"}, txns, txns, "", 0, 0); err != nil {
 		t.Fatalf("RequestSingleTxnApproval() error = %v", err)
 	}
-	if err := svc.RequestSingleTxnApprovalWithContext(context.Background(), signerapi.SignRequest{AuthAddress: "AUTH"}, txns, txns, 0, 0, 0); err != nil {
+	if err := svc.RequestSingleTxnApprovalWithContext(context.Background(), signerapi.SignRequest{AuthAddress: "AUTH"}, txns, txns, "", 0, 0); err != nil {
 		t.Fatalf("RequestSingleTxnApprovalWithContext() error = %v", err)
 	}
 	group := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}

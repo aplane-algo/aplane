@@ -331,6 +331,20 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 7. Run approval and policy evaluation on the finalized group.
    - The signer evaluates the whole group, including foreign context and passthrough entries.
    - Only sign-mode entries are candidates for actual signing by this signer.
+   - In a group prompt each sign-mode entry names its `Signing key:`, the
+     request's `auth_address`, so a header that counts several keys is
+     answered position by position.
+   - A passthrough entry names who authorizes it and with what, read from its
+     signed bytes: `Authorized by: <address> (<kind>, not verified here)`. The
+     address is the envelope's `sgnr` when set (then also "named as the
+     sender's authorizer"), else the sender; the kind is a single signature,
+     a multisig with its threshold, a native post-quantum signature, a
+     LogicSig account or a delegated LogicSig, `NO SIGNATURE`, or `MALFORMED`
+     when it carries more than one, or a LogicSig carries more than one
+     delegation. A multisig whose keys and threshold make an address other
+     than the authorizer's, like a LogicSig whose program address differs,
+     names that address. The signer does not check that signature; the
+     network does (`txnreview.Authorization`).
    - A foreign entry this signer's records connect to it is shown as such
      (`heldForeignPositions` in `internal/signerapp/signing/held_position.go`). A mixed
      cosigned group is signed in several requests, and each carries the others'
@@ -817,6 +831,18 @@ at generation time:
 **Server uses the stored key-file schema to order args for `LogicSig.Args`.**
 The live template is not consulted at sign time.
 
+An argument's stored `byte_length` or `max_size` is what the key's LogicSig
+resource profile counts for it. An argument that declares neither counts as 0
+bytes in the profile `/keys` publishes. When the signer plans a request for
+such a key, it adds the size of the value the request sends, so the dummy
+count covers the argument actually sent. If such an argument is required and
+the request leaves it out, planning refuses the request with 400 (`missing
+required arg: <name>`, the message signing gives). This applies to `/plan`,
+`/sign`, and a held contextual position on `/sign/component`. A plan made
+without the value would be too small for the group that `/sign` later
+receives with it. An optional argument left out counts as 0 bytes. Signing
+still refuses any argument over the network's 4096-byte limit.
+
 ---
 
 ## Dummy Transactions and Fee Pooling
@@ -908,6 +934,15 @@ or fees, the request is rejected — the client must submit ungrouped transactio
 instead so the server can canonicalize the group. Pre-grouped groups are only
 accepted if they already have sufficient LogicSig resources and aggregate fee.
 
+**A single pre-grouped transaction** carries the group ID of a group of one,
+computed over itself alone. `/sign` and `/plan` accept it: they check the
+claimed ID against the transaction and treat it as immutable, and the network
+accepts it too. Every reader of a frozen group refuses a single transaction
+with any group ID: `/sign/component`, `/sign/assemble`, `/sign/rotating/sign`,
+and the cosigned and rotating client flows. Such a transaction can therefore
+go through `/sign` only. The signer never produces one: `/plan` assigns a group
+ID only to two or more transactions.
+
 ### Modified Transaction Consistency
 
 When transactions are modified (fees adjusted, group ID computed), the **modified transaction data** is used consistently throughout the approval flow:
@@ -927,13 +962,35 @@ target's transaction ID and message). Immediately before signing, each signing
 path recomputes the hash and refuses with an internal error on any difference,
 so nothing between approval and signing can change what is signed.
 
-When modifications occur, the approval UI displays an explicit banner:
+When modifications occur, the approval UI displays an explicit banner, in the
+single-transaction prompt as in the group prompt:
 ```
 [MODIFIED BY SERVER]
-  • Added 1 dummy transaction(s) for LSig budget
-  • Fee adjustment: +1000 microAlgos across 1 LSig txn(s)
+  • Added 1 dummy transaction(s) for LogicSig arguments/opcode budget
+  • Group fee adjustment: +3001 microAlgos across transaction(s) [1]
+  • Required LogicSig program contribution: about 1 microAlgos (5 charged byte(s))
+  • Required native Falcon contribution: 2000 microAlgos
   • Group ID recomputed
 ```
+The adjustment is the exact amount added. The contributions say what it is
+for; each is rounded up to a whole microAlgo on its own while the adjustment
+rounds the group's total once, so they need not add up to it, and the program
+contribution, usually a fraction of a microAlgo per byte, is given as
+approximate. A group whose fees already pay the requirement shows
+`[FEE REQUIREMENT COVERED BY EXISTING FEES]` with the contributions.
+
+A `/sign/component` request checks a frozen group and changes nothing, and so
+does `/sign/rotating/sign`, which verifies the group `/sign/rotating/prepare`
+built byte for byte. Their prompts say so instead of claiming changes they did
+not make:
+```
+[FROZEN GROUP: checked as sent, not changed by this request]
+  • 1 dummy transaction(s) for LogicSig arguments/opcode budget
+  • Required LogicSig program contribution: about 30 microAlgos (300 charged byte(s))
+  • The fees shown already include these; this request adds no dummies or fees
+```
+A frozen request of one transaction with no dummies reads
+`[FROZEN TRANSACTION: checked as sent, not changed by this request]` instead.
 
 ### Relevant Policy Parameters
 
@@ -1235,6 +1292,14 @@ Transport behavior:
   success DTOs are not the error envelope,
 - request `Content-Type` is not enforced,
 - malformed JSON returns `400`,
+- request bodies are strict: a member the endpoint's request type does not
+  declare, at any depth, returns `400` with `request has unknown field
+  "<name>"`. It is not ignored. Data after the JSON value returns `400` too.
+  A body whose read fails (a timeout, a body cut short), before or after the
+  value, returns `400` with `failed to read request body`, not either of
+  those. Every endpoint that reads a body applies this. Go's decoder matches a
+  member to a declared field regardless of letter case, so send names as
+  documented,
 - oversized bodies return `413`,
 - request body limit is 5 MB for POST endpoints.
 
@@ -1333,9 +1398,19 @@ A passthrough LogicSig also requires `lsig_resources`. The signer verifies
 `program_bytes` and `argument_bytes` against the signed envelope and uses the
 declared reviewed `max_opcode_cost`; it never substitutes a guessed minimum for
 immutable foreign bytecode. Supplying `lsig_resources` for a non-LogicSig
-passthrough is rejected. The retired combined `lsig_size` field is rejected
-explicitly rather than ignored, because silently dropping it would understate
+passthrough is rejected. The retired combined `lsig_size` field is an unknown
+field like any other and is refused, not ignored; dropping it would understate
 LogicSig resources.
+
+A passthrough's signed transaction must carry an authorization: a signature, a
+multisig, a LogicSig, or a native PQ signature. The signer adds none and
+returns the bytes as signed, so one with none is refused with 400 (`signed
+transaction carries no signature`), as `/sign/assemble` refuses it. A
+multisig counts only if at least one subsig is signed, whether it signs the
+transaction or delegates a LogicSig (`msig` or `lmsig`); one with none can
+never meet its threshold. A LogicSig with a program and no delegation is an
+escrow (contract account) LogicSig and counts. `/sign`, `/plan`, and
+`/sign/assemble` apply the same check.
 
 `txn_sender` is an advisory display hint for clients. Signer authority,
 policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
@@ -1529,8 +1604,14 @@ carries `target_index`, `kind`, and `signature_scheme`.
 
 The Falcon-signed bounded assembly receipt commits to the account, target TxID,
 normalized durable metadata, and sorted runtime arguments under
-`APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1`. It prevents transplanting released base
-material into another account, metadata instance, or runtime-argument set.
+`APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1`. `/sign/assemble` checks it, so the
+signer will not assemble released base material into another account, another
+metadata instance, or another set of runtime arguments. The chain does not
+check the receipt. The program verifies the base signature over the TxID
+alone, plus the cosigner signature. A client holding both signatures can build
+the LogicSig itself with other runtime arguments. The TxID still fixes the
+transaction's effects; only which branch of the author's Layer 3 accepts it
+can differ from what was approved.
 
 `/sign/assemble` accepts `signerapi.AssemblyRequest`: optional `request_id`,
 the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
@@ -1947,10 +2028,13 @@ stored provenance was available. These fields do not change `/sign` behavior.
 - `ready_for_signing`
 - `key_count`: number of loaded keys
 - `keyset_revision`: process-local unsigned revision counter for the published
-  key snapshot. It starts at `0` on process start and increments after each
-  successful key reload/snapshot publish. Clients may compare this value across
-  status polls to decide whether to refresh `/keys`; it is not a durable
-  storage version and must not be compared across apsigner restarts.
+  key snapshot. It starts at a random value below 2^52 on process start and
+  increments after each successful key reload/snapshot publish, so it stays
+  below 2^53 and exact as a JavaScript number. Clients may compare this value
+  for equality across status polls to decide whether to refresh `/keys`. It is
+  not a durable storage version and carries no order: a restarted apsigner
+  starts elsewhere, so a revision a client cached before the restart almost
+  certainly does not match the new process's, and the client refreshes.
 - `approval_wait_seconds`: effective manual signing approval wait, in seconds,
   for the product runtime. Clients may use this value to size `/sign`
   request deadlines. Clients must tolerate this field being omitted.
@@ -2101,6 +2185,8 @@ Invalid `request_id` syntax returns `400`.
 | Condition | Status |
 |-----------|--------|
 | Malformed JSON | 400 |
+| Unknown request field, or data after the JSON value | 400 |
+| Request body read failure | 400 |
 | Oversized body | 413 |
 | Wrong method | 405 |
 | Missing/invalid credentials | 401 |
@@ -2123,6 +2209,10 @@ Invalid `request_id` syntax returns `400`.
 Additional compatibility-sensitive request failures:
 
 - missing `txn_bytes_hex` for sign mode: `400`
+- a request body member the endpoint's request type does not declare,
+  including the retired `lsig_size`: `400` naming the member
+- passthrough entries whose signed transaction carries no signature,
+  including a multisig with no signed subsig: `400`
 - passthrough entries without an existing group ID: `400`
 - passthrough LogicSig entries without `lsig_resources`, with declarations
   whose program/argument sizes differ from the signed envelope, or with
@@ -2130,6 +2220,8 @@ Additional compatibility-sensitive request failures:
 - immutable pre-grouped transactions that would require extra dummies: `400`
 - requests whose required dummies would push the group above 16 transactions: `400`
 - invalid runtime args or generic LogicSig arg decoding: `400`
+- a required runtime argument that declares no size, left out of `/plan`,
+  `/sign`, or a `/sign/component` held contextual position: `400`
 - missing TEAL compile algod configuration for generic LogicSig generation: `500`
 - missing `address` query parameter on delete: `400`
 - all-foreign `/sign` or `/plan` requests: `400` because apsigner has no signer-managed work to perform

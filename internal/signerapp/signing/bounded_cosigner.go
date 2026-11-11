@@ -306,7 +306,7 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	if deriveErr != nil {
 		return "", deriveErr
 	}
-	defer zeroGeneratedArgs(derivedArgs)
+	defer zeroDerivedArgs(derivedArgs)
 	args, argsErr := assembleBoundedArgsWithCosigner(metadata, item, baseArgs, derivedArgs, cosignerSignature)
 	if argsErr != nil {
 		return "", argsErr

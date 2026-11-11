@@ -1605,11 +1605,77 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 	if !strings.HasPrefix(gotDescription, "[TXN APPROVAL]\n") {
 		t.Fatalf("approval description = %q, want txn approval prefix", gotDescription)
 	}
-	if !strings.Contains(gotDescription, "[MODIFIED: Fee adjusted for dummy transactions]") {
+	if !strings.Contains(gotDescription, "[MODIFIED BY SERVER]\n  • Added 1 dummy transaction(s)") ||
+		!strings.Contains(gotDescription, "Group ID recomputed") {
 		t.Fatalf("approval description = %q, want dummy modification note", gotDescription)
 	}
 	if gotFirstValid != 100 || gotLastValid != 200 {
 		t.Fatalf("approval window = (%d, %d), want (100, 200)", gotFirstValid, gotLastValid)
+	}
+}
+
+// The single-transaction prompt says what the signer changed, as the group
+// prompt does: a fee raised for native Falcon with no dummies is shown with
+// its amount and reason. A request planning left alone gets no change note.
+func TestSignGroupWithPlanSingleTxnPromptShowsTheSignersFeeRaise(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		fees    DummyFeeInfo
+		want    []string
+		notWant string
+	}{
+		{
+			name: "raised",
+			fees: DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0}, NativePQFeeContribution: 2_000},
+			want: []string{
+				"[TXN APPROVAL]\n[MODIFIED BY SERVER]\n",
+				"  • Group fee adjustment: +2000 microAlgos\n",
+				"  • Required native Falcon contribution: 2000 microAlgos\n",
+			},
+			notWant: "Group ID recomputed",
+		},
+		{name: "unchanged", notWant: "MODIFIED"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotDescription string
+			service := &Service{
+				Approval: &ApprovalService{
+					HasClient:                     func() bool { return true },
+					KnownAddresses:                func() map[string]bool { return nil },
+					GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+					RequestSigningApproval: func(_, _, _, description string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+						gotDescription = description
+						return false, nil
+					},
+				},
+				Executor:                      &Executor{},
+				GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+				IsUnlocked:                    func() bool { return true },
+				PolicyFor:                     fixedPolicy(policy.DefaultConfig()),
+			}
+			req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: "deadbeef"}}}
+			plan := &PlanResult{
+				AllTxns:               []types.Transaction{{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 3_000, FirstValid: 100, LastValid: 200}}},
+				FeeInfo:               tc.fees,
+				PassthroughIndices:    map[int]bool{},
+				PassthroughSignedTxns: map[int][]byte{},
+				ForeignIndices:        map[int]bool{},
+			}
+			if _, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); err == nil {
+				t.Fatal("signGroupWithPlan() error = nil, want operator rejection")
+			}
+			if !strings.HasPrefix(gotDescription, "[TXN APPROVAL]\n") {
+				t.Fatalf("approval description = %q, want the single-transaction prompt", gotDescription)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(gotDescription, want) {
+					t.Errorf("approval description = %q, want %q", gotDescription, want)
+				}
+			}
+			if tc.notWant != "" && strings.Contains(gotDescription, tc.notWant) {
+				t.Errorf("approval description = %q, did not want %q", gotDescription, tc.notWant)
+			}
+		})
 	}
 }
 

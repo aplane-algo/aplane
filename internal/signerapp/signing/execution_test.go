@@ -927,12 +927,41 @@ func TestAssembleBoundedArgsPreservesInteriorEmptySlots(t *testing.T) {
 		{Index: 3, Name: "memo", Source: boundedmeta.ArgSourceRuntime, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional}},
 	}}
 	item := &boundedPlanItem{Path: boundedPathPureSpend, RuntimeArgs: map[string][]byte{"preimage": {0xaa}}}
-	args, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, [][]byte{nil})
+	args, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"proof": nil})
 	if err != nil {
 		t.Fatalf("assembleBoundedArgs() error = %v", err)
 	}
 	if len(args) != 3 || !bytes.Equal(args[0], []byte{0x99}) || args[1] == nil || len(args[1]) != 0 || !bytes.Equal(args[2], []byte{0xaa}) {
 		t.Fatalf("assembled args = %#v, want base/empty/runtime with the trailing empty slot omitted", args)
+	}
+}
+
+// Each derived value goes to the layout slot of its own name, whatever order
+// the metadata declares the derived arguments in.
+func TestAssembleBoundedArgsPlacesDerivedArgsByName(t *testing.T) {
+	listed := boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgOptional, ListedRekey: boundedmeta.ArgOptional}
+	metadata := &boundedmeta.Metadata{
+		DerivedArgs: []boundedmeta.DerivedArg{{Name: "first"}, {Name: "second"}},
+		ArgumentLayout: []boundedmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
+			{Index: 1, Name: "second", Source: boundedmeta.ArgSourceDerived, MaxSize: 4, Paths: listed},
+			{Index: 2, Name: "first", Source: boundedmeta.ArgSourceDerived, MaxSize: 4, Paths: listed},
+		},
+	}
+	item := &boundedPlanItem{Path: boundedPathPureSpend}
+	args, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}, "second": {0x02}})
+	if err != nil {
+		t.Fatalf("assembleBoundedArgs() error = %v", err)
+	}
+	if len(args) != 3 || !bytes.Equal(args[1], []byte{0x02}) || !bytes.Equal(args[2], []byte{0x01}) {
+		t.Fatalf("assembled args = %x, want second's value in slot 1 and first's in slot 2", args)
+	}
+
+	if _, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}}); err == nil || !strings.Contains(err.Message, `bounded derived slot "second" has no derived argument`) {
+		t.Fatalf("slot without a derived value: error = %+v", err)
+	}
+	if _, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}, "second": {0x02}, "third": nil}); err == nil || !strings.Contains(err.Message, "not fully consumed") {
+		t.Fatalf("derived value without a slot: error = %+v", err)
 	}
 }
 

@@ -37,6 +37,97 @@ logged as a request to sign.
 
 See [USER_LOGGING.md](USER_LOGGING.md#signing).
 
+## The signer refuses request fields it does not know
+
+- Every signer endpoint that reads a request body refuses a field its request
+  type does not declare, at any depth, with a 400 naming it: `request has
+  unknown field "<name>"`. Such a field used to be dropped, so a misspelled
+  hint did nothing and said nothing. So did the retired `lsig_size` written in
+  any case but lowercase. Data after the JSON value is refused too. apshell
+  and the SDKs send only declared fields. A caller that adds its own keys to a
+  request object passed to the SDKs now gets the 400. A body whose read
+  fails, a timeout or a body cut short, gets a 400 saying `failed to read
+  request body`, before or after the value.
+- A passthrough entry on `/sign` or `/plan` whose signed transaction carries
+  no signature is refused, as `/sign/assemble` already refused one. The signer
+  adds nothing to a passthrough and returns it as signed. On all three
+  endpoints, a multisig none of whose subsigs is signed counts as no
+  signature, whether it signs the transaction or delegates a LogicSig: it can
+  never meet its threshold. `/sign/assemble` used to accept one. An escrow
+  LogicSig, a program with no delegation, still counts.
+- A LogicSig runtime argument that declares neither `byte_length` nor
+  `max_size` was planned as 0 bytes, so a large one got too few dummies and
+  the network refused the group. The signer now plans it at the size the
+  request sends. It measures the hex without decoding it, so a secret value
+  such as an HTLC preimage is not copied. If such an argument is required and
+  the request leaves it out, `/plan`, `/sign` and `/sign/component` refuse
+  the request with 400 (`missing required arg: <name>`): a plan made without
+  the value would be short of dummies when `/sign` receives it. No template is
+  refused for leaving the size out.
+- A bounded account's derived arguments, the recipient proof and the rekey-to
+  list proof, go in the slot that has their name. Assembly used to rely on the
+  declarations and the slots being in the same order, which held only because
+  generation writes them that way.
+- `keyset_revision` in `/status` starts at a random value in each signer
+  process instead of 0. A restarted signer reported the same low revisions
+  again, so a client that had cached the key list under one of them could keep
+  using a stale list. Clients compare it for equality, as before.
+- ARCH_SIGNING.md now says that a single transaction carrying its own group ID
+  can go through `/sign` and `/plan` only, and that the signer checks the
+  assembly receipt, the chain does not.
+
+## Approval prompts say what the signer changed, and who signs what
+
+What the person approving a request is shown, and what the cosigned client
+prints, now matches what happened. Nothing changes in what the signer signs,
+refuses or approves.
+
+- **The single-transaction prompt shows the signer's fee raise.** apadmin and
+  apapprover marked a lone request as changed only when dummies were added. A
+  fee raised for a native Falcon signature or for LogicSig program bytes, with
+  no dummies, was shown only as the final fee. The prompt now carries the same
+  `[MODIFIED BY SERVER]` lines as the group prompt: the amount added and what
+  it is for.
+- **A frozen group is not called modified.** The `/sign/component` prompt of a
+  cosigned spend said the server had added dummies and recomputed the group
+  ID, and that the fees were covered by existing fees, for bytes this request
+  only checked. The `/sign/rotating/sign` prompt of a rotating spend said the
+  same, though it only verifies the group prepare built, byte for byte. Both
+  now say the group was checked as sent and changed by nothing here, with the
+  dummies and contributions its fees already include. A lone transaction is
+  not called a group.
+- **Each position of a group prompt names its signing key.** The header said
+  "2 auth addresses (see details)" and the details never said which key signs
+  which position.
+- **A passthrough position names who authorized it**, and with what: a single
+  signature, a multisig with its threshold, a native post-quantum signature or
+  a LogicSig, read from its signed bytes and marked as not verified by the
+  signer. A multisig or LogicSig program whose address is not the
+  authorizer's names that address, and a LogicSig delegated more than once is
+  shown as malformed.
+- **apapprover shows the validity window**, as apadmin does.
+- **A clawback from the sender's own holding is described as one.** It was
+  shown as an ordinary transfer, though it uses the clawback authority and
+  moves the holding even when it is frozen. It is not a warning, and
+  `reject_clawback` still does not refuse it.
+- **The LogicSig program contribution is given as "about" N microAlgos.** Each
+  contribution is rounded up on its own while the fee adjustment rounds the
+  group's total once, so the listed parts could differ from the adjustment by
+  a microAlgo. The adjustment is the exact amount added.
+- **The cosigned client prints the fee the signer raised** when it plans the
+  group, beside the dummies it added.
+- **The approval of the ordinary positions in a mixed cosigned group shows the
+  cosigned positions' ABI method labels**, as the cosigned approval does.
+- **apshell's ASA balance checks speak in the asset's units.** `send` printed
+  base units beside the unit name, so 1.5 USDC read "Sender has 1500000 USDC".
+  Balances now show the way the send result shows the amount, "Sender has 1.5
+  USDC", and ALGO amounts in these messages drop trailing zeros the same way.
+  When an ALGO amount plus its fee overflows, the message says so instead of
+  printing a clamped requirement as the amount needed. The checks compare whole base
+  units instead of floating-point numbers, so very large amounts compare
+  exactly. These are checks before signing; the network's own check is
+  unchanged.
+
 ## Rotating timing refusals have their own error code
 
 - `/sign/rotating/sign` refuses a spend whose validity window is not current at
