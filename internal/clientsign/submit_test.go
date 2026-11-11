@@ -438,7 +438,7 @@ func TestSignAndSubmitViaGroupRefusesSignedBytesThatAreNotCanonical(t *testing.T
 			})}
 			authCache := cache.NewAuthAddressCache()
 			_, _, err := SignAndSubmitViaGroup([]types.Transaction{original}, &authCache, signerClient, algodClient, SubmitOptions{Out: io.Discard})
-			if !errors.Is(err, canonical.ErrNotCanonical) || !strings.Contains(err.Error(), "signed transaction 1: "+canonical.ErrNotCanonical.Error()) {
+			if !errors.Is(err, canonical.ErrNotCanonical) || !strings.Contains(err.Error(), "signed transaction at index 0: "+canonical.ErrNotCanonical.Error()) {
 				t.Fatalf("error = %v, want the response refused as not canonical", err)
 			}
 		})
@@ -456,7 +456,10 @@ func TestValidateSignedGroupShape(t *testing.T) {
 	if err := validateSignedGroupShape([]string{"aa"}, 2); err == nil {
 		t.Fatal("truncated response: expected error, got nil")
 	}
-	if err := validateSignedGroupShape([]string{"aa", ""}, 2); err == nil {
-		t.Fatal("empty slot: expected error, got nil")
+	if err := validateSignedGroupShape([]string{"aa", ""}, 2); err == nil || err.Error() != "signer returned an empty signed transaction at index 1" {
+		t.Fatalf("empty slot: error = %v, want it named by its zero-based index", err)
+	}
+	if _, err := decodeSignedTransactionHex([]string{"aa", "zz"}); err == nil || !strings.HasPrefix(err.Error(), "failed to decode signed transaction at index 1: ") {
+		t.Fatalf("invalid hex: error = %v, want it named by its zero-based index", err)
 	}
 }

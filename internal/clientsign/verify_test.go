@@ -154,8 +154,9 @@ func TestValidateSignedGroupMutationsRejectsNonCanonicalDummy(t *testing.T) {
 	err = validateSignedGroupMutations(
 		[]types.Transaction{original}, decodeVerificationSigned(t, encoded), encoded, report,
 	)
-	if err == nil || !strings.Contains(err.Error(), "not the canonical resource dummy") {
-		t.Fatalf("error = %v, want canonical-dummy rejection", err)
+	// The dummy is named by its index in the group, as every check names a slot.
+	if err == nil || !strings.Contains(err.Error(), "appended transaction at index 1 is not the canonical resource dummy") {
+		t.Fatalf("error = %v, want canonical-dummy rejection at index 1", err)
 	}
 }
 
@@ -183,8 +184,8 @@ func TestValidateSignedGroupMutationsRejectsNonCanonicalDummyAuthorization(t *te
 	err = validateSignedGroupMutations(
 		[]types.Transaction{original}, decodeVerificationSigned(t, encoded), encoded, report,
 	)
-	if err == nil || !strings.Contains(err.Error(), "canonical resource dummy authorization") {
-		t.Fatalf("error = %v, want dummy-authorization rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "appended transaction at index 1 does not carry the canonical resource dummy authorization") {
+		t.Fatalf("error = %v, want dummy-authorization rejection at index 1", err)
 	}
 }
 
@@ -201,8 +202,8 @@ func TestValidateSignedGroupMutationsRejectsNonCanonicalGroupID(t *testing.T) {
 		FinalCount:     2,
 	}
 	err := validateSignedGroupMutations(original, decodeVerificationSigned(t, encoded), encoded, report)
-	if err == nil || !strings.Contains(err.Error(), "canonical group ID") {
-		t.Fatalf("error = %v, want canonical-group rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "returned transaction at index 0 does not carry the canonical group ID") {
+		t.Fatalf("error = %v, want canonical-group rejection at index 0", err)
 	}
 }
 

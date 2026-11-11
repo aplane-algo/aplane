@@ -462,7 +462,7 @@ func validateCanonicalDummies(firstOriginal types.Transaction, planned []types.T
 	if len(planned) == originalCount {
 		return nil
 	}
-	_, err = clientsign.ValidateCanonicalDummyTxns(firstOriginal, groupID, planned[originalCount:])
+	_, err = clientsign.ValidateCanonicalDummyTxns(firstOriginal, groupID, planned, originalCount)
 	return err
 }
 
