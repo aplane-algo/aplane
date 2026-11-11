@@ -210,6 +210,15 @@ func (h *promptHub) SendSignRequest(req *signerapproval.SignRequest) bool {
 	return true
 }
 
+// HasClient and SendSignRequestCanceled are called from the request's
+// goroutine and from the test's at once (a cancel notifies from both), so they
+// record nothing: the embedded hub's fields are not safe for that.
+func (h *promptHub) HasClient() bool { return true }
+
+func (h *promptHub) SendSignRequestCanceled(*signerapproval.SignRequestCanceled) bool {
+	return false
+}
+
 // generateTestKey generates a key of keyType through /admin/generate and
 // loads it for signing.
 func generateTestKey(t *testing.T, server *Signer, keyType string) string {
