@@ -89,9 +89,10 @@ comparison), `planner.go`.
 
 Pregrouped-signed review is unconditional: the plugin's `RequiresApproval`
 flag is ignored, the rendering decodes the actual bytes (sender, type, fee;
-what each transaction type does; every rekey, close and clawback, marked,
-whatever the type; app-call arguments and unknown types marked opaque:
-opacity is displayed, never hidden), and non-interactive
+then the description `internal/txnreview` builds, the same one the signer's
+approval prompt shows, and its alerts: every rekey, close, clawback, app
+update or delete and asset reconfigure or destroy, marked, whatever the
+type), and non-interactive
 contexts (`AutoConfirm`, MCP) fail closed with an explicit error. Validation
 precedes rendering: the review path itself constructs the
 `PregroupedSignedGroup`, so an undecodable or digest-tampered group errors

@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## One description of a transaction, for the signer and for apshell
+
+- apshell's review of a plugin-built group and the signer's approval prompt
+  each had their own code for describing a transaction, and the two disagreed
+  in places. Both now use one describer, so they say the same thing about the
+  same bytes. The plugin review reads like the signer's prompt, followed by
+  its alerts, each marked `!!`.
+- A key registration that goes online shows its participation keys in full.
+  The signer's prompt showed only the first 8 bytes of each.
+
 ## App calls keep the apps you list, as you list them
 
 - `app call`, `app call raw` and the JS `appCall()` / `appCallRaw()` used to

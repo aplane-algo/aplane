@@ -1147,7 +1147,8 @@ the shell-app to engine to signer path.
 | `internal/appinput/` | Shared parsing helpers used by CLI and JS |
 | `internal/apshellcli/commands_app*.go` | CLI adapter and app command parsing surface |
 | `internal/jsapi/apps.go` | JS app interaction bindings |
-| `internal/signerapp/txdesc/transaction_description.go` | Signer approval descriptions for app calls |
+| `internal/txnreview/describe.go` | The description of a transaction, app calls included, shown by the signer's approval prompt and by apshell's plugin group review |
+| `internal/txnreview/alerts.go` | What a reviewer must not miss: rekeys, closes, clawbacks, app updates and deletes, asset reconfigures and destroys |
 
 ### App State Reads
 
