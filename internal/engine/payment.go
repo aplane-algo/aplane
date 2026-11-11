@@ -8,6 +8,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/bits"
 
 	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -91,17 +93,22 @@ func (e *Engine) checkPaymentBalances(ctx context.Context, fromAddr, toAddr stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sender account info: %w", err)
 	}
-	result.SenderBalance = float64(senderAcct.Amount) / 1000000.0
+	result.SenderBalance = senderAcct.Amount
 
 	// Calculate required amount
 	txnFee := uint64(1000) // Standard fee
 	if useFlatFee {        // explicit flat fee, including a flat zero
 		txnFee = fee
 	}
-	txnFeeAlgo := float64(txnFee) / 1000000.0
-	amountAlgo := float64(amountMicro) / 1000000.0
-	result.RequiredAmount = amountAlgo + txnFeeAlgo
-	result.SufficientFunds = result.SenderBalance >= result.RequiredAmount
+	// An amount and fee that overflow together are more than any account
+	// holds: the payment cannot be funded.
+	required, carry := bits.Add64(amountMicro, txnFee, 0)
+	if carry != 0 {
+		required = math.MaxUint64
+		result.RequiredOverflows = true
+	}
+	result.RequiredAmount = required
+	result.SufficientFunds = carry == 0 && senderAcct.Amount >= required
 
 	// Check receiver
 	receiverAcct, err := e.AlgodClient.AccountInformation(toAddr).Do(ctx)
@@ -113,8 +120,8 @@ func (e *Engine) checkPaymentBalances(ctx context.Context, fromAddr, toAddr stri
 
 	// Check if sender will be below min balance after tx
 	result.MinBalance = senderAcct.MinBalance
-	if senderAcct.Amount >= amountMicro+txnFee {
-		result.RemainingBalance = senderAcct.Amount - amountMicro - txnFee
+	if result.SufficientFunds {
+		result.RemainingBalance = senderAcct.Amount - required
 		result.BelowMinBalance = result.RemainingBalance < senderAcct.MinBalance
 	} else {
 		result.BelowMinBalance = true

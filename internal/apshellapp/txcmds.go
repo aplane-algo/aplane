@@ -696,9 +696,8 @@ func decorateCloseResult(result *CloseCommandResult) {
 	if result == nil {
 		return
 	}
-	balanceAlgo := float64(result.Balance) / 1000000.0
 	result.PreSubmitLines = []string{
-		fmt.Sprintf("Closing account {from} (%.6f ALGO) to {to} using %s...", balanceAlgo, result.SigningKeyType),
+		fmt.Sprintf("Closing account {from} (%s ALGO) to {to} using %s...", asa.FormatAmountWithDecimals(result.Balance, 6), result.SigningKeyType),
 	}
 	result.ConfirmedLines = []string{
 		"Account {from} closed to {to}",

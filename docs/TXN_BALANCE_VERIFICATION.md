@@ -18,7 +18,7 @@ Example error messages:
 ```
 Error: sender is not opted into asset 10458941
 
-Error: insufficient balance: have 100.000000, need 150.000000 USDC
+Error: insufficient balance: have 100, need 150 USDC
 ```
 
 ### For ALGO Transfers
@@ -30,14 +30,14 @@ Error: insufficient balance: have 100.000000, need 150.000000 USDC
 
 Example error messages:
 ```
-Error: insufficient balance: have 5.000000, need 5.001000 ALGO
+Error: insufficient balance: have 5, need 5.001 ALGO
 
 Error: recipient is a new account and needs at least 0.1 ALGO minimum balance
 ```
 
 Example warning:
 ```
-⚠️  Warning: After this transaction, balance will be 0.099000 ALGO, below minimum balance of 0.100000 ALGO
+⚠️  Warning: After this transaction, balance will be 0.099 ALGO, below minimum balance of 0.1 ALGO
 ```
 
 ## Implementation Details
@@ -121,19 +121,19 @@ Transaction submitted: TXID...
 ### Insufficient ASA Balance
 ```
 > send 150 usdc from alice to bob
-Error: insufficient balance: have 100.000000, need 150.000000 USDC
+Error: insufficient balance: have 100, need 150 USDC
 ```
 
 ### Insufficient ALGO Balance
 ```
 > send 5 algo from alice to bob
-Error: insufficient balance: have 4.500000, need 5.001000 ALGO
+Error: insufficient balance: have 4.5, need 5.001 ALGO
 ```
 
 ### ALGO Send with Minimum Balance Warning
 ```
 > send 4.9 algo from alice to bob
-⚠️  Warning: After this transaction, balance will be 0.099000 ALGO, below minimum balance of 0.100000 ALGO
+⚠️  Warning: After this transaction, balance will be 0.099 ALGO, below minimum balance of 0.1 ALGO
 Sending 4.9 ALGO from ADDR... to ADDR... using ed25519...
 Transaction submitted: TXID...
 ```
