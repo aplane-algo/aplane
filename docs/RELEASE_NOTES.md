@@ -7,6 +7,31 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## One description of a transaction, for the signer and for apshell
+
+- apshell's review of a plugin-built group and the signer's approval prompt
+  each had their own code for describing a transaction, and the two disagreed
+  in places. Both now use one describer and one set of warning rules, so they
+  say the same thing about the same bytes. The plugin review reads like the
+  signer's prompt, followed by every finding the signer would warn about, each
+  marked `!!`. That now includes a ClearState, an asset freeze and a fee above
+  1 ALGO, which the plugin review did not flag. It names the network from the
+  transaction's genesis hash, and says a rekey keeps control when the target
+  is a key the connected signer holds.
+- Two warnings are new for the signer as well: a key registration that marks
+  the account nonparticipating (which the signer refuses to sign in any case),
+  and one that carries only one of the vote and selection keys. Under
+  `always_review_warnings` the second now forces a review.
+- When no network name is known for a transaction's chain, the description
+  shows the genesis hash.
+- A key registration that goes online shows its participation keys in full,
+  in base64, the form `goal account partkeyinfo` prints them in, so they can
+  be compared. The signer's prompt showed the first 8 bytes of each, in hex.
+  A key that is absent is shown as `(none)`.
+- A transaction's lease is shown when it has one.
+- A transaction type the describer does not know is shown with a line saying
+  its fields are not shown.
+
 ## App calls keep the apps you list, as you list them
 
 - `app call`, `app call raw` and the JS `appCall()` / `appCallRaw()` used to

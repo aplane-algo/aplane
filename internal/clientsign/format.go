@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/addressbook"
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 // FormatTransactionSummary creates a human-readable summary of a transaction
@@ -46,18 +47,15 @@ func FormatTransactionSummary(txn types.Transaction, aliasCache *cache.AliasCach
 
 	case types.ApplicationCallTx:
 		return fmt.Sprintf("App Call: %s → App %d (%s, %d arg(s))",
-			senderFmt, txn.ApplicationID, onCompletionLabel(txn.OnCompletion), len(txn.ApplicationArgs))
+			senderFmt, txn.ApplicationID, txnreview.OnCompletionLabel(txn.OnCompletion), len(txn.ApplicationArgs))
 
 	case types.KeyRegistrationTx:
-		// Check if vote key is empty (all zeros)
-		emptyVotePK := true
-		for _, b := range txn.VotePK {
-			if b != 0 {
-				emptyVotePK = false
-				break
+		// The describer's own rule for offline, so this summary and the
+		// review of the same bytes agree.
+		if txnreview.IsOfflineKeyReg(txn) {
+			if txn.Nonparticipation {
+				return fmt.Sprintf("Key Registration: %s (NONPARTICIPATING, cannot be undone)", senderFmt)
 			}
-		}
-		if emptyVotePK {
 			return fmt.Sprintf("Key Registration: %s (offline)", senderFmt)
 		}
 		return fmt.Sprintf("Key Registration: %s (online)", senderFmt)
@@ -70,23 +68,4 @@ func FormatTransactionSummary(txn types.Transaction, aliasCache *cache.AliasCach
 // formatAddress formats an address with alias if available, otherwise shortened.
 func formatAddress(addr string, aliasCache *cache.AliasCache) string {
 	return addressbook.FormatAddressWithAlias(addr, aliasCache)
-}
-
-func onCompletionLabel(onComp types.OnCompletion) string {
-	switch onComp {
-	case types.NoOpOC:
-		return "NoOp"
-	case types.OptInOC:
-		return "OptIn"
-	case types.CloseOutOC:
-		return "CloseOut"
-	case types.ClearStateOC:
-		return "ClearState"
-	case types.UpdateApplicationOC:
-		return "Update"
-	case types.DeleteApplicationOC:
-		return "Delete"
-	default:
-		return fmt.Sprintf("OnCompletion(%d)", onComp)
-	}
 }

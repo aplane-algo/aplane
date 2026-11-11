@@ -159,3 +159,13 @@ func (a *App) ResolveDeleteKeyTarget(_ context.Context, req DeleteKeyRequest) (*
 	}
 	return &DeleteKeyTarget{Address: address}, nil
 }
+
+// SignableAddressSet returns the addresses the connected signer holds keys
+// for, as a set. It is empty when no signer is connected.
+func (a *App) SignableAddressSet() map[string]bool {
+	set := map[string]bool{}
+	for _, address := range a.eng.GetSignableAddresses() {
+		set[address] = true
+	}
+	return set
+}

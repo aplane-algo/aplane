@@ -1010,7 +1010,7 @@ client, or an asset's issuer, clear the operator's screen, move the cursor
 back over lines already printed, start a line of its own, or reorder text
 with a bidirectional control. So:
 
-- the transaction description (`internal/signerapp/txdesc`) escapes every
+- the transaction description (`internal/txnreview`) escapes every
   free-form string where it shows it, so none can start a line of its own,
   and shows a note, an app argument or a box name quoted or as hex;
 - `requestSigningApproval` (`internal/signerapp/signing/approval.go`), the

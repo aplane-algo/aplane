@@ -88,10 +88,13 @@ comparison), `planner.go`.
 ### PS3: Mandatory Decoded Review, Fail-Closed
 
 Pregrouped-signed review is unconditional: the plugin's `RequiresApproval`
-flag is ignored, the rendering decodes the actual bytes (sender, type, fee;
-what each transaction type does; every rekey, close and clawback, marked,
-whatever the type; app-call arguments and unknown types marked opaque:
-opacity is displayed, never hidden), and non-interactive
+flag is ignored, the rendering decodes the actual bytes (per slot: the role
+and type; then the description `internal/txnreview` builds, the same one the
+signer's approval prompt shows, with the network named from the genesis hash;
+then every finding the signer's warning rules produce for those bytes, each
+marked `!!`; a type the describer does not know is shown with a line saying
+its fields are not shown, so opacity is displayed, never hidden), and
+non-interactive
 contexts (`AutoConfirm`, MCP) fail closed with an explicit error. Validation
 precedes rendering: the review path itself constructs the
 `PregroupedSignedGroup`, so an undecodable or digest-tampered group errors
