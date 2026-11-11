@@ -105,6 +105,7 @@ func (e *Engine) checkPaymentBalances(ctx context.Context, fromAddr, toAddr stri
 	required, carry := bits.Add64(amountMicro, txnFee, 0)
 	if carry != 0 {
 		required = math.MaxUint64
+		result.RequiredOverflows = true
 	}
 	result.RequiredAmount = required
 	result.SufficientFunds = carry == 0 && senderAcct.Amount >= required

@@ -50,14 +50,18 @@ type ConfirmationResult struct {
 // RequiredAmount are in base units: microAlgos for a payment, the asset's base
 // units for an ASA transfer.
 type BalanceCheckResult struct {
-	SenderBalance    uint64
-	RequiredAmount   uint64
-	SufficientFunds  bool
-	ReceiverOptedIn  bool // For ASA transfers
-	NewAccount       bool // Receiver is a new account
-	BelowMinBalance  bool // Sender will be below min balance after tx
-	MinBalance       uint64
-	RemainingBalance uint64
+	SenderBalance  uint64
+	RequiredAmount uint64
+	// RequiredOverflows is set when a payment's amount plus fee exceeds the
+	// largest uint64. RequiredAmount is then clamped to that largest value
+	// and is not the requirement, so a message says this instead of it.
+	RequiredOverflows bool
+	SufficientFunds   bool
+	ReceiverOptedIn   bool // For ASA transfers
+	NewAccount        bool // Receiver is a new account
+	BelowMinBalance   bool // Sender will be below min balance after tx
+	MinBalance        uint64
+	RemainingBalance  uint64
 }
 
 func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotices *[]TransactionWriteNotice, out *bytes.Buffer) clientsign.SubmitOptions {

@@ -284,7 +284,7 @@ func TestCheckPaymentBalancesIsExactAndOverflowSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkPaymentBalances() error = %v", err)
 	}
-	if result.SufficientFunds || result.RequiredAmount != 2_001_001 {
+	if result.SufficientFunds || result.RequiredAmount != 2_001_001 || result.RequiredOverflows {
 		t.Fatalf("one microAlgo short: %+v", result)
 	}
 
@@ -292,7 +292,7 @@ func TestCheckPaymentBalancesIsExactAndOverflowSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkPaymentBalances() error = %v", err)
 	}
-	if result.SufficientFunds || !result.BelowMinBalance || result.RemainingBalance != 0 || result.RequiredAmount != math.MaxUint64 {
+	if result.SufficientFunds || !result.BelowMinBalance || result.RemainingBalance != 0 || !result.RequiredOverflows {
 		t.Fatalf("overflowing amount and fee: %+v", result)
 	}
 }

@@ -87,16 +87,19 @@ func prepareTxnGroup(preps ...*PreparedTxn) (*PreparedTxnGroup, error) {
 
 // BalanceCheckDetails is the app-owned transaction validation view.
 // SenderBalance and RequiredAmount are in base units: microAlgos for ALGO,
-// the asset's base units for an ASA.
+// the asset's base units for an ASA. When RequiredOverflows is set, the
+// amount plus fee exceeds the largest uint64 and RequiredAmount is not the
+// requirement.
 type BalanceCheckDetails struct {
-	SenderBalance    uint64
-	RequiredAmount   uint64
-	SufficientFunds  bool
-	ReceiverOptedIn  bool
-	NewAccount       bool
-	BelowMinBalance  bool
-	MinBalance       uint64
-	RemainingBalance uint64
+	SenderBalance     uint64
+	RequiredAmount    uint64
+	RequiredOverflows bool
+	SufficientFunds   bool
+	ReceiverOptedIn   bool
+	NewAccount        bool
+	BelowMinBalance   bool
+	MinBalance        uint64
+	RemainingBalance  uint64
 }
 
 // RekeyCheckDetails is the app-owned rekey validation view.
@@ -130,14 +133,15 @@ func balanceCheckDetailsFromEngine(check *engine.BalanceCheckResult) *BalanceChe
 		return nil
 	}
 	return &BalanceCheckDetails{
-		SenderBalance:    check.SenderBalance,
-		RequiredAmount:   check.RequiredAmount,
-		SufficientFunds:  check.SufficientFunds,
-		ReceiverOptedIn:  check.ReceiverOptedIn,
-		NewAccount:       check.NewAccount,
-		BelowMinBalance:  check.BelowMinBalance,
-		MinBalance:       check.MinBalance,
-		RemainingBalance: check.RemainingBalance,
+		SenderBalance:     check.SenderBalance,
+		RequiredAmount:    check.RequiredAmount,
+		RequiredOverflows: check.RequiredOverflows,
+		SufficientFunds:   check.SufficientFunds,
+		ReceiverOptedIn:   check.ReceiverOptedIn,
+		NewAccount:        check.NewAccount,
+		BelowMinBalance:   check.BelowMinBalance,
+		MinBalance:        check.MinBalance,
+		RemainingBalance:  check.RemainingBalance,
 	}
 }
 

@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -379,5 +380,21 @@ func TestPreflightMessagesUseDisplayUnits(t *testing.T) {
 	}}, asa.Amount{Meta: asa.Metadata{UnitName: "ALGO", Decimals: 6}, Raw: 1})
 	if len(warnings) != 1 || warnings[0].Message != "After this transaction, balance will be 0.049000 ALGO, below minimum balance of 0.100000 ALGO" {
 		t.Fatalf("sendWarnings() = %+v", warnings)
+	}
+}
+
+// An amount whose sum with the fee overflows is refused as before, and the
+// message says so rather than printing the clamped requirement as if it were
+// the real one.
+func TestPreflightMessageForAnOverflowingRequirement(t *testing.T) {
+	algo := asa.Metadata{UnitName: "ALGO", Decimals: 6}
+	err := validatePreparedSendItem(PreparedSendItem{BalanceCheck: &BalanceCheckDetails{
+		SenderBalance: 2_000_000, RequiredAmount: math.MaxUint64, RequiredOverflows: true,
+	}}, asa.Amount{Meta: algo, Raw: math.MaxUint64 - 500})
+	if err == nil {
+		t.Fatal("validatePreparedSendItem() accepted an unfundable payment")
+	}
+	if want := "insufficient balance: have 2.000000 ALGO, and the amount plus fee exceeds the largest representable amount"; err.Error() != want {
+		t.Fatalf("validatePreparedSendItem() error = %q, want %q", err, want)
 	}
 }

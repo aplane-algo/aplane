@@ -379,6 +379,10 @@ func validatePreparedSendItem(item PreparedSendItem, amount asa.Amount) error {
 	assetID := amount.Meta.AssetID
 	assetName := asa.DisplayRef(amount.Meta)
 	if !item.BalanceCheck.SufficientFunds {
+		if item.BalanceCheck.RequiredOverflows {
+			return fmt.Errorf("insufficient balance: have %s %s, and the amount plus fee exceeds the largest representable amount",
+				displayUnits(item.BalanceCheck.SenderBalance, amount.Meta), assetName)
+		}
 		return fmt.Errorf("insufficient balance: have %s, need %s %s",
 			displayUnits(item.BalanceCheck.SenderBalance, amount.Meta), displayUnits(item.BalanceCheck.RequiredAmount, amount.Meta), assetName)
 	}
