@@ -35,6 +35,19 @@ before it was renamed `enroll`.
   can go through `/sign` and `/plan` only, and that the signer checks the
   assembly receipt, the chain does not.
 
+## Resource dummies are counted at their real opcode cost
+
+- The dummy transactions the signer adds to pool LogicSig budget were counted
+  at an opcode cost of 1. Their program runs three opcodes, so it costs 3. A
+  group whose declared LogicSig costs came within 2 per dummy of a 20,000
+  boundary was planned one dummy short, and the network rejected it: one
+  LogicSig declaring 39,999 got one dummy, though the group can then cost
+  40,002, over two transactions' 40,000. It now gets two.
+- The signer's planner, apshell's fee reserve, its cosigned and plugin dummy
+  declarations, and the plain host's resource check and fee-limit warning at
+  generation all count 3, as do the Go, Python and TypeScript SDKs' cosigned
+  dummy declarations. No wire field changed.
+
 ## apshell refuses input it used to ignore or guess at
 
 More places where what was sent could differ from what was typed, all in

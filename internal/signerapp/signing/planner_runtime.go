@@ -177,7 +177,7 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 	}
 	dummy := lsigresource.Usage{
 		ProgramBytes:  uint64(len(txsigning.EmbeddedDummyTealTok)),
-		MaxOpcodeCost: 1,
+		MaxOpcodeCost: txsigning.DummyOpcodeCost,
 	}
 	resourcePlan, solveErr := lsigresource.Solve(profile, lsigresource.PlanInput{
 		TransactionCount: uint64(len(txns)),
