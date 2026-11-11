@@ -451,6 +451,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// warnings do not report it at all.
 	known[spend.RekeyTo.String()] = true
 	protocolRekeys := map[string]bool{spend.RekeyTo.String(): true}
+	// The rebuilt group is the presented one byte for byte, so its fee info
+	// is the authorization charge prepare put on the spend: the prompt shows
+	// it, as it shows the dummies.
 	plan := &PlanResult{
 		AllTxns:              allTxns,
 		DummyTxns:            allTxns[1:],
@@ -458,6 +461,8 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		ForeignIndices:       map[int]bool{},
 		LsigIndices:          []int{0},
 		DummiesNeeded:        len(allTxns) - 1,
+		LogicSigResourcePlan: rebuilt.LogicSigResourcePlan,
+		FeeInfo:              rebuilt.FeeInfo,
 		NeedsRegroup:         len(allTxns) > 1,
 		AuthKeyTypes:         []string{s.Planner.Snapshot().KeyTypes[req.Account]},
 		KnownAddresses:       known,

@@ -443,6 +443,38 @@ func TestRotatingSignShowsTheSpendsAppCallInfo(t *testing.T) {
 	}
 }
 
+// The rotating prompt shows the authorization charge prepare put on the
+// spend, as the /sign prompt shows a fee the signer raised: the amount is the
+// one prepare reported to the client.
+func TestRotatingSignPromptShowsTheAuthorizationCharge(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	off := false
+	var description string
+	f.svc.Approval = &ApprovalService{
+		UserAutoApprove: &off,
+		HasClient:       func() bool { return true },
+		RequestSigningApproval: func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+			description = desc
+			return true, nil
+		},
+	}
+	prep := mustPrepare(t, f, f.spend(f.chain.round, f.chain.round+100))
+	if prep.Mutations == nil || prep.Mutations.TotalFeesDelta <= 0 {
+		t.Fatalf("prepare reported no authorization charge (%+v); the test needs one", prep.Mutations)
+	}
+	if _, err := f.svc.SignRotatingWithContext(context.Background(), signerapi.RotatingSignRequest{
+		Account: f.account.String(), Transactions: prep.Transactions,
+	}, f.session); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if want := fmt.Sprintf("Group fee adjustment: +%d microAlgos", prep.Mutations.TotalFeesDelta); !strings.Contains(description, want) {
+		t.Fatalf("rotating prompt missing %q:\n%s", want, description)
+	}
+	if !strings.Contains(description, "[MODIFIED BY SERVER]") {
+		t.Fatalf("rotating prompt does not say the signer changed the spend:\n%s", description)
+	}
+}
+
 func TestRotatingPrepareScansForAnUnknownStage(t *testing.T) {
 	f, _ := newSigningFixture(t)
 	// The account is at stage 6 and the table is empty, as after a restore.

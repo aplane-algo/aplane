@@ -942,7 +942,9 @@ for; each is rounded up to a whole microAlgo on its own while the adjustment
 rounds the group's total once, so they need not add up to it, and the program
 contribution, usually a fraction of a microAlgo per byte, is given as
 approximate. A group whose fees already pay the requirement shows
-`[FEE REQUIREMENT COVERED BY EXISTING FEES]` with the contributions.
+`[FEE REQUIREMENT COVERED BY EXISTING FEES]` with the contributions. A rotating
+spend's prompt shows the authorization charge `/sign/rotating/prepare` put on
+the spend the same way.
 
 A `/sign/component` request checks a frozen group and changes nothing, so its
 prompt says so instead of claiming the changes `/plan` made:
