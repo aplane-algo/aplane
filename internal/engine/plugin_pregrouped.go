@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -64,7 +63,10 @@ func DecodePregroupedSigned(encoded []string) (*PregroupedSignedGroup, error) {
 // decoded SignedTxn objects (for validation and simulation) and the original raw
 // bytes in order (for verbatim submission). The raw bytes are preserved
 // deliberately: the contract is byte-preservation, so submission never re-encodes
-// what the plugin signed.
+// what the plugin signed. Because the bytes go out as given and the decoded
+// objects are what is checked and reviewed, each blob must be the canonical
+// encoding of what it decodes to: trailing data, a repeated field or an
+// explicit empty field is refused.
 func decodeSignedTxnIntents(encoded []string) ([]types.SignedTxn, [][]byte, error) {
 	if len(encoded) == 0 {
 		return nil, nil, fmt.Errorf("pregrouped-signed: no transactions")
@@ -79,9 +81,9 @@ func decodeSignedTxnIntents(encoded []string) ([]types.SignedTxn, [][]byte, erro
 		if err != nil {
 			return nil, nil, fmt.Errorf("transaction %d: failed to decode base64: %w", i+1, err)
 		}
-		var st types.SignedTxn
-		if err := msgpack.Decode(raw, &st); err != nil {
-			return nil, nil, fmt.Errorf("transaction %d: failed to decode signed transaction msgpack: %w", i+1, err)
+		st, err := decodeCanonicalSignedTxn(raw)
+		if err != nil {
+			return nil, nil, fmt.Errorf("transaction %d: %w", i+1, err)
 		}
 		stxns[i] = st
 		rawBytes[i] = raw

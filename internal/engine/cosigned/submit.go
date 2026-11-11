@@ -12,7 +12,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
@@ -885,6 +884,10 @@ func collectComponentSignatures(resp *signerapi.ComponentResponse, expected []in
 	return nil
 }
 
+// decodeCosignedSignedGroup decodes the assembled group with the canonical
+// decoder: the raw bytes are submitted and the decoded transactions are what
+// verifyAssembledAgainstFrozen checks, so each element must be exactly one
+// canonically encoded signed transaction.
 func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
 	signedBytes := make([][]byte, len(signedHex))
 	signedObjects := make([]types.SignedTxn, len(signedHex))
@@ -895,9 +898,9 @@ func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn,
 			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction %d: %w", i+1, err)
 		}
 		signedBytes[i] = decoded
-		var stxn types.SignedTxn
-		if err := msgpack.Decode(decoded, &stxn); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction %d: %w", i+1, err)
+		stxn, err := canonical.DecodeSignedTxn(decoded)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("assembled signed transaction %d: %w", i+1, err)
 		}
 		signedObjects[i] = stxn
 		txns[i] = stxn.Txn

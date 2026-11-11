@@ -105,6 +105,49 @@ func TestProcessSignedTransactionIntents(t *testing.T) {
 			t.Fatal("want error for bad msgpack")
 		}
 	})
+	// The bytes are submitted verbatim and the decoded objects are what is
+	// checked and reviewed, so bytes that decode to the reviewed transaction
+	// but are not its canonical encoding are refused.
+	raw0, err := base64.StdEncoding.DecodeString(encoded[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, variant := range nonCanonicalSignedTxnVariants(t, raw0) {
+		t.Run(name+" refused", func(t *testing.T) {
+			intents := []string{base64.StdEncoding.EncodeToString(variant), encoded[1]}
+			if _, _, err := decodeSignedTxnIntents(intents); err == nil || !strings.Contains(err.Error(), "transaction 1: signed transaction bytes are not canonical") {
+				t.Fatalf("error = %v, want refused as not canonical", err)
+			}
+			if _, err := DecodePregroupedSigned(intents); err == nil {
+				t.Fatal("DecodePregroupedSigned accepted non-canonical bytes")
+			}
+		})
+	}
+}
+
+// nonCanonicalSignedTxnVariants returns encodings of signed that decode to the
+// same fields a reader checks but are not the bytes that would be checked:
+// trailing data, a second transaction appended, and the first field written a
+// second time (a lenient decoder keeps the last).
+func nonCanonicalSignedTxnVariants(t *testing.T, signed []byte) map[string][]byte {
+	t.Helper()
+	var decoded types.SignedTxn
+	if err := msgpack.Decode(signed, &decoded); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	other := decoded.Sig
+	other[0] ^= 0xff
+	repeated := append([]byte{signed[0] + 1}, signed[1:]...)
+	repeated = append(repeated, msgpack.Encode(map[string]types.Signature{"sig": other})[1:]...)
+	var probe types.SignedTxn
+	if err := msgpack.Decode(repeated, &probe); err != nil || probe.Sig != other {
+		t.Fatalf("fixture: repeated-signature bytes decoded to %x, %v", probe.Sig[:2], err)
+	}
+	return map[string][]byte{
+		"trailing byte":      append(append([]byte{}, signed...), 0xc0),
+		"second transaction": append(append([]byte{}, signed...), signed...),
+		"repeated field":     repeated,
+	}
 }
 
 func TestValidatePregroupedSigned(t *testing.T) {

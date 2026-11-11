@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apshell checks more of what the signer returns
+
+- **Signed bytes the client submits must be canonical.** An ordinary `/sign`
+  response, an assembled cosigned group, the managed slots of a plugin
+  `presign-plan` group and a plugin's `pregrouped-signed` group were checked
+  as decoded and then submitted as received. Bytes with trailing data, a
+  second transaction, a repeated field or an explicit empty field are now
+  refused, so what was checked is what goes to the network. The rotating path
+  already refused them.
+
 ## Rotating timing refusals have their own error code
 
 - `/sign/rotating/sign` refuses a spend whose validity window is not current at

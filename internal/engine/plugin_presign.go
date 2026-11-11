@@ -19,14 +19,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
-	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -365,7 +363,8 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 // verifySignedAgainstPlan checks the /sign response against the frozen plan
 // before anything is broadcast: every slot must sign exactly the canonical
 // transaction, and every passthrough slot (plugin-signed or dummy) must come
-// back byte-for-byte as it was sent.
+// back byte-for-byte as it was sent. A managed slot's bytes are submitted as
+// returned, so they must be the canonical encoding of what is checked.
 func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[int]string, signed [][]byte) error {
 	if len(signed) != len(canonicalTxns) {
 		return fmt.Errorf("signer returned %d signed transaction(s), want %d", len(signed), len(canonicalTxns))
@@ -377,9 +376,9 @@ func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[
 			}
 			continue
 		}
-		var stxn types.SignedTxn
-		if err := msgpack.Decode(signedBytes, &stxn); err != nil {
-			return fmt.Errorf("failed to decode signed transaction %d: %w", i, err)
+		stxn, err := decodeCanonicalSignedTxn(signedBytes)
+		if err != nil {
+			return fmt.Errorf("signed slot %d: %w", i, err)
 		}
 		if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(canonicalTxns[i])) {
 			return fmt.Errorf("signer signed a different transaction at slot %d than was planned", i)
@@ -399,12 +398,9 @@ func validatePluginSignedSlot(planned types.Transaction, encoded string, authori
 	// The signer forwards these bytes as given and refuses any that are not
 	// the canonical encoding of what they decode to. The same decoder runs
 	// here, so a slot is refused before the group goes to be signed.
-	stxn, err := canonical.DecodeSignedTxn(raw)
-	if errors.Is(err, canonical.ErrNotCanonical) {
-		return "", fmt.Errorf("signed transaction bytes are not canonical (trailing data, a repeated field, or an explicit empty field)")
-	}
+	stxn, err := decodeCanonicalSignedTxn(raw)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode signed transaction: %w", err)
+		return "", err
 	}
 	if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(planned)) {
 		return "", fmt.Errorf("signed transaction does not match the canonical bytes")

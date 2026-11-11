@@ -208,6 +208,14 @@ func TestVerifySignedAgainstPlan(t *testing.T) {
 	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0])}); err == nil {
 		t.Fatal("short response accepted")
 	}
+	// A managed slot's bytes are submitted as returned, so they must be the
+	// canonical encoding of the transaction that was checked.
+	for name, variant := range nonCanonicalSignedTxnVariants(t, sign(canonical[0])) {
+		if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{variant, pluginSigned}); err == nil ||
+			!strings.Contains(err.Error(), "signed slot 0: signed transaction bytes are not canonical") {
+			t.Errorf("managed slot with %s: got %v, want refused as not canonical", name, err)
+		}
+	}
 }
 
 func TestAssertPluginSignersMatched(t *testing.T) {

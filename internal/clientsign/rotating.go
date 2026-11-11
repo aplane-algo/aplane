@@ -20,7 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -343,12 +342,12 @@ func validateSignedRotatingGroup(prepared []types.Transaction, resp *signerapi.R
 		if err != nil {
 			return nil, fmt.Errorf("transaction %d: invalid hex: %w", i+1, err)
 		}
-		var stxn types.SignedTxn
-		if err := msgpack.Decode(raw, &stxn); err != nil {
-			return nil, fmt.Errorf("transaction %d: %w", i+1, err)
-		}
-		if !bytes.Equal(msgpack.Encode(stxn), raw) {
+		stxn, err := canonical.DecodeSignedTxn(raw)
+		if errors.Is(err, canonical.ErrNotCanonical) {
 			return nil, fmt.Errorf("transaction %d is not a single canonically encoded signed transaction", i+1)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("transaction %d: %w", i+1, err)
 		}
 		if !bytes.Equal(txnutil.EncodeWithPrefix(stxn.Txn), txnutil.EncodeWithPrefix(prepared[i])) {
 			return nil, fmt.Errorf("transaction %d differs from the prepared transaction", i+1)

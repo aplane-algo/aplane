@@ -21,6 +21,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -365,6 +366,58 @@ func TestSignAndSubmitViaGroupWritesSubmittedTransactions(t *testing.T) {
 	}
 	if original.Fee == submitted.Fee {
 		t.Fatal("test setup invalid: original and submitted fees match")
+	}
+}
+
+// nonCanonicalSignedTxnVariants returns encodings of signed that decode to the
+// same fields a reader checks but are not the bytes that would be checked:
+// trailing data, a second transaction appended, and the signature written a
+// second time as a different one (a lenient decoder keeps the last).
+func nonCanonicalSignedTxnVariants(t *testing.T, signed []byte) map[string][]byte {
+	t.Helper()
+	repeated := append([]byte{signed[0] + 1}, signed[1:]...)
+	repeated = append(repeated, msgpack.Encode(map[string]types.Signature{"sig": {2}})[1:]...)
+	var probe types.SignedTxn
+	if err := msgpack.Decode(repeated, &probe); err != nil || probe.Sig != (types.Signature{2}) {
+		t.Fatalf("fixture: repeated-signature bytes decoded to %x, %v", probe.Sig[:2], err)
+	}
+	return map[string][]byte{
+		"trailing byte":      append(append([]byte{}, signed...), 0xc0),
+		"second transaction": append(append([]byte{}, signed...), signed...),
+		"repeated field":     repeated,
+	}
+}
+
+func TestSignAndSubmitViaGroupRefusesSignedBytesThatAreNotCanonical(t *testing.T) {
+	original := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: types.Address{1}, Fee: 1000},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{2}, Amount: 1},
+	}
+	signed := msgpack.Encode(types.SignedTxn{Txn: original, Sig: types.Signature{1}})
+
+	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("algod contacted at %s for a refused response", r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer algodServer.Close()
+	algodClient, err := algod.MakeClient(algodServer.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+
+	for name, raw := range nonCanonicalSignedTxnVariants(t, signed) {
+		t.Run(name, func(t *testing.T) {
+			signerClient := signerclient.NewSignerClient("http://signer.test")
+			signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{Signed: []string{hex.EncodeToString(raw)}})
+			})}
+			authCache := cache.NewAuthAddressCache()
+			_, _, err := SignAndSubmitViaGroup([]types.Transaction{original}, &authCache, signerClient, algodClient, SubmitOptions{Out: io.Discard})
+			if err == nil || !strings.Contains(err.Error(), "signed transaction 1: "+canonical.ErrNotCanonical.Error()) {
+				t.Fatalf("error = %v, want the response refused as not canonical", err)
+			}
+		})
 	}
 }
 
