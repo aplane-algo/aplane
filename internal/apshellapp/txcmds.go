@@ -62,6 +62,11 @@ type RekeyRequest struct {
 	UseFlatFee bool
 	LsigArgs   map[string][]byte
 	Wait       bool
+	// BeforeSubmit, when set, is given the result as far as it is known once
+	// the transaction is prepared and before it is signed: the accounts and
+	// the PreSubmitLines, which carry the warnings. The host prints them then,
+	// so a warning is read before the rekey happens and not after it.
+	BeforeSubmit func(*RekeyCommandResult)
 }
 
 // UnrekeyRequest captures parsed unrekey inputs.
@@ -71,6 +76,8 @@ type UnrekeyRequest struct {
 	UseFlatFee bool
 	LsigArgs   map[string][]byte
 	Wait       bool
+	// BeforeSubmit is RekeyRequest.BeforeSubmit for an unrekey.
+	BeforeSubmit func(*RekeyCommandResult)
 }
 
 // CloseRequest captures parsed close inputs.
@@ -81,6 +88,10 @@ type CloseRequest struct {
 	UseFlatFee bool
 	LsigArgs   map[string][]byte
 	Wait       bool
+	// BeforeSubmit, when set, is given the result as far as it is known once
+	// the transaction is prepared and before it is signed, so the host can
+	// print its PreSubmitLines before the account is closed.
+	BeforeSubmit func(*CloseCommandResult)
 }
 
 // SweepRequest captures parsed sweep inputs.
@@ -89,10 +100,14 @@ type SweepRequest struct {
 	FromRaw     []string
 	ToRaw       string
 	LeavingText string
-	Fee         uint64
-	UseFlatFee  bool
-	LsigArgs    map[string][]byte
-	Wait        bool
+	// LeavingRaw, when set, is the amount to leave in base units and
+	// LeavingText is not read. JavaScript's sweep() uses it: amounts there
+	// are base units, and the command's are display units.
+	LeavingRaw *uint64
+	Fee        uint64
+	UseFlatFee bool
+	LsigArgs   map[string][]byte
+	Wait       bool
 }
 
 // ValidateRequest captures parsed account validation inputs.
@@ -449,11 +464,6 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	check := rekeyCheckDetailsFromEngine(checkResult)
 
 	canSignForTarget, authorizationKind := a.eng.CanSignForAddressWithKind(toAddress)
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
-	if err != nil {
-		return nil, fmt.Errorf("rekey transaction failed: %w", err)
-	}
-
 	result := &RekeyCommandResult{
 		From:                    fromAddress,
 		To:                      toAddress,
@@ -461,16 +471,24 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		CanSignForTarget:        canSignForTarget,
 		TargetIsLsig:            authorizationKind == algorithm.AuthorizationLogicSig,
 		TargetAuthorizationKind: authorizationKind,
-		TxID:                    submit.TxID,
-		Confirmed:               submit.Confirmed,
-		Output:                  submit.Output,
-		Warnings:                warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
+	decorateRekeyResult(result)
+	if req.BeforeSubmit != nil {
+		req.BeforeSubmit(result)
+	}
+
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	if err != nil {
+		return nil, fmt.Errorf("rekey transaction failed: %w", err)
+	}
+	result.TxID = submit.TxID
+	result.Confirmed = submit.Confirmed
+	result.Output = submit.Output
+	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 	// The auth-cache refresh after a confirmed rekey happens in the engine submit
 	// path (SignAndSubmit -> refreshRekeyedSenders), so every caller — REPL, JS,
 	// MCP — stays consistent without duplicating it. Surface its non-fatal warning.
 	result.RefreshWarning = submit.AuthRefreshWarning
-	decorateRekeyResult(result)
 	return result, nil
 }
 
@@ -503,24 +521,27 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
-	if err != nil {
-		return nil, fmt.Errorf("unrekey transaction failed: %w", err)
-	}
-
 	result := &RekeyCommandResult{
 		From:               address,
 		To:                 address,
 		IsUnrekey:          true,
 		CurrentAuthAddress: balanceResult.AuthAddr,
-		TxID:               submit.TxID,
-		Confirmed:          submit.Confirmed,
-		Output:             submit.Output,
-		Warnings:           warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
+	decorateRekeyResult(result)
+	if req.BeforeSubmit != nil {
+		req.BeforeSubmit(result)
+	}
+
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	if err != nil {
+		return nil, fmt.Errorf("unrekey transaction failed: %w", err)
+	}
+	result.TxID = submit.TxID
+	result.Confirmed = submit.Confirmed
+	result.Output = submit.Output
+	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 	// See App.Rekey: the engine submit path performs the refresh; surface its warning.
 	result.RefreshWarning = submit.AuthRefreshWarning
-	decorateRekeyResult(result)
 	return result, nil
 }
 
@@ -638,22 +659,25 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 	prep := preparedTxnFromEngine(prepResult)
 	check := closeCheckDetailsFromEngine(checkResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
-	if err != nil {
-		return nil, fmt.Errorf("close failed: %w", err)
-	}
-
 	result := &CloseCommandResult{
 		From:           fromAddress,
 		CloseTo:        toAddress,
 		Balance:        check.Balance,
 		SigningKeyType: prep.SigningContext.DisplayKeyType,
-		TxID:           submit.TxID,
-		Confirmed:      submit.Confirmed,
-		Output:         submit.Output,
-		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
 	decorateCloseResult(result)
+	if req.BeforeSubmit != nil {
+		req.BeforeSubmit(result)
+	}
+
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	if err != nil {
+		return nil, fmt.Errorf("close failed: %w", err)
+	}
+	result.TxID = submit.TxID
+	result.Confirmed = submit.Confirmed
+	result.Output = submit.Output
+	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 	return result, nil
 }
 
@@ -718,9 +742,14 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		}
 	}
 
-	leavingAmount, err := cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert leaving amount: %w", err)
+	var leavingAmount asa.Amount
+	if req.LeavingRaw != nil {
+		leavingAmount = asa.AmountFromRaw(*req.LeavingRaw, assetMeta)
+	} else {
+		leavingAmount, err = cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert leaving amount: %w", err)
+		}
 	}
 
 	result := &SweepCommandResult{

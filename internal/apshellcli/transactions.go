@@ -107,16 +107,20 @@ func (r *REPLState) runClose(args []string) (command.Result, error) {
 		return nil, err
 	}
 
-	result, err := r.app().Close(r.commandContext(), closeRequestFromParams(params))
+	req := closeRequestFromParams(params)
+	// Say what is about to be closed before it is signed, not with the result.
+	req.BeforeSubmit = func(result *apshellapp.CloseCommandResult) {
+		for _, line := range renderCloseLines(result.PreSubmitLines, result, r) {
+			r.progressPrintln(line)
+		}
+	}
+	result, err := r.app().Close(r.commandContext(), req)
 	if err != nil {
 		return nil, err
 	}
 	simulated := r.app().IsSimulateEnabled()
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
-			for _, line := range renderCloseLines(result.PreSubmitLines, result, r) {
-				r.println(line)
-			}
 			r.renderSubmissionOutput(result.Output)
 			r.renderWarnings(result.Warnings)
 			if !simulated {

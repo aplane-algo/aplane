@@ -56,6 +56,16 @@ apshell and its JavaScript API:
   read as the aliases "undefined" and "null". `NaN`, `Infinity` and fractions
   are refused there too. A plugin still receives a boolean or a `BigInt` as
   its text.
+- **JavaScript `sweep()` is now the `sweep` command.** It closed the account,
+  sending everything and resetting the account; the command of the same name
+  sends the balance less what is to be left and keeps the account open. It
+  now does that: `sweep(from, to, {asset, leaving, fee, wait})`, with `from`
+  one account or a list, returning each account's outcome. To close an
+  account from a script, call `close()`.
+- **`rekey`, `unrekey` and `close` say what they are about to do before the
+  transaction is signed.** The lines, including the warning that this system
+  cannot sign for a rekey target, were printed with the result, after the
+  account had been rekeyed or closed. There is no new prompt.
 - The MCP tool description said every amount is in human units. `fee=`,
   `pay=` and all JavaScript amounts are in microAlgos or base units, and it
   now says so.

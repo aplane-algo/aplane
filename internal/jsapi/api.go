@@ -29,6 +29,46 @@ type PluginExecutor interface {
 	ExecutePlugin(name string, args []string) (success bool, message string, data interface{}, presentation interface{}, err error)
 }
 
+// Sweeper runs the shell's sweep for sweep(). The sweep command's workflow
+// lives in apshellapp, which imports this package, so the host hands it in:
+// sweep() and the sweep command are then one implementation and cannot come
+// to mean different things.
+type Sweeper interface {
+	Sweep(ctx context.Context, req SweepRequest) (*SweepResult, error)
+}
+
+// SweepRequest is what sweep() asks for. Amounts are in base units, as
+// everywhere in the JS API.
+type SweepRequest struct {
+	From       []string
+	To         string
+	AssetID    uint64 // 0 is ALGO
+	Leaving    uint64
+	Fee        uint64
+	UseFlatFee bool
+	Wait       bool
+}
+
+// SweepResult is the outcome of a sweep, one item per source account.
+type SweepResult struct {
+	AssetID   uint64
+	To        string
+	Succeeded int
+	Failed    int
+	Items     []SweepItem
+}
+
+// SweepItem is one source account's outcome. Skipped says why nothing was
+// sent (not an error); Error says why a transaction failed.
+type SweepItem struct {
+	From      string
+	Amount    uint64
+	TxID      string
+	Confirmed bool
+	Skipped   string
+	Error     string
+}
+
 // API provides JavaScript bindings for the engine.
 type API struct {
 	engine         *engine.Engine
@@ -37,6 +77,7 @@ type API struct {
 	output         func(string)
 	pluginMu       sync.RWMutex
 	pluginExecutor PluginExecutor
+	sweeper        Sweeper
 	ctxMu          sync.RWMutex
 	ctx            context.Context
 }
@@ -83,6 +124,19 @@ func (a *API) SetPluginExecutor(executor PluginExecutor) {
 	a.pluginMu.Lock()
 	defer a.pluginMu.Unlock()
 	a.pluginExecutor = executor
+}
+
+// SetSweeper sets the host's sweep implementation for sweep().
+func (a *API) SetSweeper(sweeper Sweeper) {
+	a.pluginMu.Lock()
+	defer a.pluginMu.Unlock()
+	a.sweeper = sweeper
+}
+
+func (a *API) getSweeper() Sweeper {
+	a.pluginMu.RLock()
+	defer a.pluginMu.RUnlock()
+	return a.sweeper
 }
 
 func (a *API) getPluginExecutor() PluginExecutor {

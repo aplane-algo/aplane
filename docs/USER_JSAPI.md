@@ -291,14 +291,15 @@ Group functions return:
 |---|---|
 | `send(from, to, amount, options = {})` | Send ALGO |
 | `validate(addressOrAlias)` | Send 0 ALGO to self to validate signing |
-| `sweep(from, to, options = {})` | Close account and send remaining ALGO to `to` |
+| `sweep(from, to, options = {})` | Send each account's balance, less `leaving`, to `to`. The accounts stay open. `from` is one account or an array |
 | `close(from, to, options = {})` | Close account; supports LogicSig runtime args |
 
 Examples:
 
 ```javascript
 send("alice", "bob", algo(2), { note: "rent" })
-sweep("old-account", "treasury", { wait: true })
+sweep("hot-wallet", "treasury", { leaving: algo(1) })        // keep 1 ALGO
+sweep(["a", "b"], "treasury", { asset: 31566704 })           // an ASA, all of it
 
 close("htlc-lsig", "treasury", {
   lsigArgs: {
@@ -306,6 +307,21 @@ close("htlc-lsig", "treasury", {
   }
 })
 ```
+
+`sweep()` is the shell's `sweep` command. It does not close the account; that
+is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
+`leaving` (what to keep in each account, in microAlgos or the asset's base
+units, default 0), `fee` and `wait`. It takes no `note`.
+
+It returns `{asset, to, succeeded, failed, items}`, where each item is
+`{from, amount, txid, confirmed, skipped, error}`. An account with nothing
+above `leaving`, or one not opted into the asset, is skipped: `skipped` gives
+the reason and nothing is sent. When some transactions fail, read `failed` and
+each item's `error`. When every transaction fails, `sweep()` throws.
+
+An ALGO sweep with `leaving: 0` tries to send the whole balance less fees,
+which the network refuses, because an open account must keep its minimum
+balance. Leave at least the minimum, or use `close()` to empty the account.
 
 ### ASA
 

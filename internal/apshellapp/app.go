@@ -24,10 +24,13 @@ type App struct {
 
 // New constructs the apshell application facade.
 func New(eng *engine.Engine, cfg config.Config, dataDir string) *App {
-	return &App{
+	scripts := NewGojaScriptRuntime(eng)
+	app := &App{
 		eng:     eng,
 		DataDir: dataDir,
 		Config:  cfg,
-		Scripts: NewGojaScriptRuntime(eng),
+		Scripts: scripts,
 	}
+	scripts.sweeper = jsSweeper{app: app}
+	return app
 }

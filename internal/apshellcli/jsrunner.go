@@ -9,9 +9,9 @@ import (
 	"io"
 	"os"
 
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/scripting"
 )
 
 // runJSScriptMode runs a JavaScript script file.
@@ -36,10 +36,11 @@ func runJSScriptMode(network string, cfg config.Config, dataDir string, scriptPa
 	}
 
 	// Create runner and execute
-	runner := scripting.NewGojaRunner(eng)
-	runner.SetOutput(func(msg string) {
+	// The app builds the runner, so the script has what the shell's own
+	// runner has, sweep() included.
+	runner := apshellapp.New(eng, cfg, dataDir).Scripts.EnsureRunner(func(msg string) {
 		fmt.Println(msg)
-	})
+	}, nil)
 
 	_, err = runner.RunWithContext(context.Background(), string(content))
 	if err != nil {
@@ -58,10 +59,11 @@ func runJSExpression(network string, cfg config.Config, dataDir string, expr str
 	}
 
 	// Create runner and execute
-	runner := scripting.NewGojaRunner(eng)
-	runner.SetOutput(func(msg string) {
+	// The app builds the runner, so the script has what the shell's own
+	// runner has, sweep() included.
+	runner := apshellapp.New(eng, cfg, dataDir).Scripts.EnsureRunner(func(msg string) {
 		fmt.Println(msg)
-	})
+	}, nil)
 
 	result, err := runner.RunWithContext(context.Background(), expr)
 	if err != nil {
