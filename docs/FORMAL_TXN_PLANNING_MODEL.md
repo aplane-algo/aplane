@@ -205,7 +205,9 @@ own planning step.
 1. Sign and foreign entries decode unsigned transaction bytes from
    `txn_bytes_hex`.
 2. Passthrough entries decode signed transaction bytes from `signed_txn_hex`.
-3. Decode failures reject.
+   The bytes must be canonical and carry an authorization: a signature, a
+   multisig, a LogicSig, or a native PQ signature.
+3. Decode failures reject, and so does a passthrough with no authorization.
 4. Every transaction must resolve through the configured `GenesisHash` network
    resolver.
 5. All transactions in one request must have the same `GenesisHash`.

@@ -7,6 +7,34 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The signer refuses request fields it does not know
+
+- Every signer endpoint that reads a request body refuses a field its request
+  type does not declare, at any depth, with a 400 naming it: `request has
+  unknown field "<name>"`. Such a field used to be dropped, so a misspelled
+  hint did nothing and said nothing. So did the retired `lsig_size` written in
+  any case but lowercase. Data after the JSON value is refused too. apshell
+  and the SDKs send only declared fields. A caller that adds its own keys to a
+  request object passed to the SDKs now gets the 400.
+- A passthrough entry on `/sign` or `/plan` whose signed transaction carries
+  no signature is refused, as `/sign/assemble` already refused one. The signer
+  adds nothing to a passthrough and returns it as signed.
+- A LogicSig runtime argument that declares neither `byte_length` nor
+  `max_size` was planned as 0 bytes, so a large one got too few dummies and
+  the network refused the group. The signer now plans it at the size the
+  request sends. No template is refused for leaving the size out.
+- A bounded account's derived arguments, the recipient proof and the rekey-to
+  list proof, go in the slot that has their name. Assembly used to rely on the
+  declarations and the slots being in the same order, which held only because
+  generation writes them that way.
+- `keyset_revision` in `/status` starts at a random value in each signer
+  process instead of 0. A restarted signer reported the same low revisions
+  again, so a client that had cached the key list under one of them could keep
+  using a stale list. Clients compare it for equality, as before.
+- ARCH_SIGNING.md now says that a single transaction carrying its own group ID
+  can go through `/sign` and `/plan` only, and that the signer checks the
+  assembly receipt, the chain does not.
+
 ## apshell refuses input it used to ignore or guess at
 
 More places where what was sent could differ from what was typed, all in
