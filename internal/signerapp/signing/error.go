@@ -13,16 +13,17 @@ type (
 )
 
 const (
-	ErrorBadRequest              = svcerr.KindBadRequest
-	ErrorForbidden               = svcerr.KindForbidden
-	ErrorLocked                  = svcerr.KindLocked
-	ErrorUnavailable             = svcerr.KindUnavailable
-	ErrorInternal                = svcerr.KindInternal
-	ErrorBoundedCosignerRequired = svcerr.KindBoundedCosignerRequired
-	ErrorBoundedRekeyNotListed   = svcerr.KindBoundedRekeyNotListed
-	ErrorRotatingSigningRequired = svcerr.KindRotatingSigningRequired
-	ErrorRotatingStageUnproven   = svcerr.KindRotatingStageUnproven
-	ErrorRotatingStageChanged    = svcerr.KindRotatingStageChanged
+	ErrorBadRequest               = svcerr.KindBadRequest
+	ErrorForbidden                = svcerr.KindForbidden
+	ErrorLocked                   = svcerr.KindLocked
+	ErrorUnavailable              = svcerr.KindUnavailable
+	ErrorInternal                 = svcerr.KindInternal
+	ErrorBoundedCosignerRequired  = svcerr.KindBoundedCosignerRequired
+	ErrorBoundedRekeyNotListed    = svcerr.KindBoundedRekeyNotListed
+	ErrorRotatingSigningRequired  = svcerr.KindRotatingSigningRequired
+	ErrorRotatingStageUnproven    = svcerr.KindRotatingStageUnproven
+	ErrorRotatingStageChanged     = svcerr.KindRotatingStageChanged
+	ErrorRotatingWindowNotCurrent = svcerr.KindRotatingWindowNotCurrent
 )
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }

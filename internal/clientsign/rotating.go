@@ -47,10 +47,11 @@ type RotatingOptions struct {
 // its turn comes, so each attempt checks the window against the current
 // round first and rebuilds the validity rounds when it has aged. If the
 // signer then reports that the account's authorizer moved between prepare
-// and sign (rotating_stage_changed), or that the window aged while it
-// waited for approval, nothing was signed: the transaction is rebuilt with
-// fresh validity rounds, prepared, simulated and presented for approval
-// again, a bounded number of times.
+// and sign (rotating_stage_changed), or that the window was not current at
+// the round it read, for example because it aged during approval
+// (rotating_window_not_current), no signature was released: the transaction
+// is rebuilt with fresh validity rounds, prepared, simulated and presented
+// for approval again, a bounded number of times.
 func SignAndSubmitRotating(
 	txn types.Transaction,
 	signerClient *signerclient.Client,
@@ -96,7 +97,7 @@ func SignAndSubmitRotating(
 			return txIDs, prepared, err
 		}
 		lastErr = err
-		_, _ = fmt.Fprintf(w, "  Signer refused before signing (%s); rebuilding the transaction with fresh validity rounds (attempt %d of %d)\n", rotatingRefusalSummary(err), attempt+1, rotatingRetryAttempts)
+		_, _ = fmt.Fprintf(w, "  Signer refused and released no signature (%s); rebuilding the transaction with fresh validity rounds (attempt %d of %d)\n", rotatingRefusalSummary(err), attempt+1, rotatingRetryAttempts)
 		refreshed, refreshErr := refreshRotatingValidity(opts.Ctx, txn, algodClient)
 		if refreshErr != nil {
 			return nil, nil, fmt.Errorf("%w (and refreshing validity rounds failed: %v)", err, refreshErr)
@@ -208,20 +209,19 @@ func refreshRotatingValidity(ctx context.Context, txn types.Transaction, algodCl
 	return txn, nil
 }
 
-// isRotatingRetryable reports whether a signer refusal means nothing was
-// signed and a rebuilt transaction may succeed: the account moved between
-// prepare and sign, or the validity window aged past the signer's bounds.
+// isRotatingRetryable reports whether a signer refusal released no signature
+// and a rebuilt transaction may succeed: the account moved between prepare
+// and sign (rotating_stage_changed), or the validity window was not current
+// at the round the signer read (rotating_window_not_current). It goes by the
+// error code alone, never the message.
 func isRotatingRetryable(err error) bool {
 	var httpErr *signerclient.HTTPStatusError
 	if !errors.As(err, &httpErr) {
 		return false
 	}
 	switch httpErr.Code {
-	case signerapi.ErrCodeRotatingStageChanged:
+	case signerapi.ErrCodeRotatingStageChanged, signerapi.ErrCodeRotatingWindowNotCurrent:
 		return true
-	case signerapi.ErrCodeBadRequest:
-		msg := httpErr.Message
-		return strings.Contains(msg, "ahead of the current round") || strings.Contains(msg, "remain before last valid")
 	}
 	return false
 }
@@ -229,10 +229,12 @@ func isRotatingRetryable(err error) bool {
 func rotatingRefusalSummary(err error) string {
 	var httpErr *signerclient.HTTPStatusError
 	if errors.As(err, &httpErr) {
-		if httpErr.Code == signerapi.ErrCodeRotatingStageChanged {
+		switch httpErr.Code {
+		case signerapi.ErrCodeRotatingStageChanged:
 			return "the account's authorizer moved"
+		case signerapi.ErrCodeRotatingWindowNotCurrent:
+			return "the validity window is not current"
 		}
-		return "the validity window aged"
 	}
 	return err.Error()
 }

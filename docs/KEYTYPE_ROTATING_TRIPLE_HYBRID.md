@@ -356,7 +356,8 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    ordinary policy gates and operator approval. Under the account lock it
    re-reads the chain and refuses unless stage `n` is still the authorizer
    (`rotating_stage_changed`), `first_valid` is at most 2 rounds ahead of the
-   current round, and at least 10 rounds remain before `last_valid`. It proves
+   current round, and at least 10 rounds remain before `last_valid`
+   (`rotating_window_not_current`); neither refusal releases a signature. It proves
    the successor opens (`CheckStageOpens`), signs, verifies, writes a
    `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, tree and
    leaf index), records the release in memory and responds. It refuses the
