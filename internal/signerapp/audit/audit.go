@@ -629,11 +629,6 @@ func (a *AuditLogger) LogSignRequestAttributed(attr Attribution, address, txnSen
 	a.Log(requestEntry(AuditSignRequest, attr, address, txnSender, txnType, txnDetails))
 }
 
-// LogPlanRequest logs one slot of a /plan request, which signs nothing.
-func (a *AuditLogger) LogPlanRequest(address, txnSender, txnType, txnDetails string) {
-	a.Log(requestEntry(AuditPlanRequest, Attribution{}, address, txnSender, txnType, txnDetails))
-}
-
 // LogPlanRequestAttributed logs one slot of a /plan request with explicit
 // request attribution.
 func (a *AuditLogger) LogPlanRequestAttributed(attr Attribution, address, txnSender, txnType, txnDetails string) {

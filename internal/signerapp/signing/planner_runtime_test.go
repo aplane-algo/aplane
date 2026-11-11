@@ -65,18 +65,9 @@ type captureAuditEntry struct {
 	details     string
 }
 
-func (a *captureAuditLog) LogSignRequest(authAddress, txnSender, txnType, details string) {
+func (a *captureAuditLog) LogRequest(kind RequestKind, authAddress, txnSender, txnType, details string) {
 	a.entries = append(a.entries, captureAuditEntry{
-		authAddress: authAddress,
-		txnSender:   txnSender,
-		txnType:     txnType,
-		details:     details,
-	})
-}
-
-func (a *captureAuditLog) LogPlanRequest(authAddress, txnSender, txnType, details string) {
-	a.entries = append(a.entries, captureAuditEntry{
-		plan:        true,
+		plan:        kind == RequestToPlan,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		txnType:     txnType,

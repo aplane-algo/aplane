@@ -52,18 +52,17 @@ func (fs *Signer) signingAuditLogger(r *http.Request, requestID string) signingA
 	}
 }
 
-func (l *signingAuditLogger) LogSignRequest(authAddress, txnSender, txnType, details string) {
+// LogRequest records one slot of a request as it arrived: a SIGN_REQUEST,
+// or a PLAN_REQUEST for /plan.
+func (l *signingAuditLogger) LogRequest(kind signersigning.RequestKind, authAddress, txnSender, txnType, details string) {
 	if l == nil || l.log == nil {
+		return
+	}
+	if kind == signersigning.RequestToPlan {
+		l.log.LogPlanRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
 		return
 	}
 	l.log.LogSignRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
-}
-
-func (l *signingAuditLogger) LogPlanRequest(authAddress, txnSender, txnType, details string) {
-	if l == nil || l.log == nil {
-		return
-	}
-	l.log.LogPlanRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
 }
 
 func (l *signingAuditLogger) LogSignApproved(record signersigning.SignedRecord) {

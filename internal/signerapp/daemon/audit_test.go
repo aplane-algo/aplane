@@ -263,7 +263,7 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 		attribution: signingAuditAttributionFromRequest(r, "req-1"),
 	}
 
-	audit.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
+	audit.LogRequest(signersigning.RequestToSign, "ADDR", "SENDER", "pay", "send 1 ALGO")
 	audit.RecordApprovalResponse(signerapproval.SignResponse{ID: "req-1", Approved: true, ApproverPrincipal: "alice-admin"})
 	audit.LogSignApproved(signersigning.SignedRecord{AuthAddress: "ADDR", TxnSender: "SENDER", Details: "txn signed", PolicyRuleID: "always_review_warnings"})
 
