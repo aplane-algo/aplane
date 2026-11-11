@@ -6,7 +6,10 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -51,11 +54,121 @@ func writeServiceErrorJSON(w http.ResponseWriter, err *svcerr.Error) {
 	writeJSON(w, err.HTTPStatus(), signerapi.ErrorResponse{Error: err.Error(), Code: err.Code()})
 }
 
+// errUnknownRequestField is a request body member the endpoint's request type
+// does not declare. It carries the member name for the refusal.
+type errUnknownRequestField struct {
+	name string
+}
+
+func (e *errUnknownRequestField) Error() string {
+	return "request has unknown field " + e.name
+}
+
+var errTrailingRequestData = errors.New("request body has data after the JSON value")
+
+// errReadRequestBody is a failure of the body's reader (a timeout, a body cut
+// short), not a fault in what the body held.
+type errReadRequestBody struct {
+	err error
+}
+
+func (e *errReadRequestBody) Error() string { return "failed to read request body" }
+
+func (e *errReadRequestBody) Unwrap() error { return e.err }
+
+// bodyReadRecorder keeps the first error the body's reader returns other than
+// io.EOF, so a decode failure can be told apart from a read failure.
+type bodyReadRecorder struct {
+	r   io.Reader
+	err error
+}
+
+func (b *bodyReadRecorder) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && b.err == nil {
+		b.err = err
+	}
+	return n, err
+}
+
+// failure is the read failure to report, or nil if the reader never failed.
+// A body over the size limit stays an *http.MaxBytesError for its 413.
+func (b *bodyReadRecorder) failure() error {
+	if b.err == nil {
+		return nil
+	}
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(b.err, &maxBytesErr) {
+		return b.err
+	}
+	return &errReadRequestBody{err: b.err}
+}
+
+// maxQuotedFieldNameBytes bounds how much of a refused member name is echoed
+// back: enough to recognize a field, never a body-sized string.
+const maxQuotedFieldNameBytes = 64
+
+// decodeStrictJSON decodes one JSON request body into v. A member v does not
+// declare is refused rather than dropped, at any depth, so a misspelled or
+// retired field can't be silently ignored; so is anything after the value.
+// A body whose reader fails is reported as unread, whatever the decoder made
+// of the bytes it got. Every signer HTTP endpoint that reads a body decodes it
+// here.
+func decodeStrictJSON(body io.Reader, v any) error {
+	reader := &bodyReadRecorder{r: body}
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(v); err != nil {
+		if readErr := reader.failure(); readErr != nil {
+			return readErr
+		}
+		// encoding/json reports an undeclared member only as text.
+		if quoted, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			return &errUnknownRequestField{name: quoteFieldName(quoted)}
+		}
+		return err
+	}
+	_, err := decoder.Token()
+	if readErr := reader.failure(); readErr != nil {
+		return readErr
+	}
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	// The reader delivered more than whitespace after the value: a token, or
+	// bytes that do not make one.
+	return errTrailingRequestData
+}
+
+// quoteFieldName re-quotes the decoder's quoted member name as ASCII and
+// bounds its length.
+func quoteFieldName(quoted string) string {
+	name, err := strconv.Unquote(quoted)
+	if err != nil {
+		name = quoted
+	}
+	if len(name) > maxQuotedFieldNameBytes {
+		return strconv.QuoteToASCII(name[:maxQuotedFieldNameBytes]) + "..."
+	}
+	return strconv.QuoteToASCII(name)
+}
+
 // decodeError returns the appropriate HTTP status and message for a JSON decode error.
 func decodeError(err error) (int, string) {
 	var maxBytesErr *http.MaxBytesError
 	if errors.As(err, &maxBytesErr) {
 		return http.StatusRequestEntityTooLarge, "request body too large"
+	}
+	var unknown *errUnknownRequestField
+	if errors.As(err, &unknown) {
+		return http.StatusBadRequest, unknown.Error()
+	}
+	if errors.Is(err, errTrailingRequestData) {
+		return http.StatusBadRequest, err.Error()
+	}
+	var readErr *errReadRequestBody
+	if errors.As(err, &readErr) {
+		return http.StatusBadRequest, readErr.Error()
 	}
 	return http.StatusBadRequest, "invalid JSON"
 }
@@ -108,7 +221,7 @@ func decodeAuthenticatedJSONRequest[Req any](fs *Signer, w http.ResponseWriter, 
 
 	var req Req
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeStrictJSON(r.Body, &req); err != nil {
 		status, msg := decodeError(err)
 		writeErrorJSON(w, status, msg)
 		return nil, zero, false

@@ -452,6 +452,12 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): %s",
 					i+1, requestBytesRefusal(decodeErr, i+1, console)))
 			}
+			// The signer adds no authority to a passthrough slot and returns
+			// it as signed, so it must carry an authorization of its own, the
+			// rule /sign/assemble applies to its passthrough positions.
+			if !signedTxnHasSignature(stxn) {
+				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): signed transaction carries no signature", i+1))
+			}
 
 			txns[i] = stxn.Txn
 			passthroughSignedTxns[i] = stxnBytes

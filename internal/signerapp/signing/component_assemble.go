@@ -151,8 +151,15 @@ func rejectLocalCosignedPassthrough(ctx context.Context, stxn types.SignedTxn, t
 
 // signedTxnHasSignature reports whether a SignedTxn carries any authorization
 // proof, including native PQ authorization at the top level or inside a
-// delegated LogicSig.
+// delegated LogicSig. /sign and /plan passthrough and /sign/assemble
+// passthrough all ask it. A multisig, at the top level or delegating a
+// LogicSig, counts only when at least one subsig is signed: one with none can
+// never meet its threshold on chain. A LogicSig with a program and nothing
+// else is an escrow (contract account) LogicSig and counts.
 func signedTxnHasSignature(stxn types.SignedTxn) bool {
+	if multisigWithoutSignature(stxn.Msig) || multisigWithoutSignature(stxn.Lsig.Msig) || multisigWithoutSignature(stxn.Lsig.LMsig) {
+		return false
+	}
 	if stxn.Sig != (types.Signature{}) {
 		return true
 	}
@@ -166,6 +173,20 @@ func signedTxnHasSignature(stxn types.SignedTxn) bool {
 		return true
 	}
 	return false
+}
+
+// multisigWithoutSignature reports whether msig is present but none of its
+// subsigs carries a signature.
+func multisigWithoutSignature(msig types.MultisigSig) bool {
+	if msig.Blank() {
+		return false
+	}
+	for _, subsig := range msig.Subsigs {
+		if subsig.Sig != (types.Signature{}) {
+			return false
+		}
+	}
+	return true
 }
 
 func verifyCosignerAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {

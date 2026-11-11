@@ -7,6 +7,45 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The signer refuses request fields it does not know
+
+- Every signer endpoint that reads a request body refuses a field its request
+  type does not declare, at any depth, with a 400 naming it: `request has
+  unknown field "<name>"`. Such a field used to be dropped, so a misspelled
+  hint did nothing and said nothing. So did the retired `lsig_size` written in
+  any case but lowercase. Data after the JSON value is refused too. apshell
+  and the SDKs send only declared fields. A caller that adds its own keys to a
+  request object passed to the SDKs now gets the 400. A body whose read
+  fails, a timeout or a body cut short, gets a 400 saying `failed to read
+  request body`, before or after the value.
+- A passthrough entry on `/sign` or `/plan` whose signed transaction carries
+  no signature is refused, as `/sign/assemble` already refused one. The signer
+  adds nothing to a passthrough and returns it as signed. On all three
+  endpoints, a multisig none of whose subsigs is signed counts as no
+  signature, whether it signs the transaction or delegates a LogicSig: it can
+  never meet its threshold. `/sign/assemble` used to accept one. An escrow
+  LogicSig, a program with no delegation, still counts.
+- A LogicSig runtime argument that declares neither `byte_length` nor
+  `max_size` was planned as 0 bytes, so a large one got too few dummies and
+  the network refused the group. The signer now plans it at the size the
+  request sends. It measures the hex without decoding it, so a secret value
+  such as an HTLC preimage is not copied. If such an argument is required and
+  the request leaves it out, `/plan`, `/sign` and `/sign/component` refuse
+  the request with 400 (`missing required arg: <name>`): a plan made without
+  the value would be short of dummies when `/sign` receives it. No template is
+  refused for leaving the size out.
+- A bounded account's derived arguments, the recipient proof and the rekey-to
+  list proof, go in the slot that has their name. Assembly used to rely on the
+  declarations and the slots being in the same order, which held only because
+  generation writes them that way.
+- `keyset_revision` in `/status` starts at a random value in each signer
+  process instead of 0. A restarted signer reported the same low revisions
+  again, so a client that had cached the key list under one of them could keep
+  using a stale list. Clients compare it for equality, as before.
+- ARCH_SIGNING.md now says that a single transaction carrying its own group ID
+  can go through `/sign` and `/plan` only, and that the signer checks the
+  assembly receipt, the chain does not.
+
 ## Approval prompts say what the signer changed, and who signs what
 
 What the person approving a request is shown, and what the cosigned client

@@ -104,7 +104,8 @@ func TestListedRekeyDerivesTheListProof(t *testing.T) {
 	root, _ := hex.DecodeString(metadata.RekeyList.RootHex)
 	var root32 [32]byte
 	copy(root32[:], root)
-	if len(values) != 1 || !rekeylist.Verify(listTestTarget, values[0], root32) {
+	proofName := metadata.DerivedArgs[0].Name
+	if len(values) != 1 || !rekeylist.Verify(listTestTarget, values[proofName], root32) {
 		t.Fatalf("derived proof does not verify: %x", values)
 	}
 	tampered := boundedmeta.Clone(metadata)
@@ -112,7 +113,7 @@ func TestListedRekeyDerivesTheListProof(t *testing.T) {
 	if _, err := boundedDerivedArgs(listTestRekey(listTestTarget), key, tampered, boundedPathListedRekey); err == nil || !strings.Contains(err.Message, "does not match the account's stored root") {
 		t.Fatalf("mismatched root: error = %+v", err)
 	}
-	if values, err := boundedDerivedArgs(testBoundedPayment(), key, metadata, boundedPathPureSpend); err != nil || len(values[0]) != 0 {
+	if values, err := boundedDerivedArgs(testBoundedPayment(), key, metadata, boundedPathPureSpend); err != nil || len(values[proofName]) != 0 {
 		t.Fatalf("a spend carries a list proof: %x, %+v", values, err)
 	}
 }
