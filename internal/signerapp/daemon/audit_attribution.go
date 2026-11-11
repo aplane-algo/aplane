@@ -25,7 +25,6 @@ var _ signingAudit = (*signingAuditLogger)(nil)
 var _ signersigning.AuditCosignerRejectLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingRecoveryLogger = (*signingAuditLogger)(nil)
-var _ signersigning.AuditWithheldLogger = (*signingAuditLogger)(nil)
 
 // signingRequest settles the ID a signing or planning request is handled
 // under (signersigning.RequestID of the request_id it sent) and returns it

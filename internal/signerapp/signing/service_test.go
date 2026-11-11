@@ -371,6 +371,7 @@ type testAuditLogger struct {
 	approved []testAuditEntry
 	rejected []testAuditEntry
 	failed   []testAuditEntry
+	withheld []testAuditEntry
 }
 
 func (l *testAuditLogger) LogSignApproved(record SignedRecord) {
@@ -379,6 +380,15 @@ func (l *testAuditLogger) LogSignApproved(record SignedRecord) {
 		txnSender:   record.TxnSender,
 		reason:      record.Details,
 		policyRule:  record.PolicyRuleID,
+		record:      record,
+	})
+}
+
+func (l *testAuditLogger) LogSignWithheld(record SignedRecord, reason string) {
+	l.withheld = append(l.withheld, testAuditEntry{
+		authAddress: record.AuthAddress,
+		txnSender:   record.TxnSender,
+		reason:      reason,
 		record:      record,
 	})
 }

@@ -16,9 +16,15 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// AuditApproveLogger records each transaction a request signed, as signed.
+// AuditApproveLogger records each transaction a request signed, as signed,
+// and a signature so recorded that then never left the signer.
 type AuditApproveLogger interface {
 	LogSignApproved(record SignedRecord)
+	// LogSignWithheld records, as SIGN_FAILED, a signature already recorded
+	// as signed that never left the signer. The entry carries the record's
+	// txid and group_id, the fields its SIGN_APPROVED has, so a search on
+	// either finds both entries.
+	LogSignWithheld(record SignedRecord, reason string)
 }
 
 type IsUnlockedFunc func() bool

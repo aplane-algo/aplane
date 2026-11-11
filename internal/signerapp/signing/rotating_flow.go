@@ -652,21 +652,14 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}, nil
 }
 
-// AuditWithheldLogger records, as SIGN_FAILED, a signature already recorded
-// as signed that never left the signer. The entry carries the record's txid
-// and group_id, the fields its SIGN_APPROVED has, so a search on either
-// finds both entries.
-type AuditWithheldLogger interface {
-	LogSignWithheld(record SignedRecord, reason string)
-}
-
 // logWithheldSignature records a rotating signature that was recorded as
 // signed and then refused at the final check. record is the spend's, as its
-// SIGN_APPROVED wrote it.
+// SIGN_APPROVED wrote it. Every audit log the service takes can write it.
 func (s *Service) logWithheldSignature(record SignedRecord, refused *ServiceError) {
-	if logger, ok := s.AuditLog.(AuditWithheldLogger); ok && logger != nil {
-		logger.LogSignWithheld(record, "signature withheld after it was recorded as signed: "+refused.Message)
+	if s.AuditLog == nil {
+		return
 	}
+	s.AuditLog.LogSignWithheld(record, "signature withheld after it was recorded as signed: "+refused.Message)
 }
 
 // releaseRefused reports why a signature must not leave: the signer locked, or
