@@ -125,7 +125,8 @@ func TestLsigArgsByDeclaredName(t *testing.T) {
 
 // One account's failed lookup fails that account alone: a set command goes
 // on with the others, each given what its key declares. A plugin group, which
-// is signed as one, fails.
+// is signed as one, fails. A name no key that was looked up declares is still
+// refused, so it is never dropped for the accounts that go on.
 func TestShareLsigArgsByDeclaredNameKeepsALookupFailureToItsAccount(t *testing.T) {
 	htlc := testAddress(1).String()
 	unknown := testAddress(2).String() // its auth address cannot be fetched
@@ -147,9 +148,7 @@ func TestShareLsigArgsByDeclaredNameKeepsALookupFailureToItsAccount(t *testing.T
 	eng.AuthCache.AuthAddresses[rekeyed] = authorizer
 
 	senders := []string{htlc, unknown, rekeyed}
-	// "other" is declared by no key that could be looked up, but the two
-	// that could not might declare it, so it is not refused.
-	args := map[string][]byte{"preimage": []byte("open"), "other": {1}}
+	args := map[string][]byte{"preimage": []byte("open")}
 	shares, err := eng.ShareLsigArgsByDeclaredName(context.Background(), senders, args)
 	if err != nil {
 		t.Fatalf("ShareLsigArgsByDeclaredName() error = %v, want each failure kept to its account", err)
@@ -167,6 +166,31 @@ func TestShareLsigArgsByDeclaredNameKeepsALookupFailureToItsAccount(t *testing.T
 	if _, err := eng.LsigArgsByDeclaredName(context.Background(), senders, args); err == nil ||
 		!strings.Contains(err.Error(), "failed to refresh auth address for "+unknown) {
 		t.Fatalf("LsigArgsByDeclaredName() error = %v, want the group failed by the first lookup failure", err)
+	}
+
+	// "preimge" is declared by no key that could be looked up. The two that
+	// could not might declare it, but the HTLC would sign without it, so the
+	// whole command is refused, saying a retry may differ.
+	typo := map[string][]byte{"preimage": []byte("open"), "preimge": []byte("typo")}
+	for name, share := range map[string]func() error{
+		"ShareLsigArgsByDeclaredName": func() error {
+			_, err := eng.ShareLsigArgsByDeclaredName(context.Background(), senders, typo)
+			return err
+		},
+		"LsigArgsByDeclaredName": func() error {
+			_, err := eng.LsigArgsByDeclaredName(context.Background(), senders, typo)
+			return err
+		},
+	} {
+		err := share()
+		var undeclared *UndeclaredLsigArgsError
+		if !errors.As(err, &undeclared) || strings.Join(undeclared.Names, ",") != "preimge" || undeclared.Unresolved != 2 {
+			t.Fatalf("%s() error = %#v, want preimge refused with 2 accounts not looked up", name, err)
+		}
+		want := `none of the signing keys that could be looked up declares the LogicSig argument "preimge", so it would not be sent; 2 accounts could not be looked up`
+		if err.Error() != want {
+			t.Fatalf("%s() error = %q, want %q", name, err, want)
+		}
 	}
 }
 

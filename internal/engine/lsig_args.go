@@ -13,10 +13,14 @@ import (
 
 // UndeclaredLsigArgsError refuses LogicSig argument names that no position's
 // signing key declares. Such an argument would be sent nowhere, so it is
-// refused rather than dropped without a word. Names is sorted. Each caller
-// words it in the terms its arguments were given in.
+// refused rather than dropped without a word. Names is sorted. Unresolved is
+// the number of accounts whose signing key could not be looked up: when it is
+// not zero, Names are declared by none of the keys that could be, and a retry
+// that looks up the others may find one that declares them. Each caller words
+// it in the terms its arguments were given in.
 type UndeclaredLsigArgsError struct {
-	Names []string
+	Names      []string
+	Unresolved int
 }
 
 func (e *UndeclaredLsigArgsError) Error() string {
@@ -24,10 +28,24 @@ func (e *UndeclaredLsigArgsError) Error() string {
 	for i, name := range e.Names {
 		quoted[i] = strconv.Quote(name)
 	}
-	if len(quoted) == 1 {
-		return fmt.Sprintf("no signing key here declares the LogicSig argument %s, so it would not be sent", quoted[0])
+	argument, pronoun := "argument "+strings.Join(quoted, ", "), "it"
+	if len(quoted) > 1 {
+		argument, pronoun = "arguments "+strings.Join(quoted, ", "), "they"
 	}
-	return fmt.Sprintf("no signing key here declares the LogicSig arguments %s, so they would not be sent", strings.Join(quoted, ", "))
+	if e.Unresolved == 0 {
+		return fmt.Sprintf("no signing key here declares the LogicSig %s, so %s would not be sent", argument, pronoun)
+	}
+	return fmt.Sprintf("none of the signing keys that could be looked up declares the LogicSig %s, so %s would not be sent; %s",
+		argument, pronoun, UnresolvedAccounts(e.Unresolved))
+}
+
+// UnresolvedAccounts says that n accounts' signing keys could not be looked
+// up, for wording an *UndeclaredLsigArgsError.
+func UnresolvedAccounts(n int) string {
+	if n == 1 {
+		return "1 account could not be looked up"
+	}
+	return fmt.Sprintf("%d accounts could not be looked up", n)
 }
 
 // PositionLsigArgs is one position's share of LogicSig arguments given once
@@ -57,9 +75,11 @@ type PositionLsigArgs struct {
 // position whose lookup fails carries the failure in its Err.
 //
 // A name that no position's key declares is refused with an
-// *UndeclaredLsigArgsError. While a position's key could not be looked up,
-// what it declares is not known, so nothing is refused: that position fails,
-// and the others get what their keys declare.
+// *UndeclaredLsigArgsError, so it is never dropped. A position whose key
+// could not be looked up declares nothing that is known: a name only it might
+// declare is refused too, the error counting the accounts not looked up. When
+// every name is declared by a key that was looked up, that position fails and
+// the others get what their keys declare.
 func (e *Engine) ShareLsigArgsByDeclaredName(ctx context.Context, senders []string, args map[string][]byte) ([]PositionLsigArgs, error) {
 	shares := make([]PositionLsigArgs, len(senders))
 	if len(args) == 0 {
@@ -94,9 +114,6 @@ func (e *Engine) ShareLsigArgsByDeclaredName(ctx context.Context, senders []stri
 			declared[name] = true
 		}
 	}
-	if len(failed) > 0 {
-		return shares, nil
-	}
 
 	var undeclared []string
 	for name := range args {
@@ -106,7 +123,7 @@ func (e *Engine) ShareLsigArgsByDeclaredName(ctx context.Context, senders []stri
 	}
 	if len(undeclared) > 0 {
 		sort.Strings(undeclared)
-		return nil, &UndeclaredLsigArgsError{Names: undeclared}
+		return nil, &UndeclaredLsigArgsError{Names: undeclared, Unresolved: len(failed)}
 	}
 	return shares, nil
 }

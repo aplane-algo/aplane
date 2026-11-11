@@ -272,6 +272,15 @@ func TestUndeclaredLsigArgsAreWordedInTheCallersTerms(t *testing.T) {
 	for _, worded := range []error{shell, script} {
 		requireUndeclared(t, worded, "other", "preimge")
 	}
+	// When an account's key could not be looked up, the refusal says so, and
+	// that a retry may differ.
+	unresolved := &engine.UndeclaredLsigArgsError{Names: []string{"preimge"}, Unresolved: 1}
+	if want := "arg:preimge: none of the keys that could be looked up declares this LogicSig argument, so it would not be sent; 1 account could not be looked up, and a retry may differ; check the name"; ShellLsigArgsError(unresolved).Error() != want {
+		t.Fatalf("shell wording = %q, want %q", ShellLsigArgsError(unresolved), want)
+	}
+	if want := `lsigArgs "preimge": none of the keys that could be looked up declares this LogicSig argument, so it would not be sent; 1 account could not be looked up, and a retry may differ; check the name`; scriptLsigArgsError(unresolved).Error() != want {
+		t.Fatalf("script wording = %q, want %q", scriptLsigArgsError(unresolved), want)
+	}
 	other := errors.New("other failure")
 	if ShellLsigArgsError(other) != other || scriptLsigArgsError(other) != other || ShellLsigArgsError(nil) != nil {
 		t.Fatal("an error that is not the refusal must pass through unchanged")
@@ -490,6 +499,49 @@ func TestSetCommandsKeepALookupFailureToItsAccount(t *testing.T) {
 		}
 		requireSignedWith(t, recorder, argsHTLC, argsHTLC, openHex)
 	})
+}
+
+// A name no account that could be looked up declares is refused for the
+// whole command, though another account's lookup failed: the accounts that go
+// on would otherwise be signed without it. Nothing is signed.
+func TestSetCommandsRefuseANameNoLookedUpAccountDeclares(t *testing.T) {
+	typo := map[string][]byte{"preimge": []byte("typo")}
+	for name, run := range map[string]func(*App) error{
+		"send": func(app *App) error {
+			_, err := app.ExecuteSend(context.Background(), SendRequest{
+				AmountText: "0.1", AssetRef: "algo", FromRaw: []string{"@withbroken"}, ToRaw: []string{argsTo}, LsigArgs: typo,
+			})
+			return err
+		},
+		"sweep": func(app *App) error {
+			_, err := app.Sweep(context.Background(), SweepRequest{AssetRef: "algo", FromRaw: []string{"@withbroken"}, ToRaw: argsTo, LsigArgs: typo})
+			return err
+		},
+		"validate": func(app *App) error {
+			_, err := app.Validate(context.Background(), ValidateRequest{Account: "@withbroken", LsigArgs: typo})
+			return err
+		},
+		"plugin": func(app *App) error {
+			result := &jsonrpc.ExecuteResult{Transactions: []jsonrpc.TransactionIntent{
+				rawPaymentIntent(t, argsBroken), rawPaymentIntent(t, argsHTLC),
+			}}
+			_, err := app.SubmitPluginTransactions(context.Background(), "plugin", result, typo)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, recorder := lsigArgsTestApp(t)
+			err := run(app)
+			requireUndeclared(t, err, "preimge")
+			var undeclared *engine.UndeclaredLsigArgsError
+			if !errors.As(err, &undeclared) || undeclared.Unresolved != 1 {
+				t.Fatalf("error = %#v, want 1 account not looked up", err)
+			}
+			if paths, _ := recorder.recorded(); len(paths) != 0 {
+				t.Fatalf("signer requests = %v, want none", paths)
+			}
+		})
+	}
 }
 
 // An app call's companion payment is from the call's own account. From a

@@ -39,7 +39,10 @@ before it was renamed `enroll`.
   arguments its signing key declares, so a native account in the set is sent
   none, and a name no account's key declares is refused. An account whose
   signing key cannot be looked up (its auth address or the signer's key list
-  cannot be fetched) fails on its own, and the others go ahead. A script's
+  cannot be fetched) fails on its own, and the others go ahead with the names
+  their keys declare. A name that none of the keys that could be looked up
+  declares is still refused for the whole command, and the refusal says how
+  many accounts could not be looked up, since a retry may differ. A script's
   `sweep()` gets the same refusal, worded in terms of its `lsigArgs` option.
 - **Arguments are checked against the key that signs.** apshell checked them
   against the sending account's own arguments, even when the account is

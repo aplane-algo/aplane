@@ -24,9 +24,8 @@ func ShellLsigArgsError(err error) error {
 		for i, name := range names {
 			tokens[i] = "arg:" + name
 		}
-		return strings.Join(tokens, ", ") +
-			": no transaction here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name, or run keys refresh if the key is new"
-	})
+		return strings.Join(tokens, ", ")
+	}, "no transaction here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name, or run keys refresh if the key is new")
 }
 
 // scriptLsigArgsError words the refusal for a script: the names as keys of the
@@ -37,17 +36,24 @@ func scriptLsigArgsError(err error) error {
 		for i, name := range names {
 			quoted[i] = strconv.Quote(name)
 		}
-		return "lsigArgs " + strings.Join(quoted, ", ") +
-			": no account here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name"
-	})
+		return "lsigArgs " + strings.Join(quoted, ", ")
+	}, "no account here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name")
 }
 
-func undeclaredLsigArgsError(err error, word func(names []string) string) error {
+// undeclaredLsigArgsError words the refusal as the names, as given, then why.
+// When some accounts' keys could not be looked up, why says so, and that a
+// retry may find a key that declares the names.
+func undeclaredLsigArgsError(err error, given func(names []string) string, declaredByNone string) error {
 	var undeclared *engine.UndeclaredLsigArgsError
 	if !errors.As(err, &undeclared) {
 		return err
 	}
-	return &wordedError{text: word(undeclared.Names), err: undeclared}
+	why := declaredByNone
+	if undeclared.Unresolved > 0 {
+		why = "none of the keys that could be looked up declares this LogicSig argument, so it would not be sent; " +
+			engine.UnresolvedAccounts(undeclared.Unresolved) + ", and a retry may differ; check the name"
+	}
+	return &wordedError{text: given(undeclared.Names) + ": " + why, err: undeclared}
 }
 
 // wordedError is an engine error given in a caller's own terms. It still
