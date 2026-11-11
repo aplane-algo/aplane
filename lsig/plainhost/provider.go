@@ -823,7 +823,7 @@ func pathFees(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile
 				ArgumentBytes: uint64(metadata.ArgumentBytesForPath(path.name)),
 				MaxOpcodeCost: path.opcode,
 			}},
-			Dummy: lsigresource.Usage{ProgramBytes: uint64(len(txsigning.EmbeddedDummyTealTok)), MaxOpcodeCost: 1},
+			Dummy: lsigresource.Usage{ProgramBytes: uint64(len(txsigning.EmbeddedDummyTealTok)), MaxOpcodeCost: txsigning.DummyOpcodeCost},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("%s path does not fit the network's resource limits: %w", path.name, err)
