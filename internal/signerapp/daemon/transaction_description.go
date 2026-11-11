@@ -9,10 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
 )
 
-func (fs *Signer) generateTransactionDescription(txnBytesHex string) string {
-	return txdesc.DescribeHexWithResolver(txnBytesHex, fs.genesisHashResolver())
-}
-
 func (fs *Signer) generateTransactionDescriptionFromTxn(txn types.Transaction) string {
 	return txdesc.DescribeTxnWithResolver(txn, fs.genesisHashResolver())
 }

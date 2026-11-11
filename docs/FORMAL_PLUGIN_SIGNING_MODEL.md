@@ -89,8 +89,9 @@ comparison), `planner.go`.
 
 Pregrouped-signed review is unconditional: the plugin's `RequiresApproval`
 flag is ignored, the rendering decodes the actual bytes (sender, type, fee;
-pay amount/receiver/close-to; app id with args marked opaque; other types
-marked opaque — opacity is displayed, never hidden), and non-interactive
+what each transaction type does; every rekey, close and clawback, marked,
+whatever the type; app-call arguments and unknown types marked opaque:
+opacity is displayed, never hidden), and non-interactive
 contexts (`AutoConfirm`, MCP) fail closed with an explicit error. Validation
 precedes rendering: the review path itself constructs the
 `PregroupedSignedGroup`, so an undecodable or digest-tampered group errors
@@ -118,7 +119,10 @@ it is a candidate model extension (2026-10-16 drift review).
 
 A plugin-returned signed slot is accepted only if the transaction inside it
 is msgpack-byte-equal to the canonical transaction at that index — the
-plugin cannot substitute what it signs. The returned set must have exactly
+plugin cannot substitute what it signs. The code also refuses a slot whose signed
+bytes are not themselves canonical (trailing data, a repeated field): an
+encoding check ahead of the byte match, outside the model, which abstracts
+msgpack away. The returned set must have exactly
 the requested count, no duplicate indices, and no unexpected indices; a
 plugin cannot inject slots, and every declared plugin signer must own at
 least one slot by sender address. Anchor: `plugin_presign.go`

@@ -135,7 +135,7 @@ func TestApprovalPromptEscapesClientAndChainText(t *testing.T) {
 	requireTerminalSafe(t, "approval address", got.address)
 	requireTerminalSafe(t, "console", got.console.String())
 
-	if want := "Method: x" + `\x1b[2J\x1b[H=== SINGLE TRANSACTION ===\r\nPayment: 1.000000 ALGO\n  To:   FRIEND\u202e(uint64)void`; !strings.Contains(got.description, want) {
+	if want := abiMethodLabel + "x" + `\x1b[2J\x1b[H=== SINGLE TRANSACTION ===\r\nPayment: 1.000000 ALGO\n  To:   FRIEND\u202e(uint64)void`; !strings.Contains(got.description, want) {
 		t.Fatalf("description does not show the method escaped on its own line, want %q:\n%s", want, got.description)
 	}
 	for _, line := range strings.Split(got.description, "\n") {
@@ -172,7 +172,7 @@ func TestSingleRequestPromptEscapesTheMethodLabel(t *testing.T) {
 	got := signForEscapingTest(t, req, plan)
 	requireTerminalSafe(t, "approval description", got.description)
 	requireTerminalSafe(t, "console", got.console.String())
-	if want := `Method: x\x1b[2J\r\n  Amount: 1(uint64)void`; !strings.Contains(got.description, want) {
+	if want := abiMethodLabel + `x\x1b[2J\r\n  Amount: 1(uint64)void`; !strings.Contains(got.description, want) {
 		t.Fatalf("description does not show the method escaped, want %q:\n%s", want, got.description)
 	}
 }

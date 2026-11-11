@@ -538,7 +538,7 @@ does not handle this method.
 | Field | Type | Description |
 |-------|------|-------------|
 | `index` | int | Matches the request `index` |
-| `encoded` | string | Base64 signed transaction msgpack for that slot |
+| `encoded` | string | Base64 signed transaction msgpack for that slot, in canonical form: fields in sorted order, no empty field written out, nothing after the transaction. The Algorand SDKs' own encoders produce this. apshell refuses a slot in any other encoding, because the signer forwards the bytes as given and refuses non-canonical ones |
 
 The plugin returns one `signed` entry per request and signs the bytes exactly as
 received. APlane submits the group as the union of these plugin-signed slots and its own

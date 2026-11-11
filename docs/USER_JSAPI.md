@@ -64,10 +64,14 @@ Address arguments can be full Algorand addresses or aliases known to `apshell`.
 Set names use arrays in JavaScript API calls; the `@setname` shell syntax is for
 the REPL command language, not JS function arguments.
 
-Byte arguments used by application calls and LogicSig runtime args accept
-strings with the `hex:`, `b64:`, `text:`, and `0x` prefixes, or a byte array
-such as `[104, 105]`. See [USER_COMMANDS.md](USER_COMMANDS.md) (Byte Encodings)
-for supported prefixes.
+Byte arguments used by application calls, box names and LogicSig runtime args
+accept a byte array such as `[104, 105]`, or a string with a prefix: `hex:`,
+`b64:`, `text:` or `str:`, `int:` (a decimal number, sent as 8 big-endian
+bytes), `addr:` (an address, sent as its 32-byte public key), or `0x`. A
+string with no prefix is sent as text, unless it contains a colon: then it is
+refused, so `"int:5"` or a mistyped prefix is never sent as text by accident.
+Write literal text with a colon as `"text:user:alice"`. See
+[USER_COMMANDS.md](USER_COMMANDS.md) (Byte Encodings).
 
 Errors throw JavaScript exceptions. Use `try` / `catch` for recoverable flows:
 
@@ -388,6 +392,11 @@ Online `keyreg` options:
 }
 ```
 
+`votekey`, `selkey`, `sproofkey`, `votefirst`, `votelast` and `keydilution`
+are all required to go online. They belong to the participation key, so there
+are no defaults: a registration with the wrong window or dilution goes through
+but can't vote.
+
 `participation()` returns:
 
 ```javascript
@@ -421,7 +430,11 @@ authorization charge, added on top of the fees you set (see
 [FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership)). To sign a single
 transaction, submit its original draft rather than the transaction `plan()`
 returned: a single transaction has no group ID, so planning the planned
-transaction again adds the charge again. Request fields:
+transaction again adds the charge again. `txnBytesHex` is the hex of the
+letters `TX` followed by the transaction's canonical msgpack encoding, and
+`signedTxnHex` the hex of a signed transaction's canonical encoding; the
+signer refuses bytes without the `TX` prefix or in any other encoding. Request
+fields:
 
 ```javascript
 {
@@ -575,8 +588,25 @@ appCallRaw(123, "alice", ["text:deposit"], {
 appCall(appId, method, abiPath, from, args, options = {})
 ```
 
-`args` is an array converted to ABI argument strings. Options are the same as
-`appCallRaw`.
+`args` is an array with one entry per method argument, converted by the
+argument's ABI type. Options are the same as `appCallRaw`.
+
+| JavaScript value | Accepted for |
+|------------------|--------------|
+| number, `BigInt`, or a decimal string | `uintN`, `byte`, `ufixedNxM` |
+| `true` / `false` | `bool` |
+| `Uint8Array`, an array of byte numbers, or a byte-encoded string (`hex:`, `b64:`, `text:`) | `byte[]`, `byte[N]` |
+| string | `string`, `address`; nothing else is accepted for `string` |
+| array | arrays and tuples; each element is converted by its own type, so a `byte[]` inside a tuple takes the same forms as one at the top level |
+
+A string given for a `string` argument is sent exactly as written, including
+one that starts with `json:`; a string holding a lone surrogate or the
+replacement character U+FFFD is refused. A decimal string is accepted for a
+number inside an array or tuple as well as at the top level. A whole number past `Number.MAX_SAFE_INTEGER`
+is refused, because JavaScript has already rounded it: pass a `BigInt` or a
+decimal string. `null` and `undefined` are refused. A numeric string must be plain decimal:
+`"0100"`, `"0x10"` and `"1_000"` are refused, not read as octal, hex or a
+grouped number.
 
 Returns `{ txid, txids, confirmed, method }` for a single call, or
 `{ txids, confirmed, grouped: true, method }` when a companion payment is used.

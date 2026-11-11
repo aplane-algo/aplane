@@ -14,7 +14,7 @@ func (fs *Signer) newPlannerWithAudit(auditLog signersigning.AuditLogger) *signe
 	return signersigning.NewPlanner(signerPlannerDeps{signer: fs}, signersigning.PlannerOptions{
 		AuditLog:               auditLog,
 		Console:                signerConsole{},
-		GenerateTxnDescription: fs.generateTransactionDescription,
+		GenerateTxnDescription: fs.generateTransactionDescriptionFromTxn,
 		GenesisHashResolver:    resolver,
 	})
 }

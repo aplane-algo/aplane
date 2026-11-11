@@ -5,14 +5,16 @@ package signing
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -23,7 +25,6 @@ type AuditLogger interface {
 type VerifySignableKeysFunc func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
 type CalculateDummiesFunc func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
 type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
-type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
 type DummyFeeInfo struct {
 	TotalFees               uint64
@@ -78,7 +79,7 @@ type SnapshotFunc func() PlannerRuntimeSnapshot
 type Planner struct {
 	AuditLog               AuditLogger
 	Console                Console
-	GenerateTxnDescription GenerateTxnDescriptionFunc
+	GenerateTxnDescription GenerateTxnDescriptionFromTxnFunc
 	VerifySignableKeys     VerifySignableKeysFunc
 	CalculateDummies       CalculateDummiesFunc
 	BuildFinalGroup        BuildFinalGroupFunc
@@ -319,9 +320,9 @@ func (p *Planner) logSignRequests(req signerapi.GroupSignRequest, txns []types.T
 		if passthroughIndices[i] {
 			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
 		} else if foreignIndices[i] {
-			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txReq.TxnBytesHex))
+			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txns[i]))
 		} else {
-			p.AuditLog.LogSignRequest(txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txReq.TxnBytesHex))
+			p.AuditLog.LogSignRequest(txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txns[i]))
 		}
 	}
 }
@@ -438,9 +439,13 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): invalid hex encoding", i+1))
 			}
 
-			var stxn types.SignedTxn
-			if err := msgpack.Decode(stxnBytes, &stxn); err != nil {
-				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): invalid signed transaction msgpack", i+1))
+			// These bytes are returned as given, so they must be exactly
+			// what was decoded and reviewed: no trailing data, no repeated
+			// field that a decoder resolves one way and a node another.
+			stxn, decodeErr := canonical.DecodeSignedTxn(stxnBytes)
+			if decodeErr != nil {
+				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): %s",
+					i+1, requestBytesRefusal(decodeErr, i+1, console)))
 			}
 
 			txns[i] = stxn.Txn
@@ -454,14 +459,14 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 			return nil, nil, badRequest(fmt.Sprintf("transaction %d: invalid hex encoding", i+1))
 		}
 
-		txnBytes := txnBytesWithPrefix
-		if len(txnBytes) > 2 && txnBytes[0] == 'T' && txnBytes[1] == 'X' {
-			txnBytes = txnBytes[2:]
-		}
-
-		var txn types.Transaction
-		if err := msgpack.Decode(txnBytes, &txn); err != nil {
-			return nil, nil, badRequest(fmt.Sprintf("transaction %d: invalid msgpack", i+1))
+		// The bytes must be the canonical encoding of the transaction they
+		// decode to. A lenient decode accepts trailing data, a repeated field
+		// and a wrong-length address, and the signer would then review and
+		// sign a re-encoding that differs from what the client sent.
+		txn, decodeErr := canonical.DecodeTXPrefixed(txnBytesWithPrefix)
+		if decodeErr != nil {
+			return nil, nil, badRequest(fmt.Sprintf("transaction %d: %s",
+				i+1, requestBytesRefusal(decodeErr, i+1, console)))
 		}
 
 		txns[i] = txn
@@ -469,6 +474,20 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 	}
 
 	return txns, passthroughSignedTxns, nil
+}
+
+// requestBytesRefusal is the text a client is told when its transaction
+// bytes are refused: the canonical decoder's own fixed text. The codec's
+// detail (a field this build doesn't know, a wrong type) goes to the signer's
+// console so the operator can tell corrupt bytes from an unsupported
+// transaction. It quotes bytes from the request, so it is escaped first.
+func requestBytesRefusal(err error, position int, console Console) string {
+	var decodeErr *canonical.DecodeError
+	if errors.As(err, &decodeErr) {
+		consoleOf(console).Printf("[GROUP] transaction %d refused: %s\n",
+			position, termsafe.Line(decodeErr.Detail.Error()))
+	}
+	return err.Error()
 }
 
 func validateGroupConsistency(txns []types.Transaction, hasPassthrough bool, console Console) (isPreGrouped bool, err *ServiceError) {

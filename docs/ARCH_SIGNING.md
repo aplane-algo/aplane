@@ -84,7 +84,7 @@ Three distinct byte representations appear in the signing flow:
 |--------|---------|----------|
 | **Unsigned transaction encoding** | msgpack(txn) | Internal transaction representation |
 | **Signing preimage** | `"TX"` + msgpack(txn) | Ed25519 signs this directly; Falcon hashes it to derive the transaction ID |
-| **Transport field** (`txn_bytes_hex`) | Hex encoding of the signing preimage | Wire format in `/sign` and `/plan` requests. Server strips the `TX` prefix before msgpack decoding. |
+| **Transport field** (`txn_bytes_hex`) | Hex encoding of the signing preimage | Wire format in `/sign` and `/plan` requests. The server requires the `TX` prefix and the canonical encoding, and refuses anything else with 400. |
 
 ### Derivation by Key Type
 
@@ -301,7 +301,9 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 2. Decode all supplied transaction material.
    - Sign and foreign entries decode from `txn_bytes_hex`.
    - Passthrough entries decode from `signed_txn_hex`.
-   - Decode failures, malformed hex, and invalid msgpack fail the request.
+   - Malformed hex, a missing `TX` prefix on `txn_bytes_hex`, invalid msgpack,
+     and bytes that are not the canonical encoding of what they decode to
+     fail the request with 400.
 
 3. Classify the group and enforce shape rules.
    - All-foreign groups are rejected because the signer has no signer-managed work to perform.
@@ -1346,10 +1348,19 @@ policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
   `/plan`, the component and rotating sign requests).
 
 `/sign` uses `app_call_info` to render application-call approval prompts.
-The label is the client's claim: the signer shows it only when its selector
-matches the call's first argument, which binds the label's hash and nothing
-more. `/plan` accepts the same request DTO but does not perform approval or
+The label is the client's claim: the signer shows it only when the call's
+first argument is exactly the label's 4-byte selector, which binds the label's
+hash and nothing more. The review says so: the line reads `Method (the client's label, not
+verified): <signature>`, followed by the four selector bytes, the part the app
+acts on. `/plan` accepts the same request DTO but does not perform approval or
 signing.
+
+An application call's description lists every resource the call names: the
+accounts, apps, assets and boxes lists, and the access list (`al`) that
+replaces them in newer transactions, entry by entry, with holding, local-state
+and box entries resolved to the entries they point at. An empty entry is shown
+as adding box read and write budget, which is what the network takes it to
+mean. The description also shows `RejectVersion` when set.
 
 `request_id` is optional and is used by `/sign` to correlate a live synchronous
 sign request with a later `/sign/cancel` request. If absent, external clients
