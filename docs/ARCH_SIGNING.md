@@ -958,13 +958,15 @@ spend's prompt shows the authorization charge `/sign/rotating/prepare` put on
 the spend the same way.
 
 A `/sign/component` request checks a frozen group and changes nothing, so its
-prompt says so instead of claiming the changes `/plan` made:
+prompt says so instead of claiming changes it did not make:
 ```
 [FROZEN GROUP: checked as sent, not changed by this request]
   • 1 dummy transaction(s) for LogicSig arguments/opcode budget
   • Required LogicSig program contribution: about 30 microAlgos (300 charged byte(s))
-  • The fees shown already include these; only /plan adds them
+  • The fees shown already include these; this request adds no dummies or fees
 ```
+A frozen request of one transaction with no dummies reads
+`[FROZEN TRANSACTION: checked as sent, not changed by this request]` instead.
 
 ### Relevant Policy Parameters
 

@@ -267,21 +267,25 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 // planChangeLines tells the operator what planning did to the request: the
 // dummies it added, the fee it raised and what for, and a recomputed group
 // ID. The single-transaction prompt and the group prompt both carry it. A
-// frozen group is changed by nothing here: it is shown as checked, with what
-// its fees already pay. Every line ends in a newline; with nothing to say it
-// is empty.
+// frozen request is changed by nothing here: it is shown as checked, with
+// what its fees already pay, and a lone transaction is not called a group.
+// Every line ends in a newline; with nothing to say it is empty.
 func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) string {
 	var b strings.Builder
 	fees := plan.FeeInfo
 	contributions := fees.ProgramFeeContribution > 0 || fees.NativePQFeeContribution > 0
 	if plan.Frozen {
-		b.WriteString("[FROZEN GROUP: checked as sent, not changed by this request]\n")
+		if len(allTxns) > 1 {
+			b.WriteString("[FROZEN GROUP: checked as sent, not changed by this request]\n")
+		} else {
+			b.WriteString("[FROZEN TRANSACTION: checked as sent, not changed by this request]\n")
+		}
 		if plan.DummiesNeeded > 0 {
 			fmt.Fprintf(&b, "  • %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
 		}
 		writeContributionLines(&b, plan)
 		if plan.DummiesNeeded > 0 || contributions {
-			b.WriteString("  • The fees shown already include these; only /plan adds them\n")
+			b.WriteString("  • The fees shown already include these; this request adds no dummies or fees\n")
 		}
 		return b.String()
 	}

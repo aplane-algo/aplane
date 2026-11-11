@@ -398,13 +398,13 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 			"[FROZEN GROUP: checked as sent, not changed by this request]",
 			"  • 1 dummy transaction(s) for LogicSig arguments/opcode budget",
 			"Required LogicSig program contribution: about 30 microAlgos",
-			"The fees shown already include these; only /plan adds them",
+			"The fees shown already include these; this request adds no dummies or fees",
 		} {
 			if !strings.Contains(description, want) {
 				t.Errorf("%d request(s): description missing %q:\n%s", len(requests), want, description)
 			}
 		}
-		for _, notWant := range []string{"MODIFIED", "Added 1 dummy", "Group ID recomputed", "COVERED BY EXISTING FEES"} {
+		for _, notWant := range []string{"MODIFIED", "Added 1 dummy", "Group ID recomputed", "COVERED BY EXISTING FEES", "/plan"} {
 			if strings.Contains(description, notWant) {
 				t.Errorf("%d request(s): frozen description claims %q:\n%s", len(requests), notWant, description)
 			}
@@ -415,6 +415,31 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 		if !strings.Contains(description, "[MODIFIED BY SERVER]") || strings.Contains(description, "FROZEN") {
 			t.Errorf("%d request(s): a planned group lost its change report:\n%s", len(requests), description)
 		}
+	}
+}
+
+// A frozen request of one transaction, with no dummies, is not called a
+// group.
+func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) {
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
+	plan := &PlanResult{
+		FeeInfo:            DummyFeeInfo{NativePQFeeContribution: 2_000},
+		PassthroughIndices: map[int]bool{},
+		ForeignIndices:     map[int]bool{},
+		Frozen:             true,
+	}
+	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, func(types.Transaction) string { return "txn" })
+	for _, want := range []string{
+		"[FROZEN TRANSACTION: checked as sent, not changed by this request]",
+		"Required native Falcon contribution: 2000 microAlgos",
+		"The fees shown already include these; this request adds no dummies or fees",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("description missing %q:\n%s", want, description)
+		}
+	}
+	if strings.Contains(description, "GROUP") {
+		t.Errorf("a lone transaction is called a group:\n%s", description)
 	}
 }
 
