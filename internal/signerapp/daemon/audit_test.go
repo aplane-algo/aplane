@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
+	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -47,7 +48,7 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	logger.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
-	logger.LogSignApproved("ADDR", "SENDER", "send 1 ALGO")
+	logger.LogSignApproved(signeraudit.SignApproval{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "send 1 ALGO"})
 	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
 	logger.LogSignFailed("ADDR", "SENDER", "key load error")
 	logger.LogKeyReload(5)
@@ -125,7 +126,7 @@ func TestAuditSigningAttributionFields(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	logger.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
-	logger.LogSignApproved("ADDR", "SENDER", "txn signed")
+	logger.LogSignApproved(signeraudit.SignApproval{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed"})
 	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
 
 	entries := readAuditEntries(t, path)
@@ -152,7 +153,7 @@ func TestAuditSigningPolicyRuleID(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogSignApprovedWithPolicyRule("ADDR", "SENDER", "txn signed", "review_algo_payment_exceeded")
+	logger.LogSignApproved(signeraudit.SignApproval{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed", PolicyRuleID: "review_algo_payment_exceeded"})
 	logger.LogSignRejectedWithPolicyRule("ADDR", "SENDER", "operator rejected", "always_review_warnings")
 
 	entries := readAuditEntries(t, path)
@@ -259,12 +260,12 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 	r.RemoteAddr = "203.0.113.10:4000"
 	audit := &signingAuditLogger{
 		log:         logger,
-		attribution: signingAuditAttributionFromRequest(r),
+		attribution: signingAuditAttributionFromRequest(r, "req-1"),
 	}
 
 	audit.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
 	audit.RecordApprovalResponse(signerapproval.SignResponse{ID: "req-1", Approved: true, ApproverPrincipal: "alice-admin"})
-	audit.LogSignApprovedWithPolicyRule("ADDR", "SENDER", "txn signed", "always_review_warnings")
+	audit.LogSignApproved(signersigning.SignedRecord{AuthAddress: "ADDR", TxnSender: "SENDER", Details: "txn signed", PolicyRuleID: "always_review_warnings"})
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 2 {
@@ -286,6 +287,11 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 	}
 	if entries[1].PolicyRuleID != "always_review_warnings" {
 		t.Fatalf("approval policy_rule_id = %q, want always_review_warnings", entries[1].PolicyRuleID)
+	}
+	for _, entry := range entries {
+		if entry.OperationID != "req-1" {
+			t.Fatalf("%s operation_id = %q, want the request ID", entry.Event, entry.OperationID)
+		}
 	}
 }
 

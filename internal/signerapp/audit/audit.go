@@ -117,7 +117,7 @@ type AuditEntry struct {
 	TxnSender            string         `json:"txn_sender,omitempty"`          // Transaction sender (if different)
 	TxnType              string         `json:"txn_type,omitempty"`            // Transaction type (pay, axfer, etc)
 	TxnDetails           string         `json:"txn_details,omitempty"`         // Human-readable transaction summary
-	TxID                 string         `json:"txid,omitempty"`                // Transaction ID (after signing)
+	TxID                 string         `json:"txid,omitempty"`                // ID of the transaction as signed, after planning
 	RemoteAddr           string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
 	Reason               string         `json:"reason,omitempty"`              // Rejection/failure reason
 	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Matched review rule, satisfied manually or by User Auto-Approve
@@ -143,9 +143,18 @@ type AuditEntry struct {
 	// and the omitted names are not recorded anywhere.
 	GenerationIDsOmitted  int    `json:"generation_ids_omitted,omitempty"`
 	ArchiveEntriesOmitted int    `json:"archive_entries_omitted,omitempty"`
+	GroupTxIDsOmitted     int    `json:"group_txids_omitted,omitempty"`
 	SuppressedCount       int    `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
 	ClientLabel           string `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
 	ClosedConnections     int    `json:"closed_connections,omitempty"`
+	// SIGN_APPROVED: the signed transaction's final fee in microAlgos (0 is
+	// written), and, when it was signed in a group, the final group ID
+	// (base64), every transaction ID of that group in order, and how many of
+	// them are trailing dummies this request added and signed.
+	Fee        *uint64  `json:"fee,omitempty"`
+	GroupID    string   `json:"group_id,omitempty"`
+	GroupTxIDs []string `json:"group_txids,omitempty"`
+	DummyCount int      `json:"dummy_count,omitempty"`
 	// ROTATING_RELEASE: the stage whose program the signature revealed and
 	// the last round at which the released transaction can confirm. The
 	// signer rebuilds its release memory from these entries at unlock.
@@ -249,13 +258,16 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 		&entry.ManifestSHA256, &entry.LiveInventorySHA256, &entry.ClientLabel,
 		&entry.ResultCode, &entry.ExpectedPolicySetSHA256, &entry.ExpectedSnapshotSHA256,
 		&entry.BasePolicySetSHA256, &entry.PolicySetSHA256, &entry.ASAAction,
-		&entry.Network, &entry.GenesisHash,
+		&entry.Network, &entry.GenesisHash, &entry.GroupID,
 	} {
 		*field = boundText(*field, maxAuditField)
 	}
 	var omitted int
 	if entry.GenerationIDs, omitted = boundList(entry.GenerationIDs); omitted > 0 {
 		entry.GenerationIDsOmitted = omitted
+	}
+	if entry.GroupTxIDs, omitted = boundList(entry.GroupTxIDs); omitted > 0 {
+		entry.GroupTxIDsOmitted = omitted
 	}
 	if entry.ArchiveEntries, omitted = boundList(entry.ArchiveEntries); omitted > 0 {
 		entry.ArchiveEntriesOmitted = omitted
@@ -456,6 +468,10 @@ type Attribution struct {
 	AdminSessionID     string
 	Transport          string
 	RemoteAddr         string
+	// RequestID is the request_id a signing or planning request carried. It
+	// is the entry's operation_id, so every entry one request writes, from
+	// what it asked to what was signed, can be found together.
+	RequestID string
 }
 
 func (attr Attribution) entry(includeApprover bool) AuditEntry {
@@ -472,6 +488,7 @@ func (attr Attribution) entry(includeApprover bool) AuditEntry {
 		AdminSessionID:     attr.AdminSessionID,
 		Transport:          attr.Transport,
 		RemoteAddr:         attr.RemoteAddr,
+		OperationID:        attr.RequestID,
 	}
 }
 
@@ -545,14 +562,39 @@ func requestEntry(event AuditEventType, attr Attribution, address, txnSender, tx
 	return entry
 }
 
-func signApprovedEntry(attr Attribution, address, txnSender, txnDetails, policyRuleID string) AuditEntry {
+// SignApproval is what a SIGN_APPROVED entry records about one transaction
+// the signer signed: the transaction as signed, after planning raised its
+// fee, set its group ID and added dummies, and the group it was signed in.
+// It never holds key material, signatures or LogicSig argument values.
+type SignApproval struct {
+	TxnAuth      string // the signing key's address, or a cosigner's Witness Key ID
+	TxnSender    string
+	TxnDetails   string
+	PolicyRuleID string // the review rule that matched, if one did
+	TxID         string
+	Fee          uint64 // microAlgos
+	// GroupID (base64) and GroupTxIDs, every transaction of the group in
+	// order, are empty for a transaction signed alone. The last DummyCount
+	// of GroupTxIDs are the dummies this request added and signed.
+	GroupID    string
+	GroupTxIDs []string
+	DummyCount int
+}
+
+func signApprovedEntry(attr Attribution, approval SignApproval) AuditEntry {
 	entry := attr.entry(true)
 	entry.Event = AuditSignApproved
 	entry.Outcome = "approved"
-	entry.TxnAuth = address
-	entry.TxnSender = txnSender
-	entry.TxnDetails = txnDetails
-	entry.PolicyRuleID = policyRuleID
+	entry.TxnAuth = approval.TxnAuth
+	entry.TxnSender = approval.TxnSender
+	entry.TxnDetails = approval.TxnDetails
+	entry.PolicyRuleID = approval.PolicyRuleID
+	entry.TxID = approval.TxID
+	fee := approval.Fee
+	entry.Fee = &fee
+	entry.GroupID = approval.GroupID
+	entry.GroupTxIDs = append([]string(nil), approval.GroupTxIDs...)
+	entry.DummyCount = approval.DummyCount
 	return entry
 }
 
@@ -598,26 +640,15 @@ func (a *AuditLogger) LogPlanRequestAttributed(attr Attribution, address, txnSen
 	a.Log(requestEntry(AuditPlanRequest, attr, address, txnSender, txnType, txnDetails))
 }
 
-// LogSignApproved logs when a signing request is approved.
-func (a *AuditLogger) LogSignApproved(address, txnSender, txnDetails string) {
-	a.Log(signApprovedEntry(Attribution{}, address, txnSender, txnDetails, ""))
+// LogSignApproved logs a transaction the signer signed.
+func (a *AuditLogger) LogSignApproved(approval SignApproval) {
+	a.Log(signApprovedEntry(Attribution{}, approval))
 }
 
-// LogSignApprovedWithPolicyRule logs a signing approval caused by a policy rule
-// that required manual review.
-func (a *AuditLogger) LogSignApprovedWithPolicyRule(address, txnSender, txnDetails, policyRuleID string) {
-	a.Log(signApprovedEntry(Attribution{}, address, txnSender, txnDetails, policyRuleID))
-}
-
-// LogSignApprovedAttributed logs a signing approval with explicit request attribution.
-func (a *AuditLogger) LogSignApprovedAttributed(attr Attribution, address, txnSender, txnDetails string) {
-	a.Log(signApprovedEntry(attr, address, txnSender, txnDetails, ""))
-}
-
-// LogSignApprovedAttributedWithPolicyRule logs a signing approval with explicit
-// request attribution and the policy rule that forced manual review.
-func (a *AuditLogger) LogSignApprovedAttributedWithPolicyRule(attr Attribution, address, txnSender, txnDetails, policyRuleID string) {
-	a.Log(signApprovedEntry(attr, address, txnSender, txnDetails, policyRuleID))
+// LogSignApprovedAttributed logs a transaction the signer signed, with
+// explicit request attribution.
+func (a *AuditLogger) LogSignApprovedAttributed(attr Attribution, approval SignApproval) {
+	a.Log(signApprovedEntry(attr, approval))
 }
 
 // LogSignRejected logs when a signing request is rejected by policy or user.

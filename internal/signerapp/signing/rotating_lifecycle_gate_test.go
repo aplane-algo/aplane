@@ -381,13 +381,8 @@ type lockAfterSuccessAudit struct {
 	lock func()
 }
 
-func (a *lockAfterSuccessAudit) LogSignApproved(address, sender, details string) {
-	a.recordingReleaseAudit.LogSignApproved(address, sender, details)
-	a.lock()
-}
-
-func (a *lockAfterSuccessAudit) LogSignApprovedWithPolicyRule(address, sender, details, ruleID string) {
-	a.recordingReleaseAudit.LogSignApprovedWithPolicyRule(address, sender, details, ruleID)
+func (a *lockAfterSuccessAudit) LogSignApproved(record SignedRecord) {
+	a.recordingReleaseAudit.LogSignApproved(record)
 	a.lock()
 }
 

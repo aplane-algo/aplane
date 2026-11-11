@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
@@ -24,10 +25,14 @@ var _ signersigning.AuditCosignerRejectLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingRecoveryLogger = (*signingAuditLogger)(nil)
 
-func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
+// signingAuditAttributionFromRequest attributes a signing request's entries
+// to the connection that sent it, and ties them together by the request_id
+// the request carried.
+func signingAuditAttributionFromRequest(r *http.Request, requestID string) auditAttribution {
 	attr := auditAttribution{
 		Transport:  auditTransportHTTP,
 		RemoteAddr: r.RemoteAddr,
+		RequestID:  requestID,
 	}
 	ident := auth.IdentityFromContext(r.Context())
 	if ident == nil {
@@ -37,13 +42,13 @@ func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	return attr
 }
 
-func (fs *Signer) signingAuditLogger(r *http.Request) signingAudit {
+func (fs *Signer) signingAuditLogger(r *http.Request, requestID string) signingAudit {
 	if fs.auditLog == nil {
 		return nil
 	}
 	return &signingAuditLogger{
 		log:         fs.auditLog,
-		attribution: signingAuditAttributionFromRequest(r),
+		attribution: signingAuditAttributionFromRequest(r, requestID),
 	}
 }
 
@@ -61,18 +66,21 @@ func (l *signingAuditLogger) LogPlanRequest(authAddress, txnSender, txnType, det
 	l.log.LogPlanRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
 }
 
-func (l *signingAuditLogger) LogSignApproved(authAddress, txnSender, details string) {
+func (l *signingAuditLogger) LogSignApproved(record signersigning.SignedRecord) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignApprovedAttributed(l.attribution, authAddress, txnSender, details)
-}
-
-func (l *signingAuditLogger) LogSignApprovedWithPolicyRule(authAddress, txnSender, details, policyRuleID string) {
-	if l == nil || l.log == nil {
-		return
-	}
-	l.log.LogSignApprovedAttributedWithPolicyRule(l.attribution, authAddress, txnSender, details, policyRuleID)
+	l.log.LogSignApprovedAttributed(l.attribution, signeraudit.SignApproval{
+		TxnAuth:      record.AuthAddress,
+		TxnSender:    record.TxnSender,
+		TxnDetails:   record.Details,
+		PolicyRuleID: record.PolicyRuleID,
+		TxID:         record.TxID,
+		Fee:          record.Fee,
+		GroupID:      record.GroupID,
+		GroupTxIDs:   record.GroupTxIDs,
+		DummyCount:   record.DummyCount,
+	})
 }
 
 func (l *signingAuditLogger) LogSignRejected(authAddress, txnSender, reason string) {

@@ -16,12 +16,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+// AuditApproveLogger records each transaction a request signed, as signed.
 type AuditApproveLogger interface {
-	LogSignApproved(authAddress, txnSender, details string)
-}
-
-type AuditApprovePolicyRuleLogger interface {
-	LogSignApprovedWithPolicyRule(authAddress, txnSender, details, policyRuleID string)
+	LogSignApproved(record SignedRecord)
 }
 
 type IsUnlockedFunc func() bool
@@ -191,8 +188,6 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 	if err := rejectOrdinarySignKeyTypes(plan); err != nil {
 		return nil, err
 	}
-	allTxns := plan.AllTxns
-	txns := allTxns[:len(req.Requests)]
 	alwaysReviewRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)
 	if gateErr != nil {
 		return nil, gateErr
@@ -209,7 +204,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
-	s.logSuccessfulSignatures(req, plan, txns, alwaysReviewRuleID)
+	s.logSuccessfulSignatures(req, plan, alwaysReviewRuleID)
 
 	return &SignGroupResult{
 		Signed:    execResult.SignedTxns,
@@ -379,23 +374,21 @@ func (s *Service) logSummary(req signerapi.GroupSignRequest, plan *PlanResult, s
 	console.Printf("[GROUP] Successfully signed %d transaction(s)\n", len(signedTxns))
 }
 
-func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, policyRuleID string) {
+// logSuccessfulSignatures records each position this signer signed with its
+// key, as signed: plan.AllTxns are the transactions the executor signed, and
+// plan.DummyTxns the trailing dummies it signed with them.
+func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, policyRuleID string) {
 	if s.AuditLog == nil {
 		return
 	}
 
+	group := signedGroupOf(plan.AllTxns, len(plan.DummyTxns))
 	for i, txReq := range req.Requests {
 		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
 			continue
 		}
 		details := fmt.Sprintf("txn %d/%d signed", i+1, len(req.Requests))
-		if policyRuleID != "" {
-			if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, txns[i].Sender.String(), details, policyRuleID)
-				continue
-			}
-		}
-		s.AuditLog.LogSignApproved(txReq.AuthAddress, txns[i].Sender.String(), details)
+		s.AuditLog.LogSignApproved(group.record(i, txReq.AuthAddress, details, policyRuleID))
 	}
 }
 

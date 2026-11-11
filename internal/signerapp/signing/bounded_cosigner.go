@@ -117,19 +117,16 @@ func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, p
 		return
 	}
 	groupReq := req.GroupSignRequest()
+	// The group is frozen: each component signs its target's final TxID, and
+	// the dummies are signed later, on /sign, so none count as signed here.
+	group := signedGroupOf(plan.AllTxns, 0)
 	for _, index := range targets {
 		if index < 0 || index >= len(groupReq.Requests) || index >= len(plan.AllTxns) {
 			continue
 		}
 		txReq := groupReq.Requests[index]
 		const details = "bounded-cosigner base component released after policy and operator approval"
-		if policyRuleID != "" {
-			if logger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && logger != nil {
-				logger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details, policyRuleID)
-				continue
-			}
-		}
-		s.AuditLog.LogSignApproved(txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details)
+		s.AuditLog.LogSignApproved(group.record(index, txReq.AuthAddress, details, policyRuleID))
 	}
 }
 

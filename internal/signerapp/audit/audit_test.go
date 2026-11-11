@@ -166,3 +166,55 @@ func TestPlanRequestIsItsOwnEvent(t *testing.T) {
 		t.Fatalf("entries = %+v, want one PLAN_REQUEST", entries)
 	}
 }
+
+// A signed transaction is recorded as signed, with the request it belongs to;
+// a /plan slot is its own event and records nothing as signed.
+func TestSigningEntriesCarryTheRequestAndTheSignedGroup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attr := Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http", RequestID: "req-7"}
+	a.LogPlanRequestAttributed(attr, "ADDR", "ADDR", "", "pay 1 ALGO")
+	a.LogSignRequestAttributed(attr, "ADDR", "ADDR", "", "pay 1 ALGO")
+	a.LogSignApprovedAttributed(attr, SignApproval{
+		TxnAuth: "ADDR", TxnSender: "ADDR", TxnDetails: "txn 1/1 signed",
+		TxID: "TXA", Fee: 0, GroupID: "R1JPVVA=", GroupTxIDs: []string{"TXA", "TXD"}, DummyCount: 1,
+	})
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := readAuditEntries(t, path)
+	if len(entries) != 3 {
+		t.Fatalf("%d entries, want 3", len(entries))
+	}
+	plan, request, approved := entries[0], entries[1], entries[2]
+	if plan.Event != AuditPlanRequest || plan.Outcome != "requested" || plan.TxID != "" || plan.Fee != nil {
+		t.Fatalf("plan entry = %+v", plan)
+	}
+	if request.Event != AuditSignRequest {
+		t.Fatalf("request entry = %+v", request)
+	}
+	for _, e := range entries {
+		if e.OperationID != "req-7" {
+			t.Fatalf("%s operation_id = %q, want the request ID", e.Event, e.OperationID)
+		}
+	}
+	if approved.Event != AuditSignApproved || approved.TxID != "TXA" || approved.GroupID != "R1JPVVA=" ||
+		len(approved.GroupTxIDs) != 2 || approved.GroupTxIDs[1] != "TXD" || approved.DummyCount != 1 {
+		t.Fatalf("approved entry = %+v", approved)
+	}
+	// A zero fee is a fact about the signed transaction, so it is written.
+	if approved.Fee == nil || *approved.Fee != 0 {
+		t.Fatalf("approved fee = %v, want 0 written", approved.Fee)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"fee":0`) {
+		t.Fatalf("zero fee missing from the log:\n%s", data)
+	}
+}

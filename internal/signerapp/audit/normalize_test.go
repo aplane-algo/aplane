@@ -200,6 +200,11 @@ func TestNormalizeEntryKeepsRealIdentifiers(t *testing.T) {
 		RequesterPrincipal: "client:SHA256:Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6",
 		RotatingStage:      &stage,
 		GenerationID:       "gen-1793552194-98177ded",
+		GroupID:            "zLfLtEbLS7JfVbH0l2ttqHHrrDpGn9RtrUHz55BTpD0=",
+		GroupTxIDs: []string{
+			"MJ5RG6E2SYQ5ZT3V4GZ4OEHEPKX3MQ2H7E6NOVRZ2DQWNTGUG2FA",
+			"NNVV6LKA5C2V4WZBTLDCIDNVNVGHRDG6TXAJLCAM5KHC5MLMFUUQ",
+		},
 	}
 	if got := normalizeEntry(entry); !reflect.DeepEqual(got, entry) {
 		t.Fatalf("normalization changed real identifiers:\n got %+v\nwant %+v", got, entry)

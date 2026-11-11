@@ -630,7 +630,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		TxID: txIDText, LastValid: uint64(spend.LastValid), Reused: leafReused, Leaves: []LeafRelease{leaf}, StatelessHash: leafProfile.StatelessHash,
 	})
 	consoleOf(s.Console).Printf("[ROTATING] Rotation pending %d -> %d for %s\n", stage, targetStage, req.Account)
-	s.logSuccessfulSignatures(signReq, plan, allTxns, policyRuleID)
+	s.logSuccessfulSignatures(signReq, plan, policyRuleID)
 	// Audit writes block, so this has to come after the last of them. A refusal
 	// here leaves a release on record that never left, which only makes the leaf
 	// look used.
