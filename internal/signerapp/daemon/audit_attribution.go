@@ -5,7 +5,9 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -26,9 +28,22 @@ var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingRecoveryLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditWithheldLogger = (*signingAuditLogger)(nil)
 
+// signingRequestID is the ID that ties together what one signing or
+// planning request does: the request_id it carried or, for a request sent
+// without one, an ID the signer mints for it, req- and the time in
+// nanoseconds. Each handler settles it once, before anything is logged, and
+// sets it on the request, so the audit operation_id, the approval prompt,
+// /sign/cancel and a response that returns an ID all carry the same value.
+func signingRequestID(supplied string) string {
+	if supplied != "" {
+		return supplied
+	}
+	return fmt.Sprintf("req-%d", time.Now().UnixNano())
+}
+
 // signingAuditAttributionFromRequest attributes a signing request's entries
-// to the connection that sent it, and ties them together by the request_id
-// the request carried.
+// to the connection that sent it, and ties them together by the request's
+// ID (signingRequestID).
 func signingAuditAttributionFromRequest(r *http.Request, requestID string) auditAttribution {
 	attr := auditAttribution{
 		Transport:  auditTransportHTTP,

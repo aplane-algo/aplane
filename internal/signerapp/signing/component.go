@@ -78,7 +78,7 @@ func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *Ser
 	}
 
 	return &ComponentSignPlan{
-		RequestID:    cosignedRequestID("cmp", req.RequestID),
+		RequestID:    req.RequestID,
 		Role:         req.Role,
 		MessageRole:  role,
 		ComponentKey: req.ComponentKey,

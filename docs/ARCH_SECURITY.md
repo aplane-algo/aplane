@@ -1205,8 +1205,8 @@ Audit entries carry attribution fields:
 - `fee`, `group_id`, `group_txids`, `dummy_count`: on `SIGN_APPROVED`, the
   signed transaction's final fee and the group it was signed in (see
   Signing-audit semantics below)
-- `operation_id`: on signing and planning entries, the `request_id` the
-  request carried
+- `operation_id`: on signing and planning entries, the request's ID: the
+  `request_id` it carried, or one the signer minted for it
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
 - `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
@@ -1330,11 +1330,16 @@ Signing-audit semantics:
   added and signed. `txn_details` names the position (`txn 1/2 signed`).
   These are the IDs of the transactions returned to the client, which
   differ from the request's whenever planning changed them
-- every entry a signing or planning request writes carries its `request_id`
-  as `operation_id`, so what was asked, refused, failed and signed for one
-  request can be read together. A request without a `request_id` writes
-  none; apshell and the Go client always send one to `/sign`,
-  `/sign/component` and the rotating sign
+- every entry a signing or planning request writes carries its ID as
+  `operation_id`, so what was asked, refused, failed and signed for one
+  request can be read together. The ID is the request's `request_id`, or,
+  for a request sent without one, `req-` and the time in nanoseconds, which
+  the HTTP handler mints once and sets on the request before anything is
+  logged (`/sign`, `/plan`, `/sign/component`, `/sign/assemble` and the
+  rotating prepare and sign). The same value is the ID the approval prompt
+  is held under (the signer console shows its first 20 characters), the
+  live request's `/sign/cancel` handle, and the `request_id`
+  `/sign/component` and `/sign/assemble` return
 - `/plan` signs nothing: its slots are `PLAN_REQUEST` entries (the same
   fields as `SIGN_REQUEST`), and it writes no `SIGN_*` entry
 - no signing entry carries key material, signatures, passphrases or LogicSig

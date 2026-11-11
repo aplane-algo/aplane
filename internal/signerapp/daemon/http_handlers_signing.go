@@ -21,6 +21,7 @@ func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.RequestID = signingRequestID(req.RequestID)
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).SignGroup(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
@@ -37,6 +38,7 @@ func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.RequestID = signingRequestID(req.RequestID)
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).SignComponents(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
@@ -54,6 +56,7 @@ func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.RequestID = signingRequestID(req.RequestID)
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).Assemble(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
@@ -102,6 +105,7 @@ func (fs *Signer) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.RequestID = signingRequestID(req.RequestID)
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).Plan(ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)

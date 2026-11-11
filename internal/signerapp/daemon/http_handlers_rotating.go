@@ -15,6 +15,7 @@ func (fs *Signer) handleRotatingPrepare(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	req.RequestID = signingRequestID(req.RequestID)
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).PrepareRotating(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
@@ -45,6 +46,7 @@ func (fs *Signer) handleRotatingSign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	req.RequestID = signingRequestID(req.RequestID)
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).SignRotating(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)

@@ -12,7 +12,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -188,5 +195,221 @@ func TestAuditRecordsARefusedSignAsRejected(t *testing.T) {
 		if entry.OperationID != "refused-1" {
 			t.Fatalf("%s operation_id = %q, want refused-1", entry.Event, entry.OperationID)
 		}
+	}
+}
+
+// promptHub is a connected apadmin that hands each approval prompt to the
+// test.
+type promptHub struct {
+	recordingAdminHub
+	prompts chan *signerapproval.SignRequest
+}
+
+func (h *promptHub) SendSignRequest(req *signerapproval.SignRequest) bool {
+	h.prompts <- req
+	return true
+}
+
+// generateTestKey generates a key of keyType through /admin/generate and
+// loads it for signing.
+func generateTestKey(t *testing.T, server *Signer, keyType string) string {
+	t.Helper()
+	body, err := json.Marshal(AdminGenerateRequest{KeyType: keyType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	server.handleAdminGenerate(w, requestWithIdentity(http.MethodPost, "/admin/generate", body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("generate %s failed: %d: %s", keyType, w.Code, w.Body.String())
+	}
+	var resp AdminGenerateResponse
+	decodeResponse(t, w, &resp)
+	if err := reloadKeysForTest(server); err != nil {
+		t.Fatalf("reloadKeysForTest() error = %v", err)
+	}
+	server.productRuntime().SnapshotKeySession().InitializeSession()
+	return resp.Address
+}
+
+// testnetPayments are count payments from sender, grouped when there are
+// several.
+func testnetPayments(t *testing.T, sender string, count int) []types.Transaction {
+	t.Helper()
+	txns := make([]types.Transaction, count)
+	for i := range txns {
+		txn, err := transaction.MakePaymentTxn(sender, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", uint64(1000+i),
+			nil, "", types.SuggestedParams{
+				Fee: 1000, FlatFee: true, GenesisHash: testnetGenesisHashBytes(t), GenesisID: "testnet-v1.0", FirstRoundValid: 100, LastRoundValid: 200,
+			})
+		if err != nil {
+			t.Fatal(err)
+		}
+		txns[i] = txn
+	}
+	if count > 1 {
+		groupID, err := algocrypto.ComputeGroupID(txns)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range txns {
+			txns[i].Group = groupID
+		}
+	}
+	return txns
+}
+
+// requestIDOf is the one operation_id every entry shares, failing if any
+// entry has none or another.
+func requestIDOf(t *testing.T, entries []AuditEntry) string {
+	t.Helper()
+	if len(entries) == 0 {
+		t.Fatal("no entries")
+	}
+	id := entries[0].OperationID
+	for _, entry := range entries {
+		if entry.OperationID == "" || entry.OperationID != id {
+			t.Fatalf("%s operation_id = %q, want one non-empty ID for the request (first was %q)", entry.Event, entry.OperationID, id)
+		}
+	}
+	return id
+}
+
+// A /sign sent without a request_id gets one ID from the signer: every entry
+// it writes carries it, and it is the ID the request's prompt and cancel
+// handle are held under.
+func TestAnIDLessSignIsLoggedUnderTheIDItsPromptHas(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	hub := &promptHub{prompts: make(chan *signerapproval.SignRequest, 1)}
+	server.hub = hub
+	address := generateTestKey(t, server, "ed25519")
+	path := useTestAuditLog(t, server)
+	ir := server.productRuntime()
+
+	sign := func(txns []types.Transaction) <-chan *httptest.ResponseRecorder {
+		requests := make([]signerapi.SignRequest, len(txns))
+		for i, txn := range txns {
+			requests[i] = signerapi.SignRequest{AuthAddress: address, TxnBytesHex: encodeTxnToHex(txn)}
+		}
+		body, err := json.Marshal(signerapi.GroupSignRequest{Requests: requests})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			w := httptest.NewRecorder()
+			server.handleSign(w, requestWithIdentity(http.MethodPost, "/sign", body))
+			done <- w
+		}()
+		return done
+	}
+	awaitPrompt := func(done <-chan *httptest.ResponseRecorder) *signerapproval.SignRequest {
+		t.Helper()
+		select {
+		case prompt := <-hub.prompts:
+			return prompt
+		case w := <-done:
+			t.Fatalf("/sign ended without a prompt: %d: %s", w.Code, w.Body.String())
+		case <-time.After(30 * time.Second):
+			t.Fatal("no approval prompt")
+		}
+		return nil
+	}
+
+	// Approved: the request's entries, from what was asked to what was
+	// signed, share the signer's ID.
+	done := sign(testnetPayments(t, address, 2))
+	prompt := awaitPrompt(done)
+	ir.HandleSignApprovalResponse(&signerapproval.SignResponse{ID: prompt.ID, Approved: true})
+	if w := <-done; w.Code != http.StatusOK {
+		t.Fatalf("/sign failed: %d: %s", w.Code, w.Body.String())
+	}
+	approved := readAuditEntries(t, path)
+	if len(approved) != 4 || approved[0].Event != AuditSignRequest || approved[3].Event != AuditSignApproved {
+		t.Fatalf("entries = %+v, want two SIGN_REQUEST then two SIGN_APPROVED", approved)
+	}
+	approvedID := requestIDOf(t, approved)
+	if !strings.HasPrefix(approvedID, "req-") {
+		t.Fatalf("operation_id = %q, want an ID the signer minted", approvedID)
+	}
+
+	// Cancelled with the ID its entries carry: that is the ID the live
+	// request and its prompt are held under.
+	done = sign(testnetPayments(t, address, 1))
+	awaitPrompt(done)
+	pending := readAuditEntries(t, path)[len(approved):]
+	pendingID := requestIDOf(t, pending)
+	if pendingID == approvedID || pending[0].Event != AuditSignRequest {
+		t.Fatalf("pending entries = %+v, want a SIGN_REQUEST under a new ID", pending)
+	}
+	if result := ir.CancelSigningApproval(pendingID, signerapproval.SignRequestCancelReasonClientCanceled); result.State != signerapproval.SignRequestCancelStateCanceled {
+		t.Fatalf("cancel by the logged ID = %v, want the pending request cancelled", result.State)
+	}
+	if w := <-done; w.Code == http.StatusOK {
+		t.Fatalf("the cancelled /sign was signed: %s", w.Body.String())
+	}
+}
+
+// A /plan sent without a request_id writes its slots under one ID.
+func TestAnIDLessPlanIsLoggedUnderOneID(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	address := generateTestKey(t, server, "ed25519")
+	path := useTestAuditLog(t, server)
+
+	txns := testnetPayments(t, address, 2)
+	body, err := json.Marshal(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+		{AuthAddress: address, TxnBytesHex: encodeTxnToHex(txns[0])},
+		{AuthAddress: address, TxnBytesHex: encodeTxnToHex(txns[1])},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	server.handlePlan(w, requestWithIdentity(http.MethodPost, "/plan", body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("/plan failed: %d: %s", w.Code, w.Body.String())
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 2 || entries[0].Event != AuditPlanRequest || entries[1].Event != AuditPlanRequest {
+		t.Fatalf("entries = %+v, want two PLAN_REQUEST", entries)
+	}
+	requestIDOf(t, entries)
+}
+
+// A /sign/component sent without a request_id is logged under the ID its
+// response returns.
+func TestAnIDLessComponentIsLoggedUnderTheIDItReturns(t *testing.T) {
+	server, cleanup := setupTestNode(t, noderole.RoleCosigner, policytest.MustDocument(noderole.RoleCosigner, policy.DefaultKey,
+		`{"transfer_policy": {"routes": [{"id": "any", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}]}}`))
+	defer cleanup()
+	witnessKeyID := generateTestKey(t, server, witness.Falcon1024V1)
+	path := useTestAuditLog(t, server)
+
+	txns := testnetPayments(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", 2)
+	body, err := json.Marshal(signerapi.ComponentRequest{
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
+		Targets: []signerapi.ComponentTarget{
+			{TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: witnessKeyID},
+			{TargetIndex: 1, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: witnessKeyID},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	server.handleSignComponent(w, requestWithIdentity(http.MethodPost, "/sign/component", body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("/sign/component failed: %d: %s", w.Code, w.Body.String())
+	}
+	var resp signerapi.ComponentResponse
+	decodeResponse(t, w, &resp)
+	entries := readAuditEntries(t, path)
+	if len(entries) != 2 || entries[0].Event != AuditSignApproved || entries[1].Event != AuditSignApproved {
+		t.Fatalf("entries = %+v, want a SIGN_APPROVED per target", entries)
+	}
+	if id := requestIDOf(t, entries); resp.RequestID == "" || id != resp.RequestID {
+		t.Fatalf("operation_id = %q, response request_id = %q; want the same ID", id, resp.RequestID)
 	}
 }

@@ -22,7 +22,9 @@ logged as a request to sign.
   `SIGN_REQUEST` still records what was asked.
 - **Every entry of a signing or planning request carries its `request_id`**
   as `operation_id`, so what was asked and what was signed, refused or failed
-  read together.
+  read together. A request sent without one gets an ID from the signer,
+  `req-` and a number, which `/sign/component` and `/sign/assemble` return;
+  the approval line on the signer console shows its start.
 - **`/plan` is logged as `PLAN_REQUEST`** and writes no `SIGN_*` entry.
 - **A rotating signature refused at its last check says so.** It is already
   recorded as `SIGN_APPROVED` by then; a `SIGN_FAILED` whose reason begins

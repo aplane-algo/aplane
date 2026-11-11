@@ -443,13 +443,6 @@ func matchesSelfNoOpTransferPlanAutoApproval(plan *PlanResult, allTxns []types.T
 	return policyeval.MatchesSelfNoOpPlan(allTxns, *planFacts(signerapi.GroupSignRequest{}, plan))
 }
 
-func approvalRequestID(prefix, supplied string) string {
-	if supplied != "" {
-		return supplied
-	}
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
-}
-
 func requestIDPreview(requestID string) string {
 	if len(requestID) <= 20 {
 		return requestID
@@ -499,7 +492,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 		}
 	}
 
-	requestID := approvalRequestID("grp", req.RequestID)
+	requestID := req.RequestID
 	console.Printf("[IPC] GROUP APPROVAL: Waiting for approval from apadmin TUI (request %s)...\n", requestIDPreview(requestID))
 	console.Sync()
 
@@ -558,7 +551,7 @@ func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Contex
 // requestSingleTxnApprovalWithContext prompts for one request. bounded is its
 // bounded plan item, or nil: a bounded rekey's prompt names who authorizes it,
 // and the account's rekey-to list lets the warning name a listed handover as one.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string, bounded *boundedPlanItem) *ServiceError {
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string, bounded *boundedPlanItem) *ServiceError {
 	var listed map[string]bool
 	if bounded != nil {
 		listed = bounded.ListedRekeyTargets
@@ -596,8 +589,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return forbidden("transaction approval blocked: " + reason)
 	}
 
-	requestID := approvalRequestID("txn", suppliedRequestID)
-	console.Println("[IPC] TXN APPROVAL: Waiting for approval from apadmin TUI...")
+	console.Printf("[IPC] TXN APPROVAL: Waiting for approval from apadmin TUI (request %s)...\n", requestIDPreview(requestID))
 	console.Sync()
 
 	txnDesc := "[TXN APPROVAL]\n"

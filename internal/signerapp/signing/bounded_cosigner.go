@@ -98,7 +98,6 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 	if bindErr := checkApprovalBinding(groupReq, plan); bindErr != nil {
 		return nil, bindErr
 	}
-	req.RequestID = cosignedRequestID("bcmp", req.RequestID)
 	components := make([]signerapi.Component, 0, len(targets))
 	for _, targetIndex := range targets {
 		component, signErr := signBoundedBaseComponent(ctx, groupReq, plan, targetIndex, session)
