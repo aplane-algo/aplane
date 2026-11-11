@@ -11,10 +11,10 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -205,14 +205,20 @@ func decodeSignedTransactionHex(signedHex []string) ([][]byte, error) {
 	return signedTxns, nil
 }
 
+// decodeSignedTransactionObjects decodes the signer's returned bytes with the
+// canonical decoder. The raw bytes are what goes to the node, and the decoded
+// transactions are what is checked, so each element must be exactly one
+// canonically encoded signed transaction: trailing data, which the node would
+// read as a further transaction, or any other encoding of the same fields is
+// refused.
 func decodeSignedTransactionObjects(signedTxns [][]byte) ([]types.SignedTxn, []types.Transaction, []string, error) {
 	signedObjects := make([]types.SignedTxn, len(signedTxns))
 	txns := make([]types.Transaction, len(signedTxns))
 	txIDs := make([]string, len(signedTxns))
 	for i, signedBytes := range signedTxns {
-		var signed types.SignedTxn
-		if err := msgpack.Decode(signedBytes, &signed); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+		signed, err := canonical.DecodeSignedTxn(signedBytes)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("signed transaction %d: %w", i+1, err)
 		}
 		signedObjects[i] = signed
 		txns[i] = signed.Txn

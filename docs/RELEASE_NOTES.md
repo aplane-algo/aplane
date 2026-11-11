@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apshell checks more of what the signer returns; LogicSig arguments go only where declared
+
+- **Signed bytes the client submits must be canonical.** An ordinary `/sign`
+  response, an assembled cosigned group, the managed slots of a plugin
+  `presign-plan` group and a plugin's `pregrouped-signed` group were checked
+  as decoded and then submitted as received. Bytes with trailing data, a
+  second transaction, a repeated field or an explicit empty field are now
+  refused, so what was checked is what goes to the network. The rotating path
+  already refused them.
+
 ## apshell refuses input it used to ignore or guess at
 
 More places where what was sent could differ from what was typed, all in

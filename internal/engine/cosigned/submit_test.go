@@ -481,6 +481,27 @@ func TestDecodeCosignedSignedGroupReturnsSignedObjects(t *testing.T) {
 	}
 }
 
+// The assembled bytes are submitted as returned and the decoded transactions
+// are what is checked against the frozen group, so bytes that decode to the
+// right transaction but are not its canonical encoding are refused.
+func TestDecodeCosignedSignedGroupRefusesBytesThatAreNotCanonical(t *testing.T) {
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
+	signed := msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{1}})
+	repeated := append([]byte{signed[0] + 1}, signed[1:]...)
+	repeated = append(repeated, msgpack.Encode(map[string]types.Signature{"sig": {2}})[1:]...)
+
+	for name, raw := range map[string][]byte{
+		"trailing byte":      append(append([]byte{}, signed...), 0xc0),
+		"second transaction": append(append([]byte{}, signed...), signed...),
+		"repeated field":     repeated,
+	} {
+		_, _, _, err := decodeCosignedSignedGroup([]string{hex.EncodeToString(raw)})
+		if err == nil || !strings.Contains(err.Error(), "assembled signed transaction 1: "+canonical.ErrNotCanonical.Error()) {
+			t.Errorf("%s: error = %v, want refused as not canonical", name, err)
+		}
+	}
+}
+
 // testCacheView adapts a cache.SignerCache to SignerCacheView for tests.
 type testCacheView struct{ c *cache.SignerCache }
 

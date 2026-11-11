@@ -68,9 +68,13 @@ generic passthrough machinery already modeled in
 
 What pregrouped-signed submits is exactly `raw[i]` — the blobs whose decodes
 were validated and rendered. Binding is decode provenance enforced by the
-type (unexported fields, sole constructor), not a runtime comparison.
-Anchor: `plugin_pregrouped.go` (fields, constructor, byte-verbatim
-submission via `SubmitTransactionsWithContext(ctx, g.raw, ...)`).
+type (unexported fields, sole constructor), not a runtime comparison. The
+decode itself is the canonical decoder: a blob that is not exactly the
+canonical encoding of what it decodes to (trailing data, a second
+transaction, a repeated field) is refused, so the rendered decode is also
+what algod decodes. Anchor: `plugin_pregrouped.go` (fields, constructor,
+`decodeSignedTxnIntents`, byte-verbatim submission via
+`SubmitTransactionsWithContext(ctx, g.raw, ...)`).
 
 ### PS2: Group Digest Integrity
 
@@ -113,8 +117,9 @@ Anchor: `internal/engine/plugin_presign.go::validatePluginPlan` (applied to
 both slot classes).
 
 After `/sign` and before broadcast, `verifySignedAgainstPlan` also requires
-every managed slot to sign exactly its canonical transaction and every
-passthrough slot (plugin-signed or dummy) to come back byte-for-byte as sent.
+every managed slot to sign exactly its canonical transaction, in bytes that
+are the canonical encoding of it, and every passthrough slot (plugin-signed
+or dummy) to come back byte-for-byte as sent.
 The TLA model has no conjunct or dummy slot class for this post-sign check;
 it is a candidate model extension (2026-10-16 drift review).
 
@@ -167,10 +172,13 @@ rejected at `apshellapp/submission.go`), so there is no third path.
 - **A self-consistent malicious group passes PS2** — the digest check proves
   internal consistency, not benignity. Catching a bad-but-consistent group
   is exactly what PS3's decoded review and PS6's approval display are for.
-- **No canonical re-encode round-trip** on pregrouped raw bytes: `raw` is
-  decoded but not re-encoded and compared, so non-canonical msgpack could in
-  principle make the displayed decode differ from what algod decodes.
-  Tracked as a hardening candidate, not claimed by any invariant.
+- **Canonical encoding is checked, not modeled.** Pregrouped blobs, plugin
+  callback slots and the managed slots `/sign` returns are decoded with the
+  canonical decoder, which refuses any bytes that do not re-encode to
+  themselves, so a displayed or checked decode cannot differ from what algod
+  decodes. The model abstracts msgpack away and claims nothing about it; the
+  Go tests in `plugin_pregrouped_test.go` and `plugin_presign_test.go` cover
+  it.
 - **Plugin sender claims are not authenticated**: in presign-plan a plugin
   may declare any sender address as its own; the slot then goes foreign at
   `/plan` and apsigner never signs it, so the only effect is a group that
