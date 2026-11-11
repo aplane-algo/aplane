@@ -11,6 +11,10 @@
 # and corridor allowlist enforcement. A plain host (aplane.falcon1024.v1 with a
 # cosigner) signs a 0 ALGO self-send through apshell and through the Python,
 # TypeScript and Go SDKs, each with its real cosigner node, and then closes out.
+# Each SDK sends twice: once naming the cosigner client and its key, and once
+# through its one-call send from a data directory whose endpoints.yaml lists
+# the cosigner by role, so the SDK has to find the cosigner itself. The Python
+# check also proves a data directory with no cosigner endpoint is refused.
 # A bounded aplane.falcon1024.v1 account with the Corridor preset's rules, created
 # from a boundary file with no key type setup, carries the cosigned checks. It can
 # be rekeyed only to its listed address, with the spending key alone, so once its
@@ -97,8 +101,9 @@ then exports and imports the public cosigner reference with local IPC apadmin,
 uses the default-enabled plain host (aplane.falcon1024.v1), and verifies apshell can create,
 fund, and validate a cosigned plain host, Corridor, and native Falcon accounts
 against the selected network. The plain host signs the same 0 ALGO self-send
-through the Python, TypeScript and Go SDKs' prepared cosigned flow, then closes
-out through apshell. It also sends an allowlisted Corridor payment through the
+through the Python, TypeScript and Go SDKs' prepared cosigned flow, and again
+through each SDK's one-call send with the cosigner found from endpoints.yaml,
+then closes out through apshell. It also sends an allowlisted Corridor payment through the
 SDK's bounded-base component, cosigner component, and shared assembly choreography,
 and proves a non-allowlisted recipient is rejected. The Corridor flow also
 proves that cosigner loss blocks spend while the account's listed key can still
@@ -1107,6 +1112,7 @@ func requireEnv(name string) string {
 func main() {
 	primaryData := requireEnv("APCLIENT_DATA")
 	cosignerData := requireEnv("APLANE_COSIGNER_DATA")
+	discoveryData := requireEnv("APLANE_DISCOVERY_DATA")
 	account := requireEnv("APLANE_PLAIN_HOST_ADDRESS")
 	cosignerComponentKey := requireEnv("APLANE_COSIGNER_COMPONENT_KEY")
 	algodURL := requireEnv("APLANE_ALGOD_URL")
@@ -1174,6 +1180,32 @@ func main() {
 		fail("confirm", err)
 	}
 	fmt.Printf("Go SDK plain host validation submitted: %s\n", txid)
+
+	// One client, one call, no cosigner named: the SDK finds the cosigner
+	// that holds the account's witness key among the data directory's
+	// cosigner endpoints.
+	discoveryClient, err := aplane.FromEnvWithContext(ctx, &aplane.FromEnvOptions{DataDir: discoveryData, Timeout: 180})
+	if err != nil {
+		fail("connect from the discovery data directory", err)
+	}
+	defer discoveryClient.Close()
+	sent, err := discoveryClient.SendPayment(ctx, algodClient, aplane.PaymentPrepParams{
+		Sender:   account,
+		Receiver: account,
+		Amount:   0,
+		Note:     []byte("aplane go sdk cosigner discovery validate"),
+		Fee:      1000,
+	}, nil)
+	if err != nil {
+		fail("send through cosigner discovery", err)
+	}
+	if sent.Flow != aplane.SigningFlowCosigned1 {
+		fail("send through cosigner discovery", fmt.Errorf("took flow %q, want %q", sent.Flow, aplane.SigningFlowCosigned1))
+	}
+	if sent.Outcome != aplane.SendOutcomeConfirmed || sent.ConfirmedRound == 0 {
+		fail("send through cosigner discovery", fmt.Errorf("not confirmed: %s", sent.Outcome))
+	}
+	fmt.Printf("Go SDK cosigner discovery send confirmed: %s in round %d\n", sent.TxIDs[0], sent.ConfirmedRound)
 }
 GO
 }
@@ -1241,10 +1273,24 @@ install_go_sdk_client() {
     rm -rf "$(dirname "$GO_SDK_BIN")"
 }
 
+# write_sdk_data_dir writes an SDK data directory whose primary endpoint is
+# host:ssh_port. With a cosigner host and port it also lists that node as a
+# cosigner endpoint, which is what the SDKs' cosigner discovery reads.
 write_sdk_data_dir() {
     local data_dir="$1"
     local host="$2"
     local ssh_port="$3"
+    local cosigner_host="${4:-}"
+    local cosigner_ssh_port="${5:-}"
+    local cosigner_endpoint=""
+    if [ -n "$cosigner_host" ]; then
+        cosigner_endpoint="
+  local-cosigner:
+    role: cosigner
+    url: ssh://$cosigner_host:$cosigner_ssh_port
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts"
+    fi
 
     # The SDK client reuses the enrolled apshell key: the key is the credential.
     docker_exec_as_tester "$CLIENT_CONTAINER" "rm -rf '$data_dir' && \
@@ -1264,7 +1310,7 @@ endpoints:
     role: signer
     url: ssh://$host:$ssh_port
     identity_file: .ssh/id_ed25519
-    known_hosts_path: .ssh/known_hosts
+    known_hosts_path: .ssh/known_hosts$cosigner_endpoint
 YAML"
 }
 
@@ -1281,6 +1327,15 @@ configure_python_sdk_client_data() {
         "$signer_ssh_port"
     write_sdk_data_dir \
         "/home/$TEST_USER/aplane/apclient-sdk-cosigner" \
+        "cosigner" \
+        "$cosigner_ssh_port"
+    # One data directory that lists both nodes, as an operator's would: the
+    # signer as the primary endpoint and the cosigner by role. The discovery
+    # checks connect from it alone and name no cosigner.
+    write_sdk_data_dir \
+        "/home/$TEST_USER/aplane/apclient-sdk-discovery" \
+        "signer" \
+        "$signer_ssh_port" \
         "cosigner" \
         "$cosigner_ssh_port"
 }
@@ -1300,6 +1355,9 @@ from algosdk import transaction
 from algosdk.v2client import algod
 
 from aplanesdk import (
+    SEND_OUTCOME_CONFIRMED,
+    SIGNING_FLOW_COSIGNED1,
+    CosignerDiscoveryError,
     PreparedGroup,
     SignerClient,
     send_raw_transaction,
@@ -1320,9 +1378,49 @@ def signed_group_b64(signed_hexes: list[str]) -> str:
     return base64.b64encode(b"".join(bytes.fromhex(item) for item in signed_hexes)).decode()
 
 
+def validate_discovery(algod_client, primary_data: str, discovery_data: str, account: str) -> None:
+    # One client, one call, no cosigner named: the SDK finds the cosigner
+    # that holds the account's witness key among the data directory's
+    # cosigner endpoints.
+    with SignerClient.from_env(data_dir=discovery_data, timeout=180) as client:
+        result = client.send_payment(
+            algod_client,
+            sender=account,
+            receiver=account,
+            amount=0,
+            note=b"aplane python sdk cosigner discovery validate",
+            fee=MIN_TXN_FEE,
+        )
+    if result.flow != SIGNING_FLOW_COSIGNED1:
+        raise RuntimeError(f"discovery send took flow {result.flow!r}, want {SIGNING_FLOW_COSIGNED1!r}")
+    if result.outcome != SEND_OUTCOME_CONFIRMED or not result.confirmed_round:
+        raise RuntimeError(f"discovery send was not confirmed: {result.outcome!r}")
+    print(f"Python SDK cosigner discovery send confirmed: {result.tx_ids[0]} in round {result.confirmed_round}")
+
+    # A data directory that lists no cosigner endpoint must fail before the
+    # signer is asked for anything, and say why.
+    with SignerClient.from_env(data_dir=primary_data, timeout=180) as client:
+        try:
+            client.send_payment(
+                algod_client,
+                sender=account,
+                receiver=account,
+                amount=0,
+                note=b"aplane python sdk cosigner discovery refusal",
+                fee=MIN_TXN_FEE,
+            )
+        except CosignerDiscoveryError as error:
+            if "lists no cosigner endpoint" not in str(error):
+                raise RuntimeError(f"unexpected discovery refusal: {error}") from error
+            print(f"Python SDK cosigner discovery refused without a cosigner endpoint: {error}")
+        else:
+            raise RuntimeError("a send with no cosigner endpoint did not fail")
+
+
 def main() -> int:
     primary_data = require_env("APCLIENT_DATA")
     cosigner_data = require_env("APLANE_COSIGNER_DATA")
+    discovery_data = require_env("APLANE_DISCOVERY_DATA")
     plain_host_address = require_env("APLANE_PLAIN_HOST_ADDRESS")
     cosigner_component_key = require_env("APLANE_COSIGNER_COMPONENT_KEY")
     algod_url = require_env("APLANE_ALGOD_URL")
@@ -1355,6 +1453,8 @@ def main() -> int:
         txid = send_raw_transaction(algod_client, signed_group_b64(result.signed_group))
         transaction.wait_for_confirmation(algod_client, txid, 10)
         print(f"Python SDK plain host validation submitted: {txid}")
+
+    validate_discovery(algod_client, primary_data, discovery_data, plain_host_address)
     return 0
 
 
@@ -1368,6 +1468,7 @@ PY
     docker_exec_as_tester "$CLIENT_CONTAINER" ". '$SDK_VENV/bin/activate' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
         APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
+        APLANE_DISCOVERY_DATA=/home/$TEST_USER/aplane/apclient-sdk-discovery \
         APLANE_PLAIN_HOST_ADDRESS='$PLAIN_HOST_ADDRESS' \
         APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
@@ -1520,6 +1621,8 @@ run_typescript_sdk_plain_host_validate() {
     cat > "$js_file" <<'JS'
 import algosdk from "algosdk";
 import {
+  SEND_OUTCOME_CONFIRMED,
+  SIGNING_FLOW_COSIGNED1,
   SignerClient,
   concatenateSignedTxns,
   sendRawTransaction,
@@ -1536,9 +1639,37 @@ function requireEnv(name) {
   return value;
 }
 
+// One client, one call, no cosigner named: the SDK finds the cosigner that
+// holds the account's witness key among the data directory's cosigner
+// endpoints.
+async function validateDiscovery(algodClient, discoveryData, account) {
+  const client = await SignerClient.fromEnv({ dataDir: discoveryData, timeout: 180 });
+  try {
+    const result = await client.sendPayment(algodClient, {
+      sender: account,
+      receiver: account,
+      amount: 0,
+      note: new TextEncoder().encode("aplane typescript sdk cosigner discovery validate"),
+      fee: MIN_TXN_FEE,
+    });
+    if (result.flow !== SIGNING_FLOW_COSIGNED1) {
+      throw new Error(`discovery send took flow ${JSON.stringify(result.flow)}, want ${SIGNING_FLOW_COSIGNED1}`);
+    }
+    if (result.outcome !== SEND_OUTCOME_CONFIRMED || !result.confirmedRound) {
+      throw new Error(`discovery send was not confirmed: ${result.outcome}`);
+    }
+    console.log(
+      `TypeScript SDK cosigner discovery send confirmed: ${result.txIds[0]} in round ${result.confirmedRound}`,
+    );
+  } finally {
+    await client.close();
+  }
+}
+
 async function main() {
   const primaryData = requireEnv("APCLIENT_DATA");
   const cosignerData = requireEnv("APLANE_COSIGNER_DATA");
+  const discoveryData = requireEnv("APLANE_DISCOVERY_DATA");
   const plainHostAddress = requireEnv("APLANE_PLAIN_HOST_ADDRESS");
   const cosignerComponentKey = requireEnv("APLANE_COSIGNER_COMPONENT_KEY");
   const algodUrl = requireEnv("APLANE_ALGOD_URL");
@@ -1576,6 +1707,7 @@ async function main() {
     await cosignerClient.close();
     await userClient.close();
   }
+  await validateDiscovery(algodClient, discoveryData, plainHostAddress);
 }
 
 main().catch((err) => {
@@ -1593,6 +1725,7 @@ JS
     docker_exec_as_tester "$CLIENT_CONTAINER" "cd '$TS_SDK_DIR' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
         APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
+        APLANE_DISCOVERY_DATA=/home/$TEST_USER/aplane/apclient-sdk-discovery \
         APLANE_PLAIN_HOST_ADDRESS='$PLAIN_HOST_ADDRESS' \
         APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
@@ -1606,6 +1739,7 @@ run_go_sdk_plain_host_validate() {
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     docker_exec_as_tester "$CLIENT_CONTAINER" "APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
         APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
+        APLANE_DISCOVERY_DATA=/home/$TEST_USER/aplane/apclient-sdk-discovery \
         APLANE_PLAIN_HOST_ADDRESS='$PLAIN_HOST_ADDRESS' \
         APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
@@ -2314,7 +2448,7 @@ main() {
         install_go_sdk_client
     fi
 
-    log "Configuring Python SDK client data directories"
+    log "Configuring SDK client data directories"
     configure_python_sdk_client_data
 
     log "Generating a cosigned plain host (aplane.falcon1024.v1) through client/signer flow"
@@ -2327,14 +2461,14 @@ main() {
     log "Validating the plain host with a 0 ALGO self-send through apshell"
     validate_plain_host_self_send
 
-    log "Validating the plain host through the Python SDK"
+    log "Validating the plain host through the Python SDK, with and without cosigner discovery"
     run_python_sdk_plain_host_validate
 
-    log "Validating the plain host through the TypeScript SDK"
+    log "Validating the plain host through the TypeScript SDK, with and without cosigner discovery"
     run_typescript_sdk_plain_host_validate
 
     if [ -n "$GO_SDK_BIN" ]; then
-        log "Validating the plain host through the Go SDK"
+        log "Validating the plain host through the Go SDK, with and without cosigner discovery"
         run_go_sdk_plain_host_validate
     fi
 
