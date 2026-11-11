@@ -11,11 +11,18 @@ before it was renamed `enroll`.
 
 - apshell's review of a plugin-built group and the signer's approval prompt
   each had their own code for describing a transaction, and the two disagreed
-  in places. Both now use one describer, so they say the same thing about the
-  same bytes. The plugin review reads like the signer's prompt, followed by
-  its alerts, each marked `!!`.
-- A key registration that goes online shows its participation keys in full.
-  The signer's prompt showed only the first 8 bytes of each.
+  in places. Both now use one describer and one set of warning rules, so they
+  say the same thing about the same bytes. The plugin review reads like the
+  signer's prompt, followed by every finding the signer would warn about, each
+  marked `!!`. That now includes a ClearState, an asset freeze and a fee above
+  1 ALGO, which the plugin review did not flag.
+- A key registration that goes online shows its participation keys in full,
+  in base64, the form `goal account partkeyinfo` prints them in, so they can
+  be compared. The signer's prompt showed the first 8 bytes of each, in hex.
+  A key that is absent is shown as `(none)`.
+- A transaction's lease is shown when it has one.
+- A transaction type the describer does not know is shown with a line saying
+  its fields are not shown.
 
 ## App calls keep the apps you list, as you list them
 

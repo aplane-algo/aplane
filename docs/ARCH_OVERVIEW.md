@@ -1536,7 +1536,7 @@ The server-side plan/sign boundary is split as follows:
 - signer runtime state and lifecycle management in `internal/signerapp/runtime`,
 - sign request lifecycle, cancellation, and approval queue ownership in `internal/signerapp/approval`,
 - planning, approval flow, execution, and top-level sign orchestration in `internal/signerapp/signing`,
-- transaction description text in `internal/txnreview`, a client-safe package the signer's approval prompt and apshell's plugin group review both use; `internal/signerapp/txdesc` supplies the signer's network name and ASA set,
+- transaction description text and warning rules in `internal/txnreview`, a client-safe package the signer's approval prompt and apshell's plugin group review both use; `internal/signerapp/txdesc` supplies the signer's network name and ASA set, and `internal/signerapp/approvalpolicy` turns the findings into approval violations,
 - template registration and reload lifecycle in `internal/signerapp/templates`,
 - template library, install, show, import, remove, activate, and deactivate workflows in `internal/signerapp/templateadmin`,
 - client enrollment requests (queued at once, answered by the operator later) and their audit in `internal/signerapp/enrollment`, with the persisted queue file in `internal/signerapp/enrollqueue`,

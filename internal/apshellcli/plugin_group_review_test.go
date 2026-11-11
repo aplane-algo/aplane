@@ -18,9 +18,10 @@ func reviewTestAddress(first byte) types.Address {
 }
 
 // The review of a slot is the signer's own description of the transaction,
-// then every alert for it marked `!!`. What each transaction type's
-// description says is tested where it is built, in internal/txnreview.
-func TestPluginReviewIsTheSharedDescriptionPlusMarkedAlerts(t *testing.T) {
+// then every finding the signer would warn about, marked `!!`. What each
+// transaction type's description says, and which fields are findings, is
+// tested where both are built, in internal/txnreview.
+func TestPluginReviewIsTheSharedDescriptionPlusMarkedFindings(t *testing.T) {
 	sender, other := reviewTestAddress(1), reviewTestAddress(2)
 
 	rekey := types.Transaction{
@@ -30,24 +31,21 @@ func TestPluginReviewIsTheSharedDescriptionPlusMarkedAlerts(t *testing.T) {
 	}
 	lines := pluginReviewLines(rekey)
 	description := strings.Split(txnreview.Describe(rekey, txnreview.View{}), "\n")
-	if len(lines) != len(description)+2 {
-		t.Fatalf("review has %d line(s), want the %d description line(s) and 2 alerts:\n%s",
-			len(lines), len(description), strings.Join(lines, "\n"))
-	}
 	for i, want := range description {
-		if lines[i] != want {
-			t.Errorf("line %d = %q, want the shared description's %q", i, lines[i], want)
+		if i >= len(lines) || lines[i] != want {
+			t.Fatalf("line %d is not the shared description's %q:\n%s", i, want, strings.Join(lines, "\n"))
 		}
 	}
-	for i, alert := range txnreview.Alerts(rekey) {
-		if got := lines[len(description)+i]; got != "!! "+alert {
-			t.Errorf("alert line = %q, want %q", got, "!! "+alert)
+	got := strings.Join(lines[len(description):], "\n")
+	for _, finding := range txnreview.Findings(rekey, txnreview.FindingContext{}) {
+		if want := "!! " + finding.Field + " = " + finding.Value; !strings.Contains(got, want) {
+			t.Errorf("review missing %q:\n%s", want, got)
 		}
 	}
-	got := strings.Join(lines, "\n")
 	for _, want := range []string{
-		"!! REKEY: control of " + sender.String() + " passes to " + other.String(),
-		"!! CLOSE: the sender's whole ALGO balance goes to " + other.String(),
+		"!! RekeyTo = " + other.String(),
+		"YOU WILL LOSE CONTROL OF THIS ACCOUNT",
+		"!! CloseRemainderTo = " + other.String(),
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("review missing %q:\n%s", want, got)
@@ -56,11 +54,11 @@ func TestPluginReviewIsTheSharedDescriptionPlusMarkedAlerts(t *testing.T) {
 
 	plain := strings.Join(pluginReviewLines(types.Transaction{
 		Type:             types.PaymentTx,
-		Header:           types.Header{Sender: sender},
+		Header:           types.Header{Sender: sender, Fee: 1000},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: other, Amount: 5},
 	}), "\n")
 	if strings.Contains(plain, "!!") {
-		t.Errorf("a plain payment carries an alert:\n%s", plain)
+		t.Errorf("a plain payment carries a finding:\n%s", plain)
 	}
 	if !strings.Contains(plain, "Payment: 0.000005 ALGO") || !strings.Contains(plain, "To:   "+other.String()) {
 		t.Errorf("a plain payment is not described:\n%s", plain)
@@ -78,7 +76,7 @@ func TestPluginReviewFlagsARekeyOnAnyType(t *testing.T) {
 		got := strings.Join(pluginReviewLines(types.Transaction{
 			Type: txType, Header: types.Header{Sender: sender, RekeyTo: other},
 		}), "\n")
-		if !strings.Contains(got, "!! REKEY: control of "+sender.String()+" passes to "+other.String()) {
+		if !strings.Contains(got, "!! RekeyTo = "+other.String()) {
 			t.Errorf("type %q: the rekey is not flagged:\n%s", txType, got)
 		}
 	}

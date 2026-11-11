@@ -4,11 +4,14 @@
 package apshellcli
 
 // Honest review rendering for plugin-built transaction groups. The renderer is
-// role-aware (which party signs each slot) and marks anything APlane cannot
-// decode as opaque rather than rendering it as a harmless transaction.
+// role-aware (which party signs each slot). What each transaction does is
+// described by internal/txnreview, the describer the signer's approval prompt
+// uses; a type it does not know is shown with a line saying its fields are
+// not shown, never as a harmless transaction.
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -40,7 +43,8 @@ type pluginReviewSlot struct {
 func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlot) {
 	r.printf("\n%s\n", title)
 	if len(slots) > 0 {
-		r.printf("Group ID: %s\n", base64.StdEncoding.EncodeToString(slots[0].txn.Group[:]))
+		// Hex, as each transaction's own Group line shows it below.
+		r.printf("Group ID: %s\n", hex.EncodeToString(slots[0].txn.Group[:]))
 	}
 	r.printf("%d transaction(s):\n", len(slots))
 
@@ -49,7 +53,8 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 		txn := s.txn
 		// The type is the plugin's text: escaped, so it can't draw over the
 		// lines that follow.
-		r.printf("  [%d] %-13s %-4s sender=%s fee=%d\n", i+1, s.role, termsafe.Line(txnTypeLabel(txn.Type)), txn.Sender.String(), txn.Fee)
+		// The sender and fee are in the description that follows.
+		r.printf("  [%d] %-13s %s\n", i+1, s.role, termsafe.Line(txnTypeLabel(txn.Type)))
 		for _, line := range pluginReviewLines(txn) {
 			r.printf("        %s\n", line)
 		}
@@ -63,14 +68,18 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 }
 
 // pluginReviewLines lists what one slot does: the shared description the
-// signer's approval prompt is built from, then every alert for it, marked
-// `!!`. A plugin-signed slot never reaches the signer, so this can be the only
-// review it gets; using the signer's own describer means the two reviews say
-// the same thing about the same bytes.
+// signer's approval prompt is built from, then every finding the signer would
+// warn about, marked `!!`. A plugin-signed slot never reaches the signer, so
+// this can be the only review it gets; using the signer's own describer and
+// its own warning rules means the two reviews say the same thing about the
+// same bytes.
 func pluginReviewLines(txn types.Transaction) []string {
 	lines := strings.Split(txnreview.Describe(txn, txnreview.View{}), "\n")
-	for _, alert := range txnreview.Alerts(txn) {
-		lines = append(lines, "!! "+alert)
+	for _, finding := range txnreview.Findings(txn, txnreview.FindingContext{}) {
+		lines = append(lines, fmt.Sprintf("!! %s = %s", finding.Field, finding.Value))
+		for _, line := range strings.Split(finding.Message, "\n") {
+			lines = append(lines, "   "+strings.TrimSpace(line))
+		}
 	}
 	return lines
 }

@@ -6,6 +6,7 @@ package txnreview
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -377,10 +378,10 @@ func TestDescribeKeyRegistrationTx_ShowsParticipationDetails(t *testing.T) {
 		"VoteFirst: 100",
 		"VoteLast: 200",
 		"VoteKeyDilution: 50",
-		// Whole keys, not a prefix.
-		"VotePK: " + hex.EncodeToString(votePK[:]),
-		"SelectionPK: " + hex.EncodeToString(selectionPK[:]),
-		"StateProofPK: " + hex.EncodeToString(stateProofPK[:]),
+		// Whole keys, in base64, not a prefix.
+		"VotePK: " + base64.StdEncoding.EncodeToString(votePK[:]),
+		"SelectionPK: " + base64.StdEncoding.EncodeToString(selectionPK[:]),
+		"StateProofPK: " + base64.StdEncoding.EncodeToString(stateProofPK[:]),
 	} {
 		if !strings.Contains(onlineDesc, want) {
 			t.Fatalf("online keyreg description missing %q:\n%s", want, onlineDesc)
@@ -606,9 +607,26 @@ func TestDescribeApplicationCallTx_NamesTheAppBeingCreated(t *testing.T) {
 	}
 }
 
-func TestAlertsListEveryHandoverOfControlOrFunds(t *testing.T) {
+// findingFields names the fields Findings reports for txn, in order.
+func findingFields(txn types.Transaction) []string {
+	var fields []string
+	for _, finding := range Findings(txn, FindingContext{}) {
+		fields = append(fields, finding.Field)
+	}
+	return fields
+}
+
+func TestFindingsCoverEveryHandoverAndUseOfAuthority(t *testing.T) {
 	var sender, other types.Address
 	sender[0], other[0] = 1, 2
+	appCall := func(id uint64, oc types.OnCompletion) types.Transaction {
+		return types.Transaction{
+			Type: types.ApplicationCallTx, Header: types.Header{Sender: sender},
+			ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+				ApplicationID: types.AppIndex(id), OnCompletion: oc,
+			}},
+		}
+	}
 
 	cases := []struct {
 		name string
@@ -616,49 +634,29 @@ func TestAlertsListEveryHandoverOfControlOrFunds(t *testing.T) {
 		want []string
 	}{
 		{"plain payment", types.Transaction{
-			Type: types.PaymentTx, Header: types.Header{Sender: sender},
+			Type: types.PaymentTx, Header: types.Header{Sender: sender, Fee: 1000},
 			PaymentTxnFields: types.PaymentTxnFields{Receiver: other, Amount: 5},
 		}, nil},
 		{"zero self-payment that rekeys", types.Transaction{
 			Type: types.PaymentTx, Header: types.Header{Sender: sender, RekeyTo: other},
 			PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
-		}, []string{"REKEY: control of " + sender.String() + " passes to " + other.String()}},
+		}, []string{"RekeyTo"}},
 		{"payment that closes", types.Transaction{
 			Type: types.PaymentTx, Header: types.Header{Sender: sender},
 			PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, CloseRemainderTo: other},
-		}, []string{"CLOSE: the sender's whole ALGO balance goes to " + other.String()}},
+		}, []string{"CloseRemainderTo"}},
 		{"asset close and clawback", types.Transaction{
 			Type: types.AssetTransferTx, Header: types.Header{Sender: sender},
 			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 7, AssetCloseTo: other, AssetSender: other},
-		}, []string{
-			"CLOSE: the sender's whole holding of asset 7 goes to " + other.String(),
-			"CLAWBACK: the asset is taken from " + other.String() + ", not from the sender",
-		}},
+		}, []string{"AssetCloseTo", "AssetSender"}},
 		{"asset sender is the sender", types.Transaction{
 			Type: types.AssetTransferTx, Header: types.Header{Sender: sender},
 			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 7, AssetSender: sender},
 		}, nil},
-		{"app update that rekeys", types.Transaction{
-			Type: types.ApplicationCallTx, Header: types.Header{Sender: sender, RekeyTo: other},
-			ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
-				ApplicationID: 9, OnCompletion: types.UpdateApplicationOC,
-			}},
-		}, []string{
-			"REKEY: control of " + sender.String() + " passes to " + other.String(),
-			"APP UPDATE: replaces the program of app 9",
-		}},
-		{"app delete", types.Transaction{
-			Type: types.ApplicationCallTx, Header: types.Header{Sender: sender},
-			ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
-				ApplicationID: 9, OnCompletion: types.DeleteApplicationOC,
-			}},
-		}, []string{"APP DELETE: deletes app 9"}},
-		{"app create", types.Transaction{
-			Type: types.ApplicationCallTx, Header: types.Header{Sender: sender},
-			ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
-				ApprovalProgram: []byte{6}, ClearStateProgram: []byte{6},
-			}},
-		}, nil},
+		{"app no-op", appCall(9, types.NoOpOC), nil},
+		{"app update", appCall(9, types.UpdateApplicationOC), []string{"OnCompletion"}},
+		{"app delete", appCall(9, types.DeleteApplicationOC), []string{"OnCompletion"}},
+		{"app clear state", appCall(9, types.ClearStateOC), []string{"OnCompletion"}},
 		{"asset create", types.Transaction{
 			Type: types.AssetConfigTx, Header: types.Header{Sender: sender},
 			AssetConfigTxnFields: types.AssetConfigTxnFields{AssetParams: types.AssetParams{Total: 1, Manager: sender}},
@@ -666,54 +664,110 @@ func TestAlertsListEveryHandoverOfControlOrFunds(t *testing.T) {
 		{"asset destroy", types.Transaction{
 			Type: types.AssetConfigTx, Header: types.Header{Sender: sender},
 			AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 5},
-		}, []string{"ASSET DESTROY: destroys asset 5"}},
+		}, []string{"ConfigAsset"}},
 		{"asset reconfigure", types.Transaction{
 			Type: types.AssetConfigTx, Header: types.Header{Sender: sender},
 			AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 5, AssetParams: types.AssetParams{Manager: other}},
-		}, []string{"ASSET RECONFIGURE: sets who controls asset 5; a role set to none is gone for good"}},
-		{"keyreg offline", types.Transaction{
-			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
-		}, nil},
-		{"keyreg nonparticipating", types.Transaction{
-			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
-			KeyregTxnFields: types.KeyregTxnFields{Nonparticipation: true},
-		}, []string{"NONPARTICIPATION: marks the account nonparticipating, which cannot be undone"}},
-		{"keyreg online with both keys", types.Transaction{
-			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
-			KeyregTxnFields: types.KeyregTxnFields{VotePK: types.VotePK{1}, SelectionPK: types.VRFPK{2}},
-		}, nil},
-		{"keyreg with only a selection key", types.Transaction{
-			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
-			KeyregTxnFields: types.KeyregTxnFields{SelectionPK: types.VRFPK{2}},
-		}, []string{"INCOMPLETE KEY REGISTRATION: a participation key is missing"}},
+		}, []string{"ConfigAsset"}},
+		{"asset freeze", types.Transaction{
+			Type: types.AssetFreezeTx, Header: types.Header{Sender: sender},
+			AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAsset: 5, FreezeAccount: other, AssetFrozen: true},
+		}, []string{"FreezeAccount"}},
+		{"fee above one ALGO", types.Transaction{
+			Type: types.PaymentTx, Header: types.Header{Sender: sender, Fee: 5_000_000_000},
+			PaymentTxnFields: types.PaymentTxnFields{Receiver: other},
+		}, []string{"Fee"}},
 		{"unknown type that rekeys", types.Transaction{
 			Type: types.TxType("zzz"), Header: types.Header{Sender: sender, RekeyTo: other},
-		}, []string{"REKEY: control of " + sender.String() + " passes to " + other.String()}},
+		}, []string{"RekeyTo"}},
 	}
 	for _, tc := range cases {
-		got := Alerts(tc.txn)
-		if strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
-			t.Errorf("%s: Alerts() = %q, want %q", tc.name, got, tc.want)
+		if got := findingFields(tc.txn); strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%s: findings %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
 
-// Whatever Alerts names, the description must show too: a review that prints
-// both cannot have the alert without the field it is about.
-func TestEveryAlertIsAlsoInTheDescription(t *testing.T) {
+// A finding's value is the address, asset or action it is about. The
+// description of the same transaction must show that value too, so a review
+// that prints both never warns about something it does not display.
+func TestEveryFindingIsAlsoShownInTheDescription(t *testing.T) {
 	var sender, other types.Address
 	sender[0], other[0] = 1, 2
-	rekey := types.Transaction{
-		Type: types.PaymentTx, Header: types.Header{Sender: sender, RekeyTo: other},
-		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, CloseRemainderTo: other},
-	}
-	desc := Describe(rekey, View{})
-	for _, want := range []string{"REKEY TO: " + other.String(), "Close remainder to: " + other.String()} {
-		if !strings.Contains(desc, want) {
-			t.Errorf("description missing %q:\n%s", want, desc)
+	for name, txn := range map[string]types.Transaction{
+		"rekey and close": {
+			Type: types.PaymentTx, Header: types.Header{Sender: sender, RekeyTo: other},
+			PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, CloseRemainderTo: other},
+		},
+		"asset close and clawback": {
+			Type: types.AssetTransferTx, Header: types.Header{Sender: sender},
+			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 7, AssetCloseTo: other, AssetSender: other},
+		},
+		"asset reconfigure": {
+			Type: types.AssetConfigTx, Header: types.Header{Sender: sender},
+			AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 5, AssetParams: types.AssetParams{Manager: other}},
+		},
+		"asset freeze": {
+			Type: types.AssetFreezeTx, Header: types.Header{Sender: sender},
+			AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAsset: 5, FreezeAccount: other, AssetFrozen: true},
+		},
+	} {
+		desc := Describe(txn, View{})
+		findings := Findings(txn, FindingContext{})
+		if len(findings) == 0 {
+			t.Errorf("%s: no findings", name)
+		}
+		for _, finding := range findings {
+			shown := finding.Value
+			if finding.Field == "ConfigAsset" {
+				shown = "asset #" + finding.Value
+			}
+			if !strings.Contains(desc, shown) {
+				t.Errorf("%s: finding %s = %s is not in the description:\n%s", name, finding.Field, finding.Value, desc)
+			}
 		}
 	}
-	if len(Alerts(rekey)) != 2 {
-		t.Errorf("Alerts() = %q, want the rekey and the close", Alerts(rekey))
+}
+
+func TestDescribeShowsWhatAReviewerNeedsToCompare(t *testing.T) {
+	var sender types.Address
+	sender[0] = 1
+
+	// Participation keys in base64, the form an operator has them in; a
+	// missing key named as missing, not printed as zeros.
+	online := Describe(types.Transaction{
+		Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
+		KeyregTxnFields: types.KeyregTxnFields{VotePK: types.VotePK{1}},
+	}, View{})
+	for _, want := range []string{
+		"VotePK: " + base64.StdEncoding.EncodeToString(append([]byte{1}, make([]byte, 31)...)),
+		"SelectionPK: (none)",
+		"StateProofPK: (none)",
+	} {
+		if !strings.Contains(online, want) {
+			t.Errorf("online keyreg missing %q:\n%s", want, online)
+		}
+	}
+
+	lease := [32]byte{7}
+	leased := Describe(types.Transaction{
+		Type: types.PaymentTx, Header: types.Header{Sender: sender, Lease: lease},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
+	}, View{})
+	if !strings.Contains(leased, "Lease: "+base64.StdEncoding.EncodeToString(lease[:])) {
+		t.Errorf("a lease is not shown:\n%s", leased)
+	}
+
+	unknown := Describe(types.Transaction{Type: types.TxType("hb"), Header: types.Header{Sender: sender}}, View{})
+	if !strings.Contains(unknown, "NOT shown") {
+		t.Errorf("an unknown type reads as a complete description:\n%s", unknown)
+	}
+
+	transfer := Describe(types.Transaction{
+		Type: types.AssetTransferTx, Header: types.Header{Sender: sender},
+		AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 7, AssetReceiver: sender},
+	}, View{Network: "net\x1b[2J"})
+	if strings.Contains(transfer, "\x1b") {
+		t.Errorf("the network token is printed unescaped:\n%q", transfer)
 	}
 }

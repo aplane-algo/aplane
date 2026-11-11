@@ -10,6 +10,7 @@ package txnreview
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"strconv"
@@ -73,7 +74,7 @@ func describeAssetTransferTx(txn types.Transaction, view View) string {
 	}
 	desc.WriteString(fmt.Sprintf("ASA Transfer: %s, asset #%d", amount, txn.XferAsset))
 	if view.Network != "" {
-		desc.WriteString(", " + view.Network)
+		desc.WriteString(", " + termsafe.Line(view.Network))
 	}
 	if !known && view.Assets != nil {
 		desc.WriteString("\n  Not in this node's ASA set")
@@ -146,9 +147,9 @@ func describeAssetFreezeTx(txn types.Transaction, view View) string {
 func describeApplicationCallTx(txn types.Transaction, view View) string {
 	var desc strings.Builder
 	if txn.ApplicationID == 0 {
-		desc.WriteString(fmt.Sprintf("App Create (%s)", appOnCompletionLabel(txn.OnCompletion)))
+		desc.WriteString(fmt.Sprintf("App Create (%s)", OnCompletionLabel(txn.OnCompletion)))
 	} else {
-		desc.WriteString(fmt.Sprintf("App Call: #%d (%s)", txn.ApplicationID, appOnCompletionLabel(txn.OnCompletion)))
+		desc.WriteString(fmt.Sprintf("App Call: #%d (%s)", txn.ApplicationID, OnCompletionLabel(txn.OnCompletion)))
 	}
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	appendAppProgramDetails(&desc, txn)
@@ -301,7 +302,8 @@ func calledAppLabel(txn types.Transaction) string {
 	return fmt.Sprintf("%d (the called app)", txn.ApplicationID)
 }
 
-func appOnCompletionLabel(onComp types.OnCompletion) string {
+// OnCompletionLabel names an application call's on-completion action.
+func OnCompletionLabel(onComp types.OnCompletion) string {
 	switch onComp {
 	case types.NoOpOC:
 		return "NoOp"
@@ -346,7 +348,7 @@ func resolveBoxAppRef(txn types.Transaction, ref types.BoxReference) string {
 func describeKeyRegistrationTx(txn types.Transaction, view View) string {
 	var desc strings.Builder
 
-	if isOfflineKeyReg(txn) {
+	if IsOfflineKeyReg(txn) {
 		if txn.Nonparticipation {
 			desc.WriteString("Key Registration: Go NONPARTICIPATING")
 		} else {
@@ -354,16 +356,15 @@ func describeKeyRegistrationTx(txn types.Transaction, view View) string {
 		}
 	} else {
 		desc.WriteString("Key Registration: Go ONLINE")
-		// Whole keys: a prefix would let a registration of someone else's
-		// keys pass for the reviewer's own.
-		desc.WriteString(fmt.Sprintf("\n  VotePK: %s", hex.EncodeToString(txn.VotePK[:])))
-		desc.WriteString(fmt.Sprintf("\n  SelectionPK: %s", hex.EncodeToString(txn.SelectionPK[:])))
+		// Whole keys, in base64: that is the form an operator has them in
+		// (`goal account partkeyinfo`, `keyreg votekey=`), so they can be
+		// compared. A prefix would let someone else's keys pass for one's own.
+		desc.WriteString("\n  VotePK: " + participationKey(txn.VotePK[:]))
+		desc.WriteString("\n  SelectionPK: " + participationKey(txn.SelectionPK[:]))
 		desc.WriteString(fmt.Sprintf("\n  VoteFirst: %d", txn.VoteFirst))
 		desc.WriteString(fmt.Sprintf("\n  VoteLast: %d", txn.VoteLast))
 		desc.WriteString(fmt.Sprintf("\n  VoteKeyDilution: %d", txn.VoteKeyDilution))
-		if !isZeroStateProofKey(txn.StateProofPK) {
-			desc.WriteString(fmt.Sprintf("\n  StateProofPK: %s", hex.EncodeToString(txn.StateProofPK[:])))
-		}
+		desc.WriteString("\n  StateProofPK: " + participationKey(txn.StateProofPK[:]))
 		if txn.Nonparticipation {
 			desc.WriteString("\n  Nonparticipation: true")
 		}
@@ -377,6 +378,8 @@ func describeUnknownTx(txn types.Transaction, view View) string {
 	var desc strings.Builder
 	desc.WriteString(fmt.Sprintf("Transaction Type: %s", termsafe.Line(string(txn.Type))))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
+	// Say so: a short description must not read as a complete one.
+	desc.WriteString("\n  [This type is not known here: the fields specific to it are NOT shown]")
 	return desc.String()
 }
 
@@ -403,6 +406,12 @@ func appendCommonFields(desc *strings.Builder, txn types.Transaction, view View)
 		fmt.Fprintf(desc, "\n  ⚠️  REKEY TO: %s", txn.RekeyTo.String())
 	}
 
+	// A lease blocks any other transaction from this sender with the same
+	// lease until this one's last valid round.
+	if txn.Lease != ([32]byte{}) {
+		fmt.Fprintf(desc, "\n  Lease: %s", base64.StdEncoding.EncodeToString(txn.Lease[:]))
+	}
+
 	emptyGroup := types.Digest{}
 	if txn.Group != emptyGroup {
 		fmt.Fprintf(desc, "\n  Group: %s", hex.EncodeToString(txn.Group[:]))
@@ -425,10 +434,6 @@ var transactionDescribers = map[string]transactionDescriber{
 // text is built from the transaction passed in, so describe the transaction
 // that will be signed, after any fee or group changes.
 func Describe(txn types.Transaction, view View) string {
-	return describe(txn, view)
-}
-
-func describe(txn types.Transaction, view View) string {
 	describer, exists := transactionDescribers[string(txn.Type)]
 	if !exists {
 		describer = describeUnknownTx
@@ -508,7 +513,13 @@ func isZeroMetadataHash(hash [32]byte) bool {
 	return hash == zero
 }
 
-func isZeroStateProofKey(key types.MerkleVerifier) bool {
-	var zero types.MerkleVerifier
-	return key == zero
+// participationKey shows a key in base64, or says there is none: an all-zero
+// key printed in full would read as a real one.
+func participationKey(key []byte) string {
+	for _, b := range key {
+		if b != 0 {
+			return base64.StdEncoding.EncodeToString(key)
+		}
+	}
+	return "(none)"
 }

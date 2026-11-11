@@ -10,31 +10,19 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/asaset"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 // Default policy thresholds.
 const (
-	DefaultMaxFeeMicroAlgos = 1_000_000 // 1 ALGO
+	DefaultMaxFeeMicroAlgos = txnreview.DefaultMaxFeeMicroAlgos // 1 ALGO
 )
 
-// Context is what a warning check knows about the signer's own position.
-type Context struct {
-	// KnownAddresses is the set of addresses the signer holds. A rekey to one
-	// of them is still a finding, but it says the signer keeps control instead
-	// of warning that control is lost.
-	KnownAddresses map[string]bool
-	// ProtocolRekeyTargets are rekey targets the signer itself set as part of
-	// a signing protocol and proved before approval ran: a rotating account's
-	// next stage. A rekey to one of them is the protocol working, not a
-	// dangerous field, and produces no finding.
-	ProtocolRekeyTargets map[string]bool
-	// ListedRekeyTargets are addresses on a signing account's rekey-to list. A
-	// rekey to one is still a finding: it hands the account over.
-	ListedRekeyTargets map[string]bool
-}
+// Context is what a warning check knows about the signer's own position. The
+// rules themselves live in internal/txnreview, where apshell's review of a
+// plugin-built group uses them too.
+type Context = txnreview.FindingContext
 
 // CheckGroupWarnings analyzes each transaction in a group for dangerous
 // fields. Returns aggregated warnings prefixed with the transaction index.
@@ -68,138 +56,19 @@ func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bo
 
 // CheckDecodedTxnWarningsIn is CheckDecodedTxnWarnings with a full Context.
 func CheckDecodedTxnWarningsIn(txn types.Transaction, ctx Context) []signerapproval.Violation {
-	var violations []signerapproval.Violation
-	facts := txeffects.Inspect(txn)
-
-	if facts.Has(txeffects.EffectRekey) && !ctx.ProtocolRekeyTargets[txn.RekeyTo.String()] {
-		rekeyTarget := txn.RekeyTo.String()
-		msg := "This transaction will transfer signing authority to another address."
-		if ctx.ListedRekeyTargets[rekeyTarget] {
-			msg = "This transaction hands the account to an address on its rekey-to list."
+	findings := txnreview.Findings(txn, ctx)
+	if len(findings) == 0 {
+		return nil
+	}
+	violations := make([]signerapproval.Violation, len(findings))
+	for i, finding := range findings {
+		severity := signerapproval.ViolationSeverityWarning
+		if finding.Critical {
+			severity = signerapproval.ViolationSeverityCritical
 		}
-		switch {
-		case ctx.KnownAddresses[rekeyTarget]:
-			msg += "\n   You possess the keys for the new address."
-		case ctx.ListedRekeyTargets[rekeyTarget]:
-			msg += "\n   >>> THIS SIGNER DOES NOT HOLD IT: THE ACCOUNT LEAVES THIS SIGNER'S CUSTODY <<<"
-		default:
-			msg += "\n   >>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
-		}
-		violations = append(violations, signerapproval.Violation{
-			Field:    "RekeyTo",
-			Value:    rekeyTarget,
-			Severity: signerapproval.ViolationSeverityCritical,
-			Message:  msg,
-		})
-	}
-
-	if facts.Has(txeffects.EffectClose) {
-		violations = append(violations, signerapproval.Violation{
-			Field:    "CloseRemainderTo",
-			Value:    txn.CloseRemainderTo.String(),
-			Severity: signerapproval.ViolationSeverityCritical,
-			Message:  "This transaction will close your account and send ALL remaining ALGO to another address.",
-		})
-	}
-
-	if facts.Has(txeffects.EffectAssetClose) {
-		violations = append(violations, signerapproval.Violation{
-			Field:    "AssetCloseTo",
-			Value:    txn.AssetCloseTo.String(),
-			Severity: signerapproval.ViolationSeverityWarning,
-			Message:  "This transaction will send your ENTIRE balance of this asset to another address.",
-		})
-	}
-
-	if facts.Has(txeffects.EffectClawback) && txn.AssetSender != txn.Sender {
-		violations = append(violations, signerapproval.Violation{
-			Field:    "AssetSender",
-			Value:    txn.AssetSender.String(),
-			Severity: signerapproval.ViolationSeverityWarning,
-			Message:  "CLAWBACK: This transaction will move funds from another account using your clawback authority.",
-		})
-	}
-
-	if txn.Type == types.ApplicationCallTx {
-		switch txn.OnCompletion {
-		case types.DeleteApplicationOC:
-			violations = append(violations, signerapproval.Violation{
-				Field:    "OnCompletion",
-				Value:    "DeleteApplication",
-				Severity: signerapproval.ViolationSeverityWarning,
-				Message:  "This transaction will DELETE the application.",
-			})
-		case types.ClearStateOC:
-			violations = append(violations, signerapproval.Violation{
-				Field:    "OnCompletion",
-				Value:    "ClearState",
-				Severity: signerapproval.ViolationSeverityWarning,
-				Message:  "This transaction will force-clear your local state for the application.",
-			})
-		case types.UpdateApplicationOC:
-			violations = append(violations, signerapproval.Violation{
-				Field:    "OnCompletion",
-				Value:    "UpdateApplication",
-				Severity: signerapproval.ViolationSeverityWarning,
-				Message:  "This transaction will REPLACE the application's approval and clear-state programs.",
-			})
+		violations[i] = signerapproval.Violation{
+			Field: finding.Field, Value: finding.Value, Severity: severity, Message: finding.Message,
 		}
 	}
-
-	// Asset creation (ConfigAsset 0) is routine; reconfiguring or destroying
-	// an existing asset changes who controls it, permanently where a role is
-	// cleared.
-	if txn.Type == types.AssetConfigTx && txn.ConfigAsset != 0 {
-		if txn.AssetParams == (types.AssetParams{}) {
-			violations = append(violations, signerapproval.Violation{
-				Field:    "ConfigAsset",
-				Value:    fmt.Sprintf("%d", txn.ConfigAsset),
-				Severity: signerapproval.ViolationSeverityCritical,
-				Message:  fmt.Sprintf("This transaction will DESTROY asset #%d. The asset ID is retired permanently.", txn.ConfigAsset),
-			})
-		} else {
-			violations = append(violations, signerapproval.Violation{
-				Field:    "ConfigAsset",
-				Value:    fmt.Sprintf("%d", txn.ConfigAsset),
-				Severity: signerapproval.ViolationSeverityWarning,
-				Message: fmt.Sprintf("This transaction will RECONFIGURE the authority addresses of asset #%d. A cleared role cannot be restored."+
-					"\n   Manager: %s\n   Reserve: %s\n   Freeze: %s\n   Clawback: %s",
-					txn.ConfigAsset, assetRoleAddress(txn.AssetParams.Manager), assetRoleAddress(txn.AssetParams.Reserve),
-					assetRoleAddress(txn.AssetParams.Freeze), assetRoleAddress(txn.AssetParams.Clawback)),
-			})
-		}
-	}
-
-	if txn.Type == types.AssetFreezeTx {
-		action := "UNFREEZE"
-		if txn.AssetFrozen {
-			action = "FREEZE"
-		}
-		violations = append(violations, signerapproval.Violation{
-			Field:    "FreezeAccount",
-			Value:    txn.FreezeAccount.String(),
-			Severity: signerapproval.ViolationSeverityWarning,
-			Message:  fmt.Sprintf("This transaction will %s the account's holding of asset #%d using your freeze authority.", action, txn.FreezeAsset),
-		})
-	}
-
-	if uint64(txn.Fee) > DefaultMaxFeeMicroAlgos {
-		algoFee := asaset.FormatFixed(uint64(txn.Fee), 6)
-		violations = append(violations, signerapproval.Violation{
-			Field:    "Fee",
-			Value:    algoFee + " ALGO",
-			Severity: signerapproval.ViolationSeverityWarning,
-			Message:  fmt.Sprintf("Transaction fee is unusually high (%s ALGO). Normal fees are ~0.001 ALGO.", algoFee),
-		})
-	}
-
 	return violations
-}
-
-// assetRoleAddress names an asset role address, or its permanent clearing.
-func assetRoleAddress(addr types.Address) string {
-	if addr.IsZero() {
-		return "(cleared)"
-	}
-	return addr.String()
 }
