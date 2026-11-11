@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/appspec"
@@ -414,6 +415,62 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 		if !strings.Contains(description, "[MODIFIED BY SERVER]") || strings.Contains(description, "FROZEN") {
 			t.Errorf("%d request(s): a planned group lost its change report:\n%s", len(requests), description)
 		}
+	}
+}
+
+// Each position this request signs names the key that signs it, so a group
+// whose header counts several keys says which signs where. A position the
+// request doesn't sign names none.
+func TestBuildApprovalDescriptionNamesEachPositionsSigningKey(t *testing.T) {
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+		{AuthAddress: "AUTH1"}, {AuthAddress: "AUTH2"}, {TxnBytesHex: "aa"},
+	}}
+	plan := &PlanResult{
+		PassthroughIndices: map[int]bool{},
+		ForeignIndices:     map[int]bool{2: true},
+		HasForeign:         true,
+	}
+	txns := []types.Transaction{{Type: types.PaymentTx}, {Type: types.PaymentTx}, {Type: types.PaymentTx}}
+	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	for _, want := range []string{
+		"--- Transaction 1 of 3 ---\n  Signing key: AUTH1\ntxn",
+		"--- Transaction 2 of 3 ---\n  Signing key: AUTH2\ntxn",
+		"--- Transaction 3 of 3 [FOREIGN - not signing] ---\ntxn",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("description missing %q:\n%s", want, description)
+		}
+	}
+	if strings.Count(description, "Signing key:") != 2 {
+		t.Errorf("want a signing key on the two signed positions only:\n%s", description)
+	}
+}
+
+// A passthrough position says who authorizes it, and with what, from its
+// signed bytes, and that this signer does not check it.
+func TestBuildApprovalDescriptionNamesThePassthroughAuthorizer(t *testing.T) {
+	sender, rekeyed := types.Address{7}, types.Address{8}
+	signed := types.SignedTxn{
+		Msig:     types.MultisigSig{Version: 1, Threshold: 2, Subsigs: make([]types.MultisigSubsig, 3)},
+		Txn:      types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: sender}},
+		AuthAddr: rekeyed,
+	}
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}, {SignedTxnHex: "aa"}, {SignedTxnHex: "bb"}}}
+	plan := &PlanResult{
+		PassthroughIndices:    map[int]bool{1: true, 2: true},
+		PassthroughSignedTxns: map[int][]byte{1: msgpack.Encode(signed), 2: {0xc1}},
+		ForeignIndices:        map[int]bool{},
+		HasPassthrough:        true,
+	}
+	txns := []types.Transaction{{Type: types.PaymentTx}, signed.Txn, {Type: types.PaymentTx}}
+	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	want := "--- Transaction 2 of 3 [PASSTHROUGH] ---\n  Authorized by: " + rekeyed.String() +
+		" (multisig, 2 of 3, named as the sender's authorizer, not verified here)\ntxn"
+	if !strings.Contains(description, want) {
+		t.Fatalf("description missing %q:\n%s", want, description)
+	}
+	if !strings.Contains(description, "--- Transaction 3 of 3 [PASSTHROUGH] ---\n  Authorized by: (the signed transaction could not be read)") {
+		t.Fatalf("an unreadable passthrough is not said to be:\n%s", description)
 	}
 }
 

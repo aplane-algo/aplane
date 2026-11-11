@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -18,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/internal/termsafe"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -231,6 +233,7 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 			switch held := plan.HeldForeign[i]; {
 			case plan.PassthroughIndices[i]:
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [PASSTHROUGH] ---\n", i+1, totalTxns))
+				under = []string{passthroughAuthorizationLine(plan.PassthroughSignedTxns[i])}
 			case held != nil:
 				var label string
 				label, under = heldPositionHeading(held)
@@ -239,6 +242,9 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [FOREIGN - not signing] ---\n", i+1, totalTxns))
 			default:
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d ---\n", i+1, totalTxns))
+				// The header names one key or a count of them; each
+				// position says which of this signer's keys signs it.
+				under = []string{"  Signing key: " + req.Requests[i].AuthAddress}
 			}
 			for _, line := range under {
 				b.WriteString(line + "\n")
@@ -313,6 +319,17 @@ func writeContributionLines(b *strings.Builder, plan *PlanResult) {
 	if c := plan.FeeInfo.NativePQFeeContribution; c > 0 {
 		fmt.Fprintf(b, "  • Required native Falcon contribution: %d microAlgos\n", c)
 	}
+}
+
+// passthroughAuthorizationLine names who authorizes a passthrough position,
+// and with what kind of signature, from its signed bytes. This signer does
+// not check that signature; the network does.
+func passthroughAuthorizationLine(signed []byte) string {
+	var stxn types.SignedTxn
+	if err := msgpack.Decode(signed, &stxn); err != nil {
+		return "  Authorized by: (the signed transaction could not be read)"
+	}
+	return "  Authorized by: " + txnreview.Authorization(stxn)
 }
 
 func approvalTransactionNumbers(indices []int) []int {
