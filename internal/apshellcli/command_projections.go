@@ -183,8 +183,8 @@ type endpointMutationProjection struct {
 }
 
 type endpointDiscoveryProjection struct {
-	Endpoints      []endpointDiscoveryEntry `json:"endpoints"`
-	PublicKeyCount int                      `json:"public_key_count"`
+	Endpoints        []endpointDiscoveryEntry `json:"endpoints"`
+	CosignerKeyCount int                      `json:"cosigner_key_count"`
 }
 
 type endpointDiscoveryEntry struct {

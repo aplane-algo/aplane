@@ -787,9 +787,11 @@ type EndpointCosignerDiscovery struct {
 
 // EndpointDiscoverCosignersResult describes a read-only cosigner endpoint sweep.
 type EndpointDiscoverCosignersResult struct {
-	Endpoints      []EndpointCosignerDiscovery
-	PublicKeyCount int
-	RenderLines    []string
+	Endpoints []EndpointCosignerDiscovery
+	// CosignerKeyCount is the number of cosigner keys found, each a key type
+	// and public key: one public key under two key types counts twice.
+	CosignerKeyCount int
+	RenderLines      []string
 }
 
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.

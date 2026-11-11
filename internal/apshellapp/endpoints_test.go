@@ -159,7 +159,7 @@ func TestEndpointDiscoverCosignersIsReadOnly(t *testing.T) {
 	if string(after) != string(before) {
 		t.Fatalf("read-only discovery changed endpoints.yaml\nbefore: %s\nafter: %s", before, after)
 	}
-	if result.PublicKeyCount != 1 || len(result.Endpoints) != 1 || len(result.Endpoints[0].Keys) != 1 {
+	if result.CosignerKeyCount != 1 || len(result.Endpoints) != 1 || len(result.Endpoints[0].Keys) != 1 {
 		t.Fatalf("discovery result = %#v", result)
 	}
 	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKey, componentKey)
@@ -185,8 +185,11 @@ func TestEndpointDiscoverCosignersKeepsAPublicKeyUnderTwoKeyTypes(t *testing.T) 
 	if err != nil {
 		t.Fatalf("EndpointDiscoverCosigners() error = %v", err)
 	}
-	if result.PublicKeyCount != 2 || len(result.Endpoints) != 1 || len(result.Endpoints[0].Keys) != 2 {
+	if result.CosignerKeyCount != 2 || len(result.Endpoints) != 1 || len(result.Endpoints[0].Keys) != 2 {
 		t.Fatalf("discovery result = %#v, want both key types", result)
+	}
+	if want := "Discovered cosigner inventory from 1 endpoint(s): 2 key(s)"; len(result.RenderLines) == 0 || result.RenderLines[0] != want {
+		t.Fatalf("render lines = %q, want first line %q", result.RenderLines, want)
 	}
 }
 
@@ -201,7 +204,7 @@ func TestEndpointDiscoverCosignersRejectsDuplicatePublication(t *testing.T) {
 	writeLiveCosignerEndpoint(t, dataDir, "cosigner-b", second)
 	app := newEndpointTestApp(t, dataDir)
 	_, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
-	if err == nil || !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
+	if err == nil || !strings.Contains(err.Error(), "under key type "+witness.Falcon1024V1+" advertised by both endpoint aliases") {
 		t.Fatalf("EndpointDiscoverCosigners() error = %v, want duplicate rejection", err)
 	}
 }

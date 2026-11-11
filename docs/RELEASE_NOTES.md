@@ -33,6 +33,9 @@ before it was renamed `enroll`.
   advertised entry for a public key, so a second witness key type with the
   same public key could not be routed, and `endpoints discover-cosigners`
   called it a repeat publication. Only one witness key type exists today.
+  The diagnostic's count, `cosigner_key_count` in its structured result (was
+  `public_key_count`), counts each key type and public key pair, and a key
+  advertised by two endpoints is reported with its key type.
 
 ## Rotating timing refusals have their own error code
 
