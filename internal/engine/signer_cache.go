@@ -143,7 +143,7 @@ func (e *Core) AuthorizationFeeReserve(sender string) (uint64, error) {
 		LogicSigs:        []lsigresource.Usage{usage},
 		Dummy: lsigresource.Usage{
 			ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
-			MaxOpcodeCost: 1,
+			MaxOpcodeCost: signing.DummyOpcodeCost,
 		},
 	})
 	if err != nil {

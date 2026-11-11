@@ -33,7 +33,7 @@ func previousRotatingGroup(t *testing.T, txn types.Transaction, profile *lsigres
 	resourcePlan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
 		TransactionCount: 1,
 		LogicSigs:        []lsigresource.Usage{usage},
-		Dummy:            lsigresource.Usage{ProgramBytes: uint64(len(coresigning.EmbeddedDummyTealTok)), MaxOpcodeCost: 1},
+		Dummy:            lsigresource.Usage{ProgramBytes: uint64(len(coresigning.EmbeddedDummyTealTok)), MaxOpcodeCost: coresigning.DummyOpcodeCost},
 	})
 	if err != nil {
 		t.Fatal(err)

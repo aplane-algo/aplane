@@ -128,7 +128,7 @@ func groupPlan(t *testing.T, programBytes, argumentBytes int) (groupSize, fee ui
 	plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
 		TransactionCount: 1,
 		LogicSigs:        []lsigresource.Usage{{ProgramBytes: uint64(programBytes), ArgumentBytes: uint64(argumentBytes), MaxOpcodeCost: 20_000}},
-		Dummy:            lsigresource.Usage{ProgramBytes: uint64(len(signing.EmbeddedDummyTealTok)), MaxOpcodeCost: 1},
+		Dummy:            lsigresource.Usage{ProgramBytes: uint64(len(signing.EmbeddedDummyTealTok)), MaxOpcodeCost: signing.DummyOpcodeCost},
 	})
 	if err != nil {
 		t.Fatalf("lsigresource.Solve() error = %v", err)

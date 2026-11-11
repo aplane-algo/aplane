@@ -230,7 +230,7 @@ func TestRotatingWOTSCTripleOnChain(t *testing.T) {
 				LogicSigs: []lsigresource.Usage{{
 					ProgramBytes: uint64(wantSize), ArgumentBytes: uint64(stage.MaxArgumentBytes), MaxOpcodeCost: uint64(stage.MaxOpcodeCost),
 				}},
-				Dummy: lsigresource.Usage{ProgramBytes: uint64(len(group[1].Lsig.Logic)), MaxOpcodeCost: 1},
+				Dummy: lsigresource.Usage{ProgramBytes: uint64(len(group[1].Lsig.Logic)), MaxOpcodeCost: signing.DummyOpcodeCost},
 			})
 			if err != nil {
 				t.Fatalf("solve: %v", err)
