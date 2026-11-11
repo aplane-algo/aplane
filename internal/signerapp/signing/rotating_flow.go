@@ -452,8 +452,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	known[spend.RekeyTo.String()] = true
 	protocolRekeys := map[string]bool{spend.RekeyTo.String(): true}
 	// The rebuilt group is the presented one byte for byte, so its fee info
-	// is the authorization charge prepare put on the spend: the prompt shows
-	// it, as it shows the dummies.
+	// is what prepare's fee pays for. This request only checks the group, so
+	// the plan is frozen: the prompt shows the dummies and contributions the
+	// fees already include, as /sign/component's does, and claims no change.
 	plan := &PlanResult{
 		AllTxns:              allTxns,
 		DummyTxns:            allTxns[1:],
@@ -468,6 +469,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		KnownAddresses:       known,
 		ProtocolRekeyTargets: protocolRekeys,
 		Rotating:             item,
+		Frozen:               true,
 	}
 	signReq := signerapi.GroupSignRequest{
 		RequestID: req.RequestID,

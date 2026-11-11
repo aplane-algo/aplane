@@ -19,13 +19,14 @@ refuses or approves.
   no dummies, was shown only as the final fee. The prompt now carries the same
   `[MODIFIED BY SERVER]` lines as the group prompt: the amount added and what
   it is for.
-- **A rotating spend's prompt shows its authorization charge**: the amount
-  prepare added to the spend's fee, and what it pays for.
 - **A frozen group is not called modified.** The `/sign/component` prompt of a
   cosigned spend said the server had added dummies and recomputed the group
   ID, and that the fees were covered by existing fees, for bytes this request
-  only checked. It now says the group was checked as sent and changed by
-  nothing here, with the dummies and contributions its fees already include.
+  only checked. The `/sign/rotating/sign` prompt of a rotating spend said the
+  same, though it only verifies the group prepare built, byte for byte. Both
+  now say the group was checked as sent and changed by nothing here, with the
+  dummies and contributions its fees already include. A lone transaction is
+  not called a group.
 - **Each position of a group prompt names its signing key.** The header said
   "2 auth addresses (see details)" and the details never said which key signs
   which position.

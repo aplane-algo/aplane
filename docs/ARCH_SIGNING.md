@@ -953,12 +953,12 @@ for; each is rounded up to a whole microAlgo on its own while the adjustment
 rounds the group's total once, so they need not add up to it, and the program
 contribution, usually a fraction of a microAlgo per byte, is given as
 approximate. A group whose fees already pay the requirement shows
-`[FEE REQUIREMENT COVERED BY EXISTING FEES]` with the contributions. A rotating
-spend's prompt shows the authorization charge `/sign/rotating/prepare` put on
-the spend the same way.
+`[FEE REQUIREMENT COVERED BY EXISTING FEES]` with the contributions.
 
-A `/sign/component` request checks a frozen group and changes nothing, so its
-prompt says so instead of claiming changes it did not make:
+A `/sign/component` request checks a frozen group and changes nothing, and so
+does `/sign/rotating/sign`, which verifies the group `/sign/rotating/prepare`
+built byte for byte. Their prompts say so instead of claiming changes they did
+not make:
 ```
 [FROZEN GROUP: checked as sent, not changed by this request]
   • 1 dummy transaction(s) for LogicSig arguments/opcode budget

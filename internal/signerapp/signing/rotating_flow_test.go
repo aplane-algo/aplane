@@ -443,10 +443,11 @@ func TestRotatingSignShowsTheSpendsAppCallInfo(t *testing.T) {
 	}
 }
 
-// The rotating prompt shows the authorization charge prepare put on the
-// spend, as the /sign prompt shows a fee the signer raised: the amount is the
-// one prepare reported to the client.
-func TestRotatingSignPromptShowsTheAuthorizationCharge(t *testing.T) {
+// /sign/rotating/sign only verifies the prepared group byte for byte, so its
+// prompt reads like /sign/component's: the group checked as sent, with the
+// dummies and contributions prepare's fee already pays, and no claim that
+// this request added dummies, raised the fee or recomputed the group ID.
+func TestRotatingSignPromptShowsThePreparedGroupAsChecked(t *testing.T) {
 	f, _ := newSigningFixture(t)
 	off := false
 	var description string
@@ -467,11 +468,29 @@ func TestRotatingSignPromptShowsTheAuthorizationCharge(t *testing.T) {
 	}, f.session); err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	if want := fmt.Sprintf("Group fee adjustment: +%d microAlgos", prep.Mutations.TotalFeesDelta); !strings.Contains(description, want) {
-		t.Fatalf("rotating prompt missing %q:\n%s", want, description)
+	if prep.Mutations.DummiesAdded == 0 {
+		t.Fatalf("prepare added no dummies (%+v); the test needs a group", prep.Mutations)
 	}
-	if !strings.Contains(description, "[MODIFIED BY SERVER]") {
-		t.Fatalf("rotating prompt does not say the signer changed the spend:\n%s", description)
+	wants := []string{
+		"[FROZEN GROUP: checked as sent, not changed by this request]",
+		fmt.Sprintf("  • %d dummy transaction(s) for LogicSig arguments/opcode budget", prep.Mutations.DummiesAdded),
+		"The fees shown already include these; this request adds no dummies or fees",
+	}
+	if strings.Contains(prep.Mutations.Reason, "lsig_program_fee") {
+		wants = append(wants, "Required LogicSig program contribution")
+	}
+	if strings.Contains(prep.Mutations.Reason, "native_pq_fee") {
+		wants = append(wants, "Required native Falcon contribution")
+	}
+	for _, want := range wants {
+		if !strings.Contains(description, want) {
+			t.Errorf("rotating prompt missing %q:\n%s", want, description)
+		}
+	}
+	for _, notWant := range []string{"MODIFIED BY SERVER", "Added ", "Group fee adjustment", "Group ID recomputed"} {
+		if strings.Contains(description, notWant) {
+			t.Errorf("rotating prompt claims %q for a group it only checked:\n%s", notWant, description)
+		}
 	}
 }
 
