@@ -869,6 +869,10 @@ environment has no cosigner node. The Python check also proves that a data
 directory with no cosigner endpoint is refused before the signer is asked for
 anything.
 
+The test image is Ubuntu 24.04 with Node.js 22 copied from the official Node.js
+image, since the TypeScript SDK and `algosdk` require Node.js 22 and Ubuntu
+24.04 packages 18. The script stops if the image's Node.js is older.
+
 `make docker-local-release-test` runs the same topology and product assertions,
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript
 from npm. It also exercises cosigned signing through both published SDKs.
