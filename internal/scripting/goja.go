@@ -142,6 +142,11 @@ func (r *GojaRunner) SetPluginExecutor(executor jsapi.PluginExecutor) {
 	r.api.SetPluginExecutor(executor)
 }
 
+// SetSweeper sets the host's sweep implementation for the sweep() JS function.
+func (r *GojaRunner) SetSweeper(sweeper jsapi.Sweeper) {
+	r.api.SetSweeper(sweeper)
+}
+
 // Interrupt stops the currently running script.
 // Safe to call from another goroutine (e.g., for timeout enforcement).
 func (r *GojaRunner) Interrupt() {

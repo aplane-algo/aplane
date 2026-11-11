@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/scripting"
@@ -36,10 +37,7 @@ func runJSScriptMode(network string, cfg config.Config, dataDir string, scriptPa
 	}
 
 	// Create runner and execute
-	runner := scripting.NewGojaRunner(eng)
-	runner.SetOutput(func(msg string) {
-		fmt.Println(msg)
-	})
+	runner := standaloneScriptRunner(eng, cfg, dataDir)
 
 	_, err = runner.RunWithContext(context.Background(), string(content))
 	if err != nil {
@@ -58,10 +56,7 @@ func runJSExpression(network string, cfg config.Config, dataDir string, expr str
 	}
 
 	// Create runner and execute
-	runner := scripting.NewGojaRunner(eng)
-	runner.SetOutput(func(msg string) {
-		fmt.Println(msg)
-	})
+	runner := standaloneScriptRunner(eng, cfg, dataDir)
 
 	result, err := runner.RunWithContext(context.Background(), expr)
 	if err != nil {
@@ -78,4 +73,13 @@ func runJSExpression(network string, cfg config.Config, dataDir string, expr str
 			fmt.Println(result.Value)
 		}
 	}
+}
+
+// standaloneScriptRunner builds the runner for a script run outside the
+// REPL. The app builds it, so the script has what the shell's own runner
+// has, sweep() included; it has no plugins.
+func standaloneScriptRunner(eng *engine.Engine, cfg config.Config, dataDir string) scripting.Runner {
+	return apshellapp.New(eng, cfg, dataDir).Scripts.EnsureRunner(func(msg string) {
+		fmt.Println(msg)
+	}, nil)
 }

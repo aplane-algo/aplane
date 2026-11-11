@@ -96,12 +96,13 @@ func (r *REPLState) runRekey(args []string) (command.Result, error) {
 	}
 
 	result, err := r.app().Rekey(r.commandContext(), apshellapp.RekeyRequest{
-		Account:    params.Account,
-		Target:     params.Signer,
-		Fee:        params.Fee,
-		UseFlatFee: params.UseFlatFee,
-		LsigArgs:   params.LsigArgs,
-		Wait:       params.Wait,
+		Account:      params.Account,
+		Target:       params.Signer,
+		Fee:          params.Fee,
+		UseFlatFee:   params.UseFlatFee,
+		LsigArgs:     params.LsigArgs,
+		Wait:         params.Wait,
+		BeforeSubmit: r.announceRekey,
 	})
 	if err != nil {
 		return nil, err
@@ -128,11 +129,12 @@ func (r *REPLState) runUnrekey(args []string) (command.Result, error) {
 	}
 
 	result, err := r.app().Unrekey(r.commandContext(), apshellapp.UnrekeyRequest{
-		Account:    params.Account,
-		Fee:        params.Fee,
-		UseFlatFee: params.UseFlatFee,
-		LsigArgs:   params.LsigArgs,
-		Wait:       params.Wait,
+		Account:      params.Account,
+		Fee:          params.Fee,
+		UseFlatFee:   params.UseFlatFee,
+		LsigArgs:     params.LsigArgs,
+		Wait:         params.Wait,
+		BeforeSubmit: r.announceRekey,
 	})
 	if err != nil {
 		return nil, err
@@ -141,12 +143,18 @@ func (r *REPLState) runUnrekey(args []string) (command.Result, error) {
 	return rekeyTransactionResult(r, result, params.Wait, simulated, "Unrekey transaction submitted")
 }
 
+// announceRekey prints what a rekey is about to do, warnings included, before
+// the transaction is signed. These lines used to be printed with the result,
+// after the account had already been rekeyed.
+func (r *REPLState) announceRekey(result *apshellapp.RekeyCommandResult) {
+	for _, line := range renderRekeyLines(result.PreSubmitLines, result, r) {
+		r.progressPrintln(line)
+	}
+}
+
 func rekeyTransactionResult(r *REPLState, result *apshellapp.RekeyCommandResult, wait, simulated bool, submittedLabel string) (command.Result, error) {
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
-			for _, line := range renderRekeyLines(result.PreSubmitLines, result, r) {
-				r.println(line)
-			}
 			r.renderSubmissionOutput(result.Output)
 			r.renderWarnings(result.Warnings)
 			if !simulated {

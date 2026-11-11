@@ -62,6 +62,11 @@ type RekeyRequest struct {
 	UseFlatFee bool
 	LsigArgs   map[string][]byte
 	Wait       bool
+	// BeforeSubmit, when set, is given the result as far as it is known once
+	// the transaction is prepared and before it is signed: the accounts and
+	// the PreSubmitLines, which carry the warnings. The host prints them then,
+	// so a warning is read before the rekey happens and not after it.
+	BeforeSubmit func(*RekeyCommandResult)
 }
 
 // UnrekeyRequest captures parsed unrekey inputs.
@@ -71,6 +76,8 @@ type UnrekeyRequest struct {
 	UseFlatFee bool
 	LsigArgs   map[string][]byte
 	Wait       bool
+	// BeforeSubmit is RekeyRequest.BeforeSubmit for an unrekey.
+	BeforeSubmit func(*RekeyCommandResult)
 }
 
 // CloseRequest captures parsed close inputs.
@@ -81,18 +88,30 @@ type CloseRequest struct {
 	UseFlatFee bool
 	LsigArgs   map[string][]byte
 	Wait       bool
+	// BeforeSubmit, when set, is given the result as far as it is known once
+	// the transaction is prepared and before it is signed, so the host can
+	// print its PreSubmitLines before the account is closed.
+	BeforeSubmit func(*CloseCommandResult)
 }
 
 // SweepRequest captures parsed sweep inputs.
 type SweepRequest struct {
-	AssetRef    string
-	FromRaw     []string
-	ToRaw       string
+	AssetRef string
+	FromRaw  []string
+	ToRaw    string
+	// LeavingText is the amount to leave in each account, in display units.
+	// Empty means none was given: an ALGO sweep then leaves each account its
+	// own minimum balance, which is the most the network lets an open
+	// account send, and an ASA sweep leaves nothing.
 	LeavingText string
-	Fee         uint64
-	UseFlatFee  bool
-	LsigArgs    map[string][]byte
-	Wait        bool
+	// LeavingRaw, when set, is the amount to leave in base units and
+	// LeavingText is not read. JavaScript's sweep() uses it: amounts there
+	// are base units, and the command's are display units.
+	LeavingRaw *uint64
+	Fee        uint64
+	UseFlatFee bool
+	LsigArgs   map[string][]byte
+	Wait       bool
 }
 
 // ValidateRequest captures parsed account validation inputs.
@@ -449,11 +468,6 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	check := rekeyCheckDetailsFromEngine(checkResult)
 
 	canSignForTarget, authorizationKind := a.eng.CanSignForAddressWithKind(toAddress)
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
-	if err != nil {
-		return nil, fmt.Errorf("rekey transaction failed: %w", err)
-	}
-
 	result := &RekeyCommandResult{
 		From:                    fromAddress,
 		To:                      toAddress,
@@ -461,16 +475,27 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		CanSignForTarget:        canSignForTarget,
 		TargetIsLsig:            authorizationKind == algorithm.AuthorizationLogicSig,
 		TargetAuthorizationKind: authorizationKind,
-		TxID:                    submit.TxID,
-		Confirmed:               submit.Confirmed,
-		Output:                  submit.Output,
-		Warnings:                warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
+	decorateRekeyResult(result)
+	if req.BeforeSubmit != nil {
+		// A copy: this result is filled in after the transaction is
+		// submitted, and the host may keep what it was announced.
+		announced := *result
+		req.BeforeSubmit(&announced)
+	}
+
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	if err != nil {
+		return nil, fmt.Errorf("rekey transaction failed: %w", err)
+	}
+	result.TxID = submit.TxID
+	result.Confirmed = submit.Confirmed
+	result.Output = submit.Output
+	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 	// The auth-cache refresh after a confirmed rekey happens in the engine submit
 	// path (SignAndSubmit -> refreshRekeyedSenders), so every caller — REPL, JS,
 	// MCP — stays consistent without duplicating it. Surface its non-fatal warning.
 	result.RefreshWarning = submit.AuthRefreshWarning
-	decorateRekeyResult(result)
 	return result, nil
 }
 
@@ -503,24 +528,30 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
-	if err != nil {
-		return nil, fmt.Errorf("unrekey transaction failed: %w", err)
-	}
-
 	result := &RekeyCommandResult{
 		From:               address,
 		To:                 address,
 		IsUnrekey:          true,
 		CurrentAuthAddress: balanceResult.AuthAddr,
-		TxID:               submit.TxID,
-		Confirmed:          submit.Confirmed,
-		Output:             submit.Output,
-		Warnings:           warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
+	decorateRekeyResult(result)
+	if req.BeforeSubmit != nil {
+		// A copy: this result is filled in after the transaction is
+		// submitted, and the host may keep what it was announced.
+		announced := *result
+		req.BeforeSubmit(&announced)
+	}
+
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	if err != nil {
+		return nil, fmt.Errorf("unrekey transaction failed: %w", err)
+	}
+	result.TxID = submit.TxID
+	result.Confirmed = submit.Confirmed
+	result.Output = submit.Output
+	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 	// See App.Rekey: the engine submit path performs the refresh; surface its warning.
 	result.RefreshWarning = submit.AuthRefreshWarning
-	decorateRekeyResult(result)
 	return result, nil
 }
 
@@ -638,22 +669,26 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 	prep := preparedTxnFromEngine(prepResult)
 	check := closeCheckDetailsFromEngine(checkResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
-	if err != nil {
-		return nil, fmt.Errorf("close failed: %w", err)
-	}
-
 	result := &CloseCommandResult{
 		From:           fromAddress,
 		CloseTo:        toAddress,
 		Balance:        check.Balance,
 		SigningKeyType: prep.SigningContext.DisplayKeyType,
-		TxID:           submit.TxID,
-		Confirmed:      submit.Confirmed,
-		Output:         submit.Output,
-		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
 	decorateCloseResult(result)
+	if req.BeforeSubmit != nil {
+		announced := *result
+		req.BeforeSubmit(&announced)
+	}
+
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	if err != nil {
+		return nil, fmt.Errorf("close failed: %w", err)
+	}
+	result.TxID = submit.TxID
+	result.Confirmed = submit.Confirmed
+	result.Output = submit.Output
+	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 	return result, nil
 }
 
@@ -718,9 +753,18 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		}
 	}
 
-	leavingAmount, err := cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert leaving amount: %w", err)
+	var leavingAmount asa.Amount
+	leaveMinimumBalance := false
+	if req.LeavingRaw != nil {
+		leavingAmount = asa.AmountFromRaw(*req.LeavingRaw, assetMeta)
+	} else if req.LeavingText == "" {
+		leavingAmount = asa.AmountFromRaw(0, assetMeta)
+		leaveMinimumBalance = assetMeta.AssetID == 0
+	} else {
+		leavingAmount, err = cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert leaving amount: %w", err)
+		}
 	}
 
 	result := &SweepCommandResult{
@@ -730,6 +774,8 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		ToAddress:       toAddress,
 		UsedAllSignable: usedAllSignable,
 		ReceiverOptedIn: receiverOptedIn,
+
+		LeavingMinimumBalance: leaveMinimumBalance,
 	}
 
 	for _, fromAddress := range fromAddresses {
@@ -750,8 +796,12 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		balanceResult := balanceDetailsFromEngine(balanceEngineResult)
 
 		var balance uint64
+		leaving := leavingAmount.Raw
 		if assetMeta.AssetID == 0 {
 			balance = balanceResult.AlgoBalance
+			if leaveMinimumBalance {
+				leaving = balanceResult.MinBalance
+			}
 		} else {
 			found := false
 			for _, asset := range balanceResult.Assets {
@@ -779,11 +829,15 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			result.Items = append(result.Items, item)
 			continue
 		}
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
+		sendAmount, feeReserve, ok := sweepSendAmount(balance, leaving, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
 		if !ok {
-			item.SkippedReason = fmt.Sprintf("balance %d <= leaving amount %d", balance, leavingAmount.Raw)
-			if assetMeta.AssetID == 0 && balance > leavingAmount.Raw {
-				item.SkippedReason = fmt.Sprintf("balance %d cannot cover leaving amount %d plus fee reserve %d", balance, leavingAmount.Raw, feeReserve)
+			what := "leaving amount"
+			if leaveMinimumBalance {
+				what = "minimum balance"
+			}
+			item.SkippedReason = fmt.Sprintf("balance %d <= %s %d", balance, what, leaving)
+			if assetMeta.AssetID == 0 && balance > leaving {
+				item.SkippedReason = fmt.Sprintf("balance %d cannot cover %s %d plus fee reserve %d", balance, what, leaving, feeReserve)
 			}
 			result.Items = append(result.Items, item)
 			continue
@@ -830,7 +884,9 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				item.Output = submit.Output
 				item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 			}
-			if !errors.Is(err, engine.ErrSimulationFailed) {
+			if errors.Is(err, engine.ErrSimulationFailed) {
+				item.SimulationFailure = err.Error()
+			} else {
 				item.Error = fmt.Sprintf("transaction failed: %v", err)
 			}
 			result.FailureCount++
@@ -917,7 +973,9 @@ func decorateSweepResult(result *SweepCommandResult) {
 	}
 
 	result.HeaderLine = fmt.Sprintf("Sweeping %s from %d account(s) to {to}", asa.DisplayRef(result.Asset), len(result.FromAddresses))
-	if result.Leaving.Raw > 0 {
+	if result.LeavingMinimumBalance {
+		result.HeaderLine += " (leaving each its minimum balance)"
+	} else if result.Leaving.Raw > 0 {
 		result.HeaderLine += fmt.Sprintf(" (leaving %s in each)", asa.DisplayString(result.Leaving))
 	}
 

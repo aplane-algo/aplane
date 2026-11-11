@@ -94,41 +94,77 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 	})
 }
 
-// jsSweep closes an account, sending all funds to a destination.
+// jsSweep sends each source account's balance, less what is to be left, to
+// one destination. It is the shell's sweep command: the account stays open.
+// (It used to close the account, which close() does.)
+//
+//	sweep(from, to, {asset, leaving, fee, wait, lsigArgs})
+//
+// from is one account or an array of them. asset is an asset ID (0 or absent
+// is ALGO) and leaving is in base units; without it an ALGO sweep leaves each
+// account its minimum balance.
 func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "sweep() requires from and to arguments")
-	from := a.stringArg(call, 0)
-	to := a.stringArg(call, 1)
-
-	opts := a.parseTxnOptions(call, 2, "sweep()")
-
-	fromAddr, _, err := a.engine.ResolveAddress(from)
-	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error resolving from address: %v", err)))
-	}
-	toAddr, _, err := a.engine.ResolveAddress(to)
-	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error resolving to address: %v", err)))
+	sweeper := a.getSweeper()
+	if sweeper == nil {
+		panic(a.runtime.ToValue("sweep() is not available in this host"))
 	}
 
-	prep, _, err := a.engine.PrepareClose(a.Context(), engine.CloseAccountParams{
-		From:       fromAddr,
-		CloseTo:    toAddr,
-		Fee:        opts.Fee,
-		UseFlatFee: opts.UseFlatFee,
-	})
-	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error preparing transaction: %v", err)))
+	var from []string
+	if _, isList := call.Arguments[0].Export().([]interface{}); isList {
+		from = a.stringArrayArg(call.Arguments[0], "sweep() from")
+		if len(from) == 0 {
+			panic(a.runtime.ToValue("sweep() from: the list of accounts is empty"))
+		}
+	} else {
+		from = []string{a.stringArg(call, 0)}
+	}
+	req := SweepRequest{From: from, To: a.stringArg(call, 1), Wait: true}
+	// The address resolver passes an empty name over, which would drop a
+	// source from the list or sweep to no destination.
+	for i, account := range req.From {
+		if account == "" {
+			panic(a.runtime.ToValue(fmt.Sprintf("sweep() from: account %d is empty", i+1)))
+		}
+	}
+	if req.To == "" {
+		panic(a.runtime.ToValue("sweep() to: the destination is empty"))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
-	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error submitting transaction: %v", err)))
+	if m := a.objectArg(call, 2, "sweep()"); m != nil {
+		a.refuseUnknownKeys(m, "sweep() option", "asset", "leaving", "fee", "wait", "lsigArgs")
+		req.AssetID, _ = a.optionUint64(m, "asset", "sweep()")
+		req.Leaving, req.LeavingSet = a.optionUint64(m, "leaving", "sweep()")
+		req.Fee, req.UseFlatFee = a.optionUint64(m, "fee", "sweep()")
+		if wait, ok := a.optionBool(m, "wait", "sweep()"); ok {
+			req.Wait = wait
+		}
+		req.LsigArgs = a.lsigArgsOption(m, "sweep()")
 	}
 
+	result, err := sweeper.Sweep(a.Context(), req)
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error: %v", err)))
+	}
+
+	items := make([]interface{}, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, map[string]interface{}{
+			"from":      item.From,
+			"amount":    item.Amount,
+			"txid":      item.TxID,
+			"confirmed": item.Confirmed,
+			"skipped":   item.Skipped,
+			"error":     item.Error,
+		})
+	}
 	return a.runtime.ToValue(map[string]interface{}{
-		"txid":      result.TxID,
-		"confirmed": result.Confirmed,
+		"asset":     result.AssetID,
+		"to":        result.To,
+		"simulated": result.Simulated,
+		"succeeded": result.Succeeded,
+		"failed":    result.Failed,
+		"items":     items,
 	})
 }
 

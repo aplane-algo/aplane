@@ -291,14 +291,16 @@ Group functions return:
 |---|---|
 | `send(from, to, amount, options = {})` | Send ALGO |
 | `validate(addressOrAlias)` | Send 0 ALGO to self to validate signing |
-| `sweep(from, to, options = {})` | Close account and send remaining ALGO to `to` |
+| `sweep(from, to, options = {})` | Send each account's balance, less `leaving`, to `to`. The accounts stay open. `from` is one account or an array |
 | `close(from, to, options = {})` | Close account; supports LogicSig runtime args |
 
 Examples:
 
 ```javascript
 send("alice", "bob", algo(2), { note: "rent" })
-sweep("old-account", "treasury", { wait: true })
+sweep("hot-wallet", "treasury", { leaving: algo(1) })        // keep 1 ALGO
+sweep("hot-wallet", "treasury")                              // keep only the minimum balance
+sweep(["a", "b"], "treasury", { asset: 31566704 })           // an ASA, all of it
 
 close("htlc-lsig", "treasury", {
   lsigArgs: {
@@ -306,6 +308,34 @@ close("htlc-lsig", "treasury", {
   }
 })
 ```
+
+`sweep()` is the shell's `sweep` command. It does not close the account; that
+is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
+`leaving` (what to keep in each account, in microAlgos or the asset's base
+units), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
+no `note`. An option that is present must have a value: `{leaving: undefined}`
+is an error, not "leave nothing".
+
+It returns `{asset, to, simulated, succeeded, failed, items}`, where each item
+is `{from, amount, txid, confirmed, skipped, error}`. `amount` is what was to
+be sent from that account, whether or not it was: count only items with no
+`error` and no `skipped`. `simulated` is true when simulate mode was on, in
+which case nothing was sent. An account with nothing
+above `leaving`, or one not opted into the asset, is skipped: `skipped` gives
+the reason and nothing is sent. When some transactions fail, read `failed` and
+each item's `error`. When every transaction fails, `sweep()` throws, with each
+account's reason.
+
+A failed item can still have a `txid`: the transaction was sent and waiting
+for its confirmation failed, because it timed out or the network dropped it.
+The thrown message names such a transaction ("sent as ..."). Check whether it
+confirmed before retrying.
+
+Without `leaving`, an ALGO sweep leaves each account its own minimum balance,
+which is the most an open account can send, and an ASA sweep leaves nothing.
+`leaving: 0` on an ALGO sweep is taken as written: it tries to send the whole
+balance less fees, and the network refuses that. Use `close()` to empty an
+account.
 
 ### ASA
 

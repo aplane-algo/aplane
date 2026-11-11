@@ -1349,6 +1349,13 @@ The JS API includes:
 This is a convenience surface, not a separate architecture. JS bindings call
 into the same engine primitives as the CLI.
 
+One binding calls a shell workflow instead: `sweep()` runs `apshellapp`'s
+sweep through `jsapi.Sweeper`, which the app hands to the runner
+(`apshellapp/script_runtime.go`). `apshellapp` imports `jsapi`, so the
+dependency points that way. The function and the command are one
+implementation. The other bindings that share a command's name (`close()`,
+`rekey()`) still prepare their transaction through the engine themselves.
+
 #### Shared input parsing
 
 `internal/appinput/` holds app-specific parsing helpers reused by shell and JS

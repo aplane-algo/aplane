@@ -29,14 +29,63 @@ type PluginExecutor interface {
 	ExecutePlugin(name string, args []string) (success bool, message string, data interface{}, presentation interface{}, err error)
 }
 
+// Sweeper runs the shell's sweep for sweep(). The sweep command's workflow
+// lives in apshellapp, which imports this package, so the host hands it in:
+// sweep() and the sweep command are then one implementation and cannot come
+// to mean different things.
+type Sweeper interface {
+	Sweep(ctx context.Context, req SweepRequest) (*SweepResult, error)
+}
+
+// SweepRequest is what sweep() asks for. Amounts are in base units, as
+// everywhere in the JS API.
+type SweepRequest struct {
+	From    []string
+	To      string
+	AssetID uint64 // 0 is ALGO
+	// Leaving is read only when LeavingSet. Without it an ALGO sweep leaves
+	// each account its minimum balance and an ASA sweep leaves nothing.
+	Leaving    uint64
+	LeavingSet bool
+	Fee        uint64
+	UseFlatFee bool
+	Wait       bool
+	LsigArgs   map[string][]byte
+}
+
+// SweepResult is the outcome of a sweep, one item per source account.
+type SweepResult struct {
+	AssetID uint64
+	To      string
+	// Simulated is true when simulate mode was on: nothing was sent.
+	Simulated bool
+	Succeeded int
+	Failed    int
+	Items     []SweepItem
+}
+
+// SweepItem is one source account's outcome. Amount is what was to be sent,
+// whether or not it was. Skipped says why nothing was sent (not an error);
+// Error says why a transaction failed. A failed item can still carry a TxID:
+// the transaction was sent and waiting for its confirmation failed.
+type SweepItem struct {
+	From      string
+	Amount    uint64
+	TxID      string
+	Confirmed bool
+	Skipped   string
+	Error     string
+}
+
 // API provides JavaScript bindings for the engine.
 type API struct {
 	engine         *engine.Engine
 	runtime        *goja.Runtime
 	verbose        bool
 	output         func(string)
-	pluginMu       sync.RWMutex
+	hostMu         sync.RWMutex
 	pluginExecutor PluginExecutor
+	sweeper        Sweeper
 	ctxMu          sync.RWMutex
 	ctx            context.Context
 }
@@ -80,14 +129,27 @@ func (a *API) SetContext(ctx context.Context) func() {
 
 // SetPluginExecutor sets the plugin executor for the API.
 func (a *API) SetPluginExecutor(executor PluginExecutor) {
-	a.pluginMu.Lock()
-	defer a.pluginMu.Unlock()
+	a.hostMu.Lock()
+	defer a.hostMu.Unlock()
 	a.pluginExecutor = executor
 }
 
+// SetSweeper sets the host's sweep implementation for sweep().
+func (a *API) SetSweeper(sweeper Sweeper) {
+	a.hostMu.Lock()
+	defer a.hostMu.Unlock()
+	a.sweeper = sweeper
+}
+
+func (a *API) getSweeper() Sweeper {
+	a.hostMu.RLock()
+	defer a.hostMu.RUnlock()
+	return a.sweeper
+}
+
 func (a *API) getPluginExecutor() PluginExecutor {
-	a.pluginMu.RLock()
-	defer a.pluginMu.RUnlock()
+	a.hostMu.RLock()
+	defer a.hostMu.RUnlock()
 	return a.pluginExecutor
 }
 

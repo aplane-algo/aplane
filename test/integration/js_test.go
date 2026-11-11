@@ -195,9 +195,22 @@ const validation = validate(%q);
 print("validate=" + validation.txid);
 const payment = send(%q, %q, algo(0.1));
 print("send=" + payment.txid);
+const swept = sweep(%q, %q);
+print("sweep=" + [swept.succeeded, swept.failed, swept.items[0].amount > 0, swept.items[0].confirmed].join(","));
+print("after-sweep=" + balance(%q).algo);
 const closeout = close(%q, %q);
 print("close=" + closeout.txid);
-`, sourceAddr, sourceAddr, recipientAddr, sourceAddr, env.fundingAddr))
+`, sourceAddr, sourceAddr, recipientAddr, sourceAddr, env.fundingAddr, sourceAddr, sourceAddr, env.fundingAddr))
+
+	// sweep() is the sweep command: the account stays open. (It used to
+	// close the account.) Given no amount to leave, an ALGO sweep leaves the
+	// account its minimum balance, 100000 microAlgos for this bare account.
+	if !strings.Contains(output, "sweep=1,0,true,true") {
+		t.Fatalf("sweep() did not send one confirmed transaction:\n%s", output)
+	}
+	if !strings.Contains(output, "after-sweep=100000\n") {
+		t.Fatalf("the swept account does not hold its minimum balance:\n%s", output)
+	}
 
 	if !strings.Contains(output, "validate=") {
 		t.Fatalf("missing validate output:\n%s", output)

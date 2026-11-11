@@ -493,9 +493,10 @@ func ParseSweepCommand(args []string) (SweepParams, error) {
 		Wait:       true,
 		Fee:        0,
 		UseFlatFee: false,
-		Leaving:    cmdspec.AmountText("0"), // Default: sweep everything
-		FromRaw:    nil,                     // nil = use all signable accounts
-		ToRaw:      "",
+		// Leaving stays empty when the command gives none: the sweep then
+		// leaves an ALGO account its minimum balance, and nothing of an ASA.
+		FromRaw: nil, // nil = use all signable accounts
+		ToRaw:   "",
 	}
 
 	if len(args) < 3 {
