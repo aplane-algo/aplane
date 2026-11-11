@@ -77,15 +77,16 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 	}
 	prepared := preparedMethodCallFromEngine(preparedResult)
 
+	refs := countReferences(preparedResult.Prep.Transaction)
 	result := &AppCallMethodResult{
 		FromAddress:    fromAddr,
 		SigningKeyType: prepared.Prep.SigningContext.DisplayKeyType,
 		Method:         prepared.MethodSignature,
 		ArgsCount:      len(req.ArgValues),
-		AccountsCount:  len(accounts),
-		AppsCount:      len(req.ForeignApps),
-		AssetsCount:    len(foreignAssets),
-		BoxesCount:     len(req.Boxes),
+		AccountsCount:  refs.accounts,
+		AppsCount:      refs.apps,
+		AssetsCount:    refs.assets,
+		BoxesCount:     refs.boxes,
 		Note:           req.Note,
 		PayAmount:      req.PayAmount,
 		Structured: appresult.AppCall{

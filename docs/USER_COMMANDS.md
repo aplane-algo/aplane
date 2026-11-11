@@ -1147,6 +1147,23 @@ An ABI argument (`--arg`) for a `uintN`, `byte` or `ufixedNxM` type must be a
 plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
 `1_000` and `null` are refused: they are not read as octal, hex, a grouped
 number or zero.
+
+The apps you list with `app=` are sent exactly as typed: in that order, with
+any repeats, and with the called app if you list it. A program reads them by
+position, so the list is never tidied. A box reference to another app
+(`box=<app-id>:<name>`) adds that app at the end only when your list doesn't
+already have it.
+
+Each entry uses one of the call's reference slots, repeats and the called app
+included, so a call near the network's limit can be rejected by the node.
+`app=0` is refused.
+
+A box written without an app ID (`box=<name>`) belongs to the called app and
+always points at position 0, whether or not you also list the called app.
+A box written with an app ID (`box=<app-id>:<name>`) points at that app's
+position in your list, the called app's included; write it that way only when
+a program expects the box under the listed position.
+
 Application update calls (`oncomp=update`) require both approval and clear
 program paths. Approval and clear program options are rejected for other
 on-completion modes.

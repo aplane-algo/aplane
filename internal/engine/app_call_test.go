@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,20 +135,27 @@ func TestPrepareAppCallRaw_UpdateRequiresPrograms(t *testing.T) {
 }
 
 func TestEnsureAppReferences(t *testing.T) {
+	// The caller's list is kept exactly: order, the repeated 11, and the
+	// called app 10 all stay where they were put. Of the box apps, only 13 is
+	// missing and is appended.
 	result := ensureAppReferences(10, []uint64{11, 12, 11, 10}, []types.AppBoxReference{
 		{AppID: 10, Name: []byte("self")},
 		{AppID: 13, Name: []byte("foreign")},
 		{AppID: 12, Name: []byte("dup")},
+		{AppID: 13, Name: []byte("again")},
+		{Name: []byte("current")},
 	})
-
-	want := []uint64{11, 12, 13}
-	if len(result) != len(want) {
-		t.Fatalf("len(result) = %d, want %d (%v)", len(result), len(want), result)
+	if want := []uint64{11, 12, 11, 10, 13}; !slices.Equal(result, want) {
+		t.Fatalf("ensureAppReferences() = %v, want %v", result, want)
 	}
-	for i := range want {
-		if result[i] != want[i] {
-			t.Fatalf("result[%d] = %d, want %d (full=%v)", i, result[i], want[i], result)
-		}
+
+	explicit := []uint64{7, 7}
+	if got := ensureAppReferences(10, explicit, nil); !slices.Equal(got, explicit) {
+		t.Fatalf("ensureAppReferences() = %v, want the list as given %v", got, explicit)
+	}
+	// A box of the called app alone adds nothing.
+	if got := ensureAppReferences(10, nil, []types.AppBoxReference{{AppID: 10, Name: []byte("self")}}); len(got) != 0 {
+		t.Fatalf("ensureAppReferences() = %v, want none", got)
 	}
 }
 
@@ -203,6 +211,7 @@ func TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs(t *testing.T) {
 		Boxes: []types.AppBoxReference{
 			{AppID: 123, Name: []byte("self")},
 			{AppID: 789, Name: []byte("foreign")},
+			{Name: []byte("bare")},
 		},
 		OnCompletion: types.OptInOC,
 		Note:         "memo",
@@ -232,8 +241,16 @@ func TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs(t *testing.T) {
 	if len(prep.Transaction.Accounts) != 1 || prep.Transaction.Accounts[0].String() != account {
 		t.Fatalf("Accounts = %#v, want [%s]", prep.Transaction.Accounts, account)
 	}
-	if len(prep.Transaction.ForeignApps) != 2 || prep.Transaction.ForeignApps[0] != 456 || prep.Transaction.ForeignApps[1] != 789 {
-		t.Fatalf("ForeignApps = %#v, want [456 789]", prep.Transaction.ForeignApps)
+	// The explicit list stays as given, the called app and the repeat
+	// included; the box's app 789 is appended because the list lacks it.
+	if want := []types.AppIndex{456, 123, 456, 789}; !slices.Equal(prep.Transaction.ForeignApps, want) {
+		t.Fatalf("ForeignApps = %v, want %v", prep.Transaction.ForeignApps, want)
+	}
+	// The called app named by ID points at its listed position; a box with no
+	// app ID is index 0 even though the called app is listed.
+	if boxes := prep.Transaction.BoxReferences; len(boxes) != 3 ||
+		boxes[0].ForeignAppIdx != 2 || boxes[1].ForeignAppIdx != 4 || boxes[2].ForeignAppIdx != 0 {
+		t.Fatalf("BoxReferences = %+v, want the named called app at 2, app 789 at 4, the bare box at 0", boxes)
 	}
 	if len(prep.Transaction.ForeignAssets) != 1 || prep.Transaction.ForeignAssets[0] != 999 {
 		t.Fatalf("ForeignAssets = %#v, want [999]", prep.Transaction.ForeignAssets)
@@ -451,4 +468,21 @@ func writeTempProgram(t *testing.T, name string, data []byte) string {
 		t.Fatalf("failed to write %s: %v", name, err)
 	}
 	return path
+}
+
+func TestPrepareAppCallRawRefusesAZeroForeignApp(t *testing.T) {
+	from := testAddr(1)
+	transport := newAccountMockTransport(t)
+	transport.addAccount(from, 1_000_000)
+	eng := setupEngineWithMockAlgod(t, transport)
+
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
+		AppID:        123,
+		From:         from,
+		ForeignApps:  []uint64{456, 0, 789},
+		OnCompletion: types.NoOpOC,
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid foreign app 2") {
+		t.Fatalf("PrepareAppCallRaw with a zero foreign app: %v, want it refused by position", err)
+	}
 }

@@ -7,6 +7,21 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## App calls keep the apps you list, as you list them
+
+- `app call`, `app call raw` and the JS `appCall()` / `appCallRaw()` used to
+  tidy the foreign-apps list: repeats were dropped and the called app was
+  removed. A program that reads the list by position (`txna Applications N`)
+  then found its apps moved.
+- The list is now sent exactly as given: order, repeats, and the called app.
+- An app needed only by a box reference is still added for you, at the end,
+  and only when the list doesn't already have it.
+- A box written without an app ID always points at position 0, whether or
+  not the called app is listed.
+- Repeats and the called app now use reference slots, so a call that listed
+  them near the network's limit can be rejected by the node. `app=0`, which
+  used to be dropped, is refused.
+
 ## The signer refuses request bytes that aren't canonical
 
 - `/sign` and `/plan` decoded a request's transaction bytes leniently: the `TX`

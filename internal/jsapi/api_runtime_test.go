@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -916,6 +917,17 @@ func TestAtomicAndAppHelpers(t *testing.T) {
 	}
 	if opts.OnCompletion != types.OptInOC {
 		t.Fatalf("OnCompletion = %v, want OptInOC", opts.OnCompletion)
+	}
+
+	// Apps are kept exactly as listed: order, repeats, and the called app (7).
+	listed := api.parseAppCallOptions(goja.FunctionCall{Arguments: []goja.Value{
+		api.runtime.ToValue(7),
+		api.runtime.ToValue("from"),
+		api.runtime.ToValue([]interface{}{"arg"}),
+		api.runtime.ToValue(map[string]interface{}{"apps": []interface{}{int64(9), int64(7), "9", int64(4)}}),
+	}}, 3, "appCallRaw()", 7)
+	if want := []uint64{9, 7, 9, 4}; !slices.Equal(listed.ForeignApps, want) {
+		t.Fatalf("apps = %v, want them as listed %v", listed.ForeignApps, want)
 	}
 
 	deployOpts := api.parseAppDeployOptions(goja.FunctionCall{Arguments: []goja.Value{

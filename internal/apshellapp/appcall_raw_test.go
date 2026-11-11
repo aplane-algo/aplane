@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -71,5 +72,19 @@ func TestDecorateAppCallRawResult(t *testing.T) {
 	}
 	if got := result.ConfirmedLines[0]; got != "Confirmed grouped raw app call on app 77" {
 		t.Fatalf("confirmed line = %q", got)
+	}
+}
+
+func TestCountReferencesReadsTheBuiltTransaction(t *testing.T) {
+	txn := types.Transaction{
+		ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+			Accounts:      []types.Address{{1}},
+			ForeignApps:   []types.AppIndex{456, 456, 789},
+			ForeignAssets: []types.AssetIndex{5, 6},
+			BoxReferences: []types.BoxReference{{Name: []byte("a")}, {ForeignAppIdx: 3, Name: []byte("b")}},
+		}},
+	}
+	if got := countReferences(txn); got != (referenceCounts{accounts: 1, apps: 3, assets: 2, boxes: 2}) {
+		t.Fatalf("countReferences() = %+v", got)
 	}
 }

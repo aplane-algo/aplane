@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -57,6 +58,13 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 	for i, account := range params.Accounts {
 		if _, err := types.DecodeAddress(account); err != nil {
 			return nil, fmt.Errorf("invalid account %d address: %w", i+1, err)
+		}
+	}
+	// The list is sent as given, so a zero is refused, not dropped: dropping
+	// it would move every app listed after it.
+	for i, appID := range params.ForeignApps {
+		if appID == 0 {
+			return nil, fmt.Errorf("invalid foreign app %d: app id must be non-zero", i+1)
 		}
 	}
 	for i, assetID := range params.ForeignAssets {
@@ -184,23 +192,33 @@ func (e *Engine) PrepareAppCallMethod(ctx context.Context, params MethodAppCallP
 
 var appspecAppCallInfoRaw = signerapi.AppCallInfo{Mode: "raw"}
 
+// ensureAppReferences returns the call's foreign apps: the caller's list
+// exactly as given, then any app a box reference needs that the list lacks.
+//
+// The caller's entries are kept in order, duplicates and the called app
+// included. A program reads them by position (`txna Applications N`), so
+// tidying the list would move the apps it expects.
+//
+// Which entry a box then points at is the Algorand SDK's rule
+// (`parseBoxReferences`), not decided here:
+//   - a box with app ID 0 is the called app's and is always index 0. The
+//     parsers give a box written without an app ID this form, so its bytes
+//     don't depend on whether the called app is also listed;
+//   - a box with an app ID points at the first entry in the list that
+//     matches, and at index 0 when the ID is the called app's and the list
+//     doesn't have it.
+//
+// TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs pins all three.
 func ensureAppReferences(curAppID uint64, foreignApps []uint64, boxes []types.AppBoxReference) []uint64 {
-	seen := make(map[uint64]bool, len(foreignApps))
-	result := make([]uint64, 0, len(foreignApps))
-
-	for _, appID := range foreignApps {
-		if appID == 0 || appID == curAppID || seen[appID] {
-			continue
-		}
-		seen[appID] = true
-		result = append(result, appID)
-	}
+	result := make([]uint64, len(foreignApps), len(foreignApps)+len(boxes))
+	copy(result, foreignApps)
 
 	for _, box := range boxes {
-		if box.AppID == 0 || box.AppID == curAppID || seen[box.AppID] {
+		// A box of the called app needs no entry added: the SDK resolves it
+		// to the called app's listed position, or to index 0 when unlisted.
+		if box.AppID == 0 || box.AppID == curAppID || slices.Contains(result, box.AppID) {
 			continue
 		}
-		seen[box.AppID] = true
 		result = append(result, box.AppID)
 	}
 
