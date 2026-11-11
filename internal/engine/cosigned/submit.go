@@ -272,10 +272,10 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 	for _, component := range componentResp.Components {
 		target, ok := targetsByIndex[component.TargetIndex]
 		if !ok || component.Kind != signerapi.ComponentTargetKindBoundedBase || component.AuthAddress != target.Account {
-			return nil, "", fmt.Errorf("signer returned unexpected bounded component target %d", component.TargetIndex)
+			return nil, "", fmt.Errorf("signer returned an unexpected bounded component for target index %d", component.TargetIndex)
 		}
 		if _, duplicate := components[component.TargetIndex]; duplicate {
-			return nil, "", fmt.Errorf("signer returned duplicate bounded component target %d", component.TargetIndex)
+			return nil, "", fmt.Errorf("signer returned a duplicate bounded component for target index %d", component.TargetIndex)
 		}
 		components[component.TargetIndex] = component
 	}
@@ -377,7 +377,7 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 		// planned or approved.
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
 		if _, held := s.cache.AuthorizationKind(effectiveSigner); !held {
-			return nil, fmt.Errorf("transaction %d: the signer holds no key for %s; every position of a cosigned group must be signed by this signer (run keys refresh if the key is new)", i+1, effectiveSigner)
+			return nil, fmt.Errorf("transaction at index %d: the signer holds no key for %s; every position of a cosigned group must be signed by this signer (run keys refresh if the key is new)", i, effectiveSigner)
 		}
 		requests[i] = signModeRequest(i, effectiveSigner, txn.Sender.String(), txnHex, opts)
 	}
@@ -397,7 +397,7 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 	}
 	for i, txn := range assembled {
 		if got := txnutil.EncodeWithPrefixHex(txn); got != groupBytesHex[i] {
-			return fmt.Errorf("assembled transaction %d does not match the frozen canonical bytes", i)
+			return fmt.Errorf("assembled transaction at index %d does not match the frozen canonical bytes", i)
 		}
 	}
 	return nil
@@ -475,7 +475,7 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTa
 			continue
 		}
 		if fee := uint64(planned[target.Index].Fee); fee > *target.BoundedMaxFee {
-			return fmt.Errorf("bounded target %d fee %d exceeds advertised max_fee %d", target.Index, fee, *target.BoundedMaxFee)
+			return fmt.Errorf("bounded target at index %d: fee %d exceeds advertised max_fee %d", target.Index, fee, *target.BoundedMaxFee)
 		}
 	}
 	return nil
@@ -505,15 +505,15 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 			// for context and budget accounting but not signed here.
 			target := cosignedTargets[i]
 			if target.Sender != sender {
-				return nil, nil, fmt.Errorf("cosigned target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
+				return nil, nil, fmt.Errorf("cosigned target at index %d: sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
 			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
 			path, err := cosignedLogicSigResourcePath(target)
 			if err != nil {
-				return nil, nil, fmt.Errorf("cosigned target %d: %w", i, err)
+				return nil, nil, fmt.Errorf("cosigned target at index %d: %w", i, err)
 			}
 			if err := applyForeignLogicSigPathHint(&signRequests[i], s.cache, target.Account, path); err != nil {
-				return nil, nil, fmt.Errorf("cosigned target %d: %w", i, err)
+				return nil, nil, fmt.Errorf("cosigned target at index %d: %w", i, err)
 			}
 		default:
 			// Non-cosigned original: sign mode over the canonical bytes. Resolve
@@ -597,7 +597,7 @@ func (s *Signer) requestNonCosignedSignatures(ctx context.Context, plannedTxns [
 	signed := make(map[int]string, len(nonCosigned))
 	for _, i := range nonCosigned {
 		if signResp.Signed[i] == "" {
-			return nil, fmt.Errorf("signer returned no signature for non-cosigned position %d", i+1)
+			return nil, fmt.Errorf("signer returned no signature for the non-cosigned position at index %d", i)
 		}
 		signed[i] = signResp.Signed[i]
 	}
@@ -874,12 +874,12 @@ func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn,
 	for i, item := range signedHex {
 		decoded, err := hex.DecodeString(item)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction %d: %w", i+1, err)
+			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction at index %d: %w", i, err)
 		}
 		signedBytes[i] = decoded
 		stxn, err := clientsign.DecodeSignedTxnToSubmit(decoded)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("assembled signed transaction %d: %w", i+1, err)
+			return nil, nil, nil, fmt.Errorf("assembled signed transaction at index %d: %w", i, err)
 		}
 		signedObjects[i] = stxn
 		txns[i] = stxn.Txn

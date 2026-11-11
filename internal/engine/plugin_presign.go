@@ -125,7 +125,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	for i, txnHex := range planResp.Transactions {
 		txn, err := txnutil.DecodePrefixedHex(txnHex)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode canonical transaction %d: %w", i, err)
+			return nil, fmt.Errorf("failed to decode canonical transaction at index %d: %w", i, err)
 		}
 		canonicalTxns[i] = txn
 	}
@@ -164,7 +164,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		} else {
 			stxn, err := signing.SignDummyTransaction(ctxn)
 			if err != nil {
-				return nil, fmt.Errorf("failed to sign dummy transaction %d: %w", i, err)
+				return nil, fmt.Errorf("failed to sign dummy transaction at index %d: %w", i, err)
 			}
 			passthrough[i] = hex.EncodeToString(msgpack.Encode(stxn))
 			passthroughResources[i] = dummyLogicSigResourceUsage()
@@ -182,15 +182,15 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	for _, s := range signed {
 		ctxn, ok := expected[s.Index]
 		if !ok {
-			return nil, fmt.Errorf("plugin signed unexpected slot %d", s.Index)
+			return nil, fmt.Errorf("plugin signed an unexpected slot at index %d", s.Index)
 		}
 		if _, dup := passthrough[s.Index]; dup {
-			return nil, fmt.Errorf("plugin returned duplicate slot %d", s.Index)
+			return nil, fmt.Errorf("plugin returned a duplicate slot at index %d", s.Index)
 		}
 		authorization := expectedAuthorization[s.Index]
 		signedHex, err := validatePluginSignedSlot(ctxn, s.Encoded, authorization)
 		if err != nil {
-			return nil, fmt.Errorf("plugin slot %d: %w", s.Index, err)
+			return nil, fmt.Errorf("plugin slot at index %d: %w", s.Index, err)
 		}
 		passthrough[s.Index] = signedHex
 		if authorization.LsigResources != nil {
@@ -230,7 +230,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		signedObjects := make([]types.SignedTxn, len(finalSignedTxns))
 		for i, signedBytes := range finalSignedTxns {
 			if err := msgpack.Decode(signedBytes, &signedObjects[i]); err != nil {
-				return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+				return nil, fmt.Errorf("failed to decode signed transaction at index %d: %w", i, err)
 			}
 		}
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(ctx, signedObjects, e.AlgodClient, &output)
@@ -328,7 +328,7 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 		if _, owned := pluginSignerRefs[draft[changed.Index].Sender.String()]; owned {
 			owner = "plugin"
 		}
-		return fmt.Errorf("plan modified %s slot %d beyond its group id and reported fee", owner, changed.Index)
+		return fmt.Errorf("plan modified %s slot at index %d beyond its group id and reported fee", owner, changed.Index)
 	}
 	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
 	if err != nil {
@@ -353,16 +353,16 @@ func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[
 	for i, signedBytes := range signed {
 		if sentHex, ok := passthrough[i]; ok {
 			if hex.EncodeToString(signedBytes) != sentHex {
-				return fmt.Errorf("signer altered passthrough slot %d", i)
+				return fmt.Errorf("signer altered the passthrough slot at index %d", i)
 			}
 			continue
 		}
 		stxn, err := clientsign.DecodeSignedTxnToSubmit(signedBytes)
 		if err != nil {
-			return fmt.Errorf("signed slot %d: %w", i, err)
+			return fmt.Errorf("signed slot at index %d: %w", i, err)
 		}
 		if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(canonicalTxns[i])) {
-			return fmt.Errorf("signer signed a different transaction at slot %d than was planned", i)
+			return fmt.Errorf("signer signed a different transaction than was planned at index %d", i)
 		}
 	}
 	return nil

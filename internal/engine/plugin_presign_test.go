@@ -133,7 +133,7 @@ func TestValidatePluginPlan(t *testing.T) {
 			tc.mutate(&planned[1])
 			regroupPlan(t, planned)
 			err := validatePluginPlan(drafts, planned, report, refs)
-			if err == nil || !strings.Contains(err.Error(), "plugin slot 1") {
+			if err == nil || !strings.Contains(err.Error(), "plugin slot at index 1") {
 				t.Fatalf("expected plugin slot rejection when %s changed, got %v", tc.name, err)
 			}
 		})
@@ -222,10 +222,10 @@ func TestVerifySignedAgainstPlan(t *testing.T) {
 	}
 	other := canonical[0]
 	other.Amount++
-	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(other), pluginSigned}); err == nil || !strings.Contains(err.Error(), "different transaction at slot 0") {
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(other), pluginSigned}); err == nil || !strings.Contains(err.Error(), "different transaction than was planned at index 0") {
 		t.Fatalf("substituted managed slot: got %v", err)
 	}
-	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0]), sign(canonical[0])}); err == nil || !strings.Contains(err.Error(), "altered passthrough slot 1") {
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0]), sign(canonical[0])}); err == nil || !strings.Contains(err.Error(), "altered the passthrough slot at index 1") {
 		t.Fatalf("altered passthrough slot: got %v", err)
 	}
 	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0])}); err == nil {
@@ -235,7 +235,7 @@ func TestVerifySignedAgainstPlan(t *testing.T) {
 	// canonical encoding of the transaction that was checked.
 	for name, variant := range nonCanonicalSignedTxnVariants(t, sign(canonical[0])) {
 		if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{variant, pluginSigned}); !errors.Is(err, cosignercanonical.ErrNotCanonical) ||
-			!strings.HasPrefix(err.Error(), "signed slot 0: ") {
+			!strings.HasPrefix(err.Error(), "signed slot at index 0: ") {
 			t.Errorf("managed slot with %s: got %v, want refused as not canonical", name, err)
 		}
 	}

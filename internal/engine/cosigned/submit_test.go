@@ -496,10 +496,13 @@ func TestDecodeCosignedSignedGroupRefusesBytesThatAreNotCanonical(t *testing.T) 
 		"second transaction": append(append([]byte{}, signed...), signed...),
 		"repeated field":     repeated,
 	} {
-		_, _, _, err := decodeCosignedSignedGroup([]string{hex.EncodeToString(raw)})
-		if !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "assembled signed transaction 1: ") {
-			t.Errorf("%s: error = %v, want refused as not canonical", name, err)
+		_, _, _, err := decodeCosignedSignedGroup([]string{hex.EncodeToString(signed), hex.EncodeToString(raw)})
+		if !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "assembled signed transaction at index 1: ") {
+			t.Errorf("%s: error = %v, want refused as not canonical at index 1", name, err)
 		}
+	}
+	if _, _, _, err := decodeCosignedSignedGroup([]string{hex.EncodeToString(signed), "zz"}); err == nil || !strings.HasPrefix(err.Error(), "failed to decode assembled signed transaction at index 1: ") {
+		t.Errorf("invalid hex: error = %v, want it named by its zero-based index", err)
 	}
 }
 

@@ -71,13 +71,13 @@ func TestDecodeGroupSignResponse(t *testing.T) {
 			name:    "empty position",
 			signed:  []string{"0102", ""},
 			want:    2,
-			wantErr: "signer returned no signature for position 2",
+			wantErr: "signer returned no signature at index 1",
 		},
 		{
 			name:    "invalid hex",
 			signed:  []string{"zz"},
 			want:    1,
-			wantErr: "failed to decode signed transaction 1",
+			wantErr: "failed to decode signed transaction at index 0",
 		},
 		{
 			name:   "empty response for empty request",

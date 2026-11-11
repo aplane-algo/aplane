@@ -117,7 +117,7 @@ func TestProcessSignedTransactionIntents(t *testing.T) {
 	for name, variant := range nonCanonicalSignedTxnVariants(t, raw0) {
 		t.Run(name+" refused", func(t *testing.T) {
 			intents := []string{base64.StdEncoding.EncodeToString(variant), encoded[1]}
-			if _, _, err := decodeSignedTxnIntents(intents); !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction 1: ") {
+			if _, _, err := decodeSignedTxnIntents(intents); !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction at index 0: ") {
 				t.Fatalf("error = %v, want refused as not canonical", err)
 			}
 			if _, err := DecodePregroupedSigned(intents); err == nil {
@@ -176,16 +176,16 @@ func TestValidatePregroupedSigned(t *testing.T) {
 	t.Run("missing group id rejects", func(t *testing.T) {
 		_, stxns := signedGroup(t, "a", "b")
 		stxns[0].Txn.Group = types.Digest{}
-		if err := validatePregroupedSigned(stxns); err == nil {
-			t.Fatal("want error when a slot has no group id")
+		if err := validatePregroupedSigned(stxns); err == nil || !strings.Contains(err.Error(), "transaction at index 0 has no group ID") {
+			t.Fatalf("error = %v, want the slot without a group id named by its zero-based index", err)
 		}
 	})
 
 	t.Run("mismatched group ids reject", func(t *testing.T) {
 		_, stxns := signedGroup(t, "a", "b")
 		stxns[1].Txn.Group[0] ^= 0xFF
-		if err := validatePregroupedSigned(stxns); err == nil {
-			t.Fatal("want error when group ids differ")
+		if err := validatePregroupedSigned(stxns); err == nil || !strings.Contains(err.Error(), "transaction at index 1 has a group ID that differs from index 0") {
+			t.Fatalf("error = %v, want the differing slot named by its zero-based index", err)
 		}
 	})
 

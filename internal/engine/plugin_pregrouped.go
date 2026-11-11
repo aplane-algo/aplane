@@ -76,15 +76,15 @@ func decodeSignedTxnIntents(encoded []string) ([]types.SignedTxn, [][]byte, erro
 	rawBytes := make([][]byte, len(encoded))
 	for i, enc := range encoded {
 		if enc == "" {
-			return nil, nil, fmt.Errorf("transaction %d: missing encoded data", i+1)
+			return nil, nil, fmt.Errorf("transaction at index %d: missing encoded data", i)
 		}
 		raw, err := base64.StdEncoding.DecodeString(enc)
 		if err != nil {
-			return nil, nil, fmt.Errorf("transaction %d: failed to decode base64: %w", i+1, err)
+			return nil, nil, fmt.Errorf("transaction at index %d: failed to decode base64: %w", i, err)
 		}
 		st, err := clientsign.DecodeSignedTxnToSubmit(raw)
 		if err != nil {
-			return nil, nil, fmt.Errorf("transaction %d: %w", i+1, err)
+			return nil, nil, fmt.Errorf("transaction at index %d: %w", i, err)
 		}
 		stxns[i] = st
 		rawBytes[i] = raw
@@ -117,14 +117,14 @@ func validatePregroupedSigned(stxns []types.SignedTxn) error {
 
 	group := stxns[0].Txn.Group
 	if group == (types.Digest{}) {
-		return fmt.Errorf("pregrouped-signed: transaction 1 has no group ID")
+		return fmt.Errorf("pregrouped-signed: transaction at index 0 has no group ID")
 	}
 	for i, st := range stxns {
 		if st.Txn.Group == (types.Digest{}) {
-			return fmt.Errorf("pregrouped-signed: transaction %d has no group ID", i+1)
+			return fmt.Errorf("pregrouped-signed: transaction at index %d has no group ID", i)
 		}
 		if st.Txn.Group != group {
-			return fmt.Errorf("pregrouped-signed: transaction %d group ID differs from transaction 1", i+1)
+			return fmt.Errorf("pregrouped-signed: transaction at index %d has a group ID that differs from index 0", i)
 		}
 	}
 
