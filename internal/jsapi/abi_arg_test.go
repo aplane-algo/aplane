@@ -5,6 +5,7 @@ package jsapi
 
 import (
 	"encoding/hex"
+	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -105,5 +106,75 @@ func TestAppCallArgumentsRefuseWhatHasNoABIValue(t *testing.T) {
 	}
 	if text, err := abiArgText(big.NewInt(7), "uint64"); err != nil || text != "7" {
 		t.Errorf("abiArgText(big 7) = %q, %v", text, err)
+	}
+}
+
+// runJSAmount evaluates a JavaScript expression through toUint64, the way an
+// amount, fee or ID argument is read.
+func runJSAmount(t *testing.T, expr string) (value uint64, err error) {
+	t.Helper()
+	vm := goja.New()
+	v, runErr := vm.RunString(expr)
+	if runErr != nil {
+		t.Fatalf("run %s: %v", expr, runErr)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	return toUint64(vm, v), nil
+}
+
+func TestJSNumbersAreNeverCoerced(t *testing.T) {
+	accepted := map[string]uint64{
+		`5`:                      5,
+		`0`:                      0,
+		`"100"`:                  100,
+		`"18446744073709551615"`: 18446744073709551615,
+		`18446744073709551615n`:  18446744073709551615,
+		`9007199254740991`:       9007199254740991,
+	}
+	for expr, want := range accepted {
+		if got, err := runJSAmount(t, expr); err != nil || got != want {
+			t.Errorf("%s = %d, %v; want %d", expr, got, err, want)
+		}
+	}
+	// What JavaScript would turn into a number without saying so.
+	for _, expr := range []string{
+		`null`, `undefined`, `""`, `true`, `false`, `"0x10"`, `"1e6"`, `"0100"`, `"+5"`, `" 5"`,
+		`"abc"`, `({})`, `[]`, `[5]`, `-1`, `1.5`, `-1n`, `2 ** 64`, `9007199254740993`, `18446744073709551616n`,
+	} {
+		if got, err := runJSAmount(t, expr); err == nil {
+			t.Errorf("%s = %d, want refused", expr, got)
+		}
+	}
+}
+
+func TestJSNameArgumentsRefuseUndefinedAndNull(t *testing.T) {
+	api := &API{runtime: goja.New()}
+	read := func(expr string) (text string, err error) {
+		v, runErr := api.runtime.RunString(expr)
+		if runErr != nil {
+			t.Fatalf("run %s: %v", expr, runErr)
+		}
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("%v", r)
+			}
+		}()
+		return api.stringArg(goja.FunctionCall{Arguments: []goja.Value{v}}, 0), nil
+	}
+	for expr, want := range map[string]string{`"alice"`: "alice", `31566704`: "31566704", `""`: ""} {
+		if got, err := read(expr); err != nil || got != want {
+			t.Errorf("%s = %q, %v; want %q", expr, got, err, want)
+		}
+	}
+	// JavaScript would hand these over as the words "undefined" and "null",
+	// which would then be looked up as an alias.
+	for _, expr := range []string{`undefined`, `null`, `({})`, `[]`, `true`} {
+		if got, err := read(expr); err == nil {
+			t.Errorf("%s = %q, want refused", expr, got)
+		}
 	}
 }

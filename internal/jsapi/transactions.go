@@ -24,7 +24,7 @@ import (
 // jsValidate validates signing capability by sending 0 ALGO to self.
 func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "validate() requires an address or alias argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 
 	addr, _, err := a.engine.ResolveAddress(addressOrAlias)
 	if err != nil {
@@ -56,8 +56,8 @@ func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 // jsSend sends ALGO from one account to another.
 func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 3, "send() requires from, to, and amount arguments")
-	from := call.Arguments[0].String()
-	to := call.Arguments[1].String()
+	from := a.stringArg(call, 0)
+	to := a.stringArg(call, 1)
 	amount := toUint64(a.runtime, call.Arguments[2])
 
 	opts := a.parseTxnOptions(call, 3, "send()")
@@ -97,8 +97,8 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 // jsSweep closes an account, sending all funds to a destination.
 func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "sweep() requires from and to arguments")
-	from := call.Arguments[0].String()
-	to := call.Arguments[1].String()
+	from := a.stringArg(call, 0)
+	to := a.stringArg(call, 1)
 
 	opts := a.parseTxnOptions(call, 2, "sweep()")
 
@@ -135,8 +135,8 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 // jsSendAsset sends an ASA from one account to another.
 func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 4, "sendAsset() requires from, to, assetId, and amount arguments")
-	from := call.Arguments[0].String()
-	to := call.Arguments[1].String()
+	from := a.stringArg(call, 0)
+	to := a.stringArg(call, 1)
 	assetID := toUint64(a.runtime, call.Arguments[2])
 	amount := toUint64(a.runtime, call.Arguments[3])
 
@@ -178,7 +178,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 // jsOptIn opts an account into an ASA.
 func (a *API) jsOptIn(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "optIn() requires account and assetId arguments")
-	account := call.Arguments[0].String()
+	account := a.stringArg(call, 0)
 	assetID := toUint64(a.runtime, call.Arguments[1])
 
 	opts := a.parseTxnOptions(call, 2, "optIn()")
@@ -212,7 +212,7 @@ func (a *API) jsOptIn(call goja.FunctionCall) goja.Value {
 // jsOptOut opts an account out of an ASA.
 func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "optOut() requires account and assetId arguments")
-	account := call.Arguments[0].String()
+	account := a.stringArg(call, 0)
 	assetID := toUint64(a.runtime, call.Arguments[1])
 
 	closeTo, opts := a.parseOptOutArgs(call)
@@ -257,8 +257,8 @@ func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 // keyreg(account, "online", { votekey, selkey, sproofkey, votefirst, votelast, keydilution }) - Mark online
 func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "keyreg() requires account and mode arguments")
-	account := call.Arguments[0].String()
-	mode := call.Arguments[1].String()
+	account := a.stringArg(call, 0)
+	mode := a.stringArg(call, 1)
 
 	if mode != "online" && mode != "offline" {
 		panic(a.runtime.ToValue("keyreg() mode must be 'online' or 'offline'"))
@@ -339,7 +339,7 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 // participation(address) - Returns participation keys and status
 func (a *API) jsParticipation(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "participation() requires an address argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 
 	result, err := a.engine.GetParticipationStatus(a.Context(), addressOrAlias)
 	if err != nil {
@@ -369,7 +369,7 @@ func (a *API) jsParticipation(call goja.FunctionCall) goja.Value {
 // incentiveEligible(address) - Returns boolean
 func (a *API) jsIncentiveEligible(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "incentiveEligible() requires an address argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 	address, _, err := a.engine.ResolveAddress(addressOrAlias)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("incentiveEligible() error resolving address: %v", err)))
@@ -387,8 +387,8 @@ func (a *API) jsIncentiveEligible(call goja.FunctionCall) goja.Value {
 // rekey(from, to, options) - Rekey 'from' to be controlled by 'to'
 func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "rekey() requires from and to arguments")
-	from := call.Arguments[0].String()
-	to := call.Arguments[1].String()
+	from := a.stringArg(call, 0)
+	to := a.stringArg(call, 1)
 
 	opts := a.parseTxnOptions(call, 2, "rekey()")
 
@@ -430,7 +430,7 @@ func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 // unrekey(account, options) - Rekey 'account' back to self-control
 func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "unrekey() requires an account argument")
-	account := call.Arguments[0].String()
+	account := a.stringArg(call, 0)
 
 	opts := a.parseTxnOptions(call, 1, "unrekey()")
 
@@ -468,7 +468,7 @@ func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 // isRekeyed(address) - Returns {rekeyed: bool, authAddr: string}
 func (a *API) jsIsRekeyed(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "isRekeyed() requires an address argument")
-	addressOrAlias := call.Arguments[0].String()
+	addressOrAlias := a.stringArg(call, 0)
 	address, _, err := a.engine.ResolveAddress(addressOrAlias)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("isRekeyed() error resolving address: %v", err)))
@@ -486,8 +486,8 @@ func (a *API) jsIsRekeyed(call goja.FunctionCall) goja.Value {
 // close(from, to, options) - Close 'from' account, send funds to 'to'
 func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "close() requires from and to arguments")
-	from := call.Arguments[0].String()
-	to := call.Arguments[1].String()
+	from := a.stringArg(call, 0)
+	to := a.stringArg(call, 1)
 
 	opts := a.parseCloseOptions(call)
 
@@ -527,7 +527,7 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 // sign(filepath, {wait: false}) - Sign and submit without waiting
 func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "sign() requires a filepath argument")
-	filepath := call.Arguments[0].String()
+	filepath := a.stringArg(call, 0)
 
 	wait := true
 	if len(call.Arguments) > 1 && !goja.IsUndefined(call.Arguments[1]) && !goja.IsNull(call.Arguments[1]) {

@@ -394,6 +394,8 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 			default:
 				return params, fmt.Errorf("unknown argument: %s", key)
 			}
+		} else {
+			return params, unexpectedArgument("keyreg", arg)
 		}
 	}
 
@@ -426,19 +428,41 @@ func refuseUnknownRekeyArgs(args []string) error {
 	return nil
 }
 
+// unexpectedArgument is the refusal for a trailing word a command does not
+// take. A word that is ignored can change what is sent: `leaving=1` on a
+// sweep, read as nothing, sweeps the whole balance.
+func unexpectedArgument(command, arg string) error {
+	return fmt.Errorf("unexpected argument %q for %s; see `help %s`", arg, command, command)
+}
+
+// parseFlatFee reads a `fee=<microalgos>` argument, once.
+func parseFlatFee(arg string, seen *bool) (uint64, error) {
+	if *seen {
+		return 0, fmt.Errorf("fee given more than once")
+	}
+	feeStr := strings.TrimPrefix(arg, "fee=")
+	feeVal, err := parseUint64(feeStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid fee value: %s", feeStr)
+	}
+	*seen = true
+	return feeVal, nil
+}
+
 func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool, lsigArgs *map[string][]byte) error {
+	seenFee := false
 	for _, arg := range args {
-		if strings.EqualFold(arg, "nowait") {
+		switch {
+		case strings.EqualFold(arg, "nowait"):
 			*wait = false
-		} else if strings.HasPrefix(arg, "fee=") {
-			feeStr := strings.TrimPrefix(arg, "fee=")
-			feeVal, err := parseUint64(feeStr)
+		case strings.HasPrefix(arg, "fee="):
+			feeVal, err := parseFlatFee(arg, &seenFee)
 			if err != nil {
-				return fmt.Errorf("invalid fee value: %s", feeStr)
+				return err
 			}
 			*fee = feeVal
 			*useFlatFee = true
-		} else if strings.HasPrefix(arg, "arg:") && lsigArgs != nil {
+		case strings.HasPrefix(arg, "arg:") && lsigArgs != nil:
 			argName, argValue, err := cmdspec.ParseLsigArg(arg)
 			if err != nil {
 				return err
@@ -447,6 +471,8 @@ func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFla
 				*lsigArgs = make(map[string][]byte)
 			}
 			(*lsigArgs)[argName] = argValue
+		default:
+			return fmt.Errorf("unexpected argument %q: only [fee=<microalgos>] [nowait] [arg:name=value] may follow", arg)
 		}
 	}
 	return nil
@@ -555,24 +581,13 @@ func parseSendTrailingArgs(args []string, params *TransactionParams) error {
 			params.Atomic = true
 		case strings.HasPrefix(args[i], "note="):
 			params.Note = strings.TrimPrefix(args[i], "note=")
-		case strings.EqualFold(args[i], "note"):
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("missing note value")
-			}
-			params.Note = args[i]
 		case strings.HasPrefix(args[i], "fee="):
-			if seenFee {
-				return fmt.Errorf("duplicate fee flag")
-			}
-			feeStr := strings.TrimPrefix(args[i], "fee=")
-			feeVal, err := parseUint64(feeStr)
+			feeVal, err := parseFlatFee(args[i], &seenFee)
 			if err != nil {
-				return fmt.Errorf("invalid fee value: %s", feeStr)
+				return err
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
-			seenFee = true
 		case strings.HasPrefix(args[i], "arg:"):
 			argName, argValue, err := cmdspec.ParseLsigArg(args[i])
 			if err != nil {
@@ -582,12 +597,20 @@ func parseSendTrailingArgs(args []string, params *TransactionParams) error {
 				params.LsigArgs = make(map[string][]byte)
 			}
 			params.LsigArgs[argName] = argValue
+		default:
+			// The spaced form `note <text>` is gone: it took the next word
+			// as the note, whatever that word was.
+			if strings.EqualFold(args[i], "note") {
+				return fmt.Errorf("write the note as note=<text>")
+			}
+			return unexpectedArgument("send", args[i])
 		}
 	}
 	return nil
 }
 
 func parseSweepTrailingArgs(args []string, params *SweepParams) error {
+	seenFee := false
 	for i := 0; i < len(args); i++ {
 		switch {
 		case strings.EqualFold(args[i], "leaving"):
@@ -603,10 +626,9 @@ func parseSweepTrailingArgs(args []string, params *SweepParams) error {
 		case strings.EqualFold(args[i], "nowait"):
 			params.Wait = false
 		case strings.HasPrefix(args[i], "fee="):
-			feeStr := strings.TrimPrefix(args[i], "fee=")
-			feeVal, err := parseUint64(feeStr)
+			feeVal, err := parseFlatFee(args[i], &seenFee)
 			if err != nil {
-				return fmt.Errorf("invalid fee value: %s", feeStr)
+				return err
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
@@ -619,6 +641,8 @@ func parseSweepTrailingArgs(args []string, params *SweepParams) error {
 				params.LsigArgs = make(map[string][]byte)
 			}
 			params.LsigArgs[argName] = argValue
+		default:
+			return unexpectedArgument("sweep", args[i])
 		}
 	}
 	return nil

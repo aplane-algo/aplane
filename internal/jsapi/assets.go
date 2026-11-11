@@ -108,13 +108,13 @@ func (a *API) jsClearAssetCache(call goja.FunctionCall) goja.Value {
 // getAsaId(name, network) - Returns asset ID for specified network, or null if not found
 func (a *API) jsGetAsaId(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "getAsaId() requires an asset name argument")
-	name := strings.TrimSpace(call.Arguments[0].String())
+	name := strings.TrimSpace(a.stringArg(call, 0))
 
 	// Get network - use current network if not specified
 	currentNetwork := strings.ToLower(strings.TrimSpace(a.engine.GetNetwork()))
 	network := currentNetwork
 	if len(call.Arguments) >= 2 {
-		network = strings.ToLower(strings.TrimSpace(call.Arguments[1].String()))
+		network = strings.ToLower(strings.TrimSpace(a.stringArg(call, 1)))
 	}
 
 	resolver := a.engine.ASAResolver()

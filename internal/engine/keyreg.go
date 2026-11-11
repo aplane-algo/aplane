@@ -33,6 +33,12 @@ func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*Trans
 		return nil, ErrNoAlgodClient
 	}
 
+	// Incentive eligibility is asked for when going online and costs a 2 ALGO
+	// fee. On any other registration the fee would be paid for nothing.
+	if params.Mode != "online" && params.IncentiveEligible {
+		return nil, fmt.Errorf("eligible applies only when going online: an %s registration would pay the 2 ALGO incentive fee for nothing", params.Mode)
+	}
+
 	// Validate online mode parameters
 	if params.Mode == "online" {
 		if params.VoteKey == "" || params.SelectionKey == "" || params.StateProofKey == "" {

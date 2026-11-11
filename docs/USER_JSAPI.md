@@ -60,6 +60,16 @@ charge on top; this option is not a cap on the final fee. Caller-supplied
 excess for purposes such as inner transactions is preserved. See
 [FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership).
 
+Amounts, fees and IDs must be a number, a `BigInt`, or a string of plain
+decimal digits. Nothing is coerced: `null`, `undefined`, `''`, a boolean, and
+strings such as `'0x10'` or `'1e6'` are errors, and so is a whole number past
+`Number.MAX_SAFE_INTEGER`, which JavaScript has already rounded; pass a
+`BigInt` or a decimal string for those.
+
+Where a name is expected (an address, alias, asset or method), `undefined`
+and `null` are errors, not the words "undefined" and "null". A list of
+addresses must hold only strings.
+
 Address arguments can be full Algorand addresses or aliases known to `apshell`.
 Set names use arrays in JavaScript API calls; the `@setname` shell syntax is for
 the REPL command language, not JS function arguments.

@@ -38,6 +38,13 @@ func Parse(input string) (*ParsedInfo, error) {
 	firstRoundRe := regexp.MustCompile(`(?i)First round:\s*(\d+)`)
 	lastRoundRe := regexp.MustCompile(`(?i)Last round:\s*(\d+)`)
 
+	// One key at a time. Each field below is the first match in the whole
+	// text, so with two keys pasted together a field missing from the first
+	// would be taken from the second, and the registration would mix them.
+	if blocks := patterns["parent"].FindAllStringIndex(input, -1); len(blocks) > 1 {
+		return nil, fmt.Errorf("the input holds %d participation keys; paste the one to register", len(blocks))
+	}
+
 	if match := patterns["parent"].FindStringSubmatch(input); match != nil {
 		info.ParentAddress = match[1]
 	} else {

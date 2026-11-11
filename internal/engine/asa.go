@@ -203,6 +203,10 @@ func (e *Engine) PrepareOptOut(ctx context.Context, params OptOutParams) (*Trans
 
 	checkResult := &OptOutCheckResult{}
 
+	if err := refuseZeroAddressTarget("close", params.CloseTo); err != nil {
+		return nil, checkResult, err
+	}
+
 	// Get account info to check asset balance
 	acctInfo, err := e.AlgodClient.AccountInformation(params.Account).Do(ctx)
 	if err != nil {

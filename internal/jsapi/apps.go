@@ -51,9 +51,9 @@ type appDeployOptions struct {
 func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 3, "appDeploy() requires from, approvalPath, and clearPath arguments")
 
-	from := call.Arguments[0].String()
-	approvalPath := call.Arguments[1].String()
-	clearPath := call.Arguments[2].String()
+	from := a.stringArg(call, 0)
+	approvalPath := a.stringArg(call, 1)
+	clearPath := a.stringArg(call, 2)
 
 	opts := a.parseAppDeployOptions(call, 3, "appDeploy()")
 	fromAddr, _, err := a.resolveAppAccounts(from, nil, "appDeploy()")
@@ -133,7 +133,7 @@ func (a *API) jsAppInfo(call goja.FunctionCall) goja.Value {
 func (a *API) jsAppLocal(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "appLocal() requires appId and account arguments")
 	appID := toUint64(a.runtime, call.Arguments[0])
-	account := call.Arguments[1].String()
+	account := a.stringArg(call, 1)
 
 	address, _, err := a.engine.ResolveAddress(account)
 	if err != nil {
@@ -181,7 +181,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 3, "appCallRaw() requires appId, from, and appArgs arguments")
 
 	appID := toUint64(a.runtime, call.Arguments[0])
-	from := call.Arguments[1].String()
+	from := a.stringArg(call, 1)
 	appArgs, err := requiredJSArray(call.Arguments[2], "appCallRaw() appArgs")
 	if err != nil {
 		panic(a.runtime.ToValue(err.Error()))
@@ -267,9 +267,9 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 5, "appCall() requires appId, method, abiPath, from, and args arguments")
 
 	appID := toUint64(a.runtime, call.Arguments[0])
-	method := call.Arguments[1].String()
-	abiPath := call.Arguments[2].String()
-	from := call.Arguments[3].String()
+	method := a.stringArg(call, 1)
+	abiPath := a.stringArg(call, 2)
+	from := a.stringArg(call, 3)
 	rawArgs := toInterfaceArray(call.Arguments[4])
 	if abiPath == "" {
 		panic(a.runtime.ToValue("appCall() error preparing transaction: ABI path is required"))
@@ -376,7 +376,11 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 		}
 	}
 	if accounts, ok := m["accounts"]; ok {
-		opts.Accounts = toStringArrayValue(accounts)
+		list, err := stringArray(accounts)
+		if err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid accounts: %v", funcName, err)))
+		}
+		opts.Accounts = list
 	}
 	if apps, ok := m["apps"]; ok {
 		values, err := toUint64SliceValue(apps)

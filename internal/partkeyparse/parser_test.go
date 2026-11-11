@@ -148,3 +148,25 @@ Effective last round:      2000`
 		t.Fatalf("error = %q, want missing-round error", err.Error())
 	}
 }
+
+// Two keys pasted together are refused: the fields would otherwise be taken
+// from whichever block has them first.
+func TestParseRefusesMoreThanOneKey(t *testing.T) {
+	first := basePartKeyInfo + `
+Effective first round:     N/A
+Effective last round:      N/A
+First round:               1
+Last round:                2`
+	second := basePartKeyInfo + `
+Effective first round:     54647336
+Effective last round:      57646714
+First round:               3
+Last round:                4`
+
+	if _, err := Parse(first + "\n\n" + second); err == nil || !strings.Contains(err.Error(), "2 participation keys") {
+		t.Fatalf("two keys: %v, want them refused", err)
+	}
+	if _, err := Parse(second); err != nil {
+		t.Fatalf("one key refused: %v", err)
+	}
+}

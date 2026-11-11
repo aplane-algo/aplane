@@ -52,6 +52,11 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 	}
 
 	mode := SendModeNonAtomic
+	// An atomic send has no path that carries LogicSig arguments to each
+	// position, so they would be left out without a word.
+	if req.Atomic && len(req.LsigArgs) > 0 {
+		return nil, fmt.Errorf("arg: cannot be used with atomic: an atomic send does not carry LogicSig arguments; send without atomic")
+	}
 	if req.Atomic {
 		if isFromSet {
 			mode = SendModeAtomicFromMultiple

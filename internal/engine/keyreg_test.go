@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func TestPrepareKeyReg_NoAlgodClient(t *testing.T) {
@@ -113,9 +114,17 @@ func TestPrepareKeyReg_IncentiveFee(t *testing.T) {
 	transport.addAccount(addr, 10_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
+	key32 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	key64 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
 	result, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
 		Account:           addr,
-		Mode:              "offline",
+		Mode:              "online",
+		VoteKey:           key32,
+		SelectionKey:      key32,
+		StateProofKey:     key64,
+		VoteFirst:         1,
+		VoteLast:          100,
+		KeyDilution:       10,
 		IncentiveEligible: true,
 	})
 	if err != nil {
@@ -164,5 +173,42 @@ func TestPrepareKeyReg_OnlineRequiresKeyDilution(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "keydilution") {
 		t.Fatalf("online keyreg without a key dilution: %v, want a keydilution error", err)
+	}
+}
+
+func TestPrepareKeyReg_OfflineRefusesIncentiveEligibility(t *testing.T) {
+	addr := testAddr(1)
+	transport := newAccountMockTransport(t)
+	transport.addAccount(addr, 5_000_000)
+	eng := setupEngineWithMockAlgod(t, transport)
+
+	_, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
+		Account: addr, Mode: "offline", IncentiveEligible: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "eligible applies only when going online") {
+		t.Fatalf("offline keyreg with eligible: %v, want it refused", err)
+	}
+}
+
+// The zero address in a rekey or close field is the same as leaving the field
+// out, so the transaction would do neither and be reported as having done it.
+func TestZeroAddressIsRefusedAsARekeyOrCloseTarget(t *testing.T) {
+	addr := testAddr(1)
+	zero := types.Address{}.String()
+	transport := newAccountMockTransport(t)
+	transport.addAccount(addr, 5_000_000)
+	eng := setupEngineWithMockAlgod(t, transport)
+
+	if _, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: addr, To: zero}); err == nil ||
+		!strings.Contains(err.Error(), "zero address") {
+		t.Errorf("rekey to the zero address: %v, want it refused", err)
+	}
+	if _, _, err := eng.PrepareClose(context.Background(), CloseAccountParams{From: addr, CloseTo: zero}); err == nil ||
+		!strings.Contains(err.Error(), "zero address") {
+		t.Errorf("close to the zero address: %v, want it refused", err)
+	}
+	if _, _, err := eng.PrepareOptOut(context.Background(), OptOutParams{Account: addr, AssetID: 5, CloseTo: zero}); err == nil ||
+		!strings.Contains(err.Error(), "zero address") {
+		t.Errorf("asset close to the zero address: %v, want it refused", err)
 	}
 }

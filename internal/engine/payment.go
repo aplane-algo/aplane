@@ -154,6 +154,10 @@ func (e *Engine) PrepareClose(ctx context.Context, params CloseAccountParams) (*
 
 	checkResult := &CloseAccountCheckResult{}
 
+	if err := refuseZeroAddressTarget("close", params.CloseTo); err != nil {
+		return nil, checkResult, err
+	}
+
 	// Get account info to check status
 	acctInfo, err := e.AlgodClient.AccountInformation(params.From).Do(ctx)
 	if err != nil {

@@ -584,7 +584,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			t.Fatalf("request = %#v, want mapped sign requests", gotReq.Requests)
 		}
 
-		if !reflect.DeepEqual(toStringArrayValue(got["transactions"]), []string{"TXabc", "TXdef", "TXghi"}) {
+		if planned, err := stringArray(got["transactions"]); err != nil || !reflect.DeepEqual(planned, []string{"TXabc", "TXdef", "TXghi"}) {
 			t.Fatalf("transactions = %#v, want planned transactions", got["transactions"])
 		}
 
@@ -1041,8 +1041,9 @@ func TestAdditionalErrorPaths(t *testing.T) {
 		}
 		eng.AliasCache.Aliases["alice"] = addr1
 		defer expectJSPanicContaining(t, "holders() error")()
+		// An array as a script passes one.
 		api.jsHolders(goja.FunctionCall{Arguments: []goja.Value{
-			api.runtime.ToValue([]string{addr1, addr2}),
+			api.runtime.ToValue([]interface{}{addr1, addr2}),
 			api.runtime.ToValue("algo"),
 		}})
 	})

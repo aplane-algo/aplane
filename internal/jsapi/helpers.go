@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"strconv"
 
 	algoutil "github.com/aplane-algo/aplane/internal/algo"
@@ -39,8 +40,15 @@ func validateUint64Float(val float64) error {
 	if val >= maxSafeUint64Float {
 		return fmt.Errorf("value %v is too large", val)
 	}
+	// Past this, JavaScript has already rounded the number.
+	if val > maxExactJSInteger {
+		return fmt.Errorf("value %.0f is past the largest whole number JavaScript holds exactly; pass a BigInt or a decimal string", val)
+	}
 	return nil
 }
+
+// maxExactJSInteger is JavaScript's Number.MAX_SAFE_INTEGER.
+const maxExactJSInteger = float64(1<<53 - 1)
 
 // makeAlgoFunc creates the algo() helper function bound to a runtime.
 // algo(1.5) -> 1500000
@@ -138,16 +146,28 @@ func toUint64(vm *goja.Runtime, v goja.Value) uint64 {
 		return uint64(val)
 	case uint64:
 		return val
-	default:
-		// Non-numeric inputs (e.g. a string amount like "1.5") reach here. Run
-		// the same finite/integral/range validation as the float64 case via
-		// ToFloat() instead of ToInteger(), which would silently truncate
-		// "1.5" to 1.
-		f := v.ToFloat()
-		if err := validateUint64Float(f); err != nil {
-			panic(vm.ToValue(err.Error()))
+	case string:
+		// A decimal string is how an amount past 2^53 is passed. Nothing
+		// else: "0x10", "1e6" and "" would each be read as a number the
+		// script did not write.
+		parsed, err := strconv.ParseUint(val, 10, 64)
+		if err != nil || (len(val) > 1 && val[0] == '0') || (len(val) > 0 && val[0] == '+') {
+			panic(vm.ToValue(fmt.Sprintf("%q is not a whole number in plain decimal", val)))
 		}
-		return uint64(f)
+		return parsed
+	case *big.Int:
+		if val.Sign() < 0 {
+			panic(vm.ToValue("value cannot be negative"))
+		}
+		if !val.IsUint64() {
+			panic(vm.ToValue(fmt.Sprintf("value %s is too large", val.String())))
+		}
+		return val.Uint64()
+	default:
+		// null, undefined, booleans, objects: JavaScript would coerce these
+		// to 0, 0, 1 and NaN. An amount of 0 from a missing field is the
+		// case that matters.
+		panic(vm.ToValue(fmt.Sprintf("a number is needed, got %s", jsTypeName(val))))
 	}
 }
 
@@ -267,25 +287,71 @@ func (a *API) parseCloseOptions(call goja.FunctionCall) closeTxnOptions {
 	return opts
 }
 
-// toStringArray converts a Goja value to []string.
-func toStringArray(v goja.Value) []string {
-	return toStringArrayValue(v.Export())
-}
-
-func toStringArrayValue(v interface{}) []string {
+// stringArray reads a JavaScript array of strings. An entry that is not a
+// string is an error: dropping it would shorten the list and move every
+// later entry, and a program reads accounts by position.
+func stringArray(v interface{}) ([]string, error) {
 	switch arr := v.(type) {
 	case []interface{}:
 		result := make([]string, 0, len(arr))
-		for _, item := range arr {
-			if s, ok := item.(string); ok {
-				result = append(result, s)
+		for i, item := range arr {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("entry %d is %s, not a string", i+1, jsTypeName(item))
 			}
+			result = append(result, s)
 		}
-		return result
+		return result, nil
 	case []string:
-		return arr
+		return arr, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("expected an array of strings, got %s", jsTypeName(v))
+	}
+}
+
+// stringArrayArg is stringArray for a function argument, raising a JS error.
+func (a *API) stringArrayArg(v goja.Value, what string) []string {
+	result, err := stringArray(v.Export())
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s: %v", what, err)))
+	}
+	return result
+}
+
+// jsTypeName names an exported JavaScript value's type for an error message.
+func jsTypeName(v interface{}) string {
+	switch v.(type) {
+	case nil:
+		return "null or undefined"
+	case string:
+		return "a string"
+	case bool:
+		return "a boolean"
+	case int64, float64, int, uint64:
+		return "a number"
+	case []interface{}:
+		return "an array"
+	case map[string]interface{}:
+		return "an object"
+	default:
+		return fmt.Sprintf("a %T", v)
+	}
+}
+
+// stringArg reads a function argument that names something: an address, an
+// alias, an asset, a method, a path. JavaScript turns undefined and null into
+// the words "undefined" and "null", which would then be looked up as an
+// alias, so those are refused, as is an object or an array. A number is
+// accepted, since an asset can be named by its ID.
+func (a *API) stringArg(call goja.FunctionCall, index int) string {
+	v := call.Arguments[index]
+	switch exported := v.Export().(type) {
+	case string:
+		return exported
+	case int64, float64, int, uint64:
+		return v.String()
+	default:
+		panic(a.runtime.ToValue(fmt.Sprintf("argument %d is %s; a string is needed", index+1, jsTypeName(exported))))
 	}
 }
 

@@ -277,7 +277,7 @@ func (a *API) jsConnected(call goja.FunctionCall) goja.Value {
 // waitForTx(txid, rounds) - Waits up to 'rounds' for confirmation
 func (a *API) jsWaitForTx(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "waitForTx() requires a txid argument")
-	txid := call.Arguments[0].String()
+	txid := a.stringArg(call, 0)
 
 	var rounds uint64 = 5 // Default 5 rounds
 	if len(call.Arguments) > 1 {
@@ -348,7 +348,7 @@ func (a *API) jsPlugin(call goja.FunctionCall) goja.Value {
 	}
 
 	// First argument is the plugin/command name
-	pluginName := call.Arguments[0].String()
+	pluginName := a.stringArg(call, 0)
 
 	// Remaining arguments are passed to the plugin
 	args := make([]string, len(call.Arguments)-1)
