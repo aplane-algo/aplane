@@ -786,3 +786,36 @@ func TestDescribeShowsWhatAReviewerNeedsToCompare(t *testing.T) {
 		t.Errorf("the network token is printed unescaped:\n%q", transfer)
 	}
 }
+
+// A transfer naming its own sender as the account it takes from is a
+// clawback of the sender's own holding, and is described as one. It is not a
+// finding: the clawback warning is for taking from someone else. A clawback
+// from another account and a plain transfer are described as before.
+func TestDescribeSelfClawback(t *testing.T) {
+	sender, other := types.Address{1}, types.Address{2}
+	transfer := func(assetSender types.Address) types.Transaction {
+		return types.Transaction{
+			Type:   types.AssetTransferTx,
+			Header: types.Header{Sender: sender},
+			AssetTransferTxnFields: types.AssetTransferTxnFields{
+				XferAsset: 7, AssetAmount: 5, AssetReceiver: other, AssetSender: assetSender,
+			},
+		}
+	}
+
+	self := Describe(transfer(sender), View{})
+	if want := "CLAWBACK FROM: " + sender.String() + " (the sender's own holding, moved by clawback authority even if frozen)"; !strings.Contains(self, want) {
+		t.Fatalf("self clawback description missing %q:\n%s", want, self)
+	}
+	if findings := Findings(transfer(sender), FindingContext{}); len(findings) != 0 {
+		t.Fatalf("self clawback findings = %+v, want none", findings)
+	}
+
+	fromOther := Describe(transfer(other), View{})
+	if !strings.Contains(fromOther, "CLAWBACK FROM: "+other.String()) || strings.Contains(fromOther, "own holding") {
+		t.Fatalf("clawback from another account:\n%s", fromOther)
+	}
+	if plain := Describe(transfer(types.Address{}), View{}); strings.Contains(plain, "CLAWBACK") {
+		t.Fatalf("plain transfer described as a clawback:\n%s", plain)
+	}
+}

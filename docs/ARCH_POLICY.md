@@ -377,7 +377,10 @@ Warning analysis covers the fields below. The rules live in `internal/txnreview/
 - rekey fields,
 - ALGO close-out fields,
 - ASA close-out fields,
-- ASA clawback fields,
+- ASA clawback fields, when `AssetSender` names an account other than the
+  sender (a transfer naming the sender itself is a clawback of its own
+  holding: the description says so, but it is not a warning, so it forces no
+  review and `reject_clawback` does not refuse it),
 - application delete, clear-state, and update (`OnCompletion`
   `DeleteApplication`, `ClearState`, `UpdateApplication`),
 - asset reconfigure (`acfg` naming an existing asset; the warning names the

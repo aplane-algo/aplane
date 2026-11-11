@@ -84,6 +84,10 @@ func describeAssetTransferTx(txn types.Transaction, view View) string {
 
 	if isClawback(txn) {
 		desc.WriteString(fmt.Sprintf("\n  ⚠️  CLAWBACK FROM: %s", txn.AssetSender.String()))
+	} else if isSelfClawback(txn) {
+		// Still a clawback on chain: the sender must hold the asset's
+		// clawback role, and a freeze on its holding does not stop it.
+		desc.WriteString(fmt.Sprintf("\n  ⚠️  CLAWBACK FROM: %s (the sender's own holding, moved by clawback authority even if frozen)", txn.AssetSender.String()))
 	}
 
 	if !txn.AssetCloseTo.IsZero() {
@@ -91,6 +95,14 @@ func describeAssetTransferTx(txn types.Transaction, view View) string {
 	}
 
 	return desc.String()
+}
+
+// isSelfClawback reports whether an asset transfer names its own sender as
+// the account it takes from. That is a clawback too, of the sender's own
+// holding. It is described, not a finding: the warnings, and the review they
+// require, are for taking from someone else.
+func isSelfClawback(txn types.Transaction) bool {
+	return !txn.AssetSender.IsZero() && txn.AssetSender == txn.Sender
 }
 
 func describeAssetConfigTx(txn types.Transaction, view View) string {
