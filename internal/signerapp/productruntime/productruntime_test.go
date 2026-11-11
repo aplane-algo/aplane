@@ -128,31 +128,45 @@ func TestRuntimeNodePolicyResolvesPerKey(t *testing.T) {
 
 func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 	ir := New(Config{})
+	start := ir.KeysetRevision()
 
-	if got := ir.KeysetRevision(); got != 0 {
-		t.Fatalf("initial KeysetRevision() = %d, want 0", got)
+	ir.PublishSnapshot(
+		map[string]string{"ADDR1": "keys/ADDR1.key"},
+		map[string]string{"ADDR1": "ed25519"},
+	)
+	if got := ir.KeysetRevision(); got != start+1 {
+		t.Fatalf("KeysetRevision() after first publish = %d, want %d", got, start+1)
 	}
 
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
 	)
-	if got := ir.KeysetRevision(); got != 1 {
-		t.Fatalf("KeysetRevision() after first publish = %d, want 1", got)
-	}
-
-	ir.PublishSnapshot(
-		map[string]string{"ADDR1": "keys/ADDR1.key"},
-		map[string]string{"ADDR1": "ed25519"},
-	)
-	if got := ir.KeysetRevision(); got != 2 {
-		t.Fatalf("KeysetRevision() after second publish = %d, want 2", got)
+	if got := ir.KeysetRevision(); got != start+2 {
+		t.Fatalf("KeysetRevision() after second publish = %d, want %d", got, start+2)
 	}
 
 	ir.SetUnlocked()
 	ir.Lock()
-	if got := ir.KeysetRevision(); got != 3 {
-		t.Fatalf("KeysetRevision() after lock clears snapshot = %d, want 3", got)
+	if got := ir.KeysetRevision(); got != start+3 {
+		t.Fatalf("KeysetRevision() after lock clears snapshot = %d, want %d", got, start+3)
+	}
+}
+
+// A new process, like a restarted signer, starts its keyset revision at a
+// random point below 2^52, so it does not repeat the revisions an earlier
+// process reported, and the value stays exact as a JavaScript number.
+func TestKeysetRevisionStartsAtARandomPointBelow2To52(t *testing.T) {
+	seen := make(map[uint64]bool)
+	for i := 0; i < 8; i++ {
+		start := New(Config{}).KeysetRevision()
+		if start >= 1<<52 {
+			t.Fatalf("starting revision %d is not below 2^52", start)
+		}
+		seen[start] = true
+	}
+	if len(seen) < 7 {
+		t.Fatalf("eight runtimes started at %d distinct revisions, want different starts", len(seen))
 	}
 }
 
@@ -175,8 +189,8 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	ir.keysLock.Unlock()
 
 	snapshot := ir.KeyIndexSnapshot()
-	if snapshot.Revision != 1 {
-		t.Fatalf("snapshot revision = %d, want 1", snapshot.Revision)
+	if snapshot.Revision != ir.KeysetRevision() {
+		t.Fatalf("snapshot revision = %d, want the published %d", snapshot.Revision, ir.KeysetRevision())
 	}
 	if got := snapshot.KeyFiles["ADDR1"]; got != "keys/ADDR1.key" {
 		t.Fatalf("snapshot key file = %q, want keys/ADDR1.key", got)
@@ -213,8 +227,8 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 		t.Fatalf("snapshot key file after later publish = %q, want retained caller mutation", got)
 	}
 	current := ir.KeyIndexSnapshot()
-	if current.Revision != 2 {
-		t.Fatalf("current revision = %d, want 2", current.Revision)
+	if current.Revision != snapshot.Revision+1 {
+		t.Fatalf("current revision = %d, want %d", current.Revision, snapshot.Revision+1)
 	}
 	if _, ok := current.KeyFiles["ADDR1"]; ok {
 		t.Fatal("current snapshot retained ADDR1 after replacement publish")

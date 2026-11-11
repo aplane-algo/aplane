@@ -893,7 +893,9 @@ and forbidden on the other two, so it is empty on a cosigned rekey.
 Interior unused Layer 3 slots are explicit empty byte strings. Only unused
 trailing slots may be omitted. Callers may populate only declared runtime
 slots; they cannot populate derived or cosigner slots. The signer generates only
-declared derived slots. Ordinary `/sign` rejects caller-supplied cosigner or
+declared derived slots, and puts each derived value in the layout slot that
+has its name. Assembly therefore never relies on `derived_args` listing the
+arguments in slot order. Ordinary `/sign` rejects caller-supplied cosigner or
 signer-derived values.
 
 The planner classifies before group sizing, finalizes fee pooling, then

@@ -80,7 +80,7 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 							approvalCalls++
 							switch path {
 							case "single":
-								return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{}, txns, txns, 0, 0, 0, rule, nil)
+								return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{}, txns, txns, "", 0, 0, rule, nil)
 							default:
 								return approval.requestGroupApprovalWithContext(ctx, signerapi.GroupSignRequest{}, &PlanResult{}, "", 0, 0, txns, rule)
 							}

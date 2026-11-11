@@ -629,6 +629,9 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	if req.Description != "" {
 		fmt.Printf("\n%s\n", req.Description)
 	}
+	if line := protocol.ValidityWindowLine(req.FirstValid, req.LastValid); line != "" {
+		fmt.Printf("\n%s\n", line)
+	}
 	if len(req.Violations) > 0 {
 		fmt.Printf("\nPolicy warnings (%d):\n", len(req.Violations))
 		for _, v := range req.Violations {

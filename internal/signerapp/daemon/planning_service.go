@@ -55,6 +55,7 @@ func (d signerPlannerDeps) Snapshot() signersigning.PlannerRuntimeSnapshot {
 			Category: metadata.Category, BaseKeyType: metadata.BaseKeyType, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
 			BoundedAuthorization: metadata.BoundedAuthorization,
 			LogicSigResources:    metadata.LogicSigResources,
+			SigningArgs:          metadata.SigningArgs,
 		}
 	}
 	return signersigning.PlannerRuntimeSnapshot{

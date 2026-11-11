@@ -135,8 +135,8 @@ func TestCloseAccountCheckResult_Fields(t *testing.T) {
 // TestBalanceCheckResult_Fields tests BalanceCheckResult structure
 func TestBalanceCheckResult_Fields(t *testing.T) {
 	result := &BalanceCheckResult{
-		SenderBalance:    10.5,
-		RequiredAmount:   2.001,
+		SenderBalance:    10_500_000,
+		RequiredAmount:   2_001_000,
 		SufficientFunds:  true,
 		NewAccount:       false,
 		ReceiverOptedIn:  true,
@@ -145,12 +145,12 @@ func TestBalanceCheckResult_Fields(t *testing.T) {
 		BelowMinBalance:  false,
 	}
 
-	if result.SenderBalance != 10.5 {
-		t.Errorf("SenderBalance = %f, want 10.5", result.SenderBalance)
+	if result.SenderBalance != 10_500_000 {
+		t.Errorf("SenderBalance = %d, want 10500000", result.SenderBalance)
 	}
 
-	if result.RequiredAmount != 2.001 {
-		t.Errorf("RequiredAmount = %f, want 2.001", result.RequiredAmount)
+	if result.RequiredAmount != 2_001_000 {
+		t.Errorf("RequiredAmount = %d, want 2001000", result.RequiredAmount)
 	}
 
 	if !result.SufficientFunds {
@@ -314,8 +314,8 @@ func TestSigningContext_SameSigningAddr(t *testing.T) {
 // TestBalanceCheckResult_InsufficientFunds tests insufficient funds scenario
 func TestBalanceCheckResult_InsufficientFunds(t *testing.T) {
 	result := &BalanceCheckResult{
-		SenderBalance:   0.5,   // Only 0.5 ALGO
-		RequiredAmount:  2.001, // Need 2.001 ALGO
+		SenderBalance:   500_000,   // Only 0.5 ALGO
+		RequiredAmount:  2_001_000, // Need 2.001 ALGO
 		SufficientFunds: false,
 	}
 
@@ -331,8 +331,8 @@ func TestBalanceCheckResult_InsufficientFunds(t *testing.T) {
 // TestBalanceCheckResult_NewAccount tests new account scenario
 func TestBalanceCheckResult_NewAccount(t *testing.T) {
 	result := &BalanceCheckResult{
-		SenderBalance:   10.0,
-		RequiredAmount:  1.001,
+		SenderBalance:   10_000_000,
+		RequiredAmount:  1_001_000,
 		SufficientFunds: true,
 		NewAccount:      true,
 		ReceiverOptedIn: true, // Always true for ALGO
@@ -346,8 +346,8 @@ func TestBalanceCheckResult_NewAccount(t *testing.T) {
 // TestBalanceCheckResult_BelowMinBalance tests min balance check
 func TestBalanceCheckResult_BelowMinBalance(t *testing.T) {
 	result := &BalanceCheckResult{
-		SenderBalance:    0.15,
-		RequiredAmount:   0.101,
+		SenderBalance:    150_000,
+		RequiredAmount:   101_000,
 		SufficientFunds:  true,
 		MinBalance:       100000, // 0.1 ALGO
 		RemainingBalance: 49000,  // 0.049 ALGO - below min
