@@ -259,3 +259,37 @@ func TestValidateSubmitLsigArgsChecksTheEffectiveSignersKey(t *testing.T) {
 		}
 	}
 }
+
+// Signing a group fetches by the same rule, and fails with the failure of the
+// first sender, in transaction order, that has one.
+func TestRefreshSubmitSigningStateReturnsTheFirstSendersFailure(t *testing.T) {
+	unknown := testAddress(1) // its auth address cannot be fetched
+	rekeyed := testAddress(2) // rekeyed to a key the client lacks
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, cache.NewSignerCache(), func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/keys" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return keyMgmtTextResponse(http.StatusServiceUnavailable, "down", req), nil
+	})
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[rekeyed.String()] = testAddress(3).String()
+
+	from := func(senders ...types.Address) []types.Transaction {
+		txns := make([]types.Transaction, len(senders))
+		for i, sender := range senders {
+			txns[i].Sender = sender
+		}
+		return txns
+	}
+	for _, tc := range []struct {
+		txns []types.Transaction
+		want string
+	}{
+		{from(rekeyed, unknown), "failed to refresh signer keys"},
+		{from(unknown, rekeyed), "failed to refresh auth address for " + unknown.String()},
+	} {
+		if err := eng.refreshSubmitSigningState(context.Background(), tc.txns); err == nil || !strings.HasPrefix(err.Error(), tc.want) {
+			t.Fatalf("refreshSubmitSigningState() error = %v, want %q", err, tc.want)
+		}
+	}
+}

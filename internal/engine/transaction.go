@@ -132,7 +132,9 @@ func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.Subm
 
 // refreshSubmitSigningState fetches the auth address of each sender the
 // client does not have, and refreshes the signer's key list when it lacks an
-// effective signer, so a sender's signing key is known before it is used.
+// effective signer, so a sender's signing key is known before it is used. It
+// is refreshSigningStateEach for a group, which is signed as one: it returns
+// the failure of the first sender, in transaction order, that has one.
 func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -141,27 +143,9 @@ func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Tra
 	for i, txn := range txns {
 		senders[i] = txn.Sender.String()
 	}
-	if err := e.refreshMissingSubmitAuthAddresses(ctx, senders); err != nil {
-		return err
-	}
-
-	if !e.submitEffectiveSignersNeedKeyRefresh(senders) {
-		return nil
-	}
-	if _, err := e.RefreshKeys(ctx); err != nil {
-		return fmt.Errorf("failed to refresh signer keys: %w", err)
-	}
-	return nil
-}
-
-func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, senders []string) error {
-	seenSenders := make(map[string]struct{}, len(senders))
+	failed := e.refreshSigningStateEach(ctx, senders)
 	for _, sender := range senders {
-		if _, ok := seenSenders[sender]; ok {
-			continue
-		}
-		seenSenders[sender] = struct{}{}
-		if err := e.refreshMissingAuthAddress(ctx, sender); err != nil {
+		if err := failed[sender]; err != nil {
 			return err
 		}
 	}
@@ -182,7 +166,7 @@ func (e *Engine) refreshMissingAuthAddress(ctx context.Context, sender string) e
 
 // refreshRekeyedSenders re-queries and overwrites the auth-address cache for the
 // senders of confirmed rekey transactions. It is the post-submit counterpart to
-// refreshMissingSubmitAuthAddresses: that hook is fill-on-miss, so after a rekey
+// refreshSubmitSigningState: that hook is fill-on-miss, so after a rekey
 // it cannot correct the entry it just cached as the pre-rekey authorizer. This
 // hook overwrites that stale entry with the new on-chain authorizer.
 //
@@ -210,21 +194,6 @@ func (e *Engine) refreshRekeyedSenders(ctx context.Context, txns []types.Transac
 		}
 	}
 	return firstErr
-}
-
-func (e *Engine) submitEffectiveSignersNeedKeyRefresh(senders []string) bool {
-	seenSigners := make(map[string]struct{}, len(senders))
-	for _, sender := range senders {
-		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
-		if _, ok := seenSigners[effectiveSigner]; ok {
-			continue
-		}
-		seenSigners[effectiveSigner] = struct{}{}
-		if e.effectiveSignerNeedsKeyRefresh(sender) {
-			return true
-		}
-	}
-	return false
 }
 
 // effectiveSignerNeedsKeyRefresh reports whether signing for sender refreshes

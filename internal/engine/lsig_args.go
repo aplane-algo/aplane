@@ -151,11 +151,13 @@ func (e *Engine) LsigArgsByDeclaredName(ctx context.Context, senders []string, a
 }
 
 // refreshSigningStateEach fetches what the client lacks to know each sender's
-// signing key, as signing does: the auth address of a sender it has not
-// looked up, and the signer's key list when a sender's effective signer is
-// another address or a key it does not know. Unlike signing a group, it keeps
-// a failure to the sender it belongs to and goes on with the others. It
-// returns the failures by sender.
+// signing key: the auth address of a sender it has not looked up, and the
+// signer's key list, once, when a sender's effective signer is another
+// address or a key it does not know. It is the one rule for what is fetched
+// before a signer is known, for signing a group (refreshSubmitSigningState)
+// and for sharing out LogicSig arguments. It keeps a failure to the sender it
+// belongs to and goes on with the others; a sender whose auth address could
+// not be fetched needs no key list. It returns the failures by sender.
 func (e *Engine) refreshSigningStateEach(ctx context.Context, senders []string) map[string]error {
 	failed := make(map[string]error)
 	var needKeys []string
