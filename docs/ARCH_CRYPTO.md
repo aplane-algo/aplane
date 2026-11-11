@@ -701,7 +701,8 @@ The design record for this new implementation of an established contract:
    After expensive signing, the signer rereads authorizer and round, then, as for
    every rotating family, checks cancellation, unlocked generation and key presence
    before returning bytes.
-   An aged window or changed stage requires fresh preparation. No signature is
+   An aged window (`rotating_window_not_current`) or changed stage
+   (`rotating_stage_changed`) requires fresh preparation. No signature is
    released or recorded on those failures.
 6. **Resources and compatibility:** frozen TEAL v13 template, 2834 bytes
    unsalted / 2837 salted, canonical first off-curve salt as other rotating
