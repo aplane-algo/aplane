@@ -51,7 +51,10 @@ refuses or approves.
   cosigned positions' ABI method labels**, as the cosigned approval does.
 - **apshell's ASA balance checks speak in the asset's units.** `send` printed
   base units beside the unit name, so 1.5 USDC read "Sender has 1500000 USDC".
-  Balances now show as the amount was typed. The checks compare whole base
+  Balances now show the way the send result shows the amount, "Sender has 1.5
+  USDC", and ALGO amounts in these messages drop trailing zeros the same way.
+  When an ALGO amount plus its fee overflows, the message says so instead of
+  printing a clamped requirement as the amount needed. The checks compare whole base
   units instead of floating-point numbers, so very large amounts compare
   exactly. These are checks before signing; the network's own check is
   unchanged.

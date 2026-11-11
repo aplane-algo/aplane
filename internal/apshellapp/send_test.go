@@ -320,16 +320,17 @@ func TestPrepareSendRefusesLogicSigArgsOnAnAtomicSend(t *testing.T) {
 	}
 }
 
-// ASA preflight messages show balances in the asset's display units, the way
-// the amount was typed, not its base units beside the unit name; ALGO shows in
-// ALGO. Base units are compared as integers.
+// ASA preflight messages show balances in the asset's display units, as the
+// send result shows the amount (asa.FormatDisplayAmount), not its base units
+// beside the unit name; ALGO shows in ALGO. Base units are compared as
+// integers.
 func TestPreflightMessagesUseDisplayUnits(t *testing.T) {
 	usdc := asa.Metadata{AssetID: 31566704, UnitName: "USDC", Decimals: 6}
 
 	err := validatePreparedSendItem(PreparedSendItem{BalanceCheck: &BalanceCheckDetails{
 		SenderBalance: 1_500_000, RequiredAmount: 2_000_000,
 	}}, asa.Amount{Meta: usdc, Raw: 2_000_000})
-	if err == nil || err.Error() != "insufficient balance: have 1.500000, need 2.000000 USDC" {
+	if err == nil || err.Error() != "insufficient balance: have 1.5, need 2 USDC" {
 		t.Fatalf("validatePreparedSendItem() error = %v", err)
 	}
 
@@ -346,13 +347,13 @@ func TestPreflightMessagesUseDisplayUnits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("atomicValidationNotes() error = %v", err)
 	}
-	if len(notes) == 0 || notes[0] != "Sender has 2.500000 USDC "+checkMark() {
+	if len(notes) == 0 || notes[0] != "Sender has 2.5 USDC "+checkMark() {
 		t.Fatalf("notes = %q, want the balance in USDC", notes)
 	}
 	for i := range plan.Checks {
 		plan.Checks[i].SenderBalance = 1_500_000
 	}
-	if _, err := atomicValidationNotes(plan); err == nil || err.Error() != "insufficient balance: have 1.500000 USDC, need 2.000000 USDC" {
+	if _, err := atomicValidationNotes(plan); err == nil || err.Error() != "insufficient balance: have 1.5 USDC, need 2 USDC" {
 		t.Fatalf("atomicValidationNotes() error = %v", err)
 	}
 
@@ -378,7 +379,7 @@ func TestPreflightMessagesUseDisplayUnits(t *testing.T) {
 	warnings := sendWarnings(PreparedSendItem{BalanceCheck: &BalanceCheckDetails{
 		BelowMinBalance: true, RemainingBalance: 49_000, MinBalance: 100_000,
 	}}, asa.Amount{Meta: asa.Metadata{UnitName: "ALGO", Decimals: 6}, Raw: 1})
-	if len(warnings) != 1 || warnings[0].Message != "After this transaction, balance will be 0.049000 ALGO, below minimum balance of 0.100000 ALGO" {
+	if len(warnings) != 1 || warnings[0].Message != "After this transaction, balance will be 0.049 ALGO, below minimum balance of 0.1 ALGO" {
 		t.Fatalf("sendWarnings() = %+v", warnings)
 	}
 }
@@ -394,7 +395,7 @@ func TestPreflightMessageForAnOverflowingRequirement(t *testing.T) {
 	if err == nil {
 		t.Fatal("validatePreparedSendItem() accepted an unfundable payment")
 	}
-	if want := "insufficient balance: have 2.000000 ALGO, and the amount plus fee exceeds the largest representable amount"; err.Error() != want {
+	if want := "insufficient balance: have 2 ALGO, and the amount plus fee exceeds the largest representable amount"; err.Error() != want {
 		t.Fatalf("validatePreparedSendItem() error = %q, want %q", err, want)
 	}
 }
