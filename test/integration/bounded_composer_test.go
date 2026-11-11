@@ -119,7 +119,7 @@ func solveV42IntegrationPath(t *testing.T, profile lsigresource.ConsensusProfile
 		}},
 		Dummy: lsigresource.Usage{
 			ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
-			MaxOpcodeCost: 1,
+			MaxOpcodeCost: signing.DummyOpcodeCost,
 		},
 	})
 	if err != nil {
