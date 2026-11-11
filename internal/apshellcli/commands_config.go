@@ -236,7 +236,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		if err != nil {
 			return nil, err
 		}
-		projection := endpointDiscoveryProjection{PublicKeyCount: result.PublicKeyCount}
+		projection := endpointDiscoveryProjection{CosignerKeyCount: result.CosignerKeyCount}
 		projection.Endpoints = make([]endpointDiscoveryEntry, len(result.Endpoints))
 		for i, endpoint := range result.Endpoints {
 			entry := endpointDiscoveryEntry{Alias: endpoint.Alias, Skipped: endpoint.Skipped, Error: endpoint.Error}

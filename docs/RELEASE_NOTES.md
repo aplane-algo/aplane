@@ -33,6 +33,9 @@ before it was renamed `enroll`.
   advertised entry for a public key, so a second witness key type with the
   same public key could not be routed, and `endpoints discover-cosigners`
   called it a repeat publication. Only one witness key type exists today.
+  The diagnostic's count, `cosigner_key_count` in its structured result (was
+  `public_key_count`), counts each key type and public key pair, and a key
+  advertised by two endpoints is reported with its key type.
 - **A plugin command's `arg:` values go only where they are declared.** They
   were copied to every transaction in the plugin's group, so a sibling LogicSig
   with the same argument name received them too. Each position APlane signs now

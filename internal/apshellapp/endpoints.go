@@ -264,8 +264,8 @@ func (a *App) discoverEndpointCosigners(ctx context.Context) (*EndpointDiscoverC
 	// A component key is its key type and public key together, as routing
 	// matches it: one endpoint may advertise a public key under two key types.
 	type componentIdentity struct{ keyType, publicKey string }
-	seenPublicKeys := map[componentIdentity]string{}
-	publicKeyCount := 0
+	seen := map[componentIdentity]string{}
+	cosignerKeyCount := 0
 	for _, alias := range aliases {
 		endpoint := cfg.Endpoints.Endpoints[alias]
 		keys, err := a.eng.DiscoverCosignerComponentKeys(ctx, endpoint)
@@ -284,22 +284,22 @@ func (a *App) discoverEndpointCosigners(ctx context.Context) (*EndpointDiscoverC
 		discovery := EndpointCosignerDiscovery{Alias: alias}
 		for _, key := range keys {
 			identity := componentIdentity{keyType: key.KeyType, publicKey: key.PublicKey}
-			if previousAlias, exists := seenPublicKeys[identity]; exists {
-				return nil, fmt.Errorf("cosigner public key advertised by both endpoint aliases %q and %q", previousAlias, alias)
+			if previousAlias, exists := seen[identity]; exists {
+				return nil, fmt.Errorf("cosigner public key under key type %s advertised by both endpoint aliases %q and %q", key.KeyType, previousAlias, alias)
 			}
-			seenPublicKeys[identity] = alias
+			seen[identity] = alias
 			discovery.Keys = append(discovery.Keys, DiscoveredEndpointCosignerKey{
 				PublicKey:    key.PublicKey,
 				ComponentKey: key.ComponentKey,
 				KeyType:      key.KeyType,
 			})
-			publicKeyCount++
+			cosignerKeyCount++
 		}
 		discoveries = append(discoveries, discovery)
 	}
 	result := &EndpointDiscoverCosignersResult{
-		Endpoints:      discoveries,
-		PublicKeyCount: publicKeyCount,
+		Endpoints:        discoveries,
+		CosignerKeyCount: cosignerKeyCount,
 	}
 	return result, nil
 }
@@ -461,7 +461,7 @@ func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []s
 
 func endpointDiscoverCosignersRenderLines(result *EndpointDiscoverCosignersResult) []string {
 	lines := []string{
-		fmt.Sprintf("Discovered cosigner inventory from %d endpoint(s): %d key(s)", len(result.Endpoints), result.PublicKeyCount),
+		fmt.Sprintf("Discovered cosigner inventory from %d endpoint(s): %d key(s)", len(result.Endpoints), result.CosignerKeyCount),
 	}
 	for _, endpoint := range result.Endpoints {
 		if endpoint.Skipped {
