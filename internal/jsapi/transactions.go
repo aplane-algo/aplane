@@ -101,7 +101,8 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 //	sweep(from, to, {asset, leaving, fee, wait, lsigArgs})
 //
 // from is one account or an array of them. asset is an asset ID (0 or absent
-// is ALGO) and leaving is in base units.
+// is ALGO) and leaving is in base units; without it an ALGO sweep leaves each
+// account its minimum balance.
 func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "sweep() requires from and to arguments")
 	sweeper := a.getSweeper()
@@ -133,7 +134,7 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 	if m := a.objectArg(call, 2, "sweep()"); m != nil {
 		a.refuseUnknownKeys(m, "sweep() option", "asset", "leaving", "fee", "wait", "lsigArgs")
 		req.AssetID, _ = a.optionUint64(m, "asset", "sweep()")
-		req.Leaving, _ = a.optionUint64(m, "leaving", "sweep()")
+		req.Leaving, req.LeavingSet = a.optionUint64(m, "leaving", "sweep()")
 		req.Fee, req.UseFlatFee = a.optionUint64(m, "fee", "sweep()")
 		if wait, ok := a.optionBool(m, "wait", "sweep()"); ok {
 			req.Wait = wait

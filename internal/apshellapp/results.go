@@ -656,19 +656,22 @@ type SweepItemResult struct {
 
 // SweepCommandResult describes the semantic outcome of a sweep command.
 type SweepCommandResult struct {
-	Asset           asa.Metadata
-	Leaving         asa.Amount
-	FromAddresses   []string
-	ToAddress       string
-	UsedAllSignable bool
-	ReceiverOptedIn bool
-	Items           []SweepItemResult
-	SuccessCount    int
-	FailureCount    int
-	LastTxID        string
-	InfoLines       []string
-	HeaderLine      string
-	SummaryLines    []string
+	Asset   asa.Metadata
+	Leaving asa.Amount
+	// LeavingMinimumBalance is true for an ALGO sweep given no amount to
+	// leave: each account keeps its own minimum balance and Leaving is zero.
+	LeavingMinimumBalance bool
+	FromAddresses         []string
+	ToAddress             string
+	UsedAllSignable       bool
+	ReceiverOptedIn       bool
+	Items                 []SweepItemResult
+	SuccessCount          int
+	FailureCount          int
+	LastTxID              string
+	InfoLines             []string
+	HeaderLine            string
+	SummaryLines          []string
 }
 
 // ConnectResult describes the outcome of a signer connection attempt.

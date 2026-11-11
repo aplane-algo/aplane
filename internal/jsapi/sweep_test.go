@@ -39,7 +39,12 @@ func TestSweepPassesTheRequestToTheHost(t *testing.T) {
 			name: "a list of accounts with every option",
 			code: `sweep(["a", "b"], "dest", {asset: 31566704, leaving: 1000000, fee: 2000, wait: false})`,
 			want: SweepRequest{From: []string{"a", "b"}, To: "dest", AssetID: 31566704,
-				Leaving: 1000000, Fee: 2000, UseFlatFee: true, Wait: false},
+				Leaving: 1000000, LeavingSet: true, Fee: 2000, UseFlatFee: true, Wait: false},
+		},
+		{
+			name: "leaving nothing, said outright",
+			code: `sweep("a", "dest", {leaving: 0})`,
+			want: SweepRequest{From: []string{"a"}, To: "dest", LeavingSet: true, Wait: true},
 		},
 		{
 			name: "LogicSig arguments",
@@ -50,7 +55,7 @@ func TestSweepPassesTheRequestToTheHost(t *testing.T) {
 		{
 			name: "a large amount as text",
 			code: `sweep("a", "dest", {leaving: "9007199254740993"})`,
-			want: SweepRequest{From: []string{"a"}, To: "dest", Leaving: 9007199254740993, Wait: true},
+			want: SweepRequest{From: []string{"a"}, To: "dest", Leaving: 9007199254740993, LeavingSet: true, Wait: true},
 		},
 	}
 	for _, tc := range cases {

@@ -79,7 +79,7 @@ sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 | `<asset>` | `algo` or ASA reference |
 | `<accounts>` | Optional: `[addr1 addr2 ...]` or `@setname` (default: all signable) |
 | `<dest>` | Destination address or alias |
-| `<amount>` | Amount to leave in each source account (default: `0`, sweep everything else) |
+| `<amount>` | Amount to leave in each source account. Default: for `algo`, each account's own minimum balance, the most an open account can send; for an ASA, nothing. `leaving 0` on `algo` is taken as written and the network refuses it |
 
 **Options:**
 | Option | Description |
@@ -90,7 +90,7 @@ sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 
 **Examples:**
 ```
-sweep algo to treasury                              # All signable accounts
+sweep algo to treasury                              # All signable accounts, each left its minimum balance
 sweep usdc from [alice bob charlie] to treasury
 sweep algo from @team to main leaving 1             # Leave 1 ALGO in each
 sweep usdc from @validators to cold leaving 100

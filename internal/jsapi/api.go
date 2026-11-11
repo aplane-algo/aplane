@@ -40,10 +40,13 @@ type Sweeper interface {
 // SweepRequest is what sweep() asks for. Amounts are in base units, as
 // everywhere in the JS API.
 type SweepRequest struct {
-	From       []string
-	To         string
-	AssetID    uint64 // 0 is ALGO
+	From    []string
+	To      string
+	AssetID uint64 // 0 is ALGO
+	// Leaving is read only when LeavingSet. Without it an ALGO sweep leaves
+	// each account its minimum balance and an ASA sweep leaves nothing.
 	Leaving    uint64
+	LeavingSet bool
 	Fee        uint64
 	UseFlatFee bool
 	Wait       bool

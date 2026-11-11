@@ -58,12 +58,15 @@ func (s jsSweeper) Sweep(ctx context.Context, req jsapi.SweepRequest) (*jsapi.Sw
 	if req.AssetID != 0 {
 		assetRef = strconv.FormatUint(req.AssetID, 10)
 	}
-	leaving := req.Leaving
+	var leaving *uint64
+	if req.LeavingSet {
+		leaving = &req.Leaving
+	}
 	result, err := s.app.Sweep(ctx, SweepRequest{
 		AssetRef:   assetRef,
 		FromRaw:    req.From,
 		ToRaw:      req.To,
-		LeavingRaw: &leaving,
+		LeavingRaw: leaving,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
 		LsigArgs:   req.LsigArgs,

@@ -202,3 +202,46 @@ func TestSweepResultForScript(t *testing.T) {
 		t.Fatalf("result = %+v", out)
 	}
 }
+
+// An ALGO sweep given no amount to leave keeps each account's own minimum
+// balance: sending more is refused by the network. An amount that is given,
+// zero included, is used as given.
+func TestSweepLeavesTheMinimumBalanceByDefault(t *testing.T) {
+	// The fake network: 5,000,000 microAlgos, minimum balance 100,000. No
+	// signer, so each transaction fails after its amount is settled.
+	const balance, minimum, fee = 5_000_000, 100_000, 1_000
+	zero := uint64(0)
+	cases := []struct {
+		name        string
+		req         SweepRequest
+		wantAmount  uint64
+		wantMinimum bool
+	}{
+		{"none given", SweepRequest{}, balance - minimum - fee, true},
+		{"given as text", SweepRequest{LeavingText: "1"}, balance - 1_000_000 - fee, false},
+		{"zero given as text", SweepRequest{LeavingText: "0"}, balance - fee, false},
+		{"zero given in base units", SweepRequest{LeavingRaw: &zero}, balance - fee, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := beforeSubmitApp(t)
+			req := tc.req
+			req.AssetRef = "algo"
+			req.FromRaw = []string{beforeSubmitFrom}
+			req.ToRaw = beforeSubmitTo
+			result, _ := app.Sweep(context.Background(), req)
+			if result == nil || len(result.Items) != 1 {
+				t.Fatalf("Sweep() result = %+v", result)
+			}
+			if got := result.Items[0].Amount.Raw; got != tc.wantAmount {
+				t.Fatalf("amount to send = %d, want %d (item %+v)", got, tc.wantAmount, result.Items[0])
+			}
+			if result.LeavingMinimumBalance != tc.wantMinimum {
+				t.Fatalf("LeavingMinimumBalance = %v, want %v", result.LeavingMinimumBalance, tc.wantMinimum)
+			}
+			if tc.wantMinimum && !strings.Contains(result.HeaderLine, "leaving each its minimum balance") {
+				t.Fatalf("header = %q", result.HeaderLine)
+			}
+		})
+	}
+}

@@ -299,6 +299,7 @@ Examples:
 ```javascript
 send("alice", "bob", algo(2), { note: "rent" })
 sweep("hot-wallet", "treasury", { leaving: algo(1) })        // keep 1 ALGO
+sweep("hot-wallet", "treasury")                              // keep only the minimum balance
 sweep(["a", "b"], "treasury", { asset: 31566704 })           // an ASA, all of it
 
 close("htlc-lsig", "treasury", {
@@ -311,7 +312,7 @@ close("htlc-lsig", "treasury", {
 `sweep()` is the shell's `sweep` command. It does not close the account; that
 is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
 `leaving` (what to keep in each account, in microAlgos or the asset's base
-units, default 0), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
+units), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
 no `note`. An option that is present must have a value: `{leaving: undefined}`
 is an error, not "leave nothing".
 
@@ -330,9 +331,11 @@ for its confirmation failed, because it timed out or the network dropped it.
 The thrown message names such a transaction ("sent as ..."). Check whether it
 confirmed before retrying.
 
-An ALGO sweep with `leaving: 0` tries to send the whole balance less fees,
-which the network refuses, because an open account must keep its minimum
-balance. Leave at least the minimum, or use `close()` to empty the account.
+Without `leaving`, an ALGO sweep leaves each account its own minimum balance,
+which is the most an open account can send, and an ASA sweep leaves nothing.
+`leaving: 0` on an ALGO sweep is taken as written: it tries to send the whole
+balance less fees, and the network refuses that. Use `close()` to empty an
+account.
 
 ### ASA
 

@@ -96,9 +96,13 @@ type CloseRequest struct {
 
 // SweepRequest captures parsed sweep inputs.
 type SweepRequest struct {
-	AssetRef    string
-	FromRaw     []string
-	ToRaw       string
+	AssetRef string
+	FromRaw  []string
+	ToRaw    string
+	// LeavingText is the amount to leave in each account, in display units.
+	// Empty means none was given: an ALGO sweep then leaves each account its
+	// own minimum balance, which is the most the network lets an open
+	// account send, and an ASA sweep leaves nothing.
 	LeavingText string
 	// LeavingRaw, when set, is the amount to leave in base units and
 	// LeavingText is not read. JavaScript's sweep() uses it: amounts there
@@ -750,8 +754,12 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	}
 
 	var leavingAmount asa.Amount
+	leaveMinimumBalance := false
 	if req.LeavingRaw != nil {
 		leavingAmount = asa.AmountFromRaw(*req.LeavingRaw, assetMeta)
+	} else if req.LeavingText == "" {
+		leavingAmount = asa.AmountFromRaw(0, assetMeta)
+		leaveMinimumBalance = assetMeta.AssetID == 0
 	} else {
 		leavingAmount, err = cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
 		if err != nil {
@@ -766,6 +774,8 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		ToAddress:       toAddress,
 		UsedAllSignable: usedAllSignable,
 		ReceiverOptedIn: receiverOptedIn,
+
+		LeavingMinimumBalance: leaveMinimumBalance,
 	}
 
 	for _, fromAddress := range fromAddresses {
@@ -786,8 +796,12 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		balanceResult := balanceDetailsFromEngine(balanceEngineResult)
 
 		var balance uint64
+		leaving := leavingAmount.Raw
 		if assetMeta.AssetID == 0 {
 			balance = balanceResult.AlgoBalance
+			if leaveMinimumBalance {
+				leaving = balanceResult.MinBalance
+			}
 		} else {
 			found := false
 			for _, asset := range balanceResult.Assets {
@@ -815,11 +829,15 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			result.Items = append(result.Items, item)
 			continue
 		}
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
+		sendAmount, feeReserve, ok := sweepSendAmount(balance, leaving, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
 		if !ok {
-			item.SkippedReason = fmt.Sprintf("balance %d <= leaving amount %d", balance, leavingAmount.Raw)
-			if assetMeta.AssetID == 0 && balance > leavingAmount.Raw {
-				item.SkippedReason = fmt.Sprintf("balance %d cannot cover leaving amount %d plus fee reserve %d", balance, leavingAmount.Raw, feeReserve)
+			what := "leaving amount"
+			if leaveMinimumBalance {
+				what = "minimum balance"
+			}
+			item.SkippedReason = fmt.Sprintf("balance %d <= %s %d", balance, what, leaving)
+			if assetMeta.AssetID == 0 && balance > leaving {
+				item.SkippedReason = fmt.Sprintf("balance %d cannot cover %s %d plus fee reserve %d", balance, what, leaving, feeReserve)
 			}
 			result.Items = append(result.Items, item)
 			continue
@@ -955,7 +973,9 @@ func decorateSweepResult(result *SweepCommandResult) {
 	}
 
 	result.HeaderLine = fmt.Sprintf("Sweeping %s from %d account(s) to {to}", asa.DisplayRef(result.Asset), len(result.FromAddresses))
-	if result.Leaving.Raw > 0 {
+	if result.LeavingMinimumBalance {
+		result.HeaderLine += " (leaving each its minimum balance)"
+	} else if result.Leaving.Raw > 0 {
 		result.HeaderLine += fmt.Sprintf(" (leaving %s in each)", asa.DisplayString(result.Leaving))
 	}
 

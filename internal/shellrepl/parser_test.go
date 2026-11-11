@@ -913,8 +913,8 @@ func TestParseSweepCommand(t *testing.T) {
 				if p.ToRaw != "treasury" {
 					t.Errorf("ToRaw = %v, want treasury", p.ToRaw)
 				}
-				if p.Leaving != "0" {
-					t.Errorf("Leaving = %v, want 0", p.Leaving)
+				if p.Leaving != "" {
+					t.Errorf("Leaving = %q, want none given", p.Leaving)
 				}
 			},
 		},
@@ -978,8 +978,8 @@ func TestParseSweepCommand(t *testing.T) {
 				if p.ToRaw != "leaving" {
 					t.Errorf("ToRaw = %q, want leaving", p.ToRaw)
 				}
-				if p.Leaving != "0" {
-					t.Errorf("Leaving = %v, want 0", p.Leaving)
+				if p.Leaving != "" {
+					t.Errorf("Leaving = %q, want none given", p.Leaving)
 				}
 			},
 		},
