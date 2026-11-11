@@ -323,13 +323,10 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	params := KeyRegParams{
 		Wait:              true,
 		IncentiveEligible: false, // Default to NOT eligible (requires explicit flag)
-		VoteFirst:         0,
-		VoteLast:          3000000,
-		KeyDilution:       10000,
 	}
 
 	if len(args) < 2 {
-		return params, fmt.Errorf("usage: keyreg <account> <online|offline> [votekey=...] [selkey=...] [sproofkey=...] [votefirst=...] [votelast=...] [keydilution=...] [eligible=true] [nowait]\nExample: keyreg alice online votekey=ABC selkey=DEF sproofkey=GHI votefirst=1000 votelast=2000 keydilution=10000 eligible=true")
+		return params, fmt.Errorf("usage: keyreg <account> <online|offline> [votekey=...] [selkey=...] [sproofkey=...] [votefirst=...] [votelast=...] [keydilution=...] [eligible=true] [nowait]\nExample: keyreg alice online votekey=ABC selkey=DEF sproofkey=GHI votefirst=1000 votelast=2000 keydilution=1733 eligible=true")
 	}
 
 	// Position 0: account
