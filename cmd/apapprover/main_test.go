@@ -90,6 +90,18 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 		}},
 	}
 
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
+	if !strings.Contains(rendered, "Policy warnings (1)") {
+		t.Fatalf("displaySignRequest() output missing violations header:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "unexpected rekey") {
+		t.Fatalf("displaySignRequest() output missing violation message:\n%s", rendered)
+	}
+}
+
+// captureStdout returns what fn prints.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -97,20 +109,29 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 	}
 	os.Stdout = w
 	defer func() { os.Stdout = oldStdout }()
-
-	displaySignRequest(req, 1)
-
+	fn()
 	_ = w.Close()
 	var out bytes.Buffer
 	if _, err := out.ReadFrom(r); err != nil {
 		t.Fatalf("ReadFrom() error = %v", err)
 	}
-	rendered := out.String()
-	if !strings.Contains(rendered, "Policy warnings (1)") {
-		t.Fatalf("displaySignRequest() output missing violations header:\n%s", rendered)
+	return out.String()
+}
+
+// apapprover shows the rounds a request can be submitted in, as apadmin
+// does, and nothing when the signer sent none.
+func TestDisplaySignRequestShowsValidityWindow(t *testing.T) {
+	rendered := captureStdout(t, func() {
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc", FirstValid: 100, LastValid: 1100}, 1)
+	})
+	if !strings.Contains(rendered, "Valid Rounds: 100 - 1100 (window: 1000 blocks)") {
+		t.Fatalf("displaySignRequest() output missing the validity window:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "unexpected rekey") {
-		t.Fatalf("displaySignRequest() output missing violation message:\n%s", rendered)
+	rendered = captureStdout(t, func() {
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc"}, 1)
+	})
+	if strings.Contains(rendered, "Valid Rounds") {
+		t.Fatalf("displaySignRequest() shows a window the signer did not send:\n%s", rendered)
 	}
 }
 

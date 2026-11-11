@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -57,11 +58,9 @@ func (m Model) renderSigningPopup() string {
 	}
 	sb.WriteString("\n\n")
 
-	// Validity window (if available)
-	if m.signing.request.FirstValid > 0 && m.signing.request.LastValid > 0 {
-		window := m.signing.request.LastValid - m.signing.request.FirstValid
-		sb.WriteString(fmt.Sprintf("Valid Rounds: %d - %d (window: %d blocks)\n\n",
-			m.signing.request.FirstValid, m.signing.request.LastValid, window))
+	// Validity window (if available), worded as apapprover words it
+	if line := protocol.ValidityWindowLine(m.signing.request.FirstValid, m.signing.request.LastValid); line != "" {
+		sb.WriteString(line + "\n\n")
 	}
 
 	// Display policy violations prominently (outside viewport so they're always visible)

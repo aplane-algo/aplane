@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -155,9 +156,9 @@ func TestAtomicValidationNotesChecksAlgoGroupTotal(t *testing.T) {
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
 		Checks: []BalanceCheckDetails{
-			{SufficientFunds: true, SenderBalance: 8.0},
-			{SufficientFunds: true, SenderBalance: 8.0},
-			{SufficientFunds: true, SenderBalance: 8.0},
+			{SufficientFunds: true, SenderBalance: 8_000_000},
+			{SufficientFunds: true, SenderBalance: 8_000_000},
+			{SufficientFunds: true, SenderBalance: 8_000_000},
 		},
 	}
 
@@ -171,7 +172,7 @@ func TestAtomicValidationNotesChecksAlgoGroupTotal(t *testing.T) {
 
 	// With enough for the whole group (20 ALGO), it passes.
 	for i := range plan.Checks {
-		plan.Checks[i].SenderBalance = 20.0
+		plan.Checks[i].SenderBalance = 20_000_000
 	}
 	if _, err := atomicValidationNotes(plan); err != nil {
 		t.Fatalf("atomicValidationNotes() error = %v, want success for sufficient total", err)
@@ -190,9 +191,9 @@ func TestAtomicValidationNotesIncludesFees(t *testing.T) {
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
 		Checks: []BalanceCheckDetails{
-			{SufficientFunds: true, SenderBalance: 15.001},
-			{SufficientFunds: true, SenderBalance: 15.001},
-			{SufficientFunds: true, SenderBalance: 15.001},
+			{SufficientFunds: true, SenderBalance: 15_001_000},
+			{SufficientFunds: true, SenderBalance: 15_001_000},
+			{SufficientFunds: true, SenderBalance: 15_001_000},
 		},
 	}
 
@@ -206,7 +207,7 @@ func TestAtomicValidationNotesIncludesFees(t *testing.T) {
 
 	// Bumping the balance above the fee-inclusive total (15.003) clears it.
 	for i := range plan.Checks {
-		plan.Checks[i].SenderBalance = 15.004
+		plan.Checks[i].SenderBalance = 15_004_000
 	}
 	if _, err := atomicValidationNotes(plan); err != nil {
 		t.Fatalf("atomicValidationNotes() error = %v, want success once fees are covered", err)
@@ -232,9 +233,9 @@ func TestAtomicValidationNotesUsesPreparedFees(t *testing.T) {
 		To:     []string{"bob", "carol", "dave"},
 		Prep:   preparedAtomicGroupFromEngine(prep),
 		Checks: []BalanceCheckDetails{
-			{SufficientFunds: true, SenderBalance: 15.004},
-			{SufficientFunds: true, SenderBalance: 15.004},
-			{SufficientFunds: true, SenderBalance: 15.004},
+			{SufficientFunds: true, SenderBalance: 15_004_000},
+			{SufficientFunds: true, SenderBalance: 15_004_000},
+			{SufficientFunds: true, SenderBalance: 15_004_000},
 		},
 	}
 
@@ -248,7 +249,7 @@ func TestAtomicValidationNotesUsesPreparedFees(t *testing.T) {
 
 	// Above the prepared-fee total (15.006), it passes.
 	for i := range plan.Checks {
-		plan.Checks[i].SenderBalance = 15.007
+		plan.Checks[i].SenderBalance = 15_007_000
 	}
 	if _, err := atomicValidationNotes(plan); err != nil {
 		t.Fatalf("atomicValidationNotes() error = %v, want success once prepared fees are covered", err)
@@ -316,5 +317,85 @@ func TestPrepareSendRefusesLogicSigArgsOnAnAtomicSend(t *testing.T) {
 	plan, err := app.PrepareSend(context.Background(), request)
 	if err != nil || plan.Mode != SendModeNonAtomic {
 		t.Fatalf("one-to-one send with atomic and arg: %v (mode %v), want the ordinary path", err, plan)
+	}
+}
+
+// ASA preflight messages show balances in the asset's display units, as the
+// send result shows the amount (asa.FormatDisplayAmount), not its base units
+// beside the unit name; ALGO shows in ALGO. Base units are compared as
+// integers.
+func TestPreflightMessagesUseDisplayUnits(t *testing.T) {
+	usdc := asa.Metadata{AssetID: 31566704, UnitName: "USDC", Decimals: 6}
+
+	err := validatePreparedSendItem(PreparedSendItem{BalanceCheck: &BalanceCheckDetails{
+		SenderBalance: 1_500_000, RequiredAmount: 2_000_000,
+	}}, asa.Amount{Meta: usdc, Raw: 2_000_000})
+	if err == nil || err.Error() != "insufficient balance: have 1.5, need 2 USDC" {
+		t.Fatalf("validatePreparedSendItem() error = %v", err)
+	}
+
+	plan := &AtomicSendPlan{
+		Mode:   SendModeAtomicToMultiple,
+		Amount: asa.Amount{Meta: usdc, Raw: 1_000_000},
+		To:     []string{"bob", "carol"},
+		Checks: []BalanceCheckDetails{
+			{SufficientFunds: true, ReceiverOptedIn: true, SenderBalance: 2_500_000},
+			{SufficientFunds: true, ReceiverOptedIn: true, SenderBalance: 2_500_000},
+		},
+	}
+	notes, err := atomicValidationNotes(plan)
+	if err != nil {
+		t.Fatalf("atomicValidationNotes() error = %v", err)
+	}
+	if len(notes) == 0 || notes[0] != "Sender has 2.5 USDC "+checkMark() {
+		t.Fatalf("notes = %q, want the balance in USDC", notes)
+	}
+	for i := range plan.Checks {
+		plan.Checks[i].SenderBalance = 1_500_000
+	}
+	if _, err := atomicValidationNotes(plan); err == nil || err.Error() != "insufficient balance: have 1.5 USDC, need 2 USDC" {
+		t.Fatalf("atomicValidationNotes() error = %v", err)
+	}
+
+	// One base unit short past 2^54, where a float64 rounds both the balance
+	// and the total to 2^54 and sees no difference.
+	big := asa.Metadata{AssetID: 7, UnitName: "BIG", Decimals: 0}
+	plan = &AtomicSendPlan{
+		Mode:   SendModeAtomicToMultiple,
+		Amount: asa.Amount{Meta: big, Raw: 1<<53 + 1},
+		To:     []string{"bob", "carol"},
+		Checks: []BalanceCheckDetails{
+			{SufficientFunds: true, ReceiverOptedIn: true, SenderBalance: 1<<54 + 1},
+			{SufficientFunds: true, ReceiverOptedIn: true, SenderBalance: 1<<54 + 1},
+		},
+	}
+	if float64(plan.Checks[0].SenderBalance) < float64(2*plan.Amount.Raw) {
+		t.Fatal("the case no longer defeats a float64 comparison; pick larger amounts")
+	}
+	if _, err := atomicValidationNotes(plan); err == nil || !strings.Contains(err.Error(), "insufficient balance") {
+		t.Fatalf("atomicValidationNotes() error = %v, want one base unit short", err)
+	}
+
+	warnings := sendWarnings(PreparedSendItem{BalanceCheck: &BalanceCheckDetails{
+		BelowMinBalance: true, RemainingBalance: 49_000, MinBalance: 100_000,
+	}}, asa.Amount{Meta: asa.Metadata{UnitName: "ALGO", Decimals: 6}, Raw: 1})
+	if len(warnings) != 1 || warnings[0].Message != "After this transaction, balance will be 0.049 ALGO, below minimum balance of 0.1 ALGO" {
+		t.Fatalf("sendWarnings() = %+v", warnings)
+	}
+}
+
+// An amount whose sum with the fee overflows is refused as before, and the
+// message says so rather than printing the clamped requirement as if it were
+// the real one.
+func TestPreflightMessageForAnOverflowingRequirement(t *testing.T) {
+	algo := asa.Metadata{UnitName: "ALGO", Decimals: 6}
+	err := validatePreparedSendItem(PreparedSendItem{BalanceCheck: &BalanceCheckDetails{
+		SenderBalance: 2_000_000, RequiredAmount: math.MaxUint64, RequiredOverflows: true,
+	}}, asa.Amount{Meta: algo, Raw: math.MaxUint64 - 500})
+	if err == nil {
+		t.Fatal("validatePreparedSendItem() accepted an unfundable payment")
+	}
+	if want := "insufficient balance: have 2 ALGO, and the amount plus fee exceeds the largest representable amount"; err.Error() != want {
+		t.Fatalf("validatePreparedSendItem() error = %q, want %q", err, want)
 	}
 }

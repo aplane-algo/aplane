@@ -136,8 +136,8 @@ func (e *Engine) checkASABalances(ctx context.Context, fromAddr, toAddr string, 
 		return nil, fmt.Errorf("sender is not opted into asset %d", asaID)
 	}
 
-	result.SenderBalance = float64(senderASABalance)
-	result.RequiredAmount = float64(amountUnits)
+	result.SenderBalance = senderASABalance
+	result.RequiredAmount = amountUnits
 	result.SufficientFunds = senderASABalance >= amountUnits
 
 	// Check receiver is opted in

@@ -226,9 +226,24 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 	if dummies := len(planned) - len(original); dummies > 0 {
 		_, _ = fmt.Fprintf(w, "[COSIGNED] Signer added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", dummies)
 	}
+	// The report was checked against the returned bytes above, so it is what
+	// the signer changed.
+	if m := response.Mutations; m != nil && m.TotalFeesDelta > 0 {
+		_, _ = fmt.Fprintf(w, "[COSIGNED] Signer raised fees by %d microAlgos for authorization, on transaction(s) %v\n",
+			m.TotalFeesDelta, oneBasedPositions(m.FeesModified))
+	}
 	// DecodeGroupHex admits only canonical encodings, so re-encoding yields the
 	// signer's exact bytes in normalized hex.
 	return frozenGroup{BytesHex: encodeGroupHex(planned), Txns: planned, OriginalCount: len(original)}, nil
+}
+
+// oneBasedPositions numbers group positions from one, as the prompts do.
+func oneBasedPositions(indices []int) []int {
+	numbers := make([]int, len(indices))
+	for i, index := range indices {
+		numbers[i] = index + 1
+	}
+	return numbers
 }
 
 // requestBoundedBaseComponents obtains the user signer's bounded base
@@ -519,7 +534,13 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 			if target.Sender != sender {
 				return nil, nil, fmt.Errorf("cosigned target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
+			// The caller's app call description goes with it, so this
+			// approval shows the position's ABI method as the base
+			// component's approval does.
 			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
+			if i < len(opts.AppCallInfo) {
+				signRequests[i].AppCallInfo = opts.AppCallInfo[i]
+			}
 			path, err := cosignedLogicSigResourcePath(target)
 			if err != nil {
 				return nil, nil, fmt.Errorf("cosigned target %d: %w", i, err)
