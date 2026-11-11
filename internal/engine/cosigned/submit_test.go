@@ -17,6 +17,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -481,6 +482,30 @@ func TestDecodeCosignedSignedGroupReturnsSignedObjects(t *testing.T) {
 	}
 }
 
+// The assembled bytes are submitted as returned and the decoded transactions
+// are what is checked against the frozen group, so bytes that decode to the
+// right transaction but are not its canonical encoding are refused.
+func TestDecodeCosignedSignedGroupRefusesBytesThatAreNotCanonical(t *testing.T) {
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
+	signed := msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{1}})
+	repeated := append([]byte{signed[0] + 1}, signed[1:]...)
+	repeated = append(repeated, msgpack.Encode(map[string]types.Signature{"sig": {2}})[1:]...)
+
+	for name, raw := range map[string][]byte{
+		"trailing byte":      append(append([]byte{}, signed...), 0xc0),
+		"second transaction": append(append([]byte{}, signed...), signed...),
+		"repeated field":     repeated,
+	} {
+		_, _, _, err := decodeCosignedSignedGroup([]string{hex.EncodeToString(signed), hex.EncodeToString(raw)})
+		if !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "assembled signed transaction at index 1: ") {
+			t.Errorf("%s: error = %v, want refused as not canonical at index 1", name, err)
+		}
+	}
+	if _, _, _, err := decodeCosignedSignedGroup([]string{hex.EncodeToString(signed), "zz"}); err == nil || !strings.HasPrefix(err.Error(), "failed to decode assembled signed transaction at index 1: ") {
+		t.Errorf("invalid hex: error = %v, want it named by its zero-based index", err)
+	}
+}
+
 // testCacheView adapts a cache.SignerCache to SignerCacheView for tests.
 type testCacheView struct{ c *cache.SignerCache }
 
@@ -738,13 +763,13 @@ func TestValidatePlannedGroup(t *testing.T) {
 	original := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded")
 	plannedOriginal := original
 	plannedOriginal.Fee += 1_000
-	plannedOriginal.Group = types.Digest{0x44}
 	dummies, err := signing.CreateDummyTransactions(1, suggestedParamsFromTxn(original))
 	if err != nil {
 		t.Fatal(err)
 	}
-	dummies[0].Group = plannedOriginal.Group
 	planned := []types.Transaction{plannedOriginal, dummies[0]}
+	regroupForTest(t, planned)
+	plannedOriginal = planned[0]
 	mutations := &signerapi.MutationReport{
 		DummiesAdded: 1, GroupIDChanged: true, FeesModified: []int{0},
 		TotalFeesDelta: 1_000, OriginalCount: 1, FinalCount: 2,
@@ -764,7 +789,8 @@ func TestValidatePlannedGroup(t *testing.T) {
 	t.Run("unreported original mutation", func(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[0].Receiver = testAddress(3)
-		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields") {
+		// Zero-based, as this path's other positions are.
+		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields at original index 0") {
 			t.Fatalf("error = %v, want original mutation rejection", err)
 		}
 	})
@@ -783,14 +809,72 @@ func TestValidatePlannedGroup(t *testing.T) {
 			t.Fatalf("error = %v, want fee delta rejection", err)
 		}
 	})
-	t.Run("non-dummy appended transaction", func(t *testing.T) {
-		badPlanned := append([]types.Transaction(nil), planned...)
-		badPlanned[1].Amount = 1
-		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical cosigned budget dummy") {
-			t.Fatalf("error = %v, want dummy-shape rejection", err)
+	// The plain /sign path's reconciliation, shared here.
+	t.Run("reported fee unchanged", func(t *testing.T) {
+		unchanged := append([]types.Transaction(nil), planned...)
+		unchanged[0].Fee = original.Fee
+		bad := *mutations
+		bad.TotalFeesDelta = 0
+		if err := validatePlannedGroup([]types.Transaction{original}, unchanged, &bad); err == nil || !strings.Contains(err.Error(), "original index 0 did not increase the fee") {
+			t.Fatalf("error = %v, want an unchanged reported fee refused", err)
 		}
-		if _, err := signCosignedDummies(badPlanned[1:]); err == nil || !strings.Contains(err.Error(), "canonical cosigned budget dummy") {
-			t.Fatalf("signCosignedDummies() error = %v, want dummy-shape rejection", err)
+	})
+	t.Run("negative fee delta", func(t *testing.T) {
+		bad := *mutations
+		bad.TotalFeesDelta = -1
+		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "must not be negative") {
+			t.Fatalf("error = %v, want a negative total refused", err)
+		}
+	})
+	t.Run("fee rises that overflow", func(t *testing.T) {
+		second := testPaymentTxn(t, testAddress(3), testAddress(4), "bounded")
+		pair := []types.Transaction{original, second}
+		overflowing := append([]types.Transaction(nil), pair...)
+		for i := range overflowing {
+			overflowing[i].Fee += 1 << 63
+		}
+		report := &signerapi.MutationReport{
+			FeesModified: []int{0, 1}, GroupIDChanged: true, OriginalCount: 2, FinalCount: 2,
+		}
+		if err := validatePlannedGroup(pair, overflowing, report); err == nil || !strings.Contains(err.Error(), "overflows uint64") {
+			t.Fatalf("error = %v, want rises that wrap around refused", err)
+		}
+	})
+	// Appended positions get the canonical dummy check every other path runs,
+	// which the cosigned client's own shape check lacked: the validity window,
+	// genesis and lease have to be the planner's too.
+	for name, edit := range map[string]func(*types.Transaction){
+		"amount":       func(txn *types.Transaction) { txn.Amount = 1 },
+		"first valid":  func(txn *types.Transaction) { txn.FirstValid++ },
+		"last valid":   func(txn *types.Transaction) { txn.LastValid++ },
+		"genesis hash": func(txn *types.Transaction) { txn.GenesisHash[0] ^= 0xff },
+		"genesis id":   func(txn *types.Transaction) { txn.GenesisID = "othernet-v1" },
+		"lease":        func(txn *types.Transaction) { txn.Lease = [32]byte{7} },
+		"note":         func(txn *types.Transaction) { txn.Note = []byte{9} },
+	} {
+		t.Run("appended dummy with another "+name, func(t *testing.T) {
+			badPlanned := append([]types.Transaction(nil), planned...)
+			edit(&badPlanned[1])
+			regroupForTest(t, badPlanned)
+			if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical resource dummy") {
+				t.Fatalf("error = %v, want the dummy refused", err)
+			}
+			if _, err := signCosignedDummies(frozenGroup{Txns: badPlanned, OriginalCount: 1}); err == nil || !strings.Contains(err.Error(), "canonical resource dummy") {
+				t.Fatalf("signCosignedDummies() error = %v, want the dummy refused before it is signed", err)
+			}
+		})
+	}
+	t.Run("appended dummy outside the group", func(t *testing.T) {
+		badPlanned := append([]types.Transaction(nil), planned...)
+		badPlanned[1].Group = types.Digest{0x45}
+		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical group ID") {
+			t.Fatalf("error = %v, want the stray group ID refused", err)
+		}
+	})
+	t.Run("canonical dummies are signed", func(t *testing.T) {
+		signed, err := signCosignedDummies(frozenGroup{Txns: planned, OriginalCount: 1})
+		if err != nil || len(signed) != 1 {
+			t.Fatalf("signCosignedDummies() = %d, %v; want one signed dummy", len(signed), err)
 		}
 	})
 	t.Run("gratuitous existing group change", func(t *testing.T) {
@@ -814,6 +898,23 @@ func TestValidatePlannedGroup(t *testing.T) {
 			t.Fatalf("error = %v, want max_fee rejection", err)
 		}
 	})
+}
+
+// regroupForTest stamps the canonical group ID over txns, so a test edit is
+// the only thing a check sees as wrong.
+func regroupForTest(t *testing.T, txns []types.Transaction) {
+	t.Helper()
+	ungrouped := append([]types.Transaction(nil), txns...)
+	for i := range ungrouped {
+		ungrouped[i].Group = types.Digest{}
+	}
+	groupID, err := crypto.ComputeGroupID(ungrouped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range txns {
+		txns[i].Group = groupID
+	}
 }
 
 func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {

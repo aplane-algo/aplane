@@ -6,15 +6,16 @@ package clientsign
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -187,7 +188,7 @@ func validateSignedGroupShape(signed []string, requestCount int) error {
 	}
 	for i, s := range signed {
 		if s == "" {
-			return fmt.Errorf("signer returned an empty signed transaction at position %d", i+1)
+			return fmt.Errorf("signer returned an empty signed transaction at index %d", i)
 		}
 	}
 	return nil
@@ -198,21 +199,37 @@ func decodeSignedTransactionHex(signedHex []string) ([][]byte, error) {
 	for i, hexStr := range signedHex {
 		signedBytes, err := hex.DecodeString(hexStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+			return nil, fmt.Errorf("failed to decode signed transaction at index %d: %w", i, err)
 		}
 		signedTxns[i] = signedBytes
 	}
 	return signedTxns, nil
 }
 
+// DecodeSignedTxnToSubmit decodes one signed transaction whose bytes the
+// client submits as given. What is checked is the decoded transaction, so the
+// bytes must be exactly its canonical encoding: trailing data, which the node
+// would read as a further transaction, a repeated field or an explicit empty
+// field is refused. The error wraps canonical.ErrNotCanonical, or the
+// canonical decoder's error; each caller adds only the position.
+func DecodeSignedTxnToSubmit(raw []byte) (types.SignedTxn, error) {
+	stxn, err := canonical.DecodeSignedTxn(raw)
+	if errors.Is(err, canonical.ErrNotCanonical) {
+		err = fmt.Errorf("%w: encoding the decoded transaction again gives different bytes (for example trailing data, a second transaction, a repeated or explicit empty field, or a different key order or integer encoding)", err)
+	}
+	return stxn, err
+}
+
+// decodeSignedTransactionObjects decodes the signer's returned bytes, which go
+// to the node as returned, with DecodeSignedTxnToSubmit.
 func decodeSignedTransactionObjects(signedTxns [][]byte) ([]types.SignedTxn, []types.Transaction, []string, error) {
 	signedObjects := make([]types.SignedTxn, len(signedTxns))
 	txns := make([]types.Transaction, len(signedTxns))
 	txIDs := make([]string, len(signedTxns))
 	for i, signedBytes := range signedTxns {
-		var signed types.SignedTxn
-		if err := msgpack.Decode(signedBytes, &signed); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+		signed, err := DecodeSignedTxnToSubmit(signedBytes)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("signed transaction at index %d: %w", i, err)
 		}
 		signedObjects[i] = signed
 		txns[i] = signed.Txn

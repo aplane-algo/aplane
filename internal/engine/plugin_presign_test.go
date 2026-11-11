@@ -28,6 +28,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	cosignercanonical "github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -132,7 +133,7 @@ func TestValidatePluginPlan(t *testing.T) {
 			tc.mutate(&planned[1])
 			regroupPlan(t, planned)
 			err := validatePluginPlan(drafts, planned, report, refs)
-			if err == nil || !strings.Contains(err.Error(), "plugin slot 1") {
+			if err == nil || !strings.Contains(err.Error(), "plugin slot at index 1") {
 				t.Fatalf("expected plugin slot rejection when %s changed, got %v", tc.name, err)
 			}
 		})
@@ -148,8 +149,30 @@ func TestValidatePluginPlan(t *testing.T) {
 			}
 		})
 	}
-	reject("fee decrease", "decreased the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+	reject("fee decrease", "did not increase the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
 		p[0].Fee = drafts[0].Fee - 1
+		r.TotalFeesDelta = 0
+		regroupPlan(t, p)
+		return p, r
+	})
+	// The plain /sign path's reconciliation, shared here: a reported fee that
+	// did not change, a negative total, and rises that wrap around are refused.
+	reject("reported fee unchanged", "fee mutation at original index 0 did not increase the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		p[0].Fee = drafts[0].Fee
+		r.TotalFeesDelta = 0
+		regroupPlan(t, p)
+		return p, r
+	})
+	reject("negative total fee delta", "must not be negative", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		r.TotalFeesDelta = -1
+		return p, r
+	})
+	reject("fee rises that overflow", "overflows uint64", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		// Each rise is 2^63, so the two wrap to zero, which a report of no
+		// total delta would match if the sum were not checked.
+		p[0].Fee = drafts[0].Fee + 1<<63
+		p[1].Fee = drafts[1].Fee + 1<<63
+		r.FeesModified = []int{0, 1}
 		r.TotalFeesDelta = 0
 		regroupPlan(t, p)
 		return p, r
@@ -199,14 +222,22 @@ func TestVerifySignedAgainstPlan(t *testing.T) {
 	}
 	other := canonical[0]
 	other.Amount++
-	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(other), pluginSigned}); err == nil || !strings.Contains(err.Error(), "different transaction at slot 0") {
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(other), pluginSigned}); err == nil || !strings.Contains(err.Error(), "different transaction than was planned at index 0") {
 		t.Fatalf("substituted managed slot: got %v", err)
 	}
-	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0]), sign(canonical[0])}); err == nil || !strings.Contains(err.Error(), "altered passthrough slot 1") {
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0]), sign(canonical[0])}); err == nil || !strings.Contains(err.Error(), "altered the passthrough slot at index 1") {
 		t.Fatalf("altered passthrough slot: got %v", err)
 	}
 	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0])}); err == nil {
 		t.Fatal("short response accepted")
+	}
+	// A managed slot's bytes are submitted as returned, so they must be the
+	// canonical encoding of the transaction that was checked.
+	for name, variant := range nonCanonicalSignedTxnVariants(t, sign(canonical[0])) {
+		if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{variant, pluginSigned}); !errors.Is(err, cosignercanonical.ErrNotCanonical) ||
+			!strings.HasPrefix(err.Error(), "signed slot at index 0: ") {
+			t.Errorf("managed slot with %s: got %v, want refused as not canonical", name, err)
+		}
 	}
 }
 
@@ -274,8 +305,7 @@ func TestValidatePluginSignedSlot(t *testing.T) {
 			t.Fatal(err)
 		}
 		padded := base64.StdEncoding.EncodeToString(append(raw, 0xc0))
-		if _, err := validatePluginSignedSlot(canonical, padded, PluginSlotAuthorization{}); err == nil ||
-			!strings.Contains(err.Error(), "not canonical") {
+		if _, err := validatePluginSignedSlot(canonical, padded, PluginSlotAuthorization{}); !errors.Is(err, cosignercanonical.ErrNotCanonical) {
 			t.Fatalf("padded signed bytes: %v, want refused as not canonical", err)
 		}
 	})
@@ -617,5 +647,89 @@ func TestSignAndSubmitWithPluginSignersRejectsUnsupportedConsensusBeforePlanning
 	}
 	if pluginCalls.Load() != 0 {
 		t.Fatalf("plugin signing calls = %d, want 0", pluginCalls.Load())
+	}
+}
+
+// A /plan answer is the group the signer froze, so its bytes must be the
+// canonical encoding of what they decode to, as the cosigned plan check
+// requires. A lenient decode would let the client carry on with a different
+// encoding than the signer holds.
+func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
+	pluginAddress, err := signing.DummyAddress()
+	if err != nil {
+		t.Fatalf("signing.DummyAddress() error = %v", err)
+	}
+	managedAccount := crypto.GenerateAccount()
+	resources := &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+		MaxOpcodeCost: 20_000,
+	}
+	txns := []types.Transaction{
+		presignTestTxn(t, pluginAddress.String(), "plugin"),
+		presignTestTxn(t, managedAccount.Address.String(), "managed"),
+	}
+
+	var signCalls atomic.Int32
+	signerMux := http.NewServeMux()
+	signerMux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		planned := make([]string, len(req.Requests))
+		for i, item := range req.Requests {
+			planned[i] = item.TxnBytesHex
+		}
+		// One trailing byte after the second transaction's msgpack value.
+		planned[1] += "00"
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{
+			Transactions: planned,
+			Mutations: &signerapi.MutationReport{
+				OriginalCount: len(planned), FinalCount: len(planned), ForeignCount: 1, Reason: "foreign",
+			},
+		})
+	})
+	signerMux.HandleFunc("/sign", func(w http.ResponseWriter, r *http.Request) {
+		signCalls.Add(1)
+		http.Error(w, "must not be reached", http.StatusInternalServerError)
+	})
+	signerServer := httptest.NewServer(signerMux)
+	defer signerServer.Close()
+
+	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+			ConsensusVersion: string(protocol.ConsensusV42),
+		})
+	}))
+	defer algodServer.Close()
+	algodClient, err := algod.MakeClient(algodServer.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
+
+	var pluginCalls atomic.Int32
+	_, err = engine.SignAndSubmitWithPluginSigners(
+		context.Background(),
+		txns,
+		map[string]string{pluginAddress.String(): "plugin-ref"},
+		map[string]PluginSlotAuthorization{pluginAddress.String(): {LsigResources: resources}},
+		func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
+			pluginCalls.Add(1)
+			return nil, errors.New("must not be reached")
+		},
+		nil,
+	)
+	if !errors.Is(err, cosignercanonical.ErrNotCanonical) || !strings.Contains(err.Error(), "planned transaction at index 1") {
+		t.Fatalf("error = %v, want the plan refused as not canonical at index 1", err)
+	}
+	if pluginCalls.Load() != 0 || signCalls.Load() != 0 {
+		t.Fatalf("plugin signer calls = %d, /sign calls = %d, want none after a refused plan", pluginCalls.Load(), signCalls.Load())
 	}
 }

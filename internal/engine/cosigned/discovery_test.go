@@ -4,13 +4,48 @@
 package cosigned
 
 import (
+	"encoding/hex"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
+
+// Routing matches a component key on key type and public key together, so a
+// public key advertised under two key types is two keys, and only an exact
+// repeat collapses.
+func TestDiscoverCosignerComponentKeysKeepsEachKeyTypeOfOnePublicKey(t *testing.T) {
+	publicKey := strings.Repeat("ab", 32)
+	advertise := func(keyType string) signerapi.KeyInfo {
+		raw, err := hex.DecodeString(publicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return signerapi.KeyInfo{Address: witness.DeriveID(keyType, raw), PublicKeyHex: publicKey, KeyType: keyType, IsWitnessKey: true}
+	}
+	const otherType = "example.witness-other.v1"
+	discovered, err := discoverCosignerComponentKeys([]signerapi.KeyInfo{
+		advertise(witness.Falcon1024V1), advertise(otherType), advertise(witness.Falcon1024V1),
+	})
+	if err != nil {
+		t.Fatalf("discoverCosignerComponentKeys() error = %v", err)
+	}
+	if len(discovered) != 2 {
+		t.Fatalf("discovered %d keys, want one per key type: %+v", len(discovered), discovered)
+	}
+	for _, required := range []cosignerRequestKey{
+		{ComponentKeyType: witness.Falcon1024V1, PublicKey: publicKey},
+		{ComponentKeyType: otherType, PublicKey: publicKey},
+	} {
+		if !discoveredCosignerKeysContain(discovered, required) {
+			t.Errorf("no route for %+v in %+v", required, discovered)
+		}
+	}
+}
 
 func TestClassifyCosignerDiscoveryQueryErrorUsesWireCodeBeforeStatus(t *testing.T) {
 	tests := []struct {

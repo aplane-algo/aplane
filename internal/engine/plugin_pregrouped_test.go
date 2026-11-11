@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signing"
 )
 
@@ -105,6 +107,49 @@ func TestProcessSignedTransactionIntents(t *testing.T) {
 			t.Fatal("want error for bad msgpack")
 		}
 	})
+	// The bytes are submitted verbatim and the decoded objects are what is
+	// checked and reviewed, so bytes that decode to the reviewed transaction
+	// but are not its canonical encoding are refused.
+	raw0, err := base64.StdEncoding.DecodeString(encoded[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, variant := range nonCanonicalSignedTxnVariants(t, raw0) {
+		t.Run(name+" refused", func(t *testing.T) {
+			intents := []string{base64.StdEncoding.EncodeToString(variant), encoded[1]}
+			if _, _, err := decodeSignedTxnIntents(intents); !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction at index 0: ") {
+				t.Fatalf("error = %v, want refused as not canonical", err)
+			}
+			if _, err := DecodePregroupedSigned(intents); err == nil {
+				t.Fatal("DecodePregroupedSigned accepted non-canonical bytes")
+			}
+		})
+	}
+}
+
+// nonCanonicalSignedTxnVariants returns encodings of signed that decode to the
+// same fields a reader checks but are not the bytes that would be checked:
+// trailing data, a second transaction appended, and the first field written a
+// second time (a lenient decoder keeps the last).
+func nonCanonicalSignedTxnVariants(t *testing.T, signed []byte) map[string][]byte {
+	t.Helper()
+	var decoded types.SignedTxn
+	if err := msgpack.Decode(signed, &decoded); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	other := decoded.Sig
+	other[0] ^= 0xff
+	repeated := append([]byte{signed[0] + 1}, signed[1:]...)
+	repeated = append(repeated, msgpack.Encode(map[string]types.Signature{"sig": other})[1:]...)
+	var probe types.SignedTxn
+	if err := msgpack.Decode(repeated, &probe); err != nil || probe.Sig != other {
+		t.Fatalf("fixture: repeated-signature bytes decoded to %x, %v", probe.Sig[:2], err)
+	}
+	return map[string][]byte{
+		"trailing byte":      append(append([]byte{}, signed...), 0xc0),
+		"second transaction": append(append([]byte{}, signed...), signed...),
+		"repeated field":     repeated,
+	}
 }
 
 func TestValidatePregroupedSigned(t *testing.T) {
@@ -131,16 +176,16 @@ func TestValidatePregroupedSigned(t *testing.T) {
 	t.Run("missing group id rejects", func(t *testing.T) {
 		_, stxns := signedGroup(t, "a", "b")
 		stxns[0].Txn.Group = types.Digest{}
-		if err := validatePregroupedSigned(stxns); err == nil {
-			t.Fatal("want error when a slot has no group id")
+		if err := validatePregroupedSigned(stxns); err == nil || !strings.Contains(err.Error(), "transaction at index 0 has no group ID") {
+			t.Fatalf("error = %v, want the slot without a group id named by its zero-based index", err)
 		}
 	})
 
 	t.Run("mismatched group ids reject", func(t *testing.T) {
 		_, stxns := signedGroup(t, "a", "b")
 		stxns[1].Txn.Group[0] ^= 0xFF
-		if err := validatePregroupedSigned(stxns); err == nil {
-			t.Fatal("want error when group ids differ")
+		if err := validatePregroupedSigned(stxns); err == nil || !strings.Contains(err.Error(), "transaction at index 1 has a group ID that differs from index 0") {
+			t.Fatalf("error = %v, want the differing slot named by its zero-based index", err)
 		}
 	})
 

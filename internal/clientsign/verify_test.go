@@ -4,6 +4,7 @@
 package clientsign
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -153,8 +154,9 @@ func TestValidateSignedGroupMutationsRejectsNonCanonicalDummy(t *testing.T) {
 	err = validateSignedGroupMutations(
 		[]types.Transaction{original}, decodeVerificationSigned(t, encoded), encoded, report,
 	)
-	if err == nil || !strings.Contains(err.Error(), "not the canonical resource dummy") {
-		t.Fatalf("error = %v, want canonical-dummy rejection", err)
+	// The dummy is named by its index in the group, as every check names a slot.
+	if err == nil || !strings.Contains(err.Error(), "appended transaction at index 1 is not the canonical resource dummy") {
+		t.Fatalf("error = %v, want canonical-dummy rejection at index 1", err)
 	}
 }
 
@@ -182,8 +184,8 @@ func TestValidateSignedGroupMutationsRejectsNonCanonicalDummyAuthorization(t *te
 	err = validateSignedGroupMutations(
 		[]types.Transaction{original}, decodeVerificationSigned(t, encoded), encoded, report,
 	)
-	if err == nil || !strings.Contains(err.Error(), "canonical resource dummy authorization") {
-		t.Fatalf("error = %v, want dummy-authorization rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "appended transaction at index 1 does not carry the canonical resource dummy authorization") {
+		t.Fatalf("error = %v, want dummy-authorization rejection at index 1", err)
 	}
 }
 
@@ -200,8 +202,8 @@ func TestValidateSignedGroupMutationsRejectsNonCanonicalGroupID(t *testing.T) {
 		FinalCount:     2,
 	}
 	err := validateSignedGroupMutations(original, decodeVerificationSigned(t, encoded), encoded, report)
-	if err == nil || !strings.Contains(err.Error(), "canonical group ID") {
-		t.Fatalf("error = %v, want canonical-group rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "returned transaction at index 0 does not carry the canonical group ID") {
+		t.Fatalf("error = %v, want canonical-group rejection at index 0", err)
 	}
 }
 
@@ -221,6 +223,65 @@ func TestValidateSignedGroupMutationsRejectsInaccurateReport(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "does not match observed delta") {
 		t.Fatalf("error = %v, want fee-delta rejection", err)
+	}
+}
+
+func TestValidateOriginalPositions(t *testing.T) {
+	original := []types.Transaction{verificationPayment(1, 2), verificationPayment(3, 4)}
+	raised := func(deltas ...uint64) []types.Transaction {
+		returned := append([]types.Transaction(nil), original...)
+		for i, delta := range deltas {
+			returned[i].Fee += types.MicroAlgos(delta)
+		}
+		return returned
+	}
+
+	if err := ValidateOriginalPositions(original, raised(2000), &signerapi.MutationReport{
+		FeesModified: []int{0}, TotalFeesDelta: 2000,
+	}); err != nil {
+		t.Fatalf("reported fee rise: %v", err)
+	}
+
+	for name, tc := range map[string]struct {
+		returned []types.Transaction
+		report   *signerapi.MutationReport
+		want     string
+	}{
+		"unreported fee rise": {raised(1), nil, "unreported fields at original index 0"},
+		"reported fee unchanged": {raised(0), &signerapi.MutationReport{
+			FeesModified: []int{0},
+		}, "fee mutation at original index 0 did not increase the fee"},
+		"reported fee lowered": {func() []types.Transaction {
+			r := raised()
+			r[0].Fee--
+			return r
+		}(), &signerapi.MutationReport{FeesModified: []int{0}}, "did not increase the fee"},
+		"negative total": {raised(), &signerapi.MutationReport{TotalFeesDelta: -1}, "must not be negative"},
+		// Two rises of 2^63 wrap to zero, which a reported total of zero
+		// would match if the sum were not checked.
+		"rises overflow": {raised(1<<63, 1<<63), &signerapi.MutationReport{
+			FeesModified: []int{0, 1},
+		}, "overflows uint64"},
+		"wrong total": {raised(2000), &signerapi.MutationReport{
+			FeesModified: []int{0}, TotalFeesDelta: 1999,
+		}, "does not match observed delta"},
+		"index out of range": {raised(), &signerapi.MutationReport{FeesModified: []int{2}}, "outside original positions"},
+		"index repeated": {raised(1000), &signerapi.MutationReport{
+			FeesModified: []int{0, 0}, TotalFeesDelta: 1000,
+		}, "duplicated"},
+		"short group": {original[:1], nil, "want at least 2"},
+	} {
+		err := ValidateOriginalPositions(original, tc.returned, tc.report)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want %q", name, err, tc.want)
+		}
+	}
+
+	var changed *UnreportedChangeError
+	returned := raised()
+	returned[1].Receiver = types.Address{9}
+	if err := ValidateOriginalPositions(original, returned, nil); !errors.As(err, &changed) || changed.Index != 1 {
+		t.Fatalf("changed receiver: error = %v, want an UnreportedChangeError at index 1", err)
 	}
 }
 

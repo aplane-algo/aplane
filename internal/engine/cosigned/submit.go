@@ -4,7 +4,6 @@
 package cosigned
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
@@ -289,10 +287,10 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 	for _, component := range componentResp.Components {
 		target, ok := targetsByIndex[component.TargetIndex]
 		if !ok || component.Kind != signerapi.ComponentTargetKindBoundedBase || component.AuthAddress != target.Account {
-			return nil, "", fmt.Errorf("signer returned unexpected bounded component target %d", component.TargetIndex)
+			return nil, "", fmt.Errorf("signer returned an unexpected bounded component for target index %d", component.TargetIndex)
 		}
 		if _, duplicate := components[component.TargetIndex]; duplicate {
-			return nil, "", fmt.Errorf("signer returned duplicate bounded component target %d", component.TargetIndex)
+			return nil, "", fmt.Errorf("signer returned a duplicate bounded component for target index %d", component.TargetIndex)
 		}
 		components[component.TargetIndex] = component
 	}
@@ -308,7 +306,7 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 // targets, returning them as assembly passthrough items: budget dummies
 // locally, and non-cosigned originals through /sign over the frozen bytes.
 func (s *Signer) signContextPositions(ctx context.Context, group frozenGroup, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]signerapi.AssemblyPassthroughItem, error) {
-	signedDummies, err := signCosignedDummies(group.Txns[group.OriginalCount:])
+	signedDummies, err := signCosignedDummies(group)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +392,7 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 		// planned or approved.
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
 		if _, held := s.cache.AuthorizationKind(effectiveSigner); !held {
-			return nil, fmt.Errorf("transaction %d: the signer holds no key for %s; every position of a cosigned group must be signed by this signer (run keys refresh if the key is new)", i+1, effectiveSigner)
+			return nil, fmt.Errorf("transaction at index %d: the signer holds no key for %s; every position of a cosigned group must be signed by this signer (run keys refresh if the key is new)", i, effectiveSigner)
 		}
 		requests[i] = signModeRequest(i, effectiveSigner, txn.Sender.String(), txnHex, opts)
 	}
@@ -414,7 +412,7 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 	}
 	for i, txn := range assembled {
 		if got := txnutil.EncodeWithPrefixHex(txn); got != groupBytesHex[i] {
-			return fmt.Errorf("assembled transaction %d does not match the frozen canonical bytes", i)
+			return fmt.Errorf("assembled transaction at index %d does not match the frozen canonical bytes", i)
 		}
 	}
 	return nil
@@ -444,19 +442,13 @@ func validatePlannedGroup(original, planned []types.Transaction, mutations *sign
 		}
 	}
 
-	feeModified := make(map[int]struct{})
-	if mutations != nil {
-		for _, index := range mutations.FeesModified {
-			if index < 0 || index >= len(original) {
-				return fmt.Errorf("mutation fee index %d is outside original positions", index)
-			}
-			if _, duplicate := feeModified[index]; duplicate {
-				return fmt.Errorf("mutation fee index %d is duplicated", index)
-			}
-			feeModified[index] = struct{}{}
-		}
+	// The fee and field reconciliation is the ordinary /sign path's: reported
+	// fees may only rise, the rises must sum to total_fees_delta without
+	// overflow, and nothing else may change but the group ID.
+	if err := clientsign.ValidateOriginalPositions(original, planned, mutations); err != nil {
+		return err
 	}
-	if mutations != nil && mutations.GroupIDChanged && appended == 0 && len(feeModified) == 0 {
+	if mutations != nil && mutations.GroupIDChanged && appended == 0 && len(mutations.FeesModified) == 0 {
 		var zero types.Digest
 		requiresAssignment := false
 		for i := range original {
@@ -466,31 +458,27 @@ func validatePlannedGroup(original, planned []types.Transaction, mutations *sign
 			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
 		}
 	}
-	totalFeeDelta := uint64(0)
-	for i := range original {
-		want := original[i]
-		got := planned[i]
-		if mutations != nil && mutations.GroupIDChanged {
-			want.Group = got.Group
-		}
-		if _, ok := feeModified[i]; ok {
-			if got.Fee < want.Fee {
-				return fmt.Errorf("mutation decreased fee at original position %d", i)
-			}
-			totalFeeDelta += uint64(got.Fee - want.Fee)
-			want.Fee = got.Fee
-		}
-		if !bytes.Equal(txnutil.EncodeWithPrefix(want), txnutil.EncodeWithPrefix(got)) {
-			return fmt.Errorf("signer changed unreported fields at original position %d", i)
-		}
+	if len(original) == 0 {
+		return nil
 	}
-	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
-		return fmt.Errorf("mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
-	}
-	if err := validateCosignedDummies(planned[len(original):]); err != nil {
+	return validateCanonicalDummies(original[0], planned, len(original))
+}
+
+// validateCanonicalDummies requires the positions after originalCount to be
+// exactly the canonical resource dummies the signer's planner builds for this
+// group: the check every other client path runs, which rebuilds each dummy
+// from the first original's validity window and genesis and the group's
+// canonical ID, so nothing (a lease, a validity window, a note) can differ.
+func validateCanonicalDummies(firstOriginal types.Transaction, planned []types.Transaction, originalCount int) error {
+	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
+	if err != nil {
 		return err
 	}
-	return nil
+	if len(planned) == originalCount {
+		return nil
+	}
+	_, err = clientsign.ValidateCanonicalDummyTxns(firstOriginal, groupID, planned, originalCount)
+	return err
 }
 
 func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
@@ -502,7 +490,7 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTa
 			continue
 		}
 		if fee := uint64(planned[target.Index].Fee); fee > *target.BoundedMaxFee {
-			return fmt.Errorf("bounded target %d fee %d exceeds advertised max_fee %d", target.Index, fee, *target.BoundedMaxFee)
+			return fmt.Errorf("bounded target at index %d: fee %d exceeds advertised max_fee %d", target.Index, fee, *target.BoundedMaxFee)
 		}
 	}
 	return nil
@@ -532,7 +520,7 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 			// for context and budget accounting but not signed here.
 			target := cosignedTargets[i]
 			if target.Sender != sender {
-				return nil, nil, fmt.Errorf("cosigned target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
+				return nil, nil, fmt.Errorf("cosigned target at index %d: sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
 			// The caller's app call description goes with it, so this
 			// approval shows the position's ABI method as the base
@@ -543,10 +531,10 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 			}
 			path, err := cosignedLogicSigResourcePath(target)
 			if err != nil {
-				return nil, nil, fmt.Errorf("cosigned target %d: %w", i, err)
+				return nil, nil, fmt.Errorf("cosigned target at index %d: %w", i, err)
 			}
 			if err := applyForeignLogicSigPathHint(&signRequests[i], s.cache, target.Account, path); err != nil {
-				return nil, nil, fmt.Errorf("cosigned target %d: %w", i, err)
+				return nil, nil, fmt.Errorf("cosigned target at index %d: %w", i, err)
 			}
 		default:
 			// Non-cosigned original: sign mode over the canonical bytes. Resolve
@@ -630,7 +618,7 @@ func (s *Signer) requestNonCosignedSignatures(ctx context.Context, plannedTxns [
 	signed := make(map[int]string, len(nonCosigned))
 	for _, i := range nonCosigned {
 		if signResp.Signed[i] == "" {
-			return nil, fmt.Errorf("signer returned no signature for non-cosigned position %d", i+1)
+			return nil, fmt.Errorf("signer returned no signature for the non-cosigned position at index %d", i)
 		}
 		signed[i] = signResp.Signed[i]
 	}
@@ -770,11 +758,17 @@ func encodeGroupHex(txns []types.Transaction) []string {
 	return groupHex
 }
 
-func signCosignedDummies(dummyTxns []types.Transaction) ([]string, error) {
-	if err := validateCosignedDummies(dummyTxns); err != nil {
+// signCosignedDummies signs the frozen group's budget dummies with the dummy
+// LogicSig. The client signs these itself, so it checks them again here, with
+// the canonical dummy check, right before it signs.
+func signCosignedDummies(group frozenGroup) ([]string, error) {
+	if len(group.Txns) == 0 || group.OriginalCount < 1 || group.OriginalCount > len(group.Txns) {
+		return nil, fmt.Errorf("frozen group has %d position(s) for %d original(s)", len(group.Txns), group.OriginalCount)
+	}
+	if err := validateCanonicalDummies(group.Txns[0], group.Txns, group.OriginalCount); err != nil {
 		return nil, err
 	}
-	signedDummies, err := signing.SignDummyTransactions(dummyTxns)
+	signedDummies, err := signing.SignDummyTransactions(group.Txns[group.OriginalCount:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign cosigned dummy transactions: %w", err)
 	}
@@ -783,21 +777,6 @@ func signCosignedDummies(dummyTxns []types.Transaction) ([]string, error) {
 		signedHex[i] = hex.EncodeToString(signed)
 	}
 	return signedHex, nil
-}
-
-func validateCosignedDummies(dummyTxns []types.Transaction) error {
-	dummyAddress, err := signing.DummyAddress()
-	if err != nil {
-		return fmt.Errorf("failed to derive cosigned dummy address: %w", err)
-	}
-	for i, txn := range dummyTxns {
-		if txn.Type != types.PaymentTx || txn.Sender != dummyAddress || txn.Receiver != dummyAddress ||
-			txn.Amount != 0 || txn.Fee != 0 || len(txn.Note) != 1 || txn.Note[0] != byte(i) ||
-			!txn.RekeyTo.IsZero() || !txn.CloseRemainderTo.IsZero() {
-			return fmt.Errorf("signer-appended transaction %d is not a canonical cosigned budget dummy", i)
-		}
-	}
-	return nil
 }
 
 func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {
@@ -906,6 +885,9 @@ func collectComponentSignatures(resp *signerapi.ComponentResponse, expected []in
 	return nil
 }
 
+// decodeCosignedSignedGroup decodes the assembled group with
+// clientsign.DecodeSignedTxnToSubmit: the raw bytes are submitted and the
+// decoded transactions are what verifyAssembledAgainstFrozen checks.
 func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
 	signedBytes := make([][]byte, len(signedHex))
 	signedObjects := make([]types.SignedTxn, len(signedHex))
@@ -913,12 +895,12 @@ func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn,
 	for i, item := range signedHex {
 		decoded, err := hex.DecodeString(item)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction %d: %w", i+1, err)
+			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction at index %d: %w", i, err)
 		}
 		signedBytes[i] = decoded
-		var stxn types.SignedTxn
-		if err := msgpack.Decode(decoded, &stxn); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction %d: %w", i+1, err)
+		stxn, err := clientsign.DecodeSignedTxnToSubmit(decoded)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("assembled signed transaction at index %d: %w", i, err)
 		}
 		signedObjects[i] = stxn
 		txns[i] = stxn.Txn

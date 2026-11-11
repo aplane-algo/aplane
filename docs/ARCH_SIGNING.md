@@ -1507,7 +1507,19 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   positions, recomputes the canonical final group ID, and reconstructs every
   appended dummy transaction and its embedded LogicSig authorization. Any
   unreported field change, malformed report, or non-canonical dummy fails
-  closed on the client.
+  closed on the client. One check reconciles the original positions on this
+  path, on the cosigned `/plan` and on the plugin `presign-plan` `/plan`: a
+  reported fee must have risen, the rises must sum without overflowing to a
+  `total_fees_delta` that is not negative, and nothing else may differ but the
+  group ID. Those two plans rebuild appended dummies with the same canonical
+  dummy check, validity window, genesis and lease included.
+- The client submits the signed bytes it receives as given, so every signed
+  transaction it submits (an ordinary `/sign` response, an assembled cosigned
+  group, the managed slots of a `presign-plan` group, a plugin's
+  `pregrouped-signed` group, a rotating spend) must be the canonical encoding
+  of the transaction it checked. Trailing data, a second transaction, a
+  repeated field or an explicit empty field is refused before anything is
+  simulated or submitted.
 - Bounded pure spends, spending-key-authorized rekeys, and listed rekeys return
   complete LogicSigs from `/sign` only when the account has no cosigner. A
   rekey on an account that takes only listed rekeys, to an address not on its

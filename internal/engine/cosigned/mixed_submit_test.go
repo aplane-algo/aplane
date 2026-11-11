@@ -157,7 +157,7 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 		targets,
 		clientsign.SubmitOptions{},
 	)
-	if err == nil || !strings.Contains(err.Error(), "transaction 3: the signer holds no key for "+stranger.String()) {
+	if err == nil || !strings.Contains(err.Error(), "transaction at index 2: the signer holds no key for "+stranger.String()) {
 		t.Fatalf("unheld position: err = %v, want it refused up front", err)
 	}
 }
@@ -459,8 +459,8 @@ func TestRequestNonCosignedSignaturesRejectsMissingSignature(t *testing.T) {
 		map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
-	if err == nil || !strings.Contains(err.Error(), "no signature for non-cosigned position 2") {
-		t.Fatalf("requestNonCosignedSignatures() error = %v, want missing signature for position 2", err)
+	if err == nil || !strings.Contains(err.Error(), "no signature for the non-cosigned position at index 1") {
+		t.Fatalf("requestNonCosignedSignatures() error = %v, want missing signature at index 1", err)
 	}
 }
 

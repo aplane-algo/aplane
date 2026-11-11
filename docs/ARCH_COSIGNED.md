@@ -598,7 +598,9 @@ Runtime cosigned-send routing works like this:
 2. The client queries authenticated `/keys` on the configured cosigner endpoints
    with bounded parallelism and validates each advertised Witness Key ID.
 3. The client builds an operation-scoped route snapshot and requires exactly
-   one endpoint for every required embedded public key.
+   one endpoint for every required embedded public key. A component key is its
+   key type and public key together: one public key advertised under two
+   witness key types is two component keys, each routed on its own.
 4. Component signing reuses the already-verified endpoint connection from that
    snapshot.
 
@@ -674,6 +676,17 @@ The first-party client does not ask the cosigner first. Signer endpoints
 validate the targets they sign or assemble; they do not infer the flow of
 foreign group positions. Non-target positions are carried as exact passthrough
 signed bytes in the final assembly request.
+
+Before it freezes the `/plan` result, the client checks it with the same
+reconciliation the ordinary `/sign` path uses: each original position may
+differ from the draft only in its group ID and in a fee the mutation report
+lists, which must have risen; the rises must sum, without overflowing, to a
+non-negative `total_fees_delta`. Appended positions must be exactly the
+planner's canonical resource dummies, rebuilt from the first original's
+validity window and genesis and the group's canonical ID, so a dummy with
+another lease, window or note is refused; the client checks them again
+before it signs them with the dummy LogicSig. The final assembled group must
+be one canonically encoded signed transaction per frozen entry.
 
 A `plain1` account has no fee ceiling, so the client checks a planned fee against an
 account's ceiling only on a bounded one (`bounded2`, `max_fee` present); it

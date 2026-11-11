@@ -7,6 +7,39 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apshell checks more of what the signer returns
+
+- **Signed bytes the client submits must be canonical.** An ordinary `/sign`
+  response, an assembled cosigned group, the managed slots of a plugin
+  `presign-plan` group and a plugin's `pregrouped-signed` group were checked
+  as decoded and then submitted as received. Bytes with trailing data, a
+  second transaction, a repeated field or an explicit empty field are now
+  refused, so what was checked is what goes to the network. The rotating path
+  already refused them. The transactions a `/plan` answer returns for a plugin
+  `presign-plan` group are held to the same rule, as the cosigned plan's
+  already were.
+- **The cosigned and plugin plan checks reconcile fees as `/sign` does.** One
+  check now runs on all three: a fee the report lists must have risen (an
+  unchanged one passed on the cosigned and plugin plans), the rises must not
+  wrap around when summed, and a negative `total_fees_delta` is refused.
+- **The cosigned client checks budget dummies with the canonical dummy check.**
+  Its own check skipped the validity window, genesis and lease; it now
+  rebuilds each dummy as every other path does, before it signs the dummies.
+- **The client's checks of a signer response name a transaction by index.**
+  Some counted from 1 ("returned transaction 1") and others from 0 ("original
+  index 0"), so two errors about one transaction could name it differently.
+  Every check of a `/sign`, `/plan`, component, assembly or rotating response,
+  and of the signed transactions a plugin returns, now says "index N",
+  counting from 0 as the signer's mutation report does, and an appended dummy
+  is named by its index in the group.
+- **Cosigner discovery keeps each key type of a public key.** It kept the first
+  advertised entry for a public key, so a second witness key type with the
+  same public key could not be routed, and `endpoints discover-cosigners`
+  called it a repeat publication. Only one witness key type exists today.
+  The diagnostic's count, `cosigner_key_count` in its structured result (was
+  `public_key_count`), counts each key type and public key pair, and a key
+  advertised by two endpoints is reported with its key type.
+
 ## The audit log records what was signed
 
 The signer's audit log described each request as it arrived. Planning may

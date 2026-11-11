@@ -43,11 +43,11 @@ func decodeGroupSignResponse(signed []string, want int) ([][]byte, error) {
 	decoded := make([][]byte, len(signed))
 	for i, hexStr := range signed {
 		if hexStr == "" {
-			return nil, fmt.Errorf("signer returned no signature for position %d", i+1)
+			return nil, fmt.Errorf("signer returned no signature at index %d", i)
 		}
 		signedBytes, err := hex.DecodeString(hexStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+			return nil, fmt.Errorf("failed to decode signed transaction at index %d: %w", i, err)
 		}
 		decoded[i] = signedBytes
 	}

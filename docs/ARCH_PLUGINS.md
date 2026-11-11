@@ -794,6 +794,15 @@ budget dummies; any other change to a slot is rejected before the plugin is call
 The `/sign` result must sign exactly the planned transactions and return every
 plugin-signed and dummy slot byte-for-byte as sent, or nothing is broadcast.
 
+Signed bytes are submitted as given, so in both modes every signed transaction
+must be the canonical encoding of what it decodes to: a plugin-signed slot, a
+`pregrouped-signed` member and a managed slot apsigner returns are refused when
+encoding the decoded transaction again gives different bytes: for example
+trailing data, a second transaction, a repeated or explicit empty field, or a
+different key order or integer encoding. The transactions a `/plan` answer
+returns are held to the same rule. What is reviewed and checked is then exactly
+what is broadcast.
+
 #### What these flows enable
 
 A plugin could always compose groups with keys held anywhere — its own LogicSig, an HSM

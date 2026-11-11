@@ -124,9 +124,15 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	}
 	canonicalTxns := make([]types.Transaction, len(planResp.Transactions))
 	for i, txnHex := range planResp.Transactions {
-		txn, err := txnutil.DecodePrefixedHex(txnHex)
+		// Canonical, as the cosigned plan check requires: bytes that decode
+		// leniently could differ from what the signer froze.
+		raw, err := hex.DecodeString(txnHex)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode canonical transaction %d: %w", i, err)
+			return nil, fmt.Errorf("planned transaction at index %d: invalid hex: %w", i, err)
+		}
+		txn, err := canonical.DecodeTXPrefixed(raw)
+		if err != nil {
+			return nil, fmt.Errorf("planned transaction at index %d: %w", i, err)
 		}
 		canonicalTxns[i] = txn
 	}
@@ -165,7 +171,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		} else {
 			stxn, err := signing.SignDummyTransaction(ctxn)
 			if err != nil {
-				return nil, fmt.Errorf("failed to sign dummy transaction %d: %w", i, err)
+				return nil, fmt.Errorf("failed to sign dummy transaction at index %d: %w", i, err)
 			}
 			passthrough[i] = hex.EncodeToString(msgpack.Encode(stxn))
 			passthroughResources[i] = dummyLogicSigResourceUsage()
@@ -183,15 +189,15 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	for _, s := range signed {
 		ctxn, ok := expected[s.Index]
 		if !ok {
-			return nil, fmt.Errorf("plugin signed unexpected slot %d", s.Index)
+			return nil, fmt.Errorf("plugin signed an unexpected slot at index %d", s.Index)
 		}
 		if _, dup := passthrough[s.Index]; dup {
-			return nil, fmt.Errorf("plugin returned duplicate slot %d", s.Index)
+			return nil, fmt.Errorf("plugin returned a duplicate slot at index %d", s.Index)
 		}
 		authorization := expectedAuthorization[s.Index]
 		signedHex, err := validatePluginSignedSlot(ctxn, s.Encoded, authorization)
 		if err != nil {
-			return nil, fmt.Errorf("plugin slot %d: %w", s.Index, err)
+			return nil, fmt.Errorf("plugin slot at index %d: %w", s.Index, err)
 		}
 		passthrough[s.Index] = signedHex
 		if authorization.LsigResources != nil {
@@ -231,7 +237,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		signedObjects := make([]types.SignedTxn, len(finalSignedTxns))
 		for i, signedBytes := range finalSignedTxns {
 			if err := msgpack.Decode(signedBytes, &signedObjects[i]); err != nil {
-				return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+				return nil, fmt.Errorf("failed to decode signed transaction at index %d: %w", i, err)
 			}
 		}
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(ctx, signedObjects, e.AlgodClient, &output)
@@ -302,7 +308,6 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(planned), len(draft))
 	}
 	appended := len(planned) - len(draft)
-	feeModified := make(map[int]struct{})
 	if mutations == nil {
 		if appended != 0 {
 			return fmt.Errorf("signer appended %d transaction(s) without a mutation report", appended)
@@ -317,39 +322,20 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 		if mutations.DummiesAdded != appended {
 			return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
 		}
-		for _, index := range mutations.FeesModified {
-			if index < 0 || index >= len(draft) {
-				return fmt.Errorf("mutation fee index %d is outside original positions", index)
-			}
-			if _, duplicate := feeModified[index]; duplicate {
-				return fmt.Errorf("mutation fee index %d is duplicated", index)
-			}
-			feeModified[index] = struct{}{}
-		}
 	}
-	var totalFeeDelta uint64
-	for i := range draft {
-		want, got := draft[i], planned[i]
-		if mutations != nil && mutations.GroupIDChanged {
-			want.Group = got.Group
+	// The fee and field reconciliation is the ordinary /sign path's: reported
+	// fees may only rise, the rises must sum to total_fees_delta without
+	// overflow, and nothing else may change but the group ID.
+	if err := clientsign.ValidateOriginalPositions(draft, planned, mutations); err != nil {
+		var changed *clientsign.UnreportedChangeError
+		if !errors.As(err, &changed) {
+			return err
 		}
-		if _, ok := feeModified[i]; ok {
-			if got.Fee < want.Fee {
-				return fmt.Errorf("plan decreased the fee of slot %d", i)
-			}
-			totalFeeDelta += uint64(got.Fee - want.Fee)
-			want.Fee = got.Fee
+		owner := "managed"
+		if _, owned := pluginSignerRefs[draft[changed.Index].Sender.String()]; owned {
+			owner = "plugin"
 		}
-		if !bytes.Equal(msgpack.Encode(want), msgpack.Encode(got)) {
-			owner := "managed"
-			if _, owned := pluginSignerRefs[draft[i].Sender.String()]; owned {
-				owner = "plugin"
-			}
-			return fmt.Errorf("plan modified %s slot %d beyond its group id and reported fee", owner, i)
-		}
-	}
-	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
-		return fmt.Errorf("mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
+		return fmt.Errorf("plan modified %s slot at index %d beyond its group id and reported fee", owner, changed.Index)
 	}
 	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
 	if err != nil {
@@ -358,14 +344,15 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 	if appended == 0 {
 		return nil
 	}
-	_, err = clientsign.ValidateCanonicalDummyTxns(draft[0], groupID, planned[len(draft):])
+	_, err = clientsign.ValidateCanonicalDummyTxns(draft[0], groupID, planned, len(draft))
 	return err
 }
 
 // verifySignedAgainstPlan checks the /sign response against the frozen plan
 // before anything is broadcast: every slot must sign exactly the canonical
 // transaction, and every passthrough slot (plugin-signed or dummy) must come
-// back byte-for-byte as it was sent.
+// back byte-for-byte as it was sent. A managed slot's bytes are submitted as
+// returned, so they must be the canonical encoding of what is checked.
 func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[int]string, signed [][]byte) error {
 	if len(signed) != len(canonicalTxns) {
 		return fmt.Errorf("signer returned %d signed transaction(s), want %d", len(signed), len(canonicalTxns))
@@ -373,16 +360,16 @@ func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[
 	for i, signedBytes := range signed {
 		if sentHex, ok := passthrough[i]; ok {
 			if hex.EncodeToString(signedBytes) != sentHex {
-				return fmt.Errorf("signer altered passthrough slot %d", i)
+				return fmt.Errorf("signer altered the passthrough slot at index %d", i)
 			}
 			continue
 		}
-		var stxn types.SignedTxn
-		if err := msgpack.Decode(signedBytes, &stxn); err != nil {
-			return fmt.Errorf("failed to decode signed transaction %d: %w", i, err)
+		stxn, err := clientsign.DecodeSignedTxnToSubmit(signedBytes)
+		if err != nil {
+			return fmt.Errorf("signed slot at index %d: %w", i, err)
 		}
 		if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(canonicalTxns[i])) {
-			return fmt.Errorf("signer signed a different transaction at slot %d than was planned", i)
+			return fmt.Errorf("signer signed a different transaction than was planned at index %d", i)
 		}
 	}
 	return nil
@@ -399,12 +386,9 @@ func validatePluginSignedSlot(planned types.Transaction, encoded string, authori
 	// The signer forwards these bytes as given and refuses any that are not
 	// the canonical encoding of what they decode to. The same decoder runs
 	// here, so a slot is refused before the group goes to be signed.
-	stxn, err := canonical.DecodeSignedTxn(raw)
-	if errors.Is(err, canonical.ErrNotCanonical) {
-		return "", fmt.Errorf("signed transaction bytes are not canonical (trailing data, a repeated field, or an explicit empty field)")
-	}
+	stxn, err := clientsign.DecodeSignedTxnToSubmit(raw)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode signed transaction: %w", err)
+		return "", err
 	}
 	if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(planned)) {
 		return "", fmt.Errorf("signed transaction does not match the canonical bytes")

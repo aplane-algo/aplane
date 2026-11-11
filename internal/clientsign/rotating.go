@@ -20,7 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -318,7 +317,7 @@ func ValidatePreparedRotatingGroup(original types.Transaction, prep *signerapi.R
 		for i := range dummies {
 			dummies[i].Group = group.GroupID
 			if !bytes.Equal(txnutil.EncodeWithPrefix(dummies[i]), raws[i+1]) {
-				return nil, fmt.Errorf("appended transaction %d is not the canonical resource dummy", i+1)
+				return nil, fmt.Errorf("appended transaction at index %d is not the canonical resource dummy", i+1)
 			}
 		}
 	}
@@ -341,17 +340,14 @@ func validateSignedRotatingGroup(prepared []types.Transaction, resp *signerapi.R
 	for i, h := range resp.Signed {
 		raw, err := hex.DecodeString(h)
 		if err != nil {
-			return nil, fmt.Errorf("transaction %d: invalid hex: %w", i+1, err)
+			return nil, fmt.Errorf("transaction at index %d: invalid hex: %w", i, err)
 		}
-		var stxn types.SignedTxn
-		if err := msgpack.Decode(raw, &stxn); err != nil {
-			return nil, fmt.Errorf("transaction %d: %w", i+1, err)
-		}
-		if !bytes.Equal(msgpack.Encode(stxn), raw) {
-			return nil, fmt.Errorf("transaction %d is not a single canonically encoded signed transaction", i+1)
+		stxn, err := DecodeSignedTxnToSubmit(raw)
+		if err != nil {
+			return nil, fmt.Errorf("transaction at index %d: %w", i, err)
 		}
 		if !bytes.Equal(txnutil.EncodeWithPrefix(stxn.Txn), txnutil.EncodeWithPrefix(prepared[i])) {
-			return nil, fmt.Errorf("transaction %d differs from the prepared transaction", i+1)
+			return nil, fmt.Errorf("transaction at index %d differs from the prepared transaction", i)
 		}
 		out[i] = raw
 	}
