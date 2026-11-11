@@ -46,7 +46,7 @@ send <amount> <asset> from <sender> to <receiver> [options]
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
 | `atomic` | Send as atomic group (with sets) |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. From a set, each account gets the arguments its key declares, and a name no account's key declares is refused. Not accepted on an atomic send to or from a set |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Each sending account gets the arguments its signing key declares (the key it is rekeyed to, if it is), and a name no account's key declares is refused. Not accepted on an atomic send to or from a set |
 
 A word a command does not take is refused, on this and every transaction
 command, so a mistyped option can't be ignored. A line may end with a
@@ -86,7 +86,7 @@ sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Over several accounts, each gets the arguments its key declares, and a name no source account's key declares is refused. |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Each source account gets the arguments its signing key declares, and a name no source account's key declares is refused. |
 
 **Examples:**
 ```
@@ -317,7 +317,7 @@ validate <account|@setname> [arg:name=value]
 **Options:**
 | Option | Description |
 |--------|-------------|
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Over a set, each account gets the arguments its key declares, and a name no account's key declares is refused. |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Each account gets the arguments its signing key declares, and a name no account's key declares is refused. |
 
 **Examples:**
 ```

@@ -72,18 +72,21 @@ func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotic
 	}
 }
 
+// validateSubmitLsigArgs checks each transaction's LogicSig arguments against
+// the key that signs it: the sender's effective signer, which is the auth
+// address once the account is rekeyed. A LogicSig account rekeyed to another
+// key is therefore checked against that key's arguments, not its own, and a
+// native key, which takes none, refuses any. It runs once the signing state
+// has been refreshed, so the effective signers are known.
 func (e *Engine) validateSubmitLsigArgs(txns []types.Transaction, lsigArgsMap []map[string][]byte) error {
 	for i, txn := range txns {
 		var lsigArgs map[string][]byte
 		if i < len(lsigArgsMap) {
 			lsigArgs = lsigArgsMap[i]
 		}
-
-		sender := txn.Sender.String()
-		if e.signerCacheIsGenericLsig(sender) || len(lsigArgs) > 0 {
-			if err := e.validateSignerLsigArgs(sender, lsigArgs); err != nil {
-				return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
-			}
+		signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
+		if err := e.validateSignerLsigArgs(signer, lsigArgs); err != nil {
+			return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
 		}
 	}
 	return nil
@@ -107,13 +110,11 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	return e.Connection.SignAndSubmitGroup(txns, &e.AuthCache, e.AlgodClient, opts)
 }
 
-// checkReadyToSign runs the preconditions every signing path shares:
-// argument validation, a connected signer and algod, a supported consensus
-// version, and fresh signer metadata for the senders.
+// checkReadyToSign runs the preconditions every signing path shares: a
+// connected signer and algod, a supported consensus version, fresh signer
+// metadata for the senders, and then each transaction's LogicSig arguments
+// checked against the key that signs it, which the refresh has made known.
 func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.SubmitOptions) error {
-	if err := e.validateSubmitLsigArgs(txns, opts.LsigArgsMap); err != nil {
-		return err
-	}
 	if !e.IsConnected() {
 		return ErrNotConnected
 	}
@@ -126,45 +127,19 @@ func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.Subm
 	if err := e.refreshSubmitSigningState(opts.Ctx, txns); err != nil {
 		return err
 	}
-	return e.refuseLsigArgsForNativeSigners(txns, opts.LsigArgsMap)
+	return e.validateSubmitLsigArgs(txns, opts.LsigArgsMap)
 }
 
-// refuseLsigArgsForNativeSigners refuses LogicSig arguments given for a
-// transaction whose signing key is native (ed25519 or Falcon): it signs the
-// transaction itself and has no program to pass them to, and the signer
-// refuses such a request. It runs once the effective signers are known, so
-// the client never sends arguments for a native key. A signer the client does
-// not hold is left to the signer.
-func (e *Engine) refuseLsigArgsForNativeSigners(txns []types.Transaction, lsigArgsMap []map[string][]byte) error {
-	for i, txn := range txns {
-		if i >= len(lsigArgsMap) || len(lsigArgsMap[i]) == 0 {
-			continue
-		}
-		signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
-		kind, held := e.signerCacheAuthorizationKind(signer)
-		if !held || (kind != algorithm.AuthorizationEd25519 && kind != algorithm.AuthorizationNativePQ) {
-			continue
-		}
-		return fmt.Errorf("transaction %d: LogicSig arguments were given for %s, whose %s key is not a LogicSig and takes no arguments",
-			i+1, signer, e.signerCacheKeyType(signer))
-	}
-	return nil
-}
-
+// refreshSubmitSigningState fetches the auth address of each sender the
+// client does not have, and refreshes the signer's key list when it lacks an
+// effective signer, so a sender's signing key is known before it is used.
 func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	senders := make([]string, len(txns))
 	for i, txn := range txns {
 		senders[i] = txn.Sender.String()
-	}
-	return e.refreshSigningStateForSenders(ctx, senders)
-}
-
-// refreshSigningStateForSenders fetches the auth address of each sender the
-// client does not have, and refreshes the signer's key list when it lacks an
-// effective signer, so a sender's signing key is known before it is used.
-func (e *Engine) refreshSigningStateForSenders(ctx context.Context, senders []string) error {
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	if err := e.refreshMissingSubmitAuthAddresses(ctx, senders); err != nil {
 		return err
@@ -186,12 +161,21 @@ func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, senders 
 			continue
 		}
 		seenSenders[sender] = struct{}{}
-		if _, cached := e.AuthCache.GetAuthAddress(sender); cached {
-			continue
+		if err := e.refreshMissingAuthAddress(ctx, sender); err != nil {
+			return err
 		}
-		if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {
-			return fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
-		}
+	}
+	return nil
+}
+
+// refreshMissingAuthAddress fetches sender's auth address when the client
+// has not looked it up.
+func (e *Engine) refreshMissingAuthAddress(ctx context.Context, sender string) error {
+	if _, cached := e.AuthCache.GetAuthAddress(sender); cached {
+		return nil
+	}
+	if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {
+		return fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
 	}
 	return nil
 }
@@ -236,14 +220,19 @@ func (e *Engine) submitEffectiveSignersNeedKeyRefresh(senders []string) bool {
 			continue
 		}
 		seenSigners[effectiveSigner] = struct{}{}
-		if effectiveSigner != sender {
-			return true
-		}
-		if e.signerCacheKeyType(effectiveSigner) == "" {
+		if e.effectiveSignerNeedsKeyRefresh(sender) {
 			return true
 		}
 	}
 	return false
+}
+
+// effectiveSignerNeedsKeyRefresh reports whether signing for sender refreshes
+// the signer's key list first: its effective signer is another address, or a
+// key the client does not know.
+func (e *Engine) effectiveSignerNeedsKeyRefresh(sender string) bool {
+	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
+	return effectiveSigner != sender || e.signerCacheKeyType(effectiveSigner) == ""
 }
 
 // SignAndSubmit signs and submits a prepared transaction using the

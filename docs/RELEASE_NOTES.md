@@ -34,10 +34,19 @@ before it was renamed `enroll`.
   position declares is refused instead of being dropped. The client keeps a
   bounded account's runtime argument names for this, from the next key list
   refresh.
-- **`send`, `sweep` and `validate` over a set do the same.** The `arg:` values
-  went to every account in the set; each account now gets the arguments its
-  key declares, so a native account in the set is sent none, and a name no
-  account's key declares is refused. Over one account they go as typed.
+- **`send`, `sweep` and `validate` do the same, over a set or one account.**
+  The `arg:` values went to every account in a set; each account now gets the
+  arguments its signing key declares, so a native account in the set is sent
+  none, and a name no account's key declares is refused. An account whose
+  signing key cannot be looked up (its auth address or the signer's key list
+  cannot be fetched) fails on its own, and the others go ahead. A script's
+  `sweep()` gets the same refusal, worded in terms of its `lsigArgs` option.
+- **Arguments are checked against the key that signs.** apshell checked them
+  against the sending account's own arguments, even when the account is
+  rekeyed. A LogicSig account rekeyed to an ed25519 key needed its own
+  required arguments, which that key then ignored; it now signs with none. An
+  account rekeyed to a LogicSig takes that LogicSig's arguments. The check runs
+  after the account's auth address and the signer's key list are refreshed.
 - **The signer refuses `lsig_args` for a key that is not a LogicSig.** An
   ed25519 or native Falcon key ignored them, and they still entered the
   approval digest. `/plan`, `/sign` and `/sign/component` now answer `400`

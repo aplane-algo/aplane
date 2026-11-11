@@ -97,7 +97,8 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 
 // submitPluginTransactions processes and submits plugin transactions without UI output.
 func submitPluginTransactions(r *REPLState, pluginName string, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*apshellapp.GroupSubmitSummary, error) {
-	return r.app().SubmitPluginTransactions(r.commandContext(), pluginName, result, lsigArgs)
+	submit, err := r.app().SubmitPluginTransactions(r.commandContext(), pluginName, result, lsigArgs)
+	return submit, apshellapp.ShellLsigArgsError(err)
 }
 
 func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {

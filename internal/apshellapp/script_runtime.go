@@ -72,7 +72,7 @@ func (s jsSweeper) Sweep(ctx context.Context, req jsapi.SweepRequest) (*jsapi.Sw
 		LsigArgs:   req.LsigArgs,
 		Wait:       req.Wait,
 	})
-	out, err := sweepResultForScript(result, err)
+	out, err := sweepResultForScript(result, scriptLsigArgsError(err))
 	if out != nil {
 		out.Simulated = s.app.IsSimulateEnabled()
 	}

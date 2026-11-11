@@ -144,7 +144,7 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 	if len(addresses) == 0 {
 		return nil, fmt.Errorf("no addresses found for %q", req.Account)
 	}
-	lsigArgs, err := a.lsigArgsForSenders(ctx, addresses, req.LsigArgs)
+	lsigArgs, err := a.eng.ShareLsigArgsByDeclaredName(ctx, addresses, req.LsigArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -155,11 +155,17 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 	}
 	for i, addr := range addresses {
 		item := ValidateItemResult{Address: addr}
+		if lookupErr := lsigArgs[i].Err; lookupErr != nil {
+			item.Error = lookupErr.Error()
+			result.FailureCount++
+			result.Items = append(result.Items, item)
+			continue
+		}
 		prepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 			From:     addr,
 			To:       addr,
 			Amount:   0,
-			LsigArgs: lsigArgs[i],
+			LsigArgs: lsigArgs[i].Args,
 		})
 		if err != nil {
 			item.Error = fmt.Sprintf("failed to prepare: %v", err)
@@ -783,14 +789,15 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	}
 
 	// The destination is never swept from, so it is left out when the
-	// arguments are shared out among the source accounts.
+	// arguments are shared out among the source accounts: its position is
+	// empty, which gets none and is not looked up.
 	senders := make([]string, len(fromAddresses))
 	for i, fromAddress := range fromAddresses {
 		if fromAddress != toAddress {
 			senders[i] = fromAddress
 		}
 	}
-	lsigArgs, err := a.lsigArgsForSenders(ctx, senders, req.LsigArgs)
+	lsigArgs, err := a.eng.ShareLsigArgsByDeclaredName(ctx, senders, req.LsigArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -859,6 +866,12 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			result.Items = append(result.Items, item)
 			continue
 		}
+		if lookupErr := lsigArgs[i].Err; lookupErr != nil {
+			item.Error = lookupErr.Error()
+			result.FailureCount++
+			result.Items = append(result.Items, item)
+			continue
+		}
 
 		item.Amount = asa.AmountFromRaw(sendAmount, assetMeta)
 		var prep *PreparedTxn
@@ -869,7 +882,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   lsigArgs[i],
+				LsigArgs:   lsigArgs[i].Args,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -881,7 +894,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   lsigArgs[i],
+				LsigArgs:   lsigArgs[i].Args,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr

@@ -24,7 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/jsapi"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -35,7 +35,35 @@ var (
 	argsHTLC   = types.Address{12}.String()
 	argsPlugin = types.Address{13}.String()
 	argsTo     = types.Address{14}.String()
+	// argsLsigToNative is a LogicSig whose own template requires "secret",
+	// rekeyed to argsNative.
+	argsLsigToNative = types.Address{15}.String()
+	// argsBoundedToHTLC is a bounded account whose own runtime argument is
+	// "x", rekeyed to argsHTLC.
+	argsBoundedToHTLC = types.Address{16}.String()
+	// argsBroken is an account the fake network cannot look up.
+	argsBroken = types.Address{17}.String()
 )
+
+// lsigArgsTestKeys is the fake signer's key list.
+func lsigArgsTestKeys() signerapi.KeysResponse {
+	profile := &signerapi.LogicSigResourceProfile{
+		Default: &signerapi.LogicSigResourceUsage{ProgramBytes: 100, ArgumentBytes: 32, MaxOpcodeCost: 100},
+	}
+	keys := []signerapi.KeyInfo{
+		{Address: argsNative, KeyType: "ed25519"},
+		{Address: argsHTLC, KeyType: "aplane.htlc.v1", IsGenericLsig: true, LogicSigResources: profile,
+			SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true}}},
+		{Address: argsLsigToNative, KeyType: "aplane.htlc.v1", IsGenericLsig: true, LogicSigResources: profile,
+			SigningArgs: []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", Required: true}}},
+		{Address: argsBoundedToHTLC, KeyType: "example.bounded-hashlock.v1",
+			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+				Contract:    signerapi.BoundedContractPlain1,
+				RuntimeArgs: []signerapi.RuntimeArgInfo{{Name: "x", Type: "bytes"}},
+			}},
+	}
+	return signerapi.KeysResponse{Count: len(keys), Keys: keys}
+}
 
 // signRecorder keeps each /plan and /sign request the fake signer received.
 type signRecorder struct {
@@ -51,9 +79,10 @@ func (r *signRecorder) recorded() ([]string, []signerapi.GroupSignRequest) {
 }
 
 // lsigArgsTestApp is an app on a fake network whose signer holds an ed25519
-// key and an HTLC LogicSig taking a preimage. The signer records each /plan
-// and /sign request and refuses it, so a test sees what LogicSig arguments
-// every position would have carried.
+// key, an HTLC LogicSig taking a preimage, and two accounts rekeyed to them
+// (lsigArgsTestKeys). The signer records each /plan and /sign request and
+// refuses it, so a test sees what LogicSig arguments every position would
+// have carried.
 func lsigArgsTestApp(t *testing.T) (*App, *signRecorder) {
 	t.Helper()
 	network := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +93,8 @@ func lsigArgsTestApp(t *testing.T) (*App, *signRecorder) {
 				ConsensusVersion: string(protocol.ConsensusV43), Fee: 0, MinFee: 1000, LastRound: 100,
 				GenesisId: "testnet-v1.0", GenesisHash: make([]byte, 32),
 			})
+		case r.URL.Path == "/v2/accounts/"+argsBroken:
+			http.Error(w, "lookup failed", http.StatusInternalServerError)
 		case strings.HasPrefix(r.URL.Path, "/v2/accounts/"):
 			_ = json.NewEncoder(w).Encode(models.Account{
 				Address: strings.TrimPrefix(r.URL.Path, "/v2/accounts/"), Amount: 5_000_000, MinBalance: 100_000, Status: "Offline",
@@ -76,6 +107,11 @@ func lsigArgsTestApp(t *testing.T) (*App, *signRecorder) {
 
 	recorder := &signRecorder{}
 	signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/keys" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(lsigArgsTestKeys())
+			return
+		}
 		if r.URL.Path != "/plan" && r.URL.Path != "/sign" {
 			// The client may ask for /status after a refused request.
 			http.NotFound(w, r)
@@ -104,16 +140,20 @@ func lsigArgsTestApp(t *testing.T) (*App, *signRecorder) {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
-	eng.SignerCache.Keys = map[string]string{argsNative: "ed25519", argsHTLC: "aplane.htlc.v1"}
-	eng.SignerCache.SetGenericLsig(argsHTLC, true)
-	eng.SignerCache.SetSigningArgs(argsHTLC, []cache.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true}})
-	eng.SignerCache.SetLogicSigResourceProfile(argsHTLC, lsigresource.Profile{
-		ProgramBytes: 100, Default: &lsigresource.PathProfile{ArgumentBytes: 32, MaxOpcodeCost: 100},
-	})
+	if _, err := eng.RefreshKeys(context.Background()); err != nil {
+		t.Fatalf("RefreshKeys() error = %v", err)
+	}
 	eng.AuthCache = cache.NewAuthAddressCache()
 	eng.AuthCache.AuthAddresses[argsNative] = ""
 	eng.AuthCache.AuthAddresses[argsHTLC] = ""
-	eng.SetCache.Sets = map[string][]string{"mixed": {argsNative, argsHTLC}}
+	eng.AuthCache.AuthAddresses[argsLsigToNative] = argsNative
+	eng.AuthCache.AuthAddresses[argsBoundedToHTLC] = argsHTLC
+	eng.SetCache.Sets = map[string][]string{
+		"mixed":          {argsNative, argsHTLC},
+		"rekeyedlsig":    {argsLsigToNative, argsHTLC},
+		"rekeyedbounded": {argsBoundedToHTLC, argsNative},
+		"withbroken":     {argsBroken, argsHTLC},
+	}
 	return New(eng, config.DefaultConfig(), t.TempDir()), recorder
 }
 
@@ -191,6 +231,16 @@ func TestPresignPluginLsigArgsGoOnlyToManagedPositionsWhoseKeyDeclaresThem(t *te
 	requireArgsByPosition(t, requests[0], map[string]string{argsHTLC: hex.EncodeToString([]byte("open"))})
 }
 
+// requireUndeclared checks that err is the engine's refusal of exactly these
+// argument names.
+func requireUndeclared(t *testing.T, err error, names ...string) {
+	t.Helper()
+	var undeclared *engine.UndeclaredLsigArgsError
+	if !errors.As(err, &undeclared) || strings.Join(undeclared.Names, ",") != strings.Join(names, ",") {
+		t.Fatalf("error = %v, want the names %v refused as declared by no key", err, names)
+	}
+}
+
 // A name no position's key declares would be dropped without a word, so it is
 // refused before anything is sent to the signer.
 func TestPluginLsigArgsRefuseANameNoPositionDeclares(t *testing.T) {
@@ -201,11 +251,39 @@ func TestPluginLsigArgsRefuseANameNoPositionDeclares(t *testing.T) {
 	_, err := app.SubmitPluginTransactions(context.Background(), "plugin", result, map[string][]byte{
 		"preimage": []byte("open"), "preimge": []byte("typo"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "arg:preimge: no transaction here is signed by a key that declares this LogicSig argument") {
-		t.Fatalf("SubmitPluginTransactions() error = %v, want the undeclared name refused", err)
-	}
+	requireUndeclared(t, err, "preimge")
 	if paths, _ := recorder.recorded(); len(paths) != 0 {
 		t.Fatalf("signer requests = %v, want none", paths)
+	}
+}
+
+// The shell words the refusal as the arg: tokens that were typed, a script
+// as the keys of its lsigArgs option; neither sees the other's syntax.
+func TestUndeclaredLsigArgsAreWordedInTheCallersTerms(t *testing.T) {
+	refusal := &engine.UndeclaredLsigArgsError{Names: []string{"other", "preimge"}}
+	shell := ShellLsigArgsError(refusal)
+	if want := "arg:other, arg:preimge: no transaction here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name, or run keys refresh if the key is new"; shell.Error() != want {
+		t.Fatalf("shell wording = %q, want %q", shell, want)
+	}
+	script := scriptLsigArgsError(refusal)
+	if want := `lsigArgs "other", "preimge": no account here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name`; script.Error() != want {
+		t.Fatalf("script wording = %q, want %q", script, want)
+	}
+	for _, worded := range []error{shell, script} {
+		requireUndeclared(t, worded, "other", "preimge")
+	}
+	other := errors.New("other failure")
+	if ShellLsigArgsError(other) != other || scriptLsigArgsError(other) != other || ShellLsigArgsError(nil) != nil {
+		t.Fatal("an error that is not the refusal must pass through unchanged")
+	}
+
+	// sweep() is the shell's sweep workflow, and a script sees its own terms.
+	app, _ := lsigArgsTestApp(t)
+	_, err := jsSweeper{app: app}.Sweep(context.Background(), jsapi.SweepRequest{
+		From: []string{argsHTLC}, To: argsTo, LsigArgs: map[string][]byte{"preimge": []byte("typo")},
+	})
+	if err == nil || !strings.HasPrefix(err.Error(), `lsigArgs "preimge": `) || strings.Contains(err.Error(), "arg:") || strings.Contains(err.Error(), "keys refresh") {
+		t.Fatalf("sweep() error = %v, want the refusal in a script's terms", err)
 	}
 }
 
@@ -258,34 +336,160 @@ func TestValidateASetGivesEachAccountTheArgumentsItsKeyDeclares(t *testing.T) {
 	requireOneRequestPerSender(t, recorder, map[string]string{argsHTLC: hex.EncodeToString([]byte("open"))})
 }
 
-func TestSetCommandsRefuseANameNoAccountDeclares(t *testing.T) {
-	args := map[string][]byte{"preimge": []byte("typo")}
-	for name, run := range map[string]func(*App) error{
-		"send": func(app *App) error {
-			_, err := app.ExecuteSend(context.Background(), SendRequest{
-				AmountText: "0.1", AssetRef: "algo", FromRaw: []string{"@mixed"}, ToRaw: []string{argsTo}, LsigArgs: args,
+// A name no account's key declares is refused, over a set or one account:
+// over one account, a native key's or a typo for the LogicSig's.
+func TestSendSweepValidateRefuseANameNoAccountDeclares(t *testing.T) {
+	for _, tc := range []struct {
+		account string
+		args    map[string][]byte
+		refused string
+	}{
+		{"@mixed", map[string][]byte{"preimge": []byte("typo")}, "preimge"},
+		{argsNative, map[string][]byte{"preimage": []byte("open")}, "preimage"},
+		{argsHTLC, map[string][]byte{"preimage": []byte("open"), "preimge": []byte("typo")}, "preimge"},
+	} {
+		for name, run := range map[string]func(*App) error{
+			"send": func(app *App) error {
+				_, err := app.ExecuteSend(context.Background(), SendRequest{
+					AmountText: "0.1", AssetRef: "algo", FromRaw: []string{tc.account}, ToRaw: []string{argsTo}, LsigArgs: tc.args,
+				})
+				return err
+			},
+			"sweep": func(app *App) error {
+				_, err := app.Sweep(context.Background(), SweepRequest{AssetRef: "algo", FromRaw: []string{tc.account}, ToRaw: argsTo, LsigArgs: tc.args})
+				return err
+			},
+			"validate": func(app *App) error {
+				_, err := app.Validate(context.Background(), ValidateRequest{Account: tc.account, LsigArgs: tc.args})
+				return err
+			},
+		} {
+			t.Run(name+" from "+tc.account, func(t *testing.T) {
+				app, recorder := lsigArgsTestApp(t)
+				requireUndeclared(t, run(app), tc.refused)
+				if paths, _ := recorder.recorded(); len(paths) != 0 {
+					t.Fatalf("signer requests = %v, want none", paths)
+				}
 			})
-			return err
-		},
-		"sweep": func(app *App) error {
-			_, err := app.Sweep(context.Background(), SweepRequest{AssetRef: "algo", FromRaw: []string{"@mixed"}, ToRaw: argsTo, LsigArgs: args})
-			return err
-		},
-		"validate": func(app *App) error {
-			_, err := app.Validate(context.Background(), ValidateRequest{Account: "@mixed", LsigArgs: args})
-			return err
-		},
+		}
+	}
+}
+
+// A sweep whose source list also names the destination sweeps the same
+// accounts as one that leaves it out, and is refused the same way.
+func TestSweepNamingTheDestinationAmongTheSourcesIsRefusedTheSameWay(t *testing.T) {
+	args := map[string][]byte{"preimage": []byte("open")}
+	var messages []string
+	for _, from := range [][]string{{argsNative}, {argsNative, argsTo}} {
+		app, recorder := lsigArgsTestApp(t)
+		_, err := app.Sweep(context.Background(), SweepRequest{AssetRef: "algo", FromRaw: from, ToRaw: argsTo, LsigArgs: args})
+		requireUndeclared(t, err, "preimage")
+		messages = append(messages, ShellLsigArgsError(err).Error())
+		if paths, _ := recorder.recorded(); len(paths) != 0 {
+			t.Fatalf("sweep from %v: signer requests = %v, want none", from, paths)
+		}
+	}
+	if messages[0] != messages[1] {
+		t.Fatalf("refusals differ:\n%s\n%s", messages[0], messages[1])
+	}
+}
+
+// requireSignedWith checks that the fake signer was asked to sign for sender
+// with exactly these LogicSig arguments (hex), by its effective signer.
+func requireSignedWith(t *testing.T, recorder *signRecorder, sender, authAddress string, want map[string]string) {
+	t.Helper()
+	_, requests := recorder.recorded()
+	for _, req := range requests {
+		for _, position := range req.Requests {
+			if position.TxnSender != sender {
+				continue
+			}
+			if position.AuthAddress != authAddress {
+				t.Fatalf("%s signed by %s, want %s", sender, position.AuthAddress, authAddress)
+			}
+			if len(position.LsigArgs) != len(want) {
+				t.Fatalf("%s carried %v, want %v", sender, position.LsigArgs, want)
+			}
+			for name, value := range want {
+				if position.LsigArgs[name] != value {
+					t.Fatalf("%s carried %v, want %v", sender, position.LsigArgs, want)
+				}
+			}
+			return
+		}
+	}
+	t.Fatalf("no signer request for %s", sender)
+}
+
+// Arguments are matched and checked on the key that signs: a LogicSig
+// rekeyed to a native key signs with none, though its own template requires
+// one, and a bounded account rekeyed to a LogicSig takes that LogicSig's
+// arguments, not its own. Over one account and over a set.
+func TestRekeyedAccountsTakeTheArgumentsOfTheKeyThatSigns(t *testing.T) {
+	preimage := map[string][]byte{"preimage": []byte("open")}
+	openHex := map[string]string{"preimage": hex.EncodeToString([]byte("open"))}
+	for name, tc := range map[string]struct {
+		account string
+		args    map[string][]byte
+		sender  string
+		auth    string
+		want    map[string]string
+	}{
+		"LogicSig rekeyed to a native key":        {argsLsigToNative, nil, argsLsigToNative, argsNative, nil},
+		"LogicSig rekeyed to a native key, a set": {"@rekeyedlsig", preimage, argsLsigToNative, argsNative, nil},
+		"bounded rekeyed to a LogicSig":           {argsBoundedToHTLC, preimage, argsBoundedToHTLC, argsHTLC, openHex},
+		"bounded rekeyed to a LogicSig, a set":    {"@rekeyedbounded", preimage, argsBoundedToHTLC, argsHTLC, openHex},
 	} {
 		t.Run(name, func(t *testing.T) {
 			app, recorder := lsigArgsTestApp(t)
-			if err := run(app); err == nil || !strings.Contains(err.Error(), "arg:preimge: no transaction here is signed by a key that declares") {
-				t.Fatalf("error = %v, want the undeclared name refused", err)
+			result, _ := app.Validate(context.Background(), ValidateRequest{Account: tc.account, LsigArgs: tc.args})
+			if result == nil {
+				t.Fatal("Validate() returned no result")
 			}
-			if paths, _ := recorder.recorded(); len(paths) != 0 {
-				t.Fatalf("signer requests = %v, want none", paths)
+			for _, item := range result.Items {
+				if item.Address == tc.sender && strings.Contains(item.Error, "invalid LogicSig arguments") {
+					t.Fatalf("%s refused before signing: %s", tc.sender, item.Error)
+				}
 			}
+			requireSignedWith(t, recorder, tc.sender, tc.auth, tc.want)
 		})
 	}
+}
+
+// An account whose signing key cannot be looked up fails alone; the rest of
+// a set command goes ahead, each with the arguments its key declares.
+func TestSetCommandsKeepALookupFailureToItsAccount(t *testing.T) {
+	preimage := map[string][]byte{"preimage": []byte("open")}
+	openHex := map[string]string{"preimage": hex.EncodeToString([]byte("open"))}
+	lookupFailed := "failed to refresh auth address for " + argsBroken
+
+	t.Run("validate", func(t *testing.T) {
+		app, recorder := lsigArgsTestApp(t)
+		result, _ := app.Validate(context.Background(), ValidateRequest{Account: "@withbroken", LsigArgs: preimage})
+		if result == nil || len(result.Items) != 2 || !strings.Contains(result.Items[0].Error, lookupFailed) {
+			t.Fatalf("Validate() result = %+v, want the broken account failed on its item", result)
+		}
+		requireSignedWith(t, recorder, argsHTLC, argsHTLC, openHex)
+	})
+	t.Run("send", func(t *testing.T) {
+		app, recorder := lsigArgsTestApp(t)
+		result, err := app.ExecuteSend(context.Background(), SendRequest{
+			AmountText: "0.1", AssetRef: "algo", FromRaw: []string{"@withbroken"}, ToRaw: []string{argsTo}, LsigArgs: preimage,
+		})
+		if err != nil || result.NonAtomic == nil || len(result.NonAtomic.Items) != 2 ||
+			!strings.Contains(result.NonAtomic.Items[0].Error, lookupFailed) {
+			t.Fatalf("ExecuteSend() = %+v, %v; want the broken account failed on its item", result, err)
+		}
+		requireSignedWith(t, recorder, argsHTLC, argsHTLC, openHex)
+	})
+	t.Run("sweep", func(t *testing.T) {
+		app, recorder := lsigArgsTestApp(t)
+		result, _ := app.Sweep(context.Background(), SweepRequest{AssetRef: "algo", FromRaw: []string{"@withbroken"}, ToRaw: argsTo, LsigArgs: preimage})
+		if result == nil || len(result.Items) != 2 || result.Items[0].Error == "" {
+			t.Fatalf("Sweep() result = %+v, want the broken account failed on its item", result)
+		}
+		requireSignedWith(t, recorder, argsHTLC, argsHTLC, openHex)
+	})
 }
 
 // An app call's companion payment is from the call's own account. From a
@@ -326,32 +530,18 @@ func TestAppCallCompanionFromALogicSigCarriesTheCallsArgs(t *testing.T) {
 	}
 }
 
-// LogicSig arguments typed for one native account are refused by the client
-// before anything is sent: the key has no program to pass them to.
+// LogicSig arguments typed for a command whose account signs with a native
+// key are refused by the client before anything is sent: the key has no
+// program to pass them to. An app call checks them on the key that signs.
 func TestLsigArgsForANativeAccountAreRefusedBeforeSigning(t *testing.T) {
-	for name, run := range map[string]func(*App) error{
-		"app call with companion": func(app *App) error {
-			_, err := app.AppCallRaw(context.Background(), AppCallRawRequest{
-				AppID: 123, From: argsNative, PayAmount: 1000, LsigArgs: map[string][]byte{"preimage": []byte("open")},
-			})
-			return err
-		},
-		"validate": func(app *App) error {
-			result, err := app.Validate(context.Background(), ValidateRequest{Account: argsNative, LsigArgs: map[string][]byte{"preimage": []byte("open")}})
-			if result != nil && len(result.Items) == 1 && result.Items[0].Error != "" {
-				return errors.New(result.Items[0].Error) // validate reports each account's failure on its item
-			}
-			return err
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			app, recorder := lsigArgsTestApp(t)
-			if err := run(app); err == nil || !strings.Contains(err.Error(), "whose ed25519 key is not a LogicSig and takes no arguments") {
-				t.Fatalf("error = %v, want the arguments refused", err)
-			}
-			if paths, _ := recorder.recorded(); len(paths) != 0 {
-				t.Fatalf("signer requests = %v, want none", paths)
-			}
-		})
+	app, recorder := lsigArgsTestApp(t)
+	_, err := app.AppCallRaw(context.Background(), AppCallRawRequest{
+		AppID: 123, From: argsNative, PayAmount: 1000, LsigArgs: map[string][]byte{"preimage": []byte("open")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "the ed25519 key of "+argsNative+" is not a LogicSig and takes no arguments") {
+		t.Fatalf("error = %v, want the arguments refused", err)
+	}
+	if paths, _ := recorder.recorded(); len(paths) != 0 {
+		t.Fatalf("signer requests = %v, want none", paths)
 	}
 }

@@ -314,7 +314,9 @@ is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
 `leaving` (what to keep in each account, in microAlgos or the asset's base
 units), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
 no `note`. An option that is present must have a value: `{leaving: undefined}`
-is an error, not "leave nothing".
+is an error, not "leave nothing". Each source account gets the `lsigArgs` its
+signing key declares, and `sweep()` throws for a name no source account's key
+declares.
 
 It returns `{asset, to, simulated, succeeded, failed, items}`, where each item
 is `{from, amount, txid, confirmed, skipped, error}`. `amount` is what was to

@@ -51,7 +51,7 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 	})
 	result, err = checkedValidateResult(result, err)
 	if err != nil {
-		return nil, err
+		return nil, apshellapp.ShellLsigArgsError(err)
 	}
 	simulated := r.app().IsSimulateEnabled()
 	projection := validateProjection{

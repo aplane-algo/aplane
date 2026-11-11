@@ -33,7 +33,7 @@ func (r *REPLState) runSend(args []string) (command.Result, error) {
 		LsigArgs:   params.LsigArgs,
 	})
 	if err != nil {
-		return nil, err
+		return nil, apshellapp.ShellLsigArgsError(err)
 	}
 	simulated := r.app().IsSimulateEnabled()
 	return newShellCommandResult(func(w io.Writer) error {

@@ -204,6 +204,10 @@ type PreparedSendItem struct {
 	To           string
 	Prep         *PreparedTxn
 	BalanceCheck *BalanceCheckDetails
+	// lookupErr is why the sender's signing key could not be looked up when
+	// the command's LogicSig arguments were shared out. The item is not
+	// prepared and fails on its own.
+	lookupErr error
 }
 
 // NonAtomicSendPlan describes prepared non-atomic send execution.

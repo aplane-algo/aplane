@@ -5,9 +5,11 @@ package engine
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -120,17 +122,27 @@ func TestPreparePaymentAndMethodCall_NoAlgodClient(t *testing.T) {
 	}
 }
 
+// The arguments are checked against the signing keys once the signing state
+// is refreshed, and before anything is sent to the signer.
 func TestExecutePreparedGroupValidatesLsigArgsBeforeSubmit(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
 	lsigAddr := testAddress(1).String()
-	eng.SignerCache.SetGenericLsig(lsigAddr, true)
-	eng.SignerCache.SetSigningArgs(lsigAddr, []cache.SigningArgInfo{
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(lsigAddr, "aplane.htlc.v1")
+	signerCache.SetGenericLsig(lsigAddr, true)
+	signerCache.SetSigningArgs(lsigAddr, []cache.SigningArgInfo{
 		{Name: "preimage", Type: "bytes", Required: true},
 	})
+	signerCache.AddAddress(testAddress(3).String(), "ed25519")
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected signer request: %s %s", req.Method, req.URL.Path)
+		return nil, nil
+	})
+	algodClient, server := consensusTestAlgod(t, string(protocol.ConsensusV43), nil)
+	defer server.Close()
+	eng.AlgodClient = algodClient
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[lsigAddr] = ""
+	eng.AuthCache.AuthAddresses[testAddress(3).String()] = ""
 
 	prep1 := testPreparedTxn(t, testAddress(1), testAddress(2), "first", nil)
 	prep2 := testPreparedTxn(t, testAddress(3), testAddress(4), "second", nil)

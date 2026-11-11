@@ -111,7 +111,7 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 
 	submit, err := p.repl.app().SubmitPluginTransactions(p.repl.commandContext(), plugin.Manifest.Name, result, lsigArgs)
 	if err != nil {
-		return false, "", nil, nil, fmt.Errorf("failed to sign/submit: %w", err)
+		return false, "", nil, nil, fmt.Errorf("failed to sign/submit: %w", apshellapp.ShellLsigArgsError(err))
 	}
 	p.repl.renderSubmissionOutput(submit.Output)
 	p.repl.renderWarnings(submit.Warnings)

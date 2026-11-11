@@ -3,34 +3,59 @@
 
 package apshellapp
 
-import "context"
+import (
+	"errors"
+	"strconv"
+	"strings"
 
-// lsigArgsForSenders gives each sender of a command the LogicSig arguments
-// typed once for the whole command. Over one account they go as typed, and
-// that key's own checks refuse a name it does not take. Over several accounts
-// (a send, sweep or validate over a set) each gets the arguments its key
-// declares, as a plugin group's positions do, so an account whose key takes
-// none, a native key among them, is sent none, and a name no account's key
-// declares is refused. The result is indexed like senders.
-func (a *App) lsigArgsForSenders(ctx context.Context, senders []string, args map[string][]byte) ([]map[string][]byte, error) {
-	perSender := make([]map[string][]byte, len(senders))
-	if len(args) == 0 {
-		return perSender, nil
-	}
-	distinct := make(map[string]struct{}, len(senders))
-	for _, sender := range senders {
-		distinct[sender] = struct{}{}
-	}
-	if len(distinct) <= 1 {
-		for i := range perSender {
-			perSender[i] = args
+	"github.com/aplane-algo/aplane/internal/engine"
+)
+
+// The engine refuses LogicSig argument names that no signing key declares
+// with an *engine.UndeclaredLsigArgsError. The functions below word that
+// refusal in the terms the arguments were given in; any other error is
+// returned as it is.
+
+// ShellLsigArgsError words the refusal for the shell: the names as the arg:
+// tokens that were typed, and the command that reloads the key list.
+func ShellLsigArgsError(err error) error {
+	return undeclaredLsigArgsError(err, func(names []string) string {
+		tokens := make([]string, len(names))
+		for i, name := range names {
+			tokens[i] = "arg:" + name
 		}
-		return perSender, nil
-	}
-	shared, err := a.eng.LsigArgsByDeclaredName(ctx, senders, args)
-	if err != nil {
-		return nil, err
-	}
-	copy(perSender, shared)
-	return perSender, nil
+		return strings.Join(tokens, ", ") +
+			": no transaction here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name, or run keys refresh if the key is new"
+	})
 }
+
+// scriptLsigArgsError words the refusal for a script: the names as keys of the
+// lsigArgs option it passed.
+func scriptLsigArgsError(err error) error {
+	return undeclaredLsigArgsError(err, func(names []string) string {
+		quoted := make([]string, len(names))
+		for i, name := range names {
+			quoted[i] = strconv.Quote(name)
+		}
+		return "lsigArgs " + strings.Join(quoted, ", ") +
+			": no account here is signed by a key that declares this LogicSig argument, so it would not be sent; check the name"
+	})
+}
+
+func undeclaredLsigArgsError(err error, word func(names []string) string) error {
+	var undeclared *engine.UndeclaredLsigArgsError
+	if !errors.As(err, &undeclared) {
+		return err
+	}
+	return &wordedError{text: word(undeclared.Names), err: undeclared}
+}
+
+// wordedError is an engine error given in a caller's own terms. It still
+// unwraps to the engine error.
+type wordedError struct {
+	text string
+	err  error
+}
+
+func (e *wordedError) Error() string { return e.text }
+func (e *wordedError) Unwrap() error { return e.err }

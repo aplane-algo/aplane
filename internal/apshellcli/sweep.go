@@ -34,7 +34,7 @@ func (r *REPLState) runSweep(args []string) (command.Result, error) {
 		Wait:        params.Wait,
 	})
 	if err != nil && result == nil {
-		return nil, err
+		return nil, apshellapp.ShellLsigArgsError(err)
 	}
 	simulated := r.app().IsSimulateEnabled()
 	commandResult, resultErr := newShellCommandResult(func(w io.Writer) error {

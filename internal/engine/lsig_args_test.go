@@ -90,13 +90,18 @@ func TestLsigArgsByDeclaredName(t *testing.T) {
 		_, err := eng.LsigArgsByDeclaredName(context.Background(), senders, map[string][]byte{
 			"preimage": []byte("open"), "preimge": []byte("typo"), "other": {1},
 		})
-		if err == nil || !strings.Contains(err.Error(), "arg:other, arg:preimge: no transaction here is signed by a key that declares") {
+		var undeclared *UndeclaredLsigArgsError
+		if !errors.As(err, &undeclared) || strings.Join(undeclared.Names, ",") != "other,preimge" {
 			t.Fatalf("error = %v, want both undeclared names refused", err)
+		}
+		if strings.Contains(err.Error(), "arg:") || strings.Contains(err.Error(), "keys refresh") {
+			t.Fatalf("error = %q, want no shell syntax in the engine's wording", err)
 		}
 	})
 	t.Run("a native key alone declares nothing", func(t *testing.T) {
 		_, err := eng.LsigArgsByDeclaredName(context.Background(), []string{native}, map[string][]byte{"preimage": []byte("open")})
-		if err == nil || !strings.Contains(err.Error(), "arg:preimage") {
+		var undeclared *UndeclaredLsigArgsError
+		if !errors.As(err, &undeclared) || len(undeclared.Names) != 1 || undeclared.Names[0] != "preimage" {
 			t.Fatalf("error = %v, want the argument refused", err)
 		}
 	})
@@ -111,13 +116,65 @@ func TestLsigArgsByDeclaredName(t *testing.T) {
 		if _, err := disconnected.LsigArgsByDeclaredName(context.Background(), senders, args); !errors.Is(err, ErrNotConnected) {
 			t.Fatalf("error = %v, want ErrNotConnected", err)
 		}
+		// A set command indexes the result by account, arguments or not.
+		if shares, err := disconnected.ShareLsigArgsByDeclaredName(context.Background(), senders, nil); err != nil || len(shares) != len(senders) {
+			t.Fatalf("ShareLsigArgsByDeclaredName(nil) = %v, %v; want %d empty shares", shares, err, len(senders))
+		}
 	})
 }
 
-// The client refuses LogicSig arguments for a transaction its native key
-// signs, on the effective signer, so it never sends them; the signer refuses
-// the same request.
-func TestRefuseLsigArgsForNativeSigners(t *testing.T) {
+// One account's failed lookup fails that account alone: a set command goes
+// on with the others, each given what its key declares. A plugin group, which
+// is signed as one, fails.
+func TestShareLsigArgsByDeclaredNameKeepsALookupFailureToItsAccount(t *testing.T) {
+	htlc := testAddress(1).String()
+	unknown := testAddress(2).String() // its auth address cannot be fetched
+	rekeyed := testAddress(3).String() // rekeyed to a key the client lacks
+	authorizer := testAddress(4).String()
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(htlc, "aplane.htlc.v1")
+	signerCache.SetGenericLsig(htlc, true)
+	signerCache.SetSigningArgs(htlc, []cache.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true}})
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/keys" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return keyMgmtTextResponse(http.StatusServiceUnavailable, "down", req), nil
+	})
+	// No algod client: an auth address not in the cache cannot be fetched.
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[htlc] = ""
+	eng.AuthCache.AuthAddresses[rekeyed] = authorizer
+
+	senders := []string{htlc, unknown, rekeyed}
+	// "other" is declared by no key that could be looked up, but the two
+	// that could not might declare it, so it is not refused.
+	args := map[string][]byte{"preimage": []byte("open"), "other": {1}}
+	shares, err := eng.ShareLsigArgsByDeclaredName(context.Background(), senders, args)
+	if err != nil {
+		t.Fatalf("ShareLsigArgsByDeclaredName() error = %v, want each failure kept to its account", err)
+	}
+	if len(shares) != 3 || shares[0].Err != nil || len(shares[0].Args) != 1 || string(shares[0].Args["preimage"]) != "open" {
+		t.Fatalf("shares = %+v, want the HTLC given its preimage", shares)
+	}
+	if shares[1].Err == nil || !strings.Contains(shares[1].Err.Error(), "failed to refresh auth address for "+unknown) || shares[1].Args != nil {
+		t.Fatalf("unknown account share = %+v, want its auth address lookup failure and no arguments", shares[1])
+	}
+	if shares[2].Err == nil || !strings.Contains(shares[2].Err.Error(), "failed to refresh signer keys") || shares[2].Args != nil {
+		t.Fatalf("rekeyed account share = %+v, want the key list failure and no arguments", shares[2])
+	}
+
+	if _, err := eng.LsigArgsByDeclaredName(context.Background(), senders, args); err == nil ||
+		!strings.Contains(err.Error(), "failed to refresh auth address for "+unknown) {
+		t.Fatalf("LsigArgsByDeclaredName() error = %v, want the group failed by the first lookup failure", err)
+	}
+}
+
+// The client checks a transaction's LogicSig arguments against the key that
+// signs it, the effective signer, once the signing state is refreshed: a
+// native key takes none, and a rekeyed account takes what its auth address's
+// key declares, not what its own does.
+func TestValidateSubmitLsigArgsChecksTheEffectiveSignersKey(t *testing.T) {
 	nativefalcon.RegisterClient() // as apshell registers it
 	eng, err := NewEngine("testnet")
 	if err != nil {
@@ -126,34 +183,50 @@ func TestRefuseLsigArgsForNativeSigners(t *testing.T) {
 	native := testAddress(1).String()
 	falcon := testAddress(2).String()
 	htlc := testAddress(3).String()
-	rekeyed := testAddress(4).String()
-	unheld := testAddress(5).String()
+	lsigToNative := testAddress(4).String()
+	boundedToHTLC := testAddress(5).String()
+	unheld := testAddress(6).String()
 	eng.SignerCache.AddAddress(native, "ed25519")
 	eng.SignerCache.AddAddress(falcon, nativefalcon.KeyType)
 	eng.SignerCache.AddAddress(htlc, "aplane.htlc.v1")
 	eng.SignerCache.SetGenericLsig(htlc, true)
+	eng.SignerCache.SetSigningArgs(htlc, []cache.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true}})
+	// A generic LogicSig whose own required argument is "secret", rekeyed to
+	// the native key.
+	eng.SignerCache.AddAddress(lsigToNative, "aplane.htlc.v1")
+	eng.SignerCache.SetGenericLsig(lsigToNative, true)
+	eng.SignerCache.SetSigningArgs(lsigToNative, []cache.SigningArgInfo{{Name: "secret", Type: "bytes", Required: true}})
+	// A bounded account whose own runtime argument is "x", rekeyed to the HTLC.
+	eng.SignerCache.AddAddress(boundedToHTLC, "example.bounded-hashlock.v1")
+	eng.SignerCache.SetSigningArgs(boundedToHTLC, []cache.SigningArgInfo{{Name: "x", Type: "bytes"}})
 	eng.AuthCache = cache.NewAuthAddressCache()
-	eng.AuthCache.AuthAddresses[rekeyed] = native
+	eng.AuthCache.AuthAddresses[lsigToNative] = native
+	eng.AuthCache.AuthAddresses[boundedToHTLC] = htlc
 
-	args := []map[string][]byte{{"preimage": []byte("open")}}
+	preimage := map[string][]byte{"preimage": []byte("open")}
 	for name, tc := range map[string]struct {
 		sender string
-		args   []map[string][]byte
+		args   map[string][]byte
 		want   string
 	}{
-		"ed25519 key":             {native, args, "given for " + native + ", whose ed25519 key is not a LogicSig"},
-		"native Falcon key":       {falcon, args, "whose falcon1024 key is not a LogicSig"},
-		"rekeyed to a native key": {rekeyed, args, "given for " + native + ", whose ed25519 key"},
-		"LogicSig key":            {htlc, args, ""},
-		"key the client lacks":    {unheld, args, ""},
-		"native key, no args":     {native, nil, ""},
-		"native key, empty args":  {native, []map[string][]byte{{}}, ""},
+		"ed25519 key with args":                 {native, preimage, "transaction 1: invalid LogicSig arguments: the ed25519 key of " + native + " is not a LogicSig and takes no arguments"},
+		"native Falcon key with args":           {falcon, preimage, "the falcon1024 key of " + falcon + " is not a LogicSig"},
+		"native key, no args":                   {native, nil, ""},
+		"native key, empty args":                {native, map[string][]byte{}, ""},
+		"LogicSig with its argument":            {htlc, preimage, ""},
+		"LogicSig missing its argument":         {htlc, nil, "missing required argument: preimage"},
+		"LogicSig rekeyed to a native key":      {lsigToNative, nil, ""},
+		"LogicSig rekeyed to a native, args":    {lsigToNative, map[string][]byte{"secret": {1}}, "the ed25519 key of " + native + " is not a LogicSig"},
+		"bounded rekeyed to a LogicSig":         {boundedToHTLC, preimage, ""},
+		"bounded rekeyed, its own argument":     {boundedToHTLC, map[string][]byte{"x": {1}, "preimage": {2}}, "unknown argument 'x'"},
+		"bounded rekeyed, the LogicSig missing": {boundedToHTLC, nil, "missing required argument: preimage"},
+		"key the client lacks":                  {unheld, preimage, ""},
 	} {
 		sender, err := types.DecodeAddress(tc.sender)
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = eng.refuseLsigArgsForNativeSigners([]types.Transaction{{Header: types.Header{Sender: sender}}}, tc.args)
+		err = eng.validateSubmitLsigArgs([]types.Transaction{{Header: types.Header{Sender: sender}}}, []map[string][]byte{tc.args})
 		switch {
 		case tc.want == "" && err != nil:
 			t.Errorf("%s: error = %v, want none", name, err)

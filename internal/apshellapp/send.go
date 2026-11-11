@@ -140,7 +140,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 	if len(plan.FromAddresses) > iterCount {
 		iterCount = len(plan.FromAddresses)
 	}
-	lsigArgs, err := a.lsigArgsForSenders(ctx, plan.FromAddresses, plan.LsigArgs)
+	lsigArgs, err := a.eng.ShareLsigArgsByDeclaredName(ctx, plan.FromAddresses, plan.LsigArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -159,6 +159,13 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 		}
 
 		item := PreparedSendItem{From: fromAddr, To: toAddr}
+		if fromArgs.Err != nil {
+			// The sender's signing key could not be looked up, so what it
+			// takes is not known: this item fails, the others go ahead.
+			item.lookupErr = fromArgs.Err
+			items = append(items, item)
+			continue
+		}
 		assetID := plan.Amount.Meta.AssetID
 		amountUnits := plan.Amount.Raw
 
@@ -170,7 +177,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   fromArgs,
+				LsigArgs:   fromArgs.Args,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
@@ -184,7 +191,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   fromArgs,
+				LsigArgs:   fromArgs.Args,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
@@ -312,11 +319,15 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 
 	result := &NonAtomicSendResult{Amount: plan.Amount}
 	for _, item := range plan.Items {
-		itemResult := SendItemResult{
-			From:           item.From,
-			To:             item.To,
-			SigningKeyType: item.Prep.SigningContext.DisplayKeyType,
+		itemResult := SendItemResult{From: item.From, To: item.To}
+		if item.lookupErr != nil {
+			itemResult.Error = item.lookupErr.Error()
+			result.LastError = itemResult.Error
+			result.FailureCount++
+			result.Items = append(result.Items, itemResult)
+			continue
 		}
+		itemResult.SigningKeyType = item.Prep.SigningContext.DisplayKeyType
 
 		if err := validatePreparedSendItem(item, plan.Amount); err != nil {
 			itemResult.Error = err.Error()
