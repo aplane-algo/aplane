@@ -90,6 +90,14 @@ func rotatingStageChanged(authorizer types.Address) *ServiceError {
 	}
 }
 
+// rotatingWindowNotCurrent refuses a spend whose validity window is not
+// acceptable at the round just read (rule 3's round-relative half). No
+// signature leaves on this refusal; the client may rebuild the validity
+// rounds and prepare again.
+func rotatingWindowNotCurrent(msg string) *ServiceError {
+	return &ServiceError{Kind: ErrorRotatingWindowNotCurrent, Message: msg}
+}
+
 // validateRotatingSpend applies the sender, shape and window rules that do
 // not depend on the chain.
 func validateRotatingSpend(txn types.Transaction, account types.Address, genesis []byte) *ServiceError {
@@ -504,10 +512,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, rotatingStageChanged(view.Authorizer)
 	}
 	if uint64(spend.FirstValid) > view.Round+rotatingkey.RotatingMaxLead {
-		return nil, badRequest(fmt.Sprintf("first valid round %d is more than %d rounds ahead of the current round %d", spend.FirstValid, rotatingkey.RotatingMaxLead, view.Round))
+		return nil, rotatingWindowNotCurrent(fmt.Sprintf("first valid round %d is more than %d rounds ahead of the current round %d", spend.FirstValid, rotatingkey.RotatingMaxLead, view.Round))
 	}
 	if uint64(spend.LastValid) < view.Round+rotatingkey.RotatingMinRemaining {
-		return nil, badRequest(fmt.Sprintf("fewer than %d rounds remain before last valid round %d (current round %d); prepare the spend again", rotatingkey.RotatingMinRemaining, spend.LastValid, view.Round))
+		return nil, rotatingWindowNotCurrent(fmt.Sprintf("fewer than %d rounds remain before last valid round %d (current round %d); prepare the spend again", rotatingkey.RotatingMinRemaining, spend.LastValid, view.Round))
 	}
 
 	// From here until the signature is decided the seed is in memory, so a
@@ -593,7 +601,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		}
 		if uint64(spend.FirstValid) > fresh.Round+rotatingkey.RotatingMaxLead ||
 			uint64(spend.LastValid) < fresh.Round+rotatingkey.RotatingMinRemaining {
-			return nil, badRequest("validity window aged during signing; prepare the spend again")
+			return nil, rotatingWindowNotCurrent("validity window aged during signing; prepare the spend again")
 		}
 	}
 	signed := make([]string, 0, len(allTxns))

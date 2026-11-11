@@ -46,6 +46,20 @@ before it was renamed `enroll`.
   can go through `/sign` and `/plan` only, and that the signer checks the
   assembly receipt, the chain does not.
 
+## Rotating timing refusals have their own error code
+
+- `/sign/rotating/sign` refuses a spend whose validity window is not current at
+  the round the signer read, `first_valid` more than 2 rounds ahead or fewer
+  than 10 rounds before `last_valid`, with the new code
+  `rotating_window_not_current` (HTTP 409). It was a `bad_request` (400) that
+  clients could tell apart only by its message text. The refusal releases no
+  signature; rebuild the validity rounds and prepare again. The same code
+  covers the SLH-DSA re-read after signing, whose aged window was a plain
+  `bad_request` that apshell did not retry.
+- apshell retries a rotating spend on `rotating_stage_changed` and
+  `rotating_window_not_current` only, by code. A window longer than 100 rounds
+  is still a `bad_request`.
+
 ## Resource dummies are counted at their real opcode cost
 
 - The dummy transactions the signer adds to pool LogicSig budget were counted

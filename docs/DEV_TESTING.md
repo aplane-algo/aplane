@@ -491,6 +491,12 @@ requires a tampered signature to be rejected, and submits the transaction.
 That test is skipped when `ALGOD_URL` or `APLANE_LOCALNET_KMD_URL` is unset, as
 on TestNet.
 
+The bridge enables `aplane.rotating-triple-wotsc.v1` at the signer before the
+suites run, so the SDK rotating tests can generate an account. On LocalNet the
+Go suite funds one from the KMD wallet and sends from it twice through
+`SendPayment`. If the key type can't be enabled the bridge warns and the
+rotating tests skip.
+
 The SDK integration bridge checks the SDK language-specific test prerequisites
 before starting the signer. If the SDK checkout contains the Python SDK, pytest
 is required. Install the Python SDK development dependencies with:
