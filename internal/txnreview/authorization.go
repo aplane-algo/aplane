@@ -37,7 +37,7 @@ func signatureKind(stxn types.SignedTxn, authorizer types.Address) string {
 		kinds = append(kinds, "single signature")
 	}
 	if !stxn.Msig.Blank() {
-		kinds = append(kinds, multisigKind(stxn.Msig))
+		kinds = append(kinds, multisigKind(stxn.Msig, authorizer))
 	}
 	if !stxn.PQsig.Blank() {
 		kinds = append(kinds, "native post-quantum signature")
@@ -55,22 +55,48 @@ func signatureKind(stxn types.SignedTxn, authorizer types.Address) string {
 	}
 }
 
-func multisigKind(msig types.MultisigSig) string {
-	return fmt.Sprintf("multisig, %d of %d", msig.Threshold, len(msig.Subsigs))
+// multisigKind names a multisig by its threshold, and says when the address
+// its keys and threshold make is not the authorizer's: the network then
+// refuses it, as it refuses a LogicSig whose program is not the account's.
+func multisigKind(msig types.MultisigSig, authorizer types.Address) string {
+	kind := fmt.Sprintf("multisig, %d of %d", msig.Threshold, len(msig.Subsigs))
+	account, err := crypto.MultisigAccountFromSig(msig)
+	if err != nil {
+		return kind + ", whose address cannot be computed: " + err.Error()
+	}
+	address, err := account.Address()
+	if err != nil {
+		return kind + ", whose address cannot be computed: " + err.Error()
+	}
+	if address != authorizer {
+		return kind + ", whose address is " + address.String()
+	}
+	return kind
 }
 
 // logicSigKind names a LogicSig: delegated by the authorizer's own signature,
-// or an account of its own, whose address is the program's.
+// or an account of its own, whose address is the program's. The network takes
+// at most one delegation; more than one is shown as malformed.
 func logicSigKind(lsig types.LogicSig, authorizer types.Address) string {
-	switch {
-	case lsig.Sig != (types.Signature{}):
-		return "LogicSig delegated by a single signature"
-	case !lsig.Msig.Blank():
-		return "LogicSig delegated by " + multisigKind(lsig.Msig)
-	case !lsig.LMsig.Blank():
-		return "LogicSig delegated by " + multisigKind(lsig.LMsig)
-	case !lsig.PQsig.Blank():
-		return "LogicSig delegated by a native post-quantum signature"
+	var delegations []string
+	if lsig.Sig != (types.Signature{}) {
+		delegations = append(delegations, "a single signature")
+	}
+	if !lsig.Msig.Blank() {
+		delegations = append(delegations, multisigKind(lsig.Msig, authorizer))
+	}
+	if !lsig.LMsig.Blank() {
+		delegations = append(delegations, multisigKind(lsig.LMsig, authorizer))
+	}
+	if !lsig.PQsig.Blank() {
+		delegations = append(delegations, "a native post-quantum signature")
+	}
+	switch len(delegations) {
+	case 0:
+	case 1:
+		return "LogicSig delegated by " + delegations[0]
+	default:
+		return "MALFORMED LogicSig, more than one delegation: " + strings.Join(delegations, "; ")
 	}
 	if program := crypto.AddressFromProgram(lsig.Logic); program != authorizer {
 		return "LogicSig whose program address is " + program.String()

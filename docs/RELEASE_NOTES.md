@@ -33,7 +33,9 @@ refuses or approves.
 - **A passthrough position names who authorized it**, and with what: a single
   signature, a multisig with its threshold, a native post-quantum signature or
   a LogicSig, read from its signed bytes and marked as not verified by the
-  signer.
+  signer. A multisig or LogicSig program whose address is not the
+  authorizer's names that address, and a LogicSig delegated more than once is
+  shown as malformed.
 - **apapprover shows the validity window**, as apadmin does.
 - **A clawback from the sender's own holding is described as one.** It was
   shown as an ordinary transfer, though it uses the clawback authority and

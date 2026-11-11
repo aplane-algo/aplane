@@ -340,8 +340,11 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
      sender's authorizer"), else the sender; the kind is a single signature,
      a multisig with its threshold, a native post-quantum signature, a
      LogicSig account or a delegated LogicSig, `NO SIGNATURE`, or `MALFORMED`
-     when it carries more than one. The signer does not check that signature;
-     the network does (`txnreview.Authorization`).
+     when it carries more than one, or a LogicSig carries more than one
+     delegation. A multisig whose keys and threshold make an address other
+     than the authorizer's, like a LogicSig whose program address differs,
+     names that address. The signer does not check that signature; the
+     network does (`txnreview.Authorization`).
    - A foreign entry this signer's records connect to it is shown as such
      (`heldForeignPositions` in `internal/signerapp/signing/held_position.go`). A mixed
      cosigned group is signed in several requests, and each carries the others'

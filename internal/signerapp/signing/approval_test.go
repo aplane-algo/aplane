@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -474,9 +475,18 @@ func TestBuildApprovalDescriptionNamesEachPositionsSigningKey(t *testing.T) {
 // A passthrough position says who authorizes it, and with what, from its
 // signed bytes, and that this signer does not check it.
 func TestBuildApprovalDescriptionNamesThePassthroughAuthorizer(t *testing.T) {
-	sender, rekeyed := types.Address{7}, types.Address{8}
+	sender := types.Address{7}
+	msig := types.MultisigSig{Version: 1, Threshold: 2, Subsigs: make([]types.MultisigSubsig, 3)}
+	account, err := crypto.MultisigAccountFromSig(msig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rekeyed, err := account.Address()
+	if err != nil {
+		t.Fatal(err)
+	}
 	signed := types.SignedTxn{
-		Msig:     types.MultisigSig{Version: 1, Threshold: 2, Subsigs: make([]types.MultisigSubsig, 3)},
+		Msig:     msig,
 		Txn:      types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: sender}},
 		AuthAddr: rekeyed,
 	}
