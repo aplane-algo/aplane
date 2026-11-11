@@ -6,7 +6,6 @@ package signing
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -545,7 +544,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// signed before, else the first unused one from the TxID's pick, else
 	// (every leaf spent) the TxID's pick again, reported as reuse. State
 	// chooses the leaf, never whether to sign.
-	txIDText := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(txID[:])
+	txIDText := txIDString(txID)
 	leafProfile, _ := rotatingkey.Lookup(rs.keyType)
 	var leaf LeafRelease
 	var leafReused bool

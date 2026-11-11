@@ -46,19 +46,24 @@ type signedGroup struct {
 
 // signedGroupOf describes the final group a request signed. txns are the
 // transactions exactly as signed, whose IDs it computes as the executor
-// does when it signs them; dummyCount is how many trailing ones are dummies
-// this request added and signed (none for a frozen group, whose dummies the
-// client signs).
+// does when it signs them, and whose group ID the planner set; dummyCount
+// is how many trailing ones are dummies this request added and signed (none
+// for a frozen group, whose dummies the client signs).
 func signedGroupOf(txns []types.Transaction, dummyCount int) signedGroup {
 	txIDs := make([]string, len(txns))
 	for i, txn := range txns {
 		txIDs[i] = algocrypto.GetTxID(txn)
 	}
-	return newSignedGroup(txns, txIDs, dummyCount)
+	var groupID types.Digest
+	if len(txns) > 0 {
+		groupID = txns[0].Group
+	}
+	return newSignedGroup(txns, txIDs, groupID, dummyCount)
 }
 
 // decodedSignedGroup describes a group signed as the client sent it, with
-// the IDs computed from its bytes at decode: the IDs that were signed.
+// the IDs computed from its bytes at decode, the IDs that were signed, and
+// the group ID its decode validated every transaction carries.
 func decodedSignedGroup(group *canonical.Group, dummyCount int) signedGroup {
 	if group == nil {
 		return signedGroup{}
@@ -67,15 +72,23 @@ func decodedSignedGroup(group *canonical.Group, dummyCount int) signedGroup {
 	txIDs := make([]string, len(group.Entries))
 	for i, entry := range group.Entries {
 		txns[i] = entry.Txn
-		txIDs[i] = base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(entry.TxID[:])
+		txIDs[i] = txIDString(entry.TxID)
 	}
-	return newSignedGroup(txns, txIDs, dummyCount)
+	return newSignedGroup(txns, txIDs, group.GroupID, dummyCount)
 }
 
-func newSignedGroup(txns []types.Transaction, txIDs []string, dummyCount int) signedGroup {
+// txIDString is a transaction ID in the text form Algorand writes it in:
+// unpadded base32.
+func txIDString(id [32]byte) string {
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(id[:])
+}
+
+// newSignedGroup records groupID only when the transactions were signed in
+// a group; a transaction signed alone has none.
+func newSignedGroup(txns []types.Transaction, txIDs []string, groupID types.Digest, dummyCount int) signedGroup {
 	g := signedGroup{txns: txns, txIDs: txIDs, dummyCount: dummyCount}
-	if len(txns) > 0 && txns[0].Group != (types.Digest{}) {
-		g.groupID = base64.StdEncoding.EncodeToString(txns[0].Group[:])
+	if groupID != (types.Digest{}) {
+		g.groupID = base64.StdEncoding.EncodeToString(groupID[:])
 	}
 	return g
 }

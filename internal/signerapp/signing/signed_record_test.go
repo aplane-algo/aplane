@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -106,5 +107,33 @@ func TestRefusedSignRecordsNothingAsSigned(t *testing.T) {
 	}
 	if len(audit.approved) != 0 {
 		t.Fatalf("a refused request was recorded as signed: %+v", audit.approved)
+	}
+}
+
+// A decoded group's records name each transaction by the ID its decode
+// computed, in the text form the SDK writes, and the group by the ID its
+// decode validated.
+func TestDecodedSignedGroupNamesTheDecodedIDs(t *testing.T) {
+	txns := groupedPaymentTransactions(t, types.Address{41}.String(), types.Address{42}.String())
+	group, err := canonical.DecodeGroupHex([]string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decodedSignedGroup(group, 0).record(1, "A", "signed", "")
+	if got.TxID != algocrypto.GetTxID(txns[1]) || got.TxnSender != txns[1].Sender.String() || got.Fee != uint64(txns[1].Fee) {
+		t.Fatalf("record = %+v, want transaction 2 as decoded", got)
+	}
+	if want := base64.StdEncoding.EncodeToString(group.GroupID[:]); got.GroupID != want {
+		t.Fatalf("group_id = %q, want the validated %q", got.GroupID, want)
+	}
+	if len(got.GroupTxIDs) != 2 || got.GroupTxIDs[0] != algocrypto.GetTxID(txns[0]) || got.GroupTxIDs[1] != got.TxID {
+		t.Fatalf("group_txids = %v", got.GroupTxIDs)
+	}
+
+	// The group ID is the one the decode validated, not read off a
+	// transaction.
+	group.GroupID = types.Digest{9}
+	if got := decodedSignedGroup(group, 0).record(0, "A", "signed", ""); got.GroupID != base64.StdEncoding.EncodeToString(group.GroupID[:]) {
+		t.Fatalf("group_id = %q, want the group's own ID", got.GroupID)
 	}
 }
