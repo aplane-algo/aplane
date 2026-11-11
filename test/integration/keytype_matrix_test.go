@@ -757,7 +757,7 @@ func matrixExpectedResourceDummies(
 		LogicSigs:        usages,
 		Dummy: lsigresource.Usage{
 			ProgramBytes:  uint64(len(txsigning.EmbeddedDummyTealTok)),
-			MaxOpcodeCost: 1,
+			MaxOpcodeCost: txsigning.DummyOpcodeCost,
 		},
 	})
 	if err != nil {

@@ -70,9 +70,10 @@ if any individual LogicSig has argument_bytes > 1000:
 ```
 
 The solver finds the smallest fixed point because every added dummy also has a
-small LogicSig program and opcode cost. It never adds a dummy merely to reduce
-the program surcharge: another transaction costs a full base fee but buys at
-most 1,000 free program bytes.
+small LogicSig program and opcode cost: the dummy program is 6 bytes and runs
+three opcodes, so each dummy counts 3 toward the pooled opcode budget. It never
+adds a dummy merely to reduce the program surcharge: another transaction costs a
+full base fee but buys at most 1,000 free program bytes.
 
 This release accepts v42 and v43, whose fee and resource rules are identical;
 the v42 formulas and examples here apply to both. APlane must be upgraded
