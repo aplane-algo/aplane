@@ -246,10 +246,10 @@ func TestValidateOriginalPositions(t *testing.T) {
 		report   *signerapi.MutationReport
 		want     string
 	}{
-		"unreported fee rise": {raised(1), nil, "unreported fields at original position 1"},
+		"unreported fee rise": {raised(1), nil, "unreported fields at original index 0"},
 		"reported fee unchanged": {raised(0), &signerapi.MutationReport{
 			FeesModified: []int{0},
-		}, "did not increase the fee"},
+		}, "fee mutation at original index 0 did not increase the fee"},
 		"reported fee lowered": {func() []types.Transaction {
 			r := raised()
 			r[0].Fee--

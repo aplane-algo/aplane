@@ -786,7 +786,8 @@ func TestValidatePlannedGroup(t *testing.T) {
 	t.Run("unreported original mutation", func(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[0].Receiver = testAddress(3)
-		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields") {
+		// Zero-based, as this path's other positions are.
+		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields at original index 0") {
 			t.Fatalf("error = %v, want original mutation rejection", err)
 		}
 	})
@@ -811,7 +812,7 @@ func TestValidatePlannedGroup(t *testing.T) {
 		unchanged[0].Fee = original.Fee
 		bad := *mutations
 		bad.TotalFeesDelta = 0
-		if err := validatePlannedGroup([]types.Transaction{original}, unchanged, &bad); err == nil || !strings.Contains(err.Error(), "did not increase the fee") {
+		if err := validatePlannedGroup([]types.Transaction{original}, unchanged, &bad); err == nil || !strings.Contains(err.Error(), "original index 0 did not increase the fee") {
 			t.Fatalf("error = %v, want an unchanged reported fee refused", err)
 		}
 	})
