@@ -90,22 +90,7 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 		}},
 	}
 
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() error = %v", err)
-	}
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
-
-	displaySignRequest(req, 1)
-
-	_ = w.Close()
-	var out bytes.Buffer
-	if _, err := out.ReadFrom(r); err != nil {
-		t.Fatalf("ReadFrom() error = %v", err)
-	}
-	rendered := out.String()
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
 	if !strings.Contains(rendered, "Policy warnings (1)") {
 		t.Fatalf("displaySignRequest() output missing violations header:\n%s", rendered)
 	}
