@@ -50,6 +50,9 @@ before it was renamed `enroll`.
   required arguments, which that key then ignored; it now signs with none. An
   account rekeyed to a LogicSig takes that LogicSig's arguments. The check runs
   after the account's auth address and the signer's key list are refreshed.
+  A required argument of a composed LogicSig key is now checked on the client
+  too, not only a generic template's: left out, it is refused before the
+  signer plans or asks for approval, where before the signer refused it.
 - **The signer refuses `lsig_args` for a key that is not a LogicSig.** An
   ed25519 or native Falcon key ignored them, and they still entered the
   approval digest. `/plan`, `/sign` and `/sign/component` now answer `400`

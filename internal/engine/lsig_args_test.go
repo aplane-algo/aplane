@@ -210,6 +210,8 @@ func TestValidateSubmitLsigArgsChecksTheEffectiveSignersKey(t *testing.T) {
 	lsigToNative := testAddress(4).String()
 	boundedToHTLC := testAddress(5).String()
 	unheld := testAddress(6).String()
+	composed := testAddress(7).String()
+	bounded := testAddress(8).String()
 	eng.SignerCache.AddAddress(native, "ed25519")
 	eng.SignerCache.AddAddress(falcon, nativefalcon.KeyType)
 	eng.SignerCache.AddAddress(htlc, "aplane.htlc.v1")
@@ -223,6 +225,13 @@ func TestValidateSubmitLsigArgsChecksTheEffectiveSignersKey(t *testing.T) {
 	// A bounded account whose own runtime argument is "x", rekeyed to the HTLC.
 	eng.SignerCache.AddAddress(boundedToHTLC, "example.bounded-hashlock.v1")
 	eng.SignerCache.SetSigningArgs(boundedToHTLC, []cache.SigningArgInfo{{Name: "x", Type: "bytes"}})
+	// A composed (DSA) LogicSig, not a generic one, whose template requires
+	// "secret".
+	eng.SignerCache.AddAddress(composed, "example.composed-hashlock.v1")
+	eng.SignerCache.SetSigningArgs(composed, []cache.SigningArgInfo{{Name: "secret", Type: "bytes", Required: true}})
+	// A bounded account's runtime arguments are cached as optional.
+	eng.SignerCache.AddAddress(bounded, "example.bounded-hashlock.v1")
+	eng.SignerCache.SetSigningArgs(bounded, []cache.SigningArgInfo{{Name: "x", Type: "bytes"}})
 	eng.AuthCache = cache.NewAuthAddressCache()
 	eng.AuthCache.AuthAddresses[lsigToNative] = native
 	eng.AuthCache.AuthAddresses[boundedToHTLC] = htlc
@@ -233,18 +242,22 @@ func TestValidateSubmitLsigArgsChecksTheEffectiveSignersKey(t *testing.T) {
 		args   map[string][]byte
 		want   string
 	}{
-		"ed25519 key with args":                 {native, preimage, "transaction 1: invalid LogicSig arguments: the ed25519 key of " + native + " is not a LogicSig and takes no arguments"},
-		"native Falcon key with args":           {falcon, preimage, "the falcon1024 key of " + falcon + " is not a LogicSig"},
-		"native key, no args":                   {native, nil, ""},
-		"native key, empty args":                {native, map[string][]byte{}, ""},
-		"LogicSig with its argument":            {htlc, preimage, ""},
-		"LogicSig missing its argument":         {htlc, nil, "missing required argument: preimage"},
-		"LogicSig rekeyed to a native key":      {lsigToNative, nil, ""},
-		"LogicSig rekeyed to a native, args":    {lsigToNative, map[string][]byte{"secret": {1}}, "the ed25519 key of " + native + " is not a LogicSig"},
-		"bounded rekeyed to a LogicSig":         {boundedToHTLC, preimage, ""},
-		"bounded rekeyed, its own argument":     {boundedToHTLC, map[string][]byte{"x": {1}, "preimage": {2}}, "unknown argument 'x'"},
-		"bounded rekeyed, the LogicSig missing": {boundedToHTLC, nil, "missing required argument: preimage"},
-		"key the client lacks":                  {unheld, preimage, ""},
+		"ed25519 key with args":                  {native, preimage, "transaction 1: invalid LogicSig arguments: the ed25519 key of " + native + " is not a LogicSig and takes no arguments"},
+		"native Falcon key with args":            {falcon, preimage, "the falcon1024 key of " + falcon + " is not a LogicSig"},
+		"native key, no args":                    {native, nil, ""},
+		"native key, empty args":                 {native, map[string][]byte{}, ""},
+		"LogicSig with its argument":             {htlc, preimage, ""},
+		"LogicSig missing its argument":          {htlc, nil, "missing required argument: preimage"},
+		"LogicSig rekeyed to a native key":       {lsigToNative, nil, ""},
+		"LogicSig rekeyed to a native, args":     {lsigToNative, map[string][]byte{"secret": {1}}, "the ed25519 key of " + native + " is not a LogicSig"},
+		"bounded rekeyed to a LogicSig":          {boundedToHTLC, preimage, ""},
+		"bounded rekeyed, its own argument":      {boundedToHTLC, map[string][]byte{"x": {1}, "preimage": {2}}, "unknown argument 'x'"},
+		"bounded rekeyed, the LogicSig missing":  {boundedToHTLC, nil, "missing required argument: preimage"},
+		"key the client lacks":                   {unheld, preimage, ""},
+		"composed LogicSig missing its argument": {composed, nil, "missing required argument: secret"},
+		"composed LogicSig with its argument":    {composed, map[string][]byte{"secret": {1}}, ""},
+		"bounded spend, no arguments":            {bounded, nil, ""},
+		"bounded spend, its argument":            {bounded, map[string][]byte{"x": {1}}, ""},
 	} {
 		sender, err := types.DecodeAddress(tc.sender)
 		if err != nil {

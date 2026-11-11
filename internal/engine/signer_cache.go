@@ -236,9 +236,12 @@ func (e *Core) signerCacheSigningArgNames(address string) []string {
 // validateSignerLsigArgs checks LogicSig arguments against what address's key
 // declares. A native key (ed25519 or Falcon) declares none: it signs the
 // transaction itself and has no program to pass them to, and the signer
-// refuses a request that supplies them. A LogicSig's argument schema names the
-// arguments it takes and which of them a template requires. A key the client
-// does not hold is left to the signer.
+// refuses a request that supplies them. A LogicSig's argument schema, a
+// generic or a composed template's, names the arguments it takes and which of
+// them it requires, so a required one left out is refused here, before
+// anything is planned or approved. A bounded account's runtime arguments are
+// cached as optional, since which it needs depends on the signing path. A key
+// with no schema, or one the client does not hold, is left to the signer.
 func (e *Core) validateSignerLsigArgs(address string, args map[string][]byte) error {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
@@ -247,8 +250,6 @@ func (e *Core) validateSignerLsigArgs(address string, args map[string][]byte) er
 			(kind == algorithm.AuthorizationEd25519 || kind == algorithm.AuthorizationNativePQ) {
 			return fmt.Errorf("the %s key of %s is not a LogicSig and takes no arguments", e.SignerCache.GetKeyType(address), address)
 		}
-	} else if !e.SignerCache.IsGenericLsig(address) {
-		return nil
 	}
 	return e.SignerCache.ValidateLsigArgs(address, args)
 }

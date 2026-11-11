@@ -161,6 +161,30 @@ func TestExecutePreparedGroupValidatesLsigArgsBeforeSubmit(t *testing.T) {
 	}
 }
 
+// A composed LogicSig's required signing argument is checked on the client
+// too, not only a generic one's: left out, it is refused before the signer is
+// asked for anything, so nothing is planned or put to approval.
+func TestSignAndSubmitRefusesAComposedKeysMissingArgumentBeforeTheSigner(t *testing.T) {
+	composed := testAddress(1).String()
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(composed, "example.composed-hashlock.v1")
+	signerCache.SetSigningArgs(composed, []cache.SigningArgInfo{{Name: "secret", Type: "bytes", Required: true}})
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected signer request: %s %s", req.Method, req.URL.Path)
+		return nil, nil
+	})
+	algodClient, server := consensusTestAlgod(t, string(protocol.ConsensusV43), nil)
+	defer server.Close()
+	eng.AlgodClient = algodClient
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[composed] = ""
+
+	_, err := eng.SignAndSubmit(context.Background(), testPreparedTxn(t, testAddress(1), testAddress(2), "spend", nil), false)
+	if err == nil || !strings.Contains(err.Error(), "transaction 1: invalid LogicSig arguments: missing required argument: secret") {
+		t.Fatalf("SignAndSubmit() error = %v, want the missing argument refused", err)
+	}
+}
+
 func TestValidateSubmitLsigArgsAcceptsValidArgs(t *testing.T) {
 	eng, err := NewEngine("testnet")
 	if err != nil {
