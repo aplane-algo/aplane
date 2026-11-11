@@ -261,6 +261,14 @@ if [[ "$ready" != 1 ]]; then
   exit 1
 fi
 
+# The SDK suites spend from a rotating account, which is a library key type an
+# operator enables. Enabling an enabled type is harmless. A failure here is
+# reported and not fatal: the rotating tests skip when the type is not listed.
+rotating_key_type="aplane.rotating-triple-wotsc.v1"
+if ! go run ./cmd/apadmin -d "$APSIGNER_DATA" keytype enable "$rotating_key_type" >>"$log_file" 2>&1; then
+  echo "Warning: could not enable $rotating_key_type; the SDK rotating tests will skip (see $log_file)" >&2
+fi
+
 echo "Running SDK integration tests from $APLANE_SDKS_REPO"
 (
   cd "$APLANE_SDKS_REPO"
