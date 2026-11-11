@@ -5,9 +5,10 @@ package daemon
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -30,15 +31,28 @@ var _ signersigning.AuditWithheldLogger = (*signingAuditLogger)(nil)
 
 // signingRequestID is the ID that ties together what one signing or
 // planning request does: the request_id it carried or, for a request sent
-// without one, an ID the signer mints for it, req- and the time in
-// nanoseconds. Each handler settles it once, before anything is logged, and
+// without one, an ID the signer mints for it, req- and 16 hex digits from
+// crypto/rand. Each handler settles it once, before anything is logged, and
 // sets it on the request, so the audit operation_id, the approval prompt,
 // /sign/cancel and a response that returns an ID all carry the same value.
+//
+// A minted ID is random, not a clock reading, so two requests that arrive in
+// the same instant cannot share one: they would share an operation_id and a
+// cancel handle, and a cancel for one would stop the other. It is 20
+// characters, the most the signer console prints of a waiting request's ID,
+// so the console shows it whole; 64 random bits make two minted IDs equal
+// with negligible probability.
 func signingRequestID(supplied string) string {
 	if supplied != "" {
 		return supplied
 	}
-	return fmt.Sprintf("req-%d", time.Now().UnixNano())
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		// Unreachable: crypto/rand.Read ends the program rather than
+		// return an error.
+		panic(fmt.Sprintf("generate request ID: %v", err))
+	}
+	return "req-" + hex.EncodeToString(suffix[:])
 }
 
 // signingAuditAttributionFromRequest attributes a signing request's entries

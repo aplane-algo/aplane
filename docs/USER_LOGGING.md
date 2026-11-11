@@ -46,7 +46,7 @@ Each line is a JSON object with the following fields:
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
-| `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (its `request_id`, or one the signer minted for it) |
+| `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (the client's `request_id` when it sent one, else a random ID the signer minted; see [Signing](#signing)) |
 | `result_code` | string | Result code of a failed or uncertain policy or ASA set change |
 | `changed` | bool | On a succeeded policy or ASA set change only: whether it minted a generation (`false` is written, for a policy apply that changed nothing) |
 | `generation_id` | string | Generation a change minted, also when its commit is uncertain |
@@ -174,11 +174,15 @@ generation records say what committed. Offline `apadmin policy rescue` and
 | `ROTATING_RECOVERY` | A rotating-account recovery action or outcome was recorded |
 
 Every entry a signing or planning request writes carries the request's ID
-as `operation_id`. That is the `request_id` the request sent or, for a
-request sent without one, an ID the signer mints for it: `req-` and a
-number. `/sign/component` and `/sign/assemble` return it as `request_id`,
-and while a request waits for approval the signer's console shows the
-first 20 characters of its ID. So one request reads as a sequence: its
+as `operation_id`. For a request that sent a `request_id`, that is the
+client's ID, and the client chooses it: it can send the same ID twice or
+one that looks like the signer's, and entries sharing it then belong to
+more than one request, so keeping it unique is the client's job. For a
+request sent without one, the signer mints a random ID, `req-` and 16 hex
+digits, and never mints the same one twice. `/sign/component` and
+`/sign/assemble` return the ID as `request_id`, and while a request waits
+for approval the signer's console shows the first 20 characters of its
+ID, all of a minted one. So one request reads as a sequence: its
 `SIGN_REQUEST` entries (what was asked), then either a `SIGN_APPROVED` per
 transaction signed or the `SIGN_REJECTED` or `SIGN_FAILED` entries that
 stopped it. A request with no outcome entry was not signed: it was

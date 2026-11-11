@@ -1206,7 +1206,8 @@ Audit entries carry attribution fields:
   signed transaction's final fee and the group it was signed in (see
   Signing-audit semantics below)
 - `operation_id`: on signing and planning entries, the request's ID: the
-  `request_id` it carried, or one the signer minted for it
+  client's `request_id` when it sent one, else a random ID the signer
+  minted for it
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
 - `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
@@ -1331,10 +1332,14 @@ Signing-audit semantics:
   These are the IDs of the transactions returned to the client, which
   differ from the request's whenever planning changed them
 - every entry a signing or planning request writes carries its ID as
-  `operation_id`, so what was asked, refused, failed and signed for one
-  request can be read together. The ID is the request's `request_id`, or,
-  for a request sent without one, `req-` and the time in nanoseconds, which
-  the HTTP handler mints once and sets on the request before anything is
+  `operation_id`. When the request sent a `request_id`, that is the
+  client's ID: the client chooses it, may send it twice or send one that
+  looks like a minted ID, and entries sharing it then belong to more than
+  one request, so keeping it unique is the client's responsibility. For a
+  request sent without one, the signer mints a random ID, `req-` and 16 hex
+  digits from `crypto/rand` (64 bits, so it does not mint the same ID
+  twice; 20 characters, so the console shows it whole). The HTTP handler
+  mints it once and sets it on the request before anything is
   logged (`/sign`, `/plan`, `/sign/component`, `/sign/assemble` and the
   rotating prepare and sign). The same value is the ID the approval prompt
   is held under (the signer console shows its first 20 characters), the

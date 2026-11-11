@@ -1364,9 +1364,12 @@ mean. The description also shows `RejectVersion` when set.
 
 `request_id` is optional and is used by `/sign` to correlate a live synchronous
 sign request with a later `/sign/cancel` request. If absent, the signer mints
-one (`req-` and the time in nanoseconds) for its audit entries and approval
-line, but `/sign` does not return it, so external clients cannot cancel the
-request by ID. It never identifies the operator prompt:
+a random one (`req-` and 16 hex digits from `crypto/rand`) for its audit
+entries and approval line, but `/sign` does not return it, so external clients
+cannot cancel the request by ID. A supplied `request_id` is used as given, as
+the audit `operation_id` too: the signer does not check that it is unique, so
+a client that reuses one, or sends one shaped like a minted ID, has requests
+that share it. It never identifies the operator prompt:
 every approval prompt carries its own unguessable, single-use ID that apsigner
 generates, so an operator's answer reaches only the prompt it was given for. A
 client that cancels a request and resubmits under the same `request_id` gets a
