@@ -724,6 +724,17 @@ func (a *AuditLogger) LogSignFailedAttributed(attr Attribution, address, txnSend
 	a.Log(signFailedEntry(attr, address, txnSender, reason))
 }
 
+// LogSignWithheldAttributed logs, as SIGN_FAILED, a signature already
+// recorded as SIGN_APPROVED that never left the signer. It carries that
+// entry's txid and group_id (empty for a transaction signed alone), so a
+// search on either finds both.
+func (a *AuditLogger) LogSignWithheldAttributed(attr Attribution, address, txnSender, txID, groupID, reason string) {
+	entry := signFailedEntry(attr, address, txnSender, reason)
+	entry.TxID = txID
+	entry.GroupID = groupID
+	a.Log(entry)
+}
+
 // LogAuthFailed logs an authentication failure before a principal is known.
 func (a *AuditLogger) LogAuthFailed(remoteAddr, reason string) {
 	if !a.admitAuthFailure() {

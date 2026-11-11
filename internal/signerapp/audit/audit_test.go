@@ -218,3 +218,37 @@ func TestSigningEntriesCarryTheRequestAndTheSignedGroup(t *testing.T) {
 		t.Fatalf("zero fee missing from the log:\n%s", data)
 	}
 }
+
+// A signature withheld after it was recorded as signed is a SIGN_FAILED under
+// the same txid and group_id, so a search on either finds both entries.
+func TestWithheldSignatureCarriesTheSignedTransaction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attr := Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http", RequestID: "req-8"}
+	a.LogSignApprovedAttributed(attr, SignApproval{
+		TxnAuth: "ADDR", TxnSender: "ADDR", TxID: "TXA", GroupID: "R1JPVVA=", GroupTxIDs: []string{"TXA", "TXD"}, DummyCount: 1,
+	})
+	a.LogSignWithheldAttributed(attr, "ADDR", "ADDR", "TXA", "R1JPVVA=", "signature withheld after it was recorded as signed: signer is locked")
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := readAuditEntries(t, path)
+	if len(entries) != 2 {
+		t.Fatalf("%d entries, want 2", len(entries))
+	}
+	approved, withheld := entries[0], entries[1]
+	if withheld.Event != AuditSignFailed || withheld.Outcome != "failed" || withheld.OperationID != "req-8" {
+		t.Fatalf("withheld entry = %+v", withheld)
+	}
+	if withheld.TxID != approved.TxID || withheld.GroupID != approved.GroupID {
+		t.Fatalf("withheld txid %q group %q, want the approved %q %q", withheld.TxID, withheld.GroupID, approved.TxID, approved.GroupID)
+	}
+	// It retracts the signature; it does not restate the signed group.
+	if withheld.Fee != nil || withheld.GroupTxIDs != nil || withheld.DummyCount != 0 {
+		t.Fatalf("withheld entry restates the signed group: %+v", withheld)
+	}
+}

@@ -1370,9 +1370,9 @@ Signing-audit semantics:
   dummies counted in `dummy_count`) and makes its last check. If that check
   refuses the release (the signer locked, the request was cancelled, the key
   was removed), it writes a `SIGN_FAILED` whose `reason` begins
-  `signature withheld after it was recorded as signed` and names the
-  `txid`: the signature never left. Rotating prepare signs nothing and
-  writes no entry
+  `signature withheld after it was recorded as signed`, with the `txid` and
+  `group_id` of that `SIGN_APPROVED`: the signature never left. Rotating
+  prepare signs nothing and writes no entry
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a review rule matched, including when User Auto-Approve satisfied it without a human decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available

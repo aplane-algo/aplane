@@ -39,11 +39,12 @@ type recordingReleaseAudit struct {
 	fail     error
 	// approved counts approvals audited without a matched review rule;
 	// rules holds the rule IDs of approvals that matched one. signed holds
-	// every approval's record; failed the reasons of SIGN_FAILED entries.
+	// every approval's record; withheld the SIGN_FAILED entries of
+	// signatures recorded as signed that never left.
 	approved int
 	rules    []string
 	signed   []SignedRecord
-	failed   []string
+	withheld []withheldSignature
 	// onRelease runs as a release is audited.
 	onRelease func()
 }
@@ -56,8 +57,14 @@ func (a *recordingReleaseAudit) LogSignApproved(record SignedRecord) {
 	}
 	a.rules = append(a.rules, record.PolicyRuleID)
 }
-func (a *recordingReleaseAudit) LogSignFailed(_, _, reason string) {
-	a.failed = append(a.failed, reason)
+
+type withheldSignature struct {
+	record SignedRecord
+	reason string
+}
+
+func (a *recordingReleaseAudit) LogSignWithheld(record SignedRecord, reason string) {
+	a.withheld = append(a.withheld, withheldSignature{record: record, reason: reason})
 }
 func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
 	if a.onRelease != nil {
@@ -208,8 +215,8 @@ func runHappyPathThreeRotations(t *testing.T, f *rotatingFixture, audit *recordi
 // signed, and the fee of the spend as signed.
 func checkRotatingSignedRecord(t *testing.T, f *rotatingFixture, audit *recordingReleaseAudit, stage uint64, resp *signerapi.RotatingSignResponse) {
 	t.Helper()
-	if len(audit.signed) != int(stage)+1 || len(audit.failed) != 0 {
-		t.Fatalf("stage %d: signed %+v, failed %q; want one signed record per sign", stage, audit.signed, audit.failed)
+	if len(audit.signed) != int(stage)+1 || len(audit.withheld) != 0 {
+		t.Fatalf("stage %d: signed %+v, withheld %+v; want one signed record per sign", stage, audit.signed, audit.withheld)
 	}
 	got := audit.signed[stage]
 	if got.TxID != resp.TxID || got.AuthAddress != f.account.String() || got.TxnSender != f.account.String() {

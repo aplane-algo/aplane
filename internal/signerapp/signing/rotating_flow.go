@@ -632,7 +632,8 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	consoleOf(s.Console).Printf("[ROTATING] Rotation pending %d -> %d for %s\n", stage, targetStage, req.Account)
 	// The IDs recorded are the ones decoded from the presented bytes, which
 	// the spend's signature and the dummies' signed.
-	s.logSuccessfulSignatures(signReq, plan, decodedSignedGroup(group, len(plan.DummyTxns)), policyRuleID)
+	recorded := decodedSignedGroup(group, len(plan.DummyTxns))
+	s.logSuccessfulSignatures(signReq, plan, recorded, policyRuleID)
 	// Audit writes block, so this has to come after the last of them. A refusal
 	// here leaves a release on record that never left, which only makes the leaf
 	// look used.
@@ -640,7 +641,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		// The entries above record the transaction as signed; this one says
 		// the signature never left. Nothing leaves on this path, so writing
 		// after the check holds nothing back from a lock.
-		s.logWithheldSignature(req.Account, spend.Sender.String(), txIDText, refused)
+		s.logWithheldSignature(recorded.record(0, req.Account, "", ""), refused)
 		return nil, refused
 	}
 	return &signerapi.RotatingSignResponse{
@@ -652,11 +653,20 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}, nil
 }
 
-// logWithheldSignature records, as SIGN_FAILED, a rotating signature that was
-// recorded as signed and then refused at the final check.
-func (s *Service) logWithheldSignature(account, sender, txID string, refused *ServiceError) {
-	if logger, ok := s.AuditLog.(AuditFailLogger); ok && logger != nil {
-		logger.LogSignFailed(account, sender, fmt.Sprintf("signature withheld after it was recorded as signed (txid %s): %s", txID, refused.Message))
+// AuditWithheldLogger records, as SIGN_FAILED, a signature already recorded
+// as signed that never left the signer. The entry carries the record's txid
+// and group_id, the fields its SIGN_APPROVED has, so a search on either
+// finds both entries.
+type AuditWithheldLogger interface {
+	LogSignWithheld(record SignedRecord, reason string)
+}
+
+// logWithheldSignature records a rotating signature that was recorded as
+// signed and then refused at the final check. record is the spend's, as its
+// SIGN_APPROVED wrote it.
+func (s *Service) logWithheldSignature(record SignedRecord, refused *ServiceError) {
+	if logger, ok := s.AuditLog.(AuditWithheldLogger); ok && logger != nil {
+		logger.LogSignWithheld(record, "signature withheld after it was recorded as signed: "+refused.Message)
 	}
 }
 

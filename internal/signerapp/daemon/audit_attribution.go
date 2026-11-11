@@ -24,6 +24,7 @@ var _ signingAudit = (*signingAuditLogger)(nil)
 var _ signersigning.AuditCosignerRejectLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingRecoveryLogger = (*signingAuditLogger)(nil)
+var _ signersigning.AuditWithheldLogger = (*signingAuditLogger)(nil)
 
 // signingAuditAttributionFromRequest attributes a signing request's entries
 // to the connection that sent it, and ties them together by the request_id
@@ -108,6 +109,15 @@ func (l *signingAuditLogger) LogSignFailed(authAddress, txnSender, reason string
 		return
 	}
 	l.log.LogSignFailedAttributed(l.attribution, authAddress, txnSender, reason)
+}
+
+// LogSignWithheld records a signature already recorded as signed that never
+// left the signer, under its SIGN_APPROVED's txid and group_id.
+func (l *signingAuditLogger) LogSignWithheld(record signersigning.SignedRecord, reason string) {
+	if l == nil || l.log == nil {
+		return
+	}
+	l.log.LogSignWithheldAttributed(l.attribution, record.AuthAddress, record.TxnSender, record.TxID, record.GroupID, reason)
 }
 
 // LogRotatingRelease records a rotating release durably before the

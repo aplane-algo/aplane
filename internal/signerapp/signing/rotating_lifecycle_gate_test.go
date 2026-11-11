@@ -408,10 +408,17 @@ func TestRotatingSignStopsAtALockDuringTheLastAuditWrite(t *testing.T) {
 				t.Fatalf("response %v, error %v, want a lock refusal", resp, err)
 			}
 			// The log already says the transaction was signed; a SIGN_FAILED
-			// for the same transaction says the signature never left.
-			if len(audit.signed) != 1 || len(audit.failed) != 1 ||
-				!strings.Contains(audit.failed[0], "signature withheld") || !strings.Contains(audit.failed[0], audit.signed[0].TxID) {
-				t.Fatalf("signed %+v, failed %q; want the withheld signature recorded against its transaction", audit.signed, audit.failed)
+			// under the same txid and group_id says the signature never left.
+			if len(audit.signed) != 1 || len(audit.withheld) != 1 {
+				t.Fatalf("signed %+v, withheld %+v; want one of each", audit.signed, audit.withheld)
+			}
+			signed, withheld := audit.signed[0], audit.withheld[0]
+			if withheld.record.TxID == "" || withheld.record.TxID != signed.TxID || withheld.record.GroupID != signed.GroupID ||
+				withheld.record.AuthAddress != signed.AuthAddress || withheld.record.TxnSender != signed.TxnSender {
+				t.Fatalf("withheld %+v, want the signed record's transaction %+v", withheld.record, signed)
+			}
+			if !strings.HasPrefix(withheld.reason, "signature withheld after it was recorded as signed: ") {
+				t.Fatalf("withheld reason = %q", withheld.reason)
 			}
 		})
 	}

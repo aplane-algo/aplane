@@ -26,7 +26,8 @@ logged as a request to sign.
 - **`/plan` is logged as `PLAN_REQUEST`** and writes no `SIGN_*` entry.
 - **A rotating signature refused at its last check says so.** It is already
   recorded as `SIGN_APPROVED` by then; a `SIGN_FAILED` whose reason begins
-  `signature withheld after it was recorded as signed` now follows it.
+  `signature withheld after it was recorded as signed` now follows it, with
+  the same `txid` and `group_id`.
 - Cosigner and bounded base components record the target's `txid` and its
   frozen group.
 
