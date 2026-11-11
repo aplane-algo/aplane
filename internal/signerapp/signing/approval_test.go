@@ -340,8 +340,80 @@ func TestBuildApprovalDescriptionDistinguishesCoveredAuthorizationFeeRequirement
 		t.Fatalf("description incorrectly reports a fee mutation:\n%s", description)
 	}
 	if !strings.Contains(description, "[FEE REQUIREMENT COVERED BY EXISTING FEES]") ||
-		!strings.Contains(description, "Required LogicSig program contribution: 300 microAlgos") {
+		!strings.Contains(description, "Required LogicSig program contribution: about 300 microAlgos") {
 		t.Fatalf("description does not explain the covered fee requirement:\n%s", description)
+	}
+}
+
+// The program contribution is rounded up on its own while the adjustment
+// rounds the group's total once, so the two can differ by a microAlgo; the
+// prompt gives the contribution as approximate and the adjustment as exact.
+// The native Falcon contribution is a whole number of microAlgos and is given
+// as it is.
+func TestBuildApprovalDescriptionGivesTheProgramContributionAsApproximate(t *testing.T) {
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
+	plan := &PlanResult{
+		FeeInfo:              DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0}, ProgramFeeContribution: 1, NativePQFeeContribution: 2_000},
+		LogicSigResourcePlan: lsigresource.Plan{ChargedProgramBytes: 5},
+		PassthroughIndices:   map[int]bool{},
+		ForeignIndices:       map[int]bool{},
+	}
+	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, func(types.Transaction) string { return "txn" })
+	for _, want := range []string{
+		"Group fee adjustment: +2000 microAlgos\n",
+		"Required LogicSig program contribution: about 1 microAlgos (5 charged byte(s))",
+		"Required native Falcon contribution: 2000 microAlgos",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("description missing %q:\n%s", want, description)
+		}
+	}
+	if strings.Contains(description, "native Falcon contribution: about") {
+		t.Errorf("the exact native Falcon contribution is given as approximate:\n%s", description)
+	}
+}
+
+// A frozen group is changed by nothing in the request that judges it: the
+// prompt says it was checked as sent and what its fees already pay, never that
+// this request added dummies, raised fees or recomputed the group ID. The same
+// plan, not frozen, still reports the changes.
+func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
+	for _, requests := range [][]signerapi.SignRequest{{{AuthAddress: "AUTH"}}, {{AuthAddress: "AUTH"}, {TxnBytesHex: "aa"}}} {
+		req := signerapi.GroupSignRequest{Requests: requests}
+		plan := &PlanResult{
+			DummiesNeeded:        1,
+			FeeInfo:              DummyFeeInfo{DummyFeeContribution: 1_000, ProgramFeeContribution: 30},
+			LogicSigResourcePlan: lsigresource.Plan{ChargedProgramBytes: 300},
+			PassthroughIndices:   map[int]bool{},
+			ForeignIndices:       map[int]bool{1: len(requests) > 1},
+			Frozen:               true,
+		}
+		txns := make([]types.Transaction, len(requests)+1)
+		for i := range txns {
+			txns[i] = types.Transaction{Type: types.PaymentTx}
+		}
+		description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+		for _, want := range []string{
+			"[FROZEN GROUP: checked as sent, not changed by this request]",
+			"  • 1 dummy transaction(s) for LogicSig arguments/opcode budget",
+			"Required LogicSig program contribution: about 30 microAlgos",
+			"The fees shown already include these; only /plan adds them",
+		} {
+			if !strings.Contains(description, want) {
+				t.Errorf("%d request(s): description missing %q:\n%s", len(requests), want, description)
+			}
+		}
+		for _, notWant := range []string{"MODIFIED", "Added 1 dummy", "Group ID recomputed", "COVERED BY EXISTING FEES"} {
+			if strings.Contains(description, notWant) {
+				t.Errorf("%d request(s): frozen description claims %q:\n%s", len(requests), notWant, description)
+			}
+		}
+
+		plan.Frozen = false
+		description, _, _ = BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+		if !strings.Contains(description, "[MODIFIED BY SERVER]") || strings.Contains(description, "FROZEN") {
+			t.Errorf("%d request(s): a planned group lost its change report:\n%s", len(requests), description)
+		}
 	}
 }
 
@@ -374,7 +446,7 @@ func TestRequestSingleTxnApprovalBlocksNonReviewableTxn(t *testing.T) {
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{{Type: types.TxType("mystery")}},
 		[]types.Transaction{{Type: types.TxType("mystery")}},
-		0,
+		"",
 		0,
 		0,
 	)
@@ -449,7 +521,7 @@ func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},
 		[]types.Transaction{txn},
-		0,
+		"",
 		0,
 		0,
 	)
@@ -489,7 +561,7 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},
 		[]types.Transaction{txn},
-		0,
+		"",
 		0,
 		0,
 	)
@@ -530,7 +602,7 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},
 		[]types.Transaction{txn},
-		0,
+		"",
 		0,
 		0,
 		policy.ReviewAlgoPaymentExceededRuleID,
@@ -623,7 +695,7 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},
 		[]types.Transaction{txn},
-		0,
+		"",
 		0,
 		0,
 		"",

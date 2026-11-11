@@ -68,6 +68,10 @@ type PlanResult struct {
 	BoundedItems []*boundedPlanItem
 	// Rotating describes a rotating account's spend; nil on every other path.
 	Rotating *rotatingPlanItem
+	// Frozen is set for a group checked as sent (/sign/component), which
+	// nothing in the request changed. The review reads it; signing and
+	// policy never do.
+	Frozen bool
 
 	// approval is set by the approval gate and checked before signing.
 	approval approvalBinding

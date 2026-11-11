@@ -927,12 +927,30 @@ target's transaction ID and message). Immediately before signing, each signing
 path recomputes the hash and refuses with an internal error on any difference,
 so nothing between approval and signing can change what is signed.
 
-When modifications occur, the approval UI displays an explicit banner:
+When modifications occur, the approval UI displays an explicit banner, in the
+single-transaction prompt as in the group prompt:
 ```
 [MODIFIED BY SERVER]
-  • Added 1 dummy transaction(s) for LSig budget
-  • Fee adjustment: +1000 microAlgos across 1 LSig txn(s)
+  • Added 1 dummy transaction(s) for LogicSig arguments/opcode budget
+  • Group fee adjustment: +3001 microAlgos across transaction(s) [1]
+  • Required LogicSig program contribution: about 1 microAlgos (5 charged byte(s))
+  • Required native Falcon contribution: 2000 microAlgos
   • Group ID recomputed
+```
+The adjustment is the exact amount added. The contributions say what it is
+for; each is rounded up to a whole microAlgo on its own while the adjustment
+rounds the group's total once, so they need not add up to it, and the program
+contribution, usually a fraction of a microAlgo per byte, is given as
+approximate. A group whose fees already pay the requirement shows
+`[FEE REQUIREMENT COVERED BY EXISTING FEES]` with the contributions.
+
+A `/sign/component` request checks a frozen group and changes nothing, so its
+prompt says so instead of claiming the changes `/plan` made:
+```
+[FROZEN GROUP: checked as sent, not changed by this request]
+  • 1 dummy transaction(s) for LogicSig arguments/opcode budget
+  • Required LogicSig program contribution: about 30 microAlgos (300 charged byte(s))
+  • The fees shown already include these; only /plan adds them
 ```
 
 ### Relevant Policy Parameters

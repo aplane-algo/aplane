@@ -202,30 +202,8 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 
 	if isSingleTxn {
 		b.WriteString("=== SINGLE TRANSACTION ===\n\n")
-		hasAuthorizationFeeRequirement := plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0
-		if plan.DummiesNeeded > 0 {
-			b.WriteString("[MODIFIED BY SERVER]\n")
-			b.WriteString(fmt.Sprintf("  • Added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded))
-		}
-		if plan.FeeInfo.TotalFees > 0 {
-			if plan.DummiesNeeded == 0 {
-				b.WriteString("[MODIFIED BY SERVER]\n")
-			}
-			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos\n", plan.FeeInfo.TotalFees))
-		} else if plan.DummiesNeeded == 0 && hasAuthorizationFeeRequirement {
-			b.WriteString("[FEE REQUIREMENT COVERED BY EXISTING FEES]\n")
-		}
-		if plan.FeeInfo.ProgramFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • Required LogicSig program contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
-		}
-		if plan.FeeInfo.NativePQFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • Required native Falcon contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
-		}
-		if (plan.DummiesNeeded > 0 || plan.FeeInfo.TotalFees > 0) && len(allTxns) > 1 {
-			b.WriteString("  • Group ID recomputed\n")
-		}
-		if plan.DummiesNeeded > 0 || plan.FeeInfo.TotalFees > 0 || plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0 {
-			b.WriteString("\n")
+		if changes := planChangeLines(plan, allTxns, false); changes != "" {
+			b.WriteString(changes + "\n")
 		}
 	} else {
 		totalTxns := len(req.Requests)
@@ -242,27 +220,7 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]\n", signCount, len(plan.ForeignIndices)))
 			}
 		}
-		if plan.DummiesNeeded > 0 {
-			b.WriteString("[MODIFIED BY SERVER]\n")
-			b.WriteString(fmt.Sprintf("  • Added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded))
-		}
-		if plan.FeeInfo.TotalFees > 0 {
-			if plan.DummiesNeeded == 0 {
-				b.WriteString("[MODIFIED BY SERVER]\n")
-			}
-			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", plan.FeeInfo.TotalFees, approvalTransactionNumbers(plan.FeeInfo.FeeIndices)))
-		} else if plan.DummiesNeeded == 0 && (plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0) {
-			b.WriteString("[FEE REQUIREMENT COVERED BY EXISTING FEES]\n")
-		}
-		if plan.FeeInfo.ProgramFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • Required LogicSig program contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
-		}
-		if plan.FeeInfo.NativePQFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • Required native Falcon contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
-		}
-		if (plan.DummiesNeeded > 0 || plan.FeeInfo.TotalFees > 0) && len(allTxns) > 1 {
-			b.WriteString("  • Group ID recomputed\n")
-		}
+		b.WriteString(planChangeLines(plan, allTxns, true))
 		b.WriteString("\n")
 	}
 
@@ -298,6 +256,63 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 	firstValid, lastValid = approvalWindow(allTxns)
 	// The daemon prints this to its console as well as prompting with it.
 	return termsafe.Lines(b.String()), firstValid, lastValid
+}
+
+// planChangeLines tells the operator what planning did to the request: the
+// dummies it added, the fee it raised and what for, and a recomputed group
+// ID. The single-transaction prompt and the group prompt both carry it. A
+// frozen group is changed by nothing here: it is shown as checked, with what
+// its fees already pay. Every line ends in a newline; with nothing to say it
+// is empty.
+func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) string {
+	var b strings.Builder
+	fees := plan.FeeInfo
+	contributions := fees.ProgramFeeContribution > 0 || fees.NativePQFeeContribution > 0
+	if plan.Frozen {
+		b.WriteString("[FROZEN GROUP: checked as sent, not changed by this request]\n")
+		if plan.DummiesNeeded > 0 {
+			fmt.Fprintf(&b, "  • %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
+		}
+		writeContributionLines(&b, plan)
+		if plan.DummiesNeeded > 0 || contributions {
+			b.WriteString("  • The fees shown already include these; only /plan adds them\n")
+		}
+		return b.String()
+	}
+	if plan.DummiesNeeded > 0 || fees.TotalFees > 0 {
+		b.WriteString("[MODIFIED BY SERVER]\n")
+	} else if contributions {
+		b.WriteString("[FEE REQUIREMENT COVERED BY EXISTING FEES]\n")
+	}
+	if plan.DummiesNeeded > 0 {
+		fmt.Fprintf(&b, "  • Added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
+	}
+	if fees.TotalFees > 0 {
+		if group {
+			fmt.Fprintf(&b, "  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", fees.TotalFees, approvalTransactionNumbers(fees.FeeIndices))
+		} else {
+			fmt.Fprintf(&b, "  • Group fee adjustment: +%d microAlgos\n", fees.TotalFees)
+		}
+	}
+	writeContributionLines(&b, plan)
+	if (plan.DummiesNeeded > 0 || fees.TotalFees > 0) && len(allTxns) > 1 {
+		b.WriteString("  • Group ID recomputed\n")
+	}
+	return b.String()
+}
+
+// writeContributionLines lists what authorization requires the fees to pay
+// beyond the dummies. Each contribution is rounded up to a whole microAlgo on
+// its own, while the fee adjustment rounds the group's total once, so the
+// listed parts need not add up to it. The program contribution, the one that
+// is usually a fraction of a microAlgo per byte, is given as approximate.
+func writeContributionLines(b *strings.Builder, plan *PlanResult) {
+	if c := plan.FeeInfo.ProgramFeeContribution; c > 0 {
+		fmt.Fprintf(b, "  • Required LogicSig program contribution: about %d microAlgos (%d charged byte(s))\n", c, plan.LogicSigResourcePlan.ChargedProgramBytes)
+	}
+	if c := plan.FeeInfo.NativePQFeeContribution; c > 0 {
+		fmt.Fprintf(b, "  • Required native Falcon contribution: %d microAlgos\n", c)
+	}
 }
 
 func approvalTransactionNumbers(indices []int) []int {
@@ -547,18 +562,22 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	return nil
 }
 
-func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "", nil)
+// RequestSingleTxnApproval prompts for one request. planChanges is what
+// planning did to it, as planChangeLines gives it, or empty.
+func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
+	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil)
 }
 
-func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "", nil)
+func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
+	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil)
 }
 
-// requestSingleTxnApprovalWithContext prompts for one request. bounded is its
-// bounded plan item, or nil: a bounded rekey's prompt names who authorizes it,
-// and the account's rekey-to list lets the warning name a listed handover as one.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string, bounded *boundedPlanItem) *ServiceError {
+// requestSingleTxnApprovalWithContext prompts for one request. planChanges is
+// what planning did to it (planChangeLines), shown above the transaction as
+// the group prompt shows it. bounded is its bounded plan item, or nil: a
+// bounded rekey's prompt names who authorizes it, and the account's rekey-to
+// list lets the warning name a listed handover as one.
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64, forceReviewRuleID string, bounded *boundedPlanItem) *ServiceError {
 	var listed map[string]bool
 	if bounded != nil {
 		listed = bounded.ListedRekeyTargets
@@ -601,8 +620,8 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	console.Sync()
 
 	txnDesc := "[TXN APPROVAL]\n"
-	if dummiesNeeded > 0 {
-		txnDesc += "[MODIFIED: Fee adjusted for dummy transactions]\n"
+	if planChanges != "" {
+		txnDesc += planChanges + "\n"
 	}
 	txnDesc += describeTxnForApproval(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn)
 	txnDesc += boundedRekeyApprovalLines(bounded)
