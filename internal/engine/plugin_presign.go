@@ -337,7 +337,7 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 	if appended == 0 {
 		return nil
 	}
-	_, err = clientsign.ValidateCanonicalDummyTxns(draft[0], groupID, planned[len(draft):])
+	_, err = clientsign.ValidateCanonicalDummyTxns(draft[0], groupID, planned, len(draft))
 	return err
 }
 

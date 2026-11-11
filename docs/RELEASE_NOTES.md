@@ -23,6 +23,12 @@ before it was renamed `enroll`.
 - **The cosigned client checks budget dummies with the canonical dummy check.**
   Its own check skipped the validity window, genesis and lease; it now
   rebuilds each dummy as every other path does, before it signs the dummies.
+- **The client's checks of a signer response name a transaction by index.**
+  Some counted from 1 ("returned transaction 1") and others from 0 ("original
+  index 0"), so two errors about one transaction could name it differently.
+  Every check of a `/sign`, `/plan` or rotating response now says "index N",
+  counting from 0 as the signer's mutation report does, and an appended dummy
+  is named by its index in the group.
 - **Cosigner discovery keeps each key type of a public key.** It kept the first
   advertised entry for a public key, so a second witness key type with the
   same public key could not be routed, and `endpoints discover-cosigners`

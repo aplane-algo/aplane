@@ -188,7 +188,7 @@ func validateSignedGroupShape(signed []string, requestCount int) error {
 	}
 	for i, s := range signed {
 		if s == "" {
-			return fmt.Errorf("signer returned an empty signed transaction at position %d", i+1)
+			return fmt.Errorf("signer returned an empty signed transaction at index %d", i)
 		}
 	}
 	return nil
@@ -199,7 +199,7 @@ func decodeSignedTransactionHex(signedHex []string) ([][]byte, error) {
 	for i, hexStr := range signedHex {
 		signedBytes, err := hex.DecodeString(hexStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+			return nil, fmt.Errorf("failed to decode signed transaction at index %d: %w", i, err)
 		}
 		signedTxns[i] = signedBytes
 	}
@@ -229,7 +229,7 @@ func decodeSignedTransactionObjects(signedTxns [][]byte) ([]types.SignedTxn, []t
 	for i, signedBytes := range signedTxns {
 		signed, err := DecodeSignedTxnToSubmit(signedBytes)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("signed transaction %d: %w", i+1, err)
+			return nil, nil, nil, fmt.Errorf("signed transaction at index %d: %w", i, err)
 		}
 		signedObjects[i] = signed
 		txns[i] = signed.Txn
