@@ -500,6 +500,9 @@ func TestDecodeTransactionsRefusesBytesThatAreNotCanonical(t *testing.T) {
 
 // A passthrough slot is returned as signed and the signer adds nothing to
 // it, so one that carries no authorization is refused, as assembly refuses it.
+// A multisig none of whose subsigs is signed is no authorization, at the top
+// level or delegating a LogicSig; a LogicSig with only a program is an escrow
+// and is one.
 func TestDecodeTransactionsRefusesPassthroughWithoutSignature(t *testing.T) {
 	var sender, auth types.Address
 	sender[0], auth[0] = 1, 2
@@ -514,10 +517,20 @@ func TestDecodeTransactionsRefusesPassthroughWithoutSignature(t *testing.T) {
 			map[int]bool{0: true}, consoleOf(nil))
 		return err
 	}
+	program := []byte{0x0a, 0x81, 0x01}
+	unsignedMsig := types.MultisigSig{Version: 1, Threshold: 1, Subsigs: []types.MultisigSubsig{{Key: make([]byte, 32)}, {Key: make([]byte, 32)}}}
+	signedMsig := types.MultisigSig{Version: 1, Threshold: 1, Subsigs: []types.MultisigSubsig{{Key: make([]byte, 32)}, {Key: make([]byte, 32), Sig: types.Signature{1}}}}
 	const want = "transaction 1 (passthrough): signed transaction carries no signature"
 	for name, stxn := range map[string]types.SignedTxn{
-		"no authorization":              {Txn: txn},
-		"auth address but no signature": {Txn: txn, AuthAddr: auth},
+		"no authorization":                         {Txn: txn},
+		"auth address but no signature":            {Txn: txn, AuthAddr: auth},
+		"multisig with no subsig signed":           {Txn: txn, Msig: unsignedMsig},
+		"multisig with no subsigs":                 {Txn: txn, Msig: types.MultisigSig{Version: 1, Threshold: 1}},
+		"LogicSig delegated by an unsigned msig":   {Txn: txn, Lsig: types.LogicSig{Logic: program, Msig: unsignedMsig}},
+		"LogicSig delegated by an unsigned lmsig":  {Txn: txn, Lsig: types.LogicSig{Logic: program, LMsig: unsignedMsig}},
+		"signature beside an unsigned multisig":    {Txn: txn, Sig: types.Signature{1}, Msig: unsignedMsig},
+		"escrow LogicSig beside an unsigned msig":  {Txn: txn, Lsig: types.LogicSig{Logic: program}, Msig: unsignedMsig},
+		"native PQ signature beside unsigned msig": {Txn: txn, PQsig: types.PQSig{Scheme: types.PQScheme{'f', '1'}, PublicKey: []byte{1}, Signature: []byte{2}}, Msig: unsignedMsig},
 	} {
 		if err := decode(stxn); err == nil || err.Kind != ErrorBadRequest || err.Message != want {
 			t.Errorf("%s: %v, want bad request %q", name, err, want)
@@ -525,10 +538,13 @@ func TestDecodeTransactionsRefusesPassthroughWithoutSignature(t *testing.T) {
 	}
 	pq := types.PQSig{Scheme: types.PQScheme{'f', '1'}, PublicKey: []byte{1}, Signature: []byte{2}}
 	for name, stxn := range map[string]types.SignedTxn{
-		"signature":           {Txn: txn, Sig: types.Signature{1}},
-		"multisig":            {Txn: txn, Msig: types.MultisigSig{Version: 1, Threshold: 1, Subsigs: []types.MultisigSubsig{{Key: make([]byte, 32)}}}},
-		"logic signature":     {Txn: txn, Lsig: types.LogicSig{Logic: []byte{0x0a, 0x81, 0x01}}},
-		"native PQ signature": {Txn: txn, PQsig: pq},
+		"signature":                         {Txn: txn, Sig: types.Signature{1}},
+		"multisig with one subsig signed":   {Txn: txn, Msig: signedMsig},
+		"escrow LogicSig":                   {Txn: txn, Lsig: types.LogicSig{Logic: program}},
+		"LogicSig delegated by a signature": {Txn: txn, Lsig: types.LogicSig{Logic: program, Sig: types.Signature{1}}},
+		"LogicSig delegated by a msig":      {Txn: txn, Lsig: types.LogicSig{Logic: program, Msig: signedMsig}},
+		"LogicSig delegated by an lmsig":    {Txn: txn, Lsig: types.LogicSig{Logic: program, LMsig: signedMsig}},
+		"native PQ signature":               {Txn: txn, PQsig: pq},
 	} {
 		if err := decode(stxn); err != nil {
 			t.Errorf("%s: refused: %v", name, err)

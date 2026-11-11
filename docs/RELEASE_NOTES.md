@@ -15,14 +15,25 @@ before it was renamed `enroll`.
   hint did nothing and said nothing. So did the retired `lsig_size` written in
   any case but lowercase. Data after the JSON value is refused too. apshell
   and the SDKs send only declared fields. A caller that adds its own keys to a
-  request object passed to the SDKs now gets the 400.
+  request object passed to the SDKs now gets the 400. A body whose read
+  fails, a timeout or a body cut short, gets a 400 saying `failed to read
+  request body`, before or after the value.
 - A passthrough entry on `/sign` or `/plan` whose signed transaction carries
   no signature is refused, as `/sign/assemble` already refused one. The signer
-  adds nothing to a passthrough and returns it as signed.
+  adds nothing to a passthrough and returns it as signed. On all three
+  endpoints, a multisig none of whose subsigs is signed counts as no
+  signature, whether it signs the transaction or delegates a LogicSig: it can
+  never meet its threshold. `/sign/assemble` used to accept one. An escrow
+  LogicSig, a program with no delegation, still counts.
 - A LogicSig runtime argument that declares neither `byte_length` nor
   `max_size` was planned as 0 bytes, so a large one got too few dummies and
   the network refused the group. The signer now plans it at the size the
-  request sends. No template is refused for leaving the size out.
+  request sends. It measures the hex without decoding it, so a secret value
+  such as an HTLC preimage is not copied. If such an argument is required and
+  the request leaves it out, `/plan`, `/sign` and `/sign/component` refuse
+  the request with 400 (`missing required arg: <name>`): a plan made without
+  the value would be short of dummies when `/sign` receives it. No template is
+  refused for leaving the size out.
 - A bounded account's derived arguments, the recipient proof and the rekey-to
   list proof, go in the slot that has their name. Assembly used to rely on the
   declarations and the slots being in the same order, which held only because

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -59,6 +61,57 @@ func TestDecodeStrictJSON(t *testing.T) {
 				t.Fatalf("decodeError() = %d %q, want 400 %q", status, msg, tt.wantErr)
 			}
 		})
+	}
+}
+
+// readThenFail returns its data and err from the same Read, then io.EOF, as
+// a reader may when it fails partway.
+type readThenFail struct {
+	data []byte
+	err  error
+	done bool
+}
+
+func (r *readThenFail) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(p, r.data), r.err
+}
+
+// A body whose reader fails is reported as unread, not as data after the
+// value or as malformed JSON, wherever the failure falls.
+func TestDecodeStrictJSONReportsABodyReadFailure(t *testing.T) {
+	timeout := errors.New("i/o timeout")
+	const value = `{"requests":[]}`
+	for name, tt := range map[string]struct {
+		body    io.Reader
+		wantErr error
+	}{
+		"read error after a complete value":      {io.MultiReader(strings.NewReader(value), iotest.ErrReader(timeout)), timeout},
+		"body cut short after a complete value":  {io.MultiReader(strings.NewReader(value+" "), iotest.ErrReader(io.ErrUnexpectedEOF)), io.ErrUnexpectedEOF},
+		"read error with the value's last bytes": {&readThenFail{data: []byte(value), err: timeout}, timeout},
+		"read error inside the value":            {io.MultiReader(strings.NewReader(`{"requests":[`), iotest.ErrReader(timeout)), timeout},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var req signerapi.GroupSignRequest
+			err := decodeStrictJSON(tt.body, &req)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("decodeStrictJSON() error = %v, want it to wrap %v", err, tt.wantErr)
+			}
+			if status, msg := decodeError(err); status != http.StatusBadRequest || msg != "failed to read request body" {
+				t.Fatalf("decodeError() = %d %q, want 400 \"failed to read request body\"", status, msg)
+			}
+		})
+	}
+
+	// A body over the size limit is still too large, though the value ends
+	// within it.
+	limited := http.MaxBytesReader(httptest.NewRecorder(), io.NopCloser(strings.NewReader(value+"   ")), int64(len(value)))
+	var req signerapi.GroupSignRequest
+	if status, msg := decodeError(decodeStrictJSON(limited, &req)); status != http.StatusRequestEntityTooLarge || msg != "request body too large" {
+		t.Fatalf("oversized body: decodeError() = %d %q, want 413", status, msg)
 	}
 }
 

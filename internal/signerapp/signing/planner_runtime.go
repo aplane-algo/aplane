@@ -218,7 +218,9 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 // unsizedRuntimeArgBytes is the size of the request's value for each runtime
 // argument that declares neither byte_length nor max_size. The stored profile
 // counts such an argument as empty, so planning adds what the request
-// actually carries. An argument the request leaves out adds nothing.
+// actually carries. A required one the request leaves out is refused, as
+// signing refuses it: a plan sized without it is too small for the group that
+// /sign then receives with the value. An optional one left out adds nothing.
 func unsizedRuntimeArgBytes(defs []lsigprovider.RuntimeArgDef, lsigArgs map[string]string) (uint64, error) {
 	total := uint64(0)
 	for _, def := range defs {
@@ -227,15 +229,38 @@ func unsizedRuntimeArgBytes(defs []lsigprovider.RuntimeArgDef, lsigArgs map[stri
 		}
 		value, ok := lsigArgs[def.Name]
 		if !ok {
+			if def.Required {
+				return 0, fmt.Errorf("missing required arg: %s", def.Name)
+			}
 			continue
 		}
-		decoded, err := hex.DecodeString(value)
+		size, err := hexDecodedLen(value)
 		if err != nil {
 			return 0, fmt.Errorf("invalid hex for arg %s: %w", def.Name, err)
 		}
-		total += uint64(len(decoded))
+		total += uint64(size)
 	}
 	return total, nil
+}
+
+// hexDecodedLen is the length value decodes to under hex.DecodeString, which
+// the executor decodes runtime arguments with, and fails with the error it
+// would. It does not decode: the value can be a secret, such as an HTLC
+// preimage, and a decoded copy would stay on the heap unzeroed.
+func hexDecodedLen(value string) (int, error) {
+	for i := 0; i < len(value); i++ {
+		if !isHexDigit(value[i]) {
+			return 0, hex.InvalidByteError(value[i])
+		}
+	}
+	if len(value)%2 != 0 {
+		return 0, hex.ErrLength
+	}
+	return hex.DecodedLen(len(value)), nil
+}
+
+func isHexDigit(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
 }
 
 func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath, error) {

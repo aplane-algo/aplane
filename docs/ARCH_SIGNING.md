@@ -821,8 +821,13 @@ An argument's stored `byte_length` or `max_size` is what the key's LogicSig
 resource profile counts for it. An argument that declares neither counts as 0
 bytes in the profile `/keys` publishes. When the signer plans a request for
 such a key, it adds the size of the value the request sends, so the dummy
-count covers the argument actually sent. Signing still refuses any argument
-over the network's 4096-byte limit.
+count covers the argument actually sent. If such an argument is required and
+the request leaves it out, planning refuses the request with 400 (`missing
+required arg: <name>`, the message signing gives). This applies to `/plan`,
+`/sign`, and a held contextual position on `/sign/component`. A plan made
+without the value would be too small for the group that `/sign` later
+receives with it. An optional argument left out counts as 0 bytes. Signing
+still refuses any argument over the network's 4096-byte limit.
 
 ---
 
@@ -1254,7 +1259,9 @@ Transport behavior:
 - request bodies are strict: a member the endpoint's request type does not
   declare, at any depth, returns `400` with `request has unknown field
   "<name>"`. It is not ignored. Data after the JSON value returns `400` too.
-  Every endpoint that reads a body applies this. Go's decoder matches a
+  A body whose read fails (a timeout, a body cut short), before or after the
+  value, returns `400` with `failed to read request body`, not either of
+  those. Every endpoint that reads a body applies this. Go's decoder matches a
   member to a declared field regardless of letter case, so send names as
   documented,
 - oversized bodies return `413`,
@@ -1361,7 +1368,12 @@ LogicSig resources.
 A passthrough's signed transaction must carry an authorization: a signature, a
 multisig, a LogicSig, or a native PQ signature. The signer adds none and
 returns the bytes as signed, so one with none is refused with 400 (`signed
-transaction carries no signature`), as `/sign/assemble` refuses it.
+transaction carries no signature`), as `/sign/assemble` refuses it. A
+multisig counts only if at least one subsig is signed, whether it signs the
+transaction or delegates a LogicSig (`msig` or `lmsig`); one with none can
+never meet its threshold. A LogicSig with a program and no delegation is an
+escrow (contract account) LogicSig and counts. `/sign`, `/plan`, and
+`/sign/assemble` apply the same check.
 
 `txn_sender` is an advisory display hint for clients. Signer authority,
 policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
@@ -2118,6 +2130,7 @@ Invalid `request_id` syntax returns `400`.
 |-----------|--------|
 | Malformed JSON | 400 |
 | Unknown request field, or data after the JSON value | 400 |
+| Request body read failure | 400 |
 | Oversized body | 413 |
 | Wrong method | 405 |
 | Missing/invalid credentials | 401 |
@@ -2142,7 +2155,8 @@ Additional compatibility-sensitive request failures:
 - missing `txn_bytes_hex` for sign mode: `400`
 - a request body member the endpoint's request type does not declare,
   including the retired `lsig_size`: `400` naming the member
-- passthrough entries whose signed transaction carries no signature: `400`
+- passthrough entries whose signed transaction carries no signature,
+  including a multisig with no signed subsig: `400`
 - passthrough entries without an existing group ID: `400`
 - passthrough LogicSig entries without `lsig_resources`, with declarations
   whose program/argument sizes differ from the signed envelope, or with
@@ -2150,6 +2164,8 @@ Additional compatibility-sensitive request failures:
 - immutable pre-grouped transactions that would require extra dummies: `400`
 - requests whose required dummies would push the group above 16 transactions: `400`
 - invalid runtime args or generic LogicSig arg decoding: `400`
+- a required runtime argument that declares no size, left out of `/plan`,
+  `/sign`, or a `/sign/component` held contextual position: `400`
 - missing TEAL compile algod configuration for generic LogicSig generation: `500`
 - missing `address` query parameter on delete: `400`
 - all-foreign `/sign` or `/plan` requests: `400` because apsigner has no signer-managed work to perform

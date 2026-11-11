@@ -158,11 +158,60 @@ func TestCalculateLogicSigResourcesSizesUnsizedArgumentsFromTheRequest(t *testin
 		t.Fatal(err)
 	}
 	if omitted.TotalArgumentBytes != 32 || omitted.DummyCount != 0 {
-		t.Fatalf("plan with the unsized argument left out = %#v, want the profile's 32 bytes and no dummy", omitted)
+		t.Fatalf("plan with the optional unsized argument left out = %#v, want the profile's 32 bytes and no dummy", omitted)
 	}
 
-	if _, err := plan(t, 32, args, map[string]string{"data": "zz"}); err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "transaction 1: invalid hex for arg data") {
-		t.Fatalf("invalid hex: error = %+v, want a bad request naming the argument", err)
+	for value, want := range map[string]string{
+		"zz":  "transaction 1: invalid hex for arg data: encoding/hex: invalid byte: U+007A 'z'",
+		"abc": "transaction 1: invalid hex for arg data: encoding/hex: odd length hex string",
+	} {
+		if _, err := plan(t, 32, args, map[string]string{"data": value}); err == nil || err.Kind != ErrorBadRequest || err.Message != want {
+			t.Fatalf("hex %q: error = %+v, want bad request %q", value, err, want)
+		}
+	}
+
+	// A required unsized argument the request leaves out is refused, as
+	// signing refuses it, rather than planned at 0 bytes; a required sized one
+	// is planned at its declared size, as before, and signing refuses it.
+	required := []lsigprovider.RuntimeArgDef{
+		{Name: "preimage", Type: "bytes", Required: true},
+		{Name: "tag", Type: "bytes", Required: true, MaxSize: 32},
+	}
+	const missing = "transaction 1: missing required arg: preimage"
+	for name, lsigArgs := range map[string]map[string]string{
+		"no arguments":       nil,
+		"only the sized one": {"tag": "01"},
+	} {
+		if _, err := plan(t, 32, required, lsigArgs); err == nil || err.Kind != ErrorBadRequest || err.Message != missing {
+			t.Fatalf("%s: error = %+v, want bad request %q", name, err, missing)
+		}
+	}
+	if got, err := plan(t, 32, required, map[string]string{"preimage": large}); err != nil || got.TotalArgumentBytes != 3_032 {
+		t.Fatalf("required arguments given: plan = %#v, error = %v; want 3032 argument bytes", got, err)
+	}
+	if got, err := plan(t, 32, required, map[string]string{"preimage": ""}); err != nil || got.TotalArgumentBytes != 32 {
+		t.Fatalf("required argument given empty: plan = %#v, error = %v; want it planned at 0 bytes", got, err)
+	}
+}
+
+// Planning sizes an unsized argument by the executor's decoder's rules, and
+// fails as that decoder fails, without decoding the value into a copy.
+func TestHexDecodedLenMatchesTheExecutorsDecoder(t *testing.T) {
+	for _, value := range []string{
+		"", "00", "aBcDeF09", "0", "abc", "0x00", "zz", "a z", "0g", "g0", "abz", " 00", "00 ", "é00", strings.Repeat("ff", 4_096),
+	} {
+		decoded, decodeErr := hex.DecodeString(value)
+		size, err := hexDecodedLen(value)
+		if err != decodeErr {
+			t.Fatalf("hexDecodedLen(%q) error = %v, hex.DecodeString error = %v", value, err, decodeErr)
+		}
+		if err == nil && size != len(decoded) {
+			t.Fatalf("hexDecodedLen(%q) = %d, decoded length %d", value, size, len(decoded))
+		}
+	}
+	preimage := hex.EncodeToString(make([]byte, 4_096))
+	if allocs := testing.AllocsPerRun(10, func() { _, _ = hexDecodedLen(preimage) }); allocs != 0 {
+		t.Fatalf("hexDecodedLen allocated %v times, want none", allocs)
 	}
 }
 

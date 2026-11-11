@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -381,5 +383,67 @@ func TestFrozenComponentSizesAHeldContextPositionFromSignerRecords(t *testing.T)
 	hinted := request(signerapi.ComponentContextPosition{TargetIndex: 1, AuthAddress: falcon.String(), PQScheme: signerapi.PQSchemeFalcon1024})
 	if _, _, err := service.ValidateFrozenComponentContext(hinted); err == nil || !strings.Contains(err.Message, "lsig_resources and pq_scheme are allowed only without auth_address") {
 		t.Fatalf("hinted held position: err = %v, want the hint refused", err)
+	}
+}
+
+// A required runtime argument that declares no size is sized from the
+// request, so planning refuses a request that leaves it out: on /plan and
+// /sign, which plan alike, and on /sign/component, which sizes a held
+// contextual position the same way.
+func TestPlanningRefusesAMissingRequiredUnsizedArgument(t *testing.T) {
+	lsig := types.Address{7}
+	service, authorizer, txn := frozenBoundedTestServiceWith(t, 4_500, map[string]string{lsig.String(): "aplane.test-generic.v1"})
+	baseSnapshot := service.Planner.Snapshot
+	service.Planner.Snapshot = func() PlannerRuntimeSnapshot {
+		snapshot := baseSnapshot()
+		snapshot.KeyMetadata = maps.Clone(snapshot.KeyMetadata)
+		snapshot.KeyMetadata[lsig.String()] = PlannerKeyMetadata{
+			Category:          lsigprovider.CategoryGenericLsig,
+			LogicSigResources: &lsigresource.Profile{ProgramBytes: 100, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}},
+			SigningArgs:       []lsigprovider.RuntimeArgDef{{Name: "preimage", Type: "bytes", Required: true}},
+		}
+		return snapshot
+	}
+	lsigTxn := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: lsig, Fee: 1_000, FirstValid: 1, LastValid: 10, GenesisHash: txn.GenesisHash},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{3}, Amount: 1},
+	}
+	preimage := map[string]string{"preimage": strings.Repeat("ab", 32)}
+	planRequest := func(lsigArgs map[string]string) signerapi.GroupSignRequest {
+		return signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+			{AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)},
+			{AuthAddress: lsig.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(lsigTxn), LsigArgs: lsigArgs},
+		}}
+	}
+	const missing = "transaction 2: missing required arg: preimage"
+	if _, err := service.Planner.PlanGroup(planRequest(nil)); err == nil || err.Kind != ErrorBadRequest || err.Message != missing {
+		t.Fatalf("plan without the argument: err = %v, want bad request %q", err, missing)
+	}
+	planned, planErr := service.Planner.PlanGroup(planRequest(preimage))
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+
+	request := func(lsigArgs map[string]string) signerapi.ComponentRequest {
+		componentRequest := signerapi.ComponentRequest{
+			Targets: []signerapi.ComponentTarget{{
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+			}},
+			ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1, AuthAddress: lsig.String(), LsigArgs: lsigArgs}},
+		}
+		for i, plannedTxn := range planned.AllTxns {
+			componentRequest.GroupBytesHex = append(componentRequest.GroupBytesHex, txnutil.EncodeWithPrefixHex(plannedTxn))
+			if i > 1 {
+				componentRequest.DummyPositions = append(componentRequest.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+			}
+		}
+		return componentRequest
+	}
+	if _, _, err := service.ValidateFrozenComponentContext(request(preimage)); err != nil {
+		t.Fatalf("component request with the argument: %v", err)
+	}
+	if _, _, err := service.ValidateFrozenComponentContext(request(nil)); err == nil || err.Kind != ErrorBadRequest || err.Message != missing {
+		t.Fatalf("component request without the argument: err = %v, want bad request %q", err, missing)
 	}
 }

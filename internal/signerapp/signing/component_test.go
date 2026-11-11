@@ -1300,10 +1300,23 @@ func TestValidateCosignedPassthroughRequiresSignatureAndCanonical(t *testing.T) 
 		t.Fatal("unsigned passthrough: expected rejection, got nil")
 	}
 
+	// So is a multisig none of whose subsigs is signed, as /sign refuses it.
+	unsignedMsig := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Msig: types.MultisigSig{
+		Version: 1, Threshold: 1, Subsigs: []types.MultisigSubsig{{Key: make([]byte, 32)}},
+	}}))
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: unsignedMsig}, entry, notHeld); err == nil || err.Message != "passthrough index 0 signed transaction carries no signature" {
+		t.Fatalf("unsigned multisig passthrough: error = %v, want the no-signature refusal", err)
+	}
+
 	// A signed passthrough whose txn matches the canonical entry is accepted.
 	signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}}))
 	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, notHeld); err != nil {
 		t.Fatalf("signed passthrough: unexpected error %v", err)
+	}
+	// So is an escrow LogicSig, which carries a program and no signature.
+	escrow := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Lsig: types.LogicSig{Logic: []byte{0x0a, 0x81, 0x01}}}))
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: escrow}, entry, notHeld); err != nil {
+		t.Fatalf("escrow LogicSig passthrough: unexpected error %v", err)
 	}
 
 	// A passthrough whose sender is a locally held cosigned account is rejected:
