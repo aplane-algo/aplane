@@ -17,20 +17,21 @@ import (
 type Kind string
 
 const (
-	KindBadRequest              Kind = signerapi.ErrCodeBadRequest
-	KindUnauthorized            Kind = signerapi.ErrCodeUnauthorized
-	KindForbidden               Kind = signerapi.ErrCodeForbidden
-	KindLocked                  Kind = signerapi.ErrCodeLocked
-	KindNotFound                Kind = signerapi.ErrCodeNotFound
-	KindInvalidPassphrase       Kind = signerapi.ErrCodeInvalidPassphrase
-	KindUnavailable             Kind = signerapi.ErrCodeUnavailable
-	KindCacheRefresh            Kind = signerapi.ErrCodeCacheRefresh
-	KindInternal                Kind = signerapi.ErrCodeInternal
-	KindBoundedCosignerRequired Kind = signerapi.ErrCodeBoundedCosignerRequired
-	KindBoundedRekeyNotListed   Kind = signerapi.ErrCodeBoundedRekeyTargetNotListed
-	KindRotatingSigningRequired Kind = signerapi.ErrCodeRotatingSigningRequired
-	KindRotatingStageUnproven   Kind = signerapi.ErrCodeRotatingStageUnproven
-	KindRotatingStageChanged    Kind = signerapi.ErrCodeRotatingStageChanged
+	KindBadRequest               Kind = signerapi.ErrCodeBadRequest
+	KindUnauthorized             Kind = signerapi.ErrCodeUnauthorized
+	KindForbidden                Kind = signerapi.ErrCodeForbidden
+	KindLocked                   Kind = signerapi.ErrCodeLocked
+	KindNotFound                 Kind = signerapi.ErrCodeNotFound
+	KindInvalidPassphrase        Kind = signerapi.ErrCodeInvalidPassphrase
+	KindUnavailable              Kind = signerapi.ErrCodeUnavailable
+	KindCacheRefresh             Kind = signerapi.ErrCodeCacheRefresh
+	KindInternal                 Kind = signerapi.ErrCodeInternal
+	KindBoundedCosignerRequired  Kind = signerapi.ErrCodeBoundedCosignerRequired
+	KindBoundedRekeyNotListed    Kind = signerapi.ErrCodeBoundedRekeyTargetNotListed
+	KindRotatingSigningRequired  Kind = signerapi.ErrCodeRotatingSigningRequired
+	KindRotatingStageUnproven    Kind = signerapi.ErrCodeRotatingStageUnproven
+	KindRotatingStageChanged     Kind = signerapi.ErrCodeRotatingStageChanged
+	KindRotatingWindowNotCurrent Kind = signerapi.ErrCodeRotatingWindowNotCurrent
 )
 
 // HTTPStatus maps a kind to its HTTP status. Unknown kinds map to 500.
@@ -38,7 +39,7 @@ func (k Kind) HTTPStatus() int {
 	switch k {
 	case KindBadRequest, KindBoundedCosignerRequired, KindBoundedRekeyNotListed, KindRotatingSigningRequired:
 		return http.StatusBadRequest
-	case KindRotatingStageUnproven, KindRotatingStageChanged:
+	case KindRotatingStageUnproven, KindRotatingStageChanged, KindRotatingWindowNotCurrent:
 		return http.StatusConflict
 	case KindUnauthorized:
 		return http.StatusUnauthorized

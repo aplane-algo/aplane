@@ -1295,7 +1295,8 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `bounded_rekey_target_not_listed` | a rekey on a bounded account with a rekey-to list, to an address not on the list; nothing was signed | `400` |
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
-| `rotating_stage_changed` | the account's authorizer moved between prepare and sign; nothing was signed, rebuild and prepare again | `409` |
+| `rotating_stage_changed` | the account's authorizer moved between prepare and sign; no signature was released, rebuild and prepare again | `409` |
+| `rotating_window_not_current` | the rotating spend's validity window is not acceptable at the round the signer read (`first_valid` more than 2 rounds ahead, or fewer than 10 rounds before `last_valid`); this attempt released no signature, rebuild the validity rounds and prepare again | `409` |
 
 An empty `code` means the server predates code support or the failure had no
 specific classification. New codes may be added; existing values must not change
@@ -1658,9 +1659,16 @@ the signer's own address and a protocol rekey, so no `rekeys` value rejects it. 
 account's lock, it reads the chain again and refuses unless the authorizer
 is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
 `first_valid` is at most 2 rounds ahead of the round read, and at least 10
-rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
+rounds remain before `last_valid` (`rotating_window_not_current` otherwise:
+no signature was released). A window longer than 100 rounds does not depend
+on the round; it is refused before any chain read, as `bad_request`. It
+proves stage `n + 1` can sign, signs
 the TxID with stage `n`'s keys (Falcon-1024, a hash-based signature and
-Ed25519), verifies every signature, writes a
+Ed25519), verifies every signature, and, for a stateless family (SLH-DSA),
+whose signing is slow, reads the chain once more and applies the same
+authorizer and window rules to that round (`rotating_stage_changed` or
+`rotating_window_not_current`; the signature it computed is discarded, not
+released). It then writes a
 `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, and for
 a leaf family the tree and leaf index) with a durable sync, records the
 release in memory, and responds. The sign path is a key user: a lock cancels it
@@ -1720,8 +1728,10 @@ Creating and using rotating accounts:
   canonical dummies and that `target` is `stage + 1`, simulates the unsigned
   group, and only then signs and submits exactly the returned bytes,
   forwarding the spend's app-call metadata for the approval prompt. A
-  `rotating_stage_changed` or window-timing refusal means nothing was signed,
-  and the client rebuilds and prepares again a bounded number of times.
+  `rotating_stage_changed` or `rotating_window_not_current` refusal means no
+  signature was released, and the client rebuilds the validity rounds and
+  prepares again a bounded number of times; it retries on these two codes
+  only, never on message text.
   Simulate-only requests stop before signing, so they reveal no keys.
 
 Stage table worker: while unlocked, a background worker reads every rotating

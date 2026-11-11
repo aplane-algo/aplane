@@ -6,6 +6,7 @@ package signing
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -102,7 +103,14 @@ func (c *releaseCheckChain) ReadAccount(ctx context.Context, genesis []byte, acc
 }
 
 func TestSLHReleaseRechecksAfterSigning(t *testing.T) {
-	for _, mode := range []string{"authorizer", "expiry", "network error", "cancel", "lock generation", "locked", "removed"} {
+	// The refusals the re-read itself makes carry their own codes; the rest
+	// come from the lifecycle checks and are covered elsewhere.
+	wantKind := map[string]ErrorKind{
+		"authorizer": ErrorRotatingStageChanged,
+		"expiry":     ErrorRotatingWindowNotCurrent,
+		"lead":       ErrorRotatingWindowNotCurrent,
+	}
+	for _, mode := range []string{"authorizer", "expiry", "lead", "network error", "cancel", "lock generation", "locked", "removed"} {
 		t.Run(mode, func(t *testing.T) {
 			f, audit := newSigningFixtureFor(t, slhTestType)
 			prep := mustPrepare(t, f, f.spend(1000, 1100))
@@ -114,6 +122,10 @@ func TestSLHReleaseRechecksAfterSigning(t *testing.T) {
 					f.chain.authorizer = types.Address{9}
 				case "expiry":
 					f.chain.round = 1095
+				case "lead":
+					// The node now reports an earlier round, which puts first
+					// valid more than the allowed lead ahead of it.
+					f.chain.round = 997
 				case "network error":
 					f.chain.err = errors.New("unreachable")
 				case "cancel":
@@ -133,6 +145,9 @@ func TestSLHReleaseRechecksAfterSigning(t *testing.T) {
 			}
 			if resp != nil || err == nil {
 				t.Fatalf("released after %s: response %v, error %v", mode, resp, err)
+			}
+			if want, ok := wantKind[mode]; ok && (err.Kind != want || err.HTTPStatus() != http.StatusConflict) {
+				t.Fatalf("%s: err = %v (%s, %d), want %s, %d", mode, err, err.Kind, err.HTTPStatus(), want, http.StatusConflict)
 			}
 			if len(audit.releases) != 0 {
 				t.Fatal("aborted signature audited as released")
