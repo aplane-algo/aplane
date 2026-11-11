@@ -1584,6 +1584,10 @@ A bare value that contains a colon, such as `key:value`, is refused, so a
 mistyped or unknown prefix can't be sent as text. Write it as
 `text:key:value`.
 
+An `arg:` value is for an account whose signing key is a LogicSig. One given
+for an account signed by an ed25519 or native Falcon key is refused, since
+that key has no program to pass it to.
+
 Examples:
 
 ```

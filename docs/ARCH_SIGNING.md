@@ -213,7 +213,7 @@ type SignRequest struct {
     AuthAddress  string            `json:"auth_address,omitempty"`  // Which key to use for signing
     TxnSender    string            `json:"txn_sender,omitempty"`    // Transaction sender (for display)
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
-    LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
+    LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for a LogicSig key; refused for a native key
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
     PQScheme      string                 `json:"pq_scheme,omitempty"`      // Foreign-only native-PQ scheme hint ("f1"); exclusive with lsig_resources
     AppCallInfo   *AppCallInfo            `json:"app_call_info,omitempty"`  // Optional approval metadata
@@ -1323,6 +1323,14 @@ from `pkg/signerapi/types.go`:
     authorization-resource hint: optional `lsig_resources` or native-PQ
     `pq_scheme` (`f1`)
 
+`lsig_args` are passed to a LogicSig's program. A sign-mode entry, or a
+`/sign/component` contextual position naming one of the signer's own
+accounts, that supplies them for an ed25519 or native Falcon key is refused
+with `400` before planning, on `/plan`, `/sign` and `/sign/component`: the key
+has no program to give them to, and they used to be dropped. The first-party
+client never sends them for one: it gives a command's arguments only to
+positions whose key declares them and refuses them for a native key itself.
+
 The signer derives authorization shape for locally held keys. An unsigned
 foreign native-PQ slot must declare `pq_scheme:"f1"` so pooled protocol fees
 are correct. A foreign LogicSig slot declares `lsig_resources` with
@@ -2122,6 +2130,7 @@ Additional compatibility-sensitive request failures:
 - immutable pre-grouped transactions that would require extra dummies: `400`
 - requests whose required dummies would push the group above 16 transactions: `400`
 - invalid runtime args or generic LogicSig arg decoding: `400`
+- `lsig_args` for a key that is not a LogicSig (ed25519, native Falcon): `400`
 - missing TEAL compile algod configuration for generic LogicSig generation: `500`
 - missing `address` query parameter on delete: `400`
 - all-foreign `/sign` or `/plan` requests: `400` because apsigner has no signer-managed work to perform

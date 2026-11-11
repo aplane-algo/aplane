@@ -877,6 +877,7 @@ Parsing contracts:
 - `generate` parameter parsing is bracket-aware for `key=value` arguments,
 - `generate` reads its own flags, `--boundary <file>` and `--result <file>`, and sends neither to the signer; every `param=value` is the signer's. A boundary file sets every parameter, so it cannot be combined with others,
 - LogicSig `arg:name=value` parsing keeps the `arg:name=` split local to `internal/cmdspec/lsigarg.go` and uses the shared byte parser for the value side,
+- LogicSig arguments typed once for several transactions (a plugin group, or a `send`, `sweep` or `validate` over a set) are shared out by name with `engine.LsigArgsByDeclaredName`: each position gets the arguments its effective signer's key declares in the signer cache, a name no position declares is refused, and the engine refuses arguments for a position whose key is native before it sends anything,
 - byte-oriented shell inputs support `hex:`, `b64:`, `text:`/`str:`, `int:`, `addr:`, and `0x...`; bare text is accepted only where command behavior allows it, and never when it contains a colon,
 - ASA-facing commands may parse shell input into semantic values (`AssetRef`, `AmountText`) before command execution, but this does not change user syntax,
 - `send` and `sweep` parse their required `from`/`to`/`leaving` structure first and only treat later tokens as trailing options, so positional address/account inputs may legitimately equal keywords such as `atomic`, `nowait`, or `leaving` without being reinterpreted as flags.

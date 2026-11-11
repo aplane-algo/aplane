@@ -123,7 +123,32 @@ func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.Subm
 	if err := e.validateAlgodConsensus(opts.Ctx); err != nil {
 		return fmt.Errorf("validate algod consensus before signing: %w", err)
 	}
-	return e.refreshSubmitSigningState(opts.Ctx, txns)
+	if err := e.refreshSubmitSigningState(opts.Ctx, txns); err != nil {
+		return err
+	}
+	return e.refuseLsigArgsForNativeSigners(txns, opts.LsigArgsMap)
+}
+
+// refuseLsigArgsForNativeSigners refuses LogicSig arguments given for a
+// transaction whose signing key is native (ed25519 or Falcon): it signs the
+// transaction itself and has no program to pass them to, and the signer
+// refuses such a request. It runs once the effective signers are known, so
+// the client never sends arguments for a native key. A signer the client does
+// not hold is left to the signer.
+func (e *Engine) refuseLsigArgsForNativeSigners(txns []types.Transaction, lsigArgsMap []map[string][]byte) error {
+	for i, txn := range txns {
+		if i >= len(lsigArgsMap) || len(lsigArgsMap[i]) == 0 {
+			continue
+		}
+		signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
+		kind, held := e.signerCacheAuthorizationKind(signer)
+		if !held || (kind != algorithm.AuthorizationEd25519 && kind != algorithm.AuthorizationNativePQ) {
+			continue
+		}
+		return fmt.Errorf("transaction %d: LogicSig arguments were given for %s, whose %s key is not a LogicSig and takes no arguments",
+			i+1, signer, e.signerCacheKeyType(signer))
+	}
+	return nil
 }
 
 func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) error {

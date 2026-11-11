@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -279,6 +280,74 @@ func TestSetCommandsRefuseANameNoAccountDeclares(t *testing.T) {
 			app, recorder := lsigArgsTestApp(t)
 			if err := run(app); err == nil || !strings.Contains(err.Error(), "arg:preimge: no transaction here is signed by a key that declares") {
 				t.Fatalf("error = %v, want the undeclared name refused", err)
+			}
+			if paths, _ := recorder.recorded(); len(paths) != 0 {
+				t.Fatalf("signer requests = %v, want none", paths)
+			}
+		})
+	}
+}
+
+// An app call's companion payment is from the call's own account. From a
+// native account, with no arguments typed, neither position carries any.
+func TestAppCallCompanionFromANativeAccountCarriesNoLsigArgs(t *testing.T) {
+	app, recorder := lsigArgsTestApp(t)
+	if _, err := app.AppCallRaw(context.Background(), AppCallRawRequest{AppID: 123, From: argsNative, PayAmount: 1000}); err == nil {
+		t.Fatal("AppCallRaw() succeeded against a signer that refuses")
+	}
+	paths, requests := recorder.recorded()
+	if len(requests) != 1 || len(requests[0].Requests) != 2 {
+		t.Fatalf("signer requests = %v, want one /sign of the payment and the call", paths)
+	}
+	for i, position := range requests[0].Requests {
+		if len(position.LsigArgs) != 0 {
+			t.Fatalf("position %d carried %v, want no LogicSig arguments", i+1, position.LsigArgs)
+		}
+	}
+}
+
+// From a LogicSig account, the companion payment carries the call's
+// arguments, since the same program authorizes both.
+func TestAppCallCompanionFromALogicSigCarriesTheCallsArgs(t *testing.T) {
+	app, recorder := lsigArgsTestApp(t)
+	if _, err := app.AppCallRaw(context.Background(), AppCallRawRequest{
+		AppID: 123, From: argsHTLC, PayAmount: 1000, LsigArgs: map[string][]byte{"preimage": []byte("open")},
+	}); err == nil {
+		t.Fatal("AppCallRaw() succeeded against a signer that refuses")
+	}
+	paths, requests := recorder.recorded()
+	if len(requests) != 1 || len(requests[0].Requests) != 2 {
+		t.Fatalf("signer requests = %v, want one /sign of the payment and the call", paths)
+	}
+	for i, position := range requests[0].Requests {
+		if position.LsigArgs["preimage"] != hex.EncodeToString([]byte("open")) {
+			t.Fatalf("position %d carried %v, want the preimage", i+1, position.LsigArgs)
+		}
+	}
+}
+
+// LogicSig arguments typed for one native account are refused by the client
+// before anything is sent: the key has no program to pass them to.
+func TestLsigArgsForANativeAccountAreRefusedBeforeSigning(t *testing.T) {
+	for name, run := range map[string]func(*App) error{
+		"app call with companion": func(app *App) error {
+			_, err := app.AppCallRaw(context.Background(), AppCallRawRequest{
+				AppID: 123, From: argsNative, PayAmount: 1000, LsigArgs: map[string][]byte{"preimage": []byte("open")},
+			})
+			return err
+		},
+		"validate": func(app *App) error {
+			result, err := app.Validate(context.Background(), ValidateRequest{Account: argsNative, LsigArgs: map[string][]byte{"preimage": []byte("open")}})
+			if result != nil && len(result.Items) == 1 && result.Items[0].Error != "" {
+				return errors.New(result.Items[0].Error) // validate reports each account's failure on its item
+			}
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, recorder := lsigArgsTestApp(t)
+			if err := run(app); err == nil || !strings.Contains(err.Error(), "whose ed25519 key is not a LogicSig and takes no arguments") {
+				t.Fatalf("error = %v, want the arguments refused", err)
 			}
 			if paths, _ := recorder.recorded(); len(paths) != 0 {
 				t.Fatalf("signer requests = %v, want none", paths)

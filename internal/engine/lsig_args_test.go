@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/cache"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -109,4 +112,53 @@ func TestLsigArgsByDeclaredName(t *testing.T) {
 			t.Fatalf("error = %v, want ErrNotConnected", err)
 		}
 	})
+}
+
+// The client refuses LogicSig arguments for a transaction its native key
+// signs, on the effective signer, so it never sends them; the signer refuses
+// the same request.
+func TestRefuseLsigArgsForNativeSigners(t *testing.T) {
+	nativefalcon.RegisterClient() // as apshell registers it
+	eng, err := NewEngine("testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := testAddress(1).String()
+	falcon := testAddress(2).String()
+	htlc := testAddress(3).String()
+	rekeyed := testAddress(4).String()
+	unheld := testAddress(5).String()
+	eng.SignerCache.AddAddress(native, "ed25519")
+	eng.SignerCache.AddAddress(falcon, nativefalcon.KeyType)
+	eng.SignerCache.AddAddress(htlc, "aplane.htlc.v1")
+	eng.SignerCache.SetGenericLsig(htlc, true)
+	eng.AuthCache = cache.NewAuthAddressCache()
+	eng.AuthCache.AuthAddresses[rekeyed] = native
+
+	args := []map[string][]byte{{"preimage": []byte("open")}}
+	for name, tc := range map[string]struct {
+		sender string
+		args   []map[string][]byte
+		want   string
+	}{
+		"ed25519 key":             {native, args, "given for " + native + ", whose ed25519 key is not a LogicSig"},
+		"native Falcon key":       {falcon, args, "whose falcon1024 key is not a LogicSig"},
+		"rekeyed to a native key": {rekeyed, args, "given for " + native + ", whose ed25519 key"},
+		"LogicSig key":            {htlc, args, ""},
+		"key the client lacks":    {unheld, args, ""},
+		"native key, no args":     {native, nil, ""},
+		"native key, empty args":  {native, []map[string][]byte{{}}, ""},
+	} {
+		sender, err := types.DecodeAddress(tc.sender)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = eng.refuseLsigArgsForNativeSigners([]types.Transaction{{Header: types.Header{Sender: sender}}}, tc.args)
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: error = %v, want none", name, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%s: error = %v, want %q", name, err, tc.want)
+		}
+	}
 }

@@ -38,6 +38,11 @@ before it was renamed `enroll`.
   went to every account in the set; each account now gets the arguments its
   key declares, so a native account in the set is sent none, and a name no
   account's key declares is refused. Over one account they go as typed.
+- **The signer refuses `lsig_args` for a key that is not a LogicSig.** An
+  ed25519 or native Falcon key ignored them, and they still entered the
+  approval digest. `/plan`, `/sign` and `/sign/component` now answer `400`
+  before planning. apshell refuses them for such a key before it sends
+  anything, and with the changes above never sends them for one on its own.
 
 ## apshell refuses input it used to ignore or guess at
 

@@ -382,4 +382,9 @@ func TestFrozenComponentSizesAHeldContextPositionFromSignerRecords(t *testing.T)
 	if _, _, err := service.ValidateFrozenComponentContext(hinted); err == nil || !strings.Contains(err.Message, "lsig_resources and pq_scheme are allowed only without auth_address") {
 		t.Fatalf("hinted held position: err = %v, want the hint refused", err)
 	}
+	// A held native key takes no LogicSig arguments here either.
+	withArgs := request(signerapi.ComponentContextPosition{TargetIndex: 1, AuthAddress: falcon.String(), LsigArgs: map[string]string{"preimage": "aa"}})
+	if _, _, err := service.ValidateFrozenComponentContext(withArgs); err == nil || !strings.Contains(err.Message, "not a LogicSig and takes no arguments") {
+		t.Fatalf("held native position with lsig_args: err = %v, want the arguments refused", err)
+	}
 }

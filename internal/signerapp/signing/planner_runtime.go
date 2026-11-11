@@ -306,9 +306,24 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		if err := rejectRotatingKeyType(i, keyType); err != nil {
 			return 0, err
 		}
+		// LogicSig arguments are passed to a program. A native key signs the
+		// transaction itself and has none to give them to, so a request that
+		// supplies them for one is malformed: it is refused here, before
+		// planning or approval, rather than signed with them dropped.
+		if len(txReq.LsigArgs) > 0 && !takesLogicSigArgs(snapshot.KeyMetadata[txReq.AuthAddress].Category) {
+			return 0, badRequest(fmt.Sprintf("transaction %d: lsig_args were given for %s, whose %s key is not a LogicSig and takes no arguments",
+				i+1, txReq.AuthAddress, keytypefmt.Display(keyType)))
+		}
 		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))
 		signableCount++
 	}
 
 	return signableCount, nil
+}
+
+// takesLogicSigArgs reports whether a key of this category passes request
+// arguments to its program: a generic or DSA-backed LogicSig, bounded
+// accounts included. An ed25519 or native Falcon key does not.
+func takesLogicSigArgs(category string) bool {
+	return category == lsigprovider.CategoryGenericLsig || category == lsigprovider.CategoryDSALsig
 }

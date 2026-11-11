@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -402,6 +403,82 @@ func TestVerifySignableKeysAllowsCosignedAccountPlanning(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("verifySignableKeys() count = %d, want 1", count)
+	}
+}
+
+// A native key has no program to pass LogicSig arguments to, so a request
+// that supplies them for one is refused before planning instead of being
+// signed with them dropped. A LogicSig takes them.
+func TestVerifySignableKeysRefusesLsigArgsForANativeKey(t *testing.T) {
+	addr := types.Address{1}.String()
+	args := map[string]string{"preimage": "aa"}
+	for name, tc := range map[string]struct {
+		keyType  string
+		category string
+		args     map[string]string
+		refused  bool
+	}{
+		"ed25519 key with args":       {"ed25519", "ed25519", args, true},
+		"native Falcon key with args": {"falcon1024", "native_pq", args, true},
+		"key without metadata":        {"ed25519", "", args, true},
+		"generic LogicSig with args":  {"aplane.htlc.v1", lsigprovider.CategoryGenericLsig, args, false},
+		"DSA LogicSig with args":      {"aplane.falcon1024.v1", lsigprovider.CategoryDSALsig, args, false},
+		"ed25519 key without args":    {"ed25519", "ed25519", nil, false},
+		"ed25519 key with no names":   {"ed25519", "ed25519", map[string]string{}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			snapshot := PlannerRuntimeSnapshot{
+				KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
+				KeyTypes: map[string]string{addr: tc.keyType},
+			}
+			if tc.category != "" {
+				snapshot.KeyMetadata = map[string]PlannerKeyMetadata{addr: {Category: tc.category}}
+			}
+			requests := []signerapi.SignRequest{{AuthAddress: addr, TxnBytesHex: "deadbeef", LsigArgs: tc.args}}
+			count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
+			if !tc.refused {
+				if err != nil || count != 1 {
+					t.Fatalf("verifySignableKeys() = %d, %v; want the request admitted", count, err)
+				}
+				return
+			}
+			if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "transaction 1: lsig_args were given for "+addr) ||
+				!strings.Contains(err.Message, "key is not a LogicSig and takes no arguments") {
+				t.Fatalf("verifySignableKeys() error = %v, want a bad request refusing the arguments", err)
+			}
+		})
+	}
+}
+
+// The refusal holds on /plan and /sign, which share PlanGroup, and on
+// /sign/component, which sizes its group through the same check.
+func TestPlanGroupRefusesLsigArgsForANativeKey(t *testing.T) {
+	var genesisHash types.Digest
+	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
+		base64.StdEncoding.EncodeToString(genesisHash[:]): "snapshot_test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authAddr := types.Address{1}.String()
+	txn := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: types.Address{1}, Fee: 1_000, FirstValid: 1, LastValid: 10, GenesisHash: genesisHash},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{3}, Amount: 1},
+	}
+	planner := NewPlanner(stubPlannerDeps{
+		keyTypes:    map[string]string{authAddr: "ed25519"},
+		keyMetadata: map[string]PlannerKeyMetadata{authAddr: {Category: "ed25519"}},
+	}, PlannerOptions{GenesisHashResolver: resolver})
+	request := signerapi.SignRequest{AuthAddress: authAddr, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}
+
+	if _, planErr := planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{request}}); planErr != nil {
+		t.Fatalf("PlanGroup() without args error = %v", planErr)
+	}
+	request.LsigArgs = map[string]string{"preimage": "aa"}
+	_, planErr := planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{request}})
+	if planErr == nil || planErr.Kind != ErrorBadRequest || !strings.Contains(planErr.Message, "not a LogicSig and takes no arguments") {
+		t.Fatalf("PlanGroup() with args error = %v, want the arguments refused", planErr)
 	}
 }
 

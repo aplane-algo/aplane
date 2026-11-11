@@ -253,6 +253,8 @@ Rules:
    consulted to assemble args at sign time.
 6. Runtime args supplied by a caller must match the stored signing-argument
    contract.
+7. A native key has no signing-argument contract: a request that supplies
+   runtime args for one is refused at planning, not signed with them dropped.
 
 ## Invariants
 
@@ -486,6 +488,7 @@ High-value test anchors:
 - on-curve LogicSig bytecode rejects,
 - conflicting key payload aliases reject,
 - generic LogicSig signing uses stored `signing_args`,
+- runtime args supplied for a native key reject in planning,
 - DSA LogicSig signing uses stored `base_key_type`,
 - template fingerprint mismatch does not change signability,
 - reload may change generation/discovery state but not existing-key signing
