@@ -1166,6 +1166,10 @@ type AuditEntry struct {
     TxnType            string
     TxnDetails         string
     TxID               string
+    Fee                *uint64
+    GroupID            string
+    GroupTxIDs         []string
+    DummyCount         int
     RemoteAddr         string
     Reason             string
     PolicyRuleID       string
@@ -1198,6 +1202,11 @@ Audit entries carry attribution fields:
 - `transport`: `ipc`, `ssh`, `http`, or empty for process-level events
 - `outcome`: requested, approved, rejected, failed, denied, connected, disconnected, or similar
 - `txn_auth`, `txn_sender`, `txn_type`, `txn_details`, `txid`: transaction/key attribution for signing and key events
+- `fee`, `group_id`, `group_txids`, `dummy_count`: on `SIGN_APPROVED`, the
+  signed transaction's final fee and the group it was signed in (see
+  Signing-audit semantics below)
+- `operation_id`: on signing and planning entries, the `request_id` the
+  request carried
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
 - `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
@@ -1249,6 +1258,7 @@ Events:
 - `SERVER_STOP`
 - `SERVER_STOP_INCOMPLETE`
 - `SIGN_REQUEST`
+- `PLAN_REQUEST`
 - `SIGN_APPROVED`
 - `SIGN_REJECTED`
 - `SIGN_FAILED`
@@ -1304,18 +1314,65 @@ Events:
 
 Signing-audit semantics:
 
+- a request is recorded twice: as it arrived, and as signed. `SIGN_REQUEST`
+  is one entry per slot of a request to sign (`/sign`, and a bounded
+  account's base component on `/sign/component`), written after decoding
+  and before planning: `txn_details` describes the
+  slot's transaction as the client sent it, and it carries no `txid`.
+  `SIGN_APPROVED` is one entry per transaction the signer signed with a key,
+  written after signing, and records the transaction as signed, after
+  planning raised its fee, set its group ID and added dummies: `txid` is the
+  signed transaction's ID, `fee` its final fee in microAlgos (`0` is
+  written), and, when it was signed in a group, `group_id` is the final
+  group ID (base64), `group_txids` every transaction ID of that group in
+  group order (passthrough and foreign positions included), and
+  `dummy_count` how many of them, at the end, are dummies this request
+  added and signed. `txn_details` names the position (`txn 1/2 signed`).
+  These are the IDs of the transactions returned to the client, which
+  differ from the request's whenever planning changed them
+- every entry a signing or planning request writes carries its `request_id`
+  as `operation_id`, so what was asked, refused, failed and signed for one
+  request can be read together. A request without a `request_id` writes
+  none; apshell and the Go client always send one to `/sign`,
+  `/sign/component` and the rotating sign
+- `/plan` signs nothing: its slots are `PLAN_REQUEST` entries (the same
+  fields as `SIGN_REQUEST`), and it writes no `SIGN_*` entry
+- no signing entry carries key material, signatures, passphrases or LogicSig
+  argument values
+- a request that was not signed has no `SIGN_APPROVED`, except a rotating
+  sign refused at its last check, which says so (below). A refusal by a
+  signer invariant, policy or the operator, or an approval timeout, is
+  `SIGN_REJECTED`; a technical failure while signing a position is
+  `SIGN_FAILED`. A request cancelled by the client, or stopped before any
+  of those (no apadmin connected, a lock before signing began), leaves only
+  what it wrote before it stopped: on `/sign`, its `SIGN_REQUEST` entries.
+  The rotating sign writes no `SIGN_REQUEST`
 - `SIGN_APPROVED` is emitted only for transactions the signer actually signs
 - foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
 - signing audit over HTTP records `transport:"http"` and the connection's `client:<fingerprint>` principal as requester
 - cosigner-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
-  Witness Key ID, `txn_sender` is the decoded target sender, and
-  `policy_rule_id` carries the rule ID of the first policy violation when present
+  Witness Key ID, `txn_sender` is the decoded target sender, `txid` is the
+  target whose ID the cosigner signed, and
+  `policy_rule_id` carries the rule ID of the first policy violation when present.
+  A bounded account's base component is `SIGN_APPROVED` with the target's
+  `txid` the same way. Both sign into a frozen group whose dummies are signed
+  later, on `/sign`, so `dummy_count` is not set. `/sign/assemble` makes no
+  new signature (it joins the components' signatures into the LogicSig) and
+  writes no entry: the transaction it assembles is the one whose `txid` the
+  components recorded
 - `ROTATING_RELEASE` is written durably before a rotating account's stage
   signature leaves the signer; it records the account, `txid`,
   `rotating_stage`, and `rotating_last_valid`, and the signer rebuilds its
   release memory from these entries at unlock (see
-  [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1))
+  [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)). The
+  rotating sign then writes `SIGN_APPROVED` for the spend as signed (its
+  dummies counted in `dummy_count`) and makes its last check. If that check
+  refuses the release (the signer locked, the request was cancelled, the key
+  was removed), it writes a `SIGN_FAILED` whose `reason` begins
+  `signature withheld after it was recorded as signed` and names the
+  `txid`: the signature never left. Rotating prepare signs nothing and
+  writes no entry
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a review rule matched, including when User Auto-Approve satisfied it without a human decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
@@ -1401,8 +1458,8 @@ Store-management audit semantics:
   in `Log` and `logDurable`): `reason` and `txn_details` are cut to 8 KiB,
   every other string field to 128 bytes, and every list to 64 members of
   128 bytes, with `*_omitted` counts. This covers paths that log before
-  validating, such as signing requests (`SIGN_REQUEST` carries the
-  client's `auth_address` and transaction details); real identifiers are
+  validating, such as signing requests (`SIGN_REQUEST` and `PLAN_REQUEST`
+  carry the client's `auth_address` and transaction details); real identifiers are
   shorter and pass unchanged, so rotating-release entries stay exact. A
   test sets every string field of `AuditEntry` to an oversized value, so a
   field added later cannot be left unbounded. A cut list is a sample; the omitted names are

@@ -1631,6 +1631,11 @@ release in memory, and responds. The sign path is a key user: a lock cancels it
 and waits for the seed to be zeroed, which happens before the audit write. It
 refuses the release if the signer locked since approval, the request was cancelled
 or the key was removed, both before that write and after the last audit write.
+The last audit write is the `SIGN_APPROVED` entry for the group as signed; a
+refusal after it is recorded as `SIGN_FAILED` (`signature withheld ...`), so
+the log says the signature never left. The `ROTATING_RELEASE` entry stays and
+only makes the leaf look used (see
+[Audit Logger](ARCH_SECURITY.md#audit-logger)).
 
 For a family whose stage holds several one-time leaves
 (`rotatingkey.Profile.LeavesPerStage`), the signer chooses the leaf under
