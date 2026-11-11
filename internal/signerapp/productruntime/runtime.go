@@ -7,6 +7,8 @@ package productruntime
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -217,9 +219,27 @@ func New(cfg Config) *Runtime {
 		keyMetadata: make(map[string]KeyPublicMetadata),
 		onLocked:    cfg.OnLocked,
 	}
+	ir.keysetRev.Store(initialKeysetRevision())
 
 	rt.SetOnLock(ir.performLockCleanup)
 	return ir
+}
+
+// keysetRevisionBits bounds the random starting revision. Starting below 2^52
+// leaves 2^52 publishes before the revision passes 2^53, the largest integer
+// a JSON number carries exactly in JavaScript.
+const keysetRevisionBits = 52
+
+// initialKeysetRevision is where a process's keyset revision counts from: a
+// random value, so a restarted signer does not report the revisions the
+// previous process did, and a client that cached a key list under one of them
+// sees a different revision and refreshes.
+func initialKeysetRevision() uint64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(fmt.Sprintf("crypto/rand failed: %v", err))
+	}
+	return binary.BigEndian.Uint64(b[:]) >> (64 - keysetRevisionBits)
 }
 
 // SetReloadFunc sets the function used to reload keys and templates.
@@ -965,8 +985,8 @@ func (ir *Runtime) KeyCount() int {
 }
 
 // KeysetRevision returns the process-local revision of the published key snapshot.
-// The value starts at zero on process start and increments after each successful
-// snapshot publish.
+// The value starts at a random point on process start and increments after each
+// successful snapshot publish; clients compare it for equality only.
 func (ir *Runtime) KeysetRevision() uint64 {
 	return ir.keysetRev.Load()
 }
