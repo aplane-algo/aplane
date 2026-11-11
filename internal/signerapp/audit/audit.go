@@ -43,6 +43,7 @@ const (
 
 const (
 	AuditSignRequest                      AuditEventType = "SIGN_REQUEST"
+	AuditPlanRequest                      AuditEventType = "PLAN_REQUEST"
 	AuditSignApproved                     AuditEventType = "SIGN_APPROVED"
 	AuditSignRejected                     AuditEventType = "SIGN_REJECTED"
 	AuditSignFailed                       AuditEventType = "SIGN_FAILED"
@@ -531,9 +532,11 @@ func sessionAuditFields(ctx adminserver.SessionContext) AuditEntry {
 	}
 }
 
-func signRequestEntry(attr Attribution, address, txnSender, txnType, txnDetails string) AuditEntry {
+// requestEntry is a SIGN_REQUEST or PLAN_REQUEST entry: one slot of a request
+// as it arrived, before planning.
+func requestEntry(event AuditEventType, attr Attribution, address, txnSender, txnType, txnDetails string) AuditEntry {
 	entry := attr.entry(false)
-	entry.Event = AuditSignRequest
+	entry.Event = event
 	entry.Outcome = "requested"
 	entry.TxnAuth = address
 	entry.TxnSender = txnSender
@@ -576,12 +579,23 @@ func signFailedEntry(attr Attribution, address, txnSender, reason string) AuditE
 
 // LogSignRequest logs a request to sign a transaction.
 func (a *AuditLogger) LogSignRequest(address, txnSender, txnType, txnDetails string) {
-	a.Log(signRequestEntry(Attribution{}, address, txnSender, txnType, txnDetails))
+	a.Log(requestEntry(AuditSignRequest, Attribution{}, address, txnSender, txnType, txnDetails))
 }
 
 // LogSignRequestAttributed logs a signing request with explicit request attribution.
 func (a *AuditLogger) LogSignRequestAttributed(attr Attribution, address, txnSender, txnType, txnDetails string) {
-	a.Log(signRequestEntry(attr, address, txnSender, txnType, txnDetails))
+	a.Log(requestEntry(AuditSignRequest, attr, address, txnSender, txnType, txnDetails))
+}
+
+// LogPlanRequest logs one slot of a /plan request, which signs nothing.
+func (a *AuditLogger) LogPlanRequest(address, txnSender, txnType, txnDetails string) {
+	a.Log(requestEntry(AuditPlanRequest, Attribution{}, address, txnSender, txnType, txnDetails))
+}
+
+// LogPlanRequestAttributed logs one slot of a /plan request with explicit
+// request attribution.
+func (a *AuditLogger) LogPlanRequestAttributed(attr Attribution, address, txnSender, txnType, txnDetails string) {
+	a.Log(requestEntry(AuditPlanRequest, attr, address, txnSender, txnType, txnDetails))
 }
 
 // LogSignApproved logs when a signing request is approved.

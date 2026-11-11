@@ -147,3 +147,22 @@ func TestReopenCurrentRestoresByteCounter(t *testing.T) {
 		t.Fatalf("written = %d after reopen, want %d (rotation threshold drifts otherwise)", a.written, want)
 	}
 }
+
+// A /plan slot is its own event, not a request to sign.
+func TestPlanRequestIsItsOwnEvent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attr := Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http"}
+	a.LogPlanRequestAttributed(attr, "ADDR", "ADDR", "", "pay 1 ALGO")
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 1 || entries[0].Event != AuditPlanRequest || entries[0].Outcome != "requested" ||
+		entries[0].TxnAuth != "ADDR" || entries[0].TxnDetails != "pay 1 ALGO" || entries[0].RequesterPrincipal != "client:SHA256:abc" {
+		t.Fatalf("entries = %+v, want one PLAN_REQUEST", entries)
+	}
+}

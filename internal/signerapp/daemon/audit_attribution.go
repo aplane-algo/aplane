@@ -54,6 +54,13 @@ func (l *signingAuditLogger) LogSignRequest(authAddress, txnSender, txnType, det
 	l.log.LogSignRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
 }
 
+func (l *signingAuditLogger) LogPlanRequest(authAddress, txnSender, txnType, details string) {
+	if l == nil || l.log == nil {
+		return
+	}
+	l.log.LogPlanRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
+}
+
 func (l *signingAuditLogger) LogSignApproved(authAddress, txnSender, details string) {
 	if l == nil || l.log == nil {
 		return

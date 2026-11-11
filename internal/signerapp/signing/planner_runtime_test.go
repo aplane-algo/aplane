@@ -57,6 +57,8 @@ type captureAuditLog struct {
 }
 
 type captureAuditEntry struct {
+	// plan marks a PLAN_REQUEST entry; every other entry is a SIGN_REQUEST.
+	plan        bool
 	authAddress string
 	txnSender   string
 	txnType     string
@@ -65,6 +67,16 @@ type captureAuditEntry struct {
 
 func (a *captureAuditLog) LogSignRequest(authAddress, txnSender, txnType, details string) {
 	a.entries = append(a.entries, captureAuditEntry{
+		authAddress: authAddress,
+		txnSender:   txnSender,
+		txnType:     txnType,
+		details:     details,
+	})
+}
+
+func (a *captureAuditLog) LogPlanRequest(authAddress, txnSender, txnType, details string) {
+	a.entries = append(a.entries, captureAuditEntry{
+		plan:        true,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		txnType:     txnType,
@@ -699,5 +711,62 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	}
 	if !strings.Contains(planErr.Message, "exceeds signer-controlled bounded fee capacity") {
 		t.Fatalf("PlanGroup() error = %q, want bounded fee-capacity rejection", planErr.Message)
+	}
+}
+
+// lsigDummyPlanner plans for one LogicSig account whose program needs a
+// resource dummy, so planning adds a dummy, raises the account's fee and
+// sets a group ID.
+func lsigDummyPlanner(t *testing.T, audit AuditLogger) (*Planner, string, types.Transaction) {
+	t.Helper()
+	genesisHash := types.Digest{5}
+	authorizer := types.Address{8}.String()
+	profile := lsigresource.Profile{
+		ProgramBytes: 4_500,
+		Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 39_999},
+	}
+	planner := NewPlanner(stubPlannerDeps{
+		keyTypes: map[string]string{authorizer: "aplane.falcon1024.v1"},
+		keyMetadata: map[string]PlannerKeyMetadata{authorizer: {
+			Category: "dsa_lsig", PublicKeyHex: "aabb", LogicSigResources: &profile,
+		}},
+	}, PlannerOptions{
+		AuditLog:               audit,
+		GenesisHashResolver:    feeTestResolver(t, genesisHash),
+		GenerateTxnDescription: func(types.Transaction) string { return "payment" },
+	})
+	txn := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: types.Address{8}, Fee: 1_000, FirstValid: 1, LastValid: 2, GenesisHash: genesisHash},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{9}, Amount: 1},
+	}
+	return planner, authorizer, txn
+}
+
+// /plan signs nothing: its slots are PLAN_REQUEST entries, never a request to
+// sign, while /sign's are SIGN_REQUEST. Both describe the slot as it arrived.
+func TestPreviewGroupAuditsAPlanRequestNotASignRequest(t *testing.T) {
+	audit := &captureAuditLog{}
+	planner, authorizer, txn := lsigDummyPlanner(t, audit)
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+	}}}
+
+	if _, err := planner.PreviewGroup(req); err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.entries) != 1 || !audit.entries[0].plan {
+		t.Fatalf("/plan entries = %+v, want one PLAN_REQUEST", audit.entries)
+	}
+	if audit.entries[0].authAddress != authorizer || audit.entries[0].details != "payment" {
+		t.Fatalf("/plan entry = %+v", audit.entries[0])
+	}
+
+	audit.entries = nil
+	if _, err := planner.PlanGroup(req); err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].plan {
+		t.Fatalf("/sign entries = %+v, want one SIGN_REQUEST", audit.entries)
 	}
 }
