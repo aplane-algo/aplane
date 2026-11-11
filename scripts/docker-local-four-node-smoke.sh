@@ -242,17 +242,30 @@ build_image() {
     IMAGE_NAME="aplane-local-smoke:ubuntu-24.04"
     local dockerfile
     dockerfile="$(mktemp)"
+    # Node.js comes from the official image, not Ubuntu's package: the
+    # TypeScript SDK and algosdk require Node.js 22, and Ubuntu 24.04 ships 18.
     cat > "$dockerfile" <<'DOCKERFILE'
+FROM node:22-bookworm-slim AS node
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      bash ca-certificates curl expect gzip nodejs npm openssh-client passwd procps python3 python3-pip python3-venv sudo tar && \
+      bash ca-certificates curl expect gzip openssh-client passwd procps python3 python3-pip python3-venv sudo tar && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
+    node --version && npm --version
 CMD ["sleep", "infinity"]
 DOCKERFILE
     docker build -t "$IMAGE_NAME" -f "$dockerfile" "$ROOT_DIR"
     rm -f "$dockerfile"
+
+    local node_major
+    node_major="$(docker run --rm "$IMAGE_NAME" node -p 'process.versions.node.split(".")[0]')" \
+        || die "the test image has no working node"
+    [ "$node_major" -ge 22 ] || die "the test image has Node.js $node_major; the TypeScript SDK needs 22 or newer"
 }
 
 resolve_built_tarball() {
