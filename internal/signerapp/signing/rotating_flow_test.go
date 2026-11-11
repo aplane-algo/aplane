@@ -39,16 +39,33 @@ type recordingReleaseAudit struct {
 	releases []ReleaseRecord
 	fail     error
 	// approved counts approvals audited without a matched review rule;
-	// rules holds the rule IDs of approvals that matched one.
+	// rules holds the rule IDs of approvals that matched one. signed holds
+	// every approval's record; withheld the SIGN_FAILED entries of
+	// signatures recorded as signed that never left.
 	approved int
 	rules    []string
+	signed   []SignedRecord
+	withheld []withheldSignature
 	// onRelease runs as a release is audited.
 	onRelease func()
 }
 
-func (a *recordingReleaseAudit) LogSignApproved(string, string, string) { a.approved++ }
-func (a *recordingReleaseAudit) LogSignApprovedWithPolicyRule(_, _, _ string, policyRuleID string) {
-	a.rules = append(a.rules, policyRuleID)
+func (a *recordingReleaseAudit) LogSignApproved(record SignedRecord) {
+	a.signed = append(a.signed, record)
+	if record.PolicyRuleID == "" {
+		a.approved++
+		return
+	}
+	a.rules = append(a.rules, record.PolicyRuleID)
+}
+
+type withheldSignature struct {
+	record SignedRecord
+	reason string
+}
+
+func (a *recordingReleaseAudit) LogSignWithheld(record SignedRecord, reason string) {
+	a.withheld = append(a.withheld, withheldSignature{record: record, reason: reason})
 }
 func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
 	if a.onRelease != nil {
@@ -182,6 +199,7 @@ func runHappyPathThreeRotations(t *testing.T, f *rotatingFixture, audit *recordi
 		if !ok || rec.Stage != stage || rec.StageAddr != f.stageAddress(t, stage) || rec.NextAddr != f.stageAddress(t, stage+1) || rec.TxID != resp.TxID {
 			t.Fatalf("release memory = %+v, %v", rec, ok)
 		}
+		checkRotatingSignedRecord(t, f, audit, stage, resp)
 		f.land(t, resp)
 	}
 	if len(audit.releases) != 3 || audit.releases[2].Stage != 2 {
@@ -190,6 +208,37 @@ func runHappyPathThreeRotations(t *testing.T, f *rotatingFixture, audit *recordi
 	// The table now covers every stage used plus the next target.
 	if f.table(t).Len() < 4 {
 		t.Fatalf("table len = %d, want at least 4", f.table(t).Len())
+	}
+}
+
+// checkRotatingSignedRecord checks that a rotating sign recorded what it
+// released as signed: the response's TxID and group, with the dummies it
+// signed, and the fee of the spend as signed.
+func checkRotatingSignedRecord(t *testing.T, f *rotatingFixture, audit *recordingReleaseAudit, stage uint64, resp *signerapi.RotatingSignResponse) {
+	t.Helper()
+	if len(audit.signed) != int(stage)+1 || len(audit.withheld) != 0 {
+		t.Fatalf("stage %d: signed %+v, withheld %+v; want one signed record per sign", stage, audit.signed, audit.withheld)
+	}
+	got := audit.signed[stage]
+	if got.TxID != resp.TxID || got.AuthAddress != f.account.String() || got.TxnSender != f.account.String() {
+		t.Fatalf("stage %d record %+v, want txid %s for %s", stage, got, resp.TxID, f.account)
+	}
+	grouped := len(resp.Signed) > 1
+	if grouped && (got.GroupID != resp.GroupID || len(got.GroupTxIDs) != len(resp.Signed) || got.DummyCount != len(resp.Signed)-1) {
+		t.Fatalf("stage %d recorded group %q %v with %d dummies, want %q and the %d signed transactions", stage, got.GroupID, got.GroupTxIDs, got.DummyCount, resp.GroupID, len(resp.Signed))
+	}
+	for i, signedHex := range resp.Signed {
+		var stxn types.SignedTxn
+		raw, _ := hex.DecodeString(signedHex)
+		if err := msgpack.Decode(raw, &stxn); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 && got.Fee != uint64(stxn.Txn.Fee) {
+			t.Fatalf("stage %d recorded fee %d, want the signed %d", stage, got.Fee, stxn.Txn.Fee)
+		}
+		if grouped && got.GroupTxIDs[i] != algocrypto.GetTxID(stxn.Txn) {
+			t.Fatalf("stage %d group txid %d = %s, want the signed %s", stage, i, got.GroupTxIDs[i], algocrypto.GetTxID(stxn.Txn))
+		}
 	}
 }
 

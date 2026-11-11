@@ -18,8 +18,22 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+// RequestKind is what a request asks of the planner, and so the event each
+// of its slots is recorded as when it arrives.
+type RequestKind int
+
+const (
+	// RequestToSign is /sign, and a bounded account's base component: each
+	// slot is a SIGN_REQUEST.
+	RequestToSign RequestKind = iota
+	// RequestToPlan is /plan, which signs nothing: each slot is a
+	// PLAN_REQUEST.
+	RequestToPlan
+)
+
+// AuditLogger records each slot of a request as it arrived, before planning.
 type AuditLogger interface {
-	LogSignRequest(authAddress, txnSender, txnType, details string)
+	LogRequest(kind RequestKind, authAddress, txnSender, txnType, details string)
 }
 
 type VerifySignableKeysFunc func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
@@ -92,7 +106,20 @@ type Planner struct {
 	Snapshot               SnapshotFunc
 }
 
+// PlanGroup plans a request to sign. Its slots are audited as SIGN_REQUEST.
 func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *ServiceError) {
+	return p.planGroup(req, RequestToSign)
+}
+
+// PreviewGroup plans a /plan request, which signs nothing. Its slots are
+// audited as PLAN_REQUEST, never as a request to sign.
+func (p *Planner) PreviewGroup(req signerapi.GroupSignRequest) (*PlanResult, *ServiceError) {
+	return p.planGroup(req, RequestToPlan)
+}
+
+// planGroup is the planning both entry points share: it reads the key
+// snapshot once and plans the whole group from that copy.
+func (p *Planner) planGroup(req signerapi.GroupSignRequest, kind RequestKind) (*PlanResult, *ServiceError) {
 	console := consoleOf(p.Console)
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
@@ -122,7 +149,7 @@ func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *Servi
 		return nil, err
 	}
 
-	p.logSignRequests(req, txns, passthroughIndices, foreignIndices)
+	p.logRequests(kind, req, txns, passthroughIndices, foreignIndices)
 
 	isPreGrouped, err := validateGroupConsistency(txns, hasPassthrough, console)
 	if err != nil {
@@ -317,17 +344,19 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 	}, nil
 }
 
-func (p *Planner) logSignRequests(req signerapi.GroupSignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) {
+// logRequests records each slot as it arrived, before planning, as kind
+// says.
+func (p *Planner) logRequests(kind RequestKind, req signerapi.GroupSignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) {
 	if p.AuditLog == nil || p.GenerateTxnDescription == nil {
 		return
 	}
 	for i, txReq := range req.Requests {
 		if passthroughIndices[i] {
-			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
+			p.AuditLog.LogRequest(kind, "", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
 		} else if foreignIndices[i] {
-			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txns[i]))
+			p.AuditLog.LogRequest(kind, "", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txns[i]))
 		} else {
-			p.AuditLog.LogSignRequest(txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txns[i]))
+			p.AuditLog.LogRequest(kind, txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txns[i]))
 		}
 	}
 }

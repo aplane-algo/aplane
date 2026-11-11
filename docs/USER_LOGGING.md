@@ -34,7 +34,11 @@ Each line is a JSON object with the following fields:
 | `txn_sender` | string | Transaction sender (if different from auth addr) |
 | `txn_type` | string | Transaction type (`pay`, `axfer`, etc.) |
 | `txn_details` | string | Human-readable transaction summary |
-| `txid` | string | Transaction ID (after signing) |
+| `txid` | string | ID of the transaction as signed, after the signer's planning (`SIGN_APPROVED`, `ROTATING_RELEASE`, and a withheld rotating signature's `SIGN_FAILED`) |
+| `fee` | int | `SIGN_APPROVED`: the signed transaction's final fee in microAlgos; `0` is written |
+| `group_id` | string | `SIGN_APPROVED` and a withheld rotating signature's `SIGN_FAILED`: the final group ID (base64), when the transaction was signed in a group |
+| `group_txids` | string[] | `SIGN_APPROVED`: every transaction ID of that group, in group order |
+| `dummy_count` | int | `SIGN_APPROVED`: how many of `group_txids`, at the end, are dummies the request added and signed |
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
 | `policy_rule_id` | string | Matching policy rule for a rejection, forced review, or explicit auto-approval |
@@ -42,7 +46,7 @@ Each line is a JSON object with the following fields:
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
-| `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change |
+| `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (the client's `request_id` when it sent one, else a random ID the signer minted; see [Signing](#signing)) |
 | `result_code` | string | Result code of a failed or uncertain policy or ASA set change |
 | `changed` | bool | On a succeeded policy or ASA set change only: whether it minted a generation (`false` is written, for a policy apply that changed nothing) |
 | `generation_id` | string | Generation a change minted, also when its commit is uncertain |
@@ -60,8 +64,9 @@ Fields are omitted when empty.
 ```json
 {"timestamp":"2026-02-28T16:00:00Z","event":"SERVER_START","key_count":3}
 {"timestamp":"2026-02-28T16:00:05Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","admin_session_id":"admin-1","transport":"ipc","outcome":"connected","remote_addr":"local"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","requester_principal":"client:SHA256:example","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_type":"pay","txn_details":"pay 1.5 ALGO to DEF...UVW"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","requester_principal":"client:SHA256:example","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed"}
+{"timestamp":"2026-02-28T16:01:10Z","event":"PLAN_REQUEST","principal":"client:SHA256:example","requester_principal":"client:SHA256:example","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"pay 1.5 ALGO to DEF...UVW","operation_id":"plan-1"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","principal":"client:SHA256:example","requester_principal":"client:SHA256:example","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"pay 1.5 ALGO to DEF...UVW","operation_id":"sign-1"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","principal":"client:SHA256:example","requester_principal":"client:SHA256:example","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed","txid":"TXA...","operation_id":"sign-1","fee":3000,"group_id":"Gk1...=","group_txids":["TXA...","TXD..."],"dummy_count":1}
 {"timestamp":"2026-02-28T16:05:00Z","event":"SERVER_STOP"}
 ```
 
@@ -160,12 +165,32 @@ generation records say what committed. Offline `apadmin policy rescue` and
 
 | Event | Description |
 |-------|-------------|
-| `SIGN_REQUEST` | Transaction submitted for signing |
-| `SIGN_APPROVED` | Transaction signed successfully by the signer (not emitted for passthrough or foreign entries) |
+| `SIGN_REQUEST` | Transaction submitted for signing, as the client sent it, before the signer's planning |
+| `PLAN_REQUEST` | Transaction submitted to `/plan`, which signs nothing; the same fields as `SIGN_REQUEST`. `/plan` writes no other signing entry |
+| `SIGN_APPROVED` | Transaction signed by the signer, one entry per transaction signed with a key (not emitted for passthrough or foreign entries). It records the transaction as signed: planning may have raised its fee, set its group ID and added dummies, so `txid`, `fee`, `group_id` and `group_txids` are those of the transactions returned to the client, not of the request |
 | `SIGN_REJECTED` | Transaction rejected. A refusal before the operator names its source in the reason: `signer_invariant:` (a refusal no policy can allow, such as a nonparticipating `keyreg` or a rekey to a rotating account, on either node role), `policy_engine_rejected:` (the signer's policy) or `cosigner_policy_rejected:` (a cosigner's policy). Other reasons record the operator's decision |
-| `SIGN_FAILED` | Signing failed due to a technical error (key not found, assembly error, etc.) |
+| `SIGN_FAILED` | Signing failed due to a technical error (key not found, assembly error, etc.). A rotating signature refused at the last check after it was recorded as signed is a `SIGN_FAILED` whose `reason` begins `signature withheld after it was recorded as signed`. It has the `txid` and `group_id` of that `SIGN_APPROVED`, so a search on either finds both: the signature never left the signer |
 | `ROTATING_RELEASE` | A rotating-account signature was released; retained records rebuild release and leaf-use history after unlock |
 | `ROTATING_RECOVERY` | A rotating-account recovery action or outcome was recorded |
+
+Every entry a signing or planning request writes carries the request's ID
+as `operation_id`. For a request that sent a `request_id`, that is the
+client's ID, and the client chooses it: it can send the same ID twice or
+one that looks like the signer's, and entries sharing it then belong to
+more than one request, so keeping it unique is the client's job. For a
+request sent without one, the signer mints a random ID, `req-` and 16 hex
+digits (64 random bits, so two minted IDs do not repeat in practice).
+`/sign/component` and
+`/sign/assemble` return the ID as `request_id`, and while a request waits
+for approval the signer's console shows the first 20 characters of its
+ID, all of a minted one. So one request reads as a sequence: its
+`SIGN_REQUEST` entries (what was asked), then either a `SIGN_APPROVED` per
+transaction signed or the `SIGN_REJECTED` or `SIGN_FAILED` entries that
+stopped it. A request with no outcome entry was not signed: it was
+cancelled, found no apadmin connected to approve it, or was stopped by a
+lock. To find what was signed in a group on chain, search for `group_id` or
+any of `group_txids`. No signing entry records key material, signatures or
+LogicSig argument values.
 
 ### Authentication
 
@@ -219,7 +244,9 @@ the retained history out of the log:
   128 bytes each. A longer list is a **sample**: `generation_ids_omitted` or
   `archive_entries_omitted` counts the members left out, and their names are
   not recorded anywhere in the log. The operation itself still receives and
-  acts on the whole selection.
+  acts on the whole selection. `group_txids` has the same bound
+  (`group_txids_omitted`), which a group of at most 16 transactions never
+  reaches.
 - The policy and ASA set fields have their own, tighter bounds in
   [Policy and ASA Set Changes](#policy-and-asa-set-changes).
 

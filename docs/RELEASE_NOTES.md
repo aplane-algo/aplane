@@ -7,6 +7,36 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The audit log records what was signed
+
+The signer's audit log described each request as it arrived. Planning may
+then raise fees, set the group ID and add dummies, so the log did not name
+the transactions that were signed. And `/plan`, which signs nothing, was
+logged as a request to sign.
+
+- **`SIGN_APPROVED` records the transaction as signed**: `txid`, its final
+  `fee` (`0` is written) and, for a transaction signed in a group,
+  `group_id`, `group_txids` (every transaction of the group, in order) and
+  `dummy_count` (how many of them, at the end, are dummies the request added
+  and signed). These are the IDs of the transactions returned to the client.
+  `SIGN_REQUEST` still records what was asked.
+- **Every entry of a signing or planning request carries its `request_id`**
+  as `operation_id`, so what was asked and what was signed, refused or failed
+  read together. A request sent without one gets a random ID from the
+  signer, `req-` and 16 hex digits, which `/sign/component` and
+  `/sign/assemble` return and the approval line on the signer console shows.
+  A client's own `request_id` is used as given: if the client reuses one,
+  its requests share an `operation_id`.
+- **`/plan` is logged as `PLAN_REQUEST`** and writes no `SIGN_*` entry.
+- **A rotating signature refused at its last check says so.** It is already
+  recorded as `SIGN_APPROVED` by then; a `SIGN_FAILED` whose reason begins
+  `signature withheld after it was recorded as signed` now follows it, with
+  the same `txid` and `group_id`.
+- Cosigner and bounded base components record the target's `txid` and its
+  frozen group.
+
+See [USER_LOGGING.md](USER_LOGGING.md#signing).
+
 ## The signer refuses request fields it does not know
 
 - Every signer endpoint that reads a request body refuses a field its request

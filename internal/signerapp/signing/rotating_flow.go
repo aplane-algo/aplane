@@ -6,7 +6,6 @@ package signing
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -560,7 +559,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// signed before, else the first unused one from the TxID's pick, else
 	// (every leaf spent) the TxID's pick again, reported as reuse. State
 	// chooses the leaf, never whether to sign.
-	txIDText := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(txID[:])
+	txIDText := txIDString(txID)
 	leafProfile, _ := rotatingkey.Lookup(rs.keyType)
 	var leaf LeafRelease
 	var leafReused bool
@@ -645,11 +644,21 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		TxID: txIDText, LastValid: uint64(spend.LastValid), Reused: leafReused, Leaves: []LeafRelease{leaf}, StatelessHash: leafProfile.StatelessHash,
 	})
 	consoleOf(s.Console).Printf("[ROTATING] Rotation pending %d -> %d for %s\n", stage, targetStage, req.Account)
-	s.logSuccessfulSignatures(signReq, plan, allTxns, policyRuleID)
+	// The IDs recorded are the ones decoded from the presented bytes, which
+	// the spend's signature and the dummies' signed.
+	var recorded signedGroup
+	if s.AuditLog != nil {
+		recorded = decodedSignedGroup(group, len(plan.DummyTxns))
+		s.logSuccessfulSignatures(signReq, plan, recorded, policyRuleID)
+	}
 	// Audit writes block, so this has to come after the last of them. A refusal
 	// here leaves a release on record that never left, which only makes the leaf
 	// look used.
 	if refused := s.releaseRefused(requestCtx, deps, req.Account, lockGeneration); refused != nil {
+		// The entries above record the transaction as signed; this one says
+		// the signature never left. Nothing leaves on this path, so writing
+		// after the check holds nothing back from a lock.
+		s.logWithheldSignature(recorded, req.Account, refused)
 		return nil, refused
 	}
 	return &signerapi.RotatingSignResponse{
@@ -659,6 +668,17 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		TxID:    txIDText,
 		GroupID: groupIDText,
 	}, nil
+}
+
+// logWithheldSignature records a rotating signature that was recorded as
+// signed and then refused at the final check: the spend, position 0 of
+// group, signed by account, as its SIGN_APPROVED recorded it. Every audit
+// log the service takes can write it.
+func (s *Service) logWithheldSignature(group signedGroup, account string, refused *ServiceError) {
+	if s.AuditLog == nil {
+		return
+	}
+	s.AuditLog.LogSignWithheld(group.record(0, account, "", ""), "signature withheld after it was recorded as signed: "+refused.Message)
 }
 
 // releaseRefused reports why a signature must not leave: the signer locked, or

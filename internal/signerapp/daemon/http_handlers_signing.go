@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -21,7 +22,9 @@ func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignGroup(r.Context(), ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.SignGroup(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
@@ -37,7 +40,9 @@ func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignComponents(r.Context(), ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.SignComponents(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
@@ -54,7 +59,9 @@ func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).Assemble(r.Context(), ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.Assemble(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
@@ -102,7 +109,9 @@ func (fs *Signer) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).Plan(ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.Plan(ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return

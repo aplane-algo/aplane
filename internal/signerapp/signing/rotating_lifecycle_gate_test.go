@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -381,13 +382,8 @@ type lockAfterSuccessAudit struct {
 	lock func()
 }
 
-func (a *lockAfterSuccessAudit) LogSignApproved(address, sender, details string) {
-	a.recordingReleaseAudit.LogSignApproved(address, sender, details)
-	a.lock()
-}
-
-func (a *lockAfterSuccessAudit) LogSignApprovedWithPolicyRule(address, sender, details, ruleID string) {
-	a.recordingReleaseAudit.LogSignApprovedWithPolicyRule(address, sender, details, ruleID)
+func (a *lockAfterSuccessAudit) LogSignApproved(record SignedRecord) {
+	a.recordingReleaseAudit.LogSignApproved(record)
 	a.lock()
 }
 
@@ -410,6 +406,19 @@ func TestRotatingSignStopsAtALockDuringTheLastAuditWrite(t *testing.T) {
 			}
 			if resp != nil || err == nil || err.Kind != ErrorLocked {
 				t.Fatalf("response %v, error %v, want a lock refusal", resp, err)
+			}
+			// The log already says the transaction was signed; a SIGN_FAILED
+			// under the same txid and group_id says the signature never left.
+			if len(audit.signed) != 1 || len(audit.withheld) != 1 {
+				t.Fatalf("signed %+v, withheld %+v; want one of each", audit.signed, audit.withheld)
+			}
+			signed, withheld := audit.signed[0], audit.withheld[0]
+			if withheld.record.TxID == "" || withheld.record.TxID != signed.TxID || withheld.record.GroupID != signed.GroupID ||
+				withheld.record.AuthAddress != signed.AuthAddress || withheld.record.TxnSender != signed.TxnSender {
+				t.Fatalf("withheld %+v, want the signed record's transaction %+v", withheld.record, signed)
+			}
+			if !strings.HasPrefix(withheld.reason, "signature withheld after it was recorded as signed: ") {
+				t.Fatalf("withheld reason = %q", withheld.reason)
 			}
 		})
 	}

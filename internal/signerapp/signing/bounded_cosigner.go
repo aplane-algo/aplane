@@ -76,6 +76,9 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// The prompt is held under the request's ID and the response returns
+	// it, so a direct caller that supplies none gets one for both.
+	req.RequestID = RequestID(req.RequestID)
 	if s.Planner == nil || s.Approval == nil || s.Executor == nil {
 		return nil, internal("signing service not fully configured")
 	}
@@ -98,7 +101,6 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 	if bindErr := checkApprovalBinding(groupReq, plan); bindErr != nil {
 		return nil, bindErr
 	}
-	req.RequestID = cosignedRequestID("bcmp", req.RequestID)
 	components := make([]signerapi.Component, 0, len(targets))
 	for _, targetIndex := range targets {
 		component, signErr := signBoundedBaseComponent(ctx, groupReq, plan, targetIndex, session)
@@ -117,19 +119,18 @@ func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, p
 		return
 	}
 	groupReq := req.GroupSignRequest()
+	// The group is frozen: each component signs its target's final TxID. The
+	// signer never signs the group's dummies: the client signs them itself
+	// and sends them as foreign positions to /sign and as passthrough to
+	// /sign/assemble, so no record counts them.
+	group := signedGroupOf(plan.AllTxns, 0)
 	for _, index := range targets {
 		if index < 0 || index >= len(groupReq.Requests) || index >= len(plan.AllTxns) {
 			continue
 		}
 		txReq := groupReq.Requests[index]
 		const details = "bounded-cosigner base component released after policy and operator approval"
-		if policyRuleID != "" {
-			if logger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && logger != nil {
-				logger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details, policyRuleID)
-				continue
-			}
-		}
-		s.AuditLog.LogSignApproved(txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details)
+		s.AuditLog.LogSignApproved(group.record(index, txReq.AuthAddress, details, policyRuleID))
 	}
 }
 

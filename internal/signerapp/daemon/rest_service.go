@@ -16,7 +16,7 @@ func (fs *Signer) restService() signerrest.Service {
 	}
 	var signerAudit signingAudit
 	if fs.auditLog != nil {
-		signerAudit = fs.auditLog
+		signerAudit = &signingAuditLogger{log: fs.auditLog}
 	}
 	return fs.restServiceWithAudit(auditLog, signerAudit)
 }
