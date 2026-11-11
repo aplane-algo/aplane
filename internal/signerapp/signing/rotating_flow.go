@@ -635,6 +635,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// here leaves a release on record that never left, which only makes the leaf
 	// look used.
 	if refused := s.releaseRefused(requestCtx, deps, req.Account, lockGeneration); refused != nil {
+		// The entries above record the transaction as signed; this one says
+		// the signature never left. Nothing leaves on this path, so writing
+		// after the check holds nothing back from a lock.
+		s.logWithheldSignature(req.Account, spend.Sender.String(), txIDText, refused)
 		return nil, refused
 	}
 	return &signerapi.RotatingSignResponse{
@@ -644,6 +648,14 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		TxID:    txIDText,
 		GroupID: groupIDText,
 	}, nil
+}
+
+// logWithheldSignature records, as SIGN_FAILED, a rotating signature that was
+// recorded as signed and then refused at the final check.
+func (s *Service) logWithheldSignature(account, sender, txID string, refused *ServiceError) {
+	if logger, ok := s.AuditLog.(AuditFailLogger); ok && logger != nil {
+		logger.LogSignFailed(account, sender, fmt.Sprintf("signature withheld after it was recorded as signed (txid %s): %s", txID, refused.Message))
+	}
 }
 
 // releaseRefused reports why a signature must not leave: the signer locked, or

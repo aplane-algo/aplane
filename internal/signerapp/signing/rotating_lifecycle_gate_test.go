@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -405,6 +406,12 @@ func TestRotatingSignStopsAtALockDuringTheLastAuditWrite(t *testing.T) {
 			}
 			if resp != nil || err == nil || err.Kind != ErrorLocked {
 				t.Fatalf("response %v, error %v, want a lock refusal", resp, err)
+			}
+			// The log already says the transaction was signed; a SIGN_FAILED
+			// for the same transaction says the signature never left.
+			if len(audit.signed) != 1 || len(audit.failed) != 1 ||
+				!strings.Contains(audit.failed[0], "signature withheld") || !strings.Contains(audit.failed[0], audit.signed[0].TxID) {
+				t.Fatalf("signed %+v, failed %q; want the withheld signature recorded against its transaction", audit.signed, audit.failed)
 			}
 		})
 	}

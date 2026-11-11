@@ -93,6 +93,9 @@ for each.
   `SReturn`, where any lock step may land.
 - The sign's recheck before the seed is closed is folded into `SMake`'s check
   and the final one: it changes what is recorded, not what is returned.
+- A refusal at the final check writes a `SIGN_FAILED` entry
+  (`logWithheldSignature`) after the check. Nothing leaves on that path, so it
+  too changes only what is recorded, and `SReturn` leaves it out.
 - A check and the release it guards are one step (`SReturn`, `EDeliver`), for
   the reason above.
 - Shutdown (`Runtime.Destroy`) is not modeled. It drains and clears only after
