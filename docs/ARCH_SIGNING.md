@@ -2334,6 +2334,47 @@ Cross-SDK compatibility-bearing behavior:
   signing accepts a caller-owned `request_id` so applications can cancel from
   another thread; TypeScript high-level signing accepts a caller-owned
   `requestId` and `AbortSignal`.
+- Each SDK has a one-call send (`SendPrepared` / `SendPayment` in Go,
+  `sendPrepared` / `sendPayment` in TypeScript, `send_prepared` /
+  `send_payment` in Python) that picks the signing flow from the `signing_flow`
+  of the key record the signer returns, signs, checks the signed group against
+  what was prepared, submits exactly those bytes and waits for confirmation. It
+  adds no endpoint: it composes `/keys`, `/plan`, `/sign`, the component and
+  assembly requests and the rotating requests described here. A key whose
+  `signing_flow` the SDK does not know is refused, never signed through
+  another flow.
+- The SDKs run the rotating flow themselves: `/sign/rotating/prepare`, their
+  own check of the prepared group, an unsigned simulation (empty signatures
+  allowed, signers fixed), then `/sign/rotating/sign`, their check of the
+  signed group, and immediate submission. They retry at most three times, and
+  only on `rotating_stage_unproven`, `rotating_stage_changed` and
+  `rotating_window_not_current`, which each say this attempt released no
+  signature. The prepared and signed answers of every rotating family are
+  pinned by shared vectors in the SDK repo
+  (`contracts/signerapi_vectors/rotating_vectors.json`).
+- An SDK must tell a refusal from a lost answer. At a request that can
+  release a signature (`/sign`, `/sign/component`, `/sign/assemble`,
+  `/sign/rotating/sign`), a 200 answer that cannot be read, or an exchange
+  that ended after the request may have been written, is an unknown outcome
+  carrying the request ID, not a refusal: the caller must not sign a
+  replacement. A request that was provably never posted is a plain error and
+  sends no `/sign/cancel`. Because the signer never submits and never changes
+  a transaction's validity rounds, the SDKs treat the group's earliest last
+  valid round as the point after which no signature released by a request can
+  execute, and report it on these errors.
+- The SDKs read every 200 answer strictly: exactly one JSON object, a null
+  or absent field as its zero value, an unknown field ignored, and a wrongly
+  typed field, an out-of-range number or trailing data as unreadable. A new
+  field can be added to an answer freely; changing the type of an existing
+  field breaks every SDK.
+- For a `cosigned1` account the SDKs find the cosigner themselves when the
+  client was created from a client data directory: they read `/keys` from each
+  `endpoints.yaml` endpoint with role `cosigner` and use the one that lists a
+  witness record whose address is the Witness Key ID derived from its key type
+  and public key. More than one endpoint listing the key is refused. The
+  cosigner is resolved before the bounded-base `/sign/component` request for
+  every target that cannot take the `listed_rekey` path, and afterwards, only
+  if the path needs one, for a target that can.
 
 Go SDK specifics:
 
