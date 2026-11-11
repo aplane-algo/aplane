@@ -393,6 +393,12 @@ func appendCommonFields(desc *strings.Builder, txn types.Transaction, view View)
 	if txn.GenesisID != "" {
 		fmt.Fprintf(desc, "\n  GenesisID: %s", termsafe.Line(txn.GenesisID))
 	}
+	// The genesis ID is free text the builder of the transaction chose. When
+	// no network name is known for the chain, the genesis hash is the only
+	// thing that says which chain this is.
+	if view.Network == "" && txn.GenesisHash != (types.Digest{}) {
+		fmt.Fprintf(desc, "\n  Genesis hash: %s (no network name known for it)", base64.StdEncoding.EncodeToString(txn.GenesisHash[:]))
+	}
 
 	if len(txn.Note) > 0 {
 		fmt.Fprintf(desc, "\n  Note: %s", formatOpaqueBytes(txn.Note))

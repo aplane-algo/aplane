@@ -4,10 +4,13 @@
 package apshellcli
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
@@ -29,7 +32,7 @@ func TestPluginReviewIsTheSharedDescriptionPlusMarkedFindings(t *testing.T) {
 		Header:           types.Header{Sender: sender, RekeyTo: other},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, CloseRemainderTo: other},
 	}
-	lines := pluginReviewLines(rekey)
+	lines := pluginReviewLines(rekey, nil)
 	description := strings.Split(txnreview.Describe(rekey, txnreview.View{}), "\n")
 	for i, want := range description {
 		if i >= len(lines) || lines[i] != want {
@@ -52,7 +55,7 @@ func TestPluginReviewIsTheSharedDescriptionPlusMarkedFindings(t *testing.T) {
 		}
 	}
 
-	plain := strings.Join(pluginReviewLines(types.Transaction{
+	plain := strings.Join(pluginReviewLinesOf(types.Transaction{
 		Type:             types.PaymentTx,
 		Header:           types.Header{Sender: sender, Fee: 1000},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: other, Amount: 5},
@@ -73,7 +76,7 @@ func TestPluginReviewFlagsARekeyOnAnyType(t *testing.T) {
 		types.PaymentTx, types.AssetTransferTx, types.ApplicationCallTx,
 		types.KeyRegistrationTx, types.AssetConfigTx, types.AssetFreezeTx, types.TxType("zzz"),
 	} {
-		got := strings.Join(pluginReviewLines(types.Transaction{
+		got := strings.Join(pluginReviewLinesOf(types.Transaction{
 			Type: txType, Header: types.Header{Sender: sender, RekeyTo: other},
 		}), "\n")
 		if !strings.Contains(got, "!! RekeyTo = "+other.String()) {
@@ -91,5 +94,69 @@ func TestPluginReviewEscapesThePluginsTransactionType(t *testing.T) {
 	}})
 	if strings.ContainsAny(out.String(), "\x1b\r") {
 		t.Fatalf("the review printed raw control bytes from the transaction type:\n%q", out.String())
+	}
+}
+
+func pluginReviewLinesOf(txn types.Transaction) []string { return pluginReviewLines(txn, nil) }
+
+func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
+	sender, other := reviewTestAddress(1), reviewTestAddress(2)
+	hash, err := base64.StdEncoding.DecodeString(apconfig.AlgorandTestnetGenesisHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var genesis types.Digest
+	copy(genesis[:], hash)
+
+	// The network comes from the genesis hash, whatever the genesis ID says.
+	onTestnet := strings.Join(pluginReviewLines(types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: sender, GenesisHash: genesis, GenesisID: "mainnet-v1.0"},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: other},
+	}, nil), "\n")
+	if !strings.Contains(onTestnet, "Network: testnet") {
+		t.Errorf("the review does not name the chain from the genesis hash:\n%s", onTestnet)
+	}
+
+	unknown := strings.Join(pluginReviewLines(types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: sender, GenesisHash: types.Digest{9}},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: other},
+	}, nil), "\n")
+	if !strings.Contains(unknown, "Genesis hash: ") {
+		t.Errorf("a chain with no known name shows no genesis hash:\n%s", unknown)
+	}
+
+	rekey := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: sender, RekeyTo: other},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
+	}
+	lost := strings.Join(pluginReviewLines(rekey, nil), "\n")
+	kept := strings.Join(pluginReviewLines(rekey, map[string]bool{other.String(): true}), "\n")
+	if !strings.Contains(lost, "YOU WILL LOSE CONTROL") {
+		t.Errorf("a rekey to an address nobody here holds does not warn of losing control:\n%s", lost)
+	}
+	if strings.Contains(kept, "YOU WILL LOSE CONTROL") || !strings.Contains(kept, "You possess the keys for the new address") {
+		t.Errorf("a rekey to a held address is not shown as keeping control:\n%s", kept)
+	}
+}
+
+// The irreversible key registration and the half-set one are marked.
+func TestPluginReviewMarksIrreversibleAndIncompleteKeyRegistrations(t *testing.T) {
+	sender := reviewTestAddress(1)
+	nonpart := strings.Join(pluginReviewLines(types.Transaction{
+		Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
+		KeyregTxnFields: types.KeyregTxnFields{Nonparticipation: true},
+	}, nil), "\n")
+	if !strings.Contains(nonpart, "!! Nonparticipation = true") || !strings.Contains(nonpart, "cannot be undone") {
+		t.Errorf("a nonparticipation keyreg is not marked:\n%s", nonpart)
+	}
+	half := strings.Join(pluginReviewLines(types.Transaction{
+		Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
+		KeyregTxnFields: types.KeyregTxnFields{SelectionPK: types.VRFPK{2}},
+	}, nil), "\n")
+	if !strings.Contains(half, "!! KeyRegistration = incomplete") {
+		t.Errorf("a key registration with one key missing is not marked:\n%s", half)
 	}
 }

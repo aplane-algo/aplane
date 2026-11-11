@@ -673,6 +673,21 @@ func TestFindingsCoverEveryHandoverAndUseOfAuthority(t *testing.T) {
 			Type: types.AssetFreezeTx, Header: types.Header{Sender: sender},
 			AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAsset: 5, FreezeAccount: other, AssetFrozen: true},
 		}, []string{"FreezeAccount"}},
+		{"keyreg offline", types.Transaction{
+			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
+		}, nil},
+		{"keyreg online with both keys", types.Transaction{
+			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
+			KeyregTxnFields: types.KeyregTxnFields{VotePK: types.VotePK{1}, SelectionPK: types.VRFPK{2}},
+		}, nil},
+		{"keyreg nonparticipating", types.Transaction{
+			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
+			KeyregTxnFields: types.KeyregTxnFields{Nonparticipation: true},
+		}, []string{"Nonparticipation"}},
+		{"keyreg with only a selection key", types.Transaction{
+			Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
+			KeyregTxnFields: types.KeyregTxnFields{SelectionPK: types.VRFPK{2}},
+		}, []string{"KeyRegistration"}},
 		{"fee above one ALGO", types.Transaction{
 			Type: types.PaymentTx, Header: types.Header{Sender: sender, Fee: 5_000_000_000},
 			PaymentTxnFields: types.PaymentTxnFields{Receiver: other},

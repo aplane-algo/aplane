@@ -53,6 +53,9 @@ func FormatTransactionSummary(txn types.Transaction, aliasCache *cache.AliasCach
 		// The describer's own rule for offline, so this summary and the
 		// review of the same bytes agree.
 		if txnreview.IsOfflineKeyReg(txn) {
+			if txn.Nonparticipation {
+				return fmt.Sprintf("Key Registration: %s (NONPARTICIPATING, cannot be undone)", senderFmt)
+			}
 			return fmt.Sprintf("Key Registration: %s (offline)", senderFmt)
 		}
 		return fmt.Sprintf("Key Registration: %s (online)", senderFmt)

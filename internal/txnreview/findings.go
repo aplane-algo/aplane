@@ -155,6 +155,26 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 		})
 	}
 
+	if txn.Type == types.KeyRegistrationTx {
+		if txn.Nonparticipation {
+			violations = append(violations, Finding{
+				Field:    "Nonparticipation",
+				Value:    "true",
+				Critical: true,
+				Message:  "This transaction marks the account NONPARTICIPATING. That cannot be undone: the account can never take part in consensus or earn rewards again.",
+			})
+		}
+		// One key of the pair without the other is not a registration the
+		// network accepts as going online, and reads like one.
+		if !IsOfflineKeyReg(txn) && (txn.VotePK == (types.VotePK{}) || txn.SelectionPK == (types.VRFPK{})) {
+			violations = append(violations, Finding{
+				Field:   "KeyRegistration",
+				Value:   "incomplete",
+				Message: "This key registration carries only one of the vote and selection keys. A participation key is missing.",
+			})
+		}
+	}
+
 	if uint64(txn.Fee) > DefaultMaxFeeMicroAlgos {
 		algoFee := asaset.FormatFixed(uint64(txn.Fee), 6)
 		violations = append(violations, Finding{

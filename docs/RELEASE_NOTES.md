@@ -15,7 +15,15 @@ before it was renamed `enroll`.
   say the same thing about the same bytes. The plugin review reads like the
   signer's prompt, followed by every finding the signer would warn about, each
   marked `!!`. That now includes a ClearState, an asset freeze and a fee above
-  1 ALGO, which the plugin review did not flag.
+  1 ALGO, which the plugin review did not flag. It names the network from the
+  transaction's genesis hash, and says a rekey keeps control when the target
+  is a key the connected signer holds.
+- Two warnings are new for the signer as well: a key registration that marks
+  the account nonparticipating (which the signer refuses to sign in any case),
+  and one that carries only one of the vote and selection keys. Under
+  `always_review_warnings` the second now forces a review.
+- When no network name is known for a transaction's chain, the description
+  shows the genesis hash.
 - A key registration that goes online shows its participation keys in full,
   in base64, the form `goal account partkeyinfo` prints them in, so they can
   be compared. The signer's prompt showed the first 8 bytes of each, in hex.

@@ -372,7 +372,7 @@ direct transfer movements; passthrough and foreign request slots are not
 governed by this signer's route table. See
 [Transfer Routing](#transfer-routing).
 
-Warning analysis (`internal/signerapp/approvalpolicy/warnings.go`) covers:
+Warning analysis covers the fields below. The rules live in `internal/txnreview/findings.go`, a client-safe package, so apshell's review of a plugin-built group applies the same ones; `internal/signerapp/approvalpolicy/warnings.go` turns its findings into approval violations. Add a rule in `findings.go`, never in the adapter:
 
 - rekey fields,
 - ALGO close-out fields,
@@ -384,6 +384,9 @@ Warning analysis (`internal/signerapp/approvalpolicy/warnings.go`) covers:
   resulting Manager, Reserve, Freeze, and Clawback addresses, with
   `(cleared)` for a zeroed role) and asset destroy,
 - asset freeze and unfreeze (`afrz`),
+- a key registration that marks the account nonparticipating (the signer
+  refuses to sign one; the rule exists for a review that has no signer behind
+  it), and one that carries only one of the vote and selection keys,
 - unusually high fees above 1 ALGO.
 
 `always_review_warnings` governs only the signer's own legs. A warning on a
@@ -1669,7 +1672,7 @@ Implementation source of truth:
   effective per-key diff.
 - `internal/signerapp/policytext`: comment stripping, templates, and cosigner
   presets.
-- `internal/signerapp/approvalpolicy/warnings.go`: warning analysis.
+- `internal/txnreview/findings.go`: warning analysis, shared with apshell's plugin group review; `internal/signerapp/approvalpolicy/warnings.go` adapts its findings to approval violations.
 - `cmd/apadmin/policy.go`: policy command adapter and local IPC transport selection.
 - `internal/signerapp/policycmd`: online and offline-rescue policy workflows.
 - `internal/signerapp/policyeval`: the pure verdict evaluator for client

@@ -11,13 +11,14 @@ package apshellcli
 
 import (
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -36,18 +37,19 @@ type pluginReviewSlot struct {
 }
 
 // renderPluginGroupReview prints an honest review of a plugin-built group: per
-// slot it shows the role (who signs it), sender, type and fee, then the
-// transaction's description and its alerts (every rekey, close, clawback,
-// app update or delete, asset reconfigure or destroy). It summarizes the fees
-// paid by APlane-managed accounts.
+// slot it shows the role (who signs it) and the type, then the transaction's
+// description and every finding the signer would warn about, marked `!!`. It
+// summarizes the fees paid by APlane-managed accounts.
 func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlot) {
 	r.printf("\n%s\n", title)
 	if len(slots) > 0 {
-		// Hex, as each transaction's own Group line shows it below.
-		r.printf("Group ID: %s\n", hex.EncodeToString(slots[0].txn.Group[:]))
+		// Base64, the form plugins, SDKs and explorers show a group ID in, so
+		// it can be compared with theirs.
+		r.printf("Group ID: %s\n", base64.StdEncoding.EncodeToString(slots[0].txn.Group[:]))
 	}
 	r.printf("%d transaction(s):\n", len(slots))
 
+	held := r.heldAddresses()
 	var managedFees uint64
 	for i, s := range slots {
 		txn := s.txn
@@ -55,7 +57,7 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 		// lines that follow.
 		// The sender and fee are in the description that follows.
 		r.printf("  [%d] %-13s %s\n", i+1, s.role, termsafe.Line(txnTypeLabel(txn.Type)))
-		for _, line := range pluginReviewLines(txn) {
+		for _, line := range pluginReviewLines(txn, held) {
 			r.printf("        %s\n", line)
 		}
 		if s.role == slotRoleManaged {
@@ -63,8 +65,18 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 		}
 	}
 	if managedFees > 0 {
-		r.printf("Fees paid by APlane-managed accounts: %d microAlgo\n", managedFees)
+		r.printf("Fees paid by APlane-managed accounts: %s ALGO\n", asaset.FormatFixed(managedFees, 6))
 	}
+}
+
+// heldAddresses is the set of addresses the connected signer holds keys for,
+// or nil when that is not known. A rekey to one of them keeps control, and
+// the review says so, as the signer's own prompt does.
+func (r *REPLState) heldAddresses() map[string]bool {
+	if r.App == nil {
+		return nil
+	}
+	return r.App.SignableAddressSet()
 }
 
 // pluginReviewLines lists what one slot does: the shared description the
@@ -73,9 +85,13 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 // this can be the only review it gets; using the signer's own describer and
 // its own warning rules means the two reviews say the same thing about the
 // same bytes.
-func pluginReviewLines(txn types.Transaction) []string {
-	lines := strings.Split(txnreview.Describe(txn, txnreview.View{}), "\n")
-	for _, finding := range txnreview.Findings(txn, txnreview.FindingContext{}) {
+//
+// The network is named from the transaction's genesis hash, not from its
+// genesis ID, which is text the plugin chose.
+func pluginReviewLines(txn types.Transaction, held map[string]bool) []string {
+	network, _ := apconfig.DefaultGenesisHashNetworkResolver().NetworkForGenesisHashBytes(txn.GenesisHash[:])
+	lines := strings.Split(txnreview.Describe(txn, txnreview.View{Network: network}), "\n")
+	for _, finding := range txnreview.Findings(txn, txnreview.FindingContext{KnownAddresses: held}) {
 		lines = append(lines, fmt.Sprintf("!! %s = %s", finding.Field, finding.Value))
 		for _, line := range strings.Split(finding.Message, "\n") {
 			lines = append(lines, "   "+strings.TrimSpace(line))
