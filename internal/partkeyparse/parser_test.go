@@ -179,3 +179,19 @@ Last round:                4`
 		t.Fatalf("one key refused: %v", err)
 	}
 }
+
+// One key's round lines followed by another key in full is the same mix.
+func TestParseRefusesRoundLinesFromASecondKey(t *testing.T) {
+	rounds := `Effective first round:     100
+Effective last round:      200
+First round:               1
+Last round:                2`
+	complete := basePartKeyInfo + `
+Effective first round:     54647336
+Effective last round:      57646714
+First round:               3
+Last round:                4`
+	if _, err := Parse(rounds + "\n\n" + complete); err == nil || !strings.Contains(err.Error(), "more than one participation key") {
+		t.Fatalf("one key's rounds and another key: %v, want them refused", err)
+	}
+}

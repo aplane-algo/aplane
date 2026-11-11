@@ -356,7 +356,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 
 func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName string, appID uint64) appCallOptions {
 	opts := appCallOptions{
-		txnOptions:   a.parseTxnOptions(call, argIndex, funcName),
+		txnOptions:   a.parseTxnOptions(call, argIndex, funcName, "pay", "accounts", "apps", "assets", "boxes", "onCompletion"),
 		OnCompletion: types.NoOpOC,
 	}
 	if len(call.Arguments) <= argIndex || goja.IsUndefined(call.Arguments[argIndex]) || goja.IsNull(call.Arguments[argIndex]) {
@@ -417,7 +417,7 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 
 func (a *API) parseAppDeployOptions(call goja.FunctionCall, argIndex int, funcName string) appDeployOptions {
 	opts := appDeployOptions{
-		txnOptions:       a.parseTxnOptions(call, argIndex, funcName),
+		txnOptions:       a.parseTxnOptions(call, argIndex, funcName, "approvalCompiled", "clearCompiled", "globalUint", "globalBytes", "localUint", "localBytes", "extraPages"),
 		ApprovalCompiled: false,
 		ClearCompiled:    false,
 	}
@@ -518,6 +518,7 @@ func (a *API) parseBoxRefsValue(v interface{}, funcName string) []types.AppBoxRe
 			}
 			refs = append(refs, types.AppBoxReference{Name: name})
 		case map[string]interface{}:
+			a.refuseUnknownKeys(box, fmt.Sprintf("%s box %d key", funcName, i+1), "appId", "name")
 			appRef := uint64(0)
 			if v, ok := box["appId"]; ok {
 				id, err := toUint64Interface(v)

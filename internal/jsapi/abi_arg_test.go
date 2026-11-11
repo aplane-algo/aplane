@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -230,6 +231,113 @@ func TestJSOptionsOfTheWrongTypeAreRefused(t *testing.T) {
 			}
 		}); err != nil {
 			t.Errorf("%s: %v", key, err)
+		}
+	}
+}
+
+// jsError runs a native function call and returns the JS error it raises.
+func jsError(run func()) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	run()
+	return nil
+}
+
+func TestAlgoHelperTakesOnlyANumber(t *testing.T) {
+	vm := goja.New()
+	if err := vm.Set("algo", makeAlgoFunc(vm)); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := vm.RunString(`algo(1.25)`); err != nil || v.ToInteger() != 1250000 {
+		t.Fatalf("algo(1.25) = %v, %v", v, err)
+	}
+	// Each of these was coerced to a number: 0, 0, 1, 16 and a million ALGO.
+	for _, expr := range []string{`algo(null)`, `algo("")`, `algo(true)`, `algo("0x10")`, `algo("1e6")`, `algo(undefined)`, `algo("5")`, `algo({})`} {
+		if v, err := vm.RunString(expr); err == nil {
+			t.Errorf("%s = %v, want refused", expr, v)
+		}
+	}
+}
+
+func TestJSBooleanSettersRefuseAnythingButABoolean(t *testing.T) {
+	api := &API{runtime: goja.New()}
+	read := func(expr string) (bool, error) {
+		v, err := api.runtime.RunString(expr)
+		if err != nil {
+			t.Fatalf("run %s: %v", expr, err)
+		}
+		var got bool
+		runErr := jsError(func() { got = api.boolArg(goja.FunctionCall{Arguments: []goja.Value{v}}, 0, "setSimulate()") })
+		return got, runErr
+	}
+	for expr, want := range map[string]bool{`true`: true, `false`: false} {
+		if got, err := read(expr); err != nil || got != want {
+			t.Errorf("%s = %v, %v", expr, got, err)
+		}
+	}
+	// undefined would switch simulation off; the text 'false' would switch it on.
+	for _, expr := range []string{`undefined`, `null`, `"false"`, `0`, `1`, `({})`} {
+		if got, err := read(expr); err == nil {
+			t.Errorf("%s = %v, want refused", expr, got)
+		}
+	}
+}
+
+func TestJSOptionObjectsRefuseUnknownKeys(t *testing.T) {
+	api := &API{runtime: goja.New()}
+	parse := func(options string, extra ...string) error {
+		v, err := api.runtime.RunString("(" + options + ")")
+		if err != nil {
+			t.Fatalf("run %s: %v", options, err)
+		}
+		return jsError(func() { api.parseTxnOptions(goja.FunctionCall{Arguments: []goja.Value{v}}, 0, "send()", extra...) })
+	}
+	for _, options := range []string{`{}`, `{fee: 2000, wait: false, note: "x"}`, `{note: undefined}`} {
+		if err := parse(options); err != nil {
+			t.Errorf("%s refused: %v", options, err)
+		}
+	}
+	if err := parse(`{lsigArgs: {}}`, "lsigArgs"); err != nil {
+		t.Errorf("a key the caller reads is refused: %v", err)
+	}
+	// Each was ignored: the default fee was used, the call waited, the
+	// arguments were dropped.
+	for _, options := range []string{`{Fee: 0}`, `{nowait: true}`, `{fees: 2000}`, `{lsigArgs: {}}`} {
+		if err := parse(options); err == nil || !strings.Contains(err.Error(), "is not known") {
+			t.Errorf("%s: %v, want an unknown-option error", options, err)
+		}
+	}
+}
+
+func TestJSPluginAndNameArguments(t *testing.T) {
+	api := &API{runtime: goja.New()}
+	arg := func(expr string, read func(goja.FunctionCall, int) string) (string, error) {
+		v, err := api.runtime.RunString(expr)
+		if err != nil {
+			t.Fatalf("run %s: %v", expr, err)
+		}
+		var got string
+		runErr := jsError(func() { got = read(goja.FunctionCall{Arguments: []goja.Value{v}}, 0) })
+		return got, runErr
+	}
+	// A plugin takes text: a boolean and a BigInt are passed as their text.
+	for expr, want := range map[string]string{`"usdc"`: "usdc", `true`: "true", `10n`: "10", `5`: "5"} {
+		if got, err := arg(expr, api.pluginArg); err != nil || got != want {
+			t.Errorf("pluginArg(%s) = %q, %v; want %q", expr, got, err, want)
+		}
+	}
+	for _, expr := range []string{`undefined`, `null`, `({})`, `[1]`} {
+		if got, err := arg(expr, api.pluginArg); err == nil {
+			t.Errorf("pluginArg(%s) = %q, want refused", expr, got)
+		}
+	}
+	// A name may be a whole number (an asset ID), never NaN, Infinity or a fraction.
+	for _, expr := range []string{`NaN`, `Infinity`, `1e21`, `1.5`, `-1`} {
+		if got, err := arg(expr, api.stringArg); err == nil {
+			t.Errorf("stringArg(%s) = %q, want refused", expr, got)
 		}
 	}
 }

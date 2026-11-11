@@ -283,14 +283,15 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 		if opts == nil {
 			panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
 		}
+		a.refuseUnknownKeys(opts, "keyreg() option", "votekey", "selkey", "sproofkey", "votefirst", "votelast", "keydilution", "eligible")
 
-		if v, ok := opts["votekey"].(string); ok {
+		if v, ok := a.optionString(opts, "votekey", "keyreg()"); ok {
 			params.VoteKey = v
 		}
-		if v, ok := opts["selkey"].(string); ok {
+		if v, ok := a.optionString(opts, "selkey", "keyreg()"); ok {
 			params.SelectionKey = v
 		}
-		if v, ok := opts["sproofkey"].(string); ok {
+		if v, ok := a.optionString(opts, "sproofkey", "keyreg()"); ok {
 			params.StateProofKey = v
 		}
 		if v, ok := opts["votefirst"]; ok {
@@ -535,6 +536,7 @@ func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 		if m == nil {
 			panic(a.runtime.ToValue("sign() options must be an object"))
 		}
+		a.refuseUnknownKeys(m, "sign() option", "wait")
 		if w, ok := a.optionBool(m, "wait", "sign()"); ok {
 			wait = w
 		}
@@ -574,6 +576,8 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 		if !ok {
 			panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: expected object", i+1)))
 		}
+		a.refuseUnknownKeys(m, fmt.Sprintf("plan() request %d key", i+1),
+			"authAddress", "txnSender", "txnBytesHex", "signedTxnHex", "pqScheme", "lsigResources", "lsigArgs")
 		if v, ok := a.optionString(m, "authAddress", fmt.Sprintf("plan() request %d", i+1)); ok {
 			requests[i].AuthAddress = v
 		}
@@ -615,7 +619,11 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 				MaxOpcodeCost: read("maxOpcodeCost"),
 			}
 		}
-		if v, ok := m["lsigArgs"].(map[string]interface{}); ok {
+		if rawArgs, exists := m["lsigArgs"]; exists && rawArgs != nil {
+			v, ok := rawArgs.(map[string]interface{})
+			if !ok {
+				panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: lsigArgs must be an object of hex strings, got %s", i+1, jsTypeName(rawArgs))))
+			}
 			args := make(map[string]string, len(v))
 			for k, val := range v {
 				s, ok := val.(string)

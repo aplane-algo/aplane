@@ -203,11 +203,14 @@ func TestParseCommandDropsATrailingComment(t *testing.T) {
 		want  []string
 	}{
 		{"sweep algo to main leaving 1   # Leave 1 ALGO in each", []string{"sweep", "algo", "to", "main", "leaving", "1"}},
-		{"send 1 algo from a to b #note", []string{"send", "1", "algo", "from", "a", "to", "b"}},
+		// Only a # standing alone is a comment; #42 is an argument.
+		{"myplugin memo #42 confirm", []string{"myplugin", "memo", "#42", "confirm"}},
+		{"send 1 algo from a to b #", []string{"send", "1", "algo", "from", "a", "to", "b"}},
 		{"# a whole line", nil},
 		{"send 1 algo from a to b note=#1", []string{"send", "1", "algo", "from", "a", "to", "b", "note=#1"}},
 		{`send 1 algo from a to b note="# not a comment"`, []string{"send", "1", "algo", "from", "a", "to", "b", "note=# not a comment"}},
 		{`alias add "#team" ADDR`, []string{"alias", "add", "#team", "ADDR"}},
+		{"alias add #team ADDR", []string{"alias", "add", "#team", "ADDR"}},
 	}
 	for _, tc := range cases {
 		command, args, err := ParseCommand(tc.input)

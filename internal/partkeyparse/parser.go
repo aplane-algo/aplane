@@ -57,6 +57,15 @@ func Parse(input string) (*ParsedInfo, error) {
 		}
 	}
 
+	// The round lines too: one key's rounds with another's keys is the same
+	// mix. "First round" also matches inside "Effective first round", so each
+	// of those two may appear twice in one key's text and no more.
+	for label, limit := range map[*regexp.Regexp]int{effectiveFirstRe: 1, effectiveLastRe: 1, firstRoundRe: 2, lastRoundRe: 2} {
+		if matches := label.FindAllStringIndex(input, -1); len(matches) > limit {
+			return nil, fmt.Errorf("the input holds more than one participation key (its round lines repeat); paste only the one to register")
+		}
+	}
+
 	if match := patterns["parent"].FindStringSubmatch(input); match != nil {
 		info.ParentAddress = match[1]
 	} else {

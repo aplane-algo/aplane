@@ -19,8 +19,9 @@ apshell and its JavaScript API:
   refused too, on these and on `app call` and `app deploy`. A `to` with no
   address after it on `optout` is refused; it used to be dropped.
 - **A command line may end with `# a comment`.** The documented examples do;
-  they worked only because the trailing words were ignored. An unquoted `#`
-  where a word would begin now starts a comment.
+  they worked only because the trailing words were ignored. A `#` standing
+  alone, followed by a space or the end of the line, now starts a comment. A
+  word that begins with `#`, such as `#42`, is still an argument.
 - **`note <text>` is gone; write `note=<text>`.** The spaced form took the next
   word as the note, whatever it was.
 - **A rekey or close to the zero address is refused.** The network reads the
@@ -31,7 +32,8 @@ apshell and its JavaScript API:
   incentive fee on a registration that cannot be eligible. `eligible=` takes
   `true` or `false` only; `eligible=yes` was read as false.
 - **Pasting more than one participation key is refused**, including part of
-  one and all of another. The fields of two keys could be mixed.
+  one, or only its round lines, followed by all of another. The fields of two
+  keys could be mixed.
 - **`arg:` is refused on an atomic `send` to or from a set**: that path does
   not carry LogicSig arguments, and they were left out silently. An app call's companion
   payment (`--pay`) now carries the call's LogicSig arguments.
@@ -39,13 +41,21 @@ apshell and its JavaScript API:
   number, a `BigInt` or a plain decimal string. `null`, `undefined`, `''`,
   `true`, `'0x10'` and `'1e6'` were read as 0, 0, 0, 1, 16 and 1000000; each
   is now an error, as is a whole number past `Number.MAX_SAFE_INTEGER`. The
-  same forms are accepted inside option objects. An option of the wrong type,
-  such as `{wait: 'false'}` or `{note: 123}`, is an error; it was read as not
-  given.
+  same forms are accepted inside option objects. `algo()` takes a number
+  only: `algo(null)` was 0 ALGO and `algo('1e6')` a million.
+- **JavaScript options are checked.** An option of the wrong type, such as
+  `{wait: 'false'}` or `{note: 123}`, is an error; it was read as not given.
+  So is an option a function does not read, such as `{Fee: 0}`,
+  `{nowait: true}` or `{lsigArgs: ...}` on `send()`; each was ignored.
+- **`setSimulate()`, `setWriteMode()` and `setVerbose()` take `true` or
+  `false` only.** `setSimulate(undefined)` switched simulation off, and
+  `setSimulate('false')` switched it on.
 - **JavaScript account lists must hold only strings.** Another kind of entry
   was dropped, moving every entry after it.
 - **`undefined` and `null` are refused where a name is expected.** They were
-  read as the aliases "undefined" and "null".
+  read as the aliases "undefined" and "null". `NaN`, `Infinity` and fractions
+  are refused there too. A plugin still receives a boolean or a `BigInt` as
+  its text.
 - The MCP tool description said every amount is in human units. `fee=`,
   `pay=` and all JavaScript amounts are in microAlgos or base units, and it
   now says so.

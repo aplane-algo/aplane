@@ -50,7 +50,8 @@ send <amount> <asset> from <sender> to <receiver> [options]
 
 A word a command does not take is refused, on this and every transaction
 command, so a mistyped option can't be ignored. A line may end with a
-comment: an unquoted `#` where a word would begin starts one.
+comment: a `#` standing alone, followed by a space, starts one. A word that
+begins with `#` is an argument.
 
 **Examples:**
 ```

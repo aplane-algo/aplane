@@ -72,11 +72,14 @@ func parseCommandLine(input string, allowUnterminatedQuote bool) (commandLinePar
 				trailingSpace = true
 			}
 		case '#':
-			// An unquoted # where a word would begin starts a comment that
-			// runs to the end of the line. The documented examples carry
-			// them, and a command no longer ignores a word it does not take.
-			// Inside a word (note=#1) or quotes, # is an ordinary character.
-			if quote == 0 && current.Len() == 0 {
+			// An unquoted # standing alone, followed by a space or the end of
+			// the line, starts a comment that runs to the end of the line. The
+			// documented examples carry them, and a command no longer ignores
+			// a word it does not take. A # that begins or sits inside a word
+			// (#42, note=#1) or is quoted is an ordinary character, so an
+			// argument is never dropped as a comment.
+			standsAlone := i+1 == len(input) || input[i+1] == ' ' || input[i+1] == '\t'
+			if quote == 0 && current.Len() == 0 && standsAlone {
 				i = len(input)
 				continue
 			}

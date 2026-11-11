@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"strconv"
+	"strings"
 
 	algoutil "github.com/aplane-algo/aplane/internal/algo"
 	"github.com/dop251/goja"
@@ -55,7 +57,17 @@ func makeAlgoFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 			panic(vm.ToValue("algo() requires a number argument"))
 		}
 
-		val := call.Arguments[0].ToFloat()
+		// A number, and nothing coerced to one: algo(null) and algo('') would
+		// be 0 ALGO, algo(true) 1 ALGO, algo('1e6') a million.
+		var val float64
+		switch exported := call.Arguments[0].Export().(type) {
+		case int64:
+			val = float64(exported)
+		case float64:
+			val = exported
+		default:
+			panic(vm.ToValue(fmt.Sprintf("algo() requires a number, got %s", jsTypeName(exported))))
+		}
 		if math.IsNaN(val) || math.IsInf(val, 0) {
 			panic(vm.ToValue("algo() requires a finite number"))
 		}
@@ -201,6 +213,28 @@ func toUint64Interface(v interface{}) (uint64, error) {
 	}
 }
 
+// refuseUnknownKeys raises a JS error for a key the caller does not read.
+func (a *API) refuseUnknownKeys(m map[string]interface{}, what string, allowed ...string) {
+	for key := range m {
+		if !slices.Contains(allowed, key) {
+			known := append([]string(nil), allowed...)
+			slices.Sort(known)
+			panic(a.runtime.ToValue(fmt.Sprintf("%s %q is not known (known: %s)", what, key, strings.Join(known, ", "))))
+		}
+	}
+}
+
+// boolArg reads a function argument that must be true or false. JavaScript
+// would coerce anything else: undefined to false, and the text 'false' to
+// true.
+func (a *API) boolArg(call goja.FunctionCall, index int, funcName string) bool {
+	value, ok := call.Arguments[index].Export().(bool)
+	if !ok {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s requires true or false, got %s", funcName, jsTypeName(call.Arguments[index].Export()))))
+	}
+	return value
+}
+
 // optionBool reads a boolean option. An option that is present with another
 // type is an error: {wait: 'false'} read as "not given" would wait.
 func (a *API) optionBool(m map[string]interface{}, key, funcName string) (value, present bool) {
@@ -244,12 +278,18 @@ type closeTxnOptions struct {
 // parseTxnOptions extracts {fee, wait, note} from an optional options argument.
 // argIndex is the position of the options argument in the call.
 // funcName is used for error messages.
-func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName string) txnOptions {
+//
+// extraKeys names the other options the calling function reads from the same
+// object. Any key outside {fee, wait, note} and those is refused: an option
+// that is not read is an option that was ignored, such as {Fee: 0} or
+// {nowait: true}.
+func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName string, extraKeys ...string) txnOptions {
 	opts := txnOptions{Wait: true}
 	m := a.objectArg(call, argIndex, funcName)
 	if m == nil {
 		return opts
 	}
+	a.refuseUnknownKeys(m, funcName+" option", append([]string{"fee", "wait", "note"}, extraKeys...)...)
 	if f, ok := m["fee"]; ok {
 		var err error
 		opts.Fee, err = toUint64Interface(f)
@@ -271,7 +311,6 @@ func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName str
 // Supports: (acct, id), (acct, id, closeTo), (acct, id, opts),
 // (acct, id, closeTo, opts), and (acct, id, null, opts).
 func (a *API) parseOptOutArgs(call goja.FunctionCall) (string, txnOptions) {
-	opts := txnOptions{Wait: true}
 	if len(call.Arguments) > 2 && !goja.IsUndefined(call.Arguments[2]) && !goja.IsNull(call.Arguments[2]) {
 		arg2 := call.Arguments[2].Export()
 		if s, ok := arg2.(string); ok {
@@ -280,14 +319,15 @@ func (a *API) parseOptOutArgs(call goja.FunctionCall) (string, txnOptions) {
 		if _, ok := arg2.(map[string]interface{}); ok {
 			return "", a.parseTxnOptions(call, 2, "optOut()")
 		}
-		return "", opts
+		panic(a.runtime.ToValue(fmt.Sprintf(
+			"optOut() third argument must be a close-to address or an options object, got %s", jsTypeName(arg2))))
 	}
 	// arg2 absent, null, or undefined — check arg3 for options
 	return "", a.parseTxnOptions(call, 3, "optOut()")
 }
 
 func (a *API) parseCloseOptions(call goja.FunctionCall) closeTxnOptions {
-	opts := closeTxnOptions{txnOptions: a.parseTxnOptions(call, 2, "close()")}
+	opts := closeTxnOptions{txnOptions: a.parseTxnOptions(call, 2, "close()", "lsigArgs")}
 	m := a.objectArg(call, 2, "close()")
 	if m == nil {
 		return opts
@@ -376,10 +416,31 @@ func (a *API) stringArg(call goja.FunctionCall, index int) string {
 	switch exported := v.Export().(type) {
 	case string:
 		return exported
-	case int64, float64, int, uint64:
+	case int64:
+		if exported >= 0 {
+			return strconv.FormatInt(exported, 10)
+		}
+	case float64:
+		// A whole number names an asset by ID. NaN, Infinity and 1e21 would
+		// become the words "NaN", "Infinity" and "1e+21".
+		if exported >= 0 && exported == math.Trunc(exported) && exported <= maxSafeJSInteger {
+			return strconv.FormatFloat(exported, 'f', 0, 64)
+		}
+	}
+	panic(a.runtime.ToValue(fmt.Sprintf("argument %d is %s; a string is needed", index+1, jsTypeName(v.Export()))))
+}
+
+// pluginArg reads one argument for a plugin, which takes its arguments as
+// text. A string, number, boolean or BigInt is passed as its text; undefined,
+// null, an object or an array is refused, since those would arrive as the
+// words "undefined", "null" and "[object Object]".
+func (a *API) pluginArg(call goja.FunctionCall, index int) string {
+	v := call.Arguments[index]
+	switch v.Export().(type) {
+	case string, bool, int64, float64, *big.Int:
 		return v.String()
 	default:
-		panic(a.runtime.ToValue(fmt.Sprintf("argument %d is %s; a string is needed", index+1, jsTypeName(exported))))
+		panic(a.runtime.ToValue(fmt.Sprintf("plugin() argument %d is %s; pass text, a number or a boolean", index+1, jsTypeName(v.Export()))))
 	}
 }
 
