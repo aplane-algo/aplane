@@ -89,8 +89,9 @@ comparison), `planner.go`.
 
 Pregrouped-signed review is unconditional: the plugin's `RequiresApproval`
 flag is ignored, the rendering decodes the actual bytes (sender, type, fee;
-pay amount/receiver/close-to; app id with args marked opaque; other types
-marked opaque — opacity is displayed, never hidden), and non-interactive
+what each transaction type does; every rekey, close and clawback, marked,
+whatever the type; app-call arguments and unknown types marked opaque:
+opacity is displayed, never hidden), and non-interactive
 contexts (`AutoConfirm`, MCP) fail closed with an explicit error. Validation
 precedes rendering: the review path itself constructs the
 `PregroupedSignedGroup`, so an undecodable or digest-tampered group errors

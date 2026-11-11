@@ -1348,10 +1348,19 @@ policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
   `/plan`, the component and rotating sign requests).
 
 `/sign` uses `app_call_info` to render application-call approval prompts.
-The label is the client's claim: the signer shows it only when its selector
-matches the call's first argument, which binds the label's hash and nothing
-more. `/plan` accepts the same request DTO but does not perform approval or
+The label is the client's claim: the signer shows it only when the call's
+first argument is exactly the label's 4-byte selector, which binds the label's
+hash and nothing more. The review says so: the line reads `Method (the client's label, not
+verified): <signature>`, followed by the four selector bytes, the part the app
+acts on. `/plan` accepts the same request DTO but does not perform approval or
 signing.
+
+An application call's description lists every resource the call names: the
+accounts, apps, assets and boxes lists, and the access list (`al`) that
+replaces them in newer transactions, entry by entry, with holding, local-state
+and box entries resolved to the entries they point at. An empty entry is shown
+as adding box read and write budget, which is what the network takes it to
+mean. The description also shows `RejectVersion` when set.
 
 `request_id` is optional and is used by `/sign` to correlate a live synchronous
 sign request with a later `/sign/cancel` request. If absent, external clients

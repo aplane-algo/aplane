@@ -437,7 +437,7 @@ func TestRotatingSignShowsTheSpendsAppCallInfo(t *testing.T) {
 		if _, err := f.svc.SignRotatingWithContext(context.Background(), req, f.session); err != nil {
 			t.Fatalf("sign (app-call info %v): %v", withInfo, err)
 		}
-		if named := strings.Contains(description, "Method: "+method); named != withInfo {
+		if named := strings.Contains(description, abiMethodLabel+method); named != withInfo {
 			t.Fatalf("app-call info %v: prompt names the method = %v\n%s", withInfo, named, description)
 		}
 	}

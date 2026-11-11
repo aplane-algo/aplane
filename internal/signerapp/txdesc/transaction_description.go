@@ -184,7 +184,117 @@ func describeApplicationCallTx(txn types.Transaction, chain chainView) string {
 		}
 	}
 
+	// The access list is the newer way to name what a call may touch. A call
+	// uses it in place of the four lists above, so leaving it out would show
+	// a call that reaches accounts and assets as reaching nothing.
+	if len(txn.Access) > 0 {
+		desc.WriteString(fmt.Sprintf("\n  Access: %d", len(txn.Access)))
+		for i, ref := range txn.Access {
+			desc.WriteString(fmt.Sprintf("\n    [%d]: %s", i, describeAccessRef(txn, ref)))
+		}
+	}
+
+	if txn.RejectVersion != 0 {
+		desc.WriteString(fmt.Sprintf(
+			"\n  Reject Version: %d (the call fails if the app's version is %d or higher)",
+			txn.RejectVersion, txn.RejectVersion))
+	}
+
 	return desc.String()
+}
+
+// describeAccessRef renders one access-list entry. Holding, locals and box
+// entries point at earlier entries by a one-based index; zero means the
+// sender for an account and the called app for an app.
+func describeAccessRef(txn types.Transaction, ref types.ResourceRef) string {
+	var parts []string
+	if ref.Address != (types.Address{}) {
+		parts = append(parts, "account "+ref.Address.String())
+	}
+	if ref.Asset != 0 {
+		parts = append(parts, fmt.Sprintf("asset %d", ref.Asset))
+	}
+	if ref.App != 0 {
+		parts = append(parts, fmt.Sprintf("app %d", ref.App))
+	}
+	if ref.Holding != (types.HoldingRef{}) {
+		parts = append(parts, fmt.Sprintf("holding of %s by %s",
+			accessAssetAt(txn, ref.Holding.Asset), accessAccountAt(txn, ref.Holding.Address)))
+	}
+	if ref.Locals != (types.LocalsRef{}) {
+		parts = append(parts, fmt.Sprintf("local state of %s in %s",
+			accessAccountAt(txn, ref.Locals.Address), accessAppAt(txn, ref.Locals.App)))
+	}
+	if ref.Box.ForeignAppIdx != 0 || len(ref.Box.Name) > 0 {
+		parts = append(parts, fmt.Sprintf("box %s / %s",
+			accessAppAt(txn, ref.Box.ForeignAppIdx), formatBoxName(ref.Box.Name)))
+	}
+	switch len(parts) {
+	case 0:
+		// Not a no-op: the network counts an empty entry as an empty box
+		// reference, which raises the call's box read and write budget.
+		return "(empty entry: adds box read/write budget)"
+	case 1:
+		return parts[0]
+	default:
+		// The protocol allows one kind per entry. Show all of what is there.
+		return "MALFORMED, more than one kind: " + strings.Join(parts, "; ")
+	}
+}
+
+func accessEntryAt(txn types.Transaction, index uint64) (types.ResourceRef, bool) {
+	if index == 0 || index > uint64(len(txn.Access)) {
+		return types.ResourceRef{}, false
+	}
+	return txn.Access[index-1], true
+}
+
+// unresolvedAccessRef names an entry a pointer leads to when that entry is
+// missing or the wrong kind. The pointer is one-based on the wire; the rows
+// above are labelled from zero, so it is shown as the row label.
+func unresolvedAccessRef(txn types.Transaction, index uint64, wantKind string) string {
+	if index > uint64(len(txn.Access)) {
+		return fmt.Sprintf("?[%d] (no such entry)", index-1)
+	}
+	return fmt.Sprintf("?[%d] (not %s)", index-1, wantKind)
+}
+
+func accessAccountAt(txn types.Transaction, index uint64) string {
+	if index == 0 {
+		return "the sender"
+	}
+	if ref, ok := accessEntryAt(txn, index); ok && ref.Address != (types.Address{}) {
+		return "account " + ref.Address.String()
+	}
+	return unresolvedAccessRef(txn, index, "an account")
+}
+
+func accessAssetAt(txn types.Transaction, index uint64) string {
+	if ref, ok := accessEntryAt(txn, index); ok && ref.Asset != 0 {
+		return fmt.Sprintf("asset %d", ref.Asset)
+	}
+	if index == 0 {
+		return "?(no asset named)"
+	}
+	return unresolvedAccessRef(txn, index, "an asset")
+}
+
+func accessAppAt(txn types.Transaction, index uint64) string {
+	if index == 0 {
+		return "app " + calledAppLabel(txn)
+	}
+	if ref, ok := accessEntryAt(txn, index); ok && ref.App != 0 {
+		return fmt.Sprintf("app %d", ref.App)
+	}
+	return unresolvedAccessRef(txn, index, "an app")
+}
+
+// calledAppLabel names the app a call addresses. A create has no ID yet.
+func calledAppLabel(txn types.Transaction) string {
+	if txn.ApplicationID == 0 {
+		return "(the app being created)"
+	}
+	return fmt.Sprintf("%d (the called app)", txn.ApplicationID)
 }
 
 func appOnCompletionLabel(onComp types.OnCompletion) string {
@@ -217,6 +327,9 @@ func formatBoxName(name []byte) string {
 
 func resolveBoxAppRef(txn types.Transaction, ref types.BoxReference) string {
 	if ref.ForeignAppIdx == 0 {
+		if txn.ApplicationID == 0 {
+			return "(the app being created)"
+		}
 		return fmt.Sprintf("%d", txn.ApplicationID)
 	}
 	idx := int(ref.ForeignAppIdx - 1)
