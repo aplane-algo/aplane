@@ -16,6 +16,10 @@ before it was renamed `enroll`.
   second transaction, a repeated field or an explicit empty field are now
   refused, so what was checked is what goes to the network. The rotating path
   already refused them.
+- **The cosigned and plugin plan checks reconcile fees as `/sign` does.** One
+  check now runs on all three: a fee the report lists must have risen (an
+  unchanged one passed on the cosigned and plugin plans), the rises must not
+  wrap around when summed, and a negative `total_fees_delta` is refused.
 
 ## Rotating timing refusals have their own error code
 

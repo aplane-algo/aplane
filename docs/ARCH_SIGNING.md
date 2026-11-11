@@ -1427,7 +1427,11 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   positions, recomputes the canonical final group ID, and reconstructs every
   appended dummy transaction and its embedded LogicSig authorization. Any
   unreported field change, malformed report, or non-canonical dummy fails
-  closed on the client.
+  closed on the client. One check reconciles the original positions on this
+  path, on the cosigned `/plan` and on the plugin `presign-plan` `/plan`: a
+  reported fee must have risen, the rises must sum without overflowing to a
+  `total_fees_delta` that is not negative, and nothing else may differ but the
+  group ID.
 - The client submits the signed bytes it receives as given, so every signed
   transaction it submits (an ordinary `/sign` response, an assembled cosigned
   group, the managed slots of a `presign-plan` group, a plugin's

@@ -4,7 +4,6 @@
 package cosigned
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -428,19 +427,13 @@ func validatePlannedGroup(original, planned []types.Transaction, mutations *sign
 		}
 	}
 
-	feeModified := make(map[int]struct{})
-	if mutations != nil {
-		for _, index := range mutations.FeesModified {
-			if index < 0 || index >= len(original) {
-				return fmt.Errorf("mutation fee index %d is outside original positions", index)
-			}
-			if _, duplicate := feeModified[index]; duplicate {
-				return fmt.Errorf("mutation fee index %d is duplicated", index)
-			}
-			feeModified[index] = struct{}{}
-		}
+	// The fee and field reconciliation is the ordinary /sign path's: reported
+	// fees may only rise, the rises must sum to total_fees_delta without
+	// overflow, and nothing else may change but the group ID.
+	if err := clientsign.ValidateOriginalPositions(original, planned, mutations); err != nil {
+		return err
 	}
-	if mutations != nil && mutations.GroupIDChanged && appended == 0 && len(feeModified) == 0 {
+	if mutations != nil && mutations.GroupIDChanged && appended == 0 && len(mutations.FeesModified) == 0 {
 		var zero types.Digest
 		requiresAssignment := false
 		for i := range original {
@@ -449,27 +442,6 @@ func validatePlannedGroup(original, planned []types.Transaction, mutations *sign
 		if !requiresAssignment {
 			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
 		}
-	}
-	totalFeeDelta := uint64(0)
-	for i := range original {
-		want := original[i]
-		got := planned[i]
-		if mutations != nil && mutations.GroupIDChanged {
-			want.Group = got.Group
-		}
-		if _, ok := feeModified[i]; ok {
-			if got.Fee < want.Fee {
-				return fmt.Errorf("mutation decreased fee at original position %d", i)
-			}
-			totalFeeDelta += uint64(got.Fee - want.Fee)
-			want.Fee = got.Fee
-		}
-		if !bytes.Equal(txnutil.EncodeWithPrefix(want), txnutil.EncodeWithPrefix(got)) {
-			return fmt.Errorf("signer changed unreported fields at original position %d", i)
-		}
-	}
-	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
-		return fmt.Errorf("mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
 	}
 	if err := validateCosignedDummies(planned[len(original):]); err != nil {
 		return err

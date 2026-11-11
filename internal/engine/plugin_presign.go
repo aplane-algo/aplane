@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -300,7 +301,6 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(planned), len(draft))
 	}
 	appended := len(planned) - len(draft)
-	feeModified := make(map[int]struct{})
 	if mutations == nil {
 		if appended != 0 {
 			return fmt.Errorf("signer appended %d transaction(s) without a mutation report", appended)
@@ -315,39 +315,20 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 		if mutations.DummiesAdded != appended {
 			return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
 		}
-		for _, index := range mutations.FeesModified {
-			if index < 0 || index >= len(draft) {
-				return fmt.Errorf("mutation fee index %d is outside original positions", index)
-			}
-			if _, duplicate := feeModified[index]; duplicate {
-				return fmt.Errorf("mutation fee index %d is duplicated", index)
-			}
-			feeModified[index] = struct{}{}
-		}
 	}
-	var totalFeeDelta uint64
-	for i := range draft {
-		want, got := draft[i], planned[i]
-		if mutations != nil && mutations.GroupIDChanged {
-			want.Group = got.Group
+	// The fee and field reconciliation is the ordinary /sign path's: reported
+	// fees may only rise, the rises must sum to total_fees_delta without
+	// overflow, and nothing else may change but the group ID.
+	if err := clientsign.ValidateOriginalPositions(draft, planned, mutations); err != nil {
+		var changed *clientsign.UnreportedChangeError
+		if !errors.As(err, &changed) {
+			return err
 		}
-		if _, ok := feeModified[i]; ok {
-			if got.Fee < want.Fee {
-				return fmt.Errorf("plan decreased the fee of slot %d", i)
-			}
-			totalFeeDelta += uint64(got.Fee - want.Fee)
-			want.Fee = got.Fee
+		owner := "managed"
+		if _, owned := pluginSignerRefs[draft[changed.Index].Sender.String()]; owned {
+			owner = "plugin"
 		}
-		if !bytes.Equal(msgpack.Encode(want), msgpack.Encode(got)) {
-			owner := "managed"
-			if _, owned := pluginSignerRefs[draft[i].Sender.String()]; owned {
-				owner = "plugin"
-			}
-			return fmt.Errorf("plan modified %s slot %d beyond its group id and reported fee", owner, i)
-		}
-	}
-	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
-		return fmt.Errorf("mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
+		return fmt.Errorf("plan modified %s slot %d beyond its group id and reported fee", owner, changed.Index)
 	}
 	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
 	if err != nil {

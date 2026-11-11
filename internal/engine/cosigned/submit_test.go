@@ -804,6 +804,37 @@ func TestValidatePlannedGroup(t *testing.T) {
 			t.Fatalf("error = %v, want fee delta rejection", err)
 		}
 	})
+	// The plain /sign path's reconciliation, shared here.
+	t.Run("reported fee unchanged", func(t *testing.T) {
+		unchanged := append([]types.Transaction(nil), planned...)
+		unchanged[0].Fee = original.Fee
+		bad := *mutations
+		bad.TotalFeesDelta = 0
+		if err := validatePlannedGroup([]types.Transaction{original}, unchanged, &bad); err == nil || !strings.Contains(err.Error(), "did not increase the fee") {
+			t.Fatalf("error = %v, want an unchanged reported fee refused", err)
+		}
+	})
+	t.Run("negative fee delta", func(t *testing.T) {
+		bad := *mutations
+		bad.TotalFeesDelta = -1
+		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "must not be negative") {
+			t.Fatalf("error = %v, want a negative total refused", err)
+		}
+	})
+	t.Run("fee rises that overflow", func(t *testing.T) {
+		second := testPaymentTxn(t, testAddress(3), testAddress(4), "bounded")
+		pair := []types.Transaction{original, second}
+		overflowing := append([]types.Transaction(nil), pair...)
+		for i := range overflowing {
+			overflowing[i].Fee += 1 << 63
+		}
+		report := &signerapi.MutationReport{
+			FeesModified: []int{0, 1}, GroupIDChanged: true, OriginalCount: 2, FinalCount: 2,
+		}
+		if err := validatePlannedGroup(pair, overflowing, report); err == nil || !strings.Contains(err.Error(), "overflows uint64") {
+			t.Fatalf("error = %v, want rises that wrap around refused", err)
+		}
+	})
 	t.Run("non-dummy appended transaction", func(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[1].Amount = 1
