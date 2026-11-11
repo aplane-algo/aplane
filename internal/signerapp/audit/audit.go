@@ -620,11 +620,6 @@ func signFailedEntry(attr Attribution, address, txnSender, reason string) AuditE
 	return entry
 }
 
-// LogSignRequest logs a request to sign a transaction.
-func (a *AuditLogger) LogSignRequest(address, txnSender, txnType, txnDetails string) {
-	a.Log(requestEntry(AuditSignRequest, Attribution{}, address, txnSender, txnType, txnDetails))
-}
-
 // LogSignRequestAttributed logs a signing request with explicit request attribution.
 func (a *AuditLogger) LogSignRequestAttributed(attr Attribution, address, txnSender, txnType, txnDetails string) {
 	a.Log(requestEntry(AuditSignRequest, attr, address, txnSender, txnType, txnDetails))
@@ -634,11 +629,6 @@ func (a *AuditLogger) LogSignRequestAttributed(attr Attribution, address, txnSen
 // request attribution.
 func (a *AuditLogger) LogPlanRequestAttributed(attr Attribution, address, txnSender, txnType, txnDetails string) {
 	a.Log(requestEntry(AuditPlanRequest, attr, address, txnSender, txnType, txnDetails))
-}
-
-// LogSignApproved logs a transaction the signer signed.
-func (a *AuditLogger) LogSignApproved(approval SignApproval) {
-	a.Log(signApprovedEntry(Attribution{}, approval))
 }
 
 // LogSignApprovedAttributed logs a transaction the signer signed, with
