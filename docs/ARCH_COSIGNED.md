@@ -675,6 +675,13 @@ validate the targets they sign or assemble; they do not infer the flow of
 foreign group positions. Non-target positions are carried as exact passthrough
 signed bytes in the final assembly request.
 
+Before it freezes the `/plan` result, the client checks it with the same
+reconciliation the ordinary `/sign` path uses: each original position may
+differ from the draft only in its group ID and in a fee the mutation report
+lists, which must have risen; the rises must sum, without overflowing, to a
+non-negative `total_fees_delta`. The final assembled group must be one
+canonically encoded signed transaction per frozen entry.
+
 A `plain1` account has no fee ceiling, so the client checks a planned fee against an
 account's ceiling only on a bounded one (`bounded2`, `max_fee` present); it
 caches each account's contract from `/keys` and fails closed on one it doesn't

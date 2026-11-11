@@ -54,9 +54,6 @@ func validateSignedGroupMutations(
 		if mutations.ForeignCount != 0 {
 			return fmt.Errorf("ordinary /sign returned %d foreign transaction(s) for sign-only input", mutations.ForeignCount)
 		}
-		if mutations.TotalFeesDelta < 0 {
-			return fmt.Errorf("mutation total_fees_delta must not be negative")
-		}
 		if appended > 0 && !mutations.GroupIDChanged {
 			return fmt.Errorf("mutation appended dummies without reporting a group ID change")
 		}
@@ -65,8 +62,52 @@ func validateSignedGroupMutations(
 		}
 	}
 
+	finalTxns := make([]types.Transaction, len(signed))
+	for i := range signed {
+		finalTxns[i] = signed[i].Txn
+	}
+	if err := ValidateOriginalPositions(original, finalTxns, mutations); err != nil {
+		return err
+	}
+	groupID, err := ValidateCanonicalGroupID(finalTxns)
+	if err != nil {
+		return err
+	}
+	if appended == 0 {
+		return nil
+	}
+	return validateCanonicalReturnedDummies(original[0], groupID, signed[len(original):], signedBytes[len(original):])
+}
+
+// UnreportedChangeError is an original position of a planned or signed group
+// that differs from the transaction the client sent by more than the signer
+// may change.
+type UnreportedChangeError struct {
+	// Index is the zero-based original position.
+	Index int
+}
+
+func (e *UnreportedChangeError) Error() string {
+	return fmt.Sprintf("signer changed unreported fields at original position %d", e.Index+1)
+}
+
+// ValidateOriginalPositions checks the original positions of a group the
+// signer planned or signed against the transactions the client sent. A
+// position may differ only in its group ID, when the report says the group ID
+// changed, and in a fee the report lists, which must have risen. The rises
+// must sum, without overflowing, to the report's total_fees_delta, which must
+// not be negative. A position that differs in anything else is an
+// *UnreportedChangeError. The ordinary /sign response, the cosigned /plan and
+// the plugin presign /plan all run this one check.
+func ValidateOriginalPositions(original, returned []types.Transaction, mutations *signerapi.MutationReport) error {
+	if len(returned) < len(original) {
+		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(returned), len(original))
+	}
 	feeModified := make(map[int]struct{})
 	if mutations != nil {
+		if mutations.TotalFeesDelta < 0 {
+			return fmt.Errorf("mutation total_fees_delta must not be negative")
+		}
 		for _, index := range mutations.FeesModified {
 			if index < 0 || index >= len(original) {
 				return fmt.Errorf("mutation fee index %d is outside original positions", index)
@@ -81,7 +122,7 @@ func validateSignedGroupMutations(
 	var totalFeeDelta uint64
 	for i := range original {
 		want := original[i]
-		got := signed[i].Txn
+		got := returned[i]
 		if mutations != nil && mutations.GroupIDChanged {
 			want.Group = got.Group
 		}
@@ -97,25 +138,13 @@ func validateSignedGroupMutations(
 			want.Fee = got.Fee
 		}
 		if !bytes.Equal(txnutil.EncodeWithPrefix(want), txnutil.EncodeWithPrefix(got)) {
-			return fmt.Errorf("signer changed unreported fields at original position %d", i+1)
+			return &UnreportedChangeError{Index: i}
 		}
 	}
 	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
 		return fmt.Errorf("mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
 	}
-
-	finalTxns := make([]types.Transaction, len(signed))
-	for i := range signed {
-		finalTxns[i] = signed[i].Txn
-	}
-	groupID, err := ValidateCanonicalGroupID(finalTxns)
-	if err != nil {
-		return err
-	}
-	if appended == 0 {
-		return nil
-	}
-	return validateCanonicalReturnedDummies(original[0], groupID, signed[len(original):], signedBytes[len(original):])
+	return nil
 }
 
 // ValidateCanonicalGroupID checks that every transaction of a multi-transaction

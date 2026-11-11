@@ -148,8 +148,30 @@ func TestValidatePluginPlan(t *testing.T) {
 			}
 		})
 	}
-	reject("fee decrease", "decreased the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+	reject("fee decrease", "did not increase the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
 		p[0].Fee = drafts[0].Fee - 1
+		r.TotalFeesDelta = 0
+		regroupPlan(t, p)
+		return p, r
+	})
+	// The plain /sign path's reconciliation, shared here: a reported fee that
+	// did not change, a negative total, and rises that wrap around are refused.
+	reject("reported fee unchanged", "did not increase the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		p[0].Fee = drafts[0].Fee
+		r.TotalFeesDelta = 0
+		regroupPlan(t, p)
+		return p, r
+	})
+	reject("negative total fee delta", "must not be negative", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		r.TotalFeesDelta = -1
+		return p, r
+	})
+	reject("fee rises that overflow", "overflows uint64", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		// Each rise is 2^63, so the two wrap to zero, which a report of no
+		// total delta would match if the sum were not checked.
+		p[0].Fee = drafts[0].Fee + 1<<63
+		p[1].Fee = drafts[1].Fee + 1<<63
+		r.FeesModified = []int{0, 1}
 		r.TotalFeesDelta = 0
 		regroupPlan(t, p)
 		return p, r

@@ -108,13 +108,15 @@ before anything is shown. Anchors: `internal/apshellcli/external_plugins.go`
 ### PS4: Plan Preservation
 
 In presign-plan mode, `/plan` may only set a canonical group ID over the final
-group, raise the fees its mutation report lists (upward only, summing to
-`total_fees_delta`), and append canonical budget dummies; the report's counts
-must match the group. For every original slot — plugin and managed alike — any
-other change (sender, validity window, lease, note, amount, receiver, app id,
-args, rekey, positional reorder) rejects with "plan modified ... slot".
-Anchor: `internal/engine/plugin_presign.go::validatePluginPlan` (applied to
-both slot classes).
+group, raise the fees its mutation report lists (each strictly upward, summing
+without overflow to a `total_fees_delta` that is not negative), and append
+canonical budget dummies; the report's counts must match the group. For every
+original slot — plugin and managed alike — any other change (sender, validity
+window, lease, note, amount, receiver, app id, args, rekey, positional
+reorder) rejects with "plan modified ... slot". Anchor:
+`internal/engine/plugin_presign.go::validatePluginPlan` (applied to both slot
+classes), whose fee and field reconciliation is the ordinary `/sign` path's
+`internal/clientsign/verify.go::ValidateOriginalPositions`.
 
 After `/sign` and before broadcast, `verifySignedAgainstPlan` also requires
 every managed slot to sign exactly its canonical transaction, in bytes that
