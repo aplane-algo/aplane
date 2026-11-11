@@ -4,11 +4,14 @@
 package appspec
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	abi "github.com/algorand/avm-abi/abi"
 )
 
 func testABIPath(t *testing.T) string {
@@ -136,5 +139,72 @@ func TestLoadRejectsOversizedStaticByteArray(t *testing.T) {
 	_, err = Load(path)
 	if err == nil || err.Error() != `invalid static byte array type "byte[999999999999999999999]": size must be between 0 and 65535` {
 		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestParseArgValueHoldsScalarsToPlainDecimal(t *testing.T) {
+	accepted := []struct{ typeName, raw string }{
+		{"uint64", "0"},
+		{"uint64", "100"},
+		{"uint64", "json:100"},
+		{"byte", "7"},
+		{"ufixed64x2", "1.25"},
+		{"ufixed64x2", "3"},
+		{"bool", "true"},
+		{"bool", "false"},
+		{"uint64[]", "[1,2,3]"},
+		{"(uint64,bool)", "[1,true]"},
+	}
+	for _, tc := range accepted {
+		if _, err := parseArgValue(tc.typeName, tc.raw); err != nil {
+			t.Errorf("parseArgValue(%s, %q) = %v, want accepted", tc.typeName, tc.raw, err)
+		}
+	}
+
+	refused := []struct{ typeName, raw string }{
+		{"uint64", "0100"},
+		{"uint64", "0x10"},
+		{"uint64", "0b11"},
+		{"uint64", "1_000"},
+		{"uint64", "+5"},
+		{"uint64", "null"},
+		{"uint64", ""},
+		{"uint64", " 5"},
+		{"byte", "010"},
+		{"byte", "null"},
+		{"ufixed64x2", "010/1"},
+		{"ufixed64x2", "null"},
+		{"ufixed64x2", "1e2"},
+		{"bool", "null"},
+		{"bool", "1"},
+		{"bool", "TRUE"},
+		{"uint64[]", "[1,null]"},
+		{"(uint64,bool)", "[1,null]"},
+		{"(uint64,(bool,uint8))", "[1,[null,2]]"},
+		{"string", "json:[104,null,105]"},
+		{"string", "json:null"},
+	}
+	for _, tc := range refused {
+		if value, err := parseArgValue(tc.typeName, tc.raw); err == nil {
+			t.Errorf("parseArgValue(%s, %q) = %v, want refused", tc.typeName, tc.raw, value)
+		}
+	}
+}
+
+func TestParseArgValueReadsDecimalAsTyped(t *testing.T) {
+	abiType, err := abi.TypeOf("uint64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := parseArgValue("uint64", "100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := abiType.Encode(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := binary.BigEndian.Uint64(encoded); got != 100 {
+		t.Fatalf("uint64 100 encoded as %d", got)
 	}
 }

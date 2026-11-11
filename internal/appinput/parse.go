@@ -5,9 +5,11 @@ package appinput
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -21,11 +23,15 @@ type ProgramSource struct {
 
 // ParseByteValue parses a byte-oriented value token.
 // Supported forms:
-// - hex:...
-// - b64:...
-// - text:...
-// - 0x... (hex compatibility form)
-// - bare text otherwise
+//   - hex:...
+//   - b64:...
+//   - text:... or str:... (UTF-8 text)
+//   - int:... (a decimal uint64, as 8 big-endian bytes)
+//   - addr:... (an Algorand address, as its 32-byte public key)
+//   - 0x... (hex compatibility form)
+//   - bare text otherwise, unless it contains a colon: a mistyped or unknown
+//     prefix such as `int :5` or `base-64:AAEC` must not be sent as text, and
+//     `int:5` read as text is a different number once a program converts it
 //
 // This is the shared semantic grammar for byte values; UI layers (cmdspec)
 // consume it from here so engine-layer code never depends on UI parsing.
@@ -45,12 +51,30 @@ func ParseByteValue(raw string) ([]byte, error) {
 		return value, nil
 	case strings.HasPrefix(raw, "text:"):
 		return []byte(strings.TrimPrefix(raw, "text:")), nil
+	case strings.HasPrefix(raw, "str:"):
+		return []byte(strings.TrimPrefix(raw, "str:")), nil
+	case strings.HasPrefix(raw, "int:"):
+		number, err := strconv.ParseUint(strings.TrimPrefix(raw, "int:"), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int value: %w", err)
+		}
+		return binary.BigEndian.AppendUint64(nil, number), nil
+	case strings.HasPrefix(raw, "addr:"):
+		address, err := types.DecodeAddress(strings.TrimPrefix(raw, "addr:"))
+		if err != nil {
+			return nil, fmt.Errorf("invalid addr value: %w", err)
+		}
+		return address[:], nil
 	case strings.HasPrefix(raw, "0x"):
 		value, err := hex.DecodeString(raw[2:])
 		if err != nil {
 			return nil, fmt.Errorf("invalid hex value: %w", err)
 		}
 		return value, nil
+	case strings.Contains(raw, ":"):
+		return nil, fmt.Errorf(
+			"%q has no known value prefix (supported: hex:, b64:, text:, str:, int:, addr:); use text:%s for literal text",
+			raw, raw)
 	default:
 		return []byte(raw), nil
 	}

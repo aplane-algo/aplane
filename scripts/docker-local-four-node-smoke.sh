@@ -593,7 +593,7 @@ discover_localnet() {
         die "aplocalnet could not read LocalNet metadata from $ALGOD_URL"
     fi
     printf '%s\n' "$out"
-    LOCALNET_GENESIS_HASH="$(printf '%s\n' "$out" | awk -F': ' '/^Genesis hash:/ { print $2; exit }')"
+    LOCALNET_GENESIS_HASH="$(printf '%s\n' "$out" | awk -F': ' '/^Genesis hash:/ && !seen { print $2; seen = 1 }')"
     [ -n "$LOCALNET_GENESIS_HASH" ] || die "could not parse LocalNet genesis hash"
 }
 
@@ -1622,7 +1622,7 @@ generate_cosigner_component_key() {
         die "failed to generate cosigner key through client/cosigner flow"
     fi
     printf '%s\n' "$out"
-    COSIGNER_COMPONENT_KEY="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    COSIGNER_COMPONENT_KEY="$(printf '%s\n' "$out" | awk '/Generated .* key:/ && !seen { print $NF; seen = 1 }')"
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "could not parse generated Witness Key ID"
 }
 
@@ -1703,7 +1703,7 @@ generate_plain_host_key() {
         die "failed to generate a cosigned plain host through client/signer flow"
     fi
     printf '%s\n' "$out"
-    PLAIN_HOST_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    PLAIN_HOST_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ && !seen { print $NF; seen = 1 }')"
     [ -n "$PLAIN_HOST_ADDRESS" ] || die "could not parse generated plain host address"
 }
 
@@ -1736,7 +1736,7 @@ generate_general_bounded_key() {
         die "failed to generate bounded aplane.falcon1024.v1 account from a boundary file"
     fi
     printf '%s\n' "$out"
-    GENERAL_BOUNDED_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    GENERAL_BOUNDED_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ && !seen { print $NF; seen = 1 }')"
     [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "could not parse generated bounded aplane.falcon1024.v1 address"
     grep -Fq "Cosigner:       $COSIGNER_COMPONENT_KEY" <<<"$out" \
         || die "bounded aplane.falcon1024.v1 result did not report the requested cosigner"
@@ -1901,7 +1901,7 @@ generate_ed25519_key() {
         die "failed to generate Ed25519 key through client/signer flow"
     fi
     printf '%s\n' "$out"
-    ED25519_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    ED25519_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ && !seen { print $NF; seen = 1 }')"
     [ -n "$ED25519_ADDRESS" ] || die "could not parse generated Ed25519 address"
 }
 
@@ -1922,7 +1922,7 @@ generate_falcon_key() {
         die "failed to generate Falcon key through client/signer flow"
     fi
     printf '%s\n' "$out"
-    FALCON_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    FALCON_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ && !seen { print $NF; seen = 1 }')"
     [ -n "$FALCON_ADDRESS" ] || die "could not parse generated Falcon address"
 }
 

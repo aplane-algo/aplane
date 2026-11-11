@@ -44,6 +44,12 @@ func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*Trans
 		if params.VoteLast <= params.VoteFirst {
 			return nil, fmt.Errorf("votelast must be greater than votefirst")
 		}
+		// The dilution is a property of the participation key. A wrong one
+		// registers, but the account can't vote with it, so there is no
+		// default to fall back on.
+		if params.KeyDilution == 0 {
+			return nil, fmt.Errorf("online mode requires: keydilution, as reported for the participation key")
+		}
 	}
 
 	// Build signing context (handles auth address lookup for rekeyed accounts)

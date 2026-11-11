@@ -4,6 +4,7 @@
 package appinput
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -79,5 +80,41 @@ func TestDetectProgramSource(t *testing.T) {
 	bin := DetectProgramSource("/tmp/approval.bin")
 	if !bin.Compiled {
 		t.Fatalf("expected non-.teal file to be treated as compiled, got %+v", bin)
+	}
+}
+
+func TestParseByteValueGoalStylePrefixes(t *testing.T) {
+	const zeroAddress = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+	cases := []struct{ raw, wantHex string }{
+		{"int:5", "0000000000000005"},
+		{"int:18446744073709551615", "ffffffffffffffff"},
+		{"str:withdraw", "7769746864726177"},
+		{"text:int:5", "696e743a35"},
+		{"addr:" + zeroAddress, "0000000000000000000000000000000000000000000000000000000000000000"},
+		{"plain", "706c61696e"},
+		{"text:two words: here", "74776f20776f7264733a2068657265"},
+		{"two words", "74776f20776f726473"},
+	}
+	for _, tc := range cases {
+		got, err := ParseByteValue(tc.raw)
+		if err != nil {
+			t.Errorf("ParseByteValue(%q): %v", tc.raw, err)
+			continue
+		}
+		if hex.EncodeToString(got) != tc.wantHex {
+			t.Errorf("ParseByteValue(%q) = %x, want %s", tc.raw, got, tc.wantHex)
+		}
+	}
+}
+
+func TestParseByteValueRefusesUnknownAndMalformedPrefixes(t *testing.T) {
+	for _, raw := range []string{
+		"int:-1", "int:0x10", "int:18446744073709551616", "int:", "int:5 ",
+		"addr:notanaddress", "uint:5", "string:x", "INT:5", "base64:AAAA", "key:value",
+		"base-64:AAEC", "u_int:5", "int :5", ":leading", "two words: here", "http://example",
+	} {
+		if got, err := ParseByteValue(raw); err == nil {
+			t.Errorf("ParseByteValue(%q) = %x, want refused", raw, got)
+		}
 	}
 }
