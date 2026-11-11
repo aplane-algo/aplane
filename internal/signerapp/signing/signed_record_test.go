@@ -35,7 +35,7 @@ func TestSignedRecordDescribesTheTransactionsAsSigned(t *testing.T) {
 	}
 
 	audit := &testAuditLogger{}
-	(&Service{AuditLog: audit}).logSuccessfulSignatures(req, plan, "")
+	(&Service{AuditLog: audit}).logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), "")
 	if len(audit.approved) != 1 {
 		t.Fatalf("approvals = %d, want one for the account; dummies are recorded in its group", len(audit.approved))
 	}

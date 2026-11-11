@@ -1504,7 +1504,7 @@ func TestLogSuccessfulSignaturesSkipsPassthroughAndForeign(t *testing.T) {
 		ForeignIndices:     map[int]bool{2: true},
 	}
 
-	service.logSuccessfulSignatures(req, plan, "")
+	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), "")
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}
@@ -1528,7 +1528,7 @@ func TestLogSuccessfulSignaturesIncludesForcedReviewRule(t *testing.T) {
 		ForeignIndices:     map[int]bool{},
 	}
 
-	service.logSuccessfulSignatures(req, plan, policy.ReviewAlgoPaymentExceededRuleID)
+	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), policy.ReviewAlgoPaymentExceededRuleID)
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}

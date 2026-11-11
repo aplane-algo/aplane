@@ -6,6 +6,7 @@ package signing
 import (
 	"bytes"
 	"context"
+	"encoding/base32"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -608,9 +609,11 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	if len(audit.approved) != 1 || audit.approved[0].authAddress != componentKey {
 		t.Fatalf("approved audit entries = %#v, want one component approval", audit.approved)
 	}
-	// The record names the transaction whose ID the cosigner signed.
-	if got, want := audit.approved[0].record.TxID, algocrypto.GetTxID(plan.Group.Entries[0].Txn); got != want {
-		t.Fatalf("approved txid = %s, want the signed target %s", got, want)
+	// The record names the ID the component message was built from, the one
+	// the cosigner signed.
+	signedTxID := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(plan.Targets[0].TxID[:])
+	if got := audit.approved[0].record.TxID; got != signedTxID {
+		t.Fatalf("approved txid = %s, want the signed target %s", got, signedTxID)
 	}
 }
 

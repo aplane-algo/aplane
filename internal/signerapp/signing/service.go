@@ -204,7 +204,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
-	s.logSuccessfulSignatures(req, plan, alwaysReviewRuleID)
+	s.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), alwaysReviewRuleID)
 
 	return &SignGroupResult{
 		Signed:    execResult.SignedTxns,
@@ -375,14 +375,13 @@ func (s *Service) logSummary(req signerapi.GroupSignRequest, plan *PlanResult, s
 }
 
 // logSuccessfulSignatures records each position this signer signed with its
-// key, as signed: plan.AllTxns are the transactions the executor signed, and
-// plan.DummyTxns the trailing dummies it signed with them.
-func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, policyRuleID string) {
+// key, as signed: group is the final group, as the executor signed it, with
+// the trailing dummies it signed.
+func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, group signedGroup, policyRuleID string) {
 	if s.AuditLog == nil {
 		return
 	}
 
-	group := signedGroupOf(plan.AllTxns, len(plan.DummyTxns))
 	for i, txReq := range req.Requests {
 		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
 			continue
