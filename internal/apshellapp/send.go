@@ -140,12 +140,18 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 	if len(plan.FromAddresses) > iterCount {
 		iterCount = len(plan.FromAddresses)
 	}
+	lsigArgs, err := a.lsigArgsForSenders(ctx, plan.FromAddresses, plan.LsigArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	items := make([]PreparedSendItem, 0, iterCount)
 	for idx := 0; idx < iterCount; idx++ {
 		fromAddr := plan.FromAddresses[0]
+		fromArgs := lsigArgs[0]
 		if len(plan.FromAddresses) > 1 {
 			fromAddr = plan.FromAddresses[idx]
+			fromArgs = lsigArgs[idx]
 		}
 		toAddr := plan.ToAddresses[0]
 		if len(plan.ToAddresses) > 1 {
@@ -156,7 +162,6 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 		assetID := plan.Amount.Meta.AssetID
 		amountUnits := plan.Amount.Raw
 
-		var err error
 		if assetID == 0 {
 			prep, check, prepErr := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 				From:       fromAddr,
@@ -165,7 +170,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   plan.LsigArgs,
+				LsigArgs:   fromArgs,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
@@ -179,7 +184,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   plan.LsigArgs,
+				LsigArgs:   fromArgs,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)

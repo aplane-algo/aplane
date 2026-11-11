@@ -207,3 +207,82 @@ func TestPluginLsigArgsRefuseANameNoPositionDeclares(t *testing.T) {
 		t.Fatalf("signer requests = %v, want none", paths)
 	}
 }
+
+// requireOneRequestPerSender checks that each account of a set command was
+// signed on its own and carried only the arguments its key declares.
+func requireOneRequestPerSender(t *testing.T, recorder *signRecorder, want map[string]string) {
+	t.Helper()
+	paths, requests := recorder.recorded()
+	if len(requests) != 2 {
+		t.Fatalf("signer requests = %v, want one /sign per account", paths)
+	}
+	senders := map[string]bool{}
+	for _, req := range requests {
+		if len(req.Requests) != 1 {
+			t.Fatalf("request has %d positions, want 1", len(req.Requests))
+		}
+		senders[req.Requests[0].TxnSender] = true
+		requireArgsByPosition(t, req, want)
+	}
+	if !senders[argsNative] || !senders[argsHTLC] {
+		t.Fatalf("signed senders = %v, want both accounts", senders)
+	}
+}
+
+// Over a set, each account gets the arguments its key declares: the native
+// account in the set is sent none, the LogicSig its preimage.
+func TestSendFromASetGivesEachAccountTheArgumentsItsKeyDeclares(t *testing.T) {
+	app, recorder := lsigArgsTestApp(t)
+	_, _ = app.ExecuteSend(context.Background(), SendRequest{
+		AmountText: "0.1", AssetRef: "algo", FromRaw: []string{"@mixed"}, ToRaw: []string{argsTo},
+		LsigArgs: map[string][]byte{"preimage": []byte("open")},
+	})
+	requireOneRequestPerSender(t, recorder, map[string]string{argsHTLC: hex.EncodeToString([]byte("open"))})
+}
+
+func TestSweepFromASetGivesEachAccountTheArgumentsItsKeyDeclares(t *testing.T) {
+	app, recorder := lsigArgsTestApp(t)
+	_, _ = app.Sweep(context.Background(), SweepRequest{
+		AssetRef: "algo", FromRaw: []string{"@mixed"}, ToRaw: argsTo,
+		LsigArgs: map[string][]byte{"preimage": []byte("open")},
+	})
+	requireOneRequestPerSender(t, recorder, map[string]string{argsHTLC: hex.EncodeToString([]byte("open"))})
+}
+
+func TestValidateASetGivesEachAccountTheArgumentsItsKeyDeclares(t *testing.T) {
+	app, recorder := lsigArgsTestApp(t)
+	_, _ = app.Validate(context.Background(), ValidateRequest{
+		Account: "@mixed", LsigArgs: map[string][]byte{"preimage": []byte("open")},
+	})
+	requireOneRequestPerSender(t, recorder, map[string]string{argsHTLC: hex.EncodeToString([]byte("open"))})
+}
+
+func TestSetCommandsRefuseANameNoAccountDeclares(t *testing.T) {
+	args := map[string][]byte{"preimge": []byte("typo")}
+	for name, run := range map[string]func(*App) error{
+		"send": func(app *App) error {
+			_, err := app.ExecuteSend(context.Background(), SendRequest{
+				AmountText: "0.1", AssetRef: "algo", FromRaw: []string{"@mixed"}, ToRaw: []string{argsTo}, LsigArgs: args,
+			})
+			return err
+		},
+		"sweep": func(app *App) error {
+			_, err := app.Sweep(context.Background(), SweepRequest{AssetRef: "algo", FromRaw: []string{"@mixed"}, ToRaw: argsTo, LsigArgs: args})
+			return err
+		},
+		"validate": func(app *App) error {
+			_, err := app.Validate(context.Background(), ValidateRequest{Account: "@mixed", LsigArgs: args})
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, recorder := lsigArgsTestApp(t)
+			if err := run(app); err == nil || !strings.Contains(err.Error(), "arg:preimge: no transaction here is signed by a key that declares") {
+				t.Fatalf("error = %v, want the undeclared name refused", err)
+			}
+			if paths, _ := recorder.recorded(); len(paths) != 0 {
+				t.Fatalf("signer requests = %v, want none", paths)
+			}
+		})
+	}
+}

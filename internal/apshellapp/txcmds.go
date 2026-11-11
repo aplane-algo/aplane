@@ -144,18 +144,22 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 	if len(addresses) == 0 {
 		return nil, fmt.Errorf("no addresses found for %q", req.Account)
 	}
+	lsigArgs, err := a.lsigArgsForSenders(ctx, addresses, req.LsigArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &ValidateCommandResult{
 		Input: req.Account,
 		IsSet: len(req.Account) > 0 && req.Account[0] == '@',
 	}
-	for _, addr := range addresses {
+	for i, addr := range addresses {
 		item := ValidateItemResult{Address: addr}
 		prepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 			From:     addr,
 			To:       addr,
 			Amount:   0,
-			LsigArgs: req.LsigArgs,
+			LsigArgs: lsigArgs[i],
 		})
 		if err != nil {
 			item.Error = fmt.Sprintf("failed to prepare: %v", err)
@@ -778,7 +782,20 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		LeavingMinimumBalance: leaveMinimumBalance,
 	}
 
-	for _, fromAddress := range fromAddresses {
+	// The destination is never swept from, so it is left out when the
+	// arguments are shared out among the source accounts.
+	senders := make([]string, len(fromAddresses))
+	for i, fromAddress := range fromAddresses {
+		if fromAddress != toAddress {
+			senders[i] = fromAddress
+		}
+	}
+	lsigArgs, err := a.lsigArgsForSenders(ctx, senders, req.LsigArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, fromAddress := range fromAddresses {
 		item := SweepItemResult{From: fromAddress, To: toAddress}
 		if fromAddress == toAddress {
 			item.SkippedReason = "source and destination are the same account"
@@ -852,7 +869,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   req.LsigArgs,
+				LsigArgs:   lsigArgs[i],
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -864,7 +881,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   req.LsigArgs,
+				LsigArgs:   lsigArgs[i],
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr

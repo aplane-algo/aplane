@@ -34,6 +34,10 @@ before it was renamed `enroll`.
   position declares is refused instead of being dropped. The client keeps a
   bounded account's runtime argument names for this, from the next key list
   refresh.
+- **`send`, `sweep` and `validate` over a set do the same.** The `arg:` values
+  went to every account in the set; each account now gets the arguments its
+  key declares, so a native account in the set is sent none, and a name no
+  account's key declares is refused. Over one account they go as typed.
 
 ## apshell refuses input it used to ignore or guess at
 
