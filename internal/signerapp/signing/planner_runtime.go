@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 
@@ -37,6 +38,9 @@ type PlannerKeyMetadata struct {
 	Parameters           map[string]string
 	BoundedAuthorization *boundedmeta.Metadata
 	LogicSigResources    *lsigresource.Profile
+	// SigningArgs is a LogicSig key's declared runtime arguments. One that
+	// declares no size is planned from the request's value.
+	SigningArgs []lsigprovider.RuntimeArgDef
 }
 
 // PlannerDeps supplies process-specific data needed by the package-owned planner.
@@ -152,6 +156,16 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		if usageErr != nil {
 			return lsigresource.Plan{}, nil, internal(fmt.Sprintf("transaction %d: invalid stored LogicSig resource profile: %v", i+1, usageErr))
 		}
+		if metadata.BoundedAuthorization == nil {
+			unsized, sizeErr := unsizedRuntimeArgBytes(metadata.SigningArgs, request.LsigArgs)
+			if sizeErr != nil {
+				return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: %v", i+1, sizeErr))
+			}
+			if unsized > math.MaxUint64-usage.ArgumentBytes {
+				return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: LogicSig argument size overflows resource calculation", i+1))
+			}
+			usage.ArgumentBytes += unsized
+		}
 		usages = append(usages, usage)
 		lsigIndices = append(lsigIndices, i)
 	}
@@ -199,6 +213,29 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		)
 	}
 	return resourcePlan, lsigIndices, nil
+}
+
+// unsizedRuntimeArgBytes is the size of the request's value for each runtime
+// argument that declares neither byte_length nor max_size. The stored profile
+// counts such an argument as empty, so planning adds what the request
+// actually carries. An argument the request leaves out adds nothing.
+func unsizedRuntimeArgBytes(defs []lsigprovider.RuntimeArgDef, lsigArgs map[string]string) (uint64, error) {
+	total := uint64(0)
+	for _, def := range defs {
+		if def.ByteLength > 0 || def.MaxSize > 0 {
+			continue
+		}
+		value, ok := lsigArgs[def.Name]
+		if !ok {
+			continue
+		}
+		decoded, err := hex.DecodeString(value)
+		if err != nil {
+			return 0, fmt.Errorf("invalid hex for arg %s: %w", def.Name, err)
+		}
+		total += uint64(len(decoded))
+	}
+	return total, nil
 }
 
 func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath, error) {

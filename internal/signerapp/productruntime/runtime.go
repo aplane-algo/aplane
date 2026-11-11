@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -173,6 +174,8 @@ type KeyPublicMetadata struct {
 	Parameters           map[string]string
 	BoundedAuthorization *boundedmeta.Metadata
 	LogicSigResources    *lsigresource.Profile
+	// SigningArgs is a LogicSig key's declared runtime arguments, in order.
+	SigningArgs []lsigprovider.RuntimeArgDef
 }
 
 // Config is the construction parameters for the product Runtime.
@@ -989,6 +992,7 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 	for k, v := range ir.keyMetadata {
 		v.Parameters = maps.Clone(v.Parameters)
 		v.BoundedAuthorization = boundedmeta.Clone(v.BoundedAuthorization)
+		v.SigningArgs = slices.Clone(v.SigningArgs)
 		if v.LogicSigResources != nil {
 			cloned := v.LogicSigResources.Clone()
 			v.LogicSigResources = &cloned
@@ -1029,6 +1033,7 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 				Category: summary.Category, BaseKeyType: summary.BaseKeyType, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
 				BoundedAuthorization: summary.BoundedAuthorization,
 				LogicSigResources:    summary.LogicSigResources,
+				SigningArgs:          summary.SigningArgs,
 			}
 		}
 	}

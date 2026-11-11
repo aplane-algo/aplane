@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -109,6 +110,58 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 	}
 	if len(indices) != 1 || indices[0] != 0 {
 		t.Fatalf("fee-capable LogicSig indices = %v, want [0]", indices)
+	}
+}
+
+// A runtime argument that declares no size is planned at the size the request
+// gives it, as if the profile had counted it; a sized one stays at its
+// declared size.
+func TestCalculateLogicSigResourcesSizesUnsizedArgumentsFromTheRequest(t *testing.T) {
+	plan := func(t *testing.T, argumentBytes uint64, signingArgs []lsigprovider.RuntimeArgDef, lsigArgs map[string]string) (lsigresource.Plan, *ServiceError) {
+		t.Helper()
+		profile := lsigresource.Profile{
+			ProgramBytes: 300,
+			Default:      &lsigresource.PathProfile{ArgumentBytes: argumentBytes, MaxOpcodeCost: 700},
+		}
+		snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{
+			"LSIG": {LogicSigResources: &profile, SigningArgs: signingArgs},
+		}}
+		resourcePlan, _, err := calculateLogicSigResources(nil, snapshot,
+			[]signerapi.SignRequest{{AuthAddress: "LSIG", LsigArgs: lsigArgs}},
+			[]types.Transaction{{}}, nil, map[int]bool{}, map[int]bool{}, nil, false, false)
+		return resourcePlan, err
+	}
+	args := []lsigprovider.RuntimeArgDef{
+		{Name: "data", Type: "bytes"},
+		{Name: "tag", Type: "bytes", MaxSize: 32},
+	}
+	large := hex.EncodeToString(make([]byte, 3_000))
+
+	got, err := plan(t, 32, args, map[string]string{"data": large, "tag": "01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := plan(t, 32+3_000, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TotalArgumentBytes != 3_032 || got != want {
+		t.Fatalf("plan with a 3000-byte unsized argument = %#v, want %#v", got, want)
+	}
+	if got.DummyCount == 0 {
+		t.Fatalf("plan = %#v, want dummies for the argument pool", got)
+	}
+
+	omitted, err := plan(t, 32, args, map[string]string{"tag": "01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if omitted.TotalArgumentBytes != 32 || omitted.DummyCount != 0 {
+		t.Fatalf("plan with the unsized argument left out = %#v, want the profile's 32 bytes and no dummy", omitted)
+	}
+
+	if _, err := plan(t, 32, args, map[string]string{"data": "zz"}); err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "transaction 1: invalid hex for arg data") {
+		t.Fatalf("invalid hex: error = %+v, want a bad request naming the argument", err)
 	}
 }
 
