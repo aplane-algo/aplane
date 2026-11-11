@@ -117,8 +117,10 @@ func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, p
 		return
 	}
 	groupReq := req.GroupSignRequest()
-	// The group is frozen: each component signs its target's final TxID, and
-	// the dummies are signed later, on /sign, so none count as signed here.
+	// The group is frozen: each component signs its target's final TxID. The
+	// signer never signs the group's dummies: the client signs them itself
+	// and sends them as foreign positions to /sign and as passthrough to
+	// /sign/assemble, so no record counts them.
 	group := signedGroupOf(plan.AllTxns, 0)
 	for _, index := range targets {
 		if index < 0 || index >= len(groupReq.Requests) || index >= len(plan.AllTxns) {

@@ -47,8 +47,8 @@ type signedGroup struct {
 // signedGroupOf describes the final group a request signed. txns are the
 // transactions exactly as signed, whose IDs it computes as the executor
 // does when it signs them; dummyCount is how many trailing ones are dummies
-// this request added and signed (none when the dummies were signed
-// elsewhere, as in a frozen group's components).
+// this request added and signed (none for a frozen group, whose dummies the
+// client signs).
 func signedGroupOf(txns []types.Transaction, dummyCount int) signedGroup {
 	txIDs := make([]string, len(txns))
 	for i, txn := range txns {

@@ -1356,11 +1356,14 @@ Signing-audit semantics:
   target whose ID the cosigner signed, and
   `policy_rule_id` carries the rule ID of the first policy violation when present.
   A bounded account's base component is `SIGN_APPROVED` with the target's
-  `txid` the same way. Both sign into a frozen group whose dummies are signed
-  later, on `/sign`, so `dummy_count` is not set. `/sign/assemble` makes no
-  new signature (it joins the components' signatures into the LogicSig) and
-  writes no entry: the transaction it assembles is the one whose `txid` the
-  components recorded
+  `txid` the same way. Both sign into a frozen group whose dummies the
+  signer never signs: the client signs them itself and sends them as foreign
+  positions to `/sign` and as passthrough to `/sign/assemble`. So no
+  `SIGN_APPROVED` of a cosigned group carries a `dummy_count` for them,
+  neither a component's nor one `/sign` writes for the group's other
+  positions. `/sign/assemble` makes no new signature (it joins the
+  components' signatures into the LogicSig) and writes no entry: the
+  transaction it assembles is the one whose `txid` the components recorded
 - `ROTATING_RELEASE` is written durably before a rotating account's stage
   signature leaves the signer; it records the account, `txid`,
   `rotating_stage`, and `rotating_last_valid`, and the signer rebuilds its
