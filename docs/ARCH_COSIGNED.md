@@ -679,8 +679,12 @@ Before it freezes the `/plan` result, the client checks it with the same
 reconciliation the ordinary `/sign` path uses: each original position may
 differ from the draft only in its group ID and in a fee the mutation report
 lists, which must have risen; the rises must sum, without overflowing, to a
-non-negative `total_fees_delta`. The final assembled group must be one
-canonically encoded signed transaction per frozen entry.
+non-negative `total_fees_delta`. Appended positions must be exactly the
+planner's canonical resource dummies, rebuilt from the first original's
+validity window and genesis and the group's canonical ID, so a dummy with
+another lease, window or note is refused; the client checks them again
+before it signs them with the dummy LogicSig. The final assembled group must
+be one canonically encoded signed transaction per frozen entry.
 
 A `plain1` account has no fee ceiling, so the client checks a planned fee against an
 account's ceiling only on a bounded one (`bounded2`, `max_fee` present); it

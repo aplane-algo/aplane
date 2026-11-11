@@ -291,7 +291,7 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 // targets, returning them as assembly passthrough items: budget dummies
 // locally, and non-cosigned originals through /sign over the frozen bytes.
 func (s *Signer) signContextPositions(ctx context.Context, group frozenGroup, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]signerapi.AssemblyPassthroughItem, error) {
-	signedDummies, err := signCosignedDummies(group.Txns[group.OriginalCount:])
+	signedDummies, err := signCosignedDummies(group)
 	if err != nil {
 		return nil, err
 	}
@@ -443,10 +443,27 @@ func validatePlannedGroup(original, planned []types.Transaction, mutations *sign
 			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
 		}
 	}
-	if err := validateCosignedDummies(planned[len(original):]); err != nil {
+	if len(original) == 0 {
+		return nil
+	}
+	return validateCanonicalDummies(original[0], planned, len(original))
+}
+
+// validateCanonicalDummies requires the positions after originalCount to be
+// exactly the canonical resource dummies the signer's planner builds for this
+// group: the check every other client path runs, which rebuilds each dummy
+// from the first original's validity window and genesis and the group's
+// canonical ID, so nothing (a lease, a validity window, a note) can differ.
+func validateCanonicalDummies(firstOriginal types.Transaction, planned []types.Transaction, originalCount int) error {
+	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
+	if err != nil {
 		return err
 	}
-	return nil
+	if len(planned) == originalCount {
+		return nil
+	}
+	_, err = clientsign.ValidateCanonicalDummyTxns(firstOriginal, groupID, planned[originalCount:])
+	return err
 }
 
 func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
@@ -720,11 +737,17 @@ func encodeGroupHex(txns []types.Transaction) []string {
 	return groupHex
 }
 
-func signCosignedDummies(dummyTxns []types.Transaction) ([]string, error) {
-	if err := validateCosignedDummies(dummyTxns); err != nil {
+// signCosignedDummies signs the frozen group's budget dummies with the dummy
+// LogicSig. The client signs these itself, so it checks them again here, with
+// the canonical dummy check, right before it signs.
+func signCosignedDummies(group frozenGroup) ([]string, error) {
+	if len(group.Txns) == 0 || group.OriginalCount < 1 || group.OriginalCount > len(group.Txns) {
+		return nil, fmt.Errorf("frozen group has %d position(s) for %d original(s)", len(group.Txns), group.OriginalCount)
+	}
+	if err := validateCanonicalDummies(group.Txns[0], group.Txns, group.OriginalCount); err != nil {
 		return nil, err
 	}
-	signedDummies, err := signing.SignDummyTransactions(dummyTxns)
+	signedDummies, err := signing.SignDummyTransactions(group.Txns[group.OriginalCount:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign cosigned dummy transactions: %w", err)
 	}
@@ -733,21 +756,6 @@ func signCosignedDummies(dummyTxns []types.Transaction) ([]string, error) {
 		signedHex[i] = hex.EncodeToString(signed)
 	}
 	return signedHex, nil
-}
-
-func validateCosignedDummies(dummyTxns []types.Transaction) error {
-	dummyAddress, err := signing.DummyAddress()
-	if err != nil {
-		return fmt.Errorf("failed to derive cosigned dummy address: %w", err)
-	}
-	for i, txn := range dummyTxns {
-		if txn.Type != types.PaymentTx || txn.Sender != dummyAddress || txn.Receiver != dummyAddress ||
-			txn.Amount != 0 || txn.Fee != 0 || len(txn.Note) != 1 || txn.Note[0] != byte(i) ||
-			!txn.RekeyTo.IsZero() || !txn.CloseRemainderTo.IsZero() {
-			return fmt.Errorf("signer-appended transaction %d is not a canonical cosigned budget dummy", i)
-		}
-	}
-	return nil
 }
 
 func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {

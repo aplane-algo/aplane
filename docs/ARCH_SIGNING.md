@@ -1431,7 +1431,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   path, on the cosigned `/plan` and on the plugin `presign-plan` `/plan`: a
   reported fee must have risen, the rises must sum without overflowing to a
   `total_fees_delta` that is not negative, and nothing else may differ but the
-  group ID.
+  group ID. Those two plans rebuild appended dummies with the same canonical
+  dummy check, validity window, genesis and lease included.
 - The client submits the signed bytes it receives as given, so every signed
   transaction it submits (an ordinary `/sign` response, an assembled cosigned
   group, the managed slots of a `presign-plan` group, a plugin's
