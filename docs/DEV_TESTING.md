@@ -491,11 +491,13 @@ requires a tampered signature to be rejected, and submits the transaction.
 That test is skipped when `ALGOD_URL` or `APLANE_LOCALNET_KMD_URL` is unset, as
 on TestNet.
 
-The bridge enables `aplane.rotating-triple-wotsc.v1` at the signer before the
-suites run, so the SDK rotating tests can generate an account. On LocalNet the
-Go suite funds one from the KMD wallet and sends from it twice through
-`SendPayment`. If the key type can't be enabled the bridge warns and the
-rotating tests skip.
+The bridge enables the three rotating key types
+(`aplane.rotating-triple-wotsc.v1`, `aplane.rotating-triple-xmss.v1` and
+`aplane.rotating-triple-slhdsa.v1`) at the signer before the suites run, so
+the SDK rotating tests can generate an account of each family. On LocalNet
+each suite funds one from the KMD wallet and sends from it twice through its
+one-call send. If a key type can't be enabled the bridge warns and the suites
+skip that family.
 
 The SDK integration bridge checks the SDK language-specific test prerequisites
 before starting the signer. If the SDK checkout contains the Python SDK, pytest
@@ -859,7 +861,13 @@ local IPC `apadmin` public-reference export and import, the `apadmin policy`
 verbs on the cosigner node (`status`, `check`, `diff`, `apply` from a file and
 from stdin, `export --key`, `remove`), cosigned signing, Corridor allowlist
 and cosigner-loss behavior, and cosigned preparation/signing through a local
-Python SDK checkout.
+SDK checkout in Python, TypeScript and Go. Each SDK also sends once through its
+one-call send from a data directory whose `endpoints.yaml` lists the cosigner
+only by role, so the SDK has to find the cosigner itself; this is the only
+live test of SDK cosigner discovery, since the LocalNet integration
+environment has no cosigner node. The Python check also proves that a data
+directory with no cosigner endpoint is refused before the signer is asked for
+anything.
 
 `make docker-local-release-test` runs the same topology and product assertions,
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript

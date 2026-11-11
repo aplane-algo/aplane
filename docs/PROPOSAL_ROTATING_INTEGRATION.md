@@ -449,8 +449,11 @@ with two implementations.
 - apshell: the "must be sent alone" error disappears. Plugin intents whose
   group has one rotating sender and otherwise held authorities route
   through the rotating path without the plugin knowing.
-- SDK: the Go, TypeScript and Python SDKs carry only the wire shapes for
-  these endpoints, so they mirror the new fields: `requests`, `rotations`,
+- SDK: when this was written the Go, TypeScript and Python SDKs carried only
+  the wire shapes for these endpoints. Since November 2026 they run the
+  rotating flow themselves (see "SDK contracts" in `ARCH_SIGNING.md`), so the
+  group form would also change their flow code and shared vectors. They
+  mirror the new fields: `requests`, `rotations`,
   `owned_indexes` and per-slot `app_call_info`. Contract fixtures gain a
   group-form prepare request and both responses.
 
