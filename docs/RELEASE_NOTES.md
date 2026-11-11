@@ -31,9 +31,15 @@ before it was renamed `enroll`.
   were copied to every transaction in the plugin's group, so a sibling LogicSig
   with the same argument name received them too. Each position APlane signs now
   gets the arguments its signing key declares and no others; a name no
-  position declares is refused instead of being dropped. The client keeps a
-  bounded account's runtime argument names for this, from the next key list
-  refresh.
+  position declares is refused instead of being dropped, before the group is
+  shown for review. The client keeps a bounded account's runtime argument
+  names for this, from the next key list refresh.
+- **A plugin's `arg:` values reach the first step that has transactions.**
+  When the plugin's first step returned no transactions, the values were
+  dropped and its continuation was signed without them. They now go to the
+  first step that returns transactions, and to no later one. A plugin command
+  none of whose steps returns transactions fails, saying the values were not
+  sent; a script's `plugin()` call does the same.
 - **`send`, `sweep` and `validate` do the same, over a set or one account.**
   The `arg:` values went to every account in a set; each account now gets the
   arguments its signing key declares, so a native account in the set is sent

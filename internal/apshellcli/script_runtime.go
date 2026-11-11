@@ -90,11 +90,20 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		return false, "", nil, nil, err
 	}
 
-	// If no transactions, return early
+	// If no transactions, return early. arg: values then went nowhere, which
+	// is said rather than passed over.
 	if len(result.Transactions) == 0 {
+		if err := apshellapp.PluginLsigArgsNotSentError(lsigArgs); err != nil {
+			return false, "", nil, nil, err
+		}
 		return result.Success, result.Message, result.Data, result.Presentation, nil
 	}
 
+	// An arg: name the group would not send is refused before the review;
+	// the submission checks it again.
+	if err := p.repl.app().CheckPluginLsigArgs(p.repl.commandContext(), result, lsigArgs); err != nil {
+		return false, "", nil, nil, apshellapp.ShellLsigArgsError(err)
+	}
 	cancelled, err := reviewPluginTransactions(p.repl, result)
 	if err != nil {
 		return false, "", nil, nil, err

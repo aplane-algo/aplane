@@ -630,9 +630,13 @@ account's runtime arguments, matched on the position's effective signer), and
 no others. A native key declares none, a sibling LogicSig that does not declare
 a name never receives it, and a slot the plugin signs itself
 (`presign-plan`) receives none. A name that no position's key declares is
-refused before anything is planned or signed, rather than dropped. The
-arguments apply to the first step only, not to a continuation, and
-`pregrouped-signed` refuses them, since APlane signs nothing there.
+refused rather than dropped, before the group is shown for review and again
+before anything is planned or signed; so is a name that only a position whose
+key could not be looked up might declare. The arguments go to the first step
+that returns transactions, the first result or a continuation, and to no
+later step. If no step returns transactions, the command fails saying they
+were not sent. `pregrouped-signed` refuses them before its review, since
+APlane signs nothing there.
 
 ### Multi-Step Workflows (Continuations)
 

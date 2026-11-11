@@ -618,3 +618,61 @@ func TestLsigArgsForANativeAccountAreRefusedBeforeSigning(t *testing.T) {
 		t.Fatalf("signer requests = %v, want none", paths)
 	}
 }
+
+// The check run before a plugin group's review refuses what the submission
+// would: a name no position APlane signs declares (a plugin-signed slot
+// declares nothing), and any name for a pregrouped-signed group. What only
+// the submission can settle is left to it. Nothing is sent to the signer.
+func TestCheckPluginLsigArgsRefusesWhatTheSubmissionWould(t *testing.T) {
+	app, recorder := lsigArgsTestApp(t)
+	preimage := map[string][]byte{"preimage": []byte("open")}
+	plain := &jsonrpc.ExecuteResult{Transactions: []jsonrpc.TransactionIntent{
+		rawPaymentIntent(t, argsNative), rawPaymentIntent(t, argsHTLC),
+	}}
+	pluginSignsTheHTLC := &jsonrpc.ExecuteResult{
+		GroupMode:     jsonrpc.GroupModePresignPlan,
+		Transactions:  []jsonrpc.TransactionIntent{rawPaymentIntent(t, argsHTLC), rawPaymentIntent(t, argsNative)},
+		PluginSigners: []jsonrpc.PluginSigner{{Address: argsHTLC, Kind: jsonrpc.PluginSignerKindCallback, SignerRef: "ref"}},
+	}
+	pregrouped := &jsonrpc.ExecuteResult{
+		GroupMode:    jsonrpc.GroupModePregroupedSigned,
+		Transactions: []jsonrpc.TransactionIntent{{Type: jsonrpc.TransactionIntentSigned, Encoded: "AA=="}},
+	}
+	undecodable := &jsonrpc.ExecuteResult{Transactions: []jsonrpc.TransactionIntent{{Type: jsonrpc.TransactionIntentRaw, Encoded: "!"}}}
+
+	if err := app.CheckPluginLsigArgs(context.Background(), plain, preimage); err != nil {
+		t.Fatalf("declared name: error = %v, want none", err)
+	}
+	if err := app.CheckPluginLsigArgs(context.Background(), plain, nil); err != nil {
+		t.Fatalf("no arguments: error = %v, want none", err)
+	}
+	requireUndeclared(t, app.CheckPluginLsigArgs(context.Background(), plain, map[string][]byte{"preimge": []byte("typo")}), "preimge")
+	requireUndeclared(t, app.CheckPluginLsigArgs(context.Background(), pluginSignsTheHTLC, preimage), "preimage")
+	if err := app.CheckPluginLsigArgs(context.Background(), pregrouped, preimage); err == nil || !strings.Contains(err.Error(), "does not allow lsig args") {
+		t.Fatalf("pregrouped-signed: error = %v, want the arguments refused", err)
+	}
+	if err := app.CheckPluginLsigArgs(context.Background(), undecodable, preimage); err != nil {
+		t.Fatalf("undecodable group: error = %v, want it left to the submission", err)
+	}
+	if paths, _ := recorder.recorded(); len(paths) != 0 {
+		t.Fatalf("signer requests = %v, want none", paths)
+	}
+
+	disconnected, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := New(disconnected, config.DefaultConfig(), t.TempDir()).CheckPluginLsigArgs(context.Background(), plain, preimage); err != nil {
+		t.Fatalf("no signer: error = %v, want it left to the submission", err)
+	}
+}
+
+func TestPluginLsigArgsNotSentError(t *testing.T) {
+	if err := PluginLsigArgsNotSentError(nil); err != nil {
+		t.Fatalf("no arguments: error = %v, want none", err)
+	}
+	err := PluginLsigArgsNotSentError(map[string][]byte{"secret": {1}, "preimage": {2}})
+	if want := "arg:preimage, arg:secret: the plugin returned no transactions for APlane to sign, so they were not sent"; err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+}

@@ -57,6 +57,11 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 		pr.Presentation = result.Presentation
 
 		if len(result.Transactions) > 0 {
+			// An arg: name the group would not send is refused before the
+			// review; the submission checks it again.
+			if err := r.app().CheckPluginLsigArgs(r.commandContext(), result, lsigArgs); err != nil {
+				return apshellapp.ShellLsigArgsError(err)
+			}
 			cancelled, err := reviewPluginTransactions(r, result)
 			if err != nil {
 				return err
@@ -74,9 +79,15 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 			}
 			pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
 			pr.Steps = append(pr.Steps, appresult.PluginStep{Message: result.Message, TxIDs: submit.TxIDs})
+			// The arg: values go to the first step that has transactions,
+			// whichever step that is, and to no later one.
+			lsigArgs = nil
 		}
 
 		if result.Continuation == nil {
+			if err := apshellapp.PluginLsigArgsNotSentError(lsigArgs); err != nil {
+				return err
+			}
 			// Flatten single-step results: promote TxIDs to top level
 			if len(pr.Steps) == 1 {
 				pr.TxIDs = pr.Steps[0].TxIDs
@@ -91,7 +102,6 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 		}
 
 		result = contResult
-		lsigArgs = nil
 	}
 }
 

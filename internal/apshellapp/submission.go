@@ -116,7 +116,7 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, r
 // mixes in any APlane-managed signing.
 func (a *App) submitPregroupedSigned(ctx context.Context, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
 	if len(lsigArgs) > 0 {
-		return nil, fmt.Errorf("groupMode %q does not allow lsig args", jsonrpc.GroupModePregroupedSigned)
+		return nil, pregroupedSignedLsigArgsError()
 	}
 	if len(result.Transactions) == 0 {
 		return nil, fmt.Errorf("groupMode %q requires transactions", jsonrpc.GroupModePregroupedSigned)
