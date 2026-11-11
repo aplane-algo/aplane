@@ -71,17 +71,17 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
+	refs := countReferences(prepResult.Transaction)
 	result := &AppCallRawResult{
 		FromAddress:    fromAddr,
 		SigningKeyType: prep.SigningContext.DisplayKeyType,
 		AppArgsCount:   len(req.AppArgs),
-		AccountsCount:  len(accounts),
-		// What the transaction carries: the listed apps and any a box added.
-		AppsCount:   len(prepResult.Transaction.ForeignApps),
-		AssetsCount: len(foreignAssets),
-		BoxesCount:  len(req.Boxes),
-		Note:        req.Note,
-		PayAmount:   req.PayAmount,
+		AccountsCount:  refs.accounts,
+		AppsCount:      refs.apps,
+		AssetsCount:    refs.assets,
+		BoxesCount:     refs.boxes,
+		Note:           req.Note,
+		PayAmount:      req.PayAmount,
 		Structured: appresult.AppCall{
 			AppID: req.AppID,
 			Mode:  "raw",
@@ -197,4 +197,21 @@ func (a *App) resolveAppCallInputs(from string, accountRefs []string, assetRefs 
 	}
 
 	return fromAddr, accounts, foreignAssets, nil
+}
+
+// referenceCounts is how many of each kind of reference an app call carries.
+type referenceCounts struct {
+	accounts, apps, assets, boxes int
+}
+
+// countReferences reads the counts from the built transaction, so the
+// summary matches what is signed: the listed references and any the engine
+// added, such as an app a box needs.
+func countReferences(txn types.Transaction) referenceCounts {
+	return referenceCounts{
+		accounts: len(txn.Accounts),
+		apps:     len(txn.ForeignApps),
+		assets:   len(txn.ForeignAssets),
+		boxes:    len(txn.BoxReferences),
+	}
 }

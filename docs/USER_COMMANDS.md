@@ -1143,9 +1143,13 @@ already have it.
 
 Each entry uses one of the call's reference slots, repeats and the called app
 included, so a call near the network's limit can be rejected by the node.
-`app=0` is refused. If you list the called app, a box of the called app points
-at its listed position; otherwise it points at position 0. Both name the same
-app, but the transaction bytes differ.
+`app=0` is refused.
+
+A box written without an app ID (`box=<name>`) belongs to the called app and
+always points at position 0, whether or not you also list the called app.
+A box written with an app ID (`box=<app-id>:<name>`) points at that app's
+position in your list, the called app's included; write it that way only when
+a program expects the box under the listed position.
 
 Application update calls (`oncomp=update`) require both approval and clear
 program paths. Approval and clear program options are rejected for other

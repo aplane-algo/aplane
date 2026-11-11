@@ -1395,8 +1395,12 @@ engine's merge policy is small and fixed:
   asset ID is refused, not dropped.
 - An app needed only by a box reference is appended, and only when the list
   doesn't already have it.
-- Which entry a box points at is the Algorand SDK's rule: the first matching
-  entry in the list, and index 0 only when the called app is not listed.
+- A box written without an app ID is parsed with app ID 0, the called app,
+  and always encodes as index 0, so its bytes don't depend on the rest of the
+  list. Don't normalise 0 to the called app's ID: that would move it.
+- A box with an app ID follows the Algorand SDK's rule: the first matching
+  entry in the list, and index 0 when the ID is the called app's and the list
+  doesn't have it.
 
 Any later merge rule between ABI-derived and user-supplied references belongs
 in the engine too, and has to keep the caller's entries where they were put.

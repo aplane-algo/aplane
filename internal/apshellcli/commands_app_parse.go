@@ -134,6 +134,11 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		if err != nil {
 			return i, true, err
 		}
+		// The list is sent as typed, so a zero is refused here, where the
+		// argument can be named, and not dropped.
+		if ref == 0 {
+			return i, true, fmt.Errorf("invalid %s: a foreign app ID must be non-zero", arg)
+		}
 		// Kept exactly as typed, in order: a program reads these by position.
 		opts.ForeignApps = append(opts.ForeignApps, ref)
 		return i, true, nil
@@ -145,7 +150,7 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		opts.AssetRefs = append(opts.AssetRefs, ref)
 		return i, true, nil
 	case strings.HasPrefix(arg, "box="):
-		boxRef, err := parseBoxRef(strings.TrimPrefix(arg, "box="), appID)
+		boxRef, err := parseBoxRef(strings.TrimPrefix(arg, "box="))
 		if err != nil {
 			return i, true, err
 		}
@@ -429,8 +434,13 @@ func parseBoxName(raw string) ([]byte, error) {
 	return name, nil
 }
 
-func parseBoxRef(raw string, curAppID uint64) (types.AppBoxReference, error) {
-	appID := curAppID
+// parseBoxRef reads `<name>` or `<app-id>:<name>`. A box written without an
+// app ID belongs to the called app and carries app ID 0, which always encodes
+// as index 0: the same bytes whether or not the called app is also listed
+// with `app=`. Naming an app ID, the called app's included, asks for that
+// app's position in the list.
+func parseBoxRef(raw string) (types.AppBoxReference, error) {
+	appID := uint64(0)
 	nameRaw := raw
 
 	if idx := strings.Index(raw, ":"); idx > 0 {

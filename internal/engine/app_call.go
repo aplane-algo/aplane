@@ -200,9 +200,15 @@ var appspecAppCallInfoRaw = signerapi.AppCallInfo{Mode: "raw"}
 // tidying the list would move the apps it expects.
 //
 // Which entry a box then points at is the Algorand SDK's rule
-// (`parseBoxReferences`), not decided here: the first entry in the list that
-// matches the box's app, and index 0 only when the called app is not listed.
-// TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs pins it.
+// (`parseBoxReferences`), not decided here:
+//   - a box with app ID 0 is the called app's and is always index 0. The
+//     parsers give a box written without an app ID this form, so its bytes
+//     don't depend on whether the called app is also listed;
+//   - a box with an app ID points at the first entry in the list that
+//     matches, and at index 0 when the ID is the called app's and the list
+//     doesn't have it.
+//
+// TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs pins all three.
 func ensureAppReferences(curAppID uint64, foreignApps []uint64, boxes []types.AppBoxReference) []uint64 {
 	result := make([]uint64, len(foreignApps), len(foreignApps)+len(boxes))
 	copy(result, foreignApps)

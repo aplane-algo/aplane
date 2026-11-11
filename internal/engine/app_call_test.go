@@ -211,6 +211,7 @@ func TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs(t *testing.T) {
 		Boxes: []types.AppBoxReference{
 			{AppID: 123, Name: []byte("self")},
 			{AppID: 789, Name: []byte("foreign")},
+			{Name: []byte("bare")},
 		},
 		OnCompletion: types.OptInOC,
 		Note:         "memo",
@@ -245,8 +246,11 @@ func TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs(t *testing.T) {
 	if want := []types.AppIndex{456, 123, 456, 789}; !slices.Equal(prep.Transaction.ForeignApps, want) {
 		t.Fatalf("ForeignApps = %v, want %v", prep.Transaction.ForeignApps, want)
 	}
-	if boxes := prep.Transaction.BoxReferences; len(boxes) != 2 || boxes[0].ForeignAppIdx != 2 || boxes[1].ForeignAppIdx != 4 {
-		t.Fatalf("BoxReferences = %+v, want the called app at its listed position 2 and app 789 at 4", boxes)
+	// The called app named by ID points at its listed position; a box with no
+	// app ID is index 0 even though the called app is listed.
+	if boxes := prep.Transaction.BoxReferences; len(boxes) != 3 ||
+		boxes[0].ForeignAppIdx != 2 || boxes[1].ForeignAppIdx != 4 || boxes[2].ForeignAppIdx != 0 {
+		t.Fatalf("BoxReferences = %+v, want the named called app at 2, app 789 at 4, the bare box at 0", boxes)
 	}
 	if len(prep.Transaction.ForeignAssets) != 1 || prep.Transaction.ForeignAssets[0] != 999 {
 		t.Fatalf("ForeignAssets = %#v, want [999]", prep.Transaction.ForeignAssets)

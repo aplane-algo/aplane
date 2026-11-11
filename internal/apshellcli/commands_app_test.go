@@ -6,6 +6,7 @@ package apshellcli
 import (
 	"encoding/hex"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -99,7 +100,7 @@ func TestParseRawAppCallArgs_WithLsigArgsAndImplicitProgramDetection(t *testing.
 }
 
 func TestParseBoxRef(t *testing.T) {
-	ref, err := parseBoxRef("456:hex:636f6e666967", 123)
+	ref, err := parseBoxRef("456:hex:636f6e666967")
 	if err != nil {
 		t.Fatalf("parseBoxRef() error = %v", err)
 	}
@@ -107,17 +108,18 @@ func TestParseBoxRef(t *testing.T) {
 		t.Fatalf("unexpected ref: %+v", ref)
 	}
 
-	ref, err = parseBoxRef("settings", 123)
+	ref, err = parseBoxRef("settings")
 	if err != nil {
 		t.Fatalf("parseBoxRef() error = %v", err)
 	}
-	if ref.AppID != 123 || string(ref.Name) != "settings" {
+	// No app ID written: the called app, as app ID 0, which is index 0.
+	if ref.AppID != 0 || string(ref.Name) != "settings" {
 		t.Fatalf("unexpected default-app ref: %+v", ref)
 	}
 }
 
 func TestParseBoxRefRejectsEmptyName(t *testing.T) {
-	_, err := parseBoxRef("", 123)
+	_, err := parseBoxRef("")
 	if err == nil || err.Error() != "box name must be non-empty" {
 		t.Fatalf("expected empty-box-name error, got %v", err)
 	}
@@ -365,6 +367,10 @@ func TestParseAppCallArgsKeepExplicitAppsAsTyped(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("parseRawAppCallArgs() error = %v", err)
+	}
+	if _, err := parseRawAppCallArgs([]string{"raw", "123", "from", "alice", "app=456", "app=0"}); err == nil ||
+		!strings.Contains(err.Error(), "app=0") {
+		t.Fatalf("app=0: %v, want it refused by name", err)
 	}
 	want := []uint64{456, 123, 456, 789}
 	if !slices.Equal(raw.ForeignApps, want) {

@@ -368,6 +368,11 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid apps: %v", funcName, err)))
 		}
+		for i, id := range values {
+			if id == 0 {
+				panic(a.runtime.ToValue(fmt.Sprintf("%s invalid apps: entry %d is 0; a foreign app ID must be non-zero", funcName, i+1)))
+			}
+		}
 		opts.ForeignApps = values
 	}
 	if assets, ok := m["assets"]; ok {
@@ -378,7 +383,7 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 		opts.ForeignAssets = values
 	}
 	if boxes, ok := m["boxes"]; ok {
-		opts.ForeignBoxes = a.parseBoxRefsValue(boxes, appID, funcName)
+		opts.ForeignBoxes = a.parseBoxRefsValue(boxes, funcName)
 	}
 	if raw, ok := m["onCompletion"].(string); ok {
 		onComp, err := parseOnCompletionString(raw)
@@ -475,7 +480,11 @@ func (a *API) resolveAppAccounts(from string, accounts []string, funcName string
 	return fromAddr, resolvedAccounts, nil
 }
 
-func (a *API) parseBoxRefsValue(v interface{}, curAppID uint64, funcName string) []types.AppBoxReference {
+// parseBoxRefsValue reads the `boxes` option. A box given as a name, or as an
+// object with no `appId`, belongs to the called app and carries app ID 0,
+// which always encodes as index 0, whether or not the called app is also in
+// `apps`. An object naming an `appId` asks for that app's position in the list.
+func (a *API) parseBoxRefsValue(v interface{}, funcName string) []types.AppBoxReference {
 	values := toInterfaceSliceValue(v)
 	refs := make([]types.AppBoxReference, 0, len(values))
 	for i, raw := range values {
@@ -488,9 +497,9 @@ func (a *API) parseBoxRefsValue(v interface{}, curAppID uint64, funcName string)
 			if len(name) == 0 {
 				panic(a.runtime.ToValue(fmt.Sprintf("%s invalid box %d: box name must be non-empty", funcName, i+1)))
 			}
-			refs = append(refs, types.AppBoxReference{AppID: curAppID, Name: name})
+			refs = append(refs, types.AppBoxReference{Name: name})
 		case map[string]interface{}:
-			appRef := curAppID
+			appRef := uint64(0)
 			if v, ok := box["appId"]; ok {
 				id, err := toUint64Interface(v)
 				if err != nil {

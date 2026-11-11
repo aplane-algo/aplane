@@ -537,6 +537,10 @@ when the list doesn't already have it. Each entry uses one of the call's
 reference slots, so a call near the network's limit can be rejected by the
 node. A zero app ID is refused.
 
+A box given as a name, or as `{ name }` with no `appId`, belongs to the called
+app and always points at position 0. `{ appId, name }` points at that app's
+position in `apps`.
+
 Use `noop`, `optin`, `closeout`, `clear`, or `delete` for `onCompletion`.
 The parser also recognizes `update`, but these JavaScript options do not
 accept replacement approval/clear programs, so an update fails validation.
