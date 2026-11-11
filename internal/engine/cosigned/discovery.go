@@ -551,7 +551,9 @@ func isNetworkUnavailableError(err error) bool {
 
 func discoverCosignerComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredCosignerComponentKey, error) {
 	discovered := make([]DiscoveredCosignerComponentKey, 0)
-	seen := map[string]struct{}{}
+	// Routing matches a component key on its key type and public key together,
+	// so one public key advertised under two key types is two component keys.
+	seen := map[cosignerRequestKey]struct{}{}
 	for _, key := range keys {
 		// Component key types are runtime metadata: any advertised component
 		// key participates in discovery, and its key-type string is treated
@@ -575,10 +577,11 @@ func discoverCosignerComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredCosign
 		if selector != expectedSelector {
 			return nil, fmt.Errorf("%w: cosigner component %s advertised selector %s, want %s", ErrCosignerDiscoveryInvalidMetadata, cosignerComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
 		}
-		if _, ok := seen[publicKey]; ok {
+		identity := cosignerRequestKey{ComponentKeyType: key.KeyType, PublicKey: publicKey}
+		if _, ok := seen[identity]; ok {
 			continue
 		}
-		seen[publicKey] = struct{}{}
+		seen[identity] = struct{}{}
 		discovered = append(discovered, DiscoveredCosignerComponentKey{
 			PublicKey:    publicKey,
 			ComponentKey: selector,

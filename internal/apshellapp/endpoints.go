@@ -261,7 +261,10 @@ func (a *App) discoverEndpointCosigners(ctx context.Context) (*EndpointDiscoverC
 	}
 
 	discoveries := make([]EndpointCosignerDiscovery, 0, len(aliases))
-	seenPublicKeys := map[string]string{}
+	// A component key is its key type and public key together, as routing
+	// matches it: one endpoint may advertise a public key under two key types.
+	type componentIdentity struct{ keyType, publicKey string }
+	seenPublicKeys := map[componentIdentity]string{}
 	publicKeyCount := 0
 	for _, alias := range aliases {
 		endpoint := cfg.Endpoints.Endpoints[alias]
@@ -280,10 +283,11 @@ func (a *App) discoverEndpointCosigners(ctx context.Context) (*EndpointDiscoverC
 		}
 		discovery := EndpointCosignerDiscovery{Alias: alias}
 		for _, key := range keys {
-			if previousAlias, exists := seenPublicKeys[key.PublicKey]; exists {
+			identity := componentIdentity{keyType: key.KeyType, publicKey: key.PublicKey}
+			if previousAlias, exists := seenPublicKeys[identity]; exists {
 				return nil, fmt.Errorf("cosigner public key advertised by both endpoint aliases %q and %q", previousAlias, alias)
 			}
-			seenPublicKeys[key.PublicKey] = alias
+			seenPublicKeys[identity] = alias
 			discovery.Keys = append(discovery.Keys, DiscoveredEndpointCosignerKey{
 				PublicKey:    key.PublicKey,
 				ComponentKey: key.ComponentKey,

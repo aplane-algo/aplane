@@ -23,6 +23,10 @@ before it was renamed `enroll`.
 - **The cosigned client checks budget dummies with the canonical dummy check.**
   Its own check skipped the validity window, genesis and lease; it now
   rebuilds each dummy as every other path does, before it signs the dummies.
+- **Cosigner discovery keeps each key type of a public key.** It kept the first
+  advertised entry for a public key, so a second witness key type with the
+  same public key could not be routed, and `endpoints discover-cosigners`
+  called it a repeat publication. Only one witness key type exists today.
 
 ## apshell refuses input it used to ignore or guess at
 

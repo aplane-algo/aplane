@@ -165,6 +165,31 @@ func TestEndpointDiscoverCosignersIsReadOnly(t *testing.T) {
 	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKey, componentKey)
 }
 
+// A public key advertised under a second key type is another component key,
+// not a repeat publication, whether one endpoint or two advertise it.
+func TestEndpointDiscoverCosignersKeepsAPublicKeyUnderTwoKeyTypes(t *testing.T) {
+	dataDir := t.TempDir()
+	publicKey := testCosignerPublicKeyHex()
+	raw, err := hex.DecodeString(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const otherType = "example.witness-other.v1"
+	server := newEndpointKeysServer(t, []signerapi.KeyInfo{
+		{Address: testComponentSelector(t, witness.Falcon1024V1, publicKey), PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true},
+		{Address: witness.DeriveID(otherType, raw), PublicKeyHex: publicKey, KeyType: otherType, IsWitnessKey: true},
+	})
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-local", server)
+	app := newEndpointTestApp(t, dataDir)
+	result, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
+	if err != nil {
+		t.Fatalf("EndpointDiscoverCosigners() error = %v", err)
+	}
+	if result.PublicKeyCount != 2 || len(result.Endpoints) != 1 || len(result.Endpoints[0].Keys) != 2 {
+		t.Fatalf("discovery result = %#v, want both key types", result)
+	}
+}
+
 func TestEndpointDiscoverCosignersRejectsDuplicatePublication(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKey := testCosignerPublicKeyHex()
