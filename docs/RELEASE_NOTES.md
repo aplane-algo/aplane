@@ -7,6 +7,20 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Rotating timing refusals have their own error code
+
+- `/sign/rotating/sign` refuses a spend whose validity window is not current at
+  the round the signer read, `first_valid` more than 2 rounds ahead or fewer
+  than 10 rounds before `last_valid`, with the new code
+  `rotating_window_not_current` (HTTP 409). It was a `bad_request` (400) that
+  clients could tell apart only by its message text. The refusal releases no
+  signature; rebuild the validity rounds and prepare again. The same code
+  covers the SLH-DSA re-read after signing, whose aged window was a plain
+  `bad_request` that apshell did not retry.
+- apshell retries a rotating spend on `rotating_stage_changed` and
+  `rotating_window_not_current` only, by code. A window longer than 100 rounds
+  is still a `bad_request`.
+
 ## apshell refuses input it used to ignore or guess at
 
 More places where what was sent could differ from what was typed, all in

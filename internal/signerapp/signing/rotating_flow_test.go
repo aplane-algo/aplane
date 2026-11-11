@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -319,22 +320,85 @@ func TestRotatingSignRefusesWhenTheAccountMovedDuringApproval(t *testing.T) {
 	mustSign(t, f, prep.Transactions)
 }
 
+// wantWindowNotCurrent asserts a round-relative timing refusal: the dedicated
+// code, HTTP 409, and the message naming which bound failed.
+func wantWindowNotCurrent(t *testing.T, label string, err *ServiceError, phrase string) {
+	t.Helper()
+	if err == nil || err.Kind != ErrorRotatingWindowNotCurrent {
+		t.Fatalf("%s: err = %v, want %s", label, err, signerapi.ErrCodeRotatingWindowNotCurrent)
+	}
+	if err.Code() != signerapi.ErrCodeRotatingWindowNotCurrent || err.HTTPStatus() != http.StatusConflict {
+		t.Fatalf("%s: code %q status %d, want %q %d", label, err.Code(), err.HTTPStatus(), signerapi.ErrCodeRotatingWindowNotCurrent, http.StatusConflict)
+	}
+	if !strings.Contains(err.Message, phrase) {
+		t.Fatalf("%s: message %q does not say %q", label, err.Message, phrase)
+	}
+}
+
 func TestRotatingTimingRules(t *testing.T) {
-	f, _ := newSigningFixture(t)
+	f, audit := newSigningFixture(t)
 	f.chain.round = 1000
 	// FirstValid too far ahead of the node's round.
 	prep := mustPrepare(t, f, f.spend(1003, 1100))
-	if _, err := f.sign(t, prep.Transactions); err == nil || !strings.Contains(err.Message, "ahead of the current round") {
-		t.Fatalf("lead: %v", err)
-	}
+	_, err := f.sign(t, prep.Transactions)
+	wantWindowNotCurrent(t, "lead", err, "ahead of the current round")
 	// Too few rounds remain.
 	prep = mustPrepare(t, f, f.spend(950, 1009))
-	if _, err := f.sign(t, prep.Transactions); err == nil || !strings.Contains(err.Message, "remain before last valid") {
-		t.Fatalf("remaining: %v", err)
+	_, err = f.sign(t, prep.Transactions)
+	wantWindowNotCurrent(t, "remaining", err, "remain before last valid")
+	if len(audit.releases) != 0 {
+		t.Fatal("a timing refusal audited a release")
+	}
+	if _, ok := f.svc.Rotating.Releases.Get(f.account.String()); ok {
+		t.Fatal("a timing refusal recorded a release")
 	}
 	// Boundaries are accepted.
 	prep = mustPrepare(t, f, f.spend(1002, 1010))
 	mustSign(t, f, prep.Transactions)
+}
+
+// A refusal that does not depend on the chain round stays bad_request on the
+// same endpoint: a window longer than the stage program accepts is refused
+// before any chain read, whatever the round.
+func TestRotatingRoundIndependentRefusalsStayBadRequest(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	// The prepared group with the spend's window lengthened past the maximum
+	// and regrouped, so the group decodes and the window rule is what refuses.
+	group := make([]types.Transaction, len(prep.Transactions))
+	for i, h := range prep.Transactions {
+		txn, err := txnutil.DecodePrefixedHex(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		txn.Group = types.Digest{}
+		group[i] = txn
+	}
+	group[0].LastValid = group[0].FirstValid + types.Round(rotatingkey.RotatingMaxValidityWindow) + 1
+	gid, err := algocrypto.ComputeGroupID(group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := make([]string, len(group))
+	for i := range group {
+		group[i].Group = gid
+		long[i] = txnutil.EncodeWithPrefixHex(group[i])
+	}
+	reads := f.chain.reads
+	_, svcErr := f.sign(t, long)
+	if svcErr == nil || svcErr.Kind != ErrorBadRequest || svcErr.Code() != signerapi.ErrCodeBadRequest || svcErr.HTTPStatus() != http.StatusBadRequest {
+		t.Fatalf("over-long window: %v, want bad_request 400", svcErr)
+	}
+	if !strings.Contains(svcErr.Message, "validity window must be at most") {
+		t.Fatalf("over-long window message %q", svcErr.Message)
+	}
+	if f.chain.reads != reads {
+		t.Fatalf("the over-long window refusal read the chain %d times", f.chain.reads-reads)
+	}
+	_, svcErr = f.sign(t, []string{"not hex"})
+	if svcErr == nil || svcErr.Kind != ErrorBadRequest || svcErr.HTTPStatus() != http.StatusBadRequest {
+		t.Fatalf("malformed group: %v, want bad_request 400", svcErr)
+	}
 }
 
 func TestRotatingSecondReleaseFromTheSameStageIsAccepted(t *testing.T) {

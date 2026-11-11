@@ -177,24 +177,40 @@ func TestValidateSignedRotatingGroupRequiresPreparedBytes(t *testing.T) {
 
 func TestRotatingRetryClassification(t *testing.T) {
 	stageChanged := &signerclient.HTTPStatusError{StatusCode: http.StatusConflict, Code: signerapi.ErrCodeRotatingStageChanged, Message: "moved"}
-	aged := &signerclient.HTTPStatusError{StatusCode: http.StatusBadRequest, Code: signerapi.ErrCodeBadRequest, Message: "fewer than 10 rounds remain before last valid round 1100"}
-	lead := &signerclient.HTTPStatusError{StatusCode: http.StatusBadRequest, Code: signerapi.ErrCodeBadRequest, Message: "first valid round 1003 is more than 2 rounds ahead of the current round 1000"}
+	windowNotCurrent := &signerclient.HTTPStatusError{StatusCode: http.StatusConflict, Code: signerapi.ErrCodeRotatingWindowNotCurrent, Message: "validity window aged during signing; prepare the spend again"}
+	// The old timing texts under bad_request: retrying goes by the code, so
+	// these are not retried.
+	agedText := &signerclient.HTTPStatusError{StatusCode: http.StatusBadRequest, Code: signerapi.ErrCodeBadRequest, Message: "fewer than 10 rounds remain before last valid round 1100"}
+	leadText := &signerclient.HTTPStatusError{StatusCode: http.StatusBadRequest, Code: signerapi.ErrCodeBadRequest, Message: "first valid round 1003 is more than 2 rounds ahead of the current round 1000"}
 	unproven := &signerclient.HTTPStatusError{StatusCode: http.StatusConflict, Code: signerapi.ErrCodeRotatingStageUnproven, Message: "not found yet"}
 	other := &signerclient.HTTPStatusError{StatusCode: http.StatusBadRequest, Code: signerapi.ErrCodeBadRequest, Message: "rekey target is not a stage of this account"}
 	for _, tc := range []struct {
-		err  error
-		want bool
+		err     error
+		want    bool
+		summary string
 	}{
-		{fmt.Errorf("wrapped: %w", stageChanged), true},
-		{aged, true},
-		{lead, true},
-		{unproven, false},
-		{other, false},
-		{errors.New("network"), false},
+		{fmt.Errorf("wrapped: %w", stageChanged), true, "the account's authorizer moved"},
+		{windowNotCurrent, true, "the validity window is not current"},
+		{fmt.Errorf("wrapped: %w", windowNotCurrent), true, "the validity window is not current"},
+		{agedText, false, ""},
+		{leadText, false, ""},
+		{unproven, false, ""},
+		{other, false, ""},
+		{errors.New("network"), false, ""},
 	} {
 		if got := isRotatingRetryable(tc.err); got != tc.want {
 			t.Errorf("isRotatingRetryable(%v) = %v, want %v", tc.err, got, tc.want)
 		}
+		if tc.summary != "" {
+			if got := rotatingRefusalSummary(tc.err); got != tc.summary {
+				t.Errorf("rotatingRefusalSummary(%v) = %q, want %q", tc.err, got, tc.summary)
+			}
+		}
+	}
+	// A refusal that is not one of the two retryable codes is summarized by
+	// its own text, not assumed to be a timing one.
+	if got := rotatingRefusalSummary(other); got != other.Error() {
+		t.Errorf("rotatingRefusalSummary(other) = %q, want the error text", got)
 	}
 	if !isAuthorizerMovedRejection(errors.New(`HTTP 400: {"message":"TransactionPool.Remember: transaction X: should have been authorized by A but was actually authorized by B"}`)) {
 		t.Fatal("ledger authorizer rejection not recognised")
