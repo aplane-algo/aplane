@@ -109,10 +109,10 @@ func TestBoundedDerivedArgsMerkleProof(t *testing.T) {
 			if len(args) != 1 {
 				t.Fatalf("boundedDerivedArgs() len = %d, want 1", len(args))
 			}
-			if len(args[0]) != merkleallowlist.ProofSize {
-				t.Fatalf("proof length = %d, want %d", len(args[0]), merkleallowlist.ProofSize)
+			if len(args["merkle_proof"]) != merkleallowlist.ProofSize {
+				t.Fatalf("proof length = %d, want %d", len(args["merkle_proof"]), merkleallowlist.ProofSize)
 			}
-			if !merkleallowlist.Verify(receiver, args[0], root) {
+			if !merkleallowlist.Verify(receiver, args["merkle_proof"], root) {
 				t.Fatalf("generated proof did not verify for %s", receiver.String())
 			}
 		})
@@ -134,7 +134,7 @@ func TestBoundedDerivedArgsMerkleProofSkipsSelfTransfer(t *testing.T) {
 	if signErr != nil {
 		t.Fatalf("boundedDerivedArgs() error = %v", signErr)
 	}
-	if len(args) != 1 || args[0] != nil {
+	if proof, ok := args["merkle_proof"]; len(args) != 1 || !ok || proof != nil {
 		t.Fatalf("boundedDerivedArgs() = %#v, want one empty derived slot", args)
 	}
 }
@@ -169,7 +169,7 @@ func TestBoundedDerivedArgsMerkleProofForbiddenOnRekey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boundedDerivedArgs() error = %v", err)
 	}
-	if len(args) != 1 || args[0] != nil {
+	if proof, ok := args["merkle_proof"]; len(args) != 1 || !ok || proof != nil {
 		t.Fatalf("boundedDerivedArgs() = %#v, want one empty derived slot", args)
 	}
 }
