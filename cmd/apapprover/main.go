@@ -629,6 +629,9 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	if req.Description != "" {
 		fmt.Printf("\n%s\n", req.Description)
 	}
+	if line := validityWindowLine(req.FirstValid, req.LastValid); line != "" {
+		fmt.Printf("\n%s\n", line)
+	}
 	if len(req.Violations) > 0 {
 		fmt.Printf("\nPolicy warnings (%d):\n", len(req.Violations))
 		for _, v := range req.Violations {
@@ -641,6 +644,20 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	}
 
 	fmt.Println(strings.Repeat("=", 60))
+}
+
+// validityWindowLine is the rounds a request can be submitted in, as apadmin
+// shows them: for a group, the rounds every transaction in it is valid. It is
+// empty when the signer sent no window.
+func validityWindowLine(firstValid, lastValid uint64) string {
+	switch {
+	case firstValid == 0 || lastValid == 0:
+		return ""
+	case lastValid < firstValid:
+		return fmt.Sprintf("Valid Rounds: %d - %d (empty: no round is valid)", firstValid, lastValid)
+	default:
+		return fmt.Sprintf("Valid Rounds: %d - %d (window: %d blocks)", firstValid, lastValid, lastValid-firstValid)
+	}
 }
 
 // displayClientEnrollmentRequest shows a client enrollment request to the user.

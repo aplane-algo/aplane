@@ -114,6 +114,59 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 	}
 }
 
+// captureStdout returns what fn prints.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+	fn()
+	_ = w.Close()
+	var out bytes.Buffer
+	if _, err := out.ReadFrom(r); err != nil {
+		t.Fatalf("ReadFrom() error = %v", err)
+	}
+	return out.String()
+}
+
+// apapprover shows the rounds a request can be submitted in, as apadmin
+// does, and nothing when the signer sent none.
+func TestDisplaySignRequestShowsValidityWindow(t *testing.T) {
+	rendered := captureStdout(t, func() {
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc", FirstValid: 100, LastValid: 1100}, 1)
+	})
+	if !strings.Contains(rendered, "Valid Rounds: 100 - 1100 (window: 1000 blocks)") {
+		t.Fatalf("displaySignRequest() output missing the validity window:\n%s", rendered)
+	}
+	rendered = captureStdout(t, func() {
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc"}, 1)
+	})
+	if strings.Contains(rendered, "Valid Rounds") {
+		t.Fatalf("displaySignRequest() shows a window the signer did not send:\n%s", rendered)
+	}
+}
+
+func TestValidityWindowLine(t *testing.T) {
+	for _, tc := range []struct {
+		first, last uint64
+		want        string
+	}{
+		{0, 0, ""},
+		{10, 0, ""},
+		{0, 10, ""},
+		{10, 10, "Valid Rounds: 10 - 10 (window: 0 blocks)"},
+		{20, 10, "Valid Rounds: 20 - 10 (empty: no round is valid)"},
+	} {
+		if got := validityWindowLine(tc.first, tc.last); got != tc.want {
+			t.Errorf("validityWindowLine(%d, %d) = %q, want %q", tc.first, tc.last, got, tc.want)
+		}
+	}
+}
+
 func TestParseApprovalInput(t *testing.T) {
 	tests := []struct {
 		input        string
