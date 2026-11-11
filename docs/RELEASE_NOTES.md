@@ -20,6 +20,9 @@ before it was renamed `enroll`.
   check now runs on all three: a fee the report lists must have risen (an
   unchanged one passed on the cosigned and plugin plans), the rises must not
   wrap around when summed, and a negative `total_fees_delta` is refused.
+- **The cosigned client checks budget dummies with the canonical dummy check.**
+  Its own check skipped the validity window, genesis and lease; it now
+  rebuilds each dummy as every other path does, before it signs the dummies.
 
 ## apshell refuses input it used to ignore or guess at
 
