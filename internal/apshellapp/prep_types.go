@@ -204,18 +204,20 @@ type PreparedSendItem struct {
 	To           string
 	Prep         *PreparedTxn
 	BalanceCheck *BalanceCheckDetails
-	// lookupErr is why the sender's signing key could not be looked up when
-	// the command's LogicSig arguments were shared out. The item is not
-	// prepared and fails on its own.
-	lookupErr error
 }
 
 // NonAtomicSendPlan describes prepared non-atomic send execution.
 type NonAtomicSendPlan struct {
-	Amount    asa.Amount
-	Items     []PreparedSendItem
-	FromCount int
-	ToCount   int
+	Amount asa.Amount
+	// Items are the sends that were prepared, in order. Each has its Prep.
+	Items []PreparedSendItem
+	// Unprepared holds the result of each send that failed before it could be
+	// prepared, because its sender's signing key could not be looked up, by
+	// the send's position among all of them. Execution reports each in its
+	// place and goes on with the others.
+	Unprepared map[int]SendItemResult
+	FromCount  int
+	ToCount    int
 }
 
 // AtomicSendPlan describes prepared atomic send execution.

@@ -146,6 +146,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 	}
 
 	items := make([]PreparedSendItem, 0, iterCount)
+	var unprepared map[int]SendItemResult
 	for idx := 0; idx < iterCount; idx++ {
 		fromAddr := plan.FromAddresses[0]
 		fromArgs := lsigArgs[0]
@@ -158,14 +159,16 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 			toAddr = plan.ToAddresses[idx]
 		}
 
-		item := PreparedSendItem{From: fromAddr, To: toAddr}
 		if fromArgs.Err != nil {
 			// The sender's signing key could not be looked up, so what it
-			// takes is not known: this item fails, the others go ahead.
-			item.lookupErr = fromArgs.Err
-			items = append(items, item)
+			// takes is not known: this send fails, the others go ahead.
+			if unprepared == nil {
+				unprepared = make(map[int]SendItemResult)
+			}
+			unprepared[idx] = SendItemResult{From: fromAddr, To: toAddr, Error: fromArgs.Err.Error()}
 			continue
 		}
+		item := PreparedSendItem{From: fromAddr, To: toAddr}
 		assetID := plan.Amount.Meta.AssetID
 		amountUnits := plan.Amount.Raw
 
@@ -204,10 +207,11 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 	}
 
 	return &NonAtomicSendPlan{
-		Amount:    plan.Amount,
-		Items:     items,
-		FromCount: len(plan.FromAddresses),
-		ToCount:   len(plan.ToAddresses),
+		Amount:     plan.Amount,
+		Items:      items,
+		Unprepared: unprepared,
+		FromCount:  len(plan.FromAddresses),
+		ToCount:    len(plan.ToAddresses),
 	}, nil
 }
 
@@ -318,16 +322,18 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 	}
 
 	result := &NonAtomicSendResult{Amount: plan.Amount}
-	for _, item := range plan.Items {
-		itemResult := SendItemResult{From: item.From, To: item.To}
-		if item.lookupErr != nil {
-			itemResult.Error = item.lookupErr.Error()
-			result.LastError = itemResult.Error
+	prepared := plan.Items
+	sends := len(plan.Items) + len(plan.Unprepared)
+	for position := 0; position < sends; position++ {
+		if failed, ok := plan.Unprepared[position]; ok {
+			result.LastError = failed.Error
 			result.FailureCount++
-			result.Items = append(result.Items, itemResult)
+			result.Items = append(result.Items, failed)
 			continue
 		}
-		itemResult.SigningKeyType = item.Prep.SigningContext.DisplayKeyType
+		item := prepared[0]
+		prepared = prepared[1:]
+		itemResult := SendItemResult{From: item.From, To: item.To, SigningKeyType: item.Prep.SigningContext.DisplayKeyType}
 
 		if err := validatePreparedSendItem(item, plan.Amount); err != nil {
 			itemResult.Error = err.Error()

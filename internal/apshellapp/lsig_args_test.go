@@ -153,6 +153,7 @@ func lsigArgsTestApp(t *testing.T) (*App, *signRecorder) {
 		"rekeyedlsig":    {argsLsigToNative, argsHTLC},
 		"rekeyedbounded": {argsBoundedToHTLC, argsNative},
 		"withbroken":     {argsBroken, argsHTLC},
+		"brokenmiddle":   {argsHTLC, argsBroken, argsNative},
 	}
 	return New(eng, config.DefaultConfig(), t.TempDir()), recorder
 }
@@ -490,6 +491,26 @@ func TestSetCommandsKeepALookupFailureToItsAccount(t *testing.T) {
 			t.Fatalf("ExecuteSend() = %+v, %v; want the broken account failed on its item", result, err)
 		}
 		requireSignedWith(t, recorder, argsHTLC, argsHTLC, openHex)
+	})
+	t.Run("send, the failure between two sends", func(t *testing.T) {
+		app, recorder := lsigArgsTestApp(t)
+		result, err := app.ExecuteSend(context.Background(), SendRequest{
+			AmountText: "0.1", AssetRef: "algo", FromRaw: []string{"@brokenmiddle"}, ToRaw: []string{argsTo}, LsigArgs: preimage,
+		})
+		if err != nil || result.NonAtomic == nil || len(result.NonAtomic.Items) != 3 {
+			t.Fatalf("ExecuteSend() = %+v, %v; want a result for each of the three accounts", result, err)
+		}
+		for i, from := range []string{argsHTLC, argsBroken, argsNative} {
+			item := result.NonAtomic.Items[i]
+			if item.From != from || (from == argsBroken) != strings.Contains(item.Error, lookupFailed) {
+				t.Fatalf("item %d = %+v, want %s in its place, only the broken account failed by its lookup", i, item, from)
+			}
+		}
+		if result.NonAtomic.FailureCount != 3 || result.NonAtomic.LastError == "" {
+			t.Fatalf("FailureCount = %d, want every send failed (the fake signer refuses the others)", result.NonAtomic.FailureCount)
+		}
+		requireSignedWith(t, recorder, argsHTLC, argsHTLC, openHex)
+		requireSignedWith(t, recorder, argsNative, argsNative, nil)
 	})
 	t.Run("sweep", func(t *testing.T) {
 		app, recorder := lsigArgsTestApp(t)
