@@ -598,7 +598,9 @@ Runtime cosigned-send routing works like this:
 2. The client queries authenticated `/keys` on the configured cosigner endpoints
    with bounded parallelism and validates each advertised Witness Key ID.
 3. The client builds an operation-scoped route snapshot and requires exactly
-   one endpoint for every required embedded public key.
+   one endpoint for every required embedded public key. A component key is its
+   key type and public key together: one public key advertised under two
+   witness key types is two component keys, each routed on its own.
 4. Component signing reuses the already-verified endpoint connection from that
    snapshot.
 
