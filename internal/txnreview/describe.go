@@ -86,8 +86,9 @@ func describeAssetTransferTx(txn types.Transaction, view View) string {
 		desc.WriteString(fmt.Sprintf("\n  ⚠️  CLAWBACK FROM: %s", txn.AssetSender.String()))
 	} else if isSelfClawback(txn) {
 		// Still a clawback on chain: the sender must hold the asset's
-		// clawback role, and a freeze on its holding does not stop it.
-		desc.WriteString(fmt.Sprintf("\n  ⚠️  CLAWBACK FROM: %s (the sender's own holding, moved by clawback authority even if frozen)", txn.AssetSender.String()))
+		// clawback role, and a freeze on its holding does not stop it. A
+		// plain line, not the clawback warning: it is no finding.
+		desc.WriteString("\n  Moves the sender's own holding by clawback authority, even if frozen")
 	}
 
 	if !txn.AssetCloseTo.IsZero() {

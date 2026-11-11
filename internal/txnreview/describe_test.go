@@ -804,8 +804,12 @@ func TestDescribeSelfClawback(t *testing.T) {
 	}
 
 	self := Describe(transfer(sender), View{})
-	if want := "CLAWBACK FROM: " + sender.String() + " (the sender's own holding, moved by clawback authority even if frozen)"; !strings.Contains(self, want) {
+	if want := "\n  Moves the sender's own holding by clawback authority, even if frozen"; !strings.Contains(self, want) {
 		t.Fatalf("self clawback description missing %q:\n%s", want, self)
+	}
+	// A description line, not the warning a clawback from someone else gets.
+	if strings.Contains(self, "⚠") || strings.Contains(self, "CLAWBACK") {
+		t.Fatalf("self clawback reads as the clawback warning:\n%s", self)
 	}
 	if findings := Findings(transfer(sender), FindingContext{}); len(findings) != 0 {
 		t.Fatalf("self clawback findings = %+v, want none", findings)
