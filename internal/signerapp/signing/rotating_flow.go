@@ -631,8 +631,11 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	consoleOf(s.Console).Printf("[ROTATING] Rotation pending %d -> %d for %s\n", stage, targetStage, req.Account)
 	// The IDs recorded are the ones decoded from the presented bytes, which
 	// the spend's signature and the dummies' signed.
-	recorded := decodedSignedGroup(group, len(plan.DummyTxns))
-	s.logSuccessfulSignatures(signReq, plan, recorded, policyRuleID)
+	var recorded signedGroup
+	if s.AuditLog != nil {
+		recorded = decodedSignedGroup(group, len(plan.DummyTxns))
+		s.logSuccessfulSignatures(signReq, plan, recorded, policyRuleID)
+	}
 	// Audit writes block, so this has to come after the last of them. A refusal
 	// here leaves a release on record that never left, which only makes the leaf
 	// look used.
@@ -640,7 +643,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		// The entries above record the transaction as signed; this one says
 		// the signature never left. Nothing leaves on this path, so writing
 		// after the check holds nothing back from a lock.
-		s.logWithheldSignature(recorded.record(0, req.Account, "", ""), refused)
+		s.logWithheldSignature(recorded, req.Account, refused)
 		return nil, refused
 	}
 	return &signerapi.RotatingSignResponse{
@@ -653,13 +656,14 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 }
 
 // logWithheldSignature records a rotating signature that was recorded as
-// signed and then refused at the final check. record is the spend's, as its
-// SIGN_APPROVED wrote it. Every audit log the service takes can write it.
-func (s *Service) logWithheldSignature(record SignedRecord, refused *ServiceError) {
+// signed and then refused at the final check: the spend, position 0 of
+// group, signed by account, as its SIGN_APPROVED recorded it. Every audit
+// log the service takes can write it.
+func (s *Service) logWithheldSignature(group signedGroup, account string, refused *ServiceError) {
 	if s.AuditLog == nil {
 		return
 	}
-	s.AuditLog.LogSignWithheld(record, "signature withheld after it was recorded as signed: "+refused.Message)
+	s.AuditLog.LogSignWithheld(group.record(0, account, "", ""), "signature withheld after it was recorded as signed: "+refused.Message)
 }
 
 // releaseRefused reports why a signature must not leave: the signer locked, or

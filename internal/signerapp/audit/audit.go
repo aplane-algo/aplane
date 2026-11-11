@@ -593,7 +593,8 @@ func signApprovedEntry(attr Attribution, approval SignApproval) AuditEntry {
 	fee := approval.Fee
 	entry.Fee = &fee
 	entry.GroupID = approval.GroupID
-	entry.GroupTxIDs = append([]string(nil), approval.GroupTxIDs...)
+	// Shared, not copied: normalizeEntry bounds a copy of its own.
+	entry.GroupTxIDs = approval.GroupTxIDs
 	entry.DummyCount = approval.DummyCount
 	return entry
 }

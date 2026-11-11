@@ -213,7 +213,9 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
-	s.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), alwaysReviewRuleID)
+	if s.AuditLog != nil {
+		s.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), alwaysReviewRuleID)
+	}
 
 	return &SignGroupResult{
 		Signed:    execResult.SignedTxns,

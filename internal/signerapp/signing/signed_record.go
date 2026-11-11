@@ -36,7 +36,9 @@ type SignedRecord struct {
 
 // signedGroup is what every SignedRecord of one request shares: the final
 // group, and how many of its trailing transactions are dummies this request
-// signed.
+// signed. Every record built from it shares its one txIDs slice as
+// GroupTxIDs; nothing that receives a record changes it (the audit log
+// bounds a copy of its own).
 type signedGroup struct {
 	txns       []types.Transaction
 	txIDs      []string
@@ -118,7 +120,7 @@ func (g signedGroup) record(index int, authAddress, details, policyRuleID string
 func (g signedGroup) inGroup(r SignedRecord) SignedRecord {
 	if g.groupID != "" {
 		r.GroupID = g.groupID
-		r.GroupTxIDs = append([]string(nil), g.txIDs...)
+		r.GroupTxIDs = g.txIDs
 		r.DummyCount = g.dummyCount
 	}
 	return r

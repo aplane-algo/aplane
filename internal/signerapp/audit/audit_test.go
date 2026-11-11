@@ -5,8 +5,10 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -250,5 +252,34 @@ func TestWithheldSignatureCarriesTheSignedTransaction(t *testing.T) {
 	// It retracts the signature; it does not restate the signed group.
 	if withheld.Fee != nil || withheld.GroupTxIDs != nil || withheld.DummyCount != 0 {
 		t.Fatalf("withheld entry restates the signed group: %+v", withheld)
+	}
+}
+
+// One request's SIGN_APPROVED entries share its group_txids slice, so
+// writing an entry never changes it, even when the entry is bounded.
+func TestSignApprovedLeavesTheSharedGroupTxIDsAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared := make([]string, maxAuditSelectors+2)
+	for i := range shared {
+		shared[i] = fmt.Sprintf("TX%d", i)
+	}
+	shared[0] = strings.Repeat("X", maxAuditField+10)
+	want := append([]string(nil), shared...)
+	for i := 0; i < 2; i++ {
+		a.LogSignApprovedAttributed(Attribution{RequestID: "req-9"}, SignApproval{TxnAuth: "ADDR", TxID: "TX1", GroupID: "R1JPVVA=", GroupTxIDs: shared})
+	}
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(shared, want) {
+		t.Fatal("writing the entries changed the shared group_txids")
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 2 || len(entries[1].GroupTxIDs) != maxAuditSelectors || entries[1].GroupTxIDsOmitted != 2 {
+		t.Fatalf("entries = %+v, want each bounded to %d group_txids", entries, maxAuditSelectors)
 	}
 }
