@@ -258,10 +258,9 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 
 	r := requestWithIdentityID(http.MethodPost, "/sign", nil, "alice")
 	r.RemoteAddr = "203.0.113.10:4000"
-	audit := &signingAuditLogger{
-		log:         logger,
-		attribution: signingAuditAttributionFromRequest(r, "req-1"),
-	}
+	attr := signingAuditAttributionFromRequest(r)
+	attr.RequestID = "req-1"
+	audit := &signingAuditLogger{log: logger, attribution: attr}
 
 	audit.LogRequest(signersigning.RequestToSign, "ADDR", "SENDER", "pay", "send 1 ALGO")
 	audit.RecordApprovalResponse(signerapproval.SignResponse{ID: "req-1", Approved: true, ApproverPrincipal: "alice-admin"})

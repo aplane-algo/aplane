@@ -5,14 +5,12 @@ package daemon
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
+	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
@@ -29,40 +27,34 @@ var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingRecoveryLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditWithheldLogger = (*signingAuditLogger)(nil)
 
-// signingRequestID is the ID that ties together what one signing or
-// planning request does: the request_id it carried or, for a request sent
-// without one, an ID the signer mints for it, req- and 16 hex digits from
-// crypto/rand. Each handler settles it once, before anything is logged, and
-// sets it on the request, so the audit operation_id, the approval prompt,
-// /sign/cancel and a response that returns an ID all carry the same value.
-//
-// A minted ID is random, not a clock reading, so two requests that arrive in
-// the same instant cannot share one: they would share an operation_id and a
-// cancel handle, and a cancel for one would stop the other. It is 20
-// characters, the most the signer console prints of a waiting request's ID,
-// so the console shows it whole; 64 random bits make two minted IDs equal
-// with negligible probability.
-func signingRequestID(supplied string) string {
-	if supplied != "" {
-		return supplied
-	}
-	var suffix [8]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
-		// Unreachable: crypto/rand.Read ends the program rather than
-		// return an error.
-		panic(fmt.Sprintf("generate request ID: %v", err))
-	}
-	return "req-" + hex.EncodeToString(suffix[:])
+// signingRequest settles the ID a signing or planning request is handled
+// under (signersigning.RequestID of the request_id it sent) and returns it
+// with the REST service for the request: its audit entries are attributed to
+// the connection that sent it and carry that ID as operation_id. The handler
+// sets the ID on its request before calling the service, so the entries, the
+// approval prompt, /sign/cancel and a response that returns an ID all carry
+// the same value. It is the only way a handler gets a service whose entries
+// name a request.
+func (fs *Signer) signingRequest(r *http.Request, supplied string) (string, signerrest.Service) {
+	requestID := signersigning.RequestID(supplied)
+	attr := signingAuditAttributionFromRequest(r)
+	attr.RequestID = requestID
+	return requestID, fs.restServiceWithSigningAudit(fs.signingAuditLogger(attr))
 }
 
-// signingAuditAttributionFromRequest attributes a signing request's entries
-// to the connection that sent it, and ties them together by the request's
-// ID (signingRequestID).
-func signingAuditAttributionFromRequest(r *http.Request, requestID string) auditAttribution {
+// connectionService is the REST service for a call that is not a signing
+// request (rotating prepare and recovery): its entries are attributed to the
+// connection that sent it and name no request.
+func (fs *Signer) connectionService(r *http.Request) signerrest.Service {
+	return fs.restServiceWithSigningAudit(fs.signingAuditLogger(signingAuditAttributionFromRequest(r)))
+}
+
+// signingAuditAttributionFromRequest attributes entries to the connection
+// that sent r.
+func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	attr := auditAttribution{
 		Transport:  auditTransportHTTP,
 		RemoteAddr: r.RemoteAddr,
-		RequestID:  requestID,
 	}
 	ident := auth.IdentityFromContext(r.Context())
 	if ident == nil {
@@ -72,14 +64,13 @@ func signingAuditAttributionFromRequest(r *http.Request, requestID string) audit
 	return attr
 }
 
-func (fs *Signer) signingAuditLogger(r *http.Request, requestID string) signingAudit {
+// signingAuditLogger writes signing entries attributed as attr, or is nil
+// when the daemon has no audit log.
+func (fs *Signer) signingAuditLogger(attr auditAttribution) signingAudit {
 	if fs.auditLog == nil {
 		return nil
 	}
-	return &signingAuditLogger{
-		log:         fs.auditLog,
-		attribution: signingAuditAttributionFromRequest(r, requestID),
-	}
+	return &signingAuditLogger{log: fs.auditLog, attribution: attr}
 }
 
 // LogRequest records one slot of a request as it arrived: a SIGN_REQUEST,

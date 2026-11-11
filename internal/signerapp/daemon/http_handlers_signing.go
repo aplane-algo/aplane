@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -21,8 +22,9 @@ func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.RequestID = signingRequestID(req.RequestID)
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).SignGroup(r.Context(), ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.SignGroup(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
@@ -38,8 +40,9 @@ func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.RequestID = signingRequestID(req.RequestID)
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).SignComponents(r.Context(), ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.SignComponents(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
@@ -56,8 +59,9 @@ func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.RequestID = signingRequestID(req.RequestID)
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).Assemble(r.Context(), ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.Assemble(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
@@ -105,8 +109,9 @@ func (fs *Signer) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.RequestID = signingRequestID(req.RequestID)
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r, req.RequestID)).Plan(ir, req)
+	var svc signerrest.Service
+	req.RequestID, svc = fs.signingRequest(r, req.RequestID)
+	result, err := svc.Plan(ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return

@@ -1338,13 +1338,20 @@ Signing-audit semantics:
   one request, so keeping it unique is the client's responsibility. For a
   request sent without one, the signer mints a random ID, `req-` and 16 hex
   digits from `crypto/rand` (64 bits, so it does not mint the same ID
-  twice; 20 characters, so the console shows it whole). The HTTP handler
-  mints it once and sets it on the request before anything is
-  logged (`/sign`, `/plan`, `/sign/component`, `/sign/assemble` and the
-  rotating prepare and sign). The same value is the ID the approval prompt
-  is held under (the signer console shows its first 20 characters), the
-  live request's `/sign/cancel` handle, and the `request_id`
-  `/sign/component` and `/sign/assemble` return
+  twice; 20 characters, so the console shows it whole). One function mints
+  it (`signing.RequestID`). The HTTP handlers of `/sign`, `/plan`,
+  `/sign/component`, `/sign/assemble` and the rotating sign settle the ID
+  through one helper (`signingRequest` in the daemon), which also gives the
+  handler the audit logger attributed to that ID, and set it on the request
+  before anything is logged. The same value is the ID the approval prompt is
+  held under (the signer console shows its first 20 characters), the live
+  request's `/sign/cancel` handle, and the `request_id` `/sign/component`
+  and `/sign/assemble` return. The signing service settles the ID again
+  through the same function wherever a request reaches the approval
+  coordinator or a response that returns an ID, so a direct caller that
+  supplies none still gets one; for a request a handler settled this changes
+  nothing. Rotating prepare and recovery are not signing requests and carry
+  no ID
 - `/plan` signs nothing: its slots are `PLAN_REQUEST` entries (the same
   fields as `SIGN_REQUEST`), and it writes no `SIGN_*` entry
 - no signing entry carries key material, signatures, passphrases or LogicSig

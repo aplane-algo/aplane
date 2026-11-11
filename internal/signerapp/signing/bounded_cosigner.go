@@ -76,6 +76,9 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// The prompt is held under the request's ID and the response returns
+	// it, so a direct caller that supplies none gets one for both.
+	req.RequestID = RequestID(req.RequestID)
 	if s.Planner == nil || s.Approval == nil || s.Executor == nil {
 		return nil, internal("signing service not fully configured")
 	}

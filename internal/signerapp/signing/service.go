@@ -163,6 +163,9 @@ func (s *Service) AssembleWithContext(ctx context.Context, req signerapi.Assembl
 	if err := ctx.Err(); err != nil {
 		return nil, canceledSignRequest(err)
 	}
+	// The response returns the request's ID, so a direct caller that
+	// supplies none gets one.
+	req.RequestID = RequestID(req.RequestID)
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}

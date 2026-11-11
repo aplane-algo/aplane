@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -349,31 +348,6 @@ func TestAnIDLessSignIsLoggedUnderTheIDItsPromptHas(t *testing.T) {
 	}
 	if w := <-done; w.Code == http.StatusOK {
 		t.Fatalf("the cancelled /sign was signed: %s", w.Body.String())
-	}
-}
-
-// A minted request ID is random, so requests sent without one in the same
-// instant never share it, and it fits every bound on a request ID: the
-// request validators, the audit operation_id, and the 20 characters of a
-// waiting request's ID the signer console prints. A supplied ID is kept.
-func TestMintedRequestIDsAreUniqueAndFitTheirBounds(t *testing.T) {
-	format := regexp.MustCompile(`^req-[0-9a-f]{16}$`)
-	seen := make(map[string]bool)
-	for i := 0; i < 10_000; i++ {
-		id := signingRequestID("")
-		if !format.MatchString(id) || len(id) > 20 {
-			t.Fatalf("minted ID %q, want req- and 16 hex digits, 20 characters", id)
-		}
-		if err := (signerapi.CancelSignRequest{RequestID: id}).Validate(); err != nil {
-			t.Fatalf("minted ID %q is not a valid request_id: %v", id, err)
-		}
-		if seen[id] {
-			t.Fatalf("minted ID %q twice", id)
-		}
-		seen[id] = true
-	}
-	if got := signingRequestID("client-7"); got != "client-7" {
-		t.Fatalf("signingRequestID(client-7) = %q, want the supplied ID", got)
 	}
 }
 

@@ -492,7 +492,9 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 		}
 	}
 
-	requestID := req.RequestID
+	// A direct caller may supply no ID; the prompt is never held under an
+	// empty one.
+	requestID := RequestID(req.RequestID)
 	console.Printf("[IPC] GROUP APPROVAL: Waiting for approval from apadmin TUI (request %s)...\n", requestIDPreview(requestID))
 	console.Sync()
 
@@ -589,6 +591,9 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return forbidden("transaction approval blocked: " + reason)
 	}
 
+	// RequestSingleTxnApproval and its context form supply no ID; the prompt
+	// is never held under an empty one.
+	requestID = RequestID(requestID)
 	console.Printf("[IPC] TXN APPROVAL: Waiting for approval from apadmin TUI (request %s)...\n", requestIDPreview(requestID))
 	console.Sync()
 

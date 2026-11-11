@@ -46,5 +46,5 @@ func (fs *Signer) handleAdminDelete(w http.ResponseWriter, r *http.Request) {
 // keyMutationAuditContext attributes a REST key mutation's audit events to the
 // enrolled client that requested it, with its transport and remote address.
 func keyMutationAuditContext(r *http.Request) context.Context {
-	return signeraudit.WithAttribution(r.Context(), signingAuditAttributionFromRequest(r, ""))
+	return signeraudit.WithAttribution(r.Context(), signingAuditAttributionFromRequest(r))
 }
