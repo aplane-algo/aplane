@@ -4,7 +4,9 @@
 package signing
 
 import (
+	"encoding/binary"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -38,5 +40,57 @@ func TestCleanSubmitError(t *testing.T) {
 				t.Errorf("cleanSubmitError() = %q, want %q", got.Error(), tt.want)
 			}
 		})
+	}
+}
+
+// dummyProgramOpcodes holds exactly the opcodes the dummy program uses: the
+// immediate bytes each takes and its cost, which is 1 in every AVM version. None
+// branches, so a program built only from them is straight-line and the sum of
+// its opcode costs is the cost of every run. An opcode missing here fails the
+// test rather than being guessed at.
+var dummyProgramOpcodes = map[byte]struct {
+	name       string
+	immediates int
+	cost       uint64
+	fields     map[byte]string
+}{
+	0x12: {name: "==", cost: 1},
+	0x31: {name: "txn", immediates: 1, cost: 1, fields: map[byte]string{32: "RekeyTo"}},
+	0x32: {name: "global", immediates: 1, cost: 1, fields: map[byte]string{3: "ZeroAddress"}},
+}
+
+func TestDummyOpcodeCostMatchesEmbeddedProgram(t *testing.T) {
+	program := EmbeddedDummyTealTok
+	version, pc := binary.Uvarint(program)
+	if pc <= 0 || version != 3 {
+		t.Fatalf("dummy program version = %d (prefix %d bytes), want 3", version, pc)
+	}
+	var cost uint64
+	var listing []string
+	for pc < len(program) {
+		op, ok := dummyProgramOpcodes[program[pc]]
+		if !ok {
+			t.Fatalf("dummy program opcode 0x%02x at pc %d has no cost in this test's table", program[pc], pc)
+		}
+		if pc+1+op.immediates > len(program) {
+			t.Fatalf("dummy program opcode %s at pc %d is truncated", op.name, pc)
+		}
+		text := op.name
+		if op.immediates == 1 {
+			field, known := op.fields[program[pc+1]]
+			if !known {
+				t.Fatalf("dummy program %s field %d at pc %d is not in this test's table", op.name, program[pc+1], pc)
+			}
+			text += " " + field
+		}
+		listing = append(listing, text)
+		cost += op.cost
+		pc += 1 + op.immediates
+	}
+	if got, want := strings.Join(listing, "; "), "txn RekeyTo; global ZeroAddress; =="; got != want {
+		t.Fatalf("dummy program = %q, want %q", got, want)
+	}
+	if cost != DummyOpcodeCost {
+		t.Fatalf("dummy program costs %d, DummyOpcodeCost is %d", cost, DummyOpcodeCost)
 	}
 }

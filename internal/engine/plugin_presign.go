@@ -497,6 +497,6 @@ func dummyLogicSigResourceUsage() *signerapi.LogicSigResourceUsage {
 	return &signerapi.LogicSigResourceUsage{
 		ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
 		ArgumentBytes: 0,
-		MaxOpcodeCost: 1,
+		MaxOpcodeCost: signing.DummyOpcodeCost,
 	}
 }

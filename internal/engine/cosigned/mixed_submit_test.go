@@ -98,7 +98,7 @@ func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
 	if mode, _ := req.Requests[2].Mode(); mode != signerapi.RequestModeForeign {
 		t.Fatalf("dummy request[2] mode = %q, want foreign", mode)
 	}
-	if got := req.Requests[2].LsigResources; got == nil || got.ProgramBytes != uint64(len(signing.EmbeddedDummyTealTok)) || got.ArgumentBytes != 0 || got.MaxOpcodeCost != 1 {
+	if got := req.Requests[2].LsigResources; got == nil || got.ProgramBytes != uint64(len(signing.EmbeddedDummyTealTok)) || got.ArgumentBytes != 0 || got.MaxOpcodeCost != signing.DummyOpcodeCost {
 		t.Fatalf("dummy request[2] lsig_resources = %#v", got)
 	}
 }

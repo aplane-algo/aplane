@@ -524,7 +524,7 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 				TxnBytesHex: groupBytesHex[i],
 				LsigResources: &signerapi.LogicSigResourceUsage{
 					ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
-					MaxOpcodeCost: 1,
+					MaxOpcodeCost: signing.DummyOpcodeCost,
 				},
 			}
 		case cosignedTargets[i].Account != "":
