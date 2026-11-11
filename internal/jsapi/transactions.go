@@ -160,6 +160,7 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 	return a.runtime.ToValue(map[string]interface{}{
 		"asset":     result.AssetID,
 		"to":        result.To,
+		"simulated": result.Simulated,
 		"succeeded": result.Succeeded,
 		"failed":    result.Failed,
 		"items":     items,

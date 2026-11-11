@@ -69,7 +69,11 @@ func (s jsSweeper) Sweep(ctx context.Context, req jsapi.SweepRequest) (*jsapi.Sw
 		LsigArgs:   req.LsigArgs,
 		Wait:       req.Wait,
 	})
-	return sweepResultForScript(result, err)
+	out, err := sweepResultForScript(result, err)
+	if out != nil {
+		out.Simulated = s.app.IsSimulateEnabled()
+	}
+	return out, err
 }
 
 // sweepResultForScript turns the sweep workflow's outcome into what sweep()
@@ -87,13 +91,10 @@ func sweepResultForScript(result *SweepCommandResult, err error) (*jsapi.SweepRe
 	}
 	for _, item := range result.Items {
 		failure := item.Error
-		if item.SimulationFailed {
+		if item.SimulationFailure != "" {
 			// The shell prints the simulation's output; a script has only
 			// this field to learn the item failed, and why.
-			failure = "simulation failed"
-			if detail := strings.TrimSpace(item.Output); detail != "" {
-				failure += ": " + detail
-			}
+			failure = item.SimulationFailure
 		}
 		out.Items = append(out.Items, jsapi.SweepItem{
 			From:      item.From,
@@ -111,17 +112,17 @@ func sweepResultForScript(result *SweepCommandResult, err error) (*jsapi.SweepRe
 		// its result, and the script reads `failed` and the items.
 		//
 		// "Failed" includes a transaction that was sent and whose
-		// confirmation wait failed. It may still confirm, so its ID is in
-		// the message: the script must not take the error to mean that
-		// nothing moved.
+		// confirmation wait failed: it timed out, or the network dropped
+		// it. Which is not known here, so its ID is in the message and the
+		// script must not take the error to mean that nothing moved.
 		var reasons []string
 		for i, item := range out.Items {
 			if item.Error == "" {
 				continue
 			}
 			reason := fmt.Sprintf("%s: %s", item.From, item.Error)
-			if item.TxID != "" && !result.Items[i].SimulationFailed {
-				reason += fmt.Sprintf(" [sent as %s; it may still confirm]", item.TxID)
+			if item.TxID != "" && result.Items[i].SimulationFailure == "" {
+				reason += fmt.Sprintf(" [sent as %s; check it before retrying]", item.TxID)
 			}
 			reasons = append(reasons, reason)
 		}

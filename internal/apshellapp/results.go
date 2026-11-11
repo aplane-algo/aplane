@@ -647,10 +647,11 @@ type SweepItemResult struct {
 	Confirmed     bool
 	Output        string
 	Error         string
-	// SimulationFailed marks an item whose simulation failed. Error is left
-	// empty for it, because the shell prints the simulation's own Output.
-	SimulationFailed bool
-	Warnings         []Warning
+	// SimulationFailure is the reason an item's simulation failed. Error is
+	// left empty for such an item, because the shell prints the simulation's
+	// own Output; a script is given this instead.
+	SimulationFailure string
+	Warnings          []Warning
 }
 
 // SweepCommandResult describes the semantic outcome of a sweep command.

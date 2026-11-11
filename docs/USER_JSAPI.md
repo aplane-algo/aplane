@@ -315,16 +315,20 @@ units, default 0), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
 no `note`. An option that is present must have a value: `{leaving: undefined}`
 is an error, not "leave nothing".
 
-It returns `{asset, to, succeeded, failed, items}`, where each item is
-`{from, amount, txid, confirmed, skipped, error}`. An account with nothing
+It returns `{asset, to, simulated, succeeded, failed, items}`, where each item
+is `{from, amount, txid, confirmed, skipped, error}`. `amount` is what was to
+be sent from that account, whether or not it was: count only items with no
+`error` and no `skipped`. `simulated` is true when simulate mode was on, in
+which case nothing was sent. An account with nothing
 above `leaving`, or one not opted into the asset, is skipped: `skipped` gives
 the reason and nothing is sent. When some transactions fail, read `failed` and
 each item's `error`. When every transaction fails, `sweep()` throws, with each
 account's reason.
 
 A failed item can still have a `txid`: the transaction was sent and waiting
-for its confirmation failed, so it may yet confirm. The thrown message names
-such a transaction ("sent as ..."). Check it before retrying.
+for its confirmation failed, because it timed out or the network dropped it.
+The thrown message names such a transaction ("sent as ..."). Check whether it
+confirmed before retrying.
 
 An ALGO sweep with `leaving: 0` tries to send the whole balance less fees,
 which the network refuses, because an open account must keep its minimum

@@ -52,17 +52,19 @@ type SweepRequest struct {
 
 // SweepResult is the outcome of a sweep, one item per source account.
 type SweepResult struct {
-	AssetID   uint64
-	To        string
+	AssetID uint64
+	To      string
+	// Simulated is true when simulate mode was on: nothing was sent.
+	Simulated bool
 	Succeeded int
 	Failed    int
 	Items     []SweepItem
 }
 
-// SweepItem is one source account's outcome. Skipped says why nothing was
-// sent (not an error); Error says why a transaction failed. A failed item can
-// still carry a TxID: the transaction was sent and waiting for it failed, so
-// it may yet confirm.
+// SweepItem is one source account's outcome. Amount is what was to be sent,
+// whether or not it was. Skipped says why nothing was sent (not an error);
+// Error says why a transaction failed. A failed item can still carry a TxID:
+// the transaction was sent and waiting for its confirmation failed.
 type SweepItem struct {
 	From      string
 	Amount    uint64

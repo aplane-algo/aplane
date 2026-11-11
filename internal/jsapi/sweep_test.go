@@ -116,12 +116,12 @@ func TestSweepReturnsEachAccountsOutcome(t *testing.T) {
 		},
 	}})
 	v, err := vm.RunString(`const r = sweep(["A","B","C"], "DEST");
-		[r.to, r.succeeded, r.failed, r.items.length, r.items[0].txid, r.items[0].amount,
+		[r.to, r.simulated, r.succeeded, r.failed, r.items.length, r.items[0].txid, r.items[0].amount,
 		 r.items[0].confirmed, r.items[1].skipped, r.items[2].error].join("|")`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := v.String(), "DEST|1|1|3|TX|5|true|balance too low|refused"; got != want {
+	if got, want := v.String(), "DEST|false|1|1|3|TX|5|true|balance too low|refused"; got != want {
 		t.Fatalf("result = %q, want %q", got, want)
 	}
 }

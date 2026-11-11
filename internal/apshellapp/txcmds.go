@@ -474,7 +474,10 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	}
 	decorateRekeyResult(result)
 	if req.BeforeSubmit != nil {
-		req.BeforeSubmit(result)
+		// A copy: this result is filled in after the transaction is
+		// submitted, and the host may keep what it was announced.
+		announced := *result
+		req.BeforeSubmit(&announced)
 	}
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
@@ -529,7 +532,10 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 	}
 	decorateRekeyResult(result)
 	if req.BeforeSubmit != nil {
-		req.BeforeSubmit(result)
+		// A copy: this result is filled in after the transaction is
+		// submitted, and the host may keep what it was announced.
+		announced := *result
+		req.BeforeSubmit(&announced)
 	}
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
@@ -667,7 +673,8 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 	}
 	decorateCloseResult(result)
 	if req.BeforeSubmit != nil {
-		req.BeforeSubmit(result)
+		announced := *result
+		req.BeforeSubmit(&announced)
 	}
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
@@ -860,7 +867,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
 			}
 			if errors.Is(err, engine.ErrSimulationFailed) {
-				item.SimulationFailed = true
+				item.SimulationFailure = err.Error()
 			} else {
 				item.Error = fmt.Sprintf("transaction failed: %v", err)
 			}

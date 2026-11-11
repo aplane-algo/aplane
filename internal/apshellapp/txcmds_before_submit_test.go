@@ -173,7 +173,7 @@ func TestSweepResultForScript(t *testing.T) {
 			// Sent, and the wait for confirmation failed: it may still confirm.
 			{From: "A", TxID: "TXA", Error: "transaction failed: timed out waiting"},
 			// A simulation failure has no Error in the shell's result.
-			{From: "B", TxID: "SIMB", SimulationFailed: true, Output: "  logic eval error\n"},
+			{From: "B", TxID: "SIMB", SimulationFailure: "simulation failed: logic eval error", Output: "a long dump\nof many lines\n"},
 		},
 	}
 
@@ -182,14 +182,14 @@ func TestSweepResultForScript(t *testing.T) {
 		t.Fatal("a sweep where every transaction failed was not raised")
 	}
 	for _, want := range []string{
-		"A: transaction failed: timed out waiting [sent as TXA; it may still confirm]",
+		"A: transaction failed: timed out waiting [sent as TXA; check it before retrying]",
 		"B: simulation failed: logic eval error",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want it to contain %q", err, want)
 		}
 	}
-	if strings.Contains(err.Error(), "sent as SIMB") {
+	if strings.Contains(err.Error(), "sent as SIMB") || strings.Contains(err.Error(), "a long dump") {
 		t.Fatalf("a simulated transaction is reported as sent: %q", err)
 	}
 
