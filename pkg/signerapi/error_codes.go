@@ -45,7 +45,13 @@ const (
 	// retry usually succeeds.
 	ErrCodeRotatingStageUnproven = "rotating_stage_unproven"
 	// ErrCodeRotatingStageChanged reports that the account's authorizer moved
-	// between preparing and signing; nothing was signed and the client should
-	// rebuild the transaction and prepare again.
+	// between preparing and signing; no signature was released and the client
+	// should rebuild the transaction and prepare again.
 	ErrCodeRotatingStageChanged = "rotating_stage_changed"
+	// ErrCodeRotatingWindowNotCurrent reports that the rotating spend's
+	// validity window is not acceptable at the round the signer read: its
+	// first valid round is too far ahead, or too few rounds remain before its
+	// last valid round. This attempt released no signature; the client may
+	// rebuild the validity rounds and prepare again.
+	ErrCodeRotatingWindowNotCurrent = "rotating_window_not_current"
 )
