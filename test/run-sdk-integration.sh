@@ -261,14 +261,22 @@ if [[ "$ready" != 1 ]]; then
   exit 1
 fi
 
-# The SDK suites spend from a rotating account, which is a library key type an
-# operator enables. Enabling an enabled type is harmless. A failure here is
-# reported and not fatal: the rotating tests skip when the type is not listed.
-rotating_key_type="aplane.rotating-triple-wotsc.v1"
+# The SDK suites spend from a rotating account of each family, which are
+# library key types an operator enables. Enabling an enabled type is harmless.
+# A failure here is reported and not fatal: a suite skips the family whose
+# type is not listed.
+rotating_key_types=(
+  "aplane.rotating-triple-wotsc.v1"
+  "aplane.rotating-triple-xmss.v1"
+  "aplane.rotating-triple-slhdsa.v1"
+)
 admin_log="$(dirname "$APSIGNER_DATA")/sdk-integration-apadmin.log"
-if ! APSIGNER_PASSPHRASE="${TEST_PASSPHRASE:-}" go run ./cmd/apadmin -d "$APSIGNER_DATA" keytype enable "$rotating_key_type" >"$admin_log" 2>&1; then
-  echo "Warning: could not enable $rotating_key_type; the SDK rotating tests will skip (see $admin_log)" >&2
-fi
+: >"$admin_log"
+for rotating_key_type in "${rotating_key_types[@]}"; do
+  if ! APSIGNER_PASSPHRASE="${TEST_PASSPHRASE:-}" go run ./cmd/apadmin -d "$APSIGNER_DATA" keytype enable "$rotating_key_type" >>"$admin_log" 2>&1; then
+    echo "Warning: could not enable $rotating_key_type; the SDK rotating tests will skip it (see $admin_log)" >&2
+  fi
+done
 
 echo "Running SDK integration tests from $APLANE_SDKS_REPO"
 (
