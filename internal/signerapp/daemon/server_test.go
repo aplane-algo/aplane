@@ -71,8 +71,8 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 	deps := signerPlannerDeps{signer: signer}
 	snapshot := deps.Snapshot()
 
-	if snapshot.Revision != 1 {
-		t.Fatalf("Snapshot revision = %d, want 1", snapshot.Revision)
+	if snapshot.Revision != ir.KeysetRevision() {
+		t.Fatalf("Snapshot revision = %d, want the published %d", snapshot.Revision, ir.KeysetRevision())
 	}
 	if got := snapshot.KeyFiles["ALICE"]; got != "identities/default/keys/ALICE.key" {
 		t.Fatalf("Snapshot KeyFiles[ALICE] = %q, want identities/default/keys/ALICE.key", got)

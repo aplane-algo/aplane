@@ -113,7 +113,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	if feeErr != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(feeErr)
 	}
-	s.Planner.logSignRequests(req, originals, map[int]bool{}, foreign)
+	s.Planner.logRequests(RequestToSign, req, originals, map[int]bool{}, foreign)
 	authKeyTypes := make([]string, evalCount)
 	for i, txReq := range req.Requests {
 		if !foreign[i] {

@@ -6,6 +6,7 @@ package signing
 import (
 	"bytes"
 	"context"
+	"encoding/base32"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -79,12 +80,15 @@ func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 	}
 }
 
-func TestPrepareComponentSigningGeneratesRequestIDWhenMissing(t *testing.T) {
+// The handler settles the request's ID before the service runs; the plan
+// keeps it as given.
+func TestPrepareComponentSigningKeepsTheRequestID(t *testing.T) {
 	sender := types.Address{1}.String()
 	receiver := types.Address{2}.String()
 	txn := paymentTransaction(t, sender, receiver, 7)
 
 	plan, err := prepareComponentSigning(componentPlanRequest{
+		RequestID:     "req-42",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -93,8 +97,8 @@ func TestPrepareComponentSigningGeneratesRequestIDWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
-	if !strings.HasPrefix(plan.RequestID, "cmp-") {
-		t.Fatalf("RequestID = %q, want cmp- prefix", plan.RequestID)
+	if plan.RequestID != "req-42" {
+		t.Fatalf("RequestID = %q, want the request's req-42", plan.RequestID)
 	}
 }
 
@@ -608,6 +612,12 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	if len(audit.approved) != 1 || audit.approved[0].authAddress != componentKey {
 		t.Fatalf("approved audit entries = %#v, want one component approval", audit.approved)
 	}
+	// The record names the ID the component message was built from, the one
+	// the cosigner signed.
+	signedTxID := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(plan.Targets[0].TxID[:])
+	if got := audit.approved[0].record.TxID; got != signedTxID {
+		t.Fatalf("approved txid = %s, want the signed target %s", got, signedTxID)
+	}
 }
 
 func TestSigningServiceAssembleCosignedDispatchesAfterValidation(t *testing.T) {
@@ -832,7 +842,9 @@ func mustDecodeAddress(t *testing.T, address string) []byte {
 	return decoded[:]
 }
 
-func TestAssembleDecodedCosignedGeneratesRequestIDWhenMissing(t *testing.T) {
+// The handler settles the request's ID before the service runs; assembly
+// returns it as given.
+func TestAssembleDecodedCosignedReturnsTheRequestID(t *testing.T) {
 	txn := paymentTransaction(t, types.Address{17}.String(), types.Address{18}.String(), 7)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
 	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
@@ -842,6 +854,7 @@ func TestAssembleDecodedCosignedGeneratesRequestIDWhenMissing(t *testing.T) {
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}})
 
 	result, signErr := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
+		RequestID:     "req-43",
 		GroupBytesHex: groupBytesHex,
 		Passthrough: []signerapi.AssemblyPassthroughItem{{
 			TargetIndex:  0,
@@ -851,8 +864,8 @@ func TestAssembleDecodedCosignedGeneratesRequestIDWhenMissing(t *testing.T) {
 	if signErr != nil {
 		t.Fatalf("assembleDecoded() error = %v", signErr)
 	}
-	if !strings.HasPrefix(result.RequestID, "asm-") {
-		t.Fatalf("RequestID = %q, want asm- prefix", result.RequestID)
+	if result.RequestID != "req-43" {
+		t.Fatalf("RequestID = %q, want the request's req-43", result.RequestID)
 	}
 }
 
@@ -1300,10 +1313,23 @@ func TestValidateCosignedPassthroughRequiresSignatureAndCanonical(t *testing.T) 
 		t.Fatal("unsigned passthrough: expected rejection, got nil")
 	}
 
+	// So is a multisig none of whose subsigs is signed, as /sign refuses it.
+	unsignedMsig := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Msig: types.MultisigSig{
+		Version: 1, Threshold: 1, Subsigs: []types.MultisigSubsig{{Key: make([]byte, 32)}},
+	}}))
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: unsignedMsig}, entry, notHeld); err == nil || err.Message != "passthrough index 0 signed transaction carries no signature" {
+		t.Fatalf("unsigned multisig passthrough: error = %v, want the no-signature refusal", err)
+	}
+
 	// A signed passthrough whose txn matches the canonical entry is accepted.
 	signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}}))
 	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, notHeld); err != nil {
 		t.Fatalf("signed passthrough: unexpected error %v", err)
+	}
+	// So is an escrow LogicSig, which carries a program and no signature.
+	escrow := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Lsig: types.LogicSig{Logic: []byte{0x0a, 0x81, 0x01}}}))
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: escrow}, entry, notHeld); err != nil {
+		t.Fatalf("escrow LogicSig passthrough: unexpected error %v", err)
 	}
 
 	// A passthrough whose sender is a locally held cosigned account is rejected:

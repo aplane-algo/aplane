@@ -31,9 +31,11 @@ func (fs *Signer) genesisHashResolver() apconfig.GenesisHashNetworkResolver {
 	return resolver
 }
 
+// planGroupWithAudit serves /plan, which signs nothing: its slots are audited
+// as PLAN_REQUEST.
 func (fs *Signer) planGroupWithAudit(auditLog signersigning.AuditLogger) func(signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
 	return func(req signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
-		return fs.newPlannerWithAudit(auditLog).PlanGroup(req)
+		return fs.newPlannerWithAudit(auditLog).PreviewGroup(req)
 	}
 }
 
@@ -55,6 +57,7 @@ func (d signerPlannerDeps) Snapshot() signersigning.PlannerRuntimeSnapshot {
 			Category: metadata.Category, BaseKeyType: metadata.BaseKeyType, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
 			BoundedAuthorization: metadata.BoundedAuthorization,
 			LogicSigResources:    metadata.LogicSigResources,
+			SigningArgs:          metadata.SigningArgs,
 		}
 	}
 	return signersigning.PlannerRuntimeSnapshot{

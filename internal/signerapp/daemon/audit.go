@@ -13,6 +13,7 @@ type auditAttribution = signeraudit.Attribution
 
 const (
 	AuditSignRequest                      = signeraudit.AuditSignRequest
+	AuditPlanRequest                      = signeraudit.AuditPlanRequest
 	AuditSignApproved                     = signeraudit.AuditSignApproved
 	AuditSignRejected                     = signeraudit.AuditSignRejected
 	AuditSignFailed                       = signeraudit.AuditSignFailed

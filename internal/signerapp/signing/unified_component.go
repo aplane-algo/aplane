@@ -15,6 +15,9 @@ import (
 // request without merging the authorization gates behind each target kind.
 // Mixed kinds remain closed until the end-to-end mixed choreography is enabled.
 func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *ServiceError) {
+	// The response returns the request's ID, so a direct caller that
+	// supplies none gets one.
+	req.RequestID = RequestID(req.RequestID)
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}

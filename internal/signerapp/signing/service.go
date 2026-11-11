@@ -16,12 +16,15 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+// AuditApproveLogger records each transaction a request signed, as signed,
+// and a signature so recorded that then never left the signer.
 type AuditApproveLogger interface {
-	LogSignApproved(authAddress, txnSender, details string)
-}
-
-type AuditApprovePolicyRuleLogger interface {
-	LogSignApprovedWithPolicyRule(authAddress, txnSender, details, policyRuleID string)
+	LogSignApproved(record SignedRecord)
+	// LogSignWithheld records, as SIGN_FAILED, a signature already recorded
+	// as signed that never left the signer. The entry carries the record's
+	// txid and group_id, the fields its SIGN_APPROVED has, so a search on
+	// either finds both entries.
+	LogSignWithheld(record SignedRecord, reason string)
 }
 
 type IsUnlockedFunc func() bool
@@ -166,6 +169,9 @@ func (s *Service) AssembleWithContext(ctx context.Context, req signerapi.Assembl
 	if err := ctx.Err(); err != nil {
 		return nil, canceledSignRequest(err)
 	}
+	// The response returns the request's ID, so a direct caller that
+	// supplies none gets one.
+	req.RequestID = RequestID(req.RequestID)
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
@@ -191,8 +197,6 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 	if err := rejectOrdinarySignKeyTypes(plan); err != nil {
 		return nil, err
 	}
-	allTxns := plan.AllTxns
-	txns := allTxns[:len(req.Requests)]
 	alwaysReviewRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)
 	if gateErr != nil {
 		return nil, gateErr
@@ -209,7 +213,9 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
-	s.logSuccessfulSignatures(req, plan, txns, alwaysReviewRuleID)
+	if s.AuditLog != nil {
+		s.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), alwaysReviewRuleID)
+	}
 
 	return &SignGroupResult{
 		Signed:    execResult.SignedTxns,
@@ -379,7 +385,10 @@ func (s *Service) logSummary(req signerapi.GroupSignRequest, plan *PlanResult, s
 	console.Printf("[GROUP] Successfully signed %d transaction(s)\n", len(signedTxns))
 }
 
-func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, policyRuleID string) {
+// logSuccessfulSignatures records each position this signer signed with its
+// key, as signed: group is the final group, as the executor signed it, with
+// the trailing dummies it signed.
+func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, group signedGroup, policyRuleID string) {
 	if s.AuditLog == nil {
 		return
 	}
@@ -389,13 +398,7 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 			continue
 		}
 		details := fmt.Sprintf("txn %d/%d signed", i+1, len(req.Requests))
-		if policyRuleID != "" {
-			if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, txns[i].Sender.String(), details, policyRuleID)
-				continue
-			}
-		}
-		s.AuditLog.LogSignApproved(txReq.AuthAddress, txns[i].Sender.String(), details)
+		s.AuditLog.LogSignApproved(group.record(i, txReq.AuthAddress, details, policyRuleID))
 	}
 }
 

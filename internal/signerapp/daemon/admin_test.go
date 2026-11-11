@@ -66,6 +66,13 @@ var testSignerPolicy = policytest.MustDocument(noderole.RoleSigner, policy.Defau
 
 func setupTestSigner(t *testing.T) (*Signer, func()) {
 	t.Helper()
+	return setupTestNode(t, noderole.RoleSigner, testSignerPolicy)
+}
+
+// setupTestNode is setupTestSigner for a node of either role, with
+// defaultPolicy as its store's default policy.
+func setupTestNode(t *testing.T, role noderole.Role, defaultPolicy string) (*Signer, func()) {
+	t.Helper()
 
 	tmpDir := t.TempDir()
 
@@ -74,7 +81,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("Failed to create keyring: %v", err)
 	}
-	roleBytes, _, err := noderole.SaveInitial(keyPaths, noderole.RoleSigner, time.Now())
+	roleBytes, _, err := noderole.SaveInitial(keyPaths, role, time.Now())
 	if err != nil {
 		t.Fatalf("Failed to create node role: %v", err)
 	}
@@ -89,7 +96,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		Operation: "test-init", OperationID: "init-" + generationID,
 		CreatedAt: time.Unix(1_753_800_000, 0),
 		Apply: func(staged utilkeys.GenPaths) error {
-			if err := policy.WriteDefault(staged, noderole.RoleSigner, []byte(testSignerPolicy), masterKeyRing, time.Now()); err != nil {
+			if err := policy.WriteDefault(staged, role, []byte(defaultPolicy), masterKeyRing, time.Now()); err != nil {
 				return err
 			}
 			return noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, masterKeyRing, time.Now())
@@ -98,7 +105,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("Failed to initialize atomic store: %v", err)
 	}
-	initialPolicy, err := policyruntime.Load(noderole.RoleSigner, serverConfigForTest(), active, masterKeyRing)
+	initialPolicy, err := policyruntime.Load(role, serverConfigForTest(), active, masterKeyRing)
 	if err != nil {
 		t.Fatalf("Failed to verify policy baseline: %v", err)
 	}
@@ -129,7 +136,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	ir := productruntime.New(productruntime.Config{
 		KeyStore: ks,
 		KeyPaths: keyPaths,
-		NodeRole: noderole.RoleSigner,
+		NodeRole: role,
 	})
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)

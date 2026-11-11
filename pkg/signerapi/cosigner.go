@@ -38,10 +38,12 @@ type ComponentTarget struct {
 
 // ComponentContextPosition is an original position this request doesn't sign.
 // With AuthAddress it is one of the signer's own accounts: the signer sizes
-// its authorization from its own records, exactly as /plan did, and LsigArgs
-// carries what a bounded account needs to be classified. Without AuthAddress
-// it is another party's position, sized from the caller's LsigResources or
-// PQScheme hint. Either way it is not signed or judged by this request.
+// its authorization from its own records, exactly as /plan did. LsigArgs
+// carries what that takes: what a bounded account needs to be classified, and
+// the value of any runtime argument that declares no size (a required one
+// left out is refused). Without AuthAddress it is another party's position,
+// sized from the caller's LsigResources or PQScheme hint. Either way it is not
+// signed or judged by this request.
 type ComponentContextPosition struct {
 	TargetIndex   int                    `json:"target_index"`
 	AuthAddress   string                 `json:"auth_address,omitempty"`

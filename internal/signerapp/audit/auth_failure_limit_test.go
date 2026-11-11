@@ -199,13 +199,13 @@ func TestCosignerRejectionFloodIsSummarized(t *testing.T) {
 	now := time.Unix(1_760_000_000, 0)
 	a.cosignerRejections.now = func() time.Time { return now }
 
-	a.LogSignApproved("WITNESS", "SENDER", "cosigner component signature target 0 signed")
+	a.LogSignApprovedAttributed(Attribution{}, SignApproval{TxnAuth: "WITNESS", TxnSender: "SENDER", TxnDetails: "cosigner component signature target 0 signed"})
 	const flood = 5_000
 	for i := 0; i < flood; i++ {
 		a.LogCosignerComponentRejectedAttributed(Attribution{}, "WITNESS", "SENDER", "cosigner_policy_rejected: no route", "cosigner_transfer_no_route")
 	}
 	for i := 0; i < authFailureBurst*2; i++ {
-		a.LogSignApproved("WITNESS", "SENDER", "cosigner component signature target 0 signed")
+		a.LogSignApprovedAttributed(Attribution{}, SignApproval{TxnAuth: "WITNESS", TxnSender: "SENDER", TxnDetails: "cosigner component signature target 0 signed"})
 	}
 	a.LogAuthFailed("127.0.0.1:1", "invalid_credentials")
 	if err := a.Close(); err != nil {

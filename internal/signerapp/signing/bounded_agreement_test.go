@@ -705,7 +705,7 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 }
 
 type agDerived struct {
-	values [][]byte
+	values map[string][]byte
 	err    *ServiceError
 }
 
@@ -810,7 +810,6 @@ func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, e
 	plan := agPlan{admit: true, why: string(path), planned: true, path: path, required: make([]bool, len(a.slots))}
 	var base [][]byte
 	var cosignerSignature []byte
-	derivedIndex := 0
 	for _, slot := range a.slots {
 		rule := boundedSlotRule(slot.ArgumentSlot, path)
 		switch rule {
@@ -823,8 +822,7 @@ func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, e
 			base = append(base, a.value(slot, agValid, tx))
 			plan.required[slot.Index] = rule == boundedmeta.ArgRequired
 		case agRoleProof, agRoleListProof:
-			filled := derived.values[derivedIndex]
-			derivedIndex++
+			filled := derived.values[slot.Name]
 			plan.required[slot.Index] = rule == boundedmeta.ArgRequired || len(filled) != 0
 			if len(filled) != 0 && !bytes.Equal(filled, a.value(slot, agValid, tx)) {
 				return agPlan{}, fmt.Errorf("the signer's %s differs from the list's proof for this transaction", agRoleNames[slot.role])

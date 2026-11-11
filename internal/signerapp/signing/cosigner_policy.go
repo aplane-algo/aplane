@@ -122,11 +122,19 @@ func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *
 	if componentKey == "" {
 		componentKey = plan.ComponentKey
 	}
+	// The cosigner signs each target's TxID, as decoded, in a frozen group;
+	// it signs no dummies. Each record names its own transaction from the
+	// target, the ID the component message was built from, and takes only
+	// the group's ID and transaction IDs from the group.
+	group := decodedSignedGroup(plan.Group, 0)
 	for _, target := range plan.Targets {
-		s.AuditLog.LogSignApproved(componentKey,
-			target.Sender,
-			fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex),
-		)
+		s.AuditLog.LogSignApproved(group.inGroup(SignedRecord{
+			AuthAddress: componentKey,
+			TxnSender:   target.Sender,
+			Details:     fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex),
+			TxID:        txIDString(target.TxID),
+			Fee:         target.Fee,
+		}))
 	}
 }
 

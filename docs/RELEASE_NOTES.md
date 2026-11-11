@@ -38,6 +38,75 @@ before it was renamed `enroll`.
   `public_key_count`), counts each key type and public key pair, and a key
   advertised by two endpoints is reported with its key type.
 
+## The audit log records what was signed
+
+The signer's audit log described each request as it arrived. Planning may
+then raise fees, set the group ID and add dummies, so the log did not name
+the transactions that were signed. And `/plan`, which signs nothing, was
+logged as a request to sign.
+
+- **`SIGN_APPROVED` records the transaction as signed**: `txid`, its final
+  `fee` (`0` is written) and, for a transaction signed in a group,
+  `group_id`, `group_txids` (every transaction of the group, in order) and
+  `dummy_count` (how many of them, at the end, are dummies the request added
+  and signed). These are the IDs of the transactions returned to the client.
+  `SIGN_REQUEST` still records what was asked.
+- **Every entry of a signing or planning request carries its `request_id`**
+  as `operation_id`, so what was asked and what was signed, refused or failed
+  read together. A request sent without one gets a random ID from the
+  signer, `req-` and 16 hex digits, which `/sign/component` and
+  `/sign/assemble` return and the approval line on the signer console shows.
+  A client's own `request_id` is used as given: if the client reuses one,
+  its requests share an `operation_id`.
+- **`/plan` is logged as `PLAN_REQUEST`** and writes no `SIGN_*` entry.
+- **A rotating signature refused at its last check says so.** It is already
+  recorded as `SIGN_APPROVED` by then; a `SIGN_FAILED` whose reason begins
+  `signature withheld after it was recorded as signed` now follows it, with
+  the same `txid` and `group_id`.
+- Cosigner and bounded base components record the target's `txid` and its
+  frozen group.
+
+See [USER_LOGGING.md](USER_LOGGING.md#signing).
+
+## The signer refuses request fields it does not know
+
+- Every signer endpoint that reads a request body refuses a field its request
+  type does not declare, at any depth, with a 400 naming it: `request has
+  unknown field "<name>"`. Such a field used to be dropped, so a misspelled
+  hint did nothing and said nothing. So did the retired `lsig_size` written in
+  any case but lowercase. Data after the JSON value is refused too. apshell
+  and the SDKs send only declared fields. A caller that adds its own keys to a
+  request object passed to the SDKs now gets the 400. A body whose read
+  fails, a timeout or a body cut short, gets a 400 saying `failed to read
+  request body`, before or after the value.
+- A passthrough entry on `/sign` or `/plan` whose signed transaction carries
+  no signature is refused, as `/sign/assemble` already refused one. The signer
+  adds nothing to a passthrough and returns it as signed. On all three
+  endpoints, a multisig none of whose subsigs is signed counts as no
+  signature, whether it signs the transaction or delegates a LogicSig: it can
+  never meet its threshold. `/sign/assemble` used to accept one. An escrow
+  LogicSig, a program with no delegation, still counts.
+- A LogicSig runtime argument that declares neither `byte_length` nor
+  `max_size` was planned as 0 bytes, so a large one got too few dummies and
+  the network refused the group. The signer now plans it at the size the
+  request sends. It measures the hex without decoding it, so a secret value
+  such as an HTLC preimage is not copied. If such an argument is required and
+  the request leaves it out, `/plan`, `/sign` and `/sign/component` refuse
+  the request with 400 (`missing required arg: <name>`): a plan made without
+  the value would be short of dummies when `/sign` receives it. No template is
+  refused for leaving the size out.
+- A bounded account's derived arguments, the recipient proof and the rekey-to
+  list proof, go in the slot that has their name. Assembly used to rely on the
+  declarations and the slots being in the same order, which held only because
+  generation writes them that way.
+- `keyset_revision` in `/status` starts at a random value in each signer
+  process instead of 0. A restarted signer reported the same low revisions
+  again, so a client that had cached the key list under one of them could keep
+  using a stale list. Clients compare it for equality, as before.
+- ARCH_SIGNING.md now says that a single transaction carrying its own group ID
+  can go through `/sign` and `/plan` only, and that the signer checks the
+  assembly receipt, the chain does not.
+
 ## Approval prompts say what the signer changed, and who signs what
 
 What the person approving a request is shown, and what the cosigned client

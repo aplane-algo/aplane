@@ -481,7 +481,7 @@ func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnS
 	if deriveErr != nil {
 		return nil, keyType, deriveErr
 	}
-	defer zeroGeneratedArgs(derivedArgs)
+	defer zeroDerivedArgs(derivedArgs)
 	args, assemblyErr := assembleBoundedArgs(metadata, item, signatureArgs, derivedArgs)
 	if assemblyErr != nil {
 		return nil, keyType, assemblyErr
@@ -500,15 +500,22 @@ func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnS
 	return signedTxnBytes, keyType, nil
 }
 
-func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, path boundedPath) ([][]byte, *ServiceError) {
-	values := make([][]byte, len(metadata.DerivedArgs))
+// boundedDerivedArgs returns the value of every declared derived argument by
+// name, empty where the path or transaction takes none. Assembly places each
+// in the layout slot of the same name, so the order of the declarations and
+// the layout's slots never has to agree.
+func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, path boundedPath) (map[string][]byte, *ServiceError) {
+	values := make(map[string][]byte, len(metadata.DerivedArgs))
+	for _, arg := range metadata.DerivedArgs {
+		values[arg.Name] = nil
+	}
 	if path == boundedPathListedRekey {
 		return listedRekeyDerivedArgs(txn, keyMaterial, metadata, values)
 	}
 	if path != boundedPathPureSpend {
 		return values, nil
 	}
-	for i, arg := range metadata.DerivedArgs {
+	for _, arg := range metadata.DerivedArgs {
 		if arg.Kind == boundedmeta.DerivedArgRekeyListProof {
 			continue
 		}
@@ -535,18 +542,24 @@ func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMater
 		if err != nil {
 			return nil, badRequest(fmt.Sprintf("bounded Merkle proof generation failed: %v", err))
 		}
-		values[i] = proof
+		values[arg.Name] = proof
 	}
 	return values, nil
 }
 
-func assembleBoundedArgs(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte) ([][]byte, *ServiceError) {
+func zeroDerivedArgs(args map[string][]byte) {
+	for _, arg := range args {
+		algocrypto.ZeroBytes(arg)
+	}
+}
+
+func assembleBoundedArgs(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs [][]byte, derivedArgs map[string][]byte) ([][]byte, *ServiceError) {
 	return assembleBoundedArgsWithCosigner(metadata, item, baseArgs, derivedArgs, nil)
 }
 
-func assembleBoundedArgsWithCosigner(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte, cosignerSignature []byte) ([][]byte, *ServiceError) {
+func assembleBoundedArgsWithCosigner(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs [][]byte, derivedArgs map[string][]byte, cosignerSignature []byte) ([][]byte, *ServiceError) {
 	args := make([][]byte, len(metadata.ArgumentLayout))
-	baseIndex, derivedIndex := 0, 0
+	baseIndex, derivedUsed := 0, 0
 	for _, slot := range metadata.ArgumentLayout {
 		var value []byte
 		switch slot.Source {
@@ -557,11 +570,12 @@ func assembleBoundedArgsWithCosigner(metadata *boundedmeta.Metadata, item *bound
 			value = baseArgs[baseIndex]
 			baseIndex++
 		case boundedmeta.ArgSourceDerived:
-			if derivedIndex >= len(derivedArgs) {
-				return nil, internal("bounded derived slot count changed during assembly")
+			derived, ok := derivedArgs[slot.Name]
+			if !ok {
+				return nil, internal(fmt.Sprintf("bounded derived slot %q has no derived argument during assembly", slot.Name))
 			}
-			value = derivedArgs[derivedIndex]
-			derivedIndex++
+			value = derived
+			derivedUsed++
 		case boundedmeta.ArgSourceRuntime:
 			value = item.RuntimeArgs[slot.Name]
 		case boundedmeta.ArgSourceCosigner:
@@ -587,7 +601,7 @@ func assembleBoundedArgsWithCosigner(metadata *boundedmeta.Metadata, item *bound
 	if baseIndex != len(baseArgs) {
 		return nil, internal("bounded base signature arguments were not fully consumed during assembly")
 	}
-	if derivedIndex != len(derivedArgs) {
+	if derivedUsed != len(derivedArgs) {
 		return nil, internal("bounded derived arguments were not fully consumed during assembly")
 	}
 	for len(args) > 0 && len(args[len(args)-1]) == 0 {
@@ -607,12 +621,12 @@ func isGenericKeyMaterial(keyMaterial *coresigning.KeyMaterial) bool {
 // salt comes from a seed derived from the spending private key, so only the
 // account's own signer can build it; the recipient proofs stay empty, since no
 // rekey reaches Layer 3.
-func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, values [][]byte) ([][]byte, *ServiceError) {
+func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, values map[string][]byte) (map[string][]byte, *ServiceError) {
 	lsigKey, ok := keyMaterial.Value.(*coresigning.LsigKeyMaterial)
 	if !ok || len(lsigKey.PrivateKey) == 0 {
 		return nil, internal("bounded listed rekey needs the spending private key")
 	}
-	for i, arg := range metadata.DerivedArgs {
+	for _, arg := range metadata.DerivedArgs {
 		if arg.Kind != boundedmeta.DerivedArgRekeyListProof {
 			continue
 		}
@@ -634,7 +648,7 @@ func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyM
 		if !listed {
 			return nil, &ServiceError{Kind: ErrorBoundedRekeyNotListed, Message: fmt.Sprintf("%s is not on this account's rekey-to list", txn.RekeyTo)}
 		}
-		values[i] = proof
+		values[arg.Name] = proof
 	}
 	return values, nil
 }

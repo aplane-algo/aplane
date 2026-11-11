@@ -363,27 +363,41 @@ type testAuditEntry struct {
 	txnSender   string
 	reason      string
 	policyRule  string
+	// record is the whole record of an approval.
+	record SignedRecord
 }
 
 type testAuditLogger struct {
 	approved []testAuditEntry
 	rejected []testAuditEntry
+	failed   []testAuditEntry
+	withheld []testAuditEntry
 }
 
-func (l *testAuditLogger) LogSignApproved(authAddress, txnSender, details string) {
+func (l *testAuditLogger) LogSignApproved(record SignedRecord) {
 	l.approved = append(l.approved, testAuditEntry{
-		authAddress: authAddress,
-		txnSender:   txnSender,
-		reason:      details,
+		authAddress: record.AuthAddress,
+		txnSender:   record.TxnSender,
+		reason:      record.Details,
+		policyRule:  record.PolicyRuleID,
+		record:      record,
 	})
 }
 
-func (l *testAuditLogger) LogSignApprovedWithPolicyRule(authAddress, txnSender, details, policyRuleID string) {
-	l.approved = append(l.approved, testAuditEntry{
+func (l *testAuditLogger) LogSignWithheld(record SignedRecord, reason string) {
+	l.withheld = append(l.withheld, testAuditEntry{
+		authAddress: record.AuthAddress,
+		txnSender:   record.TxnSender,
+		reason:      reason,
+		record:      record,
+	})
+}
+
+func (l *testAuditLogger) LogSignFailed(authAddress, txnSender, reason string) {
+	l.failed = append(l.failed, testAuditEntry{
 		authAddress: authAddress,
 		txnSender:   txnSender,
-		reason:      details,
-		policyRule:  policyRuleID,
+		reason:      reason,
 	})
 }
 
@@ -1489,17 +1503,18 @@ func TestLogSuccessfulSignaturesSkipsPassthroughAndForeign(t *testing.T) {
 			{TxnBytesHex: "foreign"},
 		},
 	}
-	plan := &PlanResult{
-		PassthroughIndices: map[int]bool{1: true},
-		ForeignIndices:     map[int]bool{2: true},
-	}
 	txns := []types.Transaction{
 		{Header: types.Header{Sender: types.Address{1}}},
 		{Header: types.Header{Sender: types.Address{2}}},
 		{Header: types.Header{Sender: types.Address{3}}},
 	}
+	plan := &PlanResult{
+		AllTxns:            txns,
+		PassthroughIndices: map[int]bool{1: true},
+		ForeignIndices:     map[int]bool{2: true},
+	}
 
-	service.logSuccessfulSignatures(req, plan, txns, "")
+	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), "")
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}
@@ -1518,12 +1533,12 @@ func TestLogSuccessfulSignaturesIncludesForcedReviewRule(t *testing.T) {
 		Requests: []signerapi.SignRequest{{AuthAddress: "A"}},
 	}
 	plan := &PlanResult{
+		AllTxns:            []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}},
 		PassthroughIndices: map[int]bool{},
 		ForeignIndices:     map[int]bool{},
 	}
-	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
 
-	service.logSuccessfulSignatures(req, plan, txns, policy.ReviewAlgoPaymentExceededRuleID)
+	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), policy.ReviewAlgoPaymentExceededRuleID)
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}
