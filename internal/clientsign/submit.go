@@ -215,7 +215,7 @@ func decodeSignedTransactionHex(signedHex []string) ([][]byte, error) {
 func DecodeSignedTxnToSubmit(raw []byte) (types.SignedTxn, error) {
 	stxn, err := canonical.DecodeSignedTxn(raw)
 	if errors.Is(err, canonical.ErrNotCanonical) {
-		err = fmt.Errorf("%w (trailing data, a second transaction, a repeated field or an explicit empty field)", err)
+		err = fmt.Errorf("%w: encoding the decoded transaction again gives different bytes (for example trailing data, a second transaction, a repeated or explicit empty field, or a different key order or integer encoding)", err)
 	}
 	return stxn, err
 }

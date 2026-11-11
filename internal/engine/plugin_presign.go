@@ -26,6 +26,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -123,9 +124,15 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	}
 	canonicalTxns := make([]types.Transaction, len(planResp.Transactions))
 	for i, txnHex := range planResp.Transactions {
-		txn, err := txnutil.DecodePrefixedHex(txnHex)
+		// Canonical, as the cosigned plan check requires: bytes that decode
+		// leniently could differ from what the signer froze.
+		raw, err := hex.DecodeString(txnHex)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode canonical transaction at index %d: %w", i, err)
+			return nil, fmt.Errorf("planned transaction at index %d: invalid hex: %w", i, err)
+		}
+		txn, err := canonical.DecodeTXPrefixed(raw)
+		if err != nil {
+			return nil, fmt.Errorf("planned transaction at index %d: %w", i, err)
 		}
 		canonicalTxns[i] = txn
 	}

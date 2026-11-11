@@ -403,7 +403,7 @@ func TestDecodeSignedTxnToSubmit(t *testing.T) {
 	}
 	for name, raw := range nonCanonicalSignedTxnVariants(t, signed) {
 		_, err := DecodeSignedTxnToSubmit(raw)
-		if !errors.Is(err, canonical.ErrNotCanonical) || !strings.Contains(err.Error(), "trailing data, a second transaction, a repeated field or an explicit empty field") {
+		if !errors.Is(err, canonical.ErrNotCanonical) || !strings.Contains(err.Error(), "encoding the decoded transaction again gives different bytes") {
 			t.Errorf("%s: error = %v, want the sentinel with its explanation", name, err)
 		}
 	}

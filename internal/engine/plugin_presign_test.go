@@ -649,3 +649,87 @@ func TestSignAndSubmitWithPluginSignersRejectsUnsupportedConsensusBeforePlanning
 		t.Fatalf("plugin signing calls = %d, want 0", pluginCalls.Load())
 	}
 }
+
+// A /plan answer is the group the signer froze, so its bytes must be the
+// canonical encoding of what they decode to, as the cosigned plan check
+// requires. A lenient decode would let the client carry on with a different
+// encoding than the signer holds.
+func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
+	pluginAddress, err := signing.DummyAddress()
+	if err != nil {
+		t.Fatalf("signing.DummyAddress() error = %v", err)
+	}
+	managedAccount := crypto.GenerateAccount()
+	resources := &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+		MaxOpcodeCost: 20_000,
+	}
+	txns := []types.Transaction{
+		presignTestTxn(t, pluginAddress.String(), "plugin"),
+		presignTestTxn(t, managedAccount.Address.String(), "managed"),
+	}
+
+	var signCalls atomic.Int32
+	signerMux := http.NewServeMux()
+	signerMux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		planned := make([]string, len(req.Requests))
+		for i, item := range req.Requests {
+			planned[i] = item.TxnBytesHex
+		}
+		// One trailing byte after the second transaction's msgpack value.
+		planned[1] += "00"
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{
+			Transactions: planned,
+			Mutations: &signerapi.MutationReport{
+				OriginalCount: len(planned), FinalCount: len(planned), ForeignCount: 1, Reason: "foreign",
+			},
+		})
+	})
+	signerMux.HandleFunc("/sign", func(w http.ResponseWriter, r *http.Request) {
+		signCalls.Add(1)
+		http.Error(w, "must not be reached", http.StatusInternalServerError)
+	})
+	signerServer := httptest.NewServer(signerMux)
+	defer signerServer.Close()
+
+	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+			ConsensusVersion: string(protocol.ConsensusV42),
+		})
+	}))
+	defer algodServer.Close()
+	algodClient, err := algod.MakeClient(algodServer.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
+
+	var pluginCalls atomic.Int32
+	_, err = engine.SignAndSubmitWithPluginSigners(
+		context.Background(),
+		txns,
+		map[string]string{pluginAddress.String(): "plugin-ref"},
+		map[string]PluginSlotAuthorization{pluginAddress.String(): {LsigResources: resources}},
+		func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
+			pluginCalls.Add(1)
+			return nil, errors.New("must not be reached")
+		},
+		nil,
+	)
+	if !errors.Is(err, cosignercanonical.ErrNotCanonical) || !strings.Contains(err.Error(), "planned transaction at index 1") {
+		t.Fatalf("error = %v, want the plan refused as not canonical at index 1", err)
+	}
+	if pluginCalls.Load() != 0 || signCalls.Load() != 0 {
+		t.Fatalf("plugin signer calls = %d, /sign calls = %d, want none after a refused plan", pluginCalls.Load(), signCalls.Load())
+	}
+}

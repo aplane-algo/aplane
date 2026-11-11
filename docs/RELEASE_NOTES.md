@@ -15,7 +15,9 @@ before it was renamed `enroll`.
   as decoded and then submitted as received. Bytes with trailing data, a
   second transaction, a repeated field or an explicit empty field are now
   refused, so what was checked is what goes to the network. The rotating path
-  already refused them.
+  already refused them. The transactions a `/plan` answer returns for a plugin
+  `presign-plan` group are held to the same rule, as the cosigned plan's
+  already were.
 - **The cosigned and plugin plan checks reconcile fees as `/sign` does.** One
   check now runs on all three: a fee the report lists must have risen (an
   unchanged one passed on the cosigned and plugin plans), the rises must not
