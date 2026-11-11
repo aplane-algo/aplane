@@ -498,6 +498,44 @@ func TestDecodeTransactionsRefusesBytesThatAreNotCanonical(t *testing.T) {
 	}
 }
 
+// A passthrough slot is returned as signed and the signer adds nothing to
+// it, so one that carries no authorization is refused, as assembly refuses it.
+func TestDecodeTransactionsRefusesPassthroughWithoutSignature(t *testing.T) {
+	var sender, auth types.Address
+	sender[0], auth[0] = 1, 2
+	txn := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: sender, Fee: 1_000, FirstValid: 1, LastValid: 10},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, Amount: 1},
+	}
+	decode := func(stxn types.SignedTxn) *ServiceError {
+		_, _, err := decodeTransactions(
+			[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(msgpack.Encode(stxn))}},
+			map[int]bool{0: true}, consoleOf(nil))
+		return err
+	}
+	const want = "transaction 1 (passthrough): signed transaction carries no signature"
+	for name, stxn := range map[string]types.SignedTxn{
+		"no authorization":              {Txn: txn},
+		"auth address but no signature": {Txn: txn, AuthAddr: auth},
+	} {
+		if err := decode(stxn); err == nil || err.Kind != ErrorBadRequest || err.Message != want {
+			t.Errorf("%s: %v, want bad request %q", name, err, want)
+		}
+	}
+	pq := types.PQSig{Scheme: types.PQScheme{'f', '1'}, PublicKey: []byte{1}, Signature: []byte{2}}
+	for name, stxn := range map[string]types.SignedTxn{
+		"signature":           {Txn: txn, Sig: types.Signature{1}},
+		"multisig":            {Txn: txn, Msig: types.MultisigSig{Version: 1, Threshold: 1, Subsigs: []types.MultisigSubsig{{Key: make([]byte, 32)}}}},
+		"logic signature":     {Txn: txn, Lsig: types.LogicSig{Logic: []byte{0x0a, 0x81, 0x01}}},
+		"native PQ signature": {Txn: txn, PQsig: pq},
+	} {
+		if err := decode(stxn); err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+		}
+	}
+}
+
 func TestDecodeTransactionsRefusesPassthroughBytesThatAreNotCanonical(t *testing.T) {
 	var sender types.Address
 	sender[0] = 1
