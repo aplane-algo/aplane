@@ -86,9 +86,11 @@ func prepareTxnGroup(preps ...*PreparedTxn) (*PreparedTxnGroup, error) {
 }
 
 // BalanceCheckDetails is the app-owned transaction validation view.
+// SenderBalance and RequiredAmount are in base units: microAlgos for ALGO,
+// the asset's base units for an ASA.
 type BalanceCheckDetails struct {
-	SenderBalance    float64
-	RequiredAmount   float64
+	SenderBalance    uint64
+	RequiredAmount   uint64
 	SufficientFunds  bool
 	ReceiverOptedIn  bool
 	NewAccount       bool

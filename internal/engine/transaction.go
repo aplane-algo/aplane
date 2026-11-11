@@ -46,10 +46,12 @@ type ConfirmationResult struct {
 	Output string
 }
 
-// BalanceCheckResult contains balance validation results
+// BalanceCheckResult contains balance validation results. SenderBalance and
+// RequiredAmount are in base units: microAlgos for a payment, the asset's base
+// units for an ASA transfer.
 type BalanceCheckResult struct {
-	SenderBalance    float64
-	RequiredAmount   float64
+	SenderBalance    uint64
+	RequiredAmount   uint64
 	SufficientFunds  bool
 	ReceiverOptedIn  bool // For ASA transfers
 	NewAccount       bool // Receiver is a new account

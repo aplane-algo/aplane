@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
@@ -258,5 +259,66 @@ func TestCheckASABalances_ReceiverNotOptedIn(t *testing.T) {
 	}
 	if result.ReceiverOptedIn {
 		t.Error("receiver should not be opted in")
+	}
+}
+
+// A payment's balance check is exact in microAlgos, and an amount whose sum
+// with the fee overflows is unfundable rather than wrapping to a small
+// requirement the sender appears to meet.
+func TestCheckPaymentBalancesIsExactAndOverflowSafe(t *testing.T) {
+	sender := testAddr(1)
+	receiver := testAddr(2)
+	transport := newAccountMockTransport(t)
+	transport.addAccountFull(models.Account{Address: sender, Amount: 2_001_000, MinBalance: 100_000, Status: "Offline"})
+	transport.addAccount(receiver, 1_000_000)
+	eng := setupEngineWithMockAlgod(t, transport)
+
+	result, err := eng.checkPaymentBalances(context.Background(), sender, receiver, 2_000_000, 1_000, true)
+	if err != nil {
+		t.Fatalf("checkPaymentBalances() error = %v", err)
+	}
+	if !result.SufficientFunds || result.SenderBalance != 2_001_000 || result.RequiredAmount != 2_001_000 || result.RemainingBalance != 0 || !result.BelowMinBalance {
+		t.Fatalf("exact balance: %+v", result)
+	}
+	result, err = eng.checkPaymentBalances(context.Background(), sender, receiver, 2_000_001, 1_000, true)
+	if err != nil {
+		t.Fatalf("checkPaymentBalances() error = %v", err)
+	}
+	if result.SufficientFunds || result.RequiredAmount != 2_001_001 {
+		t.Fatalf("one microAlgo short: %+v", result)
+	}
+
+	result, err = eng.checkPaymentBalances(context.Background(), sender, receiver, math.MaxUint64-500, 1_000, true)
+	if err != nil {
+		t.Fatalf("checkPaymentBalances() error = %v", err)
+	}
+	if result.SufficientFunds || !result.BelowMinBalance || result.RemainingBalance != 0 || result.RequiredAmount != math.MaxUint64 {
+		t.Fatalf("overflowing amount and fee: %+v", result)
+	}
+}
+
+// An ASA balance check reports base units exactly: past 2^53 a float64 would
+// have rounded the balance and the amount to the same value.
+func TestCheckASABalancesComparesLargeAmountsExactly(t *testing.T) {
+	sender := testAddr(1)
+	receiver := testAddr(2)
+	const held = uint64(1) << 53
+	transport := newAccountMockTransport(t)
+	transport.addAccountFull(models.Account{
+		Address: sender, Amount: 1_000_000, MinBalance: 100_000, Status: "Offline",
+		Assets: []models.AssetHolding{{AssetId: 42, Amount: held}},
+	})
+	transport.addAccountFull(models.Account{
+		Address: receiver, Amount: 1_000_000, MinBalance: 100_000, Status: "Offline",
+		Assets: []models.AssetHolding{{AssetId: 42, Amount: 0}},
+	})
+	eng := setupEngineWithMockAlgod(t, transport)
+
+	result, err := eng.checkASABalances(context.Background(), sender, receiver, 42, held+1)
+	if err != nil {
+		t.Fatalf("checkASABalances() error = %v", err)
+	}
+	if result.SufficientFunds || result.SenderBalance != held || result.RequiredAmount != held+1 {
+		t.Fatalf("one base unit short past 2^53: %+v", result)
 	}
 }

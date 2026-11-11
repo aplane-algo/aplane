@@ -9,6 +9,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/addressbook"
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 )
@@ -23,9 +24,8 @@ func FormatTransactionSummary(txn types.Transaction, aliasCache *cache.AliasCach
 	case types.PaymentTx:
 		receiver := txn.Receiver.String()
 		receiverFmt := formatAddress(receiver, aliasCache)
-		amount := float64(txn.Amount) / 1000000.0
-		return fmt.Sprintf("Payment: %s → %s (%.6f ALGO)",
-			senderFmt, receiverFmt, amount)
+		return fmt.Sprintf("Payment: %s → %s (%s ALGO)",
+			senderFmt, receiverFmt, asaset.FormatFixed(uint64(txn.Amount), 6))
 
 	case types.AssetTransferTx:
 		receiver := txn.AssetReceiver.String()
