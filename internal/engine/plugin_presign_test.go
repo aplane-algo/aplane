@@ -156,7 +156,7 @@ func TestValidatePluginPlan(t *testing.T) {
 	})
 	// The plain /sign path's reconciliation, shared here: a reported fee that
 	// did not change, a negative total, and rises that wrap around are refused.
-	reject("reported fee unchanged", "did not increase the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+	reject("reported fee unchanged", "fee mutation at original index 0 did not increase the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
 		p[0].Fee = drafts[0].Fee
 		r.TotalFeesDelta = 0
 		regroupPlan(t, p)

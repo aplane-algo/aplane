@@ -88,7 +88,7 @@ type UnreportedChangeError struct {
 }
 
 func (e *UnreportedChangeError) Error() string {
-	return fmt.Sprintf("signer changed unreported fields at original position %d", e.Index+1)
+	return fmt.Sprintf("signer changed unreported fields at original index %d", e.Index)
 }
 
 // ValidateOriginalPositions checks the original positions of a group the
@@ -98,7 +98,8 @@ func (e *UnreportedChangeError) Error() string {
 // must sum, without overflowing, to the report's total_fees_delta, which must
 // not be negative. A position that differs in anything else is an
 // *UnreportedChangeError. The ordinary /sign response, the cosigned /plan and
-// the plugin presign /plan all run this one check.
+// the plugin presign /plan all run this one check. Positions in its errors
+// are zero-based, as the report's fee indices are.
 func ValidateOriginalPositions(original, returned []types.Transaction, mutations *signerapi.MutationReport) error {
 	if len(returned) < len(original) {
 		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(returned), len(original))
@@ -128,7 +129,7 @@ func ValidateOriginalPositions(original, returned []types.Transaction, mutations
 		}
 		if _, ok := feeModified[i]; ok {
 			if got.Fee <= want.Fee {
-				return fmt.Errorf("reported fee mutation at original position %d did not increase the fee", i+1)
+				return fmt.Errorf("reported fee mutation at original index %d did not increase the fee", i)
 			}
 			delta := uint64(got.Fee - want.Fee)
 			if ^uint64(0)-totalFeeDelta < delta {
