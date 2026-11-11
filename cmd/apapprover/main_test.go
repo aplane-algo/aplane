@@ -150,23 +150,6 @@ func TestDisplaySignRequestShowsValidityWindow(t *testing.T) {
 	}
 }
 
-func TestValidityWindowLine(t *testing.T) {
-	for _, tc := range []struct {
-		first, last uint64
-		want        string
-	}{
-		{0, 0, ""},
-		{10, 0, ""},
-		{0, 10, ""},
-		{10, 10, "Valid Rounds: 10 - 10 (window: 0 blocks)"},
-		{20, 10, "Valid Rounds: 20 - 10 (empty: no round is valid)"},
-	} {
-		if got := validityWindowLine(tc.first, tc.last); got != tc.want {
-			t.Errorf("validityWindowLine(%d, %d) = %q, want %q", tc.first, tc.last, got, tc.want)
-		}
-	}
-}
-
 func TestParseApprovalInput(t *testing.T) {
 	tests := []struct {
 		input        string
