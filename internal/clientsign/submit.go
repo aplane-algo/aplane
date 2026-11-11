@@ -6,6 +6,7 @@ package clientsign
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 
@@ -205,18 +206,28 @@ func decodeSignedTransactionHex(signedHex []string) ([][]byte, error) {
 	return signedTxns, nil
 }
 
-// decodeSignedTransactionObjects decodes the signer's returned bytes with the
-// canonical decoder. The raw bytes are what goes to the node, and the decoded
-// transactions are what is checked, so each element must be exactly one
-// canonically encoded signed transaction: trailing data, which the node would
-// read as a further transaction, or any other encoding of the same fields is
-// refused.
+// DecodeSignedTxnToSubmit decodes one signed transaction whose bytes the
+// client submits as given. What is checked is the decoded transaction, so the
+// bytes must be exactly its canonical encoding: trailing data, which the node
+// would read as a further transaction, a repeated field or an explicit empty
+// field is refused. The error wraps canonical.ErrNotCanonical, or the
+// canonical decoder's error; each caller adds only the position.
+func DecodeSignedTxnToSubmit(raw []byte) (types.SignedTxn, error) {
+	stxn, err := canonical.DecodeSignedTxn(raw)
+	if errors.Is(err, canonical.ErrNotCanonical) {
+		err = fmt.Errorf("%w (trailing data, a second transaction, a repeated field or an explicit empty field)", err)
+	}
+	return stxn, err
+}
+
+// decodeSignedTransactionObjects decodes the signer's returned bytes, which go
+// to the node as returned, with DecodeSignedTxnToSubmit.
 func decodeSignedTransactionObjects(signedTxns [][]byte) ([]types.SignedTxn, []types.Transaction, []string, error) {
 	signedObjects := make([]types.SignedTxn, len(signedTxns))
 	txns := make([]types.Transaction, len(signedTxns))
 	txIDs := make([]string, len(signedTxns))
 	for i, signedBytes := range signedTxns {
-		signed, err := canonical.DecodeSignedTxn(signedBytes)
+		signed, err := DecodeSignedTxnToSubmit(signedBytes)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("signed transaction %d: %w", i+1, err)
 		}

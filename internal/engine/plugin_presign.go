@@ -357,7 +357,7 @@ func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[
 			}
 			continue
 		}
-		stxn, err := decodeCanonicalSignedTxn(signedBytes)
+		stxn, err := clientsign.DecodeSignedTxnToSubmit(signedBytes)
 		if err != nil {
 			return fmt.Errorf("signed slot %d: %w", i, err)
 		}
@@ -379,7 +379,7 @@ func validatePluginSignedSlot(planned types.Transaction, encoded string, authori
 	// The signer forwards these bytes as given and refuses any that are not
 	// the canonical encoding of what they decode to. The same decoder runs
 	// here, so a slot is refused before the group goes to be signed.
-	stxn, err := decodeCanonicalSignedTxn(raw)
+	stxn, err := clientsign.DecodeSignedTxnToSubmit(raw)
 	if err != nil {
 		return "", err
 	}

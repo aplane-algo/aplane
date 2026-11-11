@@ -388,6 +388,30 @@ func nonCanonicalSignedTxnVariants(t *testing.T, signed []byte) map[string][]byt
 	}
 }
 
+// Every client path that submits signed bytes as given decodes them here: the
+// refusal wraps the sentinel and carries the explanation, so a caller adds
+// only its position.
+func TestDecodeSignedTxnToSubmit(t *testing.T) {
+	txn := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: types.Address{1}, Fee: 1000},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{2}, Amount: 1},
+	}
+	signed := msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{1}})
+	if stxn, err := DecodeSignedTxnToSubmit(signed); err != nil || stxn.Txn.Receiver != txn.Receiver {
+		t.Fatalf("canonical bytes: %v, %v", stxn, err)
+	}
+	for name, raw := range nonCanonicalSignedTxnVariants(t, signed) {
+		_, err := DecodeSignedTxnToSubmit(raw)
+		if !errors.Is(err, canonical.ErrNotCanonical) || !strings.Contains(err.Error(), "trailing data, a second transaction, a repeated field or an explicit empty field") {
+			t.Errorf("%s: error = %v, want the sentinel with its explanation", name, err)
+		}
+	}
+	if _, err := DecodeSignedTxnToSubmit([]byte{0xc1}); !errors.Is(err, canonical.ErrInvalidMsgpack) {
+		t.Fatalf("undecodable bytes: error = %v, want ErrInvalidMsgpack", err)
+	}
+}
+
 func TestSignAndSubmitViaGroupRefusesSignedBytesThatAreNotCanonical(t *testing.T) {
 	original := types.Transaction{
 		Type:             types.PaymentTx,
@@ -414,7 +438,7 @@ func TestSignAndSubmitViaGroupRefusesSignedBytesThatAreNotCanonical(t *testing.T
 			})}
 			authCache := cache.NewAuthAddressCache()
 			_, _, err := SignAndSubmitViaGroup([]types.Transaction{original}, &authCache, signerClient, algodClient, SubmitOptions{Out: io.Discard})
-			if err == nil || !strings.Contains(err.Error(), "signed transaction 1: "+canonical.ErrNotCanonical.Error()) {
+			if !errors.Is(err, canonical.ErrNotCanonical) || !strings.Contains(err.Error(), "signed transaction 1: "+canonical.ErrNotCanonical.Error()) {
 				t.Fatalf("error = %v, want the response refused as not canonical", err)
 			}
 		})

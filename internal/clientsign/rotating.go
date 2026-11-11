@@ -342,10 +342,7 @@ func validateSignedRotatingGroup(prepared []types.Transaction, resp *signerapi.R
 		if err != nil {
 			return nil, fmt.Errorf("transaction %d: invalid hex: %w", i+1, err)
 		}
-		stxn, err := canonical.DecodeSignedTxn(raw)
-		if errors.Is(err, canonical.ErrNotCanonical) {
-			return nil, fmt.Errorf("transaction %d is not a single canonically encoded signed transaction", i+1)
-		}
+		stxn, err := DecodeSignedTxnToSubmit(raw)
 		if err != nil {
 			return nil, fmt.Errorf("transaction %d: %w", i+1, err)
 		}

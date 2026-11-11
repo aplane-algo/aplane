@@ -28,6 +28,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	cosignercanonical "github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -233,8 +234,8 @@ func TestVerifySignedAgainstPlan(t *testing.T) {
 	// A managed slot's bytes are submitted as returned, so they must be the
 	// canonical encoding of the transaction that was checked.
 	for name, variant := range nonCanonicalSignedTxnVariants(t, sign(canonical[0])) {
-		if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{variant, pluginSigned}); err == nil ||
-			!strings.Contains(err.Error(), "signed slot 0: signed transaction bytes are not canonical") {
+		if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{variant, pluginSigned}); !errors.Is(err, cosignercanonical.ErrNotCanonical) ||
+			!strings.HasPrefix(err.Error(), "signed slot 0: ") {
 			t.Errorf("managed slot with %s: got %v, want refused as not canonical", name, err)
 		}
 	}
@@ -304,8 +305,7 @@ func TestValidatePluginSignedSlot(t *testing.T) {
 			t.Fatal(err)
 		}
 		padded := base64.StdEncoding.EncodeToString(append(raw, 0xc0))
-		if _, err := validatePluginSignedSlot(canonical, padded, PluginSlotAuthorization{}); err == nil ||
-			!strings.Contains(err.Error(), "not canonical") {
+		if _, err := validatePluginSignedSlot(canonical, padded, PluginSlotAuthorization{}); !errors.Is(err, cosignercanonical.ErrNotCanonical) {
 			t.Fatalf("padded signed bytes: %v, want refused as not canonical", err)
 		}
 	})
