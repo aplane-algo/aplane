@@ -94,7 +94,8 @@ func newSignedGroup(txns []types.Transaction, txIDs []string, groupID types.Dige
 }
 
 // record is the SignedRecord of the transaction at index, signed by
-// authAddress.
+// authAddress: its own fields from that transaction, in the group it was
+// signed in.
 func (g signedGroup) record(index int, authAddress, details, policyRuleID string) SignedRecord {
 	r := SignedRecord{
 		AuthAddress:  authAddress,
@@ -108,6 +109,13 @@ func (g signedGroup) record(index int, authAddress, details, policyRuleID string
 	r.TxnSender = txn.Sender.String()
 	r.TxID = g.txIDs[index]
 	r.Fee = uint64(txn.Fee)
+	return g.inGroup(r)
+}
+
+// inGroup is r with the group it was signed in: the group ID, every
+// transaction ID of the group, and how many are dummies this request
+// signed. r keeps its own fields; a transaction signed alone has no group.
+func (g signedGroup) inGroup(r SignedRecord) SignedRecord {
 	if g.groupID != "" {
 		r.GroupID = g.groupID
 		r.GroupTxIDs = append([]string(nil), g.txIDs...)

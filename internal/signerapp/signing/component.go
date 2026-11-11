@@ -36,7 +36,9 @@ type ComponentSignTarget struct {
 	TargetIndex int
 	Sender      string
 	TxID        [32]byte
-	Message     [32]byte
+	// Fee is the target's fee in microAlgos, as the frozen group has it.
+	Fee     uint64
+	Message [32]byte
 }
 
 type componentPlanRequest struct {
@@ -73,6 +75,7 @@ func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *Ser
 			TargetIndex: targetIndex,
 			Sender:      entry.Txn.Sender.String(),
 			TxID:        entry.TxID,
+			Fee:         uint64(entry.Txn.Fee),
 			Message:     message.ComponentMessage(role, entry.TxID),
 		}
 	}

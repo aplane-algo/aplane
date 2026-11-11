@@ -137,3 +137,48 @@ func TestDecodedSignedGroupNamesTheDecodedIDs(t *testing.T) {
 		t.Fatalf("group_id = %q, want the group's own ID", got.GroupID)
 	}
 }
+
+// A cosigner record names its own transaction from the plan's target, whose
+// TxID the component message was built from, whether or not the plan holds
+// the group or an entry at the target's index; the group gives only
+// group_id and group_txids.
+func TestCosignerRecordNamesItsTargetFromThePlan(t *testing.T) {
+	audit := &testAuditLogger{}
+	svc := &Service{AuditLog: audit}
+	target := ComponentSignTarget{TargetIndex: 1, Sender: types.Address{51}.String(), TxID: [32]byte{7}, Fee: 2_000}
+	plan := &ComponentSignPlan{ComponentKey: "WITNESS", Targets: []ComponentSignTarget{target}}
+	own := func(got SignedRecord) {
+		t.Helper()
+		if got.AuthAddress != "WITNESS" || got.TxnSender != target.Sender || got.TxID != txIDString(target.TxID) || got.Fee != 2_000 {
+			t.Fatalf("record = %+v, want the target's own sender %s, txid and fee", got, target.Sender)
+		}
+	}
+
+	// No group: the target alone.
+	svc.logCosignerComponentApproved(plan, &ComponentSignResult{})
+	if len(audit.approved) != 1 {
+		t.Fatalf("%d approvals, want 1", len(audit.approved))
+	}
+	got := audit.approved[0].record
+	own(got)
+	if got.GroupID != "" || got.GroupTxIDs != nil {
+		t.Fatalf("a plan without a group recorded one: %+v", got)
+	}
+
+	// A group with no entry at the target's index: the target's own fields,
+	// the group's ID and transaction IDs.
+	txns := groupedPaymentTransactions(t, types.Address{52}.String(), types.Address{53}.String())
+	group, err := canonical.DecodeGroupHex([]string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Group = group
+	plan.Targets[0].TargetIndex = 5
+	audit.approved = nil
+	svc.logCosignerComponentApproved(plan, &ComponentSignResult{})
+	got = audit.approved[0].record
+	own(got)
+	if got.GroupID != base64.StdEncoding.EncodeToString(group.GroupID[:]) || len(got.GroupTxIDs) != 2 || got.GroupTxIDs[0] != algocrypto.GetTxID(txns[0]) {
+		t.Fatalf("record = %+v, want the frozen group's ID and transaction IDs", got)
+	}
+}
