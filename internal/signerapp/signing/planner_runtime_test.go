@@ -444,7 +444,9 @@ func TestVerifySignableKeysAllowsCosignedAccountPlanning(t *testing.T) {
 
 // A native key has no program to pass LogicSig arguments to, so a request
 // that supplies them for one is refused before planning instead of being
-// signed with them dropped. A LogicSig takes them.
+// signed with them dropped. A LogicSig takes them, and a key whose metadata
+// does not say what it is is not refused here: only a key known to be native
+// is.
 func TestVerifySignableKeysRefusesLsigArgsForANativeKey(t *testing.T) {
 	addr := types.Address{1}.String()
 	args := map[string]string{"preimage": "aa"}
@@ -456,7 +458,7 @@ func TestVerifySignableKeysRefusesLsigArgsForANativeKey(t *testing.T) {
 	}{
 		"ed25519 key with args":       {"ed25519", "ed25519", args, true},
 		"native Falcon key with args": {"falcon1024", "native_pq", args, true},
-		"key without metadata":        {"ed25519", "", args, true},
+		"key without metadata":        {"ed25519", "", args, false},
 		"generic LogicSig with args":  {"aplane.htlc.v1", lsigprovider.CategoryGenericLsig, args, false},
 		"DSA LogicSig with args":      {"aplane.falcon1024.v1", lsigprovider.CategoryDSALsig, args, false},
 		"ed25519 key without args":    {"ed25519", "ed25519", nil, false},

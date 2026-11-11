@@ -16,6 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -94,15 +95,22 @@ func frozenBoundedTestServiceWith(t *testing.T, programBytes uint64, extraKeyTyp
 		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.CosignerSignatureMaxSizeV1), MaxOpcodeCost: 1},
 	}
 	keyTypes := map[string]string{authorizer: "aplane.test-bounded-cosigner.v1"}
+	keyMetadata := map[string]PlannerKeyMetadata{authorizer: {
+		Category: "dsa_lsig", PublicKeyHex: "aabb",
+		BoundedAuthorization: metadata, LogicSigResources: profile,
+	}}
+	// The extra keys are native, and the store records them so.
 	for address, keyType := range extraKeyTypes {
 		keyTypes[address] = keyType
+		category := keys.CategoryNativePQ
+		if keyType == "ed25519" {
+			category = keys.CategoryEd25519
+		}
+		keyMetadata[address] = PlannerKeyMetadata{Category: category}
 	}
 	planner := NewPlanner(stubPlannerDeps{
-		keyTypes: keyTypes,
-		keyMetadata: map[string]PlannerKeyMetadata{authorizer: {
-			Category: "dsa_lsig", PublicKeyHex: "aabb",
-			BoundedAuthorization: metadata, LogicSigResources: profile,
-		}},
+		keyTypes:    keyTypes,
+		keyMetadata: keyMetadata,
 	}, PlannerOptions{GenesisHashResolver: resolver})
 	txn := types.Transaction{
 		Type: types.PaymentTx,

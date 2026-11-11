@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -309,8 +310,10 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		// LogicSig arguments are passed to a program. A native key signs the
 		// transaction itself and has none to give them to, so a request that
 		// supplies them for one is malformed: it is refused here, before
-		// planning or approval, rather than signed with them dropped.
-		if len(txReq.LsigArgs) > 0 && !takesLogicSigArgs(snapshot.KeyMetadata[txReq.AuthAddress].Category) {
+		// planning or approval, rather than signed with them dropped. Only a
+		// key known to be native is refused; one whose metadata does not say
+		// is left to signing.
+		if len(txReq.LsigArgs) > 0 && isNativeKeyCategory(snapshot.KeyMetadata[txReq.AuthAddress].Category) {
 			return 0, badRequest(fmt.Sprintf("transaction %d: lsig_args were given for %s, whose %s key is not a LogicSig and takes no arguments",
 				i+1, txReq.AuthAddress, keytypefmt.Display(keyType)))
 		}
@@ -321,9 +324,9 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 	return signableCount, nil
 }
 
-// takesLogicSigArgs reports whether a key of this category passes request
-// arguments to its program: a generic or DSA-backed LogicSig, bounded
-// accounts included. An ed25519 or native Falcon key does not.
-func takesLogicSigArgs(category string) bool {
-	return category == lsigprovider.CategoryGenericLsig || category == lsigprovider.CategoryDSALsig
+// isNativeKeyCategory reports whether a key of this category signs a
+// transaction itself, with no program to pass request arguments to: an
+// ed25519 or native post-quantum (Falcon) key.
+func isNativeKeyCategory(category string) bool {
+	return category == keys.CategoryEd25519 || category == keys.CategoryNativePQ
 }

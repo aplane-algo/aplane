@@ -50,8 +50,10 @@ before it was renamed `enroll`.
 - **The signer refuses `lsig_args` for a key that is not a LogicSig.** An
   ed25519 or native Falcon key ignored them, and they still entered the
   approval digest. `/plan`, `/sign` and `/sign/component` now answer `400`
-  before planning. apshell refuses them for such a key before it sends
-  anything, and with the changes above never sends them for one on its own.
+  before planning. Only a key the store records as ed25519 or native
+  post-quantum is refused this way. apshell refuses them for such a key before
+  it sends anything, and with the changes above never sends them for one on its
+  own.
 
 ## Resource dummies are counted at their real opcode cost
 
