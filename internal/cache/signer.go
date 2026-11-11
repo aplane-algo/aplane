@@ -236,8 +236,11 @@ func (cache *SignerCache) SetBoundedContractForAddress(address, contract string)
 	cache.BoundedContracts[address] = contract
 }
 
-// GetSigningArgs returns the key-file signing args schema for a LogicSig address.
-// Returns nil if address is not in cache or has no signing args.
+// GetSigningArgs returns the LogicSig argument schema for an address: its
+// key file's signing args, or a bounded account's runtime args (kept as
+// optional, since which are required depends on the signing path). Returns nil
+// if the address is not in the cache or takes no arguments, as a native key
+// does not.
 func (cache *SignerCache) GetSigningArgs(address string) []SigningArgInfo {
 	if cache.SigningArgs == nil {
 		return nil
@@ -245,7 +248,7 @@ func (cache *SignerCache) GetSigningArgs(address string) []SigningArgInfo {
 	return cache.SigningArgs[address]
 }
 
-// SetSigningArgs sets the key-file signing args schema for a LogicSig address.
+// SetSigningArgs sets the LogicSig argument schema for an address.
 func (cache *SignerCache) SetSigningArgs(address string, args []SigningArgInfo) {
 	if cache.SigningArgs == nil {
 		cache.SigningArgs = make(map[string][]SigningArgInfo)

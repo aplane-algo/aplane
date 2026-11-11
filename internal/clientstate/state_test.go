@@ -315,6 +315,37 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	}
 }
 
+// A bounded account declares its LogicSig arguments as runtime arguments, not
+// signing arguments, so the client keeps those names too. Whether one is
+// required depends on the path, which the signer decides.
+func TestPopulateSignerCacheKeepsBoundedRuntimeArgumentNames(t *testing.T) {
+	state := New("testnet")
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
+		Address: "BOUNDED", KeyType: "example.bounded-hashlock.v1",
+		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Contract:    "bounded2",
+			RuntimeArgs: []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", Required: true, ByteLength: 32}},
+		},
+	}, {
+		Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true,
+		SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true}},
+	}, {
+		Address: "NATIVE", KeyType: "ed25519",
+	}}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	bounded := state.SignerCache.GetSigningArgs("BOUNDED")
+	if len(bounded) != 1 || bounded[0].Name != "secret" || bounded[0].Required || bounded[0].ByteLength != 32 {
+		t.Fatalf("bounded args = %+v, want secret, optional, 32 bytes", bounded)
+	}
+	if htlc := state.SignerCache.GetSigningArgs("HTLC"); len(htlc) != 1 || htlc[0].Name != "preimage" || !htlc[0].Required {
+		t.Fatalf("template args = %+v, want required preimage", htlc)
+	}
+	if native := state.SignerCache.GetSigningArgs("NATIVE"); native != nil {
+		t.Fatalf("native args = %+v, want none", native)
+	}
+}
+
 func TestPopulateSignerCacheRejectsMalformedLogicSigResourcesWithoutMutation(t *testing.T) {
 	state := New("testnet")
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{Address: "GOOD", KeyType: "ed25519"}}); err != nil {

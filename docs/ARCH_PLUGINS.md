@@ -622,6 +622,18 @@ type TransactionIntent struct {
 | `raw` | Fully formed unsigned transaction msgpack, base64-encoded | `encoded` |
 | `signed` | Already-signed transaction msgpack, base64-encoded (only under `groupMode: "pregrouped-signed"`) | `encoded` |
 
+**LogicSig arguments.** A plugin command line may carry `arg:name=value`
+tokens. APlane strips them before the plugin sees its arguments and attaches
+them to the plugin's transactions by name: each APlane-signed position gets the
+arguments its signing key declares (a template's signing arguments, or a bounded
+account's runtime arguments, matched on the position's effective signer), and
+no others. A native key declares none, a sibling LogicSig that does not declare
+a name never receives it, and a slot the plugin signs itself
+(`presign-plan`) receives none. A name that no position's key declares is
+refused before anything is planned or signed, rather than dropped. The
+arguments apply to the first step only, not to a continuation, and
+`pregrouped-signed` refuses them, since APlane signs nothing there.
+
 ### Multi-Step Workflows (Continuations)
 
 For complex protocols that require multiple transaction submissions with confirmations between steps, plugins can use the continuation mechanism.

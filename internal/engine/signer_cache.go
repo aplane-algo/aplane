@@ -219,6 +219,20 @@ func (e *Core) signerCacheIsGenericLsig(address string) bool {
 	return e.SignerCache.IsGenericLsig(address)
 }
 
+// signerCacheSigningArgNames returns the names of the LogicSig arguments the
+// signer reported for address's key: a template's signing arguments, or a
+// bounded account's runtime arguments. A native key has none.
+func (e *Core) signerCacheSigningArgNames(address string) []string {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	args := e.SignerCache.GetSigningArgs(address)
+	names := make([]string, len(args))
+	for i, arg := range args {
+		names[i] = arg.Name
+	}
+	return names
+}
+
 func (e *Core) validateSignerLsigArgs(address string, args map[string][]byte) error {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()

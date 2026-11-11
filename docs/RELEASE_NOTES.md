@@ -27,6 +27,13 @@ before it was renamed `enroll`.
   advertised entry for a public key, so a second witness key type with the
   same public key could not be routed, and `endpoints discover-cosigners`
   called it a repeat publication. Only one witness key type exists today.
+- **A plugin command's `arg:` values go only where they are declared.** They
+  were copied to every transaction in the plugin's group, so a sibling LogicSig
+  with the same argument name received them too. Each position APlane signs now
+  gets the arguments its signing key declares and no others; a name no
+  position declares is refused instead of being dropped. The client keeps a
+  bounded account's runtime argument names for this, from the next key list
+  refresh.
 
 ## apshell refuses input it used to ignore or guess at
 

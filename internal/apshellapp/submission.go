@@ -84,7 +84,10 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, r
 		return nil, err
 	}
 
-	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
+	lsigArgsSlice, err := a.eng.LsigArgsByDeclaredName(ctx, pluginSlotSenders(txns, nil), lsigArgs)
+	if err != nil {
+		return nil, err
+	}
 	submit, err := a.eng.SignAndSubmitGroup(ctx, txns, lsigArgsSlice)
 	if err != nil {
 		if submit != nil {
@@ -223,7 +226,10 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 		return out, nil
 	}
 
-	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
+	lsigArgsSlice, err := a.eng.LsigArgsByDeclaredName(ctx, pluginSlotSenders(txns, refs), lsigArgs)
+	if err != nil {
+		return nil, err
+	}
 	confirmed := !a.eng.GetSimulate()
 	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, authorizations, signSlots, lsigArgsSlice)
 	if err != nil {
@@ -235,13 +241,17 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), nil
 }
 
-func perTxnLsigArgs(lsigArgs map[string][]byte, count int) []map[string][]byte {
-	if len(lsigArgs) == 0 || count == 0 {
-		return nil
+// pluginSlotSenders lists each transaction's sender for sharing out the
+// command's LogicSig arguments by declared name. A slot the plugin signs
+// itself is left empty: apsigner does not sign it, so no argument goes to it.
+func pluginSlotSenders(txns []types.Transaction, pluginOwned map[string]string) []string {
+	senders := make([]string, len(txns))
+	for i, txn := range txns {
+		sender := txn.Sender.String()
+		if _, owned := pluginOwned[sender]; owned {
+			continue
+		}
+		senders[i] = sender
 	}
-	perTxn := make([]map[string][]byte, count)
-	for i := range perTxn {
-		perTxn[i] = lsigArgs
-	}
-	return perTxn
+	return senders
 }

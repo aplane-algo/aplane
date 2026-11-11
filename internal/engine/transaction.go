@@ -127,14 +127,25 @@ func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.Subm
 }
 
 func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) error {
+	senders := make([]string, len(txns))
+	for i, txn := range txns {
+		senders[i] = txn.Sender.String()
+	}
+	return e.refreshSigningStateForSenders(ctx, senders)
+}
+
+// refreshSigningStateForSenders fetches the auth address of each sender the
+// client does not have, and refreshes the signer's key list when it lacks an
+// effective signer, so a sender's signing key is known before it is used.
+func (e *Engine) refreshSigningStateForSenders(ctx context.Context, senders []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := e.refreshMissingSubmitAuthAddresses(ctx, txns); err != nil {
+	if err := e.refreshMissingSubmitAuthAddresses(ctx, senders); err != nil {
 		return err
 	}
 
-	if !e.submitEffectiveSignersNeedKeyRefresh(txns) {
+	if !e.submitEffectiveSignersNeedKeyRefresh(senders) {
 		return nil
 	}
 	if _, err := e.RefreshKeys(ctx); err != nil {
@@ -143,10 +154,9 @@ func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Tra
 	return nil
 }
 
-func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []types.Transaction) error {
-	seenSenders := make(map[string]struct{}, len(txns))
-	for _, txn := range txns {
-		sender := txn.Sender.String()
+func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, senders []string) error {
+	seenSenders := make(map[string]struct{}, len(senders))
+	for _, sender := range senders {
 		if _, ok := seenSenders[sender]; ok {
 			continue
 		}
@@ -193,10 +203,9 @@ func (e *Engine) refreshRekeyedSenders(ctx context.Context, txns []types.Transac
 	return firstErr
 }
 
-func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) bool {
-	seenSigners := make(map[string]struct{}, len(txns))
-	for _, txn := range txns {
-		sender := txn.Sender.String()
+func (e *Engine) submitEffectiveSignersNeedKeyRefresh(senders []string) bool {
+	seenSigners := make(map[string]struct{}, len(senders))
+	for _, sender := range senders {
 		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
 		if _, ok := seenSigners[effectiveSigner]; ok {
 			continue

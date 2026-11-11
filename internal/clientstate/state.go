@@ -187,23 +187,45 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 				s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, *keyInfo.BoundedAuthorization.MaxFee)
 			}
 		}
-		if len(keyInfo.SigningArgs) > 0 {
-			signingArgs := make([]cache.SigningArgInfo, len(keyInfo.SigningArgs))
-			for i, arg := range keyInfo.SigningArgs {
-				signingArgs[i] = cache.SigningArgInfo{
-					Name:        arg.Name,
-					Label:       arg.Label,
-					Description: arg.Description,
-					Type:        arg.Type,
-					Required:    arg.Required,
-					ByteLength:  arg.ByteLength,
-					MaxSize:     arg.MaxSize,
-				}
-			}
+		if signingArgs := cachedSigningArgs(keyInfo); len(signingArgs) > 0 {
 			s.SignerCache.SetSigningArgs(keyInfo.Address, signingArgs)
 		}
 	}
 	return nil
+}
+
+// cachedSigningArgs is the LogicSig argument schema the client keeps for a key,
+// which says what names the key takes: a template's signing arguments, or a
+// bounded account's runtime arguments (a bounded account has no signing
+// arguments of its own). A bounded argument is kept as optional: whether it is
+// required depends on the path the transaction takes, which only the signer
+// decides, so the client checks its name and fixed length only.
+func cachedSigningArgs(keyInfo signerapi.KeyInfo) []cache.SigningArgInfo {
+	var args []cache.SigningArgInfo
+	for _, arg := range keyInfo.SigningArgs {
+		args = append(args, cache.SigningArgInfo{
+			Name:        arg.Name,
+			Label:       arg.Label,
+			Description: arg.Description,
+			Type:        arg.Type,
+			Required:    arg.Required,
+			ByteLength:  arg.ByteLength,
+			MaxSize:     arg.MaxSize,
+		})
+	}
+	if keyInfo.BoundedAuthorization != nil {
+		for _, arg := range keyInfo.BoundedAuthorization.RuntimeArgs {
+			args = append(args, cache.SigningArgInfo{
+				Name:        arg.Name,
+				Label:       arg.Label,
+				Description: arg.Description,
+				Type:        arg.Type,
+				ByteLength:  arg.ByteLength,
+				MaxSize:     arg.MaxSize,
+			})
+		}
+	}
+	return args
 }
 
 func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile) (lsigresource.Profile, error) {
