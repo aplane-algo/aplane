@@ -864,10 +864,9 @@ func collectComponentSignatures(resp *signerapi.ComponentResponse, expected []in
 	return nil
 }
 
-// decodeCosignedSignedGroup decodes the assembled group with the canonical
-// decoder: the raw bytes are submitted and the decoded transactions are what
-// verifyAssembledAgainstFrozen checks, so each element must be exactly one
-// canonically encoded signed transaction.
+// decodeCosignedSignedGroup decodes the assembled group with
+// clientsign.DecodeSignedTxnToSubmit: the raw bytes are submitted and the
+// decoded transactions are what verifyAssembledAgainstFrozen checks.
 func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
 	signedBytes := make([][]byte, len(signedHex))
 	signedObjects := make([]types.SignedTxn, len(signedHex))
@@ -878,7 +877,7 @@ func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn,
 			return nil, nil, nil, fmt.Errorf("failed to decode assembled signed transaction %d: %w", i+1, err)
 		}
 		signedBytes[i] = decoded
-		stxn, err := canonical.DecodeSignedTxn(decoded)
+		stxn, err := clientsign.DecodeSignedTxnToSubmit(decoded)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("assembled signed transaction %d: %w", i+1, err)
 		}

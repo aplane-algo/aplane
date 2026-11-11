@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signing"
 )
 
@@ -115,7 +117,7 @@ func TestProcessSignedTransactionIntents(t *testing.T) {
 	for name, variant := range nonCanonicalSignedTxnVariants(t, raw0) {
 		t.Run(name+" refused", func(t *testing.T) {
 			intents := []string{base64.StdEncoding.EncodeToString(variant), encoded[1]}
-			if _, _, err := decodeSignedTxnIntents(intents); err == nil || !strings.Contains(err.Error(), "transaction 1: signed transaction bytes are not canonical") {
+			if _, _, err := decodeSignedTxnIntents(intents); !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction 1: ") {
 				t.Fatalf("error = %v, want refused as not canonical", err)
 			}
 			if _, err := DecodePregroupedSigned(intents); err == nil {

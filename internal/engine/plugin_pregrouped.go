@@ -21,6 +21,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/signing"
 )
 
@@ -81,7 +82,7 @@ func decodeSignedTxnIntents(encoded []string) ([]types.SignedTxn, [][]byte, erro
 		if err != nil {
 			return nil, nil, fmt.Errorf("transaction %d: failed to decode base64: %w", i+1, err)
 		}
-		st, err := decodeCanonicalSignedTxn(raw)
+		st, err := clientsign.DecodeSignedTxnToSubmit(raw)
 		if err != nil {
 			return nil, nil, fmt.Errorf("transaction %d: %w", i+1, err)
 		}

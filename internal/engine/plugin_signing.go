@@ -8,14 +8,12 @@ package engine
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -25,20 +23,6 @@ import (
 type PluginSubmitResult struct {
 	TxIDs  []string
 	Output string
-}
-
-// decodeCanonicalSignedTxn decodes one signed transaction whose bytes will be
-// submitted as given, refusing any encoding that is not exactly the canonical
-// encoding of what it decodes to, so what is checked is what is sent.
-func decodeCanonicalSignedTxn(raw []byte) (types.SignedTxn, error) {
-	stxn, err := canonical.DecodeSignedTxn(raw)
-	if errors.Is(err, canonical.ErrNotCanonical) {
-		return stxn, fmt.Errorf("signed transaction bytes are not canonical (trailing data, a repeated field, or an explicit empty field)")
-	}
-	if err != nil {
-		return stxn, fmt.Errorf("failed to decode signed transaction: %w", err)
-	}
-	return stxn, nil
 }
 
 func pluginAppCallInfo(txn types.Transaction) *signerapi.AppCallInfo {

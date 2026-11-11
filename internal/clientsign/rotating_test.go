@@ -167,7 +167,7 @@ func TestValidateSignedRotatingGroupRequiresPreparedBytes(t *testing.T) {
 	extra := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: rotatingAccount, Fee: 1000, FirstValid: 1000, LastValid: 1100, GenesisHash: types.Digest{9}}, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{8}, Amount: 1_000_000}}
 	trailing := append([]string(nil), honest...)
 	trailing[0] = honest[0] + hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: extra}))
-	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: trailing}); err == nil || !strings.Contains(err.Error(), "canonically encoded") {
+	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: trailing}); !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction 1: ") {
 		t.Fatalf("trailing transaction accepted: %v", err)
 	}
 	if _, err := validateSignedRotatingGroup(prepared, nil); err == nil {

@@ -497,7 +497,7 @@ func TestDecodeCosignedSignedGroupRefusesBytesThatAreNotCanonical(t *testing.T) 
 		"repeated field":     repeated,
 	} {
 		_, _, _, err := decodeCosignedSignedGroup([]string{hex.EncodeToString(raw)})
-		if err == nil || !strings.Contains(err.Error(), "assembled signed transaction 1: "+canonical.ErrNotCanonical.Error()) {
+		if !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "assembled signed transaction 1: ") {
 			t.Errorf("%s: error = %v, want refused as not canonical", name, err)
 		}
 	}
