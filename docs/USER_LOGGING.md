@@ -179,7 +179,8 @@ client's ID, and the client chooses it: it can send the same ID twice or
 one that looks like the signer's, and entries sharing it then belong to
 more than one request, so keeping it unique is the client's job. For a
 request sent without one, the signer mints a random ID, `req-` and 16 hex
-digits, and never mints the same one twice. `/sign/component` and
+digits (64 random bits, so two minted IDs do not repeat in practice).
+`/sign/component` and
 `/sign/assemble` return the ID as `request_id`, and while a request waits
 for approval the signer's console shows the first 20 characters of its
 ID, all of a minted one. So one request reads as a sequence: its

@@ -1337,9 +1337,9 @@ Signing-audit semantics:
   looks like a minted ID, and entries sharing it then belong to more than
   one request, so keeping it unique is the client's responsibility. For a
   request sent without one, the signer mints a random ID, `req-` and 16 hex
-  digits from `crypto/rand` (64 bits, so it does not mint the same ID
-  twice; 20 characters, so the console shows it whole). One function mints
-  it (`signing.RequestID`). The HTTP handlers of `/sign`, `/plan`,
+  digits from `crypto/rand` (64 random bits, so two minted IDs do not
+  repeat in practice; 20 characters, so the console shows it whole). One
+  function mints it (`signing.RequestID`). The HTTP handlers of `/sign`, `/plan`,
   `/sign/component`, `/sign/assemble` and the rotating sign settle the ID
   through one helper (`signingRequest` in the daemon), which also gives the
   handler the audit logger attributed to that ID, and set it on the request
