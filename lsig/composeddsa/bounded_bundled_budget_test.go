@@ -107,7 +107,7 @@ func solveV42BundledPath(t *testing.T, profile lsigresource.ConsensusProfile, pr
 		}},
 		Dummy: lsigresource.Usage{
 			ProgramBytes:  uint64(len(txsigning.EmbeddedDummyTealTok)),
-			MaxOpcodeCost: 1,
+			MaxOpcodeCost: txsigning.DummyOpcodeCost,
 		},
 	})
 	if err != nil {

@@ -85,11 +85,12 @@ func (a *captureAuditLog) LogPlanRequest(authAddress, txnSender, txnType, detail
 }
 
 func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *testing.T) {
+	// 39,997 plus the one dummy's 3 fills two transactions' 40,000 exactly.
 	profile := lsigresource.Profile{
 		ProgramBytes: 4_500,
 		Default: &lsigresource.PathProfile{
 			ArgumentBytes: 1_423,
-			MaxOpcodeCost: 39_999,
+			MaxOpcodeCost: 39_997,
 		},
 	}
 	snapshot := PlannerRuntimeSnapshot{
@@ -129,7 +130,7 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 func TestCalculateLogicSigResourcesUsesCompiledConsensus(t *testing.T) {
 	profile := lsigresource.Profile{
 		ProgramBytes: 4_500,
-		Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 39_999},
+		Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 39_997},
 	}
 	snapshot := PlannerRuntimeSnapshot{
 		KeyMetadata: map[string]PlannerKeyMetadata{"LSIG": {LogicSigResources: &profile}},
@@ -152,6 +153,41 @@ func TestCalculateLogicSigResourcesUsesCompiledConsensus(t *testing.T) {
 	}
 	if plan.GroupSize != 2 || plan.DummyCount != 1 {
 		t.Fatalf("resource plan = %#v, want compiled v42 group size 2", plan)
+	}
+}
+
+// The dummy program runs three opcodes, and the plan must count all three. One
+// LogicSig declaring 39,999 needs a second transaction. Counting the dummy at 1
+// would make one dummy look enough (39,999 + 1 = 40,000), but that group really
+// costs 40,002 and the network rejects it. Counted at 3, it takes two dummies:
+// 39,999 + 6 = 40,005, within three transactions' 60,000. The client fee
+// reserve and the three SDKs check the same case.
+func TestCalculateLogicSigResourcesCountsTheDummyProgramCost(t *testing.T) {
+	profile := lsigresource.Profile{
+		ProgramBytes: 1_000,
+		Default:      &lsigresource.PathProfile{MaxOpcodeCost: 39_999},
+	}
+	snapshot := PlannerRuntimeSnapshot{
+		KeyMetadata: map[string]PlannerKeyMetadata{"LSIG": {LogicSigResources: &profile}},
+	}
+	plan, _, err := calculateLogicSigResources(
+		nil,
+		snapshot,
+
+		[]signerapi.SignRequest{{AuthAddress: "LSIG"}},
+		[]types.Transaction{{}},
+		nil,
+		map[int]bool{},
+		map[int]bool{},
+		nil,
+		false,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.DummyCount != 2 || plan.GroupSize != 3 || plan.TotalMaxOpcodeCost != 40_005 {
+		t.Fatalf("resource plan = %#v, want two dummies, group size three and opcode total 40005", plan)
 	}
 }
 

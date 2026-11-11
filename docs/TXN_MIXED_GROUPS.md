@@ -80,7 +80,7 @@ Result: existing group has sufficient argument/opcode capacity; sign as-is
 **Output**:
 ```
 [GROUP] Pre-grouped transactions (group ID: ...)
-[GROUP] LogicSig resources: program=1810 args=1423 opcode<=20001, group=2 (0 dummy)
+[GROUP] LogicSig resources: program=1810 args=1423 opcode<=20003, group=2 (0 dummy)
 ```
 
 ### Case 2: Pre-grouped with Insufficient Resources
@@ -127,7 +127,7 @@ Result: Add 1 resource dummy, compute the unified fee and new group ID, sign bot
 **Output**:
 ```
 [GROUP] Ungrouped transactions - will compute group ID
-[GROUP] LogicSig resources: program=1810 args=1423 opcode<=20001, group=2 (1 dummy)
+[GROUP] LogicSig resources: program=1810 args=1423 opcode<=20003, group=2 (1 dummy)
 [GROUP] Added 1 resource dummy transaction(s); final fee planning follows
 ```
 
@@ -362,7 +362,7 @@ For scenarios where one party already has signed transactions, use passthrough m
                        max_opcode_cost: 20000}},
      {signed_txn_hex: "...dummy1 signed...",          // Passthrough dummy
       lsig_resources: {program_bytes: <dummy program length>,
-                       argument_bytes: 0, max_opcode_cost: 1}},
+                       argument_bytes: 0, max_opcode_cost: 3}},
      ... dummy2 and dummy3 declared the same way
    ]
 
