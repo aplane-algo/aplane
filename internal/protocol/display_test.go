@@ -38,3 +38,23 @@ func TestSignRequestTerminalSafeEscapesEveryShownString(t *testing.T) {
 		t.Fatal("TerminalSafe() changed the caller's violations")
 	}
 }
+
+// apadmin and apapprover show a request's validity window with one line, and
+// none when the signer sent no window.
+func TestValidityWindowLine(t *testing.T) {
+	for _, tc := range []struct {
+		first, last uint64
+		want        string
+	}{
+		{0, 0, ""},
+		{10, 0, ""},
+		{0, 10, ""},
+		{10, 10, "Valid Rounds: 10 - 10 (window: 0 blocks)"},
+		{100, 1100, "Valid Rounds: 100 - 1100 (window: 1000 blocks)"},
+		{20, 10, "Valid Rounds: 20 - 10 (empty: no round is valid)"},
+	} {
+		if got := ValidityWindowLine(tc.first, tc.last); got != tc.want {
+			t.Errorf("ValidityWindowLine(%d, %d) = %q, want %q", tc.first, tc.last, got, tc.want)
+		}
+	}
+}

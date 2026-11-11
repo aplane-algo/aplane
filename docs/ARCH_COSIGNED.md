@@ -836,7 +836,8 @@ approval context:
 - resource-dummy transactions are included consistently for LogicSig argument
   and opcode capacity,
 - signer-side `/sign` sees the complete group context for non-cosigned approval
-  and policy,
+  and policy, including the caller's `app_call_info` for the cosigned targets,
+  so its prompt shows their ABI method labels as the base component's does,
 - `/sign/assemble` receives signed non-cosigned entries as passthrough bytes.
 
 The client supplies accurate selected-path `lsig_resources` for cosigned
@@ -1005,7 +1006,9 @@ client -> user signer  POST /sign/assemble (kind=bounded-cosigner)
 client -> algod         submit or simulate exact signed group
 ```
 
-`/plan` finalizes group bytes and fees. The bounded-base component call
+`/plan` finalizes group bytes and fees; the client checks the result against
+its mutation report and prints the dummies added and the fee raised for
+authorization, with the positions that pay it. The bounded-base component call
 validates those frozen bytes without changing them, applies user-signer policy
 and operator approval, and releases the base signature args plus a
 spending-key assembly receipt. First-party clients contact the cosigner only after that

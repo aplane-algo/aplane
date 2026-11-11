@@ -38,6 +38,58 @@ before it was renamed `enroll`.
   `public_key_count`), counts each key type and public key pair, and a key
   advertised by two endpoints is reported with its key type.
 
+## Approval prompts say what the signer changed, and who signs what
+
+What the person approving a request is shown, and what the cosigned client
+prints, now matches what happened. Nothing changes in what the signer signs,
+refuses or approves.
+
+- **The single-transaction prompt shows the signer's fee raise.** apadmin and
+  apapprover marked a lone request as changed only when dummies were added. A
+  fee raised for a native Falcon signature or for LogicSig program bytes, with
+  no dummies, was shown only as the final fee. The prompt now carries the same
+  `[MODIFIED BY SERVER]` lines as the group prompt: the amount added and what
+  it is for.
+- **A frozen group is not called modified.** The `/sign/component` prompt of a
+  cosigned spend said the server had added dummies and recomputed the group
+  ID, and that the fees were covered by existing fees, for bytes this request
+  only checked. The `/sign/rotating/sign` prompt of a rotating spend said the
+  same, though it only verifies the group prepare built, byte for byte. Both
+  now say the group was checked as sent and changed by nothing here, with the
+  dummies and contributions its fees already include. A lone transaction is
+  not called a group.
+- **Each position of a group prompt names its signing key.** The header said
+  "2 auth addresses (see details)" and the details never said which key signs
+  which position.
+- **A passthrough position names who authorized it**, and with what: a single
+  signature, a multisig with its threshold, a native post-quantum signature or
+  a LogicSig, read from its signed bytes and marked as not verified by the
+  signer. A multisig or LogicSig program whose address is not the
+  authorizer's names that address, and a LogicSig delegated more than once is
+  shown as malformed.
+- **apapprover shows the validity window**, as apadmin does.
+- **A clawback from the sender's own holding is described as one.** It was
+  shown as an ordinary transfer, though it uses the clawback authority and
+  moves the holding even when it is frozen. It is not a warning, and
+  `reject_clawback` still does not refuse it.
+- **The LogicSig program contribution is given as "about" N microAlgos.** Each
+  contribution is rounded up on its own while the fee adjustment rounds the
+  group's total once, so the listed parts could differ from the adjustment by
+  a microAlgo. The adjustment is the exact amount added.
+- **The cosigned client prints the fee the signer raised** when it plans the
+  group, beside the dummies it added.
+- **The approval of the ordinary positions in a mixed cosigned group shows the
+  cosigned positions' ABI method labels**, as the cosigned approval does.
+- **apshell's ASA balance checks speak in the asset's units.** `send` printed
+  base units beside the unit name, so 1.5 USDC read "Sender has 1500000 USDC".
+  Balances now show the way the send result shows the amount, "Sender has 1.5
+  USDC", and ALGO amounts in these messages drop trailing zeros the same way.
+  When an ALGO amount plus its fee overflows, the message says so instead of
+  printing a clamped requirement as the amount needed. The checks compare whole base
+  units instead of floating-point numbers, so very large amounts compare
+  exactly. These are checks before signing; the network's own check is
+  unchanged.
+
 ## Rotating timing refusals have their own error code
 
 - `/sign/rotating/sign` refuses a spend whose validity window is not current at

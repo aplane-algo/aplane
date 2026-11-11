@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -64,6 +65,20 @@ func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
 		!reflect.DeepEqual(planned.KnownAddresses, reconstructed.KnownAddresses) ||
 		!reflect.DeepEqual(planned.BoundedItems, reconstructed.BoundedItems) {
 		t.Fatalf("frozen gate inputs drifted from canonical plan:\nplanned=%#v\nreconstructed=%#v", planned, reconstructed)
+	}
+	// The same group, planned and then checked as sent: the plan's prompt
+	// reports what /plan changed, the frozen one that nothing changed here.
+	if planned.Frozen || !reconstructed.Frozen {
+		t.Fatalf("Frozen: planned %v, reconstructed %v; want false, true", planned.Frozen, reconstructed.Frozen)
+	}
+	if lines := planChangeLines(planned, planned.AllTxns, false); !strings.Contains(lines, "[MODIFIED BY SERVER]") {
+		t.Fatalf("planned prompt lines = %q, want the change report", lines)
+	}
+	lines := planChangeLines(reconstructed, reconstructed.AllTxns, false)
+	if !strings.Contains(lines, "[FROZEN GROUP: checked as sent, not changed by this request]") ||
+		!strings.Contains(lines, fmt.Sprintf("%d dummy transaction(s)", reconstructed.DummiesNeeded)) ||
+		strings.Contains(lines, "MODIFIED") || strings.Contains(lines, "recomputed") {
+		t.Fatalf("frozen prompt lines = %q", lines)
 	}
 }
 

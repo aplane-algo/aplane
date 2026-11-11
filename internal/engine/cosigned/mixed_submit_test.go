@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -273,6 +274,117 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 		map[int]cosignedTarget{0: {Index: 0, Sender: cosigned, Account: cosigned, Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex}},
 		clientsign.SubmitOptions{}); err == nil || !strings.Contains(err.Error(), "no base component path") {
 		t.Fatalf("buildGroupSignRequests(no path) error = %v", err)
+	}
+}
+
+// The mixed /sign carries each cosigned target's app call description, so the
+// approval of the non-cosigned positions shows the target's ABI method. A
+// dummy has none, and a target the caller described nothing for gets none.
+func TestBuildGroupSignRequestsCarriesCosignedTargetAppCallInfo(t *testing.T) {
+	cosigned := testAddress(1).String()
+	nonCosigned := testAddress(2).String()
+	cosignerHex := testCosignerPublicKeyHex(0xd6)
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
+		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, cosigned, 1500)
+		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
+		c.AddAddress(nonCosigned, "ed25519")
+	})
+	txns := []types.Transaction{
+		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
+		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
+		testPaymentTxn(t, testAddress(9), testAddress(5), "dummy"),
+	}
+	targets := map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)}
+	targetInfo := &signerapi.AppCallInfo{Mode: "abi", Method: "pay(uint64)void"}
+	ordinaryInfo := &signerapi.AppCallInfo{Mode: "raw"}
+	requests, _, err := s.buildGroupSignRequests(txns, encodeGroupHex(txns), 2, targets,
+		clientsign.SubmitOptions{AppCallInfo: []*signerapi.AppCallInfo{targetInfo, ordinaryInfo}})
+	if err != nil {
+		t.Fatalf("buildGroupSignRequests() error = %v", err)
+	}
+	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeForeign || requests[0].AppCallInfo != targetInfo {
+		t.Fatalf("cosigned target request = %#v, want foreign with its app call description", requests[0])
+	}
+	if requests[1].AppCallInfo != ordinaryInfo {
+		t.Fatalf("non-cosigned request app call info = %#v, want the caller's", requests[1].AppCallInfo)
+	}
+	if requests[2].AppCallInfo != nil {
+		t.Fatalf("dummy request app call info = %#v, want none", requests[2].AppCallInfo)
+	}
+	requests, _, err = s.buildGroupSignRequests(txns, encodeGroupHex(txns), 2, targets, clientsign.SubmitOptions{})
+	if err != nil {
+		t.Fatalf("buildGroupSignRequests(no app call info) error = %v", err)
+	}
+	if requests[0].AppCallInfo != nil {
+		t.Fatalf("cosigned target app call info = %#v, want none when the caller gave none", requests[0].AppCallInfo)
+	}
+}
+
+// The cosigned client says how much the signer raised the fees at /plan, as
+// it says how many dummies it added, and says nothing about fees when the
+// plan raised none.
+func TestPlanFrozenGroupReportsTheSignersFeeRaise(t *testing.T) {
+	original := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
+	planned := original
+	planned.Fee += 3_000
+	dummies, err := signing.CreateDummyTransactions(1, suggestedParamsFromTxn(original))
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := []types.Transaction{planned, dummies[0]}
+	gid, err := crypto.ComputeGroupID(group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range group {
+		group[i].Group = gid
+	}
+	raised := signerapi.GroupPlanResponse{
+		Transactions: encodeGroupHex(group),
+		Mutations: &signerapi.MutationReport{
+			DummiesAdded: 1, GroupIDChanged: true, FeesModified: []int{0},
+			TotalFeesDelta: 3_000, OriginalCount: 1, FinalCount: 2,
+		},
+	}
+	unchanged := signerapi.GroupPlanResponse{Transactions: encodeGroupHex([]types.Transaction{original})}
+
+	for _, tc := range []struct {
+		name     string
+		response signerapi.GroupPlanResponse
+		want     []string
+		notWant  string
+	}{
+		{name: "raised", response: raised, want: []string{
+			"[COSIGNED] Signer added 1 dummy transaction(s)",
+			"[COSIGNED] Signer raised fees by 3000 microAlgos for authorization, on transaction(s) [1]",
+		}},
+		{name: "unchanged", response: unchanged, notWant: "raised fees"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(tc.response)
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			s := newMixedTestSigner(t, nil)
+			s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
+
+			var out strings.Builder
+			requests := []signerapi.SignRequest{{AuthAddress: original.Sender.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(original)}}
+			if _, err := s.planFrozenGroup(context.Background(), []types.Transaction{original}, requests, &out); err != nil {
+				t.Fatalf("planFrozenGroup() error = %v", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output = %q, want %q", out.String(), want)
+				}
+			}
+			if tc.notWant != "" && strings.Contains(out.String(), tc.notWant) {
+				t.Errorf("output = %q, did not want %q", out.String(), tc.notWant)
+			}
+		})
 	}
 }
 
