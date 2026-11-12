@@ -613,6 +613,7 @@ publisher: test
 family: reload-generic-oversized
 version: 1
 display_name: "Reload Generic Oversized"
+valid_rekey_target: false
 max_opcode_cost: 20000
 runtime_args:
   - name: blob
@@ -631,6 +632,7 @@ publisher: test
 family: reload-composed-oversized
 version: 1
 display_name: "Reload Composed Oversized"
+valid_rekey_target: true
 max_opcode_cost: 20000
 runtime_args:
   - name: blob
@@ -649,6 +651,7 @@ publisher: test
 family: reload-bounded-oversized
 version: 1
 display_name: "Reload Bounded Oversized"
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2

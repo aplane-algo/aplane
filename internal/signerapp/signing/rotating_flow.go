@@ -62,19 +62,6 @@ func (r *rotatingPlanItem) describe() string {
 	return fmt.Sprintf("\n  Rotation: stage %d signs and hands the account to stage %d (%s), held by this signer", r.Stage, r.Target, r.TargetAddress)
 }
 
-// groupKnownAddresses is the address set approval warnings treat as the
-// signer's own. A rotating plan names its rotation target in its own set;
-// every other plan keeps the runtime's key-file addresses.
-func (s *ApprovalService) groupKnownAddresses(plan *PlanResult) map[string]bool {
-	if plan != nil && plan.Rotating != nil && plan.KnownAddresses != nil {
-		return plan.KnownAddresses
-	}
-	if s.KnownAddresses == nil {
-		return nil
-	}
-	return s.KnownAddresses()
-}
-
 func rotatingStageUnproven(scanned uint64) *ServiceError {
 	return &ServiceError{
 		Kind:    ErrorRotatingStageUnproven,
@@ -448,8 +435,11 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		}
 	}
 	item := &rotatingPlanItem{Stage: stage, Target: targetStage, TargetAddress: spend.RekeyTo}
-	known := make(map[string]bool, len(s.Planner.Snapshot().KeyFiles)+1)
-	for addr := range knownAddressesFromSnapshot(s.Planner.Snapshot()) {
+	// One key-index snapshot builds the plan's known addresses, its held
+	// addresses that are not valid rekey targets, and its key type.
+	snapshot := s.Planner.Snapshot()
+	known := make(map[string]bool, len(snapshot.KeyFiles)+1)
+	for addr := range knownAddressesFromSnapshot(snapshot) {
 		known[addr] = true
 	}
 	// The rotation target is this signer's own next stage, never a foreign
@@ -472,8 +462,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		LogicSigResourcePlan: rebuilt.LogicSigResourcePlan,
 		FeeInfo:              rebuilt.FeeInfo,
 		NeedsRegroup:         len(allTxns) > 1,
-		AuthKeyTypes:         []string{s.Planner.Snapshot().KeyTypes[req.Account]},
+		AuthKeyTypes:         []string{snapshot.KeyTypes[req.Account]},
 		KnownAddresses:       known,
+		InvalidRekeyTargets:  invalidRekeyTargetsForGroup(snapshot, allTxns),
 		ProtocolRekeyTargets: protocolRekeys,
 		Rotating:             item,
 		Frozen:               true,

@@ -156,6 +156,14 @@ alone.
 - If rekey is restricted in TEAL, are helper and alternate paths covered, not
   just the main spend path?
 - If the LogicSig is signer-gated, is rekey intentionally left to signer policy?
+- Is the template's `valid_rekey_target` right? It is the author's declaration
+  that an aplane key of this type may be the signing authority an account is
+  rekeyed to, its own account included, subject to the program. Read the
+  program with another account as `Sender`; a program that never checks
+  `Sender` authorizes for every account rekeyed to it. Install requires the
+  field. It is part of the template's definition, and a key records it when
+  the key is created; a wrong value is corrected by a new version of the
+  template ([ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#correcting-a-wrong-declaration)).
 
 Public generic LogicSigs usually should not allow unconstrained rekey, because
 anyone who can exercise an allowed path may be able to transfer account control.
@@ -744,6 +752,11 @@ entries. New signer stores enable none of them except the Falcon plain host
 need enabling and bundled templates need explicit import. Users should understand the
 security model of each one before funding or relying on it.
 
+Each key type declares `valid_rekey_target`
+([ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)): `true` for the plain
+hosts `aplane.falcon1024.v1` and `aplane.ed25519.v1`, `false` for the rotating
+key types and for `aplane.htlc.v1`.
+
 ### Signer-Gated Compiled Providers
 
 These are Go-defined LogicSig DSA providers. Their TEAL is generated in code
@@ -925,6 +938,12 @@ participant may be able to exercise it.
   rejected, both at creation and by the program, because it means no close-out
 - fee ceiling of 10,000 microAlgos
 - no key registration path
+- `valid_rekey_target: false`: the program never checks `Sender` and forbids
+  every rekey, so an account rekeyed to an HTLC account could only ever be
+  closed to its recipient or refund address. The signer refuses a rekey of any
+  account to it, the HTLC account's own address included, as
+  `rekey_target_not_valid` under every `rekeys` setting, though it holds the
+  HTLC's aplane key
 
 HTLC-style policies should be reviewed with special care around validity-window
 crossing behavior and preimage handling.

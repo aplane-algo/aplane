@@ -39,7 +39,11 @@ type AuditCosignerRejectLogger interface {
 }
 
 type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
+
+// KnownAddressesFunc returns every address the signer holds an aplane key
+// for, of any key type. The daemon supplies Runtime.KnownAddresses.
 type KnownAddressesFunc func() map[string]bool
+
 type HasClientFunc func() bool
 type RequestSigningApprovalFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
 type RequestSigningApprovalResponseFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
@@ -60,6 +64,20 @@ type ApprovalService struct {
 	RequestSigningApprovalResponse        RequestSigningApprovalResponseFunc
 	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
+}
+
+// planKnownAddresses is the address set the gates and the approval warnings
+// treat as the signer's own: the plan's, from the key snapshot it was planned
+// with (a rotating plan names its rotation target in it), or the runtime's
+// key-file addresses when there is no plan set.
+func (s *ApprovalService) planKnownAddresses(plan *PlanResult) map[string]bool {
+	if plan != nil && plan.KnownAddresses != nil {
+		return plan.KnownAddresses
+	}
+	if s == nil || s.KnownAddresses == nil {
+		return nil
+	}
+	return s.KnownAddresses()
 }
 
 func (s *ApprovalService) userAutoApprove() bool {
@@ -538,7 +556,8 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	groupAuthAddr := groupApprovalAddress(req)
 
 	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
-		KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
+		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan),
+		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 	}, warningRekeyTargetsForPlan(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
@@ -590,10 +609,12 @@ func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Contex
 
 // requestSingleTxnApprovalWithContext prompts for one request. planChanges is
 // what planning did to it (planChangeLines), shown above the transaction as
-// the group prompt shows it. bounded is its bounded plan item, or nil: a
-// bounded rekey's prompt names who authorizes it, and the account's rekey-to
-// list lets the warning name a listed handover as one.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64, forceReviewRuleID string, bounded *boundedPlanItem) *ServiceError {
+// the group prompt shows it. plan is the request's plan, or nil: the warning
+// judges rekey targets against its key snapshot, and its bounded item, when
+// it has one, lets a bounded rekey's prompt name who authorizes it and the
+// warning name a listed handover as one.
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64, forceReviewRuleID string, plan *PlanResult) *ServiceError {
+	bounded := boundedItemAt(plan, 0)
 	var listed map[string]bool
 	if bounded != nil {
 		listed = bounded.ListedRekeyTargets
@@ -645,7 +666,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	txnDesc += boundedRekeyApprovalLines(bounded)
 
 	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], approvalpolicy.Context{
-		KnownAddresses: s.KnownAddresses(), ListedRekeyTargets: listed,
+		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan), ListedRekeyTargets: listed,
 	})
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 

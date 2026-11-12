@@ -22,6 +22,36 @@ var (
 	registerClientOnce sync.Once
 )
 
+// FalconPlainHostEntry is the Falcon plain host's catalog entry, and
+// Ed25519PlainHostEntry the Ed25519 plain host's. lsig/signerreg reads the same
+// entries, so the two registrations cannot disagree.
+func FalconPlainHostEntry() keytypecatalog.Entry {
+	return keytypecatalog.Entry{
+		KeyType: "aplane.falcon1024.v1",
+		Family:  family.Name,
+		// The Falcon plain host carries the bounds and the overlays, as the
+		// default-enabled general bounded type it replaces did (account
+		// overlays phase 6.5).
+		Availability: keytypecatalog.AvailabilityDefaultEnabled,
+		// An aplane key of the plain host may be the signing authority
+		// another account is rekeyed to, subject to its own overlays and
+		// bounds.
+		ValidRekeyTarget: true,
+	}
+}
+
+// Ed25519PlainHostEntry is the Ed25519 plain host's catalog entry; see
+// FalconPlainHostEntry.
+func Ed25519PlainHostEntry() keytypecatalog.Entry {
+	return keytypecatalog.Entry{
+		KeyType:      ed25519lsig.KeyTypeV1,
+		Family:       ed25519lsig.FamilyName,
+		Availability: keytypecatalog.AvailabilityLibrary,
+		// As the Falcon plain host: subject to its own overlays and bounds.
+		ValidRekeyTarget: true,
+	}
+}
+
 // RegisterClient registers client-safe LogicSig metadata, derivation, and catalog entries.
 // This is idempotent and safe to call multiple times.
 //
@@ -32,36 +62,30 @@ var (
 // They become active only after being imported into an identity keystore.
 func RegisterClient() {
 	registerClientOnce.Do(func() {
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType: "aplane.falcon1024.v1",
-			Family:  family.Name,
-			// The Falcon plain host carries the bounds and the overlays, as the
-			// default-enabled general bounded type it replaces did (account
-			// overlays phase 6.5).
-			Availability: keytypecatalog.AvailabilityDefaultEnabled,
-		}, falcon.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      ed25519lsig.KeyTypeV1,
-			Family:       ed25519lsig.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, ed25519lsig.RegisterClient)
+		registerCompiledProvider(FalconPlainHostEntry(), falcon.RegisterClient)
+		registerCompiledProvider(Ed25519PlainHostEntry(), ed25519lsig.RegisterClient)
 		// The rotating accounts have no client-side provider; each entry only
 		// makes the key type opt-in. Signer binaries register its storage,
-		// stage cryptography and generator through lsig/signerreg.
+		// stage cryptography and generator through lsig/signerreg. None is a
+		// valid rekey target: a rotating account's address is its one-time
+		// stage 0 program, for another account and for its own.
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleXmssV1,
-			Family:       rotatingkey.RotatingTripleXmssFamily,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			KeyType:          rotatingkey.RotatingTripleXmssV1,
+			Family:           rotatingkey.RotatingTripleXmssFamily,
+			Availability:     keytypecatalog.AvailabilityLibrary,
+			ValidRekeyTarget: false,
 		}, func() {})
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleSlhdsaV1,
-			Family:       rotatingkey.RotatingTripleSlhdsaFamily,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			KeyType:          rotatingkey.RotatingTripleSlhdsaV1,
+			Family:           rotatingkey.RotatingTripleSlhdsaFamily,
+			Availability:     keytypecatalog.AvailabilityLibrary,
+			ValidRekeyTarget: false,
 		}, func() {})
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleWotscV1,
-			Family:       rotatingkey.RotatingTripleWotscFamily,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			KeyType:          rotatingkey.RotatingTripleWotscV1,
+			Family:           rotatingkey.RotatingTripleWotscFamily,
+			Availability:     keytypecatalog.AvailabilityLibrary,
+			ValidRekeyTarget: false,
 		}, func() {})
 	})
 }

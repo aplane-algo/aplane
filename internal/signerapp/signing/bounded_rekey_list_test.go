@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -129,7 +130,7 @@ func TestListedRekeyWarningNamesTheHandover(t *testing.T) {
 	held := approvalpolicy.CheckDecodedTxnWarningsIn(listTestRekey(listTestTarget), approvalpolicy.Context{
 		ListedRekeyTargets: listed, KnownAddresses: listed,
 	})
-	if len(held) != 1 || !strings.Contains(held[0].Message, "You possess the keys") {
+	if len(held) != 1 || !strings.Contains(held[0].Message, txnreview.RekeyHeldText) {
 		t.Fatalf("held listed target warning = %+v", held)
 	}
 }
@@ -200,7 +201,7 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		ListedRekeyTargets: map[string]bool{listTestTarget.String(): true},
 	}
 	if err := svc.requestSingleTxnApprovalWithContext(context.Background(), "", signerapi.SignRequest{AuthAddress: "ACCOUNT"},
-		[]types.Transaction{rekey}, []types.Transaction{rekey}, "", 0, 0, policy.BoundedRekeyRequiresReviewRuleID, item); err != nil {
+		[]types.Transaction{rekey}, []types.Transaction{rekey}, "", 0, 0, policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{item}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || !strings.Contains(got[0].Message, "rekey-to list") || !strings.Contains(got[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
@@ -213,7 +214,7 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 	}
 	cosigned := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))}
 	if err := svc.requestSingleTxnApprovalWithContext(context.Background(), "", signerapi.SignRequest{AuthAddress: "ACCOUNT"},
-		[]types.Transaction{rekey}, []types.Transaction{rekey}, "", 0, 0, policy.BoundedRekeyRequiresReviewRuleID, cosigned); err != nil {
+		[]types.Transaction{rekey}, []types.Transaction{rekey}, "", 0, 0, policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{cosigned}}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(description, "Authorization: spending key and cosigner") {

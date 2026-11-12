@@ -656,6 +656,7 @@ publisher: example
 family: falcon1024-allowlist
 version: 1
 display_name: Falcon-1024 Allowlist
+valid_rekey_target: true
 
 bounded:
   contract: bounded2

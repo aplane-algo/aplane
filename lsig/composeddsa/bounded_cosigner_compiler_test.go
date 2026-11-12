@@ -32,6 +32,7 @@ publisher: aplane
 family: bounded-cosigner-compiler-test
 version: 1
 display_name: Bounded Cosigner Compiler Test
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2

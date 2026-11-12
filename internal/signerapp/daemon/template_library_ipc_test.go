@@ -249,6 +249,7 @@ publisher: test
 family: legacy-template
 version: 1
 display_name: Legacy
+valid_rekey_target: false
 teal: |
   int 1
 `),
@@ -432,10 +433,10 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr
 		}
-		_, saveErr := apkeys.SavePayload(mustActiveKeyPaths(t, server), payload, masterKey)
+		_, saveErr := apkeys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, masterKey)
 		return saveErr
 	}); err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 
 	recorder := &ipcJSONRecorderConn{}
@@ -667,6 +668,7 @@ version: %d
 display_name: %q
 description: "test template"
 max_opcode_cost: 20000
+valid_rekey_target: false
 teal: |
   #pragma version 8
   %s

@@ -24,6 +24,7 @@ reference for one of the three axes (Resolve).
 - [Key type identifier contract](#key-type-identifier-contract)
 - [Authorization object ontology](#authorization-object-ontology)
 - [Key types summary](#key-types-summary)
+- [Valid rekey target](#valid-rekey-target)
 - [The three axes](#the-three-axes)
 - [LogicSig providers](#logicsig-providers)
 - [Account generation](#account-generation)
@@ -584,16 +585,110 @@ Examples of the composed ontology:
 
 ## Key types summary
 
-| Key Type | Key-type family | Category | Description |
-|----------|--------|----------|-------------|
-| `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
-| `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled plain host on signer nodes: the plain Falcon program, one of 7 `plain1` arrangements (a rekey setting, an optional cosigner and an optional rekey-to list), or one of 147 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
-| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible plain host on Ed25519 (classical), with the same grammar as `aplane.falcon1024.v1`; distinct from native `ed25519` |
-| `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
-| `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
-| `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + two-layer SLH-DSA-SHA2-128 + Ed25519; `rotating1`, signer-side codec and cryptography |
-| `aplane.rotating-triple-wotsc.v1` | `aplane.rotating-triple-wotsc` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + WOTS+C + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| Key Type | Key-type family | Category | `valid_rekey_target` | Description |
+|----------|--------|----------|----------|-------------|
+| `ed25519` | n/a | `ed25519` | true | Native Algorand Ed25519 account; not a LogicSig |
+| `falcon1024` | n/a | `native_pq` | true | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | true | Default-enabled plain host on signer nodes: the plain Falcon program, one of 7 `plain1` arrangements (a rekey setting, an optional cosigner and an optional rekey-to list), or one of 147 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
+| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | true | Library-visible plain host on Ed25519 (classical), with the same grammar as `aplane.falcon1024.v1`; distinct from native `ed25519` |
+| `aplane.htlc.v1` | `htlc` | `generic_lsig` | false | Optional template library: hash time-locked ALGO payment |
+| `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + two-layer SLH-DSA-SHA2-128 + Ed25519; `rotating1`, signer-side codec and cryptography |
+| `aplane.rotating-triple-wotsc.v1` | `aplane.rotating-triple-wotsc` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + WOTS+C + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+
+`aplane.witness-falcon1024.v1` is not an account; its catalog entry declares
+`valid_rekey_target: false`.
+
+## Valid rekey target
+
+Every key type declares a boolean `valid_rekey_target`: the key type author's
+declaration that an aplane key of this type may be the signing authority an
+account is rekeyed to, its own account included, subject to that key's own
+restrictions (its bounds, a cosigner, its program). It is a declaration, not a
+guarantee: the signer does not check that an account rekeyed to such a key can
+do everything an ordinary account does. A key type whose accounts are
+controlled by a DSA private key (`ed25519`, `falcon1024`, and the plain hosts
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` with their overlays and bounds)
+declares true. A rotating key type declares false; its own signer invariant
+also refuses a rekey to a rotating account whatever the setting. A generic
+LogicSig template declares what its program allows: `aplane.htlc.v1` forbids
+every rekey and allows only a payment that closes the whole balance, never
+checks `Sender`, and declares false.
+
+A compiled key type declares the attribute in its `internal/keytypecatalog`
+entry. A YAML template declares it as the top-level `valid_rekey_target` field,
+which install (`generictemplate.ValidateSpecAdmission`,
+`composeddsa.ValidateTemplateAdmission`) requires. Only a template-built
+provider declares it (`lsigprovider.RekeyTargetDeclarer`: a generic template's
+provider, and the provider a composed template registers); a compiled key type,
+a plain host and its programs included, declares it in its catalog entry alone,
+so nothing can disagree with the catalog. `lsigprovider.ResolveValidRekeyTarget`
+resolves the declaration, catalog first, then the installed template, and
+reports whether it resolved. Key creation fails, writing nothing, when it did
+not: an unknown key type, or a template loaded without the field. The
+`/keytypes` listing reads an unresolved key type as not a valid rekey target
+(`lsigprovider.ValidRekeyTarget`).
+
+The declaration is part of a template's definition. The template compatibility
+fingerprint covers it beside the program
+(`generictemplate.compatibilityFingerprintForSpec`,
+`ComposedDSA.CompatibilityFingerprint`, which both hash the declaration as
+written), so a template that declares another
+value is another definition: install refuses it under an installed key type, as
+it refuses any other change to the same version (`installed template does not
+match incoming definition`), and reload treats a template file whose
+declaration changed as any other changed definition. A compiled key type's
+fingerprint does not carry it.
+
+The declaration is read once, when an aplane key is created: every creation
+path (generation, mnemonic import) records it in the key record as
+`valid_rekey_target` (`keys.Payload.ValidRekeyTarget`). They save the new
+record through `keygen.SaveNewKey`, which resolves the declaration and fails
+creation when it does not resolve; under it, `keys.SaveNewPayload` takes the
+value as a required argument, so no creation path records a value by
+omission. A path that carries an existing record (backup, restore, copy)
+writes the record it holds. From then on the key's recorded value is what
+counts. The signer reads it from the key, never from the
+live registry, so a key keeps its value when its template is disabled or absent
+on the node, and backup, restore and copy carry it as part of the record. A
+request is judged against the key snapshot it was planned with: the plan
+carries the held addresses whose keys record false
+(`PlanResult.InvalidRekeyTargets`, beside `KnownAddresses`), and the invariant
+and the approval warnings read that.
+
+`/keytypes` reports the declaration and `/keys` the value each key recorded,
+both as `valid_rekey_target`. When a key records false, the signer refuses a
+rekey of any account to its address, the account's own address included,
+under every `rekeys` setting and whatever the account's rekey-to list says: a
+signer invariant beside the rotating one
+(`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, error code
+`rekey_target_not_valid`). The `rekeys` setting decides only about foreign
+targets, addresses the signer holds no aplane key for; see
+[ARCH_POLICY.md](ARCH_POLICY.md). A per-key override that allows an account's
+return to its own address whatever the declaration (for a program that checks
+that the sender is its own address) is not built and may be added later.
+
+### Correcting a wrong declaration
+
+No tool edits the value an aplane key recorded, and a compiled key type's value
+is fixed in code. A template that declared the wrong value is corrected by
+publishing a new version of it (a new key type identifier, such as `.v2`) with
+the right declaration and creating new aplane keys from that version. Existing
+keys keep the value they recorded.
+
+- A generic LogicSig: with the same program and parameters, the new version
+  renders the same TEAL, so its key has the same address
+  (`lsig/generictemplate/provider_test.go::TestNewVersionWithCorrectedDeclarationRendersTheSameProgram`).
+  Key files are named by address, so generating it writes a record that
+  replaces the old version's record for that address; the account does not
+  move.
+- A template with a DSA private key (a composed template): a new key comes
+  from a new random seed, and LogicSig key types take no mnemonic import, so
+  it has a new address; move the account's funds to it.
+- Deleting an old key needs an unlocked store and checks nothing on chain,
+  including the account's balance. The record moves to the selected
+  generation's `deleted/keys/` and stays there until `apadmin archive prune`,
+  and retained generations keep their copies until they are pruned.
 
 ## The three axes
 
@@ -1347,6 +1442,7 @@ publisher: aplane
 family: custom-escrow
 version: 1
 display_name: "Custom Escrow"
+valid_rekey_target: false
 parameters:
   - name: recipient
     type: address
@@ -1378,6 +1474,9 @@ family: falcon-hashlock
 version: 1
 display_name: "Falcon-1024 Hashlock"
 description: "Falcon signature with SHA256 hash verification"
+# The program forbids every rekey, so an account rekeyed to it could never be
+# rekeyed away.
+valid_rekey_target: false
 parameters:
   - name: hash
     type: bytes
@@ -1541,7 +1640,7 @@ For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` the
 | 12 | For an account with a contract (`plain1` or `bounded2`), build it: cosigner ID and argument layout | `BuildBoundedAuthorizationMetadata` |
 | 13 | Resolve the reviewed opcode profile | `lsigprovider.ResolveOpcodeProfile` |
 | 14 | Build the payload with bytecode, parameters, metadata and the template fingerprint | `keys.NewAutoSaltedDSALSigPayload`, `SetBoundedAuthorization` |
-| 15 | Check the payload's selector equals the derived address, then save the key file | `Payload.Selector`, `keys.SavePayload` |
+| 15 | Check the payload's selector equals the derived address, then save the new key file with the key type's `valid_rekey_target` | `Payload.Selector`, `keygen.SaveNewKey` |
 
 `GenerateKey` finishes by reloading the runtime and writing the audit entry. The seed
 and private key are zeroed in `generateKey` on every path.

@@ -10,8 +10,10 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/termsafe"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -71,8 +73,15 @@ type PlanResult struct {
 	// the slot is passthrough, foreign, or the auth address is unknown.
 	AuthKeyTypes []string
 	// KnownAddresses is the signer-local address set materialized from the same
-	// key snapshot used for planning.
+	// key snapshot used for planning: every address the signer holds an aplane
+	// key for, of any key type. A rekey target outside it is foreign.
 	KnownAddresses map[string]bool
+	// InvalidRekeyTargets are the addresses in KnownAddresses whose aplane key
+	// records that it is not a valid rekey target, with the key type the
+	// refusal names, from the same snapshot. The valid-target invariant and
+	// the approval warnings read them, so a request is judged against one key
+	// set from planning to signing.
+	InvalidRekeyTargets map[string]txnreview.InvalidRekeyTarget
 	// ProtocolRekeyTargets are rekey targets the signer set itself and proved
 	// before approval (a rotating account's next stage). A rekey to one of
 	// them is not a warning-level finding. Nil for every other plan.
@@ -230,6 +239,7 @@ func (p *Planner) planGroup(req signerapi.GroupSignRequest, kind RequestKind) (*
 		HasPassthrough:        hasPassthrough,
 		AuthKeyTypes:          authKeyTypes,
 		KnownAddresses:        knownAddresses,
+		InvalidRekeyTargets:   invalidRekeyTargetsForGroup(snapshot, final.AllTxns),
 		BoundedItems:          final.BoundedItems,
 	}, nil
 }
@@ -361,6 +371,11 @@ func (p *Planner) logRequests(kind RequestKind, req signerapi.GroupSignRequest, 
 	}
 }
 
+// knownAddressesFromSnapshot is every address the snapshot holds an aplane
+// key for, of any key type: the set reject_foreign_rekey, the rekey warning
+// and the rotating recovery ladder read. Whether a held target's key type is
+// a valid rekey target is the invariant gate's separate question
+// (rejectRekeyToInvalidTarget).
 func knownAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool {
 	if len(snapshot.KeyFiles) == 0 {
 		return nil
@@ -370,6 +385,50 @@ func knownAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool
 		known[address] = true
 	}
 	return known
+}
+
+// invalidRekeyTargetsFromSnapshot is the held addresses whose aplane key
+// records that it is not a valid rekey target (valid_rekey_target false), by
+// address, with the key type a refusal or warning names. Nil when there are
+// none.
+func invalidRekeyTargetsFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]txnreview.InvalidRekeyTarget {
+	var invalid map[string]txnreview.InvalidRekeyTarget
+	for address := range snapshot.KeyFiles {
+		metadata := snapshot.KeyMetadata[address]
+		if metadata.ValidRekeyTarget {
+			continue
+		}
+		if invalid == nil {
+			invalid = make(map[string]txnreview.InvalidRekeyTarget)
+		}
+		invalid[address] = txnreview.InvalidRekeyTarget{
+			KeyType:         snapshot.KeyTypes[address],
+			GenericLogicSig: metadata.Category == lsigprovider.CategoryGenericLsig,
+		}
+	}
+	return invalid
+}
+
+// invalidRekeyTargetsForGroup is invalidRekeyTargetsFromSnapshot for a group
+// in which a transaction sets RekeyTo, and nil for one in which none does:
+// only a rekey reads the set, in the gate or in a warning, so most requests
+// never build it.
+func invalidRekeyTargetsForGroup(snapshot PlannerRuntimeSnapshot, group []types.Transaction) map[string]txnreview.InvalidRekeyTarget {
+	for _, txn := range group {
+		if !txn.RekeyTo.IsZero() {
+			return invalidRekeyTargetsFromSnapshot(snapshot)
+		}
+	}
+	return nil
+}
+
+// invalidRekeyTargetsForPlan is plan's held addresses that are not valid
+// rekey targets, or none.
+func invalidRekeyTargetsForPlan(plan *PlanResult) map[string]txnreview.InvalidRekeyTarget {
+	if plan == nil {
+		return nil
+	}
+	return plan.InvalidRekeyTargets
 }
 
 func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.MutationReport {

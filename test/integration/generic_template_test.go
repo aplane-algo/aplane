@@ -334,6 +334,7 @@ family: %s
 version: 1
 display_name: "Integration Allowlist"
 description: "Integration test template that permits payments and close-out to allowlisted addresses"
+valid_rekey_target: false
 
 parameters:
   - name: recipients
@@ -402,6 +403,7 @@ version: 1
 display_name: "Integration Funding Closeback"
 description: "Integration test template that permits payments and close-out only to the funding account"
 max_opcode_cost: 20000
+valid_rekey_target: false
 
 teal: |
   #pragma version 13
@@ -453,6 +455,7 @@ family: %s
 version: 1
 display_name: "Integration Falcon Closeback"
 description: "Integration test Falcon-composed template that permits payments and close-out only to the funding account"
+valid_rekey_target: true
 
 teal: |
   txn RekeyTo

@@ -138,6 +138,7 @@ version: 1
 display_name: "Test Falcon-1024 Allowlist"
 description: "Falcon-1024 signature restricted to a fixed set of receiver addresses"
 max_opcode_cost: 20000
+valid_rekey_target: true
 
 bounded:
   contract: %s

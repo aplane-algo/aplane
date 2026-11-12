@@ -24,6 +24,7 @@ const (
 	ErrorRotatingStageUnproven    = svcerr.KindRotatingStageUnproven
 	ErrorRotatingStageChanged     = svcerr.KindRotatingStageChanged
 	ErrorRotatingWindowNotCurrent = svcerr.KindRotatingWindowNotCurrent
+	ErrorRekeyTargetNotValid      = svcerr.KindRekeyTargetNotValid
 )
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }

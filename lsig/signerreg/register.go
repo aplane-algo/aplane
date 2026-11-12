@@ -9,9 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
-	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	ed25519lsigsignerreg "github.com/aplane-algo/aplane/lsig/ed25519lsig/signerreg"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
 	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingwotscsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
@@ -25,18 +23,9 @@ var registerSignerOnce sync.Once
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
 		clientreg.RegisterClient()
-		registerCompiledSigner(keytypecatalog.Entry{
-			KeyType: "aplane.falcon1024.v1",
-			Family:  family.Name,
-			// The Falcon plain host carries the bounds and the overlays and is
-			// enabled by default, as lsig/clientreg registers it.
-			Availability: keytypecatalog.AvailabilityDefaultEnabled,
-		}, falconsignerreg.RegisterSigner)
-		registerCompiledSigner(keytypecatalog.Entry{
-			KeyType:      ed25519lsig.KeyTypeV1,
-			Family:       ed25519lsig.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, ed25519lsigsignerreg.RegisterSigner)
+		// The same catalog entries lsig/clientreg registers.
+		registerCompiledSigner(clientreg.FalconPlainHostEntry(), falconsignerreg.RegisterSigner)
+		registerCompiledSigner(clientreg.Ed25519PlainHostEntry(), ed25519lsigsignerreg.RegisterSigner)
 		// Rotating key files are readable in every signer-side binary so
 		// scans, backups and offline tools agree on them. Signing for them is
 		// only available through the rotating flow.

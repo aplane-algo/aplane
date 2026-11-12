@@ -29,10 +29,15 @@ type Finding struct {
 // FindingContext is what a check knows about the reviewer's own position.
 // All of it is optional: with none, a rekey reads as a loss of control.
 type FindingContext struct {
-	// KnownAddresses is the set of addresses the signer holds. A rekey to one
-	// of them is still a finding, but it says the signer keeps control instead
-	// of warning that control is lost.
+	// KnownAddresses is every address the signer holds an aplane key for, of
+	// any key type. A rekey to one of them is still a finding, but it says the
+	// signer keeps control instead of warning that control is lost.
 	KnownAddresses map[string]bool
+	// InvalidRekeyTargets are the held addresses whose aplane key records that
+	// it is not a valid rekey target, by address. They are held, never foreign. A rekey to one
+	// at a position this signer signs is refused before any prompt; the
+	// warning says what it is at the positions this signer does not sign.
+	InvalidRekeyTargets map[string]InvalidRekeyTarget
 	// ProtocolRekeyTargets are rekey targets the signer itself set as part of
 	// a signing protocol and proved before approval ran: a rotating account's
 	// next stage. A rekey to one of them is the protocol working, not a
@@ -43,6 +48,47 @@ type FindingContext struct {
 	ListedRekeyTargets map[string]bool
 }
 
+// InvalidRekeyTarget is what the rekey warning says of a held aplane key that
+// is not a valid rekey target.
+type InvalidRekeyTarget struct {
+	KeyType string
+	// GenericLogicSig is set for a generic LogicSig, whose program decides
+	// what can be signed.
+	GenericLogicSig bool
+}
+
+// RekeyHeldNotValidText is the warning's line for a rekey to a held aplane
+// key that is not a valid rekey target. ownAddress is set when the target is
+// the transaction's own sender.
+func RekeyHeldNotValidText(target InvalidRekeyTarget, ownAddress bool) string {
+	keyType := target.KeyType
+	if keyType == "" {
+		keyType = "unknown"
+	}
+	if ownAddress {
+		return ">>> THIS SIGNER HOLDS THE APLANE KEY FOR THE ACCOUNT'S OWN ADDRESS, BUT IT IS NOT A VALID REKEY TARGET (" + keyType +
+			"): THE ACCOUNT MAY BE STRANDED <<<"
+	}
+	return ">>> THIS SIGNER HOLDS THE APLANE KEY FOR THE NEW ADDRESS, BUT IT IS NOT A VALID REKEY TARGET (" + keyType +
+		"): AN ACCOUNT REKEYED TO IT MAY BE STRANDED <<<"
+}
+
+// RekeyGenericLogicSigText follows RekeyHeldNotValidText for a generic
+// LogicSig target.
+const RekeyGenericLogicSigText = "It is a generic LogicSig: its program decides what can be signed."
+
+// Rekey finding texts. The first line says what the rekey does; the second
+// what this signer holds of the new address.
+const (
+	RekeyTransfersText      = "This transaction will transfer signing authority to another address."
+	RekeyToListedTargetText = "This transaction hands the account to an address on its rekey-to list."
+	RekeyToOwnAddressText   = "This transaction returns signing authority to the account's own address."
+	RekeyHeldText           = "This signer holds the aplane key for the new address."
+	RekeyOwnAddressHeldText = "This signer holds the aplane key for the account's own address."
+	RekeyListedNotHeldText  = ">>> THIS SIGNER DOES NOT HOLD IT: THE ACCOUNT LEAVES THIS SIGNER'S CUSTODY <<<"
+	RekeyLoseControlText    = ">>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
+)
+
 // Findings lists what a reviewer must not miss in txn. The signer's approval
 // warnings and apshell's review of a plugin-built group are both built from
 // it, so a field that warns in one warns in the other.
@@ -52,17 +98,31 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 
 	if facts.Has(txeffects.EffectRekey) && !ctx.ProtocolRekeyTargets[txn.RekeyTo.String()] {
 		rekeyTarget := txn.RekeyTo.String()
-		msg := "This transaction will transfer signing authority to another address."
-		if ctx.ListedRekeyTargets[rekeyTarget] {
-			msg = "This transaction hands the account to an address on its rekey-to list."
+		ownAddress := txn.RekeyTo == txn.Sender
+		msg := RekeyTransfersText
+		switch {
+		case ownAddress:
+			msg = RekeyToOwnAddressText
+		case ctx.ListedRekeyTargets[rekeyTarget]:
+			msg = RekeyToListedTargetText
 		}
 		switch {
+		case hasInvalidRekeyTarget(ctx, rekeyTarget):
+			invalid := ctx.InvalidRekeyTargets[rekeyTarget]
+			msg += "\n   " + RekeyHeldNotValidText(invalid, ownAddress)
+			if invalid.GenericLogicSig {
+				msg += "\n   " + RekeyGenericLogicSigText
+			}
+		case ownAddress && ctx.KnownAddresses[rekeyTarget]:
+			msg += "\n   " + RekeyOwnAddressHeldText
+		case ownAddress:
+			msg += "\n   " + RekeyLoseControlText
 		case ctx.KnownAddresses[rekeyTarget]:
-			msg += "\n   You possess the keys for the new address."
+			msg += "\n   " + RekeyHeldText
 		case ctx.ListedRekeyTargets[rekeyTarget]:
-			msg += "\n   >>> THIS SIGNER DOES NOT HOLD IT: THE ACCOUNT LEAVES THIS SIGNER'S CUSTODY <<<"
+			msg += "\n   " + RekeyListedNotHeldText
 		default:
-			msg += "\n   >>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
+			msg += "\n   " + RekeyLoseControlText
 		}
 		violations = append(violations, Finding{
 			Field:    "RekeyTo",
@@ -205,4 +265,9 @@ func isClawback(txn types.Transaction) bool {
 // keys at all, which is what takes an account offline.
 func IsOfflineKeyReg(txn types.Transaction) bool {
 	return txn.VotePK == (types.VotePK{}) && txn.SelectionPK == (types.VRFPK{})
+}
+
+func hasInvalidRekeyTarget(ctx FindingContext, address string) bool {
+	_, ok := ctx.InvalidRekeyTargets[address]
+	return ok
 }

@@ -37,6 +37,12 @@ type Entry struct {
 	KeyType      string
 	Family       string
 	Availability Availability
+	// ValidRekeyTarget is the key type's valid_rekey_target: the key type
+	// author's declaration that an aplane key of this type may be the signing
+	// authority an account is rekeyed to, its own account included,
+	// subject to that key's own restrictions (its bounds, a cosigner, its
+	// program). Every compiled key type declares it; the zero value is false.
+	ValidRekeyTarget bool
 }
 
 var (

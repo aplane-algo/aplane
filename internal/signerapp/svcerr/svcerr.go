@@ -32,6 +32,7 @@ const (
 	KindRotatingStageUnproven    Kind = signerapi.ErrCodeRotatingStageUnproven
 	KindRotatingStageChanged     Kind = signerapi.ErrCodeRotatingStageChanged
 	KindRotatingWindowNotCurrent Kind = signerapi.ErrCodeRotatingWindowNotCurrent
+	KindRekeyTargetNotValid      Kind = signerapi.ErrCodeRekeyTargetNotValid
 )
 
 // HTTPStatus maps a kind to its HTTP status. Unknown kinds map to 500.
@@ -43,7 +44,7 @@ func (k Kind) HTTPStatus() int {
 		return http.StatusConflict
 	case KindUnauthorized:
 		return http.StatusUnauthorized
-	case KindForbidden, KindLocked, KindInvalidPassphrase:
+	case KindForbidden, KindLocked, KindInvalidPassphrase, KindRekeyTargetNotValid:
 		return http.StatusForbidden
 	case KindNotFound:
 		return http.StatusNotFound

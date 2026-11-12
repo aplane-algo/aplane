@@ -96,6 +96,7 @@ publisher: test
 family: legacy
 version: 1
 display_name: Legacy
+valid_rekey_target: false
 teal: |
   int 1
 `))
@@ -115,6 +116,7 @@ publisher: test
 family: missing-opcode-ceiling
 version: 1
 display_name: Missing Opcode Ceiling
+valid_rekey_target: false
 teal: |
   int 1
 `))
@@ -131,6 +133,7 @@ publisher: test
 family: zero-opcode-ceiling
 version: 1
 display_name: Zero Opcode Ceiling
+valid_rekey_target: false
 max_opcode_cost: 0
 teal: |
   int 1
@@ -148,6 +151,7 @@ publisher: test
 family: bounded-library
 version: 1
 display_name: Bounded Library
+valid_rekey_target: true
 description: Test bounded template
 derivation_version: 3
 max_opcode_cost: 20000
@@ -418,6 +422,7 @@ publisher: test
 family: install-conflict
 version: 1
 display_name: "Install Conflict Changed"
+valid_rekey_target: false
 description: "changed same-key-type template"
 max_opcode_cost: 20000
 teal: |
@@ -604,8 +609,8 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer payload.ZeroSecrets()
-	if _, err := apkeys.SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+	if _, err := apkeys.SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 
 	_, err := DeactivateCompiledProvider(paths, keyType, cryptotest.Keyring(t, masterKey))
@@ -1068,8 +1073,8 @@ func writeTemplateKeyInUse(t *testing.T, paths storepaths.Paths, keyType string,
 	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apkeys.SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+	if _, err := apkeys.SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 }
 
@@ -1140,6 +1145,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "` + displayName + `"
+valid_rekey_target: false
 description: "Test generic template"
 max_opcode_cost: 20000
 parameters:
@@ -1165,6 +1171,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "` + displayName + `"
+valid_rekey_target: true
 description: "Test composed template"
 max_opcode_cost: 20000
 parameters:
@@ -1200,3 +1207,41 @@ func (s stubProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 	return nil, nil
 }
 func (s stubProvider) SetAlgodClient(*algod.Client) {}
+
+// valid_rekey_target is part of a template's definition: reinstalling the
+// same key type with another declaration is a conflict, as any other changed
+// field of the same version is, for both template types. A corrected
+// declaration needs a new version.
+func TestInstallParsedRejectsAChangedValidRekeyTargetDeclaration(t *testing.T) {
+	falcon.RegisterClient()
+	for _, tc := range []struct {
+		name string
+		yaml []byte
+		from string
+		to   string
+	}{
+		{"generic", testGenericTemplateYAML("rekey-declaration", "Rekey Declaration"), "valid_rekey_target: false", "valid_rekey_target: true"},
+		{"composed", testComposedTemplateYAML("rekey-declaration-composed", "Rekey Declaration Composed"), "valid_rekey_target: true", "valid_rekey_target: false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := newLibraryTestPaths(t)
+			kr := cryptotest.Keyring(t, testMasterKey())
+			original := mustParseYAML(t, "source.yaml", tc.yaml)
+			if _, err := InstallParsed(paths, original, kr); err != nil {
+				t.Fatalf("InstallParsed(original) error = %v", err)
+			}
+			again, err := InstallParsed(paths, original, kr)
+			if err != nil || !again.AlreadyExists {
+				t.Fatalf("reinstall of the same template = %+v, %v; want already installed", again, err)
+			}
+			if !strings.Contains(string(tc.yaml), tc.from) {
+				t.Fatalf("test template does not declare %q", tc.from)
+			}
+			changed := mustParseYAML(t, "changed.yaml", []byte(strings.Replace(string(tc.yaml), tc.from, tc.to, 1)))
+			_, err = InstallParsed(paths, changed, kr)
+			if err == nil || !strings.Contains(err.Error(), "installed template does not match incoming definition") {
+				t.Fatalf("reinstall with another declaration error = %v, want template conflict", err)
+			}
+		})
+	}
+}

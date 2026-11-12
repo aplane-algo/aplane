@@ -112,4 +112,17 @@ func TestComposedFingerprintBehaviorSensitive(t *testing.T) {
 	mutate("runtime args", func(c *Config) {
 		c.RuntimeArgs = append(c.RuntimeArgs, lsigprovider.RuntimeArgDef{Name: "extra", Type: "string"})
 	})
+	// A template's valid_rekey_target is part of its definition: a template
+	// that declares another value is another definition.
+	declared := func(valid bool) string {
+		cfg := fingerprintBaseConfig()
+		cfg.RekeyTargetDeclaration = &valid
+		return NewComposedDSA(cfg).CompatibilityFingerprint()
+	}
+	if declared(true) == declared(false) {
+		t.Fatal("valid_rekey_target did not change the fingerprint")
+	}
+	if declared(false) == base {
+		t.Fatal("a template declaring false hashes like a compiled composer, which declares nothing")
+	}
 }

@@ -100,6 +100,11 @@ type Config struct {
 	Bounded            *BoundedAuthorizationProfile
 	Layer3             *Layer3Policy
 	OpcodeProfile      lsigresource.OpcodeProfile
+	// RekeyTargetDeclaration is an installed template's valid_rekey_target,
+	// part of its definition and its fingerprint. A compiled key type, a plain
+	// host's programs included, leaves it nil: it declares the attribute in
+	// its catalog entry alone.
+	RekeyTargetDeclaration *bool
 }
 
 // ComposedDSA composes:
@@ -131,6 +136,8 @@ type ComposedDSA struct {
 	bounded            *BoundedAuthorizationProfile
 	layer3             *Layer3Policy
 	opcodeProfile      lsigresource.OpcodeProfile
+	// rekeyTargetDeclaration is Config.RekeyTargetDeclaration.
+	rekeyTargetDeclaration *bool
 
 	// generationPolicy replaces the production support policy for this composer
 	// only. It stays nil outside tests: nothing but export_test.go sets it.
@@ -162,25 +169,34 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		params = append(params, rekeyListEntriesParameterDef(bounded.Rekey))
 	}
 	return &ComposedDSA{
-		keyType:            cfg.KeyType,
-		baseKeyType:        cfg.BaseKeyType,
-		familyName:         cfg.FamilyName,
-		version:            cfg.Version,
-		displayName:        cfg.DisplayName,
-		description:        cfg.Description,
-		ops:                cfg.Ops,
-		tealSuffix:         cfg.TEALSuffix,
-		saltStyle:          cfg.SaltStyle,
-		templateMode:       cfg.TemplateMode,
-		templateVars:       cfg.TemplateVars,
-		params:             params,
-		runtimeArgs:        cfg.RuntimeArgs,
-		boundedRuntimeArgs: append([]boundedmeta.RuntimeArg(nil), cfg.BoundedRuntimeArgs...),
-		derivedArgs:        append([]boundedmeta.DerivedArg(nil), cfg.DerivedArgs...),
-		bounded:            bounded,
-		layer3:             cloneLayer3Policy(cfg.Layer3),
-		opcodeProfile:      opcodeProfile,
+		keyType:                cfg.KeyType,
+		baseKeyType:            cfg.BaseKeyType,
+		familyName:             cfg.FamilyName,
+		version:                cfg.Version,
+		displayName:            cfg.DisplayName,
+		description:            cfg.Description,
+		ops:                    cfg.Ops,
+		tealSuffix:             cfg.TEALSuffix,
+		saltStyle:              cfg.SaltStyle,
+		templateMode:           cfg.TemplateMode,
+		templateVars:           cfg.TemplateVars,
+		params:                 params,
+		runtimeArgs:            cfg.RuntimeArgs,
+		boundedRuntimeArgs:     append([]boundedmeta.RuntimeArg(nil), cfg.BoundedRuntimeArgs...),
+		derivedArgs:            append([]boundedmeta.DerivedArg(nil), cfg.DerivedArgs...),
+		bounded:                bounded,
+		layer3:                 cloneLayer3Policy(cfg.Layer3),
+		opcodeProfile:          opcodeProfile,
+		rekeyTargetDeclaration: cloneBool(cfg.RekeyTargetDeclaration),
 	}
+}
+
+func cloneBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 // SetAlgodClient sets the algod client used for TEAL compilation.
@@ -398,14 +414,13 @@ func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte)
 	return args, nil
 }
 
-// CompatibilityFingerprint returns a stable semantic fingerprint for the
-// behavior-bearing parts of this composed provider definition.
-// CompatibilityFingerprint returns a stable, behavior-only compatibility
-// fingerprint for this composed provider definition. It hashes only
-// behavior-bearing fields: identity/display strings (key_type, family, version)
-// are excluded, and the renameable base_key_type is projected to a stable
-// base_primitive token so the fingerprint survives a pure base rename. It is
-// provenance only and is never read on the signing path.
+// CompatibilityFingerprint returns a stable compatibility fingerprint for this
+// composed provider definition. It hashes the behavior-bearing fields and a
+// template's valid_rekey_target declaration: identity/display strings
+// (key_type, family, version) are excluded, and the renameable base_key_type
+// is projected to a stable base_primitive token so the fingerprint survives a
+// pure base rename. It is provenance only and is never read on the signing
+// path.
 func (c *ComposedDSA) CompatibilityFingerprint() string {
 	type canonicalSpec struct {
 		BasePrimitive string                             `json:"base_primitive,omitempty"`
@@ -418,6 +433,11 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		RuntimeArgs   []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
 		Bounded       any                                `json:"bounded,omitempty"`
 		Layer3        *Layer3Policy                      `json:"layer3,omitempty"`
+		// ValidRekeyTarget is a template's declaration, part of its
+		// definition: a template that declares another value is another
+		// definition. A compiled key type has none here; its catalog entry
+		// declares it.
+		ValidRekeyTarget *bool `json:"valid_rekey_target,omitempty"`
 	}
 
 	params := make([]lsigprovider.CanonicalParameter, len(c.params))
@@ -436,16 +456,17 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		boundedProjection = map[string]string{"invalid": metadataErr.Error()}
 	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
-		BasePrimitive: lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
-		OpcodeProfile: c.opcodeProfile,
-		TEALSuffix:    strings.TrimSpace(c.tealSuffix),
-		SaltStyle:     c.fingerprintSaltStyle(),
-		TemplateMode:  c.effectiveTemplateMode(),
-		TemplateVars:  c.templateVars,
-		Parameters:    params,
-		RuntimeArgs:   runtimeArgs,
-		Bounded:       boundedProjection,
-		Layer3:        cloneLayer3Policy(c.layer3),
+		BasePrimitive:    lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
+		OpcodeProfile:    c.opcodeProfile,
+		TEALSuffix:       strings.TrimSpace(c.tealSuffix),
+		SaltStyle:        c.fingerprintSaltStyle(),
+		TemplateMode:     c.effectiveTemplateMode(),
+		TemplateVars:     c.templateVars,
+		Parameters:       params,
+		RuntimeArgs:      runtimeArgs,
+		Bounded:          boundedProjection,
+		Layer3:           cloneLayer3Policy(c.layer3),
+		ValidRekeyTarget: c.rekeyTargetDeclaration,
 	})
 }
 

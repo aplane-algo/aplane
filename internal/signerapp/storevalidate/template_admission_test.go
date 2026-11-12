@@ -39,6 +39,7 @@ publisher: test
 family: admission-generic-oversized
 version: 1
 display_name: "Admission Generic Oversized"
+valid_rekey_target: false
 max_opcode_cost: 20000
 runtime_args:
   - name: blob
@@ -57,6 +58,7 @@ publisher: test
 family: admission-composed-oversized
 version: 1
 display_name: "Admission Composed Oversized"
+valid_rekey_target: true
 max_opcode_cost: 20000
 runtime_args:
   - name: blob
@@ -76,6 +78,7 @@ publisher: test
 	admissionBoundedOversizedYAML = admissionBoundedHeader + `family: admission-bounded-oversized
 version: 1
 display_name: "Admission Bounded Oversized"
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -94,6 +97,7 @@ teal: |
 	admissionBoundedReservedYAML = admissionBoundedHeader + `family: admission-bounded-reserved
 version: 1
 display_name: "Admission Bounded Reserved"
+valid_rekey_target: false
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -112,6 +116,7 @@ teal: |
 	admissionBoundedRekeyToYAML = admissionBoundedHeader + `family: admission-bounded-rekey-to
 version: 1
 display_name: "Admission Bounded Rekey To"
+valid_rekey_target: false
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -143,6 +148,7 @@ publisher: test
 family: admission-generic-too-many
 version: 1
 display_name: "Admission Generic Too Many"
+valid_rekey_target: false
 max_opcode_cost: 20000
 runtime_args:
 ` + args.String() + `teal: |

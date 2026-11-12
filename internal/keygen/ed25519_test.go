@@ -19,6 +19,8 @@ import (
 
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	nativeed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	utilpaths "github.com/aplane-algo/aplane/internal/storepaths"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -31,6 +33,10 @@ var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
 
 // setupTestKeystore sets up a temp directory and configures keystore paths for testing.
 func setupTestKeystore(t *testing.T) (utilpaths.Paths, func()) {
+	// Creation records the key type's valid_rekey_target, which the native
+	// key types declare in their catalog entries.
+	nativeed25519.RegisterClient()
+	nativefalcon.RegisterClient()
 	tmpDir := t.TempDir()
 	oldDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)

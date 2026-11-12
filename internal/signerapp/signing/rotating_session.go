@@ -100,7 +100,6 @@ type rotatingSession struct {
 	key     *coresigning.KeyMaterial
 	secret  *coresigning.RotatingKeyMaterial
 	ops     coresigning.RotatingStageOps
-	known   map[string]bool
 }
 
 func (rs *rotatingSession) close() {
@@ -196,6 +195,5 @@ func (s *Service) openRotatingSession(ctx context.Context, accountText string, s
 		key:     key,
 		secret:  secret,
 		ops:     ops,
-		known:   knownAddressesFromSnapshot(snapshot),
 	}, nil
 }

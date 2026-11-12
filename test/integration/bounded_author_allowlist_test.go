@@ -73,6 +73,7 @@ family: author-allowlist-%s
 version: 1
 display_name: "Author Allowlist %s"
 max_opcode_cost: 20000
+valid_rekey_target: true
 
 bounded:
   contract: %s

@@ -51,7 +51,13 @@ type Payload struct {
 	BoundedAuthorization   *boundedmeta.Metadata
 	TemplateFingerprint    string
 	GenesisHash            []byte
-	CreatedAt              time.Time
+	// ValidRekeyTarget is the key type's valid_rekey_target declaration,
+	// recorded when the aplane key was created: whether this aplane key may be
+	// the signing authority an account is rekeyed to, its own account
+	// included, subject to its own restrictions. The signer reads it from
+	// here, never from the live key type registry.
+	ValidRekeyTarget bool
+	CreatedAt        time.Time
 }
 
 // CanonicalPayloadMetadata is the non-secret projection of a canonical key
@@ -75,6 +81,7 @@ type CanonicalPayloadMetadata struct {
 	BoundedAuthorization   *boundedmeta.Metadata
 	TemplateFingerprint    string
 	GenesisHashHex         string
+	ValidRekeyTarget       bool
 	CreatedAt              string
 }
 
@@ -101,6 +108,7 @@ type payloadWire struct {
 	BoundedAuthorization   *boundedmeta.Metadata       `json:"bounded_authorization,omitempty"`
 	TemplateFingerprint    string                      `json:"template_fingerprint,omitempty"`
 	GenesisHashHex         string                      `json:"genesis_hash,omitempty"`
+	ValidRekeyTarget       bool                        `json:"valid_rekey_target,omitempty"`
 	CreatedAt              string                      `json:"created_at"`
 }
 
@@ -373,6 +381,7 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		BoundedAuthorization:   boundedmeta.Clone(payload.BoundedAuthorization),
 		TemplateFingerprint:    payload.TemplateFingerprint,
 		GenesisHashHex:         hex.EncodeToString(payload.GenesisHash),
+		ValidRekeyTarget:       payload.ValidRekeyTarget,
 		CreatedAt:              payload.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	encoded, err := json.MarshalIndent(wire, "", "  ")
@@ -560,6 +569,7 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
 		TemplateFingerprint:    p.TemplateFingerprint,
 		GenesisHashHex:         hex.EncodeToString(p.GenesisHash),
+		ValidRekeyTarget:       p.ValidRekeyTarget,
 		CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
@@ -647,6 +657,7 @@ func payloadFromWire(wire payloadWire) (*Payload, error) {
 		BoundedAuthorization:   boundedmeta.Clone(wire.BoundedAuthorization),
 		TemplateFingerprint:    wire.TemplateFingerprint,
 		GenesisHash:            genesisHash,
+		ValidRekeyTarget:       wire.ValidRekeyTarget,
 		CreatedAt:              createdAt,
 	}, nil
 }

@@ -49,7 +49,7 @@ func (g generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr 
 		return nil, err
 	}
 	defer payload.ZeroSecrets()
-	saved, err := keys.SavePayload(paths, payload, kr)
+	saved, err := keygen.SaveNewKey(paths, payload, kr)
 	if err != nil {
 		return nil, err
 	}

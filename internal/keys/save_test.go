@@ -35,9 +35,9 @@ func TestSavePayloadEncrypted(t *testing.T) {
 		t.Fatalf("Selector() error = %v", err)
 	}
 
-	result, err := SavePayload(paths, payload, cryptotest.Keyring(t, masterKey))
+	result, err := SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 	if result.Address != selector {
 		t.Fatalf("Address = %q, want %q", result.Address, selector)
@@ -84,9 +84,9 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 		t.Fatalf("Selector() error = %v", err)
 	}
 
-	result, err := SavePayload(paths, payload, cryptotest.Keyring(t, masterKey))
+	result, err := SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 	if result.Address != componentKey {
 		t.Fatalf("Address = %q, want %q", result.Address, componentKey)
@@ -128,12 +128,12 @@ func TestSavePayloadRejectsEmptyMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
-	result, err := SavePayload(storepaths.NewPaths(t.TempDir()), NewEd25519Payload(publicKey, privateKey), nil)
+	result, err := SaveNewPayload(storepaths.NewPaths(t.TempDir()), NewEd25519Payload(publicKey, privateKey), false, nil)
 	if result != nil {
-		t.Fatalf("SavePayload() result = %#v, want nil", result)
+		t.Fatalf("SaveNewPayload() result = %#v, want nil", result)
 	}
 	if err == nil {
-		t.Fatal("SavePayload() error = nil, want empty master key rejection")
+		t.Fatal("SaveNewPayload() error = nil, want empty master key rejection")
 	}
 }
 
@@ -145,8 +145,8 @@ func TestSavePayloadDirectoryCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
-	if _, err := SavePayload(paths, NewEd25519Payload(publicKey, privateKey), cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SavePayload() error = %v, keys dir should be created automatically", err)
+	if _, err := SaveNewPayload(paths, NewEd25519Payload(publicKey, privateKey), false, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveNewPayload() error = %v, keys dir should be created automatically", err)
 	}
 	info, err := os.Stat(activeKeysDirForTest(t, paths))
 	if err != nil {
@@ -189,8 +189,8 @@ func TestSavePayloadRefusesCosignerCredentialPastCap(t *testing.T) {
 	}
 	publicKey, privateKey := canonicalFalconComponentPair(t, 0x41)
 	payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
-	if _, err := SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); !errors.Is(err, ErrCosignerCredentialLimit) {
-		t.Fatalf("SavePayload(past the cap) error = %v, want ErrCosignerCredentialLimit", err)
+	if _, err := SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey)); !errors.Is(err, ErrCosignerCredentialLimit) {
+		t.Fatalf("SaveNewPayload(past the cap) error = %v, want ErrCosignerCredentialLimit", err)
 	}
 	selector, _ := payload.Selector()
 	if _, err := os.Stat(CosignerCredentialFilePathActive(mustResolveActiveForTest(t, paths), selector)); !os.IsNotExist(err) {

@@ -89,7 +89,7 @@ func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte,
 	defer payload.ZeroSecrets()
 	payload.FormatVersion = keys.NativeRecoveryKeyFormatVersion
 	payload.RecoveryEntropy = append([]byte(nil), entropy...)
-	keyFiles, err := keys.SavePayload(paths, payload, kr)
+	keyFiles, err := SaveNewKey(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("save native Falcon key: %w", err)
 	}

@@ -100,6 +100,7 @@ schema_version: 1
 family: test-template
 version: 1
 display_name: "Test Template"
+valid_rekey_target: false
 description: "A test template"
 teal: |
   #pragma version 10
@@ -153,6 +154,7 @@ schema_version: 1
 family: falcon1024-test
 version: 1
 display_name: "Falcon Test"
+valid_rekey_target: false
 description: "A test falcon template"
 parameters:
   - name: hash

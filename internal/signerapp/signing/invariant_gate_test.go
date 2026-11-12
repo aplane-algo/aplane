@@ -205,10 +205,10 @@ func TestCosignerChecksTheKeyBeforeTheInvariant(t *testing.T) {
 func TestSignerInvariantsFailClosedOnPositionOutsideGroup(t *testing.T) {
 	svc := &Service{}
 	txns := []types.Transaction{keyregTxn(types.Address{1}, true, false)}
-	if err := svc.rejectSignerInvariants(txns, []int{1}); err == nil || err.HTTPStatus() != 500 {
+	if err := svc.rejectSignerInvariants(txns, []int{1}, nil); err == nil || err.HTTPStatus() != 500 {
 		t.Fatalf("err = %v, want an internal error", err)
 	}
-	if err := svc.rejectSignerInvariants(txns, []int{0}); err != nil {
+	if err := svc.rejectSignerInvariants(txns, []int{0}, nil); err != nil {
 		t.Fatalf("online keyreg refused: %v", err)
 	}
 }

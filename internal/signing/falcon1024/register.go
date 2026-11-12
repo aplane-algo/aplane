@@ -35,6 +35,9 @@ func RegisterClient() {
 			KeyType:      KeyType,
 			Family:       KeyType,
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+			// A native Falcon-1024 aplane key may be the signing authority
+			// another account is rekeyed to.
+			ValidRekeyTarget: true,
 		})
 		algorithm.RegisterMetadata(metadata{})
 	})

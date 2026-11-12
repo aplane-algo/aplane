@@ -184,6 +184,43 @@ func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testin
 	}
 }
 
+// valid_rekey_target is part of a template's definition, so a template file
+// that comes back with another declaration under the same key type, as a
+// restore or rollback can bring it, is another definition: reload reports it
+// as conflicting with the registered provider and never keeps that provider as
+// an idempotent reload.
+func TestReloadTreatsAChangedValidRekeyTargetAsAnotherDefinition(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	paths = genstoretest.MintFirst(t, paths)
+	masterKey := testTemplateMasterKey()
+	keyType := "test.manager-declaration.v1"
+	t.Cleanup(func() { UnregisterProductProvider(keyType) })
+	original := managerGenericTemplateYAML("manager-declaration")
+	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, original, masterKey)
+
+	reload := func() RegistrationReport {
+		t.Helper()
+		report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
+		if err != nil {
+			t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
+		}
+		return report
+	}
+	if report := reload(); !containsString(report.GenericActivatedKeyTypes, keyType) {
+		t.Fatalf("GenericActivatedKeyTypes = %#v, want %s", report.GenericActivatedKeyTypes, keyType)
+	}
+	if report := reload(); !containsString(report.GenericIdempotentKeyTypes, keyType) {
+		t.Fatalf("GenericIdempotentKeyTypes = %#v, want %s on an unchanged reload", report.GenericIdempotentKeyTypes, keyType)
+	}
+
+	changed := []byte(strings.Replace(string(original), "valid_rekey_target: false", "valid_rekey_target: true", 1))
+	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, changed, masterKey)
+	report := reload()
+	if containsString(report.GenericIdempotentKeyTypes, keyType) || !containsString(report.GenericConflictingKeyTypes, keyType) {
+		t.Fatalf("idempotent %#v, conflicting %#v; want %s conflicting", report.GenericIdempotentKeyTypes, report.GenericConflictingKeyTypes, keyType)
+	}
+}
+
 func TestProductTemplateProviderRegistersAndUnregisters(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
@@ -638,6 +675,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "Manager Generic"
+valid_rekey_target: false
 description: "Manager generic template"
 max_opcode_cost: 20000
 parameters: []
@@ -658,6 +696,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "Manager Composed"
+valid_rekey_target: true
 description: "Manager composed template"
 max_opcode_cost: 20000
 parameters: []

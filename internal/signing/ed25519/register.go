@@ -30,6 +30,9 @@ func RegisterClient() {
 			KeyType:      "ed25519",
 			Family:       "ed25519",
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+			// An Ed25519 aplane key may be the signing authority another
+			// account is rekeyed to.
+			ValidRekeyTarget: true,
 		})
 
 		// Algorithm metadata (display color, signature size, etc.)

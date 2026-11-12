@@ -294,6 +294,7 @@ func signerAPIErrorCodes(t *testing.T) []string {
 		ErrCodeRotatingStageUnproven,
 		ErrCodeRotatingStageChanged,
 		ErrCodeRotatingWindowNotCurrent,
+		ErrCodeRekeyTargetNotValid,
 	}
 }
 

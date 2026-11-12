@@ -1091,6 +1091,7 @@ publisher: test
 family: good
 version: 1
 display_name: Good Template
+valid_rekey_target: false
 max_opcode_cost: 20000
 teal: "return"
 parameters: []
@@ -1125,6 +1126,7 @@ publisher: test
 family: from-yaml
 version: 1
 display_name: "From YAML"
+valid_rekey_target: false
 max_opcode_cost: 20000
 parameters: []
 runtime_args: []
@@ -1147,6 +1149,7 @@ publisher: test
 family: salt-style
 version: 1
 display_name: "Salt Style"
+valid_rekey_target: false
 salt_style: pushbytes
 teal: |
   int 1
@@ -1889,6 +1892,7 @@ publisher: test
 family: arg-limits
 version: 1
 display_name: "Arg Limits"
+valid_rekey_target: false
 max_opcode_cost: 20000
 runtime_args:
 ` + runtimeArgs + `teal: |
@@ -1945,5 +1949,92 @@ runtime_args:
 				t.Fatalf("ValidateSpecAdmission() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// valid_rekey_target is required to install a template, and the provider
+// reads the declared value.
+func TestValidRekeyTargetIsRequiredAtAdmission(t *testing.T) {
+	const base = `schema_version: 1
+template_type: generic
+template_mode: generated
+publisher: test
+family: rekey-target-declaration
+version: 1
+display_name: "Rekey Target Declaration"
+max_opcode_cost: 20000
+%steal: |
+  int 1
+  return
+`
+	for _, tc := range []struct {
+		name        string
+		declaration string
+		want        bool
+		admitted    bool
+	}{
+		{"absent", "", false, false},
+		{"false", "valid_rekey_target: false\n", false, true},
+		{"true", "valid_rekey_target: true\n", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, err := ParseTemplateSpec([]byte(fmt.Sprintf(base, tc.declaration)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A template loaded without the field declares nothing.
+			if valid, declared := NewYAMLTemplate(spec).RekeyTargetDeclaration(); valid != tc.want || declared != tc.admitted {
+				t.Fatalf("RekeyTargetDeclaration() = %v, %v; want %v, %v", valid, declared, tc.want, tc.admitted)
+			}
+			err = ValidateSpecAdmission(spec)
+			if !tc.admitted {
+				if err == nil || !strings.Contains(err.Error(), "valid_rekey_target is required") {
+					t.Fatalf("ValidateSpecAdmission() error = %v, want valid_rekey_target required", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateSpecAdmission() error = %v", err)
+			}
+		})
+	}
+}
+
+// A wrong valid_rekey_target is corrected by a new version of the template.
+// The new version is another definition (another fingerprint), but with the
+// same program and parameters it renders the same TEAL, so a key generated
+// from it has the same LogicSig address as the old version's key.
+func TestNewVersionWithCorrectedDeclarationRendersTheSameProgram(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrected := strings.NewReplacer("\nversion: 1\n", "\nversion: 2\n", "valid_rekey_target: false", "valid_rekey_target: true").Replace(string(data))
+	params := map[string]string{
+		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"recipient":      "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI",
+		"refund_address": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+		"timeout_round":  "12345",
+	}
+	render := func(yaml string) (keyType, fingerprint, teal string) {
+		t.Helper()
+		spec, err := ParseTemplateSpec([]byte(yaml))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmpl := NewYAMLTemplate(spec)
+		teal, err = tmpl.GenerateTEAL(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tmpl.KeyType(), tmpl.CompatibilityFingerprint(), teal
+	}
+	oldType, oldFingerprint, oldTEAL := render(string(data))
+	newType, newFingerprint, newTEAL := render(corrected)
+	if oldType == newType || oldFingerprint == newFingerprint {
+		t.Fatalf("key types %s and %s, fingerprints %s and %s: want a new key type and a new definition", oldType, newType, oldFingerprint, newFingerprint)
+	}
+	if oldTEAL != newTEAL {
+		t.Fatalf("the corrected version renders another program:\n%s\nwant\n%s", newTEAL, oldTEAL)
 	}
 }

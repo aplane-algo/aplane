@@ -355,6 +355,11 @@ Durable signing metadata includes:
 - `pq_scheme` and `pq_address_salt` for native PQ keys,
 - `lsig_opcode_profile` and `teal_source` where applicable,
 - `genesis_hash` for rotating keys,
+- `valid_rekey_target` on every category: the key type's declaration recorded
+  when the key was created (omitted when false). The signer's
+  `rekey_target_not_valid` invariant and `/keys` read it from the key, never
+  from the live key type registry, and every path that carries an existing
+  record (backup, restore, copy) carries it unchanged,
 - creation parameters and timestamps.
 
 The full field set is `payloadWireV1` in `internal/keys/payload_codec.go`.
@@ -910,7 +915,8 @@ SDK surface.
 Key inventory projections may include `template_provenance_status` and
 `template_provenance_note`. These are informational comparisons between a key
 file's stored template fingerprint and the currently registered local
-definition. The fingerprint is behavior-only, versioned (`<n>:` prefix), and
+definition. The fingerprint covers behavior and a YAML template's
+`valid_rekey_target` declaration; it is versioned (`<n>:` prefix) and
 identifier-independent, and the comparison is version-aware: only a same-version,
 different-hash pair is a conflict, while a different-version or malformed stored
 fingerprint is "not comparable" and benign. They do not change signing behavior.
@@ -1292,7 +1298,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`bounded1`, `cosigned1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
 | LogicSig derivation record | signing authority metadata | key payload `lsig_derivation` and compatibility-only `salt_counter` | stored final-bytecode derivation contract | `internal/lsigsalt`, `internal/keys` | Current `algod_v13_auto_salt` keys require final TEAL v13+ bytecode and forbid `salt_counter`; compatible manual-counter keys require it. Unknown or internally inconsistent derivation records reject scan/restore/signing. |
 | Base key type | signing authority metadata | key payload `base_key_type` | base provider lookup for DSA keys | `internal/keys`, `internal/signerapp/signing` | Required for composed/DSA signing that needs base provider ops. |
-| Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Behavior-only and versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |
+| Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Covers behavior and a YAML template's `valid_rekey_target`; versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |
 | Offline key inventory | local decrypted projection | encrypted key files plus passphrase | `apstore keys list` output | `cmd/apstore`, `internal/keys` | Does not print private key, mnemonic, or raw cosigner public key by default. |
 
 ### Key Type And Template Catalog

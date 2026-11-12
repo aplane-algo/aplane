@@ -192,6 +192,7 @@ type YAMLTemplate struct {
 var _ genericlsig.Template = (*YAMLTemplate)(nil)
 var _ genericlsig.SaltedTemplate = (*YAMLTemplate)(nil)
 var _ lsigprovider.OpcodeProfileProvider = (*YAMLTemplate)(nil)
+var _ lsigprovider.RekeyTargetDeclarer = (*YAMLTemplate)(nil)
 
 // NewYAMLTemplate creates a new YAMLTemplate from a spec.
 func NewYAMLTemplate(spec *TemplateSpec) *YAMLTemplate {
@@ -219,6 +220,15 @@ func (t *YAMLTemplate) DisplayColor() string {
 // Category returns the LSig category (generic_lsig for templates).
 func (t *YAMLTemplate) Category() string { return lsigprovider.CategoryGenericLsig }
 
+// RekeyTargetDeclaration is the template's valid_rekey_target and whether it
+// declares one (lsigprovider.RekeyTargetDeclarer).
+func (t *YAMLTemplate) RekeyTargetDeclaration() (valid, declared bool) {
+	if t.spec.ValidRekeyTarget == nil {
+		return false, false
+	}
+	return *t.spec.ValidRekeyTarget, true
+}
+
 // LogicSigOpcodeProfile returns the template author's required reviewed ceiling.
 func (t *YAMLTemplate) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
 	return t.spec.LogicSigOpcodeProfile(false)
@@ -237,7 +247,8 @@ func (t *YAMLTemplate) BuildArgs(signature []byte, runtimeArgs map[string][]byte
 }
 
 // CompatibilityFingerprint returns a stable semantic fingerprint for the
-// behavior-bearing parts of this template definition.
+// behavior-bearing parts of this template definition and its
+// valid_rekey_target declaration.
 func (t *YAMLTemplate) CompatibilityFingerprint() string {
 	return compatibilityFingerprintForSpec(t.spec)
 }
@@ -899,10 +910,11 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 	}, nil
 }
 
-// compatibilityFingerprintForSpec returns the behavior-only compatibility
-// fingerprint for a generic YAML template. Identity/display metadata
-// (key_type, family, version, publisher/display fields) are excluded; generic
-// templates have no base, so there is no base_primitive.
+// compatibilityFingerprintForSpec returns the compatibility fingerprint for a
+// generic YAML template: its behavior and its valid_rekey_target declaration.
+// Identity/display metadata (key_type, family, version, publisher/display
+// fields) are excluded; generic templates have no base, so there is no
+// base_primitive.
 func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 	type canonicalSpec struct {
 		DerivationVersion int                                `json:"derivation_version,omitempty"`
@@ -912,6 +924,10 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 		TEAL              string                             `json:"teal"`
 		Parameters        []lsigprovider.CanonicalParameter  `json:"parameters,omitempty"`
 		RuntimeArgs       []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
+		// ValidRekeyTarget is the template's declaration as written, part of
+		// its definition: a template that declares another value is another
+		// definition. It is hashed as the composed fingerprint hashes it.
+		ValidRekeyTarget *bool `json:"valid_rekey_target,omitempty"`
 	}
 
 	params := make([]lsigprovider.CanonicalParameter, len(spec.Parameters))
@@ -949,6 +965,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 		TEAL:              strings.TrimSpace(spec.TEAL),
 		Parameters:        params,
 		RuntimeArgs:       runtimeArgs,
+		ValidRekeyTarget:  spec.ValidRekeyTarget,
 	})
 }
 

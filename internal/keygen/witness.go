@@ -17,7 +17,7 @@ import (
 func SaveWitnessKey(paths storepaths.Paths, keyType string, publicKey, privateKey []byte, kr *crypto.Keyring) (*GenerationResult, error) {
 	payload := keys.NewWitnessPayload(keyType, publicKey, privateKey)
 	defer payload.ZeroSecrets()
-	keyFiles, err := keys.SavePayload(paths, payload, kr)
+	keyFiles, err := SaveNewKey(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save witness key: %w", err)
 	}

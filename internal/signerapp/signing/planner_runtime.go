@@ -41,6 +41,9 @@ type PlannerKeyMetadata struct {
 	// SigningArgs is a LogicSig key's declared runtime arguments. One that
 	// declares no size is planned from the request's value.
 	SigningArgs []lsigprovider.RuntimeArgDef
+	// ValidRekeyTarget is the valid_rekey_target the aplane key recorded when
+	// it was created.
+	ValidRekeyTarget bool
 }
 
 // PlannerDeps supplies process-specific data needed by the package-owned planner.

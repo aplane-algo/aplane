@@ -194,6 +194,10 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Bounded:            bounded,
 		Layer3:             layer3,
 		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
+		// An installed template declares it (install requires it); a plain
+		// host's bounded shape, built from a spec in code, does not, and
+		// answers its catalog entry.
+		RekeyTargetDeclaration: spec.ValidRekeyTarget,
 	}), nil
 }
 
@@ -203,11 +207,15 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 // without them, so a template installed before a check existed keeps loading and
 // can't take the whole store down. The checks:
 //
+//   - it declares valid_rekey_target;
 //   - its LogicSig arguments fit the network's limits on one LogicSig;
 //   - a bounded template satisfies its template-level contract, so a mistake
 //     key generation would refuse is refused here first.
 func ValidateTemplateAdmission(spec *TemplateSpec) error {
 	if err := ValidateTemplateSpec(spec); err != nil {
+		return err
+	}
+	if err := spec.ValidateRekeyTargetDeclaration(); err != nil {
 		return err
 	}
 	if err := generictemplate.ValidateRuntimeArgLimits(spec.RuntimeArgs); err != nil {
@@ -468,7 +476,27 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 		Fingerprint: provider.CompatibilityFingerprint(),
 		Register: func() bool {
 			addressderive.Register(keyType, base.NewAddressDeriver(keyType))
-			return logicsigdsa.RegisterIfAbsent(provider)
+			return logicsigdsa.RegisterIfAbsent(&templateProvider{provider})
 		},
 	}, nil
+}
+
+// templateProvider is the provider an installed composed template registers:
+// its composer, which also declares the template's valid_rekey_target. Only a
+// template-built provider declares it (lsigprovider.RekeyTargetDeclarer); a
+// compiled key type, a plain host and its programs included, declares it in
+// its catalog entry alone.
+type templateProvider struct {
+	*ComposedDSA
+}
+
+var _ lsigprovider.RekeyTargetDeclarer = (*templateProvider)(nil)
+
+// RekeyTargetDeclaration is the template's valid_rekey_target and whether it
+// declares one.
+func (p *templateProvider) RekeyTargetDeclaration() (valid, declared bool) {
+	if p.rekeyTargetDeclaration == nil {
+		return false, false
+	}
+	return *p.rekeyTargetDeclaration, true
 }

@@ -86,6 +86,7 @@ publisher: test
 family: author-allowlist-%s
 version: 1
 display_name: "Author Allowlist"
+valid_rekey_target: true
 max_opcode_cost: 20000
 
 bounded:

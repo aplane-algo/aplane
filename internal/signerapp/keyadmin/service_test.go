@@ -31,7 +31,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -235,7 +234,7 @@ func TestServiceGenerateBoundedCosignerFromReference(t *testing.T) {
 	configureFalconCompileMock(t)
 	ir := setupProductRuntime(t)
 	const keyType = "test.falcon1024-bounded-cosigner-keyadmin.v1"
-	spec, err := composeddsa.ParseTemplateSpec([]byte(`
+	prepared, err := composeddsa.PrepareKeystoreTemplateRegistration(keyType, []byte(`
 schema_version: 2
 derivation_version: 3
 template_type: composed
@@ -245,6 +244,7 @@ publisher: test
 family: falcon1024-bounded-cosigner-keyadmin
 version: 1
 display_name: Bounded Cosigner Keyadmin Test
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -261,11 +261,9 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	logicsigdsa.RegisterIfAbsent(provider)
+	// Registered as an installed template is, with its valid_rekey_target
+	// declaration, which creation needs.
+	prepared.Register()
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,
 	}); err != nil {
@@ -409,6 +407,7 @@ publisher: test
 family: generic-keyadmin-other-identity
 version: 1
 display_name: Generic Keyadmin Other Identity
+valid_rekey_target: false
 description: Test product-store generation
 max_opcode_cost: 20000
 parameters: []
@@ -538,7 +537,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 		t.Fatal(err)
 	}
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		result, saveErr := keys.SavePayload(ir.KeyPaths(), payload, mk)
+		result, saveErr := keys.SaveNewPayload(ir.KeyPaths(), payload, false, mk)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
@@ -752,6 +751,7 @@ publisher: test
 family: generic-service-test
 version: 1
 display_name: Generic Service Test
+valid_rekey_target: false
 description: Test generic service template
 max_opcode_cost: 20000
 parameters:
@@ -850,7 +850,7 @@ func TestServiceKeyInventoryComparesAccountDefinition(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-				_, saveErr := keys.SavePayload(ir.KeyPaths(), payload, mk)
+				_, saveErr := keys.SaveNewPayload(ir.KeyPaths(), payload, false, mk)
 				return saveErr
 			}); err != nil {
 				t.Fatalf("write key file error = %v", err)

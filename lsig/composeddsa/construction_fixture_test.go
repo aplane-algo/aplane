@@ -109,6 +109,7 @@ publisher: test
 family: construction-fixture
 version: 1
 display_name: Construction Fixture
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2

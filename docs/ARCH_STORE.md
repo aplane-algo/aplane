@@ -779,8 +779,8 @@ This separation is deliberate:
 
 | Object | Durable location | Authority |
 |---|---|---|
-| Native key file | selected generation `keys/<address>.key` | Native signing authority. |
-| LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
+| Native key file | selected generation `keys/<address>.key` | Native signing authority, and the `valid_rekey_target` its key type declared when it was created. |
+| LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, the `valid_rekey_target` its key type declared when it was created, and any private DSA key material. |
 | Cosigner witness credential | selected generation `keys/<witness_key_id>.cos` | Witness key in cosigner custody; component-signing authority for cosigner-role `/sign/component`, never an Algorand spending account. |
 | Witness public sidecar | selected generation `keys/<witness_key_id>.cos.json` | Canonical public witness reference for a local cosigner key. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
@@ -914,8 +914,9 @@ not treated as an external edit.
 | Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/enable paths. |
 
 Fingerprint comparisons are version-aware. The compatibility fingerprint is
-behavior-only and identifier-independent (it hashes behavior-bearing fields, not
-`key_type`/`family`/display or a renamed base key type) and is stored versioned
+identifier-independent (it hashes behavior-bearing fields and a YAML template's
+`valid_rekey_target` declaration, not `key_type`/`family`/display or a renamed
+base key type) and is stored versioned
 (`<n>:` prefix). A real conflict is only a same-version, different-hash pair; a
 cross-version or malformed stored fingerprint is "not comparable" and benign —
 the activation is re-pinned/registered, not flagged as a conflict. So the
@@ -967,7 +968,7 @@ Key type state records are plaintext because they contain no key material. Recor
 deletes are durable publications (temporary file, file fsync, rename, parent
 directory fsync).
 
-The record fingerprint is the behavior-only compatibility digest, stored as
+The record fingerprint is the compatibility digest, stored as
 `<n>:<sha256hex>` and described under [Key type transitions](#key-type-transitions). It is provenance
 only: never read on the signing path, and not a signing secret or
 authorization token.
@@ -1162,8 +1163,8 @@ key is rejected during reload rather than published as a signable key.
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
-| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or cosigner witness `.cos`; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
-| Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential. | Credential becomes active after reload/scan. |
+| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or cosigner witness `.cos`, recording the key type's `valid_rekey_target` declaration; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
+| Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential, recording the key type's `valid_rekey_target` declaration. | Credential becomes active after reload/scan. |
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.cos` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
@@ -1341,9 +1342,10 @@ bounded keys require version 2. LogicSig key payloads include:
   signature args; v1 signing-metadata DSA keys also persist it when it equals
   `key_type`. This field does not say which provider owns account metadata,
   creation parameters, TEAL, or cosigned assembly.
-- `template_fingerprint` — optional; the behavior-only, versioned (`<n>:`
-  prefix) compatibility fingerprint of the template/provider definition that
-  created or was bundled with the key, when known. It depends on no user-facing
+- `template_fingerprint` — optional; the versioned (`<n>:` prefix)
+  compatibility fingerprint of the template/provider definition that created
+  or was bundled with the key, when known, covering its behavior and a YAML
+  template's `valid_rekey_target`. It depends on no user-facing
   identifier (base key types are projected to a stable `base_primitive` token)
   and is provenance only, never signing authority
 
@@ -1447,7 +1449,8 @@ LogicSig salting is a generation-time contract:
 
 Templates are the source for generation, discovery, and new key creation;
 they are not consulted at sign time. `template_fingerprint` is provenance only:
-behavior-only, versioned (`<n>:` prefix), and identifier-independent. Key
+versioned (`<n>:` prefix) and identifier-independent, covering behavior and a
+YAML template's `valid_rekey_target`. Key
 inventory surfaces may compare it with the registered local definition and
 report a template conflict or unavailable template, but those notices do not
 invalidate a key. The comparison is version-aware: only a same-version,
@@ -1813,8 +1816,8 @@ Lifecycle:
     the signing index before commit and reload complete.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
-    Comparisons are version-aware: the fingerprint is behavior-only and
-    identifier-independent, and only a same-version, different-hash pair is a
+    Comparisons are version-aware: the fingerprint is identifier-independent,
+    and only a same-version, different-hash pair is a
     conflict — a cross-version or malformed stored fingerprint is "not
     comparable" and benign.
 

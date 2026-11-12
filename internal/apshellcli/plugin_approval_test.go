@@ -401,7 +401,7 @@ func TestReviewSaysControlIsKeptOnlyForAHeldKey(t *testing.T) {
 					t.Fatalf("%s: reviewPluginTransactions() error = %v", mode, err)
 				}
 				rendered := out.String()
-				keeps := strings.Contains(rendered, "You possess the keys for the new address")
+				keeps := strings.Contains(rendered, "This signer holds the aplane key for the new address")
 				loses := strings.Contains(rendered, "YOU WILL LOSE CONTROL")
 				if keeps != tc.kept || loses == tc.kept {
 					t.Errorf("%s: kept = %v, lost = %v; want kept = %v:\n%s", mode, keeps, loses, tc.kept, rendered)
@@ -409,7 +409,7 @@ func TestReviewSaysControlIsKeptOnlyForAHeldKey(t *testing.T) {
 			}
 			// The pregrouped-signed review renders through the same lines.
 			lines := strings.Join(pluginReviewLines(txn, (&REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}).heldAddresses()), "\n")
-			if strings.Contains(lines, "You possess the keys for the new address") != tc.kept {
+			if strings.Contains(lines, "This signer holds the aplane key for the new address") != tc.kept {
 				t.Errorf("pregrouped-signed lines: kept != %v:\n%s", tc.kept, lines)
 			}
 		})

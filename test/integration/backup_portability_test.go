@@ -175,6 +175,7 @@ family: %s
 version: 1
 display_name: "Backup Portability Custom Allowlist"
 description: "Custom allowlist template used by backup portability integration tests"
+valid_rekey_target: false
 
 parameters:
   - name: recipients
@@ -254,6 +255,7 @@ family: %s
 version: 1
 display_name: "Backup Portability Custom Falcon Allowlist"
 description: "Custom Falcon allowlist template used by backup portability integration tests"
+valid_rekey_target: true
 
 parameters:
   - name: recipients

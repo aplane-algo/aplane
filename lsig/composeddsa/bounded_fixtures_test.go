@@ -19,6 +19,7 @@ publisher: test
 family: fixed-allowlist-fixture
 version: 1
 display_name: "Fixed Allowlist Fixture"
+valid_rekey_target: true
 description: "Falcon-1024 signature restricted to a fixed set of receiver addresses"
 max_opcode_cost: 20000
 
@@ -53,6 +54,7 @@ publisher: test
 family: merkle-allowlist-fixture
 version: 1
 display_name: "Merkle Allowlist Fixture"
+valid_rekey_target: true
 description: "Allowlist implementation based on a fixed-depth Merkle root with signer-generated 512-byte proofs."
 max_opcode_cost: 20000
 
@@ -259,6 +261,7 @@ publisher: test
 family: custom-timelock-fixture
 version: 1
 display_name: "Custom Timelock Fixture"
+valid_rekey_target: false
 description: "Falcon-1024 signature gated by round-based timelock"
 max_opcode_cost: 20000
 

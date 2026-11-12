@@ -266,7 +266,20 @@ outranks all of those. None of the three rejects the signer's own protocol
 rekeys (a rotation's next stage), so a rotating account keeps spending under
 `reject_all_rekeys`. A `Config` never given a value rejects every rekey. A held rotating account is never an acceptable target: the signer
 refuses that rekey before policy runs, whatever the policy says (see
-[ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner analog and ignores key
+[ARCH_SIGNING.md](ARCH_SIGNING.md)).
+
+The `rekeys` setting decides only about foreign targets: addresses the signer
+holds no aplane key for. Separately, and under every `rekeys` value, the signer
+refuses a rekey of any account, its own address included, to an address it
+holds an aplane key for when that key records that it is not a valid rekey
+target (`valid_rekey_target` false, recorded from its key type's declaration
+when the key was created, such as an `aplane.htlc.v1` account). This is a
+signer invariant that runs before policy, with its own error code,
+`rekey_target_not_valid`. Neither `allow_rekeys` nor the account's rekey-to
+list lifts it (see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)).
+So with foreign rekeys refused, an account can be rekeyed only to a held aplane
+key that is a valid rekey target; with them allowed, it can be rekeyed to any
+address except a held aplane key that is not one. `reject_rekey` is the cosigner analog and ignores key
 ownership: when true, it rejects every rekey the cosigner is asked to sign. When
 it is false, the cosigner still fails closed unless `rekey_policy.allowed`
 authorizes the exact sender-to-target edge and the target transaction is a pure

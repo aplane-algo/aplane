@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 	rotatingfamilyreg "github.com/aplane-algo/aplane/lsig/rotatingfamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 )
@@ -258,7 +259,8 @@ func testTampering(t *testing.T, s Scheme) {
 func testScan(t *testing.T, s Scheme) {
 	payload, address := FixedPayload(t, s)
 	paths, kr := newStore(t)
-	if _, err := keys.SavePayload(paths, payload, kr); err != nil {
+	// A rotating key type declares valid_rekey_target false.
+	if _, err := keys.SaveNewPayload(paths, payload, false, kr); err != nil {
 		t.Fatal(err)
 	}
 	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
@@ -292,6 +294,9 @@ func testScan(t *testing.T, s Scheme) {
 // ways of generating a rotating account it does not support.
 func testGenerator(t *testing.T, s Scheme) {
 	s.Register()
+	// Creation records the key type's valid_rekey_target, which its catalog
+	// entry declares.
+	clientreg.RegisterClient()
 	paths, kr := newStore(t)
 	gen, err := keygen.GetGenerator(s.KeyType)
 	if err != nil {
@@ -313,8 +318,12 @@ func testGenerator(t *testing.T, s Scheme) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := scanned[result.Address]; !ok {
+	if info, ok := scanned[result.Address]; !ok {
 		t.Fatalf("generated account %s not found by scan", result.Address)
+	} else if info.ValidRekeyTarget {
+		// A rotating key type is not a valid rekey target, and its aplane key
+		// records that when it is created.
+		t.Fatalf("generated rotating account %s recorded valid_rekey_target true", result.Address)
 	}
 	seed, err := rotatinghybrid.SeedFromMnemonic(words)
 	if err != nil {

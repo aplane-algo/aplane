@@ -934,6 +934,16 @@ Cosigner policy never produces review verdicts: there is no `review_above`, no
 `review` type verdict, and no `on_no_route` family (an unmatched movement,
 close-out, or clawback is always rejected).
 
+`rekeys` decides only about foreign targets, addresses the node holds no aplane
+key for. Apart from it, and under every `rekeys` value, the signer refuses a
+rekey of any account, its own address included, to an address it holds an
+aplane key for when that key is not a
+[valid rekey target](USER_KEYTYPES.md#valid-rekey-targets), such as an
+`aplane.htlc.v1` account. The refusal comes before policy, with the error code
+`rekey_target_not_valid`. Neither `allow_rekeys` nor the account's
+rekey-to list lifts it.
+`appolicy try` tests the document alone and does not model it.
+
 `transaction_types` is evaluated before everything else. `reject` is Always
 Deny for the type (rule id `transaction_type:<type>`), `review` is Always
 Review, and `allow` lets the type continue to the other rules. A type the

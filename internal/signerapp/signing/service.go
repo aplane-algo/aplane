@@ -265,7 +265,8 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		PassthroughIndices:   plan.PassthroughIndices,
 		ForeignIndices:       plan.ForeignIndices,
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
-		KnownAddresses:       s.knownAddresses(plan),
+		KnownAddresses:       s.Approval.planKnownAddresses(plan),
+		InvalidRekeyTargets:  invalidRekeyTargetsForPlan(plan),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 		ListedRekeyTargets:   listedRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
@@ -286,7 +287,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
 			}
 			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, planChangeLines(plan, allTxns, false), firstValid, lastValid, forceReviewRuleID,
-				boundedItemAt(plan, 0))
+				plan)
 		},
 	}, console)
 	if gateErr != nil {
@@ -320,16 +321,6 @@ func protocolRekeyTargetsForPlan(plan *PlanResult) map[string]bool {
 		return nil
 	}
 	return plan.ProtocolRekeyTargets
-}
-
-func (s *Service) knownAddresses(plan *PlanResult) map[string]bool {
-	if plan != nil && plan.KnownAddresses != nil {
-		return plan.KnownAddresses
-	}
-	if s.Approval == nil || s.Approval.KnownAddresses == nil {
-		return nil
-	}
-	return s.Approval.KnownAddresses()
 }
 
 func authPolicyKeysFromRequest(req signerapi.GroupSignRequest, plan *PlanResult) []string {

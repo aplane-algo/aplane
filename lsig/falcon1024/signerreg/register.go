@@ -7,10 +7,8 @@ package signerreg
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/internal/witness"
 	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -43,13 +41,6 @@ func RegisterSigner() {
 			}},
 			Extra: []func(){
 				keygen.RegisterWitnessKeygen,
-				func() {
-					keytypecatalog.Register(keytypecatalog.Entry{
-						KeyType:      witness.Falcon1024V1,
-						Family:       "cosigner-falcon1024",
-						Availability: keytypecatalog.AvailabilityDefaultEnabled,
-					})
-				},
 				falconkeys.RegisterProcessors,
 			},
 		})

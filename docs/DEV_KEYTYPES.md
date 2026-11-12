@@ -160,17 +160,21 @@ fixture's `teal_compile_network` and rejects missing/zero cost reporting or
 consumption above the declared ceiling. Simulation is evidence for the reviewed
 vectors; it is not a general proof over arbitrary TEAL inputs.
 
-Key files may also store `template_fingerprint`, the behavior-only, versioned
-compatibility fingerprint of the template or composed provider that created the
-key, when known. This is provenance for inventory warnings only; it is not
-signing authority and must not override stored bytecode/signing metadata.
+Key files may also store `template_fingerprint`, the versioned compatibility
+fingerprint of the template or composed provider that created the key, when
+known. It covers the definition's behavior and, for a YAML template, its
+`valid_rekey_target` declaration. This is provenance for inventory warnings
+only; it is not signing authority and must not override stored
+bytecode/signing metadata.
 
 Fingerprint authoring rules:
 
 - The fingerprint hashes only behavior-bearing definition fields (TEAL /
   `teal_suffix`, `salt_style`, the base primitive token, `template_mode`,
   `template_variables`, `parameters`, `runtime_args`, and the effective opcode
-  profile). Identity, routing, and display fields (`key_type`, `family`,
+  profile) and a YAML template's `valid_rekey_target` declaration, which is
+  part of its definition. A compiled provider's fingerprint has no
+  declaration; its catalog entry carries it. Identity, routing, and display fields (`key_type`, `family`,
   `version`, `publisher`, `display_name`, `description`, `display_color`,
   labels/examples) are forbidden from the hash, so an identifier or display
   rename never changes the fingerprint.
@@ -817,6 +821,7 @@ version: <int>              # integer version
 display_name: "<Name>"      # human-readable
 description: "<text>"       # short description
 display_color: "<code>"     # ANSI color code (optional)
+valid_rekey_target: false   # required at install; see below
 
 parameters:
   - name: <id>              # creation-time parameter
@@ -856,6 +861,25 @@ teal: |
   // strict mode: $variable constant references
 ```
 
+`valid_rekey_target` is the key type author's declaration that an aplane key of
+this type may be the signing authority an account is rekeyed to, its own account
+included, subject to that key's own restrictions (its bounds, a cosigner, its
+program). Set it to `true` only if you make that declaration. A program that
+never checks `Sender` authorizes for every account rekeyed to it, so read the
+TEAL with another account as `Sender`. When a key records `false`, the signer
+refuses every rekey to its address, the account's own address included. Install
+refuses a template that leaves the field out, with an error naming it. Each
+aplane key records the declaration when it is created (`valid_rekey_target` in
+the key record), and the signer reads the key's value. The field is part of the
+template's definition and its compatibility fingerprint: install refuses the
+same key type with another declaration, as it refuses any other change to the
+same version. A wrong declaration is corrected by a new version of the template
+with the right one, and new keys created from it; see
+[Correcting a wrong declaration](ARCH_KEYTYPES.md#correcting-a-wrong-declaration).
+A compiled key type declares the same attribute in its
+`internal/keytypecatalog` entry, where the value is fixed in code. See
+[Valid rekey target](ARCH_KEYTYPES.md#valid-rekey-target).
+
 Strict variable constants by type. These constant blocks are emitted by the
 APlane renderer before compiler-owned auto-salting; template authors
 should still avoid hand-written constant blocks in TEAL source.
@@ -879,7 +903,7 @@ derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated     # strict | generated; legacy is not allowed
-# ...publisher, family, version, display_name, max_opcode_cost as above
+# ...publisher, family, version, display_name, max_opcode_cost, valid_rekey_target as above
 
 bounded:
   contract: bounded2         # templates can't declare plain1, the plain host's contract
@@ -960,6 +984,7 @@ family: falcon1024-allowlist
 version: 1
 display_name: "Falcon-1024 Allowlist"
 max_opcode_cost: 20000
+valid_rekey_target: true
 
 bounded:
   contract: bounded2
@@ -993,6 +1018,8 @@ family: custom-timelock
 version: 1
 display_name: "Custom Timelock"
 max_opcode_cost: 20000
+# Rekey is refused, so an account rekeyed to it could never be rekeyed away.
+valid_rekey_target: false
 
 bounded:
   contract: bounded2
@@ -1149,6 +1176,7 @@ version: 1
 display_name: "Escrow"
 description: "Hold funds until recipient provides approval code, or sender reclaims after timeout"
 display_color: "33"
+valid_rekey_target: false   # see valid_rekey_target above
 
 parameters:
   - name: recipient
@@ -1281,6 +1309,9 @@ Use this checklist for every new key type.
 - [ ] Define the family string.
 - [ ] Confirm whether the type needs runtime args.
 - [ ] Confirm whether the type needs creation params only.
+- [ ] Decide `valid_rekey_target`: in the YAML for a template, in the
+      `internal/keytypecatalog` entry and `internal/keytypecatalog/rekey_target_test.go`
+      for a compiled key type.
 - [ ] Add or update tests.
 - [ ] Update user-facing docs if the key type is intended for operators.
 - [ ] Update architecture/dev docs if the mechanism or supported family set changed.

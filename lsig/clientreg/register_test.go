@@ -152,6 +152,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "Composed Fixture"
+valid_rekey_target: true
 max_opcode_cost: 20000
 
 bounded:

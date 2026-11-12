@@ -50,6 +50,8 @@ type SigningSummary struct {
 	SigningMetadataVersion int
 	TemplateFingerprint    string
 	LogicSigResources      *lsigresource.Profile
+	// ValidRekeyTarget is the value the aplane key recorded at creation.
+	ValidRekeyTarget bool
 }
 
 // NewAtomicFileKeyStoreForPaths creates a file store whose unlock and reload
@@ -533,6 +535,7 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 			SigningMetadataVersion: v.SigningMetadataVersion,
 			BoundedAuthorization:   boundedmeta.Clone(v.BoundedAuthorization),
 			TemplateFingerprint:    v.TemplateFingerprint,
+			ValidRekeyTarget:       v.ValidRekeyTarget,
 		}
 		if v.LogicSigResources != nil {
 			cloned := v.LogicSigResources.Clone()

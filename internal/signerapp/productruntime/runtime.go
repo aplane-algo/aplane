@@ -178,6 +178,9 @@ type KeyPublicMetadata struct {
 	LogicSigResources    *lsigresource.Profile
 	// SigningArgs is a LogicSig key's declared runtime arguments, in order.
 	SigningArgs []lsigprovider.RuntimeArgDef
+	// ValidRekeyTarget is the valid_rekey_target the aplane key recorded when
+	// it was created.
+	ValidRekeyTarget bool
 }
 
 // Config is the construction parameters for the product Runtime.
@@ -955,7 +958,8 @@ func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added, clea
 
 // --- Key access ---
 
-// KnownAddresses returns a set of addresses this identity holds keys for.
+// KnownAddresses returns every address this identity holds an aplane key
+// for, of any key type: the set the rekey warning reads.
 func (ir *Runtime) KnownAddresses() map[string]bool {
 	ir.keysLock.RLock()
 	defer ir.keysLock.RUnlock()
@@ -1054,6 +1058,7 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 				BoundedAuthorization: summary.BoundedAuthorization,
 				LogicSigResources:    summary.LogicSigResources,
 				SigningArgs:          summary.SigningArgs,
+				ValidRekeyTarget:     summary.ValidRekeyTarget,
 			}
 		}
 	}

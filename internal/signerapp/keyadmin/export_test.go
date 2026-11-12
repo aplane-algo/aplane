@@ -165,7 +165,7 @@ func TestLegacyNativeFalconMnemonicUnavailable(t *testing.T) {
 		crypto.ZeroBytes(payload.RecoveryEntropy)
 		payload.RecoveryEntropy = nil
 		payload.FormatVersion = keys.CurrentKeyFormatVersion
-		_, err = keys.SavePayload(ir.KeyPaths(), payload, kr)
+		_, err = keys.SaveNewPayload(ir.KeyPaths(), payload, false, kr)
 		return err
 	})
 	if err != nil {

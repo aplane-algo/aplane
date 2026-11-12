@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	keygenreg "github.com/aplane-algo/aplane/internal/keygen"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -27,6 +28,7 @@ import (
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
@@ -43,11 +45,22 @@ func init() {
 	if logicsigdsa.Get("aplane.falcon1024.v1") == nil {
 		logicsigdsa.Register(&testFalcon1024V1{})
 	}
+	// Creation records the key type's valid_rekey_target, which its catalog
+	// entry declares.
+	keytypecatalog.Register(clientreg.FalconPlainHostEntry())
 	// Also register the generator now that it's needed
 	keygenreg.Register(NewLogicSigGenerator("falcon1024", map[string]LogicSigKeygenOps{
 		"falcon1024":           signerops.New(nil),
 		"aplane.falcon1024.v1": signerops.New(nil),
 	}))
+}
+
+// registerTestCatalogEntry catalogs a compiled test key type, which declares
+// its valid_rekey_target there: creating a key of it needs the declaration.
+func registerTestCatalogEntry(keyType, family string) {
+	keytypecatalog.Register(keytypecatalog.Entry{
+		KeyType: keyType, Family: family, Availability: keytypecatalog.AvailabilityLibrary, ValidRekeyTarget: true,
+	})
 }
 
 // testFalcon1024V1 is a minimal DSA implementation for tests.
@@ -299,6 +312,7 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 	const keyType = "test.generator-bounded.v1"
 	dsa := &boundedGeneratorTestDSA{}
 	logicsigdsa.Register(dsa)
+	registerTestCatalogEntry(keyType, "generator-bounded")
 	ops := &testFalcon1024V1{}
 	generator := NewLogicSigGenerator("generator-bounded", map[string]LogicSigKeygenOps{keyType: ops})
 	seed := make([]byte, 64)
@@ -356,6 +370,7 @@ func TestGenerateRecordsTheAccountsOwnFingerprint(t *testing.T) {
 	defer cleanup()
 	logicsigdsa.Register(&perKeyGeneratorDSA{})
 	t.Cleanup(func() { lsigprovider.Unregister(perKeyGeneratorKeyType) })
+	registerTestCatalogEntry(perKeyGeneratorKeyType, "generator-per-key")
 
 	generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{perKeyGeneratorKeyType: &testFalcon1024V1{}})
 	seed := make([]byte, 64)
