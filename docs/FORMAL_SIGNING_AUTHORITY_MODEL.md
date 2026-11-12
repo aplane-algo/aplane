@@ -252,7 +252,10 @@ Rules:
 5. The generic/composed template registered under the key's `key_type` is not
    consulted to assemble args at sign time.
 6. Runtime args supplied by a caller must match the stored signing-argument
-   contract.
+   contract. A native key (ed25519 or native PQ) has none: a sign-mode entry
+   that supplies `lsig_args` for a key whose record says it is native is
+   refused at planning, on `/plan`, `/sign` and `/sign/component`, rather than
+   signed with them dropped.
 
 ## Invariants
 
@@ -296,7 +299,12 @@ Runtime argument ordering for existing LogicSig keys comes from stored
 
 ```text
 ArgumentOrder(key) = key.stored_signing_args
+NativeKey(key) and entry.lsig_args != {} => RejectForSigning(entry)
 ```
+
+A native key has no stored signing args, so a request that supplies runtime
+args for one cannot match its contract; planning refuses it
+(`verifySignableKeys`), before policy and approval.
 
 ### S5: No Template Reconstruction
 

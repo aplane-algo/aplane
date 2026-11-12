@@ -307,6 +307,25 @@ what was reviewed.
   gates; the model carries no network and claims nothing about it. Go tests:
   `internal/engine/active_network_test.go`,
   `internal/apshellapp/submission_network_test.go`.
+- **LogicSig argument placement is checked, not modeled.** The command's
+  `arg:` values are given once for a step's group and placed by name by one
+  engine function (`internal/engine/lsig_args.go::placeLsigArgs`): each
+  position apsigner signs gets the arguments its effective signer's key
+  declares, a plugin-signed position none, and a name no position declares,
+  or a required argument left out, is refused. `apshellapp.CheckPluginGroup`
+  runs it on the decoded group after PS8's first judgment and before
+  anything is shown (only when `arg:` values are given, so a group with none
+  still needs no connection), and refuses any `arg:` values for a
+  pregrouped-signed group once it is decoded, after the non-interactive
+  refusal and before PS8's fetch. The group keeps the values; submission
+  places them again on the same group, after the network precondition: in
+  `checkReadyToSign` for the default flow, and in
+  `SignAndSubmitWithPluginSigners` for presign-plan, over the managed slots,
+  before the plan requests are built. Like the network precondition, it only
+  refuses: it changes none of the modeled gates, and the model carries no
+  arguments. Go tests: `internal/engine/lsig_args_test.go`,
+  `internal/apshellapp/lsig_args_test.go`,
+  `internal/apshellcli/plugin_continuation_test.go::TestJSPluginLsigArgsReachTheGroupCheck`.
 - **Plugin sender claims are not authenticated**: in presign-plan a plugin
   may declare any sender address as its own; the slot then goes foreign at
   `/plan` and apsigner never signs it, so the only effect is a group that
@@ -358,6 +377,11 @@ what was reviewed.
   `internal/apshellcli/plugin_continuation_test.go`.
 - Network precondition: `internal/engine/active_network_test.go`,
   `internal/apshellapp/submission_network_test.go`.
+- LogicSig argument placement at the check and at submission:
+  `internal/apshellapp/lsig_args_test.go`
+  (`TestDefaultPluginDraftPlacesLsigArgsByDeclaredName`,
+  `TestPresignPlanGroupPlacesLsigArgsByDeclaredName`);
+  `internal/apshellcli/plugin_continuation_test.go::TestJSPluginLsigArgsReachTheGroupCheck`.
 
 (Exact test names are pinned in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md)
 PS rows.)

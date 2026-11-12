@@ -59,13 +59,6 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 			mode = SendModeAtomicToMultiple
 		}
 	}
-	// The atomic paths have no way to carry LogicSig arguments to each
-	// position, so they would be left out without a word. A one-to-one send
-	// takes the ordinary path, which does carry them, whether or not
-	// `atomic` was typed.
-	if mode != SendModeNonAtomic && len(req.LsigArgs) > 0 {
-		return nil, fmt.Errorf("arg: cannot be used with an atomic send to or from a set: it does not carry LogicSig arguments; send without atomic")
-	}
 
 	return &SendPlan{
 		Mode:          mode,
@@ -140,13 +133,26 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 	if len(plan.FromAddresses) > iterCount {
 		iterCount = len(plan.FromAddresses)
 	}
+	itemSender := func(idx int) string {
+		if len(plan.FromAddresses) > 1 {
+			return plan.FromAddresses[idx]
+		}
+		return plan.FromAddresses[0]
+	}
+	// One submission per item: the arguments are checked once against every
+	// item's account, and each item gets what its own key declares.
+	itemSenders := make([]string, iterCount)
+	for idx := range itemSenders {
+		itemSenders[idx] = itemSender(idx)
+	}
+	lsigArgs, err := a.eng.LsigArgsForItems(ctx, itemSenders, plan.LsigArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	items := make([]PreparedSendItem, 0, iterCount)
 	for idx := 0; idx < iterCount; idx++ {
-		fromAddr := plan.FromAddresses[0]
-		if len(plan.FromAddresses) > 1 {
-			fromAddr = plan.FromAddresses[idx]
-		}
+		fromAddr := itemSender(idx)
 		toAddr := plan.ToAddresses[0]
 		if len(plan.ToAddresses) > 1 {
 			toAddr = plan.ToAddresses[idx]
@@ -165,7 +171,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   plan.LsigArgs,
+				LsigArgs:   lsigArgs,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
@@ -179,7 +185,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   plan.LsigArgs,
+				LsigArgs:   lsigArgs,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
@@ -213,6 +219,7 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 	groupParams := engine.AtomicGroupParams{
 		Fee:        plan.Fee,
 		UseFlatFee: plan.UseFlatFee,
+		LsigArgs:   engine.NewLsigArgs(plan.LsigArgs),
 	}
 
 	result := &AtomicSendPlan{

@@ -51,7 +51,12 @@ does not transcribe, and it runs after the rekey judgments and the review: in
 `SignAndSubmitWithPluginSigners` before `/plan` (presign-plan), and in
 `SubmitPregroupedSigned` before the group is broadcast (pregrouped-signed),
 each after the submit function's second rekey judgment. It is checked by Go
-tests, not modeled. TLC verifies that no
+tests, not modeled. So is the LogicSig argument placement
+(`engine/lsig_args.go::placeLsigArgs`), another refusal the model does not
+transcribe: `CheckPluginGroup` runs it on the decoded group with the step's
+`arg:` values after the first rekey judgment, and submission runs it again
+after the network precondition, in `checkReadyToSign` and
+`SignAndSubmitWithPluginSigners`. TLC verifies that no
 enumerated combination reaches submission without satisfying every named
 invariant. A dropped check in `Submitted` — the model's stand-in for a
 regression in the code path it transcribes — surfaces as a counterexample.

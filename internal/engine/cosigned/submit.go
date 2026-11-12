@@ -361,7 +361,8 @@ func (s *Signer) assembleAndSubmit(group frozenGroup, targets []signerapi.Assemb
 }
 
 // signModeRequest builds the sign-mode request for original position i,
-// carrying the caller's LogicSig arguments and app-call context for it.
+// carrying the LogicSig arguments the engine placed on it (what its signing
+// key declares of those given) and its app-call context.
 func signModeRequest(i int, authAddress, sender, txnHex string, opts clientsign.SubmitOptions) signerapi.SignRequest {
 	request := signerapi.SignRequest{AuthAddress: authAddress, TxnSender: sender, TxnBytesHex: txnHex}
 	if i < len(opts.LsigArgsMap) && opts.LsigArgsMap[i] != nil {

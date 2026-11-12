@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -371,9 +372,26 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		if err := rejectRotatingKeyType(i, keyType); err != nil {
 			return 0, err
 		}
+		// LogicSig arguments go to a program. A native key signs the
+		// transaction itself and has no program to give them to, so a request
+		// that sends them for one is refused here, on /plan, /sign and
+		// /sign/component alike, before planning or approval, rather than
+		// signed with them dropped. Only a key whose recorded category says it
+		// is native is refused.
+		if len(txReq.LsigArgs) > 0 && isNativeKeyCategory(snapshot.KeyMetadata[txReq.AuthAddress].Category) {
+			return 0, badRequest(fmt.Sprintf("transaction %d: lsig_args were given for %s, whose %s key is native and takes no LogicSig arguments",
+				i+1, txReq.AuthAddress, keytypefmt.Display(keyType)))
+		}
 		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))
 		signableCount++
 	}
 
 	return signableCount, nil
+}
+
+// isNativeKeyCategory reports whether a key of this category signs a
+// transaction itself, with no program to pass LogicSig arguments to: an
+// ed25519 or a native post-quantum (Falcon) key.
+func isNativeKeyCategory(category string) bool {
+	return category == keys.CategoryEd25519 || category == keys.CategoryNativePQ
 }

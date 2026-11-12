@@ -78,7 +78,7 @@ func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 		t.Fatal("hasCosignedEffectiveSigner() before refresh = true, want false with stale caches")
 	}
 
-	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
+	if _, err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
 		t.Fatalf("refreshSubmitSigningState() error = %v", err)
 	}
 
@@ -141,7 +141,7 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 	eng.AuthCache.AuthAddresses[sender] = cosigned
 
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer", nil).Transaction
-	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
+	if _, err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
 		t.Fatalf("refreshSubmitSigningState() error = %v", err)
 	}
 

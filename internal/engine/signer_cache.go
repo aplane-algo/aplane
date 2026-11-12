@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
@@ -213,16 +214,19 @@ func (e *Core) signerCacheCosignerComponentKeyType(address string) (string, bool
 	return e.SignerCache.CosignerComponentKeyTypeForAddress(address)
 }
 
-func (e *Core) signerCacheIsGenericLsig(address string) bool {
+// signerCacheSigningArgsFor returns, from one signer-cache snapshot, the
+// LogicSig arguments each address's key declares: nil for "" and for an
+// address whose key declares none.
+func (e *Core) signerCacheSigningArgsFor(addresses []string) [][]cache.SigningArgInfo {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.IsGenericLsig(address)
-}
-
-func (e *Core) validateSignerLsigArgs(address string, args map[string][]byte) error {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.ValidateLsigArgs(address, args)
+	schemas := make([][]cache.SigningArgInfo, len(addresses))
+	for i, address := range addresses {
+		if address != "" {
+			schemas[i] = slices.Clone(e.SignerCache.GetSigningArgs(address))
+		}
+	}
+	return schemas
 }
 
 func (e *Core) signerCacheKeysSnapshot() map[string]string {

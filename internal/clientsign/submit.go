@@ -27,9 +27,13 @@ type SubmitOptions struct {
 	Ctx                 context.Context
 	WaitForConfirmation bool
 	Verbose             bool
-	LsigArgsMap         []map[string][]byte
-	AppCallInfo         []*signerapi.AppCallInfo
-	Simulate            bool
+	// LsigArgsMap is each position's LogicSig arguments, index i for
+	// transaction i, as the engine placed them: what the position's signing
+	// key declares of the arguments given for the submission. Only the
+	// engine's placement sets it.
+	LsigArgsMap []map[string][]byte
+	AppCallInfo []*signerapi.AppCallInfo
+	Simulate    bool
 	// Out is the writer for progress/status output. Nil discards output.
 	Out io.Writer
 	// TxnWriter is called for each original transaction after successful

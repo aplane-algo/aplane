@@ -4,9 +4,6 @@
 package cache
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -236,8 +233,11 @@ func (cache *SignerCache) SetBoundedContractForAddress(address, contract string)
 	cache.BoundedContracts[address] = contract
 }
 
-// GetSigningArgs returns the key-file signing args schema for a LogicSig address.
-// Returns nil if address is not in cache or has no signing args.
+// GetSigningArgs returns the LogicSig arguments an address's key declares: a
+// LogicSig key's signing args, or a bounded account's runtime arguments, all
+// marked optional, since which of them a bounded account requires depends on
+// the path a transaction takes. Returns nil if the address is not in the
+// cache or its key declares none, as a native key never does.
 func (cache *SignerCache) GetSigningArgs(address string) []SigningArgInfo {
 	if cache.SigningArgs == nil {
 		return nil
@@ -245,7 +245,7 @@ func (cache *SignerCache) GetSigningArgs(address string) []SigningArgInfo {
 	return cache.SigningArgs[address]
 }
 
-// SetSigningArgs sets the key-file signing args schema for a LogicSig address.
+// SetSigningArgs sets the LogicSig arguments an address's key declares.
 func (cache *SignerCache) SetSigningArgs(address string, args []SigningArgInfo) {
 	if cache.SigningArgs == nil {
 		cache.SigningArgs = make(map[string][]SigningArgInfo)
@@ -255,58 +255,6 @@ func (cache *SignerCache) SetSigningArgs(address string, args []SigningArgInfo) 
 	} else {
 		delete(cache.SigningArgs, address)
 	}
-}
-
-// ValidateLsigArgs validates that provided lsig args match the schema for a generic lsig address.
-// Returns nil if valid, or an error describing what's wrong.
-// Checks:
-//   - All required args are provided
-//   - All provided arg names are valid (exist in schema)
-func (cache *SignerCache) ValidateLsigArgs(address string, providedArgs map[string][]byte) error {
-	schema := cache.GetSigningArgs(address)
-	if schema == nil {
-		// No schema - either not a generic lsig or no args required
-		if len(providedArgs) > 0 {
-			// Args provided but no schema - might be an error, but let server handle it
-			return nil
-		}
-		return nil
-	}
-
-	// Build a set of valid arg names from schema
-	validNames := make(map[string]bool)
-	for _, arg := range schema {
-		validNames[arg.Name] = true
-	}
-
-	// Check all provided args have valid names
-	for name := range providedArgs {
-		if !validNames[name] {
-			return fmt.Errorf("unknown argument '%s' for this account type", name)
-		}
-	}
-
-	// Check all required args are provided and validate byte lengths
-	var missing []string
-	for _, arg := range schema {
-		val, provided := providedArgs[arg.Name]
-		if arg.Required && !provided {
-			missing = append(missing, arg.Name)
-			continue
-		}
-		if provided && arg.ByteLength > 0 && len(val) != arg.ByteLength {
-			return fmt.Errorf("argument '%s': expected %d bytes, got %d", arg.Name, arg.ByteLength, len(val))
-		}
-	}
-
-	if len(missing) > 0 {
-		if len(missing) == 1 {
-			return fmt.Errorf("missing required argument: %s", missing[0])
-		}
-		return fmt.Errorf("missing required arguments: %s", strings.Join(missing, ", "))
-	}
-
-	return nil
 }
 
 // IsAccountSignable checks if an account can be signed for with the available keys

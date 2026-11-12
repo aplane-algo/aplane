@@ -64,7 +64,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		Note:       req.Note,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
+		LsigArgs:   engine.NewLsigArgs(req.LsigArgs),
 	})
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 			UseFlatFee: req.UseFlatFee,
 			// The payment is from the same account as the call, so it needs
 			// the same LogicSig arguments to be authorized.
-			LsigArgs: req.LsigArgs,
+			LsigArgs: engine.NewLsigArgs(req.LsigArgs),
 		})
 		if err != nil {
 			return nil, err

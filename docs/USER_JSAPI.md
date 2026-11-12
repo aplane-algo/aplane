@@ -309,10 +309,16 @@ close("htlc-lsig", "treasury", {
 })
 ```
 
+`lsigArgs` are given once and placed by name, as the shell's `arg:` values
+are (see [LogicSig arguments](USER_COMMANDS.md#logicsig-arguments)): a
+transaction gets the ones its signing key declares, a native key none, and a
+name no signing key declares is refused before anything is sent.
+
 `sweep()` is the shell's `sweep` command. It does not close the account; that
 is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
 `leaving` (what to keep in each account, in microAlgos or the asset's base
-units), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
+units), `fee`, `wait` and `lsigArgs` (as for `close()`; each account gets what
+its own key declares). It takes
 no `note`. An option that is present must have a value: `{leaving: undefined}`
 is an error, not "leave nothing".
 
@@ -495,6 +501,9 @@ fields:
   lsigArgs: { name: "hex-string" }
 }
 ```
+
+A `plan()` request's `lsigArgs` go to that request's position as written; the
+signer refuses them for a native (ed25519 or Falcon) key.
 
 An unsigned foreign slot may declare exactly one authorization hint:
 
@@ -692,7 +701,11 @@ Returns:
 }
 ```
 
-`plugin()` runs the plugin as the `apshell` command does. Each step's
+`plugin()` runs the plugin as the `apshell` command does. An argument of the
+form `"arg:name=value"` is a LogicSig argument for the first step's group, as
+on the command line: it is placed by name on the positions whose signing key
+declares it, and a name none declares is refused before the group is reviewed
+(see [LogicSig arguments](USER_COMMANDS.md#logicsig-arguments)). Each step's
 transactions are reviewed and submitted, and a step that returns a
 `continuation` is followed, so the call returns only after the last step:
 `success`, `message`, `data` and `presentation` are the last step's. When any

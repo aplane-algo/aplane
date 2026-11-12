@@ -217,7 +217,7 @@ func TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs(t *testing.T) {
 		Note:         "memo",
 		Fee:          2000,
 		UseFlatFee:   true,
-		LsigArgs:     lsigArgs,
+		LsigArgs:     NewLsigArgs(lsigArgs),
 	})
 	if err != nil {
 		t.Fatalf("PrepareAppCallRaw(success) error = %v", err)
@@ -255,7 +255,7 @@ func TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs(t *testing.T) {
 	if len(prep.Transaction.ForeignAssets) != 1 || prep.Transaction.ForeignAssets[0] != 999 {
 		t.Fatalf("ForeignAssets = %#v, want [999]", prep.Transaction.ForeignAssets)
 	}
-	if string(prep.LsigArgs["preimage"]) != "secret" {
+	if string(prep.LsigArgs.Values()["preimage"]) != "secret" {
 		t.Fatalf("LsigArgs = %#v, want preimage", prep.LsigArgs)
 	}
 	if prep.AppCallInfo == nil || prep.AppCallInfo.Mode != "raw" {
@@ -335,7 +335,7 @@ func TestPrepareAppCallMethod_SuccessEncodesMethodAndPropagatesLsigArgs(t *testi
 			AppID:        123,
 			From:         from,
 			Note:         "abi-call",
-			LsigArgs:     map[string][]byte{"preimage": []byte("open")},
+			LsigArgs:     NewLsigArgs(map[string][]byte{"preimage": []byte("open")}),
 			OnCompletion: types.NoOpOC,
 		},
 	})
@@ -357,7 +357,7 @@ func TestPrepareAppCallMethod_SuccessEncodesMethodAndPropagatesLsigArgs(t *testi
 	if string(prepared.Prep.Transaction.Note) != "abi-call" {
 		t.Fatalf("Note = %q, want abi-call", string(prepared.Prep.Transaction.Note))
 	}
-	if string(prepared.Prep.LsigArgs["preimage"]) != "open" {
+	if string(prepared.Prep.LsigArgs.Values()["preimage"]) != "open" {
 		t.Fatalf("LsigArgs = %#v, want propagated arg", prepared.Prep.LsigArgs)
 	}
 	if prepared.Prep.AppCallInfo == nil || prepared.Prep.AppCallInfo.Mode != "abi" || prepared.Prep.AppCallInfo.Method != method.Signature() {

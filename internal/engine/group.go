@@ -14,9 +14,12 @@ import (
 )
 
 // PreparedGroup is the canonical engine-owned representation of a grouped
-// execution plan prior to submission.
+// execution plan prior to submission. LsigArgs are the LogicSig arguments
+// given for the group, one submission: each position gets the ones its
+// signing key declares when it is signed.
 type PreparedGroup struct {
-	Entries []PreparedGroupEntry
+	Entries  []PreparedGroupEntry
+	LsigArgs LsigArgs
 }
 
 // PreparedGroupEntry preserves the prepared transaction together with the
@@ -24,7 +27,6 @@ type PreparedGroup struct {
 type PreparedGroupEntry struct {
 	Transaction    types.Transaction
 	SigningContext *SigningContext
-	LsigArgs       map[string][]byte
 	AppCallInfo    *signerapi.AppCallInfo
 }
 
@@ -57,6 +59,7 @@ func PrepareGroup(preps ...*TransactionPrepResult) (*PreparedGroup, error) {
 	}
 
 	entries := make([]PreparedGroupEntry, len(preps))
+	values := map[string][]byte{}
 	for i, prep := range preps {
 		if prep == nil {
 			return nil, fmt.Errorf("prepared transaction %d is nil", i+1)
@@ -67,12 +70,23 @@ func PrepareGroup(preps ...*TransactionPrepResult) (*PreparedGroup, error) {
 		entries[i] = PreparedGroupEntry{
 			Transaction:    prep.Transaction,
 			SigningContext: prep.SigningContext,
-			LsigArgs:       prep.LsigArgs,
 			AppCallInfo:    prep.AppCallInfo,
+		}
+		// The group is one submission, so it has one set of arguments: each
+		// prepared transaction's, which a command gives all of them alike.
+		for name, value := range prep.LsigArgs.values {
+			if other, seen := values[name]; seen && !bytes.Equal(other, value) {
+				return nil, fmt.Errorf("prepared transactions give the LogicSig argument %q different values", name)
+			}
+			values[name] = value
 		}
 	}
 
-	return &PreparedGroup{Entries: entries}, nil
+	group := &PreparedGroup{Entries: entries}
+	if len(values) > 0 {
+		group.LsigArgs = NewLsigArgs(values)
+	}
+	return group, nil
 }
 
 // Transactions returns the group's transactions in order.
@@ -85,21 +99,6 @@ func (g *PreparedGroup) Transactions() []types.Transaction {
 		txns[i] = entry.Transaction
 	}
 	return txns
-}
-
-// LsigArgsMap returns per-entry LogicSig args in transaction order.
-func (g *PreparedGroup) LsigArgsMap() []map[string][]byte {
-	if g == nil {
-		return nil
-	}
-	lsigArgs := make([]map[string][]byte, len(g.Entries))
-	for i, entry := range g.Entries {
-		if len(entry.LsigArgs) == 0 {
-			continue
-		}
-		lsigArgs[i] = entry.LsigArgs
-	}
-	return lsigArgs
 }
 
 // AppCallInfoMap returns per-entry app-call metadata in transaction order.
@@ -128,9 +127,8 @@ func (e *Engine) ExecutePreparedGroup(ctx context.Context, group *PreparedGroup,
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
 	opts := e.defaultSubmitOptions(ctx, wait, &writeNotices, &output)
-	opts.LsigArgsMap = group.LsigArgsMap()
 	opts.AppCallInfo = group.AppCallInfoMap()
-	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, opts)
+	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, group.LsigArgs, opts)
 	result := &PreparedGroupSubmitResult{
 		TxIDs:        txIDs,
 		Transactions: originalSubmittedTransactions(txns, submittedTxns),

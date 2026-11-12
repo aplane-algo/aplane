@@ -7,6 +7,48 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## LogicSig arguments go only to the transactions whose key declares them
+
+- **apshell places `arg:` values by name.** A command took one set of
+  `arg:name=value` pairs and copied all of them to every transaction it
+  built. A plugin group with two LogicSig accounts of different types was
+  refused, each refusing the other's argument name, and so was a hashlock
+  account beside a Falcon LogicSig account; `send`, `sweep` and `validate`
+  over a set sent every account every argument. Each transaction now gets the
+  arguments its signing key declares in the signer's key list: the sender's
+  key, or its auth address's when the account is rekeyed. A native key
+  (ed25519 or native Falcon) declares none and is sent none. One engine
+  function makes this placement for every path that signs: shell commands,
+  sets, atomic sends, app calls with a companion payment, scripts,
+  transaction files, and plugin groups in the default and `presign-plan`
+  modes, whose review and submission use it on the same group.
+- **A name no transaction's key declares is refused.** `arg:premage=` on a
+  native account was sent and silently ignored. Now a name that no signing
+  key of the submission declares is refused before anything is sent, with the
+  names the keys do declare (`no signing key here declares the LogicSig
+  argument "premage"; they declare "preimage"`); the key list is fetched once
+  more first, in case it was stale. A set command checks the names once,
+  against all its accounts, before the first transaction; an account whose
+  key declares none of them is simply sent none. A plugin group is checked
+  before its review. A required argument a key declares and none was given
+  for is refused for any LogicSig key, not only a generic one.
+- **Atomic sends carry LogicSig arguments.** `send ... atomic` to or from a
+  set refused `arg:`, since it had no way to carry them; it now places them
+  like any other group.
+- **The signer refuses `lsig_args` for a native key.** `/plan`, `/sign` and a
+  held contextual position on `/sign/component` answer 400 (`lsig_args were
+  given for <address>, whose <key type> key is native and takes no LogicSig
+  arguments`) where they used to sign and drop the arguments. apshell never
+  sends them; an SDK or other caller that gives every position the same
+  `lsig_args` must give a native position none. The `/keys` and request
+  wire shapes are unchanged: apshell now reads a bounded account's runtime
+  argument names from `bounded_authorization.runtime_args`, which `/keys`
+  already reported.
+- **Known limits.** Two accounts whose keys declare the same name both get
+  the value; there is no per-position syntax. In a sweep, a name declared
+  only by an account that is then skipped is used nowhere, without an error.
+  A plugin whose first result has no transactions still drops `arg:` values.
+
 ## The rotating approval prompt states the signer's charge
 
 - **`/sign/rotating/sign` prompts with the fee prepare added.** The

@@ -145,6 +145,13 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 		return nil, fmt.Errorf("no addresses found for %q", req.Account)
 	}
 
+	// One submission per account: the arguments are checked once against
+	// every account, and each gets what its own key declares.
+	lsigArgs, err := a.eng.LsigArgsForItems(ctx, addresses, req.LsigArgs)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &ValidateCommandResult{
 		Input: req.Account,
 		IsSet: len(req.Account) > 0 && req.Account[0] == '@',
@@ -155,7 +162,7 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 			From:     addr,
 			To:       addr,
 			Amount:   0,
-			LsigArgs: req.LsigArgs,
+			LsigArgs: lsigArgs,
 		})
 		if err != nil {
 			item.Error = fmt.Sprintf("failed to prepare: %v", err)
@@ -230,7 +237,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 		AssetID:    meta.AssetID,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
+		LsigArgs:   engine.NewLsigArgs(req.LsigArgs),
 	})
 	if err != nil {
 		return nil, err
@@ -280,7 +287,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 		CloseTo:    closeToAddr,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
+		LsigArgs:   engine.NewLsigArgs(req.LsigArgs),
 	})
 	if err != nil {
 		return nil, err
@@ -340,7 +347,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		VoteLast:          voteLast,
 		KeyDilution:       keyDilution,
 		IncentiveEligible: req.IncentiveEligible,
-		LsigArgs:          req.LsigArgs,
+		LsigArgs:          engine.NewLsigArgs(req.LsigArgs),
 	})
 	if err != nil {
 		return nil, err
@@ -459,7 +466,7 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		To:         toAddress,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
+		LsigArgs:   engine.NewLsigArgs(req.LsigArgs),
 	})
 	if err != nil {
 		return nil, err
@@ -521,7 +528,7 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 		To:         address,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
+		LsigArgs:   engine.NewLsigArgs(req.LsigArgs),
 	})
 	if err != nil {
 		return nil, err
@@ -661,7 +668,7 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 		CloseTo:    toAddress,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
+		LsigArgs:   engine.NewLsigArgs(req.LsigArgs),
 	})
 	if err != nil {
 		return nil, err
@@ -766,6 +773,13 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		}
 	}
 
+	// One submission per source: the arguments are checked once against
+	// every source, and each gets what its own key declares.
+	lsigArgs, err := a.eng.LsigArgsForItems(ctx, fromAddresses, req.LsigArgs)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &SweepCommandResult{
 		Asset:           assetMeta,
 		Leaving:         leavingAmount,
@@ -851,7 +865,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   req.LsigArgs,
+				LsigArgs:   lsigArgs,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -863,7 +877,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   req.LsigArgs,
+				LsigArgs:   lsigArgs,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr

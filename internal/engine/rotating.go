@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -68,8 +67,10 @@ func (e *Engine) RotatingRecover(ctx context.Context, req signerapi.RotatingReco
 
 // rotatingSender reports whether txns is a rotating account's spend. A
 // rotating account signs alone: its spend is the only transaction the client
-// may send, because the signer forms the group around it.
-func (e *Engine) rotatingSender(txns []types.Transaction, opts clientsign.SubmitOptions) (bool, error) {
+// may send, because the signer forms the group around it. Its key declares
+// no LogicSig arguments, so placement gives it none and refuses any given for
+// it alone.
+func (e *Engine) rotatingSender(txns []types.Transaction) (bool, error) {
 	found := false
 	for _, txn := range txns {
 		if e.IsRotatingAccount(txn.Sender.String()) {
@@ -81,9 +82,6 @@ func (e *Engine) rotatingSender(txns []types.Transaction, opts clientsign.Submit
 	}
 	if len(txns) != 1 {
 		return false, fmt.Errorf("a rotating account's transaction must be sent alone; it cannot be grouped with other transactions")
-	}
-	if len(opts.LsigArgsMap) > 0 && len(opts.LsigArgsMap[0]) > 0 {
-		return false, fmt.Errorf("rotating accounts take no LogicSig arguments")
 	}
 	return true, nil
 }

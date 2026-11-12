@@ -213,7 +213,7 @@ type SignRequest struct {
     AuthAddress  string            `json:"auth_address,omitempty"`  // Which key to use for signing
     TxnSender    string            `json:"txn_sender,omitempty"`    // Transaction sender (for display)
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
-    LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
+    LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for a LogicSig key; refused for a native key
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
     PQScheme      string                 `json:"pq_scheme,omitempty"`      // Foreign-only native-PQ scheme hint ("f1"); exclusive with lsig_resources
     AppCallInfo   *AppCallInfo            `json:"app_call_info,omitempty"`  // Optional approval metadata
@@ -843,6 +843,20 @@ without the value would be too small for the group that `/sign` later
 receives with it. An optional argument left out counts as 0 bytes. Signing
 still refuses any argument over the network's 4096-byte limit.
 
+`lsig_args` are for a LogicSig key only. A native key (ed25519 or native
+post-quantum Falcon) signs the transaction itself and has no program to pass
+arguments to, so a sign-mode entry that sends `lsig_args` for a key whose
+record says it is native is refused with 400 (`transaction <n>: lsig_args were
+given for <address>, whose <key type> key is native and takes no LogicSig
+arguments`). The refusal is in `verifySignableKeys`
+(`internal/signerapp/signing/planner_runtime.go`), so it applies to `/plan`,
+`/sign`, and a held contextual position on `/sign/component`, before planning
+or approval; it used to be signed with the arguments dropped. A key whose
+record names no category is left to signing. The in-repo client never sends
+arguments to a native key (see "LogicSig argument placement" in
+`ARCH_SHELL.md`); the refusal is for SDK and other callers, which give each
+position its own `lsig_args`.
+
 ---
 
 ## Dummy Transactions and Fee Pooling
@@ -1128,7 +1142,7 @@ txIDs, submittedTxns, err := clientsign.SignAndSubmitViaGroup(
     clientsign.SubmitOptions{
         WaitForConfirmation: waitForConfirmation,
         Verbose:             verbose,
-        LsigArgsMap:         lsigArgsMap, // nil if no generic lsigs
+        LsigArgsMap:         placed, // per position, as the engine placed them; nil for none
     },
 )
 ```
@@ -1388,7 +1402,7 @@ from `pkg/signerapi/types.go`:
 
 - top-level fields: optional `request_id`, `requests[]`
 - each entry is one of:
-  - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
+  - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args` (a LogicSig key's runtime arguments; refused for a native key), optional `app_call_info`
   - passthrough: `signed_txn_hex`; if the signed envelope uses LogicSig,
     `lsig_resources` is required
   - foreign: `txn_bytes_hex` without `auth_address`, with at most one
@@ -1641,7 +1655,8 @@ position of the frozen group. It comes in two forms:
   authorization from the caller's `lsig_resources` or `pq_scheme` hint.
 - **One of the signer's own accounts** carries `auth_address`, and `lsig_args`
   where a bounded account needs them to be classified. The signer sizes it from
-  its own records, exactly as `/plan` did, and refuses a hint on it. An
+  its own records, exactly as `/plan` did, and refuses a hint on it, and
+  `lsig_args` for a native key, as `/plan` refuses them. An
   `auth_address` the signer doesn't hold is refused, and so is a rotating
   account. Only a `bounded-base` request sizes the group, so only it takes
   these two fields; a `cosigner` request refuses them.

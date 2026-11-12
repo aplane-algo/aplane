@@ -10,8 +10,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-
-	"github.com/aplane-algo/aplane/internal/cache"
 )
 
 func testPreparedTxn(t *testing.T, from, to types.Address, note string, lsigArgs map[string][]byte) *TransactionPrepResult {
@@ -38,7 +36,7 @@ func testPreparedTxn(t *testing.T, from, to types.Address, note string, lsigArgs
 			SigningAddr: from.String(),
 			KeyType:     "ed25519",
 		},
-		LsigArgs: lsigArgs,
+		LsigArgs: NewLsigArgs(lsigArgs),
 	}
 }
 
@@ -89,11 +87,28 @@ func TestPrepareGroupLeavesUngroupedAndPreservesMetadata(t *testing.T) {
 	if group.Entries[0].SigningContext.Address != prep1.SigningContext.Address {
 		t.Fatalf("signing context not preserved: got %s want %s", group.Entries[0].SigningContext.Address, prep1.SigningContext.Address)
 	}
-	if string(group.LsigArgsMap()[0]["foo"]) != "bar" {
-		t.Fatalf("lsig args not preserved: %+v", group.LsigArgsMap())
+	// The group is one submission with one set of arguments, placed by name
+	// on its positions when it is signed.
+	if got := group.LsigArgs.Values(); len(got) != 1 || string(got["foo"]) != "bar" {
+		t.Fatalf("group LogicSig arguments = %+v, want the prepared transactions' foo", got)
 	}
-	if group.LsigArgsMap()[1] != nil {
-		t.Fatalf("unexpected lsig args for second entry: %+v", group.LsigArgsMap()[1])
+}
+
+// Prepared transactions of one group give the same arguments; a name given
+// two different values cannot be one submission's.
+func TestPrepareGroupRefusesConflictingLsigArgs(t *testing.T) {
+	prep1 := testPreparedTxn(t, testAddress(1), testAddress(2), "first", map[string][]byte{"preimage": []byte("a")})
+	prep2 := testPreparedTxn(t, testAddress(1), testAddress(2), "second", map[string][]byte{"preimage": []byte("a")})
+	group, err := PrepareGroup(prep1, prep2)
+	if err != nil {
+		t.Fatalf("PrepareGroup(same values) error = %v", err)
+	}
+	if got := group.LsigArgs.Values(); len(got) != 1 || string(got["preimage"]) != "a" {
+		t.Fatalf("group LogicSig arguments = %+v", got)
+	}
+	prep2 = testPreparedTxn(t, testAddress(1), testAddress(2), "second", map[string][]byte{"preimage": []byte("b")})
+	if _, err := PrepareGroup(prep1, prep2); err == nil || !strings.Contains(err.Error(), `"preimage" different values`) {
+		t.Fatalf("PrepareGroup(conflicting values) error = %v", err)
 	}
 }
 
@@ -117,52 +132,5 @@ func TestPreparePaymentAndMethodCall_NoAlgodClient(t *testing.T) {
 	)
 	if err != ErrNoAlgodClient {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
-	}
-}
-
-func TestExecutePreparedGroupValidatesLsigArgsBeforeSubmit(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
-	lsigAddr := testAddress(1).String()
-	eng.SignerCache.SetGenericLsig(lsigAddr, true)
-	eng.SignerCache.SetSigningArgs(lsigAddr, []cache.SigningArgInfo{
-		{Name: "preimage", Type: "bytes", Required: true},
-	})
-
-	prep1 := testPreparedTxn(t, testAddress(1), testAddress(2), "first", nil)
-	prep2 := testPreparedTxn(t, testAddress(3), testAddress(4), "second", nil)
-
-	group, err := PrepareGroup(prep1, prep2)
-	if err != nil {
-		t.Fatalf("PrepareGroup() error = %v", err)
-	}
-
-	_, err = eng.ExecutePreparedGroup(context.Background(), group, false)
-	if err == nil {
-		t.Fatal("ExecutePreparedGroup() error = nil, want validation error")
-	}
-	if !strings.Contains(err.Error(), "transaction 1: invalid LogicSig arguments: missing required argument: preimage") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateSubmitLsigArgsAcceptsValidArgs(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
-	lsigAddr := testAddress(1).String()
-	eng.SignerCache.SetGenericLsig(lsigAddr, true)
-	eng.SignerCache.SetSigningArgs(lsigAddr, []cache.SigningArgInfo{
-		{Name: "preimage", Type: "bytes", Required: true},
-	})
-
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "first", map[string][]byte{"preimage": []byte("ok")}).Transaction
-	if err := eng.validateSubmitLsigArgs([]types.Transaction{txn}, []map[string][]byte{{"preimage": []byte("ok")}}); err != nil {
-		t.Fatalf("validateSubmitLsigArgs() error = %v", err)
 	}
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -37,18 +36,14 @@ func TestRotatingSenderRoutesOnSendersOwnFlow(t *testing.T) {
 	spend := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: rotating}}
 	other := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: plain}}
 
-	if ok, err := eng.rotatingSender([]types.Transaction{spend}, clientsign.SubmitOptions{}); err != nil || !ok {
+	if ok, err := eng.rotatingSender([]types.Transaction{spend}); err != nil || !ok {
 		t.Fatalf("rotating spend: ok=%v err=%v", ok, err)
 	}
-	if ok, err := eng.rotatingSender([]types.Transaction{other}, clientsign.SubmitOptions{}); err != nil || ok {
+	if ok, err := eng.rotatingSender([]types.Transaction{other}); err != nil || ok {
 		t.Fatalf("plain spend routed as rotating: ok=%v err=%v", ok, err)
 	}
-	if _, err := eng.rotatingSender([]types.Transaction{other, spend}, clientsign.SubmitOptions{}); err == nil || !strings.Contains(err.Error(), "alone") {
+	if _, err := eng.rotatingSender([]types.Transaction{other, spend}); err == nil || !strings.Contains(err.Error(), "alone") {
 		t.Fatalf("grouped rotating spend: err=%v", err)
-	}
-	args := clientsign.SubmitOptions{LsigArgsMap: []map[string][]byte{{"x": {1}}}}
-	if _, err := eng.rotatingSender([]types.Transaction{spend}, args); err == nil {
-		t.Fatal("LogicSig arguments accepted for a rotating account")
 	}
 }
 

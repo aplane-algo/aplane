@@ -35,8 +35,9 @@ type AtomicASAParams struct {
 
 // AtomicGroupParams contains common parameters for atomic groups.
 type AtomicGroupParams struct {
-	Fee        uint64 // Optional custom fee in microAlgos (per transaction)
-	UseFlatFee bool   // If true, use Fee as flat fee
+	Fee        uint64   // Optional custom fee in microAlgos (per transaction)
+	UseFlatFee bool     // If true, use Fee as flat fee
+	LsigArgs   LsigArgs // LogicSig arguments given for the group, placed by name when it is signed
 }
 
 // AtomicPrepResult contains prepared atomic transaction group.
@@ -44,6 +45,7 @@ type AtomicPrepResult struct {
 	Transactions    []types.Transaction
 	SigningContexts []*SigningContext
 	AssetInfo       *ASAInfo // For ASA transfers (nil for ALGO)
+	LsigArgs        LsigArgs
 }
 
 // AtomicSubmitResult contains result of atomic group submission.
@@ -99,6 +101,7 @@ func (e *Engine) PrepareAtomicPayments(ctx context.Context, payments []AtomicPay
 	return &AtomicPrepResult{
 		Transactions:    txns,
 		SigningContexts: contexts,
+		LsigArgs:        groupParams.LsigArgs,
 	}, nil
 }
 
@@ -162,6 +165,7 @@ func (e *Engine) PrepareAtomicASATransfers(ctx context.Context, transfers []Atom
 		Transactions:    txns,
 		SigningContexts: contexts,
 		AssetInfo:       asaInfo,
+		LsigArgs:        groupParams.LsigArgs,
 	}, nil
 }
 
@@ -172,7 +176,7 @@ func (e *Engine) SignAndSubmitAtomic(ctx context.Context, prep *AtomicPrepResult
 
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	txids, submittedTxns, err := e.signAndSubmitGroup(prep.Transactions, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
+	txids, submittedTxns, err := e.signAndSubmitGroup(prep.Transactions, prep.LsigArgs, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
 	result := &AtomicSubmitResult{
 		TxIDs:        txids,
 		Transactions: originalSubmittedTransactions(prep.Transactions, submittedTxns),

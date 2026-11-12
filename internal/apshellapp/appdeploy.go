@@ -51,7 +51,7 @@ func (r AppDeployRequest) toEngineParams() engine.AppDeployParams {
 		Note:         r.Note,
 		Fee:          r.Fee,
 		UseFlatFee:   r.UseFlatFee,
-		LsigArgs:     r.LsigArgs,
+		LsigArgs:     engine.NewLsigArgs(r.LsigArgs),
 		OnCompletion: types.NoOpOC,
 	}
 }

@@ -681,6 +681,11 @@ does not report whether that group confirmed, was rejected, or got no answer.
 `plugin()`'s error lists the IDs it has, completed steps' and the failing
 step's together, and the caller looks them up.
 
+LogicSig arguments typed with the command (`arg:name=value`) belong to the
+first step that returns transactions: the loop gives them to that step's
+group check and not to a continuation's. A plugin whose first result has no
+transactions still drops them; carrying them across steps is not done.
+
 Continuation argument normalization follows the same manifest-driven rules as the initial command.
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`
 metadata for it and will pass continuation args through unchanged.
@@ -975,6 +980,9 @@ The default (`groupMode` empty) flow:
      that list cannot be had (see
      [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)). A rekey to a
      foreign address is not refused; the review warns about it
+   - Places the command's LogicSig arguments (`arg:name=value`) on the draft,
+     before anything is shown, with the engine's placement, the one signing
+     makes (see [LogicSig arguments](#logicsig-arguments))
 3. User approval (if `requiresApproval: true`)
 4. APlane Shell signs transactions via Signer
 5. APlane Shell submits transactions to network
@@ -982,6 +990,34 @@ The default (`groupMode` empty) flow:
 
 When the result sets `groupMode`, APlane Shell dispatches to the corresponding plugin
 group flow instead — see [Plugin Transaction Flows](#plugin-transaction-flows-group-modes).
+
+#### LogicSig arguments
+
+A plugin command takes the shell's `arg:name=value` LogicSig arguments (JS
+`plugin()` takes them as `"arg:name=value"` strings among its arguments).
+They are given once for the step's whole group and placed by name, by the
+engine's one placement (`internal/engine/lsig_args.go`; see "LogicSig argument
+placement" in [ARCH_SHELL.md](ARCH_SHELL.md)):
+
+- each position apsigner signs gets the arguments its signing key declares (its
+  auth address's key when rekeyed), so two LogicSig accounts of different
+  types in one group each get their own, and a native ed25519 or Falcon
+  position gets none;
+- a position the plugin signs (`presign-plan`'s `pluginSigners`) gets none and
+  declares none;
+- a name no position declares is refused, after the signer's key list is
+  fetched once more in case the cached one is stale; so is a required
+  argument a position's key declares and none was given for;
+- `pregrouped-signed` takes no arguments: the group arrives signed, and the
+  check refuses any given for it.
+
+`apshellapp.CheckPluginGroup` runs the placement on the decoded group before
+the review, so a refusal comes before anything is shown, and keeps the
+arguments on the group; `SubmitPluginTransactions` places them again, with the
+same function, on the same group. With no arguments given the check places
+nothing and fetches nothing, and a required argument left out is refused at
+submission, before anything is sent. Two positions whose keys declare the same
+name both receive the value; there is no per-position syntax.
 
 ### Creating an External Plugin
 

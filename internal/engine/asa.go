@@ -28,35 +28,35 @@ func findAssetHolding(assets []models.AssetHolding, assetID uint64) (uint64, boo
 // SendASAParams contains parameters for sending ASA tokens.
 // All addresses must be resolved 58-character Algorand addresses.
 type SendASAParams struct {
-	From       string            // Resolved sender address (58-char)
-	To         string            // Resolved receiver address (58-char)
-	AssetID    uint64            // Resolved asset ID
-	Amount     uint64            // Amount in base units (accounting for decimals)
-	Note       string            // Optional note
-	Fee        uint64            // Optional custom fee in microAlgos
-	UseFlatFee bool              // If true, use Fee as flat fee
-	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs (e.g., HTLC preimage)
+	From       string   // Resolved sender address (58-char)
+	To         string   // Resolved receiver address (58-char)
+	AssetID    uint64   // Resolved asset ID
+	Amount     uint64   // Amount in base units (accounting for decimals)
+	Note       string   // Optional note
+	Fee        uint64   // Optional custom fee in microAlgos
+	UseFlatFee bool     // If true, use Fee as flat fee
+	LsigArgs   LsigArgs // LogicSig arguments given for the submission, placed by name when it is signed
 }
 
 // OptInParams contains parameters for ASA opt-in.
 // Address must be resolved 58-character Algorand address.
 type OptInParams struct {
-	Account    string            // Resolved address (58-char)
-	AssetID    uint64            // Resolved asset ID
-	Fee        uint64            // Optional custom fee in microAlgos
-	UseFlatFee bool              // If true, use Fee as flat fee
-	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs
+	Account    string   // Resolved address (58-char)
+	AssetID    uint64   // Resolved asset ID
+	Fee        uint64   // Optional custom fee in microAlgos
+	UseFlatFee bool     // If true, use Fee as flat fee
+	LsigArgs   LsigArgs // LogicSig arguments given for the submission, placed by name when it is signed
 }
 
 // OptOutParams contains parameters for opting out of an ASA.
 // All addresses must be resolved 58-character Algorand addresses.
 type OptOutParams struct {
-	Account    string            // Account opting out (58-char)
-	AssetID    uint64            // Asset ID to opt out of
-	CloseTo    string            // Address to receive remaining balance (optional if balance is 0)
-	Fee        uint64            // Optional custom fee in microAlgos
-	UseFlatFee bool              // If true, use Fee as flat fee
-	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs
+	Account    string   // Account opting out (58-char)
+	AssetID    uint64   // Asset ID to opt out of
+	CloseTo    string   // Address to receive remaining balance (optional if balance is 0)
+	Fee        uint64   // Optional custom fee in microAlgos
+	UseFlatFee bool     // If true, use Fee as flat fee
+	LsigArgs   LsigArgs // LogicSig arguments given for the submission, placed by name when it is signed
 }
 
 // OptOutCheckResult contains validation results for an opt-out operation.

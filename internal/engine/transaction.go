@@ -25,7 +25,7 @@ type TransactionPrepResult struct {
 	SigningContext *SigningContext
 	AssetInfo      *ASAInfo               // For ASA transactions
 	AmountInUnits  uint64                 // Amount in base units
-	LsigArgs       map[string][]byte      // Optional LogicSig arguments (for generic LogicSigs like HTLC)
+	LsigArgs       LsigArgs               // LogicSig arguments given for the submission; placed when it is signed
 	AppCallInfo    *signerapi.AppCallInfo // Optional app-call metadata for signer approval rendering
 }
 
@@ -78,31 +78,19 @@ func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotic
 	}
 }
 
-func (e *Engine) validateSubmitLsigArgs(txns []types.Transaction, lsigArgsMap []map[string][]byte) error {
-	for i, txn := range txns {
-		var lsigArgs map[string][]byte
-		if i < len(lsigArgsMap) {
-			lsigArgs = lsigArgsMap[i]
-		}
-
-		sender := txn.Sender.String()
-		if e.signerCacheIsGenericLsig(sender) || len(lsigArgs) > 0 {
-			if err := e.validateSignerLsigArgs(sender, lsigArgs); err != nil {
-				return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
-			}
-		}
-	}
-	return nil
-}
-
-// signAndSubmitGroup validates preconditions and signs+submits a transaction group.
-func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.SubmitOptions) ([]string, []types.Transaction, error) {
-	if err := e.checkReadyToSign(txns, opts); err != nil {
+// signAndSubmitGroup validates preconditions and signs+submits a transaction
+// group. args are the LogicSig arguments given for the submission;
+// checkReadyToSign places them, and every route below signs with what it
+// placed, never with what the caller gave.
+func (e *Engine) signAndSubmitGroup(txns []types.Transaction, args LsigArgs, opts clientsign.SubmitOptions) ([]string, []types.Transaction, error) {
+	placed, err := e.checkReadyToSign(txns, args, opts)
+	if err != nil {
 		return nil, nil, err
 	}
+	opts.LsigArgsMap = placed
 	// Rotating accounts route on the sender's own signing flow: their
 	// effective signer is a stage address the signer never lists.
-	if rotating, err := e.rotatingSender(txns, opts); err != nil {
+	if rotating, err := e.rotatingSender(txns); err != nil {
 		return nil, nil, err
 	} else if rotating {
 		return e.Connection.SignAndSubmitRotating(txns[0], e.AlgodClient, clientsign.RotatingOptions{SubmitOptions: opts})
@@ -113,42 +101,49 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	return e.Connection.SignAndSubmitGroup(txns, &e.AuthCache, e.AlgodClient, opts)
 }
 
-// checkReadyToSign runs the preconditions every signing path shares:
-// argument validation, a connected signer and algod, a supported consensus
-// version, transactions for the active algod's network, and fresh signer
-// metadata for the senders. Plugin drafts in the default group mode and
-// transaction files reach the signer through here.
-func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.SubmitOptions) error {
-	if err := e.validateSubmitLsigArgs(txns, opts.LsigArgsMap); err != nil {
-		return err
-	}
+// checkReadyToSign runs the preconditions every signing path shares: a
+// connected signer and algod, a supported consensus version, transactions for
+// the active algod's network, and fresh signer metadata for the senders. It
+// then places the submission's LogicSig arguments on its positions
+// (lsigArgsForGroup) and returns what each position gets. Shell commands,
+// scripts, transaction files and plugin drafts in the default group mode
+// reach the signer through here.
+func (e *Engine) checkReadyToSign(txns []types.Transaction, args LsigArgs, opts clientsign.SubmitOptions) ([]map[string][]byte, error) {
 	if !e.IsConnected() {
-		return ErrNotConnected
+		return nil, ErrNotConnected
 	}
 	if e.AlgodClient == nil {
-		return ErrNoAlgodClient
+		return nil, ErrNoAlgodClient
 	}
 	if err := e.checkActiveNetwork(opts.Ctx, txns); err != nil {
-		return err
+		return nil, err
 	}
-	return e.refreshSubmitSigningState(opts.Ctx, txns)
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return e.lsigArgsForGroup(ctx, txns, nil, args)
 }
 
-func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) error {
+// refreshSubmitSigningState fetches what the client lacks to know each
+// sender's signing key: an auth address it has not looked up, and the
+// signer's key list when an effective signer is another address or a key it
+// does not know. It reports whether it fetched the key list.
+func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) (bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := e.refreshMissingSubmitAuthAddresses(ctx, txns); err != nil {
-		return err
+		return false, err
 	}
 
 	if !e.submitEffectiveSignersNeedKeyRefresh(txns) {
-		return nil
+		return false, nil
 	}
 	if _, err := e.RefreshKeys(ctx); err != nil {
-		return fmt.Errorf("failed to refresh signer keys: %w", err)
+		return false, fmt.Errorf("failed to refresh signer keys: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []types.Transaction) error {
@@ -223,21 +218,14 @@ func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) 
 // SignAndSubmit signs and submits a prepared transaction using the
 // caller's context for signer and algod operations.
 func (e *Engine) SignAndSubmit(ctx context.Context, prep *TransactionPrepResult, wait bool) (*SubmitResult, error) {
-	// Build lsigArgsMap if LsigArgs are provided
-	var lsigArgsMap []map[string][]byte
-	if len(prep.LsigArgs) > 0 {
-		lsigArgsMap = []map[string][]byte{prep.LsigArgs}
-	}
-
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
 	opts := e.defaultSubmitOptions(ctx, wait, &writeNotices, &output)
-	opts.LsigArgsMap = lsigArgsMap
 	if prep.AppCallInfo != nil {
 		opts.AppCallInfo = []*signerapi.AppCallInfo{prep.AppCallInfo}
 	}
 
-	txids, submittedTxns, err := e.signAndSubmitGroup([]types.Transaction{prep.Transaction}, opts)
+	txids, submittedTxns, err := e.signAndSubmitGroup([]types.Transaction{prep.Transaction}, prep.LsigArgs, opts)
 	submittedTxn := prep.Transaction
 	if len(submittedTxns) > 0 {
 		submittedTxn = submittedTxns[0]
@@ -302,12 +290,14 @@ func (e *Engine) CanSignForAddressWithKind(address string) (bool, algorithm.Auth
 	return present && kind != "", kind
 }
 
-func (e *Engine) SignAndSubmitGroup(ctx context.Context, txns []types.Transaction, lsigArgs []map[string][]byte) (*SignTransactionsResult, error) {
+// SignAndSubmitGroup signs and submits a group built elsewhere, a plugin's
+// default-flow draft, with the LogicSig arguments given for it, which are
+// placed by name on its positions.
+func (e *Engine) SignAndSubmitGroup(ctx context.Context, txns []types.Transaction, args LsigArgs) (*SignTransactionsResult, error) {
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
 	opts := e.defaultSubmitOptions(ctx, true, &writeNotices, &output)
-	opts.LsigArgsMap = lsigArgs
-	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, opts)
+	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, args, opts)
 	result := &SignTransactionsResult{
 		TxIDs:        txIDs,
 		Transactions: originalSubmittedTransactions(txns, submittedTxns),
@@ -339,7 +329,7 @@ func (e *Engine) SignAndSubmitTransactions(ctx context.Context, txns []types.Tra
 
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
+	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, LsigArgs{}, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
 	result := &SignTransactionsResult{
 		TxIDs:        txIDs,
 		Transactions: originalSubmittedTransactions(txns, submittedTxns),

@@ -46,7 +46,7 @@ send <amount> <asset> from <sender> to <receiver> [options]
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
 | `atomic` | Send as atomic group (with sets) |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to all LSig senders in the transaction group. Not accepted on an atomic send to or from a set |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Each transaction gets the arguments its signing key declares; see [LogicSig arguments](#logicsig-arguments) |
 
 A word a command does not take is refused, on this and every transaction
 command, so a mistyped option can't be ignored. A line may end with a
@@ -86,7 +86,7 @@ sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to each generated sweep transaction. |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Each source gets the arguments its signing key declares, and one whose key declares none gets none; a name no source's key declares is refused before anything is sent. See [LogicSig arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -95,6 +95,7 @@ sweep usdc from [alice bob charlie] to treasury
 sweep algo from @team to main leaving 1             # Leave 1 ALGO in each
 sweep usdc from @validators to cold leaving 100
 sweep algo from @lsigs to treasury arg:preimage=text:secret
+sweep algo from [alice htlc-account] to treasury arg:preimage=text:secret   # alice is ed25519: sent no argument
 ```
 
 ---
@@ -328,7 +329,7 @@ validate <account|@setname> [arg:name=value]
 **Options:**
 | Option | Description |
 |--------|-------------|
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to each generated validation transaction. |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Each account gets the arguments its signing key declares; see [LogicSig arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -1645,6 +1646,38 @@ box=text:counter
 ```
 
 ---
+
+## LogicSig arguments
+
+`arg:name=<value>` gives a LogicSig runtime argument, such as an HTLC's
+`preimage`, once for everything the command signs. apshell gives each
+transaction the arguments whose names its signing key declares: the key of
+the sender, or of the sender's auth address when the account is rekeyed. A
+LogicSig key declares the arguments of its template; a bounded account its
+runtime arguments; a native key (ed25519 or Falcon) declares none and is sent
+none.
+
+- A name that no transaction's signing key declares is refused before
+  anything is sent: `no signing key here declares the LogicSig argument
+  "premage"; they declare "preimage"`. A typo on a native account is refused
+  the same way, instead of being ignored. If the name is unknown, apshell
+  first fetches the signer's key list again in case a key was added.
+- A required argument the signing key declares and none was given for is
+  refused, and so is a value of the wrong declared length.
+- `send`, `sweep` and `validate` over several accounts check the names once,
+  against all the accounts, before the first transaction; then each account
+  gets what its own key declares, and an account whose key declares none of
+  them gets none. A name declared only by an account that `sweep` then skips
+  (low balance, not opted in) is used nowhere, without an error.
+- An atomic send and a plugin's group are one submission: each position gets
+  its own key's arguments, so a group can hold LogicSig accounts of different
+  types. Positions a plugin signs itself get none. A `pregrouped-signed`
+  plugin group takes no arguments.
+- Two accounts whose keys declare the same name both get the value; there is
+  no way to give one position a different value.
+
+The signer refuses `lsig_args` for a native key with a bad request, so a
+client other than apshell cannot send them unnoticed either.
 
 ## Common Options
 

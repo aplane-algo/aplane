@@ -529,8 +529,8 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		t.Fatalf("MakeClient() error = %v", err)
 	}
 
-	authCache := cache.NewAuthAddressCache()
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache))
+	authCache, signerCache := presignKnownManagedAccount(managedAccount.Address.String())
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache), WithSignerCache(signerCache))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -565,7 +565,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 			}
 			return out, nil
 		},
-		nil,
+		LsigArgs{},
 	)
 	if err != nil {
 		t.Fatalf("SignAndSubmitWithPluginSigners() error = %v", err)
@@ -622,7 +622,7 @@ func TestSignAndSubmitWithPluginSignersRejectsNilAlgodBeforeSigning(t *testing.T
 			pluginCalls.Add(1)
 			return nil, nil
 		},
-		nil,
+		LsigArgs{},
 	)
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("SignAndSubmitWithPluginSigners(nil algod) error = %v, want ErrNoAlgodClient", err)
@@ -655,7 +655,7 @@ func TestSignAndSubmitWithPluginSignersRejectsUnsupportedConsensusBeforePlanning
 			pluginCalls.Add(1)
 			return nil, nil
 		},
-		nil,
+		LsigArgs{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "network consensus") {
 		t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want unsupported-consensus rejection", err)
@@ -721,7 +721,8 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	authCache, signerCache := presignKnownManagedAccount(managedAccount.Address.String())
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache), WithSignerCache(signerCache))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -737,7 +738,7 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 			pluginCalls.Add(1)
 			return nil, errors.New("must not be reached")
 		},
-		nil,
+		LsigArgs{},
 	)
 	if !errors.Is(err, cosignercanonical.ErrNotCanonical) || !strings.Contains(err.Error(), "planned transaction at index 1") {
 		t.Fatalf("error = %v, want the plan refused as not canonical at index 1", err)
@@ -805,7 +806,8 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	authCache, signerCache := presignKnownManagedAccount(managedAccount.Address.String())
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache), WithSignerCache(signerCache))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -819,7 +821,7 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 		func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
 			return nil, errors.New("the plugin's key is unavailable")
 		},
-		nil,
+		LsigArgs{},
 	)
 	if err == nil || err.Error() != "plugin signing failed: the plugin's key is unavailable" {
 		t.Fatalf("error = %v, want the plugin's failure", err)
@@ -836,4 +838,15 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 	if !errors.As(err, &carrier) || carrier.SubmissionOutput() != want {
 		t.Fatalf("error %v does not carry the plan lines", err)
 	}
+}
+
+// presignKnownManagedAccount is the client's signing state for a managed
+// slot's account that it already knows: not rekeyed, held as an ed25519 key.
+// Placing the group's LogicSig arguments then fetches nothing.
+func presignKnownManagedAccount(address string) (cache.AuthAddressCache, cache.SignerCache) {
+	authCache := cache.NewAuthAddressCache()
+	authCache.AuthAddresses[address] = ""
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(address, "ed25519")
+	return authCache, signerCache
 }

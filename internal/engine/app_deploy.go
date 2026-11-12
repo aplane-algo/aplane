@@ -33,7 +33,7 @@ type AppDeployParams struct {
 	Note         string
 	Fee          uint64
 	UseFlatFee   bool
-	LsigArgs     map[string][]byte
+	LsigArgs     LsigArgs // LogicSig arguments given for the submission, placed by name when it is signed
 	OnCompletion types.OnCompletion
 }
 

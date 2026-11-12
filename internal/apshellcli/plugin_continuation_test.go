@@ -568,6 +568,30 @@ func TestJSPluginReportsARekeyRuleRefusal(t *testing.T) {
 	})
 }
 
+// The step's arg: values reach the group check: the one loop the REPL, MCP and
+// plugin() share hands them to CheckPluginGroup, which places them with the
+// engine's placement and refuses a name no signing key of the group declares
+// (here a native key's), before anything is shown or sent to /sign.
+func TestJSPluginLsigArgsReachTheGroupCheck(t *testing.T) {
+	f := newRekeyReviewFixture(t)
+	f.eng.AuthCache.AuthAddresses[f.native.String()] = ""
+	txn := approvalTestPayment(20, 2, 1)
+	intents := make([]map[string]any, 1)
+	for i, intent := range rawIntents(txn) {
+		intents[i] = map[string]any{"type": intent.Type, "encoded": intent.Encoded}
+	}
+	state, _ := scriptedPluginShellOnEngine(t, f.eng, map[string]any{"success": true, "message": "pay", "transactions": intents})
+
+	out, err := runScript(t, state, `JSON.stringify(plugin("wf", "start", "arg:premage=text:open"))`)
+	want := (&engine.UndeclaredLsigArgsError{Names: []string{"premage"}}).Error()
+	if err == nil || !strings.Contains(err.Error(), "plugin() error: "+want) {
+		t.Fatalf("plugin() = %s, %v; want the placement's refusal %q", out, err, want)
+	}
+	if f.keyFetches.Load() == 0 {
+		t.Fatal("the check did not look the name up in the signer's key list")
+	}
+}
+
 // A read-only plugin command that returns an empty data object hands the
 // script an empty object, not undefined: only localSigners is removed.
 func TestJSPluginKeepsAnEmptyDataObject(t *testing.T) {

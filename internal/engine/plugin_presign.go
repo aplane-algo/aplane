@@ -66,13 +66,16 @@ type PluginSlotAuthorization struct {
 // plugin will attach during the callback. LogicSig resources are forwarded to
 // /plan without combining program bytes, argument bytes, and opcode cost; native
 // PQ is forwarded as its scheme tag. An absent entry means ordinary authorization.
+// args are the LogicSig arguments given for the group: the managed slots get
+// them by name (lsigArgsForGroup, as CheckPluginLsigArgs placed them for the
+// review), and plugin-owned slots get none.
 func (e *Engine) SignAndSubmitWithPluginSigners(
 	ctx context.Context,
 	txns []types.Transaction,
 	pluginSignerRefs map[string]string,
 	pluginSlotAuthorizations map[string]PluginSlotAuthorization,
 	signSlots PluginSlotSigner,
-	lsigArgs []map[string][]byte,
+	args LsigArgs,
 ) (*PluginSubmitResult, error) {
 	if len(pluginSignerRefs) == 0 {
 		return nil, fmt.Errorf("pre-sign planning requires at least one plugin signer")
@@ -101,6 +104,15 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	// would only repeat both on these same transactions, so the plan request
 	// below goes to the signer connection directly.
 	if err := e.checkActiveNetwork(ctx, txns); err != nil {
+		return nil, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// The managed slots' signing state, then their LogicSig arguments: what
+	// each managed slot's signing key declares. /plan and /sign get the same.
+	lsigArgs, err := e.lsigArgsForGroup(ctx, txns, pluginSignerRefs, args)
+	if err != nil {
 		return nil, err
 	}
 
@@ -277,7 +289,8 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 }
 
 // managedSignRequest builds an apsigner sign-mode request for a managed slot,
-// resolving the auth address and attaching lsig args.
+// resolving the auth address and attaching the LogicSig arguments
+// lsigArgsForGroup placed on the slot.
 func (e *Engine) managedSignRequest(txn types.Transaction, lsigArgs map[string][]byte) signerapi.SignRequest {
 	sender := txn.Sender.String()
 	effectiveSigner := sender

@@ -72,8 +72,8 @@ func TestSendPaymentParams_Defaults(t *testing.T) {
 	if params.Note != "" {
 		t.Error("Default Note should be empty")
 	}
-	if params.LsigArgs != nil {
-		t.Error("Default LsigArgs should be nil")
+	if params.LsigArgs.Len() != 0 {
+		t.Error("Default LsigArgs should be empty")
 	}
 }
 
@@ -91,8 +91,8 @@ func TestCloseAccountParams_Defaults(t *testing.T) {
 	if params.UseFlatFee != false {
 		t.Error("Default UseFlatFee should be false")
 	}
-	if params.LsigArgs != nil {
-		t.Error("Default LsigArgs should be nil")
+	if params.LsigArgs.Len() != 0 {
+		t.Error("Default LsigArgs should be empty")
 	}
 }
 
@@ -258,17 +258,17 @@ func TestSendPaymentParams_WithLsigArgs(t *testing.T) {
 		From:   testAddress(1).String(),
 		To:     testAddress(2).String(),
 		Amount: 1000000,
-		LsigArgs: map[string][]byte{
+		LsigArgs: NewLsigArgs(map[string][]byte{
 			"preimage": []byte("secret"),
-		},
+		}),
 	}
 
-	if params.LsigArgs == nil {
-		t.Fatal("LsigArgs should not be nil")
+	if params.LsigArgs.Len() != 1 {
+		t.Fatal("LsigArgs should hold the one argument")
 	}
 
-	if string(params.LsigArgs["preimage"]) != "secret" {
-		t.Errorf("LsigArgs[preimage] = %q, want 'secret'", params.LsigArgs["preimage"])
+	if string(params.LsigArgs.Values()["preimage"]) != "secret" {
+		t.Errorf("LsigArgs[preimage] = %q, want 'secret'", params.LsigArgs.Values()["preimage"])
 	}
 }
 

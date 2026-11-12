@@ -542,7 +542,7 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 		CloseTo:    toAddr,
 		Fee:        opts.Fee,
 		UseFlatFee: opts.UseFlatFee,
-		LsigArgs:   opts.LsigArgs,
+		LsigArgs:   engine.NewLsigArgs(opts.LsigArgs),
 	})
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("close() error preparing transaction: %v", err)))

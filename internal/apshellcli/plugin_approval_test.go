@@ -67,7 +67,8 @@ func TestReviewPluginTransactionsCancelsOnNegativeResponse(t *testing.T) {
 	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
-	})
+	}, nil)
+
 	if err != nil {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}
@@ -89,7 +90,8 @@ func TestReviewPluginTransactionsSkipsPromptWhenAutoConfirm(t *testing.T) {
 	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
-	})
+	}, nil)
+
 	if err != nil {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}
@@ -115,7 +117,8 @@ func TestReviewPluginTransactionsClearsReadlinePromptBeforeApproval(t *testing.T
 	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
-	})
+	}, nil)
+
 	if err != nil {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}
@@ -144,7 +147,7 @@ func TestReviewPluginTransactionsRendersTheDecodedDraft(t *testing.T) {
 	if _, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(txn),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}
 	rendered := out.String()
@@ -183,7 +186,8 @@ func TestReviewPluginTransactionsRendersWithoutPromptingWhenApprovalNotRequested
 	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: false,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
-	})
+	}, nil)
+
 	if err != nil || cancelled {
 		t.Fatalf("reviewPluginTransactions() = %v, %v; want proceed", cancelled, err)
 	}
@@ -210,7 +214,8 @@ func TestReviewPluginTransactionsNotesADiscardedGroupID(t *testing.T) {
 	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(txns...),
-	})
+	}, nil)
+
 	if err != nil || cancelled {
 		t.Fatalf("reviewPluginTransactions() = %v, %v; want the grouped pair accepted", cancelled, err)
 	}
@@ -246,7 +251,8 @@ func TestReviewPluginTransactionsRefusesAMalformedIntentBeforePrinting(t *testin
 			_, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 				RequiresApproval: true,
 				Transactions:     []jsonrpc.TransactionIntent{intent},
-			})
+			}, nil)
+
 			if err == nil {
 				t.Fatal("reviewPluginTransactions() accepted a malformed intent")
 			}
@@ -279,7 +285,7 @@ func TestReviewPresignPlanShowsTheDraftThatIsPlanned(t *testing.T) {
 		GroupMode:     jsonrpc.GroupModePresignPlan,
 		Transactions:  rawIntents(plugin, managed),
 		PluginSigners: signers,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}
 	rendered := out.String()
@@ -305,7 +311,7 @@ func TestReviewPresignPlanShowsTheDraftThatIsPlanned(t *testing.T) {
 		GroupMode:     jsonrpc.GroupModePresignPlan,
 		Transactions:  rawIntents(ungroupedPlugin, ungroupedManaged),
 		PluginSigners: signers,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("reviewPluginTransactions(ungrouped) error = %v", err)
 	}
 	if strings.Contains(out.String(), wantDiscardedNotice) {
@@ -320,7 +326,8 @@ func TestReviewPresignPlanShowsTheDraftThatIsPlanned(t *testing.T) {
 			Type: jsonrpc.TransactionIntentRaw, Encoded: base64.StdEncoding.EncodeToString(trailing),
 		}),
 		PluginSigners: signers,
-	})
+	}, nil)
+
 	if err == nil || !strings.HasPrefix(err.Error(), "presign-plan: transaction 2: ") {
 		t.Fatalf("reviewPluginTransactions(non-canonical draft) error = %v, want transaction 2 refused", err)
 	}
@@ -347,7 +354,8 @@ func TestReviewPluginTransactionsRefusesAnUnknownGroupMode(t *testing.T) {
 				GroupMode:        mode,
 				RequiresApproval: true,
 				Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
-			})
+			}, nil)
+
 			if want := `unsupported plugin groupMode "` + mode + `"`; err == nil || err.Error() != want {
 				t.Fatalf("reviewPluginTransactions() error = %v, want %q", err, want)
 			}
@@ -576,7 +584,7 @@ func TestReviewOfARekeyTargetReadsTheSignersKeyList(t *testing.T) {
 					prompted = true
 					return "n", nil
 				}}
-				_, _, err := reviewPluginTransactions(state, c.result)
+				_, _, err := reviewPluginTransactions(state, c.result, nil)
 				if fetches := f.keyFetches.Load(); fetches != 1 {
 					t.Errorf("%s: the review fetched the key list %d time(s), want once", mode, fetches)
 				}
@@ -619,7 +627,7 @@ func TestReviewRefusesARekeyWithoutTheSignersKeyList(t *testing.T) {
 			t.Fatalf("%s: prompted for a group that cannot be checked", mode)
 			return "", nil
 		}}
-		_, _, err := reviewPluginTransactions(state, c.result)
+		_, _, err := reviewPluginTransactions(state, c.result, nil)
 		want := fmt.Sprintf("plugin group rekeys an account (transaction %d): connect to the signer so apshell can check the rekey target against its aplane keys", c.position)
 		if err == nil || err.Error() != want {
 			t.Errorf("%s: error = %v, want %q", mode, err, want)
@@ -639,7 +647,7 @@ func TestReviewAndSubmissionOfARekeyEachFetchTheKeyList(t *testing.T) {
 	txn := approvalTestPayment(1, 2, 1)
 	txn.RekeyTo = f.native
 	state := &REPLState{Out: &bytes.Buffer{}, App: app, LineReader: func() (string, error) { return "y", nil }}
-	group, cancelled, err := reviewPluginTransactions(state, rekeyReviewResults(t, txn)["pregrouped-signed"].result)
+	group, cancelled, err := reviewPluginTransactions(state, rekeyReviewResults(t, txn)["pregrouped-signed"].result, nil)
 	if err != nil || cancelled {
 		t.Fatalf("reviewPluginTransactions() = %v, %v", cancelled, err)
 	}
@@ -648,7 +656,7 @@ func TestReviewAndSubmissionOfARekeyEachFetchTheKeyList(t *testing.T) {
 	}
 	// No node is configured, so submission stops at the node, after its own
 	// fetch; it asks the signer nothing else.
-	if _, err := submitPluginTransactions(state, "plugin", group, nil); err == nil {
+	if _, err := submitPluginTransactions(state, "plugin", group); err == nil {
 		t.Fatal("submission without a node succeeded")
 	}
 	if fetches := f.keyFetches.Load(); fetches != 2 {
@@ -695,7 +703,7 @@ func TestReviewRefusesANonInteractivePregroupedGroupBeforeTheKeyList(t *testing.
 	txn.RekeyTo = f.htlc
 	var out bytes.Buffer
 	state := &REPLState{Out: &out, AutoConfirm: true, App: apshellapp.New(f.eng, config.DefaultConfig(), t.TempDir())}
-	_, _, err := reviewPluginTransactions(state, rekeyReviewResults(t, txn)["pregrouped-signed"].result)
+	_, _, err := reviewPluginTransactions(state, rekeyReviewResults(t, txn)["pregrouped-signed"].result, nil)
 	if err == nil || !strings.Contains(err.Error(), "non-interactive") {
 		t.Fatalf("reviewPluginTransactions() error = %v, want the non-interactive refusal", err)
 	}

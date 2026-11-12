@@ -63,7 +63,7 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 		pr.Presentation = result.Presentation
 
 		if len(result.Transactions) > 0 {
-			group, cancelled, err := reviewPluginTransactions(r, result)
+			group, cancelled, err := reviewPluginTransactions(r, result, lsigArgs)
 			if err != nil {
 				return err
 			}
@@ -71,7 +71,7 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 				return errPluginTransactionCancelled
 			}
 
-			submit, err := submitPluginTransactions(r, plugin.Manifest.Name, group, lsigArgs)
+			submit, err := submitPluginTransactions(r, plugin.Manifest.Name, group)
 			if err != nil {
 				if submit != nil {
 					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
@@ -106,20 +106,22 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 }
 
 // submitPluginTransactions submits a reviewed plugin group without UI output.
-func submitPluginTransactions(r *REPLState, pluginName string, group *apshellapp.PluginGroup, lsigArgs map[string][]byte) (*apshellapp.GroupSubmitSummary, error) {
-	return r.app().SubmitPluginTransactions(r.commandContext(), pluginName, group, lsigArgs)
+// The group carries the step's LogicSig arguments, as its check placed them.
+func submitPluginTransactions(r *REPLState, pluginName string, group *apshellapp.PluginGroup) (*apshellapp.GroupSubmitSummary, error) {
+	return r.app().SubmitPluginTransactions(r.commandContext(), pluginName, group)
 }
 
 // reviewPluginTransactions is the client review of a plugin result. It decodes
 // and checks the result with apshellapp.CheckPluginGroup, the step submission
-// takes the group from: an unknown mode, an undecodable group, or a group the
-// rekey rule refuses is refused with that error before anything is shown or
-// asked, and so is a pregrouped-signed group under AutoConfirm, which can
-// never be submitted. It then reviews the group, which holds everything the
-// review reads, for its mode and returns it for submission, unless the user
+// takes the group from: an unknown mode, an undecodable group, a group the
+// rekey rule refuses, or LogicSig arguments the group's signing keys would
+// refuse, is refused with that error before anything is shown or asked, and
+// so is a pregrouped-signed group under AutoConfirm, which can never be
+// submitted. It then reviews the group, which holds everything the review
+// reads, for its mode and returns it for submission, unless the user
 // cancelled.
-func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (*apshellapp.PluginGroup, bool, error) {
-	group, err := r.app().CheckPluginGroup(r.commandContext(), result, apshellapp.PluginCheckOptions{Interactive: !r.AutoConfirm})
+func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*apshellapp.PluginGroup, bool, error) {
+	group, err := r.app().CheckPluginGroup(r.commandContext(), result, apshellapp.PluginCheckOptions{Interactive: !r.AutoConfirm, LsigArgs: lsigArgs})
 	if err != nil {
 		return nil, false, err
 	}
