@@ -32,6 +32,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
@@ -127,6 +128,12 @@ func scriptedPluginShellWithAlgod(t *testing.T, client *algod.Client, results ..
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	eng.AlgodClient = client
+	return scriptedPluginShellOnEngine(t, eng, results...)
+}
+
+// scriptedPluginShellOnEngine is scriptedPluginShell on the engine given.
+func scriptedPluginShellOnEngine(t *testing.T, eng *engine.Engine, results ...map[string]any) (*REPLState, *scriptedPlugin) {
+	t.Helper()
 	scripted := &scriptedPlugin{results: results}
 	pm := pluginmanager.NewManager()
 	var started []*pluginmanager.Instance
@@ -505,6 +512,60 @@ func TestJSPluginDataStepsHoldOnlyMessageAndTxIDs(t *testing.T) {
 	if want := append(append([]string(nil), firstIDs...), secondIDs...); !reflect.DeepEqual(got.TxIDs, want) {
 		t.Fatalf("data.txids = %v, want %v", got.TxIDs, want)
 	}
+}
+
+// A group CheckPluginGroup refuses under the rekey rule, here a rekey to a
+// held aplane key that is not a valid rekey target, is refused in the review,
+// before anything is submitted, and plugin() reports it as an error, never as
+// a {success: false} result. Refused in the first step, nothing was produced
+// and the error is the refusal alone; refused in a continuation step, the
+// error also lists the transactions the first step submitted.
+func TestJSPluginReportsARekeyRuleRefusal(t *testing.T) {
+	const lookUp = ": look them up before running it again"
+	refused := func(f rekeyReviewFixture) (map[string]any, string) {
+		txn := approvalTestPayment(1, 2, 1)
+		txn.RekeyTo = f.htlc
+		intents := make([]map[string]any, 1)
+		for i, intent := range rawIntents(txn) {
+			intents[i] = map[string]any{"type": intent.Type, "encoded": intent.Encoded}
+		}
+		return map[string]any{"success": true, "message": "rekey", "transactions": intents},
+			"transaction 1: cannot rekey to " + f.htlc.String() + ": this signer holds its aplane key (aplane.htlc.v1), which is not a valid rekey target"
+	}
+	t.Run("first step", func(t *testing.T) {
+		f := newRekeyReviewFixture(t)
+		step, refusal := refused(f)
+		state, _ := scriptedPluginShellOnEngine(t, f.eng, step)
+
+		out, err := runScript(t, state, `JSON.stringify(plugin("wf", "start"))`)
+		if err == nil {
+			t.Fatalf("plugin() = %s, want an error", out)
+		}
+		if !strings.Contains(err.Error(), "plugin() error: "+refusal) || strings.Contains(err.Error(), "this run") {
+			t.Fatalf("plugin() error = %v, want the refusal %q alone", err, refusal)
+		}
+	})
+	t.Run("continuation step", func(t *testing.T) {
+		f := newRekeyReviewFixture(t)
+		second, refusal := refused(f)
+		first, firstIDs := pregroupedStep(t, "fund", map[string]any{"command": "wf", "args": []string{"_rekey"}})
+		client, sent := confirmationFailingAlgod(t, 1)
+		f.eng.AlgodClient = client
+		state, _ := scriptedPluginShellOnEngine(t, f.eng, first, second)
+		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
+
+		out, err := runScript(t, state, `JSON.stringify(plugin("wf", "start"))`)
+		if err == nil {
+			t.Fatalf("plugin() = %s, want an error", out)
+		}
+		if sent.Load() != 1 {
+			t.Fatalf("groups sent = %d, want the first step's only", sent.Load())
+		}
+		want := refusal + "; this run produced transaction(s) " + strings.Join(firstIDs, ", ") + lookUp
+		if !strings.Contains(err.Error(), "plugin() error: "+want) {
+			t.Fatalf("plugin() error = %v, want %q", err, want)
+		}
+	})
 }
 
 // A read-only plugin command that returns an empty data object hands the
