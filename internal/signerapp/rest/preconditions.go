@@ -18,9 +18,15 @@ func ensureRuntimeUnlocked(ir *productruntime.Runtime) *svcerr.Error {
 		return &svcerr.Error{Kind: svcerr.KindInternal, Message: "product runtime is nil"}
 	}
 	if !ir.IsUnlocked() {
-		return &svcerr.Error{Kind: svcerr.KindLocked, Message: "signer is locked"}
+		return lockedError()
 	}
 	return nil
+}
+
+// lockedError is the answer of an endpoint that needs an unlocked
+// signer.
+func lockedError() *svcerr.Error {
+	return &svcerr.Error{Kind: svcerr.KindLocked, Message: "signer is locked"}
 }
 
 // ensureSignable runs the preconditions shared by every signing-family

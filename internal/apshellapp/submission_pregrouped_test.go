@@ -9,12 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
 
 func TestSubmitPluginTransactionsUnsupportedGroupMode(t *testing.T) {
 	app := &App{}
-	_, err := app.SubmitPluginTransactions(context.Background(), "plugin", &jsonrpc.ExecuteResult{GroupMode: "bogus"}, nil)
+	_, err := app.CheckPluginGroup(context.Background(), &jsonrpc.ExecuteResult{GroupMode: "bogus"}, interactive)
 	if err == nil || !strings.Contains(err.Error(), "unsupported plugin groupMode") {
 		t.Fatalf("want unsupported groupMode error, got %v", err)
 	}
@@ -22,7 +24,7 @@ func TestSubmitPluginTransactionsUnsupportedGroupMode(t *testing.T) {
 
 func TestSubmitPluginTransactionsRejectsLocalSigners(t *testing.T) {
 	app := &App{}
-	_, err := app.SubmitPluginTransactions(context.Background(), "plugin", &jsonrpc.ExecuteResult{
+	err := checkAndSubmit(context.Background(), app, &jsonrpc.ExecuteResult{
 		LocalSigners: []json.RawMessage{json.RawMessage(`{"address":"A","secretKey":"k"}`)},
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "localSigners are not supported") {
@@ -37,7 +39,7 @@ func TestSubmitPluginTransactionsRejectsLocalSigners(t *testing.T) {
 func TestSubmitPregroupedSignedRejections(t *testing.T) {
 	app := &App{}
 	ctx := context.Background()
-	signed := jsonrpc.TransactionIntent{Type: jsonrpc.TransactionIntentSigned, Encoded: "AA=="}
+	group := signedPluginIntents(t, rekeySubmitTestTxn(types.Address{1}, types.Address{}), rekeySubmitTestTxn(types.Address{2}, types.Address{}))
 
 	tests := []struct {
 		name    string
@@ -49,7 +51,7 @@ func TestSubmitPregroupedSignedRejections(t *testing.T) {
 			name: "lsig args rejected",
 			result: &jsonrpc.ExecuteResult{
 				GroupMode:    jsonrpc.GroupModePregroupedSigned,
-				Transactions: []jsonrpc.TransactionIntent{signed, signed},
+				Transactions: group,
 			},
 			lsig:    map[string][]byte{"k": []byte("v")},
 			wantSub: "does not allow lsig args",
@@ -70,7 +72,7 @@ func TestSubmitPregroupedSignedRejections(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := app.SubmitPluginTransactions(ctx, "plugin", tc.result, tc.lsig)
+			err := checkAndSubmit(ctx, app, tc.result, tc.lsig)
 			if err == nil || !strings.Contains(err.Error(), tc.wantSub) {
 				t.Fatalf("want error containing %q, got %v", tc.wantSub, err)
 			}
@@ -132,7 +134,7 @@ func TestSubmitPresignPlanRejections(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			result := &jsonrpc.ExecuteResult{GroupMode: jsonrpc.GroupModePresignPlan, PluginSigners: tc.signers}
-			_, err := app.SubmitPluginTransactions(ctx, "plugin", result, nil)
+			err := checkAndSubmit(ctx, app, result, nil)
 			if err == nil || !strings.Contains(err.Error(), tc.wantSub) {
 				t.Fatalf("want error containing %q, got %v", tc.wantSub, err)
 			}

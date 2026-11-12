@@ -21,7 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
 
-func TestProcessTransactionIntentsRawClearsGroupID(t *testing.T) {
+func TestDecodePluginDraftRawClearsGroupID(t *testing.T) {
 	var group types.Digest
 	group[0] = 1
 	group[31] = 9
@@ -43,9 +43,9 @@ func TestProcessTransactionIntentsRawClearsGroupID(t *testing.T) {
 		},
 	}
 
-	got, err := ProcessTransactionIntents(intents)
+	got, _, err := DecodePluginDraft(intents)
 	if err != nil {
-		t.Fatalf("ProcessTransactionIntents() error = %v", err)
+		t.Fatalf("DecodePluginDraft() error = %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("len(got) = %d, want 1", len(got))
@@ -58,7 +58,7 @@ func TestProcessTransactionIntentsRawClearsGroupID(t *testing.T) {
 	}
 }
 
-func TestProcessTransactionIntentsRejectsBadInputs(t *testing.T) {
+func TestDecodePluginDraftRejectsBadInputs(t *testing.T) {
 	tests := []struct {
 		name        string
 		intents     []jsonrpc.TransactionIntent
@@ -105,7 +105,7 @@ func TestProcessTransactionIntentsRejectsBadInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ProcessTransactionIntents(tt.intents)
+			_, _, err := DecodePluginDraft(tt.intents)
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tt.errContains)
 			}
@@ -116,7 +116,7 @@ func TestProcessTransactionIntentsRejectsBadInputs(t *testing.T) {
 	}
 }
 
-func TestProcessTransactionIntentsMultipleRawAndLaterFailure(t *testing.T) {
+func TestDecodePluginDraftMultipleRawAndLaterFailure(t *testing.T) {
 	txn1 := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -132,18 +132,18 @@ func TestProcessTransactionIntentsMultipleRawAndLaterFailure(t *testing.T) {
 		},
 	}
 
-	got, err := ProcessTransactionIntents([]jsonrpc.TransactionIntent{
+	got, _, err := DecodePluginDraft([]jsonrpc.TransactionIntent{
 		{Type: "raw", Encoded: base64.StdEncoding.EncodeToString(msgpack.Encode(txn1))},
 		{Type: "raw", Encoded: base64.StdEncoding.EncodeToString(msgpack.Encode(txn2))},
 	})
 	if err != nil {
-		t.Fatalf("ProcessTransactionIntents(valid multiple) error = %v", err)
+		t.Fatalf("DecodePluginDraft(valid multiple) error = %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("len(got) = %d, want 2", len(got))
 	}
 
-	_, err = ProcessTransactionIntents([]jsonrpc.TransactionIntent{
+	_, _, err = DecodePluginDraft([]jsonrpc.TransactionIntent{
 		{Type: "raw", Encoded: base64.StdEncoding.EncodeToString(msgpack.Encode(txn1))},
 		{Type: "raw", Encoded: "%%%"},
 	})
@@ -189,9 +189,9 @@ func TestDecodePluginDraftAcceptsAComposerGroupedPair(t *testing.T) {
 	}
 
 	// Submission reads the same draft.
-	got, err := ProcessTransactionIntents(rawIntentsForTest(grouped...))
+	got, _, err := DecodePluginDraft(rawIntentsForTest(grouped...))
 	if err != nil {
-		t.Fatalf("ProcessTransactionIntents(grouped) error = %v", err)
+		t.Fatalf("DecodePluginDraft(grouped) error = %v", err)
 	}
 	for i, txn := range got {
 		if !bytes.Equal(msgpack.Encode(txn), msgpack.Encode(drafts[i])) {
@@ -207,7 +207,7 @@ func TestDecodePluginDraftAcceptsAComposerGroupedPair(t *testing.T) {
 // What is reviewed, planned and signed must be what the plugin's bytes say, so
 // bytes that decode but are not the canonical encoding of what they decode to
 // are refused, at the position they hold.
-func TestProcessTransactionIntentsRefusesNonCanonicalEncodings(t *testing.T) {
+func TestDecodePluginDraftRefusesNonCanonicalEncodings(t *testing.T) {
 	first := base64.StdEncoding.EncodeToString(msgpack.Encode(pluginIntentTestPayment(t, 51, 1)))
 	for name, variant := range nonCanonicalTxnVariants(t) {
 		t.Run(name, func(t *testing.T) {
@@ -215,17 +215,9 @@ func TestProcessTransactionIntentsRefusesNonCanonicalEncodings(t *testing.T) {
 				{Type: "raw", Encoded: first},
 				{Type: "raw", Encoded: base64.StdEncoding.EncodeToString(variant)},
 			}
-			for decoder, decode := range map[string]func([]jsonrpc.TransactionIntent) ([]types.Transaction, error){
-				"DecodePluginDraft": func(intents []jsonrpc.TransactionIntent) ([]types.Transaction, error) {
-					txns, _, err := DecodePluginDraft(intents)
-					return txns, err
-				},
-				"ProcessTransactionIntents": ProcessTransactionIntents,
-			} {
-				_, err := decode(intents)
-				if !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction 2: ") {
-					t.Fatalf("%s error = %v, want transaction 2 refused as not canonical", decoder, err)
-				}
+			_, _, err := DecodePluginDraft(intents)
+			if !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction 2: ") {
+				t.Fatalf("DecodePluginDraft() error = %v, want transaction 2 refused as not canonical", err)
 			}
 		})
 	}

@@ -4,10 +4,20 @@
 package engine
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	util "github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/txnreview"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestGetStatus(t *testing.T) {
@@ -302,5 +312,125 @@ func TestGetAlgorithm(t *testing.T) {
 
 	if eng.getAlgorithm("REKEYED") != "falcon1024" {
 		t.Errorf("getAlgorithm(REKEYED) = %v, want 'falcon1024' (from auth addr)", eng.getAlgorithm("REKEYED"))
+	}
+}
+
+// CurrentKeys returns the signer's list of the moment and leaves the signer
+// cache as it was: it neither reads nor rewrites it. No signer client is
+// ErrNotConnected and a locked signer is ErrSignerLocked, never an empty list.
+func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
+	locked := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if locked {
+			http.Error(w, "signer is locked", http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{
+			{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
+			{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		}})
+	}))
+	defer server.Close()
+	eng := setupTestEngine(t)
+	eng.SignerCache.AddAddress("CACHED", "ed25519")
+
+	if _, err := eng.CurrentKeys(context.Background()); !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("CurrentKeys() with no signer client error = %v, want ErrNotConnected", err)
+	}
+
+	eng.Connection.SignerClient = util.NewSignerClient(server.URL)
+	keys, err := eng.CurrentKeys(context.Background())
+	if err != nil {
+		t.Fatalf("CurrentKeys() error = %v", err)
+	}
+	want := []KeyInfo{
+		{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
+		{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+	}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("CurrentKeys() = %+v, want %+v", keys, want)
+	}
+	if got := eng.SignerCache.Keys; !reflect.DeepEqual(got, map[string]string{"CACHED": "ed25519"}) {
+		t.Fatalf("CurrentKeys() changed the signer cache: %v", got)
+	}
+
+	locked = true
+	if _, err := eng.CurrentKeys(context.Background()); !errors.Is(err, ErrSignerLocked) {
+		t.Fatalf("CurrentKeys() on a locked signer error = %v, want ErrSignerLocked", err)
+	}
+}
+
+// RekeyTargetsFromKeys holds every listed address, a generic LogicSig
+// included, and lists as not valid each one whose record does not say it is a
+// valid rekey target. It knows no rekey-to lists or protocol targets.
+func TestRekeyTargetsFromKeys(t *testing.T) {
+	got := RekeyTargetsFromKeys([]KeyInfo{
+		{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
+		{Address: "ROTATING", KeyType: "aplane.rotating-triple-wotsc.v1"},
+		// A rotating account is never a valid rekey target, whatever its
+		// record says.
+		{Address: "ROTATING-TRUE", KeyType: rotatingkey.RotatingTripleXmssV1, ValidRekeyTarget: true},
+		{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		{Address: "VAULT", KeyType: "example.vault.v1", IsGenericLsig: true, ValidRekeyTarget: true},
+	})
+	wantHeld := map[string]bool{"NATIVE": true, "ROTATING": true, "ROTATING-TRUE": true, "HTLC": true, "VAULT": true}
+	if !reflect.DeepEqual(got.KnownAddresses, wantHeld) {
+		t.Errorf("KnownAddresses = %v, want %v", got.KnownAddresses, wantHeld)
+	}
+	wantInvalid := map[string]txnreview.InvalidRekeyTarget{
+		"ROTATING":      {KeyType: "aplane.rotating-triple-wotsc.v1"},
+		"ROTATING-TRUE": {KeyType: rotatingkey.RotatingTripleXmssV1},
+		"HTLC":          {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
+	}
+	if !reflect.DeepEqual(got.InvalidRekeyTargets, wantInvalid) {
+		t.Errorf("InvalidRekeyTargets = %v, want %v", got.InvalidRekeyTargets, wantInvalid)
+	}
+	if got.ListedRekeyTargets != nil || got.ProtocolRekeyTargets != nil {
+		t.Errorf("a key list knows no rekey-to lists or protocol targets: %+v", got)
+	}
+}
+
+// A key list that disagrees with itself is an error, never a list: a count
+// other than its number of records, a record with no address, or an address
+// listed twice. A complete empty list is still an empty list.
+func TestCurrentKeysRefusesAnInconsistentList(t *testing.T) {
+	var mu sync.Mutex
+	var answer signerapi.KeysResponse
+	setAnswer := func(a signerapi.KeysResponse) {
+		mu.Lock()
+		defer mu.Unlock()
+		answer = a
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		_ = json.NewEncoder(w).Encode(answer)
+	}))
+	defer server.Close()
+	eng := setupTestEngine(t)
+	eng.Connection.SignerClient = util.NewSignerClient(server.URL)
+
+	for name, tc := range map[string]struct {
+		answer signerapi.KeysResponse
+		want   string
+	}{
+		"count larger than the records": {answer: signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}}},
+			want: "signer's key list is inconsistent: count 2, 1 record(s)"},
+		"records but a count of 0": {answer: signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}}},
+			want: "signer's key list is inconsistent: count 0, 1 record(s)"},
+		"a record with no address": {answer: signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{KeyType: "ed25519"}}},
+			want: "signer's key list is inconsistent: record 0 has no address"},
+		"an address listed twice": {answer: signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}, {Address: "A", KeyType: "aplane.htlc.v1"}}},
+			want: "signer's key list is inconsistent: A is listed twice"},
+	} {
+		setAnswer(tc.answer)
+		if _, err := eng.CurrentKeys(context.Background()); err == nil || err.Error() != tc.want {
+			t.Errorf("%s: CurrentKeys() error = %v, want %q", name, err, tc.want)
+		}
+	}
+
+	setAnswer(signerapi.KeysResponse{Count: 0, Keys: []signerapi.KeyInfo{}})
+	if keys, err := eng.CurrentKeys(context.Background()); err != nil || len(keys) != 0 {
+		t.Fatalf("CurrentKeys(empty) = %v, %v; want an empty list", keys, err)
 	}
 }

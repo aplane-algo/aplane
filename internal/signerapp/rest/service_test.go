@@ -34,6 +34,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -1274,4 +1275,35 @@ teal: |
   int 1
   return
 `)
+}
+
+// /keys answers with the list only when no lock came while it was built: a
+// lock, or a lock and an unlock, between the unlock check and the end of the
+// build empties the published keys, so the answer is the locked one, not a
+// complete-looking list with no keys. A signer unlocked throughout with no
+// keys still answers with an empty list.
+func TestKeysAnswersLockedWhenALockCameDuringTheBuild(t *testing.T) {
+	ir := setupProductRuntime(t, true)
+	lockGen := ir.LockGeneration()
+	if resp, err := keysAnswer(ir, lockGen, []signerapi.KeyInfo{}); err != nil || resp.Count != 0 || len(resp.Keys) != 0 {
+		t.Fatalf("keysAnswer(unlocked, empty) = %+v, %v; want an empty list", resp, err)
+	}
+	if resp, err := (Service{}).Keys(ir); err != nil || resp.Count != 0 {
+		t.Fatalf("Keys(unlocked, no keys) = %+v, %v; want count 0", resp, err)
+	}
+
+	list := (Service{}).BuildKeyInfoList(ir)
+	ir.Lock()
+	resp, err := keysAnswer(ir, lockGen, list)
+	if err == nil || err.Kind != svcerr.KindLocked || err.HTTPStatus() != 403 || resp != nil {
+		t.Fatalf("keysAnswer(locked during the build) = %+v, %#v; want the locked answer", resp, err)
+	}
+	if _, locked := (Service{}).Keys(ir); locked == nil || locked.Kind != err.Kind || locked.HTTPStatus() != err.HTTPStatus() || locked.Message != err.Message {
+		t.Fatalf("the answer differs from a locked signer's: %#v and %#v", err, locked)
+	}
+
+	ir.SetUnlocked()
+	if _, err := keysAnswer(ir, lockGen, list); err == nil || err.Kind != svcerr.KindLocked {
+		t.Fatalf("keysAnswer(locked and unlocked during the build) error = %#v, want the locked answer", err)
+	}
 }

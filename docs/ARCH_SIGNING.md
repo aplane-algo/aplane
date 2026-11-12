@@ -2030,7 +2030,11 @@ warning does not establish that no leaf was reused.
 
 `/keys` response:
 
-- `count`
+- `count`: the number of `keys[]` records. The list is the whole of an
+  unlocked signer's keys: a signer that locks while it builds the list
+  answers as a locked signer does (403, `locked`), never with a short or empty
+  list, and a client deciding from the list treats a `count` that disagrees
+  with its records as no list
 - `keys[]` with `address`, `public_key_hex`, `key_type`
 - optional `authorization_kind` with closed account-authorization values
   `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key

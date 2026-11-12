@@ -92,7 +92,11 @@ func TestSubmitPluginTransactionsRefusesADraftForAnotherNetwork(t *testing.T) {
 			eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 			app := New(eng, config.DefaultConfig(), t.TempDir())
 
-			_, err = app.SubmitPluginTransactions(context.Background(), "plugin", result, nil)
+			group, err := app.CheckPluginGroup(context.Background(), result, interactive)
+			if err != nil {
+				t.Fatalf("CheckPluginGroup() error = %v", err)
+			}
+			_, err = app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
 			if err == nil || !strings.Contains(err.Error(), "transaction at index 0 is for another network") ||
 				!strings.Contains(err.Error(), "(mainnet)") || !strings.Contains(err.Error(), "(testnet)") {
 				t.Fatalf("SubmitPluginTransactions() error = %v, want the mainnet draft refused on testnet", err)
