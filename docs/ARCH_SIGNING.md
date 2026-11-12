@@ -2272,11 +2272,15 @@ owned by the separate `aplane-algo/aplanesdk` repository.
 
 Cross-SDK compatibility-bearing behavior:
 
-- concatenated-group and list-per-slot signing APIs are distinct supported shapes
+- the high-level signing calls return one list, one entry per signed
+  transaction, including any the signer appended; no call returns a
+  concatenation
 - passthrough semantics are first-class for final signing; passthrough
   LogicSigs require selected-path `lsig_resources`, with observable sizes
   checked against the signed envelope
-- high-level signing helpers return base64 payloads converted from server hex
+- high-level signing helpers, results and errors hold signed transactions as
+  raw bytes, decoded once from server hex and checked as one canonical signed
+  transaction per entry; types that mirror the wire keep hex
 - `FromEnv` and connection helper path resolution are part of the product contract
 - Enrollment helpers return the authenticating key's SHA256 fingerprint and
   pending/already-enrolled state, validating the reply against the local key.
@@ -2408,11 +2412,11 @@ Go SDK specifics:
 
 TypeScript and Python SDKs preserve the same broad behaviors:
 
-- high-level convenience signing APIs return base64 payloads and may reject
-  unresolved foreign placeholders when they cannot project empty foreign slots
-  into single-payload returns
-- list-returning and raw request APIs preserve per-slot outputs, including
-  native `/sign` foreign slots returned as empty strings
+- high-level convenience signing APIs return raw bytes per signed transaction
+  and may reject unresolved foreign placeholders, which have no signed entry
+  to return
+- raw request APIs preserve per-slot wire outputs (hex), including native
+  `/sign` foreign slots returned as empty strings
 - signer status helpers expose `/status` and are used to size signing
   request deadlines when callers do not provide an earlier explicit timeout
 - raw `signRequests` / `sign_requests` APIs accept one or more `/sign` request
