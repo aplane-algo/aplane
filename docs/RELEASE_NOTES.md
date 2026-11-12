@@ -79,9 +79,11 @@ possess the keys for the new address."
   says so.
 - **apshell refuses a plugin-built group that rekeys to a held aplane key
   that is not a valid rekey target**, in every plugin mode, at any position
-  and whoever signs it, the account's own address included. A plugin-signed
-  slot never reaches the signer, so apshell applies the signer's rule itself,
-  before the group is shown, sent to the signer or submitted:
+  and whoever signs it, the account's own address included, and a rekey to a
+  held rotating account whatever its record says. A `pregrouped-signed` group
+  never reaches the signer, so apshell applies the signer's rule itself, with
+  the same wording at its core, before the group is shown, sent to the signer
+  or submitted:
   `transaction N: cannot rekey to <address>: this signer holds its aplane key
   (<key type>), which is not a valid rekey target`. A rekey to a foreign
   address remains a warning. A plugin group with any rekey is judged against

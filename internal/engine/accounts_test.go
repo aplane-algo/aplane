@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	util "github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -365,16 +366,20 @@ func TestRekeyTargetsFromKeys(t *testing.T) {
 	got := RekeyTargetsFromKeys([]KeyInfo{
 		{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
 		{Address: "ROTATING", KeyType: "aplane.rotating-triple-wotsc.v1"},
+		// A rotating account is never a valid rekey target, whatever its
+		// record says.
+		{Address: "ROTATING-TRUE", KeyType: rotatingkey.RotatingTripleXmssV1, ValidRekeyTarget: true},
 		{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
 		{Address: "VAULT", KeyType: "example.vault.v1", IsGenericLsig: true, ValidRekeyTarget: true},
 	})
-	wantHeld := map[string]bool{"NATIVE": true, "ROTATING": true, "HTLC": true, "VAULT": true}
+	wantHeld := map[string]bool{"NATIVE": true, "ROTATING": true, "ROTATING-TRUE": true, "HTLC": true, "VAULT": true}
 	if !reflect.DeepEqual(got.KnownAddresses, wantHeld) {
 		t.Errorf("KnownAddresses = %v, want %v", got.KnownAddresses, wantHeld)
 	}
 	wantInvalid := map[string]txnreview.InvalidRekeyTarget{
-		"ROTATING": {KeyType: "aplane.rotating-triple-wotsc.v1"},
-		"HTLC":     {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
+		"ROTATING":      {KeyType: "aplane.rotating-triple-wotsc.v1"},
+		"ROTATING-TRUE": {KeyType: rotatingkey.RotatingTripleXmssV1},
+		"HTLC":          {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
 	}
 	if !reflect.DeepEqual(got.InvalidRekeyTargets, wantInvalid) {
 		t.Errorf("InvalidRekeyTargets = %v, want %v", got.InvalidRekeyTargets, wantInvalid)

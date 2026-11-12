@@ -16,7 +16,7 @@ import (
 
 func TestSubmitPluginTransactionsUnsupportedGroupMode(t *testing.T) {
 	app := &App{}
-	_, err := app.CheckPluginGroup(context.Background(), &jsonrpc.ExecuteResult{GroupMode: "bogus"})
+	_, err := app.CheckPluginGroup(context.Background(), &jsonrpc.ExecuteResult{GroupMode: "bogus"}, interactive)
 	if err == nil || !strings.Contains(err.Error(), "unsupported plugin groupMode") {
 		t.Fatalf("want unsupported groupMode error, got %v", err)
 	}

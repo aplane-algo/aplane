@@ -103,10 +103,12 @@ func submitPluginTransactions(r *REPLState, pluginName string, group *apshellapp
 // and checks the result with apshellapp.CheckPluginGroup, the step submission
 // takes the group from: an unknown mode, an undecodable group, or a group the
 // rekey rule refuses is refused with that error before anything is shown or
-// asked. It then reviews the group, which holds everything the review reads,
-// for its mode and returns it for submission, unless the user cancelled.
+// asked, and so is a pregrouped-signed group under AutoConfirm, which can
+// never be submitted. It then reviews the group, which holds everything the
+// review reads, for its mode and returns it for submission, unless the user
+// cancelled.
 func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (*apshellapp.PluginGroup, bool, error) {
-	group, err := r.app().CheckPluginGroup(r.commandContext(), result)
+	group, err := r.app().CheckPluginGroup(r.commandContext(), result, apshellapp.PluginCheckOptions{Interactive: !r.AutoConfirm})
 	if err != nil {
 		return nil, false, err
 	}
@@ -132,7 +134,9 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (*aps
 // apsigner's policy and approval over the final group are the gate, and this
 // client prompt is asked only when the plugin requests it.
 func reviewDefaultDraft(r *REPLState, group *apshellapp.PluginGroup) (bool, error) {
-	renderDefaultPluginDraft(r, group)
+	if err := renderDefaultPluginDraft(r, group); err != nil {
+		return false, err
+	}
 
 	if !group.RequiresApproval() || r.AutoConfirm {
 		return false, nil
@@ -155,13 +159,12 @@ func reviewDefaultDraft(r *REPLState, group *apshellapp.PluginGroup) (bool, erro
 // local review is the ONLY human-acceptance step: plugin-provided RequiresApproval
 // is ignored, and non-interactive surfaces (AutoConfirm) fail closed rather than
 // broadcast a group the user never saw — mirroring apsigner refusing to sign with
-// no operator present. The group was decoded and validated, and its rekeys
-// checked, before this is called.
+// no operator present. That refusal is CheckPluginGroup's, told the review is
+// not interactive, before any key list is fetched; the group was decoded and
+// validated, and its rekeys checked, before this is called.
 func reviewPregroupedSigned(r *REPLState, group *apshellapp.PluginGroup) (bool, error) {
-	renderPregroupedSignedGroup(r, group)
-
-	if r.AutoConfirm {
-		return false, fmt.Errorf("pregrouped-signed groups require interactive review and cannot be submitted in non-interactive (auto-confirm) mode")
+	if err := renderPregroupedSignedGroup(r, group); err != nil {
+		return false, err
 	}
 
 	r.println()
@@ -181,7 +184,11 @@ func reviewPregroupedSigned(r *REPLState, group *apshellapp.PluginGroup) (bool, 
 // /sign approval is the authoritative gate for the managed slots, so this client
 // review is a confirm on top: it prompts interactively and otherwise proceeds.
 func reviewPresignPlan(r *REPLState, group *apshellapp.PluginGroup) (bool, error) {
-	slots := presignReviewSlots(group.Transactions(), group.PluginSigners())
+	txns, err := group.Transactions()
+	if err != nil {
+		return false, err
+	}
+	slots := presignReviewSlots(txns, group.PluginSigners())
 	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots, group.RekeyTargets())
 	renderDiscardedGroupIDNotice(r, group.GroupIDDiscarded())
 

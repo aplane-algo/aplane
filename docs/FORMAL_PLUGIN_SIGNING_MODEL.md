@@ -113,13 +113,17 @@ facts the review shares with the signer's prompt; the signer also knows each
 account's rekey-to list and the review does not, so a rekey to a listed
 address the signer does not hold reads as losing control here), and
 non-interactive contexts (`AutoConfirm`, MCP) fail closed with an explicit
-error. Validation precedes rendering: the review takes the group from
-`apshellapp.CheckPluginGroup`, which constructs the `PregroupedSignedGroup`,
-so an undecodable or digest-tampered group errors before anything is shown,
-and a group refused under PS8 is refused before anything is shown. Anchors:
-`internal/apshellcli/external_plugins.go` (`reviewPluginTransactions`,
-`reviewPregroupedSigned`), `plugin_group_review.go`,
-`internal/apshellapp/submission.go` (`CheckPluginGroup`).
+error: the review tells `apshellapp.CheckPluginGroup` whether it can ask the
+user, and the check refuses a pregrouped-signed group for a review that
+cannot, once it is decoded and before any key list is fetched, so that
+refusal comes before PS8's. Validation precedes rendering: the review takes
+the group from `CheckPluginGroup`, which constructs the
+`PregroupedSignedGroup`, so an undecodable or digest-tampered group errors
+before anything is shown, and a group refused under PS8 is refused before
+anything is shown. Anchors: `internal/apshellcli/external_plugins.go`
+(`reviewPluginTransactions`, `reviewPregroupedSigned`),
+`plugin_group_review.go`, `internal/apshellapp/submission.go`
+(`CheckPluginGroup`, `PluginCheckOptions`).
 
 ### PS4: Plan Preservation
 
@@ -197,27 +201,38 @@ so there is no third path.
 A plugin-built group is refused, in every mode, when any of its
 transactions, at any position and whoever signs it, rekeys an account to an
 address the signer holds an aplane key for whose recorded
-`valid_rekey_target` is false, the account's own address included. It is the
-rule the signer applies at the positions it signs
-(`rejectRekeyToInvalidTarget`, code `rekey_target_not_valid`); a plugin-signed
-slot never reaches the signer, so apshell applies it to every position. The
-refusal names the position, the target and its key type. It comes before
+`valid_rekey_target` is false, the account's own address included, or that
+is a rotating account, whatever its record says. It is the rule the signer
+applies at every position of a group it signs into
+(`rejectRekeyToInvalidTarget`, code `rekey_target_not_valid`, with its
+rotating check as a second line); a plugin-signed slot may never reach the
+signer, so apshell applies it itself. Both sides find the position with one
+function and word the refusal with one core
+(`internal/txnreview/findings.go::FirstRekeyToInvalidTarget`,
+`::RekeyTargetNotValidText`). The refusal names the position, the target and
+its key type. It comes before
 anything is shown or prompted for, before `/plan` or `/sign`, and before
 anything is submitted. It is applied twice. One step,
 `apshellapp.CheckPluginGroup`, decodes the result for its mode and applies
 it, and the review of every mode starts with that step. Submission
 (`SubmitPluginTransactions`, which the REPL, MCP and JavaScript all submit
 through) takes only the group the step returned, frozen at the check, and
-applies the rule again immediately before anything is sent, since a key can
-be created on the signer while the user reviews the group. A rekey to a
-foreign address, one the signer holds no aplane key for, is not refused; the
-review warns about it.
+applies the rule again, since a key can be created on the signer while the
+user reviews the group: in the default flow before the group goes to the
+signer, which then applies the same rule at every position; for
+pregrouped-signed before the group is broadcast; for presign-plan at the
+start of submission, before `/plan`, the plugin's signing callback and the
+signer's approval, none of which apshell judges again. A rekey to a foreign
+address, one the signer holds no aplane key for, is not refused; the review
+warns about it.
 
 Each time, a group in which any transaction rekeys is judged against the
 signer's key list fetched for that judgment (`engine.CurrentKeys`, which
 reads and writes no cache), and the held set and the not-valid set are built
 from the records that fetch returned (`engine.RekeyTargetsFromKeys`, from
-each record's key type, generic LogicSig flag and `valid_rekey_target`).
+each record's key type, generic LogicSig flag and `valid_rekey_target`; a
+rotating key type, `rotatingkey.IsRotatingKeyType`, is not a valid rekey
+target whatever its record says).
 Nothing is read back from the signer cache, so an empty, stale or reset
 cache cannot make a held aplane key read as foreign. The review's rekey
 findings show the facts the check judged from, carried on the group. When no
@@ -229,7 +244,11 @@ a pregrouped-signed group with no rekey still submits without one. Anchors:
 `SubmitPluginTransactions`), `internal/apshellcli/external_plugins.go`
 (`reviewPluginTransactions`), `internal/engine/accounts.go` (`CurrentKeys`,
 `RekeyTargetsFromKeys`, `keyInfoFromSigner`), `internal/engine/results.go`
-(`KeyInfo.IsGenericLsig`, `KeyInfo.ValidRekeyTarget`).
+(`KeyInfo.IsGenericLsig`, `KeyInfo.ValidRekeyTarget`),
+`internal/txnreview/findings.go` (`FirstRekeyToInvalidTarget`,
+`RekeyTargetNotValidText`). The checked group keeps its transactions as
+their encoding and decodes them afresh for every use, so what is submitted is
+what was reviewed.
 
 ## Assumptions and honest gaps
 
@@ -260,10 +279,15 @@ a pregrouped-signed group with no rekey still submits without one. Anchors:
 - The client's review renders decoded values but enforces no numeric bounds;
   bounds are the operator's judgment (pregrouped) or apsigner policy
   (managed slots).
-- **PS8 trusts the signer's `/keys` answer of the moment.** A key the signer
-  creates after submission's fetch is not seen; at the positions the signer
-  signs, its own check refuses from its own list. The default flow, which the
-  TLA model does not enumerate, applies the same refusal.
+- **PS8 trusts the signer's `/keys` answer of the moment.** apshell does not
+  see a key the signer creates after the second judgment, for any position,
+  plugin-signed ones included; in presign-plan that judgment comes before
+  `/plan`, the plugin's signing and the signer's approval wait. In the default
+  flow and presign-plan the signer applies its own rule, from its own list,
+  at every position of the group it signs into, plugin-signed positions
+  included; a pregrouped-signed group never reaches the signer, so nothing
+  judges it after apshell's second judgment. The default flow, which the TLA
+  model does not enumerate, applies the same refusal.
 
 ## Test anchors
 

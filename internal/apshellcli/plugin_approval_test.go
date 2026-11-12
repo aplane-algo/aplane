@@ -632,7 +632,7 @@ func TestReviewRefusesARekeyWithoutTheSignersKeyList(t *testing.T) {
 
 // The review and the submission of a rekeying plugin group each fetch the key
 // list: submission takes the group the review checked and judges its rekeys
-// again before anything is sent.
+// again before it broadcasts this pregrouped-signed group.
 func TestReviewAndSubmissionOfARekeyEachFetchTheKeyList(t *testing.T) {
 	f := newRekeyReviewFixture(t)
 	app := apshellapp.New(f.eng, config.DefaultConfig(), t.TempDir())
@@ -680,5 +680,24 @@ func TestPluginResultPathRefusesARekeyToAHeldInvalidTarget(t *testing.T) {
 	}
 	if out.Len() != 0 || len(pr.Steps) != 0 || len(pr.humanSteps) != 0 {
 		t.Fatalf("a refused group was shown or submitted: steps %v, output:\n%s", pr.Steps, out.String())
+	}
+}
+
+// Under AutoConfirm a pregrouped-signed group can never be submitted, so it is
+// refused for that reason first: not told to connect to a signer it could not
+// use anyway, and with no key list fetched.
+func TestReviewRefusesANonInteractivePregroupedGroupBeforeTheKeyList(t *testing.T) {
+	f := newRekeyReviewFixture(t)
+	f.eng.Connection.SignerClient = nil
+	txn := approvalTestPayment(1, 2, 1)
+	txn.RekeyTo = f.htlc
+	var out bytes.Buffer
+	state := &REPLState{Out: &out, AutoConfirm: true, App: apshellapp.New(f.eng, config.DefaultConfig(), t.TempDir())}
+	_, _, err := reviewPluginTransactions(state, rekeyReviewResults(t, txn)["pregrouped-signed"].result)
+	if err == nil || !strings.Contains(err.Error(), "non-interactive") {
+		t.Fatalf("reviewPluginTransactions() error = %v, want the non-interactive refusal", err)
+	}
+	if out.Len() != 0 || f.keyFetches.Load() != 0 {
+		t.Fatalf("shown %q and fetched the key list %d time(s) before the refusal", out.String(), f.keyFetches.Load())
 	}
 }

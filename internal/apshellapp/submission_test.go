@@ -112,10 +112,13 @@ func signedPluginIntents(t *testing.T, txns ...types.Transaction) []jsonrpc.Tran
 	return intents
 }
 
+// interactive is the check of a review that can ask the user, as the REPL's.
+var interactive = PluginCheckOptions{Interactive: true}
+
 // checkAndSubmit is what every apshell surface does with a plugin result:
 // CheckPluginGroup, then SubmitPluginTransactions with the group it returns.
 func checkAndSubmit(ctx context.Context, app *App, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) error {
-	group, err := app.CheckPluginGroup(ctx, result)
+	group, err := app.CheckPluginGroup(ctx, result, interactive)
 	if err != nil {
 		return err
 	}
@@ -287,15 +290,17 @@ func TestSubmitPluginTransactionsRefusesARekeyToAHeldInvalidTarget(t *testing.T)
 }
 
 // Submission judges a rekeying group again against a key list fetched again,
-// immediately before anything is sent: a key the signer creates while the
-// group waits at the review is refused at submission in every mode, as is a
-// signer locked meanwhile, and nothing reaches the node.
+// before it sends the group anywhere (before the signer in the default flow,
+// before broadcast for pregrouped-signed, before /plan for presign-plan): a
+// key the signer creates while the group waits at the review is refused at
+// submission in every mode, as is a signer locked meanwhile, and nothing
+// reaches the node.
 func TestSubmitPluginTransactionsRechecksTheKeyListBeforeSending(t *testing.T) {
 	rekey := rekeySubmitTestTxn(rekeyTestOther, rekeyTestHTLC)
 	f := newPluginRekeyFixture(t, rekeyTestKeys()[:1])
 	for mode, c := range pluginRekeyResults(t, rekey) {
 		f.setSigner(rekeyTestKeys()[:1], false)
-		group, err := f.app.CheckPluginGroup(context.Background(), c.result)
+		group, err := f.app.CheckPluginGroup(context.Background(), c.result, interactive)
 		if err != nil {
 			t.Fatalf("%s: CheckPluginGroup() with the target foreign: %v", mode, err)
 		}
@@ -373,12 +378,12 @@ func TestCheckPluginGroupJudgesFromTheFetchedKeys(t *testing.T) {
 	cached := maps.Clone(f.eng.SignerCache.Keys)
 
 	for mode, c := range pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, rekeyTestHTLC)) {
-		if _, err := f.app.CheckPluginGroup(context.Background(), c.result); err == nil || err.Error() != rekeyRefusal(c.position, rekeyTestHTLC, "aplane.htlc.v1") {
+		if _, err := f.app.CheckPluginGroup(context.Background(), c.result, interactive); err == nil || err.Error() != rekeyRefusal(c.position, rekeyTestHTLC, "aplane.htlc.v1") {
 			t.Errorf("%s: a rekey to the signer's HTLC: error = %v", mode, err)
 		}
 	}
 	for mode, c := range pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, rekeyTestForeign)) {
-		group, err := f.app.CheckPluginGroup(context.Background(), c.result)
+		group, err := f.app.CheckPluginGroup(context.Background(), c.result, interactive)
 		if err != nil {
 			t.Fatalf("%s: a rekey to an address the signer does not list: %v", mode, err)
 		}
@@ -404,7 +409,7 @@ func TestCheckPluginGroupLeavesAGroupWithNoRekeyAlone(t *testing.T) {
 	f := newPluginRekeyFixture(t, rekeyTestKeys())
 	for mode, c := range pluginRekeyResults(t, plain) {
 		f.resetCounts()
-		group, err := f.app.CheckPluginGroup(context.Background(), c.result)
+		group, err := f.app.CheckPluginGroup(context.Background(), c.result, interactive)
 		if err != nil {
 			t.Fatalf("%s: CheckPluginGroup() error = %v", mode, err)
 		}
@@ -419,7 +424,7 @@ func TestCheckPluginGroupLeavesAGroupWithNoRekeyAlone(t *testing.T) {
 
 	offline := (&App{})
 	result := pluginRekeyResults(t, plain)["pregrouped-signed"].result
-	if _, err := offline.CheckPluginGroup(context.Background(), result); err != nil {
+	if _, err := offline.CheckPluginGroup(context.Background(), result, interactive); err != nil {
 		t.Fatalf("offline pregrouped-signed group with no rekey: CheckPluginGroup() error = %v", err)
 	}
 }
@@ -431,7 +436,7 @@ func TestPluginGroupIsFrozenAtTheCheck(t *testing.T) {
 	f := newPluginRekeyFixture(t, rekeyTestKeys())
 	c := pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, types.Address{}))["presign-plan"]
 	c.result.RequiresApproval = true
-	group, err := f.app.CheckPluginGroup(context.Background(), c.result)
+	group, err := f.app.CheckPluginGroup(context.Background(), c.result, interactive)
 	if err != nil {
 		t.Fatalf("CheckPluginGroup() error = %v", err)
 	}
@@ -440,10 +445,14 @@ func TestPluginGroupIsFrozenAtTheCheck(t *testing.T) {
 	c.result.PluginSigners[0].SignerRef = "changed"
 	c.result.PluginSigners = nil
 	c.result.Transactions = nil
+	txns, err := group.Transactions()
+	if err != nil {
+		t.Fatalf("Transactions() error = %v", err)
+	}
 	if group.Mode() != jsonrpc.GroupModePresignPlan || !group.RequiresApproval() ||
-		len(group.PluginSigners()) != 1 || group.PluginSigners()[0].SignerRef != "ref" || len(group.Transactions()) != 2 {
+		len(group.PluginSigners()) != 1 || group.PluginSigners()[0].SignerRef != "ref" || len(txns) != 2 {
 		t.Fatalf("the checked group followed the result: mode %q, approval %v, signers %+v, %d transaction(s)",
-			group.Mode(), group.RequiresApproval(), group.PluginSigners(), len(group.Transactions()))
+			group.Mode(), group.RequiresApproval(), group.PluginSigners(), len(txns))
 	}
 	f.resetCounts()
 	_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
@@ -453,5 +462,51 @@ func TestPluginGroupIsFrozenAtTheCheck(t *testing.T) {
 
 	if _, err := f.app.SubmitPluginTransactions(context.Background(), "plugin", &PluginGroup{}, nil); !errors.Is(err, ErrUncheckedPluginGroup) {
 		t.Fatalf("SubmitPluginTransactions(unchecked group) error = %v, want ErrUncheckedPluginGroup", err)
+	}
+}
+
+// A transaction the group returns is a copy all the way down: changing a
+// slice field of one changes no later copy, and submission decodes its own
+// from what the check kept, so the group submitted is the group reviewed.
+func TestPluginGroupTransactionsAreDeepCopies(t *testing.T) {
+	txn := rekeySubmitTestTxn(rekeyTestOther, types.Address{})
+	txn.Note = []byte("reviewed")
+	group, err := (&App{}).CheckPluginGroup(context.Background(), &jsonrpc.ExecuteResult{Transactions: rawPluginIntents(txn)}, interactive)
+	if err != nil {
+		t.Fatalf("CheckPluginGroup() error = %v", err)
+	}
+	first, err := group.Transactions()
+	if err != nil {
+		t.Fatalf("Transactions() error = %v", err)
+	}
+	first[0].Note[0] = 'X'
+	first[0].RekeyTo = rekeyTestHTLC
+	again, err := group.Transactions()
+	if err != nil {
+		t.Fatalf("Transactions() error = %v", err)
+	}
+	if string(again[0].Note) != "reviewed" || !again[0].RekeyTo.IsZero() {
+		t.Fatalf("a change to a returned transaction reached the group: note %q, rekey %s", again[0].Note, again[0].RekeyTo)
+	}
+}
+
+// A pregrouped-signed group can never be submitted without a review that can
+// ask the user, so under AutoConfirm it is refused for that reason first, even
+// when it rekeys and no key list could be had.
+func TestCheckPluginGroupRefusesANonInteractivePregroupedGroupFirst(t *testing.T) {
+	c := pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, rekeyTestHTLC))["pregrouped-signed"]
+	_, err := (&App{}).CheckPluginGroup(context.Background(), c.result, PluginCheckOptions{})
+	if !errors.Is(err, errPregroupedNonInteractive) {
+		t.Fatalf("CheckPluginGroup(non-interactive) error = %v, want the non-interactive refusal", err)
+	}
+	f := newPluginRekeyFixture(t, rekeyTestKeys())
+	if _, err := f.app.CheckPluginGroup(context.Background(), c.result, PluginCheckOptions{}); !errors.Is(err, errPregroupedNonInteractive) || f.keyFetches.Load() != 0 {
+		t.Fatalf("CheckPluginGroup(non-interactive, connected) error = %v after %d key fetch(es)", err, f.keyFetches.Load())
+	}
+	// The other modes have another gate and are not affected.
+	for _, mode := range []string{"default", "presign-plan"} {
+		if _, err := f.app.CheckPluginGroup(context.Background(), pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, types.Address{}))[mode].result, PluginCheckOptions{}); err != nil {
+			t.Errorf("%s: CheckPluginGroup(non-interactive) error = %v", mode, err)
+		}
 	}
 }

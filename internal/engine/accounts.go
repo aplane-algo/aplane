@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -145,6 +146,8 @@ func (e *Core) GetAccountBalanceRaw(ctx context.Context, address string) (*Balan
 	return result, nil
 }
 
+// ListKeys lists the signer's keys. It reports a locked signer as an empty
+// list, so it must not be used for a rekey decision; CurrentKeys is for that.
 func (e *Engine) ListKeys(ctx context.Context) ([]KeyInfo, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
@@ -185,17 +188,19 @@ func (e *Engine) CurrentKeys(ctx context.Context) ([]KeyInfo, error) {
 // RekeyTargetsFromKeys builds, from a key list, the two facts about rekey
 // targets that apshell shares with the signer's prompt: every address the list
 // has an aplane key for, of any key type (KnownAddresses), and, by address,
-// those whose aplane key records that it is not a valid rekey target, with the
-// key type and whether it is a generic LogicSig (InvalidRekeyTargets). An
-// account signable only through its auth address is not in the list, so it
-// is not held. The signer's prompt also knows each account's rekey-to list;
-// this does not.
+// those that are not valid rekey targets, with the key type and whether it is
+// a generic LogicSig (InvalidRekeyTargets). An aplane key is not a valid rekey
+// target when its record says so, and a rotating account never is, whatever
+// its record says, as the signer's second line refuses a rekey to one by key
+// type. An account signable only through its auth address is not in the list,
+// so it is not held. The signer's prompt also knows each account's rekey-to
+// list; this does not.
 func RekeyTargetsFromKeys(keys []KeyInfo) txnreview.FindingContext {
 	held := make(map[string]bool, len(keys))
 	invalid := make(map[string]txnreview.InvalidRekeyTarget)
 	for _, key := range keys {
 		held[key.Address] = true
-		if !key.ValidRekeyTarget {
+		if !key.ValidRekeyTarget || rotatingkey.IsRotatingKeyType(key.KeyType) {
 			invalid[key.Address] = txnreview.InvalidRekeyTarget{KeyType: key.KeyType, GenericLogicSig: key.IsGenericLsig}
 		}
 	}

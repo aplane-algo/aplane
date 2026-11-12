@@ -105,7 +105,7 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 
 	// Handle transactions - check if signer is connected. Pregrouped-signed groups
 	// are fully plugin-signed and bypass apsigner, so they need no signer connection.
-	if result.GroupMode != jsonrpc.GroupModePregroupedSigned && !p.repl.app().IsConnected() {
+	if group.Mode() != jsonrpc.GroupModePregroupedSigned && !p.repl.app().IsConnected() {
 		return false, "", nil, nil, fmt.Errorf("not connected to signer - use connect() first to sign transactions")
 	}
 

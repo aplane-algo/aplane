@@ -106,13 +106,17 @@ func txnTypeLabel(t types.TxType) string {
 
 // renderPregroupedSignedGroup renders an all-plugin-signed group (apsigner not
 // involved) through the shared honest renderer.
-func renderPregroupedSignedGroup(r *REPLState, group *apshellapp.PluginGroup) {
-	txns := group.Transactions()
+func renderPregroupedSignedGroup(r *REPLState, group *apshellapp.PluginGroup) error {
+	txns, err := group.Transactions()
+	if err != nil {
+		return err
+	}
 	slots := make([]pluginReviewSlot, len(txns))
 	for i, txn := range txns {
 		slots[i] = pluginReviewSlot{txn: txn, role: slotRolePluginSigned}
 	}
 	renderPluginGroupReview(r, "LOCAL REVIEW — plugin-signed group (apsigner NOT involved; submitted verbatim)", slots, group.RekeyTargets())
+	return nil
 }
 
 // presignReviewSlots tags a presign-plan draft's transactions by signing role:
@@ -161,12 +165,16 @@ func renderDiscardedGroupIDNotice(r *REPLState, discarded bool) {
 // through the same renderer the group modes use. It is information, not a
 // gate: apsigner plans the final group, and its policy and approval apply to
 // it.
-func renderDefaultPluginDraft(r *REPLState, group *apshellapp.PluginGroup) {
-	drafts := group.Transactions()
+func renderDefaultPluginDraft(r *REPLState, group *apshellapp.PluginGroup) error {
+	drafts, err := group.Transactions()
+	if err != nil {
+		return err
+	}
 	slots := make([]pluginReviewSlot, len(drafts))
 	for i, txn := range drafts {
 		slots[i] = pluginReviewSlot{txn: txn, role: slotRoleManaged}
 	}
 	renderPluginGroupReview(r, defaultDraftTitle, slots, group.RekeyTargets())
 	renderDiscardedGroupIDNotice(r, group.GroupIDDiscarded())
+	return nil
 }

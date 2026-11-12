@@ -825,13 +825,14 @@ broadcast, and what is planned is what the plugin's bytes say.
 In every mode, the default flow included, apshell refuses a group in which a
 transaction, at any position and whoever signs it, rekeys an account to an
 address the signer holds an aplane key for whose recorded `valid_rekey_target`
-is false, the account's own address included. This is the rule the signer
-applies at the positions it signs (`rekey_target_not_valid`); a plugin-signed
-slot in `pregrouped-signed` or `presign-plan` never reaches the signer, so
-apshell applies it to every slot. The group is refused before it is shown or
-prompted for, before `/plan` or `/sign`, and before anything is submitted,
-with an error naming the position, counted from 1, the target and its key
-type:
+is false, or that is a rotating account whatever its record says, the
+account's own address included. This is the rule the signer applies at every
+position of a group it signs into (`rekey_target_not_valid`), with the same
+wording at its core; a `pregrouped-signed` group never reaches the signer, so
+apshell applies the rule itself, in every mode. The group is refused before
+it is shown or prompted for, before `/plan` or `/sign`, and before anything is
+submitted, with an error naming the position, counted from 1, the target and
+its key type:
 
 ```text
 transaction 2: cannot rekey to <address>: this signer holds its aplane key (aplane.htlc.v1), which is not a valid rekey target
@@ -842,13 +843,20 @@ a warning in the review, as does a rekey to an account the client signs for
 only through its auth address.
 
 A group in which any transaction rekeys is judged twice: when it is checked,
-before it is shown, and again when it is submitted, immediately before
-anything is sent, so a key created on the signer while the group waits at the
-review is seen. Each time apshell fetches the signer's `/keys` list for that
-judgment and builds what it holds, and which of those keys are not valid
-rekey targets, from the records the fetch returned; it does not read or
-rewrite its signer cache for this. The review shows the facts the check
-judged from. When apshell cannot get a current list, the group is refused:
+before it is shown, and again when it is submitted, so a key created on the
+signer while the group waits at the review is seen. The second judgment comes,
+in the default flow, before the group goes to the signer, which then applies
+the same rule at every position; for `pregrouped-signed`, before the group is
+broadcast; and for `presign-plan`, at the start of submission, before `/plan`,
+the plugin's signing callback and the signer's approval. A key created after
+the second judgment is not seen by apshell; in the default flow and
+`presign-plan` the signer still judges every position, plugin-signed ones
+included, while a `pregrouped-signed` group is not judged again. Each time
+apshell fetches the signer's `/keys` list for that judgment and builds what it
+holds, and which of those keys are not valid rekey targets, from the records
+the fetch returned; it does not read or rewrite its signer cache for this.
+The review shows the facts the check judged from. When apshell cannot get a
+current list, the group is refused:
 
 ```text
 plugin group rekeys an account (transaction 2): connect to the signer so apshell can check the rekey target against its aplane keys
@@ -857,8 +865,9 @@ plugin group rekeys an account (transaction 2): apshell could not get the signer
 ```
 
 This applies to a `pregrouped-signed` group too, which otherwise needs no
-signer connection. A group with no rekey fetches nothing and needs no
-connection. The check is `CheckPluginGroup` in `internal/apshellapp`: it
+signer connection; a `pregrouped-signed` group under AutoConfirm is refused
+first, because it cannot be reviewed, before any key list is fetched. A group
+with no rekey fetches nothing and needs no connection. The check is `CheckPluginGroup` in `internal/apshellapp`: it
 decodes the result for its mode and applies the rule, the review of every
 mode starts with it, and submission, which the REPL, MCP and JavaScript
 share, takes only the group it returns, with what the review and submission
@@ -944,9 +953,9 @@ The default (`groupMode` empty) flow:
    - Refuses a draft in which a transaction rekeys an account to an address
      the signer holds an aplane key for that is not a valid rekey target, the
      account's own address included, before anything is shown and again
-     before it is signed, each time judged against the signer's key list
-     fetched for it; a draft with a rekey is refused when that list cannot be
-     had (see
+     before the draft goes to the signer, each time judged against the
+     signer's key list fetched for it; a draft with a rekey is refused when
+     that list cannot be had (see
      [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)). A rekey to a
      foreign address is not refused; the review warns about it
 3. User approval (if `requiresApproval: true`)
