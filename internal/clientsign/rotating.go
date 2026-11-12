@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
@@ -47,7 +48,9 @@ type RotatingOptions struct {
 // RotatingMinRemaining rounds left). A transaction prepared earlier, such as
 // a later member of a non-atomic batch, may have aged past that by the time
 // its turn comes, so each attempt checks the window against the current
-// round first and rebuilds the validity rounds when it has aged. If the
+// round first and rebuilds the validity rounds when it is not current; a
+// rebuilt window keeps its width unless that is too narrow ever to be
+// signed (fewer than RotatingMinRemaining rounds). If the
 // signer then reports that the account's authorizer moved between prepare
 // and sign (rotating_stage_changed), or that the window was not current at
 // the round it read, for example because it aged during approval
@@ -82,6 +85,9 @@ func SignAndSubmitRotating(
 	capRotatingWindow(&txn, w)
 
 	var lastErr error
+	// The fee notice last shown: a retry that prepares the same raise again
+	// does not repeat it.
+	var feeNotice string
 	for attempt := 1; attempt <= rotatingRetryAttempts; attempt++ {
 		fresh, note, err := freshenRotatingValidity(opts.Ctx, txn, algodClient)
 		if err != nil {
@@ -91,7 +97,7 @@ func SignAndSubmitRotating(
 			_, _ = fmt.Fprintf(w, "  %s\n", note)
 		}
 		txn = fresh
-		txIDs, prepared, err := signAndSubmitRotatingOnce(txn, signerClient, algodClient, opts, w)
+		txIDs, prepared, err := signAndSubmitRotatingOnce(txn, signerClient, algodClient, opts, w, &feeNotice)
 		if err == nil {
 			return txIDs, prepared, nil
 		}
@@ -115,6 +121,7 @@ func signAndSubmitRotatingOnce(
 	algodClient *algod.Client,
 	opts RotatingOptions,
 	w io.Writer,
+	feeNotice *string,
 ) ([]string, []types.Transaction, error) {
 	account := txn.Sender.String()
 	prep, err := signerClient.PrepareRotatingWithContext(opts.Ctx, signerapi.RotatingPrepareRequest{
@@ -130,9 +137,14 @@ func signAndSubmitRotatingOnce(
 	}
 	// The report was checked against the prepared bytes above, so the raise
 	// shown is the one the spend pays. It is shown whether or not verbose is
-	// set: the fee comes out of the account's balance.
+	// set, since the fee comes out of the account's balance, and once per
+	// send: a retry shows it again only if the raise changed.
 	if m := prep.Mutations; m != nil && m.TotalFeesDelta > 0 {
-		_, _ = fmt.Fprintf(w, "  Signer raised the spend's fee by %d microAlgos for authorization (fee now %d microAlgos)\n", m.TotalFeesDelta, prepared[0].Fee)
+		notice := fmt.Sprintf("  Signer raised the spend's fee by %d microAlgos for authorization (fee now %d microAlgos)\n", m.TotalFeesDelta, prepared[0].Fee)
+		if notice != *feeNotice {
+			_, _ = io.WriteString(w, notice)
+			*feeNotice = notice
+		}
 	}
 	if opts.Verbose {
 		_, _ = fmt.Fprintf(w, "  Prepared rotation: stage %d signs and hands the account to stage %d (%s)\n", prep.Stage, prep.Target, prep.RekeyTo)
@@ -164,7 +176,7 @@ func signAndSubmitRotatingOnce(
 	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedBytes, algodClient, opts.WaitForConfirmation, w)
 	if err != nil {
 		if isAuthorizerMovedRejection(err) {
-			return txIDs, prepared, fmt.Errorf("submit rotating spend %s: %s; prepare again: %w", signed.TxID, authorizerMovedSummary(err, prepared[0].RekeyTo), err)
+			return txIDs, prepared, fmt.Errorf("submit rotating spend %s: %s: %w", signed.TxID, authorizerMovedSummary(err, prepared[0].RekeyTo), err)
 		}
 		return txIDs, prepared, fmt.Errorf("submit rotating spend %s: %w", signed.TxID, err)
 	}
@@ -184,23 +196,28 @@ func capRotatingWindow(txn *types.Transaction, w io.Writer) {
 // freshenRotatingValidity reads the current round and checks the
 // transaction's validity window against the signer's timing rule. A window
 // that fails it comes back rebuilt from current suggested parameters, with a
-// note saying why: it starts too far ahead of the current round, or too few
-// of its rounds remain. A current one comes back unchanged, with no note.
+// note saying why: it is too narrow ever to be signed, it starts too far
+// ahead of the current round, or too few of its rounds remain. A current one
+// comes back unchanged, with no note.
 func freshenRotatingValidity(ctx context.Context, txn types.Transaction, algodClient *algod.Client) (types.Transaction, string, error) {
 	status, err := algodClient.Status().Do(ctx)
 	if err != nil {
 		return txn, "", fmt.Errorf("read current round: %w", err)
 	}
 	round := status.LastRound
+	if uint64(txn.FirstValid) <= round+rotatingkey.RotatingMaxLead && uint64(txn.LastValid) >= round+rotatingkey.RotatingMinRemaining {
+		return txn, "", nil
+	}
 	var note string
 	switch {
+	case txn.LastValid >= txn.FirstValid && uint64(txn.LastValid-txn.FirstValid) < rotatingkey.RotatingMinRemaining:
+		note = fmt.Sprintf("Validity window (rounds %d-%d) spans %d rounds, fewer than the %d a rotating account needs left when it signs; rebuilding it from the current round with %d rounds",
+			txn.FirstValid, txn.LastValid, uint64(txn.LastValid-txn.FirstValid), rotatingkey.RotatingMinRemaining, rotatingRebuildWindow(txn))
 	case uint64(txn.FirstValid) > round+rotatingkey.RotatingMaxLead:
 		note = fmt.Sprintf("Validity window (rounds %d-%d) starts %d rounds ahead of the current round %d, more than the %d a rotating account signs; rebuilding it from the current round",
 			txn.FirstValid, txn.LastValid, uint64(txn.FirstValid)-round, round, rotatingkey.RotatingMaxLead)
-	case uint64(txn.LastValid) < round+rotatingkey.RotatingMinRemaining:
-		note = fmt.Sprintf("Validity window has aged (rounds %d-%d); rebuilding it from the current round", txn.FirstValid, txn.LastValid)
 	default:
-		return txn, "", nil
+		note = fmt.Sprintf("Validity window has aged (rounds %d-%d); rebuilding it from the current round", txn.FirstValid, txn.LastValid)
 	}
 	fresh, err := refreshRotatingValidity(ctx, txn, algodClient)
 	if err != nil {
@@ -209,17 +226,29 @@ func freshenRotatingValidity(ctx context.Context, txn types.Transaction, algodCl
 	return fresh, note, nil
 }
 
+// rotatingRebuildWindow is the width a rebuilt validity window gets: the
+// transaction's own, unless that is over the rotating limit or narrower than
+// the rounds that must remain when the signer signs, which could never be
+// signed; either of those gets the longest window. The SDK's refresh keeps
+// the same rule.
+func rotatingRebuildWindow(txn types.Transaction) types.Round {
+	if txn.LastValid >= txn.FirstValid {
+		if window := txn.LastValid - txn.FirstValid; window >= rotatingkey.RotatingMinRemaining && window <= rotatingkey.RotatingMaxValidityWindow {
+			return window
+		}
+	}
+	return rotatingkey.RotatingMaxValidityWindow
+}
+
 // refreshRotatingValidity rebuilds the transaction's validity rounds from
-// current suggested parameters, keeping everything else.
+// current suggested parameters, with the width rotatingRebuildWindow gives,
+// keeping everything else.
 func refreshRotatingValidity(ctx context.Context, txn types.Transaction, algodClient *algod.Client) (types.Transaction, error) {
 	sp, err := algodClient.SuggestedParams().Do(ctx)
 	if err != nil {
 		return txn, fmt.Errorf("fetch suggested params: %w", err)
 	}
-	window := txn.LastValid - txn.FirstValid
-	if window > rotatingkey.RotatingMaxValidityWindow || window == 0 {
-		window = rotatingkey.RotatingMaxValidityWindow
-	}
+	window := rotatingRebuildWindow(txn)
 	txn.FirstValid = sp.FirstRoundValid
 	txn.LastValid = sp.FirstRoundValid + window
 	return txn, nil
@@ -257,29 +286,40 @@ func rotatingRefusalSummary(err error) string {
 
 // ledgerAuthorizerRejection is how the ledger starts its rejection of a
 // transaction whose authorizer is not the account's, before naming the
-// authorizer it expected.
+// authorizer it expected. It is matched without regard to case.
 const ledgerAuthorizerRejection = "should have been authorized by "
+
+// ledgerAuthorizerRejectionRest returns what follows ledgerAuthorizerRejection
+// in err, lower-cased, when err is the ledger's rejection of a transaction's
+// authorizer.
+func ledgerAuthorizerRejectionRest(err error) (string, bool) {
+	msg := strings.ToLower(err.Error())
+	i := strings.Index(msg, ledgerAuthorizerRejection)
+	if i < 0 {
+		return "", false
+	}
+	return msg[i+len(ledgerAuthorizerRejection):], true
+}
 
 // isAuthorizerMovedRejection recognises the ledger's rejection of a
 // transaction whose authorizer is no longer the account's.
 func isAuthorizerMovedRejection(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, strings.TrimSpace(ledgerAuthorizerRejection))
+	_, ok := ledgerAuthorizerRejectionRest(err)
+	return ok
 }
 
 // ledgerExpectedAuthorizer reads the authorizer the ledger expected from its
 // rejection of a transaction's authorizer.
 func ledgerExpectedAuthorizer(err error) (types.Address, bool) {
-	msg := err.Error()
-	i := strings.Index(msg, ledgerAuthorizerRejection)
-	if i < 0 {
+	rest, ok := ledgerAuthorizerRejectionRest(err)
+	if !ok {
 		return types.Address{}, false
 	}
-	rest := msg[i+len(ledgerAuthorizerRejection):]
 	if end := strings.IndexByte(rest, ' '); end >= 0 {
 		rest = rest[:end]
 	}
-	addr, decodeErr := types.DecodeAddress(rest)
+	// Addresses are upper-case base32; the match above lower-cased it.
+	addr, decodeErr := types.DecodeAddress(strings.ToUpper(rest))
 	if decodeErr != nil {
 		return types.Address{}, false
 	}
@@ -287,16 +327,18 @@ func ledgerExpectedAuthorizer(err error) (types.Address, bool) {
 }
 
 // authorizerMovedSummary says why the ledger refused a signed rotating spend's
-// authorizer. Every release from a stage hands the account to the same next
-// stage, so only when the ledger expects the spend's own rekey target did
-// another release from the stage that signed land first. Any other expected
-// authorizer is reported as it is: the client cannot derive stage addresses,
-// so it cannot tell a later rotation from a signature by the wrong stage.
+// authorizer, and what to do. Every release from a stage hands the account to
+// the same next stage, so only when the ledger expects the spend's own rekey
+// target did another release from the stage that signed land first, and
+// preparing again, from the stage the account is now at, is the remedy. Any
+// other expected authorizer is reported as it is, with no advice: the client
+// cannot derive stage addresses, so it cannot tell a later rotation from a
+// signature by the wrong stage or an account rekeyed elsewhere.
 func authorizerMovedSummary(err error, rekeyTo types.Address) string {
 	expected, ok := ledgerExpectedAuthorizer(err)
 	switch {
 	case ok && expected == rekeyTo:
-		return "the account rotated under this transaction (another release from the same stage landed first)"
+		return "the account rotated under this transaction (another release from the same stage landed first); prepare again"
 	case ok:
 		return fmt.Sprintf("the ledger expects the account's authorizer to be %s, not the stage program that signed this spend", expected)
 	}
@@ -332,7 +374,8 @@ func ValidatePreparedRotatingGroup(original types.Transaction, prep *signerapi.R
 	if prep.Account != original.Sender.String() {
 		return nil, fmt.Errorf("prepared account %s is not the sender", prep.Account)
 	}
-	if prep.Target != prep.Stage+1 {
+	// The last stage has no successor, and Stage+1 would wrap to stage 0.
+	if prep.Stage == math.MaxUint64 || prep.Target != prep.Stage+1 {
 		return nil, fmt.Errorf("prepared target stage %d is not the stage after %d", prep.Target, prep.Stage)
 	}
 	// DecodeGroupHex admits only canonical encodings and a group ID computed

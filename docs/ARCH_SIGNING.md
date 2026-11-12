@@ -1790,15 +1790,17 @@ Creating and using rotating accounts:
 - First-party clients route on the sender's own `signing_flow: rotating1`,
   not on its on-chain authorizer, which is a stage address the signer never
   lists. A rotating spend is sent alone; the client caps its validity window
-  at 100 rounds and rebuilds it when it starts too far ahead of the current
-  round or has aged, saying which, prepares, and verifies the prepared group
+  at 100 rounds and rebuilds it when it is too narrow ever to be signed
+  (fewer than 10 rounds, rebuilt at 100), starts too far ahead of the current
+  round, or has aged, saying which, prepares, and verifies the prepared group
   as it verifies an ordinary `/sign` response: the mutation report's counts
   must match the group, the spend may differ from what was sent only in
   `rekey_to`, which must be the reported address, the group ID and a fee raise
   the report lists, and the raises must add up to the report's
   `total_fees_delta`; appended transactions must be the canonical dummies,
-  and `target` must be `stage + 1`. It shows the checked fee raise whether or
-  not verbose is on, simulates the unsigned group, and only then signs. The
+  and `target` must be `stage + 1`. It shows the checked fee raise once per
+  send whether or not verbose is on, simulates the unsigned group, and only
+  then signs. The
   signed group must be the prepared transactions exactly, with the prepared
   stage, target, transaction ID and group ID echoed, every dummy carrying the
   canonical dummy authorization, and the spend authorized by a stage program
@@ -1806,8 +1808,9 @@ Creating and using rotating accounts:
   after, and is never the rekey target. The client submits exactly the
   returned bytes, and forwards the spend's app-call metadata for the approval
   prompt. A ledger refusal of the spend's authorizer is reported as another
-  release from the same stage landing first only when the ledger expects the
-  spend's own rekey target. A
+  release from the same stage landing first, with the advice to prepare
+  again, only when the ledger expects the spend's own rekey target; any other
+  expected authorizer is reported as it is. A
   `rotating_stage_changed` or `rotating_window_not_current` refusal means no
   signature was released, and the client rebuilds the validity rounds and
   prepares again a bounded number of times; it retries on these two codes

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -209,6 +210,12 @@ func TestValidatePreparedRotatingGroupRejectsTampering(t *testing.T) {
 			r.Target = r.Stage + 2
 			return r
 		}, want: "not the stage after"},
+		// The last stage has no successor: its Stage+1 would wrap to 0.
+		{name: "last stage wraps to stage 0", resp: func() *signerapi.RotatingPrepareResponse {
+			r := preparedFor(t, original, rotatingTarget, nil)
+			r.Stage, r.Target = math.MaxUint64, 0
+			return r
+		}, want: "prepared target stage 0 is not the stage after 18446744073709551615"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -343,6 +350,26 @@ func TestValidateSignedRotatingGroupChecksTheStageProgram(t *testing.T) {
 		t.Fatalf("spend signed by the next stage: err = %v", err)
 	}
 
+	// Every account's first spend: stage 0 is the account itself, so the
+	// program's address is the sender and the signed spend names no signer.
+	fresh := original
+	fresh.Sender = stageAddr
+	first := preparedFor(t, fresh, rotatingTarget, nil)
+	first.Stage, first.Target = 0, 1
+	prepared, err = ValidatePreparedRotatingGroup(fresh, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	honestFirst := signedRotatingFor(t, first, prepared, stage)
+	if _, err := validateSignedRotatingGroup(first, prepared, honestFirst); err != nil {
+		t.Fatalf("honest stage 0 spend refused: %v", err)
+	}
+	named := signedRotatingFor(t, first, prepared, stage)
+	named.Signed[0] = hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: prepared[0], Lsig: stage, AuthAddr: stageAddr}))
+	if _, err := validateSignedRotatingGroup(first, prepared, named); err == nil || !strings.Contains(err.Error(), "spend names signer "+stageAddr.String()+", but at stage 0 the account signs for itself") {
+		t.Fatalf("stage 0 spend naming a signer: err = %v", err)
+	}
+
 	stageZero := preparedFor(t, original, rotatingTarget, nil)
 	stageZero.Stage, stageZero.Target = 0, 1
 	prepared, err = ValidatePreparedRotatingGroup(original, stageZero)
@@ -407,7 +434,7 @@ func TestAuthorizerMovedSummary(t *testing.T) {
 	rejection := func(expected types.Address) error {
 		return fmt.Errorf(`failed to submit transaction group: HTTP 400: {"message":"TransactionPool.Remember: transaction X: should have been authorized by %s but was actually authorized by %s"}`, expected, stageAddr)
 	}
-	if got, want := authorizerMovedSummary(rejection(rotatingTarget), rotatingTarget), "the account rotated under this transaction (another release from the same stage landed first)"; got != want {
+	if got, want := authorizerMovedSummary(rejection(rotatingTarget), rotatingTarget), "the account rotated under this transaction (another release from the same stage landed first); prepare again"; got != want {
 		t.Errorf("rotated: summary = %q, want %q", got, want)
 	}
 	later := types.Address{8}
@@ -420,6 +447,19 @@ func TestAuthorizerMovedSummary(t *testing.T) {
 	}
 	if got, want := authorizerMovedSummary(garbled, rotatingTarget), "the ledger refused the stage program that signed this spend as the account's authorizer"; got != want {
 		t.Errorf("unreadable authorizer: summary = %q, want %q", got, want)
+	}
+	// Recognising the rejection and reading its address ignore case alike.
+	for _, msg := range []string{
+		strings.ToUpper(rejection(rotatingTarget).Error()),
+		strings.ToLower(rejection(rotatingTarget).Error()),
+	} {
+		err := errors.New(msg)
+		if !isAuthorizerMovedRejection(err) {
+			t.Errorf("rejection not recognised: %q", msg)
+		}
+		if got, ok := ledgerExpectedAuthorizer(err); !ok || got != rotatingTarget {
+			t.Errorf("expected authorizer from %q = %s, %v; want %s", msg, got, ok, rotatingTarget)
+		}
 	}
 }
 
@@ -510,8 +550,8 @@ func fakeAlgodWithSubmit(t *testing.T, round uint64, simulated *[]types.Transact
 
 // rotatingSigner serves prepare with preparedFor and, when sign is set, the
 // sign step with it: sign gets the prepare response it answered and the
-// prepared group as sent back.
-func rotatingSigner(t *testing.T, prepareSeen *types.Transaction, sign func(*signerapi.RotatingPrepareResponse, []types.Transaction) *signerapi.RotatingSignResponse) *signerclient.Client {
+// prepared group as sent back, and returns the HTTP status and body.
+func rotatingSigner(t *testing.T, prepareSeen *types.Transaction, sign func(*signerapi.RotatingPrepareResponse, []types.Transaction) (int, any)) *signerclient.Client {
 	t.Helper()
 	var prep *signerapi.RotatingPrepareResponse
 	signerClient := signerclient.NewSignerClient("http://signer.test")
@@ -548,7 +588,8 @@ func rotatingSigner(t *testing.T, prepareSeen *types.Transaction, sign func(*sig
 			for i, e := range group.Entries {
 				txns[i] = e.Txn
 			}
-			return jsonResponse(r, http.StatusOK, sign(prep, txns))
+			status, body := sign(prep, txns)
+			return jsonResponse(r, status, body)
 		}
 		return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
 	})}
@@ -604,9 +645,9 @@ func TestSignAndSubmitRotatingSubmitsCheckedSignedGroup(t *testing.T) {
 		t.Helper()
 		var prepareSeen types.Transaction
 		var answered *signerapi.RotatingSignResponse
-		signerClient := rotatingSigner(t, &prepareSeen, func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) *signerapi.RotatingSignResponse {
+		signerClient := rotatingSigner(t, &prepareSeen, func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) (int, any) {
 			answered = sign(prep, txns)
-			return answered
+			return http.StatusOK, answered
 		})
 		var simulated []types.Transaction
 		algodClient := fakeAlgodWithSubmit(t, round, &simulated, submit)
@@ -658,10 +699,66 @@ func TestSignAndSubmitRotatingSubmitsCheckedSignedGroup(t *testing.T) {
 				"message": fmt.Sprintf("TransactionPool.Remember: transaction X: should have been authorized by %s but was actually authorized by %s", rotatingTarget, stageAddr),
 			})
 		})
-		if err == nil || !strings.Contains(err.Error(), "the account rotated under this transaction (another release from the same stage landed first); prepare again") {
+		if err == nil || !strings.Contains(err.Error(), "the account rotated under this transaction (another release from the same stage landed first); prepare again: ") {
 			t.Fatalf("err = %v", err)
 		}
 	})
+
+	// Any other authorizer is reported as it is, without advice to prepare
+	// again, which the client cannot tell would help.
+	t.Run("reports another authorizer without advice", func(t *testing.T) {
+		stageAddr := algocrypto.LogicSigAddress(stage)
+		other := types.Address{8}
+		_, err := run(t, honest, func(w http.ResponseWriter, _ []byte) {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"message": fmt.Sprintf("TransactionPool.Remember: transaction X: should have been authorized by %s but was actually authorized by %s", other, stageAddr),
+			})
+		})
+		if err == nil || !strings.Contains(err.Error(), "the ledger expects the account's authorizer to be "+other.String()+", not the stage program that signed this spend: ") {
+			t.Fatalf("err = %v", err)
+		}
+		if strings.Contains(err.Error(), "prepare again") {
+			t.Fatalf("err = %v, advises preparing again", err)
+		}
+	})
+}
+
+// TestSignAndSubmitRotatingShowsFeeRaiseOncePerSend refuses the first sign
+// with rotating_stage_changed, so the spend is prepared twice with the same
+// raise: the fee notice is shown once, and the second attempt is the one
+// signed and submitted.
+func TestSignAndSubmitRotatingShowsFeeRaiseOncePerSend(t *testing.T) {
+	stage := types.LogicSig{Logic: stubStageProgram}
+	signs := 0
+	var prepareSeen types.Transaction
+	signerClient := rotatingSigner(t, &prepareSeen, func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) (int, any) {
+		signs++
+		if signs == 1 {
+			return http.StatusConflict, signerapi.ErrorResponse{Error: "the account's authorizer changed before signing", Code: signerapi.ErrCodeRotatingStageChanged}
+		}
+		return http.StatusOK, signedRotatingFor(t, prep, txns, stage)
+	})
+	var simulated []types.Transaction
+	submits := 0
+	algodClient := fakeAlgodWithSubmit(t, 1000, &simulated, func(w http.ResponseWriter, _ []byte) {
+		submits++
+		_ = json.NewEncoder(w).Encode(map[string]string{"txId": "TXID"})
+	})
+	var out bytes.Buffer
+	if _, _, err := SignAndSubmitRotating(rotatingOriginal(), signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Out: &out}}); err != nil {
+		t.Fatal(err)
+	}
+	if signs != 2 || submits != 1 {
+		t.Fatalf("sign requests = %d, submissions = %d; want 2 and 1", signs, submits)
+	}
+	notice := "  Signer raised the spend's fee by 3000 microAlgos for authorization (fee now 4000 microAlgos)\n"
+	if got := strings.Count(out.String(), notice); got != 1 {
+		t.Fatalf("fee notice shown %d times, want once: %q", got, out.String())
+	}
+	if !strings.Contains(out.String(), "Signer refused and released no signature (the account's authorizer moved); rebuilding the transaction with fresh validity rounds (attempt 2 of 3)") {
+		t.Fatalf("output = %q, want the retry", out.String())
+	}
 }
 
 func TestFreshenRotatingValidityKeepsCurrentWindows(t *testing.T) {
@@ -675,19 +772,62 @@ func TestFreshenRotatingValidityKeepsCurrentWindows(t *testing.T) {
 	if note != "" || fresh.FirstValid != txn.FirstValid || fresh.LastValid != txn.LastValid {
 		t.Fatalf("a current window was rebuilt (note %q)", note)
 	}
-	nearlyDone := txn
-	nearlyDone.LastValid = 1000 + rotatingkey.RotatingMinRemaining - 1
-	if _, note, err = freshenRotatingValidity(context.Background(), nearlyDone, algodClient); err != nil || note != "Validity window has aged (rounds 1000-1009); rebuilding it from the current round" {
+	aged := txn
+	aged.FirstValid, aged.LastValid = 950, 1000+rotatingkey.RotatingMinRemaining-1
+	if fresh, note, err = freshenRotatingValidity(context.Background(), aged, algodClient); err != nil || note != "Validity window has aged (rounds 950-1009); rebuilding it from the current round" {
 		t.Fatalf("window with too few rounds left: note=%q err=%v", note, err)
+	}
+	if fresh.FirstValid != 1000 || fresh.LastValid != 1059 {
+		t.Fatalf("aged window rebuilt as %d-%d, want its width kept at 1000-1059", fresh.FirstValid, fresh.LastValid)
+	}
+	// A fresh window narrower than the rounds that must remain at signing
+	// could never be signed: it is not called aged, and is rebuilt wide.
+	narrow := txn
+	narrow.LastValid = 1005
+	want := fmt.Sprintf("Validity window (rounds 1000-1005) spans 5 rounds, fewer than the %d a rotating account needs left when it signs; rebuilding it from the current round with %d rounds", rotatingkey.RotatingMinRemaining, rotatingkey.RotatingMaxValidityWindow)
+	if fresh, note, err = freshenRotatingValidity(context.Background(), narrow, algodClient); err != nil || note != want {
+		t.Fatalf("narrow window: note=%q err=%v, want %q", note, err, want)
+	}
+	if fresh.FirstValid != 1000 || fresh.LastValid != 1000+rotatingkey.RotatingMaxValidityWindow {
+		t.Fatalf("narrow window rebuilt as %d-%d", fresh.FirstValid, fresh.LastValid)
 	}
 	// A window that starts in the future has not aged: the note says where
 	// it starts.
 	early := txn
 	early.FirstValid = 1000 + rotatingkey.RotatingMaxLead + 1
 	early.LastValid = early.FirstValid + 50
-	want := fmt.Sprintf("Validity window (rounds 1003-1053) starts 3 rounds ahead of the current round 1000, more than the %d a rotating account signs; rebuilding it from the current round", rotatingkey.RotatingMaxLead)
+	want = fmt.Sprintf("Validity window (rounds 1003-1053) starts 3 rounds ahead of the current round 1000, more than the %d a rotating account signs; rebuilding it from the current round", rotatingkey.RotatingMaxLead)
 	if _, note, err = freshenRotatingValidity(context.Background(), early, algodClient); err != nil || note != want {
 		t.Fatalf("window too far ahead: note=%q err=%v, want %q", note, err, want)
+	}
+}
+
+// A rebuilt window keeps its width unless that could never be signed or is
+// over the limit, as the SDK's refresh does; the retry after a refusal uses
+// the same rebuild.
+func TestRefreshRotatingValidityWidth(t *testing.T) {
+	var simulated []types.Transaction
+	algodClient := fakeAlgod(t, 2000, &simulated)
+	for _, tc := range []struct {
+		first, last types.Round
+		want        types.Round
+	}{
+		{1000, 1050, 50},
+		{1000, 1000 + rotatingkey.RotatingMinRemaining, rotatingkey.RotatingMinRemaining},
+		{1000, 1000 + rotatingkey.RotatingMinRemaining - 1, rotatingkey.RotatingMaxValidityWindow},
+		{1000, 1000, rotatingkey.RotatingMaxValidityWindow},
+		{1000, 1500, rotatingkey.RotatingMaxValidityWindow},
+		{1000, 900, rotatingkey.RotatingMaxValidityWindow},
+	} {
+		txn := rotatingOriginal()
+		txn.FirstValid, txn.LastValid = tc.first, tc.last
+		fresh, err := refreshRotatingValidity(context.Background(), txn, algodClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fresh.FirstValid != 2000 || fresh.LastValid != 2000+tc.want {
+			t.Errorf("window %d-%d rebuilt as %d-%d, want 2000-%d", tc.first, tc.last, fresh.FirstValid, fresh.LastValid, 2000+tc.want)
+		}
 	}
 }
 
