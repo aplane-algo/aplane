@@ -1812,9 +1812,13 @@ Creating and using rotating accounts:
   again, only when the ledger expects the spend's own rekey target; any other
   expected authorizer is reported as it is. A
   `rotating_stage_changed` or `rotating_window_not_current` refusal means no
-  signature was released, and the client rebuilds the validity rounds and
-  prepares again a bounded number of times; it retries on these two codes
-  only, never on message text.
+  signature was released, and the client prepares again, up to three
+  attempts in all, with the SDK's rule: after `rotating_stage_changed` it
+  prepares the same transaction, rebuilding the window only if it is no
+  longer current; after `rotating_window_not_current` it rebuilds the window
+  from the current round at the maximum 100 rounds, since the same width
+  would leave the operator no more time, and says so. It retries on these two
+  codes only, never on message text.
   Simulate-only requests stop before signing, so they reveal no keys.
 
 Stage table worker: while unlocked, a background worker reads every rotating

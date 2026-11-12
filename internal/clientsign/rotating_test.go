@@ -724,41 +724,124 @@ func TestSignAndSubmitRotatingSubmitsCheckedSignedGroup(t *testing.T) {
 	})
 }
 
-// TestSignAndSubmitRotatingShowsFeeRaiseOncePerSend refuses the first sign
-// with rotating_stage_changed, so the spend is prepared twice with the same
-// raise: the fee notice is shown once, and the second attempt is the one
-// signed and submitted.
-func TestSignAndSubmitRotatingShowsFeeRaiseOncePerSend(t *testing.T) {
+// TestSignAndSubmitRotatingRetries follows the SDK's retry rule. A
+// rotating_stage_changed refusal prepares the same transaction again, its
+// window rebuilt only if no longer current. A rotating_window_not_current
+// refusal rebuilds the window from the current round at the maximum width and
+// says so. Either way the fee notice for the same raise is shown once, only
+// the attempt that is signed is submitted, and the caller's transaction is
+// left as it was.
+func TestSignAndSubmitRotatingRetries(t *testing.T) {
+	const round = 1000
 	stage := types.LogicSig{Logic: stubStageProgram}
-	signs := 0
-	var prepareSeen types.Transaction
-	signerClient := rotatingSigner(t, &prepareSeen, func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) (int, any) {
-		signs++
-		if signs == 1 {
-			return http.StatusConflict, signerapi.ErrorResponse{Error: "the account's authorizer changed before signing", Code: signerapi.ErrCodeRotatingStageChanged}
+	refusal := map[string]signerapi.ErrorResponse{
+		signerapi.ErrCodeRotatingStageChanged:     {Error: "the account's authorizer changed before signing", Code: signerapi.ErrCodeRotatingStageChanged},
+		signerapi.ErrCodeRotatingWindowNotCurrent: {Error: "fewer than 10 rounds remain before last valid round", Code: signerapi.ErrCodeRotatingWindowNotCurrent},
+	}
+	// run sends txn; the first refusals sign requests are refused with code,
+	// the rest signed. It returns the spends presented for signing, the
+	// output, the number of submissions and the error.
+	run := func(t *testing.T, txn types.Transaction, code string, refusals int) ([]types.Transaction, string, int, error) {
+		t.Helper()
+		var spends []types.Transaction
+		var prepareSeen types.Transaction
+		signerClient := rotatingSigner(t, &prepareSeen, func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) (int, any) {
+			spends = append(spends, txns[0])
+			if len(spends) <= refusals {
+				return http.StatusConflict, refusal[code]
+			}
+			return http.StatusOK, signedRotatingFor(t, prep, txns, stage)
+		})
+		var simulated []types.Transaction
+		submits := 0
+		algodClient := fakeAlgodWithSubmit(t, round, &simulated, func(w http.ResponseWriter, _ []byte) {
+			submits++
+			_ = json.NewEncoder(w).Encode(map[string]string{"txId": "TXID"})
+		})
+		caller := txn
+		before := txnutil.EncodeWithPrefix(caller)
+		var out bytes.Buffer
+		_, _, err := SignAndSubmitRotating(caller, signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Out: &out}})
+		if !bytes.Equal(txnutil.EncodeWithPrefix(caller), before) {
+			t.Fatal("the caller's transaction was modified")
 		}
-		return http.StatusOK, signedRotatingFor(t, prep, txns, stage)
+		return spends, out.String(), submits, err
+	}
+	window := func(txn types.Transaction) string { return fmt.Sprintf("%d-%d", txn.FirstValid, txn.LastValid) }
+	feeNotice := "  Signer raised the spend's fee by 3000 microAlgos for authorization (fee now 4000 microAlgos)\n"
+
+	t.Run("stage changed prepares the same transaction again", func(t *testing.T) {
+		txn := rotatingOriginal()
+		txn.FirstValid, txn.LastValid = 999, 1049 // current at round 1000
+		spends, out, submits, err := run(t, txn, signerapi.ErrCodeRotatingStageChanged, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(spends) != 2 || submits != 1 {
+			t.Fatalf("sign requests = %d, submissions = %d; want 2 and 1", len(spends), submits)
+		}
+		for i, spend := range spends {
+			if got := window(spend); got != "999-1049" {
+				t.Fatalf("attempt %d presented rounds %s, want the unchanged 999-1049", i+1, got)
+			}
+		}
+		if !strings.Contains(out, "  Signer refused and released no signature (the account's authorizer moved); preparing the transaction again (attempt 2 of 3)\n") {
+			t.Fatalf("output = %q, want the retry", out)
+		}
+		if got := strings.Count(out, feeNotice); got != 1 {
+			t.Fatalf("fee notice shown %d times, want once: %q", got, out)
+		}
 	})
-	var simulated []types.Transaction
-	submits := 0
-	algodClient := fakeAlgodWithSubmit(t, 1000, &simulated, func(w http.ResponseWriter, _ []byte) {
-		submits++
-		_ = json.NewEncoder(w).Encode(map[string]string{"txId": "TXID"})
+
+	t.Run("window not current is rebuilt at the maximum width", func(t *testing.T) {
+		txn := rotatingOriginal()
+		txn.FirstValid, txn.LastValid = 1000, 1020 // a 20-round window
+		spends, out, submits, err := run(t, txn, signerapi.ErrCodeRotatingWindowNotCurrent, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(spends) != 2 || submits != 1 {
+			t.Fatalf("sign requests = %d, submissions = %d; want 2 and 1", len(spends), submits)
+		}
+		if got := window(spends[0]); got != "1000-1020" {
+			t.Fatalf("first attempt presented rounds %s, want 1000-1020", got)
+		}
+		if got, want := window(spends[1]), fmt.Sprintf("1000-%d", 1000+rotatingkey.RotatingMaxValidityWindow); got != want {
+			t.Fatalf("retry presented rounds %s, want %s", got, want)
+		}
+		if want := "  Signer found the validity window (rounds 1000-1020) no longer current and released no signature; widened it to the maximum 100 rounds from the current round (rounds 1000-1100) (attempt 2 of 3)\n"; !strings.Contains(out, want) {
+			t.Fatalf("output = %q, want %q", out, want)
+		}
+		if got := strings.Count(out, feeNotice); got != 1 {
+			t.Fatalf("fee notice shown %d times, want once: %q", got, out)
+		}
 	})
-	var out bytes.Buffer
-	if _, _, err := SignAndSubmitRotating(rotatingOriginal(), signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Out: &out}}); err != nil {
-		t.Fatal(err)
-	}
-	if signs != 2 || submits != 1 {
-		t.Fatalf("sign requests = %d, submissions = %d; want 2 and 1", signs, submits)
-	}
-	notice := "  Signer raised the spend's fee by 3000 microAlgos for authorization (fee now 4000 microAlgos)\n"
-	if got := strings.Count(out.String(), notice); got != 1 {
-		t.Fatalf("fee notice shown %d times, want once: %q", got, out.String())
-	}
-	if !strings.Contains(out.String(), "Signer refused and released no signature (the account's authorizer moved); rebuilding the transaction with fresh validity rounds (attempt 2 of 3)") {
-		t.Fatalf("output = %q, want the retry", out.String())
-	}
+
+	t.Run("a full-width window is rebuilt, not widened", func(t *testing.T) {
+		spends, out, _, err := run(t, rotatingOriginal(), signerapi.ErrCodeRotatingWindowNotCurrent, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(spends) != 2 {
+			t.Fatalf("sign requests = %d, want 2", len(spends))
+		}
+		if want := "  Signer found the validity window (rounds 1000-1100) no longer current and released no signature; rebuilt it at the maximum 100 rounds from the current round (rounds 1000-1100) (attempt 2 of 3)\n"; !strings.Contains(out, want) {
+			t.Fatalf("output = %q, want %q", out, want)
+		}
+	})
+
+	t.Run("the last attempt's refusal is returned", func(t *testing.T) {
+		spends, out, submits, err := run(t, rotatingOriginal(), signerapi.ErrCodeRotatingWindowNotCurrent, rotatingRetryAttempts)
+		if !hasRotatingRefusalCode(err, signerapi.ErrCodeRotatingWindowNotCurrent) {
+			t.Fatalf("err = %v, want the window refusal", err)
+		}
+		if len(spends) != rotatingRetryAttempts || submits != 0 {
+			t.Fatalf("sign requests = %d, submissions = %d; want %d and 0", len(spends), submits, rotatingRetryAttempts)
+		}
+		if got := strings.Count(out, "no longer current and released no signature"); got != rotatingRetryAttempts-1 {
+			t.Fatalf("window rebuilt %d times, want %d: %q", got, rotatingRetryAttempts-1, out)
+		}
+	})
 }
 
 func TestFreshenRotatingValidityKeepsCurrentWindows(t *testing.T) {
@@ -803,8 +886,8 @@ func TestFreshenRotatingValidityKeepsCurrentWindows(t *testing.T) {
 }
 
 // A rebuilt window keeps its width unless that could never be signed or is
-// over the limit, as the SDK's refresh does; the retry after a refusal uses
-// the same rebuild.
+// over the limit; widened, as after the signer's rotating_window_not_current
+// refusal, it always gets the maximum. Both are the SDK's refresh rule.
 func TestRefreshRotatingValidityWidth(t *testing.T) {
 	var simulated []types.Transaction
 	algodClient := fakeAlgod(t, 2000, &simulated)
@@ -821,12 +904,20 @@ func TestRefreshRotatingValidityWidth(t *testing.T) {
 	} {
 		txn := rotatingOriginal()
 		txn.FirstValid, txn.LastValid = tc.first, tc.last
-		fresh, err := refreshRotatingValidity(context.Background(), txn, algodClient)
+		fresh, err := refreshRotatingValidity(context.Background(), txn, algodClient, false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if fresh.FirstValid != 2000 || fresh.LastValid != 2000+tc.want {
 			t.Errorf("window %d-%d rebuilt as %d-%d, want 2000-%d", tc.first, tc.last, fresh.FirstValid, fresh.LastValid, 2000+tc.want)
+		}
+		// Widened, every window gets the maximum.
+		widened, err := refreshRotatingValidity(context.Background(), txn, algodClient, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if widened.FirstValid != 2000 || widened.LastValid != 2000+rotatingkey.RotatingMaxValidityWindow {
+			t.Errorf("window %d-%d widened as %d-%d, want 2000-%d", tc.first, tc.last, widened.FirstValid, widened.LastValid, 2000+rotatingkey.RotatingMaxValidityWindow)
 		}
 	}
 }

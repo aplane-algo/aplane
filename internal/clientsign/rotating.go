@@ -50,13 +50,16 @@ type RotatingOptions struct {
 // its turn comes, so each attempt checks the window against the current
 // round first and rebuilds the validity rounds when it is not current; a
 // rebuilt window keeps its width unless that is too narrow ever to be
-// signed (fewer than RotatingMinRemaining rounds). If the
-// signer then reports that the account's authorizer moved between prepare
-// and sign (rotating_stage_changed), or that the window was not current at
-// the round it read, for example because it aged during approval
-// (rotating_window_not_current), no signature was released: the transaction
-// is rebuilt with fresh validity rounds, prepared, simulated and presented
-// for approval again, a bounded number of times.
+// signed (fewer than RotatingMinRemaining rounds). If the signer then
+// refuses, no signature was released, and the transaction is prepared,
+// simulated and presented for approval again, a bounded number of times, as
+// the SDK does. When the account's authorizer moved between prepare and sign
+// (rotating_stage_changed), the same transaction is prepared again; its
+// window is rebuilt only if it is no longer current. When the window was not
+// current at the round the signer read, for example because it aged during
+// approval (rotating_window_not_current), it is rebuilt from the current
+// round at the maximum width, since the same width would leave the operator
+// no more time.
 func SignAndSubmitRotating(
 	txn types.Transaction,
 	signerClient *signerclient.Client,
@@ -105,12 +108,21 @@ func SignAndSubmitRotating(
 			return txIDs, prepared, err
 		}
 		lastErr = err
-		_, _ = fmt.Fprintf(w, "  Signer refused and released no signature (%s); rebuilding the transaction with fresh validity rounds (attempt %d of %d)\n", rotatingRefusalSummary(err), attempt+1, rotatingRetryAttempts)
-		refreshed, refreshErr := refreshRotatingValidity(opts.Ctx, txn, algodClient)
-		if refreshErr != nil {
-			return nil, nil, fmt.Errorf("%w (and refreshing validity rounds failed: %v)", err, refreshErr)
+		if !hasRotatingRefusalCode(err, signerapi.ErrCodeRotatingWindowNotCurrent) {
+			_, _ = fmt.Fprintf(w, "  Signer refused and released no signature (%s); preparing the transaction again (attempt %d of %d)\n", rotatingRefusalSummary(err), attempt+1, rotatingRetryAttempts)
+			continue
 		}
-		txn = refreshed
+		widened, widenErr := refreshRotatingValidity(opts.Ctx, txn, algodClient, true)
+		if widenErr != nil {
+			return nil, nil, fmt.Errorf("%w (and rebuilding the validity window failed: %v)", err, widenErr)
+		}
+		rebuilt := "widened it to"
+		if txn.LastValid >= txn.FirstValid && txn.LastValid-txn.FirstValid >= rotatingkey.RotatingMaxValidityWindow {
+			rebuilt = "rebuilt it at"
+		}
+		_, _ = fmt.Fprintf(w, "  Signer found the validity window (rounds %d-%d) no longer current and released no signature; %s the maximum %d rounds from the current round (rounds %d-%d) (attempt %d of %d)\n",
+			txn.FirstValid, txn.LastValid, rebuilt, rotatingkey.RotatingMaxValidityWindow, widened.FirstValid, widened.LastValid, attempt+1, rotatingRetryAttempts)
+		txn = widened
 	}
 	return nil, nil, lastErr
 }
@@ -219,7 +231,7 @@ func freshenRotatingValidity(ctx context.Context, txn types.Transaction, algodCl
 	default:
 		note = fmt.Sprintf("Validity window has aged (rounds %d-%d); rebuilding it from the current round", txn.FirstValid, txn.LastValid)
 	}
-	fresh, err := refreshRotatingValidity(ctx, txn, algodClient)
+	fresh, err := refreshRotatingValidity(ctx, txn, algodClient, false)
 	if err != nil {
 		return txn, note, err
 	}
@@ -241,17 +253,32 @@ func rotatingRebuildWindow(txn types.Transaction) types.Round {
 }
 
 // refreshRotatingValidity rebuilds the transaction's validity rounds from
-// current suggested parameters, with the width rotatingRebuildWindow gives,
-// keeping everything else.
-func refreshRotatingValidity(ctx context.Context, txn types.Transaction, algodClient *algod.Client) (types.Transaction, error) {
+// current suggested parameters, keeping everything else. The window gets the
+// width rotatingRebuildWindow gives, or with widen the maximum: after the
+// signer found the window not current, the same width would leave the
+// operator no more time. This is the SDK's refresh rule.
+func refreshRotatingValidity(ctx context.Context, txn types.Transaction, algodClient *algod.Client, widen bool) (types.Transaction, error) {
 	sp, err := algodClient.SuggestedParams().Do(ctx)
 	if err != nil {
 		return txn, fmt.Errorf("fetch suggested params: %w", err)
 	}
-	window := rotatingRebuildWindow(txn)
+	window := types.Round(rotatingkey.RotatingMaxValidityWindow)
+	if !widen {
+		window = rotatingRebuildWindow(txn)
+	}
+	if sp.FirstRoundValid > math.MaxUint64-window {
+		return txn, fmt.Errorf("first valid round %d leaves no room for a validity window", sp.FirstRoundValid)
+	}
 	txn.FirstValid = sp.FirstRoundValid
 	txn.LastValid = sp.FirstRoundValid + window
 	return txn, nil
+}
+
+// hasRotatingRefusalCode reports whether err is a signer refusal with the
+// given stable code.
+func hasRotatingRefusalCode(err error, code string) bool {
+	var httpErr *signerclient.HTTPStatusError
+	return errors.As(err, &httpErr) && httpErr.Code == code
 }
 
 // isRotatingRetryable reports whether a signer refusal released no signature

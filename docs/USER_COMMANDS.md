@@ -177,7 +177,12 @@ succeed; delete the key after confirming that independently.
 
 Ordinary single-transaction commands from a rotating account, such as `send`,
 also rotate it. The account must be the only transaction sent, and its
-validity window is capped at 100 rounds. `close` is refused: the stage
+validity window is capped at 100 rounds. If the signer finds the window no
+longer current when it signs, for example because approval took long, it
+releases no signature, and the command rebuilds the window from the current
+round at the full 100 rounds, says so, and asks for approval again; if the
+account moved between preparing and signing, it prepares the same
+transaction again. It makes at most three attempts. `close` is refused: the stage
 program forbids close-out. There is no exit command: to leave the scheme,
 move the funds out.
 
