@@ -76,8 +76,9 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 			if err != nil {
 				if submit != nil {
 					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
-					// Kept for JS plugin()'s error only: what became of these
-					// transactions is not known here.
+					// Kept for JS plugin()'s error only. The submission returned
+					// them with its error, so what became of them is not
+					// reported.
 					pr.failedStepTxIDs = submit.TxIDs
 				}
 				return err

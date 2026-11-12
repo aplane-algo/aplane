@@ -591,7 +591,7 @@ func TestRotatingSignPromptShowsThePreparedGroupAsChecked(t *testing.T) {
 	wants := []string{
 		"[FROZEN GROUP: checked as sent, not changed by this request]",
 		fmt.Sprintf("  • %d dummy transaction(s) for LogicSig arguments/opcode budget", prep.Mutations.DummiesAdded),
-		fmt.Sprintf("  • %d microAlgos of fee added when the group was prepared\n", prep.Mutations.TotalFeesDelta),
+		fmt.Sprintf("  • %d microAlgos of fee added when the spend was prepared\n", prep.Mutations.TotalFeesDelta),
 		"The fees shown already include these; this request adds no dummies or fees",
 	}
 	if strings.Contains(prep.Mutations.Reason, "lsig_program_fee") {

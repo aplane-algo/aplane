@@ -302,17 +302,14 @@ func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) 
 		if plan.DummiesNeeded > 0 {
 			fmt.Fprintf(&b, "  • %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
 		}
-		// A rotating spend's fee includes what prepare added; a
-		// /sign/component group, never raised, has none. It is worded as
-		// something done earlier, not as the planning prompt's "Group fee
-		// adjustment", which under this header would read as a change this
-		// request made.
+		// Only a rotating spend reaches here with a raised fee: prepare
+		// added it, to the spend. A /sign/component group is never raised.
+		// It is worded as something done earlier, not as the planning
+		// prompt's "Group fee adjustment", which under this header would read
+		// as a change this request made; and it names the spend, since the
+		// header may call the request a lone transaction.
 		if fees.TotalFees > 0 {
-			if group {
-				fmt.Fprintf(&b, "  • %d microAlgos of fee added when the group was prepared, on transaction(s) %v\n", fees.TotalFees, approvalTransactionNumbers(fees.FeeIndices))
-			} else {
-				fmt.Fprintf(&b, "  • %d microAlgos of fee added when the group was prepared\n", fees.TotalFees)
-			}
+			fmt.Fprintf(&b, "  • %d microAlgos of fee added when the spend was prepared\n", fees.TotalFees)
 		}
 		writeContributionLines(&b, plan)
 		if plan.DummiesNeeded > 0 || fees.TotalFees > 0 || contributions {

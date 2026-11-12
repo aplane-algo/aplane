@@ -454,12 +454,9 @@ func TestBuildApprovalDescriptionFrozenStatesTheFeeAddedAtPrepare(t *testing.T) 
 		fees     DummyFeeInfo
 		want     string // empty: no line
 	}{
-		{"single request", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
+		{"raised at prepare", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
 			DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0}, NativePQFeeContribution: 2_000},
-			"  • 2000 microAlgos of fee added when the group was prepared\n"},
-		{"group request", []signerapi.SignRequest{{AuthAddress: "AUTH"}, {TxnBytesHex: "aa"}},
-			DummyFeeInfo{TotalFees: 3_001, FeeIndices: []int{0}, ProgramFeeContribution: 1},
-			"  • 3001 microAlgos of fee added when the group was prepared, on transaction(s) [1]\n"},
+			"  • 2000 microAlgos of fee added when the spend was prepared\n"},
 		{"never raised", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
 			DummyFeeInfo{NativePQFeeContribution: 2_000}, ""},
 	}

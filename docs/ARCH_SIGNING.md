@@ -986,7 +986,7 @@ not make:
 ```
 [FROZEN GROUP: checked as sent, not changed by this request]
   • 1 dummy transaction(s) for LogicSig arguments/opcode budget
-  • 1030 microAlgos of fee added when the group was prepared
+  • 1030 microAlgos of fee added when the spend was prepared
   • Required LogicSig program contribution: about 30 microAlgos (300 charged byte(s))
   • The fees shown already include these; this request adds no dummies or fees
 ```

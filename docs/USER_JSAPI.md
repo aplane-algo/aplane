@@ -700,7 +700,10 @@ step submitted transactions, `data.txids` lists every transaction ID it
 submitted, in order (in simulate mode, the IDs of the simulated transactions;
 apshell's record, so a plugin's own `txids` field is replaced), and a run of
 more than one such step adds `data.steps`, one `{ message, txids }` per step.
-The IDs include any budget dummy transactions the signer added. `data` has
+The IDs include any budget dummy transactions the signer added. In such a run
+a plugin's own `steps` field is replaced as `txids` is, and when a run
+submitted transactions, plugin data that is not an object is not returned.
+`data` has
 `localSigners` removed in every outcome; data the plugin returned as an object
 stays an object, empty if `localSigners` was all it held.
 
@@ -710,8 +713,10 @@ the steps it submitted or from a failing step whose submission returned IDs
 with its error, a step that errors, is cancelled or reports failure throws,
 because the workflow may be half done. The error lists those IDs in one list:
 "this run produced transaction(s) …: look them up before running it again".
-apshell does not know what became of them (confirmed, rejected, or no answer),
-so look each one up before running the plugin again. In simulate mode nothing
+The list does not say which of them confirmed: the step output printed for
+each completed step does, and what became of a failing step's transactions
+(confirmed, rejected, or no answer) is not reported, so look each one up
+before running the plugin again. In simulate mode nothing
 is sent: the error says "this run simulated transaction(s) …, which were not
 sent", and a failed simulation's own IDs are not listed.
 

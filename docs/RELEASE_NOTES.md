@@ -13,7 +13,7 @@ before it was renamed `enroll`.
   prompt showed the spend's final fee, the dummies and the contributions, but
   not how much of the fee was the signer's authorization charge, so a client
   that padded its own fee read the same as an ordinary charge. It now prints
-  `N microAlgos of fee added when the group was prepared`, above "The fees
+  `N microAlgos of fee added when the spend was prepared`, above "The fees
   shown already include these". It is not worded as the planning prompt's
   "Group fee adjustment", since this request changes nothing. Display only: what is signed, the
   approval binding and the order of the checks are unchanged. A
@@ -61,10 +61,15 @@ before it was renamed `enroll`.
   cancel or reported failure throws, and the error lists every ID the run
   produced, a failing step's included when its submission returned IDs with
   its error, and says to look them up before running the plugin again.
-  apshell does not report what became of them. Before any IDs, a cancel or
-  the plugin's failure is still `{ success: false }`. `data.txids` is
-  apshell's record and replaces a `txids` field the plugin set, and `data`
-  has `localSigners` removed in every outcome.
+  The list does not say which confirmed; what became of a failing step's
+  transactions is not reported. Before any IDs, a cancel or the plugin's
+  failure is still `{ success: false }`. `data.txids` is apshell's record and
+  replaces a `txids` field the plugin set, `data.steps` likewise in a run of
+  more than one step, and `data` has `localSigners` removed in every outcome.
+  When a run sent transactions, plugin data that is not an object is not
+  returned. Two error texts changed with the shared loop: "not connected to
+  signer" no longer adds "use connect() first", and a first-step submission
+  error no longer starts with "failed to sign/submit:".
 
 ## The valid rekey target check judges every position of a group
 
