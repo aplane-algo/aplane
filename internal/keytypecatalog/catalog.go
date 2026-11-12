@@ -79,6 +79,11 @@ func Get(keyType string) (Entry, bool) {
 	return entry, ok
 }
 
+// All returns every cataloged key type, of every availability.
+func All() []Entry {
+	return filter(func(Entry) bool { return true })
+}
+
 func LibraryVisible() []Entry {
 	return filter(func(entry Entry) bool {
 		return entry.Availability == AvailabilityLibrary

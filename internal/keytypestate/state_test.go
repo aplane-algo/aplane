@@ -161,8 +161,8 @@ func TestRequireUnusedRejectsKeyTypeInUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer payload.ZeroSecrets()
-	if _, err := apkeys.SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+	if _, err := apkeys.SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 
 	err := RequireUnused(paths, "custom-v1", cryptotest.Keyring(t, masterKey))

@@ -161,9 +161,9 @@ alone.
   rekeyed to, its own account included, subject to the program. Read the
   program with another account as `Sender`; a program that never checks
   `Sender` authorizes for every account rekeyed to it. Install requires the
-  field. A key records the value when it is created; a wrong value is corrected
-  by reinstalling the template and regenerating the key
-  ([ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#correcting-a-wrong-declaration)).
+  field. It is part of the template's definition, and a key records it when
+  the key is created; a wrong value is corrected by a new version of the
+  template ([ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#correcting-a-wrong-declaration)).
 
 Public generic LogicSigs usually should not allow unconstrained rekey, because
 anyone who can exercise an allowed path may be able to transfer account control.

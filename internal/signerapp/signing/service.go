@@ -266,6 +266,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		ForeignIndices:       plan.ForeignIndices,
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
 		KnownAddresses:       s.knownAddresses(plan),
+		InvalidRekeyTargets:  invalidRekeyTargetsForPlan(plan),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 		ListedRekeyTargets:   listedRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
@@ -286,7 +287,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
 			}
 			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, planChangeLines(plan, allTxns, false), firstValid, lastValid, forceReviewRuleID,
-				boundedItemAt(plan, 0))
+				plan)
 		},
 	}, console)
 	if gateErr != nil {

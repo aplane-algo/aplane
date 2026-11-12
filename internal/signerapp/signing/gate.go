@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -37,6 +38,10 @@ type gateInput struct {
 	// a short slice resolves to the node default).
 	AuthKeys       []string
 	KnownAddresses map[string]bool
+	// InvalidRekeyTargets are the held addresses whose aplane key records that
+	// it is not a valid rekey target, from the same snapshot as
+	// KnownAddresses: what the valid-target invariant refuses.
+	InvalidRekeyTargets map[string]txnreview.InvalidRekeyTarget
 	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
 	// next stage); warning review does not count them.
 	ProtocolRekeyTargets map[string]bool
@@ -68,7 +73,7 @@ type gateInput struct {
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
 	slots := clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets)
-	if err := s.rejectSignerInvariants(in.AllTxns, signerPositions(slots)); err != nil {
+	if err := s.rejectSignerInvariants(in.AllTxns, signerPositions(slots), in.InvalidRekeyTargets); err != nil {
 		console.Printf("[SIGNER] Rejected: %s\n", err.Message)
 		console.Sync()
 		if in.LogRejection != nil {

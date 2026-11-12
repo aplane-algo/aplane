@@ -204,11 +204,8 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 		return nil, fmt.Errorf("derived LogicSig address mismatch: generated %s, payload derives %s", address, selector)
 	}
 
-	// The aplane key records its key type's valid_rekey_target as declared now.
-	payload.ValidRekeyTarget = lsigprovider.ValidRekeyTarget(payload.KeyType)
-
 	// Save key file
-	keyFiles, err := keys.SavePayload(paths, payload, kr)
+	keyFiles, err := keys.SaveNewPayload(paths, payload, lsigprovider.ValidRekeyTarget(payload.KeyType), kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}

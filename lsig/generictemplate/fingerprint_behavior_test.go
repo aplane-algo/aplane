@@ -123,6 +123,15 @@ func TestGenericFingerprintBehaviorSensitive(t *testing.T) {
 				1),
 		},
 		{
+			// The declaration is part of the definition: a template that
+			// declares another value is another definition.
+			name: "valid_rekey_target",
+			yaml: strings.Replace(fingerprintBaseYAML,
+				"valid_rekey_target: false",
+				"valid_rekey_target: true",
+				1),
+		},
+		{
 			// The base YAML omits derivation_version; adding the one supported
 			// contract must still move the fingerprint.
 			name: "derivation_version",

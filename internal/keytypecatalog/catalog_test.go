@@ -54,3 +54,28 @@ func TestRegisterConflictingEntryPanics(t *testing.T) {
 	entry.Availability = AvailabilityLibrary
 	Register(entry)
 }
+
+// All returns entries of every availability, internal-only and disabled
+// included, which DefaultEnabled and LibraryVisible leave out.
+func TestAllReturnsEveryAvailability(t *testing.T) {
+	want := map[string]Availability{
+		"catalog-all-default-v1":  AvailabilityDefaultEnabled,
+		"catalog-all-library-v1":  AvailabilityLibrary,
+		"catalog-all-internal-v1": AvailabilityInternalOnly,
+		"catalog-all-disabled-v1": AvailabilityDisabled,
+	}
+	for keyType, availability := range want {
+		Register(Entry{KeyType: keyType, Family: keyType, Availability: availability})
+	}
+	found := map[string]Availability{}
+	for _, entry := range All() {
+		if _, ok := want[entry.KeyType]; ok {
+			found[entry.KeyType] = entry.Availability
+		}
+	}
+	for keyType, availability := range want {
+		if found[keyType] != availability {
+			t.Errorf("All() has %s as %q, want %q", keyType, found[keyType], availability)
+		}
+	}
+}

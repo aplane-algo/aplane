@@ -258,7 +258,8 @@ func testTampering(t *testing.T, s Scheme) {
 func testScan(t *testing.T, s Scheme) {
 	payload, address := FixedPayload(t, s)
 	paths, kr := newStore(t)
-	if _, err := keys.SavePayload(paths, payload, kr); err != nil {
+	// A rotating key type declares valid_rekey_target false.
+	if _, err := keys.SaveNewPayload(paths, payload, false, kr); err != nil {
 		t.Fatal(err)
 	}
 	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)

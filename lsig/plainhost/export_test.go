@@ -58,6 +58,16 @@ func (p *Provider) ProgramsForTest() (descriptors, fingerprints []string) {
 	return descriptors, fingerprints
 }
 
+// ProgramComposersForTest returns every program's composer, in grammar order.
+func (p *Provider) ProgramComposersForTest() []*composeddsa.ComposedDSA {
+	p.mustLoadShapes()
+	composers := make([]*composeddsa.ComposedDSA, len(p.ordered))
+	for i, selected := range p.ordered {
+		composers[i] = selected.composer
+	}
+	return composers
+}
+
 // GrammarFingerprintOverForTest recomputes the grammar fingerprint over the
 // programs at the given indexes, in that order.
 func (p *Provider) GrammarFingerprintOverForTest(indexes []int) string {

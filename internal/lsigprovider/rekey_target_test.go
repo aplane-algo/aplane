@@ -16,8 +16,9 @@ import (
 // declaredValidRekeyTarget is every compiled key type's valid_rekey_target.
 // A compiled key type added without a decision here fails the test.
 var declaredValidRekeyTarget = map[string]bool{
-	// An aplane key of each of these may be the signing authority another
-	// account is rekeyed to, subject to its own restrictions.
+	// An aplane key of each of these may be the signing authority an account
+	// is rekeyed to, its own account included, subject to its own
+	// restrictions.
 	"ed25519":              true,
 	"falcon1024":           true,
 	"aplane.falcon1024.v1": true,
@@ -31,16 +32,19 @@ var declaredValidRekeyTarget = map[string]bool{
 	"aplane.witness-falcon1024.v1": false,
 }
 
+// Every catalog entry, whatever its availability (default-enabled, library,
+// internal-only or disabled), has a decision here, and the registered
+// provider, where it answers the question itself, agrees with the catalog.
 func TestEveryCompiledKeyTypeDeclaresValidRekeyTarget(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
 	ed25519signerreg.RegisterSigner()
 	nativefalconsignerreg.RegisterSigner()
 
 	seen := map[string]bool{}
-	for _, entry := range append(keytypecatalog.DefaultEnabled(), keytypecatalog.LibraryVisible()...) {
+	for _, entry := range keytypecatalog.All() {
 		want, ok := declaredValidRekeyTarget[entry.KeyType]
 		if !ok {
-			t.Errorf("compiled key type %s has no valid_rekey_target decision in this test", entry.KeyType)
+			t.Errorf("compiled key type %s (%s) has no valid_rekey_target decision in this test", entry.KeyType, entry.Availability)
 			continue
 		}
 		seen[entry.KeyType] = true
@@ -49,6 +53,9 @@ func TestEveryCompiledKeyTypeDeclaresValidRekeyTarget(t *testing.T) {
 		}
 		if got := lsigprovider.ValidRekeyTarget(entry.KeyType); got != want {
 			t.Errorf("lsigprovider.ValidRekeyTarget(%s) = %v, want %v", entry.KeyType, got, want)
+		}
+		if declarer, ok := lsigprovider.Get(entry.KeyType).(lsigprovider.RekeyTargetDeclarer); ok && declarer.ValidRekeyTarget() != want {
+			t.Errorf("%s: the registered provider answers %v, the catalog %v", entry.KeyType, declarer.ValidRekeyTarget(), want)
 		}
 	}
 	for keyType := range declaredValidRekeyTarget {

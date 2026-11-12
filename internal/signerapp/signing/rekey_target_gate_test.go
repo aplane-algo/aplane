@@ -54,6 +54,7 @@ func rekeyTargetTestSnapshot() (PlannerRuntimeSnapshot, map[string]types.Address
 func TestRejectRekeyToInvalidTarget(t *testing.T) {
 	snapshot, a := rekeyTargetTestSnapshot()
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }}}
+	invalid := invalidRekeyTargetsFromSnapshot(snapshot)
 	rekey := func(from, to string) types.Transaction {
 		return types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a[from], RekeyTo: a[to]}}
 	}
@@ -72,7 +73,7 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 		{"no rekey", types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"]}}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := svc.rejectSignerInvariants([]types.Transaction{tc.txn}, []int{0})
+			err := svc.rejectSignerInvariants([]types.Transaction{tc.txn}, []int{0}, invalid)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("refused: %v", err)
@@ -88,31 +89,40 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 		})
 	}
 	// Positions this signer doesn't sign are not judged.
-	if err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "htlc")}, nil); err != nil {
+	if err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "htlc")}, nil, invalid); err != nil {
 		t.Fatalf("an unsigned position was judged: %v", err)
 	}
 	// A rotating target is refused by the rotating invariant, unchanged.
-	err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "rotating")}, []int{0})
+	err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "rotating")}, []int{0}, invalid)
 	if want := "transaction 1: " + rotatingkey.RekeyTargetRefusal(a["rotating"].String()); err == nil || err.Message != want {
 		t.Fatalf("rekey to a rotating account: err = %v, want %q", err, want)
 	}
 }
 
-// A request that rekeys no account takes no key snapshot.
-func TestRejectRekeyToInvalidTargetTakesNoSnapshotWithoutARekey(t *testing.T) {
-	snapshot, a := rekeyTargetTestSnapshot()
-	calls := 0
-	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { calls++; return snapshot }}}
-	txns := []types.Transaction{
-		{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"]}},
-		{Type: types.PaymentTx, Header: types.Header{Sender: a["valid"]}},
+// The invariant judges the key set the request was planned with, which the
+// plan carries: an HTLC key deleted, or a reload, between planning and the
+// gates does not let a rekey to it through.
+func TestValidTargetInvariantJudgesThePlansKeySet(t *testing.T) {
+	planned, a := rekeyTargetTestSnapshot()
+	svc := &Service{
+		// By the time the gates run, the runtime holds no keys at all.
+		Planner:                       &Planner{Snapshot: func() PlannerRuntimeSnapshot { return PlannerRuntimeSnapshot{} }},
+		Approval:                      &ApprovalService{},
+		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		IsUnlocked:                    func() bool { return true },
 	}
-	if err := svc.rejectRekeyToInvalidTarget(txns, []int{0, 1}); err != nil || calls != 0 {
-		t.Fatalf("err = %v, snapshot calls = %d; want no refusal and no snapshot", err, calls)
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"], Fee: 1_000, RekeyTo: a["htlc"]}}
+	plan := &PlanResult{
+		AllTxns: []types.Transaction{txn}, PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
+		AuthKeyTypes:        []string{"ed25519"},
+		KnownAddresses:      knownAddressesFromSnapshot(planned),
+		InvalidRekeyTargets: invalidRekeyTargetsFromSnapshot(planned),
 	}
-	txns[0].RekeyTo = a["valid"]
-	if err := svc.rejectRekeyToInvalidTarget(txns, []int{0, 1}); err != nil || calls != 1 {
-		t.Fatalf("err = %v, snapshot calls = %d; want no refusal and one snapshot", err, calls)
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: a["plain"].String(), TxnBytesHex: "00"}}}
+	_, _, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
+	want := "transaction 1: " + rekeyTargetNotValid(a["htlc"].String(), "aplane.htlc.v1").Message
+	if err == nil || err.Code() != signerapi.ErrCodeRekeyTargetNotValid || err.Message != want {
+		t.Fatalf("err = %v, want %q from the plan's key set", err, want)
 	}
 }
 
@@ -140,12 +150,15 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 			} else {
 				plan.PassthroughIndices[1], plan.HasPassthrough = true, true
 			}
+			// The prompt reads the plan's key set; the runtime's has changed
+			// since planning and holds nothing.
+			plan.KnownAddresses = knownAddressesFromSnapshot(snapshot)
+			plan.InvalidRekeyTargets = invalidRekeyTargetsFromSnapshot(snapshot)
 			var got []signerapproval.Violation
 			svc := &ApprovalService{
 				HasClient:                     func() bool { return true },
 				GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
-				KnownAddresses:                func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
-				InvalidRekeyTargets:           func() map[string]txnreview.InvalidRekeyTarget { return invalidRekeyTargetsForTest(snapshot) },
+				KnownAddresses:                func() map[string]bool { return nil },
 				RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 					got = violations
 					return true, nil
@@ -168,19 +181,4 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 			t.Fatalf("no rekey warning for the %s position: %+v", class, got)
 		})
 	}
-}
-
-// invalidRekeyTargetsForTest builds the runtime's InvalidRekeyTargets from a
-// planner snapshot, as Runtime.InvalidRekeyTargets builds it from the key
-// index.
-func invalidRekeyTargetsForTest(snapshot PlannerRuntimeSnapshot) map[string]txnreview.InvalidRekeyTarget {
-	out := map[string]txnreview.InvalidRekeyTarget{}
-	for address := range snapshot.KeyFiles {
-		metadata := snapshot.KeyMetadata[address]
-		if metadata.ValidRekeyTarget {
-			continue
-		}
-		out[address] = txnreview.InvalidRekeyTarget{KeyType: snapshot.KeyTypes[address], GenericLogicSig: metadata.Category == keys.CategoryGenericLsig}
-	}
-	return out
 }

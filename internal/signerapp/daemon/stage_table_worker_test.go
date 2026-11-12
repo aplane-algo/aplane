@@ -101,7 +101,7 @@ func installRotatingKey(t *testing.T, server *Signer) (types.Address, *coresigni
 		t.Fatal(err)
 	}
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-		_, err := keys.SavePayload(active, payload, kr)
+		_, err := keys.SaveNewPayload(active, payload, false, kr)
 		return err
 	}); err != nil {
 		t.Fatal(err)

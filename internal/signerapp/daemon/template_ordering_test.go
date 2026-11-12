@@ -69,14 +69,14 @@ teal: |
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr
 		}
-		result, saveErr := keys.SavePayload(mustActiveKeyPaths(t, server), payload, masterKey)
+		result, saveErr := keys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, masterKey)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
 		return saveErr
 	})
 	if err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 
 	// Standalone key metadata lets key inventory classify and expose signing args

@@ -242,7 +242,8 @@ func (t *YAMLTemplate) BuildArgs(signature []byte, runtimeArgs map[string][]byte
 }
 
 // CompatibilityFingerprint returns a stable semantic fingerprint for the
-// behavior-bearing parts of this template definition.
+// behavior-bearing parts of this template definition and its
+// valid_rekey_target declaration.
 func (t *YAMLTemplate) CompatibilityFingerprint() string {
 	return compatibilityFingerprintForSpec(t.spec)
 }
@@ -909,10 +910,11 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 	}, nil
 }
 
-// compatibilityFingerprintForSpec returns the behavior-only compatibility
-// fingerprint for a generic YAML template. Identity/display metadata
-// (key_type, family, version, publisher/display fields) are excluded; generic
-// templates have no base, so there is no base_primitive.
+// compatibilityFingerprintForSpec returns the compatibility fingerprint for a
+// generic YAML template: its behavior and its valid_rekey_target declaration.
+// Identity/display metadata (key_type, family, version, publisher/display
+// fields) are excluded; generic templates have no base, so there is no
+// base_primitive.
 func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 	type canonicalSpec struct {
 		DerivationVersion int                                `json:"derivation_version,omitempty"`
@@ -922,6 +924,10 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 		TEAL              string                             `json:"teal"`
 		Parameters        []lsigprovider.CanonicalParameter  `json:"parameters,omitempty"`
 		RuntimeArgs       []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
+		// ValidRekeyTarget is the template's declaration, part of its
+		// definition: a template that declares another value is another
+		// definition.
+		ValidRekeyTarget bool `json:"valid_rekey_target"`
 	}
 
 	params := make([]lsigprovider.CanonicalParameter, len(spec.Parameters))
@@ -959,6 +965,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 		TEAL:              strings.TrimSpace(spec.TEAL),
 		Parameters:        params,
 		RuntimeArgs:       runtimeArgs,
+		ValidRekeyTarget:  spec.RekeyTargetValid(),
 	})
 }
 

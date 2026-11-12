@@ -540,7 +540,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 		t.Fatal(err)
 	}
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		result, saveErr := keys.SavePayload(ir.KeyPaths(), payload, mk)
+		result, saveErr := keys.SaveNewPayload(ir.KeyPaths(), payload, false, mk)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
@@ -853,7 +853,7 @@ func TestServiceKeyInventoryComparesAccountDefinition(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-				_, saveErr := keys.SavePayload(ir.KeyPaths(), payload, mk)
+				_, saveErr := keys.SaveNewPayload(ir.KeyPaths(), payload, false, mk)
 				return saveErr
 			}); err != nil {
 				t.Fatalf("write key file error = %v", err)

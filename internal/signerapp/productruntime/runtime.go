@@ -32,7 +32,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/txnreview"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
@@ -969,27 +968,6 @@ func (ir *Runtime) KnownAddresses() map[string]bool {
 		addrs[addr] = true
 	}
 	return addrs
-}
-
-// InvalidRekeyTargets returns the held addresses whose aplane key records
-// that it is not a valid rekey target. The rekey warning reads it for
-// positions this signer does not sign; the signer refuses a rekey to one at a
-// position it signs.
-func (ir *Runtime) InvalidRekeyTargets() map[string]txnreview.InvalidRekeyTarget {
-	ir.keysLock.RLock()
-	defer ir.keysLock.RUnlock()
-	out := make(map[string]txnreview.InvalidRekeyTarget)
-	for addr := range ir.keys {
-		metadata := ir.keyMetadata[addr]
-		if metadata.ValidRekeyTarget {
-			continue
-		}
-		out[addr] = txnreview.InvalidRekeyTarget{
-			KeyType:         ir.keyTypes[addr],
-			GenericLogicSig: metadata.Category == lsigprovider.CategoryGenericLsig,
-		}
-	}
-	return out
 }
 
 // FindKeyFile returns the key file path for the given address.

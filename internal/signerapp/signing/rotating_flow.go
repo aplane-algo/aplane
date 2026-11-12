@@ -62,11 +62,12 @@ func (r *rotatingPlanItem) describe() string {
 	return fmt.Sprintf("\n  Rotation: stage %d signs and hands the account to stage %d (%s), held by this signer", r.Stage, r.Target, r.TargetAddress)
 }
 
-// groupKnownAddresses is the address set approval warnings treat as the
-// signer's own. A rotating plan names its rotation target in its own set;
-// every other plan keeps the runtime's key-file addresses.
-func (s *ApprovalService) groupKnownAddresses(plan *PlanResult) map[string]bool {
-	if plan != nil && plan.Rotating != nil && plan.KnownAddresses != nil {
+// planKnownAddresses is the address set approval warnings treat as the
+// signer's own: the plan's, from the key snapshot it was planned with (a
+// rotating plan names its rotation target in it), or the runtime's key-file
+// addresses for a prompt without one.
+func (s *ApprovalService) planKnownAddresses(plan *PlanResult) map[string]bool {
+	if plan != nil && plan.KnownAddresses != nil {
 		return plan.KnownAddresses
 	}
 	if s.KnownAddresses == nil {
@@ -448,7 +449,8 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		}
 	}
 	item := &rotatingPlanItem{Stage: stage, Target: targetStage, TargetAddress: spend.RekeyTo}
-	// One key-index snapshot builds the plan's known addresses and key type.
+	// One key-index snapshot builds the plan's known addresses, its held
+	// addresses that are not valid rekey targets, and its key type.
 	snapshot := s.Planner.Snapshot()
 	known := make(map[string]bool, len(snapshot.KeyFiles)+1)
 	for addr := range knownAddressesFromSnapshot(snapshot) {
@@ -476,6 +478,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		NeedsRegroup:         len(allTxns) > 1,
 		AuthKeyTypes:         []string{snapshot.KeyTypes[req.Account]},
 		KnownAddresses:       known,
+		InvalidRekeyTargets:  invalidRekeyTargetsFromSnapshot(snapshot),
 		ProtocolRekeyTargets: protocolRekeys,
 		Rotating:             item,
 		Frozen:               true,

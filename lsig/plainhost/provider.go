@@ -28,6 +28,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -502,6 +503,15 @@ func (p *Provider) BaseKeyType() string { return p.KeyType() }
 
 // BoundarySchema names the boundary file grammar this type's requests take.
 func (p *Provider) BoundarySchema() string { return boundary.SchemaV1 }
+
+// ValidRekeyTarget is the plain host's valid_rekey_target
+// (lsigprovider.RekeyTargetDeclarer): its catalog entry, the one place a
+// compiled key type declares it, which its arrangement and shape programs
+// answer too.
+func (p *Provider) ValidRekeyTarget() bool {
+	entry, ok := keytypecatalog.Get(p.KeyType())
+	return ok && entry.ValidRekeyTarget
+}
 
 // CreationParams returns the vocabulary.
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef { return p.params }

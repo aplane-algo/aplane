@@ -261,7 +261,7 @@ publisher: test
 family: custom-timelock-fixture
 version: 1
 display_name: "Custom Timelock Fixture"
-valid_rekey_target: true
+valid_rekey_target: false
 description: "Falcon-1024 signature gated by round-based timelock"
 max_opcode_cost: 20000
 

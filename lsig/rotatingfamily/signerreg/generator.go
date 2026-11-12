@@ -50,9 +50,7 @@ func (g generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr 
 		return nil, err
 	}
 	defer payload.ZeroSecrets()
-	// The aplane key records its key type's valid_rekey_target as declared now.
-	payload.ValidRekeyTarget = lsigprovider.ValidRekeyTarget(payload.KeyType)
-	saved, err := keys.SavePayload(paths, payload, kr)
+	saved, err := keys.SaveNewPayload(paths, payload, lsigprovider.ValidRekeyTarget(payload.KeyType), kr)
 	if err != nil {
 		return nil, err
 	}

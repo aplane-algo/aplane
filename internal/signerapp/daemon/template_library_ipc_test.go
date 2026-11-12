@@ -433,10 +433,10 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr
 		}
-		_, saveErr := apkeys.SavePayload(mustActiveKeyPaths(t, server), payload, masterKey)
+		_, saveErr := apkeys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, masterKey)
 		return saveErr
 	}); err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 
 	recorder := &ipcJSONRecorderConn{}

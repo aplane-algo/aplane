@@ -128,9 +128,7 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 func saveEd25519Keys(paths storepaths.Paths, publicKey []byte, privateKey []byte, kr *securecrypto.Keyring) (*keys.ImportKeyResult, error) {
 	payload := keys.NewEd25519Payload(publicKey, privateKey)
 	defer payload.ZeroSecrets()
-	// The aplane key records its key type's valid_rekey_target as declared now.
-	payload.ValidRekeyTarget = lsigprovider.ValidRekeyTarget(payload.KeyType)
-	return keys.SavePayload(paths, payload, kr)
+	return keys.SaveNewPayload(paths, payload, lsigprovider.ValidRekeyTarget(payload.KeyType), kr)
 }
 
 var registerEd25519GeneratorOnce sync.Once

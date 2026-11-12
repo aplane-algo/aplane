@@ -609,8 +609,8 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer payload.ZeroSecrets()
-	if _, err := apkeys.SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+	if _, err := apkeys.SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 
 	_, err := DeactivateCompiledProvider(paths, keyType, cryptotest.Keyring(t, masterKey))
@@ -1073,8 +1073,8 @@ func writeTemplateKeyInUse(t *testing.T, paths storepaths.Paths, keyType string,
 	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apkeys.SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SavePayload() error = %v", err)
+	if _, err := apkeys.SaveNewPayload(paths, payload, false, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveNewPayload() error = %v", err)
 	}
 }
 
@@ -1208,47 +1208,40 @@ func (s stubProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 }
 func (s stubProvider) SetAlgodClient(*algod.Client) {}
 
-// valid_rekey_target is not part of a template's definition: reinstalling the
-// same definition with another declaration is no conflict. It replaces the
-// installed file, so keys created afterwards record the new declaration (each
-// aplane key keeps the value it recorded), and a failed install can put the
-// installed file back.
-func TestReinstallChangesValidRekeyTargetDeclaration(t *testing.T) {
-	paths := newLibraryTestPaths(t)
-	kr := cryptotest.Keyring(t, testMasterKey())
-	original := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("rekey-declaration", "Rekey Declaration"))
-	installed, err := InstallParsed(paths, original, kr)
-	if err != nil {
-		t.Fatalf("InstallParsed(original) error = %v", err)
+// valid_rekey_target is part of a template's definition: reinstalling the
+// same key type with another declaration is a conflict, as any other changed
+// field of the same version is, for both template types. A corrected
+// declaration needs a new version.
+func TestInstallParsedRejectsAChangedValidRekeyTargetDeclaration(t *testing.T) {
+	falcon.RegisterClient()
+	for _, tc := range []struct {
+		name string
+		yaml []byte
+		from string
+		to   string
+	}{
+		{"generic", testGenericTemplateYAML("rekey-declaration", "Rekey Declaration"), "valid_rekey_target: false", "valid_rekey_target: true"},
+		{"composed", testComposedTemplateYAML("rekey-declaration-composed", "Rekey Declaration Composed"), "valid_rekey_target: true", "valid_rekey_target: false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := newLibraryTestPaths(t)
+			kr := cryptotest.Keyring(t, testMasterKey())
+			original := mustParseYAML(t, "source.yaml", tc.yaml)
+			if _, err := InstallParsed(paths, original, kr); err != nil {
+				t.Fatalf("InstallParsed(original) error = %v", err)
+			}
+			again, err := InstallParsed(paths, original, kr)
+			if err != nil || !again.AlreadyExists {
+				t.Fatalf("reinstall of the same template = %+v, %v; want already installed", again, err)
+			}
+			if !strings.Contains(string(tc.yaml), tc.from) {
+				t.Fatalf("test template does not declare %q", tc.from)
+			}
+			changed := mustParseYAML(t, "changed.yaml", []byte(strings.Replace(string(tc.yaml), tc.from, tc.to, 1)))
+			_, err = InstallParsed(paths, changed, kr)
+			if err == nil || !strings.Contains(err.Error(), "installed template does not match incoming definition") {
+				t.Fatalf("reinstall with another declaration error = %v, want template conflict", err)
+			}
+		})
 	}
-	again, err := InstallParsed(paths, original, kr)
-	if err != nil || !again.AlreadyExists || again.DeclarationChanged {
-		t.Fatalf("reinstall of the same template = %+v, %v; want already installed with no change", again, err)
-	}
-
-	changedYAML := []byte(strings.Replace(string(testGenericTemplateYAML("rekey-declaration", "Rekey Declaration")), "valid_rekey_target: false", "valid_rekey_target: true", 1))
-	changed := mustParseYAML(t, "changed.yaml", changedYAML)
-	if !changed.ValidRekeyTarget || original.ValidRekeyTarget {
-		t.Fatalf("parsed declarations = %v then %v, want false then true", original.ValidRekeyTarget, changed.ValidRekeyTarget)
-	}
-	result, err := InstallParsed(paths, changed, kr)
-	if err != nil || !result.AlreadyExists || !result.DeclarationChanged {
-		t.Fatalf("reinstall with another declaration = %+v, %v; want accepted as a declaration change", result, err)
-	}
-	declared := func(label string, want bool) {
-		t.Helper()
-		stored, err := templatestore.LoadTemplateFromPath(installed.OutputPath, kr)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, valid, err := templateFacts(templatestore.TemplateTypeGeneric, stored)
-		if err != nil || valid != want {
-			t.Fatalf("%s: installed template declares %v (%v), want %v", label, valid, err, want)
-		}
-	}
-	declared("after the change", true)
-	if err := RollbackReplacedTemplate(result); err != nil {
-		t.Fatal(err)
-	}
-	declared("after rollback", false)
 }

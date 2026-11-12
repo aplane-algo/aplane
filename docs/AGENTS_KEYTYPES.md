@@ -127,18 +127,21 @@ rekeyed to, its own account included, subject to that key's own restrictions
   and `internal/lsigprovider/rekey_target_test.go` must list its decision. Its
   value is fixed in code.
 - Each aplane key records the declaration when it is created, and the signer
-  reads the key's recorded value. Reinstalling a template with another
-  declaration changes only keys created afterwards; existing keys keep theirs.
+  reads the key's recorded value. A new key creation path saves through
+  `keys.SaveNewPayload`, passing `lsigprovider.ValidRekeyTarget(keyType)`. The declaration is part of the template's
+  definition and its fingerprint: reinstalling the same version with another
+  declaration is refused, as any other change to it is.
 - The signer refuses a rekey of any account to a held aplane key that recorded
   false, the account's own address included, under every `rekeys` setting and
   whatever the account's rekey-to list says (`rekey_target_not_valid`). That
   target is held, not foreign: "foreign" means only that the signer holds no
   aplane key for the address, and `rekeys` decides only about foreign targets.
-- No tool edits a key's recorded value. To correct a wrong declaration, correct
-  the template's `valid_rekey_target`, reinstall it, then delete and regenerate
-  each affected aplane key. A generic LogicSig key regenerated with the same
-  parameters keeps its address; a composed template's key gets a new address,
-  so move its funds before deleting it. See
+- No tool edits a key's recorded value. To correct a wrong declaration, publish
+  a new version of the template with the right `valid_rekey_target` and create
+  new aplane keys from it; existing keys keep theirs. A generic LogicSig key
+  from the new version with the same parameters has the same address; a
+  composed template's key gets a new address, so move the account's funds to
+  it. See
   [Correcting a wrong declaration](ARCH_KEYTYPES.md#correcting-a-wrong-declaration).
 
 ## Naming Rules
@@ -162,12 +165,14 @@ For user output, choose a name tied to the user's actual policy.
 ## Fingerprint Rules
 
 The template compatibility fingerprint is provenance only (never signing
-authority), behavior-only, and versioned (`<n>:` prefix). When touching key-type
-definitions or the fingerprint formula:
+authority) and versioned (`<n>:` prefix). It covers behavior and a YAML
+template's `valid_rekey_target`. When touching key-type definitions or the
+fingerprint formula:
 
-- The fingerprint hashes only behavior-bearing fields; identity, routing, and
-  display fields (`key_type`, `family`, `version`, `publisher`, display strings)
-  are forbidden — never add them to the hash.
+- The fingerprint hashes only behavior-bearing fields and a template's
+  `valid_rekey_target` declaration; identity, routing, and display fields
+  (`key_type`, `family`, `version`, `publisher`, display strings) are forbidden
+  — never add them to the hash.
 - `base_primitive` tokens are a frozen namespace: add rows, never rename a token.
 - Bump `CompatibilityFingerprintVersion` only on a fingerprint-formula change
   (field set / hashing rules), never on a rename; update the goldens with it.

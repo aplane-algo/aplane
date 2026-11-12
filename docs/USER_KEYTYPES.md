@@ -73,8 +73,9 @@ payment that closes the whole balance, so an account rekeyed to an HTLC account
 could only ever be closed to its recipient or refund address.
 
 Each aplane key records its key type's declaration when the key is created, and
-keeps that value: changing a template's declaration later affects only keys
-created afterwards. The signer's `/keytypes` reports each key type's
+keeps that value. A template's declaration is part of its definition: importing
+the same key type with another declaration is refused as a template conflict,
+as any other change to an installed version is. The signer's `/keytypes` reports each key type's
 declaration as `valid_rekey_target`, and `/keys` the value each key recorded.
 
 The signer refuses a rekey of any account to an address it holds the aplane key
@@ -91,18 +92,20 @@ foreign targets, addresses the signer holds no aplane key for. See
 No command edits the value a key recorded, and a compiled key type's value is
 fixed in code. If a template declared the wrong value:
 
-1. Correct `valid_rekey_target` in the template and import it again with
-   `apadmin template import`. The import replaces the installed template.
-2. Delete each affected aplane key (`delete <address>` in apshell, or apadmin)
-   and generate it again, so that the new key records the corrected value.
+1. Publish a new version of the template (for example `.v2` in place of
+   `.v1`) with the right `valid_rekey_target`, and import it with
+   `apadmin template import`.
+2. Generate new aplane keys from the new version. Existing keys keep the value
+   they recorded.
 
-A generic LogicSig key such as `aplane.htlc.v1`, generated again with the same
-parameters, has the same address: the declaration is not part of its program.
-A key of a composed template (a DSA LogicSig) is generated from a new random
-seed, so it gets a new address; move its funds to the new address before
-deleting the old key. Delete checks nothing on chain, including the account's
-balance. A deleted key stays in the deleted archive until `apadmin archive
-prune`; see [USER_STORE_MGMT.md](USER_STORE_MGMT.md).
+A generic LogicSig key, such as an HTLC, generated from the new version with the
+same parameters has the same address, and its record replaces the old
+version's record for that address. A key of a composed template (a DSA
+LogicSig) is generated from a new random seed, so it gets a new address; move
+the old account's funds to it. Delete an old key once you no longer need it
+(`delete <address>` in apshell, or apadmin): delete checks nothing on chain,
+including the account's balance, and a deleted key stays in the deleted archive
+until `apadmin archive prune`; see [USER_STORE_MGMT.md](USER_STORE_MGMT.md).
 
 ## Operator Mental Model
 
@@ -1134,8 +1137,9 @@ files.
 ### Invalid or externally edited YAML template
 
 Reload rejects templates whose encrypted YAML no longer matches the
-same-version fingerprint stored in the state record (a behavior change); a
-different-version stored fingerprint is treated as benign, not an external edit.
+same-version fingerprint stored in the state record (a changed behavior or
+`valid_rekey_target` declaration); a different-version stored fingerprint is
+treated as benign, not an external edit.
 
 Recovery is to reinstall through the supported import path:
 
@@ -1154,7 +1158,7 @@ supported template management flow.
 ## Compatibility Rules
 
 `key_type` names are compatibility boundaries. Do not redefine an existing key
-type in place. Use versioned names such as:
+type in place, its `valid_rekey_target` included. Use versioned names such as:
 
 ```text
 example.my_escrow.v1

@@ -37,9 +37,9 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
 - Every template must declare `valid_rekey_target`: `true` only if the author
   declares that an aplane key of this type may be the signing authority an
   account is rekeyed to, its own account included, subject to the program.
-  Import refuses a template without it. Each key records the value when it is
-  created; to correct a wrong value, reinstall the corrected template, then
-  delete and regenerate the key.
+  Import refuses a template without it. It is part of the template's
+  definition, and each key records it when the key is created: a wrong value is
+  corrected by a new version of the template.
 - `max_opcode_cost` is optional. Omission uses the numeric one-transaction
   opcode ceiling shared by every consensus version APlane currently supports:
   20,000. An explicit value is an absolute reviewed worst-case cost of the

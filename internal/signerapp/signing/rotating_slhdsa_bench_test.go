@@ -49,7 +49,8 @@ func slhDiskFixture(b *testing.B) (*rotatingFixture, *keystore.FileKeyStore) {
 		b.Fatal(err)
 	}
 	defer payload.ZeroSecrets()
-	if _, err := keys.SavePayloadActive(active, payload, kr); err != nil {
+	// A rotating key type declares valid_rekey_target false.
+	if _, err := keys.SaveNewPayloadActive(active, payload, false, kr); err != nil {
 		b.Fatal(err)
 	}
 	store := keystore.NewAtomicFileKeyStoreForPaths(paths)

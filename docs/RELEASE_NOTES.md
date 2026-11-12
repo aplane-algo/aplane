@@ -25,9 +25,10 @@ possess the keys for the new address."
   `aplane.htlc.v1` declare false. A YAML template must declare it to be
   installed. `/keytypes` reports the declaration.
 - **Each aplane key records the declaration when it is created**, in its key
-  record, and keeps it. `/keys` reports the recorded value. Reinstalling a
-  template with another declaration affects only keys created afterwards; to
-  correct a key, delete and regenerate it.
+  record, and keeps it. `/keys` reports the recorded value. The declaration is
+  part of a template's definition and its fingerprint: reinstalling the same
+  version with another declaration is refused, and a wrong declaration is
+  corrected by a new version of the template.
 - **A rekey to a held aplane key that is not a valid rekey target is
   refused**, the account's own address included, before policy and under every
   `rekeys` setting, with HTTP 403 and the error code `rekey_target_not_valid`.

@@ -620,17 +620,35 @@ entry. A YAML template declares it as the top-level `valid_rekey_target` field,
 which install (`generictemplate.ValidateSpecAdmission`,
 `composeddsa.ValidateTemplateAdmission`) requires. `lsigprovider.ValidRekeyTarget`
 resolves the declaration, catalog first, then the installed template; an
-unknown key type is not a valid rekey target. The attribute is not part of the
-template compatibility fingerprint, which pins what a key's program does, so a
-reinstall of the same definition may change the declaration.
+unknown key type is not a valid rekey target. A provider answers it the same
+way: a template-built provider from its YAML, a compiled one, such as a plain
+host and each of its programs (`plainhost.Provider`, `ComposedDSA`), from its
+catalog entry, the one place a compiled key type declares it.
+
+The declaration is part of a template's definition. The template compatibility
+fingerprint covers it beside the program
+(`generictemplate.compatibilityFingerprintForSpec`,
+`ComposedDSA.CompatibilityFingerprint`), so a template that declares another
+value is another definition: install refuses it under an installed key type, as
+it refuses any other change to the same version (`installed template does not
+match incoming definition`), and reload treats a template file whose
+declaration changed as any other changed definition. A compiled key type's
+fingerprint does not carry it.
 
 The declaration is read once, when an aplane key is created: every creation
 path (generation, mnemonic import) records it in the key record as
-`valid_rekey_target` (`keys.Payload.ValidRekeyTarget`). From then on the key's
+`valid_rekey_target` (`keys.Payload.ValidRekeyTarget`). They save the new
+record through `keys.SaveNewPayload`, which takes the declaration as a
+required argument, so a creation path cannot record a value by omission; a
+path that carries an existing record (backup, restore, copy) writes the record
+it holds. From then on the key's
 recorded value is what counts. The signer reads it from the key, never from the
-live registry, so a key keeps its value when its template is later changed,
-disabled or absent on the node, and backup, restore and copy carry it as part
-of the record. A changed declaration affects only keys created afterwards.
+live registry, so a key keeps its value when its template is disabled or absent
+on the node, and backup, restore and copy carry it as part of the record. A
+request is judged against the key snapshot it was planned with: the plan
+carries the held addresses whose keys record false
+(`PlanResult.InvalidRekeyTargets`, beside `KnownAddresses`), and the invariant
+and the approval warnings read that.
 
 `/keytypes` reports the declaration and `/keys` the value each key recorded,
 both as `valid_rekey_target`. When a key records false, the signer refuses a
@@ -646,20 +664,22 @@ that the sender is its own address) is not built and may be added later.
 
 ### Correcting a wrong declaration
 
-No tool edits the value an aplane key recorded. A compiled key type's value is
-fixed in code. For a template that declared the wrong value, correct the
-template's `valid_rekey_target` and reinstall it, then delete and regenerate
-each affected aplane key, which records the corrected value:
+No tool edits the value an aplane key recorded, and a compiled key type's value
+is fixed in code. A template that declared the wrong value is corrected by
+publishing a new version of it (a new key type identifier, such as `.v2`) with
+the right declaration and creating new aplane keys from that version. Existing
+keys keep the value they recorded.
 
-- A generic LogicSig key regenerated with the same parameters has the same
-  address: the declaration is not part of the program, so the corrected
-  template compiles the same program
-  (`test/integration/generic_template_test.go::TestGenericLSigRegenerationProducesSameAddress`).
-- A key of a composed template (a DSA LogicSig) is generated from a new
-  random seed, and LogicSig key types take no mnemonic import, so
-  regenerating it gives a new address; move the account's funds to the new
-  address before deleting the old key.
-- Deleting an aplane key needs an unlocked store and checks nothing on chain,
+- A generic LogicSig: with the same program and parameters, the new version
+  renders the same TEAL, so its key has the same address
+  (`lsig/generictemplate/provider_test.go::TestNewVersionWithCorrectedDeclarationRendersTheSameProgram`).
+  Key files are named by address, so generating it writes a record that
+  replaces the old version's record for that address; the account does not
+  move.
+- A template with a DSA private key (a composed template): a new key comes
+  from a new random seed, and LogicSig key types take no mnemonic import, so
+  it has a new address; move the account's funds to it.
+- Deleting an old key needs an unlocked store and checks nothing on chain,
   including the account's balance. The record moves to the selected
   generation's `deleted/keys/` and stays there until `apadmin archive prune`,
   and retained generations keep their copies until they are pruned.
@@ -1448,7 +1468,9 @@ family: falcon-hashlock
 version: 1
 display_name: "Falcon-1024 Hashlock"
 description: "Falcon signature with SHA256 hash verification"
-valid_rekey_target: true
+# The program forbids every rekey, so an account rekeyed to it could never be
+# rekeyed away.
+valid_rekey_target: false
 parameters:
   - name: hash
     type: bytes
@@ -1612,7 +1634,7 @@ For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` the
 | 12 | For an account with a contract (`plain1` or `bounded2`), build it: cosigner ID and argument layout | `BuildBoundedAuthorizationMetadata` |
 | 13 | Resolve the reviewed opcode profile | `lsigprovider.ResolveOpcodeProfile` |
 | 14 | Build the payload with bytecode, parameters, metadata and the template fingerprint | `keys.NewAutoSaltedDSALSigPayload`, `SetBoundedAuthorization` |
-| 15 | Check the payload's selector equals the derived address, then save the key file | `Payload.Selector`, `keys.SavePayload` |
+| 15 | Check the payload's selector equals the derived address, then save the new key file with the key type's `valid_rekey_target` | `Payload.Selector`, `keys.SaveNewPayload`, `lsigprovider.ValidRekeyTarget` |
 
 `GenerateKey` finishes by reloading the runtime and writing the audit entry. The seed
 and private key are zeroed in `generateKey` on every path.

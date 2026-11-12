@@ -1998,3 +1998,42 @@ max_opcode_cost: 20000
 		})
 	}
 }
+
+// A wrong valid_rekey_target is corrected by a new version of the template.
+// The new version is another definition (another fingerprint), but with the
+// same program and parameters it renders the same TEAL, so a key generated
+// from it has the same LogicSig address as the old version's key.
+func TestNewVersionWithCorrectedDeclarationRendersTheSameProgram(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrected := strings.NewReplacer("\nversion: 1\n", "\nversion: 2\n", "valid_rekey_target: false", "valid_rekey_target: true").Replace(string(data))
+	params := map[string]string{
+		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"recipient":      "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI",
+		"refund_address": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+		"timeout_round":  "12345",
+	}
+	render := func(yaml string) (keyType, fingerprint, teal string) {
+		t.Helper()
+		spec, err := ParseTemplateSpec([]byte(yaml))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmpl := NewYAMLTemplate(spec)
+		teal, err = tmpl.GenerateTEAL(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tmpl.KeyType(), tmpl.CompatibilityFingerprint(), teal
+	}
+	oldType, oldFingerprint, oldTEAL := render(string(data))
+	newType, newFingerprint, newTEAL := render(corrected)
+	if oldType == newType || oldFingerprint == newFingerprint {
+		t.Fatalf("key types %s and %s, fingerprints %s and %s: want a new key type and a new definition", oldType, newType, oldFingerprint, newFingerprint)
+	}
+	if oldTEAL != newTEAL {
+		t.Fatalf("the corrected version renders another program:\n%s\nwant\n%s", newTEAL, oldTEAL)
+	}
+}

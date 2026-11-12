@@ -73,7 +73,7 @@ func TestKeysComparesAccountDefinition(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-				_, err := keys.SavePayload(ir.KeyPaths(), payload, mk)
+				_, err := keys.SaveNewPayload(ir.KeyPaths(), payload, false, mk)
 				return err
 			}); err != nil {
 				t.Fatalf("write key file: %v", err)

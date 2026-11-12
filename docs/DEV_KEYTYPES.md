@@ -160,17 +160,21 @@ fixture's `teal_compile_network` and rejects missing/zero cost reporting or
 consumption above the declared ceiling. Simulation is evidence for the reviewed
 vectors; it is not a general proof over arbitrary TEAL inputs.
 
-Key files may also store `template_fingerprint`, the behavior-only, versioned
-compatibility fingerprint of the template or composed provider that created the
-key, when known. This is provenance for inventory warnings only; it is not
-signing authority and must not override stored bytecode/signing metadata.
+Key files may also store `template_fingerprint`, the versioned compatibility
+fingerprint of the template or composed provider that created the key, when
+known. It covers the definition's behavior and, for a YAML template, its
+`valid_rekey_target` declaration. This is provenance for inventory warnings
+only; it is not signing authority and must not override stored
+bytecode/signing metadata.
 
 Fingerprint authoring rules:
 
 - The fingerprint hashes only behavior-bearing definition fields (TEAL /
   `teal_suffix`, `salt_style`, the base primitive token, `template_mode`,
   `template_variables`, `parameters`, `runtime_args`, and the effective opcode
-  profile). Identity, routing, and display fields (`key_type`, `family`,
+  profile) and a YAML template's `valid_rekey_target` declaration, which is
+  part of its definition. A compiled provider's fingerprint has no
+  declaration; its catalog entry carries it. Identity, routing, and display fields (`key_type`, `family`,
   `version`, `publisher`, `display_name`, `description`, `display_color`,
   labels/examples) are forbidden from the hash, so an identifier or display
   rename never changes the fingerprint.
@@ -866,11 +870,11 @@ TEAL with another account as `Sender`. When a key records `false`, the signer
 refuses every rekey to its address, the account's own address included. Install
 refuses a template that leaves the field out, with an error naming it. Each
 aplane key records the declaration when it is created (`valid_rekey_target` in
-the key record), and the signer reads the key's value. The field is not part of
-the compatibility fingerprint: reinstalling the same definition with another
-declaration changes only keys created afterwards. To correct a key created
-under a wrong declaration, correct the template's declaration, reinstall it,
-then delete and regenerate the key; see
+the key record), and the signer reads the key's value. The field is part of the
+template's definition and its compatibility fingerprint: install refuses the
+same key type with another declaration, as it refuses any other change to the
+same version. A wrong declaration is corrected by a new version of the template
+with the right one, and new keys created from it; see
 [Correcting a wrong declaration](ARCH_KEYTYPES.md#correcting-a-wrong-declaration).
 A compiled key type declares the same attribute in its
 `internal/keytypecatalog` entry, where the value is fixed in code. See
@@ -1014,7 +1018,8 @@ family: custom-timelock
 version: 1
 display_name: "Custom Timelock"
 max_opcode_cost: 20000
-valid_rekey_target: true
+# Rekey is refused, so an account rekeyed to it could never be rekeyed away.
+valid_rekey_target: false
 
 bounded:
   contract: bounded2

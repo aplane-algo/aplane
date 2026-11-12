@@ -1546,7 +1546,10 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   not a valid rekey target (`valid_rekey_target` false, recorded from its key type's declaration
   when the key was created, as an `aplane.htlc.v1` account records), is
   rejected before policy runs, on every path that reaches the approval gates,
-  with HTTP `403` and `code:"rekey_target_not_valid"`. Clients branch on the
+  with HTTP `403` and `code:"rekey_target_not_valid"`. It judges the key
+  snapshot the request was planned with, the one the `rekeys` rule and the
+  approval warnings read: the plan carries those held addresses
+  (`PlanResult.InvalidRekeyTargets`). Clients branch on the
   code; the message, `transaction N: rekey_target_not_valid: cannot rekey to
   <address>: this signer holds its aplane key (<key type>), which is not a valid
   rekey target (valid_rekey_target: false)`, is for people and the audit log.
@@ -2037,7 +2040,8 @@ warning does not establish that no leaf was reused.
 - optional `template_provenance_status`, `template_provenance_note`; these are
   informational, version-aware comparisons between stored key template
   provenance and the registered local definition, not signing gates. The
-  fingerprint is behavior-only and versioned (`<n>:` prefix), so renaming a
+  fingerprint covers behavior and a YAML template's `valid_rekey_target`, and
+  is versioned (`<n>:` prefix), so renaming a
   `key_type`, family, or base key type does not by itself produce a conflict
 
 `template_provenance_status` values:

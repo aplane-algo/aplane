@@ -248,13 +248,18 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }},
 				}
 				var logged string
+				plan := &PlanResult{
+					AllTxns: txns, KnownAddresses: knownAddressesFromSnapshot(snapshot),
+					InvalidRekeyTargets: invalidRekeyTargetsFromSnapshot(snapshot),
+				}
 				in := gateInput{
 					AllTxns: txns, EvalCount: 1, AuthKeys: []string{tc.sender.String()},
-					KnownAddresses: knownAddressesFromSnapshot(snapshot),
-					LogRejection:   func(reason string) { logged = reason },
+					KnownAddresses:      plan.KnownAddresses,
+					InvalidRekeyTargets: plan.InvalidRekeyTargets,
+					LogRejection:        func(reason string) { logged = reason },
 					RequestOperatorApproval: func(ctx context.Context, rule string) *ServiceError {
 						approvalCalls++
-						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: tc.sender.String()}, txns, txns, "", 0, 0, rule, nil)
+						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: tc.sender.String()}, txns, txns, "", 0, 0, rule, plan)
 					},
 				}
 				if tc.listed {

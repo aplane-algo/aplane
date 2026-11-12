@@ -194,7 +194,10 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Bounded:            bounded,
 		Layer3:             layer3,
 		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
-		ValidRekeyTarget:   spec.RekeyTargetValid(),
+		// An installed template declares it (install requires it); a plain
+		// host's bounded shape, built from a spec in code, does not, and
+		// answers its catalog entry.
+		RekeyTargetDeclaration: spec.ValidRekeyTarget,
 	}), nil
 }
 

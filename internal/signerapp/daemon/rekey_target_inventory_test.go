@@ -28,7 +28,7 @@ func TestInventoryReportsRecordedAndDeclaredValidRekeyTarget(t *testing.T) {
 	if err := server.productRuntime().WithKeyring(func(kr *crypto.Keyring) error {
 		payload := apkeys.NewEd25519Payload(recorded.PublicKey, recorded.PrivateKey)
 		defer payload.ZeroSecrets()
-		_, err := apkeys.SavePayload(mustActiveKeyPaths(t, server), payload, kr)
+		_, err := apkeys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, kr)
 		return err
 	}); err != nil {
 		t.Fatal(err)
