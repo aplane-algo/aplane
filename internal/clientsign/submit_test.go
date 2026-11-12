@@ -369,6 +369,66 @@ func TestSignAndSubmitViaGroupWritesSubmittedTransactions(t *testing.T) {
 	}
 }
 
+// The signer's fee raise is shown without verbose, and only once the report
+// has been checked against the returned bytes: a raise the bytes do not bear
+// out is refused and never shown.
+func TestSignAndSubmitViaGroupShowsCheckedFeeRaise(t *testing.T) {
+	original := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: types.Address{1}, Fee: 1000},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{2}, Amount: 1},
+	}
+	submitted := original
+	submitted.Fee = 5000
+	run := func(t *testing.T, reported int) (string, error) {
+		t.Helper()
+		signerClient := signerclient.NewSignerClient("http://signer.test")
+		signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/sign" {
+				return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
+			}
+			return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{
+				Signed: []string{signedTxnHex(submitted)},
+				Mutations: &signerapi.MutationReport{
+					OriginalCount: 1, FinalCount: 1, FeesModified: []int{0}, TotalFeesDelta: reported,
+				},
+			})
+		})}
+		algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v2/transactions" {
+				t.Errorf("algod path = %s, want /v2/transactions", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"txId":"test-txid"}`))
+		}))
+		defer algodServer.Close()
+		algodClient, err := algod.MakeClient(algodServer.URL, "")
+		if err != nil {
+			t.Fatalf("MakeClient() error = %v", err)
+		}
+		authCache := cache.NewAuthAddressCache()
+		var out bytes.Buffer
+		_, _, err = SignAndSubmitViaGroup([]types.Transaction{original}, &authCache, signerClient, algodClient, SubmitOptions{Out: &out})
+		return out.String(), err
+	}
+
+	out, err := run(t, 4000)
+	if err != nil {
+		t.Fatalf("SignAndSubmitViaGroup() error = %v", err)
+	}
+	if !strings.Contains(out, "  Fee adjustment: +4000 µAlgos across group\n") {
+		t.Fatalf("output = %q, want the fee adjustment without verbose", out)
+	}
+
+	out, err = run(t, 1000)
+	if err == nil || !strings.Contains(err.Error(), "mutation total_fees_delta 1000 does not match observed delta 4000") {
+		t.Fatalf("misreported raise: err = %v", err)
+	}
+	if strings.Contains(out, "Fee adjustment") {
+		t.Fatalf("a refused raise was shown: %q", out)
+	}
+}
+
 // nonCanonicalSignedTxnVariants returns encodings of signed that decode to the
 // same fields a reader checks but are not the bytes that would be checked:
 // trailing data, a second transaction appended, and the signature written a

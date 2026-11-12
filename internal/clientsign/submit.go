@@ -139,13 +139,8 @@ func SignAndSubmitViaGroup(
 		} else {
 			_, _ = fmt.Fprintf(w, "✓ Signed %d transaction(s)\n", len(txns))
 		}
-		if m := resp.Mutations; m != nil {
-			if m.TotalFeesDelta > 0 {
-				_, _ = fmt.Fprintf(w, "  Fee adjustment: +%d µAlgos across group\n", m.TotalFeesDelta)
-			}
-			if m.PassthroughCount > 0 {
-				_, _ = fmt.Fprintf(w, "  Passthrough: %d transaction(s) included as-is\n", m.PassthroughCount)
-			}
+		if m := resp.Mutations; m != nil && m.PassthroughCount > 0 {
+			_, _ = fmt.Fprintf(w, "  Passthrough: %d transaction(s) included as-is\n", m.PassthroughCount)
 		}
 	}
 
@@ -155,6 +150,12 @@ func SignAndSubmitViaGroup(
 	}
 	if err := validateSignedGroupMutations(txns, signedObjects, signedTxns, resp.Mutations); err != nil {
 		return nil, nil, fmt.Errorf("verify signer response: %w", err)
+	}
+	// The report was checked against the returned bytes above, so the raise
+	// shown is the one the group pays. It is shown whether or not verbose is
+	// set: the fee comes out of the sender's balance.
+	if m := resp.Mutations; m != nil && m.TotalFeesDelta > 0 {
+		_, _ = fmt.Fprintf(w, "  Fee adjustment: +%d µAlgos across group\n", m.TotalFeesDelta)
 	}
 	if opts.Simulate {
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, algodClient, w)
