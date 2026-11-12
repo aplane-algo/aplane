@@ -79,6 +79,18 @@ func TestAppAndShellParsersRefuseRepeatedSingleValuedOptions(t *testing.T) {
 			_, err := parseEndpointsAddArgs([]string{"ssh://a.example", "--endpoint", "ssh://b.example", "--alias", "a"})
 			return err
 		}, "endpoint URL given more than once"},
+		{"endpoints add --alias empty, then again", func() error {
+			_, err := parseEndpointsAddArgs([]string{"ssh://a.example", "--alias", "", "--alias", "prod"})
+			return err
+		}, "--alias given more than once"},
+		{"endpoints add --endpoint empty, then again", func() error {
+			_, err := parseEndpointsAddArgs([]string{"--endpoint", "", "--endpoint", "ssh://b.example", "--alias", "a"})
+			return err
+		}, "endpoint URL given more than once"},
+		{"endpoints add --endpoint empty, then a URL", func() error {
+			_, err := parseEndpointsAddArgs([]string{"--endpoint", "", "ssh://b.example", "--alias", "a"})
+			return err
+		}, "usage: " + endpointsAddUsage},
 		{"endpoints add --url twice", func() error {
 			_, err := parseEndpointsAddArgs([]string{"--url", "ssh://a.example", "--url", "ssh://b.example", "--alias", "a"})
 			return err
