@@ -8,12 +8,15 @@ package engine
 // placeLsigArgs is the one place that decides which position gets which of
 // them and which are refused. Every signing path reaches it: checkReadyToSign
 // for shell commands, scripts, transaction files and the default plugin flow,
-// SignAndSubmitWithPluginSigners for a presign-plan group, CheckPluginLsigArgs
-// for the plugin review, and LsigArgsForItems for a command that makes one
-// submission per item. Nothing above the engine filters or checks them.
+// SignAndSubmitWithPluginSigners for a presign-plan group given arguments,
+// and CheckPluginLsigArgs for the plugin review. LsigArgsForItems checks the
+// names once for a command that makes one submission per item, through the
+// same resolution and retry (judgeLsigArgs). Nothing above the engine filters
+// or checks them.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"sort"
@@ -96,79 +99,145 @@ func (e *Engine) CheckPluginLsigArgs(ctx context.Context, txns []types.Transacti
 	if !e.IsConnected() {
 		return ErrNotConnected
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	_, err := e.lsigArgsForGroup(ctx, txns, pluginOwned, NewLsigArgs(values))
 	return err
 }
 
 // LsigArgsForItems checks LogicSig arguments given once for a command that
-// makes one submission per item: send, sweep or validate over several
-// accounts. itemSenders holds each item's sender. With more than one item,
-// every name must be declared by the signing key of some item's account, as
-// the cache resolves it, or it is refused here, before anything is sent; the
-// key list is fetched again once first when a name is unknown, since the
-// cache may be stale. Each item then gets what its own key declares, and an
-// item whose key declares none of the names gets none: that is not an error.
-// With one item, the command is one submission, which refuses a name its key
-// does not declare when it is signed.
+// makes one submission per item: send, sweep or validate over one account or
+// several. itemSenders holds each item's sender. Each item's signing key is
+// resolved as its own submission resolves it (judgeLsigArgs), and every name
+// must be declared by the key of some item, or it is refused here, before
+// anything is sent. Each item's submission then gives its position what its
+// own key declares, and an item whose key declares none of the names gets
+// none: that is not an error.
+//
+// An item whose auth address cannot be looked up is set aside: its own
+// submission looks it up again and fails on it, as it would without this
+// check, and the others go on. Its key is unknown, so a name that only it
+// might declare is refused, and the refusal says which accounts could not be
+// looked up.
 func (e *Engine) LsigArgsForItems(ctx context.Context, itemSenders []string, values map[string][]byte) (LsigArgs, error) {
 	args := NewLsigArgs(values)
-	if len(values) == 0 || len(itemSenders) <= 1 {
+	if len(values) == 0 {
 		return args, nil
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if _, err := e.lsigArgSchemas(ctx, itemSenders, values, true, false); err != nil {
+	setAside := make(map[string]error)
+	err := e.judgeLsigArgs(ctx, itemSenders, setAside, func(signers []string) error {
+		if undeclared := undeclaredLsigArgs(e.signerCacheSigningArgsFor(signers), values); undeclared != nil {
+			return undeclared
+		}
+		return nil
+	})
+	if err != nil {
+		var undeclared *UndeclaredLsigArgsError
+		if errors.As(err, &undeclared) && len(setAside) > 0 {
+			err = fmt.Errorf("%w; %s", err, notLookedUp(setAside))
+		}
 		return LsigArgs{}, err
 	}
 	args.forItems = true
 	return args, nil
 }
 
-// lsigArgsForGroup is the precondition signing shares for LogicSig arguments
-// over a group: it fetches what the client lacks to know each position's
-// signing key (refreshSubmitSigningState), then places the arguments
-// (placeLsigArgs). A position whose sender is in pluginOwned is signed by a
-// plugin, not by apsigner, and takes part in neither.
+// notLookedUp says which accounts LsigArgsForItems set aside, and why.
+func notLookedUp(setAside map[string]error) string {
+	senders := make([]string, 0, len(setAside))
+	for sender := range setAside {
+		senders = append(senders, sender)
+	}
+	sort.Strings(senders)
+	reasons := make([]string, len(senders))
+	for i, sender := range senders {
+		reasons[i] = setAside[sender].Error()
+	}
+	noun := "account"
+	if len(senders) > 1 {
+		noun = "accounts"
+	}
+	return fmt.Sprintf("%d %s could not be looked up, so their keys were not checked (%s)", len(senders), noun, strings.Join(reasons, "; "))
+}
+
+// lsigArgsForGroup places the LogicSig arguments given for a group, a
+// submission (placeLsigArgs). A position whose sender is in pluginOwned is
+// signed by a plugin, not by apsigner: it gets nothing and declares nothing.
 func (e *Engine) lsigArgsForGroup(ctx context.Context, txns []types.Transaction, pluginOwned map[string]string, args LsigArgs) ([]map[string][]byte, error) {
 	senders := make([]string, len(txns))
-	managed := make([]types.Transaction, 0, len(txns))
 	for i, txn := range txns {
-		sender := txn.Sender.String()
-		if _, owned := pluginOwned[sender]; owned {
-			continue
+		if _, owned := pluginOwned[txn.Sender.String()]; !owned {
+			senders[i] = txn.Sender.String()
 		}
-		senders[i] = sender
-		managed = append(managed, txn)
 	}
-	keysFresh, err := e.refreshSubmitSigningState(ctx, managed)
-	if err != nil {
-		return nil, err
-	}
-	return e.placeLsigArgs(ctx, senders, args, keysFresh)
+	return e.placeLsigArgs(ctx, senders, args)
 }
 
 // placeLsigArgs gives each position of a submission the LogicSig arguments
 // its signing key declares, and refuses what cannot be signed. senders holds
 // each position's sender, or "" for a position apsigner does not sign, which
 // gets nothing and declares nothing. The signing key is the sender's
-// effective signer (its auth address when rekeyed), as the cache resolves
-// it: a native key (ed25519 or native Falcon) declares no arguments and is
-// given none. A name no position declares is refused (lsigArgSchemas), unless
-// LsigArgsForItems has already found it declared across the items of a set.
-// Each position is then checked against its key's declarations: a required
-// argument left out, or a value of the wrong declared length, is refused.
-// keysFresh says the key list was fetched for this submission already, so a
-// name it does not declare is refused without fetching it again.
-func (e *Engine) placeLsigArgs(ctx context.Context, senders []string, args LsigArgs, keysFresh bool) ([]map[string][]byte, error) {
-	schemas, err := e.lsigArgSchemas(ctx, senders, args.values, !args.forItems, keysFresh)
+// effective signer (its auth address when rekeyed), resolved as signing
+// resolves it (judgeLsigArgs): a native key (ed25519 or native Falcon)
+// declares no arguments and is given none. A name no position declares is
+// refused, unless LsigArgsForItems has already found it declared across the
+// items of a set. Each position is then checked against its key's
+// declarations: a required argument left out, or a value of the wrong
+// declared length, is refused. Every refusal comes from the cached key list,
+// so judgeLsigArgs looks again after fetching it, at most once.
+func (e *Engine) placeLsigArgs(ctx context.Context, senders []string, args LsigArgs) ([]map[string][]byte, error) {
+	var placed []map[string][]byte
+	err := e.judgeLsigArgs(ctx, senders, nil, func(signers []string) error {
+		var err error
+		placed, err = placeBySchemas(e.signerCacheSigningArgsFor(signers), args)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	placed := make([]map[string][]byte, len(senders))
+	return placed, nil
+}
+
+// judgeLsigArgs is where placement and its up-front check fetch. It resolves
+// each sender's signing key as signing does (refreshSubmitSigningState, with
+// setAside as given there), then runs judge on the positions' effective
+// signers: "" for a position apsigner does not sign or a sender set aside.
+// judge reads the cached key list, which may be stale, so when it refuses and
+// the list was not fetched for this submission already, the list is fetched
+// once and judge runs again; its second answer stands.
+func (e *Engine) judgeLsigArgs(ctx context.Context, senders []string, setAside map[string]error, judge func(signers []string) error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	keysFresh, err := e.refreshSubmitSigningState(ctx, senders, setAside)
+	if err != nil {
+		return err
+	}
+	resolved := make([]string, len(senders))
+	for i, sender := range senders {
+		if _, failed := setAside[sender]; !failed {
+			resolved[i] = sender
+		}
+	}
+	err = judge(e.positionSigners(resolved))
+	if err == nil || keysFresh {
+		return err
+	}
+	if _, fetchErr := e.RefreshKeys(ctx); fetchErr != nil {
+		return fmt.Errorf("%w (in the cached key list; fetching the signer's key list to look again failed: %v)", err, fetchErr)
+	}
+	return judge(e.positionSigners(resolved))
+}
+
+// placeBySchemas places args by the schemas each position's key declares,
+// and refuses a name no schema declares (unless args were checked for the
+// items of a set), a required argument left out, and a value of the wrong
+// declared length.
+func placeBySchemas(schemas [][]cache.SigningArgInfo, args LsigArgs) ([]map[string][]byte, error) {
+	if !args.forItems {
+		if undeclared := undeclaredLsigArgs(schemas, args.values); undeclared != nil {
+			return nil, undeclared
+		}
+	}
+	placed := make([]map[string][]byte, len(schemas))
 	for i, schema := range schemas {
 		var missing []string
 		for _, def := range schema {
@@ -196,33 +265,6 @@ func (e *Engine) placeLsigArgs(ctx context.Context, senders []string, args LsigA
 		}
 	}
 	return placed, nil
-}
-
-// lsigArgSchemas returns the arguments each position's signing key declares,
-// from the signer cache. When refuse is set, a given name that none of them
-// declares is refused with an *UndeclaredLsigArgsError; the cached key list
-// may be stale, so unless keysFresh says it was just fetched, it is fetched
-// once and the names are looked up again before anything is refused.
-func (e *Engine) lsigArgSchemas(ctx context.Context, senders []string, values map[string][]byte, refuse, keysFresh bool) ([][]cache.SigningArgInfo, error) {
-	schemas := e.signerCacheSigningArgsFor(e.positionSigners(senders))
-	if !refuse || len(values) == 0 {
-		return schemas, nil
-	}
-	undeclared := undeclaredLsigArgs(schemas, values)
-	if undeclared == nil {
-		return schemas, nil
-	}
-	if !keysFresh {
-		if _, err := e.RefreshKeys(ctx); err != nil {
-			return nil, fmt.Errorf("%w (in the cached key list; fetching the signer's key list to look again failed: %v)", undeclared, err)
-		}
-		schemas = e.signerCacheSigningArgsFor(e.positionSigners(senders))
-		undeclared = undeclaredLsigArgs(schemas, values)
-	}
-	if undeclared != nil {
-		return nil, undeclared
-	}
-	return schemas, nil
 }
 
 // positionSigners resolves each position's sender to its effective signer,

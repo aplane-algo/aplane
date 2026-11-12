@@ -55,8 +55,8 @@ tests, not modeled. So is the LogicSig argument placement
 (`engine/lsig_args.go::placeLsigArgs`), another refusal the model does not
 transcribe: `CheckPluginGroup` runs it on the decoded group with the step's
 `arg:` values after the first rekey judgment, and submission runs it again
-after the network precondition, in `checkReadyToSign` and
-`SignAndSubmitWithPluginSigners`. TLC verifies that no
+after the network precondition, in `checkReadyToSign` and, when `arg:` values
+were given, `SignAndSubmitWithPluginSigners`. TLC verifies that no
 enumerated combination reaches submission without satisfying every named
 invariant. A dropped check in `Submitted` — the model's stand-in for a
 regression in the code path it transcribes — surfaces as a counterexample.

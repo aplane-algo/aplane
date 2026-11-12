@@ -1005,9 +1005,10 @@ placement" in [ARCH_SHELL.md](ARCH_SHELL.md)):
   position gets none;
 - a position the plugin signs (`presign-plan`'s `pluginSigners`) gets none and
   declares none;
-- a name no position declares is refused, after the signer's key list is
-  fetched once more in case the cached one is stale; so is a required
-  argument a position's key declares and none was given for;
+- a name no position declares is refused, and so is a required argument a
+  position's key declares and none was given for, or a value of the wrong
+  declared length; before refusing, the signer's key list is fetched once more
+  in case the cached one is stale;
 - `pregrouped-signed` takes no arguments: the group arrives signed, and the
   check refuses any given for it.
 
@@ -1015,8 +1016,9 @@ placement" in [ARCH_SHELL.md](ARCH_SHELL.md)):
 the review, so a refusal comes before anything is shown, and keeps the
 arguments on the group; `SubmitPluginTransactions` places them again, with the
 same function, on the same group. With no arguments given the check places
-nothing and fetches nothing, and a required argument left out is refused at
-submission, before anything is sent. Two positions whose keys declare the same
+nothing and fetches nothing; in the default flow a required argument left out
+is then refused at submission, before anything is sent, and a `presign-plan`
+submission, as before, goes to `/plan` without placing or fetching anything. Two positions whose keys declare the same
 name both receive the value; there is no per-position syntax.
 
 ### Creating an External Plugin

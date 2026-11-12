@@ -26,12 +26,14 @@ before it was renamed `enroll`.
   native account was sent and silently ignored. Now a name that no signing
   key of the submission declares is refused before anything is sent, with the
   names the keys do declare (`no signing key here declares the LogicSig
-  argument "premage"; they declare "preimage"`); the key list is fetched once
-  more first, in case it was stale. A set command checks the names once,
-  against all its accounts, before the first transaction; an account whose
-  key declares none of them is simply sent none. A plugin group is checked
-  before its review. A required argument a key declares and none was given
-  for is refused for any LogicSig key, not only a generic one.
+  argument "premage"; they declare "preimage"`). A set command checks the
+  names once, against all its accounts, each resolved as its own transaction
+  will be, before the first transaction; an account whose key declares none
+  of them is simply sent none. A plugin group is checked before its review. A
+  required argument a key declares and none was given for is refused for any
+  LogicSig key, not only a generic one, and so is a value of the wrong
+  declared length. Before any of these refusals the key list is fetched once
+  more, in case the cached one was stale.
 - **Atomic sends carry LogicSig arguments.** `send ... atomic` to or from a
   set refused `arg:`, since it had no way to carry them; it now places them
   like any other group.

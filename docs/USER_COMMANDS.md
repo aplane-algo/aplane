@@ -1660,14 +1660,17 @@ none.
 - A name that no transaction's signing key declares is refused before
   anything is sent: `no signing key here declares the LogicSig argument
   "premage"; they declare "preimage"`. A typo on a native account is refused
-  the same way, instead of being ignored. If the name is unknown, apshell
-  first fetches the signer's key list again in case a key was added.
+  the same way, instead of being ignored.
 - A required argument the signing key declares and none was given for is
   refused, and so is a value of the wrong declared length.
-- `send`, `sweep` and `validate` over several accounts check the names once,
-  against all the accounts, before the first transaction; then each account
-  gets what its own key declares, and an account whose key declares none of
-  them gets none. A name declared only by an account that `sweep` then skips
+- Before refusing, apshell fetches the signer's key list once more, in case a
+  key was added or regenerated since it was cached.
+- `send`, `sweep` and `validate` check the names once, against all the
+  accounts (looking up an account's auth address if apshell has not yet),
+  before the first transaction; then each account gets what its own key
+  declares, and an account whose key declares none of them gets none. An
+  account whose auth address cannot be looked up fails on its own; a name
+  only its key might declare is refused, naming the account. A name declared only by an account that `sweep` then skips
   (low balance, not opted in) is used nowhere, without an error.
 - An atomic send and a plugin's group are one submission: each position gets
   its own key's arguments, so a group can hold LogicSig accounts of different

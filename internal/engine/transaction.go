@@ -118,26 +118,32 @@ func (e *Engine) checkReadyToSign(txns []types.Transaction, args LsigArgs, opts 
 	if err := e.checkActiveNetwork(opts.Ctx, txns); err != nil {
 		return nil, err
 	}
-	ctx := opts.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return e.lsigArgsForGroup(ctx, txns, nil, args)
+	return e.lsigArgsForGroup(opts.Ctx, txns, nil, args)
 }
 
 // refreshSubmitSigningState fetches what the client lacks to know each
-// sender's signing key: an auth address it has not looked up, and the
-// signer's key list when an effective signer is another address or a key it
-// does not know. It reports whether it fetched the key list.
-func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) (bool, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := e.refreshMissingSubmitAuthAddresses(ctx, txns); err != nil {
+// sender's signing key: an auth address it has not looked up
+// (refreshMissingSubmitAuthAddresses), and then the signer's key list when an
+// effective signer is another address or a key it does not know. It reports
+// whether it fetched the key list. An empty sender is skipped.
+//
+// With setAside nil, a failed lookup is returned at once, as a submission
+// fails on it. With setAside given, a sender whose lookup fails is recorded
+// there with its error and left out, and the others are resolved: a command
+// that makes one submission per item checks them all up front, and the item
+// whose lookup failed fails on its own when it is submitted, as it would
+// without the check.
+func (e *Engine) refreshSubmitSigningState(ctx context.Context, senders []string, setAside map[string]error) (bool, error) {
+	if err := e.refreshMissingSubmitAuthAddresses(ctx, senders, setAside); err != nil {
 		return false, err
 	}
-
-	if !e.submitEffectiveSignersNeedKeyRefresh(txns) {
+	resolved := make([]string, 0, len(senders))
+	for _, sender := range senders {
+		if _, failed := setAside[sender]; sender != "" && !failed {
+			resolved = append(resolved, sender)
+		}
+	}
+	if !e.submitEffectiveSignersNeedKeyRefresh(resolved) {
 		return false, nil
 	}
 	if _, err := e.RefreshKeys(ctx); err != nil {
@@ -146,10 +152,15 @@ func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Tra
 	return true, nil
 }
 
-func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []types.Transaction) error {
-	seenSenders := make(map[string]struct{}, len(txns))
-	for _, txn := range txns {
-		sender := txn.Sender.String()
+// refreshMissingSubmitAuthAddresses looks up, once each, the auth address of
+// every sender the auth cache has no entry for. A failure is returned at once,
+// or, with setAside given, recorded there for its sender.
+func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, senders []string, setAside map[string]error) error {
+	seenSenders := make(map[string]struct{}, len(senders))
+	for _, sender := range senders {
+		if sender == "" {
+			continue
+		}
 		if _, ok := seenSenders[sender]; ok {
 			continue
 		}
@@ -158,7 +169,11 @@ func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []t
 			continue
 		}
 		if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {
-			return fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
+			err = fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
+			if setAside == nil {
+				return err
+			}
+			setAside[sender] = err
 		}
 	}
 	return nil
@@ -196,10 +211,9 @@ func (e *Engine) refreshRekeyedSenders(ctx context.Context, txns []types.Transac
 	return firstErr
 }
 
-func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) bool {
-	seenSigners := make(map[string]struct{}, len(txns))
-	for _, txn := range txns {
-		sender := txn.Sender.String()
+func (e *Engine) submitEffectiveSignersNeedKeyRefresh(senders []string) bool {
+	seenSigners := make(map[string]struct{}, len(senders))
+	for _, sender := range senders {
 		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
 		if _, ok := seenSigners[effectiveSigner]; ok {
 			continue

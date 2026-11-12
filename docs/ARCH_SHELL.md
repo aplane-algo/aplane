@@ -556,14 +556,19 @@ which of them and which are refused, and every path that signs reaches it:
 `checkReadyToSign` for shell commands, scripts, transaction files, atomic
 sends, prepared groups and the default plugin flow (and so the rotating and
 cosigned routes behind it, which sign with what it placed);
-`SignAndSubmitWithPluginSigners` for a presign-plan group; and
+`SignAndSubmitWithPluginSigners` for a presign-plan group given arguments
+(with none it places nothing and fetches nothing before `/plan`); and
 `CheckPluginLsigArgs` for the plugin group check before the review. Nothing
 above the engine filters or checks arguments; callers carry them as an
 `engine.LsigArgs` value, which only the placement gives out.
 
 1. **Placement.** A position gets the arguments whose names its effective
    signer's key declares in the cached key list: the signer's key for the
-   sender, or for its auth address when it is rekeyed. A LogicSig key declares
+   sender, or for its auth address when it is rekeyed. The signer is resolved
+   as signing resolves it (`judgeLsigArgs` through
+   `refreshSubmitSigningState`): an auth address the client has not cached is
+   looked up, and the key list is fetched when a signer is another address or
+   a key the cache does not know. A LogicSig key declares
    its signing args; a bounded account declares its runtime arguments, cached
    from `/keys` (`bounded_authorization.runtime_args`) as optional, since which
    of them a path requires is the signer's to decide. A native key (ed25519 or
@@ -572,20 +577,28 @@ above the engine filters or checks arguments; callers carry them as an
 2. **Refusal, per submission.** A given name that no position of the
    submission declares is refused before anything is sent
    (`engine.UndeclaredLsigArgsError`: `no signing key here declares the
-   LogicSig argument "premage"; they declare "preimage"`). The cached key list
-   may be stale, so when a name is unknown the engine fetches it once and looks
-   again before refusing, unless it was fetched for this submission already.
+   LogicSig argument "premage"; they declare "preimage"`).
 3. **Per position.** Each position is then checked against its key's
    declarations: a required argument left out, or a value of the wrong
    declared length, is refused (`transaction <n>: invalid LogicSig
    arguments: ...`).
-4. **Sets.** `send`, `sweep` and `validate` over more than one item make one
-   submission per item. `LsigArgsForItems` checks rule 2 once, up front,
-   against every item's account as the cache resolves it; each item's
-   submission then gives its position what its own key declares and refuses no
-   name. An account whose key declares none of the names gets none, and that
-   is not an error. A lookup failure fails its own item. With one item the
-   command is one submission and rule 2 applies at its signing.
+
+   Every refusal in rules 2 and 3 comes from the cached key list, which may be
+   stale (a key added, or regenerated with other declarations, since it was
+   cached). So before refusing, the engine fetches the list once and judges
+   again, unless it was fetched for this submission already: at most one
+   fetch per submission, in one place (`judgeLsigArgs`).
+4. **Sets.** `send`, `sweep` and `validate` make one submission per item.
+   `LsigArgsForItems` checks rule 2 once, up front, against every item's
+   account, resolving each item's signer as the item's own submission will,
+   with the same lookups and the same one retry; each item's submission then
+   gives its position what its own key declares and refuses no name. An
+   account whose key declares none of the names gets none, and that is not an
+   error. An item whose auth address cannot be looked up is set aside: its own
+   submission fails on the lookup, as without the check, and the others go
+   on; a name that only it might declare is refused, and the refusal names
+   the accounts not looked up. A command with one item is checked the same
+   way.
 5. **Plugins.** `apshellapp.CheckPluginGroup` runs the placement on the decoded
    group, with the step's arguments, before the review, and the group keeps
    them; `SubmitPluginTransactions` places the same arguments on the same group

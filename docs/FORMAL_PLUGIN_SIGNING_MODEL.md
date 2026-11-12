@@ -321,7 +321,9 @@ what was reviewed.
   places them again on the same group, after the network precondition: in
   `checkReadyToSign` for the default flow, and in
   `SignAndSubmitWithPluginSigners` for presign-plan, over the managed slots,
-  before the plan requests are built. Like the network precondition, it only
+  before the plan requests are built (only when `arg:` values were given: a
+  presign-plan group with none goes to `/plan` without placing or fetching
+  anything, as before). Like the network precondition, it only
   refuses: it changes none of the modeled gates, and the model carries no
   arguments. Go tests: `internal/engine/lsig_args_test.go`,
   `internal/apshellapp/lsig_args_test.go`,

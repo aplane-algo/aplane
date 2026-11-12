@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -104,11 +106,23 @@ func argValues(pairs ...string) map[string][]byte {
 func TestPlaceLsigArgs(t *testing.T) {
 	stale := func() []signerapi.KeyInfo { return placementTableKeys() }
 	withNew := func() []signerapi.KeyInfo { return append(placementTableKeys(), htlcKeyInfo(argNewHTLC)) }
+	// composedNow is the key list after the composed key was regenerated
+	// with another declaration for secret.
+	composedNow := func(change func(*signerapi.SigningArgInfo)) []signerapi.KeyInfo {
+		keys := placementTableKeys()
+		for i := range keys {
+			if keys[i].Address == argComposed {
+				arg := keys[i].SigningArgs[0]
+				change(&arg)
+				keys[i].SigningArgs = []signerapi.SigningArgInfo{arg}
+			}
+		}
+		return keys
+	}
 	for _, tc := range []struct {
 		name       string
 		senders    []string
 		values     map[string][]byte
-		keysFresh  bool
 		refreshed  []signerapi.KeyInfo // what /keys answers; the cache holds the table's keys
 		want       []map[string][]byte
 		undeclared []string // the names refused, with the names declared
@@ -142,11 +156,11 @@ func TestPlaceLsigArgs(t *testing.T) {
 		},
 		{
 			name: "a composed LogicSig's required argument left out", senders: []string{argComposed}, values: nil,
-			wantErr: "transaction 1: invalid LogicSig arguments: missing required argument: secret",
+			wantErr: "transaction 1: invalid LogicSig arguments: missing required argument: secret", keyFetches: 1,
 		},
 		{
 			name: "a value of the wrong declared length", senders: []string{argHTLC, argComposed}, values: argValues("secret", "abc"),
-			wantErr: "transaction 2: invalid LogicSig arguments: argument 'secret': expected 4 bytes, got 3",
+			wantErr: "transaction 2: invalid LogicSig arguments: argument 'secret': expected 4 bytes, got 3", keyFetches: 1,
 		},
 		{
 			name: "a bounded account gets its runtime argument", senders: []string{argBounded}, values: argValues("memo", "m"),
@@ -161,12 +175,14 @@ func TestPlaceLsigArgs(t *testing.T) {
 			undeclared: []string{"memo"}, declared: []string{}, keyFetches: 1,
 		},
 		{
+			// A rekeyed sender's signer is another address, so signing
+			// fetches the key list.
 			name: "an account rekeyed to a LogicSig gets its authorizer's", senders: []string{argNativeToHTLC}, values: argValues("preimage", "open"),
-			want: []map[string][]byte{argValues("preimage", "open")},
+			want: []map[string][]byte{argValues("preimage", "open")}, keyFetches: 1,
 		},
 		{
 			name: "a LogicSig account rekeyed to a native key gets none", senders: []string{argHTLCToNative, argHTLC}, values: argValues("preimage", "open"),
-			want: []map[string][]byte{nil, argValues("preimage", "open")},
+			want: []map[string][]byte{nil, argValues("preimage", "open")}, keyFetches: 1,
 		},
 		{
 			name: "a LogicSig account rekeyed to a native key, alone", senders: []string{argHTLCToNative}, values: argValues("preimage", "open"),
@@ -179,6 +195,7 @@ func TestPlaceLsigArgs(t *testing.T) {
 			want: []map[string][]byte{
 				nil, argValues("preimage", "open"), argValues("secret", "abcd"), argValues("memo", "m"), nil, nil, argValues("preimage", "open"),
 			},
+			keyFetches: 1,
 		},
 		{
 			name: "a position a plugin signs declares nothing", senders: []string{argPluginPositions, argNative}, values: argValues("preimage", "open"),
@@ -197,6 +214,7 @@ func TestPlaceLsigArgs(t *testing.T) {
 			undeclared: []string{"x"}, declared: []string{}, keyFetches: 1,
 		},
 		{
+			// The cache does not know the key, so signing fetches the list.
 			name: "a stale cache: fetched again, then accepted", senders: []string{argNewHTLC}, values: argValues("preimage", "open"),
 			refreshed: withNew(), want: []map[string][]byte{argValues("preimage", "open")}, keyFetches: 1,
 		},
@@ -205,8 +223,22 @@ func TestPlaceLsigArgs(t *testing.T) {
 			refreshed: stale(), undeclared: []string{"preimage"}, declared: []string{}, keyFetches: 1,
 		},
 		{
-			name: "a key list fetched for this submission is not fetched again", senders: []string{argNewHTLC}, values: argValues("preimage", "open"),
-			keysFresh: true, refreshed: withNew(), undeclared: []string{"preimage"}, declared: []string{}, keyFetches: 0,
+			name: "a key list fetched for this submission is not fetched again", senders: []string{argNativeToHTLC, argNative}, values: argValues("premage", "open"),
+			undeclared: []string{"premage"}, declared: []string{"preimage"}, keyFetches: 1,
+		},
+		{
+			name: "a stale declared length: fetched again, then accepted", senders: []string{argComposed}, values: argValues("secret", "abc"),
+			refreshed: composedNow(func(arg *signerapi.SigningArgInfo) { arg.ByteLength = 3 }),
+			want:      []map[string][]byte{argValues("secret", "abc")}, keyFetches: 1,
+		},
+		{
+			name: "a wrong length after fetching again is refused", senders: []string{argComposed}, values: argValues("secret", "abc"),
+			refreshed: stale(), wantErr: "transaction 1: invalid LogicSig arguments: argument 'secret': expected 4 bytes, got 3", keyFetches: 1,
+		},
+		{
+			name: "a stale required argument: fetched again, then accepted", senders: []string{argComposed}, values: nil,
+			refreshed: composedNow(func(arg *signerapi.SigningArgInfo) { arg.Required = false }),
+			want:      []map[string][]byte{nil}, keyFetches: 1,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,7 +247,7 @@ func TestPlaceLsigArgs(t *testing.T) {
 				refreshed = placementTableKeys()
 			}
 			eng, keyFetches := newPlacementEngine(t, placementTableKeys(), refreshed)
-			placed, err := eng.placeLsigArgs(context.Background(), tc.senders, NewLsigArgs(tc.values), tc.keysFresh)
+			placed, err := eng.placeLsigArgs(context.Background(), tc.senders, NewLsigArgs(tc.values))
 			if got := keyFetches.Load(); got != tc.keyFetches {
 				t.Fatalf("/keys fetches = %d, want %d", got, tc.keyFetches)
 			}
@@ -269,7 +301,9 @@ func TestPlaceLsigArgsReportsAFailedFetch(t *testing.T) {
 	if err := eng.PopulateSignerCache(placementTableKeys()); err != nil {
 		t.Fatal(err)
 	}
-	_, err := eng.placeLsigArgs(context.Background(), []string{argNative}, NewLsigArgs(argValues("preimage", "x")), false)
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[argNative] = ""
+	_, err := eng.placeLsigArgs(context.Background(), []string{argNative}, NewLsigArgs(argValues("preimage", "x")))
 	var undeclared *UndeclaredLsigArgsError
 	if !errors.As(err, &undeclared) || !strings.Contains(err.Error(), "fetching the signer's key list to look again failed") {
 		t.Fatalf("error = %v, want the refusal and the failed fetch", err)
@@ -277,9 +311,8 @@ func TestPlaceLsigArgsReportsAFailedFetch(t *testing.T) {
 }
 
 // A command that makes one submission per item checks the names once against
-// every item's account. Each item's submission then takes what its own key
-// declares and refuses nothing; a single item is one submission, and refuses
-// at its own signing.
+// every item's account, one item or several. Each item's submission then
+// takes what its own key declares and refuses nothing.
 func TestLsigArgsForItems(t *testing.T) {
 	eng, keyFetches := newPlacementEngine(t, placementTableKeys(), placementTableKeys())
 	ctx := context.Background()
@@ -296,7 +329,7 @@ func TestLsigArgsForItems(t *testing.T) {
 		{argHTLC, []map[string][]byte{argValues("preimage", "open")}},
 		{argNativeFalcon, []map[string][]byte{nil}},
 	} {
-		placed, err := eng.placeLsigArgs(ctx, []string{tc.sender}, args, false)
+		placed, err := eng.placeLsigArgs(ctx, []string{tc.sender}, args)
 		if err != nil || !reflect.DeepEqual(placed, tc.want) {
 			t.Fatalf("item %s: placed = %q, %v; want %q", tc.sender, placed, err, tc.want)
 		}
@@ -315,16 +348,72 @@ func TestLsigArgsForItems(t *testing.T) {
 		t.Fatalf("/keys fetches = %d, want 1", got)
 	}
 
-	// One item: no check here, and its submission refuses.
-	single, err := eng.LsigArgsForItems(ctx, []string{argNative}, argValues("preimage", "open"))
-	if err != nil {
-		t.Fatalf("LsigArgsForItems(one item) error = %v", err)
-	}
-	if _, err := eng.placeLsigArgs(ctx, []string{argNative}, single, false); !errors.As(err, &undeclared) {
-		t.Fatalf("one item's submission: error = %v, want the name refused", err)
+	// One item is checked the same way.
+	if _, err := eng.LsigArgsForItems(ctx, []string{argNative}, argValues("preimage", "open")); !errors.As(err, &undeclared) {
+		t.Fatalf("LsigArgsForItems(one native item) error = %v, want the name refused", err)
 	}
 	// No arguments: nothing to check.
 	if none, err := eng.LsigArgsForItems(ctx, []string{argNative, argHTLC}, nil); err != nil || none.Len() != 0 {
 		t.Fatalf("LsigArgsForItems(nil) = %+v, %v", none, err)
 	}
+}
+
+// The up-front check resolves each item's signer as the item's submission
+// does: an auth address the client has not cached is looked up first. So an
+// item rekeyed to a LogicSig key is found to declare its arguments, and an
+// item rekeyed to a native key is found to declare none, in both places
+// alike. An item whose lookup fails is set aside, to fail on its own.
+func TestLsigArgsForItemsLooksUpAuthAddressesAsSigningDoes(t *testing.T) {
+	rekeyedToHTLC := testAddress(20).String()     // its own address holds no key; rekeyed to argHTLC
+	htlcRekeyedNative := testAddress(21).String() // an HTLC account, rekeyed to argNative
+	unreachable := testAddress(22).String()       // algod does not know it
+	keys := append(placementTableKeys(), htlcKeyInfo(htlcRekeyedNative))
+	newEngine := func(t *testing.T) (*Engine, *atomic.Int32) {
+		eng, keyFetches := newPlacementEngine(t, keys, keys)
+		transport := newAccountMockTransport(t)
+		transport.addAccountFull(models.Account{Address: rekeyedToHTLC, AuthAddr: argHTLC, Status: "Offline"})
+		transport.addAccountFull(models.Account{Address: htlcRekeyedNative, AuthAddr: argNative, Status: "Offline"})
+		eng.AlgodClient = newAccountMockAlgodClient(t, transport)
+		return eng, keyFetches
+	}
+	ctx := context.Background()
+	preimage := argValues("preimage", "open")
+
+	t.Run("rekeyed to a LogicSig key, auth not cached: accepted", func(t *testing.T) {
+		eng, _ := newEngine(t)
+		args, err := eng.LsigArgsForItems(ctx, []string{argNative, rekeyedToHTLC}, preimage)
+		if err != nil {
+			t.Fatalf("LsigArgsForItems() error = %v, want the authorizer's preimage found", err)
+		}
+		placed, err := eng.placeLsigArgs(ctx, []string{rekeyedToHTLC}, args)
+		if err != nil || !reflect.DeepEqual(placed, []map[string][]byte{preimage}) {
+			t.Fatalf("item placed = %q, %v; want the preimage", placed, err)
+		}
+	})
+	t.Run("own key declares it but rekeyed to a native key, auth not cached: refused", func(t *testing.T) {
+		eng, _ := newEngine(t)
+		_, err := eng.LsigArgsForItems(ctx, []string{argNative, htlcRekeyedNative}, preimage)
+		var undeclared *UndeclaredLsigArgsError
+		if !errors.As(err, &undeclared) || !reflect.DeepEqual(undeclared.Names, []string{"preimage"}) {
+			t.Fatalf("LsigArgsForItems() error = %v, want the preimage refused: no item's signing key declares it", err)
+		}
+	})
+	t.Run("a failed lookup sets its item aside", func(t *testing.T) {
+		eng, _ := newEngine(t)
+		args, err := eng.LsigArgsForItems(ctx, []string{argHTLC, unreachable}, preimage)
+		if err != nil {
+			t.Fatalf("LsigArgsForItems() error = %v, want the others checked", err)
+		}
+		// The item's own submission fails on the lookup, as without the check.
+		if _, err := eng.placeLsigArgs(ctx, []string{unreachable}, args); err == nil || !strings.Contains(err.Error(), "failed to refresh auth address for "+unreachable) {
+			t.Fatalf("set-aside item's submission: error = %v, want its lookup failure", err)
+		}
+		// A name only it might declare is refused, saying why.
+		_, err = eng.LsigArgsForItems(ctx, []string{argNative, unreachable}, preimage)
+		var undeclared *UndeclaredLsigArgsError
+		if !errors.As(err, &undeclared) || !strings.Contains(err.Error(), "1 account could not be looked up") ||
+			!strings.Contains(err.Error(), "failed to refresh auth address for "+unreachable) {
+			t.Fatalf("LsigArgsForItems() error = %v, want the refusal naming the account not looked up", err)
+		}
+	})
 }
