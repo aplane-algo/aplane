@@ -180,7 +180,7 @@ func TestSigningEntriesCarryTheRequestAndTheSignedGroup(t *testing.T) {
 	attr := Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http", RequestID: "req-7"}
 	a.LogPlanRequestAttributed(attr, "ADDR", "ADDR", "", "pay 1 ALGO")
 	a.LogSignRequestAttributed(attr, "ADDR", "ADDR", "", "pay 1 ALGO")
-	a.LogSignApprovedAttributed(attr, SignApproval{
+	a.LogSignApprovedAttributed(attr, TxnRecord{
 		TxnAuth: "ADDR", TxnSender: "ADDR", TxnDetails: "txn 1/1 signed",
 		TxID: "TXA", Fee: 0, GroupID: "R1JPVVA=", GroupTxIDs: []string{"TXA", "TXD"}, DummyCount: 1,
 	})
@@ -230,7 +230,7 @@ func TestWithheldSignatureCarriesTheSignedTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	attr := Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http", RequestID: "req-8"}
-	a.LogSignApprovedAttributed(attr, SignApproval{
+	a.LogSignApprovedAttributed(attr, TxnRecord{
 		TxnAuth: "ADDR", TxnSender: "ADDR", TxID: "TXA", GroupID: "R1JPVVA=", GroupTxIDs: []string{"TXA", "TXD"}, DummyCount: 1,
 	})
 	a.LogSignWithheldAttributed(attr, "ADDR", "ADDR", "TXA", "R1JPVVA=", "signature withheld after it was recorded as signed: signer is locked")
@@ -255,6 +255,36 @@ func TestWithheldSignatureCarriesTheSignedTransaction(t *testing.T) {
 	}
 }
 
+// A refusal that names one transaction is a SIGN_REJECTED that identifies it
+// as a SIGN_APPROVED would: its txid, and the group's group_id and
+// group_txids, so a search on any of them finds it. txn_auth is empty for a
+// position the signer does not sign.
+func TestRejectionNamingATransactionIdentifiesItAsApprovalWould(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attr := Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http", RequestID: "req-9"}
+	reason := "signer_invariant: transaction 2: rekey_target_not_valid: cannot rekey to TARGET"
+	a.LogSignRejectedTxnAttributed(attr, TxnRecord{
+		TxnSender: "SENDER", TxID: "TXB", Fee: 1000, GroupID: "R1JPVVA=", GroupTxIDs: []string{"TXA", "TXB"},
+	}, reason)
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 1 {
+		t.Fatalf("%d entries, want 1", len(entries))
+	}
+	got := entries[0]
+	if got.Event != AuditSignRejected || got.Outcome != "rejected" || got.OperationID != "req-9" ||
+		got.TxnAuth != "" || got.TxnSender != "SENDER" || got.TxID != "TXB" || got.Reason != reason ||
+		got.GroupID != "R1JPVVA=" || len(got.GroupTxIDs) != 2 || got.GroupTxIDs[1] != "TXB" || got.Fee == nil || *got.Fee != 1000 {
+		t.Fatalf("rejection entry = %+v", got)
+	}
+}
+
 // One request's SIGN_APPROVED entries share its group_txids slice, so
 // writing an entry never changes it, even when the entry is bounded.
 func TestSignApprovedLeavesTheSharedGroupTxIDsAlone(t *testing.T) {
@@ -270,7 +300,7 @@ func TestSignApprovedLeavesTheSharedGroupTxIDsAlone(t *testing.T) {
 	shared[0] = strings.Repeat("X", maxAuditField+10)
 	want := append([]string(nil), shared...)
 	for i := 0; i < 2; i++ {
-		a.LogSignApprovedAttributed(Attribution{RequestID: "req-9"}, SignApproval{TxnAuth: "ADDR", TxID: "TX1", GroupID: "R1JPVVA=", GroupTxIDs: shared})
+		a.LogSignApprovedAttributed(Attribution{RequestID: "req-9"}, TxnRecord{TxnAuth: "ADDR", TxID: "TX1", GroupID: "R1JPVVA=", GroupTxIDs: shared})
 	}
 	if err := a.Close(); err != nil {
 		t.Fatal(err)

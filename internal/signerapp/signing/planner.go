@@ -96,6 +96,10 @@ type PlanResult struct {
 	// which nothing in the request changed. The review reads it; signing and
 	// policy never do.
 	Frozen bool
+	// presented is a frozen plan's group as the client sent it, decoded with
+	// the transaction IDs of its bytes: the IDs its audit records name
+	// (auditedGroup). Nil for a group the planner built.
+	presented *canonical.Group
 
 	// approval is set by the approval gate and checked before signing.
 	approval approvalBinding

@@ -89,7 +89,22 @@ func (l *signingAuditLogger) LogSignApproved(record signersigning.SignedRecord) 
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignApprovedAttributed(l.attribution, signeraudit.SignApproval{
+	l.log.LogSignApprovedAttributed(l.attribution, txnRecordOf(record))
+}
+
+// LogSignRejectedRecord records a refusal that names one transaction of the
+// request, which the signer did not sign, identified as planned the way a
+// SIGN_APPROVED identifies a signed one.
+func (l *signingAuditLogger) LogSignRejectedRecord(record signersigning.SignedRecord, reason string) {
+	if l == nil || l.log == nil {
+		return
+	}
+	l.log.LogSignRejectedTxnAttributed(l.attribution, txnRecordOf(record), reason)
+}
+
+// txnRecordOf is record as the audit log writes it.
+func txnRecordOf(record signersigning.SignedRecord) signeraudit.TxnRecord {
+	return signeraudit.TxnRecord{
 		TxnAuth:      record.AuthAddress,
 		TxnSender:    record.TxnSender,
 		TxnDetails:   record.Details,
@@ -99,7 +114,7 @@ func (l *signingAuditLogger) LogSignApproved(record signersigning.SignedRecord) 
 		GroupID:      record.GroupID,
 		GroupTxIDs:   record.GroupTxIDs,
 		DummyCount:   record.DummyCount,
-	})
+	}
 }
 
 func (l *signingAuditLogger) LogSignRejected(authAddress, txnSender, reason string) {

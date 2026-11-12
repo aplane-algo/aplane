@@ -609,8 +609,9 @@ guarantee: the signer does not check that an account rekeyed to such a key can
 do everything an ordinary account does. A key type whose accounts are
 controlled by a DSA private key (`ed25519`, `falcon1024`, and the plain hosts
 `aplane.falcon1024.v1` and `aplane.ed25519.v1` with their overlays and bounds)
-declares true. A rotating key type declares false; its own signer invariant
-also refuses a rekey to a rotating account whatever the setting. A generic
+declares true. A rotating key type declares false, so the valid rekey target
+check refuses a rekey to a rotating account at any position, whatever the
+setting; the rotating signer invariant stands behind it as a second line. A generic
 LogicSig template declares what its program allows: `aplane.htlc.v1` forbids
 every rekey and allows only a payment that closes the whole balance, never
 checks `Sender`, and declares false.

@@ -15,7 +15,11 @@ import (
 
 // SignedRecord is the audit record of one transaction this signer signed: the
 // transaction as signed, after planning raised its fee, set its group ID and
-// added dummies, and the group it was signed in. It never holds key material,
+// added dummies, and the group it was signed in. A refusal that names one
+// transaction of a request records it the same way, built from the same
+// group, for a transaction the signer did not sign: the transaction as
+// planned, in the group the signer was asked to sign
+// (AuditApproveLogger.LogSignRejectedRecord). It never holds key material,
 // signatures or LogicSig argument values.
 type SignedRecord struct {
 	// AuthAddress is the signing key's address, or a cosigner's Witness Key ID.
@@ -77,6 +81,30 @@ func decodedSignedGroup(group *canonical.Group, dummyCount int) signedGroup {
 		txIDs[i] = txIDString(entry.TxID)
 	}
 	return newSignedGroup(txns, txIDs, group.GroupID, dummyCount)
+}
+
+// auditedGroup is the group a request's audit records name, built once for
+// every record of that request, approved and refused alike: for a frozen plan
+// (a cosigned component, a rotating sign), the IDs decoded from the presented
+// bytes, which the signatures cover; for a group the planner built, the IDs
+// of its transactions as the executor encodes them to sign. Its dummy count is
+// signerSignedDummies(plan).
+func auditedGroup(plan *PlanResult) signedGroup {
+	if plan.presented != nil {
+		return decodedSignedGroup(plan.presented, signerSignedDummies(plan))
+	}
+	return signedGroupOf(plan.AllTxns, signerSignedDummies(plan))
+}
+
+// signerSignedDummies is how many of plan's trailing transactions are dummies
+// the signer added and signs itself: the dummy_count its audit records carry.
+// A cosigned component's frozen group carries dummies the client signs, so it
+// has none; the planner's group and a rotating sign's carry the signer's own.
+func signerSignedDummies(plan *PlanResult) int {
+	if plan.Frozen && plan.Rotating == nil {
+		return 0
+	}
+	return len(plan.DummyTxns)
 }
 
 // txIDString is a transaction ID in the text form Algorand writes it in:

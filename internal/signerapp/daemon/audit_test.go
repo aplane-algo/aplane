@@ -48,7 +48,7 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	logger.LogSignRequestAttributed(auditAttribution{}, "ADDR", "SENDER", "pay", "send 1 ALGO")
-	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.SignApproval{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "send 1 ALGO"})
+	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.TxnRecord{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "send 1 ALGO"})
 	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
 	logger.LogSignFailed("ADDR", "SENDER", "key load error")
 	logger.LogKeyReload(5)
@@ -126,7 +126,7 @@ func TestAuditSigningAttributionFields(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	logger.LogSignRequestAttributed(auditAttribution{}, "ADDR", "SENDER", "pay", "send 1 ALGO")
-	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.SignApproval{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed"})
+	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.TxnRecord{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed"})
 	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
 
 	entries := readAuditEntries(t, path)
@@ -153,7 +153,7 @@ func TestAuditSigningPolicyRuleID(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.SignApproval{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed", PolicyRuleID: "review_algo_payment_exceeded"})
+	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.TxnRecord{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed", PolicyRuleID: "review_algo_payment_exceeded"})
 	logger.LogSignRejectedWithPolicyRule("ADDR", "SENDER", "operator rejected", "always_review_warnings")
 
 	entries := readAuditEntries(t, path)

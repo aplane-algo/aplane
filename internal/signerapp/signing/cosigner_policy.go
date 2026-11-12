@@ -43,7 +43,9 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 		return err
 	}
 	// A cosigner holds only witness keys, whose 52-character IDs never equal a
-	// 58-character RekeyTo address, so no rekey target is held, or invalid.
+	// 58-character RekeyTo address, so no rekey target is held, or invalid:
+	// the valid-target invariant, which judges every position of the group,
+	// has nothing to refuse here and gets no set to build.
 	if err := s.rejectSignerInvariants(group, targets, nil); err != nil {
 		s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
 		return err

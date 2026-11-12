@@ -117,7 +117,7 @@ type AuditEntry struct {
 	TxnSender            string         `json:"txn_sender,omitempty"`          // Transaction sender (if different)
 	TxnType              string         `json:"txn_type,omitempty"`            // Transaction type (pay, axfer, etc)
 	TxnDetails           string         `json:"txn_details,omitempty"`         // Human-readable transaction summary
-	TxID                 string         `json:"txid,omitempty"`                // ID of the transaction as signed, after planning
+	TxID                 string         `json:"txid,omitempty"`                // ID of the transaction as signed, after planning; on a SIGN_REJECTED, of the transaction the refusal names, as planned
 	RemoteAddr           string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
 	Reason               string         `json:"reason,omitempty"`              // Rejection/failure reason
 	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Matched review rule, satisfied manually or by User Auto-Approve
@@ -150,7 +150,9 @@ type AuditEntry struct {
 	// SIGN_APPROVED: the signed transaction's final fee in microAlgos (0 is
 	// written), and, when it was signed in a group, the final group ID
 	// (base64), every transaction ID of that group in order, and how many of
-	// them are trailing dummies this request added and signed.
+	// them are trailing dummies this request added and signed. A SIGN_REJECTED
+	// that names a transaction (TxnRecord) carries the same fields for it as
+	// planned, in the group the signer was asked to sign.
 	Fee        *uint64  `json:"fee,omitempty"`
 	GroupID    string   `json:"group_id,omitempty"`
 	GroupTxIDs []string `json:"group_txids,omitempty"`
@@ -562,40 +564,46 @@ func requestEntry(event AuditEventType, attr Attribution, address, txnSender, tx
 	return entry
 }
 
-// SignApproval is what a SIGN_APPROVED entry records about one transaction
-// the signer signed: the transaction as signed, after planning raised its
-// fee, set its group ID and added dummies, and the group it was signed in.
-// It never holds key material, signatures or LogicSig argument values.
-type SignApproval struct {
-	TxnAuth      string // the signing key's address, or a cosigner's Witness Key ID
+// TxnRecord identifies one transaction of a signing request, with the group
+// it is in. A SIGN_APPROVED entry records it for a transaction the signer
+// signed: the transaction as signed, after planning raised its fee, set its
+// group ID and added dummies, and the group it was signed in. A SIGN_REJECTED
+// entry for a refusal that names a transaction records it the same way for a
+// transaction the signer did not sign: the transaction as planned, in the
+// group the signer was asked to sign. It never holds key material,
+// signatures or LogicSig argument values.
+type TxnRecord struct {
+	TxnAuth      string // the signing key's address, a cosigner's Witness Key ID, or empty for a position the signer does not sign
 	TxnSender    string
 	TxnDetails   string
 	PolicyRuleID string // the review rule that matched, if one did
 	TxID         string
 	Fee          uint64 // microAlgos
 	// GroupID (base64) and GroupTxIDs, every transaction of the group in
-	// order, are empty for a transaction signed alone. The last DummyCount
-	// of GroupTxIDs are the dummies this request added and signed.
+	// order, are empty for a transaction alone. The last DummyCount of
+	// GroupTxIDs are dummies this request added, which the signer signs.
 	GroupID    string
 	GroupTxIDs []string
 	DummyCount int
 }
 
-func signApprovedEntry(attr Attribution, approval SignApproval) AuditEntry {
+// txnRecordEntry is an entry of event and outcome that identifies record's
+// transaction and its group.
+func txnRecordEntry(attr Attribution, event AuditEventType, outcome string, record TxnRecord) AuditEntry {
 	entry := attr.entry(true)
-	entry.Event = AuditSignApproved
-	entry.Outcome = "approved"
-	entry.TxnAuth = approval.TxnAuth
-	entry.TxnSender = approval.TxnSender
-	entry.TxnDetails = approval.TxnDetails
-	entry.PolicyRuleID = approval.PolicyRuleID
-	entry.TxID = approval.TxID
-	fee := approval.Fee
+	entry.Event = event
+	entry.Outcome = outcome
+	entry.TxnAuth = record.TxnAuth
+	entry.TxnSender = record.TxnSender
+	entry.TxnDetails = record.TxnDetails
+	entry.PolicyRuleID = record.PolicyRuleID
+	entry.TxID = record.TxID
+	fee := record.Fee
 	entry.Fee = &fee
-	entry.GroupID = approval.GroupID
+	entry.GroupID = record.GroupID
 	// Shared, not copied: normalizeEntry bounds a copy of its own.
-	entry.GroupTxIDs = approval.GroupTxIDs
-	entry.DummyCount = approval.DummyCount
+	entry.GroupTxIDs = record.GroupTxIDs
+	entry.DummyCount = record.DummyCount
 	return entry
 }
 
@@ -633,8 +641,18 @@ func (a *AuditLogger) LogPlanRequestAttributed(attr Attribution, address, txnSen
 
 // LogSignApprovedAttributed logs a transaction the signer signed, with
 // explicit request attribution.
-func (a *AuditLogger) LogSignApprovedAttributed(attr Attribution, approval SignApproval) {
-	a.Log(signApprovedEntry(attr, approval))
+func (a *AuditLogger) LogSignApprovedAttributed(attr Attribution, approval TxnRecord) {
+	a.Log(txnRecordEntry(attr, AuditSignApproved, "approved", approval))
+}
+
+// LogSignRejectedTxnAttributed logs, with explicit request attribution, a
+// refusal that names one transaction of the request, which the signer did
+// not sign: record identifies it as planned, in the group the signer was
+// asked to sign, the way a SIGN_APPROVED identifies a signed one.
+func (a *AuditLogger) LogSignRejectedTxnAttributed(attr Attribution, record TxnRecord, reason string) {
+	entry := txnRecordEntry(attr, AuditSignRejected, "rejected", record)
+	entry.Reason = reason
+	a.Log(entry)
 }
 
 // LogSignRejected logs when a signing request is rejected by policy or user.

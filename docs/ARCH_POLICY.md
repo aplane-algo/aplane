@@ -277,6 +277,9 @@ when the key was created, such as an `aplane.htlc.v1` account). This is a
 signer invariant that runs before policy, with its own error code,
 `rekey_target_not_valid`. Neither `allow_rekeys` nor the account's rekey-to
 list lifts it (see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)).
+Unlike `rekeys`, which judges only the positions the signer signs, it judges
+every position of the group: a passthrough or foreign transaction that makes
+such a rekey refuses the whole request.
 So with foreign rekeys refused, an account can be rekeyed only to a held aplane
 key that is a valid rekey target; with them allowed, it can be rekeyed to any
 address except a held aplane key that is not one. `reject_rekey` is the cosigner analog and ignores key
@@ -682,7 +685,9 @@ are not signed by this signer, so they are not evaluated by this signer's
 transaction-level policy (the transaction-type rule included). They still
 participate in request planning, group consistency checks, group context,
 warning display, approval rendering, and audit visibility, and a warning on a passthrough or foreign leg always forces
-review, whatever `always_review_warnings` says.
+review, whatever `always_review_warnings` says. The `rekey_target_not_valid`
+signer invariant, which is not policy, judges them as it judges every
+position.
 
 For cosigner, the evaluated slots are the `target_indices` of a
 `/sign/component` request. The cosigner node does not own the sender
