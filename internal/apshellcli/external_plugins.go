@@ -76,6 +76,12 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 			if err != nil {
 				if submit != nil {
 					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
+					// A failure after algod accepted the group, such as a
+					// confirmation timeout, still returns its IDs: the step
+					// was sent, and the run's record says so.
+					if len(submit.TxIDs) > 0 {
+						pr.Steps = append(pr.Steps, appresult.PluginStep{Message: result.Message, TxIDs: submit.TxIDs})
+					}
 				}
 				return err
 			}
@@ -102,9 +108,10 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 	}
 }
 
-// submittedTxIDs lists the transaction IDs every step of the run submitted,
-// in order. A single-step result keeps them in TxIDs once the run has
-// finished; until then, and for several steps, they are in Steps.
+// submittedTxIDs lists the transaction IDs every step of the run sent to
+// algod, in order, those of a step whose confirmation then failed included
+// (simulated, in simulate mode). A single-step result keeps them in TxIDs once
+// the run has finished; until then, and for several steps, they are in Steps.
 func (pr *PluginResult) submittedTxIDs() []string {
 	if len(pr.Steps) == 0 {
 		return append([]string(nil), pr.TxIDs...)

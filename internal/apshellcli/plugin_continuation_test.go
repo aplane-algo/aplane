@@ -4,16 +4,29 @@
 package apshellcli
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
+	"github.com/algorand/go-algorand-sdk/v2/transaction"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
@@ -23,6 +36,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // scriptedPlugin answers each execute call with the next of its results and
@@ -102,10 +116,17 @@ func (p *scriptedPlugin) instance(t *testing.T, plugin *discovery.Plugin) *plugi
 // "wf" answers with results in order.
 func scriptedPluginShell(t *testing.T, results ...map[string]any) (*REPLState, *scriptedPlugin) {
 	t.Helper()
+	return scriptedPluginShellWithAlgod(t, nil, results...)
+}
+
+// scriptedPluginShellWithAlgod is scriptedPluginShell on an algod.
+func scriptedPluginShellWithAlgod(t *testing.T, client *algod.Client, results ...map[string]any) (*REPLState, *scriptedPlugin) {
+	t.Helper()
 	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
+	eng.AlgodClient = client
 	scripted := &scriptedPlugin{results: results}
 	pm := pluginmanager.NewManager()
 	var started []*pluginmanager.Instance
@@ -133,6 +154,7 @@ func scriptedPluginShell(t *testing.T, results ...map[string]any) (*REPLState, *
 		App:             apshellapp.New(eng, config.DefaultConfig(), t.TempDir()),
 		CommandRegistry: command.NewRegistry(),
 		AutoConfirm:     true,
+		Out:             &bytes.Buffer{},
 	}
 	state.App.Plugins = pm
 	return state, scripted
@@ -214,10 +236,131 @@ func TestJSPluginErrorInALaterStepIsAnError(t *testing.T) {
 	}
 }
 
-// Once a step has submitted transactions, a later step that fails, is
-// cancelled or reports failure is an error that names what was submitted.
-// Before anything is submitted, a cancel or the plugin's failure is still a
-// {success: false} result. A finished run reports every submitted ID.
+// pluginTestGenesis is the network the confirmation-test algod serves.
+var pluginTestGenesis = bytes.Repeat([]byte{7}, 32)
+
+// pregroupedStep is a plugin step returning a signed, grouped pair of
+// self-payments for the test network, and the pair's transaction IDs.
+func pregroupedStep(t *testing.T, note string, continuation map[string]any) (map[string]any, []string) {
+	t.Helper()
+	acct := crypto.GenerateAccount()
+	sp := types.SuggestedParams{Fee: 1000, FirstRoundValid: 1, LastRoundValid: 1001,
+		GenesisHash: pluginTestGenesis, GenesisID: "plugin-test", FlatFee: true}
+	txns := make([]types.Transaction, 2)
+	for i := range txns {
+		txn, err := transaction.MakePaymentTxn(acct.Address.String(), acct.Address.String(), 0, []byte(note+string(rune('a'+i))), "", sp)
+		if err != nil {
+			t.Fatalf("make txn: %v", err)
+		}
+		txns[i] = txn
+	}
+	gid, err := crypto.ComputeGroupID(txns)
+	if err != nil {
+		t.Fatalf("compute group id: %v", err)
+	}
+	intents := make([]map[string]any, len(txns))
+	ids := make([]string, len(txns))
+	for i := range txns {
+		txns[i].Group = gid
+		_, raw, err := signing.SignTransactionWithKey(acct.PrivateKey, txns[i])
+		if err != nil {
+			t.Fatalf("sign txn: %v", err)
+		}
+		intents[i] = map[string]any{"type": "signed", "encoded": base64.StdEncoding.EncodeToString(raw)}
+		ids[i] = crypto.GetTxID(txns[i])
+	}
+	step := map[string]any{"success": true, "message": note, "groupMode": "pregrouped-signed", "transactions": intents}
+	if continuation != nil {
+		step["continuation"] = continuation
+	}
+	return step, ids
+}
+
+// confirmationFailingAlgod accepts every group and confirms the first
+// confirmedGroups of them; for every later group the wait for confirmation
+// fails, after the group was accepted. It counts the groups sent.
+func confirmationFailingAlgod(t *testing.T, confirmedGroups int32) (*algod.Client, *atomic.Int32) {
+	t.Helper()
+	var sent atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/transactions/params":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+				ConsensusVersion: string(protocol.ConsensusV42), MinFee: 1000, LastRound: 10,
+				GenesisHash: pluginTestGenesis, GenesisId: "plugin-test",
+			})
+		case r.URL.Path == "/v2/transactions" && r.Method == http.MethodPost:
+			sent.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"txId": "accepted"})
+		case r.URL.Path == "/v2/status":
+			if sent.Load() > confirmedGroups {
+				http.Error(w, "status unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(models.NodeStatus{LastRound: 10})
+		case strings.HasPrefix(r.URL.Path, "/v2/transactions/pending/"):
+			w.Header().Set("Content-Type", "application/msgpack")
+			_, _ = w.Write(msgpack.Encode(models.PendingTransactionInfoResponse{ConfirmedRound: 11}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := algod.MakeClient(server.URL, "")
+	if err != nil {
+		t.Fatalf("algod.MakeClient() error = %v", err)
+	}
+	return client, &sent
+}
+
+// A step whose group algod accepted but whose confirmation then failed was
+// sent: plugin() throws naming its transaction IDs, whether it is the first
+// step or a later one, so a script does not take the run for one that sent
+// nothing and send again.
+func TestJSPluginNamesTransactionsSentByAStepWhoseConfirmationFailed(t *testing.T) {
+	t.Run("first step", func(t *testing.T) {
+		step, ids := pregroupedStep(t, "fund", nil)
+		client, sent := confirmationFailingAlgod(t, 0)
+		state, _ := scriptedPluginShellWithAlgod(t, client, step)
+		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
+
+		_, err := runScript(t, state, `plugin("wf", "start")`)
+		if sent.Load() != 1 {
+			t.Fatalf("groups sent = %d, want 1", sent.Load())
+		}
+		if err == nil || !strings.Contains(err.Error(), "confirmation failed") ||
+			!strings.Contains(err.Error(), "were already sent to the network: "+strings.Join(ids, ", ")) {
+			t.Fatalf("plugin() error = %v, want the confirmation failure naming %v as sent", err, ids)
+		}
+	})
+	t.Run("later step", func(t *testing.T) {
+		second, secondIDs := pregroupedStep(t, "claim", nil)
+		first, firstIDs := pregroupedStep(t, "fund", map[string]any{"command": "wf", "args": []string{"_claim"}})
+		client, sent := confirmationFailingAlgod(t, 1)
+		state, _ := scriptedPluginShellWithAlgod(t, client, first, second)
+		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
+
+		_, err := runScript(t, state, `plugin("wf", "start")`)
+		if sent.Load() != 2 {
+			t.Fatalf("groups sent = %d, want 2", sent.Load())
+		}
+		all := strings.Join(append(append([]string(nil), firstIDs...), secondIDs...), ", ")
+		if err == nil || !strings.Contains(err.Error(), "confirmation failed") ||
+			!strings.Contains(err.Error(), "were already sent to the network: "+all) {
+			t.Fatalf("plugin() error = %v, want the confirmation failure naming both steps' IDs (%s)", err, all)
+		}
+	})
+}
+
+// Once a step has sent transactions, a step that fails, is cancelled or
+// reports failure is an error that names what was sent, and says the
+// transactions were only simulated in simulate mode. Before anything is sent,
+// a cancel or the plugin's failure is still a {success: false} result. A
+// finished run reports every sent ID. A plugin's data is filtered (no
+// localSigners) in every outcome.
 func TestJSPluginOutcome(t *testing.T) {
 	twoSteps := []appresult.PluginStep{{Message: "fund", TxIDs: []string{"T1"}}, {Message: "claim", TxIDs: []string{"T2", "T3"}}}
 	later := errors.New("continuation failed: plugin crashed")
@@ -225,13 +368,20 @@ func TestJSPluginOutcome(t *testing.T) {
 		name        string
 		pr          PluginResult
 		runErr      error
+		simulated   bool
 		wantErr     []string
 		wantSuccess bool
 		wantMessage string
-		wantData    any
+		wantData    any // compared when set or when wantNoData
+		wantNoData  bool
 	}{
 		{name: "later step fails", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}}, runErr: later,
-			wantErr: []string{"continuation failed: plugin crashed", "earlier steps already submitted transaction(s) T1"}},
+			wantErr: []string{"continuation failed: plugin crashed", "; these transaction(s) were already sent to the network: T1"}},
+		{name: "later step fails, simulated", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}}, runErr: later, simulated: true,
+			wantErr: []string{"continuation failed: plugin crashed", "; these transaction(s) were simulated, not sent: T1"}},
+		{name: "a step's confirmation fails after it was sent", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps}},
+			runErr:  errors.New("confirmation failed: wait for transaction id T2 timed out"),
+			wantErr: []string{"confirmation failed", "were already sent to the network: T1, T2, T3"}},
 		{name: "later step cancelled", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}}, runErr: errPluginTransactionCancelled,
 			wantErr: []string{"transaction cancelled by user", "T1"}},
 		{name: "last step reports failure", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "no counterparty", Steps: twoSteps[:1]}},
@@ -239,8 +389,14 @@ func TestJSPluginOutcome(t *testing.T) {
 		{name: "first step cancelled", runErr: errPluginTransactionCancelled,
 			wantMessage: "Transaction cancelled by user"},
 		{name: "first step fails", runErr: errors.New("not connected to signer"), wantErr: []string{"not connected to signer"}},
-		{name: "plugin's own failure, nothing submitted", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "bad input"}},
+		{name: "plugin's own failure, nothing sent", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "bad input"}},
 			wantMessage: "bad input"},
+		{name: "nothing sent, data filtered", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+			Data: map[string]any{"amount": 1, "localSigners": []any{"X"}}}},
+			wantSuccess: true, wantMessage: "status", wantData: map[string]any{"amount": 1}},
+		{name: "nothing sent, only localSigners", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+			Data: map[string]any{"localSigners": []any{"X"}}}},
+			wantSuccess: true, wantMessage: "status", wantNoData: true},
 		{name: "one step", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "ok", TxIDs: []string{"T1"},
 			Data: map[string]any{"escrow": "E", "txids": "forged", "localSigners": []any{"X"}}}},
 			wantSuccess: true, wantMessage: "ok", wantData: map[string]any{"escrow": "E", "txids": []string{"T1"}}},
@@ -249,7 +405,7 @@ func TestJSPluginOutcome(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			success, message, data, _, err := jsPluginOutcome(&tt.pr, tt.runErr)
+			success, message, data, _, err := jsPluginOutcome(&tt.pr, tt.runErr, tt.simulated)
 			if len(tt.wantErr) > 0 {
 				if err == nil {
 					t.Fatalf("outcome = (%v, %q, %v), want an error", success, message, data)
@@ -267,7 +423,7 @@ func TestJSPluginOutcome(t *testing.T) {
 			if success != tt.wantSuccess || message != tt.wantMessage {
 				t.Fatalf("outcome = (%v, %q), want (%v, %q)", success, message, tt.wantSuccess, tt.wantMessage)
 			}
-			if tt.wantData != nil && !reflect.DeepEqual(data, tt.wantData) {
+			if (tt.wantData != nil || tt.wantNoData) && !reflect.DeepEqual(data, tt.wantData) {
 				t.Fatalf("data = %#v, want %#v", data, tt.wantData)
 			}
 		})

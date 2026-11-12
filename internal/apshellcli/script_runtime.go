@@ -100,28 +100,32 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		p.repl.renderSubmissionOutput(step.Output)
 		p.repl.renderWarnings(step.Warnings)
 	}
-	return jsPluginOutcome(pr, runErr)
+	return jsPluginOutcome(pr, runErr, p.repl.app().IsSimulateEnabled())
 }
 
-// jsPluginOutcome is plugin()'s answer for a finished run. Before anything is
-// submitted, a cancel or the plugin's own failure is a {success: false}
-// result and other errors are errors. Once a step has submitted transactions,
-// a later step that fails, is cancelled or reports failure leaves the workflow
-// half done, so that is an error naming what was submitted, never a result a
-// script could read as success or as nothing having happened. A completed run
-// returns the last step's message, data and presentation, with apshell's
-// record of every submitted transaction ID in data.txids and, for more than one
-// step, each step's message and IDs in data.steps.
-func jsPluginOutcome(pr *PluginResult, runErr error) (bool, string, interface{}, interface{}, error) {
-	submitted := pr.submittedTxIDs()
-	if len(submitted) == 0 {
+// jsPluginOutcome is plugin()'s answer for a finished run. Before any step has
+// sent transactions, a cancel or the plugin's own failure is a
+// {success: false} result and other errors are errors. Once a step has sent
+// transactions, the confirmation of the step that failed included, a step that
+// fails, is cancelled or reports failure leaves the workflow half done, so that
+// is an error naming every transaction sent, never a result a script could read
+// as success or as nothing having happened. In simulate mode the transactions
+// were simulated, not sent, and the error says so. A completed run returns the
+// last step's message, data and presentation, with apshell's record of every
+// transaction ID it sent (simulated, in simulate mode) in data.txids and, for
+// more than one step, each step's message and IDs in data.steps. A plugin's
+// data is filtered the same way in every outcome.
+func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, string, interface{}, interface{}, error) {
+	data := appresult.FilterPluginData(pr.Data)
+	sent := pr.submittedTxIDs()
+	if len(sent) == 0 {
 		switch {
 		case errors.Is(runErr, errPluginTransactionCancelled):
 			return false, "Transaction cancelled by user", nil, nil, nil
 		case runErr != nil:
 			return false, "", nil, nil, runErr
 		}
-		return pr.Success, pr.Message, pr.Data, pr.Presentation, nil
+		return pr.Success, pr.Message, data, pr.Presentation, nil
 	}
 	if runErr == nil && !pr.Success {
 		runErr = errors.New("plugin reported failure")
@@ -130,19 +134,23 @@ func jsPluginOutcome(pr *PluginResult, runErr error) (bool, string, interface{},
 		}
 	}
 	if runErr != nil {
-		return false, "", nil, nil, fmt.Errorf("%w; earlier steps already submitted transaction(s) %s", runErr, strings.Join(submitted, ", "))
+		what := "were already sent to the network"
+		if simulated {
+			what = "were simulated, not sent"
+		}
+		return false, "", nil, nil, fmt.Errorf("%w; these transaction(s) %s: %s", runErr, what, strings.Join(sent, ", "))
 	}
 
-	data := map[string]interface{}{}
-	if dataMap, ok := appresult.FilterPluginData(pr.Data).(map[string]interface{}); ok {
+	result := map[string]interface{}{}
+	if dataMap, ok := data.(map[string]interface{}); ok {
 		for k, v := range dataMap {
-			data[k] = v
+			result[k] = v
 		}
 	}
-	// apshell's record of what it submitted, not a value the plugin chose.
-	data["txids"] = submitted
+	// apshell's record of what it sent, not a value the plugin chose.
+	result["txids"] = sent
 	if len(pr.Steps) > 0 {
-		data["steps"] = pr.Steps
+		result["steps"] = pr.Steps
 	}
-	return true, pr.Message, data, pr.Presentation, nil
+	return true, pr.Message, result, pr.Presentation, nil
 }

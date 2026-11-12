@@ -696,15 +696,20 @@ Returns:
 transactions are reviewed and submitted, and a step that returns a
 `continuation` is followed, so the call returns only after the last step:
 `success`, `message`, `data` and `presentation` are the last step's. When any
-step submitted transactions, `data.txids` lists every submitted transaction ID
-in order (apshell's record; a plugin's own `txids` field is replaced), and a run
-of more than one such step adds `data.steps`, one `{ message, txids }` per step.
+step sent transactions, `data.txids` lists every transaction ID apshell sent,
+in order (in simulate mode, the IDs of the simulated transactions; apshell's
+record, so a plugin's own `txids` field is replaced), and a run of more than one
+such step adds `data.steps`, one `{ message, txids }` per step. `data` has
+`localSigners` removed in every outcome.
 
-Before anything is submitted, a cancelled review or the plugin's own failure
-returns `{ success: false, message }`. Once a step has submitted transactions,
-a later step that errors, is cancelled or reports failure throws, and the
-error names the transaction IDs already submitted, because the workflow is
-half done.
+Before any step has sent transactions, a cancelled review or the plugin's own
+failure returns `{ success: false, message }`. Once a step has sent
+transactions, a step that errors, is cancelled or reports failure throws, and
+the error lists every transaction ID sent, because the workflow is half done:
+"these transaction(s) were already sent to the network", or in simulate mode
+"were simulated, not sent". A step whose group algod accepted counts as sent
+even when waiting for its confirmation then fails, so a script that catches
+the error does not take the run for one that sent nothing.
 
 Example:
 

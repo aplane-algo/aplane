@@ -55,13 +55,15 @@ before it was renamed `enroll`.
   `success: true`, so a workflow whose first step funds an escrow stopped
   there while the script read success. `plugin()` now runs through the same
   loop as the `apshell` command and MCP, and returns after the last step with
-  that step's result. `data.txids` lists every transaction submitted, and
-  `data.steps` each step's, when there is more than one. Once a step has
-  submitted transactions, a later step's error, cancel or reported failure
-  throws, naming the transactions already submitted. Before anything is
-  submitted, a cancel or the plugin's failure is still `{ success: false }`.
-  `data.txids` is apshell's record and replaces a `txids` field the plugin
-  set.
+  that step's result. `data.txids` lists every transaction sent (simulated,
+  in simulate mode), and `data.steps` each step's, when there is more than
+  one. Once a step has sent transactions, a step's error, cancel or reported
+  failure throws, listing every transaction sent; a step whose group algod
+  accepted counts as sent even if waiting for its confirmation then fails.
+  Before anything is sent, a cancel or the plugin's failure is still
+  `{ success: false }`. `data.txids` is apshell's record and replaces a
+  `txids` field the plugin set, and `data` has `localSigners` removed in
+  every outcome.
 
 ## Every key type declares whether it is a valid rekey target
 
