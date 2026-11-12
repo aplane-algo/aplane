@@ -6,9 +6,10 @@ package apshellcli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
-	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
 )
 
@@ -44,7 +45,8 @@ func (p *PluginExecutorAdapter) ListPluginCommands() []string {
 	return commands
 }
 
-// ExecutePlugin executes a plugin command, including signing and submitting any transactions.
+// ExecutePlugin executes a plugin command for JS plugin(), including signing
+// and submitting any transactions and following the plugin's continuations.
 func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) (bool, string, interface{}, interface{}, error) {
 	if p.repl.app().Plugins == nil {
 		return false, "", nil, nil, fmt.Errorf("plugin manager not initialized")
@@ -90,46 +92,57 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		return false, "", nil, nil, err
 	}
 
-	// If no transactions, return early
-	if len(result.Transactions) == 0 {
-		return result.Success, result.Message, result.Data, result.Presentation, nil
+	// The REPL's loop reviews and submits each step's transactions and follows
+	// continuations, so plugin() returns only after the last step.
+	pr := &PluginResult{Plugin: appresult.Plugin{Plugin: plugin.Manifest.Name}}
+	runErr := processPluginResultStructured(p.repl, pr, result, lsigArgs, plugin)
+	for _, step := range pr.humanSteps {
+		p.repl.renderSubmissionOutput(step.Output)
+		p.repl.renderWarnings(step.Warnings)
 	}
+	return jsPluginOutcome(pr, runErr)
+}
 
-	cancelled, err := reviewPluginTransactions(p.repl, result)
-	if err != nil {
-		return false, "", nil, nil, err
+// jsPluginOutcome is plugin()'s answer for a finished run. Before anything is
+// submitted, a cancel or the plugin's own failure is a {success: false}
+// result and other errors are errors. Once a step has submitted transactions,
+// a later step that fails, is cancelled or reports failure leaves the workflow
+// half done, so that is an error naming what was submitted, never a result a
+// script could read as success or as nothing having happened. A completed run
+// returns the last step's message, data and presentation, with apshell's
+// record of every submitted transaction ID in data.txids and, for more than one
+// step, each step's message and IDs in data.steps.
+func jsPluginOutcome(pr *PluginResult, runErr error) (bool, string, interface{}, interface{}, error) {
+	submitted := pr.submittedTxIDs()
+	if len(submitted) == 0 {
+		switch {
+		case errors.Is(runErr, errPluginTransactionCancelled):
+			return false, "Transaction cancelled by user", nil, nil, nil
+		case runErr != nil:
+			return false, "", nil, nil, runErr
+		}
+		return pr.Success, pr.Message, pr.Data, pr.Presentation, nil
 	}
-	if cancelled {
-		return false, "Transaction cancelled by user", nil, nil, nil
-	}
-
-	// Handle transactions - check if signer is connected. Pregrouped-signed groups
-	// are fully plugin-signed and bypass apsigner, so they need no signer connection.
-	if result.GroupMode != jsonrpc.GroupModePregroupedSigned && !p.repl.app().IsConnected() {
-		return false, "", nil, nil, fmt.Errorf("not connected to signer - use connect() first to sign transactions")
-	}
-
-	submit, err := p.repl.app().SubmitPluginTransactions(p.repl.commandContext(), plugin.Manifest.Name, result, lsigArgs)
-	if err != nil {
-		return false, "", nil, nil, fmt.Errorf("failed to sign/submit: %w", err)
-	}
-	p.repl.renderSubmissionOutput(submit.Output)
-	p.repl.renderWarnings(submit.Warnings)
-
-	// Build response with txids
-	responseData := map[string]interface{}{
-		"txids": submit.TxIDs,
-	}
-	// Merge any plugin data (exclude local signer fields)
-	if result.Data != nil {
-		if dataMap, ok := result.Data.(map[string]interface{}); ok {
-			for k, v := range dataMap {
-				if k != "localSigners" {
-					responseData[k] = v
-				}
-			}
+	if runErr == nil && !pr.Success {
+		runErr = errors.New("plugin reported failure")
+		if pr.Message != "" {
+			runErr = fmt.Errorf("plugin reported failure: %s", pr.Message)
 		}
 	}
+	if runErr != nil {
+		return false, "", nil, nil, fmt.Errorf("%w; earlier steps already submitted transaction(s) %s", runErr, strings.Join(submitted, ", "))
+	}
 
-	return true, result.Message, responseData, result.Presentation, nil
+	data := map[string]interface{}{}
+	if dataMap, ok := appresult.FilterPluginData(pr.Data).(map[string]interface{}); ok {
+		for k, v := range dataMap {
+			data[k] = v
+		}
+	}
+	// apshell's record of what it submitted, not a value the plugin chose.
+	data["txids"] = submitted
+	if len(pr.Steps) > 0 {
+		data["steps"] = pr.Steps
+	}
+	return true, pr.Message, data, pr.Presentation, nil
 }

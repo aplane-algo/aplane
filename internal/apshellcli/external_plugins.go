@@ -45,9 +45,16 @@ func execPlugin(r *REPLState, cmdName string, args []string) (*PluginResult, boo
 	return pr, true
 }
 
+// errPluginTransactionCancelled is the user declining a plugin step's
+// transactions at the client review.
+var errPluginTransactionCancelled = errors.New("transaction cancelled by user")
+
 // processPluginResultStructured processes a plugin result chain, collecting structured output.
 // Top-level Success, Message, and Data are always updated from the latest result in the chain,
-// so the final MCP response reflects the last step's state.
+// so the final MCP response reflects the last step's state. Each step's
+// transactions are reviewed and submitted before its continuation runs, and
+// the chain ends only when a step returns no continuation. It is the one
+// continuation loop: the REPL, MCP and JS plugin() all run plugins through it.
 func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte, plugin *discovery.Plugin) error {
 	for {
 		// Update top-level fields from the current result
@@ -62,7 +69,7 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 				return err
 			}
 			if cancelled {
-				return fmt.Errorf("transaction cancelled by user")
+				return errPluginTransactionCancelled
 			}
 
 			submit, err := submitPluginTransactions(r, plugin.Manifest.Name, result, lsigArgs)
@@ -93,6 +100,20 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 		result = contResult
 		lsigArgs = nil
 	}
+}
+
+// submittedTxIDs lists the transaction IDs every step of the run submitted,
+// in order. A single-step result keeps them in TxIDs once the run has
+// finished; until then, and for several steps, they are in Steps.
+func (pr *PluginResult) submittedTxIDs() []string {
+	if len(pr.Steps) == 0 {
+		return append([]string(nil), pr.TxIDs...)
+	}
+	var txIDs []string
+	for _, step := range pr.Steps {
+		txIDs = append(txIDs, step.TxIDs...)
+	}
+	return txIDs
 }
 
 // submitPluginTransactions processes and submits plugin transactions without UI output.

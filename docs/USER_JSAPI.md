@@ -689,6 +689,20 @@ Returns:
 }
 ```
 
+`plugin()` runs the plugin as the `apshell` command does. Each step's
+transactions are reviewed and submitted, and a step that returns a
+`continuation` is followed, so the call returns only after the last step:
+`success`, `message`, `data` and `presentation` are the last step's. When any
+step submitted transactions, `data.txids` lists every submitted transaction ID
+in order (apshell's record; a plugin's own `txids` field is replaced), and a run
+of more than one such step adds `data.steps`, one `{ message, txids }` per step.
+
+Before anything is submitted, a cancelled review or the plugin's own failure
+returns `{ success: false, message }`. Once a step has submitted transactions,
+a later step that errors, is cancelled or reports failure throws, and the
+error names the transaction IDs already submitted, because the workflow is
+half done.
+
 Example:
 
 ```javascript

@@ -664,6 +664,13 @@ For complex protocols that require multiple transaction submissions with confirm
 5. Plugin returns Step 2 transactions + continuation (or final result)
 6. Process repeats until no continuation is returned
 
+The REPL, MCP and JavaScript `plugin()` follow continuations through one loop
+(`internal/apshellcli/external_plugins.go::processPluginResultStructured`),
+which reviews and submits each step before running the next. `plugin()`
+returns after the last step; once a step has submitted transactions, a later
+step's error, cancel or reported failure is an error from `plugin()` that names
+the transactions already submitted (see [USER_JSAPI.md](USER_JSAPI.md#plugins)).
+
 Continuation argument normalization follows the same manifest-driven rules as the initial command.
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`
 metadata for it and will pass continuation args through unchanged.

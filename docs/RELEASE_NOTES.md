@@ -7,7 +7,7 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
-## apshell refuses repeated options and transactions for another network
+## apshell refuses repeated options and transactions for another network, and JS plugin() runs every step
 
 - **A single-valued option given twice is refused.** Only `fee=` refused a
   repeat; every other option took its last value, so
@@ -35,6 +35,18 @@ before it was renamed `enroll`.
   comes from the suggested-parameters read the consensus check already makes,
   so no algod call is added. An algod that reports no 32-byte genesis hash is
   refused.
+- **JS `plugin()` follows plugin continuations.** It submitted the first
+  step's transactions, ignored the plugin's `continuation` and returned
+  `success: true`, so a workflow whose first step funds an escrow stopped
+  there while the script read success. `plugin()` now runs through the same
+  loop as the `apshell` command and MCP, and returns after the last step with
+  that step's result. `data.txids` lists every transaction submitted, and
+  `data.steps` each step's, when there is more than one. Once a step has
+  submitted transactions, a later step's error, cancel or reported failure
+  throws, naming the transactions already submitted. Before anything is
+  submitted, a cancel or the plugin's failure is still `{ success: false }`.
+  `data.txids` is apshell's record and replaces a `txids` field the plugin
+  set.
 
 ## Every key type declares whether it is a valid rekey target
 
