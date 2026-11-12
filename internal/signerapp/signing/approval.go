@@ -66,6 +66,20 @@ type ApprovalService struct {
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
 }
 
+// planKnownAddresses is the address set the gates and the approval warnings
+// treat as the signer's own: the plan's, from the key snapshot it was planned
+// with (a rotating plan names its rotation target in it), or the runtime's
+// key-file addresses when there is no plan set.
+func (s *ApprovalService) planKnownAddresses(plan *PlanResult) map[string]bool {
+	if plan != nil && plan.KnownAddresses != nil {
+		return plan.KnownAddresses
+	}
+	if s == nil || s.KnownAddresses == nil {
+		return nil
+	}
+	return s.KnownAddresses()
+}
+
 func (s *ApprovalService) userAutoApprove() bool {
 	if s == nil || s.UserAutoApprove == nil {
 		return false

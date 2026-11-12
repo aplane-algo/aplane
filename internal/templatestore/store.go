@@ -64,11 +64,6 @@ type BaseTemplateSpec struct {
 	ValidRekeyTarget *bool `yaml:"valid_rekey_target,omitempty"`
 }
 
-// RekeyTargetValid is the declared valid_rekey_target.
-func (s *BaseTemplateSpec) RekeyTargetValid() bool {
-	return s != nil && s.ValidRekeyTarget != nil && *s.ValidRekeyTarget
-}
-
 // ValidateRekeyTargetDeclaration is the install check for
 // valid_rekey_target: a template on its way into a store must declare it.
 func (s *BaseTemplateSpec) ValidateRekeyTargetDeclaration() error {

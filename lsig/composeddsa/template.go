@@ -446,11 +446,6 @@ func SemanticFingerprint(data []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
-	return SpecFingerprint(spec)
-}
-
-// SpecFingerprint is SemanticFingerprint for a template already parsed.
-func SpecFingerprint(spec *TemplateSpec) (string, error) {
 	provider, err := NewProviderFromTemplateSpec(spec)
 	if err != nil {
 		return "", fmt.Errorf("invalid template: %w", err)
@@ -481,7 +476,27 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 		Fingerprint: provider.CompatibilityFingerprint(),
 		Register: func() bool {
 			addressderive.Register(keyType, base.NewAddressDeriver(keyType))
-			return logicsigdsa.RegisterIfAbsent(provider)
+			return logicsigdsa.RegisterIfAbsent(&templateProvider{provider})
 		},
 	}, nil
+}
+
+// templateProvider is the provider an installed composed template registers:
+// its composer, which also declares the template's valid_rekey_target. Only a
+// template-built provider declares it (lsigprovider.RekeyTargetDeclarer); a
+// compiled key type, a plain host and its programs included, declares it in
+// its catalog entry alone.
+type templateProvider struct {
+	*ComposedDSA
+}
+
+var _ lsigprovider.RekeyTargetDeclarer = (*templateProvider)(nil)
+
+// RekeyTargetDeclaration is the template's valid_rekey_target and whether it
+// declares one.
+func (p *templateProvider) RekeyTargetDeclaration() (valid, declared bool) {
+	if p.rekeyTargetDeclaration == nil {
+		return false, false
+	}
+	return *p.rekeyTargetDeclaration, true
 }

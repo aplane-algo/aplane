@@ -1982,6 +1982,10 @@ max_opcode_cost: 20000
 			if err != nil {
 				t.Fatal(err)
 			}
+			// A template loaded without the field declares nothing.
+			if valid, declared := NewYAMLTemplate(spec).RekeyTargetDeclaration(); valid != tc.want || declared != tc.admitted {
+				t.Fatalf("RekeyTargetDeclaration() = %v, %v; want %v, %v", valid, declared, tc.want, tc.admitted)
+			}
 			err = ValidateSpecAdmission(spec)
 			if !tc.admitted {
 				if err == nil || !strings.Contains(err.Error(), "valid_rekey_target is required") {
@@ -1991,9 +1995,6 @@ max_opcode_cost: 20000
 			}
 			if err != nil {
 				t.Fatalf("ValidateSpecAdmission() error = %v", err)
-			}
-			if got := NewYAMLTemplate(spec).ValidRekeyTarget(); got != tc.want {
-				t.Fatalf("ValidRekeyTarget() = %v, want %v", got, tc.want)
 			}
 		})
 	}

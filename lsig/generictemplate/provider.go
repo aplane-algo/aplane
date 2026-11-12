@@ -220,9 +220,14 @@ func (t *YAMLTemplate) DisplayColor() string {
 // Category returns the LSig category (generic_lsig for templates).
 func (t *YAMLTemplate) Category() string { return lsigprovider.CategoryGenericLsig }
 
-// ValidRekeyTarget is the template's declared valid_rekey_target
-// (lsigprovider.RekeyTargetDeclarer).
-func (t *YAMLTemplate) ValidRekeyTarget() bool { return t.spec.RekeyTargetValid() }
+// RekeyTargetDeclaration is the template's valid_rekey_target and whether it
+// declares one (lsigprovider.RekeyTargetDeclarer).
+func (t *YAMLTemplate) RekeyTargetDeclaration() (valid, declared bool) {
+	if t.spec.ValidRekeyTarget == nil {
+		return false, false
+	}
+	return *t.spec.ValidRekeyTarget, true
+}
 
 // LogicSigOpcodeProfile returns the template author's required reviewed ceiling.
 func (t *YAMLTemplate) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
@@ -876,11 +881,6 @@ func SemanticFingerprint(data []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
-	return SpecFingerprint(spec)
-}
-
-// SpecFingerprint is SemanticFingerprint for a template already parsed.
-func SpecFingerprint(spec *TemplateSpec) (string, error) {
 	if err := ValidateSpec(spec); err != nil {
 		return "", fmt.Errorf("invalid template: %w", err)
 	}
@@ -924,10 +924,10 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 		TEAL              string                             `json:"teal"`
 		Parameters        []lsigprovider.CanonicalParameter  `json:"parameters,omitempty"`
 		RuntimeArgs       []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
-		// ValidRekeyTarget is the template's declaration, part of its
-		// definition: a template that declares another value is another
-		// definition.
-		ValidRekeyTarget bool `json:"valid_rekey_target"`
+		// ValidRekeyTarget is the template's declaration as written, part of
+		// its definition: a template that declares another value is another
+		// definition. It is hashed as the composed fingerprint hashes it.
+		ValidRekeyTarget *bool `json:"valid_rekey_target,omitempty"`
 	}
 
 	params := make([]lsigprovider.CanonicalParameter, len(spec.Parameters))
@@ -965,7 +965,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 		TEAL:              strings.TrimSpace(spec.TEAL),
 		Parameters:        params,
 		RuntimeArgs:       runtimeArgs,
-		ValidRekeyTarget:  spec.RekeyTargetValid(),
+		ValidRekeyTarget:  spec.ValidRekeyTarget,
 	})
 }
 

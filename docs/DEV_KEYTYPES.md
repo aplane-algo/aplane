@@ -1310,7 +1310,7 @@ Use this checklist for every new key type.
 - [ ] Confirm whether the type needs runtime args.
 - [ ] Confirm whether the type needs creation params only.
 - [ ] Decide `valid_rekey_target`: in the YAML for a template, in the
-      `internal/keytypecatalog` entry and `internal/lsigprovider/rekey_target_test.go`
+      `internal/keytypecatalog` entry and `internal/keytypecatalog/rekey_target_test.go`
       for a compiled key type.
 - [ ] Add or update tests.
 - [ ] Update user-facing docs if the key type is intended for operators.

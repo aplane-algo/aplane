@@ -11,6 +11,7 @@ func TestRegisterAndQueryAvailability(t *testing.T) {
 		Family:       "Catalog-Test",
 		Availability: AvailabilityLibrary,
 	}
+	unregisterForTest(t, entry.KeyType)
 	Register(entry)
 	Register(entry)
 
@@ -44,6 +45,7 @@ func TestRegisterConflictingEntryPanics(t *testing.T) {
 		Family:       "catalog-conflict",
 		Availability: AvailabilityDefaultEnabled,
 	}
+	unregisterForTest(t, entry.KeyType)
 	Register(entry)
 
 	defer func() {
@@ -55,9 +57,9 @@ func TestRegisterConflictingEntryPanics(t *testing.T) {
 	Register(entry)
 }
 
-// All returns entries of every availability, internal-only and disabled
-// included, which DefaultEnabled and LibraryVisible leave out.
-func TestAllReturnsEveryAvailability(t *testing.T) {
+// EntriesForTest, which the valid_rekey_target decision test iterates, returns
+// entries of every availability, internal-only and disabled included.
+func TestEntriesForTestReturnsEveryAvailability(t *testing.T) {
 	want := map[string]Availability{
 		"catalog-all-default-v1":  AvailabilityDefaultEnabled,
 		"catalog-all-library-v1":  AvailabilityLibrary,
@@ -65,17 +67,18 @@ func TestAllReturnsEveryAvailability(t *testing.T) {
 		"catalog-all-disabled-v1": AvailabilityDisabled,
 	}
 	for keyType, availability := range want {
+		unregisterForTest(t, keyType)
 		Register(Entry{KeyType: keyType, Family: keyType, Availability: availability})
 	}
 	found := map[string]Availability{}
-	for _, entry := range All() {
+	for _, entry := range EntriesForTest() {
 		if _, ok := want[entry.KeyType]; ok {
 			found[entry.KeyType] = entry.Availability
 		}
 	}
 	for keyType, availability := range want {
 		if found[keyType] != availability {
-			t.Errorf("All() has %s as %q, want %q", keyType, found[keyType], availability)
+			t.Errorf("EntriesForTest() has %s as %q, want %q", keyType, found[keyType], availability)
 		}
 	}
 }

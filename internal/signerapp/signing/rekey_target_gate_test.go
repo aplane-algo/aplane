@@ -99,6 +99,27 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 	}
 }
 
+// A plan builds its invalid rekey targets only for a group that rekeys, at
+// any position, and then builds all of them: what the gate and the warnings
+// see for a rekeying group is unchanged.
+func TestInvalidRekeyTargetsAreBuiltOnlyForARekeyingGroup(t *testing.T) {
+	snapshot, a := rekeyTargetTestSnapshot()
+	payment := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"]}}
+	if got := invalidRekeyTargetsForGroup(snapshot, []types.Transaction{payment, payment}); got != nil {
+		t.Fatalf("a group with no rekey built %v", got)
+	}
+	foreignRekey := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a["foreign"], RekeyTo: a["valid"]}}
+	got := invalidRekeyTargetsForGroup(snapshot, []types.Transaction{payment, foreignRekey})
+	if want := invalidRekeyTargetsFromSnapshot(snapshot); len(got) != len(want) || len(want) == 0 {
+		t.Fatalf("a rekeying group built %v, want %v", got, want)
+	}
+	for address, target := range invalidRekeyTargetsFromSnapshot(snapshot) {
+		if got[address] != target {
+			t.Fatalf("%s = %+v, want %+v", address, got[address], target)
+		}
+	}
+}
+
 // The invariant judges the key set the request was planned with, which the
 // plan carries: an HTLC key deleted, or a reload, between planning and the
 // gates does not let a rekey to it through.

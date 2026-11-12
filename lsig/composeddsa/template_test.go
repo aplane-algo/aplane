@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
@@ -1255,6 +1256,19 @@ max_opcode_cost: 20000
 			if err != nil {
 				t.Fatal(err)
 			}
+			// The provider a template registers declares what the YAML says,
+			// or nothing; the bare composer, which compiled key types share,
+			// declares nothing at all.
+			provider, err := NewProviderFromTemplateSpec(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := any(provider).(lsigprovider.RekeyTargetDeclarer); ok {
+				t.Fatal("a bare composer declares valid_rekey_target")
+			}
+			if valid, declared := (&templateProvider{provider}).RekeyTargetDeclaration(); valid != tc.want || declared != tc.admitted {
+				t.Fatalf("RekeyTargetDeclaration() = %v, %v; want %v, %v", valid, declared, tc.want, tc.admitted)
+			}
 			err = ValidateTemplateAdmission(spec)
 			if !tc.admitted {
 				if err == nil || !strings.Contains(err.Error(), "valid_rekey_target is required") {
@@ -1264,13 +1278,6 @@ max_opcode_cost: 20000
 			}
 			if err != nil {
 				t.Fatalf("ValidateTemplateAdmission() error = %v", err)
-			}
-			provider, err := NewProviderFromTemplateSpec(spec)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := provider.ValidRekeyTarget(); got != tc.want {
-				t.Fatalf("ValidRekeyTarget() = %v, want %v", got, tc.want)
 			}
 		})
 	}

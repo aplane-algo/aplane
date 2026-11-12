@@ -5,32 +5,39 @@ package lsigprovider
 
 import "github.com/aplane-algo/aplane/internal/keytypecatalog"
 
-// RekeyTargetDeclarer is implemented by an installed template's provider:
-// ValidRekeyTarget is the template's valid_rekey_target, the author's
-// declaration that an aplane key of this type may be the signing authority
-// an account is rekeyed to, its own account included, subject to its
-// program. A compiled key type declares the same attribute in its catalog
-// entry.
+// RekeyTargetDeclarer is implemented only by an installed template's
+// provider: ValidRekeyTarget is the template's valid_rekey_target, the
+// author's declaration that an aplane key of this type may be the signing
+// authority an account is rekeyed to, its own account included, subject to its
+// program. A compiled key type declares the attribute in its catalog entry,
+// the one place it is declared, and its providers do not implement this.
 type RekeyTargetDeclarer interface {
-	ValidRekeyTarget() bool
+	// RekeyTargetDeclaration is the template's valid_rekey_target and whether
+	// it declares one: a template loaded without the field declares nothing.
+	RekeyTargetDeclaration() (valid, declared bool)
 }
 
-// ValidRekeyTarget resolves keyType's valid_rekey_target declaration: the key
-// type author's statement that an aplane key of this type may be the signing
-// authority an account is rekeyed to, its own account included, subject
-// to that key's own restrictions. A compiled key type declares it in its
-// catalog entry, which is read first; an installed template declares it in its YAML
-// (RekeyTargetDeclarer). It is a Resolve-axis question: it needs the
-// registries. It is read when an aplane key is created, which records the
-// value (keys.Payload.ValidRekeyTarget), and by /keytypes; the signer's rekey
-// check reads the key's recorded value. An unknown key type is not a valid
-// rekey target.
+// ResolveValidRekeyTarget resolves keyType's valid_rekey_target declaration
+// and reports whether it resolved: from the catalog entry of a compiled key
+// type, or from the provider of an installed template that declares it
+// (RekeyTargetDeclarer). ok is false for any other key type. It is a Resolve-axis question: it needs
+// the registries. Key creation reads it and fails on !ok (keygen.SaveNewKey),
+// so no key records a value its key type never declared; the signer's rekey
+// check reads the key's recorded value.
+func ResolveValidRekeyTarget(keyType string) (valid, ok bool) {
+	if entry, found := keytypecatalog.Get(keyType); found {
+		return entry.ValidRekeyTarget, true
+	}
+	if declarer, found := Get(keyType).(RekeyTargetDeclarer); found {
+		return declarer.RekeyTargetDeclaration()
+	}
+	return false, false
+}
+
+// ValidRekeyTarget is ResolveValidRekeyTarget for a read that creates nothing,
+// such as the /keytypes listing: a key type whose declaration does not
+// resolve reads as not a valid rekey target.
 func ValidRekeyTarget(keyType string) bool {
-	if entry, ok := keytypecatalog.Get(keyType); ok {
-		return entry.ValidRekeyTarget
-	}
-	if declarer, ok := Get(keyType).(RekeyTargetDeclarer); ok {
-		return declarer.ValidRekeyTarget()
-	}
-	return false
+	valid, _ := ResolveValidRekeyTarget(keyType)
+	return valid
 }

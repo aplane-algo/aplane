@@ -124,13 +124,15 @@ rekeyed to, its own account included, subject to that key's own restrictions
 - A template that forbids rekey, or allows only a close-out, a fixed recipient,
   or a hashlock or timelock payment, declares `false`. `aplane.htlc.v1` does.
 - A new compiled key type declares it in its `internal/keytypecatalog` entry,
-  and `internal/lsigprovider/rekey_target_test.go` must list its decision. Its
-  value is fixed in code.
+  and `internal/keytypecatalog/rekey_target_test.go` must list its decision. Its
+  value is fixed in code, and its providers must not implement
+  `lsigprovider.RekeyTargetDeclarer`: only template-built providers declare it.
 - Each aplane key records the declaration when it is created, and the signer
   reads the key's recorded value. A new key creation path saves through
-  `keys.SaveNewPayload`, passing `lsigprovider.ValidRekeyTarget(keyType)`. The declaration is part of the template's
-  definition and its fingerprint: reinstalling the same version with another
-  declaration is refused, as any other change to it is.
+  `keygen.SaveNewKey`, which fails creation when the key type's declaration
+  does not resolve. The declaration is part of the template's definition and
+  its fingerprint: reinstalling the same version with another declaration is
+  refused, as any other change to it is.
 - The signer refuses a rekey of any account to a held aplane key that recorded
   false, the account's own address included, under every `rekeys` setting and
   whatever the account's rekey-to list says (`rekey_target_not_valid`). That

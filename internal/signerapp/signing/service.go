@@ -265,7 +265,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		PassthroughIndices:   plan.PassthroughIndices,
 		ForeignIndices:       plan.ForeignIndices,
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
-		KnownAddresses:       s.knownAddresses(plan),
+		KnownAddresses:       s.Approval.planKnownAddresses(plan),
 		InvalidRekeyTargets:  invalidRekeyTargetsForPlan(plan),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 		ListedRekeyTargets:   listedRekeyTargetsForPlan(plan),
@@ -321,16 +321,6 @@ func protocolRekeyTargetsForPlan(plan *PlanResult) map[string]bool {
 		return nil
 	}
 	return plan.ProtocolRekeyTargets
-}
-
-func (s *Service) knownAddresses(plan *PlanResult) map[string]bool {
-	if plan != nil && plan.KnownAddresses != nil {
-		return plan.KnownAddresses
-	}
-	if s.Approval == nil || s.Approval.KnownAddresses == nil {
-		return nil
-	}
-	return s.Approval.KnownAddresses()
 }
 
 func authPolicyKeysFromRequest(req signerapi.GroupSignRequest, plan *PlanResult) []string {

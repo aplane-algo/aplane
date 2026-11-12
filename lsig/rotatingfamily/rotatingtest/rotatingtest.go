@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 	rotatingfamilyreg "github.com/aplane-algo/aplane/lsig/rotatingfamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 )
@@ -293,6 +294,9 @@ func testScan(t *testing.T, s Scheme) {
 // ways of generating a rotating account it does not support.
 func testGenerator(t *testing.T, s Scheme) {
 	s.Register()
+	// Creation records the key type's valid_rekey_target, which its catalog
+	// entry declares.
+	clientreg.RegisterClient()
 	paths, kr := newStore(t)
 	gen, err := keygen.GetGenerator(s.KeyType)
 	if err != nil {

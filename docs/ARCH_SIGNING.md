@@ -1325,7 +1325,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; no signature was released, rebuild and prepare again | `409` |
-| `rekey_target_not_valid` | a signed position rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target; refused under every `rekeys` setting before policy; nothing was signed | `403` |
+| `rekey_target_not_valid` | a signed position rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target; refused under every `rekeys` setting before policy; nothing was signed. A rekey of another account to a held rotating account is refused first by the rotating invariant and keeps that refusal's code, `forbidden` | `403` |
 | `rotating_window_not_current` | the rotating spend's validity window is not acceptable at the round the signer read (`first_valid` more than 2 rounds ahead, or fewer than 10 rounds before `last_valid`); this attempt released no signature, rebuild the validity rounds and prepare again | `409` |
 
 An empty `code` means the server predates code support or the failure had no

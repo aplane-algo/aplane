@@ -31,7 +31,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -235,7 +234,7 @@ func TestServiceGenerateBoundedCosignerFromReference(t *testing.T) {
 	configureFalconCompileMock(t)
 	ir := setupProductRuntime(t)
 	const keyType = "test.falcon1024-bounded-cosigner-keyadmin.v1"
-	spec, err := composeddsa.ParseTemplateSpec([]byte(`
+	prepared, err := composeddsa.PrepareKeystoreTemplateRegistration(keyType, []byte(`
 schema_version: 2
 derivation_version: 3
 template_type: composed
@@ -262,11 +261,9 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	logicsigdsa.RegisterIfAbsent(provider)
+	// Registered as an installed template is, with its valid_rekey_target
+	// declaration, which creation needs.
+	prepared.Register()
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,
 	}); err != nil {

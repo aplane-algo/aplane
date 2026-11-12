@@ -205,7 +205,7 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	}
 
 	// Save key file
-	keyFiles, err := keys.SaveNewPayload(paths, payload, lsigprovider.ValidRekeyTarget(payload.KeyType), kr)
+	keyFiles, err := keygen.SaveNewKey(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}

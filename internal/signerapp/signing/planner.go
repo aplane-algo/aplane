@@ -239,7 +239,7 @@ func (p *Planner) planGroup(req signerapi.GroupSignRequest, kind RequestKind) (*
 		HasPassthrough:        hasPassthrough,
 		AuthKeyTypes:          authKeyTypes,
 		KnownAddresses:        knownAddresses,
-		InvalidRekeyTargets:   invalidRekeyTargetsFromSnapshot(snapshot),
+		InvalidRekeyTargets:   invalidRekeyTargetsForGroup(snapshot, final.AllTxns),
 		BoundedItems:          final.BoundedItems,
 	}, nil
 }
@@ -407,6 +407,19 @@ func invalidRekeyTargetsFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string
 		}
 	}
 	return invalid
+}
+
+// invalidRekeyTargetsForGroup is invalidRekeyTargetsFromSnapshot for a group
+// in which a transaction sets RekeyTo, and nil for one in which none does:
+// only a rekey reads the set, in the gate or in a warning, so most requests
+// never build it.
+func invalidRekeyTargetsForGroup(snapshot PlannerRuntimeSnapshot, group []types.Transaction) map[string]txnreview.InvalidRekeyTarget {
+	for _, txn := range group {
+		if !txn.RekeyTo.IsZero() {
+			return invalidRekeyTargetsFromSnapshot(snapshot)
+		}
+	}
+	return nil
 }
 
 // invalidRekeyTargetsForPlan is plan's held addresses that are not valid

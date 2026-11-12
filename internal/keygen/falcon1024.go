@@ -14,7 +14,6 @@ import (
 	algomnemonic "github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	nativeops "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -90,7 +89,7 @@ func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte,
 	defer payload.ZeroSecrets()
 	payload.FormatVersion = keys.NativeRecoveryKeyFormatVersion
 	payload.RecoveryEntropy = append([]byte(nil), entropy...)
-	keyFiles, err := keys.SaveNewPayload(paths, payload, lsigprovider.ValidRekeyTarget(payload.KeyType), kr)
+	keyFiles, err := SaveNewKey(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("save native Falcon key: %w", err)
 	}

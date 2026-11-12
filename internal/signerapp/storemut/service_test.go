@@ -139,8 +139,10 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
 	}
+	// Creation needs the template's valid_rekey_target declaration.
+	keyType := registerRekeyTargetTemplate(t, "timed-policy", false)
 	err = svc.SaveGenericLSig(
-		"test.timed-policy.v1",
+		keyType,
 		map[string]string{"unlock_round": "123"},
 		salted.Bytecode,
 		salted.Counter,

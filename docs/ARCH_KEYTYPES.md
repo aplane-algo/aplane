@@ -618,17 +618,22 @@ checks `Sender`, and declares false.
 A compiled key type declares the attribute in its `internal/keytypecatalog`
 entry. A YAML template declares it as the top-level `valid_rekey_target` field,
 which install (`generictemplate.ValidateSpecAdmission`,
-`composeddsa.ValidateTemplateAdmission`) requires. `lsigprovider.ValidRekeyTarget`
-resolves the declaration, catalog first, then the installed template; an
-unknown key type is not a valid rekey target. A provider answers it the same
-way: a template-built provider from its YAML, a compiled one, such as a plain
-host and each of its programs (`plainhost.Provider`, `ComposedDSA`), from its
-catalog entry, the one place a compiled key type declares it.
+`composeddsa.ValidateTemplateAdmission`) requires. Only a template-built
+provider declares it (`lsigprovider.RekeyTargetDeclarer`: a generic template's
+provider, and the provider a composed template registers); a compiled key type,
+a plain host and its programs included, declares it in its catalog entry alone,
+so nothing can disagree with the catalog. `lsigprovider.ResolveValidRekeyTarget`
+resolves the declaration, catalog first, then the installed template, and
+reports whether it resolved. Key creation fails, writing nothing, when it did
+not: an unknown key type, or a template loaded without the field. The
+`/keytypes` listing reads an unresolved key type as not a valid rekey target
+(`lsigprovider.ValidRekeyTarget`).
 
 The declaration is part of a template's definition. The template compatibility
 fingerprint covers it beside the program
 (`generictemplate.compatibilityFingerprintForSpec`,
-`ComposedDSA.CompatibilityFingerprint`), so a template that declares another
+`ComposedDSA.CompatibilityFingerprint`, which both hash the declaration as
+written), so a template that declares another
 value is another definition: install refuses it under an installed key type, as
 it refuses any other change to the same version (`installed template does not
 match incoming definition`), and reload treats a template file whose
@@ -638,11 +643,12 @@ fingerprint does not carry it.
 The declaration is read once, when an aplane key is created: every creation
 path (generation, mnemonic import) records it in the key record as
 `valid_rekey_target` (`keys.Payload.ValidRekeyTarget`). They save the new
-record through `keys.SaveNewPayload`, which takes the declaration as a
-required argument, so a creation path cannot record a value by omission; a
-path that carries an existing record (backup, restore, copy) writes the record
-it holds. From then on the key's
-recorded value is what counts. The signer reads it from the key, never from the
+record through `keygen.SaveNewKey`, which resolves the declaration and fails
+creation when it does not resolve; under it, `keys.SaveNewPayload` takes the
+value as a required argument, so no creation path records a value by
+omission. A path that carries an existing record (backup, restore, copy)
+writes the record it holds. From then on the key's recorded value is what
+counts. The signer reads it from the key, never from the
 live registry, so a key keeps its value when its template is disabled or absent
 on the node, and backup, restore and copy carry it as part of the record. A
 request is judged against the key snapshot it was planned with: the plan
@@ -1634,7 +1640,7 @@ For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` the
 | 12 | For an account with a contract (`plain1` or `bounded2`), build it: cosigner ID and argument layout | `BuildBoundedAuthorizationMetadata` |
 | 13 | Resolve the reviewed opcode profile | `lsigprovider.ResolveOpcodeProfile` |
 | 14 | Build the payload with bytecode, parameters, metadata and the template fingerprint | `keys.NewAutoSaltedDSALSigPayload`, `SetBoundedAuthorization` |
-| 15 | Check the payload's selector equals the derived address, then save the new key file with the key type's `valid_rekey_target` | `Payload.Selector`, `keys.SaveNewPayload`, `lsigprovider.ValidRekeyTarget` |
+| 15 | Check the payload's selector equals the derived address, then save the new key file with the key type's `valid_rekey_target` | `Payload.Selector`, `keygen.SaveNewKey` |
 
 `GenerateKey` finishes by reloading the runtime and writing the audit entry. The seed
 and private key are zeroed in `generateKey` on every path.

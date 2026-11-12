@@ -62,20 +62,6 @@ func (r *rotatingPlanItem) describe() string {
 	return fmt.Sprintf("\n  Rotation: stage %d signs and hands the account to stage %d (%s), held by this signer", r.Stage, r.Target, r.TargetAddress)
 }
 
-// planKnownAddresses is the address set approval warnings treat as the
-// signer's own: the plan's, from the key snapshot it was planned with (a
-// rotating plan names its rotation target in it), or the runtime's key-file
-// addresses for a prompt without one.
-func (s *ApprovalService) planKnownAddresses(plan *PlanResult) map[string]bool {
-	if plan != nil && plan.KnownAddresses != nil {
-		return plan.KnownAddresses
-	}
-	if s.KnownAddresses == nil {
-		return nil
-	}
-	return s.KnownAddresses()
-}
-
 func rotatingStageUnproven(scanned uint64) *ServiceError {
 	return &ServiceError{
 		Kind:    ErrorRotatingStageUnproven,
@@ -478,7 +464,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		NeedsRegroup:         len(allTxns) > 1,
 		AuthKeyTypes:         []string{snapshot.KeyTypes[req.Account]},
 		KnownAddresses:       known,
-		InvalidRekeyTargets:  invalidRekeyTargetsFromSnapshot(snapshot),
+		InvalidRekeyTargets:  invalidRekeyTargetsForGroup(snapshot, allTxns),
 		ProtocolRekeyTargets: protocolRekeys,
 		Rotating:             item,
 		Frozen:               true,

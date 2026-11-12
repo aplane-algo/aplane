@@ -16,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -32,14 +31,14 @@ func setupPrepareTest(t *testing.T, keyType, family string) (*productruntime.Run
 	t.Helper()
 	configureFalconCompileMock(t)
 	ir := setupProductRuntime(t)
-	spec, err := composeddsa.ParseTemplateSpec([]byte(`
+	prepared, err := composeddsa.PrepareKeystoreTemplateRegistration(keyType, []byte(`
 schema_version: 2
 derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
 publisher: test
-family: ` + family + `
+family: `+family+`
 version: 1
 display_name: Prepare Test
 valid_rekey_target: true
@@ -59,11 +58,9 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	logicsigdsa.RegisterIfAbsent(provider)
+	// Registered as an installed template is, with its valid_rekey_target
+	// declaration, which creation needs.
+	prepared.Register()
 	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,

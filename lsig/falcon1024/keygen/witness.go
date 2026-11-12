@@ -11,6 +11,7 @@ import (
 
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -108,11 +109,22 @@ func validateWitnessPair(publicKey, privateKey []byte) error {
 
 var registerWitnessKeygenOnce sync.Once
 
-// RegisterWitnessKeygen registers the Falcon-1024 witness generator and pair
-// validator used when loading signer-custodied witness keys. This is
-// intentionally separate from the transaction-signing provider registry.
+// RegisterWitnessKeygen registers the Falcon-1024 witness key type's catalog
+// entry, its generator, and the pair validator used when loading
+// signer-custodied witness keys. The entry and the generator register
+// together: creating a witness key needs the key type's valid_rekey_target
+// declaration. This is intentionally separate from the transaction-signing
+// provider registry.
 func RegisterWitnessKeygen() {
 	registerWitnessKeygenOnce.Do(func() {
+		keytypecatalog.Register(keytypecatalog.Entry{
+			KeyType:      witness.Falcon1024V1,
+			Family:       "cosigner-falcon1024",
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+			// A witness key is a cosigner's component key, not an account,
+			// so nothing is rekeyed to it.
+			ValidRekeyTarget: false,
+		})
 		internalkeygen.Register(&WitnessFalcon1024Generator{})
 		witness.RegisterPairValidator(witness.Falcon1024V1, validateWitnessPair)
 	})

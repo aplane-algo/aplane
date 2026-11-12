@@ -74,21 +74,6 @@ func rejectRekeyToInvalidTarget(txns []types.Transaction, signed []int, invalid 
 	return nil
 }
 
-// cosignerInvalidRekeyTargets is what the valid-target invariant reads on a
-// cosigner, which plans nothing: one key snapshot, taken only for a group
-// that rekeys at a position it signs.
-func (s *Service) cosignerInvalidRekeyTargets(txns []types.Transaction, signed []int) map[string]txnreview.InvalidRekeyTarget {
-	if s.Planner == nil || s.Planner.Snapshot == nil {
-		return nil
-	}
-	for _, i := range signed {
-		if i >= 0 && i < len(txns) && !txns[i].RekeyTo.IsZero() {
-			return invalidRekeyTargetsFromSnapshot(s.Planner.Snapshot())
-		}
-	}
-	return nil
-}
-
 // positionOutsideGroup fails closed on a signed position the group doesn't
 // have. Callers derive positions from the group, so it is a bug, never input.
 func positionOutsideGroup(i, groupLen int) *ServiceError {

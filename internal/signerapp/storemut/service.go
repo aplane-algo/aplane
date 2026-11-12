@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -109,7 +110,7 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, false); err != nil {
 		return err
 	}
-	_, err := keys.SaveNewPayload(s.keyPaths, payload, lsigprovider.ValidRekeyTarget(payload.KeyType), kr)
+	_, err := keygen.SaveNewKey(s.keyPaths, payload, kr)
 	return err
 }
 

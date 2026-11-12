@@ -16,7 +16,6 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -101,10 +100,10 @@ type Config struct {
 	Bounded            *BoundedAuthorizationProfile
 	Layer3             *Layer3Policy
 	OpcodeProfile      lsigresource.OpcodeProfile
-	// RekeyTargetDeclaration is an installed template's valid_rekey_target.
-	// A compiled key type, a plain host's programs included, leaves it nil:
-	// it declares the attribute in its catalog entry, which ValidRekeyTarget
-	// reads.
+	// RekeyTargetDeclaration is an installed template's valid_rekey_target,
+	// part of its definition and its fingerprint. A compiled key type, a plain
+	// host's programs included, leaves it nil: it declares the attribute in
+	// its catalog entry alone.
 	RekeyTargetDeclaration *bool
 }
 
@@ -190,18 +189,6 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		opcodeProfile:          opcodeProfile,
 		rekeyTargetDeclaration: cloneBool(cfg.RekeyTargetDeclaration),
 	}
-}
-
-// ValidRekeyTarget is this provider's valid_rekey_target
-// (lsigprovider.RekeyTargetDeclarer): an installed template's declaration, or
-// for a compiled key type, such as a plain host's programs, its catalog
-// entry, the one place a compiled key type declares it.
-func (c *ComposedDSA) ValidRekeyTarget() bool {
-	if c.rekeyTargetDeclaration != nil {
-		return *c.rekeyTargetDeclaration
-	}
-	entry, ok := keytypecatalog.Get(c.keyType)
-	return ok && entry.ValidRekeyTarget
 }
 
 func cloneBool(value *bool) *bool {

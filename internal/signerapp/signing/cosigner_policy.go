@@ -42,7 +42,9 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if err := validateTransactionBounds(group); err != nil {
 		return err
 	}
-	if err := s.rejectSignerInvariants(group, targets, s.cosignerInvalidRekeyTargets(group, targets)); err != nil {
+	// A cosigner holds only witness keys, whose 52-character IDs never equal a
+	// 58-character RekeyTo address, so no rekey target is held, or invalid.
+	if err := s.rejectSignerInvariants(group, targets, nil); err != nil {
 		s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
 		return err
 	}
