@@ -677,8 +677,8 @@ local, rebuildable state:
 JSON cache files use an HMAC envelope version plus a payload-level
 `schema_version`, which every write records. The signed envelope has
 `version: 1`; alias, set, ASA, and auth-address payloads carry
-`schema_version: 1`, while `signer_cache.json` carries `schema_version: 2` for
-structured LogicSig resources. A missing or unsupported payload
+`schema_version: 1`, while `signer_cache.json` carries `schema_version: 4`.
+A missing or unsupported payload
 version is rejected and the cache is rebuilt from empty or seed data; the
 signer cache then rebuilds from authenticated signer inventory without
 invalidating unrelated client caches. Cache
@@ -699,8 +699,12 @@ are rejected.
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
-  `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`, and
-  `bounded_max_fees` (the bounded authorization `max_fee` per address).
+  `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`,
+  `bounded_max_fees` (the bounded authorization `max_fee` per address),
+  `bounded_contracts`, and `valid_rekey_targets`: the addresses whose aplane
+  key records `valid_rekey_target` true. An address not in it reads as not a
+  valid rekey target, so apshell refuses a plugin-built group that rekeys an
+  account to a held aplane key the set does not list.
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
   Bounded profiles expose exactly the spend, spending-rekey, and listed-rekey

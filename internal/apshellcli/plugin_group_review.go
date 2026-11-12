@@ -51,7 +51,7 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	}
 	r.printf("%d transaction(s):\n", len(slots))
 
-	held := r.heldAddresses()
+	rekeyTargets := r.rekeyTargetContext()
 	var managedFees uint64
 	for i, s := range slots {
 		txn := s.txn
@@ -59,7 +59,7 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 		// lines that follow.
 		// The sender and fee are in the description that follows.
 		r.printf("  [%d] %-13s %s\n", i+1, s.role, termsafe.Line(txnTypeLabel(txn.Type)))
-		for _, line := range pluginReviewLines(txn, held) {
+		for _, line := range pluginReviewLines(txn, rekeyTargets) {
 			r.printf("        %s\n", line)
 		}
 		if s.role == slotRoleManaged {
@@ -71,32 +71,37 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	}
 }
 
-// heldAddresses is the set of addresses whose own key the connected signer
-// holds, or nil when that is not known. A rekey to one of them keeps control,
-// and the review says so, as the signer's own prompt does. It is not the set
-// of accounts the client can sign for: an account signable only through its
-// auth address, or a generic LogicSig with no key, is not held, so a rekey to
-// one warns of losing control.
-func (r *REPLState) heldAddresses() map[string]bool {
+// rekeyTargetContext is what the connected signer's key list says about rekey
+// targets: every address the signer holds an aplane key for, and, by address,
+// those whose aplane key is not a valid rekey target. The review then says what
+// the signer's own prompt says: a rekey to a held address keeps control, unless
+// that aplane key is not a valid rekey target, which it warns about. An account
+// signable only through its auth address is not held, so a rekey to it warns
+// of losing control, as every rekey does when there is no app.
+func (r *REPLState) rekeyTargetContext() txnreview.FindingContext {
 	if r.App == nil {
-		return nil
+		return txnreview.FindingContext{}
 	}
-	return r.App.HeldKeyAddressSet()
+	invalid := make(map[string]txnreview.InvalidRekeyTarget)
+	for address, target := range r.App.InvalidRekeyTargets() {
+		invalid[address] = txnreview.InvalidRekeyTarget{KeyType: target.KeyType, GenericLogicSig: target.GenericLogicSig}
+	}
+	return txnreview.FindingContext{KnownAddresses: r.App.HeldKeyAddressSet(), InvalidRekeyTargets: invalid}
 }
 
 // pluginReviewLines lists what one slot does: the shared description the
 // signer's approval prompt is built from, then every finding the signer would
-// warn about, marked `!!`. A plugin-signed slot never reaches the signer, so
-// this can be the only review it gets; using the signer's own describer and
-// its own warning rules means the two reviews say the same thing about the
-// same bytes.
+// warn about, marked `!!`, given what ctx says about rekey targets. A
+// plugin-signed slot never reaches the signer, so this can be the only review
+// it gets; using the signer's own describer and its own warning rules means
+// the two reviews say the same thing about the same bytes.
 //
 // The network is named from the transaction's genesis hash, not from its
 // genesis ID, which is text the plugin chose.
-func pluginReviewLines(txn types.Transaction, held map[string]bool) []string {
+func pluginReviewLines(txn types.Transaction, ctx txnreview.FindingContext) []string {
 	network, _ := apconfig.DefaultGenesisHashNetworkResolver().NetworkForGenesisHashBytes(txn.GenesisHash[:])
 	lines := strings.Split(txnreview.Describe(txn, txnreview.View{Network: network}), "\n")
-	for _, finding := range txnreview.Findings(txn, txnreview.FindingContext{KnownAddresses: held}) {
+	for _, finding := range txnreview.Findings(txn, ctx) {
 		lines = append(lines, fmt.Sprintf("!! %s = %s", finding.Field, finding.Value))
 		for _, line := range strings.Split(finding.Message, "\n") {
 			lines = append(lines, "   "+strings.TrimSpace(line))
@@ -171,10 +176,15 @@ func renderDiscardedGroupIDNotice(r *REPLState, discarded bool) {
 // transactions for APlane-managed accounts, read with engine.DecodePluginDraft
 // as submission reads them, through the same renderer the group modes use. It
 // is information, not a gate: apsigner plans the final group, and its policy
-// and approval apply to it.
+// and approval apply to it. A draft that rekeys an account to a held aplane key
+// that is not a valid rekey target is refused before anything is shown, as
+// submission refuses it.
 func renderDefaultPluginDraft(r *REPLState, intents []jsonrpc.TransactionIntent) error {
 	drafts, groupIDDiscarded, err := engine.DecodePluginDraft(intents)
 	if err != nil {
+		return err
+	}
+	if err := r.refuseRekeyToInvalidTarget(drafts); err != nil {
 		return err
 	}
 	slots := make([]pluginReviewSlot, len(drafts))

@@ -156,6 +156,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 	s.SignerCache.CosignerPublicKeys = make(map[string]string)
 	s.SignerCache.BoundedMaxFees = make(map[string]uint64)
 	s.SignerCache.BoundedContracts = make(map[string]string)
+	s.SignerCache.ValidRekeyTargets = make(map[string]bool)
 	s.SignerCache.Locked = false
 	s.SignerCache.BindStore(s.CacheStore)
 	for _, keyInfo := range keys {
@@ -166,6 +167,9 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 		}
 		if keyInfo.IsGenericLsig {
 			s.SignerCache.SetGenericLsig(keyInfo.Address, true)
+		}
+		if keyInfo.ValidRekeyTarget {
+			s.SignerCache.SetValidRekeyTarget(keyInfo.Address, true)
 		}
 		if keyInfo.SigningFlow != "" {
 			s.SignerCache.SetSigningFlowForAddress(keyInfo.Address, keyInfo.SigningFlow)

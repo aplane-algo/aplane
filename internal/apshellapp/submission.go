@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -83,6 +84,9 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, r
 	if err != nil {
 		return nil, err
 	}
+	if err := a.RefusePluginRekeyToInvalidTarget(txns); err != nil {
+		return nil, err
+	}
 
 	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
 	submit, err := a.eng.SignAndSubmitGroup(ctx, txns, lsigArgsSlice)
@@ -130,6 +134,14 @@ func (a *App) submitPregroupedSigned(ctx context.Context, result *jsonrpc.Execut
 
 	group, err := engine.DecodePregroupedSigned(encoded)
 	if err != nil {
+		return nil, err
+	}
+	signed := group.Transactions()
+	txns := make([]types.Transaction, len(signed))
+	for i, st := range signed {
+		txns[i] = st.Txn
+	}
+	if err := a.RefusePluginRekeyToInvalidTarget(txns); err != nil {
 		return nil, err
 	}
 
@@ -203,6 +215,9 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 	if err != nil {
 		return nil, err
 	}
+	if err := a.RefusePluginRekeyToInvalidTarget(txns); err != nil {
+		return nil, err
+	}
 
 	signSlots := func(reqs []engine.PluginSlotSignRequest) ([]engine.PluginSlotSigned, error) {
 		jr := make([]jsonrpc.SignTransactionRequest, len(reqs))
@@ -233,6 +248,47 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 		return nil, err
 	}
 	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), nil
+}
+
+// RefusePluginRekeyToInvalidTarget refuses a plugin-built group in which a
+// transaction, at any position and whoever signs it, rekeys an account to an
+// address the signer holds an aplane key for that is not a valid rekey target,
+// the account's own address included. It is the rule the signer applies at the
+// positions it signs (code rekey_target_not_valid). A plugin-signed position
+// never reaches the signer, so apshell applies the rule to every position,
+// before the group is shown, prompted for, sent to the signer or submitted. A
+// foreign target, one the signer holds no aplane key for, is not refused: the
+// review warns about it.
+//
+// The held aplane keys are the signer cache's, the list the review reads. With
+// no key list nothing is held, so nothing is refused, and the review shows a
+// rekey to any address as losing control.
+func (a *App) RefusePluginRekeyToInvalidTarget(txns []types.Transaction) error {
+	return refuseRekeyToInvalidTarget(txns, a.eng.InvalidRekeyTargets())
+}
+
+// refuseRekeyToInvalidTarget is RefusePluginRekeyToInvalidTarget over a given
+// set of held aplane keys that are not valid rekey targets. Its message says
+// what the signer's refusal says, and names the position from 1, as the
+// review's slots and the plugin's decode errors do.
+func refuseRekeyToInvalidTarget(txns []types.Transaction, invalid map[string]cache.InvalidRekeyTarget) error {
+	for i, txn := range txns {
+		if txn.RekeyTo.IsZero() {
+			continue
+		}
+		target := txn.RekeyTo.String()
+		found, ok := invalid[target]
+		if !ok {
+			continue
+		}
+		keyType := found.KeyType
+		if keyType == "" {
+			keyType = "unknown"
+		}
+		return fmt.Errorf("transaction %d: cannot rekey to %s: this signer holds its aplane key (%s), which is not a valid rekey target",
+			i+1, target, keyType)
+	}
+	return nil
 }
 
 func perTxnLsigArgs(lsigArgs map[string][]byte, count int) []map[string][]byte {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
@@ -160,11 +161,19 @@ func (a *App) ResolveDeleteKeyTarget(_ context.Context, req DeleteKeyRequest) (*
 	return &DeleteKeyTarget{Address: address}, nil
 }
 
-// HeldKeyAddressSet returns the addresses whose own key record the connected
-// signer holds with key material, as a set: not an account the client can sign
-// for only through its auth address, and not a generic LogicSig, which has no
-// key. A rekey to one of them keeps control. It is empty when no signer is
-// connected.
+// HeldKeyAddressSet returns, as a set, every address the signer holds an
+// aplane key for, of any key type: not an account the client can sign for
+// only through its auth address. A rekey to one of them keeps control, unless
+// its aplane key is not a valid rekey target (InvalidRekeyTargets). It is the
+// signer cache's list, as the signer last gave it; a disconnect empties it.
 func (a *App) HeldKeyAddressSet() map[string]bool {
 	return a.eng.HeldKeyAddressSet()
+}
+
+// InvalidRekeyTargets returns, by address, the held aplane keys that are not
+// valid rekey targets, with each key's type and whether it is a generic
+// LogicSig. A rekey to one of them may strand the account. It comes from the
+// same signer cache list as HeldKeyAddressSet.
+func (a *App) InvalidRekeyTargets() map[string]cache.InvalidRekeyTarget {
+	return a.eng.InvalidRekeyTargets()
 }

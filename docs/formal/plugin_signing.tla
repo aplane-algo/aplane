@@ -24,6 +24,11 @@ plugin-produced transaction group to reach submission.
           with apsigner approval over the canonical group.
   - PS7 : no ungated submission — every submission carries the operator
           review (pregrouped) or the apsigner approval (presign-plan).
+  - PS8 : no rekey to a held invalid target. No transaction in a
+          submitted group, at any position and whoever signs it, rekeys an
+          account to an address the signer holds an aplane key for that is
+          not a valid rekey target (apshellapp
+          RefusePluginRekeyToInvalidTarget).
 
 PS1 (constructor byte binding) is structural — a property of the Go type
 (unexported fields, sole constructor) — and is not restated as a TLC
@@ -33,10 +38,11 @@ Like sign_boundary.tla this is a ONE-SHOT spec: Init enumerates every
 combination of mode, per-slot validation outcomes, and gate decisions;
 Next is UNCHANGED. The Submitted decision procedure is a transcription of
 the code's accept/reject logic (apshellcli/external_plugins.go,
-engine/plugin_pregrouped.go, engine/plugin_presign.go); a dropped check
+apshellapp/submission.go, engine/plugin_pregrouped.go,
+engine/plugin_presign.go); a dropped check
 surfaces as a counterexample, confirmed by the documented mutations
 (removing the digest conjunct violates PS2; removing the review conjunct
-violates PS3/PS7).
+violates PS3/PS7; removing either rekey target conjunct violates PS8).
 
 Validation outcomes are abstracted to booleans the standard way: the model
 checks the CHECKS and their gating, not msgpack or cryptography. Honest
@@ -69,21 +75,29 @@ Approval == {"approved", "denied"}
 
 \* A pregrouped-signed submission attempt: group-shape validity (size
 \* 2..MaxTxGroupSize, uniform non-zero group field), the group-ID
-\* recomputation outcome, and the review outcome.
+\* recomputation outcome, whether every transaction's rekey target is
+\* allowed (rekeyTargetsOK: none rekeys to an address the signer holds an
+\* aplane key for that is not a valid rekey target; every slot here is
+\* plugin-signed), and the review outcome.
 PregroupedCase == [
-    mode     : {"pregrouped_signed"},
-    shapeOK  : BOOLEAN,
-    digestOK : BOOLEAN,
-    review   : Review
+    mode           : {"pregrouped_signed"},
+    shapeOK        : BOOLEAN,
+    digestOK       : BOOLEAN,
+    rekeyTargetsOK : BOOLEAN,
+    review         : Review
 ]
 
 \* Presign-plan slots: plugin-owned (signed by the plugin callback against
 \* the canonical bytes) or managed (signed by apsigner). planPreserved is
 \* the draft-vs-canonical comparison (validatePluginPlan: canonical group ID,
 \* reported fee increases only, canonical dummies appended); txnMatch is
-\* the plugin-returned slot's byte match against the canonical transaction.
-PluginSlot  == [owner : {"plugin"},  planPreserved : BOOLEAN, txnMatch : BOOLEAN]
-ManagedSlot == [owner : {"managed"}, planPreserved : BOOLEAN]
+\* the plugin-returned slot's byte match against the canonical transaction;
+\* rekeyTargetOK is the client's check of the slot's draft that it does not
+\* rekey to an address the signer holds an aplane key for that is not a
+\* valid rekey target, made for both slot classes.
+PluginSlot  == [owner : {"plugin"},  planPreserved : BOOLEAN, txnMatch : BOOLEAN,
+                rekeyTargetOK : BOOLEAN]
+ManagedSlot == [owner : {"managed"}, planPreserved : BOOLEAN, rekeyTargetOK : BOOLEAN]
 Slot == PluginSlot \cup ManagedSlot
 
 BoundedSlots ==
@@ -114,19 +128,23 @@ Case == PregroupedCase \cup PresignCase
 (* The submission decision procedure — a transcription of the code. *)
 
 \* Pregrouped-signed (engine/plugin_pregrouped.go + apshellcli
-\* reviewPregroupedSigned): decode/shape/digest validation, then mandatory
+\* reviewPregroupedSigned + apshellapp submitPregroupedSigned):
+\* decode/shape/digest validation, the rekey target refusal, then mandatory
 \* interactive review; RequiresApproval is ignored; non-interactive fails
 \* closed; submission is byte-verbatim (PS1, structural).
 PregroupedSubmitted(c) ==
     /\ c.shapeOK
     /\ c.digestOK
+    /\ c.rekeyTargetsOK
     /\ c.review = "approved"
 
-\* Presign-plan (engine/plugin_presign.go + plugin_signing.go): plan
-\* preservation on every slot, byte match on every plugin slot, index
+\* Presign-plan (engine/plugin_presign.go + plugin_signing.go + apshellapp
+\* submitPresignPlan): the rekey target refusal on every slot of the draft,
+\* plan preservation on every slot, byte match on every plugin slot, index
 \* discipline, client draft review not rejected, apsigner's pre-grouped
 \* digest recomputation, and apsigner approval for the managed slots.
 PresignSubmitted(c) ==
+    /\ \A i \in 1..Len(c.slots) : c.slots[i].rekeyTargetOK
     /\ \A i \in 1..Len(c.slots) : c.slots[i].planPreserved
     /\ \A i \in 1..Len(c.slots) :
            c.slots[i].owner = "plugin" => c.slots[i].txnMatch
@@ -203,6 +221,16 @@ PS7_NoUngatedSubmission ==
         \/ kase.mode = "pregrouped_signed" /\ kase.review = "approved"
         \/ kase.mode = "presign_plan"      /\ kase.approval = "approved"
 
+\* PS8: no submitted group rekeys, at any position and whoever signs it, to
+\* an address the signer holds an aplane key for that is not a valid rekey
+\* target. In presign-plan the signer refuses such a managed slot as well;
+\* the plugin slots have only this check.
+PS8_NoRekeyToInvalidTarget ==
+    submitted =>
+        IF kase.mode = "pregrouped_signed"
+        THEN kase.rekeyTargetsOK
+        ELSE \A i \in 1..Len(kase.slots) : kase.slots[i].rekeyTargetOK
+
 Safety ==
     /\ TypeOK
     /\ PS2_GroupDigestVerified
@@ -211,5 +239,6 @@ Safety ==
     /\ PS5_SignedSlotByteMatch
     /\ PS6_ManagedApprovalGated
     /\ PS7_NoUngatedSubmission
+    /\ PS8_NoRekeyToInvalidTarget
 
 ============================================================================

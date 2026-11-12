@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -312,6 +313,43 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	}
 	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("PLAIN"); ok {
 		t.Fatalf("plain host max fee = %d, want none", got)
+	}
+}
+
+// Each key's valid_rekey_target is recorded from /keys; a repopulate replaces
+// the set, so a key listed again as false, or no longer listed, reads as not
+// valid.
+func TestPopulateSignerCacheRecordsValidRekeyTarget(t *testing.T) {
+	state := New("testnet")
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
+		{Address: "ROTATING", KeyType: "aplane.rotating-triple-wotsc.v1", SigningFlow: signerapi.SigningFlowRotating1},
+		{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		{Address: "VAULT", KeyType: "example.vault.v1", IsGenericLsig: true, ValidRekeyTarget: true},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	want := map[string]cache.InvalidRekeyTarget{
+		"ROTATING": {KeyType: "aplane.rotating-triple-wotsc.v1"},
+		"HTLC":     {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
+	}
+	if got := state.SignerCache.InvalidRekeyTargets(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("InvalidRekeyTargets() = %v, want %v", got, want)
+	}
+	if !state.SignerCache.IsValidRekeyTarget("NATIVE") || !state.SignerCache.IsValidRekeyTarget("VAULT") {
+		t.Fatalf("recorded valid targets = %v, want NATIVE and VAULT", state.SignerCache.ValidRekeyTargets)
+	}
+	if held := state.SignerCache.HeldKeyAddresses(); len(held) != 4 {
+		t.Fatalf("HeldKeyAddresses() = %v, want all four listed addresses", held)
+	}
+
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "NATIVE", KeyType: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	if state.SignerCache.IsValidRekeyTarget("NATIVE") || state.SignerCache.IsValidRekeyTarget("VAULT") {
+		t.Fatalf("valid targets after repopulate = %v, want none", state.SignerCache.ValidRekeyTargets)
 	}
 }
 

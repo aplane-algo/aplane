@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -117,6 +119,18 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool
 	}
 }
 
+// refuseRekeyToInvalidTarget stops a review before anything is shown or
+// prompted for when the group rekeys an account to a held aplane key that is
+// not a valid rekey target, with the error submission gives
+// (apshellapp.RefusePluginRekeyToInvalidTarget), so the user is not shown a
+// group that would be refused. With no app, nothing is known to be held.
+func (r *REPLState) refuseRekeyToInvalidTarget(txns []types.Transaction) error {
+	if r.App == nil {
+		return nil
+	}
+	return r.App.RefusePluginRekeyToInvalidTarget(txns)
+}
+
 // reviewDefaultDraft is the default mode's review: unsigned transactions for
 // APlane-managed accounts. The decoded draft is shown as information;
 // apsigner's policy and approval over the final group are the gate, and this
@@ -147,7 +161,8 @@ func reviewDefaultDraft(r *REPLState, result *jsonrpc.ExecuteResult) (bool, erro
 // local review is the ONLY human-acceptance step: plugin-provided RequiresApproval
 // is ignored, and non-interactive surfaces (AutoConfirm) fail closed rather than
 // broadcast a group the user never saw — mirroring apsigner refusing to sign with
-// no operator present.
+// no operator present. A group that rekeys an account to a held aplane key that
+// is not a valid rekey target is refused before it is shown.
 func reviewPregroupedSigned(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
 	encoded := make([]string, len(result.Transactions))
 	for i, txn := range result.Transactions {
@@ -157,8 +172,16 @@ func reviewPregroupedSigned(r *REPLState, result *jsonrpc.ExecuteResult) (bool, 
 	if err != nil {
 		return false, fmt.Errorf("pregrouped-signed: %w", err)
 	}
+	signed := group.Transactions()
+	txns := make([]types.Transaction, len(signed))
+	for i, st := range signed {
+		txns[i] = st.Txn
+	}
+	if err := r.refuseRekeyToInvalidTarget(txns); err != nil {
+		return false, err
+	}
 
-	renderPregroupedSignedGroup(r, group.Transactions())
+	renderPregroupedSignedGroup(r, signed)
 
 	if r.AutoConfirm {
 		return false, fmt.Errorf("pregrouped-signed groups require interactive review and cannot be submitted in non-interactive (auto-confirm) mode")
@@ -180,10 +203,19 @@ func reviewPregroupedSigned(r *REPLState, result *jsonrpc.ExecuteResult) (bool, 
 // slots, fee attribution) and prompts. APlane canonicalizes this group and apsigner's
 // /sign approval is the authoritative gate for the managed slots, so this client
 // review is a confirm on top: it prompts interactively and otherwise proceeds.
+// A group that rekeys an account to a held aplane key that is not a valid rekey
+// target is refused before it is shown, whichever slot does it.
 func reviewPresignPlan(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
 	slots, groupIDDiscarded, err := decodePresignReviewSlots(result.Transactions, result.PluginSigners)
 	if err != nil {
 		return false, fmt.Errorf("presign-plan: %w", err)
+	}
+	txns := make([]types.Transaction, len(slots))
+	for i, slot := range slots {
+		txns[i] = slot.txn
+	}
+	if err := r.refuseRekeyToInvalidTarget(txns); err != nil {
+		return false, err
 	}
 	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots)
 	renderDiscardedGroupIDNotice(r, groupIDDiscarded)

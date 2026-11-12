@@ -41,6 +41,20 @@ possess the keys for the new address."
   authority there; and at a position this signer does not sign, a rekey to a
   held aplane key that is not a valid rekey target, the account's own included,
   says so.
+- **apshell refuses a plugin-built group that rekeys to a held aplane key
+  that is not a valid rekey target**, in every plugin mode, at any position
+  and whoever signs it, the account's own address included. A plugin-signed
+  slot never reaches the signer, so apshell applies the signer's rule itself,
+  before the group is shown, sent to the signer or submitted:
+  `transaction N: cannot rekey to <address>: this signer holds its aplane key
+  (<key type>), which is not a valid rekey target`. A rekey to a foreign
+  address remains a warning.
+- **apshell's plugin review reads `valid_rekey_target` from `/keys`.** It
+  treats every aplane key the signer lists as held, a generic LogicSig
+  included, so a rekey to a held aplane key that is a valid rekey target says
+  the signer holds it, as the signer's prompt does. Before, it left out every
+  generic LogicSig and treated every other listed key, a rotating account
+  included, as a valid target.
 
 ## apshell checks more of what the signer returns
 

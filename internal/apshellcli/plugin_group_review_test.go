@@ -32,7 +32,7 @@ func TestPluginReviewIsTheSharedDescriptionPlusMarkedFindings(t *testing.T) {
 		Header:           types.Header{Sender: sender, RekeyTo: other},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, CloseRemainderTo: other},
 	}
-	lines := pluginReviewLines(rekey, nil)
+	lines := pluginReviewLines(rekey, txnreview.FindingContext{})
 	description := strings.Split(txnreview.Describe(rekey, txnreview.View{}), "\n")
 	for i, want := range description {
 		if i >= len(lines) || lines[i] != want {
@@ -97,7 +97,9 @@ func TestPluginReviewEscapesThePluginsTransactionType(t *testing.T) {
 	}
 }
 
-func pluginReviewLinesOf(txn types.Transaction) []string { return pluginReviewLines(txn, nil) }
+func pluginReviewLinesOf(txn types.Transaction) []string {
+	return pluginReviewLines(txn, txnreview.FindingContext{})
+}
 
 func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
 	sender, other := reviewTestAddress(1), reviewTestAddress(2)
@@ -113,7 +115,7 @@ func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
 		Type:             types.PaymentTx,
 		Header:           types.Header{Sender: sender, GenesisHash: genesis, GenesisID: "mainnet-v1.0"},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: other},
-	}, nil), "\n")
+	}, txnreview.FindingContext{}), "\n")
 	if !strings.Contains(onTestnet, "Network: testnet") {
 		t.Errorf("the review does not name the chain from the genesis hash:\n%s", onTestnet)
 	}
@@ -122,7 +124,7 @@ func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
 		Type:             types.PaymentTx,
 		Header:           types.Header{Sender: sender, GenesisHash: types.Digest{9}},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: other},
-	}, nil), "\n")
+	}, txnreview.FindingContext{}), "\n")
 	if !strings.Contains(unknown, "Genesis hash: ") {
 		t.Errorf("a chain with no known name shows no genesis hash:\n%s", unknown)
 	}
@@ -132,8 +134,8 @@ func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
 		Header:           types.Header{Sender: sender, RekeyTo: other},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
 	}
-	lost := strings.Join(pluginReviewLines(rekey, nil), "\n")
-	kept := strings.Join(pluginReviewLines(rekey, map[string]bool{other.String(): true}), "\n")
+	lost := strings.Join(pluginReviewLines(rekey, txnreview.FindingContext{}), "\n")
+	kept := strings.Join(pluginReviewLines(rekey, txnreview.FindingContext{KnownAddresses: map[string]bool{other.String(): true}}), "\n")
 	if !strings.Contains(lost, "YOU WILL LOSE CONTROL") {
 		t.Errorf("a rekey to an address nobody here holds does not warn of losing control:\n%s", lost)
 	}
@@ -148,14 +150,14 @@ func TestPluginReviewMarksIrreversibleAndIncompleteKeyRegistrations(t *testing.T
 	nonpart := strings.Join(pluginReviewLines(types.Transaction{
 		Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
 		KeyregTxnFields: types.KeyregTxnFields{Nonparticipation: true},
-	}, nil), "\n")
+	}, txnreview.FindingContext{}), "\n")
 	if !strings.Contains(nonpart, "!! Nonparticipation = true") || !strings.Contains(nonpart, "cannot be undone") {
 		t.Errorf("a nonparticipation keyreg is not marked:\n%s", nonpart)
 	}
 	half := strings.Join(pluginReviewLines(types.Transaction{
 		Type: types.KeyRegistrationTx, Header: types.Header{Sender: sender},
 		KeyregTxnFields: types.KeyregTxnFields{SelectionPK: types.VRFPK{2}},
-	}, nil), "\n")
+	}, txnreview.FindingContext{}), "\n")
 	if !strings.Contains(half, "!! KeyRegistration = incomplete") {
 		t.Errorf("a key registration with one key missing is not marked:\n%s", half)
 	}

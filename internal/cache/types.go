@@ -29,8 +29,9 @@ type AliasCache struct {
 	store         *Store
 }
 
-// SignerCache stores addresses that Signer has private keys for (can sign remotely)
-// Maps: address -> key type ("aplane.falcon1024.v1" or "ed25519")
+// SignerCache stores the aplane keys the signer lists in /keys, by address,
+// with what each key's record reports. Keys maps address -> key type
+// ("aplane.falcon1024.v1", "ed25519", ...).
 type SignerCache struct {
 	SchemaVersion             int                             `json:"schema_version,omitempty"`
 	Keys                      map[string]string               `json:"keys"`          // address -> key type
@@ -42,8 +43,16 @@ type SignerCache struct {
 	CosignerPublicKeys        map[string]string               `json:"cosigner_public_keys,omitempty"`         // address -> embedded cosigner public key hex
 	BoundedMaxFees            map[string]uint64               `json:"bounded_max_fees,omitempty"`             // address -> bounded authorization max_fee
 	BoundedContracts          map[string]string               `json:"bounded_contracts,omitempty"`            // address -> bounded authorization contract (bounded2, plain1)
+	ValidRekeyTargets         map[string]bool                 `json:"valid_rekey_targets,omitempty"`          // address -> true when its aplane key records valid_rekey_target true; an address not in it is not a valid rekey target
 	Locked                    bool                            `json:"-"`                                      // True if signer reported 403 (locked) on last /keys check
 	store                     *Store
+}
+
+// InvalidRekeyTarget is a held aplane key that is not a valid rekey target:
+// its key type, and whether it is a generic LogicSig.
+type InvalidRekeyTarget struct {
+	KeyType         string
+	GenericLogicSig bool
 }
 
 // AuthAddressCache stores cached auth addresses to avoid repeated blockchain queries

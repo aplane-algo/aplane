@@ -1,8 +1,8 @@
 # Plugin Signing Machine-Checkable Model
 
-> Status: TLC checked with `MaxSlots = 3`; the recorded run generated 3,852
+> Status: TLC checked with `MaxSlots = 3`; the recorded run generated 29,208
 > distinct reachable states (one-shot, depth 1) and found no counterexamples
-> for `Safety`.
+> for `Safety`. The deep configuration (`MaxSlots = 4`) generated 422,424.
 
 This is the tenth machine-checkable artifact under the M4 milestone in
 [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md), and the machine-checked
@@ -23,6 +23,7 @@ The spec lives at [formal/plugin_signing.tla](formal/plugin_signing.tla).
 | PS5: Signed-Slot Byte Match + Index Discipline | FORMAL_PLUGIN_SIGNING_MODEL.md | `PS5_SignedSlotByteMatch` |
 | PS6: Managed Slots Approval-Gated | FORMAL_PLUGIN_SIGNING_MODEL.md | `PS6_ManagedApprovalGated` |
 | PS7: No Ungated Submission (central) | FORMAL_PLUGIN_SIGNING_MODEL.md | `PS7_NoUngatedSubmission` |
+| PS8: No Rekey To A Held Aplane Key That Is Not A Valid Rekey Target | FORMAL_PLUGIN_SIGNING_MODEL.md | `PS8_NoRekeyToInvalidTarget` |
 
 **PS1 (Constructor Byte Binding) is deliberately not here**: it is a property
 of the Go type — `PregroupedSignedGroup`'s unexported fields and sole
@@ -34,12 +35,14 @@ constructor's tests.
 
 This is a one-shot enumeration in the `sign_boundary.tla` style: `Init`
 enumerates every combination of mode (pregrouped-signed / presign-plan),
-per-slot validation outcomes (plan preservation, byte match, ownership mix),
-group-shape and digest outcomes, and gate decisions (interactive review
+per-slot validation outcomes (plan preservation, byte match, rekey target,
+ownership mix), group-shape, digest and rekey target outcomes, and gate
+decisions (interactive review
 outcome including the non-interactive context; apsigner authorization outcome);
 `Submitted` is a transcription of the code's accept/reject logic
-(`apshellcli/external_plugins.go`, `engine/plugin_pregrouped.go`,
-`engine/plugin_presign.go`, `engine/plugin_signing.go`). TLC verifies that no
+(`apshellcli/external_plugins.go`, `apshellapp/submission.go`,
+`engine/plugin_pregrouped.go`, `engine/plugin_presign.go`,
+`engine/plugin_signing.go`). TLC verifies that no
 enumerated combination reaches submission without satisfying every named
 invariant. A dropped check in `Submitted` — the model's stand-in for a
 regression in the code path it transcribes — surfaces as a counterexample.
@@ -55,6 +58,11 @@ and their gating, not msgpack or cryptography.
   `PS3_MandatoryReviewFailClosed` (and `PS7`) — the model's reproduction of
   the removed-`localSigners`-era bypass class: bytes reaching submission with
   no human gate.
+- Removing the `rekeyTargetsOK` conjunct from `PregroupedSubmitted`, or the
+  per-slot `rekeyTargetOK` conjunct from `PresignSubmitted`, violates
+  `PS8_NoRekeyToInvalidTarget` in an initial state, and no other invariant:
+  no gate stands in for the refusal, since a plugin-signed slot never reaches
+  the signer.
 
 The restored spec passes.
 
@@ -77,6 +85,13 @@ The restored spec passes.
   and injection all manifest as the recomputed-digest mismatch, so a single
   `digestOK` boolean is the honest abstraction; the concrete cases are
   enumerated in the Go tests (`plugin_pregrouped_test.go`).
+- **The rekey target check is per slot in presign-plan and per group in
+  pregrouped-signed.** Every pregrouped slot is plugin-signed, so one boolean
+  says whether any of them rekeys to a held aplane key that is not a valid
+  rekey target. In presign-plan each slot of either class carries its own
+  outcome, so a check that skipped the plugin slots, which the signer never
+  judges, is a counterexample. The default flow is not enumerated; it applies
+  the same refusal (`apshellapp/submission.go`), anchored by Go tests.
 
 ## Test-gap found while anchoring
 
@@ -94,16 +109,18 @@ java -jar tla2tools.jar -config docs/formal/plugin_signing.cfg \
     docs/formal/plugin_signing.tla
 ```
 
-Expected: `Model checking completed. No error has been found.`, 3,852
+Expected: `Model checking completed. No error has been found.`, 29,208
 distinct states, depth 1, sub-second runtime. `make formal-test` includes the
-module.
+module; `make formal-test-deep` runs `plugin_signing_deep.cfg` (422,424
+distinct states).
 
 ## What this proves vs. doesn't
 
 It proves that over every enumerated combination of validation outcomes and
 gate decisions, the modeled decision procedure never lets plugin-produced
 bytes reach submission without group-digest integrity, plan preservation,
-byte-matched plugin slots, and the mode's authorization gate. The
+byte-matched plugin slots, the mode's authorization gate, and a group with
+no rekey to a held aplane key that is not a valid rekey target. The
 pregrouped-signed gate is necessarily human; the presign-plan gate is the
 ordinary signer policy/approval pipeline. It does not prove the
 Go code implements the procedure (code-review responsibility, anchored by
@@ -119,4 +136,4 @@ encoding).
   [formal/sign_boundary.tla](formal/sign_boundary.tla); apsigner's approval
   pipeline is [formal/approval_coordinator.tla](formal/approval_coordinator.tla)
   and the composition modules.
-- Traceability rows: PS1-PS7 in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
+- Traceability rows: PS1-PS8 in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).

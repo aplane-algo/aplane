@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -380,6 +381,7 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	})
 	original.SetCosignerPublicKeyForAddress("ADDR2", "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a")
 	original.SetBoundedMaxFeeForAddress("ADDR2", 10_000)
+	original.SetValidRekeyTarget("ADDR1", true)
 	original.Locked = true
 
 	// Save
@@ -415,6 +417,9 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if got, ok := loaded.BoundedMaxFeeForAddress("ADDR2"); !ok || got != 10_000 {
 		t.Errorf("ADDR2 bounded max fee = %d/%v, want 10000/true", got, ok)
+	}
+	if !loaded.IsValidRekeyTarget("ADDR1") || loaded.IsValidRekeyTarget("ADDR2") {
+		t.Errorf("valid rekey targets after load = %v, want only ADDR1", loaded.ValidRekeyTargets)
 	}
 	if loaded.Locked {
 		t.Error("Locked should not persist across save/load")
@@ -486,6 +491,34 @@ func TestSignerCache_LoadLegacySizeCacheReturnsEmpty(t *testing.T) {
 	}
 	if loaded.SchemaVersion != signerCachePayloadSchemaVersion {
 		t.Fatalf("loaded schema version = %d, want %d", loaded.SchemaVersion, signerCachePayloadSchemaVersion)
+	}
+}
+
+// A version 3 cache has no valid_rekey_targets. It is discarded and refilled
+// from the signer, not read as every held aplane key being not a valid rekey
+// target.
+func TestSignerCache_LoadVersion3CacheReturnsEmpty(t *testing.T) {
+	store := NewStore(t.TempDir())
+	key, err := getOrCreateCacheKey(store)
+	if err != nil {
+		t.Fatalf("getOrCreateCacheKey() error = %v", err)
+	}
+	payloadBytes := []byte(`{"schema_version":3,"keys":{"ADDR":"ed25519"},"generic_lsigs":{},"signing_args":{}}`)
+	raw, err := json.Marshal(SignedCache{
+		Version: signedCacheEnvelopeVersion,
+		Data:    base64.StdEncoding.EncodeToString(payloadBytes),
+		HMAC:    signCacheData(payloadBytes, key),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(storePath(store, "signer_cache.json"), raw, 0o600); err != nil {
+		t.Fatalf("write version 3 signer cache: %v", err)
+	}
+
+	loaded := LoadSignerCacheFromStore(store)
+	if loaded.Count() != 0 {
+		t.Fatalf("loaded signer count = %d, want empty cache requiring inventory refresh", loaded.Count())
 	}
 }
 
@@ -568,10 +601,10 @@ func searchString(s, substr string) bool {
 	return false
 }
 
-// HeldKeyAddresses is every listed address with its own key: a generic
-// LogicSig has none, and an account signable only through its auth address is
-// not listed at all.
-func TestHeldKeyAddressesLeavesOutKeylessAndAuthAddressAccounts(t *testing.T) {
+// HeldKeyAddresses is every address the signer lists an aplane key for, a
+// generic LogicSig included. An account signable only through its auth address
+// is not listed, so it is not held.
+func TestHeldKeyAddressesIsEveryListedAplaneKey(t *testing.T) {
 	cache := NewSignerCache()
 	cache.AddAddress("HELD", "ed25519")
 	cache.AddAddress("GENERIC", "aplane.htlc.v1")
@@ -579,11 +612,68 @@ func TestHeldKeyAddressesLeavesOutKeylessAndAuthAddressAccounts(t *testing.T) {
 	auth := NewAuthAddressCache()
 	auth.AuthAddresses["REKEYED"] = "HELD"
 
-	if !IsAccountSignable("REKEYED", &cache, &auth) || !IsAccountSignable("GENERIC", &cache, &auth) {
-		t.Fatal("fixture: the rekeyed account and the generic LogicSig must be signable")
+	if !IsAccountSignable("REKEYED", &cache, &auth) {
+		t.Fatal("fixture: the rekeyed account must be signable")
 	}
 	held := cache.HeldKeyAddresses()
-	if len(held) != 1 || !held["HELD"] {
-		t.Fatalf("HeldKeyAddresses() = %v, want only HELD", held)
+	if len(held) != 2 || !held["HELD"] || !held["GENERIC"] {
+		t.Fatalf("HeldKeyAddresses() = %v, want HELD and GENERIC", held)
+	}
+}
+
+// An address reads as a valid rekey target only when its aplane key recorded
+// valid_rekey_target true. One the cache has no such record of reads as not
+// valid, and InvalidRekeyTargets lists every held aplane key that is not
+// valid, with its key type and whether it is a generic LogicSig.
+func TestSignerCacheValidRekeyTargetsFailClosed(t *testing.T) {
+	cache := NewSignerCache()
+	cache.AddAddress("VALID", "ed25519")
+	cache.SetValidRekeyTarget("VALID", true)
+	cache.AddAddress("ROTATING", "aplane.rotating-triple-wotsc.v1")
+	cache.AddAddress("HTLC", "aplane.htlc.v1")
+	cache.SetGenericLsig("HTLC", true)
+	cache.AddAddress("VAULT", "example.vault.v1")
+	cache.SetGenericLsig("VAULT", true)
+	cache.SetValidRekeyTarget("VAULT", true)
+
+	if !cache.IsValidRekeyTarget("VALID") || !cache.IsValidRekeyTarget("VAULT") {
+		t.Fatalf("recorded valid targets read as not valid: %v", cache.ValidRekeyTargets)
+	}
+	for _, address := range []string{"ROTATING", "HTLC", "UNLISTED"} {
+		if cache.IsValidRekeyTarget(address) {
+			t.Errorf("IsValidRekeyTarget(%s) = true, want false without a recorded true", address)
+		}
+	}
+	want := map[string]InvalidRekeyTarget{
+		"ROTATING": {KeyType: "aplane.rotating-triple-wotsc.v1"},
+		"HTLC":     {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
+	}
+	if got := cache.InvalidRekeyTargets(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("InvalidRekeyTargets() = %v, want %v", got, want)
+	}
+
+	// A cache with no recorded values at all reads every held aplane key as
+	// not valid.
+	var bare SignerCache
+	bare.Keys = map[string]string{"VALID": "ed25519"}
+	if bare.IsValidRekeyTarget("VALID") {
+		t.Fatal("a cache with no valid set reads an address as valid")
+	}
+	if got := bare.InvalidRekeyTargets(); !reflect.DeepEqual(got, map[string]InvalidRekeyTarget{"VALID": {KeyType: "ed25519"}}) {
+		t.Fatalf("InvalidRekeyTargets() with no valid set = %v", got)
+	}
+
+	cache.SetValidRekeyTarget("VAULT", false)
+	if cache.IsValidRekeyTarget("VAULT") {
+		t.Fatal("SetValidRekeyTarget(false) left the address valid")
+	}
+	cache.SetValidRekeyTarget("VAULT", true)
+	cache.RemoveAddress("VAULT")
+	cache.RemoveAddress("VALID")
+	if cache.IsValidRekeyTarget("VAULT") || cache.IsValidRekeyTarget("VALID") {
+		t.Fatalf("RemoveAddress left a valid rekey target: %v", cache.ValidRekeyTargets)
+	}
+	if _, ok := cache.InvalidRekeyTargets()["VAULT"]; ok {
+		t.Fatal("a removed address is still listed as a held aplane key")
 	}
 }
