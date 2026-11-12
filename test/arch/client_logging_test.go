@@ -74,6 +74,7 @@ var binariesWithoutHandler = map[string]string{
 // loggingSourcePackages are the packages that report through the client pipeline.
 var loggingSourcePackages = []string{
 	"internal/cache",
+	"internal/engine",
 	"internal/plugin/discovery",
 	"internal/plugin/manager",
 	"internal/signerclient",

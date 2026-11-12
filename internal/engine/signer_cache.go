@@ -239,6 +239,16 @@ func (e *Core) signerCacheKeysSnapshot() map[string]string {
 	return keys
 }
 
+// HeldKeyAddressSet returns the addresses whose own key record the connected
+// signer holds with key material, as the signer cache last listed them: not an
+// account signable only through its auth address, and not a generic LogicSig.
+// A review uses it to say a rekey to one of them keeps control.
+func (e *Core) HeldKeyAddressSet() map[string]bool {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.HeldKeyAddresses()
+}
+
 func (e *Core) signerCacheAddresses() []string {
 	keys := e.signerCacheKeysSnapshot()
 	addresses := make([]string, 0, len(keys))

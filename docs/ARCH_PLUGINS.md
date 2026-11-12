@@ -793,6 +793,16 @@ group, raise the fees the mutation report lists, and append the planner's canoni
 budget dummies; any other change to a slot is rejected before the plugin is called.
 The `/sign` result must sign exactly the planned transactions and return every
 plugin-signed and dummy slot byte-for-byte as sent, or nothing is broadcast.
+Once the plan has passed these checks, apshell records what it changed, as the
+cosigned path does: `[PLUGIN] Signer added <n> dummy transaction(s) for
+LogicSig arguments/opcode budget` when the plan appended dummies, and
+`[PLUGIN] Signer raised fees by <n> microAlgos for authorization, on
+transaction(s) [<positions>]` when it raised fees. These lines are part of the
+command's output, shown when the command ends: after the group is submitted or
+simulated, or with the error when a later step fails (the plugin's
+`signTransactions` callback, apsigner's `/sign`, or the checks of what either
+returns). They are not shown before the plugin signs or apsigner approves, and
+not at all when the plan itself is refused.
 
 Signed bytes are submitted as given, so in both modes every signed transaction
 must be the canonical encoding of what it decodes to: a plugin-signed slot, a
@@ -800,8 +810,10 @@ must be the canonical encoding of what it decodes to: a plugin-signed slot, a
 encoding the decoded transaction again gives different bytes: for example
 trailing data, a second transaction, a repeated or explicit empty field, or a
 different key order or integer encoding. The transactions a `/plan` answer
-returns are held to the same rule. What is reviewed and checked is then exactly
-what is broadcast.
+returns are held to the same rule, and so is every unsigned `raw` intent, in
+`presign-plan` and in the default flow, where a fixed-size field of the wrong
+length is refused as well. What is reviewed and checked is then exactly what is
+broadcast, and what is planned is what the plugin's bytes say.
 
 #### What these flows enable
 
@@ -865,8 +877,21 @@ The default (`groupMode` empty) flow:
 
 1. Plugin returns transaction intents in execute response
 2. APlane Shell processes intents:
-   - Decodes `raw` unsigned transactions from base64 → msgpack
-   - Validates transaction structure
+   - Decodes `raw` unsigned transactions from base64 → msgpack, refusing any
+     intent that is not exactly the canonical encoding of one transaction. An
+     intent that is not msgpack at all is reported as `failed to decode
+     msgpack: invalid msgpack`; the decoder's own detail is logged at `debug`
+     level (`loglevel debug`, or `APSHELL_DEBUG`) for the plugin's author
+   - Discards a group ID the plugin set (SDK composers set one on every
+     multi-transaction group) and says so in the review: apsigner computes the
+     group ID over the final group, after the fees and dummies it adds. The
+     `presign-plan` draft is read the same way, by the same function, and its
+     review says so too
+   - Shows the decoded draft through the same describer and warnings as the
+     group modes' review, as information
+   - Refuses a result whose `groupMode` it does not know, with the error
+     submission gives (`unsupported plugin groupMode "<mode>"`), before
+     anything is shown
 3. User approval (if `requiresApproval: true`)
 4. APlane Shell signs transactions via Signer
 5. APlane Shell submits transactions to network
@@ -1220,12 +1245,20 @@ or
   secret keys.
 
 **User Approval:**
-- In the default flow, apshell lists the proposed intents (count and type) and,
-  for `requiresApproval: true`, asks for confirmation; AutoConfirm skips this
-  client prompt
-- The decoded review of default-flow transactions is the signer's operator
-  approval; `pregrouped-signed` and `presign-plan` get a decoded client-side
-  review in apshell
+- In the default flow, apshell shows the decoded draft (each transaction's
+  description and the findings the signer would warn about, under a title
+  saying apsigner sets the final fees and group ID and that its policy and
+  approval apply to the final group) and, for `requiresApproval: true`, asks
+  for confirmation; AutoConfirm skips this client prompt. The draft is
+  information, not a gate
+- What gates default-flow transactions is apsigner's policy and approval over
+  the final group; its operator prompt shows them decoded, unless policy or
+  `user_auto_approve` approves without one. `pregrouped-signed` and
+  `presign-plan` get a decoded client-side review in apshell
+- In every client review, a rekey is shown as keeping control only when its
+  target is an address whose own key the signer holds: not an account the
+  client signs for through its auth address, and not a generic LogicSig,
+  which has no key
 
 **Resource Limits:**
 - Timeout enforcement (default 30s)
