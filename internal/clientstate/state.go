@@ -198,10 +198,17 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 // authorization instead. A bounded account requires a runtime argument on
 // some paths only, and which path a transaction takes is the signer's to
 // decide, so each is kept as optional; the signer refuses one left out where
-// the path requires it.
+// the path requires it. Each name is kept once: a signer this client knows
+// never reports one key with both lists, but if one did, the signing_args
+// entry, the key file's own record, wins.
 func declaredSigningArgs(keyInfo signerapi.KeyInfo) []cache.SigningArgInfo {
 	var declared []cache.SigningArgInfo
+	seen := make(map[string]bool, len(keyInfo.SigningArgs))
 	for _, arg := range keyInfo.SigningArgs {
+		if seen[arg.Name] {
+			continue
+		}
+		seen[arg.Name] = true
 		declared = append(declared, cache.SigningArgInfo{
 			Name:        arg.Name,
 			Label:       arg.Label,
@@ -214,6 +221,10 @@ func declaredSigningArgs(keyInfo signerapi.KeyInfo) []cache.SigningArgInfo {
 	}
 	if keyInfo.BoundedAuthorization != nil {
 		for _, arg := range keyInfo.BoundedAuthorization.RuntimeArgs {
+			if seen[arg.Name] {
+				continue
+			}
+			seen[arg.Name] = true
 			declared = append(declared, cache.SigningArgInfo{
 				Name:        arg.Name,
 				Label:       arg.Label,

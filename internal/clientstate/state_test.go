@@ -355,6 +355,35 @@ func TestPopulateSignerCacheKeepsEveryKeysDeclaredArguments(t *testing.T) {
 	}
 }
 
+// A name reported twice is kept once, the signing_args entry first: in both
+// lists of one key, or repeated within one. The signer's own records never
+// carry either, but the cache does not depend on that.
+func TestPopulateSignerCacheKeepsEachDeclaredNameOnce(t *testing.T) {
+	state := New("testnet")
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
+		Address: "BOTH", KeyType: "example.bounded.v1",
+		SigningArgs: []signerapi.SigningArgInfo{
+			{Name: "secret", Type: "bytes", Required: true, ByteLength: 32},
+			{Name: "secret", Type: "bytes", ByteLength: 16},
+		},
+		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Contract: signerapi.BoundedContractBounded2,
+			RuntimeArgs: []signerapi.RuntimeArgInfo{
+				{Name: "secret", Type: "bytes", ByteLength: 8, MaxSize: 8},
+				{Name: "memo", Type: "bytes", MaxSize: 32},
+				{Name: "memo", Type: "bytes", MaxSize: 4},
+			},
+		},
+	}}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	got := state.SignerCache.GetSigningArgs("BOTH")
+	if len(got) != 2 || got[0].Name != "secret" || !got[0].Required || got[0].ByteLength != 32 ||
+		got[1].Name != "memo" || got[1].MaxSize != 32 {
+		t.Fatalf("declared = %+v, want secret from signing_args and memo once", got)
+	}
+}
+
 func TestPopulateSignerCacheRejectsMalformedLogicSigResourcesWithoutMutation(t *testing.T) {
 	state := New("testnet")
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{Address: "GOOD", KeyType: "ed25519"}}); err != nil {
