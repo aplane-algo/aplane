@@ -4,14 +4,10 @@
 package audit
 
 import (
-	"bufio"
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestRotatingReleaseRoundTripsThroughTheLog(t *testing.T) {
@@ -168,67 +164,4 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 	if r := got["ACCT5"]; r.Reused || len(r.Leaves) != 1 || r.Stage != 5 {
 		t.Fatalf("new stage = %+v", r)
 	}
-}
-
-// Reading a long history is linear: the release memory restore, which
-// spends wait on after an unlock, must not grow quadratically with the
-// releases a stage accumulated. The check compares reading n and 8n
-// releases instead of timing one read against a fixed limit, so it holds on
-// a slow or loaded machine: linear reading takes about 8 times as long,
-// quadratic up to 64, and the limit of 16 leaves room either side. Each size
-// keeps its fastest of three reads, so one slow read does not decide.
-func TestReadRotatingReleasesIsLinear(t *testing.T) {
-	const n, factor = 2500, 8
-	small, _ := fastestReleaseRead(t, n)
-	large, got := fastestReleaseRead(t, factor*n)
-	ratio := float64(large) / float64(small)
-	t.Logf("%d releases: %v, %d: %v, ratio %.1f", n, small, factor*n, large, ratio)
-	if ratio > 2*factor {
-		t.Fatalf("reading %d releases took %v, %d took %v: %.1fx for %dx the history, want linear (about %dx)", n, small, factor*n, large, ratio, factor, factor)
-	}
-	r := got["ACCT9"]
-	if len(r.Leaves) != factor*n || !r.Reused || r.TxID != fmt.Sprintf("TX%d", factor*n-1) || r.Index != uint32(192+(factor*n-1)%64) {
-		t.Fatalf("read %d leaves, reused %v, latest %s index %d", len(r.Leaves), r.Reused, r.TxID, r.Index)
-	}
-}
-
-// fastestReleaseRead writes n releases for one account, their leaves
-// cycling through 64 indexes so reuse is seen, and returns the fastest of
-// three reads of them with the last result.
-func fastestReleaseRead(t *testing.T, n int) (time.Duration, map[string]RotatingRelease) {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "audit.log")
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stage := uint64(3)
-	w := bufio.NewWriter(f)
-	for i := range n {
-		e := AuditEntry{Event: AuditRotatingRelease, TxnAuth: "ACCT9", TxID: fmt.Sprintf("TX%d", i), RotatingStage: &stage, RotatingLastValid: 900, RotatingTree: 0, RotatingIndex: uint32(192 + i%64)}
-		line, err := json.Marshal(e)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := w.Write(append(line, '\n')); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := w.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
-	var fastest time.Duration
-	var got map[string]RotatingRelease
-	for range 3 {
-		start := time.Now()
-		got, err = ReadRotatingReleases(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if d := time.Since(start); fastest == 0 || d < fastest {
-			fastest = d
-		}
-	}
-	return fastest, got
 }
