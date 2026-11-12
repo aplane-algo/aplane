@@ -5,17 +5,21 @@ package connect
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
+// ErrNotConnected is returned by every signer request made with no signer
+// client, for example after the tunnel closed.
+var ErrNotConnected = errors.New("not connected to Signer")
+
 func (s *ConnectionState) signerClient() (*signerclient.Client, error) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	if s.SignerClient == nil {
-		return nil, fmt.Errorf("not connected to Signer")
+		return nil, ErrNotConnected
 	}
 	if s.SignerProgressOut != nil && s.SignerClient.ProgressOut == nil {
 		s.SignerClient.ProgressOut = s.SignerProgressOut

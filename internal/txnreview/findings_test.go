@@ -4,6 +4,7 @@
 package txnreview
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -60,5 +61,38 @@ func TestRekeyFindingNamesWhatTheSignerHolds(t *testing.T) {
 				t.Fatalf("rekey finding = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// The shared rule finds the first position that rekeys to a held aplane key
+// that is not a valid rekey target, the transaction's own sender included,
+// and ignores rekeys to any other address.
+func TestFirstRekeyToInvalidTarget(t *testing.T) {
+	held, other, foreign := types.Address{1}, types.Address{2}, types.Address{3}
+	invalid := map[string]InvalidRekeyTarget{held.String(): {KeyType: "aplane.htlc.v1", GenericLogicSig: true}}
+	txns := []types.Transaction{
+		{Header: types.Header{Sender: other}},
+		{Header: types.Header{Sender: other, RekeyTo: foreign}},
+		{Header: types.Header{Sender: held, RekeyTo: held}},
+		{Header: types.Header{Sender: other, RekeyTo: held}},
+	}
+	position, target, found, ok := FirstRekeyToInvalidTarget(txns, invalid)
+	if !ok || position != 2 || target != held.String() || found.KeyType != "aplane.htlc.v1" || !found.GenericLogicSig {
+		t.Fatalf("FirstRekeyToInvalidTarget() = %d, %q, %+v, %v; want position 2, the held target", position, target, found, ok)
+	}
+	if _, _, _, ok := FirstRekeyToInvalidTarget(txns[:2], invalid); ok {
+		t.Fatal("a rekey to a foreign address was found")
+	}
+	if _, _, _, ok := FirstRekeyToInvalidTarget(txns, nil); ok {
+		t.Fatal("an empty set found a target")
+	}
+}
+
+func TestRekeyTargetNotValidText(t *testing.T) {
+	if got, want := RekeyTargetNotValidText("ADDR", "aplane.htlc.v1"), "cannot rekey to ADDR: this signer holds its aplane key (aplane.htlc.v1), which is not a valid rekey target"; got != want {
+		t.Errorf("RekeyTargetNotValidText() = %q, want %q", got, want)
+	}
+	if got := RekeyTargetNotValidText("ADDR", ""); !strings.Contains(got, "(unknown)") {
+		t.Errorf("an empty key type is not read as unknown: %q", got)
 	}
 }

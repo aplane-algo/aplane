@@ -192,7 +192,19 @@ func (s Service) Keys(ir *productruntime.Runtime) (*signerapi.KeysResponse, *sig
 		return nil, err
 	}
 
-	keyList := s.BuildKeyInfoList(ir)
+	lockGen := ir.LockGeneration()
+	return keysAnswer(ir, lockGen, s.BuildKeyInfoList(ir))
+}
+
+// keysAnswer answers /keys with keyList, built after the runtime was seen
+// unlocked at lockGen. A lock, or a maintenance pass, while it was built
+// empties the published keys, so the list may be empty or partial and would
+// read as the whole of an unlocked signer's keys: the signer answers as
+// locked instead, as it does when it is locked from the start.
+func keysAnswer(ir *productruntime.Runtime, lockGen uint64, keyList []signerapi.KeyInfo) (*signerapi.KeysResponse, *signersigning.ServiceError) {
+	if !ir.IsUnlocked() || ir.LockGeneration() != lockGen {
+		return nil, lockedError()
+	}
 	return &signerapi.KeysResponse{
 		Count: len(keyList),
 		Keys:  keyList,

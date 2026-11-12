@@ -272,3 +272,34 @@ func hasInvalidRekeyTarget(ctx FindingContext, address string) bool {
 	_, ok := ctx.InvalidRekeyTargets[address]
 	return ok
 }
+
+// FirstRekeyToInvalidTarget is the rule the signer and apshell both apply to
+// a group: it returns the position, counted from 0, of the first transaction
+// that rekeys an account to an address in invalid, a held aplane key that is
+// not a valid rekey target, with that target. The target may be the
+// transaction's own sender. ok is false when no transaction does.
+func FirstRekeyToInvalidTarget(txns []types.Transaction, invalid map[string]InvalidRekeyTarget) (position int, target string, found InvalidRekeyTarget, ok bool) {
+	if len(invalid) == 0 {
+		return 0, "", InvalidRekeyTarget{}, false
+	}
+	for i, txn := range txns {
+		if txn.RekeyTo.IsZero() {
+			continue
+		}
+		address := txn.RekeyTo.String()
+		if found, ok := invalid[address]; ok {
+			return i, address, found, true
+		}
+	}
+	return 0, "", InvalidRekeyTarget{}, false
+}
+
+// RekeyTargetNotValidText is the core of the refusal of a rekey to target, a
+// held aplane key of keyType that is not a valid rekey target. The signer's
+// refusal and apshell's both use it. An empty key type reads "unknown".
+func RekeyTargetNotValidText(target, keyType string) string {
+	if keyType == "" {
+		keyType = "unknown"
+	}
+	return "cannot rekey to " + target + ": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target"
+}

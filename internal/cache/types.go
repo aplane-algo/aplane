@@ -29,8 +29,9 @@ type AliasCache struct {
 	store         *Store
 }
 
-// SignerCache stores addresses that Signer has private keys for (can sign remotely)
-// Maps: address -> key type ("aplane.falcon1024.v1" or "ed25519")
+// SignerCache stores the aplane keys the signer lists in /keys, by address,
+// with what each key's record reports. Keys maps address -> key type
+// ("aplane.falcon1024.v1", "ed25519", ...).
 type SignerCache struct {
 	SchemaVersion             int                             `json:"schema_version,omitempty"`
 	Keys                      map[string]string               `json:"keys"`          // address -> key type

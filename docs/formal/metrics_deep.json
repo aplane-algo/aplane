@@ -32,7 +32,7 @@
   {
     "spec": "plugin_signing",
     "cfg": "plugin_signing_deep",
-    "distinct_states": 28428,
+    "distinct_states": 422424,
     "depth": 1
   },
   {

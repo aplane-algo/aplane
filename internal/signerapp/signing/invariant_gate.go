@@ -23,11 +23,7 @@ const nonparticipationRefusal = "a keyreg with nonparticipation is not supported
 // rotating key type the message also says why such an account is no target:
 // its address is a one-time stage key.
 func rekeyTargetNotValid(target, keyType string) *ServiceError {
-	if keyType == "" {
-		keyType = "unknown"
-	}
-	message := signerapi.ErrCodeRekeyTargetNotValid + ": cannot rekey to " + target +
-		": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target (valid_rekey_target: false)"
+	message := signerapi.ErrCodeRekeyTargetNotValid + ": " + txnreview.RekeyTargetNotValidText(target, keyType) + " (valid_rekey_target: false)"
 	if rotatingkey.IsRotatingKeyType(keyType) {
 		message += "; " + rotatingkey.RekeyTargetReason
 	}
@@ -80,19 +76,11 @@ func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int,
 // foreign target, one this signer holds no aplane key for, is the rekeys
 // setting's question, not this one's.
 func rejectRekeyToInvalidTarget(txns []types.Transaction, invalid map[string]txnreview.InvalidRekeyTarget) *ServiceError {
-	if len(invalid) == 0 {
+	i, target, found, ok := txnreview.FirstRekeyToInvalidTarget(txns, invalid)
+	if !ok {
 		return nil
 	}
-	for i, txn := range txns {
-		if txn.RekeyTo.IsZero() {
-			continue
-		}
-		target := txn.RekeyTo.String()
-		if found, ok := invalid[target]; ok {
-			return withTransactionIndex(i, rekeyTargetNotValid(target, found.KeyType))
-		}
-	}
-	return nil
+	return withTransactionIndex(i, rekeyTargetNotValid(target, found.KeyType))
 }
 
 // positionOutsideGroup fails closed on a signed position the group doesn't

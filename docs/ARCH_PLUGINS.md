@@ -709,7 +709,10 @@ checks the group is internally consistent and submits it without modification �
 never involved. The plugin could have signed and broadcast these exact bytes itself; what
 APlane adds is governance, not signing power: a **mandatory client-side review** is the
 human-acceptance gate, it **fails closed** when run non-interactively (it will not
-broadcast a group the operator never saw).
+broadcast a group the operator never saw). A group that rekeys an account to a held
+aplane key that is not a valid rekey target is refused before the review, and a
+group with any rekey needs a signer connection, so that apshell can check it against
+the signer's key list (see [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)).
 
 **2. Co-signing with managed accounts (`presign-plan`) — the one genuinely new capability.**
 Only apsigner can produce a signature for an apsigner-held account, so atomically combining
@@ -730,6 +733,8 @@ transaction and matches its declared authorization class. For LogicSig slots,
 the observable program and argument byte counts must match `lsigResources`,
 and the same declaration is retained on the final passthrough `/sign` request.
 Apsigner then signs the APlane-managed slots under its normal policy and approval.
+Before any of this, apshell refuses a draft in which a slot, plugin-owned or managed,
+rekeys an account to a held aplane key that is not a valid rekey target.
 **The plugin's signing keys are never exported** — it signs by reference, via the
 callback.
 
@@ -815,6 +820,59 @@ returns are held to the same rule, and so is every unsigned `raw` intent, in
 length is refused as well. What is reviewed and checked is then exactly what is
 broadcast, and what is planned is what the plugin's bytes say.
 
+#### Rekeys to held aplane keys
+
+In every mode, the default flow included, apshell refuses a group in which a
+transaction, at any position and whoever signs it, rekeys an account to an
+address the signer holds an aplane key for whose recorded `valid_rekey_target`
+is false, or that is a rotating account whatever its record says, the
+account's own address included. This is the rule the signer applies at every
+position of a group it signs into (`rekey_target_not_valid`), with the same
+wording at its core; a `pregrouped-signed` group never reaches the signer, so
+apshell applies the rule itself, in every mode. The group is refused before
+it is shown or prompted for, before `/plan` or `/sign`, and before anything is
+submitted, with an error naming the position, counted from 1, the target and
+its key type:
+
+```text
+transaction 2: cannot rekey to <address>: this signer holds its aplane key (aplane.htlc.v1), which is not a valid rekey target
+```
+
+A rekey to a foreign address, one the signer holds no aplane key for, remains
+a warning in the review, as does a rekey to an account the client signs for
+only through its auth address.
+
+A group in which any transaction rekeys is judged twice: when it is checked,
+before it is shown, and again when it is submitted, so a key created on the
+signer while the group waits at the review is seen. The second judgment comes,
+in the default flow, before the group goes to the signer, which then applies
+the same rule at every position; for `pregrouped-signed`, before the group is
+broadcast; and for `presign-plan`, at the start of submission, before `/plan`,
+the plugin's signing callback and the signer's approval. A key created after
+the second judgment is not seen by apshell; in the default flow and
+`presign-plan` the signer still judges every position, plugin-signed ones
+included, while a `pregrouped-signed` group is not judged again. Each time
+apshell fetches the signer's `/keys` list for that judgment and builds what it
+holds, and which of those keys are not valid rekey targets, from the records
+the fetch returned; it does not read or rewrite its signer cache for this.
+The review shows the facts the check judged from. When apshell cannot get a
+current list, the group is refused:
+
+```text
+plugin group rekeys an account (transaction 2): connect to the signer so apshell can check the rekey target against its aplane keys
+plugin group rekeys an account (transaction 2): the signer is locked; unlock it so apshell can check the rekey target against its aplane keys
+plugin group rekeys an account (transaction 2): apshell could not get the signer's aplane keys to check the rekey target: <reason>
+```
+
+This applies to a `pregrouped-signed` group too, which otherwise needs no
+signer connection; a `pregrouped-signed` group under AutoConfirm is refused
+first, because it cannot be reviewed, before any key list is fetched. A group
+with no rekey fetches nothing and needs no connection. The check is `CheckPluginGroup` in `internal/apshellapp`: it
+decodes the result for its mode and applies the rule, the review of every
+mode starts with it, and submission, which the REPL, MCP and JavaScript
+share, takes only the group it returns, with what the review and submission
+read copied into it at the check.
+
 #### What these flows enable
 
 A plugin could always compose groups with keys held anywhere — its own LogicSig, an HSM
@@ -892,6 +950,14 @@ The default (`groupMode` empty) flow:
    - Refuses a result whose `groupMode` it does not know, with the error
      submission gives (`unsupported plugin groupMode "<mode>"`), before
      anything is shown
+   - Refuses a draft in which a transaction rekeys an account to an address
+     the signer holds an aplane key for that is not a valid rekey target, the
+     account's own address included, before anything is shown and again
+     before the draft goes to the signer, each time judged against the
+     signer's key list fetched for it; a draft with a rekey is refused when
+     that list cannot be had (see
+     [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)). A rekey to a
+     foreign address is not refused; the review warns about it
 3. User approval (if `requiresApproval: true`)
 4. APlane Shell signs transactions via Signer
 5. APlane Shell submits transactions to network
@@ -1255,10 +1321,23 @@ or
   the final group; its operator prompt shows them decoded, unless policy or
   `user_auto_approve` approves without one. `pregrouped-signed` and
   `presign-plan` get a decoded client-side review in apshell
-- In every client review, a rekey is shown as keeping control only when its
-  target is an address whose own key the signer holds: not an account the
-  client signs for through its auth address, and not a generic LogicSig,
-  which has no key
+- In every client review, a rekey finding uses two facts it shares with the
+  signer's prompt, from the signer's key list fetched when the group is
+  checked: which addresses the signer holds an aplane key for, of any key
+  type, a generic LogicSig included, and which of those are not valid rekey
+  targets. A rekey
+  to a held aplane key that is a valid rekey target keeps control. A rekey to
+  a held aplane key that is not a valid rekey target is refused before the
+  review is shown (see
+  [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)). An account the
+  client signs for only through its auth address, or an address the signer
+  holds no aplane key for, is not held: a rekey to it warns of losing control
+  and is not refused
+- The review does not know an account's rekey-to list, which the signer's
+  prompt reads. A rekey to an address on that list that the signer does not
+  hold reads in the review as losing control, where the signer's prompt says
+  the account goes to an address on its rekey-to list and leaves the signer's
+  custody
 
 **Resource Limits:**
 - Timeout enforcement (default 30s)

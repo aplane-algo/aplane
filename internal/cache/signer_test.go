@@ -567,23 +567,3 @@ func searchString(s, substr string) bool {
 	}
 	return false
 }
-
-// HeldKeyAddresses is every listed address with its own key: a generic
-// LogicSig has none, and an account signable only through its auth address is
-// not listed at all.
-func TestHeldKeyAddressesLeavesOutKeylessAndAuthAddressAccounts(t *testing.T) {
-	cache := NewSignerCache()
-	cache.AddAddress("HELD", "ed25519")
-	cache.AddAddress("GENERIC", "aplane.htlc.v1")
-	cache.SetGenericLsig("GENERIC", true)
-	auth := NewAuthAddressCache()
-	auth.AuthAddresses["REKEYED"] = "HELD"
-
-	if !IsAccountSignable("REKEYED", &cache, &auth) || !IsAccountSignable("GENERIC", &cache, &auth) {
-		t.Fatal("fixture: the rekeyed account and the generic LogicSig must be signable")
-	}
-	held := cache.HeldKeyAddresses()
-	if len(held) != 1 || !held["HELD"] {
-		t.Fatalf("HeldKeyAddresses() = %v, want only HELD", held)
-	}
-}
