@@ -5,10 +5,15 @@ package apshellcli
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -16,9 +21,11 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
+	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -58,7 +65,7 @@ func TestReviewPluginTransactionsCancelsOnNegativeResponse(t *testing.T) {
 		},
 	}
 
-	cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
 	})
@@ -80,7 +87,7 @@ func TestReviewPluginTransactionsSkipsPromptWhenAutoConfirm(t *testing.T) {
 		AutoConfirm: true,
 	}
 
-	cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
 	})
@@ -106,7 +113,7 @@ func TestReviewPluginTransactionsClearsReadlinePromptBeforeApproval(t *testing.T
 		},
 	}
 
-	cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
 	})
@@ -133,9 +140,9 @@ func TestReviewPluginTransactionsRendersTheDecodedDraft(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out, AutoConfirm: true}
 	txn := approvalTestPayment(1, 2, 2_500_000)
-	txn.RekeyTo = reviewTestAddress(3)
+	txn.CloseRemainderTo = reviewTestAddress(3)
 
-	if _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	if _, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(txn),
 	}); err != nil {
@@ -148,7 +155,7 @@ func TestReviewPluginTransactionsRendersTheDecodedDraft(t *testing.T) {
 		"  [1] apsigner      pay",
 		"Payment: 2.500000 ALGO",
 		"To:   " + reviewTestAddress(2).String(),
-		"!! RekeyTo = " + reviewTestAddress(3).String(),
+		"!! CloseRemainderTo = " + reviewTestAddress(3).String(),
 		"Fees paid by APlane-managed accounts: 0.001000 ALGO",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -174,7 +181,7 @@ func TestReviewPluginTransactionsRendersWithoutPromptingWhenApprovalNotRequested
 			return "", nil
 		},
 	}
-	cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: false,
 		Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
 	})
@@ -201,7 +208,7 @@ func TestReviewPluginTransactionsNotesADiscardedGroupID(t *testing.T) {
 	}
 	var out bytes.Buffer
 	state := &REPLState{Out: &out, AutoConfirm: true}
-	cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	_, cancelled, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		RequiresApproval: true,
 		Transactions:     rawIntents(txns...),
 	})
@@ -237,7 +244,7 @@ func TestReviewPluginTransactionsRefusesAMalformedIntentBeforePrinting(t *testin
 					return "", nil
 				},
 			}
-			_, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+			_, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 				RequiresApproval: true,
 				Transactions:     []jsonrpc.TransactionIntent{intent},
 			})
@@ -269,7 +276,7 @@ func TestReviewPresignPlanShowsTheDraftThatIsPlanned(t *testing.T) {
 
 	var out bytes.Buffer
 	state := &REPLState{Out: &out, AutoConfirm: true}
-	if _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	if _, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		GroupMode:     jsonrpc.GroupModePresignPlan,
 		Transactions:  rawIntents(plugin, managed),
 		PluginSigners: signers,
@@ -295,7 +302,7 @@ func TestReviewPresignPlanShowsTheDraftThatIsPlanned(t *testing.T) {
 	ungroupedPlugin, ungroupedManaged := plugin, managed
 	ungroupedPlugin.Group, ungroupedManaged.Group = types.Digest{}, types.Digest{}
 	out.Reset()
-	if _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	if _, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		GroupMode:     jsonrpc.GroupModePresignPlan,
 		Transactions:  rawIntents(ungroupedPlugin, ungroupedManaged),
 		PluginSigners: signers,
@@ -308,7 +315,7 @@ func TestReviewPresignPlanShowsTheDraftThatIsPlanned(t *testing.T) {
 
 	trailing := append(msgpack.Encode(managed), msgpack.Encode(managed)...)
 	out.Reset()
-	_, err = reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+	_, _, err = reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 		GroupMode: jsonrpc.GroupModePresignPlan,
 		Transactions: append(rawIntents(plugin), jsonrpc.TransactionIntent{
 			Type: jsonrpc.TransactionIntentRaw, Encoded: base64.StdEncoding.EncodeToString(trailing),
@@ -337,7 +344,7 @@ func TestReviewPluginTransactionsRefusesAnUnknownGroupMode(t *testing.T) {
 					return "", nil
 				},
 			}
-			_, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+			_, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 				GroupMode:        mode,
 				RequiresApproval: true,
 				Transactions:     rawIntents(approvalTestPayment(1, 2, 1)),
@@ -352,14 +359,16 @@ func TestReviewPluginTransactionsRefusesAnUnknownGroupMode(t *testing.T) {
 	}
 }
 
-// rekeyReviewFixture is an engine whose signer cache was filled from /keys
-// with an ed25519 aplane key that is a valid rekey target, a rotating account
-// and an HTLC generic LogicSig that are not, and a generic LogicSig that is;
-// plus an account the client signs for only through its auth address, and an
-// address the signer lists nothing for.
+// rekeyReviewFixture is an engine connected to a test signer whose /keys lists
+// an ed25519 aplane key that is a valid rekey target, a rotating account and
+// an HTLC generic LogicSig that are not, and a generic LogicSig that is; plus
+// an account the client signs for only through its auth address, and an
+// address the signer lists nothing for. The engine's signer cache starts
+// empty: the review's check fetches the list. keyFetches counts the fetches.
 type rekeyReviewFixture struct {
 	eng                                             *engine.Engine
 	native, rotating, htlc, vault, rekeyed, foreign types.Address
+	keyFetches                                      *atomic.Int32
 }
 
 func newRekeyReviewFixture(t *testing.T) rekeyReviewFixture {
@@ -372,15 +381,26 @@ func newRekeyReviewFixture(t *testing.T) rekeyReviewFixture {
 		eng:    eng,
 		native: reviewTestAddress(20), rotating: reviewTestAddress(21), htlc: reviewTestAddress(22),
 		vault: reviewTestAddress(23), rekeyed: reviewTestAddress(24), foreign: reviewTestAddress(25),
+		keyFetches: new(atomic.Int32),
 	}
-	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+	keys := []signerapi.KeyInfo{
 		{Address: f.native.String(), KeyType: "ed25519", ValidRekeyTarget: true},
 		{Address: f.rotating.String(), KeyType: "aplane.rotating-triple-wotsc.v1", SigningFlow: signerapi.SigningFlowRotating1},
 		{Address: f.htlc.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true},
 		{Address: f.vault.String(), KeyType: "example.vault.v1", IsGenericLsig: true, ValidRekeyTarget: true},
-	}); err != nil {
-		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
+	signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/keys" {
+			t.Errorf("unexpected signer request %s %s", r.Method, r.URL.Path)
+			http.Error(w, "test signer", http.StatusServiceUnavailable)
+			return
+		}
+		f.keyFetches.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+	}))
+	t.Cleanup(signer.Close)
+	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 	eng.AliasCache.Aliases = map[string]string{"rekeyed": f.rekeyed.String()}
 	eng.AuthCache.AuthAddresses = map[string]string{f.rekeyed.String(): f.native.String()}
 	return f
@@ -502,16 +522,23 @@ func rekeyReviewResults(t *testing.T, txn types.Transaction) map[string]struct {
 	}
 }
 
-// The review of a rekey says what the signer would say of it, whatever the
-// mode. A rekey to a held aplane key that is a valid rekey target keeps
-// control; one to an account the client signs for only through its auth
-// address, or to an address the signer lists nothing for, loses it. A rekey to
-// a held aplane key that is not a valid rekey target, the account's own address
-// included, is refused in every mode before anything is shown or asked, with
-// the error submission gives; the shared renderer still describes it as the
-// signer's warning does.
-func TestReviewOfARekeyFollowsTheSigner(t *testing.T) {
+// The review of a rekey reads the signer's key list, fetched for the check, in
+// every mode: the held aplane keys and which of them are not valid rekey
+// targets, the facts it shares with the signer's prompt. A rekey to a held
+// aplane key that is a valid rekey target keeps control; one to an account
+// the client signs for only through its auth address, or to an address the
+// signer lists nothing for, loses it. A rekey to a held aplane key that is not
+// a valid rekey target, the account's own address included, is refused in
+// every mode before anything is shown or asked, with the error submission
+// gives; the shared renderer still describes it as the signer's warning does.
+// The review does not know an account's rekey-to list, which the signer's
+// prompt does, so that case is not covered here.
+func TestReviewOfARekeyTargetReadsTheSignersKeyList(t *testing.T) {
 	f := newRekeyReviewFixture(t)
+	if _, err := f.eng.RefreshKeys(context.Background()); err != nil {
+		t.Fatalf("RefreshKeys() error = %v", err)
+	}
+	rekeyTargets := f.eng.RekeyTargetContext()
 
 	// The client can sign for the auth-address account, so the signable set
 	// would call it held.
@@ -530,21 +557,25 @@ func TestReviewOfARekeyFollowsTheSigner(t *testing.T) {
 			txn.Sender = tc.sender
 			txn.RekeyTo = tc.target
 
-			// The renderer every mode shares, with what the cache knows.
-			state := &REPLState{App: app}
-			got := rekeyFindingLines(t, "        "+strings.Join(pluginReviewLines(txn, state.rekeyTargetContext()), "\n        "), tc.target)
+			// The renderer every mode shares, with what the signer lists.
+			got := rekeyFindingLines(t, "        "+strings.Join(pluginReviewLines(txn, rekeyTargets), "\n        "), tc.target)
 			if !reflect.DeepEqual(got, tc.lines) {
 				t.Errorf("renderer: RekeyTo lines = %q, want %q", got, tc.lines)
 			}
 
 			for mode, c := range rekeyReviewResults(t, txn) {
+				f.eng.SignerCache = cache.NewSignerCache()
+				f.keyFetches.Store(0)
 				var out bytes.Buffer
 				prompted := false
 				state := &REPLState{Out: &out, App: app, LineReader: func() (string, error) {
 					prompted = true
 					return "n", nil
 				}}
-				_, err := reviewPluginTransactions(state, c.result)
+				_, _, err := reviewPluginTransactions(state, c.result)
+				if fetches := f.keyFetches.Load(); fetches != 1 {
+					t.Errorf("%s: the review fetched the key list %d time(s), want once", mode, fetches)
+				}
 				if tc.refusal != "" {
 					want := fmt.Sprintf("transaction %d: %s", c.position, tc.refusal)
 					if err == nil || err.Error() != want {
@@ -563,6 +594,57 @@ func TestReviewOfARekeyFollowsTheSigner(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Without a signer connection a rekey in a plugin group cannot be checked, so
+// the review refuses it in every mode before anything is shown, whatever the
+// cache holds.
+func TestReviewRefusesARekeyWithoutTheSignersKeyList(t *testing.T) {
+	f := newRekeyReviewFixture(t)
+	f.eng.Connection.SignerClient = nil
+	if err := f.eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: f.native.String(), KeyType: "ed25519", ValidRekeyTarget: true}}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	app := apshellapp.New(f.eng, config.DefaultConfig(), t.TempDir())
+	txn := approvalTestPayment(1, 2, 1)
+	txn.RekeyTo = f.native
+	for mode, c := range rekeyReviewResults(t, txn) {
+		var out bytes.Buffer
+		state := &REPLState{Out: &out, App: app, LineReader: func() (string, error) {
+			t.Fatalf("%s: prompted for a group that cannot be checked", mode)
+			return "", nil
+		}}
+		_, _, err := reviewPluginTransactions(state, c.result)
+		want := fmt.Sprintf("plugin group rekeys an account (transaction %d): connect to the signer so apshell can check the rekey target against its aplane keys", c.position)
+		if err == nil || err.Error() != want {
+			t.Errorf("%s: error = %v, want %q", mode, err, want)
+		}
+		if out.Len() != 0 {
+			t.Errorf("%s: shown before the refusal:\n%s", mode, out.String())
+		}
+	}
+}
+
+// The review and the submission of one plugin result fetch the key list once:
+// submission takes the group the review checked.
+func TestReviewAndSubmissionOfARekeyFetchTheKeyListOnce(t *testing.T) {
+	f := newRekeyReviewFixture(t)
+	app := apshellapp.New(f.eng, config.DefaultConfig(), t.TempDir())
+	txn := approvalTestPayment(1, 2, 1)
+	txn.RekeyTo = f.native
+	state := &REPLState{Out: &bytes.Buffer{}, App: app, LineReader: func() (string, error) { return "y", nil }}
+	group, cancelled, err := reviewPluginTransactions(state, rekeyReviewResults(t, txn)["pregrouped-signed"].result)
+	if err != nil || cancelled {
+		t.Fatalf("reviewPluginTransactions() = %v, %v", cancelled, err)
+	}
+	// No node is configured, so submission stops at the node; it asks the
+	// signer nothing more.
+	if _, err := submitPluginTransactions(state, "plugin", group, nil); err == nil {
+		t.Fatal("submission without a node succeeded")
+	}
+	if fetches := f.keyFetches.Load(); fetches != 1 {
+		t.Fatalf("review and submission fetched the key list %d time(s), want once", fetches)
 	}
 }
 

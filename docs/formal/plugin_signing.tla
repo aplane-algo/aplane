@@ -27,8 +27,7 @@ plugin-produced transaction group to reach submission.
   - PS8 : no rekey to a held invalid target. No transaction in a
           submitted group, at any position and whoever signs it, rekeys an
           account to an address the signer holds an aplane key for that is
-          not a valid rekey target (apshellapp
-          RefusePluginRekeyToInvalidTarget).
+          not a valid rekey target (apshellapp CheckPluginGroup).
 
 PS1 (constructor byte binding) is structural — a property of the Go type
 (unexported fields, sole constructor) — and is not restated as a TLC

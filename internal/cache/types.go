@@ -48,13 +48,6 @@ type SignerCache struct {
 	store                     *Store
 }
 
-// InvalidRekeyTarget is a held aplane key that is not a valid rekey target:
-// its key type, and whether it is a generic LogicSig.
-type InvalidRekeyTarget struct {
-	KeyType         string
-	GenericLogicSig bool
-}
-
 // AuthAddressCache stores cached auth addresses to avoid repeated blockchain queries
 // Maps: account address -> auth address (empty string if not rekeyed)
 //

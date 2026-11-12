@@ -91,7 +91,7 @@ func TestPluginReviewEscapesThePluginsTransactionType(t *testing.T) {
 	renderPluginGroupReview(r, "REVIEW", []pluginReviewSlot{{
 		txn:  types.Transaction{Type: types.TxType("pay\x1b[2K\r  [1] forged"), Header: types.Header{Sender: reviewTestAddress(1)}},
 		role: slotRolePluginSigned,
-	}})
+	}}, txnreview.FindingContext{})
 	if strings.ContainsAny(out.String(), "\x1b\r") {
 		t.Fatalf("the review printed raw control bytes from the transaction type:\n%q", out.String())
 	}

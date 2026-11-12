@@ -95,7 +95,7 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		return result.Success, result.Message, result.Data, result.Presentation, nil
 	}
 
-	cancelled, err := reviewPluginTransactions(p.repl, result)
+	group, cancelled, err := reviewPluginTransactions(p.repl, result)
 	if err != nil {
 		return false, "", nil, nil, err
 	}
@@ -109,7 +109,7 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		return false, "", nil, nil, fmt.Errorf("not connected to signer - use connect() first to sign transactions")
 	}
 
-	submit, err := p.repl.app().SubmitPluginTransactions(p.repl.commandContext(), plugin.Manifest.Name, result, lsigArgs)
+	submit, err := p.repl.app().SubmitPluginTransactions(p.repl.commandContext(), plugin.Manifest.Name, group, lsigArgs)
 	if err != nil {
 		return false, "", nil, nil, fmt.Errorf("failed to sign/submit: %w", err)
 	}

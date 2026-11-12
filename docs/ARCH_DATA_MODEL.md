@@ -703,8 +703,9 @@ are rejected.
   `bounded_max_fees` (the bounded authorization `max_fee` per address),
   `bounded_contracts`, and `valid_rekey_targets`: the addresses whose aplane
   key records `valid_rekey_target` true. An address not in it reads as not a
-  valid rekey target, so apshell refuses a plugin-built group that rekeys an
-  account to a held aplane key the set does not list.
+  valid rekey target. Before it judges a plugin-built group that rekeys,
+  apshell refills the cache from `/keys`, and refuses the group when it rekeys
+  an account to a held aplane key the set does not list.
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
   Bounded profiles expose exactly the spend, spending-rekey, and listed-rekey

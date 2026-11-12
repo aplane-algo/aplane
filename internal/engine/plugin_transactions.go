@@ -17,9 +17,10 @@ import (
 )
 
 // DecodePluginDraft reads a plugin's unsigned (raw) transaction intents as the
-// draft APlane plans and signs. It is the one reading of a draft: both
-// submission paths (through ProcessTransactionIntents) and both client reviews
-// decode with it, so a review shows the transactions that are planned.
+// draft APlane plans and signs. It is the one reading of a draft: apshell's
+// plugin group check (apshellapp.CheckPluginGroup), whose group both the
+// client review and submission use, decodes the default-flow and presign-plan
+// drafts with it, so a review shows the transactions that are planned.
 //
 // Each intent must be exactly the canonical encoding of one transaction:
 // trailing data such as a second transaction, a repeated field, a fixed-size
@@ -70,9 +71,8 @@ func DecodePluginDraft(intents []jsonrpc.TransactionIntent) (txns []types.Transa
 	return txns, groupIDDiscarded, nil
 }
 
-// ProcessTransactionIntents converts plugin transaction intents to the
-// unsigned transactions submission plans and signs: the draft DecodePluginDraft
-// reads, with any plugin group ID cleared.
+// ProcessTransactionIntents is DecodePluginDraft without the report of a
+// discarded group ID: the draft, with any plugin group ID cleared.
 func ProcessTransactionIntents(intents []jsonrpc.TransactionIntent) ([]types.Transaction, error) {
 	txns, _, err := DecodePluginDraft(intents)
 	return txns, err

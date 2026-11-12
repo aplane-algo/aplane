@@ -128,20 +128,6 @@ func (cache *SignerCache) SetValidRekeyTarget(address string, valid bool) {
 	}
 }
 
-// InvalidRekeyTargets returns, by address, the held aplane keys that are not
-// valid rekey targets, with each key's type and whether it is a generic
-// LogicSig. Every address in it is also in HeldKeyAddresses.
-func (cache *SignerCache) InvalidRekeyTargets() map[string]InvalidRekeyTarget {
-	invalid := make(map[string]InvalidRekeyTarget)
-	for address, keyType := range cache.Keys {
-		if cache.IsValidRekeyTarget(address) {
-			continue
-		}
-		invalid[address] = InvalidRekeyTarget{KeyType: keyType, GenericLogicSig: cache.IsGenericLsig(address)}
-	}
-	return invalid
-}
-
 // SetGenericLsig marks an address as a generic LogicSig
 func (cache *SignerCache) SetGenericLsig(address string, isGeneric bool) {
 	if cache.GenericLsigs == nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -239,23 +240,26 @@ func (e *Core) signerCacheKeysSnapshot() map[string]string {
 	return keys
 }
 
-// HeldKeyAddressSet returns every address the connected signer holds an aplane
-// key for, of any key type, as the signer cache last listed them: not an
-// account signable only through its auth address. A review uses it to say a
-// rekey to one of them keeps control.
-func (e *Core) HeldKeyAddressSet() map[string]bool {
+// RekeyTargetContext returns, from one read of the signer cache, the two facts
+// about rekey targets that apshell shares with the signer: every address the
+// signer holds an aplane key for, of any key type (KnownAddresses; not an
+// account signable only through its auth address), and, by address, those
+// whose aplane key records that it is not a valid rekey target, with the key
+// type and whether it is a generic LogicSig (InvalidRekeyTargets). An address
+// the cache has no recorded valid_rekey_target for is not a valid rekey
+// target. It is the cache as last filled; a caller that needs the signer's
+// current list refreshes it first (RefreshKeys).
+func (e *Core) RekeyTargetContext() txnreview.FindingContext {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.HeldKeyAddresses()
-}
-
-// InvalidRekeyTargets returns, by address, the held aplane keys that are not
-// valid rekey targets, as the signer cache last listed them. A review uses it
-// to warn about a rekey to one of them instead of saying it keeps control.
-func (e *Core) InvalidRekeyTargets() map[string]cache.InvalidRekeyTarget {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.InvalidRekeyTargets()
+	invalid := make(map[string]txnreview.InvalidRekeyTarget)
+	for address, keyType := range e.SignerCache.Keys {
+		if e.SignerCache.IsValidRekeyTarget(address) {
+			continue
+		}
+		invalid[address] = txnreview.InvalidRekeyTarget{KeyType: keyType, GenericLogicSig: e.SignerCache.IsGenericLsig(address)}
+	}
+	return txnreview.FindingContext{KnownAddresses: e.SignerCache.HeldKeyAddresses(), InvalidRekeyTargets: invalid}
 }
 
 func (e *Core) signerCacheAddresses() []string {

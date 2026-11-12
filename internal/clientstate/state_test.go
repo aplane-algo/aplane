@@ -329,15 +329,12 @@ func TestPopulateSignerCacheRecordsValidRekeyTarget(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
-	want := map[string]cache.InvalidRekeyTarget{
-		"ROTATING": {KeyType: "aplane.rotating-triple-wotsc.v1"},
-		"HTLC":     {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
+	want := map[string]bool{"NATIVE": true, "VAULT": true}
+	if got := state.SignerCache.ValidRekeyTargets; !reflect.DeepEqual(got, want) {
+		t.Fatalf("recorded valid targets = %v, want %v", got, want)
 	}
-	if got := state.SignerCache.InvalidRekeyTargets(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("InvalidRekeyTargets() = %v, want %v", got, want)
-	}
-	if !state.SignerCache.IsValidRekeyTarget("NATIVE") || !state.SignerCache.IsValidRekeyTarget("VAULT") {
-		t.Fatalf("recorded valid targets = %v, want NATIVE and VAULT", state.SignerCache.ValidRekeyTargets)
+	if state.SignerCache.IsValidRekeyTarget("ROTATING") || state.SignerCache.IsValidRekeyTarget("HTLC") {
+		t.Fatalf("a key recording false reads as valid: %v", state.SignerCache.ValidRekeyTargets)
 	}
 	if held := state.SignerCache.HeldKeyAddresses(); len(held) != 4 {
 		t.Fatalf("HeldKeyAddresses() = %v, want all four listed addresses", held)

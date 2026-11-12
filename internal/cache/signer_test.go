@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -623,8 +622,8 @@ func TestHeldKeyAddressesIsEveryListedAplaneKey(t *testing.T) {
 
 // An address reads as a valid rekey target only when its aplane key recorded
 // valid_rekey_target true. One the cache has no such record of reads as not
-// valid, and InvalidRekeyTargets lists every held aplane key that is not
-// valid, with its key type and whether it is a generic LogicSig.
+// valid, a cache with no valid set at all included, and removing an address
+// clears its value.
 func TestSignerCacheValidRekeyTargetsFailClosed(t *testing.T) {
 	cache := NewSignerCache()
 	cache.AddAddress("VALID", "ed25519")
@@ -644,23 +643,11 @@ func TestSignerCacheValidRekeyTargetsFailClosed(t *testing.T) {
 			t.Errorf("IsValidRekeyTarget(%s) = true, want false without a recorded true", address)
 		}
 	}
-	want := map[string]InvalidRekeyTarget{
-		"ROTATING": {KeyType: "aplane.rotating-triple-wotsc.v1"},
-		"HTLC":     {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
-	}
-	if got := cache.InvalidRekeyTargets(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("InvalidRekeyTargets() = %v, want %v", got, want)
-	}
 
-	// A cache with no recorded values at all reads every held aplane key as
-	// not valid.
 	var bare SignerCache
 	bare.Keys = map[string]string{"VALID": "ed25519"}
 	if bare.IsValidRekeyTarget("VALID") {
 		t.Fatal("a cache with no valid set reads an address as valid")
-	}
-	if got := bare.InvalidRekeyTargets(); !reflect.DeepEqual(got, map[string]InvalidRekeyTarget{"VALID": {KeyType: "ed25519"}}) {
-		t.Fatalf("InvalidRekeyTargets() with no valid set = %v", got)
 	}
 
 	cache.SetValidRekeyTarget("VAULT", false)
@@ -673,7 +660,7 @@ func TestSignerCacheValidRekeyTargetsFailClosed(t *testing.T) {
 	if cache.IsValidRekeyTarget("VAULT") || cache.IsValidRekeyTarget("VALID") {
 		t.Fatalf("RemoveAddress left a valid rekey target: %v", cache.ValidRekeyTargets)
 	}
-	if _, ok := cache.InvalidRekeyTargets()["VAULT"]; ok {
-		t.Fatal("a removed address is still listed as a held aplane key")
+	if held := cache.HeldKeyAddresses(); held["VAULT"] || held["VALID"] {
+		t.Fatalf("a removed address is still held: %v", held)
 	}
 }

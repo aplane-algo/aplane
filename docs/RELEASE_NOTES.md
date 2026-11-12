@@ -48,13 +48,19 @@ possess the keys for the new address."
   before the group is shown, sent to the signer or submitted:
   `transaction N: cannot rekey to <address>: this signer holds its aplane key
   (<key type>), which is not a valid rekey target`. A rekey to a foreign
-  address remains a warning.
+  address remains a warning. A plugin group with any rekey is checked against
+  the signer's key list fetched for the check, and is refused when apshell is
+  not connected to the signer, the signer is locked, or the list cannot be
+  fetched; a `pregrouped-signed` group with a rekey therefore needs a signer
+  connection. A group with no rekey needs none.
 - **apshell's plugin review reads `valid_rekey_target` from `/keys`.** It
   treats every aplane key the signer lists as held, a generic LogicSig
   included, so a rekey to a held aplane key that is a valid rekey target says
   the signer holds it, as the signer's prompt does. Before, it left out every
   generic LogicSig and treated every other listed key, a rotating account
-  included, as a valid target.
+  included, as a valid target. The review does not read an account's rekey-to
+  list, so a rekey to a listed address the signer does not hold still reads
+  as losing control.
 
 ## apshell checks more of what the signer returns
 
