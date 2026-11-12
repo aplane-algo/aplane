@@ -43,10 +43,13 @@ before it was renamed `enroll`.
   "transaction at index N is for another network", naming both networks when
   they are known. This covers plugin drafts in the default and `presign-plan`
   modes, a plugin's `pregrouped-signed` group (refused before it is sent to
-  algod), and transaction files given to `sign` and JS `sign()`. The genesis
-  comes from the suggested-parameters read the consensus check already makes,
-  so no algod call is added. An algod that reports no 32-byte genesis hash is
-  refused.
+  algod), transaction files given to `sign` and JS `sign()`, and the requests
+  JS `plan()` sends, passthrough entries by their inner transaction; a
+  `plan()` request that is not a canonical transaction is refused before
+  `/plan`. The genesis comes from the suggested-parameters read the consensus
+  check already makes, so no algod call is added; that read is reused for up
+  to 30 seconds per algod client. An algod that reports no 32-byte genesis
+  hash is refused.
 - **JS `plugin()` follows plugin continuations.** It submitted the first
   step's transactions, ignored the plugin's `continuation` and returned
   `success: true`, so a workflow whose first step funds an escrow stopped

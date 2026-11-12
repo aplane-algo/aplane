@@ -28,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -489,6 +490,21 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 
 	t.Run("maps request and response", func(t *testing.T) {
 		eng, _, api := newTestAPI(t)
+		// plan() refuses a request for another network than algod's, so the
+		// requests carry transactions for the network algod reports.
+		genesis := make([]byte, 32)
+		planTxnHex := func(note string) string {
+			sender := algoCrypto.GenerateAccount().Address
+			txn := types.Transaction{
+				Type: types.PaymentTx,
+				Header: types.Header{Sender: sender, Fee: 1000, FirstValid: 1, LastValid: 1001,
+					GenesisID: "plan-test", Note: []byte(note)},
+				PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
+			}
+			copy(txn.GenesisHash[:], genesis)
+			return txnutil.EncodeWithPrefixHex(txn)
+		}
+		signHex, foreignHex, pqHex := planTxnHex("sign"), planTxnHex("foreign"), planTxnHex("pq")
 		algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/v2/transactions/params" {
 				http.NotFound(w, r)
@@ -496,6 +512,8 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			}
 			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
 				ConsensusVersion: string(protocol.ConsensusV42),
+				GenesisHash:      genesis,
+				GenesisId:        "plan-test",
 			})
 		}))
 		defer algodServer.Close()
@@ -539,14 +557,14 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			map[string]interface{}{
 				"authAddress": "AUTHADDR",
 				"txnSender":   "SENDERADDR",
-				"txnBytesHex": "5458abcd",
+				"txnBytesHex": signHex,
 				"lsigArgs": map[string]interface{}{
 					"alpha": "00ff",
 					"beta":  "01",
 				},
 			},
 			map[string]interface{}{
-				"txnBytesHex": "5458beef",
+				"txnBytesHex": foreignHex,
 				"lsigResources": map[string]interface{}{
 					"programBytes":  float64(123),
 					"argumentBytes": float64(45),
@@ -554,7 +572,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 				},
 			},
 			map[string]interface{}{
-				"txnBytesHex": "5458cafe",
+				"txnBytesHex": pqHex,
 				"pqScheme":    signerapi.PQSchemeFalcon1024,
 			},
 		})}})
@@ -564,20 +582,20 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			{
 				AuthAddress: "AUTHADDR",
 				TxnSender:   "SENDERADDR",
-				TxnBytesHex: "5458abcd",
+				TxnBytesHex: signHex,
 				LsigArgs: map[string]string{
 					"alpha": "00ff",
 					"beta":  "01",
 				},
 			},
 			{
-				TxnBytesHex: "5458beef",
+				TxnBytesHex: foreignHex,
 				LsigResources: &signerapi.LogicSigResourceUsage{
 					ProgramBytes: 123, ArgumentBytes: 45, MaxOpcodeCost: 6_789,
 				},
 			},
 			{
-				TxnBytesHex: "5458cafe",
+				TxnBytesHex: pqHex,
 				PQScheme:    signerapi.PQSchemeFalcon1024,
 			},
 		}) {

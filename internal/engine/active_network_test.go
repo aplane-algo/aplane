@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,12 +17,16 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func testGenesisHash(t *testing.T, encoded string) []byte {
@@ -176,16 +181,22 @@ func TestCheckActiveNetworkReusesTheSuggestedParamsRead(t *testing.T) {
 // A transaction for another network is refused before the signer sees it on
 // every path whose transactions apshell did not build: a transaction file
 // (sign) and a plugin draft in the default group mode, both through
-// checkReadyToSign, and a presign-plan draft. A pregrouped-signed group, which
-// no signer signs, is refused before it is sent to algod.
+// checkReadyToSign, a presign-plan draft, and JS plan()'s requests, sign-mode
+// and passthrough alike. A pregrouped-signed group, which no signer signs, is
+// refused before it is sent to algod.
 func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 	testnet := testGenesisHash(t, config.AlgorandTestnetGenesisHash)
 	mainnet := testGenesisHash(t, config.AlgorandMainnetGenesisHash)
-	plugin := crypto.GenerateAccount().Address.String()
+	pluginAccount := crypto.GenerateAccount()
+	plugin := pluginAccount.Address.String()
 	managed := crypto.GenerateAccount().Address.String()
 	mainnetTxns := []types.Transaction{
 		networkTestTxn(t, plugin, mainnet, "mainnet-v1.0"),
 		networkTestTxn(t, managed, mainnet, "mainnet-v1.0"),
+	}
+	_, signedMainnet, err := signing.SignTransactionWithKey(pluginAccount.PrivateKey, mainnetTxns[0])
+	if err != nil {
+		t.Fatalf("sign txn: %v", err)
 	}
 
 	paths := []struct {
@@ -207,6 +218,19 @@ func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 					t.Error("the plugin was asked to sign a slot for another network")
 					return nil, nil
 				}, nil)
+			return err
+		}},
+		{"plan() sign request", func(eng *Engine) error {
+			_, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{
+				{AuthAddress: managed, TxnBytesHex: txnutil.EncodeWithPrefixHex(mainnetTxns[1])},
+			})
+			return err
+		}},
+		{"plan() passthrough request", func(eng *Engine) error {
+			_, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{
+				{SignedTxnHex: hex.EncodeToString(signedMainnet)},
+				{AuthAddress: managed, TxnBytesHex: txnutil.EncodeWithPrefixHex(networkTestTxn(t, managed, testnet, "testnet-v1.0"))},
+			})
 			return err
 		}},
 		{"pregrouped-signed", func(eng *Engine) error {
@@ -244,6 +268,48 @@ func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 			}
 			if got := otherAlgodCalls.Load(); got != 0 {
 				t.Fatalf("algod calls other than suggested parameters = %d, want 0", got)
+			}
+		})
+	}
+}
+
+// plan() requests whose bytes are not a canonical transaction cannot be
+// checked for their network, so they are refused before /plan, as the signer
+// would refuse them.
+func TestGroupPlanningRefusesUndecodableRequestsBeforeSigner(t *testing.T) {
+	testnet := testGenesisHash(t, config.AlgorandTestnetGenesisHash)
+	sender := crypto.GenerateAccount().Address.String()
+	txn := networkTestTxn(t, sender, testnet, "testnet-v1.0")
+	tests := []struct {
+		name    string
+		request signerapi.SignRequest
+		want    string
+	}{
+		{"not hex", signerapi.SignRequest{AuthAddress: sender, TxnBytesHex: "zz"}, "plan request at index 0: invalid hex"},
+		{"no TX prefix", signerapi.SignRequest{AuthAddress: sender, TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn))}, "plan request at index 0:"},
+		{"trailing data", signerapi.SignRequest{AuthAddress: sender, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn) + "00"}, "plan request at index 0:"},
+		{"passthrough not a signed transaction", signerapi.SignRequest{SignedTxnHex: "00"}, "plan request at index 0: signed transaction:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var signerCalls atomic.Int32
+			signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				signerCalls.Add(1)
+				http.Error(w, "signer must not be called", http.StatusInternalServerError)
+			}))
+			t.Cleanup(signer.Close)
+			client, _, _ := networkTestAlgod(t, testnet, "testnet-v1.0")
+			eng, err := NewEngine("testnet", WithAlgodClient(client))
+			if err != nil {
+				t.Fatalf("NewEngine() error = %v", err)
+			}
+			eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
+			_, err = eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{tt.request})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("RequestGroupPlanWithContext() error = %v, want %q", err, tt.want)
+			}
+			if got := signerCalls.Load(); got != 0 {
+				t.Fatalf("signer calls = %d, want 0", got)
 			}
 		})
 	}

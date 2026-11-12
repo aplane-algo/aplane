@@ -472,7 +472,10 @@ set genesis ID, that differs from the algod's is refused before signing, as
 `transaction at index N is for another network`.
 
 `plan()` sends transaction sign requests to the signer group planner without
-signing or triggering approval. The planned fees include the signer's
+signing or triggering approval. As with `sign()`, each request's transaction,
+and a passthrough entry's inner transaction, must be for the active algod's
+network, and bytes that are not a canonical transaction are refused before
+anything is sent. The planned fees include the signer's
 authorization charge, added on top of the fees you set (see
 [FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership)). To sign a single
 transaction, submit its original draft rather than the transaction `plan()`
