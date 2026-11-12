@@ -55,7 +55,23 @@ var errPluginTransactionCancelled = errors.New("transaction cancelled by user")
 // transactions are reviewed and submitted before its continuation runs, and
 // the chain ends only when a step returns no continuation. It is the one
 // continuation loop: the REPL, MCP and JS plugin() all run plugins through it.
+//
+// A run with one step that sent transactions reports its IDs at the top level
+// (TxIDs, Unconfirmed), whether the run completed or failed, so a failed run's
+// IDs are where a completed run's are; a run with several keeps them in Steps.
 func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte, plugin *discovery.Plugin) error {
+	err := followPluginSteps(r, pr, result, lsigArgs, plugin)
+	if len(pr.Steps) == 1 {
+		pr.TxIDs = pr.Steps[0].TxIDs
+		pr.Unconfirmed = pr.Steps[0].Unconfirmed
+		pr.Steps = nil
+	}
+	return err
+}
+
+// followPluginSteps runs processPluginResultStructured's chain, recording each
+// step that sent transactions in pr.Steps.
+func followPluginSteps(r *REPLState, pr *PluginResult, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte, plugin *discovery.Plugin) error {
 	for {
 		// Update top-level fields from the current result
 		pr.Success = result.Success
@@ -76,11 +92,14 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 			if err != nil {
 				if submit != nil {
 					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
-					// A failure after algod accepted the group, such as a
-					// confirmation timeout, still returns its IDs: the step
-					// was sent, and the run's record says so.
-					if len(submit.TxIDs) > 0 {
-						pr.Steps = append(pr.Steps, appresult.PluginStep{Message: result.Message, TxIDs: submit.TxIDs})
+					// Outside simulate mode, IDs come back with an error only
+					// when algod accepted the group and waiting for its
+					// confirmation then failed: the step was sent and may
+					// still confirm, so it is recorded as unconfirmed. In
+					// simulate mode they come back from a failed simulation,
+					// which sent nothing, and are not recorded.
+					if len(submit.TxIDs) > 0 && !r.app().IsSimulateEnabled() {
+						pr.Steps = append(pr.Steps, appresult.PluginStep{Message: result.Message, TxIDs: submit.TxIDs, Unconfirmed: true})
 					}
 				}
 				return err
@@ -90,11 +109,6 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 		}
 
 		if result.Continuation == nil {
-			// Flatten single-step results: promote TxIDs to top level
-			if len(pr.Steps) == 1 {
-				pr.TxIDs = pr.Steps[0].TxIDs
-				pr.Steps = nil
-			}
 			return nil
 		}
 
@@ -108,19 +122,18 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 	}
 }
 
-// submittedTxIDs lists the transaction IDs every step of the run sent to
-// algod, in order, those of a step whose confirmation then failed included
-// (simulated, in simulate mode). A single-step result keeps them in TxIDs once
-// the run has finished; until then, and for several steps, they are in Steps.
-func (pr *PluginResult) submittedTxIDs() []string {
-	if len(pr.Steps) == 0 {
-		return append([]string(nil), pr.TxIDs...)
+// sentSteps lists the steps of a finished run that sent transactions
+// (simulated them, in simulate mode), in order, the unconfirmed one included,
+// whether processPluginResultStructured reported a single step at the top
+// level or several in Steps.
+func (pr *PluginResult) sentSteps() []appresult.PluginStep {
+	if len(pr.Steps) > 0 {
+		return pr.Steps
 	}
-	var txIDs []string
-	for _, step := range pr.Steps {
-		txIDs = append(txIDs, step.TxIDs...)
+	if len(pr.TxIDs) > 0 {
+		return []appresult.PluginStep{{TxIDs: pr.TxIDs, Unconfirmed: pr.Unconfirmed}}
 	}
-	return txIDs
+	return nil
 }
 
 // submitPluginTransactions processes and submits plugin transactions without UI output.

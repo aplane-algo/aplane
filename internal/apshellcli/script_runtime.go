@@ -106,20 +106,30 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 // jsPluginOutcome is plugin()'s answer for a finished run. Before any step has
 // sent transactions, a cancel or the plugin's own failure is a
 // {success: false} result and other errors are errors. Once a step has sent
-// transactions, the confirmation of the step that failed included, a step that
-// fails, is cancelled or reports failure leaves the workflow half done, so that
-// is an error naming every transaction sent, never a result a script could read
-// as success or as nothing having happened. In simulate mode the transactions
-// were simulated, not sent, and the error says so. A completed run returns the
-// last step's message, data and presentation, with apshell's record of every
-// transaction ID it sent (simulated, in simulate mode) in data.txids and, for
-// more than one step, each step's message and IDs in data.steps. A plugin's
-// data never carries localSigners to the script, in any outcome, and data the
-// plugin returned as an object stays an object, empty if localSigners was all
-// it held.
+// transactions, a step that fails, is cancelled or reports failure leaves the
+// workflow half done, so that is an error naming what was sent, never a result
+// a script could read as success or as nothing having happened: the
+// transactions that confirmed, and apart from them those of the step whose
+// confirmation failed, which algod accepted and which may still confirm. In
+// simulate mode nothing was sent and the error says the transactions were
+// simulated. A completed run returns the last step's message, data and
+// presentation, with apshell's record of every transaction ID it sent
+// (simulated, in simulate mode) in data.txids and, for more than one step,
+// each step's message and IDs in data.steps. A plugin's data never carries
+// localSigners to the script, in any outcome, and data the plugin returned as
+// an object stays an object, empty if localSigners was all it held.
 func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, string, interface{}, interface{}, error) {
 	data := appresult.StripShellOnlyPluginData(pr.Data)
-	sent := pr.submittedTxIDs()
+	steps := pr.sentSteps()
+	var sent, confirmed, unconfirmed []string
+	for _, step := range steps {
+		sent = append(sent, step.TxIDs...)
+		if step.Unconfirmed {
+			unconfirmed = append(unconfirmed, step.TxIDs...)
+		} else {
+			confirmed = append(confirmed, step.TxIDs...)
+		}
+	}
 	if len(sent) == 0 {
 		switch {
 		case errors.Is(runErr, errPluginTransactionCancelled):
@@ -136,11 +146,20 @@ func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, stri
 		}
 	}
 	if runErr != nil {
-		what := "were already sent to the network"
+		var detail string
 		if simulated {
-			what = "were simulated, not sent"
+			// A failed simulation is not recorded, so every step here was
+			// simulated in full.
+			detail = "; these transaction(s) were simulated, not sent: " + strings.Join(sent, ", ")
+		} else {
+			if len(confirmed) > 0 {
+				detail += "; these transaction(s) were confirmed: " + strings.Join(confirmed, ", ")
+			}
+			if len(unconfirmed) > 0 {
+				detail += "; these transaction(s) were accepted by algod but not confirmed, and may still confirm: " + strings.Join(unconfirmed, ", ")
+			}
 		}
-		return false, "", nil, nil, fmt.Errorf("%w; these transaction(s) %s: %s", runErr, what, strings.Join(sent, ", "))
+		return false, "", nil, nil, fmt.Errorf("%w%s", runErr, detail)
 	}
 
 	result := map[string]interface{}{}

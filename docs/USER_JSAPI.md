@@ -706,11 +706,14 @@ stays an object, empty if `localSigners` was all it held.
 Before any step has sent transactions, a cancelled review or the plugin's own
 failure returns `{ success: false, message }`. Once a step has sent
 transactions, a step that errors, is cancelled or reports failure throws, and
-the error lists every transaction ID sent, because the workflow is half done:
-"these transaction(s) were already sent to the network", or in simulate mode
-"were simulated, not sent". A step whose group algod accepted counts as sent
-even when waiting for its confirmation then fails, so a script that catches
-the error does not take the run for one that sent nothing.
+the error names what was sent, because the workflow is half done: "these
+transaction(s) were confirmed: …" for the steps that confirmed and, for a step
+whose group algod accepted but whose confirmation then failed, "these
+transaction(s) were accepted by algod but not confirmed, and may still
+confirm: …". A script that catches the error therefore does not take the run
+for one that sent nothing. In simulate mode nothing is sent: the error names
+the steps simulated in full ("were simulated, not sent: …"), and a step whose
+simulation failed is not counted.
 
 Example:
 

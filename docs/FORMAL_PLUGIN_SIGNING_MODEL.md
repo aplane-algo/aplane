@@ -41,9 +41,10 @@ Two surviving plugin group modes plus the shared trust machinery:
   (`/sign`), and the results are merged and submitted.
 
 Every entry point runs a plugin's steps through one loop,
-`internal/apshellcli/external_plugins.go::processPluginResultStructured`, which
-reviews each step (`reviewPluginTransactions`) before it submits it and follows
-continuations: the REPL and MCP through `execPlugin`, and JS `plugin()`
+`internal/apshellcli/external_plugins.go::processPluginResultStructured`. Its
+loop, `followPluginSteps`, reviews each step (`reviewPluginTransactions`)
+before it submits it and follows continuations: the REPL and MCP through
+`execPlugin`, and JS `plugin()`
 through `script_runtime.go::PluginExecutorAdapter.ExecutePlugin`. JS
 `plugin()` is therefore an entry into the modeled path, not a third one.
 

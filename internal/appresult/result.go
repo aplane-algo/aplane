@@ -151,18 +151,26 @@ type MCPHolders struct {
 	TotalStr string           `json:"total_display"`
 }
 
-// PluginStep is one structured step in a plugin continuation flow.
+// PluginStep is one structured step in a plugin continuation flow: a step that
+// sent transactions (simulated them, in simulate mode). Unconfirmed marks the
+// step whose group algod accepted but whose confirmation then failed: its
+// transactions may still confirm. A step without it was confirmed.
 type PluginStep struct {
-	Message string   `json:"message,omitempty"`
-	TxIDs   []string `json:"txids,omitempty"`
+	Message     string   `json:"message,omitempty"`
+	TxIDs       []string `json:"txids,omitempty"`
+	Unconfirmed bool     `json:"unconfirmed,omitempty"`
 }
 
-// Plugin is the canonical structured result for external plugin execution.
+// Plugin is the canonical structured result for external plugin execution. A
+// run with one step that sent transactions reports that step in TxIDs and
+// Unconfirmed, whether or not the run succeeded; a run with several reports
+// them in Steps.
 type Plugin struct {
 	Plugin       string                `json:"plugin"`
 	Success      bool                  `json:"success"`
 	Message      string                `json:"message,omitempty"`
 	TxIDs        []string              `json:"txids,omitempty"`
+	Unconfirmed  bool                  `json:"unconfirmed,omitempty"`
 	Data         interface{}           `json:"data,omitempty"`
 	Presentation *jsonrpc.Presentation `json:"presentation,omitempty"`
 	Steps        []PluginStep          `json:"steps,omitempty"`
