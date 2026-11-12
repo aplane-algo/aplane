@@ -17,8 +17,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/txnutil"
-
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -144,11 +142,19 @@ func DecodeTXPrefixed(raw []byte) (types.Transaction, error) {
 	if len(raw) < 2 || raw[0] != 'T' || raw[1] != 'X' {
 		return txn, ErrMissingTXPrefix
 	}
-	if err := msgpack.Decode(raw[2:], &txn); err != nil {
+	return DecodeTxn(raw[2:])
+}
+
+// DecodeTxn decodes one unprefixed transaction and rejects any encoding that
+// does not re-encode to exactly the same bytes: trailing data such as a second
+// transaction, a repeated field (a lenient decoder keeps the last), a
+// fixed-size field of the wrong length, or an explicit empty field.
+func DecodeTxn(raw []byte) (types.Transaction, error) {
+	var txn types.Transaction
+	if err := msgpack.Decode(raw, &txn); err != nil {
 		return txn, &DecodeError{Detail: err}
 	}
-	canonical := txnutil.EncodeWithPrefix(txn)
-	if !bytes.Equal(raw, canonical) {
+	if !bytes.Equal(msgpack.Encode(txn), raw) {
 		return txn, ErrNotCanonical
 	}
 	return txn, nil

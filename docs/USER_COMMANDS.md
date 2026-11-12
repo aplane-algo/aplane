@@ -177,7 +177,12 @@ succeed; delete the key after confirming that independently.
 
 Ordinary single-transaction commands from a rotating account, such as `send`,
 also rotate it. The account must be the only transaction sent, and its
-validity window is capped at 100 rounds. `close` is refused: the stage
+validity window is capped at 100 rounds. If the signer finds the window no
+longer current when it signs, for example because approval took long, it
+releases no signature, and the command rebuilds the window from the current
+round at the full 100 rounds, says so, and asks for approval again; if the
+account moved between preparing and signing, it prepares the same
+transaction again. It makes at most three attempts. `close` is refused: the stage
 program forbids close-out. There is no exit command: to leave the scheme,
 move the funds out.
 
@@ -1171,6 +1176,24 @@ plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
 `1_000` and `null` are refused: they are not read as octal, hex, a grouped
 number or zero.
 
+An ABI argument for an array or tuple type is a JSON array, such as
+`[100,"text:alice"]`, and must start with `[`. A `json:` prefix in front of it
+is allowed and changes nothing; the same holds for number, `bool` and
+`address` arguments. For a `string` argument, `json:` changes the reading:
+bare text is sent as typed, and `json:` reads the rest as JSON. The shell
+removes double quotes, so put a JSON value in single quotes.
+
+A `byte[]` or `byte[N]` argument at the top level takes only the
+[Byte Encodings](#byte-encodings) forms and reads bare text as text. It has no
+number-list form: `--arg '[104,105]'` sends the nine characters `[104,105]`,
+so write `hex:6869` for those two bytes. A byte array inside an array or tuple
+is a list of byte numbers or a string with an encoding prefix: `hex:`, `b64:`,
+`text:`, `str:`, `int:`, `addr:` or `0x`. A bare string there is refused,
+because other ABI tools read it as base64. Text that holds the replacement
+character U+FFFD is refused too, since invalid UTF-8 and a lone surrogate
+escape have already become U+FFFD by then; write those bytes with `hex:` or
+`b64:`.
+
 The apps you list with `app=` are sent exactly as typed: in that order, with
 any repeats, and with the called app if you list it. A program reads them by
 position, so the list is never tidied. A box reference to another app
@@ -1197,6 +1220,7 @@ app read info 123
 app deploy from alice approval=approval.teal clear=clear.teal global-uint=2 global-bytes=2 local-uint=1 local-bytes=0
 app deploy from lsig-account approval=approval.teal clear=clear.teal global-uint=2 global-bytes=2 local-uint=1 local-bytes=0 arg:preimage=text:secret
 app call 123 deposit --abi ./contract.json from alice --pay 100000
+app call 123 register --abi ./contract.json from alice --arg '[100,"text:alice"]'
 app call raw 123 from alice arg-raw=hex:010203 box=text:counter
 ```
 
@@ -1279,10 +1303,12 @@ When write mode is active, the prompt shows a `w` flag (e.g., `testnet w>`).
 ### verbose
 
 Toggle detailed signing output. When enabled, shows additional details after signing:
-- Fee adjustments (total fee delta across the group)
 - Passthrough transaction count (pre-signed transactions included as-is)
 - Foreign transaction count (transactions not signed by this signer)
 - Dummy transaction count (budget transactions added for LogicSig)
+
+A fee the signer raised is shown whether or not verbose is on, once the client
+has checked it against the signed bytes.
 
 ```
 verbose [on|off]

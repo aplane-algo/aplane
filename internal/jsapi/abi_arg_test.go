@@ -110,6 +110,30 @@ func TestAppCallArgumentsRefuseWhatHasNoABIValue(t *testing.T) {
 	}
 }
 
+// A compound value passed as one JSON string is read by the shell's rule, so a
+// byte array inside it names its encoding; the array form reads bare text as
+// text, as at the top level.
+func TestAppCallCompoundJSONStringNeedsBytePrefixes(t *testing.T) {
+	const want = "0000000000000007000a000461626364" // (7, "abcd")
+	for _, script := range []string{`[[7, "abcd"]]`, `['[7,"text:abcd"]']`, `['json:[7,"hex:61626364"]']`} {
+		encoded, err := abiArgsFromJS(t, script, "(uint64,byte[])")
+		if err != nil {
+			t.Errorf("%s: %v", script, err)
+			continue
+		}
+		if got := hex.EncodeToString(encoded[1]); got != want {
+			t.Errorf("%s: encoded %s, want %s", script, got, want)
+		}
+	}
+	// Read as base64 before, "abcd" was sent as the bytes 69b71d.
+	for _, script := range []string{`['[7,"abcd"]']`, `['json:[7,"abcd"]']`} {
+		encoded, err := abiArgsFromJS(t, script, "(uint64,byte[])")
+		if err == nil || !strings.Contains(err.Error(), `nested byte value "abcd" needs an encoding prefix`) {
+			t.Errorf("%s: encoded %x, %v; want a missing-prefix error", script, encoded, err)
+		}
+	}
+}
+
 // runJSAmount evaluates a JavaScript expression through toUint64, the way an
 // amount, fee or ID argument is read.
 func runJSAmount(t *testing.T, expr string) (value uint64, err error) {

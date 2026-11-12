@@ -51,7 +51,10 @@ generic passthrough machinery already modeled in
 - **Intent**: a plugin-produced transaction, `type:"raw"` (unsigned draft) or
   `type:"signed"` (finished bytes). Mode dispatch is total: signed intents
   are accepted only by the pregrouped-signed path
-  (`internal/engine/plugin_transactions.go` accepts only `"raw"`).
+  (`internal/engine/plugin_transactions.go` accepts only `"raw"`). A raw
+  intent is decoded with the canonical decoder: one that is not exactly the
+  canonical encoding of one transaction is refused, so the draft is what the
+  plugin's bytes say.
 - **PregroupedSignedGroup**: decoded transactions paired with the exact raw
   byte blobs they were decoded from. Both fields are unexported and
   `DecodePregroupedSigned` is the sole constructor
@@ -97,7 +100,10 @@ and type; then the description `internal/txnreview` builds, the same one the
 signer's approval prompt shows, with the network named from the genesis hash;
 then every finding the signer's warning rules produce for those bytes, each
 marked `!!`; a type the describer does not know is shown with a line saying
-its fields are not shown, so opacity is displayed, never hidden), and
+its fields are not shown, so opacity is displayed, never hidden; a rekey is
+shown as keeping control only when its target is an address whose own key
+the signer holds, `heldAddresses`, which leaves out an account signable only
+through its auth address and a generic LogicSig with no key), and
 non-interactive
 contexts (`AutoConfirm`, MCP) fail closed with an explicit error. Validation
 precedes rendering: the review path itself constructs the
@@ -116,7 +122,17 @@ window, lease, note, amount, receiver, app id, args, rekey, positional
 reorder) rejects with "plan modified ... slot". Anchor:
 `internal/engine/plugin_presign.go::validatePluginPlan` (applied to both slot
 classes), whose fee and field reconciliation is the ordinary `/sign` path's
-`internal/clientsign/verify.go::ValidateOriginalPositions`.
+`internal/clientsign/verify.go::ValidateOriginalPositions`. The draft it
+compares against is the one reading of the plugin's raw intents
+(`internal/engine/plugin_transactions.go::DecodePluginDraft`: canonical
+decode, group ID cleared, a discarded one reported), which submission reads
+through `ProcessTransactionIntents` and the client review reads directly, so
+the review shows what is planned and preservation holds from the plugin's own
+bytes, not from one lenient reading of them. Once the plan passes, the dummies
+it appended and the fee raise it reports are recorded in the command's output,
+which is shown when the command ends, with the submission or with the error of
+a later step; this is output, not a guard, and adds nothing to the checks or
+their order.
 
 After `/sign` and before broadcast, `verifySignedAgainstPlan` also requires
 every managed slot to sign exactly its canonical transaction, in bytes that
@@ -157,8 +173,10 @@ Every plugin-produced submission passed PS3's interactive review
 (pregrouped-signed) or PS6's signer authorization pipeline (presign-plan).
 The latter may resolve through explicit policy, forced review, or the ordinary
 operator default. Mode dispatch is total
-(`external_plugins.go` switches on `GroupMode`; signed intents outside
-pregrouped-signed fail `ProcessTransactionIntents`; `localSigners` is
+(`external_plugins.go` switches on `GroupMode` and, like submission, refuses a
+mode it does not know; signed intents outside pregrouped-signed fail
+`DecodePluginDraft`, which `ProcessTransactionIntents` and the client reviews
+of the presign-plan and default-flow drafts all read with; `localSigners` is
 rejected at `apshellapp/submission.go`), so there is no third path.
 
 ## Assumptions and honest gaps
@@ -175,12 +193,14 @@ rejected at `apshellapp/submission.go`), so there is no third path.
   internal consistency, not benignity. Catching a bad-but-consistent group
   is exactly what PS3's decoded review and PS6's approval display are for.
 - **Canonical encoding is checked, not modeled.** Pregrouped blobs, plugin
-  callback slots and the managed slots `/sign` returns are decoded with the
-  canonical decoder, which refuses any bytes that do not re-encode to
-  themselves, so a displayed or checked decode cannot differ from what algod
-  decodes. The model abstracts msgpack away and claims nothing about it; the
-  Go tests in `plugin_pregrouped_test.go` and `plugin_presign_test.go` cover
-  it.
+  callback slots, the managed slots `/sign` returns and every raw intent (the
+  presign-plan draft and the default flow) are decoded with the canonical
+  decoder, which refuses any bytes that do not re-encode to themselves, so a
+  displayed or checked decode cannot differ from what algod decodes, and a
+  draft cannot differ from what the plugin's bytes say. The model abstracts
+  msgpack away and claims nothing about it; the Go tests in
+  `plugin_pregrouped_test.go`, `plugin_presign_test.go` and
+  `plugin_transactions_test.go` cover it.
 - **Plugin sender claims are not authenticated**: in presign-plan a plugin
   may declare any sender address as its own; the slot then goes foreign at
   `/plan` and apsigner never signs it, so the only effect is a group that
@@ -192,15 +212,22 @@ rejected at `apshellapp/submission.go`), so there is no third path.
 ## Test anchors
 
 - Pregrouped validation/rendering/fail-closed:
-  `internal/engine/plugin_pregrouped_test.go`,
-  `internal/apshellcli/plugin_pregrouped_review_test.go` and
-  `plugin_approval_test.go` (mandatory review, AutoConfirm rejection).
+  `internal/engine/plugin_pregrouped_test.go` and
+  `internal/apshellcli/plugin_pregrouped_review_test.go` (mandatory review,
+  AutoConfirm rejection).
+- Raw intent decoding (canonical, raw-only, group ID cleared and its discard
+  reported) and the review of the drafts:
+  `internal/engine/plugin_transactions_test.go`;
+  `internal/apshellcli/plugin_approval_test.go` (the default flow's decoded
+  draft, whose prompt stays the plugin's `requiresApproval`; the presign-plan
+  draft review; the refusal of an unknown `groupMode`; a rekey kept only for a
+  held key).
 - Presign preservation/byte-match/index discipline:
   `internal/engine/plugin_presign_test.go`.
 - Mixed passthrough display and auto-approval disable:
   `internal/signerapp/signing/approval_test.go`, `always_review_test.go`;
   end-to-end `test/integration` Passthrough* tests.
-- `localSigners` rejection: `internal/apshellapp/submission_test.go`.
+- `localSigners` rejection: `internal/apshellapp/submission_pregrouped_test.go`.
 
 (Exact test names are pinned in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md)
 PS rows.)

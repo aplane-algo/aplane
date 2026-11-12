@@ -14,11 +14,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -42,7 +42,9 @@ type pluginReviewSlot struct {
 // summarizes the fees paid by APlane-managed accounts.
 func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlot) {
 	r.printf("\n%s\n", title)
-	if len(slots) > 0 {
+	// Only a group that is submitted as it is has its group ID yet: a draft's
+	// is assigned when the signer plans it, so none is shown for one.
+	if len(slots) > 0 && slots[0].txn.Group != (types.Digest{}) {
 		// Base64, the form plugins, SDKs and explorers show a group ID in, so
 		// it can be compared with theirs.
 		r.printf("Group ID: %s\n", base64.StdEncoding.EncodeToString(slots[0].txn.Group[:]))
@@ -69,14 +71,17 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	}
 }
 
-// heldAddresses is the set of addresses the connected signer holds keys for,
-// or nil when that is not known. A rekey to one of them keeps control, and
-// the review says so, as the signer's own prompt does.
+// heldAddresses is the set of addresses whose own key the connected signer
+// holds, or nil when that is not known. A rekey to one of them keeps control,
+// and the review says so, as the signer's own prompt does. It is not the set
+// of accounts the client can sign for: an account signable only through its
+// auth address, or a generic LogicSig with no key, is not held, so a rekey to
+// one warns of losing control.
 func (r *REPLState) heldAddresses() map[string]bool {
 	if r.App == nil {
 		return nil
 	}
-	return r.App.SignableAddressSet()
+	return r.App.HeldKeyAddressSet()
 }
 
 // pluginReviewLines lists what one slot does: the shared description the
@@ -120,31 +125,63 @@ func renderPregroupedSignedGroup(r *REPLState, stxns []types.SignedTxn) {
 // decodePresignReviewSlots decodes a presign-plan draft (every slot Type:"raw",
 // unsigned) into review slots, tagging each by signing role: a slot whose sender is
 // declared in pluginSigners is plugin-signed; every other slot is APlane-managed
-// (apsigner signs it). Display-only; the engine performs authoritative validation,
-// and apsigner's /sign approval is the authoritative gate for the managed slots.
-func decodePresignReviewSlots(intents []jsonrpc.TransactionIntent, pluginSigners []jsonrpc.PluginSigner) ([]pluginReviewSlot, error) {
+// (apsigner signs it). It reads the draft with engine.DecodePluginDraft, the
+// one reading the /plan request is built from, so the review shows the
+// transactions that are planned; groupIDDiscarded reports a plugin group ID
+// that reading cleared. Display-only; the engine performs authoritative
+// validation, and apsigner's /sign approval is the authoritative gate for the
+// managed slots.
+func decodePresignReviewSlots(intents []jsonrpc.TransactionIntent, pluginSigners []jsonrpc.PluginSigner) (slots []pluginReviewSlot, groupIDDiscarded bool, err error) {
 	owned := make(map[string]bool, len(pluginSigners))
 	for _, ps := range pluginSigners {
 		owned[ps.Address] = true
 	}
-	slots := make([]pluginReviewSlot, len(intents))
-	for i, intent := range intents {
-		if intent.Type != jsonrpc.TransactionIntentRaw {
-			return nil, fmt.Errorf("transaction %d: presign-plan slots must be type %q, got %q", i+1, jsonrpc.TransactionIntentRaw, intent.Type)
-		}
-		raw, err := base64.StdEncoding.DecodeString(intent.Encoded)
-		if err != nil {
-			return nil, fmt.Errorf("transaction %d: decode base64: %w", i+1, err)
-		}
-		var txn types.Transaction
-		if err := msgpack.Decode(raw, &txn); err != nil {
-			return nil, fmt.Errorf("transaction %d: decode raw: %w", i+1, err)
-		}
+	txns, groupIDDiscarded, err := engine.DecodePluginDraft(intents)
+	if err != nil {
+		return nil, false, err
+	}
+	slots = make([]pluginReviewSlot, len(txns))
+	for i, txn := range txns {
 		role := slotRoleManaged
 		if owned[txn.Sender.String()] {
 			role = slotRolePluginSigned
 		}
 		slots[i] = pluginReviewSlot{txn: txn, role: role}
 	}
-	return slots, nil
+	return slots, groupIDDiscarded, nil
+}
+
+// defaultDraftTitle heads the default mode's review. It promises nothing
+// about a display: under auto-approval apsigner shows nothing, so it names
+// what applies to the final group instead.
+const defaultDraftTitle = "DRAFT: plugin-built transaction(s); apsigner sets the final fees and group ID, and its policy and approval apply to the final group"
+
+// discardedGroupIDNotice follows a draft review whose plugin set a group ID.
+const discardedGroupIDNotice = "The plugin set a group ID; it is discarded, and apsigner computes the group ID over the final group."
+
+// renderDiscardedGroupIDNotice says that a draft's plugin group ID was
+// discarded, when one was.
+func renderDiscardedGroupIDNotice(r *REPLState, discarded bool) {
+	if discarded {
+		r.println(discardedGroupIDNotice)
+	}
+}
+
+// renderDefaultPluginDraft renders a default-mode plugin result: unsigned
+// transactions for APlane-managed accounts, read with engine.DecodePluginDraft
+// as submission reads them, through the same renderer the group modes use. It
+// is information, not a gate: apsigner plans the final group, and its policy
+// and approval apply to it.
+func renderDefaultPluginDraft(r *REPLState, intents []jsonrpc.TransactionIntent) error {
+	drafts, groupIDDiscarded, err := engine.DecodePluginDraft(intents)
+	if err != nil {
+		return err
+	}
+	slots := make([]pluginReviewSlot, len(drafts))
+	for i, txn := range drafts {
+		slots[i] = pluginReviewSlot{txn: txn, role: slotRoleManaged}
+	}
+	renderPluginGroupReview(r, defaultDraftTitle, slots)
+	renderDiscardedGroupIDNotice(r, groupIDDiscarded)
+	return nil
 }

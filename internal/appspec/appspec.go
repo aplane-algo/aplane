@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	abi "github.com/algorand/avm-abi/abi"
 
@@ -209,12 +210,20 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 			return nil, fmt.Errorf("%q is not true or false for ABI type bool", payload)
 		}
 	default:
+		// Only arrays and tuples reach here. JSON ignores the whitespace
+		// around a value, so trimming it changes nothing that is sent.
+		payload = strings.Trim(payload, " \t\r\n")
 		if !strings.HasPrefix(payload, "[") && !strings.HasPrefix(payload, "{") && !strings.HasPrefix(payload, `"`) {
 			return nil, fmt.Errorf("use json:<value> for ABI type %s", typeName)
 		}
 		if err := rejectJSONNull(payload, typeName); err != nil {
 			return nil, err
 		}
+		normalized, err := normalizeCompoundJSON(payload, typeName)
+		if err != nil {
+			return nil, err
+		}
+		payload = normalized
 	}
 
 	abiType, err := abi.TypeOf(typeName)
@@ -256,6 +265,95 @@ func rejectJSONNull(payload, typeName string) error {
 			return fmt.Errorf("null is not a value of ABI type %s", typeName)
 		}
 	}
+}
+
+// normalizeCompoundJSON rewrites each byte array inside a compound value that
+// is written as a string into the list of its byte numbers. The ABI library
+// would read such a string as base64, where a byte value at the top level is
+// read as text, so the string must name its encoding with a prefix. Numbers
+// keep their text, so a large integer is not rounded, and anything after the
+// value is refused, as the ABI library's own reader refuses it.
+func normalizeCompoundJSON(payload, typeName string) (string, error) {
+	decoder := json.NewDecoder(strings.NewReader(payload))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return "", fmt.Errorf("invalid JSON for ABI type %s: %w", typeName, err)
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return "", fmt.Errorf("invalid JSON for ABI type %s: more after the value", typeName)
+	}
+	value, err := nestedByteValues(value, typeName)
+	if err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("failed to write JSON for ABI type %s: %w", typeName, err)
+	}
+	return string(encoded), nil
+}
+
+// nestedByteValues follows the ABI type down into arrays and tuples and reads
+// each string it finds where the type has a byte array. A list of numbers
+// there, and every other value, is left for the ABI library.
+func nestedByteValues(value interface{}, typeName string) (interface{}, error) {
+	if IsByteArrayType(typeName) {
+		text, ok := value.(string)
+		if !ok {
+			return value, nil
+		}
+		decoded, encoded, err := appinput.ParseEncodedByteValue(text)
+		if !encoded {
+			return nil, fmt.Errorf("nested byte value %q needs an encoding prefix: %s", text, appinput.BytePrefixes)
+		}
+		// The JSON reader has already turned invalid UTF-8 and a lone
+		// surrogate escape into U+FFFD, so the text is not what was written.
+		if strings.ContainsRune(text, utf8.RuneError) {
+			return nil, fmt.Errorf(
+				"nested byte value %q holds the replacement character U+FFFD (invalid UTF-8 or a lone surrogate?); write the bytes with a hex: or b64: prefix",
+				text)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("nested byte value %q: %w", text, err)
+		}
+		if match := staticByteArrayRE.FindStringSubmatch(typeName); len(match) == 2 {
+			if size, err := strconv.ParseUint(match[1], 10, 16); err == nil && size != uint64(len(decoded)) {
+				return nil, fmt.Errorf("nested byte value %q is %d bytes; %s takes %d", text, len(decoded), typeName, size)
+			}
+		}
+		numbers := make([]interface{}, len(decoded))
+		for i, b := range decoded {
+			numbers[i] = json.Number(strconv.Itoa(int(b)))
+		}
+		return numbers, nil
+	}
+
+	items, ok := value.([]interface{})
+	if !ok {
+		return value, nil
+	}
+	members, isTuple := TupleTypes(typeName)
+	element, isArray := ElementType(typeName)
+	if !isTuple && !isArray {
+		return value, nil
+	}
+	for i, item := range items {
+		itemType := element
+		if isTuple {
+			// The ABI library reports a member count that does not match.
+			if i >= len(members) {
+				break
+			}
+			itemType = members[i]
+		}
+		converted, err := nestedByteValues(item, itemType)
+		if err != nil {
+			return nil, fmt.Errorf("element %d: %w", i, err)
+		}
+		items[i] = converted
+	}
+	return items, nil
 }
 
 // CheckNumberText reports whether typeName is a scalar number type (`uintN`,

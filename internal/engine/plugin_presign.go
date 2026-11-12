@@ -149,6 +149,27 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if err := validatePluginPlan(txns, canonicalTxns, planResp.Mutations, pluginSignerRefs); err != nil {
 		return nil, fmt.Errorf("invalid group plan: %w", err)
 	}
+	// What the accepted plan changed goes into the command's output, as the
+	// cosigned path reports it. The plan and its report were checked above, so
+	// these lines say what the signer did. The output reaches the user when the
+	// command ends: with the submission or simulation, or with the error of any
+	// step after this one, which keeps it (failed below).
+	var output bytes.Buffer
+	if dummies := len(canonicalTxns) - originalCount; dummies > 0 {
+		_, _ = fmt.Fprintf(&output, "[PLUGIN] Signer added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", dummies)
+	}
+	if m := planResp.Mutations; m != nil && m.TotalFeesDelta > 0 {
+		_, _ = fmt.Fprintf(&output, "[PLUGIN] Signer raised fees by %d microAlgos for authorization, on transaction(s) %v\n",
+			m.TotalFeesDelta, oneBasedPositions(m.FeesModified))
+	}
+	// failed returns err from a step after the plan with the output so far,
+	// as a failed submission returns its own.
+	failed := func(err error) (*PluginSubmitResult, error) {
+		if output.Len() == 0 {
+			return nil, err
+		}
+		return &PluginSubmitResult{Output: output.String()}, errorWithSubmissionOutput(err, output.String())
+	}
 
 	// --- Phase 2: gather plugin slots for the callback; sign dummies locally ---
 	passthrough := make(map[int]string) // index -> signed txn hex
@@ -171,7 +192,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		} else {
 			stxn, err := signing.SignDummyTransaction(ctxn)
 			if err != nil {
-				return nil, fmt.Errorf("failed to sign dummy transaction at index %d: %w", i, err)
+				return failed(fmt.Errorf("failed to sign dummy transaction at index %d: %w", i, err))
 			}
 			passthrough[i] = hex.EncodeToString(msgpack.Encode(stxn))
 			passthroughResources[i] = dummyLogicSigResourceUsage()
@@ -181,23 +202,23 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	// --- Plugin signs its slots over the canonical bytes ---
 	signed, err := signSlots(callbackReqs)
 	if err != nil {
-		return nil, fmt.Errorf("plugin signing failed: %w", err)
+		return failed(fmt.Errorf("plugin signing failed: %w", err))
 	}
 	if len(signed) != len(callbackReqs) {
-		return nil, fmt.Errorf("plugin returned %d signed slot(s), want %d", len(signed), len(callbackReqs))
+		return failed(fmt.Errorf("plugin returned %d signed slot(s), want %d", len(signed), len(callbackReqs)))
 	}
 	for _, s := range signed {
 		ctxn, ok := expected[s.Index]
 		if !ok {
-			return nil, fmt.Errorf("plugin signed an unexpected slot at index %d", s.Index)
+			return failed(fmt.Errorf("plugin signed an unexpected slot at index %d", s.Index))
 		}
 		if _, dup := passthrough[s.Index]; dup {
-			return nil, fmt.Errorf("plugin returned a duplicate slot at index %d", s.Index)
+			return failed(fmt.Errorf("plugin returned a duplicate slot at index %d", s.Index))
 		}
 		authorization := expectedAuthorization[s.Index]
 		signedHex, err := validatePluginSignedSlot(ctxn, s.Encoded, authorization)
 		if err != nil {
-			return nil, fmt.Errorf("plugin slot at index %d: %w", s.Index, err)
+			return failed(fmt.Errorf("plugin slot at index %d: %w", s.Index, err))
 		}
 		passthrough[s.Index] = signedHex
 		if authorization.LsigResources != nil {
@@ -222,22 +243,21 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 
 	signResp, err := e.RequestGroupSignWithContext(ctx, signRequests)
 	if err != nil {
-		return nil, fmt.Errorf("server signing failed: %w", err)
+		return failed(fmt.Errorf("server signing failed: %w", err))
 	}
 	finalSignedTxns, err := decodeGroupSignResponse(signResp.Signed, len(signRequests))
 	if err != nil {
-		return nil, err
+		return failed(err)
 	}
 	if err := verifySignedAgainstPlan(canonicalTxns, passthrough, finalSignedTxns); err != nil {
-		return nil, err
+		return failed(err)
 	}
 
-	var output bytes.Buffer
 	if e.Simulate {
 		signedObjects := make([]types.SignedTxn, len(finalSignedTxns))
 		for i, signedBytes := range finalSignedTxns {
 			if err := msgpack.Decode(signedBytes, &signedObjects[i]); err != nil {
-				return nil, fmt.Errorf("failed to decode signed transaction at index %d: %w", i, err)
+				return failed(fmt.Errorf("failed to decode signed transaction at index %d: %w", i, err))
 			}
 		}
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(ctx, signedObjects, e.AlgodClient, &output)
@@ -269,6 +289,15 @@ func (e *Engine) managedSignRequest(txn types.Transaction, lsigArgs map[string][
 		}
 	}
 	return req
+}
+
+// oneBasedPositions numbers group positions from one, as the prompts do.
+func oneBasedPositions(indices []int) []int {
+	numbers := make([]int, len(indices))
+	for i, index := range indices {
+		numbers[i] = index + 1
+	}
+	return numbers
 }
 
 func lsigArgsAt(lsigArgs []map[string][]byte, i int) map[string][]byte {
