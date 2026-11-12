@@ -255,6 +255,31 @@ func TestWithheldSignatureCarriesTheSignedTransaction(t *testing.T) {
 	}
 }
 
+// A refusal that names one transaction is a SIGN_REJECTED carrying that
+// transaction's ID, with no txn_auth when the signer does not sign it.
+func TestRejectionNamingATransactionCarriesItsTxID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attr := Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http", RequestID: "req-9"}
+	reason := "signer_invariant: transaction 2: rekey_target_not_valid: cannot rekey to TARGET"
+	a.LogSignRejectedTxnAttributed(attr, "", "SENDER", "TXB", reason)
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 1 {
+		t.Fatalf("%d entries, want 1", len(entries))
+	}
+	got := entries[0]
+	if got.Event != AuditSignRejected || got.Outcome != "rejected" || got.OperationID != "req-9" ||
+		got.TxnAuth != "" || got.TxnSender != "SENDER" || got.TxID != "TXB" || got.Reason != reason {
+		t.Fatalf("rejection entry = %+v", got)
+	}
+}
+
 // One request's SIGN_APPROVED entries share its group_txids slice, so
 // writing an entry never changes it, even when the entry is bounded.
 func TestSignApprovedLeavesTheSharedGroupTxIDsAlone(t *testing.T) {

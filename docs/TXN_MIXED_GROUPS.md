@@ -381,6 +381,11 @@ For scenarios where one party already has signed transactions, use passthrough m
 - Passthrough transactions are decoded for group consistency, approval context,
   warning analysis, and audit visibility, but transaction-level hard policy is
   applied only to signer-controlled slots
+- The signer refuses the whole request when a passthrough transaction
+  rekeys an account, its own address included, to an address the signer holds
+  an aplane key for that is not a valid rekey target
+  (`rekey_target_not_valid`). That check judges every position of the group,
+  so it applies to a passthrough-only request too
 
 ### Foreign Mode (Server-Planned Groups)
 
@@ -429,6 +434,11 @@ sufficient LogicSig resources and no additional dummies are needed.
 - Foreign transactions are included in planning, approval context,
   warning analysis, and audit visibility, but transaction-level hard policy is
   applied only to signer-controlled slots
+- The signer refuses the whole request when a foreign transaction
+  rekeys an account, its own address included, to an address the signer holds
+  an aplane key for that is not a valid rekey target
+  (`rekey_target_not_valid`), as at any other position. `/plan` does not run
+  this check; the later `/sign` does
 
 ### Passthrough vs Foreign
 

@@ -149,7 +149,7 @@ func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
 	_, err := svc.runApprovalGates(context.Background(), gateInput{
 		AllTxns:      []types.Transaction{{Header: types.Header{Sender: sender, RekeyTo: rotating}}},
 		EvalCount:    1,
-		LogRejection: func(reason string) { logged = reason },
+		LogRejection: func(reason string, _ int) { logged = reason },
 		RequestOperatorApproval: func(context.Context, string) *ServiceError {
 			t.Fatal("operator was asked")
 			return nil

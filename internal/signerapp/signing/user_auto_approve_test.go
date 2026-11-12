@@ -256,7 +256,7 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					AllTxns: txns, EvalCount: 1, AuthKeys: []string{tc.sender.String()},
 					KnownAddresses:      plan.KnownAddresses,
 					InvalidRekeyTargets: plan.InvalidRekeyTargets,
-					LogRejection:        func(reason string) { logged = reason },
+					LogRejection:        func(reason string, _ int) { logged = reason },
 					RequestOperatorApproval: func(ctx context.Context, rule string) *ServiceError {
 						approvalCalls++
 						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: tc.sender.String()}, txns, txns, "", 0, 0, rule, plan)

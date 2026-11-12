@@ -5,16 +5,26 @@ package signing
 
 import (
 	"context"
+	"encoding/hex"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/txnreview"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -48,9 +58,9 @@ func rekeyTargetTestSnapshot() (PlannerRuntimeSnapshot, map[string]types.Address
 // that key records it is not a valid rekey target, and a key with no metadata
 // is not one. The account's own address is no exception: an HTLC or rotating
 // account back to itself is refused, an ed25519 one passes. A foreign target
-// is left to the rekeys setting, a position this signer doesn't sign is not
-// judged, and a rotating target held for another account meets its own
-// invariant first.
+// is left to the rekeys setting, a position this signer doesn't sign is
+// judged as every position is, and a rotating target held for another account
+// at a signed position meets its own invariant first.
 func TestRejectRekeyToInvalidTarget(t *testing.T) {
 	snapshot, a := rekeyTargetTestSnapshot()
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }}}
@@ -88,14 +98,55 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 			}
 		})
 	}
-	// Positions this signer doesn't sign are not judged.
-	if err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "htlc")}, nil, invalid); err != nil {
-		t.Fatalf("an unsigned position was judged: %v", err)
-	}
-	// A rotating target is refused by the rotating invariant, unchanged.
+	// A rotating target at a signed position is refused by the rotating
+	// invariant, unchanged.
 	err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "rotating")}, []int{0}, invalid)
 	if want := "transaction 1: " + rotatingkey.RekeyTargetRefusal(a["rotating"].String()); err == nil || err.Message != want {
 		t.Fatalf("rekey to a rotating account: err = %v, want %q", err, want)
+	}
+
+	// Every position is judged, not only the ones this signer signs, and a
+	// request that signs nothing is judged too. The rotating and
+	// nonparticipation invariants still judge only the signed positions, so
+	// at a position this signer doesn't sign a rotating target meets this
+	// invariant.
+	payment := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"]}}
+	nonparticipating := types.Transaction{Type: types.KeyRegistrationTx, Header: types.Header{Sender: a["foreign"]},
+		KeyregTxnFields: types.KeyregTxnFields{Nonparticipation: true}}
+	for _, tc := range []struct {
+		name   string
+		txns   []types.Transaction
+		signed []int
+		want   string // "" when nothing is refused
+	}{
+		{"an HTLC target at a position not signed", []types.Transaction{payment, rekey("foreign", "htlc")}, []int{0},
+			"transaction 2: " + rekeyTargetNotValid(a["htlc"].String(), "aplane.htlc.v1").Message},
+		{"a rotating target at a position not signed", []types.Transaction{payment, rekey("foreign", "rotating")}, []int{0},
+			"transaction 2: " + rekeyTargetNotValid(a["rotating"].String(), rotatingkey.RotatingTripleWotscV1).Message},
+		{"a rotating account back to itself at a position not signed", []types.Transaction{payment, rekey("rotating", "rotating")}, []int{0},
+			"transaction 2: " + rekeyTargetNotValid(a["rotating"].String(), rotatingkey.RotatingTripleWotscV1).Message},
+		{"a request that signs nothing", []types.Transaction{rekey("plain", "htlc")}, nil,
+			"transaction 1: " + rekeyTargetNotValid(a["htlc"].String(), "aplane.htlc.v1").Message},
+		{"a held valid target at a position not signed", []types.Transaction{payment, rekey("foreign", "valid")}, []int{0}, ""},
+		{"a foreign target at a position not signed", []types.Transaction{payment, rekey("plain", "foreign")}, []int{0}, ""},
+		{"a nonparticipating keyreg at a position not signed", []types.Transaction{payment, nonparticipating}, []int{0}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := svc.rejectSignerInvariants(tc.txns, tc.signed, invalid)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("refused: %v", err)
+				}
+				return
+			}
+			if err == nil || err.HTTPStatus() != 403 || err.Code() != signerapi.ErrCodeRekeyTargetNotValid || err.Message != tc.want {
+				t.Fatalf("err = %v, want 403 %s %q", err, signerapi.ErrCodeRekeyTargetNotValid, tc.want)
+			}
+		})
+	}
+	// A cosigner passes no set: there is nothing to refuse at any position.
+	if err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "htlc")}, []int{0}, nil); err != nil {
+		t.Fatalf("refused with no invalid targets: %v", err)
 	}
 }
 
@@ -147,10 +198,12 @@ func TestValidTargetInvariantJudgesThePlansKeySet(t *testing.T) {
 	}
 }
 
-// A position this signer does not sign is never refused by the invariant, so
-// the group's warning says what its rekey target is: a held aplane key that
-// is not a valid rekey target, and for a generic LogicSig, that its program
-// decides what can be signed.
+// The invariant refuses such a group before any prompt, so the signer's own
+// prompts never show this warning. The warning stays as a defence in depth:
+// a group prompt reached directly still says what the rekey target at a
+// position this signer does not sign is, a held aplane key that is not a
+// valid rekey target, and for a generic LogicSig, that its program decides
+// what can be signed.
 func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T) {
 	snapshot, a := rekeyTargetTestSnapshot()
 	foreignRekey := types.Transaction{
@@ -202,4 +255,362 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 			t.Fatalf("no rekey warning for the %s position: %+v", class, got)
 		})
 	}
+}
+
+// shippedSignerPolicyWithRekeys is the shipped default signer policy with its
+// rekeys setting replaced.
+func shippedSignerPolicyWithRekeys(t *testing.T, rekeys policy.SignerRekeys) *policy.Config {
+	t.Helper()
+	doc := strings.Replace(policytest.EmbeddedDefault(t, noderole.RoleSigner), `"rekeys": "reject_foreign_rekey"`, `"rekeys": "`+string(rekeys)+`"`, 1)
+	decoded, err := policy.DecodePolicyV1([]byte(doc), policy.DefaultKey, noderole.RoleSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := decoded.Compile(policy.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rekeys != rekeys {
+		t.Fatalf("compiled rekeys = %q, want %q", cfg.Rekeys, rekeys)
+	}
+	return cfg
+}
+
+// rekeyGateHarness records every trace of approval a request leaves: the
+// operator prompts, and what the approval adapter prints, which with User
+// Auto-Approve on is its only trace. A request the gates pass stops at
+// BeforeExecute, so nothing is signed.
+type rekeyGateHarness struct {
+	prompts  int
+	executes int
+	approval strings.Builder
+}
+
+// stoppedAfterApproval is what a request the gates passed returns.
+const stoppedAfterApproval = "test: stopped after approval"
+
+// configure gives svc an approval adapter, the shipped default policy with
+// rekeys replaced, and a BeforeExecute that stops the request.
+func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.SignerRekeys, auto bool) {
+	t.Helper()
+	svc.Approval = &ApprovalService{
+		UserAutoApprove:               &auto,
+		Console:                       &stringConsole{&h.approval},
+		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		HasClient:                     func() bool { return true },
+		RequestSigningApprovalContext: func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+			h.prompts++
+			return true, nil
+		},
+	}
+	svc.Executor = &Executor{}
+	svc.GenerateTxnDescriptionFromTxn = func(types.Transaction) string { return "txn" }
+	svc.IsUnlocked = func() bool { return true }
+	svc.PolicyFor = fixedPolicy(shippedSignerPolicyWithRekeys(t, rekeys))
+	svc.BeforeExecute = func() (func(), *ServiceError) {
+		h.executes++
+		return nil, unavailable(stoppedAfterApproval)
+	}
+}
+
+// check holds err to the refusal wantRefused names, before any approval, or,
+// when it names none, to a request that went on through review and approval.
+func (h *rekeyGateHarness) check(t *testing.T, err *ServiceError, wantRefused string, auto bool) {
+	t.Helper()
+	if wantRefused != "" {
+		if err == nil || err.HTTPStatus() != 403 || err.Code() != signerapi.ErrCodeRekeyTargetNotValid || err.Message != wantRefused {
+			t.Fatalf("err = %v, want 403 %s %q", err, signerapi.ErrCodeRekeyTargetNotValid, wantRefused)
+		}
+		if h.prompts != 0 || h.approval.Len() != 0 || h.executes != 0 {
+			t.Fatalf("prompts = %d, approval printed %q, executes = %d; want a refusal before any approval", h.prompts, h.approval.String(), h.executes)
+		}
+		return
+	}
+	if err == nil || err.Message != stoppedAfterApproval || h.executes != 1 {
+		t.Fatalf("err = %v, executes = %d; want the request to pass the gates and approval", err, h.executes)
+	}
+	if auto && (h.prompts != 0 || !strings.Contains(h.approval.String(), "[USER AUTO-APPROVE]")) {
+		t.Fatalf("prompts = %d, approval printed %q; want User Auto-Approve to approve", h.prompts, h.approval.String())
+	}
+	if !auto && h.prompts != 1 {
+		t.Fatalf("prompts = %d, want the operator asked once", h.prompts)
+	}
+}
+
+// rekeyTargetCase is a rekey at a position this signer does not sign, and the
+// refusal it gets ("" for none).
+type rekeyTargetCase struct {
+	name           string
+	sender, target string
+	keyType        string // the refused target's key type
+}
+
+// unsignedRekeyCases are the rekeys at a position this signer does not sign,
+// over the rekey target test snapshot: held targets that are not valid rekey
+// targets, which are refused, and a held valid and a foreign target, which
+// are not.
+var unsignedRekeyCases = []rekeyTargetCase{
+	{"another account to a held rotating account", "foreign", "rotating", rotatingkey.RotatingTripleWotscV1},
+	{"another account to a held generic LogicSig recording false", "foreign", "htlc", "aplane.htlc.v1"},
+	{"a rotating account back to its own address", "rotating", "rotating", rotatingkey.RotatingTripleWotscV1},
+	{"a generic LogicSig recording false back to its own address", "htlc", "htlc", "aplane.htlc.v1"},
+	{"another account to a held valid rekey target", "foreign", "valid", ""},
+	{"another account to a foreign address", "foreign", "elsewhere", ""},
+}
+
+// A /sign request in which any position rekeys an account to a held aplane
+// key that is not a valid rekey target is refused, whatever the position: a
+// passthrough, a foreign one, or the only position of a request that signs
+// nothing. It is refused before policy and before any approval, under every
+// rekeys setting, with User Auto-Approve on and off, by the real planner's
+// group. A held valid target and a foreign one are not this check's, and the
+// request goes on to review.
+func TestValidTargetInvariantJudgesEveryPositionOfASignRequest(t *testing.T) {
+	snapshot, a := rekeyTargetTestSnapshot()
+	a["elsewhere"] = types.Address{8}
+	for _, mode := range []string{"passthrough", "foreign", "passthrough-only"} {
+		for _, tc := range unsignedRekeyCases {
+			for _, rekeys := range []policy.SignerRekeys{policy.RekeysRejectAll, policy.RekeysRejectForeign, policy.RekeysAllow} {
+				for _, auto := range []bool{false, true} {
+					t.Run(mode+"/"+tc.name+"/"+string(rekeys)+"/auto="+map[bool]string{false: "off", true: "on"}[auto], func(t *testing.T) {
+						req, position := rekeyAtPositionRequest(t, a, mode, a[tc.sender], a[tc.target])
+						h := &rekeyGateHarness{}
+						svc := rekeyTargetSignService(snapshot)
+						h.configure(t, svc, rekeys, auto)
+						_, err := svc.SignGroupWithContext(context.Background(), req, nil)
+						want := ""
+						if tc.keyType != "" {
+							want = withTransactionIndex(position, rekeyTargetNotValid(a[tc.target].String(), tc.keyType)).Message
+						}
+						h.check(t, err, want, auto)
+					})
+				}
+			}
+		}
+	}
+}
+
+// rekeyTargetSignService is a /sign service planning with the real planner
+// over snapshot.
+func rekeyTargetSignService(snapshot PlannerRuntimeSnapshot) *Service {
+	return &Service{Planner: NewPlanner(stubPlannerDeps{keyTypes: snapshot.KeyTypes, keyFiles: snapshot.KeyFiles, keyMetadata: snapshot.KeyMetadata},
+		PlannerOptions{GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver()})}
+}
+
+// rekeyAtPositionRequest is a /sign request with a rekey of sender to target
+// at a position of the given mode, and that position. In "passthrough" and
+// "foreign" mode the first position is a payment from a's plain account,
+// which this signer signs, and the rekey is the second; a passthrough group
+// is pre-grouped, as passthrough requires, and a foreign one is left for the
+// signer to group. In "passthrough-only" mode the rekey is the only position
+// and the signer signs nothing; in "sign" mode it is the only position and
+// the signer signs it, as plain.
+func rekeyAtPositionRequest(t *testing.T, a map[string]types.Address, mode string, sender, target types.Address) (signerapi.GroupSignRequest, int) {
+	t.Helper()
+	payment := testnetPaymentTransaction(t, a["plain"].String(), a["valid"].String(), 1)
+	payment.Fee = 1_000
+	rekey := testnetPaymentTransaction(t, sender.String(), sender.String(), 0)
+	rekey.Fee = 1_000
+	rekey.RekeyTo = target
+	signed := func(txn types.Transaction) signerapi.SignRequest {
+		return signerapi.SignRequest{SignedTxnHex: hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{7}}))}
+	}
+	regroup := func(txns ...types.Transaction) []types.Transaction {
+		groupID, err := algocrypto.ComputeGroupID(txns)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range txns {
+			txns[i].Group = groupID
+		}
+		return txns
+	}
+	switch mode {
+	case "passthrough":
+		txns := regroup(payment, rekey)
+		return signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+			{AuthAddress: a["plain"].String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(txns[0])}, signed(txns[1]),
+		}}, 1
+	case "foreign":
+		return signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+			{AuthAddress: a["plain"].String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(payment)},
+			{TxnBytesHex: txnutil.EncodeWithPrefixHex(rekey)},
+		}}, 1
+	case "sign":
+		return signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+			{AuthAddress: a["plain"].String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(rekey)},
+		}}, 0
+	case "passthrough-only":
+		return signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{signed(regroup(rekey)[0])}}, 0
+	}
+	t.Fatalf("unknown mode %q", mode)
+	return signerapi.GroupSignRequest{}, 0
+}
+
+// txnRejectionLog is testAuditLogger that also records the rejections that
+// name a transaction, with its ID in record.TxID.
+type txnRejectionLog struct {
+	testAuditLogger
+	txnRejected []testAuditEntry
+}
+
+func (l *txnRejectionLog) LogSignRejectedTxn(authAddress, txnSender, txID, reason string) {
+	l.txnRejected = append(l.txnRejected, testAuditEntry{
+		authAddress: authAddress, txnSender: txnSender, reason: reason, record: SignedRecord{TxID: txID},
+	})
+}
+
+// A request refused by the valid-target invariant leaves a SIGN_REJECTED
+// entry for the position the refusal names, whatever its kind, with that
+// transaction's ID as planned and the reason, which names the position and
+// the target. A passthrough-only request signs nothing and leaves that one
+// entry; in a mixed request whose foreign position is refused, each signed
+// position keeps the entry every refusal gives it. A refused position this
+// signer signs gets its one entry, with its ID, not two.
+func TestValidTargetRefusalIsAuditedAtThePositionItNames(t *testing.T) {
+	snapshot, a := rekeyTargetTestSnapshot()
+	for _, tc := range []struct {
+		name, mode, sender, target, keyType string
+		signedEntries                       int // entries for the other signed positions
+		auth                                string
+	}{
+		{"a passthrough-only request", "passthrough-only", "foreign", "htlc", "aplane.htlc.v1", 0, ""},
+		{"a mixed request refused at its foreign position", "foreign", "foreign", "rotating", rotatingkey.RotatingTripleWotscV1, 1, ""},
+		{"a mixed request refused at its passthrough position", "passthrough", "foreign", "htlc", "aplane.htlc.v1", 1, ""},
+		{"a request refused at the position it signs", "sign", "plain", "htlc", "aplane.htlc.v1", 0, "plain"},
+	} {
+		for _, auto := range []bool{false, true} {
+			t.Run(tc.name+"/auto="+map[bool]string{false: "off", true: "on"}[auto], func(t *testing.T) {
+				req, position := rekeyAtPositionRequest(t, a, tc.mode, a[tc.sender], a[tc.target])
+				svc := rekeyTargetSignService(snapshot)
+				planned, planErr := svc.Planner.PlanGroup(req)
+				if planErr != nil {
+					t.Fatal(planErr)
+				}
+				log := &txnRejectionLog{}
+				h := &rekeyGateHarness{}
+				h.configure(t, svc, policy.RekeysRejectForeign, auto)
+				svc.AuditLog = log
+				_, err := svc.SignGroupWithContext(context.Background(), req, nil)
+				refusal := withTransactionIndex(position, rekeyTargetNotValid(a[tc.target].String(), tc.keyType)).Message
+				h.check(t, err, refusal, auto)
+				reason := auditSignerInvariant + refusal
+				if len(log.txnRejected) != 1 {
+					t.Fatalf("rejections naming a transaction = %+v, want one", log.txnRejected)
+				}
+				got := log.txnRejected[0]
+				wantAuth := ""
+				if tc.auth != "" {
+					wantAuth = a[tc.auth].String()
+				}
+				if got.authAddress != wantAuth || got.txnSender != a[tc.sender].String() || got.reason != reason ||
+					got.record.TxID != algocrypto.GetTxID(planned.AllTxns[position]) {
+					t.Fatalf("rejection = %+v (txid %s), want auth %q, sender %s, txid %s, reason %q",
+						got, got.record.TxID, wantAuth, a[tc.sender], algocrypto.GetTxID(planned.AllTxns[position]), reason)
+				}
+				if !strings.Contains(got.reason, "transaction "+strconv.Itoa(position+1)+": ") || !strings.Contains(got.reason, a[tc.target].String()) {
+					t.Fatalf("reason %q does not name the position and the target", got.reason)
+				}
+				if len(log.rejected) != tc.signedEntries {
+					t.Fatalf("other rejection entries = %+v, want %d", log.rejected, tc.signedEntries)
+				}
+				for _, entry := range log.rejected {
+					if entry.authAddress != a["plain"].String() || entry.reason != reason {
+						t.Fatalf("signed position's rejection = %+v, want plain with reason %q", entry, reason)
+					}
+				}
+			})
+		}
+	}
+}
+
+// The cosigned flow's /sign/component judges the whole frozen group too: a
+// contextual position, which this request neither signs nor submits to
+// policy, that rekeys an account to a held aplane key that is not a valid
+// rekey target refuses the request before approval, and nothing is signed. A
+// held valid target is not this check's, and the request goes on to review.
+func TestValidTargetInvariantJudgesAComponentRequestsContextualPositions(t *testing.T) {
+	// The rekey target test snapshot, moved off the frozen bounded service's
+	// own addresses.
+	base, original := rekeyTargetTestSnapshot()
+	snapshot := PlannerRuntimeSnapshot{KeyFiles: map[string]string{}, KeyTypes: map[string]string{}, KeyMetadata: map[string]PlannerKeyMetadata{}}
+	a := map[string]types.Address{"elsewhere": {0x28}}
+	for name, address := range original {
+		moved := address
+		moved[0] += 0x20
+		a[name] = moved
+		if file, ok := base.KeyFiles[address.String()]; ok {
+			snapshot.KeyFiles[moved.String()] = file
+			snapshot.KeyTypes[moved.String()] = base.KeyTypes[address.String()]
+		}
+		if metadata, ok := base.KeyMetadata[address.String()]; ok {
+			snapshot.KeyMetadata[moved.String()] = metadata
+		}
+	}
+	for _, tc := range unsignedRekeyCases {
+		for _, rekeys := range []policy.SignerRekeys{policy.RekeysRejectAll, policy.RekeysRejectForeign, policy.RekeysAllow} {
+			for _, auto := range []bool{false, true} {
+				t.Run(tc.name+"/"+string(rekeys)+"/auto="+map[bool]string{false: "off", true: "on"}[auto], func(t *testing.T) {
+					service, authorizer, txn := frozenBoundedTestServiceWith(t, 4_500, nil)
+					bounded := service.Planner.Snapshot
+					// The signer also holds the rekey target test snapshot's keys.
+					service.Planner.Snapshot = func() PlannerRuntimeSnapshot {
+						merged := bounded()
+						merged.KeyFiles, merged.KeyTypes = copyMap(merged.KeyFiles), copyMap(merged.KeyTypes)
+						merged.KeyMetadata = copyMap(merged.KeyMetadata)
+						for address := range snapshot.KeyFiles {
+							merged.KeyFiles[address] = snapshot.KeyFiles[address]
+							merged.KeyTypes[address] = snapshot.KeyTypes[address]
+							if metadata, ok := snapshot.KeyMetadata[address]; ok {
+								merged.KeyMetadata[address] = metadata
+							}
+						}
+						return merged
+					}
+					if _, clash := snapshot.KeyFiles[authorizer]; clash {
+						t.Fatal("the bounded authorizer is one of the snapshot's addresses")
+					}
+					rekey := types.Transaction{
+						Type: types.PaymentTx,
+						Header: types.Header{Sender: a[tc.sender], Fee: 1_000, FirstValid: 1, LastValid: 10,
+							GenesisHash: txn.GenesisHash, RekeyTo: a[tc.target]},
+						PaymentTxnFields: types.PaymentTxnFields{Receiver: a[tc.sender]},
+					}
+					planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+						{AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)},
+						{TxnBytesHex: txnutil.EncodeWithPrefixHex(rekey)},
+					}})
+					if planErr != nil {
+						t.Fatal(planErr)
+					}
+					request := signerapi.ComponentRequest{
+						Targets:             []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
+						ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1}},
+					}
+					for i, plannedTxn := range planned.AllTxns {
+						request.GroupBytesHex = append(request.GroupBytesHex, txnutil.EncodeWithPrefixHex(plannedTxn))
+						if i > 1 {
+							request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+						}
+					}
+					h := &rekeyGateHarness{}
+					h.configure(t, service, rekeys, auto)
+					_, err := service.SignComponentsWithContext(context.Background(), request, &keystore.KeySession{})
+					want := ""
+					if tc.keyType != "" {
+						want = "transaction 2: " + rekeyTargetNotValid(a[tc.target].String(), tc.keyType).Message
+					}
+					h.check(t, err, want, auto)
+				})
+			}
+		}
+	}
+}
+
+func copyMap[K comparable, V any](in map[K]V) map[K]V {
+	out := make(map[K]V, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

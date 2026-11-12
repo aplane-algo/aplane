@@ -23,6 +23,7 @@ type signingAuditLogger struct {
 
 var _ signingAudit = (*signingAuditLogger)(nil)
 var _ signersigning.AuditCosignerRejectLogger = (*signingAuditLogger)(nil)
+var _ signersigning.AuditRejectTxnLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingRecoveryLogger = (*signingAuditLogger)(nil)
 
@@ -107,6 +108,15 @@ func (l *signingAuditLogger) LogSignRejected(authAddress, txnSender, reason stri
 		return
 	}
 	l.log.LogSignRejectedAttributed(l.attribution, authAddress, txnSender, reason)
+}
+
+// LogSignRejectedTxn records a refusal that names one transaction of the
+// request, by its ID as planned.
+func (l *signingAuditLogger) LogSignRejectedTxn(authAddress, txnSender, txID, reason string) {
+	if l == nil || l.log == nil {
+		return
+	}
+	l.log.LogSignRejectedTxnAttributed(l.attribution, authAddress, txnSender, txID, reason)
 }
 
 func (l *signingAuditLogger) LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string) {

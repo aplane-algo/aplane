@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -276,8 +277,8 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			return ""
 		}(),
 		Plan: planFacts(req, plan),
-		LogRejection: func(reason string) {
-			s.logSignRejections(req, plan, txns, reason)
+		LogRejection: func(reason string, refused int) {
+			s.logSignRejections(req, plan, txns, reason, refused)
 		},
 		RequestOperatorApproval: func(ctx context.Context, forceReviewRuleID string) *ServiceError {
 			// A rotating spend is one request, but its prompt must carry the
@@ -394,17 +395,49 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 }
 
 // logSignRejections audits a refused sign at each position this signer would
-// have signed. reason carries its own audit prefix.
-func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string) {
+// have signed. reason carries its own audit prefix. refused is the position a
+// rekey_target_not_valid refusal names, or -1: that position's entry carries
+// its transaction ID as planned, and it is written whatever the position's
+// kind, so a refusal caused by a passthrough or foreign position, or by the
+// only position of a request that signs nothing, is still on record. Its
+// txn_auth is empty unless this signer signs the position.
+func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string, refused int) {
 	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
 	if !ok || rejectLogger == nil {
 		return
 	}
 
 	for i, txReq := range req.Requests {
-		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
+		signs := !plan.PassthroughIndices[i] && !plan.ForeignIndices[i]
+		if i == refused {
+			authAddress := ""
+			if signs {
+				authAddress = txReq.AuthAddress
+			}
+			s.logRefusedPosition(rejectLogger, authAddress, plan.AllTxns, i, reason)
+			continue
+		}
+		if !signs {
 			continue
 		}
 		rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), reason)
 	}
+	// A dummy follows the request's positions.
+	if refused >= len(req.Requests) {
+		s.logRefusedPosition(rejectLogger, "", plan.AllTxns, refused, reason)
+	}
+}
+
+// logRefusedPosition audits a refusal at position i of group, by the
+// transaction's ID as planned when the audit log records one.
+func (s *Service) logRefusedPosition(rejectLogger policyAuditLogger, authAddress string, group []types.Transaction, i int, reason string) {
+	if i < 0 || i >= len(group) {
+		return
+	}
+	txn := group[i]
+	if txnLogger, ok := s.AuditLog.(AuditRejectTxnLogger); ok && txnLogger != nil {
+		txnLogger.LogSignRejectedTxn(authAddress, txn.Sender.String(), algocrypto.GetTxID(txn), reason)
+		return
+	}
+	rejectLogger.LogSignRejected(authAddress, txn.Sender.String(), reason)
 }

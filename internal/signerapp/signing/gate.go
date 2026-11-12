@@ -25,13 +25,16 @@ const (
 // group signing and cosigned user-component signing evaluate the same gates
 // with the same semantics.
 type gateInput struct {
-	// AllTxns is the full decoded group, including dummy transactions.
+	// AllTxns is the full decoded group, including dummy transactions. The
+	// valid-target invariant judges every position of it.
 	AllTxns []types.Transaction
-	// EvalCount bounds candidate positions: gates evaluate AllTxns[:EvalCount].
+	// EvalCount bounds the candidate positions policy and the other signer
+	// invariants evaluate: AllTxns[:EvalCount].
 	EvalCount int
 	// PassthroughIndices and ForeignIndices classify positions this signer does
 	// not sign. They are skipped by per-position policy and covered by the
-	// foreign-slot always-review warnings instead.
+	// foreign-slot always-review warnings instead; the valid-target invariant
+	// judges them as it judges every position.
 	PassthroughIndices map[int]bool
 	ForeignIndices     map[int]bool
 	// AuthKeys[i] is the key selector whose policy governs position i ("" or
@@ -40,7 +43,8 @@ type gateInput struct {
 	KnownAddresses map[string]bool
 	// InvalidRekeyTargets are the held addresses whose aplane key records that
 	// it is not a valid rekey target, from the same snapshot as
-	// KnownAddresses: what the valid-target invariant refuses.
+	// KnownAddresses: what the valid-target invariant refuses at any position
+	// of AllTxns.
 	InvalidRekeyTargets map[string]txnreview.InvalidRekeyTarget
 	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
 	// next stage); warning review does not count them.
@@ -56,20 +60,24 @@ type gateInput struct {
 	Plan *policyeval.PlanFacts
 	// LogRejection records per-position audit events for a rejection. The
 	// reason carries its audit prefix (auditSignerInvariant,
-	// auditPolicyRejected).
-	LogRejection func(reason string)
+	// auditPolicyRejected). refused is the position a rekey_target_not_valid
+	// refusal names, which may be one this signer does not sign, so that
+	// position is recorded whatever its kind; it is -1 for every other
+	// rejection.
+	LogRejection func(reason string, refused int)
 	// RequestOperatorApproval blocks on the surface's operator approval prompt.
 	// forceReviewRuleID is non-empty when an always-review rule matched.
 	RequestOperatorApproval func(ctx context.Context, forceReviewRuleID string) *ServiceError
 }
 
 // runApprovalGates runs the shared signer-domain gate sequence: the signer
-// invariants (no rekey to a rotating account, no rekey to a held aplane key
-// whose key type is not a valid rekey target, no nonparticipating keyreg),
-// then the policy verdict (policyeval.Evaluate: hard rejection, always-review
-// rules, auto-approval rules), then the operator approval fallback. It returns
-// the matched always-review rule ID for approval audit events ("" when none
-// matched).
+// invariants (no rekey to a rotating account at a position this signer signs,
+// no rekey to a held aplane key whose key type is not a valid rekey target at
+// any position of the group, no nonparticipating keyreg at a position this
+// signer signs), then the policy verdict (policyeval.Evaluate: hard
+// rejection, always-review rules, auto-approval rules), then the operator
+// approval fallback. It returns the matched always-review rule ID for
+// approval audit events ("" when none matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
 	slots := clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets)
@@ -77,7 +85,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		console.Printf("[SIGNER] Rejected: %s\n", err.Message)
 		console.Sync()
 		if in.LogRejection != nil {
-			in.LogRejection(auditSignerInvariant + err.Message)
+			in.LogRejection(auditSignerInvariant+err.Message, refusedPosition(err, in.AllTxns, in.InvalidRekeyTargets))
 		}
 		return "", err
 	}
@@ -99,7 +107,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 	}
 	if err := rejection; err != nil {
 		if in.LogRejection != nil {
-			in.LogRejection(auditPolicyRejected + err.Message)
+			in.LogRejection(auditPolicyRejected+err.Message, -1)
 		}
 		return "", err
 	}

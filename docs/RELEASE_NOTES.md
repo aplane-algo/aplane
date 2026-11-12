@@ -7,6 +7,29 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The valid rekey target check judges every position of a group
+
+The signer refused a rekey to a held aplane key that is not a valid rekey
+target only at the positions it signs. The same rekey at a passthrough or
+foreign position of the group got a warning, which User Auto-Approve satisfies
+without a prompt, so the signer could put its signature into a group that made
+one of its own aplane keys, a rotating account's for one, another account's
+authority.
+
+- **Every position is judged.** When any transaction of a group the signer is
+  asked to sign any part of rekeys an account, its own address included, to an
+  address the signer holds an aplane key for that is not a valid rekey target,
+  the whole request is refused with HTTP 403 and `rekey_target_not_valid`,
+  naming that position. This covers passthrough and foreign positions on
+  `/sign`, a passthrough-only `/sign`, and contextual positions on
+  `/sign/component`, under every `rekeys` setting.
+- **The refusal is audited at the position it names.** A `SIGN_REJECTED`
+  entry for that position carries its `txid` and the reason, whatever kind of
+  position it is, so a refused passthrough-only request is on record too.
+- **Nothing else widens.** The rotating and nonparticipation invariants and the
+  `rekeys` setting still judge only the positions the signer signs. `/plan`
+  runs no signer invariant; the `/sign` that follows refuses.
+
 ## Every key type declares whether it is a valid rekey target
 
 The signer passed a rekey of an account to any address it held an aplane key

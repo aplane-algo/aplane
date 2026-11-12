@@ -1484,7 +1484,7 @@ func TestLogSignRejectionsSkipsPassthroughAndForeign(t *testing.T) {
 		{Header: types.Header{Sender: types.Address{3}}},
 	}
 
-	service.logSignRejections(req, plan, txns, auditPolicyRejected+"test")
+	service.logSignRejections(req, plan, txns, auditPolicyRejected+"test", -1)
 	if len(audit.rejected) != 1 {
 		t.Fatalf("len(audit.rejected) = %d, want 1", len(audit.rejected))
 	}

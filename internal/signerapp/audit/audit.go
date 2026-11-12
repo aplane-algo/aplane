@@ -653,6 +653,16 @@ func (a *AuditLogger) LogSignRejectedAttributed(attr Attribution, address, txnSe
 	a.Log(signRejectedEntry(attr, address, txnSender, reason, ""))
 }
 
+// LogSignRejectedTxnAttributed logs a signing rejection that names one
+// transaction of the request, by its ID as planned, with explicit request
+// attribution. The transaction may be one the signer does not sign, so
+// address may be empty.
+func (a *AuditLogger) LogSignRejectedTxnAttributed(attr Attribution, address, txnSender, txID, reason string) {
+	entry := signRejectedEntry(attr, address, txnSender, reason, "")
+	entry.TxID = txID
+	a.Log(entry)
+}
+
 // LogSignRejectedAttributedWithPolicyRule logs a signing rejection with
 // explicit request attribution and the policy rule that forced manual review.
 func (a *AuditLogger) LogSignRejectedAttributedWithPolicyRule(attr Attribution, address, txnSender, reason, policyRuleID string) {

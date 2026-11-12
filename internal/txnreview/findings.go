@@ -34,9 +34,10 @@ type FindingContext struct {
 	// signer keeps control instead of warning that control is lost.
 	KnownAddresses map[string]bool
 	// InvalidRekeyTargets are the held addresses whose aplane key records that
-	// it is not a valid rekey target, by address. They are held, never foreign. A rekey to one
-	// at a position this signer signs is refused before any prompt; the
-	// warning says what it is at the positions this signer does not sign.
+	// it is not a valid rekey target, by address. They are held, never foreign.
+	// The signer refuses a group that rekeys to one at any position before any
+	// prompt, so its own prompts never show the warning; the warning says what
+	// such a target is wherever a review runs without that refusal.
 	InvalidRekeyTargets map[string]InvalidRekeyTarget
 	// ProtocolRekeyTargets are rekey targets the signer itself set as part of
 	// a signing protocol and proved before approval ran: a rotating account's

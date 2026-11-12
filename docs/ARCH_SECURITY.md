@@ -1359,7 +1359,14 @@ Signing-audit semantics:
 - a request that was not signed has no `SIGN_APPROVED`, except a rotating
   sign refused at its last check, which says so (below). A refusal by a
   signer invariant, policy or the operator, or an approval timeout, is
-  `SIGN_REJECTED`; a technical failure while signing a position is
+  `SIGN_REJECTED`. A signer-invariant or policy refusal writes one entry per
+  position the signer signs. A `rekey_target_not_valid` refusal also writes
+  one for the position it names, whatever its kind (a passthrough or foreign
+  position, or the only position of a request that signs nothing), with that
+  transaction's `txid` as planned and an empty `txn_auth` unless the signer
+  signs the position; a position the signer signs gets that one entry, with
+  its `txid`. Its `reason` names the position and the target. A technical
+  failure while signing a position is
   `SIGN_FAILED`. A request cancelled by the client, or stopped before any
   of those (no apadmin connected, a lock before signing began), leaves only
   what it wrote before it stopped: on `/sign`, its `SIGN_REQUEST` entries.

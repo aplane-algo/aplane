@@ -127,7 +127,9 @@ their slot class is determined by planning.
 
 Hard-reject and configured amount/routing rules evaluate signer-controlled
 request slots only. Passthrough and foreign slots are not governed by those
-rules because this signer is not signing them. They still participate in group
+rules because this signer is not signing them. One Always Deny source does
+judge them: the valid-target signer invariant, which is not a policy rule and
+judges every position of the group (see Always Deny below). They still participate in group
 context, approval rendering, audit visibility, and a load-bearing cross-party
 Always Review check: warning-bearing rekey, close, clawback, and related danger
 fields require review, which `user_auto_approve:true` satisfies without a prompt. Dummies are
@@ -230,7 +232,9 @@ Always Deny rules are hard safety guards. Current deny sources include:
   is not a valid rekey target
   (`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, run second; error
   code `rekey_target_not_valid`). No `rekeys` value and no rekey-to list lifts
-  it,
+  it. Unlike the other two invariants and every policy rule, it judges every
+  position of the group, passthrough, foreign, contextual and dummy positions
+  included, so a match at any position refuses the whole request,
 - the signer invariant that refuses a nonparticipating `keyreg` at a position
   the signer signs (`signing/invariant_gate.go::rejectNonparticipation`, run
   last). All three invariants run through `rejectSignerInvariants`, on the
@@ -239,7 +243,8 @@ Always Deny rules are hard safety guards. Current deny sources include:
   before the cosigner's policy. Like the rotating invariant they have no rule
   id and precede every policy document rule, on both node roles. The model
   (`policy_precedence.tla`) abstracts every invariant as an Always Deny match;
-  no spec transcribes the invariant list or its order,
+  no spec transcribes the invariant list, its order or the positions each
+  invariant judges,
 - `transaction_types` entries with verdict `reject` (rule id
   `transaction_type:<type>`), the first policy document rule evaluated,
 - `rekeys` (`reject_all_rekeys` or `reject_foreign_rekey`; a protocol rekey is
@@ -472,6 +477,10 @@ ModeAt(i) in {passthrough, foreign} =>
 ```
 
 Those slots also affect group context, approval rendering, and audit visibility.
+P8 is about policy. The valid-target signer invariant is not a policy rule and
+is outside it: a rekey at a passthrough or foreign slot to a held aplane key
+that is not a valid rekey target refuses the request before policy runs, so
+no review is reached.
 
 ### P9: Route Verdict Excludes Approve
 
