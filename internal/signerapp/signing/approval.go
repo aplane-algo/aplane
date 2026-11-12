@@ -286,7 +286,8 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 // dummies it added, the fee it raised and what for, and a recomputed group
 // ID. The single-transaction prompt and the group prompt both carry it. A
 // frozen request is changed by nothing here: it is shown as checked, with
-// what its fees already pay, and a lone transaction is not called a group.
+// what its fees already pay, the fee adjustment that built it included, and
+// a lone transaction is not called a group.
 // Every line ends in a newline; with nothing to say it is empty.
 func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) string {
 	var b strings.Builder
@@ -301,8 +302,11 @@ func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) 
 		if plan.DummiesNeeded > 0 {
 			fmt.Fprintf(&b, "  • %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
 		}
+		// A rotating spend's fee includes the charge prepare added; a
+		// /sign/component group, never raised, has none.
+		writeFeeAdjustmentLine(&b, fees, group)
 		writeContributionLines(&b, plan)
-		if plan.DummiesNeeded > 0 || contributions {
+		if plan.DummiesNeeded > 0 || fees.TotalFees > 0 || contributions {
 			b.WriteString("  • The fees shown already include these; this request adds no dummies or fees\n")
 		}
 		return b.String()
@@ -315,18 +319,26 @@ func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) 
 	if plan.DummiesNeeded > 0 {
 		fmt.Fprintf(&b, "  • Added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
 	}
-	if fees.TotalFees > 0 {
-		if group {
-			fmt.Fprintf(&b, "  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", fees.TotalFees, approvalTransactionNumbers(fees.FeeIndices))
-		} else {
-			fmt.Fprintf(&b, "  • Group fee adjustment: +%d microAlgos\n", fees.TotalFees)
-		}
-	}
+	writeFeeAdjustmentLine(&b, fees, group)
 	writeContributionLines(&b, plan)
 	if (plan.DummiesNeeded > 0 || fees.TotalFees > 0) && len(allTxns) > 1 {
 		b.WriteString("  • Group ID recomputed\n")
 	}
 	return b.String()
+}
+
+// writeFeeAdjustmentLine states the fee planning added for the signer's
+// authorization charge, and where, when it added one. For a frozen plan it is
+// what the request that built the group added.
+func writeFeeAdjustmentLine(b *strings.Builder, fees DummyFeeInfo, group bool) {
+	if fees.TotalFees == 0 {
+		return
+	}
+	if group {
+		fmt.Fprintf(b, "  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", fees.TotalFees, approvalTransactionNumbers(fees.FeeIndices))
+	} else {
+		fmt.Fprintf(b, "  • Group fee adjustment: +%d microAlgos\n", fees.TotalFees)
+	}
 }
 
 // writeContributionLines lists what authorization requires the fees to pay

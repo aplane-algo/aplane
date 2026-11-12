@@ -986,10 +986,15 @@ not make:
 ```
 [FROZEN GROUP: checked as sent, not changed by this request]
   • 1 dummy transaction(s) for LogicSig arguments/opcode budget
+  • Group fee adjustment: +1030 microAlgos
   • Required LogicSig program contribution: about 30 microAlgos (300 charged byte(s))
   • The fees shown already include these; this request adds no dummies or fees
 ```
-A frozen request of one transaction with no dummies reads
+The fee adjustment line is the one the planning prompt prints, in the same
+words: for a rotating spend it is the authorization charge
+`/sign/rotating/prepare` added on top of the client's fee, so the operator can
+tell the two apart. A `/sign/component` group is never raised and has no such
+line. A frozen request of one transaction with no dummies reads
 `[FROZEN TRANSACTION: checked as sent, not changed by this request]` instead.
 
 ### Relevant Policy Parameters

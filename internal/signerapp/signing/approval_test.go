@@ -444,6 +444,62 @@ func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) 
 	}
 }
 
+// A frozen prompt states the fee adjustment that built the group, in the
+// words and form the planning prompt uses, so the operator can tell the
+// signer's authorization charge from the client's fee. A frozen group that was
+// never raised (/sign/component) states none.
+func TestBuildApprovalDescriptionFrozenStatesTheFeeAdjustment(t *testing.T) {
+	tests := []struct {
+		name     string
+		requests []signerapi.SignRequest
+		fees     DummyFeeInfo
+		want     string // empty: no adjustment line
+	}{
+		{"single request", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
+			DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0}, NativePQFeeContribution: 2_000},
+			"  • Group fee adjustment: +2000 microAlgos\n"},
+		{"group request", []signerapi.SignRequest{{AuthAddress: "AUTH"}, {TxnBytesHex: "aa"}},
+			DummyFeeInfo{TotalFees: 3_001, FeeIndices: []int{0}, ProgramFeeContribution: 1},
+			"  • Group fee adjustment: +3001 microAlgos across transaction(s) [1]\n"},
+		{"never raised", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
+			DummyFeeInfo{NativePQFeeContribution: 2_000}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := signerapi.GroupSignRequest{Requests: tt.requests}
+			plan := &PlanResult{
+				FeeInfo:            tt.fees,
+				PassthroughIndices: map[int]bool{},
+				ForeignIndices:     map[int]bool{1: len(tt.requests) > 1},
+				Frozen:             true,
+			}
+			txns := make([]types.Transaction, len(tt.requests))
+			for i := range txns {
+				txns[i] = types.Transaction{Type: types.PaymentTx}
+			}
+			describe := func(types.Transaction) string { return "txn" }
+			frozen, _, _ := BuildApprovalDescription(req, plan, txns, describe)
+			if tt.want == "" {
+				if strings.Contains(frozen, "Group fee adjustment") {
+					t.Fatalf("a group never raised states an adjustment:\n%s", frozen)
+				}
+				return
+			}
+			if !strings.Contains(frozen, tt.want) {
+				t.Fatalf("frozen description missing %q:\n%s", tt.want, frozen)
+			}
+			if !strings.Contains(frozen, "The fees shown already include these; this request adds no dummies or fees") {
+				t.Fatalf("frozen description no longer says the fees already include it:\n%s", frozen)
+			}
+			plan.Frozen = false
+			planned, _, _ := BuildApprovalDescription(req, plan, txns, describe)
+			if !strings.Contains(planned, tt.want) {
+				t.Fatalf("the planning prompt words the adjustment otherwise; missing %q:\n%s", tt.want, planned)
+			}
+		})
+	}
+}
+
 // Each position this request signs names the key that signs it, so a group
 // whose header counts several keys says which signs where. A position the
 // request doesn't sign names none.
