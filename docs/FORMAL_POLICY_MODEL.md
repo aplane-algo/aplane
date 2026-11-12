@@ -223,25 +223,29 @@ verdict.
 
 Always Deny rules are hard safety guards. Current deny sources include:
 
-- the signer invariant that refuses a rekey of another account to a held
-  rotating account (`signing/rotating_gate.go::rejectRekeyToRotating`, run
-  first in `gate.go::runApprovalGates`); it is not a policy setting and has no
-  rule id, and it is evaluated before every policy document rule,
 - the signer invariant that refuses a rekey of any account, its own address
   included, to an address the signer holds an aplane key for that records it
   is not a valid rekey target
-  (`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, run second; error
-  code `rekey_target_not_valid`). No `rekeys` value and no rekey-to list lifts
-  it. Unlike the other two invariants and every policy rule, it judges every
-  position of the group, passthrough, foreign, contextual and dummy positions
-  included, so a match at any position refuses the whole request,
+  (`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, run first in
+  `gate.go::runApprovalGates`; error code `rekey_target_not_valid`). It is not
+  a policy setting and has no rule id, and no `rekeys` value and no rekey-to
+  list lifts it. Unlike the other two invariants and every policy rule, it
+  judges every position of the group, passthrough, foreign, contextual and
+  dummy positions included, so a match at any position refuses the whole
+  request. Every rotating aplane key records false, so a rekey to a held
+  rotating account meets it, with that code, at every position,
+- the signer invariant that refuses a rekey of another account to a held
+  rotating account at a position the signer signs
+  (`signing/rotating_gate.go::rejectRekeyToRotating`, run second). It reads
+  the key type rather than the key record, so it is a second line that fires
+  only if a rotating key's record ever said it is a valid rekey target,
 - the signer invariant that refuses a nonparticipating `keyreg` at a position
   the signer signs (`signing/invariant_gate.go::rejectNonparticipation`, run
   last). All three invariants run through `rejectSignerInvariants`, on the
   signer role in `runApprovalGates` and on a cosigner in
   `cosigner_policy.go::runCosignerGates`, after the component key check and
-  before the cosigner's policy. Like the rotating invariant they have no rule
-  id and precede every policy document rule, on both node roles. The model
+  before the cosigner's policy. None has a rule id, and all precede every
+  policy document rule, on both node roles. The model
   (`policy_precedence.tla`) abstracts every invariant as an Always Deny match;
   no spec transcribes the invariant list, its order or the positions each
   invariant judges,

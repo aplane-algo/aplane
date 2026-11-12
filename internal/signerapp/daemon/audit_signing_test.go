@@ -10,10 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -196,6 +199,141 @@ func TestAuditRecordsARefusedSignAsRejected(t *testing.T) {
 			t.Fatalf("%s operation_id = %q, want refused-1", entry.Event, entry.OperationID)
 		}
 	}
+}
+
+// A request refused because one of its positions rekeys an account to a held
+// aplane key that is not a valid rekey target leaves a SIGN_REJECTED for that
+// position, whatever its kind, which identifies the transaction as planned
+// the way a SIGN_APPROVED identifies a signed one: its txid, fee, group ID
+// and every transaction ID of the planned group. A passthrough-only request,
+// which signs nothing, leaves that one entry. In a mixed request refused at
+// its foreign position, the IDs are those of the group /plan returns for it,
+// and the signed position keeps its own entry.
+func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	server.config.UserAutoApprove = true
+	server.productRuntime().Config().SetUserAutoApprove(true)
+	signer := generateTestKey(t, server, "ed25519")
+	// A held aplane key whose record says it is not a valid rekey target.
+	held := algocrypto.GenerateAccount()
+	if err := server.productRuntime().WithKeyring(func(kr *crypto.Keyring) error {
+		payload := apkeys.NewEd25519Payload(held.PublicKey, held.PrivateKey)
+		defer payload.ZeroSecrets()
+		_, err := apkeys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, kr)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reloadKeysForTest(server); err != nil {
+		t.Fatal(err)
+	}
+	server.productRuntime().SnapshotKeySession().InitializeSession()
+	other := algocrypto.GenerateAccount().Address
+	params := types.SuggestedParams{Fee: 1000, FlatFee: true, GenesisHash: testnetGenesisHashBytes(t), GenesisID: "testnet-v1.0", FirstRoundValid: 100, LastRoundValid: 200}
+	rekey, err := transaction.MakePaymentTxn(other.String(), other.String(), 0, nil, "", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rekey.RekeyTo = held.Address
+	payment, err := transaction.MakePaymentTxn(signer, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", 1, nil, "", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reason := func(position int) string {
+		return "signer_invariant: transaction " + strconv.Itoa(position+1) + ": rekey_target_not_valid: cannot rekey to " + held.Address.String() +
+			": this signer holds its aplane key (ed25519), which is not a valid rekey target (valid_rekey_target: false)"
+	}
+	post := func(t *testing.T, handler func(http.ResponseWriter, *http.Request), path string, req signerapi.GroupSignRequest) *httptest.ResponseRecorder {
+		t.Helper()
+		body, err := json.Marshal(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		handler(w, requestWithIdentity(http.MethodPost, path, body))
+		return w
+	}
+	wantRefused := func(t *testing.T, w *httptest.ResponseRecorder) {
+		t.Helper()
+		var resp signerapi.ErrorResponse
+		if w.Code != http.StatusForbidden || json.Unmarshal(w.Body.Bytes(), &resp) != nil || resp.Code != signerapi.ErrCodeRekeyTargetNotValid {
+			t.Fatalf("/sign = %d: %s, want 403 %s", w.Code, w.Body.String(), signerapi.ErrCodeRekeyTargetNotValid)
+		}
+	}
+	// wantRecord holds entry to the planned position of group.
+	wantRecord := func(t *testing.T, entry AuditEntry, group []types.Transaction, position int, operationID string) {
+		t.Helper()
+		txn := group[position]
+		if entry.Event != AuditSignRejected || entry.Outcome != "rejected" || entry.OperationID != operationID ||
+			entry.TxnAuth != "" || entry.TxnSender != other.String() || entry.Reason != reason(position) {
+			t.Fatalf("rejection = %+v", entry)
+		}
+		if entry.TxID != algocrypto.GetTxID(txn) || entry.Fee == nil || *entry.Fee != uint64(txn.Fee) ||
+			entry.GroupID != base64.StdEncoding.EncodeToString(txn.Group[:]) || len(entry.GroupTxIDs) != len(group) || entry.DummyCount != 0 {
+			t.Fatalf("rejection identifies %s fee %v group %s %v; want the planned %s in group %x of %d", entry.TxID, entry.Fee, entry.GroupID, entry.GroupTxIDs,
+				algocrypto.GetTxID(txn), txn.Group, len(group))
+		}
+		for i, member := range group {
+			if entry.GroupTxIDs[i] != algocrypto.GetTxID(member) {
+				t.Fatalf("group_txids[%d] = %s, want %s", i, entry.GroupTxIDs[i], algocrypto.GetTxID(member))
+			}
+		}
+	}
+
+	t.Run("passthrough only", func(t *testing.T) {
+		path := useTestAuditLog(t, server)
+		grouped := rekey
+		groupID, err := algocrypto.ComputeGroupID([]types.Transaction{grouped})
+		if err != nil {
+			t.Fatal(err)
+		}
+		grouped.Group = groupID
+		signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: grouped, Sig: types.Signature{7}}))
+		wantRefused(t, post(t, server.handleSign, "/sign", signerapi.GroupSignRequest{RequestID: "refused-pt", Requests: []signerapi.SignRequest{{SignedTxnHex: signed}}}))
+		entries := readAuditEntries(t, path)
+		if len(entries) != 2 || entries[0].Event != AuditSignRequest {
+			t.Fatalf("entries = %+v, want SIGN_REQUEST then one SIGN_REJECTED", entries)
+		}
+		wantRecord(t, entries[1], []types.Transaction{grouped}, 0, "refused-pt")
+	})
+
+	t.Run("mixed, refused at the foreign position", func(t *testing.T) {
+		req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+			{AuthAddress: signer, TxnBytesHex: encodeTxnToHex(payment)},
+			{TxnBytesHex: encodeTxnToHex(rekey)},
+		}}
+		// /plan signs nothing and runs no signer invariant: it returns the
+		// group the later /sign refuses, which the entry names.
+		req.RequestID = "plan-mixed"
+		planW := post(t, server.handlePlan, "/plan", req)
+		if planW.Code != http.StatusOK {
+			t.Fatalf("/plan = %d: %s", planW.Code, planW.Body.String())
+		}
+		var plan signerapi.GroupPlanResponse
+		decodeResponse(t, planW, &plan)
+		planned := make([]types.Transaction, len(plan.Transactions))
+		for i, txnHex := range plan.Transactions {
+			if planned[i], err = txnutil.DecodePrefixedHex(txnHex); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if len(planned) != 2 || planned[1].Group == (types.Digest{}) {
+			t.Fatalf("planned %d transactions, want the two grouped", len(planned))
+		}
+
+		path := useTestAuditLog(t, server)
+		req.RequestID = "refused-mixed"
+		wantRefused(t, post(t, server.handleSign, "/sign", req))
+		entries := readAuditEntries(t, path)
+		if len(entries) != 4 || entries[0].Event != AuditSignRequest || entries[1].Event != AuditSignRequest {
+			t.Fatalf("entries = %+v, want two SIGN_REQUEST then two SIGN_REJECTED", entries)
+		}
+		if own := entries[2]; own.Event != AuditSignRejected || own.TxnAuth != signer || own.Reason != reason(1) || own.TxID != "" {
+			t.Fatalf("signed position's rejection = %+v", own)
+		}
+		wantRecord(t, entries[3], planned, 1, "refused-mixed")
+	})
 }
 
 // promptHub is a connected apadmin that hands each approval prompt to the

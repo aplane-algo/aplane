@@ -113,8 +113,12 @@ func TestRejectRekeyToRotatingAccount(t *testing.T) {
 	}
 }
 
-// A foreign or passthrough position isn't this signer's signature, so the
-// gate sequence doesn't refuse its rekey to a rotating account.
+// The rotating invariant, the second line behind the valid-target one,
+// judges only the positions this signer signs: with no held invalid rekey
+// target named (as if the rotating key's record said it is a valid one), a
+// foreign or passthrough position's rekey to a rotating account passes the
+// signer invariants. With a real plan the valid-target invariant refuses it
+// at any position (TestValidTargetInvariantJudgesEveryPositionOfASignRequest).
 func TestApprovalGatesSkipRotatingRekeyAtUnsignedPositions(t *testing.T) {
 	sender := types.Address{1}
 	rotating := types.Address{2}
@@ -138,6 +142,8 @@ func TestApprovalGatesSkipRotatingRekeyAtUnsignedPositions(t *testing.T) {
 	}
 }
 
+// The rotating invariant, on its own (no held invalid rekey target named),
+// refuses a signed position's rekey to a rotating account before policy.
 func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
 	sender := types.Address{1}
 	rotating := types.Address{2}
@@ -149,7 +155,7 @@ func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
 	_, err := svc.runApprovalGates(context.Background(), gateInput{
 		AllTxns:      []types.Transaction{{Header: types.Header{Sender: sender, RekeyTo: rotating}}},
 		EvalCount:    1,
-		LogRejection: func(reason string, _ int) { logged = reason },
+		LogRejection: func(reason string, _ *ServiceError) { logged = reason },
 		RequestOperatorApproval: func(context.Context, string) *ServiceError {
 			t.Fatal("operator was asked")
 			return nil

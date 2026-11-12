@@ -5,7 +5,9 @@ package signing
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
+	"maps"
 	"strconv"
 	"strings"
 	"testing"
@@ -60,7 +62,8 @@ func rekeyTargetTestSnapshot() (PlannerRuntimeSnapshot, map[string]types.Address
 // account back to itself is refused, an ed25519 one passes. A foreign target
 // is left to the rekeys setting, a position this signer doesn't sign is
 // judged as every position is, and a rotating target held for another account
-// at a signed position meets its own invariant first.
+// gets this refusal at every position, the rotating invariant being a second
+// line behind it.
 func TestRejectRekeyToInvalidTarget(t *testing.T) {
 	snapshot, a := rekeyTargetTestSnapshot()
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }}}
@@ -98,11 +101,28 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 			}
 		})
 	}
-	// A rotating target at a signed position is refused by the rotating
-	// invariant, unchanged.
+	// A rekey of another account to a held rotating account at a signed
+	// position gets the same code as at any other: this invariant runs before
+	// the rotating one, and every rotating key records false.
 	err := svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "rotating")}, []int{0}, invalid)
-	if want := "transaction 1: " + rotatingkey.RekeyTargetRefusal(a["rotating"].String()); err == nil || err.Message != want {
-		t.Fatalf("rekey to a rotating account: err = %v, want %q", err, want)
+	if want := "transaction 1: " + rekeyTargetNotValid(a["rotating"].String(), rotatingkey.RotatingTripleWotscV1).Message; err == nil ||
+		err.Code() != signerapi.ErrCodeRekeyTargetNotValid || err.Message != want || err.RefusedPosition == nil || *err.RefusedPosition != 0 {
+		t.Fatalf("rekey to a rotating account: err = %+v, want %s %q at position 0", err, signerapi.ErrCodeRekeyTargetNotValid, want)
+	}
+	// The rotating invariant is a second line: it refuses such a rekey at a
+	// signed position only if the rotating key's record said it is a valid
+	// rekey target, and names no position for the audit log beyond the
+	// signed one.
+	validRotating := map[string]txnreview.InvalidRekeyTarget{}
+	for address, target := range invalid {
+		if address != a["rotating"].String() {
+			validRotating[address] = target
+		}
+	}
+	err = svc.rejectSignerInvariants([]types.Transaction{rekey("plain", "rotating")}, []int{0}, validRotating)
+	if want := "transaction 1: " + rotatingkey.RekeyTargetRefusal(a["rotating"].String()); err == nil ||
+		err.Code() != signerapi.ErrCodeForbidden || err.Message != want || err.RefusedPosition != nil {
+		t.Fatalf("second line: err = %+v, want forbidden %q", err, want)
 	}
 
 	// Every position is judged, not only the ones this signer signs, and a
@@ -141,6 +161,9 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 			}
 			if err == nil || err.HTTPStatus() != 403 || err.Code() != signerapi.ErrCodeRekeyTargetNotValid || err.Message != tc.want {
 				t.Fatalf("err = %v, want 403 %s %q", err, signerapi.ErrCodeRekeyTargetNotValid, tc.want)
+			}
+			if want := len(tc.txns) - 1; err.RefusedPosition == nil || *err.RefusedPosition != want {
+				t.Fatalf("refused position = %v, want %d", err.RefusedPosition, want)
 			}
 		})
 	}
@@ -447,26 +470,41 @@ func rekeyAtPositionRequest(t *testing.T, a map[string]types.Address, mode strin
 	return signerapi.GroupSignRequest{}, 0
 }
 
-// txnRejectionLog is testAuditLogger that also records the rejections that
-// name a transaction, with its ID in record.TxID.
-type txnRejectionLog struct {
-	testAuditLogger
-	txnRejected []testAuditEntry
-}
-
-func (l *txnRejectionLog) LogSignRejectedTxn(authAddress, txnSender, txID, reason string) {
-	l.txnRejected = append(l.txnRejected, testAuditEntry{
-		authAddress: authAddress, txnSender: txnSender, reason: reason, record: SignedRecord{TxID: txID},
-	})
+// wantPlannedRecord checks that got identifies position of group, as planned,
+// the way a SIGN_APPROVED identifies a signed transaction: its sender and
+// txid, and for a group the group ID and every transaction ID of the group
+// in order, with dummyCount trailing dummies.
+func wantPlannedRecord(t *testing.T, got SignedRecord, group []types.Transaction, position, dummyCount int) {
+	t.Helper()
+	txn := group[position]
+	if got.TxnSender != txn.Sender.String() || got.TxID != algocrypto.GetTxID(txn) || got.Fee != uint64(txn.Fee) {
+		t.Fatalf("record = %+v, want sender %s txid %s fee %d", got, txn.Sender, algocrypto.GetTxID(txn), txn.Fee)
+	}
+	if txn.Group == (types.Digest{}) {
+		if got.GroupID != "" || got.GroupTxIDs != nil || got.DummyCount != 0 {
+			t.Fatalf("record of a transaction alone names a group: %+v", got)
+		}
+		return
+	}
+	if got.GroupID != base64.StdEncoding.EncodeToString(txn.Group[:]) || len(got.GroupTxIDs) != len(group) || got.DummyCount != dummyCount {
+		t.Fatalf("record group = %q %v dummies %d, want %x, %d members, %d dummies", got.GroupID, got.GroupTxIDs, got.DummyCount, txn.Group, len(group), dummyCount)
+	}
+	for i, member := range group {
+		if got.GroupTxIDs[i] != algocrypto.GetTxID(member) {
+			t.Fatalf("group_txids[%d] = %s, want %s", i, got.GroupTxIDs[i], algocrypto.GetTxID(member))
+		}
+	}
 }
 
 // A request refused by the valid-target invariant leaves a SIGN_REJECTED
-// entry for the position the refusal names, whatever its kind, with that
-// transaction's ID as planned and the reason, which names the position and
-// the target. A passthrough-only request signs nothing and leaves that one
-// entry; in a mixed request whose foreign position is refused, each signed
-// position keeps the entry every refusal gives it. A refused position this
-// signer signs gets its one entry, with its ID, not two.
+// entry for the position the refusal names, whatever its kind. The entry
+// identifies that transaction as planned, in the group the signer was asked
+// to sign, the way a SIGN_APPROVED identifies a signed one, and carries the
+// reason, which names the position and the target. A passthrough-only
+// request signs nothing and leaves that one entry; in a mixed request whose
+// foreign or passthrough position is refused, each signed position keeps the
+// entry every refusal gives it. A refused position this signer signs gets
+// its one entry, not two.
 func TestValidTargetRefusalIsAuditedAtThePositionItNames(t *testing.T) {
 	snapshot, a := rekeyTargetTestSnapshot()
 	for _, tc := range []struct {
@@ -487,7 +525,7 @@ func TestValidTargetRefusalIsAuditedAtThePositionItNames(t *testing.T) {
 				if planErr != nil {
 					t.Fatal(planErr)
 				}
-				log := &txnRejectionLog{}
+				log := &testAuditLogger{}
 				h := &rekeyGateHarness{}
 				h.configure(t, svc, policy.RekeysRejectForeign, auto)
 				svc.AuditLog = log
@@ -495,19 +533,18 @@ func TestValidTargetRefusalIsAuditedAtThePositionItNames(t *testing.T) {
 				refusal := withTransactionIndex(position, rekeyTargetNotValid(a[tc.target].String(), tc.keyType)).Message
 				h.check(t, err, refusal, auto)
 				reason := auditSignerInvariant + refusal
-				if len(log.txnRejected) != 1 {
-					t.Fatalf("rejections naming a transaction = %+v, want one", log.txnRejected)
+				if len(log.rejectedRecords) != 1 {
+					t.Fatalf("rejections naming a transaction = %+v, want one", log.rejectedRecords)
 				}
-				got := log.txnRejected[0]
+				got := log.rejectedRecords[0]
 				wantAuth := ""
 				if tc.auth != "" {
 					wantAuth = a[tc.auth].String()
 				}
-				if got.authAddress != wantAuth || got.txnSender != a[tc.sender].String() || got.reason != reason ||
-					got.record.TxID != algocrypto.GetTxID(planned.AllTxns[position]) {
-					t.Fatalf("rejection = %+v (txid %s), want auth %q, sender %s, txid %s, reason %q",
-						got, got.record.TxID, wantAuth, a[tc.sender], algocrypto.GetTxID(planned.AllTxns[position]), reason)
+				if got.authAddress != wantAuth || got.reason != reason {
+					t.Fatalf("rejection = %+v, want auth %q, reason %q", got, wantAuth, reason)
 				}
+				wantPlannedRecord(t, got.record, planned.AllTxns, position, len(planned.DummyTxns))
 				if !strings.Contains(got.reason, "transaction "+strconv.Itoa(position+1)+": ") || !strings.Contains(got.reason, a[tc.target].String()) {
 					t.Fatalf("reason %q does not name the position and the target", got.reason)
 				}
@@ -556,8 +593,8 @@ func TestValidTargetInvariantJudgesAComponentRequestsContextualPositions(t *test
 					// The signer also holds the rekey target test snapshot's keys.
 					service.Planner.Snapshot = func() PlannerRuntimeSnapshot {
 						merged := bounded()
-						merged.KeyFiles, merged.KeyTypes = copyMap(merged.KeyFiles), copyMap(merged.KeyTypes)
-						merged.KeyMetadata = copyMap(merged.KeyMetadata)
+						merged.KeyFiles, merged.KeyTypes = maps.Clone(merged.KeyFiles), maps.Clone(merged.KeyTypes)
+						merged.KeyMetadata = maps.Clone(merged.KeyMetadata)
 						for address := range snapshot.KeyFiles {
 							merged.KeyFiles[address] = snapshot.KeyFiles[address]
 							merged.KeyTypes[address] = snapshot.KeyTypes[address]
@@ -595,22 +632,33 @@ func TestValidTargetInvariantJudgesAComponentRequestsContextualPositions(t *test
 					}
 					h := &rekeyGateHarness{}
 					h.configure(t, service, rekeys, auto)
+					log := &testAuditLogger{}
+					service.AuditLog = log
 					_, err := service.SignComponentsWithContext(context.Background(), request, &keystore.KeySession{})
 					want := ""
 					if tc.keyType != "" {
 						want = "transaction 2: " + rekeyTargetNotValid(a[tc.target].String(), tc.keyType).Message
 					}
 					h.check(t, err, want, auto)
+					if want == "" {
+						if len(log.rejectedRecords) != 0 {
+							t.Fatalf("a request not refused recorded %+v", log.rejectedRecords)
+						}
+						return
+					}
+					// The contextual position is recorded as planned in the
+					// frozen group, whose dummies the client signs, and the
+					// target keeps the entry every refusal gives it.
+					reason := auditSignerInvariant + want
+					if len(log.rejectedRecords) != 1 || log.rejectedRecords[0].authAddress != "" || log.rejectedRecords[0].reason != reason {
+						t.Fatalf("rejections naming a transaction = %+v, want one for position 1 with reason %q", log.rejectedRecords, reason)
+					}
+					wantPlannedRecord(t, log.rejectedRecords[0].record, planned.AllTxns, 1, 0)
+					if len(log.rejected) != 1 || log.rejected[0].authAddress != authorizer || log.rejected[0].reason != reason {
+						t.Fatalf("target rejections = %+v, want the bounded target's", log.rejected)
+					}
 				})
 			}
 		}
 	}
-}
-
-func copyMap[K comparable, V any](in map[K]V) map[K]V {
-	out := make(map[K]V, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }

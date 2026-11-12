@@ -31,13 +31,6 @@ type AuditRejectPolicyRuleLogger interface {
 	LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string)
 }
 
-// AuditRejectTxnLogger records a refusal that names one transaction of the
-// request, by its ID as planned. The transaction may be one the signer does
-// not sign, so authAddress may be empty.
-type AuditRejectTxnLogger interface {
-	LogSignRejectedTxn(authAddress, txnSender, txID, reason string)
-}
-
 // AuditCosignerRejectLogger records cosigner policy rejections under the
 // audit log's rate limit, so a caller provoking rejections cannot rotate the
 // record of what the cosigner signed out of the log.

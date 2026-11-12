@@ -1203,8 +1203,9 @@ Audit entries carry attribution fields:
 - `outcome`: requested, approved, rejected, failed, denied, connected, disconnected, or similar
 - `txn_auth`, `txn_sender`, `txn_type`, `txn_details`, `txid`: transaction/key attribution for signing and key events
 - `fee`, `group_id`, `group_txids`, `dummy_count`: on `SIGN_APPROVED`, the
-  signed transaction's final fee and the group it was signed in (see
-  Signing-audit semantics below)
+  signed transaction's final fee and the group it was signed in; on a
+  `SIGN_REJECTED` that names a transaction, the same fields for it as planned
+  (see Signing-audit semantics below)
 - `operation_id`: on signing and planning entries, the request's ID: the
   client's `request_id` when it sent one, else a random ID the signer
   minted for it
@@ -1362,11 +1363,18 @@ Signing-audit semantics:
   `SIGN_REJECTED`. A signer-invariant or policy refusal writes one entry per
   position the signer signs. A `rekey_target_not_valid` refusal also writes
   one for the position it names, whatever its kind (a passthrough or foreign
-  position, or the only position of a request that signs nothing), with that
-  transaction's `txid` as planned and an empty `txn_auth` unless the signer
-  signs the position; a position the signer signs gets that one entry, with
-  its `txid`. Its `reason` names the position and the target. A technical
-  failure while signing a position is
+  position, or the only position of a request that signs nothing). That entry
+  identifies the transaction the way a `SIGN_APPROVED` does, from the same
+  record: `txid` is the ID of the transaction as planned in the group the
+  signer was asked to sign, which the signer did not sign; `fee` is its fee
+  as planned; and, when it is in a group, `group_id`, `group_txids` and
+  `dummy_count` describe that planned group as a `SIGN_APPROVED` for it would
+  have (`dummy_count` counts the trailing dummies the signer added and would
+  have signed). So a search on the planned group's ID, or on any of its
+  transaction IDs, from a `/plan` answer for instance, finds it. Its
+  `txn_auth` is empty unless the signer signs the position, and a position the
+  signer signs gets that one entry, not two. Its `reason` names the position
+  and the target. A technical failure while signing a position is
   `SIGN_FAILED`. A request cancelled by the client, or stopped before any
   of those (no apadmin connected, a lock before signing began), leaves only
   what it wrote before it stopped: on `/sign`, its `SIGN_REQUEST` entries.

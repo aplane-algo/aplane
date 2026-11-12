@@ -23,9 +23,15 @@ authority.
   naming that position. This covers passthrough and foreign positions on
   `/sign`, a passthrough-only `/sign`, and contextual positions on
   `/sign/component`, under every `rekeys` setting.
+- **One code for a rekey to a held rotating account.** It is refused with
+  `rekey_target_not_valid` at every position. The rotating check, which
+  refused it with `forbidden` at a position the signer signs, now runs after
+  the valid rekey target check, as a second line.
 - **The refusal is audited at the position it names.** A `SIGN_REJECTED`
-  entry for that position carries its `txid` and the reason, whatever kind of
-  position it is, so a refused passthrough-only request is on record too.
+  entry for that position, whatever kind of position it is, identifies the
+  transaction as planned the way a `SIGN_APPROVED` does, with its `txid` and
+  the group's `group_id` and `group_txids`, and carries the reason. A refused
+  passthrough-only request is on record too.
 - **Nothing else widens.** The rotating and nonparticipation invariants and the
   `rekeys` setting still judge only the positions the signer signs. `/plan`
   runs no signer invariant; the `/sign` that follows refuses.

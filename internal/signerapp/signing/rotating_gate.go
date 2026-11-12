@@ -54,6 +54,13 @@ func (s *Service) rejectRotatingComponentRequest(req signerapi.ComponentRequest)
 // reuse that one-time key. The rotating flow's own rekeys go to a stage
 // address and pass. This is a signer invariant, not a policy setting. signed
 // lists the zero-based positions this signer signs (signerPositions).
+//
+// It is a second line. Every rotating key type declares that it is not a
+// valid rekey target and every rotating aplane key records that, so
+// rejectRekeyToInvalidTarget, which runs first, refuses such a rekey at any
+// position with rekey_target_not_valid. This check, which reads the key type
+// rather than the record, fires only if a rotating aplane key's record ever
+// said it is a valid rekey target.
 func (s *Service) rejectRekeyToRotating(txns []types.Transaction, signed []int) *ServiceError {
 	if s.Planner == nil || s.Planner.Snapshot == nil {
 		return nil

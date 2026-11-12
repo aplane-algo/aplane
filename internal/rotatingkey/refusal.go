@@ -5,8 +5,10 @@ package rotatingkey
 
 // RekeyTargetRefusal is why an account can't be rekeyed to the rotating
 // account at target. apshell refuses with it before building the rekey, and
-// the signer refuses with it as a signer invariant, so both give the same
-// reason.
+// so do key generation and the bounded rekey-to list. The signer refuses such
+// a rekey as rekey_target_not_valid, since every rotating aplane key records
+// that it is not a valid rekey target; its rotating invariant, a second line,
+// gives this reason only if a rotating key's record ever said otherwise.
 func RekeyTargetRefusal(target string) string {
 	return "cannot rekey to " + target + ": it is a rotating account, and its address is a one-time stage key; " +
 		"an account rekeyed to it would be stuck on that stage, and every signature would reuse that key"

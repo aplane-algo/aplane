@@ -13,12 +13,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
-	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 // AuditApproveLogger records each transaction a request signed, as signed,
-// and a signature so recorded that then never left the signer.
+// a signature so recorded that then never left the signer, and a refusal
+// that names one transaction of the request.
 type AuditApproveLogger interface {
 	LogSignApproved(record SignedRecord)
 	// LogSignWithheld records, as SIGN_FAILED, a signature already recorded
@@ -26,6 +26,12 @@ type AuditApproveLogger interface {
 	// txid and group_id, the fields its SIGN_APPROVED has, so a search on
 	// either finds both entries.
 	LogSignWithheld(record SignedRecord, reason string)
+	// LogSignRejectedRecord records, as SIGN_REJECTED, a refusal that names
+	// one transaction of the request, which the signer did not sign. record
+	// identifies it as planned, in the group the signer was asked to sign,
+	// with the fields a SIGN_APPROVED for it would have carried: its txid
+	// and the group's group_id and group_txids.
+	LogSignRejectedRecord(record SignedRecord, reason string)
 }
 
 type IsUnlockedFunc func() bool
@@ -277,8 +283,8 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			return ""
 		}(),
 		Plan: planFacts(req, plan),
-		LogRejection: func(reason string, refused int) {
-			s.logSignRejections(req, plan, txns, reason, refused)
+		LogRejection: func(reason string, refusal *ServiceError) {
+			s.logSignRejections(req, plan, txns, reason, refusal)
 		},
 		RequestOperatorApproval: func(ctx context.Context, forceReviewRuleID string) *ServiceError {
 			// A rotating spend is one request, but its prompt must carry the
@@ -394,50 +400,46 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 	}
 }
 
-// logSignRejections audits a refused sign at each position this signer would
-// have signed. reason carries its own audit prefix. refused is the position a
-// rekey_target_not_valid refusal names, or -1: that position's entry carries
-// its transaction ID as planned, and it is written whatever the position's
-// kind, so a refusal caused by a passthrough or foreign position, or by the
-// only position of a request that signs nothing, is still on record. Its
-// txn_auth is empty unless this signer signs the position.
-func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string, refused int) {
-	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
-	if !ok || rejectLogger == nil {
+// logSignRejections audits a refused sign: a SIGN_REJECTED at each position
+// this signer would have signed, as every refusal writes, and, when the
+// refusal names a position (its RefusedPosition, which a
+// rekey_target_not_valid refusal sets), one for that position whatever its
+// kind. That entry identifies the transaction as planned, in the group the
+// signer was asked to sign, the way a SIGN_APPROVED identifies a signed one:
+// its txid and the group's group_id and group_txids. So a refusal caused by a
+// passthrough or foreign position, or by the only position of a request that
+// signs nothing, is on record. Its txn_auth is empty unless this signer signs
+// the position, and a position it signs gets that one entry, not two. reason
+// carries its own audit prefix.
+func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string, refusal *ServiceError) {
+	if s.AuditLog == nil {
 		return
 	}
-
+	rejectLogger, _ := s.AuditLog.(policyAuditLogger)
+	named := refusal != nil && refusal.RefusedPosition != nil
 	for i, txReq := range req.Requests {
 		signs := !plan.PassthroughIndices[i] && !plan.ForeignIndices[i]
-		if i == refused {
+		switch {
+		case named && i == *refusal.RefusedPosition:
 			authAddress := ""
 			if signs {
 				authAddress = txReq.AuthAddress
 			}
-			s.logRefusedPosition(rejectLogger, authAddress, plan.AllTxns, i, reason)
-			continue
+			group := signedGroupOf(plan.AllTxns, signerSignedDummies(plan))
+			s.AuditLog.LogSignRejectedRecord(group.record(i, authAddress, "", ""), reason)
+		case signs && rejectLogger != nil:
+			rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), reason)
 		}
-		if !signs {
-			continue
-		}
-		rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), reason)
-	}
-	// A dummy follows the request's positions.
-	if refused >= len(req.Requests) {
-		s.logRefusedPosition(rejectLogger, "", plan.AllTxns, refused, reason)
 	}
 }
 
-// logRefusedPosition audits a refusal at position i of group, by the
-// transaction's ID as planned when the audit log records one.
-func (s *Service) logRefusedPosition(rejectLogger policyAuditLogger, authAddress string, group []types.Transaction, i int, reason string) {
-	if i < 0 || i >= len(group) {
-		return
+// signerSignedDummies is how many of plan's trailing transactions are dummies
+// the signer added and signs itself: the dummy_count its SIGN_APPROVED
+// entries carry. A cosigned component's frozen group carries dummies the
+// client signs, so it has none.
+func signerSignedDummies(plan *PlanResult) int {
+	if plan.Frozen && plan.Rotating == nil {
+		return 0
 	}
-	txn := group[i]
-	if txnLogger, ok := s.AuditLog.(AuditRejectTxnLogger); ok && txnLogger != nil {
-		txnLogger.LogSignRejectedTxn(authAddress, txn.Sender.String(), algocrypto.GetTxID(txn), reason)
-		return
-	}
-	rejectLogger.LogSignRejected(authAddress, txn.Sender.String(), reason)
+	return len(plan.DummyTxns)
 }

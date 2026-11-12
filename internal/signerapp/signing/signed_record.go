@@ -15,7 +15,11 @@ import (
 
 // SignedRecord is the audit record of one transaction this signer signed: the
 // transaction as signed, after planning raised its fee, set its group ID and
-// added dummies, and the group it was signed in. It never holds key material,
+// added dummies, and the group it was signed in. A refusal that names one
+// transaction of a request records it the same way, built from the same
+// group, for a transaction the signer did not sign: the transaction as
+// planned, in the group the signer was asked to sign
+// (AuditApproveLogger.LogSignRejectedRecord). It never holds key material,
 // signatures or LogicSig argument values.
 type SignedRecord struct {
 	// AuthAddress is the signing key's address, or a cosigner's Witness Key ID.
