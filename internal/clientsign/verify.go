@@ -29,38 +29,10 @@ func validateSignedGroupMutations(
 	if len(signed) != len(signedBytes) {
 		return fmt.Errorf("decoded signed transaction count %d does not match wire count %d", len(signed), len(signedBytes))
 	}
-	if len(signed) < len(original) {
-		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(signed), len(original))
+	if err := validateMutationReportCounts("ordinary /sign", len(original), len(signed), mutations); err != nil {
+		return err
 	}
-
 	appended := len(signed) - len(original)
-	if mutations == nil {
-		if appended != 0 {
-			return fmt.Errorf("signer appended %d transaction(s) without a mutation report", appended)
-		}
-	} else {
-		if mutations.OriginalCount != len(original) {
-			return fmt.Errorf("mutation original_count %d does not match request count %d", mutations.OriginalCount, len(original))
-		}
-		if mutations.FinalCount != len(signed) {
-			return fmt.Errorf("mutation final_count %d does not match returned count %d", mutations.FinalCount, len(signed))
-		}
-		if mutations.DummiesAdded != appended {
-			return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
-		}
-		if mutations.PassthroughCount != 0 {
-			return fmt.Errorf("ordinary /sign returned %d passthrough transaction(s) for sign-only input", mutations.PassthroughCount)
-		}
-		if mutations.ForeignCount != 0 {
-			return fmt.Errorf("ordinary /sign returned %d foreign transaction(s) for sign-only input", mutations.ForeignCount)
-		}
-		if appended > 0 && !mutations.GroupIDChanged {
-			return fmt.Errorf("mutation appended dummies without reporting a group ID change")
-		}
-		if len(signed) == 1 && mutations.GroupIDChanged {
-			return fmt.Errorf("mutation reported a group ID change for a single transaction")
-		}
-	}
 
 	finalTxns := make([]types.Transaction, len(signed))
 	for i := range signed {
@@ -77,6 +49,48 @@ func validateSignedGroupMutations(
 		return nil
 	}
 	return validateCanonicalReturnedDummies(original[0], groupID, signed, signedBytes, len(original))
+}
+
+// validateMutationReportCounts checks the counts of a mutation report against a
+// group the signer returned for originalCount sign-only positions: it may
+// append transactions only with a report, which must count the request, the
+// returned group and the appended dummies, claim no passthrough or foreign
+// positions, and report a group ID change exactly when the group needs one.
+// endpoint names the response in the passthrough and foreign errors. The
+// fields of each position are ValidateOriginalPositions' to check.
+func validateMutationReportCounts(endpoint string, originalCount, returnedCount int, mutations *signerapi.MutationReport) error {
+	if returnedCount < originalCount {
+		return fmt.Errorf("signer returned %d transaction(s), want at least %d", returnedCount, originalCount)
+	}
+	appended := returnedCount - originalCount
+	if mutations == nil {
+		if appended != 0 {
+			return fmt.Errorf("signer appended %d transaction(s) without a mutation report", appended)
+		}
+		return nil
+	}
+	if mutations.OriginalCount != originalCount {
+		return fmt.Errorf("mutation original_count %d does not match request count %d", mutations.OriginalCount, originalCount)
+	}
+	if mutations.FinalCount != returnedCount {
+		return fmt.Errorf("mutation final_count %d does not match returned count %d", mutations.FinalCount, returnedCount)
+	}
+	if mutations.DummiesAdded != appended {
+		return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
+	}
+	if mutations.PassthroughCount != 0 {
+		return fmt.Errorf("%s returned %d passthrough transaction(s) for sign-only input", endpoint, mutations.PassthroughCount)
+	}
+	if mutations.ForeignCount != 0 {
+		return fmt.Errorf("%s returned %d foreign transaction(s) for sign-only input", endpoint, mutations.ForeignCount)
+	}
+	if appended > 0 && !mutations.GroupIDChanged {
+		return fmt.Errorf("mutation appended dummies without reporting a group ID change")
+	}
+	if returnedCount == 1 && mutations.GroupIDChanged {
+		return fmt.Errorf("mutation reported a group ID change for a single transaction")
+	}
+	return nil
 }
 
 // UnreportedChangeError is an original position of a planned or signed group

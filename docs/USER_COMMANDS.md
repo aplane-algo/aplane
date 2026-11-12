@@ -1261,10 +1261,12 @@ When write mode is active, the prompt shows a `w` flag (e.g., `testnet w>`).
 ### verbose
 
 Toggle detailed signing output. When enabled, shows additional details after signing:
-- Fee adjustments (total fee delta across the group)
 - Passthrough transaction count (pre-signed transactions included as-is)
 - Foreign transaction count (transactions not signed by this signer)
 - Dummy transaction count (budget transactions added for LogicSig)
+
+A fee the signer raised is shown whether or not verbose is on, once the client
+has checked it against the signed bytes.
 
 ```
 verbose [on|off]
