@@ -30,15 +30,15 @@ Each line is a JSON object with the following fields:
 | `admin_session_id` | string | Admin protocol session ID |
 | `transport` | string | Admin or signing transport, such as `ipc`, `ssh`, or `http` |
 | `outcome` | string | Event outcome, such as `requested`, `approved`, `rejected`, `failed`, or `connected` |
-| `txn_auth` | string | Signing key address (auth addr); empty on a `SIGN_REJECTED` that names a transaction this signer does not sign |
+| `txn_auth` | string | Signing key address (auth addr). Omitted on an entry for a position the signer does not sign: a passthrough or foreign position in a `SIGN_REJECTED`, for example |
 | `txn_sender` | string | Transaction sender (if different from auth addr) |
 | `txn_type` | string | Transaction type (`pay`, `axfer`, etc.) |
 | `txn_details` | string | Human-readable transaction summary |
-| `txid` | string | On `SIGN_APPROVED`, `ROTATING_RELEASE` and a withheld rotating signature's `SIGN_FAILED`: the ID of the transaction as signed, after the signer's planning. On a `SIGN_REJECTED` for a `rekey_target_not_valid` refusal: the ID of the transaction the refusal names, as planned in the group the signer was asked to sign, which the signer did not sign |
-| `fee` | int | `SIGN_APPROVED`: the signed transaction's final fee in microAlgos; `0` is written. A `SIGN_REJECTED` with a `txid`: that transaction's fee as planned |
-| `group_id` | string | `SIGN_APPROVED` and a withheld rotating signature's `SIGN_FAILED`: the final group ID (base64), when the transaction was signed in a group. A `SIGN_REJECTED` with a `txid`: the planned group's ID, when the transaction is in a group |
-| `group_txids` | string[] | `SIGN_APPROVED`, and a `SIGN_REJECTED` with a `txid`: every transaction ID of that group, in group order |
-| `dummy_count` | int | `SIGN_APPROVED`, and a `SIGN_REJECTED` with a `txid`: how many of `group_txids`, at the end, are dummies the request added that the signer signs (on a `SIGN_REJECTED`, would have signed) |
+| `txid` | string | On `SIGN_APPROVED`, `ROTATING_RELEASE` and a withheld rotating signature's `SIGN_FAILED`: the ID of the transaction as signed, after the signer's planning. On a `SIGN_REJECTED` for a signer-invariant refusal: the ID of the entry's transaction as planned in the group the signer was asked to sign, which the signer did not sign (for a cosigned component or a rotating sign, the ID of the bytes the client presented) |
+| `fee` | int | `SIGN_APPROVED`: the signed transaction's final fee in microAlgos; `0` is written. A `SIGN_REJECTED` for a signer-invariant refusal: that transaction's fee as planned |
+| `group_id` | string | `SIGN_APPROVED` and a withheld rotating signature's `SIGN_FAILED`: the final group ID (base64), when the transaction was signed in a group. A `SIGN_REJECTED` for a signer-invariant refusal: the planned group's ID, when the transaction is in a group, so that refusal's entries join by it |
+| `group_txids` | string[] | `SIGN_APPROVED`, and a `SIGN_REJECTED` for a signer-invariant refusal: every transaction ID of that group, in group order |
+| `dummy_count` | int | `SIGN_APPROVED`, and a `SIGN_REJECTED` for a signer-invariant refusal: how many of `group_txids`, at the end, are dummies the request added that the signer signs itself (on a `SIGN_REJECTED`, would have signed); none for a cosigned component, whose dummies the client signs |
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
 | `policy_rule_id` | string | Matching policy rule for a rejection, forced review, or explicit auto-approval |
@@ -168,7 +168,7 @@ generation records say what committed. Offline `apadmin policy rescue` and
 | `SIGN_REQUEST` | Transaction submitted for signing, as the client sent it, before the signer's planning |
 | `PLAN_REQUEST` | Transaction submitted to `/plan`, which signs nothing; the same fields as `SIGN_REQUEST`. `/plan` writes no other signing entry |
 | `SIGN_APPROVED` | Transaction signed by the signer, one entry per transaction signed with a key (not emitted for passthrough or foreign entries). It records the transaction as signed: planning may have raised its fee, set its group ID and added dummies, so `txid`, `fee`, `group_id` and `group_txids` are those of the transactions returned to the client, not of the request |
-| `SIGN_REJECTED` | Transaction rejected. A refusal before the operator names its source in the reason: `signer_invariant:` (a refusal no policy can allow, such as a nonparticipating `keyreg` or a rekey to a rotating account, on either node role), `policy_engine_rejected:` (the signer's policy) or `cosigner_policy_rejected:` (a cosigner's policy). Other reasons record the operator's decision. A `rekey_target_not_valid` refusal also has an entry for the position it names, even a passthrough or foreign one, which identifies that transaction as planned, in the group the signer was asked to sign, with the `txid`, `fee`, `group_id`, `group_txids` and `dummy_count` a `SIGN_APPROVED` for it would have had; the signer did not sign it |
+| `SIGN_REJECTED` | Transaction rejected. A refusal before the operator names its source in the reason: `signer_invariant:` (a refusal no policy can allow, such as a nonparticipating `keyreg`, on either node role, or a rekey to a held aplane key that is not a valid rekey target), `policy_engine_rejected:` (the signer's policy) or `cosigner_policy_rejected:` (a cosigner's policy). Other reasons record the operator's decision. A signer-invariant refusal on the signer names one position: it writes an entry for each position the signer signs and one for the named position, even a passthrough or foreign one, and every one of them identifies its transaction as planned with the `txid`, `fee`, `group_id`, `group_txids` and `dummy_count` a `SIGN_APPROVED` for it would have had. A policy refusal writes an entry per position the signer signs, with no `txid`. A request refused before the signer's gates, for example `bounded_cosigner_required`, writes none |
 | `SIGN_FAILED` | Signing failed due to a technical error (key not found, assembly error, etc.). A rotating signature refused at the last check after it was recorded as signed is a `SIGN_FAILED` whose `reason` begins `signature withheld after it was recorded as signed`. It has the `txid` and `group_id` of that `SIGN_APPROVED`, so a search on either finds both: the signature never left the signer |
 | `ROTATING_RELEASE` | A rotating-account signature was released; retained records rebuild release and leaf-use history after unlock |
 | `ROTATING_RECOVERY` | A rotating-account recovery action or outcome was recorded |
@@ -187,8 +187,9 @@ ID, all of a minted one. So one request reads as a sequence: its
 `SIGN_REQUEST` entries (what was asked), then either a `SIGN_APPROVED` per
 transaction signed or the `SIGN_REJECTED` or `SIGN_FAILED` entries that
 stopped it. A request with no outcome entry was not signed: it was
-cancelled, found no apadmin connected to approve it, or was stopped by a
-lock. To find what was signed in a group on chain, search for `group_id` or
+cancelled, found no apadmin connected to approve it, was stopped by a
+lock, or was refused before the signer's gates ran (a planning error, or
+`bounded_cosigner_required`, for example). To find what was signed in a group on chain, search for `group_id` or
 any of `group_txids`. No signing entry records key material, signatures or
 LogicSig argument values.
 

@@ -1204,7 +1204,8 @@ Audit entries carry attribution fields:
 - `txn_auth`, `txn_sender`, `txn_type`, `txn_details`, `txid`: transaction/key attribution for signing and key events
 - `fee`, `group_id`, `group_txids`, `dummy_count`: on `SIGN_APPROVED`, the
   signed transaction's final fee and the group it was signed in; on a
-  `SIGN_REJECTED` that names a transaction, the same fields for it as planned
+  `SIGN_REJECTED` for a signer-invariant refusal, the same fields for the
+  entry's transaction as planned
   (see Signing-audit semantics below)
 - `operation_id`: on signing and planning entries, the request's ID: the
   client's `request_id` when it sent one, else a random ID the signer
@@ -1360,21 +1361,38 @@ Signing-audit semantics:
 - a request that was not signed has no `SIGN_APPROVED`, except a rotating
   sign refused at its last check, which says so (below). A refusal by a
   signer invariant, policy or the operator, or an approval timeout, is
-  `SIGN_REJECTED`. A signer-invariant or policy refusal writes one entry per
-  position the signer signs. A `rekey_target_not_valid` refusal also writes
-  one for the position it names, whatever its kind (a passthrough or foreign
-  position, or the only position of a request that signs nothing). That entry
-  identifies the transaction the way a `SIGN_APPROVED` does, from the same
-  record: `txid` is the ID of the transaction as planned in the group the
-  signer was asked to sign, which the signer did not sign; `fee` is its fee
-  as planned; and, when it is in a group, `group_id`, `group_txids` and
-  `dummy_count` describe that planned group as a `SIGN_APPROVED` for it would
-  have (`dummy_count` counts the trailing dummies the signer added and would
-  have signed). So a search on the planned group's ID, or on any of its
-  transaction IDs, from a `/plan` answer for instance, finds it. Its
-  `txn_auth` is empty unless the signer signs the position, and a position the
-  signer signs gets that one entry, not two. Its `reason` names the position
-  and the target. A technical failure while signing a position is
+  `SIGN_REJECTED`, and the entries a refusal writes depend on its kind:
+  - a refusal by a signer invariant (`rekey_target_not_valid`, the rotating
+    check, a nonparticipating `keyreg`) names one position of the group. It
+    writes one entry for each position the signer signs and one for the
+    named position, whatever its kind (a passthrough, foreign, contextual or
+    trailing position, or the only position of a request that signs
+    nothing); a named position the signer signs gets one entry, not two.
+    Every one of these entries identifies its transaction the way a
+    `SIGN_APPROVED` does, built from the same record: `txid` is the ID of the
+    transaction as planned in the group the signer was asked to sign, which
+    the signer did not sign (for a cosigned component or a rotating sign, the
+    ID of the presented bytes); `fee` is its fee as planned; and, when it is
+    in a group, `group_id`, `group_txids` and `dummy_count` describe that
+    group as a `SIGN_APPROVED` for it would (`dummy_count` counts the trailing
+    dummies the signer added and signs itself, none for a cosigned
+    component). So the entries of one refusal join by `group_id`, and a
+    search on the planned group's ID, or on any of its transaction IDs, from
+    a `/plan` answer for instance, finds them. An entry for a position the
+    signer does not sign has no `txn_auth` field. Every entry's `reason`
+    names the position and, for a rekey, the target
+  - a policy rejection writes one entry per position the signer signs, with
+    `txn_auth`, `txn_sender` and `reason`, and no `txid`
+  - an operator rejection, a reviewability block or an approval timeout
+    writes one entry per position of the request, with no `txn_auth` for a
+    position whose request entry names no auth address (passthrough and
+    foreign positions)
+
+  A request refused before the signer's gates run, for example a cosigned
+  account sent to `/sign` (`bounded_cosigner_required`) or a planning
+  error, is refused for that reason and writes no `SIGN_REJECTED`, whatever
+  its other positions hold; nothing was signed. A technical failure while
+  signing a position is
   `SIGN_FAILED`. A request cancelled by the client, or stopped before any
   of those (no apadmin connected, a lock before signing began), leaves only
   what it wrote before it stopped: on `/sign`, its `SIGN_REQUEST` entries.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -18,13 +19,19 @@ const nonparticipationRefusal = "a keyreg with nonparticipation is not supported
 
 // rekeyTargetNotValid refuses a rekey to target, an aplane key of keyType this
 // signer holds that records it is not a valid rekey target. Its code is
-// rekey_target_not_valid, which the message repeats for the audit log.
+// rekey_target_not_valid, which the message repeats for the audit log. For a
+// rotating key type the message also says why such an account is no target:
+// its address is a one-time stage key.
 func rekeyTargetNotValid(target, keyType string) *ServiceError {
 	if keyType == "" {
 		keyType = "unknown"
 	}
-	return &ServiceError{Kind: ErrorRekeyTargetNotValid, Message: signerapi.ErrCodeRekeyTargetNotValid + ": cannot rekey to " + target +
-		": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target (valid_rekey_target: false)"}
+	message := signerapi.ErrCodeRekeyTargetNotValid + ": cannot rekey to " + target +
+		": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target (valid_rekey_target: false)"
+	if rotatingkey.IsRotatingKeyType(keyType) {
+		message += "; " + rotatingkey.RekeyTargetReason
+	}
+	return &ServiceError{Kind: ErrorRekeyTargetNotValid, Message: message}
 }
 
 // rejectSignerInvariants runs every signer invariant, in order: no rekey to a
@@ -82,9 +89,7 @@ func rejectRekeyToInvalidTarget(txns []types.Transaction, invalid map[string]txn
 		}
 		target := txn.RekeyTo.String()
 		if found, ok := invalid[target]; ok {
-			err := withTransactionIndex(i, rekeyTargetNotValid(target, found.KeyType))
-			err.RefusedPosition = &i
-			return err
+			return withTransactionIndex(i, rekeyTargetNotValid(target, found.KeyType))
 		}
 	}
 	return nil

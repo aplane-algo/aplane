@@ -60,9 +60,9 @@ type gateInput struct {
 	Plan *policyeval.PlanFacts
 	// LogRejection records per-position audit events for a rejection. The
 	// reason carries its audit prefix (auditSignerInvariant,
-	// auditPolicyRejected). refusal is the rejection itself: when its
-	// RefusedPosition is set (a rekey_target_not_valid refusal), that
-	// position is recorded whatever its kind.
+	// auditPolicyRejected). refusal is the rejection itself: a signer
+	// invariant's names its position (RefusedPosition), which is recorded
+	// whatever its kind; a policy rejection's names none.
 	LogRejection func(reason string, refusal *ServiceError)
 	// RequestOperatorApproval blocks on the surface's operator approval prompt.
 	// forceReviewRuleID is non-empty when an always-review rule matched.

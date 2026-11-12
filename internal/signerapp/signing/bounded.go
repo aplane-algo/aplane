@@ -209,11 +209,15 @@ func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) 
 	}
 }
 
+// withTransactionIndex is err naming the transaction at the zero-based index
+// of the group: its message says "transaction N:" for people, and its
+// RefusedPosition carries the index, where the audit log records a refusal.
 func withTransactionIndex(index int, err *ServiceError) *ServiceError {
 	if err == nil {
 		return nil
 	}
-	return &ServiceError{Kind: err.Kind, Message: fmt.Sprintf("transaction %d: %s", index+1, err.Message)}
+	position := index
+	return &ServiceError{Kind: err.Kind, Message: fmt.Sprintf("transaction %d: %s", index+1, err.Message), RefusedPosition: &position}
 }
 
 // planHasCosignedBoundedTarget reports whether any bounded position belongs to a

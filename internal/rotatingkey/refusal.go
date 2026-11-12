@@ -10,6 +10,11 @@ package rotatingkey
 // that it is not a valid rekey target; its rotating invariant, a second line,
 // gives this reason only if a rotating key's record ever said otherwise.
 func RekeyTargetRefusal(target string) string {
-	return "cannot rekey to " + target + ": it is a rotating account, and its address is a one-time stage key; " +
-		"an account rekeyed to it would be stuck on that stage, and every signature would reuse that key"
+	return "cannot rekey to " + target + ": " + RekeyTargetReason
 }
+
+// RekeyTargetReason is why a rotating account is no rekey target, as
+// RekeyTargetRefusal and the signer's rekey_target_not_valid refusal of a
+// rotating target give it.
+const RekeyTargetReason = "it is a rotating account, and its address is a one-time stage key; " +
+	"an account rekeyed to it would be stuck on that stage, and every signature would reuse that key"

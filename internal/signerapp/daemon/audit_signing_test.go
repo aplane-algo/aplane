@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -202,13 +203,14 @@ func TestAuditRecordsARefusedSignAsRejected(t *testing.T) {
 }
 
 // A request refused because one of its positions rekeys an account to a held
-// aplane key that is not a valid rekey target leaves a SIGN_REJECTED for that
-// position, whatever its kind, which identifies the transaction as planned
-// the way a SIGN_APPROVED identifies a signed one: its txid, fee, group ID
-// and every transaction ID of the planned group. A passthrough-only request,
-// which signs nothing, leaves that one entry. In a mixed request refused at
-// its foreign position, the IDs are those of the group /plan returns for it,
-// and the signed position keeps its own entry.
+// aplane key that is not a valid rekey target leaves a SIGN_REJECTED for each
+// position the signer signs and one for the named position, whatever its
+// kind. Each identifies its transaction as planned the way a SIGN_APPROVED
+// identifies a signed one: its txid, fee, group ID and every transaction ID
+// of the planned group. A passthrough-only request, which signs nothing,
+// leaves the one entry. In a mixed request refused at its foreign position,
+// the IDs are those of the group /plan returns for it, and the foreign
+// position's entry has no txn_auth.
 func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -261,12 +263,14 @@ func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 			t.Fatalf("/sign = %d: %s, want 403 %s", w.Code, w.Body.String(), signerapi.ErrCodeRekeyTargetNotValid)
 		}
 	}
-	// wantRecord holds entry to the planned position of group.
-	wantRecord := func(t *testing.T, entry AuditEntry, group []types.Transaction, position int, operationID string) {
+	// wantRecord holds entry, for a refusal naming refused, to the planned
+	// position of group, signed by auth ("" for a position the signer does
+	// not sign, whose entry has no txn_auth).
+	wantRecord := func(t *testing.T, entry AuditEntry, group []types.Transaction, position, refused int, auth, operationID string) {
 		t.Helper()
 		txn := group[position]
 		if entry.Event != AuditSignRejected || entry.Outcome != "rejected" || entry.OperationID != operationID ||
-			entry.TxnAuth != "" || entry.TxnSender != other.String() || entry.Reason != reason(position) {
+			entry.TxnAuth != auth || entry.TxnSender != txn.Sender.String() || entry.Reason != reason(refused) {
 			t.Fatalf("rejection = %+v", entry)
 		}
 		if entry.TxID != algocrypto.GetTxID(txn) || entry.Fee == nil || *entry.Fee != uint64(txn.Fee) ||
@@ -295,7 +299,10 @@ func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 		if len(entries) != 2 || entries[0].Event != AuditSignRequest {
 			t.Fatalf("entries = %+v, want SIGN_REQUEST then one SIGN_REJECTED", entries)
 		}
-		wantRecord(t, entries[1], []types.Transaction{grouped}, 0, "refused-pt")
+		wantRecord(t, entries[1], []types.Transaction{grouped}, 0, 0, "", "refused-pt")
+		if raw := auditLines(t, path)[1]; strings.Contains(raw, `"txn_auth"`) {
+			t.Fatalf("entry for a position the signer does not sign has txn_auth: %s", raw)
+		}
 	})
 
 	t.Run("mixed, refused at the foreign position", func(t *testing.T) {
@@ -329,11 +336,23 @@ func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 		if len(entries) != 4 || entries[0].Event != AuditSignRequest || entries[1].Event != AuditSignRequest {
 			t.Fatalf("entries = %+v, want two SIGN_REQUEST then two SIGN_REJECTED", entries)
 		}
-		if own := entries[2]; own.Event != AuditSignRejected || own.TxnAuth != signer || own.Reason != reason(1) || own.TxID != "" {
-			t.Fatalf("signed position's rejection = %+v", own)
+		wantRecord(t, entries[2], planned, 0, 1, signer, "refused-mixed")
+		wantRecord(t, entries[3], planned, 1, 1, "", "refused-mixed")
+		// The JSON line of the foreign position's entry has no txn_auth.
+		if raw := auditLines(t, path)[3]; strings.Contains(raw, `"txn_auth"`) {
+			t.Fatalf("entry for a position the signer does not sign has txn_auth: %s", raw)
 		}
-		wantRecord(t, entries[3], planned, 1, "refused-mixed")
 	})
+}
+
+// auditLines is the audit log at path, one JSON line per entry.
+func auditLines(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSpace(string(data)), "\n")
 }
 
 // promptHub is a connected apadmin that hands each approval prompt to the

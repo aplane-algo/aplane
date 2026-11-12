@@ -16,22 +16,29 @@ without a prompt, so the signer could put its signature into a group that made
 one of its own aplane keys, a rotating account's for one, another account's
 authority.
 
-- **Every position is judged.** When any transaction of a group the signer is
-  asked to sign any part of rekeys an account, its own address included, to an
-  address the signer holds an aplane key for that is not a valid rekey target,
-  the whole request is refused with HTTP 403 and `rekey_target_not_valid`,
-  naming that position. This covers passthrough and foreign positions on
-  `/sign`, a passthrough-only `/sign`, and contextual positions on
-  `/sign/component`, under every `rekeys` setting.
+- **Every position is judged.** When a request reaches the signer's gates and
+  any transaction of its group rekeys an account, its own address included,
+  to an address the signer holds an aplane key for that is not a valid rekey
+  target, the whole request is refused with HTTP 403 and
+  `rekey_target_not_valid`, naming that position. This covers passthrough and
+  foreign positions on `/sign`, a passthrough-only `/sign`, and contextual
+  positions on `/sign/component`, under every `rekeys` setting. A request
+  refused before the gates, such as a cosigned account sent to `/sign`
+  (`bounded_cosigner_required`), is refused for that reason, as before.
 - **One code for a rekey to a held rotating account.** It is refused with
-  `rekey_target_not_valid` at every position. The rotating check, which
+  `rekey_target_not_valid` at every position, and the message keeps the
+  reason: its address is a one-time stage key, so an account rekeyed to it
+  would be stuck on that stage and reuse that key. The rotating check, which
   refused it with `forbidden` at a position the signer signs, now runs after
   the valid rekey target check, as a second line.
-- **The refusal is audited at the position it names.** A `SIGN_REJECTED`
-  entry for that position, whatever kind of position it is, identifies the
-  transaction as planned the way a `SIGN_APPROVED` does, with its `txid` and
-  the group's `group_id` and `group_txids`, and carries the reason. A refused
-  passthrough-only request is on record too.
+- **A signer-invariant refusal is audited at every position it concerns.** It
+  writes a `SIGN_REJECTED` for each position the signer signs and one for the
+  position it names, whatever its kind, and each identifies its transaction
+  as planned the way a `SIGN_APPROVED` does, with its `txid` and the group's
+  `group_id`, `group_txids` and `dummy_count`, so the entries join by group.
+  An entry for a position the signer does not sign has no `txn_auth`. A
+  refused passthrough-only request is on record too. Policy and operator
+  rejections write what they did before.
 - **Nothing else widens.** The rotating and nonparticipation invariants and the
   `rekeys` setting still judge only the positions the signer signs. `/plan`
   runs no signer invariant; the `/sign` that follows refuses.

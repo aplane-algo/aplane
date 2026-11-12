@@ -61,20 +61,28 @@ func (s *Service) rejectRotatingComponentRequest(req signerapi.ComponentRequest)
 // position with rekey_target_not_valid. This check, which reads the key type
 // rather than the record, fires only if a rotating aplane key's record ever
 // said it is a valid rekey target.
+//
+// It takes the key snapshot only when a signed position rekeys an account to
+// another address, which most requests never do.
 func (s *Service) rejectRekeyToRotating(txns []types.Transaction, signed []int) *ServiceError {
 	if s.Planner == nil || s.Planner.Snapshot == nil {
 		return nil
 	}
-	keyTypes := s.Planner.Snapshot().KeyTypes
+	var rekeys []int
 	for _, i := range signed {
 		if i < 0 || i >= len(txns) {
 			return positionOutsideGroup(i, len(txns))
 		}
-		txn := txns[i]
-		if txn.RekeyTo.IsZero() || txn.RekeyTo == txn.Sender {
-			continue
+		if txn := txns[i]; !txn.RekeyTo.IsZero() && txn.RekeyTo != txn.Sender {
+			rekeys = append(rekeys, i)
 		}
-		target := txn.RekeyTo.String()
+	}
+	if len(rekeys) == 0 {
+		return nil
+	}
+	keyTypes := s.Planner.Snapshot().KeyTypes
+	for _, i := range rekeys {
+		target := txns[i].RekeyTo.String()
 		if rotatingkey.IsRotatingKeyType(keyTypes[target]) {
 			return withTransactionIndex(i, forbidden(rotatingkey.RekeyTargetRefusal(target)))
 		}

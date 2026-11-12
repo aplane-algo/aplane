@@ -221,7 +221,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
 	if s.AuditLog != nil {
-		s.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), alwaysReviewRuleID)
+		s.logSuccessfulSignatures(req, plan, auditedGroup(plan), alwaysReviewRuleID)
 	}
 
 	return &SignGroupResult{
@@ -400,46 +400,53 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 	}
 }
 
-// logSignRejections audits a refused sign: a SIGN_REJECTED at each position
-// this signer would have signed, as every refusal writes, and, when the
-// refusal names a position (its RefusedPosition, which a
-// rekey_target_not_valid refusal sets), one for that position whatever its
-// kind. That entry identifies the transaction as planned, in the group the
-// signer was asked to sign, the way a SIGN_APPROVED identifies a signed one:
-// its txid and the group's group_id and group_txids. So a refusal caused by a
-// passthrough or foreign position, or by the only position of a request that
-// signs nothing, is on record. Its txn_auth is empty unless this signer signs
-// the position, and a position it signs gets that one entry, not two. reason
-// carries its own audit prefix.
+// logSignRejections audits a refused sign. reason carries its own audit
+// prefix.
+//
+// A refusal that names a position (its RefusedPosition: every signer
+// invariant names one) writes a SIGN_REJECTED for each position this signer
+// would have signed and one for the named position whatever its kind and
+// wherever it is in the group, so a refusal caused by a passthrough, foreign
+// or trailing position, or by the only position of a request that signs
+// nothing, is on record. Every one of those entries identifies its
+// transaction as planned, in the group the signer was asked to sign, the way
+// a SIGN_APPROVED identifies a signed one (auditedGroup), so they join by
+// group. The entry for a position this signer does not sign has no
+// txn_auth, and a position it signs gets one entry, not two.
+//
+// Any other refusal, a policy rejection, writes one entry per position this
+// signer would have signed, naming the auth address, sender and reason.
 func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string, refusal *ServiceError) {
-	if s.AuditLog == nil {
+	if refusal != nil && refusal.RefusedPosition != nil {
+		s.logPositionRefusal(req, plan, *refusal.RefusedPosition, reason)
 		return
 	}
-	rejectLogger, _ := s.AuditLog.(policyAuditLogger)
-	named := refusal != nil && refusal.RefusedPosition != nil
+	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
+	if !ok || rejectLogger == nil {
+		return
+	}
 	for i, txReq := range req.Requests {
-		signs := !plan.PassthroughIndices[i] && !plan.ForeignIndices[i]
-		switch {
-		case named && i == *refusal.RefusedPosition:
-			authAddress := ""
-			if signs {
-				authAddress = txReq.AuthAddress
-			}
-			group := signedGroupOf(plan.AllTxns, signerSignedDummies(plan))
-			s.AuditLog.LogSignRejectedRecord(group.record(i, authAddress, "", ""), reason)
-		case signs && rejectLogger != nil:
-			rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), reason)
+		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
+			continue
 		}
+		rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), reason)
 	}
 }
 
-// signerSignedDummies is how many of plan's trailing transactions are dummies
-// the signer added and signs itself: the dummy_count its SIGN_APPROVED
-// entries carry. A cosigned component's frozen group carries dummies the
-// client signs, so it has none.
-func signerSignedDummies(plan *PlanResult) int {
-	if plan.Frozen && plan.Rotating == nil {
-		return 0
+// logPositionRefusal writes logSignRejections' entries for a refusal that
+// names position named of plan's group.
+func (s *Service) logPositionRefusal(req signerapi.GroupSignRequest, plan *PlanResult, named int, reason string) {
+	if s.AuditLog == nil {
+		return
 	}
-	return len(plan.DummyTxns)
+	group := auditedGroup(plan)
+	for i := range plan.AllTxns {
+		authAddress, signs := "", false
+		if i < len(req.Requests) && !plan.PassthroughIndices[i] && !plan.ForeignIndices[i] {
+			authAddress, signs = req.Requests[i].AuthAddress, true
+		}
+		if signs || i == named {
+			s.AuditLog.LogSignRejectedRecord(group.record(i, authAddress, "", ""), reason)
+		}
+	}
 }

@@ -59,10 +59,10 @@ func (k Kind) HTTPStatus() int {
 type Error struct {
 	Kind    Kind
 	Message string
-	// RefusedPosition, when set, is the zero-based group position a refusal
-	// names that the audit log records the refusal at whatever the
-	// position's kind, including one the signer does not sign. It never
-	// reaches the wire: Message names the position for people.
+	// RefusedPosition, when set, is the zero-based group position of the
+	// transaction the error names, where the audit log records a refusal,
+	// whatever the position's kind, including one the signer does not sign.
+	// It never reaches the wire: Message names the position for people.
 	RefusedPosition *int
 }
 

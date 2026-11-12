@@ -1325,7 +1325,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; no signature was released, rebuild and prepare again | `409` |
-| `rekey_target_not_valid` | a transaction at any position of the group, whether this signer signs it or not (passthrough, foreign and contextual positions included), rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target, a held rotating account included; the message names that position; refused under every `rekeys` setting before policy; nothing was signed | `403` |
+| `rekey_target_not_valid` | in a request that reaches the signer's gates, a transaction at any position of the group, whether this signer signs it or not (passthrough, foreign and contextual positions included), rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target, a held rotating account included; the message names that position; refused under every `rekeys` setting before policy; nothing was signed | `403` |
 | `rotating_window_not_current` | the rotating spend's validity window is not acceptable at the round the signer read (`first_valid` more than 2 rounds ahead, or fewer than 10 rounds before `last_valid`); this attempt released no signature, rebuild the validity rounds and prepare again | `409` |
 
 An empty `code` means the server predates code support or the failure had no
@@ -1535,15 +1535,23 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   `/sign/component`.
 - The signer invariants run in this order, before policy, on every path that
   reaches the approval gates: the valid rekey target check, the rotating
-  check, then the nonparticipation check.
+  check, then the nonparticipation check. Every request that reaches the
+  gates is judged at every position by the first. A request refused before
+  the gates is refused for that earlier reason, with its own code, and
+  nothing is signed: for example a cosigned account sent to `/sign`
+  (`bounded_cosigner_required`), a witness or rotating key type as an
+  ordinary signing authority, a `/sign/component` target that is not an
+  admitted cosigned spend or rekey, or a planning error. Those checks keep
+  their order.
 - A group in which any transaction rekeys an account, its own address
   included, to an address this signer holds an aplane key for, when that key
   records that it is not a valid rekey target (`valid_rekey_target` false,
   recorded from its key type's declaration when the key was created, as an
   `aplane.htlc.v1` account and every rotating account record), is rejected
   before policy runs, on every path that reaches the approval gates, with
-  HTTP `403` and `code:"rekey_target_not_valid"`. It judges every position of
-  the group as it will go on chain, not only the positions this signer signs:
+  HTTP `403` and `code:"rekey_target_not_valid"`. For a request that reaches
+  the gates, it judges every position of the group as it will go on chain,
+  not only the positions this signer signs:
   passthrough, foreign and contextual positions are judged too, and so is a
   request in which the signer signs nothing, such as a passthrough-only
   `/sign`. The signer puts no signature into a group that makes one of its
@@ -1557,9 +1565,12 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   (`PlanResult.InvalidRekeyTargets`). Clients branch on the
   code; the message, `transaction N: rekey_target_not_valid: cannot rekey to
   <address>: this signer holds its aplane key (<key type>), which is not a valid
-  rekey target (valid_rekey_target: false)`, is for people and the audit log,
-  which records the refusal at the position it names (see
-  [ARCH_SECURITY.md](ARCH_SECURITY.md)). The key type's author declared that
+  rekey target (valid_rekey_target: false)`, followed for a rotating key type
+  by `; it is a rotating account, and its address is a one-time stage key; an
+  account rekeyed to it would be stuck on that stage, and every signature
+  would reuse that key`, is for people and the audit log, which records the
+  refusal at the position it names and at each position the signer signs
+  (see [ARCH_SECURITY.md](ARCH_SECURITY.md)). The key type's author declared that
   such a key may not be the signing authority an account is rekeyed to: an
   HTLC account's program never checks `Sender`, forbids every rekey and
   allows only a payment that closes the whole balance. This is a signer
