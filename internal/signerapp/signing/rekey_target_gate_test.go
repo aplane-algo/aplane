@@ -45,10 +45,12 @@ func rekeyTargetTestSnapshot() (PlannerRuntimeSnapshot, map[string]types.Address
 }
 
 // A rekey to an address this signer holds an aplane key for is refused when
-// that key's type is not a valid rekey target, and a key with no metadata is
-// not one. A foreign target is left to the rekeys setting, a rekey to the
-// account's own address passes, a position this signer doesn't sign is not
-// judged, and a rotating target meets its own invariant first.
+// that key records it is not a valid rekey target, and a key with no metadata
+// is not one. The account's own address is no exception: an HTLC or rotating
+// account back to itself is refused, an ed25519 one passes. A foreign target
+// is left to the rekeys setting, a position this signer doesn't sign is not
+// judged, and a rotating target held for another account meets its own
+// invariant first.
 func TestRejectRekeyToInvalidTarget(t *testing.T) {
 	snapshot, a := rekeyTargetTestSnapshot()
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }}}
@@ -64,7 +66,9 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 		{"held HTLC account", rekey("plain", "htlc"), "transaction 1: " + rekeyTargetNotValid(a["htlc"].String(), "aplane.htlc.v1").Message},
 		{"held key with no metadata", rekey("plain", "bare"), "transaction 1: " + rekeyTargetNotValid(a["bare"].String(), "ed25519").Message},
 		{"foreign target", rekey("plain", "foreign"), ""},
-		{"an HTLC account back to its own address", rekey("htlc", "htlc"), ""},
+		{"an HTLC account back to its own address", rekey("htlc", "htlc"), "transaction 1: " + rekeyTargetNotValid(a["htlc"].String(), "aplane.htlc.v1").Message},
+		{"a rotating account back to its own address", rekey("rotating", "rotating"), "transaction 1: " + rekeyTargetNotValid(a["rotating"].String(), rotatingkey.RotatingTripleWotscV1).Message},
+		{"an ed25519 account back to its own address", rekey("plain", "plain"), ""},
 		{"no rekey", types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"]}}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -94,14 +98,14 @@ func TestRejectRekeyToInvalidTarget(t *testing.T) {
 	}
 }
 
-// A request that rekeys no account to another address takes no key snapshot.
+// A request that rekeys no account takes no key snapshot.
 func TestRejectRekeyToInvalidTargetTakesNoSnapshotWithoutARekey(t *testing.T) {
 	snapshot, a := rekeyTargetTestSnapshot()
 	calls := 0
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { calls++; return snapshot }}}
 	txns := []types.Transaction{
 		{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"]}},
-		{Type: types.PaymentTx, Header: types.Header{Sender: a["htlc"], RekeyTo: a["htlc"]}},
+		{Type: types.PaymentTx, Header: types.Header{Sender: a["valid"]}},
 	}
 	if err := svc.rejectRekeyToInvalidTarget(txns, []int{0, 1}); err != nil || calls != 0 {
 		t.Fatalf("err = %v, snapshot calls = %d; want no refusal and no snapshot", err, calls)
@@ -151,7 +155,7 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 			if err := svc.RequestGroupApprovalWithContext(context.Background(), req, plan, "group", 0, 0, txns); err != nil {
 				t.Fatal(err)
 			}
-			want := txnreview.RekeyTransfersText + "\n   " + txnreview.RekeyHeldNotValidText(txnreview.InvalidRekeyTarget{KeyType: "aplane.htlc.v1", GenericLogicSig: true}) +
+			want := txnreview.RekeyTransfersText + "\n   " + txnreview.RekeyHeldNotValidText(txnreview.InvalidRekeyTarget{KeyType: "aplane.htlc.v1", GenericLogicSig: true}, false) +
 				"\n   " + txnreview.RekeyGenericLogicSigText
 			for _, v := range got {
 				if v.Field == "Tx 2/2: RekeyTo" {

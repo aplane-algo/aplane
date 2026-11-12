@@ -30,8 +30,8 @@ func RegisterClient() {
 			KeyType:      "ed25519",
 			Family:       "ed25519",
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
-			// An Ed25519 private key controls the account; an account rekeyed
-			// to it can be rekeyed away again.
+			// An Ed25519 aplane key may be the signing authority another
+			// account is rekeyed to.
 			ValidRekeyTarget: true,
 		})
 

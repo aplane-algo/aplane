@@ -601,18 +601,19 @@ Examples of the composed ontology:
 
 ## Valid rekey target
 
-Every key type declares a boolean `valid_rekey_target`: whether an account of
-another key type may safely be rekeyed to an account of this key type. True
-promises that such an account is not stranded there: the program, or the DSA
-private key that controls the account, lets it be rekeyed away again, or
-otherwise permits what an ordinary account needs. A key type whose accounts are
+Every key type declares a boolean `valid_rekey_target`: the key type author's
+declaration that an aplane key of this type may be the signing authority an
+account is rekeyed to, its own account included, subject to that key's own
+restrictions (its bounds, a cosigner, its program). It is a declaration, not a
+guarantee: the signer does not check that an account rekeyed to such a key can
+do everything an ordinary account does. A key type whose accounts are
 controlled by a DSA private key (`ed25519`, `falcon1024`, and the plain hosts
 `aplane.falcon1024.v1` and `aplane.ed25519.v1` with their overlays and bounds)
 declares true. A rotating key type declares false; its own signer invariant
-refuses a rekey to a rotating account whatever the setting. A generic LogicSig
-template declares what its program allows: `aplane.htlc.v1` forbids every rekey
-and allows only a payment that closes the whole balance, never checks `Sender`,
-and declares false.
+also refuses a rekey to a rotating account whatever the setting. A generic
+LogicSig template declares what its program allows: `aplane.htlc.v1` forbids
+every rekey and allows only a payment that closes the whole balance, never
+checks `Sender`, and declares false.
 
 A compiled key type declares the attribute in its `internal/keytypecatalog`
 entry. A YAML template declares it as the top-level `valid_rekey_target` field,
@@ -633,12 +634,35 @@ of the record. A changed declaration affects only keys created afterwards.
 
 `/keytypes` reports the declaration and `/keys` the value each key recorded,
 both as `valid_rekey_target`. When a key records false, the signer refuses a
-rekey of another account to its address, under every `rekeys` setting and
-whatever the account's rekey-to list says: a signer invariant beside the
-rotating one (`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, error
-code `rekey_target_not_valid`). A rekey of an account to its own address is
-exempt. The `rekeys` setting decides only about foreign targets, addresses the
-signer holds no aplane key for; see [ARCH_POLICY.md](ARCH_POLICY.md).
+rekey of any account to its address, the account's own address included,
+under every `rekeys` setting and whatever the account's rekey-to list says: a
+signer invariant beside the rotating one
+(`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, error code
+`rekey_target_not_valid`). The `rekeys` setting decides only about foreign
+targets, addresses the signer holds no aplane key for; see
+[ARCH_POLICY.md](ARCH_POLICY.md). A per-key override that allows an account's
+return to its own address whatever the declaration (for a program that checks
+that the sender is its own address) is not built and may be added later.
+
+### Correcting a wrong declaration
+
+No tool edits the value an aplane key recorded. A compiled key type's value is
+fixed in code. For a template that declared the wrong value, correct the
+template's `valid_rekey_target` and reinstall it, then delete and regenerate
+each affected aplane key, which records the corrected value:
+
+- A generic LogicSig key regenerated with the same parameters has the same
+  address: the declaration is not part of the program, so the corrected
+  template compiles the same program
+  (`test/integration/generic_template_test.go::TestGenericLSigRegenerationProducesSameAddress`).
+- A key of a composed template (a DSA LogicSig) is generated from a new
+  random seed, and LogicSig key types take no mnemonic import, so
+  regenerating it gives a new address; move the account's funds to the new
+  address before deleting the old key.
+- Deleting an aplane key needs an unlocked store and checks nothing on chain,
+  including the account's balance. The record moves to the selected
+  generation's `deleted/keys/` and stays there until `apadmin archive prune`,
+  and retained generations keep their copies until they are pruned.
 
 ## The three axes
 

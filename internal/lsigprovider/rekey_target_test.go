@@ -16,14 +16,14 @@ import (
 // declaredValidRekeyTarget is every compiled key type's valid_rekey_target.
 // A compiled key type added without a decision here fails the test.
 var declaredValidRekeyTarget = map[string]bool{
-	// A DSA private key controls each of these; an account rekeyed to one can
-	// be rekeyed away again.
+	// An aplane key of each of these may be the signing authority another
+	// account is rekeyed to, subject to its own restrictions.
 	"ed25519":              true,
 	"falcon1024":           true,
 	"aplane.falcon1024.v1": true,
 	"aplane.ed25519.v1":    true,
-	// A rotating account's address is its one-time stage 0 program;
-	// rejectRekeyToRotating refuses a rekey to it on its own as well.
+	// A rotating account's address is its one-time stage 0 program, for
+	// another account and for its own.
 	"aplane.rotating-triple-xmss.v1":   false,
 	"aplane.rotating-triple-slhdsa.v1": false,
 	"aplane.rotating-triple-wotsc.v1":  false,

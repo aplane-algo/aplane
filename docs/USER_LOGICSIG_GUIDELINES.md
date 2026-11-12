@@ -156,12 +156,14 @@ alone.
 - If rekey is restricted in TEAL, are helper and alternate paths covered, not
   just the main spend path?
 - If the LogicSig is signer-gated, is rekey intentionally left to signer policy?
-- Is the template's `valid_rekey_target` right? It is `true` only if an account
-  of another key type rekeyed to an account of this key type is not stranded:
-  the program lets it be rekeyed away again, or otherwise permits what an
-  ordinary account needs. Read the program with another account as `Sender`; a
-  program that never checks `Sender` authorizes for every account rekeyed to it.
-  Install requires the field.
+- Is the template's `valid_rekey_target` right? It is the author's declaration
+  that an aplane key of this type may be the signing authority an account is
+  rekeyed to, its own account included, subject to the program. Read the
+  program with another account as `Sender`; a program that never checks
+  `Sender` authorizes for every account rekeyed to it. Install requires the
+  field. A key records the value when it is created; a wrong value is corrected
+  by reinstalling the template and regenerating the key
+  ([ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#correcting-a-wrong-declaration)).
 
 Public generic LogicSigs usually should not allow unconstrained rekey, because
 anyone who can exercise an allowed path may be able to transfer account control.
@@ -938,9 +940,10 @@ participant may be able to exercise it.
 - no key registration path
 - `valid_rekey_target: false`: the program never checks `Sender` and forbids
   every rekey, so an account rekeyed to an HTLC account could only ever be
-  closed to its recipient or refund address. The signer refuses such a rekey
-  as `rekey_target_not_valid` under every `rekeys` setting, though it holds
-  the HTLC's aplane key
+  closed to its recipient or refund address. The signer refuses a rekey of any
+  account to it, the HTLC account's own address included, as
+  `rekey_target_not_valid` under every `rekeys` setting, though it holds the
+  HTLC's aplane key
 
 HTLC-style policies should be reviewed with special care around validity-window
 crossing behavior and preimage handling.

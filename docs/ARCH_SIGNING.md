@@ -1325,7 +1325,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; no signature was released, rebuild and prepare again | `409` |
-| `rekey_target_not_valid` | a signed position rekeys another account to an address this signer holds an aplane key for that records it is not a valid rekey target; refused under every `rekeys` setting before policy; nothing was signed | `403` |
+| `rekey_target_not_valid` | a signed position rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target; refused under every `rekeys` setting before policy; nothing was signed | `403` |
 | `rotating_window_not_current` | the rotating spend's validity window is not acceptable at the round the signer read (`first_valid` more than 2 rounds ahead, or fewer than 10 rounds before `last_valid`); this attempt released no signature, rebuild the validity rounds and prepare again | `409` |
 
 An empty `code` means the server predates code support or the failure had no
@@ -1541,22 +1541,22 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   rekeys go to stage addresses and are unaffected. apshell's `rekey` refuses
   the same target before building the transaction, and fails closed on any
   target whose `signing_flow` it cannot route an authorizer through.
-- A signed position that rekeys any other account to an address this signer
-  holds an aplane key for, when that key records that it is not a valid rekey
-  target (`valid_rekey_target` false, recorded from its key type's declaration
+- A signed position that rekeys any account, its own address included, to an
+  address this signer holds an aplane key for, when that key records that it is
+  not a valid rekey target (`valid_rekey_target` false, recorded from its key type's declaration
   when the key was created, as an `aplane.htlc.v1` account records), is
   rejected before policy runs, on every path that reaches the approval gates,
   with HTTP `403` and `code:"rekey_target_not_valid"`. Clients branch on the
   code; the message, `transaction N: rekey_target_not_valid: cannot rekey to
   <address>: this signer holds its aplane key (<key type>), which is not a valid
   rekey target (valid_rekey_target: false)`, is for people and the audit log.
-  An account rekeyed there would be stranded: an HTLC account's program never
-  checks `Sender`, forbids every rekey and allows only a payment that closes
-  the whole balance. This is a signer invariant, not a policy setting: no
+  The key type's author declared that such a key may not be the signing
+  authority an account is rekeyed to: an HTLC account's program never checks
+  `Sender`, forbids every rekey and allows only a payment that closes the whole
+  balance. This is a signer invariant, not a policy setting: no
   `rekeys` value lifts it, `allow_rekeys` included, and neither does the
   account's rekey-to list (see
-  [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)). A rekey of an
-  account to its own address passes. A foreign target, one the signer holds
+  [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)). A foreign target, one the signer holds
   no aplane key for, is left to the `rekeys` setting. A rotating target meets
   the rotating invariant above first. At a position this signer does not sign,
   the group's rekey warning names such a target instead.
@@ -2012,8 +2012,8 @@ warning does not establish that no leaf was reused.
 - optional `is_generic_lsig`
 - `valid_rekey_target`: the value this aplane key recorded when it was created,
   from its key type's declaration then (always present). When it is false, the
-  signer refuses a rekey of any other account to this address under every
-  `rekeys` setting (`rekey_target_not_valid`)
+  signer refuses a rekey of any account to this address, the account's own
+  included, under every `rekeys` setting (`rekey_target_not_valid`)
 - optional `is_witness_key` and `is_spending_account`: cosigner-key rows use
   `address` as the Witness Key ID, not as an Algorand spending address.
   Witness Key IDs are always 52-character uppercase base32
@@ -2099,7 +2099,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_type`, optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: the key type's declaration now, which each aplane key records when it is created; whether an account of another key type may safely be rekeyed to an account of this key type; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_type`, optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: the key type author's current declaration that an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to that key's own restrictions; each aplane key records it when created; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `type`, and optional `label`, `description`, `required`, `byte_length`, and `max_size`

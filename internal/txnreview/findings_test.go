@@ -41,9 +41,12 @@ func TestRekeyFindingNamesWhatTheSignerHolds(t *testing.T) {
 			RekeyTransfersText + "\n   >>> THIS SIGNER HOLDS THE APLANE KEY FOR THE NEW ADDRESS, BUT IT IS NOT A VALID REKEY TARGET (aplane.htlc.v1): AN ACCOUNT REKEYED TO IT MAY BE STRANDED <<<" +
 				"\n   It is a generic LogicSig: its program decides what can be signed."},
 		{"held rotating account", rekey(sender, rotating), FindingContext{KnownAddresses: known, InvalidRekeyTargets: invalid},
-			line(RekeyTransfersText, RekeyHeldNotValidText(invalid[rotating.String()]))},
+			line(RekeyTransfersText, RekeyHeldNotValidText(invalid[rotating.String()], false))},
 		{"an HTLC account back to its own address", rekey(htlc, htlc), FindingContext{KnownAddresses: known, InvalidRekeyTargets: invalid},
-			line(RekeyToOwnAddressText, RekeyOwnAddressHeldText)},
+			RekeyToOwnAddressText + "\n   >>> THIS SIGNER HOLDS THE APLANE KEY FOR THE ACCOUNT'S OWN ADDRESS, BUT IT IS NOT A VALID REKEY TARGET (aplane.htlc.v1): THE ACCOUNT MAY BE STRANDED <<<" +
+				"\n   It is a generic LogicSig: its program decides what can be signed."},
+		{"a rotating account back to its own address", rekey(rotating, rotating), FindingContext{KnownAddresses: known, InvalidRekeyTargets: invalid},
+			line(RekeyToOwnAddressText, RekeyHeldNotValidText(invalid[rotating.String()], true))},
 		{"the signer's own protocol rekey", rekey(sender, protocol), FindingContext{KnownAddresses: known, ProtocolRekeyTargets: map[string]bool{protocol.String(): true}}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

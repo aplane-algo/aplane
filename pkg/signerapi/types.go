@@ -472,13 +472,16 @@ type KeyTypeInfo struct {
 	// take (aplane.boundary.v1 for the plain hosts, which take bounds and
 	// overlays), and is empty for a type that takes none.
 	BoundarySchema string `json:"boundary_schema,omitempty"`
-	// ValidRekeyTarget is the key type's valid_rekey_target declaration:
-	// whether an account of another key type may safely be rekeyed to an
-	// account of this key type. Each aplane key records the declaration when
-	// it is created (KeyInfo.ValidRekeyTarget); the signer refuses, under
-	// every rekeys policy setting and whatever the account's rekey-to list
-	// says, a rekey to a held aplane key that recorded false (code
-	// rekey_target_not_valid). The rekeys setting does not read it.
+	// ValidRekeyTarget is the key type's valid_rekey_target: the key type
+	// author's declaration that an aplane key of this type may be the signing
+	// authority an account is rekeyed to, its own account included,
+	// subject to that key's own restrictions (its bounds, a cosigner, its
+	// program). Each aplane key records the declaration when it is created
+	// (KeyInfo.ValidRekeyTarget). The signer refuses, under every rekeys policy
+	// setting and whatever the account's rekey-to list says, a rekey whose
+	// target is a held aplane key that recorded false, the account's own
+	// address included (code rekey_target_not_valid). The rekeys setting does
+	// not read it.
 	ValidRekeyTarget bool                `json:"valid_rekey_target"`
 	CreationParams   []CreationParamInfo `json:"creation_params"`
 	RuntimeArgs      []RuntimeArgInfo    `json:"runtime_args"`
@@ -559,9 +562,9 @@ type KeyInfo struct {
 	// ValidRekeyTarget is the valid_rekey_target this aplane key recorded when
 	// it was created, from its key type's declaration at that moment
 	// (KeyTypeInfo.ValidRekeyTarget is the declaration now). When it is false
-	// the signer refuses a rekey of another account to this address under
-	// every rekeys policy setting (code rekey_target_not_valid); the rekeys
-	// setting does not read it.
+	// the signer refuses any rekey to this address, this account's own rekey
+	// back to it included, under every rekeys policy setting (code
+	// rekey_target_not_valid); the rekeys setting does not read it.
 	ValidRekeyTarget bool `json:"valid_rekey_target"`
 }
 

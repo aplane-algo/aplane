@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -119,25 +120,37 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 
 // The rekey rule's truth table, target kind across, rekeys setting down:
 //
-//	                      foreign   held+valid   held+not-valid   self
-//	reject_all_rekeys     refuse    refuse       refuse (C)       refuse
-//	reject_foreign_rekey  refuse*   allow        refuse (C)       allow
-//	allow_rekeys          allow     allow        refuse (C)       allow
+//	                      foreign   held+valid   held+not-valid
+//	reject_all_rekeys     refuse    refuse       refuse (C)
+//	reject_foreign_rekey  refuse*   allow        refuse (C)
+//	allow_rekeys          allow     allow        refuse (C)
 //
 // * unless the account's rekey-to list names it. The rekeys setting decides as
 // it always has; (C) is the valid_rekey_target signer invariant, which runs
 // before policy under every setting and which neither allow_rekeys nor the
-// rekey-to list lifts. "allow" means the rule refuses nothing and the rekey
+// rekey-to list lifts. An account's own address is no column of its own: it
+// is a target like any other, held and valid (an ed25519 account), held and
+// not valid (a rotating account, or a generic LogicSig whose key records
+// false), or foreign. "allow" means the rule refuses nothing and the rekey
 // goes on to review, here always_review_warnings, User Auto-Approve on or off.
 func TestRekeyRuleTruthTable(t *testing.T) {
 	key, valid, htlc, foreign := types.Address{1}, types.Address{2}, types.Address{7}, types.Address{9}
+	rotating, genericValid := types.Address{3}, types.Address{4}
 	snapshot := PlannerRuntimeSnapshot{
-		KeyFiles: map[string]string{key.String(): "key.key", valid.String(): "valid.key", htlc.String(): "htlc.key"},
-		KeyTypes: map[string]string{key.String(): "ed25519", valid.String(): "ed25519", htlc.String(): "aplane.htlc.v1"},
+		KeyFiles: map[string]string{
+			key.String(): "key.key", valid.String(): "valid.key", htlc.String(): "htlc.key",
+			rotating.String(): "rotating.key", genericValid.String(): "generic.key",
+		},
+		KeyTypes: map[string]string{
+			key.String(): "ed25519", valid.String(): "ed25519", htlc.String(): "aplane.htlc.v1",
+			rotating.String(): rotatingkey.RotatingTripleWotscV1, genericValid.String(): "test.self-valid.v1",
+		},
 		KeyMetadata: map[string]PlannerKeyMetadata{
-			key.String():   {Category: keys.CategoryEd25519, ValidRekeyTarget: true},
-			valid.String(): {Category: keys.CategoryEd25519, ValidRekeyTarget: true},
-			htlc.String():  {Category: keys.CategoryGenericLsig},
+			key.String():          {Category: keys.CategoryEd25519, ValidRekeyTarget: true},
+			valid.String():        {Category: keys.CategoryEd25519, ValidRekeyTarget: true},
+			htlc.String():         {Category: keys.CategoryGenericLsig},
+			rotating.String():     {Category: keys.CategoryRotatingLsig},
+			genericValid.String(): {Category: keys.CategoryGenericLsig, ValidRekeyTarget: true},
 		},
 	}
 	shipped := func(rekeys policy.SignerRekeys) *policy.Config {
@@ -156,8 +169,8 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 		}
 		return cfg
 	}
-	rekeyTo := func(target types.Address) types.Transaction {
-		txn := testnetPaymentTransaction(t, key.String(), key.String(), 0)
+	rekey := func(sender, target types.Address) types.Transaction {
+		txn := testnetPaymentTransaction(t, sender.String(), sender.String(), 0)
 		txn.Fee = 1_000
 		txn.RekeyTo = target
 		return txn
@@ -171,37 +184,51 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 	held := txnreview.RekeyTransfersText + "\n   " + txnreview.RekeyHeldText
 	self := txnreview.RekeyToOwnAddressText + "\n   " + txnreview.RekeyOwnAddressHeldText
 	lost := txnreview.RekeyTransfersText + "\n   " + txnreview.RekeyLoseControlText
-	for _, tc := range []struct {
+	type rekeyCase struct {
 		name    string
 		rekeys  policy.SignerRekeys
+		sender  types.Address
 		target  types.Address
 		listed  bool
 		want    string
 		warning string // the review's rekey warning; "" skips the check
-	}{
-		{"reject_all_rekeys/foreign", policy.RekeysRejectAll, foreign, false, allRekeys, ""},
-		{"reject_all_rekeys/held valid", policy.RekeysRejectAll, valid, false, allRekeys, ""},
-		{"reject_all_rekeys/held not valid", policy.RekeysRejectAll, htlc, false, invalid, ""},
-		{"reject_all_rekeys/self", policy.RekeysRejectAll, key, false, allRekeys, ""},
-		{"reject_foreign_rekey/foreign", policy.RekeysRejectForeign, foreign, false, foreignOut, ""},
-		{"reject_foreign_rekey/listed foreign", policy.RekeysRejectForeign, foreign, true, allowed, ""},
-		{"reject_foreign_rekey/held valid", policy.RekeysRejectForeign, valid, false, allowed, held},
-		{"reject_foreign_rekey/held not valid", policy.RekeysRejectForeign, htlc, false, invalid, ""},
-		{"reject_foreign_rekey/listed held not valid", policy.RekeysRejectForeign, htlc, true, invalid, ""},
-		{"reject_foreign_rekey/self", policy.RekeysRejectForeign, key, false, allowed, self},
-		{"allow_rekeys/foreign", policy.RekeysAllow, foreign, false, allowed, lost},
-		{"allow_rekeys/held valid", policy.RekeysAllow, valid, false, allowed, held},
-		{"allow_rekeys/held not valid", policy.RekeysAllow, htlc, false, invalid, ""},
-		{"allow_rekeys/listed held not valid", policy.RekeysAllow, htlc, true, invalid, ""},
-		{"allow_rekeys/self", policy.RekeysAllow, key, false, allowed, self},
-	} {
+	}
+	cases := []rekeyCase{
+		{"reject_all_rekeys/foreign", policy.RekeysRejectAll, key, foreign, false, allRekeys, ""},
+		{"reject_all_rekeys/held valid", policy.RekeysRejectAll, key, valid, false, allRekeys, ""},
+		{"reject_all_rekeys/held not valid", policy.RekeysRejectAll, key, htlc, false, invalid, ""},
+		{"reject_foreign_rekey/foreign", policy.RekeysRejectForeign, key, foreign, false, foreignOut, ""},
+		{"reject_foreign_rekey/listed foreign", policy.RekeysRejectForeign, key, foreign, true, allowed, ""},
+		{"reject_foreign_rekey/held valid", policy.RekeysRejectForeign, key, valid, false, allowed, held},
+		{"reject_foreign_rekey/held not valid", policy.RekeysRejectForeign, key, htlc, false, invalid, ""},
+		{"reject_foreign_rekey/listed held not valid", policy.RekeysRejectForeign, key, htlc, true, invalid, ""},
+		{"allow_rekeys/foreign", policy.RekeysAllow, key, foreign, false, allowed, lost},
+		{"allow_rekeys/held valid", policy.RekeysAllow, key, valid, false, allowed, held},
+		{"allow_rekeys/held not valid", policy.RekeysAllow, key, htlc, false, invalid, ""},
+		{"allow_rekeys/listed held not valid", policy.RekeysAllow, key, htlc, true, invalid, ""},
+		// An account back to its own address, under every setting.
+		{"reject_all_rekeys/ed25519 to itself", policy.RekeysRejectAll, key, key, false, allRekeys, ""},
+		{"reject_foreign_rekey/ed25519 to itself", policy.RekeysRejectForeign, key, key, false, allowed, self},
+		{"allow_rekeys/ed25519 to itself", policy.RekeysAllow, key, key, false, allowed, self},
+		{"reject_foreign_rekey/generic recording true to itself", policy.RekeysRejectForeign, genericValid, genericValid, false, allowed, self},
+		{"allow_rekeys/generic recording true to itself", policy.RekeysAllow, genericValid, genericValid, false, allowed, self},
+		{"reject_all_rekeys/foreign account to itself", policy.RekeysRejectAll, foreign, foreign, false, allRekeys, ""},
+		{"reject_foreign_rekey/foreign account to itself", policy.RekeysRejectForeign, foreign, foreign, false, foreignOut, ""},
+	}
+	for _, rekeys := range []policy.SignerRekeys{policy.RekeysRejectAll, policy.RekeysRejectForeign, policy.RekeysAllow} {
+		cases = append(cases,
+			rekeyCase{string(rekeys) + "/rotating to itself", rekeys, rotating, rotating, false, invalid, ""},
+			rekeyCase{string(rekeys) + "/generic recording false to itself", rekeys, htlc, htlc, false, invalid, ""},
+		)
+	}
+	for _, tc := range cases {
 		for _, auto := range []bool{false, true} {
 			mode := "manual"
 			if auto {
 				mode = "auto"
 			}
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
-				txns := []types.Transaction{rekeyTo(tc.target)}
+				txns := []types.Transaction{rekey(tc.sender, tc.target)}
 				var warnings []signerapproval.Violation
 				var console strings.Builder
 				prompted, approvalCalls := false, 0
@@ -222,12 +249,12 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 				}
 				var logged string
 				in := gateInput{
-					AllTxns: txns, EvalCount: 1, AuthKeys: []string{key.String()},
+					AllTxns: txns, EvalCount: 1, AuthKeys: []string{tc.sender.String()},
 					KnownAddresses: knownAddressesFromSnapshot(snapshot),
 					LogRejection:   func(reason string) { logged = reason },
 					RequestOperatorApproval: func(ctx context.Context, rule string) *ServiceError {
 						approvalCalls++
-						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: key.String()}, txns, txns, "", 0, 0, rule, nil)
+						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: tc.sender.String()}, txns, txns, "", 0, 0, rule, nil)
 					},
 				}
 				if tc.listed {
@@ -245,7 +272,7 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					var want string
 					switch tc.want {
 					case invalid:
-						want = "transaction 1: " + rekeyTargetNotValid(tc.target.String(), "aplane.htlc.v1").Message
+						want = "transaction 1: " + rekeyTargetNotValid(tc.target.String(), snapshot.KeyTypes[tc.target.String()]).Message
 						if err.Message != want || logged != auditSignerInvariant+want {
 							t.Fatalf("error = %q, audit = %q; want the rekey target invariant %q", err.Message, logged, want)
 						}

@@ -63,28 +63,46 @@ the template-management commands below.
 
 ### Valid rekey targets
 
-Every key type says whether an account of another key type may safely be
-rekeyed to an account of this key type: its `valid_rekey_target`. The
-protocol-native types and the plain hosts say yes: a DSA private key controls
-their accounts, so an account rekeyed to one can be rekeyed away again. The
-rotating key types and `aplane.htlc.v1` say no. An HTLC's program never checks
-`Sender`, forbids every rekey and allows only a payment that closes the whole
-balance, so an account rekeyed to an HTLC account could only ever be closed to
-its recipient or refund address.
+Every key type carries `valid_rekey_target`: the key type author's declaration
+that an aplane key of this type may be the signing authority an account is
+rekeyed to, its own account included, subject to that key's own restrictions
+(its bounds, a cosigner, its program). The protocol-native types and the plain
+hosts declare true. The rotating key types and `aplane.htlc.v1` declare false.
+An HTLC's program never checks `Sender`, forbids every rekey and allows only a
+payment that closes the whole balance, so an account rekeyed to an HTLC account
+could only ever be closed to its recipient or refund address.
 
 Each aplane key records its key type's declaration when the key is created, and
 keeps that value: changing a template's declaration later affects only keys
 created afterwards. The signer's `/keytypes` reports each key type's
 declaration as `valid_rekey_target`, and `/keys` the value each key recorded.
 
-The signer refuses a rekey of an account to an address it holds the aplane key
-for when that key recorded that it is not a valid rekey target, unless it is the
-account's own address. The refusal names its reason, `rekey_target_not_valid`.
+The signer refuses a rekey of any account to an address it holds the aplane key
+for when that key recorded that it is not a valid rekey target, the account's
+own address included. The refusal names its reason, `rekey_target_not_valid`.
 Such a target is held, not foreign, and no policy setting lifts the refusal:
 not `rekeys: allow_rekeys`, and not the account's
 [rekey-to list](#rekey-to-lists). The `rekeys` setting decides only about
 foreign targets, addresses the signer holds no aplane key for. See
 [USER_POLICY.md](USER_POLICY.md).
+
+#### Correcting a wrong declaration
+
+No command edits the value a key recorded, and a compiled key type's value is
+fixed in code. If a template declared the wrong value:
+
+1. Correct `valid_rekey_target` in the template and import it again with
+   `apadmin template import`. The import replaces the installed template.
+2. Delete each affected aplane key (`delete <address>` in apshell, or apadmin)
+   and generate it again, so that the new key records the corrected value.
+
+A generic LogicSig key such as `aplane.htlc.v1`, generated again with the same
+parameters, has the same address: the declaration is not part of its program.
+A key of a composed template (a DSA LogicSig) is generated from a new random
+seed, so it gets a new address; move its funds to the new address before
+deleting the old key. Delete checks nothing on chain, including the account's
+balance. A deleted key stays in the deleted archive until `apadmin archive
+prune`; see [USER_STORE_MGMT.md](USER_STORE_MGMT.md).
 
 ## Operator Mental Model
 

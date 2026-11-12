@@ -34,10 +34,12 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
   set produces the same LogicSig address regardless of input order.
 - Template key types are compatibility boundaries. Do not change the behavior of
   an installed key type in place; create a new versioned key type instead.
-- Every template must declare `valid_rekey_target`: `true` only if an account
-  of another key type rekeyed to an account of this key type is not stranded
-  (the program lets it be rekeyed away again, or otherwise permits what an
-  ordinary account needs). Import refuses a template without it.
+- Every template must declare `valid_rekey_target`: `true` only if the author
+  declares that an aplane key of this type may be the signing authority an
+  account is rekeyed to, its own account included, subject to the program.
+  Import refuses a template without it. Each key records the value when it is
+  created; to correct a wrong value, reinstall the corrected template, then
+  delete and regenerate the key.
 - `max_opcode_cost` is optional. Omission uses the numeric one-transaction
   opcode ceiling shared by every consensus version APlane currently supports:
   20,000. An explicit value is an absolute reviewed worst-case cost of the

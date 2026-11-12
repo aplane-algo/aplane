@@ -41,29 +41,28 @@ func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int)
 	return rejectNonparticipation(txns, signed)
 }
 
-// rejectRekeyToInvalidTarget refuses a signed position that rekeys an
-// account to an address this signer holds an aplane key for, when that key
-// records that it is not a valid rekey target (valid_rekey_target false, the
-// value its key type declared when the key was created): an account rekeyed
-// there would be stranded, as one rekeyed to an HTLC account can only ever be
-// closed to the HTLC's recipient or refund address. It is a signer invariant,
-// not a policy setting: no rekeys value and no rekey-to list lifts it. A rekey
-// of an account to its own address returns it to its own aplane key and
-// passes, as rejectRekeyToRotating lets it. A foreign target, one this signer
-// holds no aplane key for, is the rekeys setting's question, not this one's.
-// A rotating target meets rejectRekeyToRotating first.
+// rejectRekeyToInvalidTarget refuses a signed position whose rekey target is
+// an address this signer holds an aplane key for, when that key records that
+// it is not a valid rekey target (valid_rekey_target false, the value its key
+// type declared when the key was created). The target may be the
+// transaction's own sender: returning an account to its own address is no
+// exception, since a rotating account's address, for one, is its one-time
+// stage 0 key. It is a signer invariant, not a policy setting: no rekeys value
+// and no rekey-to list lifts it. A foreign target, one this signer holds no
+// aplane key for, is the rekeys setting's question, not this one's. A rotating
+// target held for another account meets rejectRekeyToRotating first.
 func (s *Service) rejectRekeyToInvalidTarget(txns []types.Transaction, signed []int) *ServiceError {
 	if s.Planner == nil || s.Planner.Snapshot == nil {
 		return nil
 	}
 	// Most requests rekey nothing: take the key snapshot only for one that
-	// rekeys an account to another address.
+	// rekeys.
 	rekeys := false
 	for _, i := range signed {
 		if i < 0 || i >= len(txns) {
 			return positionOutsideGroup(i, len(txns))
 		}
-		if txn := txns[i]; !txn.RekeyTo.IsZero() && txn.RekeyTo != txn.Sender {
+		if !txns[i].RekeyTo.IsZero() {
 			rekeys = true
 		}
 	}
@@ -73,7 +72,7 @@ func (s *Service) rejectRekeyToInvalidTarget(txns []types.Transaction, signed []
 	snapshot := s.Planner.Snapshot()
 	for _, i := range signed {
 		txn := txns[i]
-		if txn.RekeyTo.IsZero() || txn.RekeyTo == txn.Sender {
+		if txn.RekeyTo.IsZero() {
 			continue
 		}
 		target := txn.RekeyTo.String()

@@ -52,8 +52,9 @@ type Payload struct {
 	TemplateFingerprint    string
 	GenesisHash            []byte
 	// ValidRekeyTarget is the key type's valid_rekey_target declaration,
-	// recorded when the aplane key was created: whether an account of another
-	// key type may safely be rekeyed to this account. The signer reads it from
+	// recorded when the aplane key was created: whether this aplane key may be
+	// the signing authority an account is rekeyed to, its own account
+	// included, subject to its own restrictions. The signer reads it from
 	// here, never from the live key type registry.
 	ValidRekeyTarget bool
 	CreatedAt        time.Time

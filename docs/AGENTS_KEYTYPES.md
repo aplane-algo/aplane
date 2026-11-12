@@ -110,29 +110,36 @@ to another key type.
 
 ## Valid Rekey Target
 
-Every key type declares `valid_rekey_target`: whether an account of another key
-type may safely be rekeyed to an account of this key type. See
+Every key type declares `valid_rekey_target`: the key type author's declaration
+that an aplane key of this type may be the signing authority an account is
+rekeyed to, its own account included, subject to that key's own restrictions
+(its bounds, a cosigner, its program). See
 [Valid rekey target](ARCH_KEYTYPES.md#valid-rekey-target).
 
 - Every YAML template you write must declare it at the top level; install
   refuses a template without it.
-- Set `true` only if an account rekeyed to an account of this key type is not
-  stranded: the program lets it be rekeyed away again, or otherwise permits
-  what an ordinary account needs. Read the TEAL with an account other than the
-  program's own as `Sender`: a program that never checks `Sender` authorizes
-  for every account rekeyed to it.
+- Set `true` only if you make that declaration for the template. Read the TEAL
+  with an account other than the program's own as `Sender`: a program that
+  never checks `Sender` authorizes for every account rekeyed to it.
 - A template that forbids rekey, or allows only a close-out, a fixed recipient,
   or a hashlock or timelock payment, declares `false`. `aplane.htlc.v1` does.
 - A new compiled key type declares it in its `internal/keytypecatalog` entry,
-  and `internal/lsigprovider/rekey_target_test.go` must list its decision.
+  and `internal/lsigprovider/rekey_target_test.go` must list its decision. Its
+  value is fixed in code.
 - Each aplane key records the declaration when it is created, and the signer
   reads the key's recorded value. Reinstalling a template with another
   declaration changes only keys created afterwards; existing keys keep theirs.
-- The signer refuses a rekey of another account to a held aplane key that
-  recorded false, under every `rekeys` setting and whatever the account's
-  rekey-to list says (`rekey_target_not_valid`). That target is held, not
-  foreign: "foreign" means only that the signer holds no aplane key for the
-  address, and `rekeys` decides only about foreign targets.
+- The signer refuses a rekey of any account to a held aplane key that recorded
+  false, the account's own address included, under every `rekeys` setting and
+  whatever the account's rekey-to list says (`rekey_target_not_valid`). That
+  target is held, not foreign: "foreign" means only that the signer holds no
+  aplane key for the address, and `rekeys` decides only about foreign targets.
+- No tool edits a key's recorded value. To correct a wrong declaration, correct
+  the template's `valid_rekey_target`, reinstall it, then delete and regenerate
+  each affected aplane key. A generic LogicSig key regenerated with the same
+  parameters keeps its address; a composed template's key gets a new address,
+  so move its funds before deleting it. See
+  [Correcting a wrong declaration](ARCH_KEYTYPES.md#correcting-a-wrong-declaration).
 
 ## Naming Rules
 

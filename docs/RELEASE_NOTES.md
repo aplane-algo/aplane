@@ -16,26 +16,30 @@ whole balance, so an account rekeyed to it was left to whoever could satisfy the
 program. Such a rekey passed the shipped default, and its warning said "You
 possess the keys for the new address."
 
-- **Every key type declares `valid_rekey_target`**: whether an account of
-  another key type may safely be rekeyed to an account of this key type.
+- **Every key type declares `valid_rekey_target`**: the key type author's
+  declaration that an aplane key of this type may be the signing authority an
+  account is rekeyed to, its own account included, subject to that key's own
+  restrictions (its bounds, a cosigner, its program).
   `ed25519`, `falcon1024`, `aplane.falcon1024.v1` and `aplane.ed25519.v1` declare
   true; the rotating key types, `aplane.witness-falcon1024.v1` and
   `aplane.htlc.v1` declare false. A YAML template must declare it to be
   installed. `/keytypes` reports the declaration.
 - **Each aplane key records the declaration when it is created**, in its key
   record, and keeps it. `/keys` reports the recorded value. Reinstalling a
-  template with another declaration affects only keys created afterwards.
+  template with another declaration affects only keys created afterwards; to
+  correct a key, delete and regenerate it.
 - **A rekey to a held aplane key that is not a valid rekey target is
-  refused**, before policy and under every `rekeys` setting, with HTTP 403 and
-  the error code `rekey_target_not_valid`. Neither `allow_rekeys` nor the
-  account's rekey-to list lifts it. A rekey of an account to its own address is
-  exempt. The `rekeys` setting still decides foreign targets, addresses the
+  refused**, the account's own address included, before policy and under every
+  `rekeys` setting, with HTTP 403 and the error code `rekey_target_not_valid`.
+  Neither `allow_rekeys` nor the account's rekey-to list lifts it. The `rekeys`
+  setting still decides foreign targets, addresses the
   signer holds no aplane key for, as before.
 - **The rekey warning names what the signer holds.** "This signer holds the
   aplane key for the new address." replaces "You possess the keys for the new
-  address."; a rekey of an account to its own address says it returns to the
-  account's own aplane key; and at a position this signer does not sign, a rekey
-  to a held aplane key that is not a valid rekey target says so.
+  address."; a rekey of an account to its own address says it returns signing
+  authority there; and at a position this signer does not sign, a rekey to a
+  held aplane key that is not a valid rekey target, the account's own included,
+  says so.
 
 ## apshell checks more of what the signer returns
 

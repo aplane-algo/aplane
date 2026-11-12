@@ -58,11 +58,16 @@ type InvalidRekeyTarget struct {
 }
 
 // RekeyHeldNotValidText is the warning's line for a rekey to a held aplane
-// key that is not a valid rekey target.
-func RekeyHeldNotValidText(target InvalidRekeyTarget) string {
+// key that is not a valid rekey target. ownAddress is set when the target is
+// the transaction's own sender.
+func RekeyHeldNotValidText(target InvalidRekeyTarget, ownAddress bool) string {
 	keyType := target.KeyType
 	if keyType == "" {
 		keyType = "unknown"
+	}
+	if ownAddress {
+		return ">>> THIS SIGNER HOLDS THE APLANE KEY FOR THE ACCOUNT'S OWN ADDRESS, BUT IT IS NOT A VALID REKEY TARGET (" + keyType +
+			"): THE ACCOUNT MAY BE STRANDED <<<"
 	}
 	return ">>> THIS SIGNER HOLDS THE APLANE KEY FOR THE NEW ADDRESS, BUT IT IS NOT A VALID REKEY TARGET (" + keyType +
 		"): AN ACCOUNT REKEYED TO IT MAY BE STRANDED <<<"
@@ -93,21 +98,25 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 
 	if facts.Has(txeffects.EffectRekey) && !ctx.ProtocolRekeyTargets[txn.RekeyTo.String()] {
 		rekeyTarget := txn.RekeyTo.String()
+		ownAddress := txn.RekeyTo == txn.Sender
 		msg := RekeyTransfersText
-		if ctx.ListedRekeyTargets[rekeyTarget] {
+		switch {
+		case ownAddress:
+			msg = RekeyToOwnAddressText
+		case ctx.ListedRekeyTargets[rekeyTarget]:
 			msg = RekeyToListedTargetText
 		}
 		switch {
-		case txn.RekeyTo == txn.Sender && ctx.KnownAddresses[rekeyTarget]:
-			msg = RekeyToOwnAddressText + "\n   " + RekeyOwnAddressHeldText
-		case txn.RekeyTo == txn.Sender:
-			msg = RekeyToOwnAddressText + "\n   " + RekeyLoseControlText
 		case hasInvalidRekeyTarget(ctx, rekeyTarget):
 			invalid := ctx.InvalidRekeyTargets[rekeyTarget]
-			msg += "\n   " + RekeyHeldNotValidText(invalid)
+			msg += "\n   " + RekeyHeldNotValidText(invalid, ownAddress)
 			if invalid.GenericLogicSig {
 				msg += "\n   " + RekeyGenericLogicSigText
 			}
+		case ownAddress && ctx.KnownAddresses[rekeyTarget]:
+			msg += "\n   " + RekeyOwnAddressHeldText
+		case ownAddress:
+			msg += "\n   " + RekeyLoseControlText
 		case ctx.KnownAddresses[rekeyTarget]:
 			msg += "\n   " + RekeyHeldText
 		case ctx.ListedRekeyTargets[rekeyTarget]:

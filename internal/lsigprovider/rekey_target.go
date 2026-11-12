@@ -6,17 +6,20 @@ package lsigprovider
 import "github.com/aplane-algo/aplane/internal/keytypecatalog"
 
 // RekeyTargetDeclarer is implemented by an installed template's provider:
-// ValidRekeyTarget is the template's valid_rekey_target attribute, whether an
-// account of another key type may safely be rekeyed to an account of this key
-// type. A compiled key type declares the same attribute in its catalog entry.
+// ValidRekeyTarget is the template's valid_rekey_target, the author's
+// declaration that an aplane key of this type may be the signing authority
+// an account is rekeyed to, its own account included, subject to its
+// program. A compiled key type declares the same attribute in its catalog
+// entry.
 type RekeyTargetDeclarer interface {
 	ValidRekeyTarget() bool
 }
 
-// ValidRekeyTarget resolves keyType's valid_rekey_target declaration: whether
-// an account of another key type may safely be rekeyed to an account of this
-// key type. A compiled key type declares it in its catalog entry, which is
-// read first; an installed template declares it in its YAML
+// ValidRekeyTarget resolves keyType's valid_rekey_target declaration: the key
+// type author's statement that an aplane key of this type may be the signing
+// authority an account is rekeyed to, its own account included, subject
+// to that key's own restrictions. A compiled key type declares it in its
+// catalog entry, which is read first; an installed template declares it in its YAML
 // (RekeyTargetDeclarer). It is a Resolve-axis question: it needs the
 // registries. It is read when an aplane key is created, which records the
 // value (keys.Payload.ValidRekeyTarget), and by /keytypes; the signer's rekey

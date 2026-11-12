@@ -11,7 +11,8 @@ max_opcode_cost: 20000
 # Not a valid rekey target: the program never checks Sender, forbids every
 # rekey, and allows only a payment that closes the whole balance to the
 # recipient (with the preimage) or the refund address (after timeout_round).
-# An account rekeyed to an HTLC account could never be rekeyed away again.
+# An account rekeyed to an HTLC account would be closed by whoever satisfies
+# the program, and could never be rekeyed away.
 valid_rekey_target: false
 
 parameters:

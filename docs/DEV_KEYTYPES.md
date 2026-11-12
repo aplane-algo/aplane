@@ -857,18 +857,23 @@ teal: |
   // strict mode: $variable constant references
 ```
 
-`valid_rekey_target` says whether an account of another key type may safely be
-rekeyed to an account of this key type. Set it to `true` only if such an account
-is not stranded: the program lets it be rekeyed away again, or otherwise
-permits what an ordinary account needs. A program that never checks `Sender`
-authorizes for every account rekeyed to it, so read the TEAL with another
-account as `Sender`. Install refuses a template that leaves the field out, with
-an error naming it. Each aplane key records the declaration when it is created
-(`valid_rekey_target` in the key record), and the signer reads the key's value.
-The field is not part of the compatibility fingerprint: reinstalling the same
-definition with another declaration changes only keys created afterwards. A
-compiled key type declares the same attribute in its `internal/keytypecatalog`
-entry. See
+`valid_rekey_target` is the key type author's declaration that an aplane key of
+this type may be the signing authority an account is rekeyed to, its own account
+included, subject to that key's own restrictions (its bounds, a cosigner, its
+program). Set it to `true` only if you make that declaration. A program that
+never checks `Sender` authorizes for every account rekeyed to it, so read the
+TEAL with another account as `Sender`. When a key records `false`, the signer
+refuses every rekey to its address, the account's own address included. Install
+refuses a template that leaves the field out, with an error naming it. Each
+aplane key records the declaration when it is created (`valid_rekey_target` in
+the key record), and the signer reads the key's value. The field is not part of
+the compatibility fingerprint: reinstalling the same definition with another
+declaration changes only keys created afterwards. To correct a key created
+under a wrong declaration, correct the template's declaration, reinstall it,
+then delete and regenerate the key; see
+[Correcting a wrong declaration](ARCH_KEYTYPES.md#correcting-a-wrong-declaration).
+A compiled key type declares the same attribute in its
+`internal/keytypecatalog` entry, where the value is fixed in code. See
 [Valid rekey target](ARCH_KEYTYPES.md#valid-rekey-target).
 
 Strict variable constants by type. These constant blocks are emitted by the

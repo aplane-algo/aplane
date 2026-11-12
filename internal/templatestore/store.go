@@ -55,11 +55,12 @@ type BaseTemplateSpec struct {
 	// consensus profile APlane currently supports. A pointer preserves the
 	// distinction between omission and an invalid explicit zero while parsing.
 	MaxOpcodeCost *uint64 `yaml:"max_opcode_cost,omitempty"`
-	// ValidRekeyTarget is the key type's valid_rekey_target declaration: an
-	// account of another key type may safely be rekeyed to an account of this
-	// key type, because the program does not strand it there. Install requires
-	// it (ValidateRekeyTargetDeclaration); a pointer is what lets that check
-	// see it is there. Each aplane key records it when the key is created.
+	// ValidRekeyTarget is the template's valid_rekey_target: the author's
+	// declaration that an aplane key of this type may be the signing authority
+	// an account is rekeyed to, its own account included, subject to its
+	// program. Install requires it (ValidateRekeyTargetDeclaration); a pointer
+	// is what lets that check see it is there. Each aplane key records it when
+	// the key is created.
 	ValidRekeyTarget *bool `yaml:"valid_rekey_target,omitempty"`
 }
 
@@ -72,7 +73,7 @@ func (s *BaseTemplateSpec) RekeyTargetValid() bool {
 // valid_rekey_target: a template on its way into a store must declare it.
 func (s *BaseTemplateSpec) ValidateRekeyTargetDeclaration() error {
 	if s == nil || s.ValidRekeyTarget == nil {
-		return fmt.Errorf("valid_rekey_target is required: set it to true only if an account of another key type rekeyed to an account of this key type is not stranded (the program lets it be rekeyed away again, or otherwise permits what an ordinary account needs), else false")
+		return fmt.Errorf("valid_rekey_target is required: declare true only if an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to its program; else false")
 	}
 	return nil
 }

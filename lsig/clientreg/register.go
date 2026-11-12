@@ -33,8 +33,9 @@ func FalconPlainHostEntry() keytypecatalog.Entry {
 		// default-enabled general bounded type it replaces did (account
 		// overlays phase 6.5).
 		Availability: keytypecatalog.AvailabilityDefaultEnabled,
-		// A Falcon-1024 private key controls every account of the plain
-		// host, with or without overlays and bounds.
+		// An aplane key of the plain host may be the signing authority
+		// another account is rekeyed to, subject to its own overlays and
+		// bounds.
 		ValidRekeyTarget: true,
 	}
 }
@@ -46,7 +47,7 @@ func Ed25519PlainHostEntry() keytypecatalog.Entry {
 		KeyType:      ed25519lsig.KeyTypeV1,
 		Family:       ed25519lsig.FamilyName,
 		Availability: keytypecatalog.AvailabilityLibrary,
-		// An Ed25519 private key controls every account of the plain host.
+		// As the Falcon plain host: subject to its own overlays and bounds.
 		ValidRekeyTarget: true,
 	}
 }
@@ -67,7 +68,7 @@ func RegisterClient() {
 		// makes the key type opt-in. Signer binaries register its storage,
 		// stage cryptography and generator through lsig/signerreg. None is a
 		// valid rekey target: a rotating account's address is its one-time
-		// stage 0 program (rejectRekeyToRotating refuses such a rekey).
+		// stage 0 program, for another account and for its own.
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:          rotatingkey.RotatingTripleXmssV1,
 			Family:           rotatingkey.RotatingTripleXmssFamily,
