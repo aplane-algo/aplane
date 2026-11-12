@@ -92,6 +92,21 @@ func (cache *SignerCache) IsGenericLsig(address string) bool {
 	return cache.GenericLsigs[address]
 }
 
+// HeldKeyAddresses returns, as a set, the addresses whose own key record the
+// signer holds with key material: every address it lists except a generic
+// LogicSig, which has no key. An account the signer can sign for only through
+// its auth address is not in it, so a rekey to that account hands it over just
+// as a rekey to a stranger does.
+func (cache *SignerCache) HeldKeyAddresses() map[string]bool {
+	held := make(map[string]bool, len(cache.Keys))
+	for address := range cache.Keys {
+		if !cache.IsGenericLsig(address) {
+			held[address] = true
+		}
+	}
+	return held
+}
+
 // SetGenericLsig marks an address as a generic LogicSig
 func (cache *SignerCache) SetGenericLsig(address string, isGeneric bool) {
 	if cache.GenericLsigs == nil {

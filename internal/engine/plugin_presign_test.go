@@ -740,3 +740,96 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 		t.Fatalf("plugin signer calls = %d, /sign calls = %d, want none after a refused plan", pluginCalls.Load(), signCalls.Load())
 	}
 }
+
+// What the accepted plan changed is reported, and the report survives a step
+// after the plan that fails: it comes back with the error, as a failed
+// submission's output does, rather than being dropped with it.
+func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *testing.T) {
+	pluginAddress, err := signing.DummyAddress()
+	if err != nil {
+		t.Fatalf("signing.DummyAddress() error = %v", err)
+	}
+	managedAccount := crypto.GenerateAccount()
+	resources := &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+		MaxOpcodeCost: 20_000,
+	}
+	txns := []types.Transaction{
+		presignTestTxn(t, pluginAddress.String(), "plugin"),
+		presignTestTxn(t, managedAccount.Address.String(), "managed"),
+	}
+
+	var signCalls atomic.Int32
+	signerMux := http.NewServeMux()
+	signerMux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		drafts := make([]types.Transaction, len(req.Requests))
+		for i, item := range req.Requests {
+			txn, err := txnutil.DecodePrefixedHex(item.TxnBytesHex)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			drafts[i] = txn
+		}
+		planned, report := presignPlan(t, drafts, 2000, 1)
+		encoded := make([]string, len(planned))
+		for i, txn := range planned {
+			encoded[i] = txnutil.EncodeWithPrefixHex(txn)
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: encoded, Mutations: report})
+	})
+	signerMux.HandleFunc("/sign", func(w http.ResponseWriter, r *http.Request) {
+		signCalls.Add(1)
+		http.Error(w, "must not be reached", http.StatusInternalServerError)
+	})
+	signerServer := httptest.NewServer(signerMux)
+	defer signerServer.Close()
+
+	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+			ConsensusVersion: string(protocol.ConsensusV42),
+		})
+	}))
+	defer algodServer.Close()
+	algodClient, err := algod.MakeClient(algodServer.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
+
+	result, err := engine.SignAndSubmitWithPluginSigners(
+		context.Background(),
+		txns,
+		map[string]string{pluginAddress.String(): "plugin-ref"},
+		map[string]PluginSlotAuthorization{pluginAddress.String(): {LsigResources: resources}},
+		func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
+			return nil, errors.New("the plugin's key is unavailable")
+		},
+		nil,
+	)
+	if err == nil || err.Error() != "plugin signing failed: the plugin's key is unavailable" {
+		t.Fatalf("error = %v, want the plugin's failure", err)
+	}
+	if signCalls.Load() != 0 {
+		t.Fatalf("/sign calls = %d, want none after the plugin failed", signCalls.Load())
+	}
+	want := "[PLUGIN] Signer added 1 dummy transaction(s) for LogicSig arguments/opcode budget\n" +
+		"[PLUGIN] Signer raised fees by 2000 microAlgos for authorization, on transaction(s) [1]\n"
+	if result == nil || result.Output != want {
+		t.Fatalf("result = %+v, want the plan lines %q", result, want)
+	}
+	var carrier interface{ SubmissionOutput() string }
+	if !errors.As(err, &carrier) || carrier.SubmissionOutput() != want {
+		t.Fatalf("error %v does not carry the plan lines", err)
+	}
+}

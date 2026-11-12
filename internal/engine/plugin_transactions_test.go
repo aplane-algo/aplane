@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"log"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -153,46 +156,51 @@ func TestProcessTransactionIntentsMultipleRawAndLaterFailure(t *testing.T) {
 }
 
 // A grouped pair, as an SDK composer (algosdk's AtomicTransactionComposer, which
-// the reti example plugin uses) returns it in the default mode: the group ID is
-// read as the plugin set it, and cleared for the signer to compute.
-func TestProcessTransactionIntentsAcceptsAComposerGroupedPair(t *testing.T) {
+// the reti example plugin uses) returns it in the default mode: the pair is
+// accepted, its group ID is cleared for the signer to compute, and the reading
+// reports that one was discarded, so the review can say so.
+func TestDecodePluginDraftAcceptsAComposerGroupedPair(t *testing.T) {
 	txns := []types.Transaction{pluginIntentTestPayment(t, 41, 1), pluginIntentTestPayment(t, 42, 2)}
+	ungrouped := rawIntentsForTest(txns...)
 	groupID, err := crypto.ComputeGroupID(txns)
 	if err != nil {
 		t.Fatalf("ComputeGroupID() error = %v", err)
 	}
-	intents := make([]jsonrpc.TransactionIntent, len(txns))
+	grouped := make([]types.Transaction, len(txns))
 	for i := range txns {
-		txns[i].Group = groupID
-		intents[i] = jsonrpc.TransactionIntent{Type: "raw", Encoded: base64.StdEncoding.EncodeToString(msgpack.Encode(txns[i]))}
+		grouped[i] = txns[i]
+		grouped[i].Group = groupID
 	}
 
-	drafts, err := DecodeRawTransactionIntents(intents)
+	drafts, discarded, err := DecodePluginDraft(rawIntentsForTest(grouped...))
 	if err != nil {
-		t.Fatalf("DecodeRawTransactionIntents() error = %v", err)
+		t.Fatalf("DecodePluginDraft(grouped) error = %v", err)
+	}
+	if !discarded {
+		t.Fatal("DecodePluginDraft(grouped) did not report the discarded group ID")
+	}
+	if len(drafts) != 2 {
+		t.Fatalf("len(drafts) = %d, want 2", len(drafts))
 	}
 	for i, txn := range drafts {
-		if txn.Group != groupID {
-			t.Fatalf("draft %d group = %x, want the plugin's %x", i, txn.Group, groupID)
+		if !bytes.Equal(msgpack.Encode(txn), msgpack.Encode(txns[i])) {
+			t.Fatalf("draft %d is not the plugin's transaction with its group ID cleared", i)
 		}
 	}
 
-	got, err := ProcessTransactionIntents(intents)
+	// Submission reads the same draft.
+	got, err := ProcessTransactionIntents(rawIntentsForTest(grouped...))
 	if err != nil {
-		t.Fatalf("ProcessTransactionIntents() error = %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("len(got) = %d, want 2", len(got))
+		t.Fatalf("ProcessTransactionIntents(grouped) error = %v", err)
 	}
 	for i, txn := range got {
-		if txn.Group != (types.Digest{}) {
-			t.Fatalf("transaction %d group = %x, want cleared", i, txn.Group)
+		if !bytes.Equal(msgpack.Encode(txn), msgpack.Encode(drafts[i])) {
+			t.Fatalf("submission's transaction %d differs from the reviewed draft", i)
 		}
-		want := txns[i]
-		want.Group = types.Digest{}
-		if !bytes.Equal(msgpack.Encode(txn), msgpack.Encode(want)) {
-			t.Fatalf("transaction %d changed beyond its group ID", i)
-		}
+	}
+
+	if _, discarded, err := DecodePluginDraft(ungrouped); err != nil || discarded {
+		t.Fatalf("DecodePluginDraft(ungrouped) = discarded %v, %v; want nothing discarded", discarded, err)
 	}
 }
 
@@ -208,8 +216,11 @@ func TestProcessTransactionIntentsRefusesNonCanonicalEncodings(t *testing.T) {
 				{Type: "raw", Encoded: base64.StdEncoding.EncodeToString(variant)},
 			}
 			for decoder, decode := range map[string]func([]jsonrpc.TransactionIntent) ([]types.Transaction, error){
-				"DecodeRawTransactionIntents": DecodeRawTransactionIntents,
-				"ProcessTransactionIntents":   ProcessTransactionIntents,
+				"DecodePluginDraft": func(intents []jsonrpc.TransactionIntent) ([]types.Transaction, error) {
+					txns, _, err := DecodePluginDraft(intents)
+					return txns, err
+				},
+				"ProcessTransactionIntents": ProcessTransactionIntents,
 			} {
 				_, err := decode(intents)
 				if !errors.Is(err, canonical.ErrNotCanonical) || !strings.HasPrefix(err.Error(), "transaction 2: ") {
@@ -218,6 +229,46 @@ func TestProcessTransactionIntentsRefusesNonCanonicalEncodings(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The user is told only that the msgpack is invalid; the codec's own detail,
+// which can quote the plugin's bytes, goes to the debug log for the plugin's
+// author.
+func TestDecodePluginDraftLogsTheCodecDetailAtDebug(t *testing.T) {
+	previous := slog.Default()
+	flags := log.Flags()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(os.Stderr)
+		log.SetFlags(flags)
+	})
+	var logged bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	_, _, err := DecodePluginDraft([]jsonrpc.TransactionIntent{
+		{Type: "raw", Encoded: base64.StdEncoding.EncodeToString([]byte("not-msgpack"))},
+	})
+	if err == nil || err.Error() != "transaction 1: failed to decode msgpack: invalid msgpack" {
+		t.Fatalf("error = %v, want only that the msgpack is invalid", err)
+	}
+	got := logged.String()
+	for _, want := range []string{"level=DEBUG", "component=engine", "transaction=1", "error="} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("debug log = %q, want %q", got, want)
+		}
+	}
+	if strings.Contains(got, `error="invalid msgpack"`) || strings.Contains(got, "error=invalid") {
+		t.Fatalf("debug log = %q, want the codec's detail, not the user-facing text", got)
+	}
+}
+
+// rawIntentsForTest encodes txns as a plugin's raw intents.
+func rawIntentsForTest(txns ...types.Transaction) []jsonrpc.TransactionIntent {
+	intents := make([]jsonrpc.TransactionIntent, len(txns))
+	for i, txn := range txns {
+		intents[i] = jsonrpc.TransactionIntent{Type: "raw", Encoded: base64.StdEncoding.EncodeToString(msgpack.Encode(txn))}
+	}
+	return intents
 }
 
 // pluginIntentTestPayment is a payment of amount from a sender to a receiver,

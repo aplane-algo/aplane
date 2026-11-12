@@ -71,14 +71,17 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	}
 }
 
-// heldAddresses is the set of addresses the connected signer holds keys for,
-// or nil when that is not known. A rekey to one of them keeps control, and
-// the review says so, as the signer's own prompt does.
+// heldAddresses is the set of addresses whose own key the connected signer
+// holds, or nil when that is not known. A rekey to one of them keeps control,
+// and the review says so, as the signer's own prompt does. It is not the set
+// of accounts the client can sign for: an account signable only through its
+// auth address, or a generic LogicSig with no key, is not held, so a rekey to
+// one warns of losing control.
 func (r *REPLState) heldAddresses() map[string]bool {
 	if r.App == nil {
 		return nil
 	}
-	return r.App.SignableAddressSet()
+	return r.App.HeldKeyAddressSet()
 }
 
 // pluginReviewLines lists what one slot does: the shared description the
@@ -122,20 +125,22 @@ func renderPregroupedSignedGroup(r *REPLState, stxns []types.SignedTxn) {
 // decodePresignReviewSlots decodes a presign-plan draft (every slot Type:"raw",
 // unsigned) into review slots, tagging each by signing role: a slot whose sender is
 // declared in pluginSigners is plugin-signed; every other slot is APlane-managed
-// (apsigner signs it). It decodes with engine.ProcessTransactionIntents, the
-// function that builds the draft sent to /plan, so the review shows that draft.
-// Display-only; the engine performs authoritative validation, and apsigner's
-// /sign approval is the authoritative gate for the managed slots.
-func decodePresignReviewSlots(intents []jsonrpc.TransactionIntent, pluginSigners []jsonrpc.PluginSigner) ([]pluginReviewSlot, error) {
+// (apsigner signs it). It reads the draft with engine.DecodePluginDraft, the
+// one reading the /plan request is built from, so the review shows the
+// transactions that are planned; groupIDDiscarded reports a plugin group ID
+// that reading cleared. Display-only; the engine performs authoritative
+// validation, and apsigner's /sign approval is the authoritative gate for the
+// managed slots.
+func decodePresignReviewSlots(intents []jsonrpc.TransactionIntent, pluginSigners []jsonrpc.PluginSigner) (slots []pluginReviewSlot, groupIDDiscarded bool, err error) {
 	owned := make(map[string]bool, len(pluginSigners))
 	for _, ps := range pluginSigners {
 		owned[ps.Address] = true
 	}
-	txns, err := engine.ProcessTransactionIntents(intents)
+	txns, groupIDDiscarded, err := engine.DecodePluginDraft(intents)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	slots := make([]pluginReviewSlot, len(txns))
+	slots = make([]pluginReviewSlot, len(txns))
 	for i, txn := range txns {
 		role := slotRoleManaged
 		if owned[txn.Sender.String()] {
@@ -143,32 +148,40 @@ func decodePresignReviewSlots(intents []jsonrpc.TransactionIntent, pluginSigners
 		}
 		slots[i] = pluginReviewSlot{txn: txn, role: role}
 	}
-	return slots, nil
+	return slots, groupIDDiscarded, nil
+}
+
+// defaultDraftTitle heads the default mode's review. It promises nothing
+// about a display: under auto-approval apsigner shows nothing, so it names
+// what applies to the final group instead.
+const defaultDraftTitle = "DRAFT: plugin-built transaction(s); apsigner sets the final fees and group ID, and its policy and approval apply to the final group"
+
+// discardedGroupIDNotice follows a draft review whose plugin set a group ID.
+const discardedGroupIDNotice = "The plugin set a group ID; it is discarded, and apsigner computes the group ID over the final group."
+
+// renderDiscardedGroupIDNotice says that a draft's plugin group ID was
+// discarded, when one was.
+func renderDiscardedGroupIDNotice(r *REPLState, discarded bool) {
+	if discarded {
+		r.println(discardedGroupIDNotice)
+	}
 }
 
 // renderDefaultPluginDraft renders a default-mode plugin result: unsigned
-// transactions for APlane-managed accounts, decoded as submission decodes
-// them, through the same renderer the group modes use. It is information,
-// not a gate: apsigner plans the group and its approval shows the final
-// transactions. A group ID the plugin set is discarded at submission (the
-// signer computes the group ID over the final group), and the review says so.
+// transactions for APlane-managed accounts, read with engine.DecodePluginDraft
+// as submission reads them, through the same renderer the group modes use. It
+// is information, not a gate: apsigner plans the final group, and its policy
+// and approval apply to it.
 func renderDefaultPluginDraft(r *REPLState, intents []jsonrpc.TransactionIntent) error {
-	drafts, err := engine.DecodeRawTransactionIntents(intents)
+	drafts, groupIDDiscarded, err := engine.DecodePluginDraft(intents)
 	if err != nil {
 		return err
 	}
-	discarded := false
 	slots := make([]pluginReviewSlot, len(drafts))
 	for i, txn := range drafts {
-		if txn.Group != (types.Digest{}) {
-			discarded = true
-			txn.Group = types.Digest{}
-		}
 		slots[i] = pluginReviewSlot{txn: txn, role: slotRoleManaged}
 	}
-	renderPluginGroupReview(r, "DRAFT: plugin-built transaction(s); apsigner sets the final fees and group ID and shows them for approval", slots)
-	if discarded {
-		r.println("The plugin set a group ID; it is discarded, and apsigner computes the group ID over the final group.")
-	}
+	renderPluginGroupReview(r, defaultDraftTitle, slots)
+	renderDiscardedGroupIDNotice(r, groupIDDiscarded)
 	return nil
 }

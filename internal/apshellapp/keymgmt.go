@@ -160,12 +160,11 @@ func (a *App) ResolveDeleteKeyTarget(_ context.Context, req DeleteKeyRequest) (*
 	return &DeleteKeyTarget{Address: address}, nil
 }
 
-// SignableAddressSet returns the addresses the connected signer holds keys
-// for, as a set. It is empty when no signer is connected.
-func (a *App) SignableAddressSet() map[string]bool {
-	set := map[string]bool{}
-	for _, address := range a.eng.GetSignableAddresses() {
-		set[address] = true
-	}
-	return set
+// HeldKeyAddressSet returns the addresses whose own key record the connected
+// signer holds with key material, as a set: not an account the client can sign
+// for only through its auth address, and not a generic LogicSig, which has no
+// key. A rekey to one of them keeps control. It is empty when no signer is
+// connected.
+func (a *App) HeldKeyAddressSet() map[string]bool {
+	return a.eng.HeldKeyAddressSet()
 }

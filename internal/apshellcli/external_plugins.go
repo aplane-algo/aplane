@@ -100,17 +100,28 @@ func submitPluginTransactions(r *REPLState, pluginName string, result *jsonrpc.E
 	return r.app().SubmitPluginTransactions(r.commandContext(), pluginName, result, lsigArgs)
 }
 
+// reviewPluginTransactions dispatches the client review on the result's group
+// mode, as submission dispatches on it: an unknown mode is refused with the
+// error submission gives, before anything is shown, rather than reviewed as
+// the default mode.
 func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
 	switch result.GroupMode {
+	case "":
+		return reviewDefaultDraft(r, result)
 	case jsonrpc.GroupModePregroupedSigned:
 		return reviewPregroupedSigned(r, result)
 	case jsonrpc.GroupModePresignPlan:
 		return reviewPresignPlan(r, result)
+	default:
+		return false, fmt.Errorf("unsupported plugin groupMode %q", result.GroupMode)
 	}
+}
 
-	// The default mode: unsigned transactions for APlane-managed accounts. The
-	// decoded draft is shown as information; apsigner's approval is the gate,
-	// and this client prompt is asked only when the plugin requests it.
+// reviewDefaultDraft is the default mode's review: unsigned transactions for
+// APlane-managed accounts. The decoded draft is shown as information;
+// apsigner's policy and approval over the final group are the gate, and this
+// client prompt is asked only when the plugin requests it.
+func reviewDefaultDraft(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
 	if err := renderDefaultPluginDraft(r, result.Transactions); err != nil {
 		return false, err
 	}
@@ -170,11 +181,12 @@ func reviewPregroupedSigned(r *REPLState, result *jsonrpc.ExecuteResult) (bool, 
 // /sign approval is the authoritative gate for the managed slots, so this client
 // review is a confirm on top: it prompts interactively and otherwise proceeds.
 func reviewPresignPlan(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
-	slots, err := decodePresignReviewSlots(result.Transactions, result.PluginSigners)
+	slots, groupIDDiscarded, err := decodePresignReviewSlots(result.Transactions, result.PluginSigners)
 	if err != nil {
 		return false, fmt.Errorf("presign-plan: %w", err)
 	}
 	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots)
+	renderDiscardedGroupIDNotice(r, groupIDDiscarded)
 
 	if r.AutoConfirm {
 		return false, nil

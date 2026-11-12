@@ -100,7 +100,10 @@ and type; then the description `internal/txnreview` builds, the same one the
 signer's approval prompt shows, with the network named from the genesis hash;
 then every finding the signer's warning rules produce for those bytes, each
 marked `!!`; a type the describer does not know is shown with a line saying
-its fields are not shown, so opacity is displayed, never hidden), and
+its fields are not shown, so opacity is displayed, never hidden; a rekey is
+shown as keeping control only when its target is an address whose own key
+the signer holds, `heldAddresses`, which leaves out an account signable only
+through its auth address and a generic LogicSig with no key), and
 non-interactive
 contexts (`AutoConfirm`, MCP) fail closed with an explicit error. Validation
 precedes rendering: the review path itself constructs the
@@ -120,11 +123,16 @@ reorder) rejects with "plan modified ... slot". Anchor:
 `internal/engine/plugin_presign.go::validatePluginPlan` (applied to both slot
 classes), whose fee and field reconciliation is the ordinary `/sign` path's
 `internal/clientsign/verify.go::ValidateOriginalPositions`. The draft it
-compares against is the canonical decode of the plugin's raw intents
-(`internal/engine/plugin_transactions.go::ProcessTransactionIntents`, group ID
-cleared), and the client review decodes the draft with the same function, so
-preservation holds from the plugin's own bytes, not from one lenient reading
-of them. Once the plan passes, the fee raise it reports is printed.
+compares against is the one reading of the plugin's raw intents
+(`internal/engine/plugin_transactions.go::DecodePluginDraft`: canonical
+decode, group ID cleared, a discarded one reported), which submission reads
+through `ProcessTransactionIntents` and the client review reads directly, so
+the review shows what is planned and preservation holds from the plugin's own
+bytes, not from one lenient reading of them. Once the plan passes, the dummies
+it appended and the fee raise it reports are recorded in the command's output,
+which is shown when the command ends, with the submission or with the error of
+a later step; this is output, not a guard, and adds nothing to the checks or
+their order.
 
 After `/sign` and before broadcast, `verifySignedAgainstPlan` also requires
 every managed slot to sign exactly its canonical transaction, in bytes that
@@ -165,11 +173,11 @@ Every plugin-produced submission passed PS3's interactive review
 (pregrouped-signed) or PS6's signer authorization pipeline (presign-plan).
 The latter may resolve through explicit policy, forced review, or the ordinary
 operator default. Mode dispatch is total
-(`external_plugins.go` switches on `GroupMode`; signed intents outside
-pregrouped-signed fail `DecodeRawTransactionIntents`, which
-`ProcessTransactionIntents` and the client reviews of the presign-plan and
-default-flow drafts all decode with; `localSigners` is rejected at
-`apshellapp/submission.go`), so there is no third path.
+(`external_plugins.go` switches on `GroupMode` and, like submission, refuses a
+mode it does not know; signed intents outside pregrouped-signed fail
+`DecodePluginDraft`, which `ProcessTransactionIntents` and the client reviews
+of the presign-plan and default-flow drafts all read with; `localSigners` is
+rejected at `apshellapp/submission.go`), so there is no third path.
 
 ## Assumptions and honest gaps
 
@@ -207,11 +215,13 @@ default-flow drafts all decode with; `localSigners` is rejected at
   `internal/engine/plugin_pregrouped_test.go` and
   `internal/apshellcli/plugin_pregrouped_review_test.go` (mandatory review,
   AutoConfirm rejection).
-- Raw intent decoding (canonical, raw-only, group ID cleared) and the review
-  of the drafts: `internal/engine/plugin_transactions_test.go`;
+- Raw intent decoding (canonical, raw-only, group ID cleared and its discard
+  reported) and the review of the drafts:
+  `internal/engine/plugin_transactions_test.go`;
   `internal/apshellcli/plugin_approval_test.go` (the default flow's decoded
-  draft, whose prompt stays the plugin's `requiresApproval`, and the
-  presign-plan draft review).
+  draft, whose prompt stays the plugin's `requiresApproval`; the presign-plan
+  draft review; the refusal of an unknown `groupMode`; a rekey kept only for a
+  held key).
 - Presign preservation/byte-match/index discipline:
   `internal/engine/plugin_presign_test.go`.
 - Mixed passthrough display and auto-approval disable:
