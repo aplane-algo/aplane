@@ -941,7 +941,9 @@ aplane key for when that key is not a
 [valid rekey target](USER_KEYTYPES.md#valid-rekey-targets), such as an
 `aplane.htlc.v1` account. The refusal comes before policy, with the error code
 `rekey_target_not_valid`. Neither `allow_rekeys` nor the account's
-rekey-to list lifts it.
+rekey-to list lifts it. It covers every transaction of the group, not only the
+ones this signer signs: a transaction another party signed or will sign that
+makes such a rekey refuses the whole request.
 `appolicy try` tests the document alone and does not model it.
 
 `transaction_types` is evaluated before everything else. `reject` is Always

@@ -547,7 +547,7 @@ authorization path, enabling consensus-correct dummy and fee calculation.
 
 2. **All-foreign is rejected by apsigner**: If every entry is foreign (nothing to sign), both `/sign` and `/plan` return 400 because apsigner has no managed signing work to perform.
 
-3. **Policy applies to signer-controlled slots**: Hard policy linting runs only on signer-controlled transactions. Foreign slots are part of planning and approval context, but are not hard-rejected by the signer's policy engine.
+3. **Policy applies to signer-controlled slots**: Hard policy linting runs only on signer-controlled transactions. Foreign slots are part of planning and approval context, but are not hard-rejected by the signer's policy engine. The `rekey_target_not_valid` signer invariant, which is not policy, judges every position, foreign ones included (see [Request/Response Shapes](#requestresponse-shapes)).
 
 4. **`lsig_resources` is advisory for generic foreign entries**: It is a
    structured selected-path declaration used for dummy and program-fee
@@ -1325,7 +1325,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; no signature was released, rebuild and prepare again | `409` |
-| `rekey_target_not_valid` | a signed position rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target; refused under every `rekeys` setting before policy; nothing was signed. A rekey of another account to a held rotating account is refused first by the rotating invariant and keeps that refusal's code, `forbidden` | `403` |
+| `rekey_target_not_valid` | in a request that reaches the signer's gates, a transaction at any position of the group, whether this signer signs it or not (passthrough, foreign and contextual positions included), rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target, a held rotating account included; the message names that position; refused under every `rekeys` setting before policy; nothing was signed | `403` |
 | `rotating_window_not_current` | the rotating spend's validity window is not acceptable at the round the signer read (`first_valid` more than 2 rounds ahead, or fewer than 10 rounds before `last_valid`); this attempt released no signature, rebuild the validity rounds and prepare again | `409` |
 
 An empty `code` means the server predates code support or the failure had no
@@ -1464,7 +1464,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   freeze those cosigned workflows. Transaction-level hard policy is
   applied only to signer-controlled slots; passthrough and foreign entries
   contribute to group consistency, approval context, warning analysis, and
-  audit visibility.
+  audit visibility. The `rekey_target_not_valid` signer invariant judges them
+  as it judges every position.
 - Apsigner has no simulation endpoint or simulation request mode. Full
   simulation obtains an executable group through ordinary `/sign`; cosigned
   and bounded-cosigner groups both use `/plan`, `/sign/component`, and
@@ -1532,37 +1533,63 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - Rotating accounts (`signing_flow: rotating1`) are rejected before approval
   with `code:"rotating_signing_required"` on `/plan`, `/sign` and
   `/sign/component`.
-- A signed position that rekeys any other account to a rotating account this
-  signer holds is rejected with `403` before policy runs, on every path that
-  reaches the approval gates. A rotating account's address is its stage 0
-  program, a one-time stage key: an account rekeyed to it would be stuck on
-  that stage, outside the rotation, and every signature would reuse that key.
-  This is a signer invariant, not a policy setting; the rotating flow's own
-  rekeys go to stage addresses and are unaffected. apshell's `rekey` refuses
-  the same target before building the transaction, and fails closed on any
-  target whose `signing_flow` it cannot route an authorizer through.
-- A signed position that rekeys any account, its own address included, to an
-  address this signer holds an aplane key for, when that key records that it is
-  not a valid rekey target (`valid_rekey_target` false, recorded from its key type's declaration
-  when the key was created, as an `aplane.htlc.v1` account records), is
-  rejected before policy runs, on every path that reaches the approval gates,
-  with HTTP `403` and `code:"rekey_target_not_valid"`. It judges the key
-  snapshot the request was planned with, the one the `rekeys` rule and the
-  approval warnings read: the plan carries those held addresses
+- The signer invariants run in this order, before policy, on every path that
+  reaches the approval gates: the valid rekey target check, the rotating
+  check, then the nonparticipation check. Every request that reaches the
+  gates is judged at every position by the first. A request refused before
+  the gates is refused for that earlier reason, with its own code, and
+  nothing is signed: for example a cosigned account sent to `/sign`
+  (`bounded_cosigner_required`), a witness or rotating key type as an
+  ordinary signing authority, a `/sign/component` target that is not an
+  admitted cosigned spend or rekey, or a planning error. Those checks keep
+  their order.
+- A group in which any transaction rekeys an account, its own address
+  included, to an address this signer holds an aplane key for, when that key
+  records that it is not a valid rekey target (`valid_rekey_target` false,
+  recorded from its key type's declaration when the key was created, as an
+  `aplane.htlc.v1` account and every rotating account record), is rejected
+  before policy runs, on every path that reaches the approval gates, with
+  HTTP `403` and `code:"rekey_target_not_valid"`. For a request that reaches
+  the gates, it judges every position of the group as it will go on chain,
+  not only the positions this signer signs:
+  passthrough, foreign and contextual positions are judged too, and so is a
+  request in which the signer signs nothing, such as a passthrough-only
+  `/sign`. The signer puts no signature into a group that makes one of its
+  own aplane keys that is not a valid rekey target an account's authority. A
+  rekey to a held rotating account gets this code at every position: a
+  rotating account's address is its stage 0 program, a one-time stage key, so
+  an account rekeyed to it would be stuck on that stage, outside the
+  rotation, and every later signature for it would reuse that key. It judges
+  the key snapshot the request was planned with, the one the `rekeys` rule
+  and the approval warnings read: the plan carries those held addresses
   (`PlanResult.InvalidRekeyTargets`). Clients branch on the
   code; the message, `transaction N: rekey_target_not_valid: cannot rekey to
   <address>: this signer holds its aplane key (<key type>), which is not a valid
-  rekey target (valid_rekey_target: false)`, is for people and the audit log.
-  The key type's author declared that such a key may not be the signing
-  authority an account is rekeyed to: an HTLC account's program never checks
-  `Sender`, forbids every rekey and allows only a payment that closes the whole
-  balance. This is a signer invariant, not a policy setting: no
-  `rekeys` value lifts it, `allow_rekeys` included, and neither does the
-  account's rekey-to list (see
-  [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)). A foreign target, one the signer holds
-  no aplane key for, is left to the `rekeys` setting. A rotating target meets
-  the rotating invariant above first. At a position this signer does not sign,
-  the group's rekey warning names such a target instead.
+  rekey target (valid_rekey_target: false)`, followed for a rotating key type
+  by `; it is a rotating account, and its address is a one-time stage key; an
+  account rekeyed to it would be stuck on that stage, and every signature
+  would reuse that key`, is for people and the audit log, which records the
+  refusal at the position it names and at each position the signer signs
+  (see [ARCH_SECURITY.md](ARCH_SECURITY.md)). The key type's author declared that
+  such a key may not be the signing authority an account is rekeyed to: an
+  HTLC account's program never checks `Sender`, forbids every rekey and
+  allows only a payment that closes the whole balance. This is a signer
+  invariant, not a policy setting: no `rekeys` value lifts it,
+  `allow_rekeys` included, and neither does the account's rekey-to list (see
+  [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)). A foreign target,
+  one the signer holds no aplane key for, is left to the `rekeys` setting,
+  which still judges only the positions this signer signs. The cosigner role
+  holds no account aplane keys, so it has nothing to refuse here.
+- A signed position that rekeys any other account to a rotating account this
+  signer holds is rejected with `403` and `code:"forbidden"` by the rotating
+  check, which reads the key type rather than the key record. It is a second
+  line behind the valid rekey target check: every rotating key type declares
+  that it is not a valid rekey target and every rotating aplane key records
+  that, so the check above refuses such a rekey first, and this one fires
+  only if a rotating key's record ever said otherwise. The rotating flow's
+  own rekeys go to stage addresses and are unaffected. apshell's `rekey`
+  refuses the same target before building the transaction, and fails closed
+  on any target whose `signing_flow` it cannot route an authorizer through.
 - A `keyreg` with `Nonparticipation` set at a position this signer signs is
   rejected with `403` before policy runs, on both node roles: on the signer
   role in the approval gates (`/sign`, bounded components, rotating sign), and
@@ -1573,7 +1600,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   can't be undone, and the account can never take part in consensus again, so
   no policy can allow it; a `keyreg` `allow` covers online and offline
   registrations only. Passthrough and foreign positions are not this signer's
-  signatures and are not judged (`internal/signerapp/signing/invariant_gate.go`).
+  signatures and are not judged by it, nor by the rotating check
+  (`internal/signerapp/signing/invariant_gate.go`).
 
 `/plan` response (`signerapi.GroupPlanResponse`):
 
@@ -1599,8 +1627,10 @@ frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`,
 `contextual_positions[]`, and a contiguous `dummy_positions[]` suffix. The
 three position sets form a closed partition.
 
-A contextual position is one this request doesn't sign or judge; policy and the
-operator see it on the later `/sign`. It comes in two forms:
+A contextual position is one this request doesn't sign and its policy doesn't
+judge; policy and the operator see it on the later `/sign`. The
+`rekey_target_not_valid` invariant judges it here too, as it judges every
+position of the frozen group. It comes in two forms:
 
 - **Another party's position** carries no `auth_address`. The signer sizes its
   authorization from the caller's `lsig_resources` or `pq_scheme` hint.

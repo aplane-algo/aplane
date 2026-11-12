@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -98,8 +99,11 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 	}
 	_, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if err != nil && strings.Contains(err.Message, nonparticipationRefusal) {
-		if len(audit.rejected) == 0 || audit.rejected[0].reason != auditSignerInvariant+err.Message {
-			t.Fatalf("audit = %#v, want the refusal audited as %q", audit.rejected, auditSignerInvariant)
+		// A signer invariant names its position, so each entry identifies its
+		// transaction as planned.
+		if len(audit.rejected) != 0 || len(audit.rejectedRecords) == 0 || audit.rejectedRecords[0].reason != auditSignerInvariant+err.Message ||
+			audit.rejectedRecords[0].record.TxID != algocrypto.GetTxID(plan.AllTxns[0]) {
+			t.Fatalf("audit = %#v / %#v, want the refusal audited as %q with its transaction's record", audit.rejected, audit.rejectedRecords, auditSignerInvariant)
 		}
 	}
 	return err, approvalCalled

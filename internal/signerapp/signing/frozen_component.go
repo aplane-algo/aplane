@@ -52,7 +52,9 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	}
 	originals := allTxns[:evalCount]
 	// Every contextual position is foreign to this request's policy and
-	// signing: it is judged and signed later, on /sign. For sizing, a position
+	// signing: policy judges it and the signer signs it later, on /sign. The
+	// valid-target invariant judges it here too, as it judges every position
+	// of the frozen group, dummies included. For sizing, a position
 	// that names one of this signer's own accounts is not foreign: its
 	// authorization is sized from the signer's records, as /plan sized it, so
 	// the two always agree on the dummy count.
@@ -130,6 +132,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		NeedsRegroup: false, IsPreGrouped: isPreGrouped, HasPassthrough: false,
 		AuthKeyTypes: authKeyTypes, KnownAddresses: knownAddressesFromSnapshot(snapshot),
 		InvalidRekeyTargets: invalidRekeyTargetsForGroup(snapshot, allTxns), BoundedItems: boundedItems, Frozen: true,
+		presented: group,
 	}, req, nil
 }
 
