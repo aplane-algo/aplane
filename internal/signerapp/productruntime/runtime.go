@@ -178,6 +178,10 @@ type KeyPublicMetadata struct {
 	LogicSigResources    *lsigresource.Profile
 	// SigningArgs is a LogicSig key's declared runtime arguments, in order.
 	SigningArgs []lsigprovider.RuntimeArgDef
+	// ValidRekeyTarget is the key type's valid_rekey_target attribute
+	// (lsigprovider.ValidRekeyTarget), read once when the snapshot is
+	// published.
+	ValidRekeyTarget bool
 }
 
 // Config is the construction parameters for the product Runtime.
@@ -955,18 +959,13 @@ func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added, clea
 
 // --- Key access ---
 
-// KnownAddresses returns the addresses this identity holds a key for, the set
-// the rekey warning reads: every key record except a generic LogicSig, which
-// has no key and is controlled by its program alone. A record with no
-// metadata stays in the set.
+// KnownAddresses returns every address this identity holds an aplane key
+// for, of any key type: the set the rekey warning reads.
 func (ir *Runtime) KnownAddresses() map[string]bool {
 	ir.keysLock.RLock()
 	defer ir.keysLock.RUnlock()
 	addrs := make(map[string]bool, len(ir.keys))
 	for addr := range ir.keys {
-		if ir.keyMetadata[addr].Category == lsigprovider.CategoryGenericLsig {
-			continue
-		}
 		addrs[addr] = true
 	}
 	return addrs
@@ -1060,6 +1059,7 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 				BoundedAuthorization: summary.BoundedAuthorization,
 				LogicSigResources:    summary.LogicSigResources,
 				SigningArgs:          summary.SigningArgs,
+				ValidRekeyTarget:     lsigprovider.ValidRekeyTarget(keyTypes[selector]),
 			}
 		}
 	}

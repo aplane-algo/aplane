@@ -192,6 +192,7 @@ type YAMLTemplate struct {
 var _ genericlsig.Template = (*YAMLTemplate)(nil)
 var _ genericlsig.SaltedTemplate = (*YAMLTemplate)(nil)
 var _ lsigprovider.OpcodeProfileProvider = (*YAMLTemplate)(nil)
+var _ lsigprovider.RekeyTargetDeclarer = (*YAMLTemplate)(nil)
 
 // NewYAMLTemplate creates a new YAMLTemplate from a spec.
 func NewYAMLTemplate(spec *TemplateSpec) *YAMLTemplate {
@@ -218,6 +219,10 @@ func (t *YAMLTemplate) DisplayColor() string {
 
 // Category returns the LSig category (generic_lsig for templates).
 func (t *YAMLTemplate) Category() string { return lsigprovider.CategoryGenericLsig }
+
+// ValidRekeyTarget is the template's declared valid_rekey_target
+// (lsigprovider.RekeyTargetDeclarer), false when it declares none.
+func (t *YAMLTemplate) ValidRekeyTarget() bool { return t.spec.RekeyTargetValid() }
 
 // LogicSigOpcodeProfile returns the template author's required reviewed ceiling.
 func (t *YAMLTemplate) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {

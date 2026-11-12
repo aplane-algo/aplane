@@ -61,6 +61,27 @@ does not become an active key type until it is imported into the product store.
 New stores install no templates; import any library template explicitly with
 the template-management commands below.
 
+### Valid rekey targets
+
+Every key type says whether an account of another key type may safely be
+rekeyed to an account of this key type: its `valid_rekey_target`. The
+protocol-native types and the plain hosts say yes: a DSA private key controls
+their accounts, so an account rekeyed to one can be rekeyed away again. The
+rotating key types and `aplane.htlc.v1` say no. An HTLC's program never checks
+`Sender`, forbids every rekey and allows only a payment that closes the whole
+balance, so an account rekeyed to an HTLC account could only ever be closed to
+its recipient or refund address. The signer's `/keytypes` reports the
+attribute as `valid_rekey_target`, and `/keys` reports it for each key.
+
+The signer refuses a rekey of an account to an address it holds the aplane key
+for when that key's type is not a valid rekey target, unless it is the
+account's own address. The refusal names its reason, `rekey_target_not_valid`.
+Such a target is held, not foreign, and no policy setting lifts the refusal:
+not `rekeys: allow_rekeys`, and not the account's
+[rekey-to list](#rekey-to-lists). The `rekeys` setting decides only about
+foreign targets, addresses the signer holds no aplane key for. See
+[USER_POLICY.md](USER_POLICY.md).
+
 ## Operator Mental Model
 
 Normal operator screens answer one primary question: can this product runtime create
@@ -922,7 +943,10 @@ apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 ```
 
 Import encrypts the YAML into the product keystore and enables the key type
-for the signer.
+for the signer. A template must declare `valid_rekey_target` (see
+[Valid rekey targets](#valid-rekey-targets)); import refuses one that does not.
+A template installed before the field existed keeps loading, and its key type
+is not a valid rekey target.
 
 New stores install no template. For an allowlist or Corridor account,
 use a [preset of a plain host](#bounded-accounts). The only bundled

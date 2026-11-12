@@ -268,6 +268,9 @@ func ValidateSpecAdmission(spec *TemplateSpec) error {
 	if spec == nil {
 		return fmt.Errorf("template spec is nil")
 	}
+	if err := spec.ValidateRekeyTargetDeclaration(); err != nil {
+		return err
+	}
 	return ValidateRuntimeArgLimits(spec.RuntimeArgs)
 }
 

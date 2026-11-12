@@ -448,8 +448,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		}
 	}
 	item := &rotatingPlanItem{Stage: stage, Target: targetStage, TargetAddress: spend.RekeyTo}
-	known := make(map[string]bool, len(s.Planner.Snapshot().KeyFiles)+1)
-	for addr := range rekeyHeldAddressesFromSnapshot(s.Planner.Snapshot()) {
+	// One key-index snapshot builds the plan's known addresses and key type.
+	snapshot := s.Planner.Snapshot()
+	known := make(map[string]bool, len(snapshot.KeyFiles)+1)
+	for addr := range knownAddressesFromSnapshot(snapshot) {
 		known[addr] = true
 	}
 	// The rotation target is this signer's own next stage, never a foreign
@@ -472,7 +474,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		LogicSigResourcePlan: rebuilt.LogicSigResourcePlan,
 		FeeInfo:              rebuilt.FeeInfo,
 		NeedsRegroup:         len(allTxns) > 1,
-		AuthKeyTypes:         []string{s.Planner.Snapshot().KeyTypes[req.Account]},
+		AuthKeyTypes:         []string{snapshot.KeyTypes[req.Account]},
 		KnownAddresses:       known,
 		ProtocolRekeyTargets: protocolRekeys,
 		Rotating:             item,

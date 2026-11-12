@@ -59,7 +59,8 @@ type gateInput struct {
 }
 
 // runApprovalGates runs the shared signer-domain gate sequence: the signer
-// invariants (no rekey to a rotating account, no nonparticipating keyreg),
+// invariants (no rekey to a rotating account, no rekey to a held aplane key
+// whose key type is not a valid rekey target, no nonparticipating keyreg),
 // then the policy verdict (policyeval.Evaluate: hard rejection, always-review
 // rules, auto-approval rules), then the operator approval fallback. It returns
 // the matched always-review rule ID for approval audit events ("" when none

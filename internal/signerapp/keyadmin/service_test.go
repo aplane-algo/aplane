@@ -245,6 +245,7 @@ publisher: test
 family: falcon1024-bounded-cosigner-keyadmin
 version: 1
 display_name: Bounded Cosigner Keyadmin Test
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -409,6 +410,7 @@ publisher: test
 family: generic-keyadmin-other-identity
 version: 1
 display_name: Generic Keyadmin Other Identity
+valid_rekey_target: false
 description: Test product-store generation
 max_opcode_cost: 20000
 parameters: []
@@ -752,6 +754,7 @@ publisher: test
 family: generic-service-test
 version: 1
 display_name: Generic Service Test
+valid_rekey_target: false
 description: Test generic service template
 max_opcode_cost: 20000
 parameters:

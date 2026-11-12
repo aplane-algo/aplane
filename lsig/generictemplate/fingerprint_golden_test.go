@@ -43,6 +43,7 @@ publisher: test
 family: synthetic-generic
 version: 7
 display_name: "Synthetic Generic"
+valid_rekey_target: false
 description: "Exercises every canonical fingerprint field"
 max_opcode_cost: 20000
 parameters:

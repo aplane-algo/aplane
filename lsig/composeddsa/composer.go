@@ -100,6 +100,9 @@ type Config struct {
 	Bounded            *BoundedAuthorizationProfile
 	Layer3             *Layer3Policy
 	OpcodeProfile      lsigresource.OpcodeProfile
+	// ValidRekeyTarget is an installed template's declared valid_rekey_target.
+	// A compiled key type declares it in its catalog entry instead.
+	ValidRekeyTarget bool
 }
 
 // ComposedDSA composes:
@@ -131,6 +134,7 @@ type ComposedDSA struct {
 	bounded            *BoundedAuthorizationProfile
 	layer3             *Layer3Policy
 	opcodeProfile      lsigresource.OpcodeProfile
+	validRekeyTarget   bool
 
 	// generationPolicy replaces the production support policy for this composer
 	// only. It stays nil outside tests: nothing but export_test.go sets it.
@@ -180,8 +184,14 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		bounded:            bounded,
 		layer3:             cloneLayer3Policy(cfg.Layer3),
 		opcodeProfile:      opcodeProfile,
+		validRekeyTarget:   cfg.ValidRekeyTarget,
 	}
 }
+
+// ValidRekeyTarget is the template's declared valid_rekey_target
+// (lsigprovider.RekeyTargetDeclarer). A compiled key type's catalog entry
+// takes precedence over it.
+func (c *ComposedDSA) ValidRekeyTarget() bool { return c.validRekeyTarget }
 
 // SetAlgodClient sets the algod client used for TEAL compilation.
 // This must be called before DeriveLsig.

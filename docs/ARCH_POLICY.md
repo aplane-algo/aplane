@@ -231,7 +231,7 @@ Policy fields by domain:
 | Field | Domain | Meaning |
 |-------|--------|---------|
 | `transaction_types` `reject` | common | Reject every transaction of that type; evaluated first and suppresses the other transaction guards; transfer-routing deny verdicts for the same transaction may still be listed alongside it |
-| `rekeys` | signer | The signer's rejection rule for a non-zero `RekeyTo`: `reject_all_rekeys`, `reject_foreign_rekey` (the default: reject a target the product signer runtime does not hold a key for, unless it is on the signing account's own rekey-to list; a held generic LogicSig address counts as foreign), or `allow_rekeys` |
+| `rekeys` | signer | The signer's rejection rule for a non-zero `RekeyTo`: `reject_all_rekeys`, `reject_foreign_rekey` (the default: reject a target the product signer runtime does not hold, unless it is on the signing account's own rekey-to list), or `allow_rekeys` |
 | `reject_rekey` | cosigner | Reject every transaction with non-zero `RekeyTo` the cosigner is asked to sign; a listed rekey on a bounded account never asks it |
 | `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target. A sender or a target may be `*`, and a target may be `self` (a rekey back to the account's own address), so the list can be fully open. On a bounded account it picks cosigned-rekey targets only |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
@@ -255,22 +255,31 @@ alone.
 
 `rekeys` only rejects. `reject_all_rekeys` rejects every rekey, a listed one
 included; `reject_foreign_rekey` evaluates the rekey target against the set of
-addresses the current signer holds a key for, which is meaningful only when the
-signer owns the sender, and counts the signing account's own rekey-to list as
-declared targets: the list is the owner's standing statement that those addresses
-may take the account. Each position counts only its own account's list, never
-another position's. A generic LogicSig address the signer holds counts as foreign
-for this rule: it has no key, and whoever satisfies its program spends from an
-account rekeyed to it. To allow such a rekey, set `rekeys: allow_rekeys` on the
-key's policy or put the address on the account's rekey-to list. `allow_rekeys`
-rejects none. What it lets through goes on through the
+addresses held by the current signer, which is meaningful only when the signer
+owns the sender, and counts the signing account's own rekey-to list as declared
+targets: the list is the owner's standing statement that those addresses may take
+the account. Each position counts only its own account's list, never another
+position's. `allow_rekeys` rejects none. What it lets through goes on through the
 rest of policy as any transaction does: the rekey warning, review rules,
 operator approval, and User Auto-Approve, which can approve it. A rejection
 outranks all of those. None of the three rejects the signer's own protocol
 rekeys (a rotation's next stage), so a rotating account keeps spending under
 `reject_all_rekeys`. A `Config` never given a value rejects every rekey. A held rotating account is never an acceptable target: the signer
 refuses that rekey before policy runs, whatever the policy says (see
-[ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner analog and ignores key
+[ARCH_SIGNING.md](ARCH_SIGNING.md)).
+
+The `rekeys` setting decides only about foreign targets: addresses the signer
+holds no aplane key for. Separately, and under every `rekeys` value, the signer
+refuses a rekey of an account to an address it holds an aplane key for when that
+key's type is not a valid rekey target (`valid_rekey_target` false, such as an
+`aplane.htlc.v1` account). This is a signer invariant that runs before policy,
+with its own reason, `rekey_target_not_valid`. Neither `allow_rekeys` nor the
+account's rekey-to list lifts it; only the key type's own declaration does (see
+[ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)). A rekey of an account
+to its own address is exempt. So with foreign rekeys refused, an account can be
+rekeyed only to a held aplane key whose key type is a valid rekey target; with
+them allowed, it can be rekeyed to any address except a held aplane key whose
+key type is not one. `reject_rekey` is the cosigner analog and ignores key
 ownership: when true, it rejects every rekey the cosigner is asked to sign. When
 it is false, the cosigner still fails closed unless `rekey_policy.allowed`
 authorizes the exact sender-to-target edge and the target transaction is a pure
@@ -967,7 +976,7 @@ absent is an error, and an optional field that is absent means none.
 | `role` | `"signer"` \| `"cosigner"` | required | required | Node role the document is for; must equal the node's |
 | `key` | `"default"` or selector | required | required | The document this is: the node default, or one key's own; must equal the file name |
 | `description` | string, at most 1024 characters | optional | optional | Notes for reviewers |
-| `rekeys` | `"reject_all_rekeys"` \| `"reject_foreign_rekey"` \| `"allow_rekeys"` | required | rejected | Reject every rekey, a rekey to an address this signer does not hold a key for and the signing account does not list (a held generic LogicSig address counts as foreign), or none |
+| `rekeys` | `"reject_all_rekeys"` \| `"reject_foreign_rekey"` \| `"allow_rekeys"` | required | rejected | Reject every rekey, a rekey to an address this signer does not hold and the signing account does not list, or none |
 | `reject_close_remainder` | bool | required | required | Reject ALGO close-outs |
 | `reject_asset_close` | bool | required | required | Reject ASA close-outs |
 | `reject_clawback` | bool | required | required | Reject ASA clawbacks |

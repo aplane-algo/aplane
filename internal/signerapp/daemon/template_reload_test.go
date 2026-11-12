@@ -252,6 +252,7 @@ version: %d
 display_name: %q
 description: %q
 max_opcode_cost: 20000
+valid_rekey_target: false
 teal: |
   #pragma version 8
   int 1

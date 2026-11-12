@@ -32,6 +32,7 @@ publisher: test
 family: only-these
 version: 1
 display_name: "Only These"
+valid_rekey_target: true
 max_opcode_cost: 20000
 
 bounded:
@@ -383,6 +384,7 @@ publisher: test
 family: only-these-allowlist
 version: 1
 display_name: "Only These Allowlist"
+valid_rekey_target: true
 max_opcode_cost: 20000
 
 bounded:

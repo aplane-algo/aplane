@@ -373,6 +373,7 @@ publisher: test
 family: admin-install-oversized
 version: 1
 display_name: "Admin Install Oversized"
+valid_rekey_target: false
 max_opcode_cost: 20000
 runtime_args:
   - name: blob

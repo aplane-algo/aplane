@@ -1006,7 +1006,7 @@ in the embedded signer default a fresh store starts from.
 |---------|--------|-----------------|-------------|
 | `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign non-rejected requests without TUI confirmation, including policy review requirements. |
 | `transaction_types` | policy document (default or the key's own file) | `{"*": "allow"}` | Per-type verdict evaluated before every other rule: `reject` is a hard rejection, `review` forces operator review, `allow` continues to the rules below; `*` covers every type not named. |
-| `rekeys` | policy document (default or the key's own file) | `reject_foreign_rekey` | The signer's rekey rejection, before approval: `reject_all_rekeys` rejects every non-zero `RekeyTo`, `reject_foreign_rekey` one whose target the current signer does not hold a key for and that is not on the signing account's own rekey-to list, `allow_rekeys` none. A held generic LogicSig address counts as foreign: it has no key, and its program alone authorizes. `allow_rekeys` on the key, or the address on the account's rekey-to list, allows such a rekey. What passes goes on to review and `user_auto_approve`. The signer's own rotation rekeys are never rejected. |
+| `rekeys` | policy document (default or the key's own file) | `reject_foreign_rekey` | The signer's rekey rejection, before approval: `reject_all_rekeys` rejects every non-zero `RekeyTo`, `reject_foreign_rekey` one whose target the current signer does not hold and that is not on the signing account's own rekey-to list, `allow_rekeys` none. What passes goes on to review and `user_auto_approve`. The signer's own rotation rekeys are never rejected. |
 | `reject_close_remainder` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
 | `reject_asset_close` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
 | `reject_clawback` | policy document (default or the key's own file) | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
@@ -1540,6 +1540,24 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   rekeys go to stage addresses and are unaffected. apshell's `rekey` refuses
   the same target before building the transaction, and fails closed on any
   target whose `signing_flow` it cannot route an authorizer through.
+- A signed position that rekeys any other account to an address this signer
+  holds an aplane key for, when that key's type is not a valid rekey target
+  (`valid_rekey_target` false, such as an `aplane.htlc.v1` account), is
+  rejected with `403` before policy runs, on every path that reaches the
+  approval gates. The message begins `rekey_target_not_valid:` and names the
+  target and its key type. An account rekeyed there would be stranded: an HTLC
+  account's program never checks `Sender`, forbids every rekey and allows only
+  a payment that closes the whole balance. This is a signer invariant, not a
+  policy setting: no `rekeys` value lifts it, `allow_rekeys` included, and
+  neither does the account's rekey-to list; only the key type's own
+  declaration does (see
+  [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)). A rekey of an
+  account to its own address passes. A held key with no metadata, or of a key
+  type the signer cannot resolve (an `aplane.htlc.v1` key restored to a node
+  that has not installed the template, for one), is not a valid rekey target.
+  A foreign target, one the signer holds no aplane key for, is left to the
+  `rekeys` setting. A rotating target meets the rotating invariant above
+  first.
 - A `keyreg` with `Nonparticipation` set at a position this signer signs is
   rejected with `403` before policy runs, on both node roles: on the signer
   role in the approval gates (`/sign`, bounded components, rotating sign), and
@@ -1990,6 +2008,10 @@ warning does not establish that no leaf was reused.
   has `spend`, `spending_rekey`, and `listed_rekey` cells, and a pure rekey to
   a listed target is sized from `listed_rekey`
 - optional `is_generic_lsig`
+- `valid_rekey_target`: the key's key type's `valid_rekey_target` attribute
+  (always present). When it is false, the signer refuses a rekey of any other
+  account to this address under every `rekeys` setting
+  (`rekey_target_not_valid`)
 - optional `is_witness_key` and `is_spending_account`: cosigner-key rows use
   `address` as the Witness Key ID, not as an Algorand spending address.
   Witness Key IDs are always 52-character uppercase base32
@@ -2075,7 +2097,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_type`, optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: whether an account of another key type may safely be rekeyed to an account of this key type; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `type`, and optional `label`, `description`, `required`, `byte_length`, and `max_size`

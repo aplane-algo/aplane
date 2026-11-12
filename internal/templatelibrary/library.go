@@ -343,7 +343,32 @@ func requireInstalledTemplateMatch(installedPath string, tmpl ParsedTemplate, kr
 	if existingFingerprint != incomingFingerprint {
 		return fmt.Errorf("template conflict for %s: installed template does not match incoming definition", tmpl.KeyType)
 	}
+	// valid_rekey_target is not part of the fingerprint, which pins what a
+	// key's program does. A template that declares it differently is still
+	// another definition: the installed one stays, so say so rather than
+	// report the incoming one installed.
+	existingValid, err := declaredRekeyTargetValid(existingYAML)
+	if err != nil {
+		return fmt.Errorf("failed to read existing template: %w", err)
+	}
+	incomingValid, err := declaredRekeyTargetValid(tmpl.YAMLData)
+	if err != nil {
+		return fmt.Errorf("failed to read incoming template: %w", err)
+	}
+	if existingValid != incomingValid {
+		return fmt.Errorf("template conflict for %s: installed template has valid_rekey_target %t, incoming declares %t; publish a new version", tmpl.KeyType, existingValid, incomingValid)
+	}
 	return nil
+}
+
+// declaredRekeyTargetValid reads a template's valid_rekey_target, false when
+// it declares none.
+func declaredRekeyTargetValid(data []byte) (bool, error) {
+	var header templatestore.BaseTemplateSpec
+	if err := yaml.Unmarshal(data, &header); err != nil {
+		return false, fmt.Errorf("YAML parse error: %w", err)
+	}
+	return header.RekeyTargetValid(), nil
 }
 
 type templateStateChange struct {

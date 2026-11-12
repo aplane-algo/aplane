@@ -503,6 +503,7 @@ publisher: test
 family: falcon1024-timelock
 version: 1
 display_name: "Falcon-1024 Timelock"
+valid_rekey_target: true
 description: "Falcon-1024 signature gated by round-based timelock"
 max_opcode_cost: 20000
 

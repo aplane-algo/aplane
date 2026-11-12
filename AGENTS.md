@@ -35,6 +35,13 @@ APlane is the overarching Project name. Its goal is to provide an ops substrate 
 Signer is one of the two major components; it holds keys and signs transactions.
 Apshell is the other major component; it provides a shell-like interface to generate and submit transactions to the network.
 
+### Terminology: aplane key vs DSA private key
+In aplane an unqualified "key" is an account's key file (record), and a generic
+LogicSig account is a key in that sense. Write "aplane key" for the key file and
+"DSA private key" for signature-algorithm key material; never call a held record
+"keyless", "not a key", or "foreign" (foreign means the signer holds no aplane key
+for the address).
+
 ### Binaries (`cmd/`)
 - `cmd/apshell/`: Interactive shell, scripting environment, plugin host, and MCP surface
 - `cmd/apsigner/`: Thin signing-daemon entrypoint for flags and provider registration; `internal/signerapp/daemon` owns the HTTP/IPC/SSH runtime

@@ -119,7 +119,7 @@ func (e *explainer) guards() {
 		// this setting judges.
 		rejects = append(rejects, "every rekey except a rotating account's own rotation")
 	case policy.RekeysRejectForeign:
-		rejects = append(rejects, "rekeys to an address this node does not hold a key for and the account does not list")
+		rejects = append(rejects, "rekeys to an address this node does not hold and the account does not list")
 	}
 	if d.RejectRekey {
 		// A listed rekey on a cosigned account never asks the cosigner.

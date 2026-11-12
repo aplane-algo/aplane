@@ -366,10 +366,7 @@ arbitrary wall-clock instants.
 Multi-field atomicity is enforced for planning by materializing a
 per-request key-index snapshot. `Resolve`, `KeyType`, `LogicSigResources`, and the
 signer-local known-address set used by request policy are derived from that
-one copied snapshot rather than from separate live runtime reads. The
-known-address set is the addresses the snapshot holds a key for: it leaves out
-generic LogicSig records, which have no key, by their category in the same
-snapshot. A reload
+one copied snapshot rather than from separate live runtime reads. A reload
 that completes after the snapshot is captured applies only to later
 planning requests.
 
@@ -515,5 +512,4 @@ These should be resolved before a machine-checkable model:
 4. ~~Cross-read snapshot consistency.~~ **Resolved.** Planning materializes a
    per-request key-index snapshot from the runtime once and uses that copied
    view for key-file resolution, key-type selection, LogicSig budget sizing,
-   and signer-local known-address policy checks (addresses held by a key; a
-   generic LogicSig record is left out).
+   and signer-local known-address policy checks.

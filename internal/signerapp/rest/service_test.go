@@ -840,6 +840,7 @@ publisher: test
 family: generic-rest-disabled
 version: 1
 display_name: Generic Rest Disabled
+valid_rekey_target: false
 description: Test disabled template
 max_opcode_cost: 20000
 parameters: []
@@ -1031,6 +1032,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: ` + displayName + `
+valid_rekey_target: false
 description: Test generic template
 max_opcode_cost: 20000
 parameters: []
@@ -1262,6 +1264,7 @@ publisher: test
 family: generic-rest-error
 version: 1
 display_name: Generic Rest Error
+valid_rekey_target: false
 description: Test generic rest template
 max_opcode_cost: 20000
 parameters: []

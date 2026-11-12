@@ -39,6 +39,9 @@ type AuditCosignerRejectLogger interface {
 }
 
 type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
+
+// KnownAddressesFunc returns every address the signer holds an aplane key
+// for, of any key type. The daemon supplies Runtime.KnownAddresses.
 type KnownAddressesFunc func() map[string]bool
 type HasClientFunc func() bool
 type RequestSigningApprovalFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)

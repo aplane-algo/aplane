@@ -13,7 +13,8 @@ host, such as a preset of `aplane.falcon1024.v1`. It needs no import.
 
 ## Install
 
-Generic LogicSig templates are TEAL-only accounts with no private key:
+Generic LogicSig templates are TEAL-only accounts: their program alone, with no
+DSA private key, decides what they sign.
 
 ```bash
 apadmin template import library/templates/aplane.htlc.v1.yaml
@@ -21,9 +22,9 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
 
 ## Generic Templates
 
-| Key type | File | Purpose | Creation params | Runtime args |
-|---|---|---|---|---|
-| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked ALGO contract: recipient can claim the whole balance before timeout with a preimage; refund address can reclaim the whole balance after timeout. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round` | `preimage` |
+| Key type | File | Purpose | Creation params | Runtime args | `valid_rekey_target` |
+|---|---|---|---|---|---|
+| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked ALGO contract: recipient can claim the whole balance before timeout with a preimage; refund address can reclaim the whole balance after timeout. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round` | `preimage` | `false` |
 
 ## Notes
 
@@ -33,6 +34,10 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
   set produces the same LogicSig address regardless of input order.
 - Template key types are compatibility boundaries. Do not change the behavior of
   an installed key type in place; create a new versioned key type instead.
+- Every template must declare `valid_rekey_target`: `true` only if an account
+  of another key type rekeyed to an account of this key type is not stranded
+  (the program lets it be rekeyed away again, or otherwise permits what an
+  ordinary account needs). Import refuses a template without it.
 - `max_opcode_cost` is optional. Omission uses the numeric one-transaction
   opcode ceiling shared by every consensus version APlane currently supports:
   20,000. An explicit value is an absolute reviewed worst-case cost of the

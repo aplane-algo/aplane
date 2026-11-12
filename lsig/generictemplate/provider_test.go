@@ -1091,6 +1091,7 @@ publisher: test
 family: good
 version: 1
 display_name: Good Template
+valid_rekey_target: false
 max_opcode_cost: 20000
 teal: "return"
 parameters: []
@@ -1125,6 +1126,7 @@ publisher: test
 family: from-yaml
 version: 1
 display_name: "From YAML"
+valid_rekey_target: false
 max_opcode_cost: 20000
 parameters: []
 runtime_args: []
@@ -1147,6 +1149,7 @@ publisher: test
 family: salt-style
 version: 1
 display_name: "Salt Style"
+valid_rekey_target: false
 salt_style: pushbytes
 teal: |
   int 1
@@ -1889,6 +1892,7 @@ publisher: test
 family: arg-limits
 version: 1
 display_name: "Arg Limits"
+valid_rekey_target: false
 max_opcode_cost: 20000
 runtime_args:
 ` + runtimeArgs + `teal: |
@@ -1943,6 +1947,58 @@ runtime_args:
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("ValidateSpecAdmission() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// valid_rekey_target is required to install a template and read at load: a
+// stored template that declares none loads, and its key type is not a valid
+// rekey target.
+func TestValidRekeyTargetIsRequiredAtAdmissionAndReadAtLoad(t *testing.T) {
+	const base = `schema_version: 1
+template_type: generic
+template_mode: generated
+publisher: test
+family: rekey-target-declaration
+version: 1
+display_name: "Rekey Target Declaration"
+max_opcode_cost: 20000
+%steal: |
+  int 1
+  return
+`
+	for _, tc := range []struct {
+		name        string
+		declaration string
+		want        bool
+		admitted    bool
+	}{
+		{"absent", "", false, false},
+		{"false", "valid_rekey_target: false\n", false, true},
+		{"true", "valid_rekey_target: true\n", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte(fmt.Sprintf(base, tc.declaration))
+			spec, err := ParseTemplateSpec(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateSpec(spec); err != nil {
+				t.Fatalf("ValidateSpec() error = %v; load must not require the field", err)
+			}
+			err = ValidateSpecAdmission(spec)
+			if tc.admitted && err != nil {
+				t.Fatalf("ValidateSpecAdmission() error = %v", err)
+			}
+			if !tc.admitted && (err == nil || !strings.Contains(err.Error(), "valid_rekey_target is required")) {
+				t.Fatalf("ValidateSpecAdmission() error = %v, want valid_rekey_target required", err)
+			}
+			if _, err := PrepareKeystoreTemplateRegistration(spec.KeyType(), data); err != nil {
+				t.Fatalf("PrepareKeystoreTemplateRegistration() error = %v; a stored template must load", err)
+			}
+			if got := NewYAMLTemplate(spec).ValidRekeyTarget(); got != tc.want {
+				t.Fatalf("ValidRekeyTarget() = %v, want %v", got, tc.want)
 			}
 		})
 	}

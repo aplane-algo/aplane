@@ -24,6 +24,7 @@ reference for one of the three axes (Resolve).
 - [Key type identifier contract](#key-type-identifier-contract)
 - [Authorization object ontology](#authorization-object-ontology)
 - [Key types summary](#key-types-summary)
+- [Valid rekey target](#valid-rekey-target)
 - [The three axes](#the-three-axes)
 - [LogicSig providers](#logicsig-providers)
 - [Account generation](#account-generation)
@@ -584,16 +585,55 @@ Examples of the composed ontology:
 
 ## Key types summary
 
-| Key Type | Key-type family | Category | Description |
-|----------|--------|----------|-------------|
-| `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
-| `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled plain host on signer nodes: the plain Falcon program, one of 7 `plain1` arrangements (a rekey setting, an optional cosigner and an optional rekey-to list), or one of 147 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
-| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible plain host on Ed25519 (classical), with the same grammar as `aplane.falcon1024.v1`; distinct from native `ed25519` |
-| `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
-| `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
-| `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + two-layer SLH-DSA-SHA2-128 + Ed25519; `rotating1`, signer-side codec and cryptography |
-| `aplane.rotating-triple-wotsc.v1` | `aplane.rotating-triple-wotsc` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + WOTS+C + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| Key Type | Key-type family | Category | `valid_rekey_target` | Description |
+|----------|--------|----------|----------|-------------|
+| `ed25519` | n/a | `ed25519` | true | Native Algorand Ed25519 account; not a LogicSig |
+| `falcon1024` | n/a | `native_pq` | true | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | true | Default-enabled plain host on signer nodes: the plain Falcon program, one of 7 `plain1` arrangements (a rekey setting, an optional cosigner and an optional rekey-to list), or one of 147 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
+| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | true | Library-visible plain host on Ed25519 (classical), with the same grammar as `aplane.falcon1024.v1`; distinct from native `ed25519` |
+| `aplane.htlc.v1` | `htlc` | `generic_lsig` | false | Optional template library: hash time-locked ALGO payment |
+| `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + two-layer SLH-DSA-SHA2-128 + Ed25519; `rotating1`, signer-side codec and cryptography |
+| `aplane.rotating-triple-wotsc.v1` | `aplane.rotating-triple-wotsc` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + WOTS+C + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+
+`aplane.witness-falcon1024.v1` is not an account; its catalog entry declares
+`valid_rekey_target: false`.
+
+## Valid rekey target
+
+Every key type declares a boolean `valid_rekey_target`: whether an account of
+another key type may safely be rekeyed to an account of this key type. True
+promises that such an account is not stranded there: the program, or the DSA
+private key that controls the account, lets it be rekeyed away again, or
+otherwise permits what an ordinary account needs. A key type whose accounts are
+controlled by a DSA private key (`ed25519`, `falcon1024`, and the plain hosts
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` with their overlays and bounds)
+declares true. A rotating key type declares false; its own signer invariant
+refuses a rekey to a rotating account whatever the setting. A generic LogicSig
+template declares what its program allows: `aplane.htlc.v1` forbids every rekey
+and allows only a payment that closes the whole balance, never checks `Sender`,
+and declares false.
+
+A compiled key type declares the attribute in its `internal/keytypecatalog`
+entry. A YAML template declares it as the top-level `valid_rekey_target` field;
+admission (`generictemplate.ValidateSpecAdmission`,
+`composeddsa.ValidateTemplateAdmission`) refuses a template that leaves it out.
+A template already in a store loads without it and reads as false.
+`lsigprovider.ValidRekeyTarget` resolves the attribute, catalog first, then the
+installed template. An unknown key type is not a valid rekey target. The runtime
+reads it once per key when it publishes its key snapshot, and the signer
+invariant reads it from that snapshot. The attribute is not part of
+the template compatibility fingerprint, which pins what a key's program does;
+reinstalling a template that declares it differently is refused as a conflict.
+
+`/keytypes` and `/keys` report it as `valid_rekey_target`. When a key type
+declares false, the signer refuses a rekey of another account to an address it
+holds an aplane key of that type for, under every `rekeys` setting and whatever
+the account's rekey-to list says: a signer invariant beside the rotating one
+(`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, reason
+`rekey_target_not_valid`). A rekey of an account to its own address is exempt.
+The `rekeys` setting decides only about foreign targets, addresses the signer
+holds no aplane key for; see [ARCH_POLICY.md](ARCH_POLICY.md).
 
 ## The three axes
 

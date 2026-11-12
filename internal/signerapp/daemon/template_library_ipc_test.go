@@ -249,6 +249,7 @@ publisher: test
 family: legacy-template
 version: 1
 display_name: Legacy
+valid_rekey_target: false
 teal: |
   int 1
 `),
@@ -667,6 +668,7 @@ version: %d
 display_name: %q
 description: "test template"
 max_opcode_cost: 20000
+valid_rekey_target: false
 teal: |
   #pragma version 8
   %s

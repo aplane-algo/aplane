@@ -75,6 +75,7 @@ publisher: test
 family: fixed
 version: 1
 display_name: Test
+valid_rekey_target: true
 description: Test
 bounded:
   contract: bounded2
@@ -185,6 +186,7 @@ publisher: test
 family: layer3
 version: 1
 display_name: Test
+valid_rekey_target: true
 bounded:
   contract: bounded2
   spend_effects: [pay]

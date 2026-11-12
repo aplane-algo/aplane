@@ -817,6 +817,7 @@ version: <int>              # integer version
 display_name: "<Name>"      # human-readable
 description: "<text>"       # short description
 display_color: "<code>"     # ANSI color code (optional)
+valid_rekey_target: false   # required at install; see below
 
 parameters:
   - name: <id>              # creation-time parameter
@@ -855,6 +856,19 @@ teal: |
   #pragma version 13
   // strict mode: $variable constant references
 ```
+
+`valid_rekey_target` says whether an account of another key type may safely be
+rekeyed to an account of this key type. Set it to `true` only if such an account
+is not stranded: the program lets it be rekeyed away again, or otherwise
+permits what an ordinary account needs. A program that never checks `Sender`
+authorizes for every account rekeyed to it, so read the TEAL with another
+account as `Sender`. Install refuses a template that leaves the field out, with
+an error naming it; a template already in a store loads without it and reads as
+`false`. It is not part of the compatibility fingerprint, and reinstalling a
+template that declares it differently is refused as a conflict: publish a new
+version instead. A compiled key type declares the same attribute in its
+`internal/keytypecatalog` entry. See
+[Valid rekey target](ARCH_KEYTYPES.md#valid-rekey-target).
 
 Strict variable constants by type. These constant blocks are emitted by the
 APlane renderer before compiler-owned auto-salting; template authors
@@ -1281,6 +1295,9 @@ Use this checklist for every new key type.
 - [ ] Define the family string.
 - [ ] Confirm whether the type needs runtime args.
 - [ ] Confirm whether the type needs creation params only.
+- [ ] Decide `valid_rekey_target`: in the YAML for a template, in the
+      `internal/keytypecatalog` entry and `internal/lsigprovider/rekey_target_test.go`
+      for a compiled key type.
 - [ ] Add or update tests.
 - [ ] Update user-facing docs if the key type is intended for operators.
 - [ ] Update architecture/dev docs if the mechanism or supported family set changed.

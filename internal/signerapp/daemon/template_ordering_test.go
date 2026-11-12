@@ -44,6 +44,7 @@ version: 1
 display_name: "Ordering Template"
 description: "ordering check"
 max_opcode_cost: 20000
+valid_rekey_target: false
 runtime_args:
   - name: preimage
     label: "Preimage"

@@ -56,6 +56,7 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 			KeyType:           keyType,
 			AuthorizationKind: authorizationKindForCategory(category),
 			IsGenericLsig:     isGeneric,
+			ValidRekeyTarget:  lsigprovider.ValidRekeyTarget(keyType),
 		}
 		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
 		if isComponent {
@@ -233,9 +234,10 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 
 	for _, keyType := range validTypes {
 		info := signerapi.KeyTypeInfo{
-			KeyType:        keyType,
-			CreationParams: []signerapi.CreationParamInfo{},
-			RuntimeArgs:    []signerapi.RuntimeArgInfo{},
+			KeyType:          keyType,
+			ValidRekeyTarget: lsigprovider.ValidRekeyTarget(keyType),
+			CreationParams:   []signerapi.CreationParamInfo{},
+			RuntimeArgs:      []signerapi.RuntimeArgInfo{},
 		}
 
 		if witness.IsKeyType(keyType) {
@@ -344,6 +346,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			Description:       tmpl.Description(),
 			AuthorizationKind: string(algorithm.AuthorizationLogicSig),
 			RequiresLogicSig:  true,
+			ValidRekeyTarget:  lsigprovider.ValidRekeyTarget(tmpl.KeyType()),
 			CreationParams:    []signerapi.CreationParamInfo{},
 			RuntimeArgs:       []signerapi.RuntimeArgInfo{},
 		}

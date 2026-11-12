@@ -96,6 +96,7 @@ publisher: test
 family: legacy
 version: 1
 display_name: Legacy
+valid_rekey_target: false
 teal: |
   int 1
 `))
@@ -115,6 +116,7 @@ publisher: test
 family: missing-opcode-ceiling
 version: 1
 display_name: Missing Opcode Ceiling
+valid_rekey_target: false
 teal: |
   int 1
 `))
@@ -131,6 +133,7 @@ publisher: test
 family: zero-opcode-ceiling
 version: 1
 display_name: Zero Opcode Ceiling
+valid_rekey_target: false
 max_opcode_cost: 0
 teal: |
   int 1
@@ -148,6 +151,7 @@ publisher: test
 family: bounded-library
 version: 1
 display_name: Bounded Library
+valid_rekey_target: true
 description: Test bounded template
 derivation_version: 3
 max_opcode_cost: 20000
@@ -418,6 +422,7 @@ publisher: test
 family: install-conflict
 version: 1
 display_name: "Install Conflict Changed"
+valid_rekey_target: false
 description: "changed same-key-type template"
 max_opcode_cost: 20000
 teal: |
@@ -1140,6 +1145,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "` + displayName + `"
+valid_rekey_target: false
 description: "Test generic template"
 max_opcode_cost: 20000
 parameters:
@@ -1165,6 +1171,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "` + displayName + `"
+valid_rekey_target: true
 description: "Test composed template"
 max_opcode_cost: 20000
 parameters:

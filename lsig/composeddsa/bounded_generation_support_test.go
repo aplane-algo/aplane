@@ -29,6 +29,7 @@ publisher: test
 family: ed25519-bounded-fixture
 version: 1
 display_name: Ed25519 Bounded Fixture
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -51,6 +52,7 @@ publisher: test
 family: falcon-cosigner-fixture
 version: 1
 display_name: Falcon Cosigner Fixture
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2

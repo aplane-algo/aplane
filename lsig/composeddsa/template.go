@@ -194,6 +194,7 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Bounded:            bounded,
 		Layer3:             layer3,
 		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
+		ValidRekeyTarget:   spec.RekeyTargetValid(),
 	}), nil
 }
 
@@ -203,11 +204,15 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 // without them, so a template installed before a check existed keeps loading and
 // can't take the whole store down. The checks:
 //
+//   - it declares valid_rekey_target;
 //   - its LogicSig arguments fit the network's limits on one LogicSig;
 //   - a bounded template satisfies its template-level contract, so a mistake
 //     key generation would refuse is refused here first.
 func ValidateTemplateAdmission(spec *TemplateSpec) error {
 	if err := ValidateTemplateSpec(spec); err != nil {
+		return err
+	}
+	if err := spec.ValidateRekeyTargetDeclaration(); err != nil {
 		return err
 	}
 	if err := generictemplate.ValidateRuntimeArgLimits(spec.RuntimeArgs); err != nil {

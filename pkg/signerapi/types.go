@@ -471,9 +471,14 @@ type KeyTypeInfo struct {
 	// BoundarySchema names the boundary file grammar a per-key type's requests
 	// take (aplane.boundary.v1 for the plain hosts, which take bounds and
 	// overlays), and is empty for a type that takes none.
-	BoundarySchema string              `json:"boundary_schema,omitempty"`
-	CreationParams []CreationParamInfo `json:"creation_params"`
-	RuntimeArgs    []RuntimeArgInfo    `json:"runtime_args"`
+	BoundarySchema string `json:"boundary_schema,omitempty"`
+	// ValidRekeyTarget is the key type's valid_rekey_target attribute: an
+	// account of another key type may safely be rekeyed to an account of this
+	// key type. reject_foreign_rekey passes a rekey to an address this signer
+	// holds the aplane key for only when it is true.
+	ValidRekeyTarget bool                `json:"valid_rekey_target"`
+	CreationParams   []CreationParamInfo `json:"creation_params"`
+	RuntimeArgs      []RuntimeArgInfo    `json:"runtime_args"`
 }
 
 // CreationParamInfo describes a parameter required to generate a key of a given type.
@@ -548,6 +553,10 @@ type KeyInfo struct {
 	Parameters               map[string]string         `json:"parameters,omitempty"`
 	TemplateProvenanceStatus string                    `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string                    `json:"template_provenance_note,omitempty"`
+	// ValidRekeyTarget is the key's key type's valid_rekey_target attribute
+	// (KeyTypeInfo.ValidRekeyTarget): reject_foreign_rekey passes a rekey to
+	// this address only when it is true.
+	ValidRekeyTarget bool `json:"valid_rekey_target"`
 }
 
 // KeysResponse is the response from the /keys endpoint.

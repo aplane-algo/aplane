@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -129,7 +130,7 @@ func TestListedRekeyWarningNamesTheHandover(t *testing.T) {
 	held := approvalpolicy.CheckDecodedTxnWarningsIn(listTestRekey(listTestTarget), approvalpolicy.Context{
 		ListedRekeyTargets: listed, KnownAddresses: listed,
 	})
-	if len(held) != 1 || !strings.Contains(held[0].Message, "You possess the keys") {
+	if len(held) != 1 || !strings.Contains(held[0].Message, txnreview.RekeyHeldText) {
 		t.Fatalf("held listed target warning = %+v", held)
 	}
 }

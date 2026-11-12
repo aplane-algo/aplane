@@ -58,6 +58,7 @@ func (d signerPlannerDeps) Snapshot() signersigning.PlannerRuntimeSnapshot {
 			BoundedAuthorization: metadata.BoundedAuthorization,
 			LogicSigResources:    metadata.LogicSigResources,
 			SigningArgs:          metadata.SigningArgs,
+			ValidRekeyTarget:     metadata.ValidRekeyTarget,
 		}
 	}
 	return signersigning.PlannerRuntimeSnapshot{

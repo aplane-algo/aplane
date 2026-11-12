@@ -42,6 +42,7 @@ publisher: test
 family: unsupported-base-fixture
 version: 1
 display_name: Unsupported Base Fixture
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2

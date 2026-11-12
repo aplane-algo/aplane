@@ -29,9 +29,9 @@ type Finding struct {
 // FindingContext is what a check knows about the reviewer's own position.
 // All of it is optional: with none, a rekey reads as a loss of control.
 type FindingContext struct {
-	// KnownAddresses is the set of addresses the signer holds. A rekey to one
-	// of them is still a finding, but it says the signer keeps control instead
-	// of warning that control is lost.
+	// KnownAddresses is every address the signer holds an aplane key for, of
+	// any key type. A rekey to one of them is still a finding, but it says the
+	// signer keeps control instead of warning that control is lost.
 	KnownAddresses map[string]bool
 	// ProtocolRekeyTargets are rekey targets the signer itself set as part of
 	// a signing protocol and proved before approval ran: a rotating account's
@@ -43,6 +43,18 @@ type FindingContext struct {
 	ListedRekeyTargets map[string]bool
 }
 
+// Rekey finding texts. The first line says what the rekey does; the second
+// what this signer holds of the new address.
+const (
+	RekeyTransfersText      = "This transaction will transfer signing authority to another address."
+	RekeyToListedTargetText = "This transaction hands the account to an address on its rekey-to list."
+	RekeyToOwnAddressText   = "This transaction returns signing authority to the account's own address."
+	RekeyHeldText           = "This signer holds the aplane key for the new address."
+	RekeyOwnAddressHeldText = "This signer holds the aplane key for the account's own address."
+	RekeyListedNotHeldText  = ">>> THIS SIGNER DOES NOT HOLD IT: THE ACCOUNT LEAVES THIS SIGNER'S CUSTODY <<<"
+	RekeyLoseControlText    = ">>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
+)
+
 // Findings lists what a reviewer must not miss in txn. The signer's approval
 // warnings and apshell's review of a plugin-built group are both built from
 // it, so a field that warns in one warns in the other.
@@ -52,17 +64,21 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 
 	if facts.Has(txeffects.EffectRekey) && !ctx.ProtocolRekeyTargets[txn.RekeyTo.String()] {
 		rekeyTarget := txn.RekeyTo.String()
-		msg := "This transaction will transfer signing authority to another address."
+		msg := RekeyTransfersText
 		if ctx.ListedRekeyTargets[rekeyTarget] {
-			msg = "This transaction hands the account to an address on its rekey-to list."
+			msg = RekeyToListedTargetText
 		}
 		switch {
+		case txn.RekeyTo == txn.Sender && ctx.KnownAddresses[rekeyTarget]:
+			msg = RekeyToOwnAddressText + "\n   " + RekeyOwnAddressHeldText
+		case txn.RekeyTo == txn.Sender:
+			msg = RekeyToOwnAddressText + "\n   " + RekeyLoseControlText
 		case ctx.KnownAddresses[rekeyTarget]:
-			msg += "\n   You possess the keys for the new address."
+			msg += "\n   " + RekeyHeldText
 		case ctx.ListedRekeyTargets[rekeyTarget]:
-			msg += "\n   >>> THIS SIGNER DOES NOT HOLD IT: THE ACCOUNT LEAVES THIS SIGNER'S CUSTODY <<<"
+			msg += "\n   " + RekeyListedNotHeldText
 		default:
-			msg += "\n   >>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
+			msg += "\n   " + RekeyLoseControlText
 		}
 		violations = append(violations, Finding{
 			Field:    "RekeyTo",

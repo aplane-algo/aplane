@@ -35,6 +35,9 @@ func RegisterClient() {
 			KeyType:      KeyType,
 			Family:       KeyType,
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+			// A Falcon-1024 private key controls the account; an account
+			// rekeyed to it can be rekeyed away again.
+			ValidRekeyTarget: true,
 		})
 		algorithm.RegisterMetadata(metadata{})
 	})

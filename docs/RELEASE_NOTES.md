@@ -7,6 +7,35 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Every key type declares whether it is a valid rekey target
+
+The signer passed a rekey of an account to any address it held an aplane key
+for, whatever its key type. An `aplane.htlc.v1` account is one: its program never
+checks `Sender`, forbids every rekey and allows only a payment that closes the
+whole balance, so an account rekeyed to it was left to whoever could satisfy the
+program. Such a rekey passed the shipped default, and its warning said "You
+possess the keys for the new address."
+
+- **Every key type declares `valid_rekey_target`**: whether an account of
+  another key type may safely be rekeyed to an account of this key type.
+  `ed25519`, `falcon1024`, `aplane.falcon1024.v1` and `aplane.ed25519.v1` declare
+  true; the rotating key types, `aplane.witness-falcon1024.v1` and
+  `aplane.htlc.v1` declare false. A YAML template must declare it to be
+  installed; one installed before the field existed keeps loading and reads as
+  false. `/keytypes` and `/keys` report it.
+- **A rekey to a held aplane key whose key type is not a valid rekey target is
+  refused**, before policy and under every `rekeys` setting, with the reason
+  `rekey_target_not_valid`. Neither `allow_rekeys` nor the account's rekey-to
+  list lifts it; only the key type's declaration does. A rekey of an account to
+  its own address is exempt. The `rekeys` setting still decides foreign
+  targets, addresses the signer holds no aplane key for, as before.
+- **The rekey warning names what the signer holds.** "This signer holds the
+  aplane key for the new address." replaces "You possess the keys for the new
+  address.", and a rekey of an account to its own address says it returns to
+  the account's own aplane key.
+- **Reinstalling a template that declares `valid_rekey_target` differently is
+  refused as a conflict.** Publish a new version instead.
+
 ## apshell checks more of what the signer returns
 
 - **Signed bytes the client submits must be canonical.** An ordinary `/sign`

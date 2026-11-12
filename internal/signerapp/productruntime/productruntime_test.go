@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -239,25 +238,25 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	}
 }
 
-// A generic LogicSig has no key, so the rekey warning's address set leaves it
-// out. A record with no metadata stays in.
-func TestKnownAddressesLeaveOutGenericLogicSigs(t *testing.T) {
+// The key index carries each key's valid_rekey_target to the planner, and
+// KnownAddresses still holds every aplane key, valid rekey target or not.
+func TestKeyIndexSnapshotCarriesValidRekeyTarget(t *testing.T) {
 	ir := New(Config{})
 	ir.PublishSnapshot(
-		map[string]string{"KEY": "keys/KEY.key", "HTLC": "keys/HTLC.key", "BARE": "keys/BARE.key"},
-		map[string]string{"KEY": "ed25519", "HTLC": "aplane.htlc.v1", "BARE": "ed25519"},
+		map[string]string{"KEY": "keys/KEY.key", "HTLC": "keys/HTLC.key"},
+		map[string]string{"KEY": "ed25519", "HTLC": "aplane.htlc.v1"},
 	)
 	ir.keysLock.Lock()
-	ir.keyMetadata["KEY"] = KeyPublicMetadata{Category: "ed25519"}
-	ir.keyMetadata["HTLC"] = KeyPublicMetadata{Category: lsigprovider.CategoryGenericLsig}
+	ir.keyMetadata["KEY"] = KeyPublicMetadata{Category: "ed25519", ValidRekeyTarget: true}
+	ir.keyMetadata["HTLC"] = KeyPublicMetadata{Category: "generic_lsig"}
 	ir.keysLock.Unlock()
 
-	known := ir.KnownAddresses()
-	if !known["KEY"] || !known["BARE"] || known["HTLC"] || len(known) != 2 {
-		t.Fatalf("KnownAddresses() = %v, want KEY and BARE only", known)
+	snapshot := ir.KeyIndexSnapshot()
+	if !snapshot.KeyMetadata["KEY"].ValidRekeyTarget || snapshot.KeyMetadata["HTLC"].ValidRekeyTarget {
+		t.Fatalf("snapshot metadata = %+v, want KEY a valid rekey target and HTLC not", snapshot.KeyMetadata)
 	}
-	if _, ok := ir.KeyIndexSnapshot().KeyFiles["HTLC"]; !ok {
-		t.Fatal("the key index lost the generic LogicSig record")
+	if known := ir.KnownAddresses(); !known["KEY"] || !known["HTLC"] || len(known) != 2 {
+		t.Fatalf("KnownAddresses() = %v, want every aplane key held", known)
 	}
 }
 

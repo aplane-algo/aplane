@@ -638,6 +638,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "Manager Generic"
+valid_rekey_target: false
 description: "Manager generic template"
 max_opcode_cost: 20000
 parameters: []
@@ -658,6 +659,7 @@ publisher: test
 family: ` + family + `
 version: 1
 display_name: "Manager Composed"
+valid_rekey_target: true
 description: "Manager composed template"
 max_opcode_cost: 20000
 parameters: []

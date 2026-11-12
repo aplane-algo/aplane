@@ -39,29 +39,39 @@ func RegisterClient() {
 			// default-enabled general bounded type it replaces did (account
 			// overlays phase 6.5).
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+			// A Falcon-1024 private key controls every account of the plain
+			// host, with or without overlays and bounds.
+			ValidRekeyTarget: true,
 		}, falcon.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,
+			// An Ed25519 private key controls every account of the plain host.
+			ValidRekeyTarget: true,
 		}, ed25519lsig.RegisterClient)
 		// The rotating accounts have no client-side provider; each entry only
 		// makes the key type opt-in. Signer binaries register its storage,
-		// stage cryptography and generator through lsig/signerreg.
+		// stage cryptography and generator through lsig/signerreg. None is a
+		// valid rekey target: a rotating account's address is its one-time
+		// stage 0 program (rejectRekeyToRotating refuses such a rekey).
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleXmssV1,
-			Family:       rotatingkey.RotatingTripleXmssFamily,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			KeyType:          rotatingkey.RotatingTripleXmssV1,
+			Family:           rotatingkey.RotatingTripleXmssFamily,
+			Availability:     keytypecatalog.AvailabilityLibrary,
+			ValidRekeyTarget: false,
 		}, func() {})
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleSlhdsaV1,
-			Family:       rotatingkey.RotatingTripleSlhdsaFamily,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			KeyType:          rotatingkey.RotatingTripleSlhdsaV1,
+			Family:           rotatingkey.RotatingTripleSlhdsaFamily,
+			Availability:     keytypecatalog.AvailabilityLibrary,
+			ValidRekeyTarget: false,
 		}, func() {})
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleWotscV1,
-			Family:       rotatingkey.RotatingTripleWotscFamily,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			KeyType:          rotatingkey.RotatingTripleWotscV1,
+			Family:           rotatingkey.RotatingTripleWotscFamily,
+			Availability:     keytypecatalog.AvailabilityLibrary,
+			ValidRekeyTarget: false,
 		}, func() {})
 	})
 }

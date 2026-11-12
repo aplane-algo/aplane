@@ -48,6 +48,9 @@ func RegisterSigner() {
 						KeyType:      witness.Falcon1024V1,
 						Family:       "cosigner-falcon1024",
 						Availability: keytypecatalog.AvailabilityDefaultEnabled,
+						// A witness key is a cosigner's component key, not an
+						// account, so nothing is rekeyed to it.
+						ValidRekeyTarget: false,
 					})
 				},
 				falconkeys.RegisterProcessors,

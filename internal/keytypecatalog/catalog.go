@@ -37,6 +37,11 @@ type Entry struct {
 	KeyType      string
 	Family       string
 	Availability Availability
+	// ValidRekeyTarget is the key type's valid_rekey_target attribute: an
+	// account of another key type may safely be rekeyed to an account of this
+	// key type, because the account is not stranded there. Every compiled key
+	// type declares it; the zero value is not a valid rekey target.
+	ValidRekeyTarget bool
 }
 
 var (

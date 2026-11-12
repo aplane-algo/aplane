@@ -5,18 +5,18 @@ package signing
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -117,30 +117,29 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 	}
 }
 
-// A generic LogicSig has no key: its program alone authorizes, so a rekey to
-// one this signer holds is foreign. Under the shipped default it is rejected
-// before approval, User Auto-Approve included. With allow_rekeys it goes on to
-// review, and the warning says control is lost.
-func TestRekeyToHeldGenericLogicSigIsForeign(t *testing.T) {
-	key := types.Address{1}
-	generic := types.Address{7}
-	deps := stubPlannerDeps{
-		keyTypes: map[string]string{key.String(): "ed25519", generic.String(): "aplane.htlc.v1"},
-		keyMetadata: map[string]PlannerKeyMetadata{
-			key.String():     {Category: "ed25519"},
-			generic.String(): {Category: lsigprovider.CategoryGenericLsig},
+// The rekey rule's truth table, target kind across, rekeys setting down:
+//
+//	                      foreign   held+valid   held+not-valid   self
+//	reject_all_rekeys     refuse    refuse       refuse (C)       refuse
+//	reject_foreign_rekey  refuse*   allow        refuse (C)       allow
+//	allow_rekeys          allow     allow        refuse (C)       allow
+//
+// * unless the account's rekey-to list names it. The rekeys setting decides as
+// it always has; (C) is the valid_rekey_target signer invariant, which runs
+// before policy under every setting and which neither allow_rekeys nor the
+// rekey-to list lifts. "allow" means the rule refuses nothing and the rekey
+// goes on to review, here always_review_warnings, User Auto-Approve on or off.
+func TestRekeyRuleTruthTable(t *testing.T) {
+	key, valid, htlc, foreign := types.Address{1}, types.Address{2}, types.Address{7}, types.Address{9}
+	snapshot := PlannerRuntimeSnapshot{
+		KeyFiles: map[string]string{key.String(): "key.key", valid.String(): "valid.key", htlc.String(): "htlc.key"},
+		KeyTypes: map[string]string{key.String(): "ed25519", valid.String(): "ed25519", htlc.String(): "aplane.htlc.v1"},
+		KeyMetadata: map[string]PlannerKeyMetadata{
+			key.String():   {Category: keys.CategoryEd25519, ValidRekeyTarget: true},
+			valid.String(): {Category: keys.CategoryEd25519, ValidRekeyTarget: true},
+			htlc.String():  {Category: keys.CategoryGenericLsig},
 		},
 	}
-	planner := NewPlanner(deps, PlannerOptions{GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver()})
-	txn := testnetPaymentTransaction(t, key.String(), key.String(), 0)
-	txn.Fee = 1_000
-	txn.RekeyTo = generic
-	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: key.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}}}
-	plan, planErr := planner.PlanGroup(req)
-	if planErr != nil {
-		t.Fatalf("PlanGroup() error = %v", planErr)
-	}
-
 	shipped := func(rekeys policy.SignerRekeys) *policy.Config {
 		doc := policytest.EmbeddedDefault(t, noderole.RoleSigner)
 		doc = strings.Replace(doc, `"rekeys": "reject_foreign_rekey"`, `"rekeys": "`+string(rekeys)+`"`, 1)
@@ -157,14 +156,44 @@ func TestRekeyToHeldGenericLogicSigIsForeign(t *testing.T) {
 		}
 		return cfg
 	}
-
+	rekeyTo := func(target types.Address) types.Transaction {
+		txn := testnetPaymentTransaction(t, key.String(), key.String(), 0)
+		txn.Fee = 1_000
+		txn.RekeyTo = target
+		return txn
+	}
+	const (
+		invalid    = "invalid" // the valid_rekey_target invariant refuses
+		allRekeys  = "all"     // reject_all_rekeys refuses
+		foreignOut = "foreign" // reject_foreign_rekey refuses
+		allowed    = ""        // review
+	)
+	held := txnreview.RekeyTransfersText + "\n   " + txnreview.RekeyHeldText
+	self := txnreview.RekeyToOwnAddressText + "\n   " + txnreview.RekeyOwnAddressHeldText
+	lost := txnreview.RekeyTransfersText + "\n   " + txnreview.RekeyLoseControlText
 	for _, tc := range []struct {
-		name   string
-		cfg    *policy.Config
-		reject bool
+		name    string
+		rekeys  policy.SignerRekeys
+		target  types.Address
+		listed  bool
+		want    string
+		warning string // the review's rekey warning; "" skips the check
 	}{
-		{name: "shipped_default", cfg: shipped(policy.RekeysRejectForeign), reject: true},
-		{name: "allow_rekeys", cfg: shipped(policy.RekeysAllow)},
+		{"reject_all_rekeys/foreign", policy.RekeysRejectAll, foreign, false, allRekeys, ""},
+		{"reject_all_rekeys/held valid", policy.RekeysRejectAll, valid, false, allRekeys, ""},
+		{"reject_all_rekeys/held not valid", policy.RekeysRejectAll, htlc, false, invalid, ""},
+		{"reject_all_rekeys/self", policy.RekeysRejectAll, key, false, allRekeys, ""},
+		{"reject_foreign_rekey/foreign", policy.RekeysRejectForeign, foreign, false, foreignOut, ""},
+		{"reject_foreign_rekey/listed foreign", policy.RekeysRejectForeign, foreign, true, allowed, ""},
+		{"reject_foreign_rekey/held valid", policy.RekeysRejectForeign, valid, false, allowed, held},
+		{"reject_foreign_rekey/held not valid", policy.RekeysRejectForeign, htlc, false, invalid, ""},
+		{"reject_foreign_rekey/listed held not valid", policy.RekeysRejectForeign, htlc, true, invalid, ""},
+		{"reject_foreign_rekey/self", policy.RekeysRejectForeign, key, false, allowed, self},
+		{"allow_rekeys/foreign", policy.RekeysAllow, foreign, false, allowed, lost},
+		{"allow_rekeys/held valid", policy.RekeysAllow, valid, false, allowed, held},
+		{"allow_rekeys/held not valid", policy.RekeysAllow, htlc, false, invalid, ""},
+		{"allow_rekeys/listed held not valid", policy.RekeysAllow, htlc, true, invalid, ""},
+		{"allow_rekeys/self", policy.RekeysAllow, key, false, allowed, self},
 	} {
 		for _, auto := range []bool{false, true} {
 			mode := "manual"
@@ -172,35 +201,58 @@ func TestRekeyToHeldGenericLogicSigIsForeign(t *testing.T) {
 				mode = "auto"
 			}
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				txns := []types.Transaction{rekeyTo(tc.target)}
 				var warnings []signerapproval.Violation
+				var console strings.Builder
 				prompted, approvalCalls := false, 0
 				approval := &ApprovalService{
 					UserAutoApprove:               &auto,
 					GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
-					// The runtime's set, which leaves out generic LogicSigs the
-					// same way (TestKnownAddressesLeaveOutGenericLogicSigs).
-					KnownAddresses: func() map[string]bool { return rekeyHeldAddressesFromSnapshot(deps.Snapshot()) },
-					HasClient:      func() bool { return true },
+					KnownAddresses:                func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
+					HasClient:                     func() bool { return true },
 					RequestSigningApprovalContext: func(_ context.Context, _, _, _, _ string, _, _ uint64, v []signerapproval.Violation, _ time.Duration) (bool, error) {
 						prompted = true
 						warnings = v
 						return true, nil
 					},
 				}
-				svc := &Service{Approval: approval, PolicyFor: fixedPolicy(tc.cfg), Planner: planner}
-				rule, err := svc.runApprovalGates(context.Background(), gateInput{
-					AllTxns: plan.AllTxns, EvalCount: len(req.Requests),
-					PassthroughIndices: plan.PassthroughIndices, ForeignIndices: plan.ForeignIndices,
-					AuthKeys:       []string{key.String()},
-					KnownAddresses: svc.knownAddresses(plan),
+				svc := &Service{
+					Approval: approval, PolicyFor: fixedPolicy(shipped(tc.rekeys)),
+					Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }},
+				}
+				var logged string
+				in := gateInput{
+					AllTxns: txns, EvalCount: 1, AuthKeys: []string{key.String()},
+					KnownAddresses: knownAddressesFromSnapshot(snapshot),
+					LogRejection:   func(reason string) { logged = reason },
 					RequestOperatorApproval: func(ctx context.Context, rule string) *ServiceError {
 						approvalCalls++
-						return approval.requestSingleTxnApprovalWithContext(ctx, "", req.Requests[0], plan.AllTxns, plan.AllTxns[:1], "", 0, 0, rule, nil)
+						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: key.String()}, txns, txns, "", 0, 0, rule, nil)
 					},
-				}, nil)
-				if tc.reject {
-					if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, policy.RejectForeignRekeyRuleID) || approvalCalls != 0 {
-						t.Fatalf("error = %v, approval calls = %d; want %s before approval", err, approvalCalls, policy.RejectForeignRekeyRuleID)
+				}
+				if tc.listed {
+					in.ListedRekeyTargets = map[int]map[string]bool{0: {tc.target.String(): true}}
+				}
+				rule, err := svc.runApprovalGates(context.Background(), in, &stringConsole{&console})
+				if tc.want != allowed {
+					if err == nil || err.Kind != ErrorForbidden || approvalCalls != 0 {
+						t.Fatalf("error = %v, approval calls = %d; want a refusal before approval", err, approvalCalls)
+					}
+					var want string
+					switch tc.want {
+					case invalid:
+						want = "transaction 1: " + rekeyTargetNotValidRefusal(tc.target.String(), "aplane.htlc.v1")
+						if err.Message != want || logged != auditSignerInvariant+want {
+							t.Fatalf("error = %q, audit = %q; want the %s invariant %q", err.Message, logged, RekeyTargetNotValidReason, want)
+						}
+						return
+					case allRekeys:
+						want = "[" + policy.RejectAllRekeysRuleID + "]"
+					case foreignOut:
+						want = "[" + policy.RejectForeignRekeyRuleID + "]"
+					}
+					if !strings.HasPrefix(err.Message, "policy engine rejected request: txn 1: "+want) || strings.Contains(err.Message, RekeyTargetNotValidReason) {
+						t.Fatalf("error = %q, want the policy rule %s", err.Message, want)
 					}
 					return
 				}
@@ -216,10 +268,17 @@ func TestRekeyToHeldGenericLogicSigIsForeign(t *testing.T) {
 				if !prompted || len(warnings) != 1 {
 					t.Fatalf("prompted = %v, warnings = %+v; want one rekey warning", prompted, warnings)
 				}
-				if msg := warnings[0].Message; !strings.Contains(msg, "YOU WILL LOSE CONTROL OF THIS ACCOUNT") || strings.Contains(msg, "You possess the keys") {
-					t.Fatalf("rekey warning = %q, want the lose-control text", msg)
+				if tc.warning != "" && warnings[0].Message != tc.warning {
+					t.Fatalf("rekey warning = %q, want %q", warnings[0].Message, tc.warning)
 				}
 			})
 		}
 	}
 }
+
+// stringConsole records what the gates print.
+type stringConsole struct{ b *strings.Builder }
+
+func (c *stringConsole) Printf(format string, args ...any) { fmt.Fprintf(c.b, format, args...) }
+func (c *stringConsole) Println(args ...any)               { fmt.Fprintln(c.b, args...) }
+func (c *stringConsole) Sync()                             {}

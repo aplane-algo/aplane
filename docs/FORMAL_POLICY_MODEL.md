@@ -225,19 +225,25 @@ Always Deny rules are hard safety guards. Current deny sources include:
   rotating account (`signing/rotating_gate.go::rejectRekeyToRotating`, run
   first in `gate.go::runApprovalGates`); it is not a policy setting and has no
   rule id, and it is evaluated before every policy document rule,
+- the signer invariant that refuses a rekey of another account to an address
+  the signer holds an aplane key for whose key type is not a valid rekey
+  target (`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, run second;
+  its message begins `rekey_target_not_valid:`). No `rekeys` value and no
+  rekey-to list lifts it; a rekey of an account to its own address is exempt,
 - the signer invariant that refuses a nonparticipating `keyreg` at a position
   the signer signs (`signing/invariant_gate.go::rejectNonparticipation`, run
-  next). Both invariants run through `rejectSignerInvariants`, on the signer
-  role in `runApprovalGates` and on a cosigner in
+  last). All three invariants run through `rejectSignerInvariants`, on the
+  signer role in `runApprovalGates` and on a cosigner in
   `cosigner_policy.go::runCosignerGates`, after the component key check and
-  before the cosigner's policy. Like the rotating invariant it has no rule id
-  and precedes every policy document rule, on both node roles,
+  before the cosigner's policy. Like the rotating invariant they have no rule
+  id and precede every policy document rule, on both node roles. The model
+  (`policy_precedence.tla`) abstracts every invariant as an Always Deny match;
+  no spec transcribes the invariant list or its order,
 - `transaction_types` entries with verdict `reject` (rule id
   `transaction_type:<type>`), the first policy document rule evaluated,
 - `rekeys` (`reject_all_rekeys` or `reject_foreign_rekey`; a protocol rekey is
   never rejected, and `reject_foreign_rekey` counts a target on the signing
-  account's own rekey-to list as declared and a held generic LogicSig address,
-  which has no key, as foreign; `signing/planner.go::rekeyHeldAddressesFromSnapshot`),
+  account's own rekey-to list as declared),
 - `reject_close_remainder`,
 - `reject_asset_close`,
 - `reject_clawback`,

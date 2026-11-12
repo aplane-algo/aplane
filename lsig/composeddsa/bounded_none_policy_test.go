@@ -27,6 +27,7 @@ publisher: test
 family: limits-only
 version: 1
 display_name: "Limits Only"
+valid_rekey_target: true
 max_opcode_cost: 20000
 
 bounded:

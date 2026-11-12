@@ -551,6 +551,17 @@ a rekey to an address on the account's rekey-to list takes the spending key
 alone and never asks the cosigner; any other rekey the account allows asks the
 cosigner too, whose policy decides the target.
 
+A rekey to a generic LogicSig account this signer holds, such as an
+`aplane.htlc.v1` account, is refused even though the signer holds its aplane
+key: its key type is not a
+[valid rekey target](USER_KEYTYPES.md#valid-rekey-targets), because its program
+decides what can be signed and anyone who can satisfy it could spend from the
+account. The refusal names its reason, `rekey_target_not_valid`, and no policy
+setting lifts it, `rekeys: allow_rekeys` and the account's rekey-to list
+included. A rekey to a foreign address, one the signer holds no aplane key for,
+is decided by the `rekeys` setting as before (see
+[USER_POLICY.md](USER_POLICY.md)).
+
 **Options:**
 | Option | Description |
 |--------|-------------|
@@ -577,6 +588,12 @@ Rekey an account back to itself (restore self-signing).
 ```
 unrekey <account> [options]
 ```
+
+A rekey back to the account's own address is exempt from the
+`rekey_target_not_valid` refusal, whatever the account's key type: returning an
+account to its own aplane key never strands it. When the signer holds the
+current authorizer but not the account's own aplane key, the target is foreign,
+and the `rekeys` setting decides it.
 
 **Options:**
 | Option | Description |

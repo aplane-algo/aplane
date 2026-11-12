@@ -137,7 +137,7 @@ func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
 	if !strings.Contains(lost, "YOU WILL LOSE CONTROL") {
 		t.Errorf("a rekey to an address nobody here holds does not warn of losing control:\n%s", lost)
 	}
-	if strings.Contains(kept, "YOU WILL LOSE CONTROL") || !strings.Contains(kept, "You possess the keys for the new address") {
+	if strings.Contains(kept, "YOU WILL LOSE CONTROL") || !strings.Contains(kept, txnreview.RekeyHeldText) {
 		t.Errorf("a rekey to a held address is not shown as keeping control:\n%s", kept)
 	}
 }

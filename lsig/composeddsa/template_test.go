@@ -53,6 +53,7 @@ publisher: test
 family: template-base-allowlist
 version: 1
 display_name: "Template Base Allowlist"
+valid_rekey_target: true
 parameters:
   - name: recipient
     type: address
@@ -94,6 +95,7 @@ publisher: test
 family: template-derivation
 version: 1
 display_name: "Template Derivation"
+valid_rekey_target: true
 max_opcode_cost: 20000
 teal: |
   int 1
@@ -123,6 +125,7 @@ publisher: test
 family: template-unsalted
 version: 1
 display_name: "Template Unsalted"
+valid_rekey_target: true
 max_opcode_cost: 20000
 teal: |
   int 1
@@ -156,6 +159,7 @@ publisher: test
 family: missing-base
 version: 1
 display_name: "Missing Base"
+valid_rekey_target: true
 teal: |
   int 1
 `,
@@ -172,6 +176,7 @@ publisher: test
 family: unknown-base
 version: 1
 display_name: "Unknown Base"
+valid_rekey_target: true
 teal: |
   int 1
 `,
@@ -188,6 +193,7 @@ publisher: test
 family: wrong-type
 version: 1
 display_name: "Wrong Type"
+valid_rekey_target: true
 teal: |
   int 1
 `,
@@ -219,6 +225,7 @@ publisher: test
 family: salt-style
 version: 1
 display_name: "Salt Style"
+valid_rekey_target: true
 salt_style: pushbytes
 teal: |
   int 1
@@ -250,6 +257,7 @@ publisher: test
 family: template-bounded
 version: 1
 display_name: Template Bounded
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -307,6 +315,7 @@ publisher: test
 family: author-reserved
 version: 1
 display_name: Author Reserved
+valid_rekey_target: true
 bounded:
   contract: bounded2
   spend_effects: [pay]
@@ -362,6 +371,7 @@ publisher: test
 family: missing-bounded
 version: 1
 display_name: Missing Bounded
+valid_rekey_target: true
 teal: int 1
 `,
 			want: "requires bounded",
@@ -433,6 +443,7 @@ publisher: aplane
 family: bounded-cosigner-test
 version: 1
 display_name: Bounded Cosigner Test
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -484,6 +495,7 @@ publisher: test
 family: invalid-bounded-cosigner
 version: 1
 display_name: Invalid Bounded Cosigner
+valid_rekey_target: true
 bounded:
   contract: bounded2
   spend_effects: [pay]
@@ -578,6 +590,7 @@ publisher: test
 family: bounded-args
 version: 1
 display_name: Bounded Args
+valid_rekey_target: true
 bounded:
   contract: bounded2
   spend_effects: [pay]
@@ -616,6 +629,7 @@ publisher: test
 family: missing-max-fee
 version: 1
 display_name: Missing Max Fee
+valid_rekey_target: true
 bounded:
   contract: bounded2
   spend_effects: [pay]
@@ -651,6 +665,7 @@ publisher: test
 family: rekey-setting
 version: 1
 display_name: Rekey Setting
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -753,6 +768,7 @@ publisher: test
 family: non-relocatable-%s
 version: 1
 display_name: "Non Relocatable"
+valid_rekey_target: true
 teal: |
 %s
 `, strings.ReplaceAll(tt.name, " ", "-"), indentTEALForTest(tt.teal))))
@@ -779,6 +795,7 @@ publisher: test
 family: relocatable-strict
 version: 1
 display_name: "Relocatable Strict"
+valid_rekey_target: true
 max_opcode_cost: 20000
 parameters:
   - name: hash
@@ -822,6 +839,7 @@ publisher: test
 family: existing-provider
 version: 1
 display_name: "Existing Provider"
+valid_rekey_target: true
 max_opcode_cost: 20000
 teal: |
   int 1
@@ -871,6 +889,7 @@ publisher: test
 family: fingerprint-template
 version: 1
 display_name: "Fingerprint Template"
+valid_rekey_target: true
 max_opcode_cost: 20000
 teal: |
   int 1
@@ -1034,6 +1053,7 @@ publisher: test
 family: template-arg-limit
 version: 1
 display_name: "Template Arg Limit"
+valid_rekey_target: true
 max_opcode_cost: 20000
 runtime_args:
 %steal: |
@@ -1070,6 +1090,7 @@ publisher: test
 family: template-arg-limit-plain
 version: 1
 display_name: "Template Arg Limit"
+valid_rekey_target: true
 max_opcode_cost: 20000
 runtime_args:
 %steal: |
@@ -1108,6 +1129,7 @@ publisher: test
 family: bounded-arg-count
 version: 1
 display_name: Bounded Arg Count
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -1173,6 +1195,7 @@ publisher: aplane
 family: bounded-arg-limit
 version: 1
 display_name: Bounded Arg Limit
+valid_rekey_target: true
 max_opcode_cost: 20000
 bounded:
   contract: bounded2
@@ -1197,6 +1220,50 @@ bounded:
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantKeygen) {
 				t.Fatalf("key metadata: error = %v, want %q", err, tt.wantKeygen)
+			}
+		})
+	}
+}
+
+// A composed template declares valid_rekey_target too: install requires it,
+// and a stored template without it reads as not a valid rekey target.
+func TestComposedValidRekeyTargetIsRequiredAtAdmissionAndReadAtLoad(t *testing.T) {
+	registerTemplateTestBase(t, "test.rekey-target-base.v1")
+	const base = `schema_version: 1
+template_type: composed
+base_key_type: test.rekey-target-base.v1
+template_mode: generated
+publisher: test
+family: falcon1024-rekey-target-declaration
+version: 1
+display_name: "Composed Rekey Target Declaration"
+max_opcode_cost: 20000
+%steal: |
+  int 1
+  assert
+`
+	for _, tc := range []struct {
+		name, declaration string
+		want, admitted    bool
+	}{
+		{"absent", "", false, false},
+		{"true", "valid_rekey_target: true\n", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, err := ParseTemplateSpec([]byte(fmt.Sprintf(base, tc.declaration)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = ValidateTemplateAdmission(spec)
+			if tc.admitted != (err == nil) || (!tc.admitted && !strings.Contains(err.Error(), "valid_rekey_target is required")) {
+				t.Fatalf("ValidateTemplateAdmission() error = %v, admitted want %v", err, tc.admitted)
+			}
+			provider, err := NewProviderFromTemplateSpec(spec)
+			if err != nil {
+				t.Fatalf("NewProviderFromTemplateSpec() error = %v; a stored template must load", err)
+			}
+			if got := provider.ValidRekeyTarget(); got != tc.want {
+				t.Fatalf("ValidRekeyTarget() = %v, want %v", got, tc.want)
 			}
 		})
 	}

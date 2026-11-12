@@ -48,6 +48,7 @@ publisher: makman
 family: demo-v2-test
 version: 1
 display_name: "Makman Demo V2 Test"
+valid_rekey_target: true
 max_opcode_cost: 20000
 teal: |
   int 1

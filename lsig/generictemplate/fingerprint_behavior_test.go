@@ -15,6 +15,7 @@ publisher: test
 family: synthetic-generic
 version: 1
 display_name: "Synthetic Generic"
+valid_rekey_target: false
 description: "behavior fingerprint base"
 display_color: "35"
 max_opcode_cost: 20000

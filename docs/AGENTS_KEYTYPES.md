@@ -108,6 +108,32 @@ cosigned assembly. It names the signature construction. Account semantics are
 owned by the full `key_type` unless a specific operation deliberately delegates
 to another key type.
 
+## Valid Rekey Target
+
+Every key type declares `valid_rekey_target`: whether an account of another key
+type may safely be rekeyed to an account of this key type. See
+[Valid rekey target](ARCH_KEYTYPES.md#valid-rekey-target).
+
+- Every YAML template you write must declare it at the top level. Install
+  refuses a template without it; a template already in a store loads without
+  it and reads as false.
+- Set `true` only if an account rekeyed to an account of this key type is not
+  stranded: the program lets it be rekeyed away again, or otherwise permits
+  what an ordinary account needs. Read the TEAL with an account other than the
+  program's own as `Sender`: a program that never checks `Sender` authorizes
+  for every account rekeyed to it.
+- A template that forbids rekey, or allows only a close-out, a fixed recipient,
+  or a hashlock or timelock payment, declares `false`. `aplane.htlc.v1` does.
+- A new compiled key type declares it in its `internal/keytypecatalog` entry,
+  and `internal/lsigprovider/rekey_target_test.go` must list its decision.
+- Never flip it for an installed key type: publish a new version. Reinstalling
+  a template that declares it differently is refused as a conflict.
+- The signer refuses a rekey of another account to a held address whose key
+  type declares false, under every `rekeys` setting and whatever the account's
+  rekey-to list says (`rekey_target_not_valid`). That target is held, not
+  foreign: "foreign" means only that the signer holds no aplane key for the
+  address, and `rekeys` decides only about foreign targets.
+
 ## Naming Rules
 
 Every custom template needs a unique versioned key type:
@@ -346,7 +372,8 @@ Stay inside the network's LogicSig argument limits:
 Use `lsigresource.MaxLogicSigArgs` and `lsigresource.MaxLogicSigArgBytes` in Go, not
 literals.
 
-Know when each check runs. Install refuses a template past a limit (admission:
+Know when each check runs. Install refuses a template past a limit, or one that
+does not declare `valid_rekey_target` (admission:
 `generictemplate.ValidateSpecAdmission`, `composeddsa.ValidateTemplateAdmission`).
 Key generation checks a bounded account's argument layout. Signing refuses a supplied
 argument over 4,096 bytes. Nothing is re-checked at load. When you add a restriction
