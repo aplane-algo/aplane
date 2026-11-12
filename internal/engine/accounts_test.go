@@ -4,10 +4,18 @@
 package engine
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	util "github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/txnreview"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestGetStatus(t *testing.T) {
@@ -302,5 +310,76 @@ func TestGetAlgorithm(t *testing.T) {
 
 	if eng.getAlgorithm("REKEYED") != "falcon1024" {
 		t.Errorf("getAlgorithm(REKEYED) = %v, want 'falcon1024' (from auth addr)", eng.getAlgorithm("REKEYED"))
+	}
+}
+
+// CurrentKeys returns the signer's list of the moment and leaves the signer
+// cache as it was: it neither reads nor rewrites it. No signer client is
+// ErrNotConnected and a locked signer is ErrSignerLocked, never an empty list.
+func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
+	locked := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if locked {
+			http.Error(w, "signer is locked", http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{
+			{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
+			{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		}})
+	}))
+	defer server.Close()
+	eng := setupTestEngine(t)
+	eng.SignerCache.AddAddress("CACHED", "ed25519")
+
+	if _, err := eng.CurrentKeys(context.Background()); !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("CurrentKeys() with no signer client error = %v, want ErrNotConnected", err)
+	}
+
+	eng.Connection.SignerClient = util.NewSignerClient(server.URL)
+	keys, err := eng.CurrentKeys(context.Background())
+	if err != nil {
+		t.Fatalf("CurrentKeys() error = %v", err)
+	}
+	want := []KeyInfo{
+		{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
+		{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+	}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("CurrentKeys() = %+v, want %+v", keys, want)
+	}
+	if got := eng.SignerCache.Keys; !reflect.DeepEqual(got, map[string]string{"CACHED": "ed25519"}) {
+		t.Fatalf("CurrentKeys() changed the signer cache: %v", got)
+	}
+
+	locked = true
+	if _, err := eng.CurrentKeys(context.Background()); !errors.Is(err, ErrSignerLocked) {
+		t.Fatalf("CurrentKeys() on a locked signer error = %v, want ErrSignerLocked", err)
+	}
+}
+
+// RekeyTargetsFromKeys holds every listed address, a generic LogicSig
+// included, and lists as not valid each one whose record does not say it is a
+// valid rekey target. It knows no rekey-to lists or protocol targets.
+func TestRekeyTargetsFromKeys(t *testing.T) {
+	got := RekeyTargetsFromKeys([]KeyInfo{
+		{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
+		{Address: "ROTATING", KeyType: "aplane.rotating-triple-wotsc.v1"},
+		{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		{Address: "VAULT", KeyType: "example.vault.v1", IsGenericLsig: true, ValidRekeyTarget: true},
+	})
+	wantHeld := map[string]bool{"NATIVE": true, "ROTATING": true, "HTLC": true, "VAULT": true}
+	if !reflect.DeepEqual(got.KnownAddresses, wantHeld) {
+		t.Errorf("KnownAddresses = %v, want %v", got.KnownAddresses, wantHeld)
+	}
+	wantInvalid := map[string]txnreview.InvalidRekeyTarget{
+		"ROTATING": {KeyType: "aplane.rotating-triple-wotsc.v1"},
+		"HTLC":     {KeyType: "aplane.htlc.v1", GenericLogicSig: true},
+	}
+	if !reflect.DeepEqual(got.InvalidRekeyTargets, wantInvalid) {
+		t.Errorf("InvalidRekeyTargets = %v, want %v", got.InvalidRekeyTargets, wantInvalid)
+	}
+	if got.ListedRekeyTargets != nil || got.ProtocolRekeyTargets != nil {
+		t.Errorf("a key list knows no rekey-to lists or protocol targets: %+v", got)
 	}
 }

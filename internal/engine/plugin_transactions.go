@@ -70,10 +70,3 @@ func DecodePluginDraft(intents []jsonrpc.TransactionIntent) (txns []types.Transa
 
 	return txns, groupIDDiscarded, nil
 }
-
-// ProcessTransactionIntents is DecodePluginDraft without the report of a
-// discarded group ID: the draft, with any plugin group ID cleared.
-func ProcessTransactionIntents(intents []jsonrpc.TransactionIntent) ([]types.Transaction, error) {
-	txns, _, err := DecodePluginDraft(intents)
-	return txns, err
-}

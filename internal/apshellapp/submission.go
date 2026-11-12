@@ -60,19 +60,35 @@ func (a *App) signTransactions(ctx context.Context, txns []types.Transaction, wa
 }
 
 // PluginGroup is a plugin result decoded for its group mode and checked under
-// the rekey rule (CheckPluginGroup). The review renders it and
-// SubmitPluginTransactions signs or submits it, so both see the same decoded
-// transactions, and neither can reach a group that skipped the check.
+// the rekey rule, frozen at the check: it holds copies of what the review and
+// submission read, never the result itself. CheckPluginGroup is its only
+// constructor. The review renders it and SubmitPluginTransactions signs or
+// submits it, so both see the same decoded transactions, and neither can reach
+// a group that skipped the check.
 type PluginGroup struct {
-	result           *jsonrpc.ExecuteResult
+	checked          bool
+	mode             string
+	requiresApproval bool
+	pluginSigners    []jsonrpc.PluginSigner
 	txns             []types.Transaction
 	groupIDDiscarded bool
 	signed           *engine.PregroupedSignedGroup // pregrouped-signed only
+	firstRekey       int                           // position of the first rekey, -1 for none
 	rekeyTargets     txnreview.FindingContext
 }
 
 // Mode is the result's group mode: empty for the default flow.
-func (g *PluginGroup) Mode() string { return g.result.GroupMode }
+func (g *PluginGroup) Mode() string { return g.mode }
+
+// RequiresApproval is the plugin's requiresApproval, which decides the default
+// flow's client prompt.
+func (g *PluginGroup) RequiresApproval() bool { return g.requiresApproval }
+
+// PluginSigners returns the plugin signers the result declared, for
+// presign-plan.
+func (g *PluginGroup) PluginSigners() []jsonrpc.PluginSigner {
+	return clonePluginSigners(g.pluginSigners)
+}
 
 // Transactions returns the decoded group: the draft, with any plugin group ID
 // cleared, for the default flow and presign-plan, and the signed group's
@@ -85,42 +101,56 @@ func (g *PluginGroup) Transactions() []types.Transaction {
 // set.
 func (g *PluginGroup) GroupIDDiscarded() bool { return g.groupIDDiscarded }
 
-// RekeyTargets is what the signer's key list, fetched for this check, says of
-// rekey targets, for the review's rekey findings: every address the signer
-// holds an aplane key for, and those whose aplane key is not a valid rekey
-// target. They are the facts the review shares with the signer's prompt; the
-// signer also knows each account's rekey-to list, which the review does not,
-// so a rekey to a listed address the signer does not hold reads here as losing
-// control. It is empty for a group that rekeys nothing.
+// RekeyTargets is what the key list the check fetched says of rekey targets,
+// for the review's rekey findings: the facts the check judged the group from.
+// They are every address the signer holds an aplane key for, and those whose
+// aplane key is not a valid rekey target: the facts the review shares with the
+// signer's prompt. The signer also knows each account's rekey-to list, which
+// the review does not, so a rekey to a listed address the signer does not
+// hold reads here as losing control. It is empty for a group with no rekey,
+// which has no rekey finding to show.
 func (g *PluginGroup) RekeyTargets() txnreview.FindingContext { return g.rekeyTargets }
+
+// ErrUncheckedPluginGroup refuses a plugin group CheckPluginGroup did not
+// produce.
+var ErrUncheckedPluginGroup = errors.New("internal error: the plugin group was not produced by CheckPluginGroup")
 
 // CheckPluginGroup decodes a plugin result for its group mode and applies the
 // rekey rule. It is the one decode of a plugin result: the review and
-// submission both use the group it returns. A mode it does not know is refused
-// before anything is decoded.
+// submission both use the group it returns. A result with localSigners, or
+// with a mode it does not know, is refused before anything is decoded.
 //
 // A group in which any transaction rekeys an account is judged against the key
-// list fetched from the signer for this check, and is refused when that list
-// cannot be had, or when a transaction, at any position and whoever signs it,
-// rekeys an account to an address the signer holds an aplane key for that is
-// not a valid rekey target, the account's own address included. That is the
-// rule the signer applies at the positions it signs (code
-// rekey_target_not_valid); a plugin-signed position never reaches the signer,
-// so apshell applies it to every position, before the group is shown, prompted
-// for, sent to the signer or submitted. A foreign target, one the signer holds
-// no aplane key for, is not refused: the review warns about it. A group with
-// no rekey needs no key list and no signer connection.
+// list fetched from the signer for this check (judgeRekeys), and is refused
+// when that list cannot be had, or when a transaction, at any position and
+// whoever signs it, rekeys an account to an address the signer holds an
+// aplane key for that is not a valid rekey target, the account's own address
+// included. That is the rule the signer applies at the positions it signs
+// (code rekey_target_not_valid); a plugin-signed position never reaches the
+// signer, so apshell applies it to every position, before the group is shown
+// or prompted for, and SubmitPluginTransactions applies it again before
+// anything is sent. A foreign target, one the signer holds no aplane key for,
+// is not refused: the review warns about it. A group with no rekey needs no
+// key list and no signer connection.
 func (a *App) CheckPluginGroup(ctx context.Context, result *jsonrpc.ExecuteResult) (*PluginGroup, error) {
 	if result == nil {
 		return nil, fmt.Errorf("plugin returned no result")
 	}
-	group := &PluginGroup{result: result}
+	if len(result.LocalSigners) > 0 {
+		return nil, fmt.Errorf("plugin localSigners are not supported; use groupMode %q or %q",
+			jsonrpc.GroupModePresignPlan, jsonrpc.GroupModePregroupedSigned)
+	}
+	group := &PluginGroup{
+		mode:             result.GroupMode,
+		requiresApproval: result.RequiresApproval,
+		pluginSigners:    clonePluginSigners(result.PluginSigners),
+	}
 	var err error
 	switch result.GroupMode {
 	case "":
 		group.txns, group.groupIDDiscarded, err = engine.DecodePluginDraft(result.Transactions)
 	case jsonrpc.GroupModePregroupedSigned:
-		err = group.decodePregroupedSigned()
+		group.txns, group.signed, err = decodePregroupedSigned(result.Transactions)
 	case jsonrpc.GroupModePresignPlan:
 		group.txns, group.groupIDDiscarded, err = engine.DecodePluginDraft(result.Transactions)
 		if err != nil {
@@ -132,72 +162,82 @@ func (a *App) CheckPluginGroup(ctx context.Context, result *jsonrpc.ExecuteResul
 	if err != nil {
 		return nil, err
 	}
-	if err := a.checkPluginRekeys(ctx, group); err != nil {
+	group.firstRekey = firstRekey(group.txns)
+	if group.rekeyTargets, err = a.judgeRekeys(ctx, group); err != nil {
 		return nil, err
 	}
+	group.checked = true
 	return group, nil
 }
 
 // decodePregroupedSigned decodes a pregrouped-signed result: every intent
-// signed, and the group self-consistent (engine.DecodePregroupedSigned).
-func (g *PluginGroup) decodePregroupedSigned() error {
-	intents := g.result.Transactions
+// signed, and the group self-consistent (engine.DecodePregroupedSigned). It
+// returns the group's transactions and the validated group.
+func decodePregroupedSigned(intents []jsonrpc.TransactionIntent) ([]types.Transaction, *engine.PregroupedSignedGroup, error) {
 	if len(intents) == 0 {
-		return fmt.Errorf("groupMode %q requires transactions", jsonrpc.GroupModePregroupedSigned)
+		return nil, nil, fmt.Errorf("groupMode %q requires transactions", jsonrpc.GroupModePregroupedSigned)
 	}
 	encoded := make([]string, len(intents))
 	for i, intent := range intents {
 		if intent.Type != jsonrpc.TransactionIntentSigned {
-			return fmt.Errorf("groupMode %q requires every transaction to be type %q; transaction %d is %q",
+			return nil, nil, fmt.Errorf("groupMode %q requires every transaction to be type %q; transaction %d is %q",
 				jsonrpc.GroupModePregroupedSigned, jsonrpc.TransactionIntentSigned, i+1, intent.Type)
 		}
 		encoded[i] = intent.Encoded
 	}
 	signed, err := engine.DecodePregroupedSigned(encoded)
 	if err != nil {
-		return fmt.Errorf("pregrouped-signed: %w", err)
+		return nil, nil, fmt.Errorf("pregrouped-signed: %w", err)
 	}
 	stxns := signed.Transactions()
-	g.txns = make([]types.Transaction, len(stxns))
+	txns := make([]types.Transaction, len(stxns))
 	for i, st := range stxns {
-		g.txns[i] = st.Txn
+		txns[i] = st.Txn
 	}
-	g.signed = signed
-	return nil
+	return txns, signed, nil
 }
 
-// checkPluginRekeys applies the rekey rule to a decoded group. A group with no
-// rekey is left alone. Otherwise the signer's key list is fetched
-// (engine.RefreshKeys) and read once (engine.RekeyTargetContext); without it the
-// group is refused, since an empty or stale cache would make a held aplane key
-// read as foreign.
-func (a *App) checkPluginRekeys(ctx context.Context, group *PluginGroup) error {
-	first := -1
-	for i, txn := range group.txns {
+// firstRekey is the position of the first transaction with a non-zero
+// RekeyTo, or -1 when none has one.
+func firstRekey(txns []types.Transaction) int {
+	for i, txn := range txns {
 		if !txn.RekeyTo.IsZero() {
-			first = i
-			break
+			return i
 		}
 	}
-	if first < 0 {
-		return nil
+	return -1
+}
+
+// judgeRekeys applies the rekey rule to a decoded group against the signer's
+// key list fetched now (engine.CurrentKeys), which writes no cache, and
+// returns the facts it judged from (engine.RekeyTargetsFromKeys), built from
+// the records that fetch returned and never from the signer cache. A group
+// with no rekey fetches nothing and returns no facts. Without a current list
+// the group is refused, since a held aplane key would otherwise read as
+// foreign.
+func (a *App) judgeRekeys(ctx context.Context, group *PluginGroup) (txnreview.FindingContext, error) {
+	if group.firstRekey < 0 {
+		return txnreview.FindingContext{}, nil
 	}
-	rekeys := fmt.Sprintf("plugin group rekeys an account (transaction %d)", first+1)
-	if a == nil || a.eng == nil || !a.eng.IsConnected() {
-		return fmt.Errorf("%s: connect to the signer so apshell can check the rekey target against its aplane keys", rekeys)
+	rekeys := fmt.Sprintf("plugin group rekeys an account (transaction %d)", group.firstRekey+1)
+	connectHint := fmt.Errorf("%s: connect to the signer so apshell can check the rekey target against its aplane keys", rekeys)
+	if a == nil || a.eng == nil {
+		return txnreview.FindingContext{}, connectHint
 	}
-	if _, err := a.eng.RefreshKeys(ctx); err != nil {
-		switch {
-		case errors.Is(err, engine.ErrNotConnected):
-			return fmt.Errorf("%s: connect to the signer so apshell can check the rekey target against its aplane keys", rekeys)
-		case errors.Is(err, engine.ErrSignerLocked):
-			return fmt.Errorf("%s: the signer is locked; unlock it so apshell can check the rekey target against its aplane keys", rekeys)
-		default:
-			return fmt.Errorf("%s: apshell could not get the signer's aplane keys to check the rekey target: %w", rekeys, err)
-		}
+	keys, err := a.eng.CurrentKeys(ctx)
+	switch {
+	case errors.Is(err, engine.ErrNotConnected):
+		return txnreview.FindingContext{}, connectHint
+	case errors.Is(err, engine.ErrSignerLocked):
+		return txnreview.FindingContext{}, fmt.Errorf("%s: the signer is locked; unlock it so apshell can check the rekey target against its aplane keys", rekeys)
+	case err != nil:
+		return txnreview.FindingContext{}, fmt.Errorf("%s: apshell could not get the signer's aplane keys to check the rekey target: %w", rekeys, err)
 	}
-	group.rekeyTargets = a.eng.RekeyTargetContext()
-	return refuseRekeyToInvalidTarget(group.txns, group.rekeyTargets.InvalidRekeyTargets)
+	targets := engine.RekeyTargetsFromKeys(keys)
+	if err := refuseRekeyToInvalidTarget(group.txns, targets.InvalidRekeyTargets); err != nil {
+		return txnreview.FindingContext{}, err
+	}
+	return targets, nil
 }
 
 // refuseRekeyToInvalidTarget refuses the first transaction in txns that rekeys
@@ -224,35 +264,54 @@ func refuseRekeyToInvalidTarget(txns []types.Transaction, invalid map[string]txn
 	return nil
 }
 
+func clonePluginSigners(signers []jsonrpc.PluginSigner) []jsonrpc.PluginSigner {
+	if signers == nil {
+		return nil
+	}
+	out := make([]jsonrpc.PluginSigner, len(signers))
+	for i, ps := range signers {
+		out[i] = ps
+		if ps.LsigResources != nil {
+			resources := *ps.LsigResources
+			out[i].LsigResources = &resources
+		}
+	}
+	return out
+}
+
 // SubmitPluginTransactions signs and submits a checked plugin group through
 // its mode's path. The group comes from CheckPluginGroup, which the review
-// calls first, so the group submitted is the group reviewed and checked.
+// calls first, so the group submitted is the group reviewed. A group with a
+// rekey is judged again, against a key list fetched again, immediately before
+// anything is sent, since a key can be created on the signer while the user
+// reviews the group (judgeRekeys).
 func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
-	if group == nil || group.result == nil {
-		return nil, fmt.Errorf("no checked plugin group to submit")
+	if group == nil || !group.checked {
+		return nil, ErrUncheckedPluginGroup
 	}
-	result := group.result
-	if len(result.LocalSigners) > 0 {
-		return nil, fmt.Errorf("plugin localSigners are not supported; use groupMode %q or %q",
-			jsonrpc.GroupModePresignPlan, jsonrpc.GroupModePregroupedSigned)
-	}
-
-	switch result.GroupMode {
+	switch group.mode {
 	case "":
-		// Default unsigned path: APlane-managed slots only.
+		return a.submitDefaultDraft(ctx, group, lsigArgs)
 	case jsonrpc.GroupModePregroupedSigned:
 		return a.submitPregroupedSigned(ctx, group, lsigArgs)
 	case jsonrpc.GroupModePresignPlan:
 		return a.submitPresignPlan(ctx, pluginName, group, lsigArgs)
 	default:
-		return nil, fmt.Errorf("unsupported plugin groupMode %q", result.GroupMode)
+		return nil, ErrUncheckedPluginGroup
 	}
+}
 
+// submitDefaultDraft signs the default flow's draft, APlane-managed slots
+// only, through apsigner and submits it.
+func (a *App) submitDefaultDraft(ctx context.Context, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
 	if !a.eng.IsConnected() {
 		return nil, fmt.Errorf("not connected to signer")
 	}
+	if _, err := a.judgeRekeys(ctx, group); err != nil {
+		return nil, err
+	}
 
-	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
+	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(group.txns))
 	submit, err := a.eng.SignAndSubmitGroup(ctx, group.txns, lsigArgsSlice)
 	if err != nil {
 		if submit != nil {
@@ -278,11 +337,14 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, g
 // this submits the exact signed bytes verbatim. apsigner is not involved, so —
 // unlike the other plugin paths — it does NOT require a signer connection, only
 // an algod client (checked downstream in SubmitPregroupedSigned), unless the
-// group rekeys, which CheckPluginGroup judges against the signer's key list. It
-// fails closed if the result mixes in any APlane-managed signing.
+// group rekeys, which is judged against the signer's key list. It fails closed
+// if the result mixes in any APlane-managed signing.
 func (a *App) submitPregroupedSigned(ctx context.Context, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
 	if len(lsigArgs) > 0 {
 		return nil, fmt.Errorf("groupMode %q does not allow lsig args", jsonrpc.GroupModePregroupedSigned)
+	}
+	if _, err := a.judgeRekeys(ctx, group); err != nil {
+		return nil, err
 	}
 
 	confirmed := !a.eng.GetSimulate()
@@ -307,14 +369,14 @@ func (a *App) submitPregroupedSigned(ctx context.Context, group *PluginGroup, ls
 // apsigner's policy + approval over the canonical group remains the
 // authoritative human-acceptance gate for signer-owned keys.
 func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
-	result := group.result
-	if len(result.PluginSigners) == 0 {
+	signers := group.pluginSigners
+	if len(signers) == 0 {
 		return nil, fmt.Errorf("groupMode %q requires pluginSigners", jsonrpc.GroupModePresignPlan)
 	}
 
-	refs := make(map[string]string, len(result.PluginSigners))
-	authorizations := make(map[string]engine.PluginSlotAuthorization, len(result.PluginSigners))
-	for i, ps := range result.PluginSigners {
+	refs := make(map[string]string, len(signers))
+	authorizations := make(map[string]engine.PluginSlotAuthorization, len(signers))
+	for i, ps := range signers {
 		if ps.Kind != jsonrpc.PluginSignerKindCallback {
 			return nil, fmt.Errorf("pluginSigners[%d]: unsupported kind %q", i, ps.Kind)
 		}
@@ -351,6 +413,9 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *P
 	if !a.eng.IsConnected() {
 		return nil, fmt.Errorf("not connected to signer")
 	}
+	if _, err := a.judgeRekeys(ctx, group); err != nil {
+		return nil, err
+	}
 
 	signSlots := func(reqs []engine.PluginSlotSignRequest) ([]engine.PluginSlotSigned, error) {
 		jr := make([]jsonrpc.SignTransactionRequest, len(reqs))
@@ -371,7 +436,7 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *P
 		return out, nil
 	}
 
-	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
+	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(group.txns))
 	confirmed := !a.eng.GetSimulate()
 	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, group.txns, refs, authorizations, signSlots, lsigArgsSlice)
 	if err != nil {

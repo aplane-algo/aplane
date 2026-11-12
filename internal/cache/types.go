@@ -43,7 +43,6 @@ type SignerCache struct {
 	CosignerPublicKeys        map[string]string               `json:"cosigner_public_keys,omitempty"`         // address -> embedded cosigner public key hex
 	BoundedMaxFees            map[string]uint64               `json:"bounded_max_fees,omitempty"`             // address -> bounded authorization max_fee
 	BoundedContracts          map[string]string               `json:"bounded_contracts,omitempty"`            // address -> bounded authorization contract (bounded2, plain1)
-	ValidRekeyTargets         map[string]bool                 `json:"valid_rekey_targets,omitempty"`          // address -> true when its aplane key records valid_rekey_target true; an address not in it is not a valid rekey target
 	Locked                    bool                            `json:"-"`                                      // True if signer reported 403 (locked) on last /keys check
 	store                     *Store
 }

@@ -103,8 +103,8 @@ func submitPluginTransactions(r *REPLState, pluginName string, group *apshellapp
 // and checks the result with apshellapp.CheckPluginGroup, the step submission
 // takes the group from: an unknown mode, an undecodable group, or a group the
 // rekey rule refuses is refused with that error before anything is shown or
-// asked. It then reviews the group for its mode and returns it for
-// submission, unless the user cancelled.
+// asked. It then reviews the group, which holds everything the review reads,
+// for its mode and returns it for submission, unless the user cancelled.
 func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (*apshellapp.PluginGroup, bool, error) {
 	group, err := r.app().CheckPluginGroup(r.commandContext(), result)
 	if err != nil {
@@ -113,13 +113,13 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (*aps
 	var cancelled bool
 	switch group.Mode() {
 	case "":
-		cancelled, err = reviewDefaultDraft(r, result, group)
+		cancelled, err = reviewDefaultDraft(r, group)
 	case jsonrpc.GroupModePregroupedSigned:
 		cancelled, err = reviewPregroupedSigned(r, group)
 	case jsonrpc.GroupModePresignPlan:
-		cancelled, err = reviewPresignPlan(r, result, group)
+		cancelled, err = reviewPresignPlan(r, group)
 	default:
-		err = fmt.Errorf("unsupported plugin groupMode %q", group.Mode())
+		err = apshellapp.ErrUncheckedPluginGroup
 	}
 	if err != nil || cancelled {
 		return nil, cancelled, err
@@ -131,10 +131,10 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (*aps
 // APlane-managed accounts. The decoded draft is shown as information;
 // apsigner's policy and approval over the final group are the gate, and this
 // client prompt is asked only when the plugin requests it.
-func reviewDefaultDraft(r *REPLState, result *jsonrpc.ExecuteResult, group *apshellapp.PluginGroup) (bool, error) {
+func reviewDefaultDraft(r *REPLState, group *apshellapp.PluginGroup) (bool, error) {
 	renderDefaultPluginDraft(r, group)
 
-	if !result.RequiresApproval || r.AutoConfirm {
+	if !group.RequiresApproval() || r.AutoConfirm {
 		return false, nil
 	}
 
@@ -180,8 +180,8 @@ func reviewPregroupedSigned(r *REPLState, group *apshellapp.PluginGroup) (bool, 
 // slots, fee attribution) and prompts. APlane canonicalizes this group and apsigner's
 // /sign approval is the authoritative gate for the managed slots, so this client
 // review is a confirm on top: it prompts interactively and otherwise proceeds.
-func reviewPresignPlan(r *REPLState, result *jsonrpc.ExecuteResult, group *apshellapp.PluginGroup) (bool, error) {
-	slots := presignReviewSlots(group.Transactions(), result.PluginSigners)
+func reviewPresignPlan(r *REPLState, group *apshellapp.PluginGroup) (bool, error) {
+	slots := presignReviewSlots(group.Transactions(), group.PluginSigners())
 	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots, group.RekeyTargets())
 	renderDiscardedGroupIDNotice(r, group.GroupIDDiscarded())
 

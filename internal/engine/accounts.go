@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -159,6 +160,46 @@ func (e *Engine) ListKeys(ctx context.Context) ([]KeyInfo, error) {
 		result = append(result, keyInfoFromSigner(k))
 	}
 	return result, nil
+}
+
+// CurrentKeys fetches the signer's key list and returns its records. It reads
+// and writes no cache, so a decision made from it uses the list the signer
+// gave for that decision, whatever happens to the signer cache meanwhile. No
+// signer client is ErrNotConnected, and a locked signer is ErrSignerLocked,
+// never an empty list.
+func (e *Engine) CurrentKeys(ctx context.Context) ([]KeyInfo, error) {
+	keysResp, err := e.GetKeysWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch keys: %w", err)
+	}
+	if keysResp.Locked {
+		return nil, ErrSignerLocked
+	}
+	keys := make([]KeyInfo, 0, len(keysResp.Keys))
+	for _, k := range keysResp.Keys {
+		keys = append(keys, keyInfoFromSigner(k))
+	}
+	return keys, nil
+}
+
+// RekeyTargetsFromKeys builds, from a key list, the two facts about rekey
+// targets that apshell shares with the signer's prompt: every address the list
+// has an aplane key for, of any key type (KnownAddresses), and, by address,
+// those whose aplane key records that it is not a valid rekey target, with the
+// key type and whether it is a generic LogicSig (InvalidRekeyTargets). An
+// account signable only through its auth address is not in the list, so it
+// is not held. The signer's prompt also knows each account's rekey-to list;
+// this does not.
+func RekeyTargetsFromKeys(keys []KeyInfo) txnreview.FindingContext {
+	held := make(map[string]bool, len(keys))
+	invalid := make(map[string]txnreview.InvalidRekeyTarget)
+	for _, key := range keys {
+		held[key.Address] = true
+		if !key.ValidRekeyTarget {
+			invalid[key.Address] = txnreview.InvalidRekeyTarget{KeyType: key.KeyType, GenericLogicSig: key.IsGenericLsig}
+		}
+	}
+	return txnreview.FindingContext{KnownAddresses: held, InvalidRekeyTargets: invalid}
 }
 
 func (e *Engine) RefreshKeys(ctx context.Context) ([]KeyInfo, error) {
@@ -422,6 +463,8 @@ func keyInfoFromSigner(k signerapi.KeyInfo) KeyInfo {
 		TemplateProvenanceStatus: k.TemplateProvenanceStatus,
 		TemplateProvenanceNote:   k.TemplateProvenanceNote,
 		PolicyLabel:              keytypeux.BoundedLabel(k.BoundedAuthorization),
+		IsGenericLsig:            k.IsGenericLsig,
+		ValidRekeyTarget:         k.ValidRekeyTarget,
 	}
 	if bounded := k.BoundedAuthorization; bounded != nil {
 		if bounded.Cosigner != nil {

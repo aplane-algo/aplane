@@ -101,11 +101,12 @@ signer's approval prompt shows, with the network named from the genesis hash;
 then every finding the signer's warning rules produce for those bytes, each
 marked `!!`; a type the describer does not know is shown with a line saying
 its fields are not shown, so opacity is displayed, never hidden; what a rekey
-finding says of its target comes from the signer's key list, fetched for the
-PS8 check and read once, `PluginGroup.RekeyTargets`: the addresses the signer
-holds an aplane key for, of any key type, a generic LogicSig included, and
-those of them whose aplane key records that it is not a valid rekey target,
-with the key type; a rekey to a held address is shown as keeping control, and
+finding says of its target comes from the signer's key list fetched for the
+PS8 check, the facts the check judged from, `PluginGroup.RekeyTargets`: the
+addresses the signer holds an aplane key for, of any key type, a generic
+LogicSig included, and those of them whose aplane key records that it is not
+a valid rekey target, with the key type; a group with no rekey has no rekey
+finding and needs neither; a rekey to a held address is shown as keeping control, and
 a rekey to an account signable only through its auth address, or to an
 address the signer lists nothing for, warns of losing control. Those are the
 facts the review shares with the signer's prompt; the signer also knows each
@@ -202,30 +203,33 @@ rule the signer applies at the positions it signs
 slot never reaches the signer, so apshell applies it to every position. The
 refusal names the position, the target and its key type. It comes before
 anything is shown or prompted for, before `/plan` or `/sign`, and before
-anything is submitted: one step, `apshellapp.CheckPluginGroup`, decodes the
-result for its mode and applies it, the review of every mode starts with that
-step, and submission (`SubmitPluginTransactions`, which the REPL, MCP and
-JavaScript all submit through) takes only the group the step returned. A
-rekey to a foreign address, one the signer holds no aplane key for, is not
-refused; the review warns about it.
+anything is submitted. It is applied twice. One step,
+`apshellapp.CheckPluginGroup`, decodes the result for its mode and applies
+it, and the review of every mode starts with that step. Submission
+(`SubmitPluginTransactions`, which the REPL, MCP and JavaScript all submit
+through) takes only the group the step returned, frozen at the check, and
+applies the rule again immediately before anything is sent, since a key can
+be created on the signer while the user reviews the group. A rekey to a
+foreign address, one the signer holds no aplane key for, is not refused; the
+review warns about it.
 
-A group in which any transaction rekeys is judged against the signer's key
-list fetched for the check (`engine.RefreshKeys`, then one read of the held
-set and the not-valid set, `engine.RekeyTargetContext`), so an empty cache or
-one older than the signer's list cannot make a held aplane key read as
-foreign. When no current list can be had, because apshell is not connected
-to the signer, the signer is locked, or the request fails, the group is
-refused with an error saying so. A group with no rekey fetches nothing and
-needs no connection, so a pregrouped-signed group with no rekey still
-submits without one. The review and submission of one result fetch once:
-submission takes the checked group. In the cache an address with no recorded
-`valid_rekey_target` true is not a valid rekey target. Anchors:
-`internal/apshellapp/submission.go` (`CheckPluginGroup`,
-`checkPluginRekeys`, `SubmitPluginTransactions`),
-`internal/apshellcli/external_plugins.go` (`reviewPluginTransactions`),
-`internal/engine/signer_cache.go` (`RekeyTargetContext`),
-`internal/cache/signer.go` (`IsValidRekeyTarget`, `HeldKeyAddresses`),
-`internal/clientstate/state.go` (`PopulateSignerCache`).
+Each time, a group in which any transaction rekeys is judged against the
+signer's key list fetched for that judgment (`engine.CurrentKeys`, which
+reads and writes no cache), and the held set and the not-valid set are built
+from the records that fetch returned (`engine.RekeyTargetsFromKeys`, from
+each record's key type, generic LogicSig flag and `valid_rekey_target`).
+Nothing is read back from the signer cache, so an empty, stale or reset
+cache cannot make a held aplane key read as foreign. The review's rekey
+findings show the facts the check judged from, carried on the group. When no
+current list can be had, because apshell is not connected to the signer, the
+signer is locked, or the request fails, the group is refused with an error
+saying so. A group with no rekey fetches nothing and needs no connection, so
+a pregrouped-signed group with no rekey still submits without one. Anchors:
+`internal/apshellapp/submission.go` (`CheckPluginGroup`, `judgeRekeys`,
+`SubmitPluginTransactions`), `internal/apshellcli/external_plugins.go`
+(`reviewPluginTransactions`), `internal/engine/accounts.go` (`CurrentKeys`,
+`RekeyTargetsFromKeys`, `keyInfoFromSigner`), `internal/engine/results.go`
+(`KeyInfo.IsGenericLsig`, `KeyInfo.ValidRekeyTarget`).
 
 ## Assumptions and honest gaps
 
@@ -257,9 +261,9 @@ submission takes the checked group. In the cache an address with no recorded
   bounds are the operator's judgment (pregrouped) or apsigner policy
   (managed slots).
 - **PS8 trusts the signer's `/keys` answer of the moment.** A key the signer
-  creates between that fetch and submission is not seen; at the positions the
-  signer signs, its own check refuses from its own list. The default flow,
-  which the TLA model does not enumerate, applies the same refusal.
+  creates after submission's fetch is not seen; at the positions the signer
+  signs, its own check refuses from its own list. The default flow, which the
+  TLA model does not enumerate, applies the same refusal.
 
 ## Test anchors
 
@@ -275,11 +279,14 @@ submission takes the checked group. In the cache an address with no recorded
   draft review; the refusal of an unknown `groupMode`; what each mode's review
   says of a rekey target from the fetched key list, its refusal of a rekey to
   a held aplane key that is not a valid rekey target or of a rekey that cannot
-  be checked, and one fetch for review and submission).
-- PS8 in submission, with nothing sent to the signer's other endpoints or the
-  node: a fresh key list catches a key the cache lacks, no connection or a
-  locked signer refuses a rekey, and a group with no rekey fetches nothing:
-  `internal/apshellapp/submission_test.go`.
+  be checked, and a fetch at the review and another at submission).
+- PS8 at the check and at submission, with nothing sent to the signer's other
+  endpoints or the node: the verdict follows the fetched records, not a cache
+  that says otherwise, and the cache is left as it was; a key created after
+  the check is refused at submission; no connection or a locked signer
+  refuses a rekey; a group with no rekey fetches nothing; the checked group is
+  frozen: `internal/apshellapp/submission_test.go`; the fetch and the two
+  sets: `internal/engine/accounts_test.go`.
 - Presign preservation/byte-match/index discipline:
   `internal/engine/plugin_presign_test.go`.
 - Mixed passthrough display and auto-approval disable:

@@ -21,7 +21,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
@@ -363,8 +362,8 @@ func TestReviewPluginTransactionsRefusesAnUnknownGroupMode(t *testing.T) {
 // an ed25519 aplane key that is a valid rekey target, a rotating account and
 // an HTLC generic LogicSig that are not, and a generic LogicSig that is; plus
 // an account the client signs for only through its auth address, and an
-// address the signer lists nothing for. The engine's signer cache starts
-// empty: the review's check fetches the list. keyFetches counts the fetches.
+// address the signer lists nothing for. The review's check fetches the list;
+// keyFetches counts the fetches.
 type rekeyReviewFixture struct {
 	eng                                             *engine.Engine
 	native, rotating, htlc, vault, rekeyed, foreign types.Address
@@ -535,10 +534,16 @@ func rekeyReviewResults(t *testing.T, txn types.Transaction) map[string]struct {
 // prompt does, so that case is not covered here.
 func TestReviewOfARekeyTargetReadsTheSignersKeyList(t *testing.T) {
 	f := newRekeyReviewFixture(t)
+	// The cache is filled only so the auth-address account is signable; the
+	// review's facts come from the fetched list.
 	if _, err := f.eng.RefreshKeys(context.Background()); err != nil {
 		t.Fatalf("RefreshKeys() error = %v", err)
 	}
-	rekeyTargets := f.eng.RekeyTargetContext()
+	keys, err := f.eng.CurrentKeys(context.Background())
+	if err != nil {
+		t.Fatalf("CurrentKeys() error = %v", err)
+	}
+	rekeyTargets := engine.RekeyTargetsFromKeys(keys)
 
 	// The client can sign for the auth-address account, so the signable set
 	// would call it held.
@@ -564,7 +569,6 @@ func TestReviewOfARekeyTargetReadsTheSignersKeyList(t *testing.T) {
 			}
 
 			for mode, c := range rekeyReviewResults(t, txn) {
-				f.eng.SignerCache = cache.NewSignerCache()
 				f.keyFetches.Store(0)
 				var out bytes.Buffer
 				prompted := false
@@ -626,9 +630,10 @@ func TestReviewRefusesARekeyWithoutTheSignersKeyList(t *testing.T) {
 	}
 }
 
-// The review and the submission of one plugin result fetch the key list once:
-// submission takes the group the review checked.
-func TestReviewAndSubmissionOfARekeyFetchTheKeyListOnce(t *testing.T) {
+// The review and the submission of a rekeying plugin group each fetch the key
+// list: submission takes the group the review checked and judges its rekeys
+// again before anything is sent.
+func TestReviewAndSubmissionOfARekeyEachFetchTheKeyList(t *testing.T) {
 	f := newRekeyReviewFixture(t)
 	app := apshellapp.New(f.eng, config.DefaultConfig(), t.TempDir())
 	txn := approvalTestPayment(1, 2, 1)
@@ -638,13 +643,16 @@ func TestReviewAndSubmissionOfARekeyFetchTheKeyListOnce(t *testing.T) {
 	if err != nil || cancelled {
 		t.Fatalf("reviewPluginTransactions() = %v, %v", cancelled, err)
 	}
-	// No node is configured, so submission stops at the node; it asks the
-	// signer nothing more.
+	if fetches := f.keyFetches.Load(); fetches != 1 {
+		t.Fatalf("the review fetched the key list %d time(s), want once", fetches)
+	}
+	// No node is configured, so submission stops at the node, after its own
+	// fetch; it asks the signer nothing else.
 	if _, err := submitPluginTransactions(state, "plugin", group, nil); err == nil {
 		t.Fatal("submission without a node succeeded")
 	}
-	if fetches := f.keyFetches.Load(); fetches != 1 {
-		t.Fatalf("review and submission fetched the key list %d time(s), want once", fetches)
+	if fetches := f.keyFetches.Load(); fetches != 2 {
+		t.Fatalf("review and submission fetched the key list %d time(s), want twice", fetches)
 	}
 }
 

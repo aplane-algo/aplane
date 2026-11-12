@@ -92,11 +92,15 @@ The restored spec passes.
   outcome, so a check that skipped the plugin slots, which the signer never
   judges, is a counterexample. The default flow is not enumerated; it applies
   the same refusal (`apshellapp/submission.go`), anchored by Go tests.
-- **The key list is not modeled.** The model has no state for the signer's
-  key list or whether apshell could fetch it. A group with a rekey that
-  cannot be checked against a current list is refused, so that outcome is
-  one of the cases where `rekeyTargetsOK` or `rekeyTargetOK` is false; the
-  fetch and its failures are anchored by Go tests.
+- **The key list, and the check and submission as two steps, are not
+  modeled.** The model has no state for the signer's key list or whether
+  apshell could fetch it, and no step between the check and submission.
+  apshell applies the rule at the check and again at submission, each time
+  against a list fetched for it, and a group with a rekey that cannot be
+  checked against a current list is refused; `rekeyTargetsOK` and
+  `rekeyTargetOK` stand for both judgments passing, so a refusal at either
+  is a case where they are false. The fetches, their failures and the
+  recheck are anchored by Go tests.
 
 ## Test-gap found while anchoring
 

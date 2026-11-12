@@ -57,6 +57,12 @@ type KeyInfo struct {
 	PolicyLabel string `json:"policy_label,omitempty"`
 	// CosignerKeyID is the signer's identity for a bounded account's cosigner.
 	CosignerKeyID string `json:"cosigner_key_id,omitempty"`
+	// IsGenericLsig is set for a generic LogicSig aplane key, whose program
+	// decides what can be signed.
+	IsGenericLsig bool `json:"is_generic_lsig,omitempty"`
+	// ValidRekeyTarget is the valid_rekey_target this aplane key recorded when
+	// it was created: whether an account may be rekeyed to it.
+	ValidRekeyTarget bool `json:"valid_rekey_target"`
 }
 
 // ASAInfo holds asset metadata

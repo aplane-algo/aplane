@@ -24,7 +24,6 @@ func NewSignerCache() SignerCache {
 		CosignerPublicKeys:        make(map[string]string),
 		BoundedMaxFees:            make(map[string]uint64),
 		BoundedContracts:          make(map[string]string),
-		ValidRekeyTargets:         make(map[string]bool),
 	}
 	return cache
 }
@@ -78,7 +77,6 @@ func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.CosignerPublicKeys, address)
 	delete(cache.BoundedMaxFees, address)
 	delete(cache.BoundedContracts, address)
-	delete(cache.ValidRekeyTargets, address)
 }
 
 // Count returns the number of addresses in the cache
@@ -92,40 +90,6 @@ func (cache *SignerCache) IsGenericLsig(address string) bool {
 		return false
 	}
 	return cache.GenericLsigs[address]
-}
-
-// HeldKeyAddresses returns, as a set, every address the signer lists an aplane
-// key for, of any key type, a generic LogicSig included. An account the signer
-// can sign for only through its auth address is not in it, so a rekey to that
-// account hands it over just as a rekey to a stranger does.
-func (cache *SignerCache) HeldKeyAddresses() map[string]bool {
-	held := make(map[string]bool, len(cache.Keys))
-	for address := range cache.Keys {
-		held[address] = true
-	}
-	return held
-}
-
-// IsValidRekeyTarget reports whether the aplane key the signer lists for an
-// address records valid_rekey_target true. An address the cache has no such
-// record of reads as not a valid rekey target.
-func (cache *SignerCache) IsValidRekeyTarget(address string) bool {
-	if cache.ValidRekeyTargets == nil {
-		return false
-	}
-	return cache.ValidRekeyTargets[address]
-}
-
-// SetValidRekeyTarget records an address's valid_rekey_target.
-func (cache *SignerCache) SetValidRekeyTarget(address string, valid bool) {
-	if cache.ValidRekeyTargets == nil {
-		cache.ValidRekeyTargets = make(map[string]bool)
-	}
-	if valid {
-		cache.ValidRekeyTargets[address] = true
-	} else {
-		delete(cache.ValidRekeyTargets, address)
-	}
 }
 
 // SetGenericLsig marks an address as a generic LogicSig

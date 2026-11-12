@@ -30,13 +30,11 @@ var errNoCacheStore = errors.New("cache has no client data directory")
 const (
 	signedCacheEnvelopeVersion = 1
 	cachePayloadSchemaVersion  = 1
-	// signerCachePayloadSchemaVersion 4 adds valid_rekey_targets, which apshell
-	// reads to refuse, and to describe, a plugin-built group's rekey to a held
-	// aplane key that is not a valid rekey target. A cache of another version is
-	// discarded and refilled from the signer, so a client never reads an older
-	// cache's missing set as every held aplane key being not a valid rekey
-	// target.
-	signerCachePayloadSchemaVersion = 4
+	// signerCachePayloadSchemaVersion 3 adds bounded_contracts, which the
+	// cosigned flow needs to tell a plain host's absent fee ceiling from missing
+	// metadata. A cache of another version is discarded and refilled from the
+	// signer, so an upgraded client never fails on an older cache.
+	signerCachePayloadSchemaVersion = 3
 )
 
 type cachePayloadVersioner interface {

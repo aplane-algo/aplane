@@ -7,11 +7,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -20,7 +23,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
@@ -122,15 +124,16 @@ func checkAndSubmit(ctx context.Context, app *App, result *jsonrpc.ExecuteResult
 }
 
 // pluginRekeyFixture is an engine connected to a test signer whose /keys lists
-// keys, and whose other endpoints, like the test node's, answer 503 and are
-// counted.
+// keys, which a test may change, and whose other endpoints, like the test
+// node's, answer 503 and are counted.
 type pluginRekeyFixture struct {
 	app                     *App
 	eng                     *engine.Engine
+	mu                      sync.Mutex
 	keys                    []signerapi.KeyInfo
+	locked                  bool
 	keyFetches, signerCalls atomic.Int32
 	nodeCalls               atomic.Int32
-	locked                  bool
 }
 
 func newPluginRekeyFixture(t *testing.T, keys []signerapi.KeyInfo) *pluginRekeyFixture {
@@ -139,12 +142,15 @@ func newPluginRekeyFixture(t *testing.T, keys []signerapi.KeyInfo) *pluginRekeyF
 	signerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/keys" {
 			f.keyFetches.Add(1)
-			if f.locked {
+			f.mu.Lock()
+			keys, locked := f.keys, f.locked
+			f.mu.Unlock()
+			if locked {
 				http.Error(w, "signer is locked", http.StatusForbidden)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(f.keys), Keys: f.keys})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
 			return
 		}
 		f.signerCalls.Add(1)
@@ -167,6 +173,13 @@ func newPluginRekeyFixture(t *testing.T, keys []signerapi.KeyInfo) *pluginRekeyF
 	f.eng.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 	f.app = New(f.eng, config.DefaultConfig(), t.TempDir())
 	return f
+}
+
+// setSigner changes what the test signer's /keys answers.
+func (f *pluginRekeyFixture) setSigner(keys []signerapi.KeyInfo, locked bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keys, f.locked = keys, locked
 }
 
 func (f *pluginRekeyFixture) resetCounts() {
@@ -218,20 +231,22 @@ func rekeyTestKeys() []signerapi.KeyInfo {
 	}
 }
 
+func rekeyRefusal(position string, target types.Address, keyType string) string {
+	return "transaction " + position + ": cannot rekey to " + target.String() +
+		": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target"
+}
+
 // A plugin-built group is refused, in every mode, when a transaction at any
 // position rekeys an account to a held aplane key that is not a valid rekey
 // target, the account's own address included. The check fetches the signer's
-// key list, so it holds with an empty cache, and fetches nothing else: nothing
-// goes to the signer's other endpoints or to the node. A held aplane key that
-// is a valid rekey target, and a foreign address, are not refused: the group
-// goes on to the signer or the node. The REPL, MCP and JavaScript all take the
-// group from CheckPluginGroup and submit it with SubmitPluginTransactions.
+// key list and sends nothing else: nothing goes to the signer's other
+// endpoints or to the node. A held aplane key that is a valid rekey target,
+// and a foreign address, are not refused: submission fetches the list again
+// and the group goes on to the signer or the node. The REPL, MCP and
+// JavaScript all take the group from CheckPluginGroup and submit it with
+// SubmitPluginTransactions.
 func TestSubmitPluginTransactionsRefusesARekeyToAHeldInvalidTarget(t *testing.T) {
 	f := newPluginRekeyFixture(t, rekeyTestKeys())
-	refusal := func(position string, target types.Address, keyType string) string {
-		return "transaction " + position + ": cannot rekey to " + target.String() +
-			": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target"
-	}
 	for _, tc := range []struct {
 		name    string
 		txn     types.Transaction
@@ -245,16 +260,11 @@ func TestSubmitPluginTransactionsRefusesARekeyToAHeldInvalidTarget(t *testing.T)
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for mode, c := range pluginRekeyResults(t, tc.txn) {
-				// Each check starts from an empty cache: the list comes from the signer.
-				f.eng.SignerCache = cache.NewSignerCache()
 				f.resetCounts()
 				err := checkAndSubmit(context.Background(), f.app, c.result, nil)
-				if got := f.keyFetches.Load(); got < 1 {
-					t.Errorf("%s: the check fetched the signer's key list %d time(s), want at least once", mode, got)
-				}
 				sent := f.signerCalls.Load() + f.nodeCalls.Load()
 				if tc.keyType != "" {
-					if want := refusal(c.position, tc.txn.RekeyTo, tc.keyType); err == nil || err.Error() != want {
+					if want := rekeyRefusal(c.position, tc.txn.RekeyTo, tc.keyType); err == nil || err.Error() != want {
 						t.Errorf("%s: error = %v, want %q", mode, err, want)
 					}
 					if sent != 0 || f.keyFetches.Load() != 1 {
@@ -265,6 +275,9 @@ func TestSubmitPluginTransactionsRefusesARekeyToAHeldInvalidTarget(t *testing.T)
 				if err != nil && strings.Contains(err.Error(), "not a valid rekey target") {
 					t.Errorf("%s: refused a rekey the signer allows: %v", mode, err)
 				}
+				if got := f.keyFetches.Load(); got != 2 {
+					t.Errorf("%s: fetched the key list %d time(s), want once at the check and once at submission", mode, got)
+				}
 				if sent == 0 {
 					t.Errorf("%s: the group reached neither the signer nor the node (error %v)", mode, err)
 				}
@@ -273,10 +286,45 @@ func TestSubmitPluginTransactionsRefusesARekeyToAHeldInvalidTarget(t *testing.T)
 	}
 }
 
+// Submission judges a rekeying group again against a key list fetched again,
+// immediately before anything is sent: a key the signer creates while the
+// group waits at the review is refused at submission in every mode, as is a
+// signer locked meanwhile, and nothing reaches the node.
+func TestSubmitPluginTransactionsRechecksTheKeyListBeforeSending(t *testing.T) {
+	rekey := rekeySubmitTestTxn(rekeyTestOther, rekeyTestHTLC)
+	f := newPluginRekeyFixture(t, rekeyTestKeys()[:1])
+	for mode, c := range pluginRekeyResults(t, rekey) {
+		f.setSigner(rekeyTestKeys()[:1], false)
+		group, err := f.app.CheckPluginGroup(context.Background(), c.result)
+		if err != nil {
+			t.Fatalf("%s: CheckPluginGroup() with the target foreign: %v", mode, err)
+		}
+		f.setSigner(rekeyTestKeys(), false)
+		f.resetCounts()
+		_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+		if want := rekeyRefusal(c.position, rekeyTestHTLC, "aplane.htlc.v1"); err == nil || err.Error() != want {
+			t.Errorf("%s: SubmitPluginTransactions() error = %v, want %q", mode, err, want)
+		}
+		if f.keyFetches.Load() != 1 || f.signerCalls.Load() != 0 || f.nodeCalls.Load() != 0 {
+			t.Errorf("%s: submission fetched the key list %d time(s), sent %d request(s) to the signer and %d to the node",
+				mode, f.keyFetches.Load(), f.signerCalls.Load(), f.nodeCalls.Load())
+		}
+
+		f.setSigner(rekeyTestKeys()[:1], true)
+		f.resetCounts()
+		_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+		if want := "plugin group rekeys an account (transaction " + c.position + "): the signer is locked; unlock it so apshell can check the rekey target against its aplane keys"; err == nil || err.Error() != want {
+			t.Errorf("%s: locked at submission: error = %v, want %q", mode, err, want)
+		}
+		if f.nodeCalls.Load() != 0 {
+			t.Errorf("%s: locked at submission: sent %d request(s) to the node", mode, f.nodeCalls.Load())
+		}
+	}
+}
+
 // A rekey in a plugin group needs the signer's current key list. Without a
 // connection, or with a locked signer, the group is refused in every mode,
-// whatever the cache holds, and nothing goes to the node. A key the signer
-// lists that the cache does not yet hold is still caught.
+// whatever the cache holds, and nothing goes to the node.
 func TestCheckPluginGroupNeedsTheSignersKeyListForARekey(t *testing.T) {
 	rekey := rekeySubmitTestTxn(rekeyTestOther, rekeyTestHTLC)
 
@@ -289,12 +337,12 @@ func TestCheckPluginGroupNeedsTheSignersKeyListForARekey(t *testing.T) {
 			t.Errorf("not connected, %s: error = %v, want %q", mode, err, want)
 		}
 		if f.nodeCalls.Load() != 0 || f.keyFetches.Load() != 0 {
-			t.Errorf("not connected, %s: sent %d request(s) to the node", mode, f.nodeCalls.Load())
+			t.Errorf("not connected, %s: sent %d request(s) to the node and fetched the key list %d time(s)", mode, f.nodeCalls.Load(), f.keyFetches.Load())
 		}
 	}
 
 	locked := newPluginRekeyFixture(t, rekeyTestKeys())
-	locked.locked = true
+	locked.setSigner(rekeyTestKeys(), true)
 	for mode, c := range pluginRekeyResults(t, rekey) {
 		locked.resetCounts()
 		want := "plugin group rekeys an account (transaction " + c.position + "): the signer is locked; unlock it so apshell can check the rekey target against its aplane keys"
@@ -305,23 +353,52 @@ func TestCheckPluginGroupNeedsTheSignersKeyListForARekey(t *testing.T) {
 			t.Errorf("locked, %s: sent %d request(s) to the node and %d to the signer", mode, locked.nodeCalls.Load(), locked.signerCalls.Load())
 		}
 	}
+}
 
-	// The cache lists only the ed25519 key; the signer has since added the HTLC.
-	added := newPluginRekeyFixture(t, rekeyTestKeys())
-	if err := added.eng.PopulateSignerCache(rekeyTestKeys()[:1]); err != nil {
+// The verdict and the review's facts come from the records the fetch returned,
+// never from the signer cache, which the check neither reads nor rewrites: a
+// cache that says the opposite of the signer changes nothing, and is left as
+// it was.
+func TestCheckPluginGroupJudgesFromTheFetchedKeys(t *testing.T) {
+	f := newPluginRekeyFixture(t, rekeyTestKeys())
+	// The cache says the HTLC is a valid rekey target and that a foreign
+	// address holds an HTLC; the signer says neither.
+	contradicting := []signerapi.KeyInfo{
+		{Address: rekeyTestHTLC.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true, ValidRekeyTarget: true},
+		{Address: rekeyTestForeign.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+	}
+	if err := f.eng.PopulateSignerCache(contradicting); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
-	for mode, c := range pluginRekeyResults(t, rekey) {
-		want := "transaction " + c.position + ": cannot rekey to " + rekeyTestHTLC.String() +
-			": this signer holds its aplane key (aplane.htlc.v1), which is not a valid rekey target"
-		if err := checkAndSubmit(context.Background(), added.app, c.result, nil); err == nil || err.Error() != want {
-			t.Errorf("key added since, %s: error = %v, want %q", mode, err, want)
+	cached := maps.Clone(f.eng.SignerCache.Keys)
+
+	for mode, c := range pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, rekeyTestHTLC)) {
+		if _, err := f.app.CheckPluginGroup(context.Background(), c.result); err == nil || err.Error() != rekeyRefusal(c.position, rekeyTestHTLC, "aplane.htlc.v1") {
+			t.Errorf("%s: a rekey to the signer's HTLC: error = %v", mode, err)
 		}
+	}
+	for mode, c := range pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, rekeyTestForeign)) {
+		group, err := f.app.CheckPluginGroup(context.Background(), c.result)
+		if err != nil {
+			t.Fatalf("%s: a rekey to an address the signer does not list: %v", mode, err)
+		}
+		// The review shows the facts the check judged from: the signer's list.
+		facts := group.RekeyTargets()
+		if facts.KnownAddresses[rekeyTestForeign.String()] || !facts.KnownAddresses[rekeyTestHTLC.String()] {
+			t.Errorf("%s: the review's held set is not the fetched list: %v", mode, facts.KnownAddresses)
+		}
+		if _, ok := facts.InvalidRekeyTargets[rekeyTestHTLC.String()]; !ok {
+			t.Errorf("%s: the review's not-valid set is not the fetched list: %v", mode, facts.InvalidRekeyTargets)
+		}
+	}
+	if !maps.Equal(f.eng.SignerCache.Keys, cached) {
+		t.Fatalf("the check rewrote the signer cache: %v, was %v", f.eng.SignerCache.Keys, cached)
 	}
 }
 
-// A plugin group with no rekey needs no key list: it is not refreshed, and a
-// pregrouped-signed group with no rekey is checked with no signer connection.
+// A plugin group with no rekey needs no key list: it fetches nothing at the
+// check or at submission, and a pregrouped-signed group with no rekey is
+// checked with no signer connection.
 func TestCheckPluginGroupLeavesAGroupWithNoRekeyAlone(t *testing.T) {
 	plain := rekeySubmitTestTxn(rekeyTestOther, types.Address{})
 	f := newPluginRekeyFixture(t, rekeyTestKeys())
@@ -331,11 +408,12 @@ func TestCheckPluginGroupLeavesAGroupWithNoRekeyAlone(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: CheckPluginGroup() error = %v", mode, err)
 		}
-		if f.keyFetches.Load() != 0 || f.signerCalls.Load() != 0 {
-			t.Errorf("%s: a group with no rekey fetched the key list %d time(s)", mode, f.keyFetches.Load())
-		}
 		if group.RekeyTargets().KnownAddresses != nil {
-			t.Errorf("%s: a group with no rekey read the signer cache", mode)
+			t.Errorf("%s: a group with no rekey has rekey facts", mode)
+		}
+		_, _ = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+		if f.keyFetches.Load() != 0 {
+			t.Errorf("%s: a group with no rekey fetched the key list %d time(s)", mode, f.keyFetches.Load())
 		}
 	}
 
@@ -343,5 +421,37 @@ func TestCheckPluginGroupLeavesAGroupWithNoRekeyAlone(t *testing.T) {
 	result := pluginRekeyResults(t, plain)["pregrouped-signed"].result
 	if _, err := offline.CheckPluginGroup(context.Background(), result); err != nil {
 		t.Fatalf("offline pregrouped-signed group with no rekey: CheckPluginGroup() error = %v", err)
+	}
+}
+
+// The checked group holds copies of what review and submission read: a
+// change to the result after the check changes neither, and a group the
+// check did not produce is refused.
+func TestPluginGroupIsFrozenAtTheCheck(t *testing.T) {
+	f := newPluginRekeyFixture(t, rekeyTestKeys())
+	c := pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, types.Address{}))["presign-plan"]
+	c.result.RequiresApproval = true
+	group, err := f.app.CheckPluginGroup(context.Background(), c.result)
+	if err != nil {
+		t.Fatalf("CheckPluginGroup() error = %v", err)
+	}
+	c.result.GroupMode = "bogus"
+	c.result.RequiresApproval = false
+	c.result.PluginSigners[0].SignerRef = "changed"
+	c.result.PluginSigners = nil
+	c.result.Transactions = nil
+	if group.Mode() != jsonrpc.GroupModePresignPlan || !group.RequiresApproval() ||
+		len(group.PluginSigners()) != 1 || group.PluginSigners()[0].SignerRef != "ref" || len(group.Transactions()) != 2 {
+		t.Fatalf("the checked group followed the result: mode %q, approval %v, signers %+v, %d transaction(s)",
+			group.Mode(), group.RequiresApproval(), group.PluginSigners(), len(group.Transactions()))
+	}
+	f.resetCounts()
+	_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+	if err == nil || strings.Contains(err.Error(), "pluginSigners") || f.nodeCalls.Load() == 0 {
+		t.Fatalf("submission did not submit the checked group: error %v, %d node request(s)", err, f.nodeCalls.Load())
+	}
+
+	if _, err := f.app.SubmitPluginTransactions(context.Background(), "plugin", &PluginGroup{}, nil); !errors.Is(err, ErrUncheckedPluginGroup) {
+		t.Fatalf("SubmitPluginTransactions(unchecked group) error = %v, want ErrUncheckedPluginGroup", err)
 	}
 }

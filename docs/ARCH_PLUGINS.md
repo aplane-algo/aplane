@@ -841,10 +841,14 @@ A rekey to a foreign address, one the signer holds no aplane key for, remains
 a warning in the review, as does a rekey to an account the client signs for
 only through its auth address.
 
-A group in which any transaction rekeys is checked against the signer's
-`/keys` list, fetched for the check, not against the cache as it stands, so a
-key created since the cache was filled is seen. When apshell cannot get a
-current list, the group is refused before it is shown:
+A group in which any transaction rekeys is judged twice: when it is checked,
+before it is shown, and again when it is submitted, immediately before
+anything is sent, so a key created on the signer while the group waits at the
+review is seen. Each time apshell fetches the signer's `/keys` list for that
+judgment and builds what it holds, and which of those keys are not valid
+rekey targets, from the records the fetch returned; it does not read or
+rewrite its signer cache for this. The review shows the facts the check
+judged from. When apshell cannot get a current list, the group is refused:
 
 ```text
 plugin group rekeys an account (transaction 2): connect to the signer so apshell can check the rekey target against its aplane keys
@@ -857,7 +861,8 @@ signer connection. A group with no rekey fetches nothing and needs no
 connection. The check is `CheckPluginGroup` in `internal/apshellapp`: it
 decodes the result for its mode and applies the rule, the review of every
 mode starts with it, and submission, which the REPL, MCP and JavaScript
-share, takes only the group it returns, so the list is fetched once.
+share, takes only the group it returns, with what the review and submission
+read copied into it at the check.
 
 #### What these flows enable
 
@@ -938,9 +943,10 @@ The default (`groupMode` empty) flow:
      anything is shown
    - Refuses a draft in which a transaction rekeys an account to an address
      the signer holds an aplane key for that is not a valid rekey target, the
-     account's own address included, before anything is shown, judged against
-     the signer's key list fetched for the check; a draft with a rekey is
-     refused when that list cannot be had (see
+     account's own address included, before anything is shown and again
+     before it is signed, each time judged against the signer's key list
+     fetched for it; a draft with a rekey is refused when that list cannot be
+     had (see
      [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)). A rekey to a
      foreign address is not refused; the review warns about it
 3. User approval (if `requiresApproval: true`)
@@ -1307,9 +1313,10 @@ or
   `user_auto_approve` approves without one. `pregrouped-signed` and
   `presign-plan` get a decoded client-side review in apshell
 - In every client review, a rekey finding uses two facts it shares with the
-  signer's prompt, from the signer's key list fetched for the check: which
-  addresses the signer holds an aplane key for, of any key type, a generic
-  LogicSig included, and which of those are not valid rekey targets. A rekey
+  signer's prompt, from the signer's key list fetched when the group is
+  checked: which addresses the signer holds an aplane key for, of any key
+  type, a generic LogicSig included, and which of those are not valid rekey
+  targets. A rekey
   to a held aplane key that is a valid rekey target keeps control. A rekey to
   a held aplane key that is not a valid rekey target is refused before the
   review is shown (see

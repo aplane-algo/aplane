@@ -6,12 +6,15 @@ package engine
 import (
 	"errors"
 
+	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 var (
-	// ErrNotConnected indicates no connection to Signer
-	ErrNotConnected = errors.New("not connected to Signer")
+	// ErrNotConnected indicates no connection to Signer. It is the error a
+	// signer request returns with no signer client, so errors.Is finds it in a
+	// request's wrapped error too.
+	ErrNotConnected = connect.ErrNotConnected
 
 	// ErrInvalidAddress indicates an invalid address or alias
 	ErrInvalidAddress = errors.New("invalid address or alias")
