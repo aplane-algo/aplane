@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	abi "github.com/algorand/avm-abi/abi"
 
@@ -209,6 +210,9 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 			return nil, fmt.Errorf("%q is not true or false for ABI type bool", payload)
 		}
 	default:
+		// Only arrays and tuples reach here. JSON ignores the whitespace
+		// around a value, so trimming it changes nothing that is sent.
+		payload = strings.Trim(payload, " \t\r\n")
 		if !strings.HasPrefix(payload, "[") && !strings.HasPrefix(payload, "{") && !strings.HasPrefix(payload, `"`) {
 			return nil, fmt.Errorf("use json:<value> for ABI type %s", typeName)
 		}
@@ -285,7 +289,7 @@ func normalizeCompoundJSON(payload, typeName string) (string, error) {
 	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to write JSON for ABI type %s: %w", typeName, err)
 	}
 	return string(encoded), nil
 }
@@ -302,6 +306,13 @@ func nestedByteValues(value interface{}, typeName string) (interface{}, error) {
 		decoded, encoded, err := appinput.ParseEncodedByteValue(text)
 		if !encoded {
 			return nil, fmt.Errorf("nested byte value %q needs an encoding prefix: %s", text, appinput.BytePrefixes)
+		}
+		// The JSON reader has already turned invalid UTF-8 and a lone
+		// surrogate escape into U+FFFD, so the text is not what was written.
+		if strings.ContainsRune(text, utf8.RuneError) {
+			return nil, fmt.Errorf(
+				"nested byte value %q holds the replacement character U+FFFD (invalid UTF-8 or a lone surrogate?); write the bytes with a hex: or b64: prefix",
+				text)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("nested byte value %q: %w", text, err)

@@ -5,6 +5,7 @@ package appinput
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -118,6 +119,76 @@ func TestParseEncodedByteValueLeavesBareTextToTheCaller(t *testing.T) {
 			t.Errorf("ParseEncodedByteValue(%q) = %x, %v, %v; want bare text", raw, value, encoded, err)
 		}
 	}
+}
+
+// BytePrefixes is written out by hand for messages; it must name exactly the
+// prefixes ParseEncodedByteValue reads.
+func TestBytePrefixesMatchTheParser(t *testing.T) {
+	samples := map[string]string{
+		"hex:":  "6869",
+		"b64:":  "aGk=",
+		"text:": "hi",
+		"str:":  "hi",
+		"int:":  "5",
+		"addr:": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+		"0x":    "6869",
+	}
+	listed := map[string]bool{}
+	for _, prefix := range strings.Split(BytePrefixes, ", ") {
+		listed[prefix] = true
+		sample, ok := samples[prefix]
+		if !ok {
+			t.Errorf("BytePrefixes lists %q, which has no sample value here", prefix)
+			continue
+		}
+		if _, encoded, err := ParseEncodedByteValue(prefix + sample); !encoded || err != nil {
+			t.Errorf("BytePrefixes lists %q, but ParseEncodedByteValue(%q) = %v, %v", prefix, prefix+sample, encoded, err)
+		}
+	}
+	for prefix := range samples {
+		if !listed[prefix] {
+			t.Errorf("BytePrefixes does not list %q", prefix)
+		}
+	}
+	if _, encoded, _ := ParseEncodedByteValue("utf8:hi"); encoded {
+		t.Error(`ParseEncodedByteValue("utf8:hi") reads a made-up prefix as encoded`)
+	}
+
+	// A prefix read by the parser but missing from the list: every name of up
+	// to four lowercase letters or digits before a colon, and every two
+	// characters with none (the form 0x takes), is tried.
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	listedPrefixes := strings.Split(BytePrefixes, ", ")
+	try := func(candidate string) {
+		for _, prefix := range listedPrefixes {
+			if strings.HasPrefix(candidate, prefix) {
+				return
+			}
+		}
+		if _, encoded, _ := ParseEncodedByteValue(candidate); encoded {
+			t.Errorf("ParseEncodedByteValue reads the prefix %q, which BytePrefixes does not list", candidate)
+		}
+	}
+	for length := 1; length <= 4; length++ {
+		name := make([]byte, length)
+		for n := 0; n < pow(len(chars), length); n++ {
+			for i, rest := 0, n; i < length; i, rest = i+1, rest/len(chars) {
+				name[i] = chars[rest%len(chars)]
+			}
+			try(string(name) + ":")
+			if length == 2 {
+				try(string(name))
+			}
+		}
+	}
+}
+
+func pow(base, exponent int) int {
+	result := 1
+	for ; exponent > 0; exponent-- {
+		result *= base
+	}
+	return result
 }
 
 func TestParseByteValueRefusesUnknownAndMalformedPrefixes(t *testing.T) {

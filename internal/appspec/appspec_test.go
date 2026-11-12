@@ -230,8 +230,17 @@ func TestNestedByteValuesNameTheirEncoding(t *testing.T) {
 		// Numbers keep their text: 2^53+1 would round to 2^53 as a float.
 		{"(uint64,byte[])", `json:[9007199254740993,"text:a"]`, "0020000000000001000a000161"},
 		{"(uint64,byte[])", `json:[18446744073709551615,"text:a"]`, "ffffffffffffffff000a000161"},
-		// A top-level byte array still reads bare text as text.
+		// Text that is not ASCII is sent as its UTF-8, written or escaped.
+		{"(uint64,byte[])", `json:[100,"text:héllo"]`, "0000000000000064000a000668c3a96c6c6f"},
+		{"(uint64,byte[])", `json:[100,"text:é"]`, "0000000000000064000a0002c3a9"},
+		{"(uint64,byte[])", `json:[100,"text:😀"]`, "0000000000000064000a0004f09f9880"},
+		// JSON ignores the whitespace around a value.
+		{"(uint64,byte[])", " [100,\"text:a\"]\n", "0000000000000064000a000161"},
+		{"(uint64,bool)", `json: [1,true] `, "000000000000000180"},
+		// A top-level byte array still reads bare text as text, and has no
+		// number-list form.
 		{"byte[]", "test", "000474657374"},
+		{"byte[]", "[104,105]", "00095b3130342c3130355d"},
 	}
 	for _, tc := range accepted {
 		got, err := encodeOneArg(tc.typeName, tc.raw)
@@ -260,6 +269,10 @@ func TestNestedByteValuesNameTheirEncoding(t *testing.T) {
 		{"(uint64,bool)", `json:[1,true] [2]`, "more after the value"},
 		{"(uint64,bool)", `json:[1,true]]`, ""},
 		{"(uint64,bool)", `[1,true],`, ""},
+		// The JSON reader would send each of these as the bytes ef bf bd.
+		{"(uint64,byte[])", `json:[100,"text:\ud800"]`, "holds the replacement character U+FFFD"},
+		{"(uint64,byte[])", "json:[100,\"text:\xff\"]", "write the bytes with a hex: or b64: prefix"},
+		{"(uint64,byte[])", `json:[100,"str:a�"]`, "holds the replacement character U+FFFD"},
 	}
 	for _, tc := range refused {
 		got, err := encodeOneArg(tc.typeName, tc.raw)

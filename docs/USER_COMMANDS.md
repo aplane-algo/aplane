@@ -1153,14 +1153,23 @@ plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
 `1_000` and `null` are refused: they are not read as octal, hex, a grouped
 number or zero.
 
-An ABI argument for an array or tuple type is JSON, such as
-`[100,"text:alice"]`. The `json:` prefix is optional when the value starts
-with `[`, `{` or `"`. The shell removes double quotes, so put the whole value
-in single quotes. A `byte[]` or `byte[N]` argument at the top level takes the
-[Byte Encodings](#byte-encodings) forms and reads bare text as text. A byte
-array inside an array or tuple is a list of byte numbers or a string with an
-encoding prefix: `hex:`, `b64:`, `text:`, `str:`, `int:`, `addr:` or `0x`. A
-bare string there is refused, because other ABI tools read it as base64.
+An ABI argument for an array or tuple type is a JSON array, such as
+`[100,"text:alice"]`, and must start with `[`. A `json:` prefix in front of it
+is allowed and changes nothing; the same holds for number, `bool` and
+`address` arguments. For a `string` argument, `json:` changes the reading:
+bare text is sent as typed, and `json:` reads the rest as JSON. The shell
+removes double quotes, so put a JSON value in single quotes.
+
+A `byte[]` or `byte[N]` argument at the top level takes only the
+[Byte Encodings](#byte-encodings) forms and reads bare text as text. It has no
+number-list form: `--arg '[104,105]'` sends the nine characters `[104,105]`,
+so write `hex:6869` for those two bytes. A byte array inside an array or tuple
+is a list of byte numbers or a string with an encoding prefix: `hex:`, `b64:`,
+`text:`, `str:`, `int:`, `addr:` or `0x`. A bare string there is refused,
+because other ABI tools read it as base64. Text that holds the replacement
+character U+FFFD is refused too, since invalid UTF-8 and a lone surrogate
+escape have already become U+FFFD by then; write those bytes with `hex:` or
+`b64:`.
 
 The apps you list with `app=` are sent exactly as typed: in that order, with
 any repeats, and with the called app if you list it. A program reads them by
