@@ -652,6 +652,11 @@ decimal string. `null` and `undefined` are refused. A numeric string must be pla
 `"0100"`, `"0x10"` and `"1_000"` are refused, not read as octal, hex or a
 grouped number.
 
+An array or tuple passed as one JSON string, such as `'[7,"text:abcd"]'`,
+follows the shell's [`--arg`](USER_COMMANDS.md#app) rule: a byte array inside
+it needs an encoding prefix, and a bare string there is refused. The array
+form `[7, "abcd"]` is unchanged and reads the bare string as text.
+
 Returns `{ txid, txids, confirmed, method }` for a single call, or
 `{ txids, confirmed, grouped: true, method }` when a companion payment is used.
 

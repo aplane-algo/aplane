@@ -36,47 +36,62 @@ type ProgramSource struct {
 // This is the shared semantic grammar for byte values; UI layers (cmdspec)
 // consume it from here so engine-layer code never depends on UI parsing.
 func ParseByteValue(raw string) ([]byte, error) {
+	if value, encoded, err := ParseEncodedByteValue(raw); encoded {
+		return value, err
+	}
+	if strings.Contains(raw, ":") {
+		return nil, fmt.Errorf(
+			"%q has no known value prefix (supported: %s); use text:%s for literal text",
+			raw, BytePrefixes, raw)
+	}
+	return []byte(raw), nil
+}
+
+// BytePrefixes names the encoding prefixes ParseByteValue reads, for messages.
+const BytePrefixes = "hex:, b64:, text:, str:, int:, addr:, 0x"
+
+// ParseEncodedByteValue reads raw when it starts with one of the encoding
+// prefixes in BytePrefixes, as ParseByteValue does. For anything else it
+// returns encoded false and no error, so a caller that must not guess how bare
+// text is meant can refuse it.
+func ParseEncodedByteValue(raw string) (value []byte, encoded bool, err error) {
 	switch {
 	case strings.HasPrefix(raw, "hex:"):
 		value, err := hex.DecodeString(strings.TrimSpace(strings.TrimPrefix(raw, "hex:")))
 		if err != nil {
-			return nil, fmt.Errorf("invalid hex value: %w", err)
+			return nil, true, fmt.Errorf("invalid hex value: %w", err)
 		}
-		return value, nil
+		return value, true, nil
 	case strings.HasPrefix(raw, "b64:"):
 		value, err := base64.StdEncoding.DecodeString(strings.TrimSpace(strings.TrimPrefix(raw, "b64:")))
 		if err != nil {
-			return nil, fmt.Errorf("invalid base64 value: %w", err)
+			return nil, true, fmt.Errorf("invalid base64 value: %w", err)
 		}
-		return value, nil
+		return value, true, nil
 	case strings.HasPrefix(raw, "text:"):
-		return []byte(strings.TrimPrefix(raw, "text:")), nil
+		return []byte(strings.TrimPrefix(raw, "text:")), true, nil
 	case strings.HasPrefix(raw, "str:"):
-		return []byte(strings.TrimPrefix(raw, "str:")), nil
+		return []byte(strings.TrimPrefix(raw, "str:")), true, nil
 	case strings.HasPrefix(raw, "int:"):
 		number, err := strconv.ParseUint(strings.TrimPrefix(raw, "int:"), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid int value: %w", err)
+			return nil, true, fmt.Errorf("invalid int value: %w", err)
 		}
-		return binary.BigEndian.AppendUint64(nil, number), nil
+		return binary.BigEndian.AppendUint64(nil, number), true, nil
 	case strings.HasPrefix(raw, "addr:"):
 		address, err := types.DecodeAddress(strings.TrimPrefix(raw, "addr:"))
 		if err != nil {
-			return nil, fmt.Errorf("invalid addr value: %w", err)
+			return nil, true, fmt.Errorf("invalid addr value: %w", err)
 		}
-		return address[:], nil
+		return address[:], true, nil
 	case strings.HasPrefix(raw, "0x"):
 		value, err := hex.DecodeString(raw[2:])
 		if err != nil {
-			return nil, fmt.Errorf("invalid hex value: %w", err)
+			return nil, true, fmt.Errorf("invalid hex value: %w", err)
 		}
-		return value, nil
-	case strings.Contains(raw, ":"):
-		return nil, fmt.Errorf(
-			"%q has no known value prefix (supported: hex:, b64:, text:, str:, int:, addr:); use text:%s for literal text",
-			raw, raw)
+		return value, true, nil
 	default:
-		return []byte(raw), nil
+		return nil, false, nil
 	}
 }
 

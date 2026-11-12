@@ -107,6 +107,19 @@ func TestParseByteValueGoalStylePrefixes(t *testing.T) {
 	}
 }
 
+func TestParseEncodedByteValueLeavesBareTextToTheCaller(t *testing.T) {
+	for _, raw := range []string{"hex:6869", "b64:aGk=", "text:hi", "str:hi", "int:5", "0x6869", "hex:zz"} {
+		if _, encoded, _ := ParseEncodedByteValue(raw); !encoded {
+			t.Errorf("ParseEncodedByteValue(%q) reads as bare text", raw)
+		}
+	}
+	for _, raw := range []string{"hi", "", "aGk=", "key:value", "base64:AAAA", "HEX:6869"} {
+		if value, encoded, err := ParseEncodedByteValue(raw); encoded || err != nil || value != nil {
+			t.Errorf("ParseEncodedByteValue(%q) = %x, %v, %v; want bare text", raw, value, encoded, err)
+		}
+	}
+}
+
 func TestParseByteValueRefusesUnknownAndMalformedPrefixes(t *testing.T) {
 	for _, raw := range []string{
 		"int:-1", "int:0x10", "int:18446744073709551616", "int:", "int:5 ",

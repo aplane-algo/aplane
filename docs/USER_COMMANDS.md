@@ -1153,6 +1153,15 @@ plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
 `1_000` and `null` are refused: they are not read as octal, hex, a grouped
 number or zero.
 
+An ABI argument for an array or tuple type is JSON, such as
+`[100,"text:alice"]`. The `json:` prefix is optional when the value starts
+with `[`, `{` or `"`. The shell removes double quotes, so put the whole value
+in single quotes. A `byte[]` or `byte[N]` argument at the top level takes the
+[Byte Encodings](#byte-encodings) forms and reads bare text as text. A byte
+array inside an array or tuple is a list of byte numbers or a string with an
+encoding prefix: `hex:`, `b64:`, `text:`, `str:`, `int:`, `addr:` or `0x`. A
+bare string there is refused, because other ABI tools read it as base64.
+
 The apps you list with `app=` are sent exactly as typed: in that order, with
 any repeats, and with the called app if you list it. A program reads them by
 position, so the list is never tidied. A box reference to another app
@@ -1179,6 +1188,7 @@ app read info 123
 app deploy from alice approval=approval.teal clear=clear.teal global-uint=2 global-bytes=2 local-uint=1 local-bytes=0
 app deploy from lsig-account approval=approval.teal clear=clear.teal global-uint=2 global-bytes=2 local-uint=1 local-bytes=0 arg:preimage=text:secret
 app call 123 deposit --abi ./contract.json from alice --pay 100000
+app call 123 register --abi ./contract.json from alice --arg '[100,"text:alice"]'
 app call raw 123 from alice arg-raw=hex:010203 box=text:counter
 ```
 
