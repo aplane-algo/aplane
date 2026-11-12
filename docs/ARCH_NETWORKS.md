@@ -173,6 +173,22 @@ remains network-independent: during `/plan` or `/sign` it validates the
 transaction genesis hash for policy context, then applies the shared v42/v43
 LogicSig and native-PQ rules.
 
+The same read gives the client the active algod's genesis hash and genesis ID,
+and the client refuses any transaction that is not for that network before it
+is sent to `/plan` or `/sign` (`internal/engine/active_network.go`,
+`checkActiveNetwork`). The signer's gate refuses only a genesis hash it does not
+recognize; a transaction for another network it knows would be signed under
+that network's policy and then sent to the active algod, whose operator would
+hold a transaction valid on the other network. The check compares each
+transaction's genesis hash, and its genesis ID when it sets one, and names the
+position by zero-based index. Transactions apshell builds take their genesis
+from the active algod and pass; it matters for those that carry their own: a
+plugin draft (default and `presign-plan` group modes), a plugin's
+`pregrouped-signed` group, which is refused before it is sent to algod, and a
+transaction file given to `sign` or JS `sign()`. An algod that reports no
+32-byte genesis hash is refused. The check reuses the consensus read, so it adds
+no algod call.
+
 V43 adds the requirement that an account's minimum balance must equal the base
 minimum before closing. Algod 5.0.4 also enforces this at admission and simulation
 on v42. Client single-payment close-out preparation checks algod's aggregate

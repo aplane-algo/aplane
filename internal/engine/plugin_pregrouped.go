@@ -159,8 +159,14 @@ func (e *Engine) SubmitPregroupedSigned(ctx context.Context, g *PregroupedSigned
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
-	if err := e.validateAlgodConsensus(ctx); err != nil {
-		return nil, fmt.Errorf("validate algod consensus before pregrouped submission: %w", err)
+	// No signer signs this group, but it is still sent to the active algod,
+	// so it must be for that algod's network.
+	txns := make([]types.Transaction, len(g.stxns))
+	for i, stxn := range g.stxns {
+		txns[i] = stxn.Txn
+	}
+	if err := e.checkActiveNetwork(ctx, txns); err != nil {
+		return nil, err
 	}
 
 	if e.Simulate {

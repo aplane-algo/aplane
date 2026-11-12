@@ -467,6 +467,9 @@ but can't vote.
 
 `sign()` reads an external transaction file, verifies the live algod is
 running supported consensus v42 or v43, signs, submits, and optionally waits.
+Each transaction must be for the active algod's network: a genesis hash, or a
+set genesis ID, that differs from the algod's is refused before signing, as
+`transaction at index N is for another network`.
 
 `plan()` sends transaction sign requests to the signer group planner without
 signing or triggering approval. The planned fees include the signer's

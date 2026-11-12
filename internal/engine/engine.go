@@ -339,14 +339,12 @@ func (e *Core) getSuggestedParamsWithFee(ctx context.Context, fee uint64, useFla
 	if err != nil {
 		return types.SuggestedParams{}, fmt.Errorf("failed to get suggested params: %w", err)
 	}
-	if err := e.rememberAlgodConsensus(client, sp.ConsensusVersion); err != nil {
+	// The genesis read here is remembered with the consensus version: a
+	// transaction built from these parameters is for this algod's network, and
+	// checkActiveNetwork, which every signing path runs, reuses the read.
+	if err := e.rememberAlgodConsensus(client, sp); err != nil {
 		return types.SuggestedParams{}, err
 	}
-	// A client-side genesis-hash assertion was considered here (audit finding:
-	// mis-pointed algod). It is deferred: the signer authoritatively rejects an
-	// unrecognized genesis hash (signing.validateKnownNetwork) and its policy is
-	// genesis-derived, so a wrong-chain client build is caught at the trust
-	// boundary. A client check would only move the error earlier.
 	if useFlatFee {
 		sp.FlatFee = true
 		sp.Fee = types.MicroAlgos(fee)

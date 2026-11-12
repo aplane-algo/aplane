@@ -7,7 +7,7 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
-## apshell refuses repeated options
+## apshell refuses repeated options and transactions for another network
 
 - **A single-valued option given twice is refused.** Only `fee=` refused a
   repeat; every other option took its last value, so
@@ -21,6 +21,20 @@ before it was renamed `enroll`.
   value flags of `rotate recover`, `enroll` and `endpoints add`. List options
   (`--arg`, `arg-raw=`, `account=`, `app=`, `asset=`, `box=`) and `arg:` with
   different names still repeat.
+- **A transaction for another network is refused before it is signed.** The
+  signer refuses a genesis hash it does not recognize, but a plugin or a
+  transaction file could carry one it does: on a testnet shell, a plugin's
+  mainnet payment was signed under mainnet policy and sent to the testnet
+  algod, whose operator then held a valid mainnet transaction. apshell now
+  compares each transaction's genesis hash, and its genesis ID when set, with
+  the active algod's before `/plan` or `/sign`, and refuses a mismatch as
+  "transaction at index N is for another network", naming both networks when
+  they are known. This covers plugin drafts in the default and `presign-plan`
+  modes, a plugin's `pregrouped-signed` group (refused before it is sent to
+  algod), and transaction files given to `sign` and JS `sign()`. The genesis
+  comes from the suggested-parameters read the consensus check already makes,
+  so no algod call is added. An algod that reports no 32-byte genesis hash is
+  refused.
 
 ## Every key type declares whether it is a valid rekey target
 

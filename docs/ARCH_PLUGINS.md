@@ -1049,7 +1049,12 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 1. Use `type: "raw"` with base64-encoded msgpack transactions
 2. Set `requiresApproval: true` for transactions requiring user confirmation
 3. Include metadata in `data` field for user information
-4. Ensure transactions use the genesis hash of `context.network`, obtained from algod
+4. Ensure transactions use the genesis hash of `context.network`, obtained from algod.
+   apshell compares every plugin transaction's genesis hash, and its genesis ID
+   when set, with the active algod's before anything is planned, signed or
+   submitted, in every group mode, and refuses a mismatch naming the
+   transaction's zero-based index (see
+   [ARCH_NETWORKS.md](ARCH_NETWORKS.md#transaction-planning)).
 
 ### Plugin Directory Layout
 

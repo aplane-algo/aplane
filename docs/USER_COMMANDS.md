@@ -303,6 +303,12 @@ names the same key twice, a JSON `null`, a transaction with no type, or a
 `{"txn": [...]}` file holding any other key is refused, so what is signed is
 what the file shows.
 
+Each transaction must be for the network apshell is on: its genesis hash, and
+its genesis ID when it has one, must be the active algod's. A file written on
+mainnet and signed while apshell is on testnet is refused before the signer
+sees it, naming the transaction's zero-based index. Plugin transactions are
+checked the same way.
+
 **Examples:**
 ```
 sign transaction.txn

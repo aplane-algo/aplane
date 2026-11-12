@@ -95,6 +95,11 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
+	// The draft carries the plugin's genesis: it must be the active algod's
+	// network before the signer plans or signs any of it.
+	if err := e.checkActiveNetwork(ctx, txns); err != nil {
+		return nil, err
+	}
 
 	// --- Phase 1: /plan — plugin slots foreign, managed slots sign-mode ---
 	planRequests := make([]signerapi.SignRequest, len(txns))
