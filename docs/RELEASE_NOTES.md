@@ -9,12 +9,13 @@ before it was renamed `enroll`.
 
 ## The rotating approval prompt states the signer's charge
 
-- **`/sign/rotating/sign` prompts with the fee adjustment prepare made.** The
+- **`/sign/rotating/sign` prompts with the fee prepare added.** The
   prompt showed the spend's final fee, the dummies and the contributions, but
   not how much of the fee was the signer's authorization charge, so a client
   that padded its own fee read the same as an ordinary charge. It now prints
-  `Group fee adjustment: +N microAlgos`, the planning prompt's line, above
-  "The fees shown already include these". Display only: what is signed, the
+  `N microAlgos of fee added when the group was prepared`, above "The fees
+  shown already include these". It is not worded as the planning prompt's
+  "Group fee adjustment", since this request changes nothing. Display only: what is signed, the
   approval binding and the order of the checks are unchanged. A
   `/sign/component` group, never raised, shows no adjustment.
 

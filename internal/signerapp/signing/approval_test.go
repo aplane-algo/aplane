@@ -444,23 +444,22 @@ func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) 
 	}
 }
 
-// A frozen prompt states the fee adjustment that built the group, in the
-// words and form the planning prompt uses, so the operator can tell the
-// signer's authorization charge from the client's fee. A frozen group that was
-// never raised (/sign/component) states none.
-func TestBuildApprovalDescriptionFrozenStatesTheFeeAdjustment(t *testing.T) {
+// A frozen prompt states the fee added when its group was prepared, worded as
+// done earlier: under the frozen header the planning prompt's "Group fee
+// adjustment" would read as a change this request made.
+func TestBuildApprovalDescriptionFrozenStatesTheFeeAddedAtPrepare(t *testing.T) {
 	tests := []struct {
 		name     string
 		requests []signerapi.SignRequest
 		fees     DummyFeeInfo
-		want     string // empty: no adjustment line
+		want     string // empty: no line
 	}{
 		{"single request", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
 			DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0}, NativePQFeeContribution: 2_000},
-			"  • Group fee adjustment: +2000 microAlgos\n"},
+			"  • 2000 microAlgos of fee added when the group was prepared\n"},
 		{"group request", []signerapi.SignRequest{{AuthAddress: "AUTH"}, {TxnBytesHex: "aa"}},
 			DummyFeeInfo{TotalFees: 3_001, FeeIndices: []int{0}, ProgramFeeContribution: 1},
-			"  • Group fee adjustment: +3001 microAlgos across transaction(s) [1]\n"},
+			"  • 3001 microAlgos of fee added when the group was prepared, on transaction(s) [1]\n"},
 		{"never raised", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
 			DummyFeeInfo{NativePQFeeContribution: 2_000}, ""},
 	}
@@ -479,9 +478,12 @@ func TestBuildApprovalDescriptionFrozenStatesTheFeeAdjustment(t *testing.T) {
 			}
 			describe := func(types.Transaction) string { return "txn" }
 			frozen, _, _ := BuildApprovalDescription(req, plan, txns, describe)
+			if strings.Contains(frozen, "Group fee adjustment") {
+				t.Fatalf("a frozen prompt words the fee as this request's adjustment:\n%s", frozen)
+			}
 			if tt.want == "" {
-				if strings.Contains(frozen, "Group fee adjustment") {
-					t.Fatalf("a group never raised states an adjustment:\n%s", frozen)
+				if strings.Contains(frozen, "of fee added") {
+					t.Fatalf("a group never raised states an added fee:\n%s", frozen)
 				}
 				return
 			}
@@ -490,11 +492,6 @@ func TestBuildApprovalDescriptionFrozenStatesTheFeeAdjustment(t *testing.T) {
 			}
 			if !strings.Contains(frozen, "The fees shown already include these; this request adds no dummies or fees") {
 				t.Fatalf("frozen description no longer says the fees already include it:\n%s", frozen)
-			}
-			plan.Frozen = false
-			planned, _, _ := BuildApprovalDescription(req, plan, txns, describe)
-			if !strings.Contains(planned, tt.want) {
-				t.Fatalf("the planning prompt words the adjustment otherwise; missing %q:\n%s", tt.want, planned)
 			}
 		})
 	}
