@@ -68,7 +68,8 @@ type PluginSlotAuthorization struct {
 // PQ is forwarded as its scheme tag. An absent entry means ordinary authorization.
 // args are the LogicSig arguments given for the group: the managed slots get
 // them by name (lsigArgsForGroup, as CheckPluginLsigArgs placed them for the
-// review), and plugin-owned slots get none.
+// review), and plugin-owned slots get none. With none given, nothing is placed
+// or fetched before /plan.
 func (e *Engine) SignAndSubmitWithPluginSigners(
 	ctx context.Context,
 	txns []types.Transaction,
@@ -106,14 +107,16 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if err := e.checkActiveNetwork(ctx, txns); err != nil {
 		return nil, err
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	// The managed slots' signing state, then their LogicSig arguments: what
-	// each managed slot's signing key declares. /plan and /sign get the same.
-	lsigArgs, err := e.lsigArgsForGroup(ctx, txns, pluginSignerRefs, args)
-	if err != nil {
-		return nil, err
+	// With LogicSig arguments given, each managed slot gets what its signing
+	// key declares (resolving the slots' signing state first), and /plan and
+	// /sign get the same. With none there is nothing to place, and nothing is
+	// fetched.
+	var lsigArgs []map[string][]byte
+	if args.Len() > 0 {
+		var err error
+		if lsigArgs, err = e.lsigArgsForGroup(ctx, txns, pluginSignerRefs, args); err != nil {
+			return nil, err
+		}
 	}
 
 	// --- Phase 1: /plan — plugin slots foreign, managed slots sign-mode ---

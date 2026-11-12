@@ -529,8 +529,8 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		t.Fatalf("MakeClient() error = %v", err)
 	}
 
-	authCache, signerCache := presignKnownManagedAccount(managedAccount.Address.String())
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache), WithSignerCache(signerCache))
+	authCache := cache.NewAuthAddressCache()
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -721,8 +721,7 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	authCache, signerCache := presignKnownManagedAccount(managedAccount.Address.String())
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache), WithSignerCache(signerCache))
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -806,8 +805,7 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	authCache, signerCache := presignKnownManagedAccount(managedAccount.Address.String())
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache), WithSignerCache(signerCache))
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -838,15 +836,4 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 	if !errors.As(err, &carrier) || carrier.SubmissionOutput() != want {
 		t.Fatalf("error %v does not carry the plan lines", err)
 	}
-}
-
-// presignKnownManagedAccount is the client's signing state for a managed
-// slot's account that it already knows: not rekeyed, held as an ed25519 key.
-// Placing the group's LogicSig arguments then fetches nothing.
-func presignKnownManagedAccount(address string) (cache.AuthAddressCache, cache.SignerCache) {
-	authCache := cache.NewAuthAddressCache()
-	authCache.AuthAddresses[address] = ""
-	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
-	return authCache, signerCache
 }
