@@ -315,6 +315,46 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	}
 }
 
+// The cache keeps the LogicSig arguments each key declares, the names the
+// client places arguments by: a LogicSig key's signing args as declared, a
+// bounded account's runtime arguments, which /keys reports under its bounded
+// authorization, as optional, and nothing for a native key.
+func TestPopulateSignerCacheKeepsEveryKeysDeclaredArguments(t *testing.T) {
+	state := New("testnet")
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "NATIVE", KeyType: "ed25519"},
+		{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true,
+			SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true, MaxSize: 64}}},
+		{Address: "BOUNDED", KeyType: "example.bounded-hashlock.v1",
+			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+				Contract: signerapi.BoundedContractBounded2,
+				RuntimeArgs: []signerapi.RuntimeArgInfo{
+					{Name: "secret", Type: "bytes", Required: true, ByteLength: 32, MaxSize: 32},
+				},
+			}},
+		{Address: "BOUNDED-NONE", KeyType: "aplane.falcon1024.v1",
+			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Contract: signerapi.BoundedContractBounded2, RuntimeArgs: []signerapi.RuntimeArgInfo{}}},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	if got := state.SignerCache.GetSigningArgs("NATIVE"); got != nil {
+		t.Fatalf("native key declares %+v, want none", got)
+	}
+	if got := state.SignerCache.GetSigningArgs("HTLC"); len(got) != 1 || got[0].Name != "preimage" || !got[0].Required || got[0].MaxSize != 64 {
+		t.Fatalf("LogicSig key declares %+v, want its required preimage", got)
+	}
+	got := state.SignerCache.GetSigningArgs("BOUNDED")
+	if len(got) != 1 || got[0].Name != "secret" || got[0].ByteLength != 32 || got[0].MaxSize != 32 {
+		t.Fatalf("bounded account declares %+v, want its runtime argument secret", got)
+	}
+	if got[0].Required {
+		t.Fatal("bounded runtime argument cached as required; which path requires it is the signer's to decide")
+	}
+	if got := state.SignerCache.GetSigningArgs("BOUNDED-NONE"); got != nil {
+		t.Fatalf("bounded account with no runtime arguments declares %+v", got)
+	}
+}
+
 func TestPopulateSignerCacheRejectsMalformedLogicSigResourcesWithoutMutation(t *testing.T) {
 	state := New("testnet")
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{Address: "GOOD", KeyType: "ed25519"}}); err != nil {

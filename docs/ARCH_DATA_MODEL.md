@@ -698,8 +698,10 @@ are rejected.
 
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
-  structured `logic_sig_resources`, key-file signing argument schemas,
-  `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`, and
+  structured `logic_sig_resources`, the LogicSig arguments each key declares
+  in `signing_args` (a LogicSig key's signing args, or a bounded account's
+  `bounded_authorization.runtime_args`, kept as optional; what apshell places
+  `arg:` values by), `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`, and
   `bounded_max_fees` (the bounded authorization `max_fee` per address).
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.

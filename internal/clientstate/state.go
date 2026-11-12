@@ -187,23 +187,44 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 				s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, *keyInfo.BoundedAuthorization.MaxFee)
 			}
 		}
-		if len(keyInfo.SigningArgs) > 0 {
-			signingArgs := make([]cache.SigningArgInfo, len(keyInfo.SigningArgs))
-			for i, arg := range keyInfo.SigningArgs {
-				signingArgs[i] = cache.SigningArgInfo{
-					Name:        arg.Name,
-					Label:       arg.Label,
-					Description: arg.Description,
-					Type:        arg.Type,
-					Required:    arg.Required,
-					ByteLength:  arg.ByteLength,
-					MaxSize:     arg.MaxSize,
-				}
-			}
-			s.SignerCache.SetSigningArgs(keyInfo.Address, signingArgs)
-		}
+		s.SignerCache.SetSigningArgs(keyInfo.Address, declaredSigningArgs(keyInfo))
 	}
 	return nil
+}
+
+// declaredSigningArgs is the LogicSig arguments a key declares, the names the
+// client places arguments by: a LogicSig key's signing args, or a bounded
+// account's runtime arguments, which it records under its bounded
+// authorization instead. A bounded account requires a runtime argument on
+// some paths only, and which path a transaction takes is the signer's to
+// decide, so each is kept as optional; the signer refuses one left out where
+// the path requires it.
+func declaredSigningArgs(keyInfo signerapi.KeyInfo) []cache.SigningArgInfo {
+	var declared []cache.SigningArgInfo
+	for _, arg := range keyInfo.SigningArgs {
+		declared = append(declared, cache.SigningArgInfo{
+			Name:        arg.Name,
+			Label:       arg.Label,
+			Description: arg.Description,
+			Type:        arg.Type,
+			Required:    arg.Required,
+			ByteLength:  arg.ByteLength,
+			MaxSize:     arg.MaxSize,
+		})
+	}
+	if keyInfo.BoundedAuthorization != nil {
+		for _, arg := range keyInfo.BoundedAuthorization.RuntimeArgs {
+			declared = append(declared, cache.SigningArgInfo{
+				Name:        arg.Name,
+				Label:       arg.Label,
+				Description: arg.Description,
+				Type:        arg.Type,
+				ByteLength:  arg.ByteLength,
+				MaxSize:     arg.MaxSize,
+			})
+		}
+	}
+	return declared
 }
 
 func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile) (lsigresource.Profile, error) {

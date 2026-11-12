@@ -37,7 +37,7 @@ type SignerCache struct {
 	Keys                      map[string]string               `json:"keys"`          // address -> key type
 	GenericLsigs              map[string]bool                 `json:"generic_lsigs"` // address -> true if generic lsig (no signature needed)
 	LogicSigResources         map[string]lsigresource.Profile `json:"logic_sig_resources,omitempty"`
-	SigningArgs               map[string][]SigningArgInfo     `json:"signing_args"`                           // address -> key-file signing arg schema for LogicSigs
+	SigningArgs               map[string][]SigningArgInfo     `json:"signing_args"`                           // address -> LogicSig arguments its key declares (signing args, or a bounded account's runtime args as optional)
 	SigningFlows              map[string]string               `json:"signing_flows,omitempty"`                // address -> signing choreography label (e.g. "cosigned1"); empty = plain /sign
 	CosignerComponentKeyTypes map[string]string               `json:"cosigner_component_key_types,omitempty"` // address -> cosigner component key type for signing_flow "cosigned1"
 	CosignerPublicKeys        map[string]string               `json:"cosigner_public_keys,omitempty"`         // address -> embedded cosigner public key hex
