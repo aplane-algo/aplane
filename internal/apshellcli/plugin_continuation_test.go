@@ -355,6 +355,24 @@ func TestJSPluginNamesTransactionsSentByAStepWhoseConfirmationFailed(t *testing.
 	})
 }
 
+// A read-only plugin command that returns an empty data object hands the
+// script an empty object, not undefined: only localSigners is removed.
+func TestJSPluginKeepsAnEmptyDataObject(t *testing.T) {
+	state, _ := scriptedPluginShell(t,
+		map[string]any{"success": true, "message": "status", "data": map[string]any{}},
+		map[string]any{"success": true, "message": "status", "data": map[string]any{"localSigners": []any{"X"}}},
+	)
+	for i := 0; i < 2; i++ {
+		out, err := runScript(t, state, `JSON.stringify(plugin("wf", "status").data)`)
+		if err != nil {
+			t.Fatalf("run %d: plugin() error = %v", i, err)
+		}
+		if out != "{}" {
+			t.Fatalf("run %d: plugin().data = %s, want {}", i, out)
+		}
+	}
+}
+
 // Once a step has sent transactions, a step that fails, is cancelled or
 // reports failure is an error that names what was sent, and says the
 // transactions were only simulated in simulate mode. Before anything is sent,
@@ -396,7 +414,15 @@ func TestJSPluginOutcome(t *testing.T) {
 			wantSuccess: true, wantMessage: "status", wantData: map[string]any{"amount": 1}},
 		{name: "nothing sent, only localSigners", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
 			Data: map[string]any{"localSigners": []any{"X"}}}},
+			wantSuccess: true, wantMessage: "status", wantData: map[string]any{}},
+		{name: "nothing sent, empty data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+			Data: map[string]any{}}},
+			wantSuccess: true, wantMessage: "status", wantData: map[string]any{}},
+		{name: "nothing sent, no data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status"}},
 			wantSuccess: true, wantMessage: "status", wantNoData: true},
+		{name: "nothing sent, data not an object", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+			Data: "plain"}},
+			wantSuccess: true, wantMessage: "status", wantData: "plain"},
 		{name: "one step", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "ok", TxIDs: []string{"T1"},
 			Data: map[string]any{"escrow": "E", "txids": "forged", "localSigners": []any{"X"}}}},
 			wantSuccess: true, wantMessage: "ok", wantData: map[string]any{"escrow": "E", "txids": []string{"T1"}}},

@@ -114,9 +114,11 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 // last step's message, data and presentation, with apshell's record of every
 // transaction ID it sent (simulated, in simulate mode) in data.txids and, for
 // more than one step, each step's message and IDs in data.steps. A plugin's
-// data is filtered the same way in every outcome.
+// data never carries localSigners to the script, in any outcome, and data the
+// plugin returned as an object stays an object, empty if localSigners was all
+// it held.
 func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, string, interface{}, interface{}, error) {
-	data := appresult.FilterPluginData(pr.Data)
+	data := appresult.StripShellOnlyPluginData(pr.Data)
 	sent := pr.submittedTxIDs()
 	if len(sent) == 0 {
 		switch {

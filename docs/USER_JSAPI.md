@@ -700,7 +700,8 @@ step sent transactions, `data.txids` lists every transaction ID apshell sent,
 in order (in simulate mode, the IDs of the simulated transactions; apshell's
 record, so a plugin's own `txids` field is replaced), and a run of more than one
 such step adds `data.steps`, one `{ message, txids }` per step. `data` has
-`localSigners` removed in every outcome.
+`localSigners` removed in every outcome; data the plugin returned as an object
+stays an object, empty if `localSigners` was all it held.
 
 Before any step has sent transactions, a cancelled review or the plugin's own
 failure returns `{ success: false, message }`. Once a step has sent

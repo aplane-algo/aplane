@@ -402,21 +402,29 @@ func HoldersToMCP(asset string, decimals uint64, holders []MCPHolderEntry, total
 	}
 }
 
-// FilterPluginData removes non-serializable shell-only data from plugin output.
-func FilterPluginData(data interface{}) interface{} {
+// StripShellOnlyPluginData removes the shell-only field localSigners from a
+// plugin's data. Data that is a map stays a map, empty when localSigners was
+// all it held; any other data, nil included, is returned as it is.
+func StripShellOnlyPluginData(data interface{}) interface{} {
 	dataMap, ok := data.(map[string]interface{})
 	if !ok {
 		return data
 	}
-
-	filtered := make(map[string]interface{}, len(dataMap))
+	stripped := make(map[string]interface{}, len(dataMap))
 	for k, v := range dataMap {
 		if k != "localSigners" {
-			filtered[k] = v
+			stripped[k] = v
 		}
 	}
-	if len(filtered) == 0 {
+	return stripped
+}
+
+// FilterPluginData removes non-serializable shell-only data from plugin output,
+// as StripShellOnlyPluginData does, and drops a map left empty.
+func FilterPluginData(data interface{}) interface{} {
+	stripped := StripShellOnlyPluginData(data)
+	if dataMap, ok := stripped.(map[string]interface{}); ok && len(dataMap) == 0 {
 		return nil
 	}
-	return filtered
+	return stripped
 }
