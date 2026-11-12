@@ -1373,7 +1373,6 @@ from aplanesdk import (
     CosignerDiscoveryError,
     PreparedGroup,
     SignerClient,
-    send_raw_transaction,
     sign_prepared_cosigned_group,
 )
 
@@ -1463,7 +1462,7 @@ def main() -> int:
             raise RuntimeError("SDK cosigned signing returned an empty signed group")
         print(f"Python SDK plain host validation group size: {len(result.signed_group)}")
 
-        txid = send_raw_transaction(algod_client, signed_group_b64(result.signed_group))
+        txid = algod_client.send_raw_transaction(signed_group_b64(result.signed_group))
         transaction.wait_for_confirmation(algod_client, txid, 10)
         print(f"Python SDK plain host validation submitted: {txid}")
 
@@ -1510,7 +1509,6 @@ from aplanesdk import (
     PreparedGroup,
     SignerClient,
     SignerError,
-    send_raw_transaction,
     sign_prepared_cosigned_group,
 )
 
@@ -1570,10 +1568,7 @@ def main() -> int:
             "Python SDK bounded-cosigner Corridor group size: "
             f"{len(result.signed_group)}"
         )
-        txid = send_raw_transaction(
-            algod_client,
-            signed_group_b64(result.signed_group),
-        )
+        txid = algod_client.send_raw_transaction(signed_group_b64(result.signed_group))
         transaction.wait_for_confirmation(algod_client, txid, 10)
         print(f"Python SDK bounded-cosigner Corridor submitted: {txid}")
 
@@ -1638,7 +1633,6 @@ import {
   SIGNING_FLOW_COSIGNED1,
   SignerClient,
   concatenateSignedTxns,
-  sendRawTransaction,
   signPreparedCosignedGroup,
 } from "aplanesdk";
 
@@ -1713,7 +1707,9 @@ async function main() {
     }
     console.log(`TypeScript SDK plain host validation group size: ${result.signedGroup.length}`);
 
-    const txid = await sendRawTransaction(algodClient, concatenateSignedTxns(result.signedGroup));
+    const { txid } = await algodClient
+      .sendRawTransaction(Buffer.from(concatenateSignedTxns(result.signedGroup), "base64"))
+      .do();
     await algosdk.waitForConfirmation(algodClient, txid, 10);
     console.log(`TypeScript SDK plain host validation submitted: ${txid}`);
   } finally {
