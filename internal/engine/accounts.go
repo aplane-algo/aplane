@@ -169,7 +169,10 @@ func (e *Engine) ListKeys(ctx context.Context) ([]KeyInfo, error) {
 // and writes no cache, so a decision made from it uses the list the signer
 // gave for that decision, whatever happens to the signer cache meanwhile. No
 // signer client is ErrNotConnected, and a locked signer is ErrSignerLocked,
-// never an empty list.
+// never an empty list. An answer that disagrees with itself (a count other
+// than its number of records, a record with no address, an address listed
+// twice) is an error, never a list: a decision must not read a short list as
+// the signer holding fewer keys.
 func (e *Engine) CurrentKeys(ctx context.Context) ([]KeyInfo, error) {
 	keysResp, err := e.GetKeysWithContext(ctx)
 	if err != nil {
@@ -177,6 +180,19 @@ func (e *Engine) CurrentKeys(ctx context.Context) ([]KeyInfo, error) {
 	}
 	if keysResp.Locked {
 		return nil, ErrSignerLocked
+	}
+	if keysResp.Count != len(keysResp.Keys) {
+		return nil, fmt.Errorf("signer's key list is inconsistent: count %d, %d record(s)", keysResp.Count, len(keysResp.Keys))
+	}
+	seen := make(map[string]bool, len(keysResp.Keys))
+	for i, k := range keysResp.Keys {
+		if k.Address == "" {
+			return nil, fmt.Errorf("signer's key list is inconsistent: record %d has no address", i)
+		}
+		if seen[k.Address] {
+			return nil, fmt.Errorf("signer's key list is inconsistent: %s is listed twice", k.Address)
+		}
+		seen[k.Address] = true
 	}
 	keys := make([]KeyInfo, 0, len(keysResp.Keys))
 	for _, k := range keysResp.Keys {
@@ -191,10 +207,13 @@ func (e *Engine) CurrentKeys(ctx context.Context) ([]KeyInfo, error) {
 // those that are not valid rekey targets, with the key type and whether it is
 // a generic LogicSig (InvalidRekeyTargets). An aplane key is not a valid rekey
 // target when its record says so, and a rotating account never is, whatever
-// its record says, as the signer's second line refuses a rekey to one by key
-// type. An account signable only through its auth address is not in the list,
-// so it is not held. The signer's prompt also knows each account's rekey-to
-// list; this does not.
+// its record says. That clause is broader than the signer's second line,
+// which refuses a rekey to a rotating account by key type only at the
+// positions the signer signs and not for an account's rekey to its own
+// address: here a rotating key type is not a valid target at any position,
+// the own address included, as its record already says. An account signable
+// only through its auth address is not in the list, so it is not held. The
+// signer's prompt also knows each account's rekey-to list; this does not.
 func RekeyTargetsFromKeys(keys []KeyInfo) txnreview.FindingContext {
 	held := make(map[string]bool, len(keys))
 	invalid := make(map[string]txnreview.InvalidRekeyTarget)

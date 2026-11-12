@@ -510,3 +510,39 @@ func TestCheckPluginGroupRefusesANonInteractivePregroupedGroupFirst(t *testing.T
 		}
 	}
 }
+
+// The facts a group returns for the review are copies: changing the returned
+// maps changes no later call.
+func TestPluginGroupRekeyTargetsAreCopies(t *testing.T) {
+	f := newPluginRekeyFixture(t, rekeyTestKeys())
+	group, err := f.app.CheckPluginGroup(context.Background(), pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, rekeyTestNative))["default"].result, interactive)
+	if err != nil {
+		t.Fatalf("CheckPluginGroup() error = %v", err)
+	}
+	first := group.RekeyTargets()
+	delete(first.KnownAddresses, rekeyTestNative.String())
+	first.KnownAddresses[rekeyTestForeign.String()] = true
+	delete(first.InvalidRekeyTargets, rekeyTestHTLC.String())
+	again := group.RekeyTargets()
+	if !again.KnownAddresses[rekeyTestNative.String()] || again.KnownAddresses[rekeyTestForeign.String()] {
+		t.Fatalf("a change to the returned held set reached the group: %v", again.KnownAddresses)
+	}
+	if _, ok := again.InvalidRekeyTargets[rekeyTestHTLC.String()]; !ok {
+		t.Fatalf("a change to the returned not-valid set reached the group: %v", again.InvalidRekeyTargets)
+	}
+}
+
+// A pregrouped-signed group the engine refuses is named by its mode once:
+// the engine's own refusals already name it, and those that do not get it.
+func TestCheckPluginGroupNamesThePregroupedModeOnce(t *testing.T) {
+	one := signedPluginIntents(t, rekeySubmitTestTxn(rekeyTestOther, types.Address{}))
+	_, err := (&App{}).CheckPluginGroup(context.Background(), &jsonrpc.ExecuteResult{GroupMode: jsonrpc.GroupModePregroupedSigned, Transactions: one}, interactive)
+	if want := "pregrouped-signed: group must contain at least 2 transactions, got 1"; err == nil || err.Error() != want {
+		t.Fatalf("CheckPluginGroup(one transaction) error = %v, want %q", err, want)
+	}
+	bad := []jsonrpc.TransactionIntent{one[0], {Type: jsonrpc.TransactionIntentSigned}}
+	_, err = (&App{}).CheckPluginGroup(context.Background(), &jsonrpc.ExecuteResult{GroupMode: jsonrpc.GroupModePregroupedSigned, Transactions: bad}, interactive)
+	if want := "pregrouped-signed: transaction at index 1: missing encoded data"; err == nil || err.Error() != want {
+		t.Fatalf("CheckPluginGroup(missing data) error = %v, want %q", err, want)
+	}
+}

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -129,8 +131,15 @@ func (g *PluginGroup) GroupIDDiscarded() bool { return g.groupIDDiscarded }
 // signer's prompt. The signer also knows each account's rekey-to list, which
 // the review does not, so a rekey to a listed address the signer does not
 // hold reads here as losing control. It is empty for a group with no rekey,
-// which has no rekey finding to show.
-func (g *PluginGroup) RekeyTargets() txnreview.FindingContext { return g.rekeyTargets }
+// which has no rekey finding to show. It returns copies.
+func (g *PluginGroup) RekeyTargets() txnreview.FindingContext {
+	return txnreview.FindingContext{
+		KnownAddresses:       maps.Clone(g.rekeyTargets.KnownAddresses),
+		InvalidRekeyTargets:  maps.Clone(g.rekeyTargets.InvalidRekeyTargets),
+		ProtocolRekeyTargets: maps.Clone(g.rekeyTargets.ProtocolRekeyTargets),
+		ListedRekeyTargets:   maps.Clone(g.rekeyTargets.ListedRekeyTargets),
+	}
+}
 
 // ErrUncheckedPluginGroup refuses a plugin group CheckPluginGroup did not
 // produce.
@@ -217,7 +226,11 @@ func decodePregroupedSigned(intents []jsonrpc.TransactionIntent) ([]types.Transa
 	}
 	signed, err := engine.DecodePregroupedSigned(encoded)
 	if err != nil {
-		return nil, nil, fmt.Errorf("pregrouped-signed: %w", err)
+		// Some of the engine's errors name the mode already.
+		if !strings.HasPrefix(err.Error(), jsonrpc.GroupModePregroupedSigned+": ") {
+			err = fmt.Errorf("%s: %w", jsonrpc.GroupModePregroupedSigned, err)
+		}
+		return nil, nil, err
 	}
 	stxns := signed.Transactions()
 	txns := make([]types.Transaction, len(stxns))

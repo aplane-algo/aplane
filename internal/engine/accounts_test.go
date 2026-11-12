@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/cache"
@@ -386,5 +387,50 @@ func TestRekeyTargetsFromKeys(t *testing.T) {
 	}
 	if got.ListedRekeyTargets != nil || got.ProtocolRekeyTargets != nil {
 		t.Errorf("a key list knows no rekey-to lists or protocol targets: %+v", got)
+	}
+}
+
+// A key list that disagrees with itself is an error, never a list: a count
+// other than its number of records, a record with no address, or an address
+// listed twice. A complete empty list is still an empty list.
+func TestCurrentKeysRefusesAnInconsistentList(t *testing.T) {
+	var mu sync.Mutex
+	var answer signerapi.KeysResponse
+	setAnswer := func(a signerapi.KeysResponse) {
+		mu.Lock()
+		defer mu.Unlock()
+		answer = a
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		_ = json.NewEncoder(w).Encode(answer)
+	}))
+	defer server.Close()
+	eng := setupTestEngine(t)
+	eng.Connection.SignerClient = util.NewSignerClient(server.URL)
+
+	for name, tc := range map[string]struct {
+		answer signerapi.KeysResponse
+		want   string
+	}{
+		"count larger than the records": {answer: signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}}},
+			want: "signer's key list is inconsistent: count 2, 1 record(s)"},
+		"records but a count of 0": {answer: signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}}},
+			want: "signer's key list is inconsistent: count 0, 1 record(s)"},
+		"a record with no address": {answer: signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{KeyType: "ed25519"}}},
+			want: "signer's key list is inconsistent: record 0 has no address"},
+		"an address listed twice": {answer: signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}, {Address: "A", KeyType: "aplane.htlc.v1"}}},
+			want: "signer's key list is inconsistent: A is listed twice"},
+	} {
+		setAnswer(tc.answer)
+		if _, err := eng.CurrentKeys(context.Background()); err == nil || err.Error() != tc.want {
+			t.Errorf("%s: CurrentKeys() error = %v, want %q", name, err, tc.want)
+		}
+	}
+
+	setAnswer(signerapi.KeysResponse{Count: 0, Keys: []signerapi.KeyInfo{}})
+	if keys, err := eng.CurrentKeys(context.Background()); err != nil || len(keys) != 0 {
+		t.Fatalf("CurrentKeys(empty) = %v, %v; want an empty list", keys, err)
 	}
 }

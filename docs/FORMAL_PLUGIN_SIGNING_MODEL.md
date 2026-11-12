@@ -237,8 +237,12 @@ Nothing is read back from the signer cache, so an empty, stale or reset
 cache cannot make a held aplane key read as foreign. The review's rekey
 findings show the facts the check judged from, carried on the group. When no
 current list can be had, because apshell is not connected to the signer, the
-signer is locked, or the request fails, the group is refused with an error
-saying so. A group with no rekey fetches nothing and needs no connection, so
+signer is locked, the request fails, or the answer disagrees with itself (a
+`count` other than its number of records, a record with no address, an
+address listed twice), the group is refused with an error saying so. The
+signer, for its part, never answers `/keys` with a list shortened by a lock:
+a lock while it builds the list makes it answer as locked
+(`internal/signerapp/rest/inventory.go::keysAnswer`). A group with no rekey fetches nothing and needs no connection, so
 a pregrouped-signed group with no rekey still submits without one. Anchors:
 `internal/apshellapp/submission.go` (`CheckPluginGroup`, `judgeRekeys`,
 `SubmitPluginTransactions`), `internal/apshellcli/external_plugins.go`

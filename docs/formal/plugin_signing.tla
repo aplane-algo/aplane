@@ -222,8 +222,9 @@ PS7_NoUngatedSubmission ==
 
 \* PS8: no submitted group rekeys, at any position and whoever signs it, to
 \* an address the signer holds an aplane key for that is not a valid rekey
-\* target. In presign-plan the signer refuses such a managed slot as well;
-\* the plugin slots have only this check.
+\* target. In presign-plan the signer also judges every position of the
+\* group it signs into, plugin-signed ones included; only a pregrouped-signed
+\* group, which never reaches the signer, has this check alone.
 PS8_NoRekeyToInvalidTarget ==
     submitted =>
         IF kase.mode = "pregrouped_signed"
