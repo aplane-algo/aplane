@@ -424,6 +424,8 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 			}
 			planned[i] = txn
 		}
+		// The signer charges the managed slot for its authorization.
+		planned[1].Fee += 2000
 		groupID, err := crypto.ComputeGroupID(planned)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -440,6 +442,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 			Transactions: encoded,
 			Mutations: &signerapi.MutationReport{
 				GroupIDChanged: true, OriginalCount: len(planned), FinalCount: len(planned),
+				FeesModified: []int{1}, TotalFeesDelta: 2000,
 				ForeignCount: 1, Reason: "foreign",
 			},
 		})
@@ -570,6 +573,10 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 	}
 	if simulateReq.AllowEmptySignatures || simulateReq.FixSigners {
 		t.Fatal("plugin signed simulation enabled empty-signature overrides")
+	}
+	// The checked fee raise is always shown, as the cosigned path shows it.
+	if want := "[PLUGIN] Signer raised fees by 2000 microAlgos for authorization, on transaction(s) [2]\n"; !strings.Contains(result.Output, want) {
+		t.Fatalf("output = %q, want the fee raise %q", result.Output, want)
 	}
 	signedMu.Lock()
 	wantSigned := append([]string(nil), finalSignedHex...)

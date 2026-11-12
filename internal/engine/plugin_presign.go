@@ -149,6 +149,13 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if err := validatePluginPlan(txns, canonicalTxns, planResp.Mutations, pluginSignerRefs); err != nil {
 		return nil, fmt.Errorf("invalid group plan: %w", err)
 	}
+	var output bytes.Buffer
+	// The report was checked against the returned bytes above, so it is what
+	// the signer changed.
+	if m := planResp.Mutations; m != nil && m.TotalFeesDelta > 0 {
+		_, _ = fmt.Fprintf(&output, "[PLUGIN] Signer raised fees by %d microAlgos for authorization, on transaction(s) %v\n",
+			m.TotalFeesDelta, oneBasedPositions(m.FeesModified))
+	}
 
 	// --- Phase 2: gather plugin slots for the callback; sign dummies locally ---
 	passthrough := make(map[int]string) // index -> signed txn hex
@@ -232,7 +239,6 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		return nil, err
 	}
 
-	var output bytes.Buffer
 	if e.Simulate {
 		signedObjects := make([]types.SignedTxn, len(finalSignedTxns))
 		for i, signedBytes := range finalSignedTxns {
@@ -269,6 +275,15 @@ func (e *Engine) managedSignRequest(txn types.Transaction, lsigArgs map[string][
 		}
 	}
 	return req
+}
+
+// oneBasedPositions numbers group positions from one, as the prompts do.
+func oneBasedPositions(indices []int) []int {
+	numbers := make([]int, len(indices))
+	for i, index := range indices {
+		numbers[i] = index + 1
+	}
+	return numbers
 }
 
 func lsigArgsAt(lsigArgs []map[string][]byte, i int) map[string][]byte {

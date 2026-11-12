@@ -108,9 +108,11 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool
 		return reviewPresignPlan(r, result)
 	}
 
-	r.printf("\nPlugin generated %d transaction(s):\n", len(result.Transactions))
-	for i, txn := range result.Transactions {
-		r.printf("  [%d] %s transaction\n", i+1, txn.Type)
+	// The default mode: unsigned transactions for APlane-managed accounts. The
+	// decoded draft is shown as information; apsigner's approval is the gate,
+	// and this client prompt is asked only when the plugin requests it.
+	if err := renderDefaultPluginDraft(r, result.Transactions); err != nil {
+		return false, err
 	}
 
 	if !result.RequiresApproval || r.AutoConfirm {
