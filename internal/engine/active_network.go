@@ -31,9 +31,12 @@ import (
 //
 // It runs in checkReadyToSign, before every /sign route (ordinary, rotating
 // and cosigned: built-in commands, the default plugin mode, sign files and JS
-// sign()); in RequestGroupPlanWithContext, before /plan (JS plan() and the
-// presign-plan flow, whose later /sign carries the checked plan); and in
-// SubmitPregroupedSigned, before a plugin-signed group goes to algod.
+// sign()); in SignAndSubmitWithPluginSigners, on the presign-plan draft before
+// its plan requests are built (its later /sign carries the checked plan); in
+// RequestGroupPlanWithContext, on the decoded requests before /plan, for JS
+// plan() (the presign-plan flow passes through it too, a repeat of its own
+// check); and in SubmitPregroupedSigned, before a plugin-signed group goes to
+// algod.
 //
 // It reads algod at most once, reusing a read from the last
 // consensusValidationReuseWindow (see activeAlgodNetwork). That read is kept

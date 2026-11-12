@@ -188,8 +188,11 @@ plugin draft (default and `presign-plan` group modes), a plugin's
 transaction file given to `sign` or JS `sign()`, and the requests JS `plan()`
 sends, passthrough entries by their inner transaction. A `plan()` request whose
 bytes are not a canonical transaction is refused before `/plan`, as the signer
-would refuse it. The check runs in three places: `checkReadyToSign`, before
-every `/sign` route; `RequestGroupPlanWithContext`, before `/plan`; and
+would refuse it. The check runs in four places: `checkReadyToSign`, before
+every `/sign` route; `SignAndSubmitWithPluginSigners`, on a `presign-plan`
+draft before its plan requests are built; `RequestGroupPlanWithContext`, on the
+decoded requests before `/plan`, for JS `plan()` (a `presign-plan` draft passes
+through it too, a repeat of its own check that costs no algod call); and
 `SubmitPregroupedSigned`, before a plugin-signed group is sent to algod. An algod
 that reports no 32-byte genesis hash is refused. The check reuses the consensus
 read, so it adds no algod call; that read is kept per algod client for up to 30

@@ -259,8 +259,10 @@ func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 			}
 			eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 
+			// The refusal is reported as itself, not as a failure of a step
+			// (such as planning) that never started.
 			err = path.run(eng)
-			if err == nil || !strings.Contains(err.Error(), "transaction at index 0 is for another network") {
+			if err == nil || !strings.HasPrefix(err.Error(), "transaction at index 0 is for another network") {
 				t.Fatalf("error = %v, want the transaction at index 0 refused as for another network", err)
 			}
 			if got := signerCalls.Load(); got != 0 {

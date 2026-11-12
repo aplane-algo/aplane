@@ -95,6 +95,11 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
+	// The draft carries the plugin's genesis: it must be the active algod's
+	// network before any of it is planned or signed.
+	if err := e.checkActiveNetwork(ctx, txns); err != nil {
+		return nil, err
+	}
 
 	// --- Phase 1: /plan — plugin slots foreign, managed slots sign-mode ---
 	planRequests := make([]signerapi.SignRequest, len(txns))
@@ -114,9 +119,10 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		}
 	}
 
-	// The draft carries the plugin's genesis; RequestGroupPlanWithContext
-	// refuses it, before the signer plans or signs any of it, unless it is
-	// for the active algod's network.
+	// RequestGroupPlanWithContext decodes these requests and checks their
+	// network again, for JS plan(), whose requests arrive as bytes. Here that
+	// repeats the check above on the same transactions; it costs a decode and
+	// no algod call, since the network read is cached.
 	planResp, err := e.RequestGroupPlanWithContext(ctx, planRequests)
 	if err != nil {
 		return nil, fmt.Errorf("group planning failed: %w", err)
