@@ -1654,6 +1654,19 @@ Many transaction commands support these options:
 | `nowait` | Submit without waiting for confirmation |
 | `note=<text>` | Attach a note to supported transaction commands, such as `send` and `app` |
 
+An option that takes one value may be given once. A second value is refused
+with `<option> given more than once` rather than replacing the first, so
+`app call ... --pay 100000 ... pay=10000000` and `... from alice ... from treasury`
+are errors. This covers `fee=`, `note=`, `arg:<name>=` for the same name, the
+app call options `from`, `--abi`/`abi=`, `--pay`/`pay=` (one option in either
+spelling), `oncomp=`, the approval and clear programs in any of their
+spellings, `app deploy`'s schema options and `extra-pages=`, sweep's
+`leaving`, keyreg's `key=value` options, `generate` parameters, and the value
+flags of `rotate recover`, `enroll` and `endpoints add`. Options that build a
+list still repeat: `--arg`/`arg=`, `arg-raw=`, `account=`, `app=`, `asset=`,
+`box=`, and `arg:` with different names. Flags without a value, such as
+`nowait` and `atomic`, may be repeated and mean the same once or twice.
+
 ---
 
 ## Configuration File

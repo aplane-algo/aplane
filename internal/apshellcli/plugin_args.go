@@ -15,14 +15,9 @@ func extractPluginLsigArgs(args []string) ([]string, map[string][]byte, error) {
 	var lsigArgs map[string][]byte
 	for _, a := range args {
 		if strings.HasPrefix(a, "arg:") {
-			name, value, err := cmdspec.ParseLsigArg(a)
-			if err != nil {
+			if err := cmdspec.AddLsigArg(&lsigArgs, a); err != nil {
 				return nil, nil, err
 			}
-			if lsigArgs == nil {
-				lsigArgs = make(map[string][]byte)
-			}
-			lsigArgs[name] = value
 		} else {
 			cleanArgs = append(cleanArgs, a)
 		}

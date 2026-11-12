@@ -7,6 +7,21 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apshell refuses repeated options
+
+- **A single-valued option given twice is refused.** Only `fee=` refused a
+  repeat; every other option took its last value, so
+  `app call ... --pay 100000 ... pay=10000000` sent the larger payment and
+  `... from alice ... from treasury` signed from treasury, with no error. Each
+  is now refused with `<option> given more than once`. This covers `note=`,
+  `arg:<name>=` for the same name, app call's `from`, `--abi`/`abi=` and
+  `--pay`/`pay=` (each one option in either spelling), `oncomp=`, the approval
+  and clear programs, `app deploy`'s schema options and `extra-pages=`, sweep's
+  `leaving`, keyreg's `key=value` options, `generate` parameters, and the
+  value flags of `rotate recover`, `enroll` and `endpoints add`. List options
+  (`--arg`, `arg-raw=`, `account=`, `app=`, `asset=`, `box=`) and `arg:` with
+  different names still repeat.
+
 ## Every key type declares whether it is a valid rekey target
 
 The signer passed a rekey of an account to any address it held an aplane key

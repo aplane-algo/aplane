@@ -23,6 +23,21 @@ import (
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
+// parseValidateLsigArgs reads what may follow validate's account: arg:
+// tokens only.
+func parseValidateLsigArgs(args []string) (map[string][]byte, error) {
+	var lsigArgs map[string][]byte
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "arg:") {
+			return nil, fmt.Errorf("unknown validate argument: %s", arg)
+		}
+		if err := cmdspec.AddLsigArg(&lsigArgs, arg); err != nil {
+			return nil, err
+		}
+	}
+	return lsigArgs, nil
+}
+
 // runValidate handles the validate command by parsing args, delegating
 // workflow to apshellapp, and rendering the result.
 func (r *REPLState) runValidate(args []string) (command.Result, error) {
@@ -30,19 +45,9 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 		return nil, fmt.Errorf("usage: validate <account> [arg:name=value]\n  Sends a 0 ALGO self-send transaction to validate account signing capability")
 	}
 
-	var lsigArgs map[string][]byte
-	for _, arg := range args[1:] {
-		if !strings.HasPrefix(arg, "arg:") {
-			return nil, fmt.Errorf("unknown validate argument: %s", arg)
-		}
-		name, value, err := cmdspec.ParseLsigArg(arg)
-		if err != nil {
-			return nil, err
-		}
-		if lsigArgs == nil {
-			lsigArgs = make(map[string][]byte)
-		}
-		lsigArgs[name] = value
+	lsigArgs, err := parseValidateLsigArgs(args[1:])
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := r.app().Validate(r.commandContext(), apshellapp.ValidateRequest{

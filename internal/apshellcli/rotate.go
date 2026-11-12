@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -119,6 +120,7 @@ func parseRotateRecover(args []string) (apshellapp.RotateRecoverRequest, error) 
 		}
 		return n, nil
 	}
+	seen := cmdspec.SeenOptions{}
 	for i := 0; i < len(rest); i++ {
 		flag := rest[i]
 		if !strings.HasPrefix(flag, "--") || i+1 >= len(rest) {
@@ -128,6 +130,10 @@ func parseRotateRecover(args []string) (apshellapp.RotateRecoverRequest, error) 
 		i++
 		n, err := number(flag, value)
 		if err != nil {
+			return apshellapp.RotateRecoverRequest{}, err
+		}
+		// Each option is single-valued; an unknown one is refused below.
+		if err := seen.Once(flag); err != nil {
 			return apshellapp.RotateRecoverRequest{}, err
 		}
 		switch flag {

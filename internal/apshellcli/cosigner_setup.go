@@ -234,11 +234,19 @@ func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
 			if i >= len(args) {
 				return out, errors.New("usage: " + endpointsAddUsage)
 			}
+			if out.request.Alias != "" {
+				return out, errors.New("--alias given more than once")
+			}
 			out.request.Alias = args[i]
 		case "--endpoint", "--url":
 			i++
 			if i >= len(args) {
 				return out, errors.New("usage: " + endpointsAddUsage)
+			}
+			// The URL is one value, whether given as a flag or as the
+			// positional argument.
+			if out.request.URL != "" {
+				return out, errors.New("endpoint URL given more than once")
 			}
 			out.request.URL = args[i]
 		default:
