@@ -1213,3 +1213,82 @@ func TestSharedTrailingArgsRefuseUnknownWordsAndRepeatedFees(t *testing.T) {
 		}
 	}
 }
+
+// A single-valued option given twice is refused, naming the option, rather
+// than read as its last value: `note=a ... note=b` would send note b, and a
+// second arg:preimage would replace the first.
+func TestCommandsRefuseRepeatedSingleValuedOptions(t *testing.T) {
+	send := func(trailing ...string) func() error {
+		return func() error {
+			_, err := ParseSendCommand(append([]string{"1", "algo", "from", "alice", "to", "bob"}, trailing...))
+			return err
+		}
+	}
+	sweep := func(trailing ...string) func() error {
+		return func() error {
+			_, err := ParseSweepCommand(append([]string{"algo", "to", "main"}, trailing...))
+			return err
+		}
+	}
+	keyreg := func(trailing ...string) func() error {
+		return func() error {
+			_, err := ParseTakeCommand(append([]string{"alice", "online", "votekey=A", "selkey=B", "sproofkey=C"}, trailing...))
+			return err
+		}
+	}
+	tests := []struct {
+		name  string
+		parse func() error
+		want  string
+	}{
+		{"send note", send("note=a", "note=b"), "note given more than once"},
+		{"send arg:preimage", send("arg:preimage=text:a", "arg:preimage=text:b"), "arg:preimage given more than once"},
+		{"sweep leaving", sweep("leaving", "1", "leaving", "2"), "leaving given more than once"},
+		{"sweep arg:preimage", sweep("arg:preimage=text:a", "arg:preimage=text:b"), "arg:preimage given more than once"},
+		{"keyreg votekey", keyreg("votekey=D"), "votekey given more than once"},
+		{"keyreg votefirst", keyreg("votefirst=1", "votefirst=2"), "votefirst given more than once"},
+		{"keyreg votelast", keyreg("votelast=1", "votelast=2"), "votelast given more than once"},
+		{"keyreg keydilution", keyreg("keydilution=1", "keydilution=2"), "keydilution given more than once"},
+		{"keyreg eligible", keyreg("eligible=true", "eligible=false"), "eligible given more than once"},
+		{"keyreg arg:preimage", keyreg("arg:preimage=text:a", "arg:preimage=text:b"), "arg:preimage given more than once"},
+		{"optin arg:preimage", func() error {
+			_, err := ParseOptinCommand([]string{"usdc", "for", "alice", "arg:preimage=text:a", "arg:preimage=text:b"})
+			return err
+		}, "arg:preimage given more than once"},
+		{"optout arg:preimage", func() error {
+			_, err := ParseOptoutCommand([]string{"usdc", "from", "alice", "arg:preimage=text:a", "arg:preimage=text:b"})
+			return err
+		}, "arg:preimage given more than once"},
+		{"close arg:preimage", func() error {
+			_, err := ParseCloseCommand([]string{"alice", "to", "bob", "arg:preimage=text:a", "arg:preimage=text:b"})
+			return err
+		}, "arg:preimage given more than once"},
+		{"rekey arg:preimage", func() error {
+			_, err := ParseRekeyCommand([]string{"alice", "to", "bob", "arg:preimage=text:a", "arg:preimage=text:b"}, false)
+			return err
+		}, "arg:preimage given more than once"},
+		{"unrekey arg:preimage", func() error {
+			_, err := ParseRekeyCommand([]string{"alice", "arg:preimage=text:a", "arg:preimage=text:b"}, true)
+			return err
+		}, "arg:preimage given more than once"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.parse()
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+
+	// What may repeat still does: different arg: names, and the flags,
+	// which take no value.
+	p, err := ParseSendCommand([]string{"1", "algo", "from", "alice", "to", "bob",
+		"arg:preimage=text:a", "arg:hashlock=text:b", "nowait", "nowait", "atomic", "atomic", "note=n"})
+	if err != nil {
+		t.Fatalf("well-formed send refused: %v", err)
+	}
+	if string(p.LsigArgs["preimage"]) != "a" || string(p.LsigArgs["hashlock"]) != "b" || p.Note != "n" {
+		t.Fatalf("send parsed as %+v", p)
+	}
+}

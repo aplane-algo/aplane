@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
@@ -223,6 +224,10 @@ func (r *REPLState) offerCreatedConnectionRemoval(plan apshellapp.CosignerSetupP
 
 func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
 	var out cosignerSetupCLIOptions
+	// The URL is one value, whether given as a flag or as the positional
+	// argument; it and the alias may each be given once, even as "".
+	const endpointURL = "endpoint URL"
+	seen := cmdspec.SeenOptions{}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--dry-run":
@@ -234,20 +239,27 @@ func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
 			if i >= len(args) {
 				return out, errors.New("usage: " + endpointsAddUsage)
 			}
+			if err := seen.Once("--alias"); err != nil {
+				return out, err
+			}
 			out.request.Alias = args[i]
 		case "--endpoint", "--url":
 			i++
 			if i >= len(args) {
 				return out, errors.New("usage: " + endpointsAddUsage)
 			}
+			if err := seen.Once(endpointURL); err != nil {
+				return out, err
+			}
 			out.request.URL = args[i]
 		default:
-			if strings.HasPrefix(args[i], "-") || out.request.URL != "" {
+			if strings.HasPrefix(args[i], "-") || seen[endpointURL] {
 				return out, errors.New("usage: " + endpointsAddUsage)
 			}
 			if !strings.Contains(args[i], "://") {
 				return out, errors.New(endpointsAddFileHint)
 			}
+			seen[endpointURL] = true
 			out.request.URL = args[i]
 		}
 	}

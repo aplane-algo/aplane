@@ -27,3 +27,21 @@ func ParseLsigArg(token string) (string, []byte, error) {
 	}
 	return argName, argValue, nil
 }
+
+// AddLsigArg parses an "arg:name=value" token into args, making the map on
+// first use. Different names may each be given once; a name given twice is
+// refused, because the second value would silently replace the first.
+func AddLsigArg(args *map[string][]byte, token string) error {
+	name, value, err := ParseLsigArg(token)
+	if err != nil {
+		return err
+	}
+	if _, repeated := (*args)[name]; repeated {
+		return fmt.Errorf("arg:%s given more than once", name)
+	}
+	if *args == nil {
+		*args = make(map[string][]byte)
+	}
+	(*args)[name] = value
+	return nil
+}

@@ -19,6 +19,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -33,7 +34,9 @@ func consensusTestAlgod(t *testing.T, version string, unexpectedCalls *atomic.In
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{ConsensusVersion: version})
+		params := presignAlgodParams()
+		params.ConsensusVersion = version
+		_ = json.NewEncoder(w).Encode(params)
 	}))
 	client, err := algod.MakeClient(server.URL, "")
 	if err != nil {
@@ -204,7 +207,7 @@ func TestGroupPlanningValidatesConsensusBeforeSigner(t *testing.T) {
 	eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
 	_, err = eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 		AuthAddress: "ADDR",
-		TxnBytesHex: "545801",
+		TxnBytesHex: txnutil.EncodeWithPrefixHex(presignTestTxn(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "plan")),
 	}})
 	if err == nil || !strings.Contains(err.Error(), "network consensus") {
 		t.Fatalf("RequestGroupPlanWithContext() error = %v, want unsupported-consensus rejection", err)
@@ -235,7 +238,7 @@ func TestGroupPlanningForwardsAfterConsensusValidation(t *testing.T) {
 			eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
 			response, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 				AuthAddress: "ADDR",
-				TxnBytesHex: "545801",
+				TxnBytesHex: txnutil.EncodeWithPrefixHex(presignTestTxn(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "plan")),
 			}})
 			if err != nil {
 				t.Fatalf("RequestGroupPlanWithContext() error = %v", err)

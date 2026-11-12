@@ -48,6 +48,16 @@ func presignTestTxn(t *testing.T, sender, note string) types.Transaction {
 	return txn
 }
 
+// presignAlgodParams is what a fake algod reports: a supported consensus
+// version and the network presignTestTxn builds for.
+func presignAlgodParams() models.TransactionParametersResponse {
+	return models.TransactionParametersResponse{
+		ConsensusVersion: string(protocol.ConsensusV42),
+		GenesisHash:      make([]byte, 32),
+		GenesisId:        "presign-test",
+	}
+}
+
 // presignPlan builds a planned group from drafts the way the planner does: the
 // first slot's fee raised by delta, appended canonical dummies, and the group id
 // over the final group. It returns the planned group and its mutation report.
@@ -492,9 +502,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/transactions/params" {
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
-				ConsensusVersion: string(protocol.ConsensusV42),
-			})
+			_ = json.NewEncoder(w).Encode(presignAlgodParams())
 			return
 		}
 		if r.URL.Path != "/v2/transactions/simulate" {
@@ -706,9 +714,7 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 
 	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
-			ConsensusVersion: string(protocol.ConsensusV42),
-		})
+		_ = json.NewEncoder(w).Encode(presignAlgodParams())
 	}))
 	defer algodServer.Close()
 	algodClient, err := algod.MakeClient(algodServer.URL, "")
@@ -792,9 +798,7 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 
 	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
-			ConsensusVersion: string(protocol.ConsensusV42),
-		})
+		_ = json.NewEncoder(w).Encode(presignAlgodParams())
 	}))
 	defer algodServer.Close()
 	algodClient, err := algod.MakeClient(algodServer.URL, "")

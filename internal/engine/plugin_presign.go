@@ -95,6 +95,14 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
+	// The draft carries the plugin's genesis: it must be the active algod's
+	// network before any of it is planned or signed. The check includes the
+	// algod consensus validation; the engine's RequestGroupPlanWithContext
+	// would only repeat both on these same transactions, so the plan request
+	// below goes to the signer connection directly.
+	if err := e.checkActiveNetwork(ctx, txns); err != nil {
+		return nil, err
+	}
 
 	// --- Phase 1: /plan — plugin slots foreign, managed slots sign-mode ---
 	planRequests := make([]signerapi.SignRequest, len(txns))
@@ -114,7 +122,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		}
 	}
 
-	planResp, err := e.RequestGroupPlanWithContext(ctx, planRequests)
+	planResp, err := e.Connection.RequestGroupPlanWithContext(ctx, planRequests)
 	if err != nil {
 		return nil, fmt.Errorf("group planning failed: %w", err)
 	}

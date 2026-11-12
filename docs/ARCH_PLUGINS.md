@@ -664,6 +664,23 @@ For complex protocols that require multiple transaction submissions with confirm
 5. Plugin returns Step 2 transactions + continuation (or final result)
 6. Process repeats until no continuation is returned
 
+The REPL, MCP and JavaScript `plugin()` follow continuations through one loop
+(`internal/apshellcli/external_plugins.go::processPluginResultStructured`),
+which reviews and submits each step before running the next. The transaction
+IDs a step reports are those of every transaction in the submitted group,
+including the budget dummies the signer appended. `plugin()` returns after the
+last step. Once the run has produced transaction IDs (from the steps it
+submitted, and from a failing step whose submission returned IDs with its
+error), a step's error, cancel or reported failure is an error from `plugin()`
+that lists them and says to look them up before running the plugin again; in
+simulate mode it names the simulated ones as not sent and leaves out a failed
+simulation's own IDs (see [USER_JSAPI.md](USER_JSAPI.md#plugins)).
+
+Known limit: when a step's submission fails after its group was sent, apshell
+does not report whether that group confirmed, was rejected, or got no answer.
+`plugin()`'s error lists the IDs it has, completed steps' and the failing
+step's together, and the caller looks them up.
+
 Continuation argument normalization follows the same manifest-driven rules as the initial command.
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`
 metadata for it and will pass continuation args through unchanged.
@@ -1115,7 +1132,12 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 1. Use `type: "raw"` with base64-encoded msgpack transactions
 2. Set `requiresApproval: true` for transactions requiring user confirmation
 3. Include metadata in `data` field for user information
-4. Ensure transactions use the genesis hash of `context.network`, obtained from algod
+4. Ensure transactions use the genesis hash of `context.network`, obtained from algod.
+   apshell compares every plugin transaction's genesis hash, and its genesis ID
+   when set, with the active algod's before anything is planned, signed or
+   submitted, in every group mode, and refuses a mismatch naming the
+   transaction's zero-based index (see
+   [ARCH_NETWORKS.md](ARCH_NETWORKS.md#transaction-planning)).
 
 ### Plugin Directory Layout
 

@@ -40,6 +40,13 @@ Two surviving plugin group modes plus the shared trust machinery:
   signed by the plugin against the canonical bytes, managed slots by apsigner
   (`/sign`), and the results are merged and submitted.
 
+Every entry point runs a plugin's steps through one loop,
+`internal/apshellcli/external_plugins.go::processPluginResultStructured`, which
+reviews each step (`reviewPluginTransactions`) before it submits it and follows
+continuations: the REPL and MCP through `execPlugin`, and JS `plugin()`
+through `script_runtime.go::PluginExecutorAdapter.ExecutePlugin`. JS
+`plugin()` is therefore an entry into the modeled path, not a third one.
+
 Out of scope: the plugin process protocol itself (JSON-RPC, sandboxing,
 manifests — `docs/ARCH_PLUGINS.md`), cosigned-account component assembly
 ([FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)), and the
@@ -194,7 +201,8 @@ refuses one; signed intents outside pregrouped-signed fail
 `DecodePluginDraft`, with which `CheckPluginGroup` reads the presign-plan and
 default-flow drafts, and a pregrouped-signed intent that is not signed is
 refused there too; `localSigners` is rejected at `apshellapp/submission.go`),
-so there is no third path.
+so there is no third path. The REPL, MCP and JS `plugin()` all reach
+submission through the same review-then-submit loop (see Scope).
 
 ### PS8: No Rekey To A Held Aplane Key That Is Not A Valid Rekey Target
 
@@ -276,6 +284,29 @@ what was reviewed.
   msgpack away and claims nothing about it; the Go tests in
   `plugin_pregrouped_test.go`, `plugin_presign_test.go` and
   `plugin_transactions_test.go` cover it.
+- **The network precondition is checked, not modeled.** The client refuses any
+  transaction whose genesis hash, or set genesis ID, is not the active algod's
+  (`internal/engine/active_network.go::checkActiveNetwork`). On the plugin paths
+  it runs late, after the modeled client gates: after `CheckPluginGroup`'s
+  decode and PS8's first rekey judgment, after the client review (PS3's
+  mandatory review, for pregrouped-signed), and after PS8's second judgment at
+  submission (`judgeRekeys` in the mode's submit function). Per path:
+  - default flow: in `internal/engine/transaction.go::checkReadyToSign`,
+    reached from `internal/apshellapp/submission.go::submitDefaultDraft`
+    through `SignAndSubmitGroup`, after the second rekey judgment and before
+    `/sign`;
+  - presign-plan: in `internal/engine/plugin_presign.go::SignAndSubmitWithPluginSigners`,
+    after the second rekey judgment (in `submitPresignPlan`) and its own
+    slot-ownership checks, before the plan requests are built and `/plan`;
+  - pregrouped-signed: in `internal/engine/plugin_pregrouped.go::SubmitPregroupedSigned`,
+    after the second rekey judgment (in `submitPregroupedSigned`), before the
+    group is broadcast or simulated.
+
+  A group refused for its network has therefore already been shown and, where
+  the mode prompts, approved by the user. The check changes none of the modeled
+  gates; the model carries no network and claims nothing about it. Go tests:
+  `internal/engine/active_network_test.go`,
+  `internal/apshellapp/submission_network_test.go`.
 - **Plugin sender claims are not authenticated**: in presign-plan a plugin
   may declare any sender address as its own; the slot then goes foreign at
   `/plan` and apsigner never signs it, so the only effect is a group that
@@ -321,6 +352,12 @@ what was reviewed.
   `internal/signerapp/signing/approval_test.go`, `always_review_test.go`;
   end-to-end `test/integration` Passthrough* tests.
 - `localSigners` rejection: `internal/apshellapp/submission_pregrouped_test.go`.
+- JS `plugin()` through the shared loop (continuations, a later step's error,
+  the mandatory pregrouped review, the IDs a failed run lists, a failed run's
+  REPL and MCP record unchanged):
+  `internal/apshellcli/plugin_continuation_test.go`.
+- Network precondition: `internal/engine/active_network_test.go`,
+  `internal/apshellapp/submission_network_test.go`.
 
 (Exact test names are pinned in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md)
 PS rows.)

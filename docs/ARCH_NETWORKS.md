@@ -173,6 +173,32 @@ remains network-independent: during `/plan` or `/sign` it validates the
 transaction genesis hash for policy context, then applies the shared v42/v43
 LogicSig and native-PQ rules.
 
+The same read gives the client the active algod's genesis hash and genesis ID,
+and the client refuses any transaction that is not for that network before it
+is sent to `/plan` or `/sign` (`internal/engine/active_network.go`,
+`checkActiveNetwork`). The signer's gate refuses only a genesis hash it does not
+recognize; a transaction for another network it knows would be signed under
+that network's policy and then sent to the active algod, whose operator would
+hold a transaction valid on the other network. The check compares each
+transaction's genesis hash, and its genesis ID when it sets one, and names the
+position by zero-based index. Transactions apshell builds take their genesis
+from the active algod and pass; it matters for those that carry their own: a
+plugin draft (default and `presign-plan` group modes), a plugin's
+`pregrouped-signed` group, which is refused before it is sent to algod, a
+transaction file given to `sign` or JS `sign()`, and the requests JS `plan()`
+sends, passthrough entries by their inner transaction. A `plan()` request whose
+bytes are not a canonical transaction is refused before `/plan`, as the signer
+would refuse it. The check runs in four places: `checkReadyToSign`, before
+every `/sign` route; `SignAndSubmitWithPluginSigners`, on a `presign-plan`
+draft before its plan requests are built, after which its `/plan` request goes to
+the signer connection directly; `RequestGroupPlanWithContext`, on the decoded
+requests before `/plan`, for JS `plan()`; and
+`SubmitPregroupedSigned`, before a plugin-signed group is sent to algod. An algod
+that reports no 32-byte genesis hash is refused. The check reuses the consensus
+read, so it adds no algod call; that read is kept per algod client for up to 30
+seconds, so an algod whose URL is pointed at another network within that time
+passes on the network it served when it was read.
+
 V43 adds the requirement that an account's minimum balance must equal the base
 minimum before closing. Algod 5.0.4 also enforces this at admission and simulation
 on v42. Client single-payment close-out preparation checks algod's aggregate

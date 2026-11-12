@@ -338,19 +338,15 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	}
 
 	// Parse optional key=value pairs and flags
+	seen := cmdspec.SeenOptions{}
 	for i := 2; i < len(args); i++ {
 		arg := args[i]
 		if arg == "nowait" {
 			params.Wait = false
 		} else if strings.HasPrefix(arg, "arg:") {
-			argName, argValue, err := cmdspec.ParseLsigArg(arg)
-			if err != nil {
+			if err := cmdspec.AddLsigArg(&params.LsigArgs, arg); err != nil {
 				return params, err
 			}
-			if params.LsigArgs == nil {
-				params.LsigArgs = make(map[string][]byte)
-			}
-			params.LsigArgs[argName] = argValue
 		} else if strings.Contains(arg, "=") {
 			parts := strings.SplitN(arg, "=", 2)
 			if len(parts) != 2 {
@@ -359,6 +355,10 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 			key := parts[0]
 			value := parts[1]
 
+			// Every key=value keyreg takes is single-valued.
+			if err := seen.Once(key); err != nil {
+				return params, err
+			}
 			switch key {
 			case "votekey":
 				params.VoteKey = value
@@ -427,41 +427,35 @@ func unexpectedArgument(command, arg string) error {
 }
 
 // parseFlatFee reads a `fee=<microalgos>` argument, once.
-func parseFlatFee(arg string, seen *bool) (uint64, error) {
-	if *seen {
-		return 0, fmt.Errorf("fee given more than once")
+func parseFlatFee(arg string, seen cmdspec.SeenOptions) (uint64, error) {
+	if err := seen.Once("fee"); err != nil {
+		return 0, err
 	}
 	feeStr := strings.TrimPrefix(arg, "fee=")
 	feeVal, err := parseUint64(feeStr)
 	if err != nil {
 		return 0, fmt.Errorf("invalid fee value: %s", feeStr)
 	}
-	*seen = true
 	return feeVal, nil
 }
 
 func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool, lsigArgs *map[string][]byte) error {
-	seenFee := false
+	seen := cmdspec.SeenOptions{}
 	for _, arg := range args {
 		switch {
 		case strings.EqualFold(arg, "nowait"):
 			*wait = false
 		case strings.HasPrefix(arg, "fee="):
-			feeVal, err := parseFlatFee(arg, &seenFee)
+			feeVal, err := parseFlatFee(arg, seen)
 			if err != nil {
 				return err
 			}
 			*fee = feeVal
 			*useFlatFee = true
 		case strings.HasPrefix(arg, "arg:") && lsigArgs != nil:
-			argName, argValue, err := cmdspec.ParseLsigArg(arg)
-			if err != nil {
+			if err := cmdspec.AddLsigArg(lsigArgs, arg); err != nil {
 				return err
 			}
-			if *lsigArgs == nil {
-				*lsigArgs = make(map[string][]byte)
-			}
-			(*lsigArgs)[argName] = argValue
 		default:
 			return fmt.Errorf("unexpected argument %q: only [fee=<microalgos>] [nowait] [arg:name=value] may follow", arg)
 		}
@@ -564,7 +558,7 @@ func parseAddressSpan(args []string, startIdx int) ([]string, int, error) {
 }
 
 func parseSendTrailingArgs(args []string, params *TransactionParams) error {
-	seenFee := false
+	seen := cmdspec.SeenOptions{}
 	for i := 0; i < len(args); i++ {
 		switch {
 		case strings.EqualFold(args[i], "nowait"):
@@ -572,23 +566,21 @@ func parseSendTrailingArgs(args []string, params *TransactionParams) error {
 		case strings.EqualFold(args[i], "atomic"):
 			params.Atomic = true
 		case strings.HasPrefix(args[i], "note="):
+			if err := seen.Once("note"); err != nil {
+				return err
+			}
 			params.Note = strings.TrimPrefix(args[i], "note=")
 		case strings.HasPrefix(args[i], "fee="):
-			feeVal, err := parseFlatFee(args[i], &seenFee)
+			feeVal, err := parseFlatFee(args[i], seen)
 			if err != nil {
 				return err
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
 		case strings.HasPrefix(args[i], "arg:"):
-			argName, argValue, err := cmdspec.ParseLsigArg(args[i])
-			if err != nil {
+			if err := cmdspec.AddLsigArg(&params.LsigArgs, args[i]); err != nil {
 				return err
 			}
-			if params.LsigArgs == nil {
-				params.LsigArgs = make(map[string][]byte)
-			}
-			params.LsigArgs[argName] = argValue
 		default:
 			// The spaced form `note <text>` is gone: it took the next word
 			// as the note, whatever that word was.
@@ -602,10 +594,13 @@ func parseSendTrailingArgs(args []string, params *TransactionParams) error {
 }
 
 func parseSweepTrailingArgs(args []string, params *SweepParams) error {
-	seenFee := false
+	seen := cmdspec.SeenOptions{}
 	for i := 0; i < len(args); i++ {
 		switch {
 		case strings.EqualFold(args[i], "leaving"):
+			if err := seen.Once("leaving"); err != nil {
+				return err
+			}
 			i++
 			if i >= len(args) {
 				return fmt.Errorf("missing amount after 'leaving'")
@@ -618,21 +613,16 @@ func parseSweepTrailingArgs(args []string, params *SweepParams) error {
 		case strings.EqualFold(args[i], "nowait"):
 			params.Wait = false
 		case strings.HasPrefix(args[i], "fee="):
-			feeVal, err := parseFlatFee(args[i], &seenFee)
+			feeVal, err := parseFlatFee(args[i], seen)
 			if err != nil {
 				return err
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
 		case strings.HasPrefix(args[i], "arg:"):
-			argName, argValue, err := cmdspec.ParseLsigArg(args[i])
-			if err != nil {
+			if err := cmdspec.AddLsigArg(&params.LsigArgs, args[i]); err != nil {
 				return err
 			}
-			if params.LsigArgs == nil {
-				params.LsigArgs = make(map[string][]byte)
-			}
-			params.LsigArgs[argName] = argValue
 		default:
 			return unexpectedArgument("sweep", args[i])
 		}

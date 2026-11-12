@@ -115,7 +115,9 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 
 // checkReadyToSign runs the preconditions every signing path shares:
 // argument validation, a connected signer and algod, a supported consensus
-// version, and fresh signer metadata for the senders.
+// version, transactions for the active algod's network, and fresh signer
+// metadata for the senders. Plugin drafts in the default group mode and
+// transaction files reach the signer through here.
 func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.SubmitOptions) error {
 	if err := e.validateSubmitLsigArgs(txns, opts.LsigArgsMap); err != nil {
 		return err
@@ -126,8 +128,8 @@ func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.Subm
 	if e.AlgodClient == nil {
 		return ErrNoAlgodClient
 	}
-	if err := e.validateAlgodConsensus(opts.Ctx); err != nil {
-		return fmt.Errorf("validate algod consensus before signing: %w", err)
+	if err := e.checkActiveNetwork(opts.Ctx, txns); err != nil {
+		return err
 	}
 	return e.refreshSubmitSigningState(opts.Ctx, txns)
 }

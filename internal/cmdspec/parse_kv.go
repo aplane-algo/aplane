@@ -10,6 +10,8 @@ import (
 
 // ParseKeyValueArgs separates positional args from key=value pairs with bracket awareness.
 // Bracketed values are collapsed to a comma-separated string as a slice-1 compatibility shim.
+// A key given twice is refused: a list is one bracketed value, and a second
+// value would silently replace the first.
 func ParseKeyValueArgs(args []string) ([]string, map[string]string, error) {
 	positional := make([]string, 0)
 	kv := make(map[string]string)
@@ -26,6 +28,9 @@ func ParseKeyValueArgs(args []string) ([]string, map[string]string, error) {
 		value := parts[1]
 		if key == "" {
 			return nil, nil, fmt.Errorf("invalid parameter %q (empty key)", arg)
+		}
+		if _, repeated := kv[key]; repeated {
+			return nil, nil, fmt.Errorf("%s given more than once", key)
 		}
 
 		if strings.HasPrefix(value, "[") {

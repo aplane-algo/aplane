@@ -7,6 +7,70 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The rotating approval prompt states the signer's charge
+
+- **`/sign/rotating/sign` prompts with the fee prepare added.** The
+  prompt showed the spend's final fee, the dummies and the contributions, but
+  not how much of the fee was the signer's authorization charge, so a client
+  that padded its own fee read the same as an ordinary charge. It now prints
+  `N microAlgos of fee added when the spend was prepared`, above "The fees
+  shown already include these". It is not worded as the planning prompt's
+  "Group fee adjustment", since this request changes nothing. Display only: what is signed, the
+  approval binding and the order of the checks are unchanged. A
+  `/sign/component` group, never raised, shows no adjustment.
+
+## apshell refuses repeated options and transactions for another network, and JS plugin() runs every step
+
+- **A single-valued option given twice is refused.** Only `fee=` refused a
+  repeat; every other option took its last value, so
+  `app call ... --pay 100000 ... pay=10000000` sent the larger payment and
+  `... from alice ... from treasury` signed from treasury, with no error. Each
+  is now refused with `<option> given more than once`. This covers `note=`,
+  `arg:<name>=` for the same name, app call's `from`, `--abi`/`abi=` and
+  `--pay`/`pay=` (each one option in either spelling), `oncomp=`, the approval
+  and clear programs, `app deploy`'s schema options and `extra-pages=`, sweep's
+  `leaving`, keyreg's `key=value` options, `generate` parameters, and the
+  value flags of `rotate recover`, `enroll` and `endpoints add`. List options
+  (`--arg`, `arg-raw=`, `account=`, `app=`, `asset=`, `box=`) and `arg:` with
+  different names still repeat.
+- **A transaction for another network is refused before it is signed.** The
+  signer refuses a genesis hash it does not recognize, but a plugin or a
+  transaction file could carry one it does: on a testnet shell, a plugin's
+  mainnet payment was signed under mainnet policy and sent to the testnet
+  algod, whose operator then held a valid mainnet transaction. apshell now
+  compares each transaction's genesis hash, and its genesis ID when set, with
+  the active algod's before `/plan` or `/sign`, and refuses a mismatch as
+  "transaction at index N is for another network", naming both networks when
+  they are known. This covers plugin drafts in the default and `presign-plan`
+  modes, a plugin's `pregrouped-signed` group (refused before it is sent to
+  algod), transaction files given to `sign` and JS `sign()`, and the requests
+  JS `plan()` sends, passthrough entries by their inner transaction; a
+  `plan()` request that is not a canonical transaction is refused before
+  `/plan`. The genesis comes from the suggested-parameters read the consensus
+  check already makes, so no algod call is added; that read is reused for up
+  to 30 seconds per algod client. An algod that reports no 32-byte genesis
+  hash is refused.
+- **JS `plugin()` follows plugin continuations.** It submitted the first
+  step's transactions, ignored the plugin's `continuation` and returned
+  `success: true`, so a workflow whose first step funds an escrow stopped
+  there while the script read success. `plugin()` now runs through the same
+  loop as the `apshell` command and MCP, and returns after the last step with
+  that step's result. `data.txids` lists every transaction submitted
+  (simulated, in simulate mode), and `data.steps` each step's, when there is
+  more than one. Once the run has produced transaction IDs, a step's error,
+  cancel or reported failure throws, and the error lists every ID the run
+  produced, a failing step's included when its submission returned IDs with
+  its error, and says to look them up before running the plugin again.
+  The list does not say which confirmed; what became of a failing step's
+  transactions is not reported. Before any IDs, a cancel or the plugin's
+  failure is still `{ success: false }`. `data.txids` is apshell's record and
+  replaces a `txids` field the plugin set, `data.steps` likewise in a run of
+  more than one step, and `data` has `localSigners` removed in every outcome.
+  When a run sent transactions, plugin data that is not an object is not
+  returned. Two error texts changed with the shared loop: "not connected to
+  signer" no longer adds "use connect() first", and a first-step submission
+  error no longer starts with "failed to sign/submit:".
+
 ## The valid rekey target check judges every position of a group
 
 The signer refused a rekey to a held aplane key that is not a valid rekey

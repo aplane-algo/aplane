@@ -467,9 +467,15 @@ but can't vote.
 
 `sign()` reads an external transaction file, verifies the live algod is
 running supported consensus v42 or v43, signs, submits, and optionally waits.
+Each transaction must be for the active algod's network: a genesis hash, or a
+set genesis ID, that differs from the algod's is refused before signing, as
+`transaction at index N is for another network`.
 
 `plan()` sends transaction sign requests to the signer group planner without
-signing or triggering approval. The planned fees include the signer's
+signing or triggering approval. As with `sign()`, each request's transaction,
+and a passthrough entry's inner transaction, must be for the active algod's
+network, and bytes that are not a canonical transaction are refused before
+anything is sent. The planned fees include the signer's
 authorization charge, added on top of the fees you set (see
 [FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership)). To sign a single
 transaction, submit its original draft rather than the transaction `plan()`
@@ -685,6 +691,34 @@ Returns:
   presentation   // optional presentation payload
 }
 ```
+
+`plugin()` runs the plugin as the `apshell` command does. Each step's
+transactions are reviewed and submitted, and a step that returns a
+`continuation` is followed, so the call returns only after the last step:
+`success`, `message`, `data` and `presentation` are the last step's. When any
+step submitted transactions, `data.txids` lists every transaction ID it
+submitted, in order (in simulate mode, the IDs of the simulated transactions;
+apshell's record, so a plugin's own `txids` field is replaced), and a run of
+more than one such step adds `data.steps`, one `{ message, txids }` per step.
+The IDs include any budget dummy transactions the signer added. In such a run
+a plugin's own `steps` field is replaced as `txids` is, and when a run
+submitted transactions, plugin data that is not an object is not returned.
+`data` has
+`localSigners` removed in every outcome; data the plugin returned as an object
+stays an object, empty if `localSigners` was all it held.
+
+Before the run has produced any transaction IDs, a cancelled review or the
+plugin's own failure returns `{ success: false, message }`. Once it has, from
+the steps it submitted or from a failing step whose submission returned IDs
+with its error, a step that errors, is cancelled or reports failure throws,
+because the workflow may be half done. The error lists those IDs in one list:
+"this run produced transaction(s) …: look them up before running it again".
+The list does not say which of them confirmed: the step output printed for
+each completed step does, and what became of a failing step's transactions
+(confirmed, rejected, or no answer) is not reported, so look each one up
+before running the plugin again. In simulate mode nothing
+is sent: the error says "this run simulated transaction(s) …, which were not
+sent", and a failed simulation's own IDs are not listed.
 
 Example:
 

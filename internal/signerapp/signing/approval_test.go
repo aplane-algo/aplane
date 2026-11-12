@@ -444,6 +444,56 @@ func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) 
 	}
 }
 
+// A frozen prompt states the fee added when its group was prepared, worded as
+// done earlier: under the frozen header the planning prompt's "Group fee
+// adjustment" would read as a change this request made.
+func TestBuildApprovalDescriptionFrozenStatesTheFeeAddedAtPrepare(t *testing.T) {
+	tests := []struct {
+		name     string
+		requests []signerapi.SignRequest
+		fees     DummyFeeInfo
+		want     string // empty: no line
+	}{
+		{"raised at prepare", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
+			DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0}, NativePQFeeContribution: 2_000},
+			"  • 2000 microAlgos of fee added when the spend was prepared\n"},
+		{"never raised", []signerapi.SignRequest{{AuthAddress: "AUTH"}},
+			DummyFeeInfo{NativePQFeeContribution: 2_000}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := signerapi.GroupSignRequest{Requests: tt.requests}
+			plan := &PlanResult{
+				FeeInfo:            tt.fees,
+				PassthroughIndices: map[int]bool{},
+				ForeignIndices:     map[int]bool{1: len(tt.requests) > 1},
+				Frozen:             true,
+			}
+			txns := make([]types.Transaction, len(tt.requests))
+			for i := range txns {
+				txns[i] = types.Transaction{Type: types.PaymentTx}
+			}
+			describe := func(types.Transaction) string { return "txn" }
+			frozen, _, _ := BuildApprovalDescription(req, plan, txns, describe)
+			if strings.Contains(frozen, "Group fee adjustment") {
+				t.Fatalf("a frozen prompt words the fee as this request's adjustment:\n%s", frozen)
+			}
+			if tt.want == "" {
+				if strings.Contains(frozen, "of fee added") {
+					t.Fatalf("a group never raised states an added fee:\n%s", frozen)
+				}
+				return
+			}
+			if !strings.Contains(frozen, tt.want) {
+				t.Fatalf("frozen description missing %q:\n%s", tt.want, frozen)
+			}
+			if !strings.Contains(frozen, "The fees shown already include these; this request adds no dummies or fees") {
+				t.Fatalf("frozen description no longer says the fees already include it:\n%s", frozen)
+			}
+		})
+	}
+}
+
 // Each position this request signs names the key that signs it, so a group
 // whose header counts several keys says which signs where. A position the
 // request doesn't sign names none.

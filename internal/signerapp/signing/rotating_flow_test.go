@@ -560,8 +560,10 @@ func TestRotatingSignShowsTheSpendsAppCallInfo(t *testing.T) {
 
 // /sign/rotating/sign only verifies the prepared group byte for byte, so its
 // prompt reads like /sign/component's: the group checked as sent, with the
-// dummies and contributions prepare's fee already pays, and no claim that
-// this request added dummies, raised the fee or recomputed the group ID.
+// dummies, contributions and authorization charge prepare's fee already pays,
+// and no claim that this request added dummies, raised the fee or recomputed
+// the group ID. What prepare added to the fee is stated as done earlier, so
+// the operator can tell the client's fee from the signer's.
 func TestRotatingSignPromptShowsThePreparedGroupAsChecked(t *testing.T) {
 	f, _ := newSigningFixture(t)
 	off := false
@@ -589,6 +591,7 @@ func TestRotatingSignPromptShowsThePreparedGroupAsChecked(t *testing.T) {
 	wants := []string{
 		"[FROZEN GROUP: checked as sent, not changed by this request]",
 		fmt.Sprintf("  • %d dummy transaction(s) for LogicSig arguments/opcode budget", prep.Mutations.DummiesAdded),
+		fmt.Sprintf("  • %d microAlgos of fee added when the spend was prepared\n", prep.Mutations.TotalFeesDelta),
 		"The fees shown already include these; this request adds no dummies or fees",
 	}
 	if strings.Contains(prep.Mutations.Reason, "lsig_program_fee") {

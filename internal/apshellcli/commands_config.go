@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 )
@@ -110,26 +111,38 @@ func (r *REPLState) cmdEnroll(args []string, ctx interface{}) (command.Result, e
 const enrollUsage = "enroll [--endpoint <alias>] [--label <text>]"
 
 func (r *REPLState) runEnroll(args []string, _ interface{}) error {
-	alias, label := "", ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--endpoint", "-e":
-			if i+1 >= len(args) {
-				return fmt.Errorf("usage: %s", enrollUsage)
-			}
-			alias = args[i+1]
-			i++
-		case "--label", "-l":
-			if i+1 >= len(args) {
-				return fmt.Errorf("usage: %s", enrollUsage)
-			}
-			label = args[i+1]
-			i++
-		default:
-			return fmt.Errorf("usage: %s", enrollUsage)
-		}
+	alias, label, err := parseEnrollArgs(args)
+	if err != nil {
+		return err
 	}
 	return requestEnrollment(r, alias, label)
+}
+
+// parseEnrollArgs reads enroll's options, each of which takes one value and
+// may be given once.
+func parseEnrollArgs(args []string) (alias, label string, err error) {
+	seen := cmdspec.SeenOptions{}
+	for i := 0; i < len(args); i++ {
+		var name string
+		var value *string
+		switch args[i] {
+		case "--endpoint", "-e":
+			name, value = "--endpoint", &alias
+		case "--label", "-l":
+			name, value = "--label", &label
+		default:
+			return "", "", fmt.Errorf("usage: %s", enrollUsage)
+		}
+		if i+1 >= len(args) {
+			return "", "", fmt.Errorf("usage: %s", enrollUsage)
+		}
+		if err := seen.Once(name); err != nil {
+			return "", "", err
+		}
+		i++
+		*value = args[i]
+	}
+	return alias, label, nil
 }
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) {

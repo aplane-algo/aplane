@@ -244,3 +244,32 @@ func TestPluginMarshalFiltersStructuredPayload(t *testing.T) {
 		t.Fatalf("plugin JSON shape mismatch\n got: %#v\nwant: %#v", got, want)
 	}
 }
+
+// StripShellOnlyPluginData removes localSigners and keeps a map a map, even
+// one left empty; FilterPluginData, for the MCP projection, still drops a map
+// left empty.
+func TestStripShellOnlyPluginDataKeepsAnEmptyMap(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     interface{}
+		stripped interface{}
+		filtered interface{}
+	}{
+		{"nil", nil, nil, nil},
+		{"empty map", map[string]interface{}{}, map[string]interface{}{}, nil},
+		{"only localSigners", map[string]interface{}{"localSigners": []any{"X"}}, map[string]interface{}{}, nil},
+		{"fields and localSigners", map[string]interface{}{"amount": 1, "localSigners": []any{"X"}},
+			map[string]interface{}{"amount": 1}, map[string]interface{}{"amount": 1}},
+		{"not a map", "plain", "plain", "plain"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := StripShellOnlyPluginData(tt.data); !reflect.DeepEqual(got, tt.stripped) {
+				t.Errorf("StripShellOnlyPluginData() = %#v, want %#v", got, tt.stripped)
+			}
+			if got := FilterPluginData(tt.data); !reflect.DeepEqual(got, tt.filtered) {
+				t.Errorf("FilterPluginData() = %#v, want %#v", got, tt.filtered)
+			}
+		})
+	}
+}

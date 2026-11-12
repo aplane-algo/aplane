@@ -89,9 +89,14 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 	}
 	params.From = args[1]
 
+	// Every option app deploy takes, but arg:<name>, is single-valued.
+	seen := cmdspec.SeenOptions{}
 	setProgram := func(kind, value string, compiled bool) error {
 		if value == "" {
 			return fmt.Errorf("missing value for %s", kind)
+		}
+		if err := seen.Once(kind); err != nil {
+			return err
 		}
 		switch kind {
 		case "approval":
@@ -138,40 +143,58 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 				return nil, err
 			}
 		case strings.HasPrefix(arg, "global-uint="):
+			if err := seen.Once("global-uint"); err != nil {
+				return nil, err
+			}
 			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "global-uint="), 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid global-uint value: %s", strings.TrimPrefix(arg, "global-uint="))
 			}
 			params.GlobalUint = v
 		case strings.HasPrefix(arg, "global-bytes="):
+			if err := seen.Once("global-bytes"); err != nil {
+				return nil, err
+			}
 			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "global-bytes="), 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid global-bytes value: %s", strings.TrimPrefix(arg, "global-bytes="))
 			}
 			params.GlobalBytes = v
 		case strings.HasPrefix(arg, "local-uint="):
+			if err := seen.Once("local-uint"); err != nil {
+				return nil, err
+			}
 			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "local-uint="), 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid local-uint value: %s", strings.TrimPrefix(arg, "local-uint="))
 			}
 			params.LocalUint = v
 		case strings.HasPrefix(arg, "local-bytes="):
+			if err := seen.Once("local-bytes"); err != nil {
+				return nil, err
+			}
 			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "local-bytes="), 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid local-bytes value: %s", strings.TrimPrefix(arg, "local-bytes="))
 			}
 			params.LocalBytes = v
 		case strings.HasPrefix(arg, "extra-pages="):
+			if err := seen.Once("extra-pages"); err != nil {
+				return nil, err
+			}
 			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "extra-pages="), 10, 32)
 			if err != nil {
 				return nil, fmt.Errorf("invalid extra-pages value: %s", strings.TrimPrefix(arg, "extra-pages="))
 			}
 			params.ExtraPages = uint32(v)
 		case strings.HasPrefix(arg, "note="):
+			if err := seen.Once("note"); err != nil {
+				return nil, err
+			}
 			params.Note = strings.TrimPrefix(arg, "note=")
 		case strings.HasPrefix(arg, "fee="):
-			if params.UseFlatFee {
-				return nil, fmt.Errorf("fee given more than once")
+			if err := seen.Once("fee"); err != nil {
+				return nil, err
 			}
 			feeVal, err := strconv.ParseUint(strings.TrimPrefix(arg, "fee="), 10, 64)
 			if err != nil {
@@ -180,14 +203,9 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 			params.Fee = feeVal
 			params.UseFlatFee = true
 		case strings.HasPrefix(arg, "arg:"):
-			argName, argValue, err := cmdspec.ParseLsigArg(arg)
-			if err != nil {
+			if err := cmdspec.AddLsigArg(&params.LsigArgs, arg); err != nil {
 				return nil, err
 			}
-			if params.LsigArgs == nil {
-				params.LsigArgs = make(map[string][]byte)
-			}
-			params.LsigArgs[argName] = argValue
 		default:
 			return nil, fmt.Errorf("unknown app deploy argument: %s", arg)
 		}

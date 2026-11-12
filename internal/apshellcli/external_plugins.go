@@ -44,9 +44,16 @@ func execPlugin(r *REPLState, cmdName string, args []string) (*PluginResult, boo
 	return pr, true
 }
 
+// errPluginTransactionCancelled is the user declining a plugin step's
+// transactions at the client review.
+var errPluginTransactionCancelled = errors.New("transaction cancelled by user")
+
 // processPluginResultStructured processes a plugin result chain, collecting structured output.
 // Top-level Success, Message, and Data are always updated from the latest result in the chain,
-// so the final MCP response reflects the last step's state.
+// so the final MCP response reflects the last step's state. Each step's
+// transactions are reviewed and submitted before its continuation runs, and
+// the chain ends only when a step returns no continuation. It is the one
+// continuation loop: the REPL, MCP and JS plugin() all run plugins through it.
 func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte, plugin *discovery.Plugin) error {
 	for {
 		// Update top-level fields from the current result
@@ -61,13 +68,17 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 				return err
 			}
 			if cancelled {
-				return fmt.Errorf("transaction cancelled by user")
+				return errPluginTransactionCancelled
 			}
 
 			submit, err := submitPluginTransactions(r, plugin.Manifest.Name, group, lsigArgs)
 			if err != nil {
 				if submit != nil {
 					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
+					// Kept for JS plugin()'s error only. The submission returned
+					// them with its error, so what became of them is not
+					// reported.
+					pr.failedStepTxIDs = submit.TxIDs
 				}
 				return err
 			}

@@ -880,6 +880,7 @@ Parsing contracts:
 - byte-oriented shell inputs support `hex:`, `b64:`, `text:`/`str:`, `int:`, `addr:`, and `0x...`; bare text is accepted only where command behavior allows it, and never when it contains a colon,
 - ASA-facing commands may parse shell input into semantic values (`AssetRef`, `AmountText`) before command execution, but this does not change user syntax,
 - `send` and `sweep` parse their required `from`/`to`/`leaving` structure first and only treat later tokens as trailing options, so positional address/account inputs may legitimately equal keywords such as `atomic`, `nowait`, or `leaving` without being reinterpreted as flags.
+- an option that takes one value is given once: a second value is refused with `<option> given more than once` (`cmdspec.SeenOptions`, and `cmdspec.AddLsigArg` for `arg:<name>=`), never read as the last value. An option with two spellings, such as `--pay`/`pay=`, is one option. List options (`--arg`, `arg-raw=`, `account=`, `app=`, `asset=`, `box=`) and `arg:` with different names repeat; flags without a value (`nowait`, `atomic`) may repeat to no effect. `generate` refuses a repeated parameter key in `cmdspec.ParseKeyValueArgs`.
 
 ### Address Resolution
 

@@ -75,12 +75,16 @@ type commonAppCallOptions struct {
 	Fee              uint64
 	UseFlatFee       bool
 	LsigArgs         map[string][]byte
+	// seen holds the single-valued options given so far, the app call
+	// forms' own (from, abi) included, so a repeat is refused.
+	seen cmdspec.SeenOptions
 }
 
 func newCommonAppCallOptions() commonAppCallOptions {
 	return commonAppCallOptions{
 		Wait:         true,
 		OnCompletion: types.NoOpOC,
+		seen:         cmdspec.SeenOptions{},
 	}
 }
 
@@ -90,6 +94,9 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 	setProgram := func(kind, value string, compiled bool) error {
 		if value == "" {
 			return fmt.Errorf("missing value for %s", kind)
+		}
+		if err := opts.seen.Once(kind); err != nil {
+			return err
 		}
 		switch kind {
 		case "approval":
@@ -113,6 +120,10 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		if i >= len(args) {
 			return i, true, fmt.Errorf("missing value for --pay")
 		}
+		// --pay and pay= are one option.
+		if err := opts.seen.Once("pay"); err != nil {
+			return i, true, err
+		}
 		payAmount, err := strconv.ParseUint(args[i], 10, 64)
 		if err != nil {
 			return i, true, fmt.Errorf("invalid --pay value: %s", args[i])
@@ -120,6 +131,9 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		opts.PayAmount = payAmount
 		return i, true, nil
 	case strings.HasPrefix(arg, "pay="):
+		if err := opts.seen.Once("pay"); err != nil {
+			return i, true, err
+		}
 		payAmount, err := strconv.ParseUint(strings.TrimPrefix(arg, "pay="), 10, 64)
 		if err != nil {
 			return i, true, fmt.Errorf("invalid pay value: %s", strings.TrimPrefix(arg, "pay="))
@@ -157,6 +171,9 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		opts.Boxes = append(opts.Boxes, boxRef)
 		return i, true, nil
 	case strings.HasPrefix(arg, "oncomp="):
+		if err := opts.seen.Once("oncomp"); err != nil {
+			return i, true, err
+		}
 		onComp, err := appinput.ParseOnCompletion(strings.TrimPrefix(arg, "oncomp="))
 		if err != nil {
 			return i, true, err
@@ -178,11 +195,14 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		src := appinput.DetectProgramSource(strings.TrimPrefix(arg, "clear="))
 		return i, true, setProgram("clear", src.Path, src.Compiled)
 	case strings.HasPrefix(arg, "note="):
+		if err := opts.seen.Once("note"); err != nil {
+			return i, true, err
+		}
 		opts.Note = strings.TrimPrefix(arg, "note=")
 		return i, true, nil
 	case strings.HasPrefix(arg, "fee="):
-		if opts.UseFlatFee {
-			return i, true, fmt.Errorf("fee given more than once")
+		if err := opts.seen.Once("fee"); err != nil {
+			return i, true, err
 		}
 		feeVal, err := strconv.ParseUint(strings.TrimPrefix(arg, "fee="), 10, 64)
 		if err != nil {
@@ -192,15 +212,7 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		opts.UseFlatFee = true
 		return i, true, nil
 	case strings.HasPrefix(arg, "arg:"):
-		argName, value, err := cmdspec.ParseLsigArg(arg)
-		if err != nil {
-			return i, true, err
-		}
-		if opts.LsigArgs == nil {
-			opts.LsigArgs = make(map[string][]byte)
-		}
-		opts.LsigArgs[argName] = value
-		return i, true, nil
+		return i, true, cmdspec.AddLsigArg(&opts.LsigArgs, arg)
 	default:
 		return i, false, nil
 	}
@@ -328,13 +340,23 @@ func parseMethodAppCallArgs(args []string) (*methodAppCallArgs, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("missing value for --abi")
 			}
+			// --abi and abi= are one option.
+			if err := common.seen.Once("abi"); err != nil {
+				return nil, err
+			}
 			params.ABIPath = args[i]
 		case strings.HasPrefix(arg, "abi="):
+			if err := common.seen.Once("abi"); err != nil {
+				return nil, err
+			}
 			params.ABIPath = strings.TrimPrefix(arg, "abi=")
 		case arg == "from":
 			i++
 			if i >= len(args) {
 				return nil, fmt.Errorf("usage: app call %d %s --abi <path> from <account>", params.AppID, params.Method)
+			}
+			if err := common.seen.Once("from"); err != nil {
+				return nil, err
 			}
 			params.From = args[i]
 		case arg == "--arg":

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
@@ -22,7 +24,22 @@ type consensusValidationCache struct {
 	mu          sync.Mutex
 	client      *algod.Client
 	version     string
+	network     algodNetwork
 	validatedAt time.Time
+}
+
+// algodNetwork is the network an algod serves, as its suggested parameters
+// name it, read in the same call that reports its consensus version.
+type algodNetwork struct {
+	genesisHash []byte
+	genesisID   string
+}
+
+func algodNetworkOf(params types.SuggestedParams) algodNetwork {
+	return algodNetwork{
+		genesisHash: append([]byte(nil), params.GenesisHash...),
+		genesisID:   params.GenesisID,
+	}
 }
 
 func resolveSupportedConsensus(version string) (lsigresource.ConsensusProfile, error) {
@@ -44,26 +61,35 @@ func ValidateAlgodConsensus(ctx context.Context, client *algod.Client) error {
 	return err
 }
 
-func querySupportedAlgodConsensus(ctx context.Context, client *algod.Client) (string, error) {
+func querySupportedAlgodConsensus(ctx context.Context, client *algod.Client) (types.SuggestedParams, error) {
 	if client == nil {
-		return "", ErrNoAlgodClient
+		return types.SuggestedParams{}, ErrNoAlgodClient
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	params, err := client.SuggestedParams().Do(ctx)
 	if err != nil {
-		return "", fmt.Errorf("query algod consensus: %w", err)
+		return types.SuggestedParams{}, fmt.Errorf("query algod consensus: %w", err)
 	}
 	if _, err := resolveSupportedConsensus(params.ConsensusVersion); err != nil {
-		return "", err
+		return types.SuggestedParams{}, err
 	}
-	return params.ConsensusVersion, nil
+	return params, nil
 }
 
 func (e *Core) validateAlgodConsensus(ctx context.Context) error {
+	_, err := e.activeAlgodNetwork(ctx)
+	return err
+}
+
+// activeAlgodNetwork checks that the active algod runs a reviewed consensus
+// contract and returns the network it serves. A read from the last
+// consensusValidationReuseWindow is reused, the one that fetched suggested
+// parameters for a transaction included, so it costs at most one algod call.
+func (e *Core) activeAlgodNetwork(ctx context.Context) (algodNetwork, error) {
 	if e == nil || e.AlgodClient == nil {
-		return ErrNoAlgodClient
+		return algodNetwork{}, ErrNoAlgodClient
 	}
 	client := e.AlgodClient
 	now := time.Now()
@@ -73,26 +99,29 @@ func (e *Core) validateAlgodConsensus(ctx context.Context) error {
 	if e.consensusValidation.client == client &&
 		e.consensusValidation.version != "" &&
 		now.Sub(e.consensusValidation.validatedAt) < consensusValidationReuseWindow {
-		return nil
+		return e.consensusValidation.network, nil
 	}
 
-	version, err := querySupportedAlgodConsensus(ctx, client)
+	params, err := querySupportedAlgodConsensus(ctx, client)
 	if err != nil {
-		return err
+		return algodNetwork{}, err
 	}
 	e.consensusValidation.client = client
-	e.consensusValidation.version = version
+	e.consensusValidation.version = params.ConsensusVersion
+	e.consensusValidation.network = algodNetworkOf(params)
 	e.consensusValidation.validatedAt = time.Now()
-	return nil
+	return e.consensusValidation.network, nil
 }
 
-func (e *Core) rememberAlgodConsensus(client *algod.Client, version string) error {
+func (e *Core) rememberAlgodConsensus(client *algod.Client, params types.SuggestedParams) error {
+	version := params.ConsensusVersion
 	if _, err := resolveSupportedConsensus(version); err != nil {
 		if e != nil {
 			e.consensusValidation.mu.Lock()
 			if e.consensusValidation.client == client {
 				e.consensusValidation.client = nil
 				e.consensusValidation.version = ""
+				e.consensusValidation.network = algodNetwork{}
 				e.consensusValidation.validatedAt = time.Time{}
 			}
 			e.consensusValidation.mu.Unlock()
@@ -105,6 +134,7 @@ func (e *Core) rememberAlgodConsensus(client *algod.Client, version string) erro
 	e.consensusValidation.mu.Lock()
 	e.consensusValidation.client = client
 	e.consensusValidation.version = version
+	e.consensusValidation.network = algodNetworkOf(params)
 	e.consensusValidation.validatedAt = time.Now()
 	e.consensusValidation.mu.Unlock()
 	return nil
@@ -117,6 +147,7 @@ func (e *Core) clearAlgodConsensusValidation() {
 	e.consensusValidation.mu.Lock()
 	e.consensusValidation.client = nil
 	e.consensusValidation.version = ""
+	e.consensusValidation.network = algodNetwork{}
 	e.consensusValidation.validatedAt = time.Time{}
 	e.consensusValidation.mu.Unlock()
 }
