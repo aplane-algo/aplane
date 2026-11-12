@@ -2261,13 +2261,7 @@ SDK-facing typed errors in Go include:
 - `ErrKeyNotFound`
 - `ErrSignerLocked`
 - `ErrKeyDeletion`
-- `ErrLogicSigRejected`
-- `ErrInsufficientFunds`
-- `ErrInvalidTransaction`
-- `ErrTransactionRejected`
 - `ErrConfigNotFound`
-
-`TransactionError` wraps rejection details with optional TxID.
 
 ### SDK Contracts
 
@@ -2350,8 +2344,10 @@ Cross-SDK compatibility-bearing behavior:
   `sendPrepared` / `sendPayment` in TypeScript, `send_prepared` /
   `send_payment` in Python) that picks the signing flow from the `signing_flow`
   of the key record the signer returns, signs, checks the signed group against
-  what was prepared, submits exactly those bytes and waits for confirmation. It
-  adds no endpoint: it composes `/keys`, `/plan`, `/sign`, the component and
+  what was prepared, submits exactly those bytes and waits for confirmation.
+  Submission and the wait are algosdk's own calls, unchanged: the SDKs do not
+  interpret the node's answer, and a failure there is reported with algosdk's
+  error as its cause, together with the signed group. It adds no endpoint: it composes `/keys`, `/plan`, `/sign`, the component and
   assembly requests and the rotating requests described here. A key whose
   `signing_flow` the SDK does not know is refused, never signed through
   another flow.
