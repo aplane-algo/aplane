@@ -1100,8 +1100,8 @@ write_go_sdk_validator() {
 package main
 
 import (
+	"bytes"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -1177,15 +1177,7 @@ func main() {
 	}
 	fmt.Printf("Go SDK plain host validation group size: %d\n", len(result.SignedGroup))
 
-	var raw []byte
-	for _, signed := range result.SignedGroup {
-		decoded, err := hex.DecodeString(signed)
-		if err != nil {
-			fail("decode signed transaction", err)
-		}
-		raw = append(raw, decoded...)
-	}
-	txid, err := algodClient.SendRawTransaction(raw).Do(ctx)
+	txid, err := algodClient.SendRawTransaction(bytes.Join(result.SignedGroup, nil)).Do(ctx)
 	if err != nil {
 		fail("submit", err)
 	}
@@ -1386,8 +1378,8 @@ def require_env(name: str) -> str:
     return value
 
 
-def signed_group_b64(signed_hexes: list[str]) -> str:
-    return base64.b64encode(b"".join(bytes.fromhex(item) for item in signed_hexes)).decode()
+def signed_group_b64(signed_group: list[bytes]) -> str:
+    return base64.b64encode(b"".join(signed_group)).decode()
 
 
 def validate_discovery(algod_client, primary_data: str, discovery_data: str, account: str) -> None:
@@ -1522,10 +1514,8 @@ def require_env(name: str) -> str:
     return value
 
 
-def signed_group_b64(signed_hexes: list[str]) -> str:
-    return base64.b64encode(
-        b"".join(bytes.fromhex(item) for item in signed_hexes)
-    ).decode()
+def signed_group_b64(signed_group: list[bytes]) -> str:
+    return base64.b64encode(b"".join(signed_group)).decode()
 
 
 def main() -> int:
@@ -1632,7 +1622,6 @@ import {
   SEND_OUTCOME_CONFIRMED,
   SIGNING_FLOW_COSIGNED1,
   SignerClient,
-  concatenateSignedTxns,
   signPreparedCosignedGroup,
 } from "aplanesdk";
 
@@ -1707,9 +1696,7 @@ async function main() {
     }
     console.log(`TypeScript SDK plain host validation group size: ${result.signedGroup.length}`);
 
-    const { txid } = await algodClient
-      .sendRawTransaction(Buffer.from(concatenateSignedTxns(result.signedGroup), "base64"))
-      .do();
+    const { txid } = await algodClient.sendRawTransaction(result.signedGroup).do();
     await algosdk.waitForConfirmation(algodClient, txid, 10);
     console.log(`TypeScript SDK plain host validation submitted: ${txid}`);
   } finally {
