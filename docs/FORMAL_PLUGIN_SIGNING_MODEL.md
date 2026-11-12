@@ -40,6 +40,13 @@ Two surviving plugin group modes plus the shared trust machinery:
   signed by the plugin against the canonical bytes, managed slots by apsigner
   (`/sign`), and the results are merged and submitted.
 
+Every entry point runs a plugin's steps through one loop,
+`internal/apshellcli/external_plugins.go::processPluginResultStructured`, which
+reviews each step (`reviewPluginTransactions`) before it submits it and follows
+continuations: the REPL and MCP through `execPlugin`, and JS `plugin()`
+through `script_runtime.go::PluginExecutorAdapter.ExecutePlugin`. JS
+`plugin()` is therefore an entry into the modeled path, not a third one.
+
 Out of scope: the plugin process protocol itself (JSON-RPC, sandboxing,
 manifests — `docs/ARCH_PLUGINS.md`), cosigned-account component assembly
 ([FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)), and the
@@ -177,7 +184,9 @@ operator default. Mode dispatch is total
 mode it does not know; signed intents outside pregrouped-signed fail
 `DecodePluginDraft`, which `ProcessTransactionIntents` and the client reviews
 of the presign-plan and default-flow drafts all read with; `localSigners` is
-rejected at `apshellapp/submission.go`), so there is no third path.
+rejected at `apshellapp/submission.go`), so there is no third path. The REPL,
+MCP and JS `plugin()` all reach submission through the same review-then-submit
+loop (see Scope).
 
 ## Assumptions and honest gaps
 
@@ -201,6 +210,15 @@ rejected at `apshellapp/submission.go`), so there is no third path.
   msgpack away and claims nothing about it; the Go tests in
   `plugin_pregrouped_test.go`, `plugin_presign_test.go` and
   `plugin_transactions_test.go` cover it.
+- **The network precondition is checked, not modeled.** Before `/plan`
+  (presign-plan, through `internal/engine/connection.go::RequestGroupPlanWithContext`)
+  and before a pregrouped-signed group is sent to algod
+  (`internal/engine/plugin_pregrouped.go::SubmitPregroupedSigned`), the client
+  refuses any transaction whose genesis hash, or set genesis ID, is not the
+  active algod's (`internal/engine/active_network.go::checkActiveNetwork`). It
+  adds a refusal ahead of the modeled gates and changes none of them; the model
+  carries no network and claims nothing about it. Go tests:
+  `internal/engine/active_network_test.go`.
 - **Plugin sender claims are not authenticated**: in presign-plan a plugin
   may declare any sender address as its own; the slot then goes foreign at
   `/plan` and apsigner never signs it, so the only effect is a group that
@@ -228,6 +246,11 @@ rejected at `apshellapp/submission.go`), so there is no third path.
   `internal/signerapp/signing/approval_test.go`, `always_review_test.go`;
   end-to-end `test/integration` Passthrough* tests.
 - `localSigners` rejection: `internal/apshellapp/submission_pregrouped_test.go`.
+- JS `plugin()` through the shared loop (continuations, a later step's error,
+  the mandatory pregrouped review, IDs of a step whose confirmation failed):
+  `internal/apshellcli/plugin_continuation_test.go`.
+- Network precondition: `internal/engine/active_network_test.go`,
+  `internal/apshellapp/submission_network_test.go`.
 
 (Exact test names are pinned in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md)
 PS rows.)

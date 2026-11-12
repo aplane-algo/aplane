@@ -39,7 +39,12 @@ group-shape and digest outcomes, and gate decisions (interactive review
 outcome including the non-interactive context; apsigner authorization outcome);
 `Submitted` is a transcription of the code's accept/reject logic
 (`apshellcli/external_plugins.go`, `engine/plugin_pregrouped.go`,
-`engine/plugin_presign.go`, `engine/plugin_signing.go`). TLC verifies that no
+`engine/plugin_presign.go`, `engine/plugin_signing.go`), which every entry point
+reaches through `external_plugins.go::processPluginResultStructured`: the REPL
+and MCP, and JS `plugin()` (`apshellcli/script_runtime.go`). The client's network
+precondition (`engine/active_network.go::checkActiveNetwork`, before `/plan` and
+before a pregrouped group is sent) is a further refusal the model does not
+transcribe: checked by Go tests, not modeled. TLC verifies that no
 enumerated combination reaches submission without satisfying every named
 invariant. A dropped check in `Submitted` — the model's stand-in for a
 regression in the code path it transcribes — surfaces as a counterexample.
