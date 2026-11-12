@@ -449,7 +449,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 	item := &rotatingPlanItem{Stage: stage, Target: targetStage, TargetAddress: spend.RekeyTo}
 	known := make(map[string]bool, len(s.Planner.Snapshot().KeyFiles)+1)
-	for addr := range knownAddressesFromSnapshot(s.Planner.Snapshot()) {
+	for addr := range rekeyHeldAddressesFromSnapshot(s.Planner.Snapshot()) {
 		known[addr] = true
 	}
 	// The rotation target is this signer's own next stage, never a foreign

@@ -598,6 +598,47 @@ func TestPlannerUsesSingleRuntimeSnapshot(t *testing.T) {
 	}
 }
 
+// The plan's rekey-held set leaves out a generic LogicSig, which no key
+// controls, and keeps a record with no metadata. The recovery ladder's set
+// still holds every record.
+func TestPlanKnownAddressesLeaveOutGenericLogicSigs(t *testing.T) {
+	key := types.Address{1}
+	generic := types.Address{7}
+	bare := types.Address{8}
+	deps := stubPlannerDeps{
+		keyTypes: map[string]string{key.String(): "ed25519", generic.String(): "aplane.htlc.v1", bare.String(): "ed25519"},
+		keyMetadata: map[string]PlannerKeyMetadata{
+			key.String():     {Category: "ed25519"},
+			generic.String(): {Category: lsigprovider.CategoryGenericLsig},
+		},
+	}
+	planner := NewPlanner(deps, PlannerOptions{GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver()})
+	txn := testnetPaymentTransaction(t, key.String(), key.String(), 0)
+	txn.RekeyTo = generic
+	plan, planErr := planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+		AuthAddress: key.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+	}}})
+	if planErr != nil {
+		t.Fatalf("PlanGroup() error = %v", planErr)
+	}
+	if !plan.KnownAddresses[key.String()] || !plan.KnownAddresses[bare.String()] || plan.KnownAddresses[generic.String()] {
+		t.Fatalf("KnownAddresses = %v, want the ed25519 records and not the generic LogicSig", plan.KnownAddresses)
+	}
+	if !knownAddressesFromSnapshot(deps.Snapshot())[generic.String()] {
+		t.Fatal("the recovery ladder's set lost the generic LogicSig record")
+	}
+
+	// A store of generic LogicSigs alone gives an empty set, not nil, so the
+	// service never falls back to the runtime's set.
+	onlyGeneric := PlannerRuntimeSnapshot{
+		KeyFiles:    map[string]string{generic.String(): "keys/g.key"},
+		KeyMetadata: map[string]PlannerKeyMetadata{generic.String(): {Category: lsigprovider.CategoryGenericLsig}},
+	}
+	if held := rekeyHeldAddressesFromSnapshot(onlyGeneric); held == nil || len(held) != 0 {
+		t.Fatalf("rekeyHeldAddressesFromSnapshot(only generic) = %v, want an empty non-nil set", held)
+	}
+}
+
 func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 	var genesisHash types.Digest
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{

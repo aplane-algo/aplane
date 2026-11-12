@@ -7,9 +7,16 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -106,6 +113,113 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+// A generic LogicSig has no key: its program alone authorizes, so a rekey to
+// one this signer holds is foreign. Under the shipped default it is rejected
+// before approval, User Auto-Approve included. With allow_rekeys it goes on to
+// review, and the warning says control is lost.
+func TestRekeyToHeldGenericLogicSigIsForeign(t *testing.T) {
+	key := types.Address{1}
+	generic := types.Address{7}
+	deps := stubPlannerDeps{
+		keyTypes: map[string]string{key.String(): "ed25519", generic.String(): "aplane.htlc.v1"},
+		keyMetadata: map[string]PlannerKeyMetadata{
+			key.String():     {Category: "ed25519"},
+			generic.String(): {Category: lsigprovider.CategoryGenericLsig},
+		},
+	}
+	planner := NewPlanner(deps, PlannerOptions{GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver()})
+	txn := testnetPaymentTransaction(t, key.String(), key.String(), 0)
+	txn.Fee = 1_000
+	txn.RekeyTo = generic
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: key.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}}}
+	plan, planErr := planner.PlanGroup(req)
+	if planErr != nil {
+		t.Fatalf("PlanGroup() error = %v", planErr)
+	}
+
+	shipped := func(rekeys policy.SignerRekeys) *policy.Config {
+		doc := policytest.EmbeddedDefault(t, noderole.RoleSigner)
+		doc = strings.Replace(doc, `"rekeys": "reject_foreign_rekey"`, `"rekeys": "`+string(rekeys)+`"`, 1)
+		decoded, err := policy.DecodePolicyV1([]byte(doc), policy.DefaultKey, noderole.RoleSigner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := decoded.Compile(policy.DefaultConfig())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Rekeys != rekeys || !cfg.AlwaysReviewWarnings {
+			t.Fatalf("compiled rekeys = %q, always_review_warnings = %v; want %q and true", cfg.Rekeys, cfg.AlwaysReviewWarnings, rekeys)
+		}
+		return cfg
+	}
+
+	for _, tc := range []struct {
+		name   string
+		cfg    *policy.Config
+		reject bool
+	}{
+		{name: "shipped_default", cfg: shipped(policy.RekeysRejectForeign), reject: true},
+		{name: "allow_rekeys", cfg: shipped(policy.RekeysAllow)},
+	} {
+		for _, auto := range []bool{false, true} {
+			mode := "manual"
+			if auto {
+				mode = "auto"
+			}
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				var warnings []signerapproval.Violation
+				prompted, approvalCalls := false, 0
+				approval := &ApprovalService{
+					UserAutoApprove:               &auto,
+					GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+					// The runtime's set, which leaves out generic LogicSigs the
+					// same way (TestKnownAddressesLeaveOutGenericLogicSigs).
+					KnownAddresses: func() map[string]bool { return rekeyHeldAddressesFromSnapshot(deps.Snapshot()) },
+					HasClient:      func() bool { return true },
+					RequestSigningApprovalContext: func(_ context.Context, _, _, _, _ string, _, _ uint64, v []signerapproval.Violation, _ time.Duration) (bool, error) {
+						prompted = true
+						warnings = v
+						return true, nil
+					},
+				}
+				svc := &Service{Approval: approval, PolicyFor: fixedPolicy(tc.cfg), Planner: planner}
+				rule, err := svc.runApprovalGates(context.Background(), gateInput{
+					AllTxns: plan.AllTxns, EvalCount: len(req.Requests),
+					PassthroughIndices: plan.PassthroughIndices, ForeignIndices: plan.ForeignIndices,
+					AuthKeys:       []string{key.String()},
+					KnownAddresses: svc.knownAddresses(plan),
+					RequestOperatorApproval: func(ctx context.Context, rule string) *ServiceError {
+						approvalCalls++
+						return approval.requestSingleTxnApprovalWithContext(ctx, "", req.Requests[0], plan.AllTxns, plan.AllTxns[:1], "", 0, 0, rule, nil)
+					},
+				}, nil)
+				if tc.reject {
+					if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, policy.RejectForeignRekeyRuleID) || approvalCalls != 0 {
+						t.Fatalf("error = %v, approval calls = %d; want %s before approval", err, approvalCalls, policy.RejectForeignRekeyRuleID)
+					}
+					return
+				}
+				if err != nil || rule != policy.AlwaysReviewWarningsRuleID || approvalCalls != 1 {
+					t.Fatalf("rule = %q, error = %v, approval calls = %d; want review by %s", rule, err, approvalCalls, policy.AlwaysReviewWarningsRuleID)
+				}
+				if auto {
+					if prompted {
+						t.Fatal("User Auto-Approve prompted the operator")
+					}
+					return
+				}
+				if !prompted || len(warnings) != 1 {
+					t.Fatalf("prompted = %v, warnings = %+v; want one rekey warning", prompted, warnings)
+				}
+				if msg := warnings[0].Message; !strings.Contains(msg, "YOU WILL LOSE CONTROL OF THIS ACCOUNT") || strings.Contains(msg, "You possess the keys") {
+					t.Fatalf("rekey warning = %q, want the lose-control text", msg)
+				}
+			})
 		}
 	}
 }

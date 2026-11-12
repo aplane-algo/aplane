@@ -236,7 +236,8 @@ Always Deny rules are hard safety guards. Current deny sources include:
   `transaction_type:<type>`), the first policy document rule evaluated,
 - `rekeys` (`reject_all_rekeys` or `reject_foreign_rekey`; a protocol rekey is
   never rejected, and `reject_foreign_rekey` counts a target on the signing
-  account's own rekey-to list as declared),
+  account's own rekey-to list as declared and a held generic LogicSig address,
+  which has no key, as foreign; `signing/planner.go::rekeyHeldAddressesFromSnapshot`),
 - `reject_close_remainder`,
 - `reject_asset_close`,
 - `reject_clawback`,

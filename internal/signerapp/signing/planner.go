@@ -10,6 +10,7 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -71,7 +72,8 @@ type PlanResult struct {
 	// the slot is passthrough, foreign, or the auth address is unknown.
 	AuthKeyTypes []string
 	// KnownAddresses is the signer-local address set materialized from the same
-	// key snapshot used for planning.
+	// key snapshot used for planning: the rekey targets this signer holds a key
+	// for (rekeyHeldAddressesFromSnapshot).
 	KnownAddresses map[string]bool
 	// ProtocolRekeyTargets are rekey targets the signer set itself and proved
 	// before approval (a rotating account's next stage). A rekey to one of
@@ -211,7 +213,7 @@ func (p *Planner) planGroup(req signerapi.GroupSignRequest, kind RequestKind) (*
 		}
 		authKeyTypes[i] = snapshot.KeyTypes[txReq.AuthAddress]
 	}
-	knownAddresses := knownAddressesFromSnapshot(snapshot)
+	knownAddresses := rekeyHeldAddressesFromSnapshot(snapshot)
 
 	return &PlanResult{
 		AllTxns:               final.AllTxns,
@@ -361,6 +363,10 @@ func (p *Planner) logRequests(kind RequestKind, req signerapi.GroupSignRequest, 
 	}
 }
 
+// knownAddressesFromSnapshot is every address the snapshot holds a record
+// for. The rotating recovery ladder reads it: an authorizer this signer holds
+// any record for is not a stage to search for. The rekey rule reads
+// rekeyHeldAddressesFromSnapshot instead.
 func knownAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool {
 	if len(snapshot.KeyFiles) == 0 {
 		return nil
@@ -370,6 +376,28 @@ func knownAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool
 		known[address] = true
 	}
 	return known
+}
+
+// rekeyHeldAddressesFromSnapshot is the address set reject_foreign_rekey and
+// the rekey warning treat as this signer's own: every address the snapshot
+// holds a record for except a generic LogicSig. A generic LogicSig has no key;
+// its program alone authorizes, so whoever satisfies the program spends from
+// an account rekeyed to it, and a rekey to one is foreign. A record with no
+// metadata stays held. The set is non-nil whenever the snapshot holds a
+// record, so a store of generic LogicSigs alone does not fall back to the
+// runtime's set.
+func rekeyHeldAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool {
+	if len(snapshot.KeyFiles) == 0 {
+		return nil
+	}
+	held := make(map[string]bool, len(snapshot.KeyFiles))
+	for address := range snapshot.KeyFiles {
+		if snapshot.KeyMetadata[address].Category == lsigprovider.CategoryGenericLsig {
+			continue
+		}
+		held[address] = true
+	}
+	return held
 }
 
 func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.MutationReport {

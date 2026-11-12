@@ -955,12 +955,18 @@ func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added, clea
 
 // --- Key access ---
 
-// KnownAddresses returns a set of addresses this identity holds keys for.
+// KnownAddresses returns the addresses this identity holds a key for, the set
+// the rekey warning reads: every key record except a generic LogicSig, which
+// has no key and is controlled by its program alone. A record with no
+// metadata stays in the set.
 func (ir *Runtime) KnownAddresses() map[string]bool {
 	ir.keysLock.RLock()
 	defer ir.keysLock.RUnlock()
 	addrs := make(map[string]bool, len(ir.keys))
 	for addr := range ir.keys {
+		if ir.keyMetadata[addr].Category == lsigprovider.CategoryGenericLsig {
+			continue
+		}
 		addrs[addr] = true
 	}
 	return addrs

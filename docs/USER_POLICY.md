@@ -201,7 +201,7 @@ cosigner presets, as before.
 
 Every signer preset rejects every other transaction type (application calls,
 asset configuration and freezes, key registration), close-outs, clawbacks
-and routing misses; rejects rekeys to an address this node does not hold;
+and routing misses; rejects rekeys to an address this node does not hold a key for;
 sends warnings to review; and leaves self no-op auto-approval off. What the
 presets do not do:
 
@@ -783,9 +783,10 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   asset's raw units), and optionally `--asset`, `--network` (default
   `testnet`), `--fee` (default 1000), `--close-to`, `--clawback-from` and
   `--rekey-to`. A rekey is foreign unless you add `--rekey-held` to say the
-  node holds the target's key; `reject_foreign_rekey` treats a target on the
-  signing account's rekey-to list the same way, so try a listed target with
-  `--rekey-held`. `--json` prints the result as JSON. It exits 0
+  node holds a key for the target; a generic LogicSig address the node holds
+  has no key, so leave the flag off for it. `reject_foreign_rekey` treats a
+  target on the signing account's rekey-to list as held, so try a listed
+  target with `--rekey-held`. `--json` prints the result as JSON. It exits 0
   whatever the verdict and 2 for bad input.
 
   The answer is the document's, not the node's, and it lists what it
@@ -915,7 +916,7 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `role` | both | yes | `"signer"` or `"cosigner"`; must match the node. |
 | `key` | both | yes | `"default"` for the node default, or the key the file governs: a signing address on a signer node, a Witness Key ID on a cosigner node. Must match the file name. |
 | `description` | both | no | Notes for reviewers. |
-| `rekeys` | signer | yes | How the signer treats a txn with a non-zero `RekeyTo`: `reject_all_rekeys` rejects it; `reject_foreign_rekey` rejects it unless this node holds the target or the target is on the signing account's own [rekey-to list](USER_KEYTYPES.md#rekey-to-lists) (the shipped default); `allow_rekeys` rejects nothing. This setting only rejects: a rekey it lets through still meets the rekey warning, review rules and operator approval, and User Auto-Approve can approve it. A rejection outranks all of those. The signer's own rotation rekeys are never rejected. |
+| `rekeys` | signer | yes | How the signer treats a txn with a non-zero `RekeyTo`: `reject_all_rekeys` rejects it; `reject_foreign_rekey` rejects it unless this node holds a key for the target or the target is on the signing account's own [rekey-to list](USER_KEYTYPES.md#rekey-to-lists) (the shipped default); `allow_rekeys` rejects nothing. A generic LogicSig address this node holds counts as foreign: no key controls it, and whoever satisfies its program spends from an account rekeyed to it. To allow such a rekey, set `rekeys: allow_rekeys` in the key's policy or put the address on the account's rekey-to list. This setting only rejects: a rekey it lets through still meets the rekey warning, review rules and operator approval, and User Auto-Approve can approve it. A rejection outranks all of those. The signer's own rotation rekeys are never rejected. |
 | `reject_rekey` | cosigner | yes | Reject every txn with non-zero `RekeyTo` this cosigner is asked to sign. With `false`, a rekey still fails unless `rekey_policy` allows the edge. A bounded account's listed rekey never asks the cosigner, so this doesn't stop it. |
 | `reject_close_remainder` | both | yes | Reject payment txns with non-zero `CloseRemainderTo`. |
 | `reject_asset_close` | both | yes | Reject ASA transfer txns with non-zero `AssetCloseTo`. |

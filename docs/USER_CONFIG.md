@@ -675,7 +675,7 @@ unknown field is rejected. Amounts are decimal strings in base units.
 | `role` | both | string | Required; `signer` or `cosigner`, matching the node |
 | `key` | both | string | Required; `default`, or the key the file governs (a signing address or a Witness Key ID), matching the file name |
 | `description` | both | string | Notes for reviewers |
-| `rekeys` | signer | string | `reject_all_rekeys`, `reject_foreign_rekey` (default), or `allow_rekeys`: reject every rekey, a rekey whose target this node does not hold and the signing account does not list, or none. What passes goes on to review and User Auto-Approve |
+| `rekeys` | signer | string | `reject_all_rekeys`, `reject_foreign_rekey` (default), or `allow_rekeys`: reject every rekey, a rekey whose target this node does not hold a key for and the signing account does not list, or none. A generic LogicSig address this node holds counts as foreign; `allow_rekeys` on the key, or the address on the account's rekey-to list, allows it. What passes goes on to review and User Auto-Approve |
 | `reject_rekey` | cosigner | bool | Reject every txn with non-zero `RekeyTo` this cosigner is asked to sign; with `false`, a rekey still fails unless `rekey_policy.allowed` authorizes the sender-to-target edge. A bounded account's listed rekey never asks the cosigner |
 | `reject_close_remainder` | both | bool | Reject payment txns with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | both | bool | Reject ASA transfer txns with non-zero `AssetCloseTo` |
