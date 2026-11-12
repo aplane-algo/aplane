@@ -284,15 +284,29 @@ what was reviewed.
   msgpack away and claims nothing about it; the Go tests in
   `plugin_pregrouped_test.go`, `plugin_presign_test.go` and
   `plugin_transactions_test.go` cover it.
-- **The network precondition is checked, not modeled.** Before `/plan`
-  (presign-plan, in `internal/engine/plugin_presign.go::SignAndSubmitWithPluginSigners`
-  before the plan requests are built) and before a pregrouped-signed group is sent to algod
-  (`internal/engine/plugin_pregrouped.go::SubmitPregroupedSigned`), the client
-  refuses any transaction whose genesis hash, or set genesis ID, is not the
-  active algod's (`internal/engine/active_network.go::checkActiveNetwork`). It
-  adds a refusal ahead of the modeled gates and changes none of them; the model
-  carries no network and claims nothing about it. Go tests:
-  `internal/engine/active_network_test.go`.
+- **The network precondition is checked, not modeled.** The client refuses any
+  transaction whose genesis hash, or set genesis ID, is not the active algod's
+  (`internal/engine/active_network.go::checkActiveNetwork`). On the plugin paths
+  it runs late, after the modeled client gates: after `CheckPluginGroup`'s
+  decode and PS8's first rekey judgment, after the client review (PS3's
+  mandatory review, for pregrouped-signed), and after PS8's second judgment at
+  submission (`judgeRekeys` in the mode's submit function). Per path:
+  - default flow: in `internal/engine/transaction.go::checkReadyToSign`,
+    reached from `internal/apshellapp/submission.go::submitDefaultDraft`
+    through `SignAndSubmitGroup`, after the second rekey judgment and before
+    `/sign`;
+  - presign-plan: in `internal/engine/plugin_presign.go::SignAndSubmitWithPluginSigners`,
+    after the second rekey judgment (in `submitPresignPlan`) and its own
+    slot-ownership checks, before the plan requests are built and `/plan`;
+  - pregrouped-signed: in `internal/engine/plugin_pregrouped.go::SubmitPregroupedSigned`,
+    after the second rekey judgment (in `submitPregroupedSigned`), before the
+    group is broadcast or simulated.
+
+  A group refused for its network has therefore already been shown and, where
+  the mode prompts, approved by the user. The check changes none of the modeled
+  gates; the model carries no network and claims nothing about it. Go tests:
+  `internal/engine/active_network_test.go`,
+  `internal/apshellapp/submission_network_test.go`.
 - **Plugin sender claims are not authenticated**: in presign-plan a plugin
   may declare any sender address as its own; the slot then goes foreign at
   `/plan` and apsigner never signs it, so the only effect is a group that

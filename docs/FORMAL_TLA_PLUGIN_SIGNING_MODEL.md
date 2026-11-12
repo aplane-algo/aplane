@@ -45,9 +45,13 @@ outcome including the non-interactive context; apsigner authorization outcome);
 `engine/plugin_signing.go`), which every entry point reaches through
 `external_plugins.go::processPluginResultStructured`: the REPL and MCP, and JS
 `plugin()` (`apshellcli/script_runtime.go`). The client's network precondition
-(`engine/active_network.go::checkActiveNetwork`, before `/plan` and before a
-pregrouped group is sent) is a further refusal the model does not transcribe:
-checked by Go tests, not modeled. TLC verifies that no
+(`engine/active_network.go::checkActiveNetwork`) is a further refusal the model
+does not transcribe, and it runs after the rekey judgments and the review: in
+`checkReadyToSign` before `/sign` (default flow), in
+`SignAndSubmitWithPluginSigners` before `/plan` (presign-plan), and in
+`SubmitPregroupedSigned` before the group is broadcast (pregrouped-signed),
+each after the submit function's second rekey judgment. It is checked by Go
+tests, not modeled. TLC verifies that no
 enumerated combination reaches submission without satisfying every named
 invariant. A dropped check in `Submitted` — the model's stand-in for a
 regression in the code path it transcribes — surfaces as a counterexample.

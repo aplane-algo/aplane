@@ -656,11 +656,13 @@ func TestReviewAndSubmissionOfARekeyEachFetchTheKeyList(t *testing.T) {
 	}
 }
 
-// The REPL and MCP run a plugin result through processPluginResultStructured,
-// and JavaScript through PluginExecutorAdapter.ExecutePlugin; both review with
-// reviewPluginTransactions and submit with App.SubmitPluginTransactions, so a
-// refused group stops in the review on every surface, non-interactive ones
-// included, before it is shown or submitted.
+// The REPL, MCP and JavaScript run a plugin result through the one loop,
+// processPluginResultStructured: execPlugin calls it for the REPL and MCP, and
+// PluginExecutorAdapter.ExecutePlugin for JavaScript's plugin(). It reviews
+// each step with reviewPluginTransactions and submits it with
+// App.SubmitPluginTransactions, so a refused group stops in the review on
+// every surface, non-interactive ones included, before it is shown or
+// submitted.
 func TestPluginResultPathRefusesARekeyToAHeldInvalidTarget(t *testing.T) {
 	f := newRekeyReviewFixture(t)
 	txn := approvalTestPayment(1, 2, 1)
