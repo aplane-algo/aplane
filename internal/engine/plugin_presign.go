@@ -96,7 +96,10 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		return nil, ErrNoAlgodClient
 	}
 	// The draft carries the plugin's genesis: it must be the active algod's
-	// network before any of it is planned or signed.
+	// network before any of it is planned or signed. The check includes the
+	// algod consensus validation; the engine's RequestGroupPlanWithContext
+	// would only repeat both on these same transactions, so the plan request
+	// below goes to the signer connection directly.
 	if err := e.checkActiveNetwork(ctx, txns); err != nil {
 		return nil, err
 	}
@@ -119,11 +122,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		}
 	}
 
-	// RequestGroupPlanWithContext decodes these requests and checks their
-	// network again, for JS plan(), whose requests arrive as bytes. Here that
-	// repeats the check above on the same transactions; it costs a decode and
-	// no algod call, since the network read is cached.
-	planResp, err := e.RequestGroupPlanWithContext(ctx, planRequests)
+	planResp, err := e.Connection.RequestGroupPlanWithContext(ctx, planRequests)
 	if err != nil {
 		return nil, fmt.Errorf("group planning failed: %w", err)
 	}

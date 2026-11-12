@@ -98,8 +98,9 @@ func (e *Core) AdminDeleteKeyWithContext(ctx context.Context, address string) (*
 }
 
 // RequestGroupPlanWithContext sends requests to /plan once every transaction
-// they carry is for the active algod's network. JS plan() and the plugin
-// presign-plan flow reach /plan through here.
+// they carry is for the active algod's network. JS plan(), whose requests
+// arrive as bytes, reaches /plan through here; the presign-plan flow checks
+// its draft itself and calls the signer connection directly.
 func (e *Core) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	txns, err := planRequestTransactions(requests)
 	if err != nil {

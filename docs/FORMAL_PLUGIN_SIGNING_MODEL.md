@@ -213,8 +213,7 @@ loop (see Scope).
   `plugin_transactions_test.go` cover it.
 - **The network precondition is checked, not modeled.** Before `/plan`
   (presign-plan, in `internal/engine/plugin_presign.go::SignAndSubmitWithPluginSigners`
-  before the plan requests are built, and again on the decoded requests in
-  `internal/engine/connection.go::RequestGroupPlanWithContext`) and before a pregrouped-signed group is sent to algod
+  before the plan requests are built) and before a pregrouped-signed group is sent to algod
   (`internal/engine/plugin_pregrouped.go::SubmitPregroupedSigned`), the client
   refuses any transaction whose genesis hash, or set genesis ID, is not the
   active algod's (`internal/engine/active_network.go::checkActiveNetwork`). It
