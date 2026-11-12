@@ -711,8 +711,9 @@ rotating account's address is a one-time stage key. The refusal has three limits
   a rotating account held elsewhere passes.
 - It recognises only the rotating account's own address. The addresses of its later
   stages are one-time keys too, and a list that names one passes. The signing gate
-  (`rejectRekeyToRotating`) has the same limit: it refuses a rekey to a held rotating
-  account's address, not to one of its stage addresses.
+  (`rejectRekeyToInvalidTarget`, and `rejectRekeyToRotating` behind it) has the same
+  limit: it refuses a rekey to a held rotating account's address, not to one of its
+  stage addresses.
 - It is an admission check at generation. The composer and durable validation don't
   make it, so an account already stored with such a list still loads.
 - It refuses what it can't check: a list it can't parse, or a signer whose key list

@@ -43,7 +43,7 @@ func TestRotatingReleaseRoundTripsThroughTheLog(t *testing.T) {
 		}
 	}
 	// A signature entry naming a transaction is not a release.
-	a.LogSignApprovedAttributed(Attribution{}, SignApproval{TxnAuth: "ACCT1", TxnSender: "ACCT1", TxnDetails: "unrelated", TxID: "TX9"})
+	a.LogSignApprovedAttributed(Attribution{}, TxnRecord{TxnAuth: "ACCT1", TxnSender: "ACCT1", TxnDetails: "unrelated", TxID: "TX9"})
 
 	got, err := ReadRotatingReleases(path)
 	if err != nil {

@@ -267,7 +267,9 @@ Policy evaluation observes the finalized planned data:
 Transaction-level hard policy applies only to signer-controlled sign-mode slots.
 Passthrough and foreign slots are not signed by this signer, but they remain
 visible to group consistency checks, approval context, warning analysis, and
-audit.
+audit. One signer invariant, not policy, judges them: a rekey at any position
+to a held aplane key that is not a valid rekey target refuses the request
+(`rekey_target_not_valid`).
 
 Policy verdict precedence is:
 

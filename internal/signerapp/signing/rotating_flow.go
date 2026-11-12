@@ -468,6 +468,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		ProtocolRekeyTargets: protocolRekeys,
 		Rotating:             item,
 		Frozen:               true,
+		presented:            group,
 	}
 	signReq := signerapi.GroupSignRequest{
 		RequestID: req.RequestID,
@@ -639,7 +640,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// the spend's signature and the dummies' signed.
 	var recorded signedGroup
 	if s.AuditLog != nil {
-		recorded = decodedSignedGroup(group, len(plan.DummyTxns))
+		recorded = auditedGroup(plan)
 		s.logSuccessfulSignatures(signReq, plan, recorded, policyRuleID)
 	}
 	// Audit writes block, so this has to come after the last of them. A refusal

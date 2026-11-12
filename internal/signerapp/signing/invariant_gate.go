@@ -8,6 +8,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -18,51 +19,71 @@ const nonparticipationRefusal = "a keyreg with nonparticipation is not supported
 
 // rekeyTargetNotValid refuses a rekey to target, an aplane key of keyType this
 // signer holds that records it is not a valid rekey target. Its code is
-// rekey_target_not_valid, which the message repeats for the audit log.
+// rekey_target_not_valid, which the message repeats for the audit log. For a
+// rotating key type the message also says why such an account is no target:
+// its address is a one-time stage key.
 func rekeyTargetNotValid(target, keyType string) *ServiceError {
 	if keyType == "" {
 		keyType = "unknown"
 	}
-	return &ServiceError{Kind: ErrorRekeyTargetNotValid, Message: signerapi.ErrCodeRekeyTargetNotValid + ": cannot rekey to " + target +
-		": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target (valid_rekey_target: false)"}
+	message := signerapi.ErrCodeRekeyTargetNotValid + ": cannot rekey to " + target +
+		": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target (valid_rekey_target: false)"
+	if rotatingkey.IsRotatingKeyType(keyType) {
+		message += "; " + rotatingkey.RekeyTargetReason
+	}
+	return &ServiceError{Kind: ErrorRekeyTargetNotValid, Message: message}
 }
 
-// rejectSignerInvariants runs every signer invariant over the positions this
-// node signs. Both node roles call it before any policy verdict, so no policy
-// can allow what an invariant refuses, and an invariant added here holds on
-// both roles. invalidRekeyTargets is the request's held addresses that are not
-// valid rekey targets, from the key snapshot the request was planned with. On
-// a cosigner, which holds no rotating accounts and no account aplane keys, the
-// rotating and rekey target checks find nothing to refuse.
+// rejectSignerInvariants runs every signer invariant, in order: no rekey to a
+// held aplane key that is not a valid rekey target, no rekey to a rotating
+// account, no nonparticipating keyreg. Both node roles call it before any
+// policy verdict, so no policy can allow what an invariant refuses, and an
+// invariant added here holds on both roles. txns is the whole group as it
+// will go on chain, the signer's own dummies included, and signed lists the
+// positions this node signs. The valid-target invariant judges every position
+// of txns; the rotating and nonparticipation invariants judge the signed
+// positions. Every rotating aplane key records that it is not a valid rekey
+// target, so a rekey to a held rotating account meets the valid-target
+// invariant first, at any position, and is refused with one code,
+// rekey_target_not_valid; the rotating invariant stays as a second line.
+// invalidRekeyTargets is the request's held addresses that are not valid
+// rekey targets, from the key snapshot the request was planned with. On a
+// cosigner, which holds no rotating accounts and no account aplane keys, the
+// rekey target and rotating checks find nothing to refuse.
 func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int, invalidRekeyTargets map[string]txnreview.InvalidRekeyTarget) *ServiceError {
-	if err := s.rejectRekeyToRotating(txns, signed); err != nil {
+	if err := rejectRekeyToInvalidTarget(txns, invalidRekeyTargets); err != nil {
 		return err
 	}
-	if err := rejectRekeyToInvalidTarget(txns, signed, invalidRekeyTargets); err != nil {
+	if err := s.rejectRekeyToRotating(txns, signed); err != nil {
 		return err
 	}
 	return rejectNonparticipation(txns, signed)
 }
 
-// rejectRekeyToInvalidTarget refuses a signed position whose rekey target is
-// an address this signer holds an aplane key for, when that key records that
-// it is not a valid rekey target (valid_rekey_target false, the value its key
-// type declared when the key was created). invalid is those addresses, built
+// rejectRekeyToInvalidTarget refuses a group in which any transaction, at any
+// position, rekeys an account to an address this signer holds an aplane key
+// for, when that key records that it is not a valid rekey target
+// (valid_rekey_target false, the value its key type declared when the key was
+// created). It names the first such position, in its message and as the
+// error's RefusedPosition, where the audit log records the refusal. The
+// position may be one this signer signs, a passthrough, a foreign or
+// contextual position: the signer puts no signature into a group that makes
+// one of its own aplane keys that is not a valid rekey target an account's
+// authority. For a rotating target that would mean every later signature for
+// the account reuses a one-time stage key. invalid is those addresses, built
 // from the key snapshot the request was planned with
 // (invalidRekeyTargetsFromSnapshot), so the refusal and the rekeys rule judge
 // one key set. The target may be the transaction's own sender: returning an
 // account to its own address is no exception, since a rotating account's
-// address, for one, is its one-time stage 0 key. It is a signer invariant, not
-// a policy setting: no rekeys value and no rekey-to list lifts it. A foreign
-// target, one this signer holds no aplane key for, is the rekeys setting's
-// question, not this one's. A rotating target held for another account meets
-// rejectRekeyToRotating first.
-func rejectRekeyToInvalidTarget(txns []types.Transaction, signed []int, invalid map[string]txnreview.InvalidRekeyTarget) *ServiceError {
-	for _, i := range signed {
-		if i < 0 || i >= len(txns) {
-			return positionOutsideGroup(i, len(txns))
-		}
-		txn := txns[i]
+// address, for one, is its one-time stage 0 key. It is a signer invariant,
+// not a policy setting: no rekeys value and no rekey-to list lifts it. A
+// foreign target, one this signer holds no aplane key for, is the rekeys
+// setting's question, not this one's.
+func rejectRekeyToInvalidTarget(txns []types.Transaction, invalid map[string]txnreview.InvalidRekeyTarget) *ServiceError {
+	if len(invalid) == 0 {
+		return nil
+	}
+	for i, txn := range txns {
 		if txn.RekeyTo.IsZero() {
 			continue
 		}

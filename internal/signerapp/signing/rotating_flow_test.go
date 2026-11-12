@@ -67,6 +67,8 @@ type withheldSignature struct {
 func (a *recordingReleaseAudit) LogSignWithheld(record SignedRecord, reason string) {
 	a.withheld = append(a.withheld, withheldSignature{record: record, reason: reason})
 }
+
+func (a *recordingReleaseAudit) LogSignRejectedRecord(SignedRecord, string) {}
 func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
 	if a.onRelease != nil {
 		a.onRelease()
