@@ -863,11 +863,12 @@ is not stranded: the program lets it be rekeyed away again, or otherwise
 permits what an ordinary account needs. A program that never checks `Sender`
 authorizes for every account rekeyed to it, so read the TEAL with another
 account as `Sender`. Install refuses a template that leaves the field out, with
-an error naming it; a template already in a store loads without it and reads as
-`false`. It is not part of the compatibility fingerprint, and reinstalling a
-template that declares it differently is refused as a conflict: publish a new
-version instead. A compiled key type declares the same attribute in its
-`internal/keytypecatalog` entry. See
+an error naming it. Each aplane key records the declaration when it is created
+(`valid_rekey_target` in the key record), and the signer reads the key's value.
+The field is not part of the compatibility fingerprint: reinstalling the same
+definition with another declaration changes only keys created afterwards. A
+compiled key type declares the same attribute in its `internal/keytypecatalog`
+entry. See
 [Valid rekey target](ARCH_KEYTYPES.md#valid-rekey-target).
 
 Strict variable constants by type. These constant blocks are emitted by the
@@ -893,7 +894,7 @@ derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated     # strict | generated; legacy is not allowed
-# ...publisher, family, version, display_name, max_opcode_cost as above
+# ...publisher, family, version, display_name, max_opcode_cost, valid_rekey_target as above
 
 bounded:
   contract: bounded2         # templates can't declare plain1, the plain host's contract
@@ -974,6 +975,7 @@ family: falcon1024-allowlist
 version: 1
 display_name: "Falcon-1024 Allowlist"
 max_opcode_cost: 20000
+valid_rekey_target: true
 
 bounded:
   contract: bounded2
@@ -1007,6 +1009,7 @@ family: custom-timelock
 version: 1
 display_name: "Custom Timelock"
 max_opcode_cost: 20000
+valid_rekey_target: true
 
 bounded:
   contract: bounded2
@@ -1163,6 +1166,7 @@ version: 1
 display_name: "Escrow"
 description: "Hold funds until recipient provides approval code, or sender reclaims after timeout"
 display_color: "33"
+valid_rekey_target: false   # see valid_rekey_target above
 
 parameters:
   - name: recipient

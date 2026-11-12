@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 func TestValidateProductStoreLayout(t *testing.T) {
@@ -238,8 +239,9 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	}
 }
 
-// The key index carries each key's valid_rekey_target to the planner, and
-// KnownAddresses still holds every aplane key, valid rekey target or not.
+// The key index carries the valid_rekey_target each aplane key recorded to the
+// planner; KnownAddresses still holds every aplane key, valid rekey target or
+// not, and InvalidRekeyTargets the ones that are not.
 func TestKeyIndexSnapshotCarriesValidRekeyTarget(t *testing.T) {
 	ir := New(Config{})
 	ir.PublishSnapshot(
@@ -257,6 +259,10 @@ func TestKeyIndexSnapshotCarriesValidRekeyTarget(t *testing.T) {
 	}
 	if known := ir.KnownAddresses(); !known["KEY"] || !known["HTLC"] || len(known) != 2 {
 		t.Fatalf("KnownAddresses() = %v, want every aplane key held", known)
+	}
+	invalid := ir.InvalidRekeyTargets()
+	if want := (txnreview.InvalidRekeyTarget{KeyType: "aplane.htlc.v1", GenericLogicSig: true}); len(invalid) != 1 || invalid["HTLC"] != want {
+		t.Fatalf("InvalidRekeyTargets() = %+v, want only HTLC as %+v", invalid, want)
 	}
 }
 

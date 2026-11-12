@@ -1207,3 +1207,48 @@ func (s stubProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 	return nil, nil
 }
 func (s stubProvider) SetAlgodClient(*algod.Client) {}
+
+// valid_rekey_target is not part of a template's definition: reinstalling the
+// same definition with another declaration is no conflict. It replaces the
+// installed file, so keys created afterwards record the new declaration (each
+// aplane key keeps the value it recorded), and a failed install can put the
+// installed file back.
+func TestReinstallChangesValidRekeyTargetDeclaration(t *testing.T) {
+	paths := newLibraryTestPaths(t)
+	kr := cryptotest.Keyring(t, testMasterKey())
+	original := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("rekey-declaration", "Rekey Declaration"))
+	installed, err := InstallParsed(paths, original, kr)
+	if err != nil {
+		t.Fatalf("InstallParsed(original) error = %v", err)
+	}
+	again, err := InstallParsed(paths, original, kr)
+	if err != nil || !again.AlreadyExists || again.DeclarationChanged {
+		t.Fatalf("reinstall of the same template = %+v, %v; want already installed with no change", again, err)
+	}
+
+	changedYAML := []byte(strings.Replace(string(testGenericTemplateYAML("rekey-declaration", "Rekey Declaration")), "valid_rekey_target: false", "valid_rekey_target: true", 1))
+	changed := mustParseYAML(t, "changed.yaml", changedYAML)
+	if !changed.ValidRekeyTarget || original.ValidRekeyTarget {
+		t.Fatalf("parsed declarations = %v then %v, want false then true", original.ValidRekeyTarget, changed.ValidRekeyTarget)
+	}
+	result, err := InstallParsed(paths, changed, kr)
+	if err != nil || !result.AlreadyExists || !result.DeclarationChanged {
+		t.Fatalf("reinstall with another declaration = %+v, %v; want accepted as a declaration change", result, err)
+	}
+	declared := func(label string, want bool) {
+		t.Helper()
+		stored, err := templatestore.LoadTemplateFromPath(installed.OutputPath, kr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, valid, err := templateFacts(templatestore.TemplateTypeGeneric, stored)
+		if err != nil || valid != want {
+			t.Fatalf("%s: installed template declares %v (%v), want %v", label, valid, err, want)
+		}
+	}
+	declared("after the change", true)
+	if err := RollbackReplacedTemplate(result); err != nil {
+		t.Fatal(err)
+	}
+	declared("after rollback", false)
+}

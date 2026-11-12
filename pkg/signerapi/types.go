@@ -472,10 +472,13 @@ type KeyTypeInfo struct {
 	// take (aplane.boundary.v1 for the plain hosts, which take bounds and
 	// overlays), and is empty for a type that takes none.
 	BoundarySchema string `json:"boundary_schema,omitempty"`
-	// ValidRekeyTarget is the key type's valid_rekey_target attribute: an
-	// account of another key type may safely be rekeyed to an account of this
-	// key type. reject_foreign_rekey passes a rekey to an address this signer
-	// holds the aplane key for only when it is true.
+	// ValidRekeyTarget is the key type's valid_rekey_target declaration:
+	// whether an account of another key type may safely be rekeyed to an
+	// account of this key type. Each aplane key records the declaration when
+	// it is created (KeyInfo.ValidRekeyTarget); the signer refuses, under
+	// every rekeys policy setting and whatever the account's rekey-to list
+	// says, a rekey to a held aplane key that recorded false (code
+	// rekey_target_not_valid). The rekeys setting does not read it.
 	ValidRekeyTarget bool                `json:"valid_rekey_target"`
 	CreationParams   []CreationParamInfo `json:"creation_params"`
 	RuntimeArgs      []RuntimeArgInfo    `json:"runtime_args"`
@@ -553,9 +556,12 @@ type KeyInfo struct {
 	Parameters               map[string]string         `json:"parameters,omitempty"`
 	TemplateProvenanceStatus string                    `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string                    `json:"template_provenance_note,omitempty"`
-	// ValidRekeyTarget is the key's key type's valid_rekey_target attribute
-	// (KeyTypeInfo.ValidRekeyTarget): reject_foreign_rekey passes a rekey to
-	// this address only when it is true.
+	// ValidRekeyTarget is the valid_rekey_target this aplane key recorded when
+	// it was created, from its key type's declaration at that moment
+	// (KeyTypeInfo.ValidRekeyTarget is the declaration now). When it is false
+	// the signer refuses a rekey of another account to this address under
+	// every rekeys policy setting (code rekey_target_not_valid); the rekeys
+	// setting does not read it.
 	ValidRekeyTarget bool `json:"valid_rekey_target"`
 }
 

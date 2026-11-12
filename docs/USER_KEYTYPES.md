@@ -70,11 +70,15 @@ their accounts, so an account rekeyed to one can be rekeyed away again. The
 rotating key types and `aplane.htlc.v1` say no. An HTLC's program never checks
 `Sender`, forbids every rekey and allows only a payment that closes the whole
 balance, so an account rekeyed to an HTLC account could only ever be closed to
-its recipient or refund address. The signer's `/keytypes` reports the
-attribute as `valid_rekey_target`, and `/keys` reports it for each key.
+its recipient or refund address.
+
+Each aplane key records its key type's declaration when the key is created, and
+keeps that value: changing a template's declaration later affects only keys
+created afterwards. The signer's `/keytypes` reports each key type's
+declaration as `valid_rekey_target`, and `/keys` the value each key recorded.
 
 The signer refuses a rekey of an account to an address it holds the aplane key
-for when that key's type is not a valid rekey target, unless it is the
+for when that key recorded that it is not a valid rekey target, unless it is the
 account's own address. The refusal names its reason, `rekey_target_not_valid`.
 Such a target is held, not foreign, and no policy setting lifts the refusal:
 not `rekeys: allow_rekeys`, and not the account's
@@ -945,8 +949,6 @@ apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 Import encrypts the YAML into the product keystore and enables the key type
 for the signer. A template must declare `valid_rekey_target` (see
 [Valid rekey targets](#valid-rekey-targets)); import refuses one that does not.
-A template installed before the field existed keeps loading, and its key type
-is not a valid rekey target.
 
 New stores install no template. For an allowlist or Corridor account,
 use a [preset of a plain host](#bounded-accounts). The only bundled

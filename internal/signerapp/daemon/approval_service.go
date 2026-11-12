@@ -27,6 +27,7 @@ func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditL
 		KnownAddresses: func() map[string]bool {
 			return ir.KnownAddresses()
 		},
+		InvalidRekeyTargets: ir.InvalidRekeyTargets,
 		HasClient: func() bool {
 			return fs.hasAdminClient()
 		},

@@ -443,6 +443,11 @@ func SemanticFingerprint(data []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
+	return SpecFingerprint(spec)
+}
+
+// SpecFingerprint is SemanticFingerprint for a template already parsed.
+func SpecFingerprint(spec *TemplateSpec) (string, error) {
 	provider, err := NewProviderFromTemplateSpec(spec)
 	if err != nil {
 		return "", fmt.Errorf("invalid template: %w", err)

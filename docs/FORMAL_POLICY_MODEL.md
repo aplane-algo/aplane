@@ -226,9 +226,9 @@ Always Deny rules are hard safety guards. Current deny sources include:
   first in `gate.go::runApprovalGates`); it is not a policy setting and has no
   rule id, and it is evaluated before every policy document rule,
 - the signer invariant that refuses a rekey of another account to an address
-  the signer holds an aplane key for whose key type is not a valid rekey
+  the signer holds an aplane key for that records it is not a valid rekey
   target (`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, run second;
-  its message begins `rekey_target_not_valid:`). No `rekeys` value and no
+  error code `rekey_target_not_valid`). No `rekeys` value and no
   rekey-to list lifts it; a rekey of an account to its own address is exempt,
 - the signer invariant that refuses a nonparticipating `keyreg` at a position
   the signer signs (`signing/invariant_gate.go::rejectNonparticipation`, run

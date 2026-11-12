@@ -313,8 +313,12 @@ func testGenerator(t *testing.T, s Scheme) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := scanned[result.Address]; !ok {
+	if info, ok := scanned[result.Address]; !ok {
 		t.Fatalf("generated account %s not found by scan", result.Address)
+	} else if info.ValidRekeyTarget {
+		// A rotating key type is not a valid rekey target, and its aplane key
+		// records that when it is created.
+		t.Fatalf("generated rotating account %s recorded valid_rekey_target true", result.Address)
 	}
 	seed, err := rotatinghybrid.SeedFromMnemonic(words)
 	if err != nil {

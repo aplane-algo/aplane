@@ -109,6 +109,8 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, false); err != nil {
 		return err
 	}
+	// The aplane key records its key type's valid_rekey_target as declared now.
+	payload.ValidRekeyTarget = lsigprovider.ValidRekeyTarget(payload.KeyType)
 	_, err := keys.SavePayload(s.keyPaths, payload, kr)
 	return err
 }

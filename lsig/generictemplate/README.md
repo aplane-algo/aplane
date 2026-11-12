@@ -22,6 +22,7 @@ version: 2                 # Version number within family
 display_name: "Timelock"   # Human-readable name for UI
 description: "..."         # Short description
 display_color: "35"        # ANSI color code (optional, default: 35/magenta)
+valid_rekey_target: false  # Required: true only if an account rekeyed to an account of this key type is not stranded
 
 parameters:
   - name: recipient        # Creation-time parameter
@@ -129,6 +130,7 @@ family: mytemplate
 version: 1
 display_name: "My Template"
 description: "Description for UI"
+valid_rekey_target: false
 
 parameters:
   - name: target

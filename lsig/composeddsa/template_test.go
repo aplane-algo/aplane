@@ -1226,8 +1226,8 @@ bounded:
 }
 
 // A composed template declares valid_rekey_target too: install requires it,
-// and a stored template without it reads as not a valid rekey target.
-func TestComposedValidRekeyTargetIsRequiredAtAdmissionAndReadAtLoad(t *testing.T) {
+// and the provider reads the declared value.
+func TestComposedValidRekeyTargetIsRequiredAtAdmission(t *testing.T) {
 	registerTemplateTestBase(t, "test.rekey-target-base.v1")
 	const base = `schema_version: 1
 template_type: composed
@@ -1247,6 +1247,7 @@ max_opcode_cost: 20000
 		want, admitted    bool
 	}{
 		{"absent", "", false, false},
+		{"false", "valid_rekey_target: false\n", false, true},
 		{"true", "valid_rekey_target: true\n", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1255,12 +1256,18 @@ max_opcode_cost: 20000
 				t.Fatal(err)
 			}
 			err = ValidateTemplateAdmission(spec)
-			if tc.admitted != (err == nil) || (!tc.admitted && !strings.Contains(err.Error(), "valid_rekey_target is required")) {
-				t.Fatalf("ValidateTemplateAdmission() error = %v, admitted want %v", err, tc.admitted)
+			if !tc.admitted {
+				if err == nil || !strings.Contains(err.Error(), "valid_rekey_target is required") {
+					t.Fatalf("ValidateTemplateAdmission() error = %v, want valid_rekey_target required", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateTemplateAdmission() error = %v", err)
 			}
 			provider, err := NewProviderFromTemplateSpec(spec)
 			if err != nil {
-				t.Fatalf("NewProviderFromTemplateSpec() error = %v; a stored template must load", err)
+				t.Fatal(err)
 			}
 			if got := provider.ValidRekeyTarget(); got != tc.want {
 				t.Fatalf("ValidRekeyTarget() = %v, want %v", got, tc.want)

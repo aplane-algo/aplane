@@ -1952,10 +1952,9 @@ runtime_args:
 	}
 }
 
-// valid_rekey_target is required to install a template and read at load: a
-// stored template that declares none loads, and its key type is not a valid
-// rekey target.
-func TestValidRekeyTargetIsRequiredAtAdmissionAndReadAtLoad(t *testing.T) {
+// valid_rekey_target is required to install a template, and the provider
+// reads the declared value.
+func TestValidRekeyTargetIsRequiredAtAdmission(t *testing.T) {
 	const base = `schema_version: 1
 template_type: generic
 template_mode: generated
@@ -1979,23 +1978,19 @@ max_opcode_cost: 20000
 		{"true", "valid_rekey_target: true\n", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			data := []byte(fmt.Sprintf(base, tc.declaration))
-			spec, err := ParseTemplateSpec(data)
+			spec, err := ParseTemplateSpec([]byte(fmt.Sprintf(base, tc.declaration)))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := ValidateSpec(spec); err != nil {
-				t.Fatalf("ValidateSpec() error = %v; load must not require the field", err)
-			}
 			err = ValidateSpecAdmission(spec)
-			if tc.admitted && err != nil {
+			if !tc.admitted {
+				if err == nil || !strings.Contains(err.Error(), "valid_rekey_target is required") {
+					t.Fatalf("ValidateSpecAdmission() error = %v, want valid_rekey_target required", err)
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("ValidateSpecAdmission() error = %v", err)
-			}
-			if !tc.admitted && (err == nil || !strings.Contains(err.Error(), "valid_rekey_target is required")) {
-				t.Fatalf("ValidateSpecAdmission() error = %v, want valid_rekey_target required", err)
-			}
-			if _, err := PrepareKeystoreTemplateRegistration(spec.KeyType(), data); err != nil {
-				t.Fatalf("PrepareKeystoreTemplateRegistration() error = %v; a stored template must load", err)
 			}
 			if got := NewYAMLTemplate(spec).ValidRekeyTarget(); got != tc.want {
 				t.Fatalf("ValidRekeyTarget() = %v, want %v", got, tc.want)

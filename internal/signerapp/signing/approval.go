@@ -43,6 +43,11 @@ type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
 // KnownAddressesFunc returns every address the signer holds an aplane key
 // for, of any key type. The daemon supplies Runtime.KnownAddresses.
 type KnownAddressesFunc func() map[string]bool
+
+// InvalidRekeyTargetsFunc returns the held addresses whose key type is not a
+// valid rekey target, for the rekey warning at positions this signer does not
+// sign. The daemon supplies Runtime.InvalidRekeyTargets.
+type InvalidRekeyTargetsFunc func() map[string]txnreview.InvalidRekeyTarget
 type HasClientFunc func() bool
 type RequestSigningApprovalFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
 type RequestSigningApprovalResponseFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
@@ -58,11 +63,21 @@ type ApprovalService struct {
 	Console                               Console
 	GenerateTxnDescriptionFromTxn         GenerateTxnDescriptionFromTxnFunc
 	KnownAddresses                        KnownAddressesFunc
+	InvalidRekeyTargets                   InvalidRekeyTargetsFunc
 	HasClient                             HasClientFunc
 	RequestSigningApproval                RequestSigningApprovalFunc
 	RequestSigningApprovalResponse        RequestSigningApprovalResponseFunc
 	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
+}
+
+// invalidRekeyTargets is the runtime's held addresses whose key type is not a
+// valid rekey target, or none.
+func (s *ApprovalService) invalidRekeyTargets() map[string]txnreview.InvalidRekeyTarget {
+	if s == nil || s.InvalidRekeyTargets == nil {
+		return nil
+	}
+	return s.InvalidRekeyTargets()
 }
 
 func (s *ApprovalService) userAutoApprove() bool {
@@ -541,7 +556,8 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	groupAuthAddr := groupApprovalAddress(req)
 
 	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
-		KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
+		KnownAddresses: s.groupKnownAddresses(plan), InvalidRekeyTargets: s.invalidRekeyTargets(),
+		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 	}, warningRekeyTargetsForPlan(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
@@ -648,7 +664,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	txnDesc += boundedRekeyApprovalLines(bounded)
 
 	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], approvalpolicy.Context{
-		KnownAddresses: s.KnownAddresses(), ListedRekeyTargets: listed,
+		KnownAddresses: s.KnownAddresses(), InvalidRekeyTargets: s.invalidRekeyTargets(), ListedRekeyTargets: listed,
 	})
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 

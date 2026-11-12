@@ -33,6 +33,11 @@ type FindingContext struct {
 	// any key type. A rekey to one of them is still a finding, but it says the
 	// signer keeps control instead of warning that control is lost.
 	KnownAddresses map[string]bool
+	// InvalidRekeyTargets are the held addresses whose aplane key records that
+	// it is not a valid rekey target, by address. They are held, never foreign. A rekey to one
+	// at a position this signer signs is refused before any prompt; the
+	// warning says what it is at the positions this signer does not sign.
+	InvalidRekeyTargets map[string]InvalidRekeyTarget
 	// ProtocolRekeyTargets are rekey targets the signer itself set as part of
 	// a signing protocol and proved before approval ran: a rotating account's
 	// next stage. A rekey to one of them is the protocol working, not a
@@ -42,6 +47,30 @@ type FindingContext struct {
 	// rekey to one is still a finding: it hands the account over.
 	ListedRekeyTargets map[string]bool
 }
+
+// InvalidRekeyTarget is what the rekey warning says of a held aplane key that
+// is not a valid rekey target.
+type InvalidRekeyTarget struct {
+	KeyType string
+	// GenericLogicSig is set for a generic LogicSig, whose program decides
+	// what can be signed.
+	GenericLogicSig bool
+}
+
+// RekeyHeldNotValidText is the warning's line for a rekey to a held aplane
+// key that is not a valid rekey target.
+func RekeyHeldNotValidText(target InvalidRekeyTarget) string {
+	keyType := target.KeyType
+	if keyType == "" {
+		keyType = "unknown"
+	}
+	return ">>> THIS SIGNER HOLDS THE APLANE KEY FOR THE NEW ADDRESS, BUT IT IS NOT A VALID REKEY TARGET (" + keyType +
+		"): AN ACCOUNT REKEYED TO IT MAY BE STRANDED <<<"
+}
+
+// RekeyGenericLogicSigText follows RekeyHeldNotValidText for a generic
+// LogicSig target.
+const RekeyGenericLogicSigText = "It is a generic LogicSig: its program decides what can be signed."
 
 // Rekey finding texts. The first line says what the rekey does; the second
 // what this signer holds of the new address.
@@ -73,6 +102,12 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 			msg = RekeyToOwnAddressText + "\n   " + RekeyOwnAddressHeldText
 		case txn.RekeyTo == txn.Sender:
 			msg = RekeyToOwnAddressText + "\n   " + RekeyLoseControlText
+		case hasInvalidRekeyTarget(ctx, rekeyTarget):
+			invalid := ctx.InvalidRekeyTargets[rekeyTarget]
+			msg += "\n   " + RekeyHeldNotValidText(invalid)
+			if invalid.GenericLogicSig {
+				msg += "\n   " + RekeyGenericLogicSigText
+			}
 		case ctx.KnownAddresses[rekeyTarget]:
 			msg += "\n   " + RekeyHeldText
 		case ctx.ListedRekeyTargets[rekeyTarget]:
@@ -221,4 +256,9 @@ func isClawback(txn types.Transaction) bool {
 // keys at all, which is what takes an account offline.
 func IsOfflineKeyReg(txn types.Transaction) bool {
 	return txn.VotePK == (types.VotePK{}) && txn.SelectionPK == (types.VRFPK{})
+}
+
+func hasInvalidRekeyTarget(ctx FindingContext, address string) bool {
+	_, ok := ctx.InvalidRekeyTargets[address]
+	return ok
 }

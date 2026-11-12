@@ -221,7 +221,7 @@ func (t *YAMLTemplate) DisplayColor() string {
 func (t *YAMLTemplate) Category() string { return lsigprovider.CategoryGenericLsig }
 
 // ValidRekeyTarget is the template's declared valid_rekey_target
-// (lsigprovider.RekeyTargetDeclarer), false when it declares none.
+// (lsigprovider.RekeyTargetDeclarer).
 func (t *YAMLTemplate) ValidRekeyTarget() bool { return t.spec.RekeyTargetValid() }
 
 // LogicSigOpcodeProfile returns the template author's required reviewed ceiling.
@@ -875,6 +875,11 @@ func SemanticFingerprint(data []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
+	return SpecFingerprint(spec)
+}
+
+// SpecFingerprint is SemanticFingerprint for a template already parsed.
+func SpecFingerprint(spec *TemplateSpec) (string, error) {
 	if err := ValidateSpec(spec); err != nil {
 		return "", fmt.Errorf("invalid template: %w", err)
 	}

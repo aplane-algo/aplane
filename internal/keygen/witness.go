@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -17,6 +18,8 @@ import (
 func SaveWitnessKey(paths storepaths.Paths, keyType string, publicKey, privateKey []byte, kr *crypto.Keyring) (*GenerationResult, error) {
 	payload := keys.NewWitnessPayload(keyType, publicKey, privateKey)
 	defer payload.ZeroSecrets()
+	// The aplane key records its key type's valid_rekey_target as declared now.
+	payload.ValidRekeyTarget = lsigprovider.ValidRekeyTarget(payload.KeyType)
 	keyFiles, err := keys.SavePayload(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save witness key: %w", err)

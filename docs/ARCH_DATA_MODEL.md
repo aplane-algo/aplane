@@ -355,6 +355,11 @@ Durable signing metadata includes:
 - `pq_scheme` and `pq_address_salt` for native PQ keys,
 - `lsig_opcode_profile` and `teal_source` where applicable,
 - `genesis_hash` for rotating keys,
+- `valid_rekey_target` on every category: the key type's declaration recorded
+  when the key was created (omitted when false). The signer's
+  `rekey_target_not_valid` invariant and `/keys` read it from the key, never
+  from the live key type registry, and every path that carries an existing
+  record (backup, restore, copy) carries it unchanged,
 - creation parameters and timestamps.
 
 The full field set is `payloadWireV1` in `internal/keys/payload_codec.go`.

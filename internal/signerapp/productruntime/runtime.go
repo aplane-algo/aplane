@@ -32,6 +32,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
@@ -178,9 +179,8 @@ type KeyPublicMetadata struct {
 	LogicSigResources    *lsigresource.Profile
 	// SigningArgs is a LogicSig key's declared runtime arguments, in order.
 	SigningArgs []lsigprovider.RuntimeArgDef
-	// ValidRekeyTarget is the key type's valid_rekey_target attribute
-	// (lsigprovider.ValidRekeyTarget), read once when the snapshot is
-	// published.
+	// ValidRekeyTarget is the valid_rekey_target the aplane key recorded when
+	// it was created.
 	ValidRekeyTarget bool
 }
 
@@ -971,6 +971,27 @@ func (ir *Runtime) KnownAddresses() map[string]bool {
 	return addrs
 }
 
+// InvalidRekeyTargets returns the held addresses whose aplane key records
+// that it is not a valid rekey target. The rekey warning reads it for
+// positions this signer does not sign; the signer refuses a rekey to one at a
+// position it signs.
+func (ir *Runtime) InvalidRekeyTargets() map[string]txnreview.InvalidRekeyTarget {
+	ir.keysLock.RLock()
+	defer ir.keysLock.RUnlock()
+	out := make(map[string]txnreview.InvalidRekeyTarget)
+	for addr := range ir.keys {
+		metadata := ir.keyMetadata[addr]
+		if metadata.ValidRekeyTarget {
+			continue
+		}
+		out[addr] = txnreview.InvalidRekeyTarget{
+			KeyType:         ir.keyTypes[addr],
+			GenericLogicSig: metadata.Category == lsigprovider.CategoryGenericLsig,
+		}
+	}
+	return out
+}
+
 // FindKeyFile returns the key file path for the given address.
 func (ir *Runtime) FindKeyFile(address string) (string, error) {
 	ir.keysLock.RLock()
@@ -1059,7 +1080,7 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 				BoundedAuthorization: summary.BoundedAuthorization,
 				LogicSigResources:    summary.LogicSigResources,
 				SigningArgs:          summary.SigningArgs,
-				ValidRekeyTarget:     lsigprovider.ValidRekeyTarget(keyTypes[selector]),
+				ValidRekeyTarget:     summary.ValidRekeyTarget,
 			}
 		}
 	}

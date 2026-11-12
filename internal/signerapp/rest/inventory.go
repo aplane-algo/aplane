@@ -56,7 +56,9 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 			KeyType:           keyType,
 			AuthorizationKind: authorizationKindForCategory(category),
 			IsGenericLsig:     isGeneric,
-			ValidRekeyTarget:  lsigprovider.ValidRekeyTarget(keyType),
+			// The value the aplane key recorded at creation, not the key
+			// type's current declaration (that is /keytypes').
+			ValidRekeyTarget: summary.ValidRekeyTarget,
 		}
 		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
 		if isComponent {

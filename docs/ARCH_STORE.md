@@ -779,8 +779,8 @@ This separation is deliberate:
 
 | Object | Durable location | Authority |
 |---|---|---|
-| Native key file | selected generation `keys/<address>.key` | Native signing authority. |
-| LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
+| Native key file | selected generation `keys/<address>.key` | Native signing authority, and the `valid_rekey_target` its key type declared when it was created. |
+| LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, the `valid_rekey_target` its key type declared when it was created, and any private DSA key material. |
 | Cosigner witness credential | selected generation `keys/<witness_key_id>.cos` | Witness key in cosigner custody; component-signing authority for cosigner-role `/sign/component`, never an Algorand spending account. |
 | Witness public sidecar | selected generation `keys/<witness_key_id>.cos.json` | Canonical public witness reference for a local cosigner key. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
@@ -1162,8 +1162,8 @@ key is rejected during reload rather than published as a signable key.
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
-| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or cosigner witness `.cos`; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
-| Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential. | Credential becomes active after reload/scan. |
+| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or cosigner witness `.cos`, recording the key type's `valid_rekey_target` declaration; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
+| Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential, recording the key type's `valid_rekey_target` declaration. | Credential becomes active after reload/scan. |
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.cos` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |

@@ -615,25 +615,30 @@ and allows only a payment that closes the whole balance, never checks `Sender`,
 and declares false.
 
 A compiled key type declares the attribute in its `internal/keytypecatalog`
-entry. A YAML template declares it as the top-level `valid_rekey_target` field;
-admission (`generictemplate.ValidateSpecAdmission`,
-`composeddsa.ValidateTemplateAdmission`) refuses a template that leaves it out.
-A template already in a store loads without it and reads as false.
-`lsigprovider.ValidRekeyTarget` resolves the attribute, catalog first, then the
-installed template. An unknown key type is not a valid rekey target. The runtime
-reads it once per key when it publishes its key snapshot, and the signer
-invariant reads it from that snapshot. The attribute is not part of
-the template compatibility fingerprint, which pins what a key's program does;
-reinstalling a template that declares it differently is refused as a conflict.
+entry. A YAML template declares it as the top-level `valid_rekey_target` field,
+which install (`generictemplate.ValidateSpecAdmission`,
+`composeddsa.ValidateTemplateAdmission`) requires. `lsigprovider.ValidRekeyTarget`
+resolves the declaration, catalog first, then the installed template; an
+unknown key type is not a valid rekey target. The attribute is not part of the
+template compatibility fingerprint, which pins what a key's program does, so a
+reinstall of the same definition may change the declaration.
 
-`/keytypes` and `/keys` report it as `valid_rekey_target`. When a key type
-declares false, the signer refuses a rekey of another account to an address it
-holds an aplane key of that type for, under every `rekeys` setting and whatever
-the account's rekey-to list says: a signer invariant beside the rotating one
-(`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, reason
-`rekey_target_not_valid`). A rekey of an account to its own address is exempt.
-The `rekeys` setting decides only about foreign targets, addresses the signer
-holds no aplane key for; see [ARCH_POLICY.md](ARCH_POLICY.md).
+The declaration is read once, when an aplane key is created: every creation
+path (generation, mnemonic import) records it in the key record as
+`valid_rekey_target` (`keys.Payload.ValidRekeyTarget`). From then on the key's
+recorded value is what counts. The signer reads it from the key, never from the
+live registry, so a key keeps its value when its template is later changed,
+disabled or absent on the node, and backup, restore and copy carry it as part
+of the record. A changed declaration affects only keys created afterwards.
+
+`/keytypes` reports the declaration and `/keys` the value each key recorded,
+both as `valid_rekey_target`. When a key records false, the signer refuses a
+rekey of another account to its address, under every `rekeys` setting and
+whatever the account's rekey-to list says: a signer invariant beside the
+rotating one (`signing/invariant_gate.go::rejectRekeyToInvalidTarget`, error
+code `rekey_target_not_valid`). A rekey of an account to its own address is
+exempt. The `rekeys` setting decides only about foreign targets, addresses the
+signer holds no aplane key for; see [ARCH_POLICY.md](ARCH_POLICY.md).
 
 ## The three axes
 
@@ -1387,6 +1392,7 @@ publisher: aplane
 family: custom-escrow
 version: 1
 display_name: "Custom Escrow"
+valid_rekey_target: false
 parameters:
   - name: recipient
     type: address
@@ -1418,6 +1424,7 @@ family: falcon-hashlock
 version: 1
 display_name: "Falcon-1024 Hashlock"
 description: "Falcon signature with SHA256 hash verification"
+valid_rekey_target: true
 parameters:
   - name: hash
     type: bytes

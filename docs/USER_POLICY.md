@@ -936,10 +936,10 @@ close-out, or clawback is always rejected).
 
 `rekeys` decides only about foreign targets, addresses the node holds no aplane
 key for. Apart from it, and under every `rekeys` value, the signer refuses a
-rekey of an account to an address it holds an aplane key for when that key's
-type is not a [valid rekey target](USER_KEYTYPES.md#valid-rekey-targets), such
-as an `aplane.htlc.v1` account. The refusal comes before policy and names its
-reason, `rekey_target_not_valid`. Neither `allow_rekeys` nor the account's
+rekey of an account to an address it holds an aplane key for when that key is
+not a [valid rekey target](USER_KEYTYPES.md#valid-rekey-targets), such as an
+`aplane.htlc.v1` account. The refusal comes before policy, with the error code
+`rekey_target_not_valid`. Neither `allow_rekeys` nor the account's
 rekey-to list lifts it; a rekey of an account to its own address is exempt.
 `appolicy try` tests the document alone and does not model it.
 

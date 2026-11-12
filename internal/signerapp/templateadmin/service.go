@@ -113,6 +113,12 @@ func (s Service) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateReq
 			return nil
 		}
 
+		// A reinstall that changed the template's valid_rekey_target replaced
+		// its file; the reload registers the new definition only once the old
+		// provider is gone.
+		if installResult.DeclarationChanged {
+			signertemplates.UnregisterProductProvider(installResult.KeyType)
+		}
 		reloadReport, reloadErr := ir.Reload()
 		if reloadErr != nil {
 			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, reloadErr)
@@ -335,6 +341,12 @@ func (s Service) ImportInstalledTemplate(req adminproto.ImportInstalledTemplateR
 			return nil
 		}
 
+		// A reinstall that changed the template's valid_rekey_target replaced
+		// its file; the reload registers the new definition only once the old
+		// provider is gone.
+		if installResult.DeclarationChanged {
+			signertemplates.UnregisterProductProvider(installResult.KeyType)
+		}
 		reloadReport, reloadErr := ir.Reload()
 		if reloadErr != nil {
 			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, reloadErr)
@@ -670,6 +682,11 @@ func rollbackFailedTemplateInstall(paths storepaths.Paths, result templatelibrar
 	var rollbackErr error
 	if !result.AlreadyExists {
 		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, result.KeyType, result.TemplateType)
+		signertemplates.UnregisterProductProvider(result.KeyType)
+	}
+	if result.DeclarationChanged {
+		// The next reload registers the restored definition.
+		rollbackErr = templatelibrary.RollbackReplacedTemplate(result)
 		signertemplates.UnregisterProductProvider(result.KeyType)
 	}
 	if result.StateChanged {

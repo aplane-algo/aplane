@@ -9,23 +9,21 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // nonparticipationRefusal is why a nonparticipating keyreg is refused.
 const nonparticipationRefusal = "a keyreg with nonparticipation is not supported: it permanently marks the account as unable to participate"
 
-// RekeyTargetNotValidReason tags the refusal of a rekey to an address this
-// signer holds an aplane key for whose key type is not a valid rekey target.
-const RekeyTargetNotValidReason = "rekey_target_not_valid"
-
-// rekeyTargetNotValidRefusal is why a rekey to target, held with an aplane
-// key of keyType, is refused.
-func rekeyTargetNotValidRefusal(target, keyType string) string {
+// rekeyTargetNotValid refuses a rekey to target, an aplane key of keyType this
+// signer holds that records it is not a valid rekey target. Its code is
+// rekey_target_not_valid, which the message repeats for the audit log.
+func rekeyTargetNotValid(target, keyType string) *ServiceError {
 	if keyType == "" {
 		keyType = "unknown"
 	}
-	return RekeyTargetNotValidReason + ": cannot rekey to " + target + ": this signer holds its aplane key, but its key type (" +
-		keyType + ") is not a valid rekey target (valid_rekey_target: false)"
+	return &ServiceError{Kind: ErrorRekeyTargetNotValid, Message: signerapi.ErrCodeRekeyTargetNotValid + ": cannot rekey to " + target +
+		": this signer holds its aplane key (" + keyType + "), which is not a valid rekey target (valid_rekey_target: false)"}
 }
 
 // rejectSignerInvariants runs every signer invariant over the positions this
@@ -44,27 +42,36 @@ func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int)
 }
 
 // rejectRekeyToInvalidTarget refuses a signed position that rekeys an
-// account to an address this signer holds an aplane key for, when that key's
-// type is not a valid rekey target (valid_rekey_target false): an account
-// rekeyed there would be stranded, as one rekeyed to an HTLC account can only
-// ever be closed to the HTLC's recipient or refund address. It is a signer
-// invariant, not a policy setting: no rekeys value and no rekey-to list lifts
-// it, and the way to permit such a rekey is the key type's own declaration. A
-// rekey of an account to its own address returns it to its own aplane key and
+// account to an address this signer holds an aplane key for, when that key
+// records that it is not a valid rekey target (valid_rekey_target false, the
+// value its key type declared when the key was created): an account rekeyed
+// there would be stranded, as one rekeyed to an HTLC account can only ever be
+// closed to the HTLC's recipient or refund address. It is a signer invariant,
+// not a policy setting: no rekeys value and no rekey-to list lifts it. A rekey
+// of an account to its own address returns it to its own aplane key and
 // passes, as rejectRekeyToRotating lets it. A foreign target, one this signer
 // holds no aplane key for, is the rekeys setting's question, not this one's.
-// A held key with no metadata, or whose key type the signer could not resolve
-// when it published the snapshot, is not a valid rekey target. A rotating
-// target meets rejectRekeyToRotating first.
+// A rotating target meets rejectRekeyToRotating first.
 func (s *Service) rejectRekeyToInvalidTarget(txns []types.Transaction, signed []int) *ServiceError {
 	if s.Planner == nil || s.Planner.Snapshot == nil {
 		return nil
 	}
-	snapshot := s.Planner.Snapshot()
+	// Most requests rekey nothing: take the key snapshot only for one that
+	// rekeys an account to another address.
+	rekeys := false
 	for _, i := range signed {
 		if i < 0 || i >= len(txns) {
 			return positionOutsideGroup(i, len(txns))
 		}
+		if txn := txns[i]; !txn.RekeyTo.IsZero() && txn.RekeyTo != txn.Sender {
+			rekeys = true
+		}
+	}
+	if !rekeys {
+		return nil
+	}
+	snapshot := s.Planner.Snapshot()
+	for _, i := range signed {
 		txn := txns[i]
 		if txn.RekeyTo.IsZero() || txn.RekeyTo == txn.Sender {
 			continue
@@ -76,7 +83,7 @@ func (s *Service) rejectRekeyToInvalidTarget(txns []types.Transaction, signed []
 		if snapshot.KeyMetadata[target].ValidRekeyTarget {
 			continue
 		}
-		return withTransactionIndex(i, forbidden(rekeyTargetNotValidRefusal(target, snapshot.KeyTypes[target])))
+		return withTransactionIndex(i, rekeyTargetNotValid(target, snapshot.KeyTypes[target]))
 	}
 	return nil
 }

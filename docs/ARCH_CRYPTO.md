@@ -495,7 +495,8 @@ extension. Compatibility is split across:
 
 LogicSig entries store final bytecode, the `lsig_derivation` contract, signing
 metadata, and parameters rather than reconstructing authorization from a live
-template at sign time. Current compiler-auto-salted entries omit
+template at sign time. Every entry also records `valid_rekey_target`, its key
+type's declaration when the key was created, as a plain payload field. Current compiler-auto-salted entries omit
 `salt_counter`; compatible manual-counter entries retain it. DSA-backed entries
 also carry the base signing metadata needed to produce provider-specific
 signatures.

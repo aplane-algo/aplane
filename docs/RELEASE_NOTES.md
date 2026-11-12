@@ -21,20 +21,21 @@ possess the keys for the new address."
   `ed25519`, `falcon1024`, `aplane.falcon1024.v1` and `aplane.ed25519.v1` declare
   true; the rotating key types, `aplane.witness-falcon1024.v1` and
   `aplane.htlc.v1` declare false. A YAML template must declare it to be
-  installed; one installed before the field existed keeps loading and reads as
-  false. `/keytypes` and `/keys` report it.
-- **A rekey to a held aplane key whose key type is not a valid rekey target is
-  refused**, before policy and under every `rekeys` setting, with the reason
-  `rekey_target_not_valid`. Neither `allow_rekeys` nor the account's rekey-to
-  list lifts it; only the key type's declaration does. A rekey of an account to
-  its own address is exempt. The `rekeys` setting still decides foreign
-  targets, addresses the signer holds no aplane key for, as before.
+  installed. `/keytypes` reports the declaration.
+- **Each aplane key records the declaration when it is created**, in its key
+  record, and keeps it. `/keys` reports the recorded value. Reinstalling a
+  template with another declaration affects only keys created afterwards.
+- **A rekey to a held aplane key that is not a valid rekey target is
+  refused**, before policy and under every `rekeys` setting, with HTTP 403 and
+  the error code `rekey_target_not_valid`. Neither `allow_rekeys` nor the
+  account's rekey-to list lifts it. A rekey of an account to its own address is
+  exempt. The `rekeys` setting still decides foreign targets, addresses the
+  signer holds no aplane key for, as before.
 - **The rekey warning names what the signer holds.** "This signer holds the
   aplane key for the new address." replaces "You possess the keys for the new
-  address.", and a rekey of an account to its own address says it returns to
-  the account's own aplane key.
-- **Reinstalling a template that declares `valid_rekey_target` differently is
-  refused as a conflict.** Publish a new version instead.
+  address."; a rekey of an account to its own address says it returns to the
+  account's own aplane key; and at a position this signer does not sign, a rekey
+  to a held aplane key that is not a valid rekey target says so.
 
 ## apshell checks more of what the signer returns
 

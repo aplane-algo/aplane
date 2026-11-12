@@ -61,6 +61,12 @@ type ParsedTemplate struct {
 	RuntimeArgs []lsigprovider.RuntimeArgDef
 	SourcePath  string
 	YAMLData    []byte
+	// Fingerprint is the template's compatibility fingerprint, and
+	// ValidRekeyTarget its valid_rekey_target declaration, both from the one
+	// parse that produced it. An empty Fingerprint is computed from YAMLData
+	// when needed.
+	Fingerprint      string
+	ValidRekeyTarget bool
 }
 
 type InstallResult struct {
@@ -69,9 +75,18 @@ type InstallResult struct {
 	OutputPath    string
 	AlreadyExists bool
 	StateChanged  bool
+	// DeclarationChanged is set when the reinstalled template, the same
+	// definition, declares another valid_rekey_target than the installed one: the
+	// installed file was replaced, and the registered provider must be
+	// replaced too before the reload, so keys created afterwards record the
+	// new declaration. Existing aplane keys keep the value they recorded.
+	DeclarationChanged bool
 
 	hadPreviousState bool
 	previousState    keytypestate.Record
+	// replacedTemplate is the encrypted file DeclarationChanged replaced, for
+	// RollbackReplacedTemplate.
+	replacedTemplate []byte
 }
 
 type RemoveResult struct {
@@ -287,11 +302,31 @@ func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, kr 
 
 	if templatestore.TemplateExistsActive(active, tmpl.KeyType, tmpl.TemplateType) {
 		result.OutputPath = templatestore.GetTemplateFilePathActive(active, tmpl.KeyType, tmpl.TemplateType)
-		if err := requireInstalledTemplateMatch(result.OutputPath, tmpl, kr); err != nil {
+		installedDeclaration, err := requireInstalledTemplateMatch(result.OutputPath, tmpl, kr)
+		if err != nil {
 			return result, err
+		}
+		// The same definition with another valid_rekey_target declaration
+		// replaces the installed file. It changes only keys created from now
+		// on: each aplane key records the value when it is created.
+		if installedDeclaration != tmpl.ValidRekeyTarget {
+			previous, _, readErr := fsutil.ReadRegularFileLimited(result.OutputPath, maxInstalledTemplateFileBytes)
+			if readErr != nil {
+				return result, fmt.Errorf("failed to read installed template: %w", readErr)
+			}
+			if _, err := templatestore.SaveTemplateActive(active, tmpl.YAMLData, tmpl.KeyType, tmpl.TemplateType, kr); err != nil {
+				return result, err
+			}
+			result.DeclarationChanged = true
+			result.replacedTemplate = previous
 		}
 		stateChange, err := putTemplateState(active, tmpl, keytypestate.StateEnabled)
 		if err != nil {
+			if result.DeclarationChanged {
+				if rollbackErr := RollbackReplacedTemplate(result); rollbackErr != nil {
+					return result, fmt.Errorf("failed to write template state: %w (rollback failed: %v)", err, rollbackErr)
+				}
+			}
 			return result, err
 		}
 		result.StateChanged = stateChange.Changed
@@ -326,49 +361,45 @@ func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, kr 
 	return result, nil
 }
 
-func requireInstalledTemplateMatch(installedPath string, tmpl ParsedTemplate, kr *crypto.Keyring) error {
+// maxInstalledTemplateFileBytes bounds the read of an installed template file
+// kept for RollbackReplacedTemplate.
+const maxInstalledTemplateFileBytes = 1 << 22
+
+// requireInstalledTemplateMatch refuses an incoming template that is not the
+// installed definition: a different fingerprint. It returns the installed
+// template's valid_rekey_target declaration. The declaration is not part of
+// the definition, which pins what a key's program does: a reinstall may
+// change it.
+func requireInstalledTemplateMatch(installedPath string, tmpl ParsedTemplate, kr *crypto.Keyring) (bool, error) {
 	existingYAML, err := templatestore.LoadTemplateFromPath(installedPath, kr)
 	if err != nil {
-		return fmt.Errorf("failed to load existing template for compatibility check: %w", err)
+		return false, fmt.Errorf("failed to load existing template for compatibility check: %w", err)
 	}
 
-	existingFingerprint, err := semanticFingerprint(tmpl.TemplateType, existingYAML)
+	existingFingerprint, existingDeclaration, err := templateFacts(tmpl.TemplateType, existingYAML)
 	if err != nil {
-		return fmt.Errorf("failed to fingerprint existing template: %w", err)
+		return false, fmt.Errorf("failed to fingerprint existing template: %w", err)
 	}
-	incomingFingerprint, err := semanticFingerprint(tmpl.TemplateType, tmpl.YAMLData)
+	incomingFingerprint, err := parsedFingerprint(tmpl)
 	if err != nil {
-		return fmt.Errorf("failed to fingerprint incoming template: %w", err)
+		return false, fmt.Errorf("failed to fingerprint incoming template: %w", err)
 	}
 	if existingFingerprint != incomingFingerprint {
-		return fmt.Errorf("template conflict for %s: installed template does not match incoming definition", tmpl.KeyType)
+		return false, fmt.Errorf("template conflict for %s: installed template does not match incoming definition", tmpl.KeyType)
 	}
-	// valid_rekey_target is not part of the fingerprint, which pins what a
-	// key's program does. A template that declares it differently is still
-	// another definition: the installed one stays, so say so rather than
-	// report the incoming one installed.
-	existingValid, err := declaredRekeyTargetValid(existingYAML)
-	if err != nil {
-		return fmt.Errorf("failed to read existing template: %w", err)
-	}
-	incomingValid, err := declaredRekeyTargetValid(tmpl.YAMLData)
-	if err != nil {
-		return fmt.Errorf("failed to read incoming template: %w", err)
-	}
-	if existingValid != incomingValid {
-		return fmt.Errorf("template conflict for %s: installed template has valid_rekey_target %t, incoming declares %t; publish a new version", tmpl.KeyType, existingValid, incomingValid)
-	}
-	return nil
+	return existingDeclaration, nil
 }
 
-// declaredRekeyTargetValid reads a template's valid_rekey_target, false when
-// it declares none.
-func declaredRekeyTargetValid(data []byte) (bool, error) {
-	var header templatestore.BaseTemplateSpec
-	if err := yaml.Unmarshal(data, &header); err != nil {
-		return false, fmt.Errorf("YAML parse error: %w", err)
+// RollbackReplacedTemplate restores the installed template file an install
+// replaced to change its valid_rekey_target declaration (DeclarationChanged).
+func RollbackReplacedTemplate(result InstallResult) error {
+	if !result.DeclarationChanged || result.replacedTemplate == nil {
+		return nil
 	}
-	return header.RekeyTargetValid(), nil
+	if err := fsutil.WriteFileDurable(result.OutputPath, result.replacedTemplate); err != nil {
+		return fmt.Errorf("failed to restore installed template: %w", err)
+	}
+	return nil
 }
 
 type templateStateChange struct {
@@ -378,7 +409,7 @@ type templateStateChange struct {
 }
 
 func putTemplateState(active storepaths.ActivePaths, tmpl ParsedTemplate, state keytypestate.State) (templateStateChange, error) {
-	fingerprint, err := semanticFingerprint(tmpl.TemplateType, tmpl.YAMLData)
+	fingerprint, err := parsedFingerprint(tmpl)
 	if err != nil {
 		return templateStateChange{}, err
 	}
@@ -728,6 +759,10 @@ func parseGeneric(path string, data []byte) (ParsedTemplate, error) {
 	if err := generictemplate.ValidateSpecAdmission(spec); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid generic template: %w", err)
 	}
+	fingerprint, err := generictemplate.SpecFingerprint(spec)
+	if err != nil {
+		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid generic template: %w", err)
+	}
 	return ParsedTemplate{
 		TemplateRef: TemplateRef{
 			KeyType:      spec.KeyType(),
@@ -739,6 +774,9 @@ func parseGeneric(path string, data []byte) (ParsedTemplate, error) {
 		RuntimeArgs: generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs),
 		SourcePath:  path,
 		YAMLData:    append([]byte(nil), data...),
+
+		Fingerprint:      fingerprint,
+		ValidRekeyTarget: spec.RekeyTargetValid(),
 	}, nil
 }
 
@@ -752,6 +790,10 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 	if err := composeddsa.ValidateTemplateAdmission(spec); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid composed template: %w", err)
 	}
+	fingerprint, err := composeddsa.SpecFingerprint(spec)
+	if err != nil {
+		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid composed template: %w", err)
+	}
 	return ParsedTemplate{
 		TemplateRef: TemplateRef{
 			KeyType:      spec.KeyType(),
@@ -763,6 +805,9 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 		RuntimeArgs: generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs),
 		SourcePath:  path,
 		YAMLData:    append([]byte(nil), data...),
+
+		Fingerprint:      fingerprint,
+		ValidRekeyTarget: spec.RekeyTargetValid(),
 	}, nil
 }
 
@@ -789,7 +834,7 @@ func validateRegisteredProviderConflict(tmpl ParsedTemplate) error {
 	if !lsigprovider.Has(tmpl.KeyType) {
 		return nil
 	}
-	incomingFingerprint, err := semanticFingerprint(tmpl.TemplateType, tmpl.YAMLData)
+	incomingFingerprint, err := parsedFingerprint(tmpl)
 	if err != nil {
 		return fmt.Errorf("failed to fingerprint template %s: %w", tmpl.KeyType, err)
 	}
@@ -800,6 +845,38 @@ func validateRegisteredProviderConflict(tmpl ParsedTemplate) error {
 		return fmt.Errorf("key type %s is already registered by a conflicting provider", tmpl.KeyType)
 	}
 	return fmt.Errorf("key type %s is already registered as a built-in provider", tmpl.KeyType)
+}
+
+// parsedFingerprint is the fingerprint a parse already computed, or computed
+// from the YAML for a ParsedTemplate built without one.
+func parsedFingerprint(tmpl ParsedTemplate) (string, error) {
+	if tmpl.Fingerprint != "" {
+		return tmpl.Fingerprint, nil
+	}
+	return semanticFingerprint(tmpl.TemplateType, tmpl.YAMLData)
+}
+
+// templateFacts parses a template once for its fingerprint and its
+// valid_rekey_target declaration.
+func templateFacts(templateType templatestore.TemplateType, data []byte) (string, bool, error) {
+	switch templateType {
+	case templatestore.TemplateTypeGeneric:
+		spec, err := generictemplate.ParseTemplateSpec(data)
+		if err != nil {
+			return "", false, fmt.Errorf("failed to parse template: %w", err)
+		}
+		fingerprint, err := generictemplate.SpecFingerprint(spec)
+		return fingerprint, spec.RekeyTargetValid(), err
+	case templatestore.TemplateTypeComposed:
+		spec, err := composeddsa.ParseTemplateSpec(data)
+		if err != nil {
+			return "", false, fmt.Errorf("failed to parse template: %w", err)
+		}
+		fingerprint, err := composeddsa.SpecFingerprint(spec)
+		return fingerprint, spec.RekeyTargetValid(), err
+	default:
+		return "", false, fmt.Errorf("unsupported template_type %q", templateType)
+	}
 }
 
 func semanticFingerprint(templateType templatestore.TemplateType, data []byte) (string, error) {

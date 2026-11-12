@@ -54,4 +54,9 @@ const (
 	// last valid round. This attempt released no signature; the client may
 	// rebuild the validity rounds and prepare again.
 	ErrCodeRotatingWindowNotCurrent = "rotating_window_not_current"
+	// ErrCodeRekeyTargetNotValid refuses a signed position that rekeys an
+	// account to an address the signer holds an aplane key for that records it
+	// is not a valid rekey target. It is a signer check under every rekeys
+	// policy setting; nothing was signed.
+	ErrCodeRekeyTargetNotValid = "rekey_target_not_valid"
 )

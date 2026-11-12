@@ -31,35 +31,6 @@ import (
 // Templates an install refuses. Each stands for one installed by a build that
 // had no such check, so each must keep loading.
 const (
-	// admissionGenericNoRekeyTargetYAML and admissionComposedNoRekeyTargetYAML
-	// declare no valid_rekey_target, which install requires. Loaded, each
-	// reads as not a valid rekey target.
-	admissionGenericNoRekeyTargetYAML = `schema_version: 1
-derivation_version: 3
-template_type: generic
-template_mode: generated
-publisher: test
-family: admission-generic-no-rekey-target
-version: 1
-display_name: "Admission Generic No Rekey Target"
-max_opcode_cost: 20000
-teal: |
-  int 1
-  return
-`
-	admissionComposedNoRekeyTargetYAML = `schema_version: 1
-template_type: composed
-base_key_type: aplane.falcon1024.v1
-template_mode: generated
-publisher: test
-family: admission-composed-no-rekey-target
-version: 1
-display_name: "Admission Composed No Rekey Target"
-max_opcode_cost: 20000
-teal: |
-  int 1
-  assert
-`
 	admissionGenericOversizedYAML = `schema_version: 1
 derivation_version: 3
 template_type: generic
@@ -205,20 +176,7 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 		wantInstall  string
 		// The refusal is the bounded template-level contract's.
 		contract bool
-		// The template declares no valid_rekey_target, so once loaded its key
-		// type is not a valid rekey target.
-		noRekeyTarget bool
 	}{
-		{
-			name: "generic without valid_rekey_target", keyType: "test.admission-generic-no-rekey-target.v1",
-			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericNoRekeyTargetYAML,
-			wantInstall: "invalid generic template: valid_rekey_target is required", noRekeyTarget: true,
-		},
-		{
-			name: "composed without valid_rekey_target", keyType: "test.admission-composed-no-rekey-target.v1",
-			templateType: templatestore.TemplateTypeComposed, yaml: admissionComposedNoRekeyTargetYAML,
-			wantInstall: "invalid composed template: valid_rekey_target is required", noRekeyTarget: true,
-		},
 		{
 			name: "generic runtime argument over the size limit", keyType: "test.admission-generic-oversized.v1",
 			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericOversizedYAML,
@@ -385,9 +343,6 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 		}
 		if lsigprovider.Get(tc.keyType) == nil {
 			t.Fatalf("%s was not registered", tc.keyType)
-		}
-		if tc.noRekeyTarget && lsigprovider.ValidRekeyTarget(tc.keyType) {
-			t.Fatalf("%s declares no valid_rekey_target but reads as a valid rekey target", tc.keyType)
 		}
 	}
 }

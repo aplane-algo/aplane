@@ -114,9 +114,8 @@ Every key type declares `valid_rekey_target`: whether an account of another key
 type may safely be rekeyed to an account of this key type. See
 [Valid rekey target](ARCH_KEYTYPES.md#valid-rekey-target).
 
-- Every YAML template you write must declare it at the top level. Install
-  refuses a template without it; a template already in a store loads without
-  it and reads as false.
+- Every YAML template you write must declare it at the top level; install
+  refuses a template without it.
 - Set `true` only if an account rekeyed to an account of this key type is not
   stranded: the program lets it be rekeyed away again, or otherwise permits
   what an ordinary account needs. Read the TEAL with an account other than the
@@ -126,10 +125,11 @@ type may safely be rekeyed to an account of this key type. See
   or a hashlock or timelock payment, declares `false`. `aplane.htlc.v1` does.
 - A new compiled key type declares it in its `internal/keytypecatalog` entry,
   and `internal/lsigprovider/rekey_target_test.go` must list its decision.
-- Never flip it for an installed key type: publish a new version. Reinstalling
-  a template that declares it differently is refused as a conflict.
-- The signer refuses a rekey of another account to a held address whose key
-  type declares false, under every `rekeys` setting and whatever the account's
+- Each aplane key records the declaration when it is created, and the signer
+  reads the key's recorded value. Reinstalling a template with another
+  declaration changes only keys created afterwards; existing keys keep theirs.
+- The signer refuses a rekey of another account to a held aplane key that
+  recorded false, under every `rekeys` setting and whatever the account's
   rekey-to list says (`rekey_target_not_valid`). That target is held, not
   foreign: "foreign" means only that the signer holds no aplane key for the
   address, and `rekeys` decides only about foreign targets.

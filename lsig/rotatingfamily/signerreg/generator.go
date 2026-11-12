@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -49,6 +50,8 @@ func (g generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr 
 		return nil, err
 	}
 	defer payload.ZeroSecrets()
+	// The aplane key records its key type's valid_rekey_target as declared now.
+	payload.ValidRekeyTarget = lsigprovider.ValidRekeyTarget(payload.KeyType)
 	saved, err := keys.SavePayload(paths, payload, kr)
 	if err != nil {
 		return nil, err

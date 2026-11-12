@@ -235,15 +235,19 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 				}
 				rule, err := svc.runApprovalGates(context.Background(), in, &stringConsole{&console})
 				if tc.want != allowed {
-					if err == nil || err.Kind != ErrorForbidden || approvalCalls != 0 {
-						t.Fatalf("error = %v, approval calls = %d; want a refusal before approval", err, approvalCalls)
+					wantKind := ErrorForbidden
+					if tc.want == invalid {
+						wantKind = ErrorRekeyTargetNotValid
+					}
+					if err == nil || err.Kind != wantKind || err.HTTPStatus() != 403 || approvalCalls != 0 {
+						t.Fatalf("error = %v, approval calls = %d; want a %s refusal before approval", err, approvalCalls, wantKind)
 					}
 					var want string
 					switch tc.want {
 					case invalid:
-						want = "transaction 1: " + rekeyTargetNotValidRefusal(tc.target.String(), "aplane.htlc.v1")
+						want = "transaction 1: " + rekeyTargetNotValid(tc.target.String(), "aplane.htlc.v1").Message
 						if err.Message != want || logged != auditSignerInvariant+want {
-							t.Fatalf("error = %q, audit = %q; want the %s invariant %q", err.Message, logged, RekeyTargetNotValidReason, want)
+							t.Fatalf("error = %q, audit = %q; want the rekey target invariant %q", err.Message, logged, want)
 						}
 						return
 					case allRekeys:
@@ -251,7 +255,7 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					case foreignOut:
 						want = "[" + policy.RejectForeignRekeyRuleID + "]"
 					}
-					if !strings.HasPrefix(err.Message, "policy engine rejected request: txn 1: "+want) || strings.Contains(err.Message, RekeyTargetNotValidReason) {
+					if !strings.HasPrefix(err.Message, "policy engine rejected request: txn 1: "+want) || strings.Contains(err.Message, signerapi.ErrCodeRekeyTargetNotValid) {
 						t.Fatalf("error = %q, want the policy rule %s", err.Message, want)
 					}
 					return

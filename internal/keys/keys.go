@@ -131,6 +131,7 @@ type KeyScanInfo struct {
 	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 	TemplateFingerprint    string
+	ValidRekeyTarget       bool   // recorded in the aplane key at creation
 	CreatedAt              string // RFC 3339 creation timestamp
 }
 
@@ -446,6 +447,7 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 			BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
 			SigningMetadataVersion: signingMeta.SigningMetadataVersion,
 			TemplateFingerprint:    payloadMeta.TemplateFingerprint,
+			ValidRekeyTarget:       payloadMeta.ValidRekeyTarget,
 			CreatedAt:              createdAt,
 		}
 	}

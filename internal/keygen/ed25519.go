@@ -11,6 +11,7 @@ import (
 
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -127,6 +128,8 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 func saveEd25519Keys(paths storepaths.Paths, publicKey []byte, privateKey []byte, kr *securecrypto.Keyring) (*keys.ImportKeyResult, error) {
 	payload := keys.NewEd25519Payload(publicKey, privateKey)
 	defer payload.ZeroSecrets()
+	// The aplane key records its key type's valid_rekey_target as declared now.
+	payload.ValidRekeyTarget = lsigprovider.ValidRekeyTarget(payload.KeyType)
 	return keys.SavePayload(paths, payload, kr)
 }
 
