@@ -666,20 +666,19 @@ For complex protocols that require multiple transaction submissions with confirm
 
 The REPL, MCP and JavaScript `plugin()` follow continuations through one loop
 (`internal/apshellcli/external_plugins.go::processPluginResultStructured`),
-which reviews and submits each step before running the next. Each step that
-sent transactions (simulated them, in simulate mode) is recorded with its
-transaction IDs. A step whose submission fails after algod accepted its group
-(a confirmation timeout, for example) is recorded too, marked `unconfirmed`:
-its transactions may still confirm. A step whose simulation failed sent nothing
-and is not recorded. In the MCP result a run with one such step reports it in
-the top-level `txids` and `unconfirmed`, whether the run succeeded or failed; a
-run with several reports them in `steps`, each `{message, txids, unconfirmed}`.
-The IDs are those of every transaction in the submitted group, including the
-budget dummies the signer appended. `plugin()` returns after the last step;
-once a step has sent transactions, a step's error, cancel or reported failure
-is an error from `plugin()` that names the confirmed transactions apart from
-the unconfirmed step's, or the simulated ones in simulate mode (see
-[USER_JSAPI.md](USER_JSAPI.md#plugins)).
+which reviews and submits each step before running the next. The transaction
+IDs a step reports are those of every transaction in the submitted group,
+including the budget dummies the signer appended. `plugin()` returns after the
+last step. Once the run has produced transaction IDs (from the steps it
+submitted, and from a failing step whose submission returned IDs with its
+error), a step's error, cancel or reported failure is an error from `plugin()`
+that lists them and says to look them up before running the plugin again; in
+simulate mode it names the simulated ones as not sent and leaves out a failed
+simulation's own IDs (see [USER_JSAPI.md](USER_JSAPI.md#plugins)).
+
+Known limit: apshell does not report whether a sent plugin group confirmed, was
+rejected, or got no answer. `plugin()` lists the IDs it has, and the caller
+looks them up.
 
 Continuation argument normalization follows the same manifest-driven rules as the initial command.
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`

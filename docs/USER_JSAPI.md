@@ -696,24 +696,24 @@ Returns:
 transactions are reviewed and submitted, and a step that returns a
 `continuation` is followed, so the call returns only after the last step:
 `success`, `message`, `data` and `presentation` are the last step's. When any
-step sent transactions, `data.txids` lists every transaction ID apshell sent,
-in order (in simulate mode, the IDs of the simulated transactions; apshell's
-record, so a plugin's own `txids` field is replaced), and a run of more than one
-such step adds `data.steps`, one `{ message, txids }` per step. `data` has
+step submitted transactions, `data.txids` lists every transaction ID it
+submitted, in order (in simulate mode, the IDs of the simulated transactions;
+apshell's record, so a plugin's own `txids` field is replaced), and a run of
+more than one such step adds `data.steps`, one `{ message, txids }` per step.
+The IDs include any budget dummy transactions the signer added. `data` has
 `localSigners` removed in every outcome; data the plugin returned as an object
 stays an object, empty if `localSigners` was all it held.
 
-Before any step has sent transactions, a cancelled review or the plugin's own
-failure returns `{ success: false, message }`. Once a step has sent
-transactions, a step that errors, is cancelled or reports failure throws, and
-the error names what was sent, because the workflow is half done: "these
-transaction(s) were confirmed: …" for the steps that confirmed and, for a step
-whose group algod accepted but whose confirmation then failed, "these
-transaction(s) were accepted by algod but not confirmed, and may still
-confirm: …". A script that catches the error therefore does not take the run
-for one that sent nothing. In simulate mode nothing is sent: the error names
-the steps simulated in full ("were simulated, not sent: …"), and a step whose
-simulation failed is not counted.
+Before the run has produced any transaction IDs, a cancelled review or the
+plugin's own failure returns `{ success: false, message }`. Once it has, from
+the steps it submitted or from a failing step whose submission returned IDs
+with its error, a step that errors, is cancelled or reports failure throws,
+because the workflow may be half done. The error lists those IDs in one list:
+"this run produced transaction(s) …: look them up before running it again".
+apshell does not know what became of them (confirmed, rejected, or no answer),
+so look each one up before running the plugin again. In simulate mode nothing
+is sent: the error says "this run simulated transaction(s) …, which were not
+sent", and a failed simulation's own IDs are not listed.
 
 Example:
 

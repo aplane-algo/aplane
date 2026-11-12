@@ -103,34 +103,31 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 	return jsPluginOutcome(pr, runErr, p.repl.app().IsSimulateEnabled())
 }
 
-// jsPluginOutcome is plugin()'s answer for a finished run. Before any step has
-// sent transactions, a cancel or the plugin's own failure is a
-// {success: false} result and other errors are errors. Once a step has sent
-// transactions, a step that fails, is cancelled or reports failure leaves the
-// workflow half done, so that is an error naming what was sent, never a result
-// a script could read as success or as nothing having happened: the
-// transactions that confirmed, and apart from them those of the step whose
-// confirmation failed, which algod accepted and which may still confirm. In
-// simulate mode nothing was sent and the error says the transactions were
-// simulated. A completed run returns the last step's message, data and
-// presentation, with apshell's record of every transaction ID it sent
-// (simulated, in simulate mode) in data.txids and, for more than one step,
-// each step's message and IDs in data.steps. A plugin's data never carries
-// localSigners to the script, in any outcome, and data the plugin returned as
-// an object stays an object, empty if localSigners was all it held.
+// jsPluginOutcome is plugin()'s answer for a finished run. A run that produced
+// no transaction IDs is answered as a single plugin command is: a cancel or the
+// plugin's own failure is a {success: false} result, other errors are errors.
+// Once the run has produced transaction IDs, from the steps it submitted and
+// from a failing step whose submission returned IDs with its error, a step that
+// fails, is cancelled or reports failure leaves the workflow half done, so that
+// is an error that lists them and says to look them up before running the
+// plugin again. It says nothing of what became of them: the submission does
+// not report it. In simulate mode the listed IDs were simulated, not sent, and
+// a failed simulation's own IDs are not listed. A completed run returns the
+// last step's message, data and presentation, with every transaction ID it
+// submitted (simulated, in simulate mode) in data.txids and, for more than one
+// such step, each step's message and IDs in data.steps. A plugin's data never
+// carries localSigners to the script, in any outcome, and data the plugin
+// returned as an object stays an object, empty if localSigners was all it held.
 func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, string, interface{}, interface{}, error) {
 	data := appresult.StripShellOnlyPluginData(pr.Data)
-	steps := pr.sentSteps()
-	var sent, confirmed, unconfirmed []string
-	for _, step := range steps {
-		sent = append(sent, step.TxIDs...)
-		if step.Unconfirmed {
-			unconfirmed = append(unconfirmed, step.TxIDs...)
-		} else {
-			confirmed = append(confirmed, step.TxIDs...)
-		}
+	ids := append([]string(nil), pr.TxIDs...)
+	for _, step := range pr.Steps {
+		ids = append(ids, step.TxIDs...)
 	}
-	if len(sent) == 0 {
+	if !simulated {
+		ids = append(ids, pr.failedStepTxIDs...)
+	}
+	if len(ids) == 0 {
 		switch {
 		case errors.Is(runErr, errPluginTransactionCancelled):
 			return false, "Transaction cancelled by user", nil, nil, nil
@@ -146,20 +143,10 @@ func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, stri
 		}
 	}
 	if runErr != nil {
-		var detail string
 		if simulated {
-			// A failed simulation is not recorded, so every step here was
-			// simulated in full.
-			detail = "; these transaction(s) were simulated, not sent: " + strings.Join(sent, ", ")
-		} else {
-			if len(confirmed) > 0 {
-				detail += "; these transaction(s) were confirmed: " + strings.Join(confirmed, ", ")
-			}
-			if len(unconfirmed) > 0 {
-				detail += "; these transaction(s) were accepted by algod but not confirmed, and may still confirm: " + strings.Join(unconfirmed, ", ")
-			}
+			return false, "", nil, nil, fmt.Errorf("%w; this run simulated transaction(s) %s, which were not sent", runErr, strings.Join(ids, ", "))
 		}
-		return false, "", nil, nil, fmt.Errorf("%w%s", runErr, detail)
+		return false, "", nil, nil, fmt.Errorf("%w; this run produced transaction(s) %s: look them up before running it again", runErr, strings.Join(ids, ", "))
 	}
 
 	result := map[string]interface{}{}
@@ -168,8 +155,8 @@ func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, stri
 			result[k] = v
 		}
 	}
-	// apshell's record of what it sent, not a value the plugin chose.
-	result["txids"] = sent
+	// apshell's record of what it submitted, not a value the plugin chose.
+	result["txids"] = ids
 	if len(pr.Steps) > 0 {
 		result["steps"] = pr.Steps
 	}

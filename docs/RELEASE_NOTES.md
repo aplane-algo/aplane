@@ -55,21 +55,16 @@ before it was renamed `enroll`.
   `success: true`, so a workflow whose first step funds an escrow stopped
   there while the script read success. `plugin()` now runs through the same
   loop as the `apshell` command and MCP, and returns after the last step with
-  that step's result. `data.txids` lists every transaction sent (simulated,
-  in simulate mode), and `data.steps` each step's, when there is more than
-  one. Once a step has sent transactions, a step's error, cancel or reported
-  failure throws, naming the confirmed transactions apart from those of a
-  step whose group algod accepted but whose confirmation failed, which may
-  still confirm. Before anything is sent, a cancel or the plugin's failure is
-  still `{ success: false }`. `data.txids` is apshell's record and replaces a
-  `txids` field the plugin set, and `data` has `localSigners` removed in
-  every outcome.
-- **A plugin run's record marks the step that did not confirm.** In the REPL
-  and MCP result, a step whose group algod accepted but whose confirmation
-  failed is recorded with its IDs and `unconfirmed: true`, and a failed
-  one-step run reports its IDs in the top-level `txids`, where a completed
-  one-step run does. A step whose simulation failed, in simulate mode, sent
-  nothing and is not recorded.
+  that step's result. `data.txids` lists every transaction submitted
+  (simulated, in simulate mode), and `data.steps` each step's, when there is
+  more than one. Once the run has produced transaction IDs, a step's error,
+  cancel or reported failure throws, and the error lists every ID the run
+  produced, a failing step's included when its submission returned IDs with
+  its error, and says to look them up before running the plugin again.
+  apshell does not report what became of them. Before any IDs, a cancel or
+  the plugin's failure is still `{ success: false }`. `data.txids` is
+  apshell's record and replaces a `txids` field the plugin set, and `data`
+  has `localSigners` removed in every outcome.
 
 ## Every key type declares whether it is a valid rekey target
 

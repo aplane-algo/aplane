@@ -41,10 +41,9 @@ Two surviving plugin group modes plus the shared trust machinery:
   (`/sign`), and the results are merged and submitted.
 
 Every entry point runs a plugin's steps through one loop,
-`internal/apshellcli/external_plugins.go::processPluginResultStructured`. Its
-loop, `followPluginSteps`, reviews each step (`reviewPluginTransactions`)
-before it submits it and follows continuations: the REPL and MCP through
-`execPlugin`, and JS `plugin()`
+`internal/apshellcli/external_plugins.go::processPluginResultStructured`, which
+reviews each step (`reviewPluginTransactions`) before it submits it and follows
+continuations: the REPL and MCP through `execPlugin`, and JS `plugin()`
 through `script_runtime.go::PluginExecutorAdapter.ExecutePlugin`. JS
 `plugin()` is therefore an entry into the modeled path, not a third one.
 
@@ -248,7 +247,8 @@ loop (see Scope).
   end-to-end `test/integration` Passthrough* tests.
 - `localSigners` rejection: `internal/apshellapp/submission_pregrouped_test.go`.
 - JS `plugin()` through the shared loop (continuations, a later step's error,
-  the mandatory pregrouped review, IDs of a step whose confirmation failed):
+  the mandatory pregrouped review, the IDs a failed run lists, a failed run's
+  REPL and MCP record unchanged):
   `internal/apshellcli/plugin_continuation_test.go`.
 - Network precondition: `internal/engine/active_network_test.go`,
   `internal/apshellapp/submission_network_test.go`.

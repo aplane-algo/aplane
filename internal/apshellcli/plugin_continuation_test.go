@@ -316,13 +316,11 @@ func confirmationFailingAlgod(t *testing.T, confirmedGroups int32) (*algod.Clien
 	return client, &sent
 }
 
-// A step whose group algod accepted but whose confirmation then failed was
-// sent and may still confirm. plugin() throws naming its transaction IDs apart
-// from those that confirmed, whether it is the first step or a later one, so a
-// script does not take the run for one that sent nothing and send again.
-func TestJSPluginNamesTransactionsSentByAStepWhoseConfirmationFailed(t *testing.T) {
-	const confirmedLabel = "were confirmed: "
-	const unconfirmedLabel = "were accepted by algod but not confirmed, and may still confirm: "
+// After a failure, plugin() lists every transaction ID the run produced, the
+// failing step's included when its submission returned IDs with its error, in
+// one list, and says to look them up. It says nothing of what became of them.
+func TestJSPluginListsTheRunsTransactionIDsAfterAFailure(t *testing.T) {
+	const lookUp = ": look them up before running it again"
 	t.Run("first step", func(t *testing.T) {
 		step, ids := pregroupedStep(t, "fund", nil)
 		client, sent := confirmationFailingAlgod(t, 0)
@@ -334,9 +332,8 @@ func TestJSPluginNamesTransactionsSentByAStepWhoseConfirmationFailed(t *testing.
 			t.Fatalf("groups sent = %d, want 1", sent.Load())
 		}
 		if err == nil || !strings.Contains(err.Error(), "confirmation failed") ||
-			!strings.Contains(err.Error(), unconfirmedLabel+strings.Join(ids, ", ")) ||
-			strings.Contains(err.Error(), confirmedLabel) {
-			t.Fatalf("plugin() error = %v, want the confirmation failure naming %v as not confirmed, and nothing as confirmed", err, ids)
+			!strings.Contains(err.Error(), "; this run produced transaction(s) "+strings.Join(ids, ", ")+lookUp) {
+			t.Fatalf("plugin() error = %v, want the failure listing %v", err, ids)
 		}
 	})
 	t.Run("later step", func(t *testing.T) {
@@ -350,50 +347,56 @@ func TestJSPluginNamesTransactionsSentByAStepWhoseConfirmationFailed(t *testing.
 		if sent.Load() != 2 {
 			t.Fatalf("groups sent = %d, want 2", sent.Load())
 		}
-		if err == nil || !strings.Contains(err.Error(), "confirmation failed") ||
-			!strings.Contains(err.Error(), confirmedLabel+strings.Join(firstIDs, ", ")+";") ||
-			!strings.Contains(err.Error(), unconfirmedLabel+strings.Join(secondIDs, ", ")) {
-			t.Fatalf("plugin() error = %v, want %v named as confirmed and %v as not confirmed", err, firstIDs, secondIDs)
+		all := strings.Join(append(append([]string(nil), firstIDs...), secondIDs...), ", ")
+		if err == nil || !strings.Contains(err.Error(), "; this run produced transaction(s) "+all+lookUp) {
+			t.Fatalf("plugin() error = %v, want both steps' IDs in one list (%s)", err, all)
 		}
 	})
 }
 
-// The REPL and MCP record the step whose confirmation failed, marked
-// unconfirmed, and a failed run's IDs are where a completed run's are: at the
-// top level for one step, in steps for several.
-func TestPluginRunRecordsTheUnconfirmedStep(t *testing.T) {
+// The REPL and MCP record a failed run as main does: the steps that completed
+// their submission, and nothing of the failing step, whose IDs come back with
+// its error. A run of one step is reported at the top level only when it
+// completes.
+func TestPluginRunRecordOfAFailedRunIsUnchanged(t *testing.T) {
+	project := func(t *testing.T, pr *PluginResult) map[string]any {
+		t.Helper()
+		var got map[string]any
+		if err := json.Unmarshal(appresult.Marshal(projectPluginResult(pr)), &got); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		return got
+	}
 	t.Run("one step", func(t *testing.T) {
-		step, ids := pregroupedStep(t, "fund", nil)
+		step, _ := pregroupedStep(t, "fund", nil)
 		client, _ := confirmationFailingAlgod(t, 0)
 		state, _ := scriptedPluginShellWithAlgod(t, client, step)
 		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
 
 		pr, _ := execPlugin(state, "wf", []string{"start"})
-		if pr.Success || !reflect.DeepEqual(pr.TxIDs, ids) || !pr.Unconfirmed || pr.Steps != nil {
-			t.Fatalf("result = %+v, want a failure with txids %v marked unconfirmed", pr.Plugin, ids)
-		}
-		var got map[string]any
-		if err := json.Unmarshal(appresult.Marshal(projectPluginResult(pr)), &got); err != nil {
-			t.Fatalf("Unmarshal() error = %v", err)
-		}
-		if got["unconfirmed"] != true || len(got["txids"].([]any)) != len(ids) {
-			t.Fatalf("MCP result = %v, want txids and unconfirmed: true", got)
+		got := project(t, pr)
+		want := map[string]any{"plugin": "workflow", "success": false, "message": pr.Message}
+		if !reflect.DeepEqual(got, want) || !strings.Contains(pr.Message, "confirmation failed") {
+			t.Fatalf("MCP result = %v, want %v", got, want)
 		}
 	})
 	t.Run("later step", func(t *testing.T) {
-		second, secondIDs := pregroupedStep(t, "claim", nil)
+		second, _ := pregroupedStep(t, "claim", nil)
 		first, firstIDs := pregroupedStep(t, "fund", map[string]any{"command": "wf", "args": []string{"_claim"}})
 		client, _ := confirmationFailingAlgod(t, 1)
 		state, _ := scriptedPluginShellWithAlgod(t, client, first, second)
 		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
 
 		pr, _ := execPlugin(state, "wf", []string{"start"})
-		want := []appresult.PluginStep{
-			{Message: "fund", TxIDs: firstIDs},
-			{Message: "claim", TxIDs: secondIDs, Unconfirmed: true},
+		got := project(t, pr)
+		ids := make([]any, len(firstIDs))
+		for i, id := range firstIDs {
+			ids[i] = id
 		}
-		if pr.Success || !reflect.DeepEqual(pr.Steps, want) || pr.TxIDs != nil || pr.Unconfirmed {
-			t.Fatalf("result = %+v, want steps %+v", pr.Plugin, want)
+		want := map[string]any{"plugin": "workflow", "success": false, "message": pr.Message,
+			"steps": []any{map[string]any{"message": "fund", "txids": ids}}}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("MCP result = %v, want %v", got, want)
 		}
 	})
 }
@@ -432,22 +435,27 @@ func simulationFailingAlgod(t *testing.T, okGroups int32) (*algod.Client, *atomi
 	return client, &simulated, &sent
 }
 
-// In simulate mode a step whose simulation failed sent nothing: it is not
-// recorded as a step, and plugin() names only the steps simulated in full.
-func TestPluginRunDoesNotRecordAFailedSimulation(t *testing.T) {
+// In simulate mode nothing is sent. plugin() names the transactions of the
+// steps simulated as simulated, not sent, and does not list a failed
+// simulation's own IDs; the REPL and MCP record no step for it.
+func TestJSPluginInSimulateMode(t *testing.T) {
 	t.Run("one step", func(t *testing.T) {
 		step, ids := pregroupedStep(t, "fund", nil)
 		client, simulated, sent := simulationFailingAlgod(t, 0)
-		state, _ := scriptedPluginShellWithAlgod(t, client, step)
+		state, _ := scriptedPluginShellWithAlgod(t, client, step, step)
 		state.App.SetSimulateMode(true)
 		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
 
-		pr, _ := execPlugin(state, "wf", []string{"start"})
-		if simulated.Load() != 1 || sent.Load() != 0 {
-			t.Fatalf("simulations = %d, sent = %d, want 1 and 0", simulated.Load(), sent.Load())
+		_, err := runScript(t, state, `plugin("wf", "start")`)
+		if err == nil || strings.Contains(err.Error(), ids[0]) || strings.Contains(err.Error(), "this run") {
+			t.Fatalf("plugin() error = %v, want the simulation failure with no IDs listed", err)
 		}
-		if pr.Success || pr.TxIDs != nil || pr.Unconfirmed || pr.Steps != nil {
-			t.Fatalf("result = %+v, want a failure that records no step (txids %v were never sent)", pr.Plugin, ids)
+		pr, _ := execPlugin(state, "wf", []string{"start"})
+		if pr.Success || pr.TxIDs != nil || pr.Steps != nil {
+			t.Fatalf("result = %+v, want a failure that records no step", pr.Plugin)
+		}
+		if simulated.Load() != 2 || sent.Load() != 0 {
+			t.Fatalf("simulations = %d, sent = %d, want 2 and 0", simulated.Load(), sent.Load())
 		}
 	})
 	t.Run("later step", func(t *testing.T) {
@@ -462,11 +470,41 @@ func TestPluginRunDoesNotRecordAFailedSimulation(t *testing.T) {
 		if sent.Load() != 0 {
 			t.Fatalf("sent = %d, want 0", sent.Load())
 		}
-		if err == nil || !strings.Contains(err.Error(), "were simulated, not sent: "+strings.Join(firstIDs, ", ")) ||
-			strings.Contains(err.Error(), secondIDs[0]) || strings.Contains(err.Error(), "confirm") {
+		if err == nil || !strings.Contains(err.Error(), "; this run simulated transaction(s) "+strings.Join(firstIDs, ", ")+", which were not sent") ||
+			strings.Contains(err.Error(), secondIDs[0]) {
 			t.Fatalf("plugin() error = %v, want only %v named, as simulated", err, firstIDs)
 		}
 	})
+}
+
+// A completed run's data.steps entries are exactly { message, txids }, as
+// USER_JSAPI.md documents, and data.txids lists every ID in order.
+func TestJSPluginDataStepsHoldOnlyMessageAndTxIDs(t *testing.T) {
+	second, secondIDs := pregroupedStep(t, "claim", nil)
+	first, firstIDs := pregroupedStep(t, "fund", map[string]any{"command": "wf", "args": []string{"_claim"}})
+	client, _ := confirmationFailingAlgod(t, 2)
+	state, _ := scriptedPluginShellWithAlgod(t, client, first, second)
+	state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
+
+	out, err := runScript(t, state, `
+		let r = plugin("wf", "start")
+		JSON.stringify({keys: r.data.steps.map(s => Object.keys(s).sort()), txids: r.data.txids})`)
+	if err != nil {
+		t.Fatalf("plugin() error = %v", err)
+	}
+	var got struct {
+		Keys  [][]string `json:"keys"`
+		TxIDs []string   `json:"txids"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("plugin() returned %q: %v", out, err)
+	}
+	if !reflect.DeepEqual(got.Keys, [][]string{{"message", "txids"}, {"message", "txids"}}) {
+		t.Fatalf("data.steps keys = %v, want [message txids] for each step", got.Keys)
+	}
+	if want := append(append([]string(nil), firstIDs...), secondIDs...); !reflect.DeepEqual(got.TxIDs, want) {
+		t.Fatalf("data.txids = %v, want %v", got.TxIDs, want)
+	}
 }
 
 // A read-only plugin command that returns an empty data object hands the
@@ -487,62 +525,62 @@ func TestJSPluginKeepsAnEmptyDataObject(t *testing.T) {
 	}
 }
 
-// Once a step has sent transactions, a step that fails, is cancelled or
-// reports failure is an error that names what was sent, the confirmed
-// transactions apart from the unconfirmed step's, and says the transactions
-// were only simulated in simulate mode. Before anything is sent,
-// a cancel or the plugin's failure is still a {success: false} result. A
-// finished run reports every sent ID. A plugin's data is filtered (no
-// localSigners) in every outcome.
+// Once the run has produced transaction IDs, a step that fails, is cancelled
+// or reports failure is an error that lists them in one list and says to look
+// them up, the failing step's own IDs included; in simulate mode the
+// simulated ones are named as not sent and a failed simulation's own IDs are
+// not listed. Before any IDs, a cancel or the plugin's failure is still a
+// {success: false} result. A finished run reports every ID. A plugin's data
+// never carries localSigners, and an object stays an object.
 func TestJSPluginOutcome(t *testing.T) {
 	twoSteps := []appresult.PluginStep{{Message: "fund", TxIDs: []string{"T1"}}, {Message: "claim", TxIDs: []string{"T2", "T3"}}}
-	confirmedThenUnconfirmed := []appresult.PluginStep{twoSteps[0], {Message: "claim", TxIDs: []string{"T2", "T3"}, Unconfirmed: true}}
 	later := errors.New("continuation failed: plugin crashed")
+	const lookUp = ": look them up before running it again"
 	tests := []struct {
 		name        string
 		pr          PluginResult
 		runErr      error
 		simulated   bool
-		wantErr     []string
-		notInErr    []string
+		wantErr     string // the whole error
 		wantSuccess bool
 		wantMessage string
 		wantData    any // compared when set or when wantNoData
 		wantNoData  bool
 	}{
 		{name: "later step fails", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}}, runErr: later,
-			wantErr: []string{"continuation failed: plugin crashed", "; these transaction(s) were confirmed: T1"}, notInErr: []string{"not confirmed"}},
-		{name: "later step fails, simulated", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}}, runErr: later, simulated: true,
-			wantErr: []string{"continuation failed: plugin crashed", "; these transaction(s) were simulated, not sent: T1"}},
-		{name: "a later step's confirmation fails after it was sent", pr: PluginResult{Plugin: appresult.Plugin{Steps: confirmedThenUnconfirmed}},
-			runErr: errors.New("confirmation failed: wait for transaction id T2 timed out"),
-			wantErr: []string{"confirmation failed", "; these transaction(s) were confirmed: T1;",
-				"; these transaction(s) were accepted by algod but not confirmed, and may still confirm: T2, T3"}},
-		{name: "a single step's confirmation fails after it was sent", pr: PluginResult{Plugin: appresult.Plugin{TxIDs: []string{"T1"}, Unconfirmed: true}},
-			runErr:   errors.New("confirmation failed: wait for transaction id T1 timed out"),
-			wantErr:  []string{"; these transaction(s) were accepted by algod but not confirmed, and may still confirm: T1"},
-			notInErr: []string{"were confirmed"}},
+			wantErr: "continuation failed: plugin crashed; this run produced transaction(s) T1" + lookUp},
+		{name: "failing step returned IDs", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}, failedStepTxIDs: []string{"T2", "T3"}},
+			runErr:  errors.New("confirmation failed: timed out"),
+			wantErr: "confirmation failed: timed out; this run produced transaction(s) T1, T2, T3" + lookUp},
+		{name: "first step returned IDs", pr: PluginResult{failedStepTxIDs: []string{"T1"}},
+			runErr:  errors.New("confirmation failed: timed out"),
+			wantErr: "confirmation failed: timed out; this run produced transaction(s) T1" + lookUp},
+		{name: "later step fails, simulated", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}, failedStepTxIDs: []string{"T2"}},
+			runErr: later, simulated: true,
+			wantErr: "continuation failed: plugin crashed; this run simulated transaction(s) T1, which were not sent"},
+		{name: "first simulation fails", pr: PluginResult{failedStepTxIDs: []string{"T1"}}, runErr: errors.New("simulation failed"),
+			simulated: true, wantErr: "simulation failed"},
 		{name: "later step cancelled", pr: PluginResult{Plugin: appresult.Plugin{Steps: twoSteps[:1]}}, runErr: errPluginTransactionCancelled,
-			wantErr: []string{"transaction cancelled by user", "T1"}},
-		{name: "last step reports failure", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "no counterparty", Steps: twoSteps[:1]}},
-			wantErr: []string{"plugin reported failure: no counterparty", "T1"}},
+			wantErr: "transaction cancelled by user; this run produced transaction(s) T1" + lookUp},
+		{name: "last step reports failure", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "no counterparty", TxIDs: []string{"T1"}}},
+			wantErr: "plugin reported failure: no counterparty; this run produced transaction(s) T1" + lookUp},
 		{name: "first step cancelled", runErr: errPluginTransactionCancelled,
 			wantMessage: "Transaction cancelled by user"},
-		{name: "first step fails", runErr: errors.New("not connected to signer"), wantErr: []string{"not connected to signer"}},
-		{name: "plugin's own failure, nothing sent", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "bad input"}},
+		{name: "first step fails", runErr: errors.New("not connected to signer"), wantErr: "not connected to signer"},
+		{name: "plugin's own failure, nothing produced", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "bad input"}},
 			wantMessage: "bad input"},
-		{name: "nothing sent, data filtered", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+		{name: "nothing produced, data filtered", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
 			Data: map[string]any{"amount": 1, "localSigners": []any{"X"}}}},
 			wantSuccess: true, wantMessage: "status", wantData: map[string]any{"amount": 1}},
-		{name: "nothing sent, only localSigners", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+		{name: "nothing produced, only localSigners", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
 			Data: map[string]any{"localSigners": []any{"X"}}}},
 			wantSuccess: true, wantMessage: "status", wantData: map[string]any{}},
-		{name: "nothing sent, empty data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+		{name: "nothing produced, empty data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
 			Data: map[string]any{}}},
 			wantSuccess: true, wantMessage: "status", wantData: map[string]any{}},
-		{name: "nothing sent, no data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status"}},
+		{name: "nothing produced, no data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status"}},
 			wantSuccess: true, wantMessage: "status", wantNoData: true},
-		{name: "nothing sent, data not an object", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+		{name: "nothing produced, data not an object", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
 			Data: "plain"}},
 			wantSuccess: true, wantMessage: "status", wantData: "plain"},
 		{name: "one step", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "ok", TxIDs: []string{"T1"},
@@ -554,19 +592,9 @@ func TestJSPluginOutcome(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			success, message, data, _, err := jsPluginOutcome(&tt.pr, tt.runErr, tt.simulated)
-			if len(tt.wantErr) > 0 {
-				if err == nil {
-					t.Fatalf("outcome = (%v, %q, %v), want an error", success, message, data)
-				}
-				for _, want := range tt.wantErr {
-					if !strings.Contains(err.Error(), want) {
-						t.Errorf("error = %q, want it to contain %q", err, want)
-					}
-				}
-				for _, notWant := range tt.notInErr {
-					if strings.Contains(err.Error(), notWant) {
-						t.Errorf("error = %q, want it not to contain %q", err, notWant)
-					}
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("outcome = (%v, %q, %v, %v), want the error %q", success, message, data, err, tt.wantErr)
 				}
 				return
 			}
