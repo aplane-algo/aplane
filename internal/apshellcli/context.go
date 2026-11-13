@@ -3,39 +3,29 @@
 
 package apshellcli
 
-// checkIncentiveEligibility checks if an account is already incentive eligible and determines
-// whether to charge the 2 ALGO fee. Returns true if fee should be charged, false otherwise.
-// userWantsEligible: for manual mode (true if user passed eligible=true parameter)
-// promptUser: for paste mode (true to prompt user interactively, false to use userWantsEligible)
-func checkIncentiveEligibility(r *REPLState, address string, userWantsEligible bool, promptUser bool) (bool, error) {
-	wantsEligible := userWantsEligible
-	if promptUser {
-		incentiveResponse, err := r.readPromptResponse("Enable consensus incentive eligibility? (2 ALGO fee) [y/N]: ")
-		if err != nil {
-			return false, err
-		}
-		wantsEligible = incentiveResponse == "y" || incentiveResponse == "yes"
-	}
+import "github.com/aplane-algo/aplane/internal/apshellapp"
 
-	result, err := r.app().ResolveIncentiveEligibility(r.commandContext(), address, wantsEligible)
+// askIncentiveEligibility asks paste mode's user whether to request incentive
+// eligibility. Nothing is known about the account yet: the registration
+// decides whether the 2 ALGO fee is paid.
+func askIncentiveEligibility(r *REPLState) (bool, error) {
+	incentiveResponse, err := r.readPromptResponse("Request consensus incentive eligibility? (2 ALGO fee unless already eligible) [y/N]: ")
 	if err != nil {
 		return false, err
 	}
+	return incentiveResponse == "y" || incentiveResponse == "yes", nil
+}
 
-	if result.AlreadyEligible {
-		if result.Requested || promptUser {
-			r.println("✓ Account is already incentive eligible (will maintain eligibility, no additional fee)")
-		} else {
-			r.println("✓ Account is already incentive eligible (will maintain eligibility)")
-		}
-		return false, nil
+// reportIncentiveEligibility says what a registration's transaction carries
+// for incentive eligibility. prompted is true in paste mode, where the user
+// was asked and a "no" is worth saying.
+func reportIncentiveEligibility(r *REPLState, result *apshellapp.KeyRegCommandResult, prompted bool) {
+	switch {
+	case result.IncentiveRequested && result.AlreadyIncentiveEligible:
+		r.println("Already incentive eligible: no incentive fee paid")
+	case result.IncentiveRequested:
+		r.println("Incentive eligibility requested: 2 ALGO fee")
+	case prompted:
+		r.println("Incentive eligibility not requested: ordinary fee")
 	}
-
-	if result.ChargeFee {
-		r.println("✓ Consensus incentive eligibility enabled (2 ALGO fee)")
-	} else if promptUser || result.Requested {
-		r.println("  Consensus incentive eligibility disabled (standard fee)")
-	}
-
-	return result.ChargeFee, nil
 }

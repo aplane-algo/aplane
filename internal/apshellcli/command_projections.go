@@ -426,6 +426,10 @@ type keyRegProjection struct {
 	TxID      string `json:"tx_id,omitempty"`
 	Confirmed bool   `json:"confirmed"`
 	Simulated bool   `json:"simulated"`
+
+	// The transaction carries the 2 ALGO incentive fee when requested and not already eligible.
+	IncentiveRequested       bool `json:"incentive_requested"`
+	AlreadyIncentiveEligible bool `json:"already_incentive_eligible"`
 }
 
 type validateProjection struct {

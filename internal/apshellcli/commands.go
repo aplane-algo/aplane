@@ -150,18 +150,6 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 	if cmdParams.Online {
 		mode = "online"
 	}
-	incentiveEligible := cmdParams.IncentiveEligible
-
-	if mode == "online" {
-		address, err := r.app().ResolveAddress(cmdParams.From)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve address: %w", err)
-		}
-		incentiveEligible, err = checkIncentiveEligibility(r, address, incentiveEligible, false)
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	result, err := r.app().KeyReg(r.commandContext(), apshellapp.KeyRegRequest{
 		Account:           cmdParams.From,
@@ -172,7 +160,7 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 		VoteFirst:         cmdParams.VoteFirst,
 		VoteLast:          cmdParams.VoteLast,
 		KeyDilution:       cmdParams.KeyDilution,
-		IncentiveEligible: incentiveEligible,
+		IncentiveEligible: cmdParams.IncentiveEligible,
 		LsigArgs:          cmdParams.LsigArgs,
 		Wait:              cmdParams.Wait,
 	})
@@ -192,6 +180,7 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 			if !simulated {
 				r.printf("Key registration submitted: %s\n", result.TxID)
 			}
+			reportIncentiveEligibility(r, result, false)
 			if result.Confirmed {
 				switch mode {
 				case "online":
@@ -212,6 +201,7 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 	}, keyRegProjection{
 		Account: result.Account, Mode: result.Mode, TxID: result.TxID,
 		Confirmed: result.Confirmed, Simulated: simulated,
+		IncentiveRequested: result.IncentiveRequested, AlreadyIncentiveEligible: result.AlreadyIncentiveEligible,
 	})
 }
 

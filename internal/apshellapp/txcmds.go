@@ -125,18 +125,16 @@ type ValidateRequest struct {
 	LsigArgs cmdspec.LsigArgs
 }
 
-// ResolveIncentiveEligibility queries current status and resolves whether to charge the fee.
-func (a *App) ResolveIncentiveEligibility(ctx context.Context, address string, requested bool) (*IncentiveEligibilityResult, error) {
-	cache.Debug("checking incentive eligibility", "address", address)
-	alreadyEligible, err := a.eng.GetIncentiveEligibility(ctx, address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query incentive eligibility: %w", err)
+// withIncentive records on result what a registration that asked for
+// incentive eligibility found: the engine set the 2 ALGO fee unless the
+// account was eligible already.
+func withIncentive(result *KeyRegCommandResult, prep *engine.TransactionPrepResult) *KeyRegCommandResult {
+	if prep.Incentive != nil {
+		cache.Debug("incentive eligibility requested", "already_eligible", prep.Incentive.AlreadyEligible)
+		result.IncentiveRequested = true
+		result.AlreadyIncentiveEligible = prep.Incentive.AlreadyEligible
 	}
-	return &IncentiveEligibilityResult{
-		AlreadyEligible: alreadyEligible,
-		Requested:       requested,
-		ChargeFee:       !alreadyEligible && requested,
-	}, nil
+	return result
 }
 
 // Validate resolves and validates one account or address set via 0-ALGO self-send transactions.
@@ -370,7 +368,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
 
-	return &KeyRegCommandResult{
+	return withIncentive(&KeyRegCommandResult{
 		Account:        address,
 		Mode:           mode,
 		VoteFirst:      voteFirst,
@@ -380,7 +378,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		Confirmed:      submit.Confirmed,
 		Output:         submit.Output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, nil
+	}, prepResult), nil
 }
 
 // KeyRegFromPartKey prepares and submits online keyreg from parsed goal output.
@@ -419,7 +417,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		confirmed = true
 	}
 
-	return &KeyRegCommandResult{
+	return withIncentive(&KeyRegCommandResult{
 		Account:        parsed.ParentAddress,
 		Mode:           "online",
 		VoteFirst:      parsed.VoteFirst,
@@ -429,7 +427,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		Confirmed:      confirmed,
 		Output:         output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, nil
+	}, prepResult), nil
 }
 
 // ListRekeys returns all cached rekey relationships.
