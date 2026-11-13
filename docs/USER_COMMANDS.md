@@ -299,6 +299,10 @@ sign <file> [nowait]
 Several transactions in one file, in any of these formats, are signed and
 submitted together as one group.
 
+Only `nowait` may follow the file. The transactions are already built, so a
+`fee=`, `note=` or `arg:` word has nothing to apply to, and any other word is
+refused.
+
 Every byte of the file has to belong to a transaction. A file with leftover
 data, a msgpack transaction that isn't in canonical form, a JSON object that
 names the same key twice, a JSON `null`, a transaction with no type, or a
