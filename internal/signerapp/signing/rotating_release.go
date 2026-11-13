@@ -406,7 +406,7 @@ var ErrRestoreInterrupted = errors.New("release restore interrupted")
 // restore that returns without it has finished. generation is the session
 // the restore serves, read before ctx and session were made: a lock after
 // that point has to count as interrupting it.
-func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, generation uint64, entries []AuditedRelease, opts StageFillOptions) (int, error) {
+func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, generation uint64, entries []AuditedRelease) (int, error) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil || deps.Releases == nil {
 		return 0, nil
@@ -435,7 +435,7 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 			deps.Releases.Restored(e.Account)
 			continue
 		}
-		stageAddr, nextAddr, err := s.releaseAddresses(ctx, e.Account, e.Stage, session, opts)
+		stageAddr, nextAddr, err := s.releaseAddresses(ctx, e.Account, e.Stage, session)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("rotating account %s: %w", e.Account, err)
@@ -459,14 +459,18 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 }
 
 // releaseAddresses derives A_stage and A_{stage+1} for an account.
-func (s *Service) releaseAddresses(ctx context.Context, account string, stage uint64, session *keystore.KeySession, opts StageFillOptions) (types.Address, types.Address, error) {
-	derive := s.stageDeriver(account, session, StageFillOptions{Parallel: 2, KeyUse: opts.KeyUse})
+func (s *Service) releaseAddresses(ctx context.Context, account string, stage uint64, session *keystore.KeySession) (types.Address, types.Address, error) {
+	derive := s.stageDeriver(account, session, StageFillOptions{Parallel: 2})
 	addrs, err := derive(ctx, stage, stage+2)
+	// A lock or recovery that refused the key use, or cut it short, isn't a
+	// failure of this account: the deriver reports it as errKeyUseRefused or
+	// as a short result.
+	if errors.Is(err, errKeyUseRefused) {
+		return types.Address{}, types.Address{}, ErrRestoreInterrupted
+	}
 	if err != nil {
 		return types.Address{}, types.Address{}, err
 	}
-	// The deriver reports a cut as a short result, not an error: a lock or
-	// recovery refused the key use. That isn't a failure of this account.
 	if len(addrs) != 2 {
 		return types.Address{}, types.Address{}, ErrRestoreInterrupted
 	}

@@ -4,7 +4,6 @@
 package shellrepl
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/chzyer/readline"
@@ -233,60 +232,15 @@ func (c *ContextCompleter) getSuggestionsForArgSpec(spec cmdspec.ArgSpec) []stri
 // resolveArgSpec resolves the effective ArgSpec at a given position, considering branches.
 // args contains the arguments typed so far (excluding the command name).
 // argIndex is the position we're completing (0-based).
-// Returns the resolved ArgSpec, or nil if no spec applies.
+// Returns the resolved ArgSpec, or nil if no spec applies. Branches are read
+// by cmdspec.ArgSpecAt, as plugin argument normalization reads them; a branch
+// it cannot read gets no completion.
 func resolveArgSpec(specs []cmdspec.ArgSpec, args []string, argIndex int) *cmdspec.ArgSpec {
-	// Walk through specs, handling branches as we go
-	currentSpecs := specs
-	currentOffset := 0 // Offset into currentSpecs
-
-	for i := 0; i <= argIndex; i++ {
-		specIdx := i - currentOffset
-		if specIdx >= len(currentSpecs) {
-			return nil // No more specs
-		}
-
-		spec := currentSpecs[specIdx]
-
-		// Check if this spec is a branching point
-		if len(spec.Branches) > 0 {
-			// Find a matching branch based on previous args
-			var matchedBranch *cmdspec.ArgBranch
-			for _, branch := range spec.Branches {
-				if branch.When.Arg < len(args) {
-					argValue := args[branch.When.Arg]
-					if matched, _ := regexp.MatchString(branch.When.Matches, argValue); matched {
-						matchedBranch = &branch
-						break
-					}
-				}
-			}
-
-			if matchedBranch != nil {
-				// Switch to branch's specs for subsequent positions
-				currentSpecs = matchedBranch.Specs
-				currentOffset = i // Reset offset to current position
-			} else {
-				// No branch matched - no completion for this or subsequent positions
-				return nil
-			}
-		}
-
-		// If this is the position we're completing, return the spec
-		if i == argIndex {
-			specIdx = i - currentOffset
-			if specIdx >= len(currentSpecs) {
-				return nil
-			}
-			finalSpec := currentSpecs[specIdx]
-			// Don't return branching specs directly - they need to be resolved
-			if len(finalSpec.Branches) > 0 {
-				return nil // Branch not yet resolvable
-			}
-			return &finalSpec
-		}
+	spec, err := cmdspec.ArgSpecAt(specs, args, argIndex)
+	if err != nil {
+		return nil
 	}
-
-	return nil
+	return spec
 }
 
 // Do implements readline.AutoCompleter

@@ -582,3 +582,122 @@ func TestRetiredFunctionsFieldRejectedWhenManifestFormatIsOmitted(t *testing.T) 
 		t.Fatalf("load() error = %q, want containing %q", err, want)
 	}
 }
+
+// argSpecManifest is a valid manifest whose one command has the given
+// arg_specs JSON.
+func argSpecManifest(argSpecs string) string {
+	return `{
+		"name": "branchy",
+		"version": "1.0.0",
+		"description": "Plugin with branching arg_specs",
+		"executable": "plugin",
+		"commands": [{"name": "branchy", "description": "Test", "arg_specs": ` + argSpecs + `}]
+	}`
+}
+
+func TestLoadRefusesArgSpecsTheInterpretersCannotRead(t *testing.T) {
+	tests := []struct {
+		name     string
+		argSpecs string
+		want     string
+	}{
+		{
+			name:     "negative branch index",
+			argSpecs: `[{"type": "keyword", "values": ["a"]}, {"branches": [{"when": {"arg": -1, "matches": "^a$"}, "specs": [{"type": "address"}]}]}]`,
+			want:     `command[0] "branchy": arg_specs[1].branches[0]: when.arg is -1`,
+		},
+		{
+			name:     "branch without specs",
+			argSpecs: `[{"type": "keyword", "values": ["a"]}, {"branches": [{"when": {"arg": 0, "matches": "^a$"}, "specs": []}]}]`,
+			want:     "arg_specs[1].branches[0]: specs is empty",
+		},
+		{
+			name:     "branch with specs omitted",
+			argSpecs: `[{"branches": [{"when": {"arg": 0, "matches": "^a$"}}]}]`,
+			want:     "arg_specs[0].branches[0]: specs is empty",
+		},
+		{
+			name:     "pattern that does not compile",
+			argSpecs: `[{"type": "keyword", "values": ["a"]}, {"branches": [{"when": {"arg": 0, "matches": "(a"}, "specs": [{"type": "address"}]}]}]`,
+			want:     "arg_specs[1].branches[0]: when.matches does not compile",
+		},
+		{
+			name: "negative index in a nested branch",
+			argSpecs: `[{"type": "keyword", "values": ["a"]}, {"branches": [{"when": {"arg": 0, "matches": "^a$"}, "specs": [
+				{"type": "keyword", "values": ["b"]},
+				{"branches": [{"when": {"arg": -2, "matches": "^b$"}, "specs": [{"type": "address"}]}]}
+			]}]}]`,
+			want: "arg_specs[1].branches[0].specs[1].branches[0]: when.arg is -2",
+		},
+		{
+			name: "empty nested branch",
+			argSpecs: `[{"branches": [{"when": {"arg": 0, "matches": "^a$"}, "specs": [
+				{"branches": [{"when": {"arg": 0, "matches": "^a$"}, "specs": [{"type": "number"}]}, {"when": {"arg": 1, "matches": ""}, "specs": []}]}
+			]}]}]`,
+			want: "arg_specs[0].branches[0].specs[0].branches[1]: specs is empty",
+		},
+		{
+			name: "bad pattern in a nested branch",
+			argSpecs: `[{"branches": [{"when": {"arg": 0, "matches": "^a$"}, "specs": [
+				{"type": "number"},
+				{"branches": [{"when": {"arg": 1, "matches": "[0-"}, "specs": [{"type": "address"}]}]}
+			]}]}]`,
+			want: "arg_specs[0].branches[0].specs[1].branches[0]: when.matches does not compile",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(argSpecManifest(tt.argSpecs)), 0o644); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+			_, err := LoadFromDir(dir)
+			if err == nil {
+				t.Fatal("LoadFromDir() error = nil, want the arg_specs refused")
+			}
+			if !strings.Contains(err.Error(), "invalid manifest: ") || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("LoadFromDir() error = %q, want it to contain %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsWellFormedNestedBranches(t *testing.T) {
+	dir := t.TempDir()
+	argSpecs := `[{"type": "keyword", "values": ["pay", "info"]}, {"branches": [
+		{"when": {"arg": 0, "matches": "^pay$"}, "specs": [
+			{"type": "keyword", "values": ["to", "from"]},
+			{"branches": [{"when": {"arg": 1, "matches": "^(to|from)$"}, "specs": [{"type": "address"}]}]}
+		]},
+		{"when": {"arg": 0, "matches": ""}, "specs": [{"type": "address"}]}
+	]}]`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(argSpecManifest(argSpecs)), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if _, err := LoadFromDir(dir); err != nil {
+		t.Fatalf("LoadFromDir() error = %v", err)
+	}
+}
+
+// TestInTreePluginManifestsValidate loads every bundled and example plugin
+// manifest in the repository, so a manifest the loader would refuse cannot
+// ship.
+func TestInTreePluginManifestsValidate(t *testing.T) {
+	var paths []string
+	for _, pattern := range []string{"../../../plugins/*/manifest.json", "../../../examples/external_plugins/*/manifest.json"} {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatalf("Glob(%s) error = %v", pattern, err)
+		}
+		paths = append(paths, matches...)
+	}
+	if len(paths) == 0 {
+		t.Fatal("found no in-tree plugin manifests")
+	}
+	for _, path := range paths {
+		if _, err := load(path); err != nil {
+			t.Errorf("load(%s) error = %v", path, err)
+		}
+	}
+}

@@ -112,6 +112,11 @@ func (m *Manifest) Validate() error {
 		if cmd.Description == "" {
 			return fmt.Errorf("command[%d]: description is required", i)
 		}
+		// The shell reads arg_specs with cmdspec.ArgSpecAt, for argument
+		// normalization and for completion; this refuses specs it cannot read.
+		if err := cmdspec.ValidateArgSpecs(cmd.ArgSpecs, "arg_specs"); err != nil {
+			return fmt.Errorf("command[%d] %q: %w", i, cmd.Name, err)
+		}
 	}
 
 	// Set defaults
