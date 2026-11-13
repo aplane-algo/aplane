@@ -91,8 +91,7 @@ func (r *REPLState) keyRegPasteMode() error {
 	r.printf("  Key dilution: %d\n", parsedInfo.KeyDilution)
 	r.println()
 
-	// Check if account is already incentive eligible and prompt user if needed
-	incentiveEligible, err := checkIncentiveEligibility(r, parsedInfo.ParentAddress, false, true)
+	incentiveEligible, err := askIncentiveEligibility(r)
 	if err != nil {
 		return err
 	}
@@ -107,6 +106,7 @@ func (r *REPLState) keyRegPasteMode() error {
 	if !r.app().IsSimulateEnabled() {
 		r.printf("Key registration submitted: %s\n", result.TxID)
 	}
+	reportIncentiveEligibility(r, result, true)
 	if result.Confirmed {
 		r.printf("\n%s is now ONLINE (participating)\n", r.app().FormatAddress(parsedInfo.ParentAddress, ""))
 		r.printf("Participation valid from round %d to %d\n", parsedInfo.VoteFirst, parsedInfo.VoteLast)

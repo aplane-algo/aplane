@@ -433,13 +433,6 @@ type ParticipationCommandResult struct {
 	AuthAddress   string
 }
 
-// IncentiveEligibilityResult describes whether keyreg should charge the incentive fee.
-type IncentiveEligibilityResult struct {
-	AlreadyEligible bool
-	Requested       bool
-	ChargeFee       bool
-}
-
 // SignersCommandResult describes the semantic outcome of a signers/keys refresh.
 type SignersCommandResult struct {
 	Keys appresult.Keys
@@ -594,6 +587,12 @@ type KeyRegCommandResult struct {
 	Confirmed      bool
 	Output         string
 	Warnings       []Warning
+
+	// IncentiveRequested is set when the registration asked for incentive
+	// eligibility. It carries the 2 ALGO fee unless AlreadyIncentiveEligible:
+	// algod reported the account eligible, so it carries the ordinary fee.
+	IncentiveRequested       bool
+	AlreadyIncentiveEligible bool
 }
 
 // RekeyListCommandResult describes the semantic outcome of listing rekeyed accounts.
