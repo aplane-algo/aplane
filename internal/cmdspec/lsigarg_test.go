@@ -41,17 +41,21 @@ func TestParseLsigArg(t *testing.T) {
 		// The parser does not judge target text; resolving it does.
 		{name: "asterisk is target text", token: "arg:*:preimage=x", wantTarget: "*", wantName: "preimage", wantValue: []byte("x")},
 
-		{name: "missing equals", token: "arg:preimage", wantErr: []string{"expected arg:<name>=<value> or arg:<account>:<name>=<value>"}},
-		{name: "missing equals with a target", token: "arg:alice:preimage", wantErr: []string{"expected arg:<name>=<value>"}},
+		{name: "missing equals", token: "arg:preimage", wantErr: []string{"arg:preimage has no '=': expected arg:<name>=<value> or arg:<account>:<name>=<value>"}},
+		{name: "missing equals with a target", token: "arg:alice:preimage", wantErr: []string{"arg:alice:... has no '='"}},
 		{name: "empty name", token: "arg:=x", wantErr: []string{"arg:=...: the argument name is empty"}},
 		{name: "empty target", token: "arg::preimage=x", wantErr: []string{"arg::preimage=...: the account before the name is empty"}},
 		{name: "empty name after a target", token: "arg:alice:=x", wantErr: []string{"arg:alice:=...: the argument name is empty"}},
 		{name: "empty target and name", token: "arg::=x", wantErr: []string{"the account before the name is empty"}},
-		{name: "two colons", token: "arg:alice:pre:image=x", wantErr: []string{"arg:alice:pre:image=...: too many ':' (an argument name may not contain ':')"}},
+		{name: "two colons", token: "arg:alice:pre:image=x", wantErr: []string{"arg:alice:pre:...: too many ':' (an argument name may not contain ':')"}},
 		{name: "two colons, empty parts", token: "arg:::=x", wantErr: []string{"too many ':'"}},
 		{name: "set target", token: "arg:@team:preimage=x", wantErr: []string{"a set cannot be the account an argument is for"}},
-		{name: "invalid hex", token: "arg:preimage=0xxyz", wantErr: []string{"invalid arg:preimage"}},
-		{name: "invalid prefixed hex with a target", token: "arg:alice:preimage=hex:xyz", wantErr: []string{"invalid arg:alice:preimage"}},
+		{name: "invalid hex", token: "arg:preimage=0xxyz", wantErr: []string{"invalid arg:preimage: the value is not valid hex"}},
+		{name: "invalid prefixed hex with a target", token: "arg:alice:preimage=hex:xyz", wantErr: []string{"invalid arg:alice:preimage: the value is not valid hex"}},
+		{name: "invalid base64", token: "arg:preimage=b64:@@", wantErr: []string{"invalid arg:preimage: the value is not valid base64"}},
+		{name: "invalid int", token: "arg:preimage=int:x", wantErr: []string{"invalid arg:preimage: the value is not a decimal unsigned 64-bit number"}},
+		{name: "invalid addr", token: "arg:preimage=addr:x", wantErr: []string{"invalid arg:preimage: the value is not a valid Algorand address"}},
+		{name: "unknown prefix", token: "arg:preimage=key:x", wantErr: []string{"invalid arg:preimage: the value has a ':' but no known prefix", "write text:<value> for literal text"}},
 	}
 
 	for _, tt := range tests {
@@ -82,10 +86,18 @@ func TestParseLsigArg(t *testing.T) {
 	}
 }
 
-// A refusal of the word's form names the word but never repeats the value,
-// which may be a secret.
+// No refusal repeats the value, which may be a secret: not a refusal of the
+// word's form, a word whose ':' slips put the value before or without the
+// '=', or a value that does not decode, whose decoder's own message would
+// quote it.
 func TestParseLsigArgRefusalsLeaveTheValueOut(t *testing.T) {
-	for _, token := range []string{"arg:=s3cret", "arg::preimage=s3cret", "arg:a:pre:image=s3cret", "arg:@team:x=s3cret"} {
+	for _, token := range []string{
+		"arg:=s3cret", "arg::preimage=s3cret", "arg:a:pre:image=s3cret", "arg:@team:x=s3cret",
+		"arg:alice:preimage:text:s3cret", "arg:preimage:s3cret", "arg:preimage:text:s3cret",
+		"arg:preimage:b64:s3cret=", "arg:alice:preimage:hex:s3cret=",
+		"arg:preimage=0xs3cret", "arg:preimage=hex:s3cret", "arg:alice:preimage=b64:s3cret!",
+		"arg:preimage=int:s3cret", "arg:preimage=addr:s3cret", "arg:preimage=s3cret:x",
+	} {
 		if _, err := ParseLsigArg(token); err == nil || strings.Contains(err.Error(), "s3cret") {
 			t.Fatalf("ParseLsigArg(%q) error = %v, want a refusal without the value", token, err)
 		}

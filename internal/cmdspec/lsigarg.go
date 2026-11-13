@@ -47,15 +47,26 @@ type LsigArgs []LsigArg
 // ":", which is what keeps the two forms apart. A target that names a set is
 // refused: a target is one account. The value side is decoded via the shared
 // byte-value grammar in appinput.
+//
+// No refusal repeats the value, which may be a secret such as a preimage. A
+// refusal names the word only as far as its position says it cannot be the
+// value: the part before the "=", and of a word without "=" or with too many
+// ":", only what comes before the ":" a value could follow.
 func ParseLsigArg(token string) (LsigArg, error) {
 	const expected = "expected arg:<name>=<value> or arg:<account>:<name>=<value>"
 	body, ok := strings.CutPrefix(token, "arg:")
 	if !ok {
-		return LsigArg{}, fmt.Errorf("invalid LogicSig argument %q: %s", token, expected)
+		return LsigArg{}, fmt.Errorf("invalid LogicSig argument: %s", expected)
 	}
 	head, rawValue, ok := strings.Cut(body, "=")
 	if !ok {
-		return LsigArg{}, fmt.Errorf("invalid LogicSig argument %q: %s", token, expected)
+		// arg:alice:preimage:text:s3cret is the likely slip: what follows the
+		// first ":" may be the value.
+		shown, _, more := strings.Cut(body, ":")
+		if more {
+			shown += ":..."
+		}
+		return LsigArg{}, fmt.Errorf("arg:%s has no '=': %s", shown, expected)
 	}
 	var arg LsigArg
 	switch strings.Count(head, ":") {
@@ -70,17 +81,38 @@ func ParseLsigArg(token string) (LsigArg, error) {
 			return LsigArg{}, fmt.Errorf("arg:%s=...: a set cannot be the account an argument is for: name one account (an address or an alias), or leave it out for every transaction", head)
 		}
 	default:
-		return LsigArg{}, fmt.Errorf("arg:%s=...: too many ':' (an argument name may not contain ':'): %s", head, expected)
+		// arg:preimage:b64:c2VjcmV0= puts a value before the "=".
+		first, rest, _ := strings.Cut(head, ":")
+		second, _, _ := strings.Cut(rest, ":")
+		return LsigArg{}, fmt.Errorf("arg:%s:%s:...: too many ':' (an argument name may not contain ':'): %s", first, second, expected)
 	}
 	if arg.Name == "" {
 		return LsigArg{}, fmt.Errorf("arg:%s=...: the argument name is empty: %s", head, expected)
 	}
 	value, err := appinput.ParseByteValue(rawValue)
 	if err != nil {
-		return LsigArg{}, fmt.Errorf("invalid %s: %w", arg.Word(), err)
+		return LsigArg{}, fmt.Errorf("invalid %s: %s", arg.Word(), lsigArgValueProblem(rawValue))
 	}
 	arg.Value = value
 	return arg, nil
+}
+
+// lsigArgValueProblem says what is wrong with a value appinput.ParseByteValue
+// refused, by the form its prefix names, without the value or the decoder's
+// detail, which can quote part of it.
+func lsigArgValueProblem(raw string) string {
+	switch {
+	case strings.HasPrefix(raw, "hex:"), strings.HasPrefix(raw, "0x"):
+		return "the value is not valid hex"
+	case strings.HasPrefix(raw, "b64:"):
+		return "the value is not valid base64"
+	case strings.HasPrefix(raw, "int:"):
+		return "the value is not a decimal unsigned 64-bit number"
+	case strings.HasPrefix(raw, "addr:"):
+		return "the value is not a valid Algorand address"
+	default:
+		return fmt.Sprintf("the value has a ':' but no known prefix (supported: %s); write text:<value> for literal text", appinput.BytePrefixes)
+	}
 }
 
 // AddLsigArg parses an arg: token and appends it to args. A name given twice
