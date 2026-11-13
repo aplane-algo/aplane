@@ -15,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/partkeyparse"
-	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // OptInRequest captures parsed opt-in inputs.
@@ -865,7 +864,14 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			result.Items = append(result.Items, item)
 			continue
 		}
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leaving, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
+		txnFee, err := a.sweepPaymentFee(ctx, assetMeta.AssetID, fromAddress, toAddress, balance, leaving, req.Fee, req.UseFlatFee)
+		if err != nil {
+			item.Error = fmt.Sprintf("failed to prepare transaction: %v", err)
+			result.FailureCount++
+			result.Items = append(result.Items, item)
+			continue
+		}
+		sendAmount, feeReserve, ok := sweepSendAmount(balance, leaving, assetMeta.AssetID, txnFee, authorizationReserve)
 		if !ok {
 			what := "leaving amount"
 			if leaveMinimumBalance {
@@ -886,8 +892,8 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				From:       fromAddress,
 				To:         toAddress,
 				Amount:     item.Amount.Raw,
-				Fee:        req.Fee,
-				UseFlatFee: req.UseFlatFee,
+				Fee:        txnFee,
+				UseFlatFee: true,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -959,13 +965,39 @@ func authorizationFeeReserveForSweep(
 	return reserve(sender)
 }
 
+// sweepPaymentFee returns the fee an ALGO sweep's payment pays. It builds the
+// payment carrying the most it could send, the balance less what is to be
+// left, and reads the fee that transaction was given. algod's suggested fee is
+// per byte, and a smaller amount never encodes larger, so no amount the sweep
+// sends costs more. The sweep builds its payment with this fee fixed, which
+// leaves the account exactly what is to be left. A flat fee the user gave,
+// zero included, comes back as given. Nothing is built when there is nothing
+// to send, or for an ASA sweep, whose fee does not change the amount.
+func (a *App) sweepPaymentFee(ctx context.Context, assetID uint64, from, to string, balance, leaving, fee uint64, useFlatFee bool) (uint64, error) {
+	if assetID != 0 || balance <= leaving {
+		return 0, nil
+	}
+	largest, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
+		From:       from,
+		To:         to,
+		Amount:     balance - leaving,
+		Fee:        fee,
+		UseFlatFee: useFlatFee,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return uint64(largest.Transaction.Fee), nil
+}
+
 // sweepSendAmount computes how much to send so the account is left with exactly
-// `leaving`. For ALGO sweeps the fee reserve is the base transaction fee plus
-// authorizationFeeReserve — LogicSig dummy/program fees or the native-PQ fee
-// contribution — so sweeping from a non-Ed25519 account does not overspend.
-// ASA sweeps pay their fee from the ALGO balance, not the swept asset, so the
-// authorization reserve does not apply there.
-func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
+// `leaving`. For ALGO sweeps the fee reserve is txnFee, the fee of the payment
+// the sweep builds (sweepPaymentFee), plus authorizationFeeReserve, the
+// LogicSig dummy/program fees or native-PQ fee contribution the signer adds on
+// top, so sweeping from a non-Ed25519 account does not overspend.
+// ASA sweeps pay their fee from the ALGO balance, not the swept asset, so
+// neither applies there.
+func sweepSendAmount(balance, leaving, assetID, txnFee, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
 	if balance <= leaving {
 		return 0, 0, false
 	}
@@ -973,16 +1005,10 @@ func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, aut
 	if assetID != 0 {
 		return available, 0, true
 	}
-	// A flat fee is authoritative when opted in, including an explicit flat
-	// zero, matching the unified fee model (engine.getSuggestedParamsWithFee).
-	baseFee := uint64(signing.DefaultMinFee)
-	if useFlatFee {
-		baseFee = fee
-	}
-	if authorizationFeeReserve > math.MaxUint64-baseFee {
+	if authorizationFeeReserve > math.MaxUint64-txnFee {
 		return 0, math.MaxUint64, false
 	}
-	feeReserve = baseFee + authorizationFeeReserve
+	feeReserve = txnFee + authorizationFeeReserve
 	if available <= feeReserve {
 		return 0, feeReserve, false
 	}
