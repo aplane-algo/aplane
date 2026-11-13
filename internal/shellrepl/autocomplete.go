@@ -233,7 +233,10 @@ func (c *ContextCompleter) getSuggestionsForArgSpec(spec cmdspec.ArgSpec) []stri
 // resolveArgSpec resolves the effective ArgSpec at a given position, considering branches.
 // args contains the arguments typed so far (excluding the command name).
 // argIndex is the position we're completing (0-based).
-// Returns the resolved ArgSpec, or nil if no spec applies.
+// Returns the resolved ArgSpec, or nil if no spec applies. Discovery refuses
+// a manifest whose branches name a negative argument or carry a pattern that
+// does not compile; a spec that has either anyway gets no completion rather
+// than a panic.
 func resolveArgSpec(specs []cmdspec.ArgSpec, args []string, argIndex int) *cmdspec.ArgSpec {
 	// Walk through specs, handling branches as we go
 	currentSpecs := specs
@@ -252,9 +255,16 @@ func resolveArgSpec(specs []cmdspec.ArgSpec, args []string, argIndex int) *cmdsp
 			// Find a matching branch based on previous args
 			var matchedBranch *cmdspec.ArgBranch
 			for _, branch := range spec.Branches {
+				if branch.When.Arg < 0 {
+					return nil
+				}
 				if branch.When.Arg < len(args) {
 					argValue := args[branch.When.Arg]
-					if matched, _ := regexp.MatchString(branch.When.Matches, argValue); matched {
+					matched, err := regexp.MatchString(branch.When.Matches, argValue)
+					if err != nil {
+						return nil
+					}
+					if matched {
 						matchedBranch = &branch
 						break
 					}
@@ -262,7 +272,8 @@ func resolveArgSpec(specs []cmdspec.ArgSpec, args []string, argIndex int) *cmdsp
 			}
 
 			if matchedBranch != nil {
-				// Switch to branch's specs for subsequent positions
+				// Switch to branch's specs for subsequent positions. A branch
+				// with no specs ends completion at the length checks below.
 				currentSpecs = matchedBranch.Specs
 				currentOffset = i // Reset offset to current position
 			} else {

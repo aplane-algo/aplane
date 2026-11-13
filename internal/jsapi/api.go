@@ -16,6 +16,7 @@ package jsapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -269,12 +270,55 @@ func (a *API) RegisterAll(vm *goja.Runtime) error {
 	}
 
 	for _, b := range bindings {
-		if err := vm.Set(b.name, b.fn); err != nil {
+		if err := vm.Set(b.name, a.hostCall(b.name, b.fn)); err != nil {
 			return fmt.Errorf("failed to register %s: %w", b.name, err)
 		}
 	}
 
 	return nil
+}
+
+// hostCall wraps a binding so that its outcome is not lost when the script is
+// cancelled while it runs. The runner then interrupts the script at its next
+// instruction, so neither the value the call returns (a transaction ID, say)
+// nor the error it throws would reach the script. The call itself is not cut
+// short: it ends on its own terms, under the cancelled context, and when it
+// ends after the cancellation its outcome is printed on the script's output.
+func (a *API) hostCall(name string, fn func(goja.FunctionCall) goja.Value) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) (returned goja.Value) {
+		ctx := a.Context()
+		defer func() {
+			if ctx.Err() == nil {
+				return
+			}
+			if thrown := recover(); thrown != nil {
+				a.outputMsg(fmt.Sprintf("%s() ended after the script was interrupted, failing with: %s", name, thrownMessage(thrown)))
+				panic(thrown)
+			}
+			if returned != nil && !goja.IsUndefined(returned) && !goja.IsNull(returned) {
+				a.outputMsg(fmt.Sprintf("%s() ended after the script was interrupted, returning: %s", name, reportedValue(returned)))
+			}
+		}()
+		return fn(call)
+	}
+}
+
+func thrownMessage(thrown interface{}) string {
+	switch v := thrown.(type) {
+	case goja.Value:
+		return v.String()
+	case error:
+		return v.Error()
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func reportedValue(v goja.Value) string {
+	if data, err := json.Marshal(v.Export()); err == nil {
+		return string(data)
+	}
+	return v.String()
 }
 
 // output helper for internal use.

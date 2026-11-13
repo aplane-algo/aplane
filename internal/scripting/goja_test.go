@@ -4,7 +4,11 @@
 package scripting
 
 import (
+	"context"
+	"errors"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -253,5 +257,240 @@ func TestGojaRunnerEmitsStartupWarningOnce(t *testing.T) {
 	}
 	if len(output) != 1 {
 		t.Fatalf("startup warning re-emitted: %#v", output)
+	}
+}
+
+// syncOutput collects print output from the runner, which writes it from the
+// script's goroutine.
+type syncOutput struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (o *syncOutput) write(msg string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.lines = append(o.lines, msg)
+}
+
+func (o *syncOutput) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return strings.Join(o.lines, "\n")
+}
+
+// runAsync starts code under ctx and returns a channel with the run's error.
+func runAsync(runner *GojaRunner, ctx context.Context, code string) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := runner.RunWithContext(ctx, code)
+		done <- err
+	}()
+	return done
+}
+
+func waitForRun(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the script to stop")
+		return nil
+	}
+}
+
+func requireCancelled(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "script interrupted") {
+		t.Fatalf("run error = %v, want script interrupted wrapping context.Canceled", err)
+	}
+}
+
+// requireRunsNormally checks that a later run is not hit by an interrupt
+// left over from an earlier one.
+func requireRunsNormally(t *testing.T, runner *GojaRunner) {
+	t.Helper()
+	result, err := runner.RunWithContext(context.Background(), "let n = 0; for (let i = 0; i < 100000; i++) { n++ } n")
+	if err != nil {
+		t.Fatalf("next run error = %v", err)
+	}
+	if result.Value != int64(100000) {
+		t.Fatalf("next run = %#v, want 100000", result.Value)
+	}
+}
+
+func TestGojaRunnerCancelInterruptsAnEndlessLoop(t *testing.T) {
+	runner := newRunnerForTest(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := runAsync(runner, ctx, "while (true) {}")
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	requireCancelled(t, waitForRun(t, done))
+	requireRunsNormally(t, runner)
+}
+
+func TestGojaRunnerRefusesAnAlreadyCancelledContext(t *testing.T) {
+	runner := newRunnerForTest(t)
+	var output syncOutput
+	runner.SetOutput(output.write)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := runner.RunWithContext(ctx, `print("ran")`)
+	requireCancelled(t, err)
+	if got := output.String(); got != "" {
+		t.Fatalf("output = %q, want nothing run", got)
+	}
+	requireRunsNormally(t, runner)
+}
+
+func TestGojaRunnerCancelAfterCompletionIsANoOp(t *testing.T) {
+	runner := newRunnerForTest(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	result, err := runner.RunWithContext(ctx, "1 + 2")
+	if err != nil || result.Value != int64(3) {
+		t.Fatalf("run = %#v, %v; want 3", result, err)
+	}
+	cancel()
+
+	requireRunsNormally(t, runner)
+}
+
+func TestGojaRunnerDiscardsAnInterruptBetweenRuns(t *testing.T) {
+	runner := newRunnerForTest(t)
+	runner.Interrupt()
+	requireRunsNormally(t, runner)
+}
+
+// Every run's watcher exits when the run ends, cancelled or not.
+func TestGojaRunnerLeavesNoWatcherBehind(t *testing.T) {
+	runner := newRunnerForTest(t)
+	before := runtime.NumGoroutine()
+	for i := 0; i < 50; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		if _, err := runner.RunWithContext(ctx, "1"); err != nil {
+			t.Fatalf("run %d error = %v", i, err)
+		}
+		cancel()
+	}
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := runAsync(runner, ctx, "while (true) {}")
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+		requireCancelled(t, waitForRun(t, done))
+	}
+	// Allow the last runAsync goroutine a moment to return after its send.
+	after := runtime.NumGoroutine()
+	for deadline := time.Now().Add(time.Second); after > before+1 && time.Now().Before(deadline); after = runtime.NumGoroutine() {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if after > before+1 {
+		t.Fatalf("goroutines = %d after 55 runs, %d before; a watcher was left running", after, before)
+	}
+}
+
+// blockingPluginExecutor stands in for a host call that has submitted a
+// transaction and is still finishing when the script is cancelled: it
+// returns only when the test releases it.
+type blockingPluginExecutor struct {
+	started chan struct{}
+	release chan struct{}
+	err     error
+}
+
+func newBlockingPluginExecutor(err error) *blockingPluginExecutor {
+	return &blockingPluginExecutor{started: make(chan struct{}), release: make(chan struct{}), err: err}
+}
+
+func (e *blockingPluginExecutor) ExecutePlugin(string, []string) (bool, string, interface{}, interface{}, error) {
+	close(e.started)
+	<-e.release
+	if e.err != nil {
+		return false, "", nil, nil, e.err
+	}
+	return true, "swapped", map[string]interface{}{"txids": []string{"TXID1"}}, nil, nil
+}
+
+func TestGojaRunnerCancelDuringAHostCallKeepsWhatItReturned(t *testing.T) {
+	runner := newRunnerForTest(t)
+	var output syncOutput
+	runner.SetOutput(output.write)
+	executor := newBlockingPluginExecutor(nil)
+	runner.SetPluginExecutor(executor)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := runAsync(runner, ctx, `const r = plugin("swap"); while (true) {}`)
+	<-executor.started
+	cancel()
+	// The host call is not cut short: it finishes after the cancellation.
+	close(executor.release)
+
+	requireCancelled(t, waitForRun(t, done))
+	want := `plugin() ended after the script was interrupted, returning: {"data":{"txids":["TXID1"]},"message":"swapped","success":true}`
+	if got := output.String(); !strings.Contains(got, want) {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+	requireRunsNormally(t, runner)
+}
+
+func TestGojaRunnerCancelDuringAHostCallKeepsTheErrorItThrew(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		code string
+	}{
+		// The script would have caught the error, but the interrupt
+		// stops it first.
+		{name: "caught", code: `try { plugin("swap") } catch (e) { print("caught " + e) } while (true) {}`},
+		// The error ends the run itself, before the VM sees the interrupt,
+		// which goja then leaves set; the next run must not inherit it.
+		{name: "uncaught", code: `plugin("swap")`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := newRunnerForTest(t)
+			var output syncOutput
+			runner.SetOutput(output.write)
+			executor := newBlockingPluginExecutor(errors.New("step 2 failed after step 1 submitted TXID1"))
+			runner.SetPluginExecutor(executor)
+			ctx, cancel := context.WithCancel(context.Background())
+
+			done := runAsync(runner, ctx, tt.code)
+			<-executor.started
+			cancel()
+			close(executor.release)
+
+			err := waitForRun(t, done)
+			if err == nil {
+				t.Fatal("run error = nil, want the cancellation or the host call's error")
+			}
+			want := "plugin() ended after the script was interrupted, failing with: plugin() error: step 2 failed after step 1 submitted TXID1"
+			if got := output.String(); !strings.Contains(got, want) {
+				t.Fatalf("output = %q, want %q", got, want)
+			}
+			requireRunsNormally(t, runner)
+		})
+	}
+}
+
+// A host call that ends before the cancellation reached the script on its
+// own, so nothing about it is printed again.
+func TestGojaRunnerDoesNotReportHostCallsThatEndedBeforeTheCancel(t *testing.T) {
+	runner := newRunnerForTest(t)
+	var output syncOutput
+	runner.SetOutput(output.write)
+	runner.SetPluginExecutor(scriptingPluginExecutor{})
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := runAsync(runner, ctx, `plugin("echo", "a"); while (true) {}`)
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	requireCancelled(t, waitForRun(t, done))
+	if got := output.String(); got != "" {
+		t.Fatalf("output = %q, want nothing reported", got)
 	}
 }

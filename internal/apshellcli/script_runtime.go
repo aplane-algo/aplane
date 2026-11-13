@@ -81,7 +81,10 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 	if err != nil {
 		return false, "", nil, nil, err
 	}
-	normalizedArgs := apshellapp.NormalizePluginCommandArgs(plugin, pluginName, pluginArgs)
+	normalizedArgs, err := apshellapp.NormalizePluginCommandArgs(plugin, pluginName, pluginArgs)
+	if err != nil {
+		return false, "", nil, nil, err
+	}
 
 	// Execute the plugin command
 	result, err := p.repl.app().Plugins.ExecuteCommand(plugin.Manifest.Name, pluginName, normalizedArgs, context)

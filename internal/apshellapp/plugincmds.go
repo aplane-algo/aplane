@@ -41,24 +41,32 @@ func ValidatePluginExecuteResult(result *jsonrpc.ExecuteResult) error {
 	return validatePluginResult(result)
 }
 
-func normalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) []string {
+func normalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) ([]string, error) {
 	if plugin == nil {
-		return args
+		return args, nil
 	}
 	if manifestCmd := plugin.Manifest.FindCommand(commandName); manifestCmd != nil && len(manifestCmd.ArgSpecs) > 0 {
-		return normalizePluginAddressArgs(manifestCmd.ArgSpecs, args)
+		normalized, err := normalizePluginAddressArgs(manifestCmd.ArgSpecs, args)
+		if err != nil {
+			return nil, fmt.Errorf("plugin '%s' command '%s': arg_specs: %w", plugin.Manifest.Name, commandName, err)
+		}
+		return normalized, nil
 	}
-	return args
+	return args, nil
 }
 
 // NormalizePluginCommandArgs normalizes plugin arguments using the app-owned ArgSpec rules.
-func NormalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) []string {
+func NormalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) ([]string, error) {
 	return normalizePluginCommandArgs(plugin, commandName, args)
 }
 
-func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) []string {
+// normalizePluginAddressArgs uppercases the arguments the specs declare as
+// addresses. Discovery refuses a manifest whose branches this would trip on
+// (manifest.validateArgSpecs); the checks here keep specs that did not come
+// through discovery from panicking.
+func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) ([]string, error) {
 	if len(specs) == 0 || len(args) == 0 {
-		return args
+		return args, nil
 	}
 
 	result := make([]string, len(args))
@@ -80,9 +88,16 @@ func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) []string
 		if len(spec.Branches) > 0 {
 			var matchedBranch *cmdspec.ArgBranch
 			for _, branch := range spec.Branches {
+				if branch.When.Arg < 0 {
+					return nil, fmt.Errorf("branch when.arg is %d; an argument index must not be negative", branch.When.Arg)
+				}
 				if branch.When.Arg < len(args) {
 					argValue := args[branch.When.Arg]
-					if matched, _ := regexp.MatchString(branch.When.Matches, argValue); matched {
+					matched, err := regexp.MatchString(branch.When.Matches, argValue)
+					if err != nil {
+						return nil, fmt.Errorf("branch when.matches does not compile: %w", err)
+					}
+					if matched {
 						matchedBranch = &branch
 						break
 					}
@@ -90,6 +105,9 @@ func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) []string
 			}
 
 			if matchedBranch != nil {
+				if len(matchedBranch.Specs) == 0 {
+					return nil, fmt.Errorf("branch matching %q has no specs", matchedBranch.When.Matches)
+				}
 				currentSpecs = matchedBranch.Specs
 				currentOffset = i
 				specIdx = 0
@@ -104,7 +122,7 @@ func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) []string
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 // ExecutePluginCommand resolves and executes a plugin command against the current network context.
@@ -126,7 +144,10 @@ func (a *App) ExecutePluginCommand(_ context.Context, commandName string, args [
 		return nil, err
 	}
 
-	normalizedArgs := normalizePluginCommandArgs(plugin, commandName, args)
+	normalizedArgs, err := normalizePluginCommandArgs(plugin, commandName, args)
+	if err != nil {
+		return nil, err
+	}
 	result, err := a.Plugins.ExecuteCommand(plugin.Manifest.Name, commandName, normalizedArgs, pluginContext)
 	if err != nil {
 		return nil, err
@@ -156,7 +177,10 @@ func (a *App) ContinuePluginCommand(_ context.Context, plugin *discovery.Plugin,
 	}
 	pluginContext.Continuation = cont.Context
 
-	normalizedArgs := normalizePluginCommandArgs(plugin, cont.Command, cont.Args)
+	normalizedArgs, err := normalizePluginCommandArgs(plugin, cont.Command, cont.Args)
+	if err != nil {
+		return nil, err
+	}
 	result, err := a.Plugins.ExecuteCommand(plugin.Manifest.Name, cont.Command, normalizedArgs, pluginContext)
 	if err != nil {
 		return nil, err

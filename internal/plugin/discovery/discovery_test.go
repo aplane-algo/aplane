@@ -247,3 +247,63 @@ func TestSkippedPluginIsLoggedAsAWarning(t *testing.T) {
 		}
 	}
 }
+
+// TestPluginWithUnreadableArgSpecsIsNotLoaded installs an enabled plugin
+// whose arg_specs branch names a negative argument index, next to a good
+// one. Discovery leaves it out and warns with the reason, as for any other
+// manifest error, so neither argument normalization nor completion ever sees
+// those specs.
+func TestPluginWithUnreadableArgSpecsIsNotLoaded(t *testing.T) {
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	var out bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&out, nil)))
+
+	dataDir := t.TempDir()
+	availableDir := filepath.Join(dataDir, AvailableDirName)
+	createDiscoveryPlugin(t, availableDir, "good", "swap", "good")
+	pluginDir := filepath.Join(availableDir, "bad")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", pluginDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "bad.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(executable) error = %v", err)
+	}
+	manifestJSON := `{
+  "name": "bad",
+  "version": "1.0.0",
+  "description": "plugin with a negative branch index",
+  "executable": "bad.sh",
+  "commands": [{"name": "lend", "description": "cmd", "arg_specs": [
+    {"branches": [{"when": {"arg": -1, "matches": "^x$"}, "specs": [{"type": "address"}]}]}
+  ]}],
+  "manifest_format": "2.0"
+}`
+	if err := os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifestJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(manifest) error = %v", err)
+	}
+	checksums, err := integrity.GenerateChecksums(pluginDir, []string{"manifest.json", "bad.sh"})
+	if err != nil {
+		t.Fatalf("GenerateChecksums() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "checksums.sha256"), []byte(checksums), 0o644); err != nil {
+		t.Fatalf("WriteFile(checksums) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, ActivationConfigName), []byte("enabled_plugins:\n  - bad\n  - good\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", ActivationConfigName, err)
+	}
+
+	plugins, err := NewWithDataDir(dataDir).Discover()
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if got, want := discoveredPluginSummaries(plugins), []string{"good:swap"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Discover() = %#v, want %#v", got, want)
+	}
+	logged := out.String()
+	for _, want := range []string{"level=WARN", "name=bad", "when.arg is -1"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("log = %q, want %q", logged, want)
+		}
+	}
+}

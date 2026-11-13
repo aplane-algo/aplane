@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 )
@@ -112,6 +113,9 @@ func (m *Manifest) Validate() error {
 		if cmd.Description == "" {
 			return fmt.Errorf("command[%d]: description is required", i)
 		}
+		if err := validateArgSpecs(cmd.ArgSpecs, "arg_specs"); err != nil {
+			return fmt.Errorf("command[%d] %q: %w", i, cmd.Name, err)
+		}
 	}
 
 	// Set defaults
@@ -122,6 +126,32 @@ func (m *Manifest) Validate() error {
 		m.Timeout = 30
 	}
 
+	return nil
+}
+
+// validateArgSpecs checks what the two readers of arg_specs take for granted:
+// argument normalization (apshellapp) and tab completion (shellrepl) index the
+// typed arguments by a branch's when.arg, compile its when.matches, and take
+// the first of its specs once it matches. Branches nest, so the check
+// recurses into every branch's specs.
+func validateArgSpecs(specs []cmdspec.ArgSpec, path string) error {
+	for i, spec := range specs {
+		for j, branch := range spec.Branches {
+			at := fmt.Sprintf("%s[%d].branches[%d]", path, i, j)
+			if branch.When.Arg < 0 {
+				return fmt.Errorf("%s: when.arg is %d; an argument index must not be negative", at, branch.When.Arg)
+			}
+			if _, err := regexp.Compile(branch.When.Matches); err != nil {
+				return fmt.Errorf("%s: when.matches does not compile: %w", at, err)
+			}
+			if len(branch.Specs) == 0 {
+				return fmt.Errorf("%s: specs is empty; a branch needs at least one spec", at)
+			}
+			if err := validateArgSpecs(branch.Specs, at+".specs"); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

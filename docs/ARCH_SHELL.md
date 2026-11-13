@@ -951,7 +951,10 @@ when a set expands to more than one address.
 argument types in `manifest.json` via `arg_specs` and support address, asset,
 set, keyword, number, file, and conditional branching. The `custom` type is
 reserved for plugin-provided completion; the runtime returns no custom
-suggestions.
+suggestions. Discovery refuses a manifest whose branches the resolvers could
+not read (see [ARCH_PLUGINS.md](ARCH_PLUGINS.md#the-manifest-manifestjson));
+`resolveArgSpec` and the argument normalization in `apshellapp` still check a
+branch's index and pattern, giving no completion or an error, not a panic.
 
 Built-in commands complete in two layers. `ContextCompleter.Do` first tries
 context paths that understand a command's argument positions and match account
@@ -1578,6 +1581,18 @@ Response shape:
 Errors are returned as MCP error results. If `print()` output was produced before the error, it is prepended to the error message.
 
 The `code` argument is required.
+
+The script runs under the request's context. `scripting.GojaRunner` interrupts
+the interpreter when that context, or the REPL's or apconsole's command
+context on Ctrl-C, is cancelled, so an endless loop ends and the execution
+lock is released; the run returns `script interrupted: <ctx.Err()>`. A
+watcher goroutine per run delivers the interrupt and exits when the run ends,
+and the runner clears any interrupt before and after each run, so none reaches
+a later script. A host call running at the cancellation is not cut short; it
+ends under the cancelled context. Its result never reaches the script, so
+`jsapi` prints it on the script's output (`<fn>() ended after the script was
+interrupted, returning: ...` or `..., failing with: ...`); see
+[USER_JSAPI.md](USER_JSAPI.md#stopping-a-script).
 
 #### `doc` tool
 

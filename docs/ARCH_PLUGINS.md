@@ -100,8 +100,8 @@ Each plugin must reside in its own subdirectory containing:
 Symlinked plugin directories are ignored. If multiple enabled catalog
 directories declare the same manifest `name`, the first enabled entry wins.
 
-Missing or integrity-failing enabled plugin directories are skipped with a
-warning. Invalid `plugins.yaml` syntax or unsafe plugin names fail discovery.
+Missing, integrity-failing, or invalid-manifest enabled plugin directories are
+skipped with a warning that gives the reason. Invalid `plugins.yaml` syntax or unsafe plugin names fail discovery.
 If `plugins.yaml` is missing, no plugins are loaded.
 
 Activation file format:
@@ -261,9 +261,17 @@ For commands with subcommands that have different argument patterns, use `branch
 
 | Field | Description |
 |-------|-------------|
-| `when.arg` | Argument index to check (0-based) |
-| `when.matches` | Regex pattern to match against the argument value |
-| `specs` | ArgSpecs to use when condition matches |
+| `when.arg` | Argument index to check (0-based); must not be negative |
+| `when.matches` | Regex pattern (Go RE2 syntax) to match against the argument value; must compile |
+| `specs` | ArgSpecs to use when condition matches; at least one is required, and they may branch again |
+
+Argument normalization and tab completion index the typed arguments by
+`when.arg`, compile `when.matches`, and take the first of `specs` once a branch
+matches. Discovery therefore checks every branch, nested ones included, for
+those three rules; a manifest that breaks one is invalid, so the plugin is not
+loaded and discovery warns with the field's path, for example
+`command[0] "my-command": arg_specs[1].branches[0]: when.arg is -1; an argument
+index must not be negative`.
 
 ### JSON-RPC Protocol
 
