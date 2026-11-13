@@ -151,7 +151,7 @@ func (fs *Signer) restoreReleases(ctx context.Context, ir *productruntime.Runtim
 	ctx, cancel := ir.LockCancelContext(ctx)
 	defer cancel()
 	svc := &signersigning.Service{Planner: fs.newPlannerWithAudit(nil), Console: signerConsole{}, IsUnlocked: ir.IsUnlocked, Rotating: fs.rotatingDeps(ir)}
-	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), generation, audited, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), generation, audited)
 	if err != nil {
 		logWarnf("rotating release memory: %v", err)
 	}
@@ -213,7 +213,6 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 		Batch:          fs.stageFillBatch,
 		MaxDerivations: fs.stageFillMaxDeriv,
 		Parallel:       1,
-		KeyUse:         ir.KeyUseContext,
 		Session:        &session,
 		Pace: func(d time.Duration) {
 			select {

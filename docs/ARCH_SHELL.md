@@ -951,7 +951,14 @@ when a set expands to more than one address.
 argument types in `manifest.json` via `arg_specs` and support address, asset,
 set, keyword, number, file, and conditional branching. The `custom` type is
 reserved for plugin-provided completion; the runtime returns no custom
-suggestions.
+suggestions. Completion (`resolveArgSpec`) and the plugin argument
+normalization in `apshellapp` read branches with one resolver,
+`cmdspec.ArgSpecAt`, so both select the same spec at every position, nested
+branches included. Discovery refuses a manifest whose branches the resolver
+could not read (see [ARCH_PLUGINS.md](ARCH_PLUGINS.md#the-manifest-manifestjson));
+for specs that skipped discovery, the resolver reports such a branch, and
+completion offers nothing there while normalization passes the arguments from
+there on as typed, logging the reason at `debug`.
 
 Built-in commands complete in two layers. `ContextCompleter.Do` first tries
 context paths that understand a command's argument positions and match account
@@ -1578,6 +1585,33 @@ Response shape:
 Errors are returned as MCP error results. If `print()` output was produced before the error, it is prepended to the error message.
 
 The `code` argument is required.
+
+The script runs under the tool call's context, but the MCP stdio server does
+not currently deliver a client's cancel to a running tool:
+`internal/apshellcli/mcp.go` starts it with `context.Background()`, and
+mcp-go v0.27.0 handles one message at a time
+and does not act on `notifications/cancelled`. So nothing stops a `js` call
+before its script ends, an endless loop included, and the server answers no
+other request meanwhile.
+
+What does interrupt a script is a cancelled context. `scripting.GojaRunner`
+interrupts the interpreter when the context it runs under is cancelled, as
+the REPL's and apconsole's command context is on Ctrl-C, so an endless loop
+ends and the execution lock is released. A run that ends while its context is
+cancelled returns `script interrupted: <ctx.Err()>`, wrapping the context's
+error whatever ended the run; when an error of the script's own ended it
+before the interrupt (a host call failing under the cancelled context), that
+error is wrapped too and its text follows (`...; the script ended with:
+<error>`). A watcher goroutine per run delivers the interrupt and exits when
+the run ends, and the runner clears any interrupt before and after each run,
+so none reaches a later script. A host call running at the cancellation is
+not cut short; it ends under the cancelled context. Its result never reaches
+the script, so `jsapi` prints it on the script's output (`<fn>() ended after
+the script was interrupted, returning: ...` or `..., failing with: ...`), a
+returned value as one line of JSON cut at 256 bytes. A host call the script
+starts after the cancellation, before the interrupt reaches it, does not run:
+it throws `<fn>() not run: the script was interrupted (...)` and prints
+nothing. See [USER_JSAPI.md](USER_JSAPI.md#stopping-a-script).
 
 #### `doc` tool
 

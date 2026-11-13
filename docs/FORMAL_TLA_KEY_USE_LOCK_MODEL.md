@@ -18,7 +18,13 @@
 > violates `KU3_NoExportAfterWipe`, 160 distinct states at depth 8).
 
 Code that holds loaded key material outside an admin session registers a key
-use with `Runtime.KeyUseContext`. A lock cancels every registered key use and
+use with `Runtime.KeyUseContext`. For a rotating seed that is every load in
+prepare and sign: the identity read (`rotatingAccount`) and each stage
+derivation (`requestDeriver`) in both, and the sign's signing window after
+approval; the stage table fill and the release restore use the same identity
+read and deriver. Every one of them opens its window through
+`RotatingDeps.keyUse`, which refuses to open one without `KeyUse`, so none of
+them loads a seed unregistered. A lock cancels every registered key use and
 waits for each to release before it clears the session. Two holders release
 something to a caller: a rotating sign returns a signature, and a mnemonic
 export delivers a recovery phrase. This model asks what a lock guarantees
@@ -43,7 +49,8 @@ waits for it; KU2 and KU3 cover that case.
 ## What TLC actually verifies
 
 - `SStart`, `SRegister`, `SMake`, `SRelease`, and `SReturn` transcribe
-  `SignRotatingWithContext` in `internal/signerapp/signing/rotating_flow.go`:
+  the signing window of `SignRotatingWithContext` in
+  `internal/signerapp/signing/rotating_flow.go`, after approval:
   the lock generation captured at the start, `deps.keyUse`, `releaseRefused`
   before the seed is used, `rs.close` and `endKeyUse` before the audit write,
   and `releaseRefused` on the request context before the response.
@@ -86,7 +93,17 @@ for each.
 
 - One rotating sign and one export, each repeating. The stage table worker is
   a third holder of the same mechanism; KU2 holds for any number of holders
-  because the drain waits for each registered key use.
+  because the drain waits for each registered key use. Prepare's seed loads
+  and the sign's two loads before approval are holders of the same kind: each
+  registers, loads, zeroes the seed and releases, returns nothing to a caller
+  while it holds the seed, and answers locked when its key use is refused or
+  cut short (the deriver reports that as `errKeyUseRefused`, decided where the
+  window was stopped). `Register`, a held step and `Release` describe them, so
+  KU2 covers them without new actions.
+- The model takes as given that every load of key material is registered; it
+  cannot see a load that is not. For rotating seeds,
+  `TestLockWaitsForEveryRotatingSeedLoad` parks each load of prepare and sign
+  under the real `Runtime.Lock` and fails if one of them is not a key use.
 - The sign's leaf choice, audit write and release memory belong to
   [FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md](FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md)
   and are not repeated here. The audit write is the gap between `SRelease` and

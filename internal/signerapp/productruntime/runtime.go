@@ -1133,8 +1133,10 @@ func (ir *Runtime) RotatingNotes() []string {
 // so. It keeps waiting: a lock that returned while a seed was still in
 // memory would be a lie, so a user that fails to release stalls the lock
 // visibly rather than letting it complete. Users hold key material only
-// across derivations, never across I/O, so in practice the wait is one
-// derivation.
+// across its load and derivations, never across a disk write; the one network
+// read inside a window (a stateless-hash rotating sign's last chain read) runs
+// under the key-use context, which the lock cancels. In practice the wait is
+// one derivation.
 const keyUseDrainWarnAfter = 5 * time.Second
 
 // KeyUseContext registers a holder of loaded key material. The

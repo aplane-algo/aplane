@@ -42,7 +42,9 @@ func (l *RotatingLocks) deriveJob(ctx context.Context, key stageJobKey, derive f
 				// A foreground leader may have left while a background grant
 				// still needs this probe. Retry under the waiter's own context;
 				// do not consume its explicit hint cursor without doing work.
-				if len(job.addresses) == 0 && ctx.Err() == nil && (job.err == nil || errors.Is(job.err, context.Canceled) || errors.Is(job.err, context.DeadlineExceeded)) {
+				// A refused key use was the leader's; the waiter's own key use
+				// decides whether it is refused too.
+				if len(job.addresses) == 0 && ctx.Err() == nil && (job.err == nil || errors.Is(job.err, context.Canceled) || errors.Is(job.err, context.DeadlineExceeded) || errors.Is(job.err, errKeyUseRefused)) {
 					continue
 				}
 				return job.addresses, job.err
