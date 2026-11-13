@@ -105,13 +105,40 @@ submission step as an `Error` object, not a string. These functions are
 `sweep()` and `plugin()`, any failure of the run is thrown this way. The
 text is the same as before: an uncaught error, `"failed: " + e`, `String(e)`
 and `e.message` all give it. Two things differ from a thrown string:
-`typeof e` is `"object"`, and `print(e)` prints `map[value:<text>]`, because
-`print()` does not convert an `Error` to its text. Use `print(String(e))`.
-The error keeps the submission's outcome, so the MCP `js` tool reports the
-transaction IDs and how far their submission got (see
-[ARCH_SHELL.md](ARCH_SHELL.md#submission-outcomes)). These functions still
-throw their other failures, such as a bad argument or a failed preparation,
-as strings.
+`typeof e` is `"object"`, and `print(e)` prints the object's properties
+(`map[... value:<text>]`), because `print()` does not convert an `Error` to
+its text. Use `print(String(e))`. These functions still throw their other
+failures, such as a bad argument or a failed preparation, as strings.
+
+When the failure came at or after algod's submit call, the error says which
+transactions it concerns and how far they got:
+
+- `e.txids`: the IDs of the transactions whose submission failed, in group
+  order. Look them up before retrying: some may be on the network.
+- `e.submission`: how far their submission got: `"submitted"` (algod
+  accepted them; the wait for their confirmation then failed), `"unknown"`
+  (algod gave no answer, or answered with an HTTP status other than 400),
+  `"rejected"` (algod answered with HTTP 400; read the reason in the
+  message, since a transaction already in the ledger is answered this way
+  too) or `"not_sent"` (nothing was sent).
+
+A `sweep()` in which several transactions failed this way has every one of
+their IDs in `e.txids` and no `e.submission`; its message gives each
+account's reason. A failure before the submit call has neither property.
+
+```javascript
+try {
+  send("alice", "bob", algo(1))
+} catch (e) {
+  if (e.txids) {
+    print("submission " + e.submission + ": check " + e.txids.join(", ") + " before retrying")
+  }
+}
+```
+
+The MCP `js` tool reports the outcome of every such failure of the run, the
+caught ones too, in its result's `submissions` (see
+[ARCH_SHELL.md](ARCH_SHELL.md#submission-outcomes)). Nothing retries.
 
 Scripts do not have direct filesystem, network, process, or private-key access.
 They operate through the exported shell functions, and signing still routes

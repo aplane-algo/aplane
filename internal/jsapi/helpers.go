@@ -4,6 +4,7 @@
 package jsapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -11,8 +12,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	algoutil "github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/dop251/goja"
 )
 
@@ -101,17 +104,67 @@ func makeMicroalgosFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Valu
 	}
 }
 
-// throwSubmitError throws the failure of a function that submits. The
+// throwSubmitError throws the failure of a function that submits. Every
+// submitting function throws its submission failure through here. The
 // exception is an Error whose message is err's text, and whose string form,
 // uncaught or concatenated, is that text alone, as the string thrown before
-// it was. It carries err, so the host reads the submission's outcome from the
-// error the run returns (scripting.RunnerError's Cause). Every submitting
-// function throws its submission failure through here.
+// it was. When err carries submission outcomes
+// (appresult.SubmissionsFromError), the Error has txids, every ID of the
+// failed submissions in order, and, when there is one, submission, its
+// state. The outcomes are also recorded for the run when its context has a
+// recorder (RecordSubmissions), so the host reports them whether or not the
+// script catches the error.
 func (a *API) throwSubmitError(err error) {
+	submissions := appresult.SubmissionsFromError(err)
+	if recorder, ok := a.Context().Value(submissionRecorderKey{}).(*submissionRecorder); ok {
+		recorder.add(submissions)
+	}
 	obj := a.runtime.NewGoError(err)
 	// A GoError's name would print "GoError: " before the message.
 	_ = obj.DefineDataProperty("name", a.runtime.ToValue(""), goja.FLAG_TRUE, goja.FLAG_TRUE, goja.FLAG_FALSE)
+	if len(submissions) > 0 {
+		var ids []interface{}
+		for _, submission := range submissions {
+			for _, id := range submission.TxIDs {
+				ids = append(ids, id)
+			}
+		}
+		_ = obj.Set("txids", a.runtime.NewArray(ids...))
+		if len(submissions) == 1 {
+			_ = obj.Set("submission", submissions[0].State)
+		}
+	}
 	panic(obj)
+}
+
+type submissionRecorderKey struct{}
+
+// submissionRecorder holds the outcomes of the submission failures the JS
+// functions threw during one run, in order.
+type submissionRecorder struct {
+	mu          sync.Mutex
+	submissions []appresult.Submission
+}
+
+func (r *submissionRecorder) add(submissions []appresult.Submission) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.submissions = append(r.submissions, submissions...)
+}
+
+func (r *submissionRecorder) recorded() []appresult.Submission {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]appresult.Submission(nil), r.submissions...)
+}
+
+// RecordSubmissions returns ctx for one script run, under which every
+// submission failure a JS function throws is recorded, whether or not the
+// script catches it, and a function that returns the outcomes recorded so
+// far, in order.
+func RecordSubmissions(ctx context.Context) (context.Context, func() []appresult.Submission) {
+	recorder := &submissionRecorder{}
+	return context.WithValue(ctx, submissionRecorderKey{}, recorder), recorder.recorded
 }
 
 // requireArgs panics with a JS exception if the call has fewer than n arguments.

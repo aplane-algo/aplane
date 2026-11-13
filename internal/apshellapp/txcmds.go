@@ -816,7 +816,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		LeavingMinimumBalance: leaveMinimumBalance,
 	}
 
-	var submitErrs []error
+	var submissionFailures []*signing.SubmissionError
 	for _, fromAddress := range fromAddresses {
 		item := SweepItemResult{From: fromAddress, To: toAddress}
 		if fromAddress == toAddress {
@@ -927,7 +927,10 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				item.Error = fmt.Sprintf("transaction failed: %v", err)
 			}
 			item.Submission = appresult.SubmissionFromError(err)
-			submitErrs = append(submitErrs, err)
+			var failure *signing.SubmissionError
+			if errors.As(err, &failure) {
+				submissionFailures = append(submissionFailures, failure)
+			}
 			result.FailureCount++
 			result.Items = append(result.Items, item)
 			continue
@@ -946,27 +949,11 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 
 	if result.FailureCount > 0 && result.SuccessCount == 0 {
 		return result, &failedItemsError{
-			msg:  fmt.Sprintf("all %d transaction(s) failed", result.FailureCount),
-			errs: submitErrs,
+			msg:      fmt.Sprintf("all %d transaction(s) failed", result.FailureCount),
+			failures: submissionFailures,
 		}
 	}
 	return result, nil
-}
-
-// failedItemsError is a command's failure as a whole, with the errors its
-// items' submissions failed with, so the outcome each carries
-// (appresult.SubmissionsFromError) is not lost. Its text is msg alone.
-type failedItemsError struct {
-	msg  string
-	errs []error
-}
-
-func (e *failedItemsError) Error() string {
-	return e.msg
-}
-
-func (e *failedItemsError) Unwrap() []error {
-	return e.errs
 }
 
 func authorizationFeeReserveForSweep(

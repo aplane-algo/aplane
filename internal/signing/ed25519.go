@@ -59,10 +59,11 @@ func SubmitTransactionsWithContext(
 	// From here a failure is a *SubmissionError naming the IDs and how far
 	// the group got, which every caller keeps when it wraps the error.
 	if err := ctx.Err(); err != nil {
-		return nil, submissionFailure(txIDs, SubmissionNotSent, fmt.Errorf("failed to submit %s: %w", what, err))
+		return nil, submissionFailure(txIDs, SubmissionNotSent, nil, fmt.Errorf("failed to submit %s: %w", what, err))
 	}
 	if _, err := algodClient.SendRawTransaction(blob).Do(ctx); err != nil {
-		return nil, submissionFailure(txIDs, submitCallState(err), fmt.Errorf("failed to submit %s: %w", what, cleanSubmitError(err)))
+		answer := algodAnswer(err)
+		return nil, submissionFailure(txIDs, submitCallState(answer), answer, fmt.Errorf("failed to submit %s: %w", what, cleanSubmitError(err)))
 	}
 
 	_, _ = fmt.Fprintln(w, "✓ Transaction(s) submitted")
@@ -81,7 +82,7 @@ func SubmitTransactionsWithContext(
 		confirmedTxn, err := transaction.WaitForConfirmation(algodClient, txIDs[0], confirmationTimeoutRounds, ctx)
 		if err != nil {
 			_, _ = fmt.Fprintln(w)
-			return txIDs, submissionFailure(txIDs, SubmissionSubmitted, fmt.Errorf("confirmation failed: %w", err))
+			return txIDs, submissionFailure(txIDs, SubmissionSubmitted, nil, fmt.Errorf("confirmation failed: %w", err))
 		}
 		_, _ = fmt.Fprintf(w, "\n✓ Confirmed in round %d\n", confirmedTxn.ConfirmedRound)
 	}

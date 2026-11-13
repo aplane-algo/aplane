@@ -8,19 +8,12 @@ package scripting
 import "context"
 
 // RunnerError represents an error that occurred during script execution.
-// Cause is the Go error an uncaught exception carried, when a host function
-// threw one, so what it reports (a submission's outcome) stays readable.
 type RunnerError struct {
 	Message string
-	Cause   error
 }
 
 func (e *RunnerError) Error() string {
 	return e.Message
-}
-
-func (e *RunnerError) Unwrap() error {
-	return e.Cause
 }
 
 // Result holds the outcome of running a script.

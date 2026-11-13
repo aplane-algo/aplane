@@ -85,7 +85,7 @@ func (r *GojaRunner) RunWithContext(ctx context.Context, code string) (result Re
 		result = Result{}
 		switch v := recovered.(type) {
 		case *goja.Exception:
-			err = &RunnerError{Message: v.String(), Cause: v.Unwrap()}
+			err = &RunnerError{Message: v.String()}
 		case goja.Value:
 			err = &RunnerError{Message: v.String()}
 		case error:
@@ -101,7 +101,7 @@ func (r *GojaRunner) RunWithContext(ctx context.Context, code string) (result Re
 		if jsErr, ok := err.(*goja.Exception); ok {
 			// Use String() to get proper error message including stack trace info
 			// Don't use Value().Export() as that returns map[] for Error objects
-			return Result{}, &RunnerError{Message: jsErr.String(), Cause: jsErr.Unwrap()}
+			return Result{}, &RunnerError{Message: jsErr.String()}
 		}
 		return Result{}, err
 	}

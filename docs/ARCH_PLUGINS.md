@@ -676,13 +676,15 @@ that lists them and says to look them up before running the plugin again; in
 simulate mode it names the simulated ones as not sent and leaves out a failed
 simulation's own IDs (see [USER_JSAPI.md](USER_JSAPI.md#plugins)).
 
-When a step's submission fails at or after algod's submit call, the REPL and
-MCP result carries that step's outcome in `submissions`: its state
-(`submitted`, `unknown`, `rejected` or `not_sent`) and every ID of its group (see
-[ARCH_SHELL.md](ARCH_SHELL.md#submission-outcomes)). `plugin()`'s error keeps
-the same outcome for the MCP `js` tool. Its message still lists the IDs it has,
-completed steps' and the failing step's (those the submission returned)
-together, and the caller looks them up.
+When a step's submission fails at or after algod's submit call, the plugin's
+machine result (what MCP returns) carries that step's outcome in
+`submissions`: its state (`submitted`, `unknown`, `rejected` or `not_sent`) and
+every ID of its group (see
+[ARCH_SHELL.md](ARCH_SHELL.md#submission-outcomes)); the REPL prints what it
+printed before. `plugin()`'s error carries the step's `txids` and
+`submission`, and the MCP `js` tool reports the outcome. Its message still
+lists the IDs it has, completed steps' and the failing step's (those the
+submission returned) together, and the caller looks them up.
 
 Continuation argument normalization follows the same manifest-driven rules as the initial command.
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`

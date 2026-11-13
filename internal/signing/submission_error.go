@@ -5,6 +5,7 @@ package signing
 
 import (
 	"errors"
+	"net/http"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common"
 )
@@ -22,11 +23,12 @@ const (
 	// made, so nothing was sent.
 	SubmissionNotSent SubmissionState = "not_sent"
 	// SubmissionSubmitted: algod accepted the group, and the wait for its
-	// confirmation then failed, so whether it confirmed was not seen.
+	// confirmation then ended with an error.
 	SubmissionSubmitted SubmissionState = "submitted"
 	// SubmissionUnknown: the submit call ended without a 400 answer from
-	// algod (no answer, a lost connection, another status, or the context
-	// ending during the call), so whether algod has the group is not known.
+	// algod: with no HTTP answer (a lost connection, a timeout, the context
+	// ending during the call) or with another HTTP status (Answer). Whether
+	// algod has the group is not known.
 	SubmissionUnknown SubmissionState = "unknown"
 )
 
@@ -39,7 +41,14 @@ const (
 type SubmissionError struct {
 	TxIDs []string
 	State SubmissionState
-	Err   error
+	// Answer is algod's HTTP answer to the submit call, its status and its
+	// message as algod gave them, when the call got one. It is nil when the
+	// call got no HTTP answer, and when the failure came before the call or
+	// after algod accepted the group.
+	Answer *common.HTTPError
+	// Err is the failure. For SubmissionSubmitted it is "confirmation
+	// failed: " wrapping the confirmation wait's own error.
+	Err error
 }
 
 func (e *SubmissionError) Error() string {
@@ -55,16 +64,40 @@ func (e *SubmissionError) Submitted() bool {
 	return e.State == SubmissionSubmitted
 }
 
-func submissionFailure(txIDs []string, state SubmissionState, err error) error {
-	return &SubmissionError{TxIDs: append([]string(nil), txIDs...), State: state, Err: err}
+func submissionFailure(txIDs []string, state SubmissionState, answer *common.HTTPError, err error) error {
+	return &SubmissionError{TxIDs: append([]string(nil), txIDs...), State: state, Answer: answer, Err: err}
 }
 
-// submitCallState reads the submit call's error without interpreting algod's
-// reason: a 400 is algod's answer; any other failure leaves it open whether
-// algod has the group.
-func submitCallState(err error) SubmissionState {
-	var answered common.BadRequest
-	if errors.As(err, &answered) {
+// algodAnswer returns the HTTP answer algod gave a call that failed, nil when
+// err holds none: the call got no HTTP answer.
+func algodAnswer(err error) *common.HTTPError {
+	var (
+		badRequest   common.BadRequest
+		invalidToken common.InvalidToken
+		notFound     common.NotFound
+		internal     common.InternalError
+		other        common.HTTPError
+	)
+	switch {
+	case errors.As(err, &badRequest):
+		return &badRequest.HTTPError
+	case errors.As(err, &invalidToken):
+		return &invalidToken.HTTPError
+	case errors.As(err, &notFound):
+		return &notFound.HTTPError
+	case errors.As(err, &internal):
+		return &internal.HTTPError
+	case errors.As(err, &other):
+		return &other
+	}
+	return nil
+}
+
+// submitCallState reads the submit call's answer without interpreting
+// algod's reason: a 400 is algod's answer; anything else leaves it open
+// whether algod has the group.
+func submitCallState(answer *common.HTTPError) SubmissionState {
+	if answer != nil && answer.StatusCode == http.StatusBadRequest {
 		return SubmissionRejected
 	}
 	return SubmissionUnknown

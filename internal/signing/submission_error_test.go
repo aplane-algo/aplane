@@ -89,6 +89,15 @@ func refuseSubmit(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": "TransactionPool.Remember: transaction X: overspend"})
 }
 
+// answerSubmit answers the submit call with status.
+func answerSubmit(status int) func(http.ResponseWriter) {
+	return func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "node is catching up"})
+	}
+}
+
 // signedPayments returns n signed payments and their IDs.
 func signedPayments(t *testing.T, n int) ([][]byte, []string) {
 	t.Helper()
@@ -113,16 +122,19 @@ func signedPayments(t *testing.T, n int) ([][]byte, []string) {
 }
 
 // Each way a submission can end is told apart: algod accepting and the wait
-// timing out or failing is "submitted"; a submit call with no answer is
-// "unknown"; algod's 400 is "rejected"; a context that ended before the call
-// is "not_sent". The error keeps the text it had before and names every
-// transaction ID of the group, even when algod's own text names none.
+// timing out or failing is "submitted"; a submit call with no answer, or an
+// answer other than 400, is "unknown"; algod's 400 is "rejected"; a context
+// that ended before the call is "not_sent". An answer algod gave the submit
+// call is kept as given (Answer), and only then. The error keeps the text it
+// had before and names every transaction ID of the group, even when algod's
+// own text names none.
 func TestSubmitTransactionsReportsHowFarTheGroupGot(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		node      *submitNode
 		cancelled bool
 		state     SubmissionState
+		answer    int
 		text      string
 		posts     int32
 	}{
@@ -133,7 +145,17 @@ func TestSubmitTransactionsReportsHowFarTheGroupGot(t *testing.T) {
 		{name: "the submit response is lost", node: &submitNode{submit: dropSubmit},
 			state: SubmissionUnknown, text: "failed to submit transaction group: ", posts: 1},
 		{name: "algod answers 400", node: &submitNode{submit: refuseSubmit},
-			state: SubmissionRejected, text: "failed to submit transaction group: HTTP 400: {\"message\":\"TransactionPool.Remember: transaction X: overspend\"}\n", posts: 1},
+			state: SubmissionRejected, answer: 400, text: "failed to submit transaction group: HTTP 400: {\"message\":\"TransactionPool.Remember: transaction X: overspend\"}\n", posts: 1},
+		{name: "algod answers 401", node: &submitNode{submit: answerSubmit(401)},
+			state: SubmissionUnknown, answer: 401, text: "failed to submit transaction group: HTTP 401: ", posts: 1},
+		{name: "algod answers 404", node: &submitNode{submit: answerSubmit(404)},
+			state: SubmissionUnknown, answer: 404, text: "failed to submit transaction group: HTTP 404: ", posts: 1},
+		{name: "algod answers 429", node: &submitNode{submit: answerSubmit(429)},
+			state: SubmissionUnknown, answer: 429, text: "failed to submit transaction group: HTTP 429: ", posts: 1},
+		{name: "algod answers 500", node: &submitNode{submit: answerSubmit(500)},
+			state: SubmissionUnknown, answer: 500, text: "failed to submit transaction group: HTTP 500: ", posts: 1},
+		{name: "algod answers 503", node: &submitNode{submit: answerSubmit(503)},
+			state: SubmissionUnknown, answer: 503, text: "failed to submit transaction group: HTTP 503: ", posts: 1},
 		{name: "the context ended before the call", node: &submitNode{submit: acceptSubmit}, cancelled: true,
 			state: SubmissionNotSent, text: "failed to submit transaction group: context canceled"},
 	} {
@@ -152,6 +174,12 @@ func TestSubmitTransactionsReportsHowFarTheGroupGot(t *testing.T) {
 			}
 			if failure.State != tc.state || failure.Submitted() != (tc.state == SubmissionSubmitted) {
 				t.Fatalf("state = %q (submitted %v), want %q", failure.State, failure.Submitted(), tc.state)
+			}
+			if tc.answer == 0 && failure.Answer != nil {
+				t.Fatalf("Answer = %+v, want none: algod gave the submit call no answer", failure.Answer)
+			}
+			if tc.answer != 0 && (failure.Answer == nil || failure.Answer.StatusCode != tc.answer || !strings.Contains(failure.Answer.Message, "\"message\":")) {
+				t.Fatalf("Answer = %+v, want status %d with algod's message", failure.Answer, tc.answer)
 			}
 			if strings.Join(failure.TxIDs, ",") != strings.Join(ids, ",") {
 				t.Fatalf("TxIDs = %v, want %v", failure.TxIDs, ids)

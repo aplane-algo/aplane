@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/docassets"
+	"github.com/aplane-algo/aplane/internal/jsapi"
 	"github.com/aplane-algo/aplane/internal/version"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -271,11 +272,7 @@ func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
 
 	result, err := state.executeCommandResult(cmd)
 	if err != nil {
-		var machine []byte
-		if result != nil {
-			machine, _ = result.MarshalMachine()
-		}
-		return mcpErrorResult(err.Error(), err, machine)
+		return mcpErrorResult(err.Error(), err, appresult.SubmissionsFromError(err))
 	}
 	if result == nil {
 		name := cmd.Name
@@ -296,28 +293,24 @@ func mcpJSONTextResult(data []byte) *mcp.CallToolResult {
 }
 
 // mcpErrorJSON is the structured content of an MCP error result: the error
-// text, the outcome of each submission the error carries, and the command's
-// structured result when it returned one with the error.
+// text and the outcome of each failed submission.
 type mcpErrorJSON struct {
 	Error       string                 `json:"error"`
-	Submissions []appresult.Submission `json:"submissions,omitempty"`
-	Result      json.RawMessage        `json:"result,omitempty"`
+	Submissions []appresult.Submission `json:"submissions"`
 }
 
-// mcpErrorResult is a failed tool call whose first text content is text. When
-// err carries submission outcomes (appresult.SubmissionsFromError), or the
-// command returned a structured result with it (machine), each outcome's
-// sentence is appended to that text, and a second text content holds
-// mcpErrorJSON. Any other error is its text alone, as before.
-func mcpErrorResult(text string, err error, machine []byte) *mcp.CallToolResult {
-	submissions := appresult.SubmissionsFromError(err)
-	if len(submissions) == 0 && len(machine) == 0 {
+// mcpErrorResult is a failed tool call whose first text content is text.
+// With submission outcomes, each outcome's sentence is appended to that text,
+// and a second text content holds mcpErrorJSON. Without, it is the text
+// alone, as before.
+func mcpErrorResult(text string, err error, submissions []appresult.Submission) *mcp.CallToolResult {
+	if len(submissions) == 0 {
 		return mcp.NewToolResultError(text)
 	}
 	for _, submission := range submissions {
 		text += "\n" + submission.Message
 	}
-	data, marshalErr := json.Marshal(mcpErrorJSON{Error: err.Error(), Submissions: submissions, Result: machine})
+	data, marshalErr := json.Marshal(mcpErrorJSON{Error: err.Error(), Submissions: submissions})
 	if marshalErr != nil {
 		return mcp.NewToolResultError(text)
 	}
@@ -357,6 +350,9 @@ func mcpReferenceText(state *REPLState) string {
 type mcpJSResult struct {
 	Value  interface{} `json:"value,omitempty"`
 	Output string      `json:"output,omitempty"`
+	// Submissions are the outcomes of the submission failures the script's
+	// functions threw, including those it caught.
+	Submissions []appresult.Submission `json:"submissions,omitempty"`
 }
 
 // captureJSExecution runs JS code with print() output captured into the returned
@@ -390,16 +386,21 @@ func captureJSExecution(ctx context.Context, state *REPLState, code string) (mcp
 	return resp, nil
 }
 
-// mcpJSExecutionResult wraps captureJSExecution for the MCP js tool.
+// mcpJSExecutionResult wraps captureJSExecution for the MCP js tool. It
+// reports every submission failure the script's functions threw
+// (jsapi.RecordSubmissions), caught or not, on success and on error.
 func mcpJSExecutionResult(ctx context.Context, state *REPLState, code string) *mcp.CallToolResult {
+	ctx, recorded := jsapi.RecordSubmissions(ctx)
 	resp, err := captureJSExecution(ctx, state, code)
+	submissions := recorded()
 	if err != nil {
 		msg := err.Error()
 		if resp.Output != "" {
 			msg = resp.Output + "\nError: " + msg
 		}
-		return mcpErrorResult(msg, err, nil)
+		return mcpErrorResult(msg, err, submissions)
 	}
+	resp.Submissions = submissions
 	data, marshalErr := json.Marshal(resp)
 	if marshalErr != nil {
 		return mcp.NewToolResultText(fmt.Sprintf("value: %v\noutput: %s", resp.Value, resp.Output))

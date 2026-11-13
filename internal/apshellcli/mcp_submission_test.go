@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,6 +55,8 @@ const (
 	nodeAcceptsSubmit = "accept" // accepts; the confirmation wait then times out
 	nodeRefusesSubmit = "refuse" // HTTP 400
 	nodeHasTheGroup   = "ledger" // HTTP 400: the transaction is already in the ledger
+	nodeUnavailable   = "503"    // HTTP 503
+	nodePoolError     = "pool"   // accepts; the pending transaction then reports a pool error
 	nodeConfirms      = "confirm"
 )
 
@@ -209,6 +212,9 @@ func (f *submitFixture) serveNode(t *testing.T) func(http.ResponseWriter, *http.
 			case nodeHasTheGroup:
 				w.WriteHeader(http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(map[string]string{"message": "TransactionPool.Remember: transaction X: transaction already in ledger"})
+			case nodeUnavailable:
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": "node is catching up"})
 			default:
 				_ = json.NewEncoder(w).Encode(map[string]string{"txId": "accepted"})
 			}
@@ -216,8 +222,11 @@ func (f *submitFixture) serveNode(t *testing.T) func(http.ResponseWriter, *http.
 			_ = json.NewEncoder(w).Encode(models.NodeStatus{LastRound: 1000})
 		case strings.HasPrefix(path, "/v2/transactions/pending/"):
 			info := models.PendingTransactionInfoResponse{}
-			if f.mode == nodeConfirms {
+			switch f.mode {
+			case nodeConfirms:
 				info.ConfirmedRound = 1001
+			case nodePoolError:
+				info.PoolError = "TransactionPool.Remember: transaction X: overspend"
 			}
 			w.Header().Set("Content-Type", "application/msgpack")
 			_, _ = w.Write(msgpack.Encode(info))
@@ -372,19 +381,38 @@ func TestMCPSubmittingCommandsReportALostSubmission(t *testing.T) {
 }
 
 // The states and success, through one command: an accepted submission whose
-// confirmation was not seen, a lost submit response, algod's 400 answer, and
-// a confirmed send. Only a failed submission adds structured content;
-// the error text is the one the REPL prints.
+// confirmation wait timed out or ended with the pool error algod reported, a
+// lost submit response, an HTTP answer other than 400, algod's 400 answer,
+// and a confirmed send. Each sentence says what happened, with what algod or
+// the wait answered as given. Only a failed submission adds structured
+// content; the error text is the one the REPL prints.
 func TestMCPSubmissionOutcomeStates(t *testing.T) {
 	for _, tc := range []struct {
 		mode      string
 		state     string
 		submitted bool
-		message   string
+		message   func(ids []string) string
 	}{
-		{nodeAcceptsSubmit, "submitted", true, "Submitted: algod accepted transaction(s) %s, and their confirmation was not seen. Check these IDs on the network before retrying."},
-		{nodeDropsSubmit, "unknown", false, "Submission outcome unknown: the submit request for transaction(s) %s got no answer from algod, so they may have been accepted. Check these IDs on the network before retrying."},
-		{nodeRefusesSubmit, "rejected", false, "algod answered the submit request for transaction(s) %s with an error. Read the reason before retrying: a transaction already in the ledger is answered this way too."},
+		{nodeAcceptsSubmit, "submitted", true, func(ids []string) string {
+			return "Submitted: algod accepted transaction(s) " + strings.Join(ids, ", ") +
+				", and waiting for their confirmation ended with: wait for transaction id " + ids[0] + " timed out. Check these IDs on the network before retrying."
+		}},
+		{nodePoolError, "submitted", true, func(ids []string) string {
+			return "Submitted: algod accepted transaction(s) " + strings.Join(ids, ", ") +
+				", and waiting for their confirmation ended with: transaction rejected: TransactionPool.Remember: transaction X: overspend. Check these IDs on the network before retrying."
+		}},
+		{nodeDropsSubmit, "unknown", false, func(ids []string) string {
+			return "Submission outcome unknown: the submit request for transaction(s) " + strings.Join(ids, ", ") +
+				" got no answer from algod, so they may have been accepted. Check these IDs on the network before retrying."
+		}},
+		{nodeUnavailable, "unknown", false, func(ids []string) string {
+			return "Submission outcome unknown: algod answered the submit request for transaction(s) " + strings.Join(ids, ", ") +
+				` with HTTP 503: {"message":"node is catching up"}. Check these IDs on the network before retrying.`
+		}},
+		{nodeRefusesSubmit, "rejected", false, func(ids []string) string {
+			return "algod answered the submit request for transaction(s) " + strings.Join(ids, ", ") +
+				" with an error. Read the reason before retrying: a transaction already in the ledger is answered this way too."
+		}},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			f := newSubmitFixture(t, tc.mode)
@@ -395,7 +423,7 @@ func TestMCPSubmissionOutcomeStates(t *testing.T) {
 			text, structured := mcpErrorParts(t, mcpExecuteCommand(f.state, cmd))
 			ids := f.signedIDs()[0]
 			want := appresult.Submission{State: tc.state, Submitted: tc.submitted, TxIDs: ids,
-				Message: fmt.Sprintf(tc.message, strings.Join(ids, ", "))}
+				Message: tc.message(ids)}
 			got := structured.Submissions[0]
 			want.Error = got.Error
 			if !reflect.DeepEqual(got, want) || got.Error == "" || !strings.Contains(structured.Error, got.Error) {
@@ -403,9 +431,6 @@ func TestMCPSubmissionOutcomeStates(t *testing.T) {
 			}
 			if text != structured.Error+"\n"+want.Message {
 				t.Fatalf("text = %q", text)
-			}
-			if len(structured.Result) != 0 {
-				t.Fatalf("result = %s, want none", structured.Result)
 			}
 		})
 	}
@@ -445,39 +470,75 @@ func TestMCPErrorWithoutASubmissionIsItsText(t *testing.T) {
 	}
 }
 
-// A sweep in which every item failed reports each item's outcome: the
-// submissions in order, with the sweep's own result, whose items keep their
-// reasons and outcomes. The REPL's error text is unchanged.
+// A sweep in which every item failed reports each item's outcome once: in
+// the error result's submissions, in order. The result is not attached, so
+// no outcome appears twice, and the error text is the REPL's.
 func TestMCPSweepWhoseItemsAllFailed(t *testing.T) {
 	f := newSubmitFixture(t, nodeDropsSubmit)
 	cmd, err := parseShellCommand(fmt.Sprintf("sweep algo from [%s %s] to %s", f.a.Address, f.c.Address, f.b.Address))
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, structured := mcpErrorParts(t, mcpExecuteCommand(f.state, cmd))
+	result := mcpExecuteCommand(f.state, cmd)
+	text, structured := mcpErrorParts(t, result)
 	signed := f.signedIDs()
 	if structured.Error != "all 2 transaction(s) failed" || len(signed) != 2 || len(structured.Submissions) != 2 {
 		t.Fatalf("error %q, submissions %+v, signed %v", structured.Error, structured.Submissions, signed)
-	}
-	var result sweepProjection
-	if err := json.Unmarshal(structured.Result, &result); err != nil {
-		t.Fatalf("result %s: %v", structured.Result, err)
-	}
-	if len(result.Items) != 2 {
-		t.Fatalf("items = %+v", result.Items)
 	}
 	for i, submission := range structured.Submissions {
 		if submission.State != "unknown" || !reflect.DeepEqual(submission.TxIDs, signed[i]) {
 			t.Fatalf("submission %d = %+v, want unknown for %v", i, submission, signed[i])
 		}
-		item := result.Items[i]
-		if item.Error == "" || item.Submission == nil || !reflect.DeepEqual(item.Submission.TxIDs, signed[i]) {
-			t.Fatalf("item %d = %+v, want its reason and outcome", i, item)
-		}
 		if !strings.Contains(text, submission.Message) {
 			t.Fatalf("text %q lacks item %d's outcome", text, i)
 		}
 	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result.Content[1].(mcp.TextContent).Text), &keys); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 || keys["error"] == nil || keys["submissions"] == nil {
+		t.Fatalf("structured content has %v, want error and submissions only", keys)
+	}
+}
+
+// The error of a sweep in which every item failed is the sweep's own: no
+// item's error is reachable through it, so no item's sentinel matches it,
+// while the outcomes of the items whose submission failed are still read
+// from it. One whose items carry no outcome is the error text alone, as
+// before, though the sweep returned its result with it.
+func TestSweepWhoseItemsAllFailedMatchesNoItemError(t *testing.T) {
+	sweep := func(t *testing.T, f *submitFixture) Command {
+		t.Helper()
+		cmd, err := parseShellCommand(fmt.Sprintf("sweep algo from [%s %s] to %s", f.a.Address, f.c.Address, f.b.Address))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cmd
+	}
+	t.Run("refused before signing", func(t *testing.T) {
+		f := newSubmitFixture(t, nodeDropsSubmit)
+		f.eng.Connection.SignerClient = nil
+		result, err := f.state.executeCommandResult(sweep(t, f))
+		if result == nil || err == nil || err.Error() != "all 2 transaction(s) failed" || errors.Is(err, engine.ErrNotConnected) {
+			t.Fatalf("result returned %v, error %v: want the sweep's result and its own error, matching no item's", result != nil, err)
+		}
+		if mcpResult := mcpExecuteCommand(f.state, sweep(t, f)); !mcpResult.IsError || len(mcpResult.Content) != 1 ||
+			mcpResultText(t, mcpResult) != "all 2 transaction(s) failed" {
+			t.Fatalf("MCP result = %+v, want the error text alone", mcpResult)
+		}
+	})
+	t.Run("lost submissions", func(t *testing.T) {
+		f := newSubmitFixture(t, nodeDropsSubmit)
+		_, err := f.state.executeCommandResult(sweep(t, f))
+		var failure *signing.SubmissionError
+		if err == nil || errors.Is(err, io.EOF) || errors.As(err, &failure) {
+			t.Fatalf("error %v reaches an item's error", err)
+		}
+		if got := appresult.SubmissionsFromError(err); len(got) != 2 {
+			t.Fatalf("submissions = %+v, want both items'", got)
+		}
+	})
 }
 
 // JS sign() through the MCP js tool: the uncaught error keeps its text, and
@@ -495,6 +556,39 @@ func TestMCPJSSignReportsASubmission(t *testing.T) {
 		!strings.HasPrefix(text, structured.Error) {
 		t.Fatalf("error %q, text %q", structured.Error, text)
 	}
+}
+
+// The MCP js tool reports every submission failure the script's functions
+// threw, including those the script caught: on a successful result, and with
+// a later uncaught one on the error result. The caught Error names the
+// submission for the script.
+func TestMCPJSReportsCaughtSubmissions(t *testing.T) {
+	send := func(f *submitFixture) string { return fmt.Sprintf("send(%q, %q, 1000)", f.a.Address, f.b.Address) }
+	t.Run("caught", func(t *testing.T) {
+		f := newSubmitFixture(t, nodeDropsSubmit)
+		result := mcpJSExecutionResult(context.Background(), f.state,
+			`var seen; try { `+send(f)+` } catch (e) { seen = e.submission + " " + e.txids.join(",") } seen`)
+		if result.IsError {
+			t.Fatalf("result = %+v, want success", result)
+		}
+		var got mcpJSResult
+		if err := json.Unmarshal([]byte(mcpResultText(t, result)), &got); err != nil {
+			t.Fatal(err)
+		}
+		ids := f.signedIDs()[0]
+		if got.Value != "unknown "+strings.Join(ids, ",") {
+			t.Fatalf("the script read %v from the error, want its state and IDs %v", got.Value, ids)
+		}
+		if len(got.Submissions) != 1 || got.Submissions[0].State != "unknown" || !reflect.DeepEqual(got.Submissions[0].TxIDs, ids) {
+			t.Fatalf("submissions = %+v, want the caught one for %v", got.Submissions, ids)
+		}
+	})
+	t.Run("caught, then uncaught", func(t *testing.T) {
+		f := newSubmitFixture(t, nodeDropsSubmit)
+		text, structured := mcpErrorParts(t, mcpJSExecutionResult(context.Background(), f.state,
+			`try { `+send(f)+` } catch (e) {} `+send(f)))
+		wantJSSubmissions(t, f, text, structured, 2)
+	})
 }
 
 // The REPL is unchanged: it returns the error text it printed before, and

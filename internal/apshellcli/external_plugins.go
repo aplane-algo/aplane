@@ -83,9 +83,10 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 				pr.Submissions = appresult.SubmissionsFromError(err)
 				if submit != nil {
 					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
-					// Kept for JS plugin()'s error only. The submission returned
-					// them with its error, so what became of them is not
-					// reported.
+					// Kept for JS plugin()'s error message only. The submission
+					// returned them with its error; how far they got is in
+					// pr.Submissions, when the failure came at or after
+					// algod's submit call.
 					pr.failedStepTxIDs = submit.TxIDs
 				}
 				return err

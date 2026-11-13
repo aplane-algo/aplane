@@ -8,6 +8,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -678,6 +679,26 @@ type SweepCommandResult struct {
 	InfoLines             []string
 	HeaderLine            string
 	SummaryLines          []string
+}
+
+// failedItemsError is a command's failure as a whole, a sweep in which every
+// item failed. Its text is msg alone. It reports its items' submission
+// failures for appresult.SubmissionsFromError and wraps nothing: an item's
+// sentinel does not describe the whole, and the command's result already
+// shows each item's output.
+type failedItemsError struct {
+	msg      string
+	failures []*signing.SubmissionError
+}
+
+var _ appresult.SubmissionFailures = (*failedItemsError)(nil)
+
+func (e *failedItemsError) Error() string {
+	return e.msg
+}
+
+func (e *failedItemsError) SubmissionFailures() []*signing.SubmissionError {
+	return e.failures
 }
 
 // ConnectResult describes the outcome of a signer connection attempt.

@@ -384,7 +384,7 @@ func TestPluginRunRecordOfAFailedRun(t *testing.T) {
 			"state": "submitted", "submitted": true, "txids": txids,
 			"error": "confirmation failed: HTTP 503: status unavailable\n",
 			"message": "Submitted: algod accepted transaction(s) " + strings.Join(ids, ", ") +
-				", and their confirmation was not seen. Check these IDs on the network before retrying.",
+				", and waiting for their confirmation ended with: HTTP 503: status unavailable. Check these IDs on the network before retrying.",
 		}}
 	}
 	t.Run("one step", func(t *testing.T) {
