@@ -104,20 +104,21 @@ func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.Authoriza
 }
 
 // AuthorizationFeeReserve returns the additional microAlgo fee a standalone
-// transaction from sender needs beyond its ordinary base fee. It covers
-// LogicSig resource dummies and priced program bytes, plus the native-PQ fee
-// contribution. Sweep flows reserve it before choosing a spend-everything
-// amount. The calculation is local and deterministic because this release
-// implements one compiled v42 consensus contract.
-func (e *Core) AuthorizationFeeReserve(sender string) (uint64, error) {
-	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
-	profile, ok := e.signerCacheLogicSigResourceProfile(effectiveSigner)
-	isNativeFalcon := e.signerCacheKeyType(effectiveSigner) == nativefalcon.KeyType
+// transaction signed by signingAddr's key needs beyond its ordinary base fee.
+// It covers LogicSig resource dummies and priced program bytes, plus the
+// native-PQ fee contribution. Sweep flows reserve it before choosing a
+// spend-everything amount. The calculation is local and deterministic because
+// this release implements one compiled v42 consensus contract. signingAddr is
+// the address that signs, SigningContext.SigningAddr: a rekeyed account's
+// auth address, a rotating account itself. The auth cache is not read.
+func (e *Core) AuthorizationFeeReserve(signingAddr string) (uint64, error) {
+	profile, ok := e.signerCacheLogicSigResourceProfile(signingAddr)
+	isNativeFalcon := e.signerCacheKeyType(signingAddr) == nativefalcon.KeyType
 	if !ok && !isNativeFalcon {
 		return 0, nil
 	}
 	if ok && isNativeFalcon {
-		return 0, fmt.Errorf("signer cache classifies %s as both LogicSig and native Falcon", effectiveSigner)
+		return 0, fmt.Errorf("signer cache classifies %s as both LogicSig and native Falcon", signingAddr)
 	}
 	consensus, err := lsigresource.CurrentConsensus()
 	if err != nil {
