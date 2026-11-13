@@ -110,10 +110,13 @@ func (r TransactionASAResolver) ResolveMetadata(ref string) (asa.Metadata, error
 	if err != nil {
 		return asa.Metadata{}, err
 	}
-	if meta, ok := asa.BuiltinMetadata(e.Network, assetID); ok {
+	byCachedName := match == cache.ASARefByCachedName
+	// The table answers for a built-in asset unless only a cached name led
+	// to it. The cache keeps built-in entries as the table has them, so that
+	// should not happen; if it does, the name is confirmed like any other.
+	if meta, ok := asa.BuiltinMetadata(e.Network, assetID); ok && !byCachedName {
 		return meta, nil
 	}
-	byCachedName := match == cache.ASARefByCachedName
 	if r.idOnly && !byCachedName {
 		meta := asa.Metadata{Network: e.Network, AssetID: assetID, Source: asa.SourceIDOnly}
 		if cached, ok := e.AsaCache.Assets[assetID]; ok {
