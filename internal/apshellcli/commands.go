@@ -150,19 +150,6 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 	if cmdParams.Online {
 		mode = "online"
 	}
-	incentiveEligible := cmdParams.IncentiveEligible
-
-	if mode == "online" {
-		address, err := r.app().ResolveAddress(cmdParams.From)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve address: %w", err)
-		}
-		incentiveEligible, err = checkIncentiveEligibility(r, address, incentiveEligible, false)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	result, err := r.app().KeyReg(r.commandContext(), apshellapp.KeyRegRequest{
 		Account:           cmdParams.From,
 		Mode:              mode,
@@ -172,9 +159,12 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 		VoteFirst:         cmdParams.VoteFirst,
 		VoteLast:          cmdParams.VoteLast,
 		KeyDilution:       cmdParams.KeyDilution,
-		IncentiveEligible: incentiveEligible,
+		IncentiveEligible: cmdParams.IncentiveEligible,
 		LsigArgs:          cmdParams.LsigArgs,
 		Wait:              cmdParams.Wait,
+		BeforeSubmit: func(incentive *apshellapp.IncentiveEligibilityResult) {
+			reportIncentiveEligibility(r, incentive, false)
+		},
 	})
 	if err != nil {
 		return nil, err

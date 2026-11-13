@@ -24,7 +24,15 @@ type KeyRegParams struct {
 	VoteFirst         uint64 // First valid round
 	VoteLast          uint64 // Last valid round
 	KeyDilution       uint64 // Key dilution
-	IncentiveEligible bool   // Request incentive eligibility (costs 2 ALGO)
+	IncentiveEligible bool   // Request incentive eligibility (2 ALGO unless already eligible)
+}
+
+// IncentiveDecision is what an online key registration decided about
+// incentive eligibility and its 2 ALGO fee.
+type IncentiveDecision struct {
+	Requested       bool // The caller asked for incentive eligibility
+	AlreadyEligible bool // algod reports the account eligible already
+	FeeCharged      bool // The registration pays the 2 ALGO fee: requested and not eligible already
 }
 
 func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*TransactionPrepResult, error) {
@@ -86,16 +94,33 @@ func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*Trans
 		return nil, fmt.Errorf("failed to create keyreg transaction: %w", err)
 	}
 
-	// Set incentive fee if eligible.
+	// Going online reads whether the account is incentive eligible already.
+	// Eligibility survives later registrations, so the fee is paid only to
+	// become eligible. A failed lookup refuses the registration rather than
+	// pay 2 ALGO that may not be owed or drop a request for eligibility.
+	var incentive *IncentiveDecision
+	if params.Mode == "online" {
+		alreadyEligible, err := e.GetIncentiveEligibility(ctx, params.Account)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query incentive eligibility: %w", err)
+		}
+		incentive = &IncentiveDecision{
+			Requested:       params.IncentiveEligible,
+			AlreadyEligible: alreadyEligible,
+			FeeCharged:      params.IncentiveEligible && !alreadyEligible,
+		}
+	}
+
 	// 2 ALGO is the protocol-defined minimum fee for incentive eligibility (AVM v11+).
 	const incentiveFeeMicroAlgos = 2_000_000
-	if params.IncentiveEligible {
+	if incentive != nil && incentive.FeeCharged {
 		txnObj.Fee = types.MicroAlgos(incentiveFeeMicroAlgos)
 	}
 
 	return &TransactionPrepResult{
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
+		Incentive:      incentive,
 	}, nil
 }
 

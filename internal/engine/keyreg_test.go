@@ -106,17 +106,16 @@ func TestPrepareKeyReg_OfflineSuccess(t *testing.T) {
 	if txn.Sender.String() != addr {
 		t.Errorf("txn.Sender = %q, want %q", txn.Sender.String(), addr)
 	}
+	if result.Incentive != nil {
+		t.Errorf("offline registration carries an incentive decision: %+v", *result.Incentive)
+	}
 }
 
-func TestPrepareKeyReg_IncentiveFee(t *testing.T) {
-	addr := testAddr(1)
-	transport := newAccountMockTransport(t)
-	transport.addAccount(addr, 10_000_000)
-	eng := setupEngineWithMockAlgod(t, transport)
-
+// onlineKeyReg is an online registration for addr with well-formed keys.
+func onlineKeyReg(addr string, eligible bool) KeyRegParams {
 	key32 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	key64 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
-	result, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
+	return KeyRegParams{
 		Account:           addr,
 		Mode:              "online",
 		VoteKey:           key32,
@@ -125,13 +124,72 @@ func TestPrepareKeyReg_IncentiveFee(t *testing.T) {
 		VoteFirst:         1,
 		VoteLast:          100,
 		KeyDilution:       10,
-		IncentiveEligible: true,
-	})
-	if err != nil {
-		t.Fatalf("PrepareKeyReg() error = %v", err)
+		IncentiveEligible: eligible,
 	}
-	if uint64(result.Transaction.Fee) != 2_000_000 {
-		t.Errorf("txn.Fee = %d, want 2000000 for incentive eligibility", result.Transaction.Fee)
+}
+
+// The 2 ALGO fee is paid only to become eligible: an account that is
+// eligible already keeps its eligibility through the registration at the
+// ordinary fee. The decision is on the result, asked for or not.
+func TestPrepareKeyReg_IncentiveFee(t *testing.T) {
+	tests := []struct {
+		name            string
+		alreadyEligible bool
+		requested       bool
+		wantFee         uint64
+	}{
+		{"requested, not eligible yet", false, true, 2_000_000},
+		{"requested, eligible already", true, true, 1000},
+		{"not requested, eligible already", true, false, 1000},
+		{"not requested, not eligible", false, false, 1000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr := testAddr(1)
+			transport := newAccountMockTransport(t)
+			transport.txParams.Fee = 0 // the ordinary fee is the minimum fee
+			transport.addAccountFull(models.Account{
+				Address: addr, Amount: 10_000_000, MinBalance: 100_000, Status: "Online",
+				IncentiveEligible: tt.alreadyEligible,
+			})
+			eng := setupEngineWithMockAlgod(t, transport)
+
+			result, err := eng.PrepareKeyReg(context.Background(), onlineKeyReg(addr, tt.requested))
+			if err != nil {
+				t.Fatalf("PrepareKeyReg() error = %v", err)
+			}
+			if uint64(result.Transaction.Fee) != tt.wantFee {
+				t.Errorf("txn.Fee = %d, want %d", result.Transaction.Fee, tt.wantFee)
+			}
+			want := IncentiveDecision{
+				Requested:       tt.requested,
+				AlreadyEligible: tt.alreadyEligible,
+				FeeCharged:      tt.wantFee == 2_000_000,
+			}
+			if result.Incentive == nil || *result.Incentive != want {
+				t.Errorf("Incentive = %+v, want %+v", result.Incentive, want)
+			}
+		})
+	}
+}
+
+// Without the account's eligibility an online registration is refused, so it
+// neither pays a fee that may not be owed nor drops a request for eligibility.
+func TestPrepareKeyReg_RefusedWhenEligibilityCannotBeRead(t *testing.T) {
+	for _, requested := range []bool{true, false} {
+		addr := testAddr(1)
+		transport := newAccountMockTransport(t)
+		transport.addAccount(addr, 10_000_000)
+		eng := setupEngineWithMockAlgod(t, transport)
+		// The account signs for itself, so building the signing context asks
+		// algod nothing; then algod stops answering for the account.
+		eng.AuthCache.AuthAddresses[addr] = ""
+		delete(transport.accounts, addr)
+
+		_, err := eng.PrepareKeyReg(context.Background(), onlineKeyReg(addr, requested))
+		if err == nil || !strings.Contains(err.Error(), "failed to query incentive eligibility") {
+			t.Errorf("requested=%v: PrepareKeyReg() error = %v, want the eligibility lookup error", requested, err)
+		}
 	}
 }
 

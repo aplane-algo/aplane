@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/partkeyparse"
 
 	"github.com/chzyer/readline"
@@ -91,14 +92,16 @@ func (r *REPLState) keyRegPasteMode() error {
 	r.printf("  Key dilution: %d\n", parsedInfo.KeyDilution)
 	r.println()
 
-	// Check if account is already incentive eligible and prompt user if needed
-	incentiveEligible, err := checkIncentiveEligibility(r, parsedInfo.ParentAddress, false, true)
+	incentiveEligible, err := askIncentiveEligibility(r)
 	if err != nil {
 		return err
 	}
-	r.println()
 
-	result, err := r.app().KeyRegFromPartKey(r.commandContext(), parsedInfo, incentiveEligible)
+	result, err := r.app().KeyRegFromPartKey(r.commandContext(), parsedInfo, incentiveEligible,
+		func(incentive *apshellapp.IncentiveEligibilityResult) {
+			reportIncentiveEligibility(r, incentive, true)
+			r.println()
+		})
 	if err != nil {
 		return err
 	}

@@ -265,7 +265,7 @@ keyreg
 | `votefirst=<round>` | First round the participation key is valid for (required for `online`; no default) |
 | `votelast=<round>` | Last round the participation key is valid for (required for `online`; no default) |
 | `keydilution=<n>` | Key dilution, as reported for the participation key (required for `online`; no default) |
-| `eligible=true` | Mark as incentive-eligible, which sets a 2 ALGO fee. Only when going online; refused with `offline`. The value must be `true` or `false` |
+| `eligible=true` | Mark as incentive-eligible, which sets a 2 ALGO fee unless the account is eligible already. Only when going online; refused with `offline`. The value must be `true` or `false` |
 | `nowait` | Don't wait for confirmation |
 | `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 

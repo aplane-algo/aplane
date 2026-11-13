@@ -454,6 +454,11 @@ are all required to go online. They belong to the participation key, so there
 are no defaults: a registration with the wrong window or dilution goes through
 but can't vote.
 
+`eligible: true` asks for incentive eligibility, which sets a 2 ALGO fee. An
+account that is eligible already keeps its eligibility and pays the ordinary
+fee, as on the command line. Going online reads the account's eligibility from
+algod, and the registration is refused if algod can't answer.
+
 `participation()` returns:
 
 ```javascript

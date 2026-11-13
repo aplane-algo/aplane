@@ -52,6 +52,10 @@ type KeyRegRequest struct {
 	IncentiveEligible bool
 	Wait              bool
 	LsigArgs          cmdspec.LsigArgs
+	// BeforeSubmit, when set, is given what an online registration decided
+	// about incentive eligibility once the transaction is prepared and
+	// before it is signed, so the host can say whether the 2 ALGO fee is paid.
+	BeforeSubmit func(*IncentiveEligibilityResult)
 }
 
 // RekeyRequest captures parsed rekey inputs.
@@ -124,18 +128,22 @@ type ValidateRequest struct {
 	LsigArgs cmdspec.LsigArgs
 }
 
-// ResolveIncentiveEligibility queries current status and resolves whether to charge the fee.
-func (a *App) ResolveIncentiveEligibility(ctx context.Context, address string, requested bool) (*IncentiveEligibilityResult, error) {
-	cache.Debug("checking incentive eligibility", "address", address)
-	alreadyEligible, err := a.eng.GetIncentiveEligibility(ctx, address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query incentive eligibility: %w", err)
+// announceIncentive hands beforeSubmit the engine's incentive eligibility
+// decision for a prepared online registration. An offline one has none.
+func announceIncentive(prep *engine.TransactionPrepResult, beforeSubmit func(*IncentiveEligibilityResult)) {
+	decision := prep.Incentive
+	if decision == nil {
+		return
 	}
-	return &IncentiveEligibilityResult{
-		AlreadyEligible: alreadyEligible,
-		Requested:       requested,
-		ChargeFee:       !alreadyEligible && requested,
-	}, nil
+	cache.Debug("incentive eligibility", "requested", decision.Requested,
+		"already_eligible", decision.AlreadyEligible, "fee_charged", decision.FeeCharged)
+	if beforeSubmit != nil {
+		beforeSubmit(&IncentiveEligibilityResult{
+			AlreadyEligible: decision.AlreadyEligible,
+			Requested:       decision.Requested,
+			ChargeFee:       decision.FeeCharged,
+		})
+	}
 }
 
 // Validate resolves and validates one account or address set via 0-ALGO self-send transactions.
@@ -362,6 +370,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		return nil, err
 	}
 	prep := preparedTxnFromEngine(prepResult)
+	announceIncentive(prepResult, req.BeforeSubmit)
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
@@ -382,7 +391,9 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 }
 
 // KeyRegFromPartKey prepares and submits online keyreg from parsed goal output.
-func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.ParsedInfo, incentiveEligible bool) (*KeyRegCommandResult, error) {
+// beforeSubmit is KeyRegRequest.BeforeSubmit.
+func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.ParsedInfo, incentiveEligible bool,
+	beforeSubmit func(*IncentiveEligibilityResult)) (*KeyRegCommandResult, error) {
 	prepResult, err := a.eng.PrepareKeyReg(ctx, engine.KeyRegParams{
 		Account:           parsed.ParentAddress,
 		Mode:              "online",
@@ -398,6 +409,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		return nil, fmt.Errorf("failed to prepare keyreg: %w", err)
 	}
 	prep := preparedTxnFromEngine(prepResult)
+	announceIncentive(prepResult, beforeSubmit)
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, engine.LsigArgs{}, false)
 	if err != nil {
