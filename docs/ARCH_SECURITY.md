@@ -1796,9 +1796,12 @@ applies `lock_on_disconnect` in the normal disconnect cleanup path.
 
 #### Shutdown Path
 
-On `SIGINT` / `SIGTERM`, `internal/signerapp/startup.RunLifecycle` stops
-started services in reverse start order. It closes audit logging and destroys
-the one product runtime only after every service reports a clean stop:
+On `SIGINT` / `SIGTERM`, or when a service fails to start or serve,
+`internal/signerapp/startup.RunLifecycle` first ends the context every
+service was started with, so the rotating stage-table worker stops its passes
+at once, then stops started services in reverse start order. It destroys the
+one product runtime and closes audit logging only after every service reports
+a clean stop:
 
 All service stops share one 5 s shutdown deadline.
 
@@ -1809,14 +1812,27 @@ All service stops share one 5 s shutdown deadline.
    deadline (and cannot be approved after the stop began).
 2. Cancel and stop the SSH server.
 3. `ipcServer.Stop()` — stop accepting new IPC connections and close active sessions.
-4. Stop the rotating stage-table worker.
-5. Write `SERVER_STOP` and close the audit log.
-6. Call `Destroy()` on the product runtime:
+4. Stop the rotating stage-table worker: wait for it to exit until the
+   deadline. A worker still running then, in a stage table write that no
+   cancellation reaches, holds no key material and is left to the process
+   exit; that is not an incomplete stop.
+5. Call `Destroy(ctx)` on the product runtime, with a 5 s deadline of its own:
    - `StopKeyWatcher()` — prevents new reloads.
-   - drain background key users, then take the passphrase lock, as a lock does,
-     so a lock cleanup racing shutdown cannot interleave.
+   - drain background key users, as a lock does, but only until the deadline,
+     then take the passphrase lock, so a lock cleanup racing shutdown cannot
+     interleave.
    - `keySession.Destroy()` — drain in-flight key retrieval operations.
    - `keyStore.ClearKeys()` — zero every term key.
+6. Write `SERVER_STOP` and close the audit log.
+
+A key user that still holds key material at the drain deadline decrypted its
+own copy under the read locks that `keySession.Destroy()` and `ClearKeys()`
+wait for, so the session and keyring are cleared under it without disturbing
+it, and any load it starts afterward fails as locked. Its copy is zeroed when
+it releases or is reclaimed by the operating system at the exit that follows.
+`Destroy` reports it, and lifecycle writes `SERVER_STOP_INCOMPLETE` instead of
+`SERVER_STOP` and leaves the audit log open for that user's final record (a
+key export writes one).
 
 If any service stop fails, lifecycle writes a synced
 `SERVER_STOP_INCOMPLETE` record with the service error. A deadline error means
@@ -1826,8 +1842,7 @@ that handler and leaves the logger open for its final records. A non-deadline
 error is reported only after handlers have drained, so the logger is closed and
 runtime key state is destroyed normally. The SSH server applies the lifecycle
 deadline to its accept loop and connection handlers and returns the deadline
-error rather than treating an incomplete drain as success, and so does the
-rotating stage table worker while it is still in a pass. The clean shutdown
+error rather than treating an incomplete drain as success. The clean shutdown
 destroy path stops watcher dispatch before draining key operations and zeroing
 the keyring.
 

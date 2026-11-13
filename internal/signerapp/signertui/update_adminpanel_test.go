@@ -152,7 +152,9 @@ func TestBoundedSettingsAreHiddenOnCosignerNodes(t *testing.T) {
 
 // A failed setting update can still be in effect (saved, its durability
 // unconfirmed), so the panel re-reads the settings after a failure as after a
-// success, instead of keeping the value it showed before.
+// success, instead of keeping the value it showed before. That result is
+// coded applied_not_durable and shown as a warning; it once read "Setting
+// update failed" like a refused change.
 func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = serverConn.Close() }()
@@ -180,12 +182,13 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 	m := approvalTestModel(ViewAdminPanel)
 	m.adminClient = client
 	m.admin.settings = &AdminSettings{UserAutoApprove: false}
+	inEffect := "user_auto_approve is set to true and in effect, but its durability is not confirmed: injected"
 	next, cmd := m.Update(AdminSettingUpdatedMsg{
 		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true",
-		Error: "user_auto_approve is set to true and in effect, but its durability is not confirmed: injected",
+		Code: protocol.ResultCodeAppliedNotDurable, Error: inEffect,
 	})
-	if got := next.(Model).lastError; !strings.Contains(got, "durability is not confirmed") {
-		t.Fatalf("lastError = %q, want the signer's error shown", got)
+	if got := next.(Model); got.lastError != "" || got.lastWarning != inEffect {
+		t.Fatalf("lastError = %q, lastWarning = %q; want no error and the signer's message as a warning", got.lastError, got.lastWarning)
 	}
 	// A lone listener wait blocks until the client disconnects.
 	produced := make(chan tea.Msg, 1)
@@ -210,5 +213,17 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("no get_admin_settings sent after a failed update")
+	}
+}
+
+// A refused or unsaved setting change is shown as a failure.
+func TestUnappliedSettingUpdateIsShownAsAFailure(t *testing.T) {
+	m := approvalTestModel(ViewAdminPanel)
+	next, _ := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true",
+		Code: protocol.ErrCodeInternal, Error: "failed to save config.yaml; user_auto_approve is unchanged: injected",
+	})
+	if got := next.(Model); got.lastError != "Setting update failed: failed to save config.yaml; user_auto_approve is unchanged: injected" || got.lastWarning != "" {
+		t.Fatalf("lastError = %q, lastWarning = %q; want the failure as an error", got.lastError, got.lastWarning)
 	}
 }

@@ -648,13 +648,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
-		if !msg.Success {
+		var warningCmd tea.Cmd
+		switch {
+		case msg.Code == protocol.ResultCodeAppliedNotDurable:
+			// Saved and in effect; only its durability is unconfirmed, which
+			// the signer's message says.
+			warningCmd = m.setTransientWarning(msg.Error)
+		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
 		}
 		// Re-read the settings either way: a failed update can still be in
 		// effect (saved, its durability unconfirmed), so the panel shows what
 		// the signer holds rather than what it showed before.
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd())
+		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), warningCmd)
 
 	case PolicyLoadedMsg:
 		return m.handlePolicyLoaded(msg)

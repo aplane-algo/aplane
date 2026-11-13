@@ -118,9 +118,9 @@ func TestSigningNeverSeesAnUnsavedAutoApprove(t *testing.T) {
 }
 
 // What an admin client receives when the save is in place but its directory
-// sync failed: a failed result whose error says the setting is in effect,
-// and settings that then report the new value, which the TUI re-reads after
-// any result.
+// sync failed: a failed result coded applied_not_durable whose error says the
+// setting is in effect, and settings that then report the new value, which
+// the TUI re-reads after any result.
 func TestUnsyncedSettingSaveReachesTheAdminClientAsInEffect(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -154,6 +154,7 @@ func TestUnsyncedSettingSaveReachesTheAdminClientAsInEffect(t *testing.T) {
 	if !reflectJSONSubset(msgs[0], map[string]any{
 		"type": protocol.MsgTypeUpdateAdminSettingResult, "id": "req-1", "success": false,
 		"key": adminproto.AdminSettingUserAutoApprove, "value": "true",
+		"code": protocol.ResultCodeAppliedNotDurable,
 	}) {
 		t.Fatalf("update_admin_setting_result = %#v", msgs[0])
 	}

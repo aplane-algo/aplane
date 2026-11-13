@@ -55,8 +55,10 @@ which KU2 covers.
 Scope: one rotating sign and one export, repeating. The stage table worker is
 a third holder of the same kind; KU2 covers any holder. The sign's leaf choice
 and release memory are rotating_leaf_release.tla's. Shutdown (Runtime.Destroy)
-is not modeled: it drains and clears only after every service has stopped and
-skips teardown when a handler may still run, so no holder can exist or start.
+is not modeled: the process exits right after it. It drains like a lock but
+only until its deadline, then clears the session either way; a holder still
+running then keeps its own decrypted copy until it releases or the process
+exits, and shutdown records the stop as incomplete.
 
 Code anchors:
   - SStart/SRegister/SMake/SRelease/SReturn transcribe

@@ -845,6 +845,7 @@ type AdminSettingUpdatedMsg struct {
 	Success bool
 	Key     string
 	Value   string
+	Code    string
 	Error   string
 }
 

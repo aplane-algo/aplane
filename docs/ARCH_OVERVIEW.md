@@ -1514,12 +1514,18 @@ audit logger and runtime key state intact for process exit. A non-deadline stop
 error occurs only after handlers have drained; lifecycle closes the audit log
 and destroys runtime state normally. SSH stop uses the same lifecycle deadline
 and reports a deadline error until its accept loop and all connection handlers
-have exited. The rotating stage table worker's stop does the same while the
-worker is still in a pass (a derivation, or a stage table write, which no
-cancellation reaches), so the runtime it may be using is never destroyed
-underneath it. Shutdown therefore takes at most the shared lifecycle
-deadline; on the retention path nothing is zeroed in process and the
-operating system reclaims key material at the exit that follows.
+have exited. Every service's start context ends when shutdown begins, so the
+rotating stage table worker stops its passes then rather than at its turn,
+last, in the stop order. A worker still running at the deadline is in a stage
+table write that no cancellation reaches and holds no key material, so its
+stop reports nothing and the shutdown stays complete. `Runtime.Destroy` then
+waits for background key users with a deadline of its own and zeroes the
+keyring either way: a key use still in flight at that deadline keeps its own
+decrypted copy until it releases or the process exits, and lifecycle records
+`SERVER_STOP_INCOMPLETE` and leaves the audit log open. Shutdown therefore
+takes at most the shared stop deadline plus one more for key users; on the
+retention path nothing is zeroed in process and the operating system reclaims
+key material at the exit that follows.
 
 `RunLifecycle` returns the error of a service that failed to start (an HTTP
 port that cannot be bound, for example) or stopped serving with an error,

@@ -261,9 +261,7 @@ func TestBuildAdminSettingsEndpointDisplayURL(t *testing.T) {
 func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 	t.Run("theme uses process config mutation lock", func(t *testing.T) {
 		svc, _, deps := setupAdminService(t)
-		if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-			t.Fatal(err)
-		}
+		writeRootConfig(t, deps)
 
 		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingTheme, Value: "dark"}); err != nil {
 			t.Fatalf("UpdateAdminSetting(theme) error = %v", err)
@@ -278,9 +276,7 @@ func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 
 	t.Run("identity setting uses store mutation lock", func(t *testing.T) {
 		svc, _, deps := setupAdminService(t)
-		if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-			t.Fatal(err)
-		}
+		writeRootConfig(t, deps)
 
 		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "true"}); err != nil {
 			t.Fatalf("UpdateAdminSetting(user_auto_approve) error = %v", err)
@@ -306,9 +302,7 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
 			svc, _, deps := setupAdminService(t)
-			if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-				t.Fatal(err)
-			}
+			writeRootConfig(t, deps)
 
 			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
 				Key:   tt.key,
@@ -358,9 +352,7 @@ func TestGenerationRequirementsAreSavedAndLoaded(t *testing.T) {
 
 func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
+	writeRootConfig(t, deps)
 	for _, test := range []struct {
 		key                     string
 		wantAdmin, wantCosigner bool
@@ -395,9 +387,7 @@ func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 
 func TestGenerationRequirementIsNotAppliedWhenItCannotBeSaved(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
+	writeRootConfig(t, deps)
 	// A directory where the runtime config belongs makes the save fail.
 	if err := os.MkdirAll(productruntime.ConfigPath(deps.dataDir), 0o700); err != nil {
 		t.Fatal(err)
@@ -555,7 +545,8 @@ func TestUpdateAdminSettingFailureBeforeRenameChangesNothing(t *testing.T) {
 
 				err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: tc.key, Value: tc.to})
 				fsutil.TestHook = nil
-				if err == nil || errors.Is(err, fsutil.ErrPublishedNotDurable) || !strings.Contains(err.Error(), "unchanged") {
+				if err == nil || errors.Is(err, fsutil.ErrPublishedNotDurable) || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotDurable ||
+					!strings.Contains(err.Error(), "unchanged") {
 					t.Fatalf("UpdateAdminSetting error = %v, want the save failure with the setting unchanged", err)
 				}
 				if live, stored := tc.live(svc, ir), tc.stored(t, deps.dataDir); live != tc.from || stored != tc.from {
@@ -578,9 +569,9 @@ func TestUpdateAdminSettingFailureAfterRenamePublishesTheSavedValue(t *testing.T
 
 			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: tc.key, Value: tc.to})
 			fsutil.TestHook = nil
-			if !errors.Is(err, fsutil.ErrPublishedNotDurable) ||
+			if !errors.Is(err, fsutil.ErrPublishedNotDurable) || protocol.CodeForError(err) != protocol.ResultCodeAppliedNotDurable ||
 				!strings.Contains(err.Error(), "in effect") || !strings.Contains(err.Error(), "durability is not confirmed") {
-				t.Fatalf("UpdateAdminSetting error = %v, want in effect with durability unconfirmed", err)
+				t.Fatalf("UpdateAdminSetting error = %v (code %q), want %s: in effect with durability unconfirmed", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotDurable)
 			}
 			if live, stored := tc.live(svc, ir), tc.stored(t, deps.dataDir); live != tc.to || stored != tc.to {
 				t.Fatalf("after the unsynced save: live %s, saved %s; want both %s", live, stored, tc.to)

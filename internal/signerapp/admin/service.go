@@ -173,8 +173,8 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	}
 
 	// The new value is a candidate until it is saved: publish makes it live
-	// only afterward, so no reader (a signing request included) ever sees a
-	// value the file does not hold.
+	// only once the save returns, so no reader (a signing request included)
+	// ever sees a value that was not saved.
 	var saveValue interface{}
 	var publish func()
 	icfg := ir.Config()
@@ -243,7 +243,8 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		// The new file is in place and is what the next start loads, so
 		// memory follows it rather than keep a value the file no longer holds.
 		publish()
-		return fmt.Errorf("%s is set to %v and in effect, but its durability is not confirmed: %w", req.Key, saveValue, saveErr)
+		return protocol.WithCode(protocol.ResultCodeAppliedNotDurable,
+			fmt.Errorf("%s is set to %v and in effect, but its durability is not confirmed: %w", req.Key, saveValue, saveErr))
 	default:
 		return fmt.Errorf("failed to save config.yaml; %s is unchanged: %w", req.Key, saveErr)
 	}

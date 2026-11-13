@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,13 +21,7 @@ import (
 func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
-		KeyPaths: storepaths.NewPaths(root),
-	})
-	ir.SetUnlocked()
-	ir.SnapshotKeySession().InitializeSession()
+	ir := newLifecycleTestRuntime(t)
 
 	var mu sync.Mutex
 	var events []string
@@ -119,13 +115,7 @@ func (r *lifecycleAuditRecorder) snapshot() (stopped bool, incompleteReason stri
 func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
-		KeyPaths: storepaths.NewPaths(root),
-	})
-	ir.SetUnlocked()
-	ir.SnapshotKeySession().InitializeSession()
+	ir := newLifecycleTestRuntime(t)
 
 	handlerRelease := make(chan struct{})
 	handlerDone := make(chan struct{})
@@ -185,13 +175,7 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 func TestShutdownLifecycleDestroysRuntimeAfterNonDeadlineStopError(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
-		KeyPaths: storepaths.NewPaths(root),
-	})
-	ir.SetUnlocked()
-	ir.SnapshotKeySession().InitializeSession()
+	ir := newLifecycleTestRuntime(t)
 	audit := &lifecycleAuditRecorder{}
 
 	shutdownLifecycle([]LifecycleService{{
@@ -295,5 +279,109 @@ func TestRunLifecycleReturnsAServeFailure(t *testing.T) {
 	}
 	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
+	}
+}
+
+// Shutdown waits for a key use in flight before it zeroes the keyring, and
+// records a complete stop once the use has released its material.
+func TestShutdownWaitsForAKeyUseBeforeZeroing(t *testing.T) {
+	t.Parallel()
+
+	ir := newLifecycleTestRuntime(t)
+	useCtx, release := ir.KeyUseContext(context.Background())
+	sessionLiveAtRelease := make(chan bool, 1)
+	go func() {
+		<-useCtx.Done()
+		_, err := ir.SnapshotKeySession().GetKey("missing")
+		sessionLiveAtRelease <- !errors.Is(err, keystore.ErrStoreLocked)
+		release()
+	}()
+	audit := &lifecycleAuditRecorder{}
+	shutdownLifecycle(nil, LifecyclePlan{ProductRuntime: ir, ShutdownTimeout: 5 * time.Second, AuditLog: audit})
+
+	if !<-sessionLiveAtRelease {
+		t.Fatal("the session was cleared before the key use released its material")
+	}
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
+	}
+	if stopped, incompleteReason, closed := audit.snapshot(); !stopped || incompleteReason != "" || !closed {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want SERVER_STOP and a closed logger", stopped, incompleteReason, closed)
+	}
+}
+
+// A key use that outlives the shutdown deadline does not hold shutdown: the
+// keyring is zeroed anyway, the stop is recorded as incomplete, and the audit
+// log stays open for the user's own final record. Shutdown once waited for
+// key users without a bound.
+func TestShutdownBoundsItsWaitForAKeyUse(t *testing.T) {
+	t.Parallel()
+
+	ir := newLifecycleTestRuntime(t)
+	_, release := ir.KeyUseContext(context.Background())
+	t.Cleanup(release)
+	audit := &lifecycleAuditRecorder{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		shutdownLifecycle(nil, LifecyclePlan{ProductRuntime: ir, ShutdownTimeout: 50 * time.Millisecond, AuditLog: audit})
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown waited on a key use past its deadline")
+	}
+
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
+	}
+	if stopped, incompleteReason, closed := audit.snapshot(); stopped || !strings.Contains(incompleteReason, "key use") || closed {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want the key use recorded and the logger open", stopped, incompleteReason, closed)
+	}
+}
+
+// Every Start context has ended by the time the first Stop runs, whatever
+// ended the run, so background work tied to it does not run on through the
+// other services' stops. It once ended only with the caller's context, which
+// a start or serve failure leaves running.
+func TestShutdownEndsTheStartContextsBeforeAnyStop(t *testing.T) {
+	t.Parallel()
+
+	for _, failStart := range []bool{false, true} {
+		var startCtx context.Context
+		var endedAtStop []bool
+		stop := func(context.Context) error {
+			endedAtStop = append(endedAtStop, startCtx.Err() != nil)
+			return nil
+		}
+		err := RunLifecycle(context.Background(), LifecyclePlan{
+			ProductRuntime:  newLifecycleTestRuntime(t),
+			ShutdownTimeout: time.Second,
+			Services: []LifecycleService{
+				{
+					Name:  "worker",
+					Start: func(ctx context.Context, _ chan<- error) error { startCtx = ctx; return nil },
+					Stop:  stop,
+				},
+				{Name: "SSH server", Start: func(context.Context, chan<- error) error { return nil }, Stop: stop},
+				{
+					Name: "HTTP server",
+					Start: func(_ context.Context, errs chan<- error) error {
+						if failStart {
+							return errors.New("address already in use")
+						}
+						errs <- errors.New("accept failed")
+						return nil
+					},
+					Stop: stop,
+				},
+			},
+		})
+		if err == nil {
+			t.Fatalf("failStart=%v: RunLifecycle = nil, want the failure", failStart)
+		}
+		if len(endedAtStop) == 0 || slices.Contains(endedAtStop, false) {
+			t.Fatalf("failStart=%v: Start context ended at each stop = %v, want true at every one", failStart, endedAtStop)
+		}
 	}
 }

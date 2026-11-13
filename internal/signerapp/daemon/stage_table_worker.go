@@ -6,7 +6,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
@@ -260,10 +259,12 @@ func passSession(parent context.Context, generation func() uint64, cancelContext
 	return session, ctx, cancel, true
 }
 
-// stageTableWorkerService runs the worker for the life of the daemon. Its
-// stop reports the deadline error when the worker is still running at the
-// deadline, so lifecycle leaves the runtime state the worker may still be
-// using in place until process exit instead of destroying it underneath.
+// stageTableWorkerService runs the worker for the life of the daemon. The
+// worker stops when shutdown begins, since its context is the Start context,
+// and its stop waits for it until the shutdown deadline. A worker still
+// running then (a stage table write, which no cancellation reaches) is not
+// an incomplete stop: outside a key use it holds no key material, and
+// Runtime.Destroy waits, bounded, for a key use it is in.
 func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 	var cancel context.CancelFunc
 	done := make(chan struct{})
@@ -271,7 +272,7 @@ func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 		Name: "rotating stage table worker",
 		Start: func(ctx context.Context, _ chan<- error) error {
 			var workerCtx context.Context
-			workerCtx, cancel = context.WithCancel(context.Background())
+			workerCtx, cancel = context.WithCancel(ctx)
 			go func() {
 				defer close(done)
 				fs.runStageTableWorker(workerCtx)
@@ -285,16 +286,10 @@ func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 			cancel()
 			select {
 			case <-done:
-				return nil
 			case <-ctx.Done():
+				logWarnf("rotating stage table worker is still running at the shutdown deadline; it holds no key material outside a key use")
 			}
-			// The deadline and the worker's exit can be ready together.
-			select {
-			case <-done:
-				return nil
-			default:
-				return fmt.Errorf("worker still running: %w", ctx.Err())
-			}
+			return nil
 		},
 	}
 }
