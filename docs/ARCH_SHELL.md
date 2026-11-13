@@ -968,7 +968,14 @@ when a set expands to more than one address.
 argument types in `manifest.json` via `arg_specs` and support address, asset,
 set, keyword, number, file, and conditional branching. The `custom` type is
 reserved for plugin-provided completion; the runtime returns no custom
-suggestions.
+suggestions. Completion (`resolveArgSpec`) and the plugin argument
+normalization in `apshellapp` read branches with one resolver,
+`cmdspec.ArgSpecAt`, so both select the same spec at every position, nested
+branches included. Discovery refuses a manifest whose branches the resolver
+could not read (see [ARCH_PLUGINS.md](ARCH_PLUGINS.md#the-manifest-manifestjson));
+for specs that skipped discovery, the resolver reports such a branch, and
+completion offers nothing there while normalization passes the arguments from
+there on as typed, logging the reason at `debug`.
 
 Built-in commands complete in two layers. `ContextCompleter.Do` first tries
 context paths that understand a command's argument positions and match account
@@ -1551,7 +1558,8 @@ but produces structured JSON instead of terminal text.
 
 **Compatibility-bearing.** The tool names, parameters, and response shapes in
 this section, including the [`js`](#js-tool), [`doc`](#doc-tool),
-[`jssave`](#jssave-tool), and [`jslist`](#jslist-tool) subsections, are the MCP
+[`jssave`](#jssave-tool), and [`jslist`](#jslist-tool) subsections, and the
+error result shape in [Submission Outcomes](#submission-outcomes), are the MCP
 tool contract that [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) indexes. MCP clients
 and LLM prompts depend on them; change them only as a deliberate contract
 change.
@@ -1586,15 +1594,43 @@ Executes JavaScript in the Goja runtime.
 Response shape:
 
 ```json
-{"value": <return-value>, "output": "<print-output>"}
+{"value": <return-value>, "output": "<print-output>", "submissions": [...]}
 ```
 
 - `value`: the JSON-serialized return value of the last expression (omitted if `undefined`/`null`)
 - `output`: captured `print()` output (omitted if empty)
+- `submissions`: the outcome of each submission failure a JavaScript function threw during the run and the script caught (omitted if none); see [Submission Outcomes](#submission-outcomes)
 
-Errors are returned as MCP error results. If `print()` output was produced before the error, it is prepended to the error message.
+Errors are returned as MCP error results. If `print()` output was produced before the error, it is prepended to the error message. A run during which a JavaScript function threw a submission failure, caught or not, also has the structured content described in [Submission Outcomes](#submission-outcomes), with every such outcome of the run.
 
 The `code` argument is required.
+
+The script runs under the tool call's context, but the MCP stdio server does
+not currently deliver a client's cancel to a running tool:
+`internal/apshellcli/mcp.go` starts it with `context.Background()`, and
+mcp-go v0.27.0 handles one message at a time
+and does not act on `notifications/cancelled`. So nothing stops a `js` call
+before its script ends, an endless loop included, and the server answers no
+other request meanwhile.
+
+What does interrupt a script is a cancelled context. `scripting.GojaRunner`
+interrupts the interpreter when the context it runs under is cancelled, as
+the REPL's and apconsole's command context is on Ctrl-C, so an endless loop
+ends and the execution lock is released. A run that ends while its context is
+cancelled returns `script interrupted: <ctx.Err()>`, wrapping the context's
+error whatever ended the run; when an error of the script's own ended it
+before the interrupt (a host call failing under the cancelled context), that
+error is wrapped too and its text follows (`...; the script ended with:
+<error>`). A watcher goroutine per run delivers the interrupt and exits when
+the run ends, and the runner clears any interrupt before and after each run,
+so none reaches a later script. A host call running at the cancellation is
+not cut short; it ends under the cancelled context. Its result never reaches
+the script, so `jsapi` prints it on the script's output (`<fn>() ended after
+the script was interrupted, returning: ...` or `..., failing with: ...`), a
+returned value as one line of JSON cut at 256 bytes. A host call the script
+starts after the cancellation, before the interrupt reaches it, does not run:
+it throws `<fn>() not run: the script was interrupted (...)` and prints
+nothing. See [USER_JSAPI.md](USER_JSAPI.md#stopping-a-script).
 
 #### `doc` tool
 
@@ -1714,6 +1750,94 @@ data field.
 
 JSON results are returned as text containing JSON bytes via `mcp.NewToolResultText(string(data))`, not as typed JSON content objects.
 
+#### Submission Outcomes
+
+Every submission goes through `internal/signing/ed25519.go::SubmitTransactionsWithContext`.
+When it fails at or after the submit call, the error is a
+`*signing.SubmissionError` with the IDs of every signed transaction in the
+group, budget dummies included, how far the group got, and algod's HTTP
+answer to the submit call when it gave one (`Answer`, its status and message
+as given):
+
+| `state` | `submitted` | Meaning |
+|---|---|---|
+| `submitted` | `true` | algod accepted the group, and the confirmation wait then ended with an error (a timeout, a pool error the node reported, a failed status read) |
+| `unknown` | `false` | the submit call ended without a 400 answer from algod: with no HTTP answer (a lost connection, a timeout, the context ending during the call) or with another HTTP status, so algod may have the group |
+| `rejected` | `false` | algod answered the submit call with HTTP 400. A group already in the ledger gets this answer too, so it says nothing about whether the group is on the network: the reason decides |
+| `not_sent` | `false` | the context had ended before the submit call was made, so nothing was sent |
+
+The vocabulary follows the SDK's `SubmissionError`: `submitted` is true only
+when algod's submit call succeeded. aplane does not interpret algod's answer:
+it says whether algod answered and hands over what algod or the confirmation
+wait said, with no matching on its text. The error's text is unchanged, and
+every layer above wraps it with `%w`. `appresult.SubmissionsFromError` reads
+one outcome for each `SubmissionError` in the error, following wrapped and
+joined errors, and for each one an `appresult.SubmissionFailures` error
+reports. An error without one did not fail at a submit call or a
+confirmation wait. It says nothing about submissions that completed before
+the failure: earlier ones in the same script or plugin run, or a confirmed deploy
+whose created app `app deploy` then could not look up.
+
+Each outcome's `message` says what happened:
+
+| `state` | `message` |
+|---|---|
+| `submitted` | `Submitted: algod accepted transaction(s) <ids>, and waiting for their confirmation ended with: <the wait's error>. Check these IDs on the network before retrying.` |
+| `unknown`, with an answer | `Submission outcome unknown: algod answered the submit request for transaction(s) <ids> with HTTP <status>: <algod's message>. Check these IDs on the network before retrying.` |
+| `unknown`, without | `Submission outcome unknown: the submit request for transaction(s) <ids> got no answer from algod, so they may have been accepted. Check these IDs on the network before retrying.` |
+| `rejected` | `algod answered the submit request for transaction(s) <ids> with an error. Read the reason before retrying: a transaction already in the ledger is answered this way too.` |
+| `not_sent` | `Not sent: the context had ended before the submit call for transaction(s) <ids> was made, so nothing was sent.` |
+
+`execute` and `js` turn an error into an MCP error result through
+`mcpErrorResult`. An error with no outcome is its text alone, as before,
+even when the command returned a structured result with it. Otherwise the
+first text content is the error text, then one sentence for each outcome.
+The second text content is JSON with `error` and `submissions`; the
+command's structured result is not attached, so each outcome is reported
+once:
+
+```json
+{
+  "error": "atomic transaction group failed: failed to sign and submit atomic group: confirmation failed: wait for transaction id AAAA… timed out",
+  "submissions": [
+    {
+      "state": "submitted",
+      "submitted": true,
+      "txids": ["AAAA…", "BBBB…"],
+      "error": "confirmation failed: wait for transaction id AAAA… timed out",
+      "message": "Submitted: algod accepted transaction(s) AAAA…, BBBB…, and waiting for their confirmation ended with: wait for transaction id AAAA… timed out. Check these IDs on the network before retrying."
+    }
+  ]
+}
+```
+
+The text names transaction IDs only, never transaction contents or argument
+values. Nothing retries.
+
+Commands that report items record each item's outcome as `submission` on the
+item of their successful result: non-atomic `send`, `validate`, and a `sweep`
+in which some items succeeded. A `sweep` in which every item failed returns
+its result with an error whose text is `all N transaction(s) failed`. That
+error wraps none of the items' errors, so no item's sentinel matches it and
+the REPL renders each item's submission output once, in the result; it
+reports the items' `SubmissionError`s as an `appresult.SubmissionFailures`,
+so its MCP error result lists each item's outcome in `submissions`. A plugin
+step whose submission failed is still a plugin result (see
+[success:false Handling](#successfalse-handling)), with its outcome in
+`submissions`.
+
+JavaScript functions that submit throw their failure through `jsapi`'s
+`throwSubmitError`, the one place they report it. The thrown `Error` carries
+`txids` and, for one submission, `submission` (see
+[USER_JSAPI.md](USER_JSAPI.md)). `throwSubmitError` also records the outcomes
+in the run's recorder, which the `js` tool sets with `jsapi.RecordSubmissions`
+on the run's context, so the tool reports every outcome of the run whether
+the script caught the error or not, on a successful result and on an error
+result alike. A function that does not throw, such as a `sweep()` in which
+only some items failed, records nothing; its result's items carry their
+errors. The REPL output is unchanged: it prints the error text and the
+submission output, which lists the IDs, and nothing of the outcome.
+
 #### Blocked Commands
 
 | Command | Reason |
@@ -1755,7 +1879,10 @@ This prevents stray `fmt.Printf` calls from corrupting the MCP transport.
 Plugin commands that return `success: false` (e.g., usage messages, validation
 errors) are returned as normal MCP tool results with the full JSON payload,
 not as MCP transport errors. This matches the REPL contract where these are
-informational messages, not hard failures.
+informational messages, not hard failures. A step whose submission failed at
+or after algod's submit call is reported the same way, with `success: false`,
+the steps that completed in `steps`, and the failing step's outcome in
+`submissions` (see [Submission Outcomes](#submission-outcomes)).
 
 #### Plugin Documentation (mcp.md)
 

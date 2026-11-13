@@ -6,6 +6,7 @@ package startup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,26 +14,42 @@ import (
 )
 
 // LifecycleService is a long-lived process service started and stopped by the
-// signer runtime entrypoint.
+// signer runtime entrypoint. The context Start receives ends when shutdown
+// begins, before any Stop runs, whatever began the shutdown.
 type LifecycleService struct {
 	Name  string
 	Start func(ctx context.Context, errs chan<- error) error
 	Stop  func(ctx context.Context) error
 }
 
+// ErrStillRunning marks a stop that gave up waiting for its service's own
+// work, which is still running but uses neither the audit log nor key
+// material outside a key use, so teardown may go on. Like any stop error
+// other than the shutdown context's deadline error, it makes lifecycle record
+// the stop as incomplete and still tear down: wait for key uses, close the
+// audit log and zero the keyring. It must not wrap the deadline error, which
+// means a request handler may still be using both, so lifecycle skips
+// teardown.
+var ErrStillRunning = errors.New("still running")
+
 // ServerAuditLogger captures the shutdown hooks needed for audit shutdown.
 type ServerAuditLogger interface {
 	LogServerStop()
 	LogServerStopIncomplete(reason string)
+	// FlushSummaries writes pending rate-limited summaries when the log is
+	// left open, which Close would otherwise have written.
+	FlushSummaries()
 	Close() error
 }
 
 // LifecyclePlan describes process lifecycle ownership after startup
 // configuration and identity assembly are complete.
 type LifecyclePlan struct {
-	Services        []LifecycleService
-	ProductRuntime  *productruntime.Runtime
-	StartWatcher    func(*productruntime.Runtime)
+	Services       []LifecycleService
+	ProductRuntime *productruntime.Runtime
+	StartWatcher   func(*productruntime.Runtime)
+	// ShutdownTimeout bounds the service stops together, and separately the
+	// wait for key users before the keyring is zeroed. Zero means 5s.
 	ShutdownTimeout time.Duration
 	AuditLog        ServerAuditLogger
 	Info            func(string)
@@ -41,11 +58,18 @@ type LifecyclePlan struct {
 }
 
 // RunLifecycle owns service start, wait, shutdown ordering, audit shutdown,
-// and product runtime destruction for the signer process.
-func RunLifecycle(ctx context.Context, plan LifecyclePlan) {
+// and product runtime destruction for the signer process. It returns the
+// service start failure or serve failure that ended the run, after shutting
+// down, and nil when ctx ended it; the signer exits non-zero on an error.
+func RunLifecycle(ctx context.Context, plan LifecyclePlan) error {
 	if plan.ProductRuntime != nil && plan.StartWatcher != nil && plan.ProductRuntime.IsUnlocked() {
 		plan.StartWatcher(plan.ProductRuntime)
 	}
+
+	// A service's background work tied to its Start context stops as soon as
+	// shutdown begins, not at its own turn in the stop order.
+	runCtx, endRun := context.WithCancel(ctx)
+	defer endRun()
 
 	errs := make(chan error, len(plan.Services))
 	started := make([]LifecycleService, 0, len(plan.Services))
@@ -53,28 +77,35 @@ func RunLifecycle(ctx context.Context, plan LifecyclePlan) {
 		if svc.Start == nil {
 			continue
 		}
-		if err := svc.Start(ctx, errs); err != nil {
+		if err := svc.Start(runCtx, errs); err != nil {
 			if plan.Error != nil {
 				plan.Error("failed to start " + svc.Name + ": " + err.Error())
 			}
+			endRun()
 			shutdownLifecycle(started, plan)
-			return
+			return fmt.Errorf("failed to start %s: %w", svc.Name, err)
 		}
 		started = append(started, svc)
 	}
 
+	var runErr error
 	select {
 	case <-ctx.Done():
 		if plan.Info != nil {
 			plan.Info("shutdown signal received, cleaning up")
 		}
 	case err := <-errs:
-		if err != nil && plan.Error != nil {
-			plan.Error("server error: " + err.Error())
+		if err != nil {
+			if plan.Error != nil {
+				plan.Error("server error: " + err.Error())
+			}
+			runErr = fmt.Errorf("server error: %w", err)
 		}
 	}
 
+	endRun()
 	shutdownLifecycle(started, plan)
+	return runErr
 }
 
 func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
@@ -111,25 +142,53 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	// those handlers. The signer process returns immediately after this path, so
 	// the operating system performs the final process-memory and descriptor
 	// cleanup without creating an in-process use-after-destroy window.
-	if len(shutdownErrors) != 0 {
+	if handlersMayBeRunning {
 		if plan.AuditLog != nil {
 			plan.AuditLog.LogServerStopIncomplete(strings.Join(shutdownErrors, "; "))
+			plan.AuditLog.FlushSummaries()
 		}
-	}
-	if handlersMayBeRunning {
 		if plan.Warn != nil {
 			plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
 		}
 		return
 	}
 
+	// No request handler is running, but a background key user (a stage
+	// table derivation, a key export) may still hold key material.
+	// EndKeyUses refuses new key uses and waits for the registered ones with
+	// a deadline of its own, so other services' stops cannot use up its wait.
+	keyUseInFlight := false
+	if plan.ProductRuntime != nil {
+		drainCtx, cancelDrain := context.WithTimeout(context.Background(), timeout)
+		err := plan.ProductRuntime.EndKeyUses(drainCtx)
+		cancelDrain()
+		if err != nil {
+			keyUseInFlight = true
+			shutdownErrors = append(shutdownErrors, "product runtime: "+err.Error())
+			if plan.Warn != nil {
+				plan.Warn("product runtime shutdown error: " + err.Error() + "; its copy is released at process exit")
+			}
+		}
+	}
+
+	// The stop is recorded before Destroy, which takes locks without a bound:
+	// a key operation stalled inside one must not cost the record.
 	if plan.AuditLog != nil {
 		if len(shutdownErrors) == 0 {
 			plan.AuditLog.LogServerStop()
+		} else {
+			plan.AuditLog.LogServerStopIncomplete(strings.Join(shutdownErrors, "; "))
 		}
-		_ = plan.AuditLog.Close()
+		// A key user still running may write its audit record when it ends
+		// (a key export does).
+		if keyUseInFlight {
+			plan.AuditLog.FlushSummaries()
+		} else {
+			_ = plan.AuditLog.Close()
+		}
 	}
 
+	// The keyring is zeroed whether or not every key user released.
 	if plan.ProductRuntime != nil {
 		if plan.Info != nil {
 			plan.Info("zeroing cached keys and the keyring")
@@ -138,6 +197,10 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	}
 
 	if plan.Info != nil {
-		plan.Info("shutdown complete")
+		if len(shutdownErrors) == 0 {
+			plan.Info("shutdown complete")
+		} else {
+			plan.Info("shutdown finished incomplete: " + strings.Join(shutdownErrors, "; "))
+		}
 	}
 }

@@ -631,6 +631,19 @@ each MCP server instance uses its own:
 - **All-foreign sign/plan requests are rejected.**
 - **Refresh after external or unconfirmed rekeys, or a reported cache refresh
   failure.**
+- **A failed submission names its transactions.** An error result whose
+  structured content has `submissions` gives each group's `txids` and `state`:
+  `submitted` (algod accepted them; the wait for their confirmation then
+  ended with the error given), `unknown` (algod gave no answer, or answered
+  with an HTTP status other than 400, which the message names), `rejected`
+  (algod answered with HTTP 400; read the reason, since a transaction already
+  in the ledger is answered this way too) or `not_sent` (nothing was sent).
+  Look the IDs up before retrying; nothing retries for you. Each outcome is
+  reported once: in the error result's `submissions`, in a plugin result's
+  `submissions`, or as `submission` on a `send`, `validate` or `sweep` item of
+  a successful result. The `js` tool reports every submission failure of the
+  run in `submissions`, including those the script caught, on a successful
+  result too.
 - **Some commands require dedicated tools or a terminal.** Check the
   [blocked-command table](#commands-blocked-from-execute) before using `execute`.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /

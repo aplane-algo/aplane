@@ -111,8 +111,9 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 // fails, is cancelled or reports failure leaves the workflow half done, so that
 // is an error that lists them and says to look them up before running the
 // plugin again. The list does not say which of them confirmed: the step
-// output does for the steps that completed, and what became of a failing
-// step's transactions is not reported. In simulate mode the listed IDs were simulated, not sent, and
+// output does for the steps that completed, and how far a failing step's
+// transactions got is not in it (the Error plugin() throws carries that as
+// submission and txids). In simulate mode the listed IDs were simulated, not sent, and
 // a failed simulation's own IDs are not listed. A completed run returns the
 // last step's message, data and presentation, with every transaction ID it
 // submitted (simulated, in simulate mode) in data.txids and, for more than one

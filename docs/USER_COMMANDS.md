@@ -39,6 +39,11 @@ send <amount> <asset> from <sender> to <receiver> [options]
 | `<sender>` | Address, alias, or `@setname` |
 | `<receiver>` | Address, alias, or `@setname` |
 
+Each account in a set of senders or receivers gets its own transaction, so a
+set that names an account more than once (an alias and its address, or a set
+and one of its members listed again) is refused, naming the account, before
+anything is sent.
+
 **Options:**
 | Option | Description |
 |--------|-------------|
@@ -300,6 +305,10 @@ sign <file> [nowait]
 
 Several transactions in one file, in any of these formats, are signed and
 submitted together as one group.
+
+Only `nowait` may follow the file. The transactions are already built, so a
+`fee=`, `note=` or `arg:` word has nothing to apply to, and any other word is
+refused.
 
 Every byte of the file has to belong to a transaction. A file with leftover
 data, a msgpack transaction that isn't in canonical form, a JSON object that
@@ -670,6 +679,13 @@ Clear all ASAs from the local cache.
 ```
 asa clear
 ```
+
+The cache is kept per network name. An asset's ID, name, unit name and decimals
+never change on a chain, so a cached entry stays right for as long as the
+network name means the same chain. Run `asa clear` after a LocalNet reset, or
+after pointing a custom network at another chain: the same asset ID can then be
+a different asset with other decimals, and an amount typed for it would be
+converted with the old ones.
 
 ## Configuration Commands
 

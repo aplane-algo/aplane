@@ -6,7 +6,9 @@ package apshellapp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
@@ -46,7 +48,14 @@ func normalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, ar
 		return args
 	}
 	if manifestCmd := plugin.Manifest.FindCommand(commandName); manifestCmd != nil && len(manifestCmd.ArgSpecs) > 0 {
-		return normalizePluginAddressArgs(manifestCmd.ArgSpecs, args)
+		normalized, err := normalizePluginAddressArgs(manifestCmd.ArgSpecs, args)
+		if err != nil {
+			// Normalization only uppercases addresses, so a spec it cannot
+			// read is no reason to refuse the command.
+			logger().Debug("plugin arg_specs unreadable; the arguments from there on are passed as typed",
+				"plugin", plugin.Manifest.Name, "command", commandName, "error", err)
+		}
+		return normalized
 	}
 	return args
 }
@@ -56,55 +65,32 @@ func NormalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, ar
 	return normalizePluginCommandArgs(plugin, commandName, args)
 }
 
-func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) []string {
-	if len(specs) == 0 || len(args) == 0 {
-		return args
-	}
+var pluginAddressArg = regexp.MustCompile(`^[A-Za-z2-7]{58}$`)
 
-	result := make([]string, len(args))
-	copy(result, args)
-
-	addrPattern := regexp.MustCompile(`^[A-Za-z2-7]{58}$`)
-
-	currentSpecs := specs
-	currentOffset := 0
-
-	for i := 0; i < len(args); i++ {
-		specIdx := i - currentOffset
-		if specIdx >= len(currentSpecs) {
-			break
+// normalizePluginAddressArgs uppercases the arguments the specs declare as
+// addresses, reading branches with cmdspec.ArgSpecAt as completion does. At a
+// branch it cannot read it stops and returns the reason: that argument and
+// those after it stay as typed.
+func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) ([]string, error) {
+	result := slices.Clone(args)
+	for i := range result {
+		spec, err := cmdspec.ArgSpecAt(specs, args, i)
+		if err != nil {
+			return result, err
 		}
-
-		spec := currentSpecs[specIdx]
-
-		if len(spec.Branches) > 0 {
-			var matchedBranch *cmdspec.ArgBranch
-			for _, branch := range spec.Branches {
-				if branch.When.Arg < len(args) {
-					argValue := args[branch.When.Arg]
-					if matched, _ := regexp.MatchString(branch.When.Matches, argValue); matched {
-						matchedBranch = &branch
-						break
-					}
-				}
-			}
-
-			if matchedBranch != nil {
-				currentSpecs = matchedBranch.Specs
-				currentOffset = i
-				specIdx = 0
-				spec = currentSpecs[specIdx]
-			} else {
-				continue
-			}
-		}
-
-		if spec.Type == cmdspec.ArgTypeAddress && addrPattern.MatchString(result[i]) {
+		if spec != nil && spec.Type == cmdspec.ArgTypeAddress && pluginAddressArg.MatchString(result[i]) {
 			result[i] = strings.ToUpper(result[i])
 		}
 	}
+	return result, nil
+}
 
-	return result
+// logger returns the plugin logger. It is made at each call, because a logger
+// kept from package initialization would miss the handler the host installs.
+// The component matches plugin discovery's; "plugin" is reserved for what
+// plugins themselves print.
+func logger() *slog.Logger {
+	return slog.With("component", "plugins")
 }
 
 // ExecutePluginCommand resolves and executes a plugin command against the current network context.

@@ -87,7 +87,7 @@ func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("appDeploy() error submitting transaction: %w", err))
 	}
 
 	out := map[string]interface{}{
@@ -230,7 +230,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 
 		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.LsigArgs{}, opts.Wait)
 		if err != nil {
-			panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error submitting grouped call: %v", err)))
+			a.throwSubmitError(fmt.Errorf("appCallRaw() error submitting grouped call: %w", err))
 		}
 		return a.preparedGroupResultValue(result, "")
 	}
@@ -242,7 +242,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("appCallRaw() error submitting transaction: %w", err))
 	}
 
 	return a.submitResultValue(result, "")
@@ -336,7 +336,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 
 		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.LsigArgs{}, opts.Wait)
 		if err != nil {
-			panic(a.runtime.ToValue(fmt.Sprintf("appCall() error submitting grouped call: %v", err)))
+			a.throwSubmitError(fmt.Errorf("appCall() error submitting grouped call: %w", err))
 		}
 		return a.preparedGroupResultValue(result, methodSignature)
 	}
@@ -348,7 +348,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prepared.Prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("appCall() error submitting transaction: %w", err))
 	}
 
 	return a.submitResultValue(result, prepared.Method.Signature())

@@ -78,7 +78,7 @@ Fields are omitted when empty.
 |-------|-------------|
 | `SERVER_START` | Server started; `key_count` shows loaded keys |
 | `SERVER_STOP` | Server shut down gracefully |
-| `SERVER_STOP_INCOMPLETE` | A service failed to drain; `outcome` is `failed` and `reason` names the service error |
+| `SERVER_STOP_INCOMPLETE` | A service failed to drain, or a key use still held key material at the shutdown deadline; `outcome` is `failed` and `reason` names the service error or the key use |
 | `KEY_RELOAD` | Keys reloaded from keystore; `key_count` shows new count |
 
 ### Key Management

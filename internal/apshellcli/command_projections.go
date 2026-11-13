@@ -330,11 +330,12 @@ type sendProjection struct {
 }
 
 type sendItemProjection struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	TxID      string `json:"tx_id,omitempty"`
-	Confirmed bool   `json:"confirmed"`
-	Error     string `json:"error,omitempty"`
+	From       string                `json:"from"`
+	To         string                `json:"to"`
+	TxID       string                `json:"tx_id,omitempty"`
+	Confirmed  bool                  `json:"confirmed"`
+	Error      string                `json:"error,omitempty"`
+	Submission *appresult.Submission `json:"submission,omitempty"`
 }
 
 func projectSendResult(result *apshellapp.SendExecutionResult, simulated bool) sendProjection {
@@ -346,6 +347,7 @@ func projectSendResult(result *apshellapp.SendExecutionResult, simulated bool) s
 		for i, item := range result.NonAtomic.Items {
 			projection.Items[i] = sendItemProjection{
 				From: item.From, To: item.To, TxID: item.TxID, Confirmed: item.Confirmed, Error: item.Error,
+				Submission: item.Submission,
 			}
 			if item.TxID != "" {
 				projection.TxIDs = append(projection.TxIDs, item.TxID)
@@ -371,11 +373,12 @@ type sweepProjection struct {
 }
 
 type sweepItemProjection struct {
-	From          string `json:"from"`
-	TxID          string `json:"tx_id,omitempty"`
-	Confirmed     bool   `json:"confirmed"`
-	SkippedReason string `json:"skipped_reason,omitempty"`
-	Error         string `json:"error,omitempty"`
+	From          string                `json:"from"`
+	TxID          string                `json:"tx_id,omitempty"`
+	Confirmed     bool                  `json:"confirmed"`
+	SkippedReason string                `json:"skipped_reason,omitempty"`
+	Error         string                `json:"error,omitempty"`
+	Submission    *appresult.Submission `json:"submission,omitempty"`
 }
 
 func projectSweepResult(result *apshellapp.SweepCommandResult, simulated bool) sweepProjection {
@@ -387,7 +390,7 @@ func projectSweepResult(result *apshellapp.SweepCommandResult, simulated bool) s
 	for i, item := range result.Items {
 		projection.Items[i] = sweepItemProjection{
 			From: item.From, TxID: item.TxID, Confirmed: item.Confirmed,
-			SkippedReason: item.SkippedReason, Error: item.Error,
+			SkippedReason: item.SkippedReason, Error: item.Error, Submission: item.Submission,
 		}
 	}
 	return projection
@@ -437,10 +440,11 @@ type validateProjection struct {
 }
 
 type validateItemProjection struct {
-	Address   string `json:"address"`
-	TxID      string `json:"tx_id,omitempty"`
-	Confirmed bool   `json:"confirmed"`
-	Error     string `json:"error,omitempty"`
+	Address    string                `json:"address"`
+	TxID       string                `json:"tx_id,omitempty"`
+	Confirmed  bool                  `json:"confirmed"`
+	Error      string                `json:"error,omitempty"`
+	Submission *appresult.Submission `json:"submission,omitempty"`
 }
 
 type closeProjection struct {

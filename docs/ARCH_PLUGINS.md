@@ -100,8 +100,8 @@ Each plugin must reside in its own subdirectory containing:
 Symlinked plugin directories are ignored. If multiple enabled catalog
 directories declare the same manifest `name`, the first enabled entry wins.
 
-Missing or integrity-failing enabled plugin directories are skipped with a
-warning. Invalid `plugins.yaml` syntax or unsafe plugin names fail discovery.
+Missing, integrity-failing, or invalid-manifest enabled plugin directories are
+skipped with a warning that gives the reason. Invalid `plugins.yaml` syntax or unsafe plugin names fail discovery.
 If `plugins.yaml` is missing, no plugins are loaded.
 
 Activation file format:
@@ -261,9 +261,32 @@ For commands with subcommands that have different argument patterns, use `branch
 
 | Field | Description |
 |-------|-------------|
-| `when.arg` | Argument index to check (0-based) |
-| `when.matches` | Regex pattern to match against the argument value |
-| `specs` | ArgSpecs to use when condition matches |
+| `when.arg` | Argument index to check (0-based); must not be negative |
+| `when.matches` | Regex pattern (Go RE2 syntax) to match against the argument value; must compile |
+| `specs` | ArgSpecs to use when condition matches; at least one is required, and they may branch again |
+
+Argument normalization (uppercasing `address` arguments before the plugin
+runs) and tab completion read branches with one resolver, `cmdspec.ArgSpecAt`,
+so they select the same spec at every position:
+
+- Specs apply by position. A spec with `branches` stands for the first branch
+  whose `when.matches` matches the argument at `when.arg`. That branch's
+  `specs` then apply from the branching spec's position on, in place of the
+  rest of the list it was in, so specs after a branching spec are never used.
+  The first of them may itself branch, at any depth.
+- When no branch matches, no spec applies at that position or after it:
+  completion offers nothing there, and normalization passes those arguments
+  as typed.
+
+Discovery checks every branch, nested ones included, for the three rules in
+the table (`cmdspec.ValidateArgSpecs`); a manifest that breaks one is
+invalid, so the plugin is not loaded and discovery warns with the field's
+path, for example `command[0] "my-command": arg_specs[1].branches[0]: when.arg
+is -1; an argument index must not be negative`. The resolver checks the
+branches it reads by the same rules, for specs that did not come through
+discovery: at a branch that breaks one, completion offers nothing, and
+normalization passes the arguments from there on as typed and logs the reason
+at `debug`. The command still runs.
 
 ### JSON-RPC Protocol
 
@@ -676,10 +699,15 @@ that lists them and says to look them up before running the plugin again; in
 simulate mode it names the simulated ones as not sent and leaves out a failed
 simulation's own IDs (see [USER_JSAPI.md](USER_JSAPI.md#plugins)).
 
-Known limit: when a step's submission fails after its group was sent, apshell
-does not report whether that group confirmed, was rejected, or got no answer.
-`plugin()`'s error lists the IDs it has, completed steps' and the failing
-step's together, and the caller looks them up.
+When a step's submission fails at or after algod's submit call, the plugin's
+machine result (what MCP returns) carries that step's outcome in
+`submissions`: its state (`submitted`, `unknown`, `rejected` or `not_sent`) and
+every ID of its group (see
+[ARCH_SHELL.md](ARCH_SHELL.md#submission-outcomes)); the REPL prints what it
+printed before. `plugin()`'s error carries the step's `txids` and
+`submission`, and the MCP `js` tool reports the outcome. Its message still
+lists the IDs it has, completed steps' and the failing step's (those the
+submission returned) together, and the caller looks them up.
 
 Continuation argument normalization follows the same manifest-driven rules as the initial command.
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`
