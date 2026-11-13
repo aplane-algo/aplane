@@ -1664,10 +1664,11 @@ The rules:
 - apshell does not look up which names a key takes in order to place an
   argument. Before asking the signer it checks each transaction's arguments
   against the names the key that signs for the sender declares, as far as
-  the cached key list says, and the signer refuses any argument a key does
-  not take. A native key (ed25519, native Falcon) takes none, so an argument
-  given with no account over a group or set that includes a native account
-  is refused on that account's position: name the LogicSig account instead.
+  the cached key list says (a plugin's `presign-plan` group skips this
+  check), and the signer refuses any argument a key does not take. A native
+  key (ed25519, native Falcon) takes none, so an argument given with no
+  account over a group or set that includes a native account is refused on
+  that account's position: name the LogicSig account instead.
 - An atomic `send` to or from a set carries arguments like any other send,
   each position getting its own sender's.
 - In a plugin command, the arguments go to the plugin's first result only,
