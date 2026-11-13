@@ -844,14 +844,15 @@ receives with it. An optional argument left out counts as 0 bytes. Signing
 still refuses any argument over the network's 4096-byte limit.
 
 `lsig_args` is for a key that runs a program. A sign-mode position whose key
-record says it is native (ed25519 or native PQ, a key that signs the
-transaction itself) and that carries `lsig_args` is refused with 400
+type is native (`ed25519` or native PQ `falcon1024`, a key that signs the
+transaction itself; the authorization kind its registered metadata declares,
+as `/keytypes` reports it) and that carries `lsig_args` is refused with 400
 (`transaction N: lsig_args were given for <address>, whose <key type> key is
 native and takes no LogicSig arguments`, N counted from 1), before planning,
 policy or approval, on `/plan`, `/sign`, and a held contextual position on
 `/sign/component`. Before, the arguments were dropped without a word. Every
-key type now refuses an argument it does not take. A key whose record names no
-category is left to signing.
+key type now refuses an argument it does not take. The key type alone decides,
+so a native key is refused whether or not its metadata entry is present.
 
 apshell places a command's arguments by the sending account, as the user
 addresses them (`arg:<name>=<value>` for every transaction,

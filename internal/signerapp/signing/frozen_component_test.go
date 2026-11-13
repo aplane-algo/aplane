@@ -16,6 +16,7 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -464,18 +465,25 @@ func TestPlanningRefusesAMissingRequiredUnsizedArgument(t *testing.T) {
 }
 
 // LogicSig arguments go to a program, and a native key has none: a request
-// that sends lsig_args for a key whose record says it is native (ed25519 or
-// native Falcon) is refused with a bad request, on /plan and /sign, which plan
+// that sends lsig_args for a key whose key type is native (ed25519 or native
+// Falcon) is refused with a bad request, on /plan and /sign, which plan
 // alike, and on /sign/component for a held contextual position, before
-// anything is planned or approved. A LogicSig key's arguments, and a native
-// key sent none, plan as before; a key whose record names no category is
-// left to signing.
+// anything is planned or approved. The key type decides: a native key with no
+// metadata entry is refused too. A LogicSig key's arguments, and a native key
+// sent none, plan as before.
 func TestPlanningRefusesLsigArgsForANativeKey(t *testing.T) {
+	// The native algorithms' metadata, which apsigner registers at start
+	// (cmd/apsigner RegisterProviders), names their authorization kind.
+	algorithm.RegisterEd25519Metadata()
+	nativefalcon.RegisterClient()
 	falcon, ed25519Key, lsig, unrecorded := types.Address{7}, types.Address{8}, types.Address{9}, types.Address{10}
 	service, authorizer, txn := frozenBoundedTestServiceWith(t, 4_500, map[string]string{
 		falcon.String(): nativefalcon.KeyType, ed25519Key.String(): "ed25519",
 		lsig.String(): "aplane.test-generic.v1", unrecorded.String(): "ed25519",
 	})
+	if _, recorded := service.Planner.Snapshot().KeyMetadata[unrecorded.String()]; recorded {
+		t.Fatal("the unrecorded native key has a metadata entry; the test needs one without")
+	}
 	baseSnapshot := service.Planner.Snapshot
 	service.Planner.Snapshot = func() PlannerRuntimeSnapshot {
 		snapshot := baseSnapshot()
@@ -514,7 +522,7 @@ func TestPlanningRefusesLsigArgsForANativeKey(t *testing.T) {
 		}
 	}
 
-	for _, position := range []types.Address{falcon, ed25519Key} {
+	for _, position := range []types.Address{falcon, ed25519Key, unrecorded} {
 		_, err := service.Planner.PlanGroup(groupRequest(position, preimage))
 		wantRefused("/sign", position, err)
 		_, err = service.Planner.PreviewGroup(groupRequest(position, preimage))
@@ -523,10 +531,8 @@ func TestPlanningRefusesLsigArgsForANativeKey(t *testing.T) {
 			t.Fatalf("/sign for native %s without lsig_args: %v", position, err)
 		}
 	}
-	for _, position := range []types.Address{lsig, unrecorded} {
-		if _, err := service.Planner.PlanGroup(groupRequest(position, preimage)); err != nil {
-			t.Fatalf("/sign with lsig_args for %s, not recorded as native: %v", position, err)
-		}
+	if _, err := service.Planner.PlanGroup(groupRequest(lsig, preimage)); err != nil {
+		t.Fatalf("/sign with lsig_args for the LogicSig key %s: %v", lsig, err)
 	}
 
 	// /sign/component: a held contextual position is sized from the

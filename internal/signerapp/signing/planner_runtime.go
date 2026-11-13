@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -376,9 +376,9 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		// transaction itself and has no program to give them to, so a request
 		// that sends them for one is refused here, on /plan, /sign and
 		// /sign/component alike, before planning or approval, rather than
-		// signed with them dropped. Only a key whose recorded category says it
-		// is native is refused.
-		if len(txReq.LsigArgs) > 0 && isNativeKeyCategory(snapshot.KeyMetadata[txReq.AuthAddress].Category) {
+		// signed with them dropped. The key type decides, so the refusal does
+		// not depend on the key's metadata entry.
+		if len(txReq.LsigArgs) > 0 && isNativeKeyType(keyType) {
 			return 0, badRequest(fmt.Sprintf("transaction %d: lsig_args were given for %s, whose %s key is native and takes no LogicSig arguments",
 				i+1, txReq.AuthAddress, keytypefmt.Display(keyType)))
 		}
@@ -389,9 +389,17 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 	return signableCount, nil
 }
 
-// isNativeKeyCategory reports whether a key of this category signs a
-// transaction itself, with no program to pass LogicSig arguments to: an
-// ed25519 or a native post-quantum (Falcon) key.
-func isNativeKeyCategory(category string) bool {
-	return category == keys.CategoryEd25519 || category == keys.CategoryNativePQ
+// isNativeKeyType reports whether a key of this type signs a transaction
+// itself, with no program to pass LogicSig arguments to: an ed25519 or a
+// native post-quantum (Falcon) key. It reads the authorization kind the key
+// type's registered metadata declares (algorithm.GetMetadata), which /keytypes
+// reports as authorization_kind and which resolves a native algorithm only by
+// its exact key type. A key type with no registered metadata is not native.
+func isNativeKeyType(keyType string) bool {
+	meta, err := algorithm.GetMetadata(keyType)
+	if err != nil {
+		return false
+	}
+	kind := meta.AuthorizationKind()
+	return kind == algorithm.AuthorizationEd25519 || kind == algorithm.AuthorizationNativePQ
 }
