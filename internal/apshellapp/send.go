@@ -24,7 +24,7 @@ type SendRequest struct {
 	Atomic     bool
 	Fee        uint64
 	UseFlatFee bool
-	LsigArgs   map[string][]byte
+	LsigArgs   cmdspec.LsigArgs
 }
 
 // PrepareSend resolves addresses, amount metadata, and execution mode for a send command.
@@ -59,12 +59,11 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 			mode = SendModeAtomicToMultiple
 		}
 	}
-	// The atomic paths have no way to carry LogicSig arguments to each
-	// position, so they would be left out without a word. A one-to-one send
-	// takes the ordinary path, which does carry them, whether or not
-	// `atomic` was typed.
-	if mode != SendModeNonAtomic && len(req.LsigArgs) > 0 {
-		return nil, fmt.Errorf("arg: cannot be used with an atomic send to or from a set: it does not carry LogicSig arguments; send without atomic")
+	// Every path places each transaction's arguments by its sender: an atomic
+	// group from a set gives each position its own account's.
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, fromAddresses)
+	if err != nil {
+		return nil, err
 	}
 
 	return &SendPlan{
@@ -76,7 +75,7 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 		Wait:          req.Wait,
 		Fee:           req.Fee,
 		UseFlatFee:    req.UseFlatFee,
-		LsigArgs:      req.LsigArgs,
+		LsigArgs:      lsigArgs,
 	}, nil
 }
 
@@ -165,7 +164,6 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   plan.LsigArgs,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
@@ -179,7 +177,6 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 				Note:       plan.Note,
 				Fee:        plan.Fee,
 				UseFlatFee: plan.UseFlatFee,
-				LsigArgs:   plan.LsigArgs,
 			})
 			item.Prep = preparedTxnFromEngine(prep)
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
@@ -196,6 +193,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 		Items:     items,
 		FromCount: len(plan.FromAddresses),
 		ToCount:   len(plan.ToAddresses),
+		LsigArgs:  plan.LsigArgs,
 	}, nil
 }
 
@@ -222,6 +220,7 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 		To:          plan.ToAddresses,
 		Wait:        plan.Wait,
 		GroupParams: groupParams,
+		LsigArgs:    plan.LsigArgs,
 	}
 
 	switch plan.Mode {
@@ -322,7 +321,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 		}
 
 		itemResult.Warnings = sendWarnings(item, plan.Amount)
-		submit, err := a.eng.SignAndSubmit(ctx, item.Prep.enginePrep, wait)
+		submit, err := a.eng.SignAndSubmit(ctx, item.Prep.enginePrep, plan.LsigArgs, wait)
 		if err != nil {
 			if submit != nil {
 				itemResult.TxID = submit.TxID
@@ -357,7 +356,7 @@ func (a *App) executeAtomicSend(ctx context.Context, plan *AtomicSendPlan) (*Ato
 		return nil, err
 	}
 
-	submit, err := a.eng.SignAndSubmitAtomic(ctx, plan.Prep.enginePrep, plan.Wait)
+	submit, err := a.eng.SignAndSubmitAtomic(ctx, plan.Prep.enginePrep, plan.LsigArgs, plan.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("atomic transaction group failed: %w", err)
 	}

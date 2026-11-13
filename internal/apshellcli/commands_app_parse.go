@@ -33,7 +33,7 @@ type rawAppCallArgs struct {
 	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
-	LsigArgs         map[string][]byte
+	LsigArgs         cmdspec.LsigArgs
 }
 
 type methodAppCallArgs struct {
@@ -56,7 +56,7 @@ type methodAppCallArgs struct {
 	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
-	LsigArgs         map[string][]byte
+	LsigArgs         cmdspec.LsigArgs
 }
 
 type commonAppCallOptions struct {
@@ -74,7 +74,7 @@ type commonAppCallOptions struct {
 	Note             string
 	Fee              uint64
 	UseFlatFee       bool
-	LsigArgs         map[string][]byte
+	LsigArgs         cmdspec.LsigArgs
 	// seen holds the single-valued options given so far, the app call
 	// forms' own (from, abi) included, so a repeat is refused.
 	seen cmdspec.SeenOptions
@@ -226,7 +226,7 @@ func parseRawAppCallArgs(args []string) (*rawAppCallArgs, error) {
 	}
 
 	if len(args) < 4 || args[0] != "raw" {
-		return nil, fmt.Errorf("usage: app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]")
+		return nil, fmt.Errorf("usage: app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]")
 	}
 
 	appID, err := parseAppID(args[1])
@@ -322,7 +322,7 @@ func parseMethodAppCallArgs(args []string) (*methodAppCallArgs, error) {
 	}
 
 	if len(args) < 2 {
-		return nil, fmt.Errorf("usage: app call <app-id> <method> --abi <path> from <account> [--arg <value> ...] [--pay <microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]")
+		return nil, fmt.Errorf("usage: app call <app-id> <method> --abi <path> from <account> [--arg <value> ...] [--pay <microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]")
 	}
 
 	appID, err := parseAppID(args[0])

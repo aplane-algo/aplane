@@ -115,7 +115,7 @@ func (a *App) Rotate(ctx context.Context, req RotateRequest) (*RotateCommandResu
 	if err != nil {
 		return nil, err
 	}
-	submit, err := a.eng.SignAndSubmit(ctx, preparedTxnFromEngine(prepResult).enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, preparedTxnFromEngine(prepResult).enginePrep, engine.LsigArgs{}, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("rotate failed: %w", err)
 	}

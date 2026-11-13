@@ -7,8 +7,19 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
+
+// lsigArgValue is the value of the untargeted arg:<name> word in args, or nil.
+func lsigArgValue(args cmdspec.LsigArgs, name string) []byte {
+	for _, arg := range args {
+		if arg.Untargeted() && arg.Name == name {
+			return arg.Value
+		}
+	}
+	return nil
+}
 
 func TestOptOutRequestFromParamsPreservesFeeAndLsigArgs(t *testing.T) {
 	params, err := shellrepl.ParseOptoutCommand([]string{"usdc", "from", "alice", "to", "bob", "fee=3000", "nowait", "arg:preimage=text:secret"})
@@ -27,7 +38,7 @@ func TestOptOutRequestFromParamsPreservesFeeAndLsigArgs(t *testing.T) {
 	if req.Wait {
 		t.Fatal("Wait = true, want false")
 	}
-	if got := req.LsigArgs["preimage"]; !bytes.Equal(got, []byte("secret")) {
+	if got := lsigArgValue(req.LsigArgs, "preimage"); !bytes.Equal(got, []byte("secret")) {
 		t.Fatalf("LsigArgs[preimage] = %q, want secret", string(got))
 	}
 }
@@ -49,7 +60,7 @@ func TestCloseRequestFromParamsPreservesFeeAndLsigArgs(t *testing.T) {
 	if req.Wait {
 		t.Fatal("Wait = true, want false")
 	}
-	if got := req.LsigArgs["preimage"]; !bytes.Equal(got, []byte("secret")) {
+	if got := lsigArgValue(req.LsigArgs, "preimage"); !bytes.Equal(got, []byte("secret")) {
 		t.Fatalf("LsigArgs[preimage] = %q, want secret", string(got))
 	}
 }

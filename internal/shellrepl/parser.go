@@ -19,10 +19,10 @@ type TransactionParams struct {
 	ToRaw      []string         // Raw receiver inputs (aliases, addresses, @setnames)
 	Note       string
 	Wait       bool
-	Atomic     bool              // true if atomic group transaction
-	Fee        uint64            // transaction fee in microAlgos
-	UseFlatFee bool              // true if user explicitly set fee (even if zero)
-	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs (e.g., HTLC preimage)
+	Atomic     bool             // true if atomic group transaction
+	Fee        uint64           // transaction fee in microAlgos
+	UseFlatFee bool             // true if user explicitly set fee (even if zero)
+	LsigArgs   cmdspec.LsigArgs // LogicSig arguments for generic LogicSigs (e.g., HTLC preimage)
 }
 
 // OptInParams holds parsed parameters for optin command
@@ -30,9 +30,9 @@ type OptInParams struct {
 	ASARef     cmdspec.AssetRef // ASA name or ID
 	From       string           // Account to opt-in
 	Wait       bool
-	Fee        uint64            // transaction fee in microAlgos
-	UseFlatFee bool              // true if user explicitly set fee (even if zero)
-	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs
+	Fee        uint64           // transaction fee in microAlgos
+	UseFlatFee bool             // true if user explicitly set fee (even if zero)
+	LsigArgs   cmdspec.LsigArgs // LogicSig arguments for generic LogicSigs
 }
 
 // RekeyParams holds parsed parameters for rekey command
@@ -40,9 +40,9 @@ type RekeyParams struct {
 	Account    string // Account to rekey
 	Signer     string // New signing authority
 	Wait       bool
-	Fee        uint64            // transaction fee in microAlgos
-	UseFlatFee bool              // true if user explicitly set fee (even if zero)
-	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs
+	Fee        uint64           // transaction fee in microAlgos
+	UseFlatFee bool             // true if user explicitly set fee (even if zero)
+	LsigArgs   cmdspec.LsigArgs // LogicSig arguments for generic LogicSigs
 }
 
 // OptOutParams holds parsed parameters for optout command
@@ -51,9 +51,9 @@ type OptOutParams struct {
 	Account    string           // Account to opt out
 	CloseTo    string           // Where to send remaining balance (optional)
 	Wait       bool
-	Fee        uint64            // transaction fee in microAlgos
-	UseFlatFee bool              // true if user explicitly set fee (even if zero)
-	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs
+	Fee        uint64           // transaction fee in microAlgos
+	UseFlatFee bool             // true if user explicitly set fee (even if zero)
+	LsigArgs   cmdspec.LsigArgs // LogicSig arguments for generic LogicSigs
 }
 
 // CloseParams holds parsed parameters for close command
@@ -61,9 +61,9 @@ type CloseParams struct {
 	Account    string // Account to close
 	CloseTo    string // Where to send remaining balance
 	Wait       bool
-	Fee        uint64            // transaction fee in microAlgos
-	UseFlatFee bool              // true if user explicitly set fee (even if zero)
-	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs
+	Fee        uint64           // transaction fee in microAlgos
+	UseFlatFee bool             // true if user explicitly set fee (even if zero)
+	LsigArgs   cmdspec.LsigArgs // LogicSig arguments for generic LogicSigs
 }
 
 // KeyRegParams holds parsed parameters for keyreg command
@@ -78,7 +78,7 @@ type KeyRegParams struct {
 	KeyDilution       uint64
 	IncentiveEligible bool
 	Wait              bool
-	LsigArgs          map[string][]byte
+	LsigArgs          cmdspec.LsigArgs
 }
 
 // ParseSendCommand parses natural language send syntax:
@@ -140,7 +140,7 @@ func ParseSendCommand(args []string) (TransactionParams, error) {
 }
 
 // ParseOptinCommand parses natural language optin syntax:
-// optin <asset> for <account> [fee=<microalgos>] [nowait] [arg:name=value]
+// optin <asset> for <account> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
 func ParseOptinCommand(args []string) (OptInParams, error) {
 	params := OptInParams{
 		Wait:       true,
@@ -178,7 +178,7 @@ func ParseOptinCommand(args []string) (OptInParams, error) {
 }
 
 // ParseOptoutCommand parses natural language optout syntax:
-// optout <asset> from <account> [to <dest>] [fee=<microalgos>] [nowait] [arg:name=value]
+// optout <asset> from <account> [to <dest>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
 func ParseOptoutCommand(args []string) (OptOutParams, error) {
 	params := OptOutParams{
 		Wait:       true,
@@ -231,7 +231,7 @@ func ParseOptoutCommand(args []string) (OptOutParams, error) {
 }
 
 // ParseCloseCommand parses natural language close syntax:
-// close <account> to <destination> [fee=<microalgos>] [nowait] [arg:name=value]
+// close <account> to <destination> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
 func ParseCloseCommand(args []string) (CloseParams, error) {
 	params := CloseParams{
 		Wait:       true,
@@ -240,7 +240,7 @@ func ParseCloseCommand(args []string) (CloseParams, error) {
 	}
 
 	if len(args) < 3 {
-		return params, fmt.Errorf("usage: close <account> to <destination> [fee=<microalgos>] [nowait] [arg:name=value]\nExample: close alice to bob")
+		return params, fmt.Errorf("usage: close <account> to <destination> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]\nExample: close alice to bob")
 	}
 
 	// Position 0: account to close
@@ -264,8 +264,8 @@ func ParseCloseCommand(args []string) (CloseParams, error) {
 }
 
 // ParseRekeyCommand parses natural language rekey syntax:
-// rekey <account> to <signer> [fee=<microalgos>] [nowait] [arg:name=value]
-// Also handles unrekey: unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]
+// rekey <account> to <signer> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
+// Also handles unrekey: unrekey <account> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
 func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	params := RekeyParams{
 		Wait:       true,
@@ -273,9 +273,9 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 		UseFlatFee: false,
 	}
 	if isUnrekey {
-		// unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]
+		// unrekey <account> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
 		if len(args) < 1 {
-			return params, fmt.Errorf("usage: unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]\nExample: unrekey alice")
+			return params, fmt.Errorf("usage: unrekey <account> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]\nExample: unrekey alice")
 		}
 		params.Account = args[0]
 		params.Signer = args[0] // Rekey to self
@@ -313,7 +313,7 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 }
 
 // ParseTakeCommand parses natural language keyreg syntax:
-// keyreg <account> <online|offline> [votekey=...] [selkey=...] [sproofkey=...] [votefirst=...] [votelast=...] [keydilution=...] [eligible=true] [nowait] [arg:name=value]
+// keyreg <account> <online|offline> [votekey=...] [selkey=...] [sproofkey=...] [votefirst=...] [votelast=...] [keydilution=...] [eligible=true] [nowait] [arg:[<account>:]<name>=<value>]
 func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	params := KeyRegParams{
 		Wait:              true,
@@ -439,7 +439,7 @@ func parseFlatFee(arg string, seen cmdspec.SeenOptions) (uint64, error) {
 	return feeVal, nil
 }
 
-func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool, lsigArgs *map[string][]byte) error {
+func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool, lsigArgs *cmdspec.LsigArgs) error {
 	seen := cmdspec.SeenOptions{}
 	for _, arg := range args {
 		switch {
@@ -457,7 +457,7 @@ func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFla
 				return err
 			}
 		default:
-			return fmt.Errorf("unexpected argument %q: only [fee=<microalgos>] [nowait] [arg:name=value] may follow", arg)
+			return fmt.Errorf("unexpected argument %q: only [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>] may follow", arg)
 		}
 	}
 	return nil
@@ -474,9 +474,9 @@ type SweepParams struct {
 	ToRaw      string             // Raw destination input (alias, address)
 	Leaving    cmdspec.AmountText // Amount to leave in each source (optional)
 	Wait       bool
-	Fee        uint64            // transaction fee in microAlgos
-	UseFlatFee bool              // true if user explicitly set fee (even if zero)
-	LsigArgs   map[string][]byte // LogicSig arguments applied to each generated transaction
+	Fee        uint64           // transaction fee in microAlgos
+	UseFlatFee bool             // true if user explicitly set fee (even if zero)
+	LsigArgs   cmdspec.LsigArgs // LogicSig arguments: untargeted for every transaction, or for one source account
 }
 
 // ParseSweepCommand parses sweep syntax:

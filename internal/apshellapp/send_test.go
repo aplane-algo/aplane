@@ -13,6 +13,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
@@ -284,39 +285,34 @@ func TestCheckedSendTotal(t *testing.T) {
 	}
 }
 
-// An atomic send has no path that carries LogicSig arguments, so giving them
-// is refused, not dropped.
-func TestPrepareSendRefusesLogicSigArgsOnAnAtomicSend(t *testing.T) {
+// An atomic send carries LogicSig arguments like any other send, each
+// position getting its sender's, so giving them is no longer refused. A
+// target is checked against the senders: a receiver is not one.
+func TestPrepareSendResolvesLogicSigArgsOnAnAtomicSend(t *testing.T) {
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	eng.AliasCache.Aliases = map[string]string{"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}
-	eng.SetCache.Sets = map[string][]string{
-		"friends": {
-			"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-			"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-		},
-	}
+	alice, bob, carol := types.Address{51}.String(), types.Address{52}.String(), types.Address{53}.String()
+	eng.AliasCache.Aliases = map[string]string{"alice": alice}
+	eng.SetCache.Sets = map[string][]string{"friends": {bob, carol}}
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	request := SendRequest{
 		AmountText: "1.5", AssetRef: "algo", FromRaw: []string{"alice"}, ToRaw: []string{"@friends"},
-		Atomic: true, LsigArgs: map[string][]byte{"preimage": []byte("x")},
+		Atomic: true, LsigArgs: cmdspec.LsigArgs{{Name: "preimage", Value: []byte("x")}, {Target: "alice", Name: "secret", Value: []byte("y")}},
 	}
-	if _, err := app.PrepareSend(context.Background(), request); err == nil || !strings.Contains(err.Error(), "atomic") {
-		t.Fatalf("atomic send with arg: %v, want it refused", err)
-	}
-	request.Atomic = false
-	if _, err := app.PrepareSend(context.Background(), request); err != nil {
-		t.Fatalf("the same send without atomic is refused: %v", err)
-	}
-	// One to one takes the ordinary path, which carries the arguments, so
-	// `atomic` there is no reason to refuse them.
-	request.Atomic = true
-	request.ToRaw = []string{"alice"}
 	plan, err := app.PrepareSend(context.Background(), request)
-	if err != nil || plan.Mode != SendModeNonAtomic {
-		t.Fatalf("one-to-one send with atomic and arg: %v (mode %v), want the ordinary path", err, plan)
+	if err != nil || plan.Mode != SendModeAtomicToMultiple {
+		t.Fatalf("atomic send with arg: %v (plan %+v), want the atomic path", err, plan)
+	}
+	if got := plan.LsigArgs.For(alice); string(got["preimage"]) != "x" || string(got["secret"]) != "y" || len(got) != 2 {
+		t.Fatalf("alice's arguments = %q, want preimage and secret", got)
+	}
+
+	request.LsigArgs = cmdspec.LsigArgs{{Target: carol, Name: "secret", Value: []byte("y")}}
+	if _, err := app.PrepareSend(context.Background(), request); err == nil ||
+		!strings.Contains(err.Error(), "arg:"+carol+":secret: "+carol+" is not one of the accounts this command sends from") {
+		t.Fatalf("argument for a receiver: %v, want it refused", err)
 	}
 }
 

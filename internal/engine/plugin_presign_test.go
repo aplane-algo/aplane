@@ -565,7 +565,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 			}
 			return out, nil
 		},
-		nil,
+		LsigArgs{},
 	)
 	if err != nil {
 		t.Fatalf("SignAndSubmitWithPluginSigners() error = %v", err)
@@ -622,7 +622,7 @@ func TestSignAndSubmitWithPluginSignersRejectsNilAlgodBeforeSigning(t *testing.T
 			pluginCalls.Add(1)
 			return nil, nil
 		},
-		nil,
+		LsigArgs{},
 	)
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("SignAndSubmitWithPluginSigners(nil algod) error = %v, want ErrNoAlgodClient", err)
@@ -655,7 +655,7 @@ func TestSignAndSubmitWithPluginSignersRejectsUnsupportedConsensusBeforePlanning
 			pluginCalls.Add(1)
 			return nil, nil
 		},
-		nil,
+		LsigArgs{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "network consensus") {
 		t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want unsupported-consensus rejection", err)
@@ -737,7 +737,7 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 			pluginCalls.Add(1)
 			return nil, errors.New("must not be reached")
 		},
-		nil,
+		LsigArgs{},
 	)
 	if !errors.Is(err, cosignercanonical.ErrNotCanonical) || !strings.Contains(err.Error(), "planned transaction at index 1") {
 		t.Fatalf("error = %v, want the plan refused as not canonical at index 1", err)
@@ -819,7 +819,7 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 		func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
 			return nil, errors.New("the plugin's key is unavailable")
 		},
-		nil,
+		LsigArgs{},
 	)
 	if err == nil || err.Error() != "plugin signing failed: the plugin's key is unavailable" {
 		t.Fatalf("error = %v, want the plugin's failure", err)

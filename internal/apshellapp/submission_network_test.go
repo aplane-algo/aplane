@@ -100,7 +100,7 @@ func TestSubmitPluginTransactionsRefusesADraftForAnotherNetwork(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CheckPluginGroup() error = %v", err)
 			}
-			_, err = app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+			_, err = app.SubmitPluginTransactions(context.Background(), "plugin", group)
 			if err == nil || !strings.Contains(err.Error(), "transaction at index 0 is for another network") ||
 				!strings.Contains(err.Error(), "(mainnet)") || !strings.Contains(err.Error(), "(testnet)") {
 				t.Fatalf("SubmitPluginTransactions() error = %v, want the mainnet draft refused on testnet", err)
@@ -222,7 +222,7 @@ func TestSubmitPluginTransactionsRefusesARekeyingGroupForAnotherNetwork(t *testi
 			if err != nil {
 				t.Fatalf("CheckPluginGroup() error = %v, want the rekey to a held valid target to pass", err)
 			}
-			_, err = app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+			_, err = app.SubmitPluginTransactions(context.Background(), "plugin", group)
 			if err == nil || !strings.HasPrefix(err.Error(), "transaction at index 0 is for another network") {
 				t.Fatalf("SubmitPluginTransactions() error = %v, want the group refused for its network", err)
 			}

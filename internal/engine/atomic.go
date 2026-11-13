@@ -165,14 +165,16 @@ func (e *Engine) PrepareAtomicASATransfers(ctx context.Context, transfers []Atom
 	}, nil
 }
 
-func (e *Engine) SignAndSubmitAtomic(ctx context.Context, prep *AtomicPrepResult, wait bool) (*AtomicSubmitResult, error) {
+// SignAndSubmitAtomic signs and submits a prepared atomic group, each
+// transaction with the arguments args gives its sender.
+func (e *Engine) SignAndSubmitAtomic(ctx context.Context, prep *AtomicPrepResult, args LsigArgs, wait bool) (*AtomicSubmitResult, error) {
 	if len(prep.Transactions) == 0 {
 		return nil, fmt.Errorf("no transactions to submit")
 	}
 
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	txids, submittedTxns, err := e.signAndSubmitGroup(prep.Transactions, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
+	txids, submittedTxns, err := e.signAndSubmitGroup(prep.Transactions, args, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
 	result := &AtomicSubmitResult{
 		TxIDs:        txids,
 		Transactions: originalSubmittedTransactions(prep.Transactions, submittedTxns),

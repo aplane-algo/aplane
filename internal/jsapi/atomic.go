@@ -85,7 +85,7 @@ func (a *API) jsAtomicSend(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSend() error preparing transactions: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSend() error submitting transactions: %v", err)))
 	}
@@ -180,7 +180,7 @@ func (a *API) jsAtomicSendAsset(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSendAsset() error preparing transactions: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSendAsset() error submitting transactions: %v", err)))
 	}

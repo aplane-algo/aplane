@@ -201,7 +201,8 @@ type SendPlan struct {
 	Wait          bool
 	Fee           uint64
 	UseFlatFee    bool
-	LsigArgs      map[string][]byte
+	// LsigArgs is the command's arg: words resolved for its senders.
+	LsigArgs engine.LsigArgs
 }
 
 // PreparedSendItem describes one prepared non-atomic send.
@@ -218,6 +219,7 @@ type NonAtomicSendPlan struct {
 	Items     []PreparedSendItem
 	FromCount int
 	ToCount   int
+	LsigArgs  engine.LsigArgs
 }
 
 // AtomicSendPlan describes prepared atomic send execution.
@@ -230,4 +232,5 @@ type AtomicSendPlan struct {
 	To          []string
 	Wait        bool
 	GroupParams engine.AtomicGroupParams
+	LsigArgs    engine.LsigArgs
 }

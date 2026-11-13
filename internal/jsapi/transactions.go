@@ -41,7 +41,7 @@ func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("validate() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, true)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, true)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("validate() error: %v", err)))
 	}
@@ -83,7 +83,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("send() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("send() error submitting transaction: %v", err)))
 	}
@@ -200,7 +200,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("sendAsset() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("sendAsset() error submitting transaction: %v", err)))
 	}
@@ -234,7 +234,7 @@ func (a *API) jsOptIn(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("optIn() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("optIn() error submitting transaction: %v", err)))
 	}
@@ -277,7 +277,7 @@ func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("optOut() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("optOut() error submitting transaction: %v", err)))
 	}
@@ -361,7 +361,7 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("keyreg() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, true)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, true)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("keyreg() error submitting transaction: %v", err)))
 	}
@@ -448,7 +448,7 @@ func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error submitting transaction: %v", err)))
 	}
@@ -486,7 +486,7 @@ func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error submitting transaction: %v", err)))
 	}
@@ -542,13 +542,14 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 		CloseTo:    toAddr,
 		Fee:        opts.Fee,
 		UseFlatFee: opts.UseFlatFee,
-		LsigArgs:   opts.LsigArgs,
 	})
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("close() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	// lsigArgs is untargeted, for every transaction close() builds: the JS
+	// API names no accounts for arguments.
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("close() error submitting transaction: %v", err)))
 	}

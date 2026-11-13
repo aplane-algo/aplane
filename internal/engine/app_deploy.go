@@ -33,7 +33,6 @@ type AppDeployParams struct {
 	Note         string
 	Fee          uint64
 	UseFlatFee   bool
-	LsigArgs     map[string][]byte
 	OnCompletion types.OnCompletion
 }
 
@@ -122,7 +121,6 @@ func (e *Engine) PrepareAppDeploy(ctx context.Context, params AppDeployParams) (
 	return &TransactionPrepResult{
 		Transaction:    txn,
 		SigningContext: signingCtx,
-		LsigArgs:       params.LsigArgs,
 	}, nil
 }
 

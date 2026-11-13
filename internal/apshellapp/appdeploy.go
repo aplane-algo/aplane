@@ -10,6 +10,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
@@ -29,7 +30,7 @@ type AppDeployRequest struct {
 	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
-	LsigArgs         map[string][]byte
+	LsigArgs         cmdspec.LsigArgs
 }
 
 func (r AppDeployRequest) toEngineParams() engine.AppDeployParams {
@@ -51,7 +52,6 @@ func (r AppDeployRequest) toEngineParams() engine.AppDeployParams {
 		Note:         r.Note,
 		Fee:          r.Fee,
 		UseFlatFee:   r.UseFlatFee,
-		LsigArgs:     r.LsigArgs,
 		OnCompletion: types.NoOpOC,
 	}
 }
@@ -63,6 +63,10 @@ func (a *App) AppDeploy(ctx context.Context, req AppDeployRequest) (*AppDeployRe
 		return nil, fmt.Errorf("failed to resolve deploy sender: %w", err)
 	}
 	req.From = fromAddr
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{fromAddr})
+	if err != nil {
+		return nil, err
+	}
 
 	prepResult, err := a.eng.PrepareAppDeploy(ctx, req.toEngineParams())
 	if err != nil {
@@ -70,7 +74,7 @@ func (a *App) AppDeploy(ctx context.Context, req AppDeployRequest) (*AppDeployRe
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("app deploy failed: %w", err)
 	}

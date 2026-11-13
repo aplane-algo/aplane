@@ -91,10 +91,10 @@ func TestParseRawAppCallArgs_WithLsigArgsAndImplicitProgramDetection(t *testing.
 	if !params.ClearCompiled {
 		t.Fatalf("ClearCompiled = false, want true for .bin")
 	}
-	if string(params.LsigArgs["preimage"]) != "hello" {
-		t.Fatalf("LsigArgs[preimage] = %q, want hello", string(params.LsigArgs["preimage"]))
+	if string(lsigArgValue(params.LsigArgs, "preimage")) != "hello" {
+		t.Fatalf("LsigArgs[preimage] = %q, want hello", string(lsigArgValue(params.LsigArgs, "preimage")))
 	}
-	if got := hex.EncodeToString(params.LsigArgs["hash"]); got != "0102" {
+	if got := hex.EncodeToString(lsigArgValue(params.LsigArgs, "hash")); got != "0102" {
 		t.Fatalf("LsigArgs[hash] = %s, want 0102", got)
 	}
 }
@@ -220,10 +220,10 @@ func TestParseMethodAppCallArgs_WithLsigArgsAndUpdatePrograms(t *testing.T) {
 	if !params.ClearCompiled {
 		t.Fatalf("ClearCompiled = false, want true for .bin")
 	}
-	if string(params.LsigArgs["preimage"]) != "hello" {
-		t.Fatalf("LsigArgs[preimage] = %q, want hello", string(params.LsigArgs["preimage"]))
+	if string(lsigArgValue(params.LsigArgs, "preimage")) != "hello" {
+		t.Fatalf("LsigArgs[preimage] = %q, want hello", string(lsigArgValue(params.LsigArgs, "preimage")))
 	}
-	if got := hex.EncodeToString(params.LsigArgs["hash"]); got != "0102" {
+	if got := hex.EncodeToString(lsigArgValue(params.LsigArgs, "hash")); got != "0102" {
 		t.Fatalf("LsigArgs[hash] = %s, want 0102", got)
 	}
 }
@@ -334,7 +334,7 @@ func TestParseAppDeployArgs(t *testing.T) {
 	if params.Wait {
 		t.Fatal("expected nowait to disable waiting")
 	}
-	if got := string(params.LsigArgs["preimage"]); got != "secret" {
+	if got := string(lsigArgValue(params.LsigArgs, "preimage")); got != "secret" {
 		t.Fatalf("LsigArgs[preimage] = %q, want secret", got)
 	}
 }

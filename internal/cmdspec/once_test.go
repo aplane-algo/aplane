@@ -18,25 +18,6 @@ func TestSeenOptionsRefusesASecondValue(t *testing.T) {
 	}
 }
 
-func TestAddLsigArgRefusesARepeatedName(t *testing.T) {
-	var args map[string][]byte
-	for _, token := range []string{"arg:preimage=text:a", "arg:hashlock=text:b"} {
-		if err := AddLsigArg(&args, token); err != nil {
-			t.Fatalf("AddLsigArg(%q) error = %v", token, err)
-		}
-	}
-	if string(args["preimage"]) != "a" || string(args["hashlock"]) != "b" {
-		t.Fatalf("args = %q", args)
-	}
-	err := AddLsigArg(&args, "arg:preimage=text:c")
-	if err == nil || err.Error() != "arg:preimage given more than once" {
-		t.Fatalf("repeated name error = %v, want %q", err, "arg:preimage given more than once")
-	}
-	if string(args["preimage"]) != "a" {
-		t.Fatalf("refused value replaced the first: %q", args["preimage"])
-	}
-}
-
 func TestParseKeyValueArgsRefusesARepeatedKey(t *testing.T) {
 	for _, tt := range []struct {
 		args []string

@@ -23,6 +23,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
@@ -116,13 +117,14 @@ func signedPluginIntents(t *testing.T, txns ...types.Transaction) []jsonrpc.Tran
 var interactive = PluginCheckOptions{Interactive: true}
 
 // checkAndSubmit is what every apshell surface does with a plugin result:
-// CheckPluginGroup, then SubmitPluginTransactions with the group it returns.
-func checkAndSubmit(ctx context.Context, app *App, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) error {
-	group, err := app.CheckPluginGroup(ctx, result, interactive)
+// CheckPluginGroup, given the step's arg: words, then
+// SubmitPluginTransactions with the group it returns.
+func checkAndSubmit(ctx context.Context, app *App, result *jsonrpc.ExecuteResult, lsigArgs cmdspec.LsigArgs) error {
+	group, err := app.CheckPluginGroup(ctx, result, PluginCheckOptions{Interactive: true, LsigArgs: lsigArgs})
 	if err != nil {
 		return err
 	}
-	_, err = app.SubmitPluginTransactions(ctx, "plugin", group, lsigArgs)
+	_, err = app.SubmitPluginTransactions(ctx, "plugin", group)
 	return err
 }
 
@@ -306,7 +308,7 @@ func TestSubmitPluginTransactionsRechecksTheKeyListBeforeSending(t *testing.T) {
 		}
 		f.setSigner(rekeyTestKeys(), false)
 		f.resetCounts()
-		_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+		_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group)
 		if want := rekeyRefusal(c.position, rekeyTestHTLC, "aplane.htlc.v1"); err == nil || err.Error() != want {
 			t.Errorf("%s: SubmitPluginTransactions() error = %v, want %q", mode, err, want)
 		}
@@ -317,7 +319,7 @@ func TestSubmitPluginTransactionsRechecksTheKeyListBeforeSending(t *testing.T) {
 
 		f.setSigner(rekeyTestKeys()[:1], true)
 		f.resetCounts()
-		_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+		_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group)
 		if want := "plugin group rekeys an account (transaction " + c.position + "): the signer is locked; unlock it so apshell can check the rekey target against its aplane keys"; err == nil || err.Error() != want {
 			t.Errorf("%s: locked at submission: error = %v, want %q", mode, err, want)
 		}
@@ -416,7 +418,7 @@ func TestCheckPluginGroupLeavesAGroupWithNoRekeyAlone(t *testing.T) {
 		if group.RekeyTargets().KnownAddresses != nil {
 			t.Errorf("%s: a group with no rekey has rekey facts", mode)
 		}
-		_, _ = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+		_, _ = f.app.SubmitPluginTransactions(context.Background(), "plugin", group)
 		if f.keyFetches.Load() != 0 {
 			t.Errorf("%s: a group with no rekey fetched the key list %d time(s)", mode, f.keyFetches.Load())
 		}
@@ -455,12 +457,12 @@ func TestPluginGroupIsFrozenAtTheCheck(t *testing.T) {
 			group.Mode(), group.RequiresApproval(), group.PluginSigners(), len(txns))
 	}
 	f.resetCounts()
-	_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group, nil)
+	_, err = f.app.SubmitPluginTransactions(context.Background(), "plugin", group)
 	if err == nil || strings.Contains(err.Error(), "pluginSigners") || f.nodeCalls.Load() == 0 {
 		t.Fatalf("submission did not submit the checked group: error %v, %d node request(s)", err, f.nodeCalls.Load())
 	}
 
-	if _, err := f.app.SubmitPluginTransactions(context.Background(), "plugin", &PluginGroup{}, nil); !errors.Is(err, ErrUncheckedPluginGroup) {
+	if _, err := f.app.SubmitPluginTransactions(context.Background(), "plugin", &PluginGroup{}); !errors.Is(err, ErrUncheckedPluginGroup) {
 		t.Fatalf("SubmitPluginTransactions(unchecked group) error = %v, want ErrUncheckedPluginGroup", err)
 	}
 }
