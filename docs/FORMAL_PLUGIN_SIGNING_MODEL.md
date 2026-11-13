@@ -307,6 +307,35 @@ what was reviewed.
   gates; the model carries no network and claims nothing about it. Go tests:
   `internal/engine/active_network_test.go`,
   `internal/apshellapp/submission_network_test.go`.
+- **LogicSig arguments are checked, not modeled.** A plugin command's `arg:`
+  words apply to its first result only and are placed by the account that
+  sends each transaction: `arg:<name>=<value>` on every position,
+  `arg:<account>:<name>=<value>` on that account's. The refusals they add come
+  before anything is sent and change none of the modeled gates or their order:
+  - `internal/apshellcli/external_plugins.go::processPluginResultStructured`
+    refuses arguments given for a first result with no transactions
+    (`apshellapp.ErrLsigArgsWithoutTransactions`), before its continuation
+    runs;
+  - `internal/apshellapp/submission.go::CheckPluginGroup` refuses any
+    arguments for a pregrouped-signed group, and resolves the others against
+    the group's senders (`internal/apshellapp/lsig_args.go::resolveLsigArgs`),
+    refusing an account that sends none of the group's transactions and a
+    name given twice to one transaction. Both come after the decode and the
+    non-interactive refusal and before PS8's first judgment, so a group that
+    could never be submitted is refused before any key list is fetched. The
+    group keeps the resolved arguments, and submission places them by sender
+    (`internal/engine/lsig_args.go::LsigArgs.place`);
+  - `internal/engine/plugin_presign.go::SignAndSubmitWithPluginSigners`
+    refuses an argument placed on a plugin-signed slot
+    (`internal/engine/lsig_args.go::refusePluginSignedLsigArgs`): the
+    plugin's `signTransactions` request carries none. It runs after the
+    slot-ownership checks and before the network precondition, the plan
+    requests and `/plan`.
+
+  The model carries no arguments and claims nothing about them. Go tests:
+  `internal/apshellapp/lsig_args_test.go`,
+  `internal/engine/lsig_args_test.go`,
+  `internal/apshellcli/plugin_continuation_test.go::TestPluginArgumentsNeedTransactionsInTheFirstResult`.
 - **Plugin sender claims are not authenticated**: in presign-plan a plugin
   may declare any sender address as its own; the slot then goes foreign at
   `/plan` and apsigner never signs it, so the only effect is a group that

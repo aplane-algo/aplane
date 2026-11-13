@@ -226,7 +226,10 @@ compatible manual-salt records retain it.
   them to `generate`/`generateKey`. Address-list and uint-list params are
   canonicalized (sorted) before the address is derived.
 - **Runtime args** are supplied per transaction at signing time (e.g. an HTLC
-  preimage). Shell syntax: `arg:preimage=0x...`. JS: the `lsigArgs` option.
+  preimage). Shell syntax: `arg:preimage=0x...`, for every transaction the
+  command builds, or `arg:<account>:preimage=0x...`, for the transactions
+  that account sends, when a group or set mixes accounts that take different
+  arguments. JS: the `lsigArgs` option, which goes to every transaction.
 
 ### Restricted variants (the safety is in the program)
 

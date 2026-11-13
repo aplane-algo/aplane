@@ -442,7 +442,6 @@ type SendPaymentParams struct {
     Fee        uint64
     UseFlatFee bool
     Close      bool   // close the account to To
-    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // SendASAParams for ASA transfers
@@ -454,7 +453,6 @@ type SendASAParams struct {
     Note       string
     Fee        uint64
     UseFlatFee bool
-    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // OptInParams for ASA opt-in
@@ -463,7 +461,6 @@ type OptInParams struct {
     AssetID    uint64
     Fee        uint64
     UseFlatFee bool
-    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // KeyRegParams for key registration (online/offline)
@@ -477,7 +474,6 @@ type KeyRegParams struct {
     VoteLast          uint64
     KeyDilution       uint64
     IncentiveEligible bool
-    LsigArgs          map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // RekeyParams for rekeying accounts
@@ -486,7 +482,6 @@ type RekeyParams struct {
     To         string // New auth address
     Fee        uint64
     UseFlatFee bool
-    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // CloseAccountParams for closing accounts
@@ -495,7 +490,6 @@ type CloseAccountParams struct {
     CloseTo    string // Recipient of remaining ALGO
     Fee        uint64
     UseFlatFee bool
-    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // OptOutParams for ASA opt-out
@@ -505,7 +499,6 @@ type OptOutParams struct {
     CloseTo    string // Recipient of remaining balance
     Fee        uint64
     UseFlatFee bool
-    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // AtomicPaymentParams for atomic group payments
@@ -543,9 +536,53 @@ if !balanceCheck.SufficientFunds {
     fmt.Printf("Warning: Insufficient funds\n")
 }
 
-// Phase 2: Sign and submit
-result, err := engine.SignAndSubmit(ctx, prep, true) // wait for confirmation
+// Phase 2: Sign and submit, with the command's LogicSig arguments placed by
+// sender (engine.LsigArgs{} for none), waiting for confirmation
+result, err := engine.SignAndSubmit(ctx, prep, args, true)
 ```
+
+#### LogicSig Arguments
+
+A command's `arg:` words carry LogicSig arguments in two forms:
+`arg:<name>=<value>` for every transaction the command builds, and
+`arg:<account>:<name>=<value>` for the transactions sent by that account (an
+address or an alias). The user-facing rules are in
+[USER_COMMANDS.md](USER_COMMANDS.md#logicsig-arguments). Arguments are not a
+preparation input: the `Prepare*` parameter structs carry none, and the submit
+methods take them.
+
+- `internal/cmdspec/lsigarg.go` parses a word into `cmdspec.LsigArg` (the
+  target as written, the name, the decoded value) and refuses a malformed
+  word, a name holding `:`, a set as the target, and a name repeated for a
+  target written the same way. It cannot resolve aliases.
+- `internal/apshellapp/lsig_args.go::resolveLsigArgs` is the one place a
+  command's words are resolved, once per command, before anything is sent.
+  It resolves each target with the command's address resolver, refuses a
+  target that is not one of the accounts the command was asked to send from
+  (a set expanded; a skipped sweep source still counts), and refuses, after
+  resolution, a name given twice to one transaction: twice for one account,
+  or both untargeted and for an account. It returns an `engine.LsigArgs`.
+  For a plugin command it runs in `CheckPluginGroup`, against the senders of
+  the first result's transactions; the group keeps the result.
+- `engine.LsigArgs` (`internal/engine/lsig_args.go`) is the only way to hand
+  the engine arguments: its fields are unexported, and it is made by
+  `NewLsigArgs(untargeted, bySender)` or `UntargetedLsigArgs(m)` (the JS API's
+  `lsigArgs` option). The engine places it by sender on every route:
+  `signAndSubmitGroup` (single, atomic, prepared group, default plugin draft,
+  and through it the rotating and cosigned routes) and
+  `SignAndSubmitWithPluginSigners` set each position's map from
+  `LsigArgs.For(sender)`. The engine judges nothing in it, with two
+  exceptions: a presign-plan position the plugin signs refuses any argument
+  (the plugin's sign request has no field for them), and the existing
+  pre-sign check (`validateSubmitLsigArgs`) compares each position's map with
+  the declared arguments of the sender's effective signer in the signer
+  cache, after `refreshSubmitSigningState`. A key the cache describes no
+  arguments for passes; the signer judges every key, and refuses
+  `lsig_args` for a native key.
+
+Which names a key takes is never used to place an argument. A transaction
+file (`sign`) carries none. Two transactions from one sender in one command
+get the same arguments.
 
 #### Available Transaction Methods
 
@@ -876,11 +913,11 @@ Parsing contracts:
 - bracketed address lists such as `[ A1 A2 ]` and `[A1 A2]` are accepted where a command already accepts address-list input,
 - `generate` parameter parsing is bracket-aware for `key=value` arguments,
 - `generate` reads its own flags, `--boundary <file>` and `--result <file>`, and sends neither to the signer; every `param=value` is the signer's. A boundary file sets every parameter, so it cannot be combined with others,
-- LogicSig `arg:name=value` parsing keeps the `arg:name=` split local to `internal/cmdspec/lsigarg.go` and uses the shared byte parser for the value side,
+- LogicSig `arg:<name>=<value>` and `arg:<account>:<name>=<value>` parsing keeps the split local to `internal/cmdspec/lsigarg.go`: the word is split at its first `=`, the part before it at its one `:` (none for an untargeted word, more than one refused, so a name may not contain `:`), and the value side uses the shared byte parser,
 - byte-oriented shell inputs support `hex:`, `b64:`, `text:`/`str:`, `int:`, `addr:`, and `0x...`; bare text is accepted only where command behavior allows it, and never when it contains a colon,
 - ASA-facing commands may parse shell input into semantic values (`AssetRef`, `AmountText`) before command execution, but this does not change user syntax,
 - `send` and `sweep` parse their required `from`/`to`/`leaving` structure first and only treat later tokens as trailing options, so positional address/account inputs may legitimately equal keywords such as `atomic`, `nowait`, or `leaving` without being reinterpreted as flags.
-- an option that takes one value is given once: a second value is refused with `<option> given more than once` (`cmdspec.SeenOptions`, and `cmdspec.AddLsigArg` for `arg:<name>=`), never read as the last value. An option with two spellings, such as `--pay`/`pay=`, is one option. List options (`--arg`, `arg-raw=`, `account=`, `app=`, `asset=`, `box=`) and `arg:` with different names repeat; flags without a value (`nowait`, `atomic`) may repeat to no effect. `generate` refuses a repeated parameter key in `cmdspec.ParseKeyValueArgs`.
+- an option that takes one value is given once: a second value is refused with `<option> given more than once` (`cmdspec.SeenOptions`, and `cmdspec.AddLsigArg` for an `arg:` name repeated for one written target; a repeat that depends on resolving the target is refused by `apshellapp.resolveLsigArgs`), never read as the last value. An option with two spellings, such as `--pay`/`pay=`, is one option. List options (`--arg`, `arg-raw=`, `account=`, `app=`, `asset=`, `box=`) and `arg:` with different names or for different accounts repeat; flags without a value (`nowait`, `atomic`) may repeat to no effect. `generate` refuses a repeated parameter key in `cmdspec.ParseKeyValueArgs`.
 
 ### Address Resolution
 
@@ -1186,7 +1223,6 @@ Supported preparation inputs include:
 - box references
 - on-completion
 - update-only approval and clear programs
-- per-call LogicSig arguments
 - note
 - fee / flat-fee control
 
@@ -1198,7 +1234,7 @@ The CLI surface is:
 
 Raw-call CLI arguments also include:
 - `approval=` / `approval-teal=` / `approval-bin=` and `clear=` / `clear-teal=` / `clear-bin=` when `oncomp=update`
-- `arg:name=value` for per-call LogicSig arguments passed through the existing signer flow
+- `arg:<name>=<value>` and `arg:<account>:<name>=<value>` LogicSig arguments, given at submission and placed by sender; a `--pay` companion payment is from the same account and gets the same
 
 This path is the protocol-level fallback and does not depend on ABI metadata.
 
@@ -1260,7 +1296,6 @@ type PreparedGroup struct {
 type PreparedGroupEntry struct {
     Transaction    types.Transaction
     SigningContext *SigningContext
-    LsigArgs       map[string][]byte
     AppCallInfo    *signerapi.AppCallInfo
 }
 ```
@@ -1268,7 +1303,9 @@ type PreparedGroupEntry struct {
 This type is owned by the engine. It represents:
 - ordered transactions
 - their derived signing metadata
-- any per-entry LogicSig args
+
+LogicSig arguments are not part of it: `ExecutePreparedGroup` takes an
+`engine.LsigArgs` and places it by sender.
 
 It does not represent authorization proofs, wallet sessions, or external
 signing workflows.
@@ -1288,7 +1325,7 @@ The engine exposes:
 - `PrepareGroup(preps ...*TransactionPrepResult)`
 - `PreparePaymentAppGroupWithContext(ctx, prepper, payment, app)`
 - `PreparePaymentMethodGroupWithContext(ctx, prepper, payment, app)`
-- `ExecutePreparedGroup(ctx, group, wait)`
+- `ExecutePreparedGroup(ctx, group, args, wait)`
 
 The first concrete grouped dApp pattern is companion payment plus app call.
 

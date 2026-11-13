@@ -51,7 +51,16 @@ does not transcribe, and it runs after the rekey judgments and the review: in
 `SignAndSubmitWithPluginSigners` before `/plan` (presign-plan), and in
 `SubmitPregroupedSigned` before the group is broadcast (pregrouped-signed),
 each after the submit function's second rekey judgment. It is checked by Go
-tests, not modeled. TLC verifies that no
+tests, not modeled. So are the refusals of a step's LogicSig arguments
+(`arg:` words), which the model does not transcribe either and which change
+none of its gates: `CheckPluginGroup` refuses any for a pregrouped-signed
+group, and an argument whose account is not a sender of the group or whose
+name repeats for one transaction (`apshellapp/lsig_args.go::resolveLsigArgs`),
+after the decode and the non-interactive refusal and before the first rekey
+judgment; `processPluginResultStructured` refuses arguments for a first result
+with no transactions; and `SignAndSubmitWithPluginSigners` refuses an argument
+placed on a plugin-signed slot, after its slot-ownership checks and before the
+network precondition and `/plan`. TLC verifies that no
 enumerated combination reaches submission without satisfying every named
 invariant. A dropped check in `Submitted` — the model's stand-in for a
 regression in the code path it transcribes — surfaces as a counterexample.
