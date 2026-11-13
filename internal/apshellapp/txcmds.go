@@ -866,10 +866,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			if leaveMinimumBalance {
 				what = "minimum balance"
 			}
-			item.SkippedReason = fmt.Sprintf("balance %d <= %s %d", balance, what, leaving)
-			if assetMeta.AssetID == 0 && balance > leaving {
-				item.SkippedReason = fmt.Sprintf("balance %d leaves nothing to send after the %s %d and fee reserve %d", balance, what, leaving, amounts.feeReserve)
-			}
+			item.SkippedReason = amounts.skipReason(balance, leaving, what)
 			result.Items = append(result.Items, item)
 			continue
 		}
@@ -940,96 +937,91 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	return result, nil
 }
 
-func authorizationFeeReserveForSweep(
-	assetID uint64,
-	sender string,
-	reserve func(string) (uint64, error),
-) (uint64, error) {
-	// The reserve affects only the amount of ALGO that can be swept. An ASA
-	// sweep sends asset units, so querying authorization resources cannot alter
-	// its amount and must not introduce an unrelated algod/profile failure.
-	if assetID != 0 {
-		return 0, nil
-	}
-	return reserve(sender)
-}
-
 // sweepAmounts is what one account's sweep sends and the fees it reserves.
 type sweepAmounts struct {
 	send       uint64 // the amount to send
 	txnFee     uint64 // the fee an ALGO payment is built with
-	feeReserve uint64 // txnFee plus the authorization reserve
+	feeReserve uint64 // what the balance above leaving was compared against
+	early      bool   // feeReserve is the smallest fee alone: nothing was built
 	ok         bool   // false: nothing to send
 }
 
-// settleSweepAmounts settles what one account's sweep sends. An account with
-// nothing to send even at the smallest fee its payment could carry, the
-// user's flat fee or else the protocol minimum, is skipped before anything is
-// built, so a network or signer failure cannot turn that skip into a failure.
-// Otherwise the payment's fee is read from a build (sweepPaymentFee), and only
-// then the authorization reserve: the build looks up and caches the account's
-// auth address, so the reserve is for the key that signs, not the account's
-// own when it is rekeyed.
+// skipReason says why an account with nothing to send is skipped, naming what
+// its balance was compared against.
+func (s sweepAmounts) skipReason(balance, leaving uint64, what string) string {
+	switch {
+	case balance <= leaving:
+		return fmt.Sprintf("balance %d <= %s %d", balance, what, leaving)
+	case s.early:
+		return fmt.Sprintf("balance %d leaves nothing to send after the %s %d and a fee of at least %d", balance, what, leaving, s.feeReserve)
+	default:
+		return fmt.Sprintf("balance %d leaves nothing to send after the %s %d and fee reserve %d", balance, what, leaving, s.feeReserve)
+	}
+}
+
+// settleSweepAmounts settles what one account's sweep sends. An ASA sweep
+// sends all above what is to be left: its fee is paid in ALGO, not the swept
+// asset, so nothing is built or reserved. An ALGO account with nothing to send
+// even at the smallest fee its payment could carry, the user's flat fee or
+// else the protocol minimum, is skipped before anything is built, so a network
+// or signer failure cannot turn that skip into a failure. Otherwise the
+// payment's fee and the address that signs it come from a build
+// (sweepPaymentFee), and the authorization reserve is for that address: a
+// rekeyed account's auth address, a rotating account itself.
 func (a *App) settleSweepAmounts(ctx context.Context, assetID uint64, from, to string, balance, leaving, fee uint64, useFlatFee bool) (sweepAmounts, error) {
+	if assetID != 0 {
+		send, _, ok := sweepSendAmount(balance, leaving, 0, 0)
+		return sweepAmounts{send: send, ok: ok}, nil
+	}
 	smallestFee := signing.DefaultMinFee
 	if useFlatFee {
 		smallestFee = fee
 	}
-	if _, feeReserve, ok := sweepSendAmount(balance, leaving, assetID, smallestFee, 0); !ok {
-		return sweepAmounts{feeReserve: feeReserve}, nil
+	if _, feeReserve, ok := sweepSendAmount(balance, leaving, smallestFee, 0); !ok {
+		return sweepAmounts{feeReserve: feeReserve, early: true}, nil
 	}
-	txnFee, err := a.sweepPaymentFee(ctx, assetID, from, to, balance, leaving, fee, useFlatFee)
+	txnFee, signingAddr, err := a.sweepPaymentFee(ctx, from, to, balance-leaving, fee, useFlatFee)
 	if err != nil {
 		return sweepAmounts{}, fmt.Errorf("failed to prepare transaction: %w", err)
 	}
-	reserve, err := authorizationFeeReserveForSweep(assetID, from, a.eng.AuthorizationFeeReserve)
+	reserve, err := a.eng.AuthorizationFeeReserve(signingAddr)
 	if err != nil {
 		return sweepAmounts{}, fmt.Errorf("failed to plan authorization fee reserve: %w", err)
 	}
-	send, feeReserve, ok := sweepSendAmount(balance, leaving, assetID, txnFee, reserve)
+	send, feeReserve, ok := sweepSendAmount(balance, leaving, txnFee, reserve)
 	return sweepAmounts{send: send, txnFee: txnFee, feeReserve: feeReserve, ok: ok}, nil
 }
 
-// sweepPaymentFee returns the fee an ALGO sweep's payment pays. It builds the
-// payment carrying the most it could send, the balance less what is to be
-// left, and reads the fee that transaction was given. algod's suggested fee is
-// per byte, and a smaller amount never encodes larger, so no amount the sweep
-// sends costs more. The sweep builds its payment with this fee fixed, which
-// leaves the account exactly what is to be left. A flat fee the user gave,
-// zero included, comes back as given. Nothing is built when there is nothing
-// to send, or for an ASA sweep, whose fee does not change the amount.
-func (a *App) sweepPaymentFee(ctx context.Context, assetID uint64, from, to string, balance, leaving, fee uint64, useFlatFee bool) (uint64, error) {
-	if assetID != 0 || balance <= leaving {
-		return 0, nil
-	}
-	largest, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
+// sweepPaymentFee builds an ALGO sweep's payment carrying largest, the most it
+// could send, and returns the fee that transaction was given and the address
+// that signs it. algod's suggested fee is per byte, and a smaller amount never
+// encodes larger, so no amount the sweep sends costs more. The sweep builds its
+// payment with this fee fixed, which leaves the account exactly what is to be
+// left. A flat fee the user gave, zero included, comes back as given.
+func (a *App) sweepPaymentFee(ctx context.Context, from, to string, largest, fee uint64, useFlatFee bool) (txnFee uint64, signingAddr string, err error) {
+	prep, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 		From:       from,
 		To:         to,
-		Amount:     balance - leaving,
+		Amount:     largest,
 		Fee:        fee,
 		UseFlatFee: useFlatFee,
 	})
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
-	return uint64(largest.Transaction.Fee), nil
+	return uint64(prep.Transaction.Fee), prep.SigningContext.SigningAddr, nil
 }
 
 // sweepSendAmount computes how much to send so the account is left with exactly
-// `leaving`. For ALGO sweeps the fee reserve is txnFee, the fee of the payment
-// the sweep builds (sweepPaymentFee), plus authorizationFeeReserve, the
-// LogicSig dummy/program fees or native-PQ fee contribution the signer adds on
-// top, so sweeping from a non-Ed25519 account does not overspend.
-// ASA sweeps pay their fee from the ALGO balance, not the swept asset, so
-// neither applies there.
-func sweepSendAmount(balance, leaving, assetID, txnFee, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
+// `leaving`, reserving txnFee, the fee of the payment the sweep builds
+// (sweepPaymentFee), plus authorizationFeeReserve, the LogicSig dummy/program
+// fees or native-PQ fee contribution the signer adds on top, so sweeping from a
+// non-Ed25519 account does not overspend.
+func sweepSendAmount(balance, leaving, txnFee, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
 	if balance <= leaving {
 		return 0, 0, false
 	}
 	available := balance - leaving
-	if assetID != 0 {
-		return available, 0, true
-	}
 	if authorizationFeeReserve > math.MaxUint64-txnFee {
 		return 0, math.MaxUint64, false
 	}

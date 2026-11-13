@@ -93,12 +93,8 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	if !e.signerCacheHasAddress(signingAddr) && cached {
 		refreshedAuth, err := e.RefreshAuthAddressWithContext(ctx, address)
 		if err == nil {
-			if refreshedAuth == "" || refreshedAuth == address {
-				signingAddr = address
-			} else {
-				signingAddr = refreshedAuth
-				authAddr = refreshedAuth
-			}
+			signingAddr = e.signingAddressFor(address, refreshedAuth)
+			authAddr = refreshedAuth
 		}
 	}
 	if !e.signerCacheHasAddress(signingAddr) {
