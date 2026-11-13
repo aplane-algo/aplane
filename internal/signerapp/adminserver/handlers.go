@@ -102,6 +102,16 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 	}
 	request := adminproto.UpdateAdminSettingRequest{Key: msg.Key, Value: msg.Value}
 	err := s.settingsServices.UpdateAdminSetting(request)
+	// A change in effect whose save did not complete leaves no durable trace
+	// of its own: after a power loss the old value comes back. The audit log
+	// records it.
+	if code := protocol.CodeForError(err); code == protocol.ResultCodeAppliedNotDurable || code == protocol.ResultCodeAppliedNotSaved {
+		if audit, ok := s.audit.(interface {
+			LogSettingNotDurableContext(SessionContext, string, string, string)
+		}); ok {
+			audit.LogSettingNotDurableContext(s.SessionContext(), msg.Key, code, err.Error())
+		}
+	}
 	_ = s.WriteJSON(ProtocolUpdateAdminSettingResultMessage(msg.ID, request, err))
 }
 

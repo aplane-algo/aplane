@@ -212,7 +212,7 @@ type stageDeriver func(ctx context.Context, from, to uint64) ([]types.Address, e
 // anything: it refused or cancelled the key use, or had already cleared the
 // session the seed would load from. A request answers it as locked; the
 // background fill and restore stop on it as on any cut.
-var errKeyUseRefused = errors.New("signer is locked")
+var errKeyUseRefused = errors.New(lockedMessage)
 
 // keyUseCut says why a window ended before a stage was derived: the caller's
 // own context if that ended, else the lock.
@@ -252,7 +252,13 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	// closed again inside the call.
 	acct, genesis, _, svcErr := s.rotatingAccount(ctx, deps, account, session)
 	if svcErr != nil {
-		report.Err = errors.New(svcErr.Message)
+		// A lock during the identity read is where the pass stops, as it is
+		// one step later in the deriver (backgroundDeriver): not an account
+		// error. The pass's context, which the lock also cancels, may end
+		// first, so either report is the lock's.
+		if svcErr.Kind != ErrorLocked && ctx.Err() == nil {
+			report.Err = errors.New(svcErr.Message)
+		}
 		return report
 	}
 	present := func() bool {

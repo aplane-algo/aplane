@@ -380,6 +380,10 @@ type adminPanelState struct {
 	selectedRow int
 	editingRow  int // -1 = none
 	editValue   string
+	// unsavedWarning names a setting the last update result left in effect
+	// without a completed save (applied_not_durable or applied_not_saved).
+	// The panel shows it until the next update result replaces or clears it.
+	unsavedWarning string
 }
 
 // clientsState is the enrolled-clients screen and its revocation dialog.

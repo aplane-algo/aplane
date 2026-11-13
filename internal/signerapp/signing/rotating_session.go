@@ -55,7 +55,8 @@ type RotatingDeps struct {
 	// window, with one exception: for a stateless-hash family (SLH-DSA) the
 	// sign's signing window reads the chain once more after signing, before
 	// the seed is zeroed. That read runs under the window's context, so a
-	// lock cancels it rather than waiting it out.
+	// lock cancels it rather than waiting it out, and the request answers
+	// locked.
 	KeyUse func(context.Context) (context.Context, func())
 	// DiscoveryTimeout bounds a request's scan for an unknown live stage.
 	// Zero means DefaultDiscoveryTimeout.
@@ -63,9 +64,13 @@ type RotatingDeps struct {
 	Wake             func()
 }
 
+// rotatingNotConfiguredMessage is the text rotatingDeps refuses missing
+// dependencies with, which errKeyUseNotConfigured shares.
+const rotatingNotConfiguredMessage = "rotating signing is not configured"
+
 // errKeyUseNotConfigured refuses a seed load on deps without KeyUse, with
 // the message rotatingDeps uses for missing dependencies.
-var errKeyUseNotConfigured = errors.New("rotating signing is not configured")
+var errKeyUseNotConfigured = errors.New(rotatingNotConfiguredMessage)
 
 // keyUse opens a window for holding a seed. The returned release is safe to
 // call more than once. Without KeyUse it opens no window and returns
@@ -133,7 +138,7 @@ func (rs *rotatingSession) stageAddress(stage uint64) (types.Address, error) {
 func (s *Service) rotatingDeps() (*RotatingDeps, *ServiceError) {
 	if s.Planner == nil || s.Planner.Snapshot == nil || s.Rotating == nil ||
 		s.Rotating.Chain == nil || s.Rotating.Tables == nil || s.Rotating.Locks == nil {
-		return nil, internal("rotating signing is not configured")
+		return nil, internal(rotatingNotConfiguredMessage)
 	}
 	return s.Rotating, nil
 }
@@ -201,9 +206,16 @@ func (s *Service) openRotatingSession(ctx context.Context, accountText string, s
 	if svcErr != nil {
 		return nil, svcErr
 	}
+	return loadRotatingKey(ctx, rs, session)
+}
+
+// loadRotatingKey loads the seed of an account indexedRotatingKey returned
+// into rs.
+func loadRotatingKey(ctx context.Context, rs *rotatingSession, session *keystore.KeySession) (*rotatingSession, *ServiceError) {
 	if session == nil {
 		return nil, lockedError()
 	}
+	accountText := rs.account.String()
 	key, loadErr := session.GetKeyWithContext(ctx, accountText)
 	if loadErr != nil {
 		if errors.Is(loadErr, keystore.ErrStoreLocked) {

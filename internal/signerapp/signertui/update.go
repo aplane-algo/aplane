@@ -648,12 +648,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
+		// In effect without a completed save is not a failure: the panel
+		// warns until the next update result, and the re-read below shows the
+		// value in effect. The warning names the setting, not the echoed
+		// request value, which can differ from what the signer holds.
+		m.admin.unsavedWarning = ""
 		switch {
 		case msg.Code == protocol.ResultCodeAppliedNotDurable:
-			// Saved and in effect; only its durability is unconfirmed. The
-			// warning stays until the next key on the admin panel, which
-			// shows the stored value once the settings are re-read.
-			m.setPersistentWarning(settingNotDurableWarningPrefix + msg.Key)
+			m.admin.unsavedWarning = msg.Key + " is in effect; its durability is not confirmed"
+		case msg.Code == protocol.ResultCodeAppliedNotSaved:
+			m.admin.unsavedWarning = msg.Key + " is in effect but not saved; a restart reverts it"
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
 		}

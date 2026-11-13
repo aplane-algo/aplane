@@ -53,8 +53,11 @@ func rotatingSigningRequired() *ServiceError {
 	}
 }
 
+// lockedMessage is the locked error's text, which errKeyUseRefused shares.
+const lockedMessage = "signer is locked"
+
 // lockedError reports the signer keystore as locked with the dedicated
 // machine-readable kind.
 func lockedError() *ServiceError {
-	return &ServiceError{Kind: ErrorLocked, Message: "signer is locked"}
+	return &ServiceError{Kind: ErrorLocked, Message: lockedMessage}
 }

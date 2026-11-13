@@ -403,6 +403,107 @@ func TestStageDerivationReportsALockOnlyWhenTheKeyUseWasStopped(t *testing.T) {
 	}
 }
 
+// A lock during the stage table fill's identity read is where the pass stops,
+// as it is one step later in the deriver: no account error, so the worker
+// logs no warning. The lock refuses or cuts the read's key use, and it also
+// cancels the pass's context, which may be seen first. The report once
+// carried "signer is locked" or "context canceled", whichever came first.
+func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// passCancelled: the lock has cancelled the pass's context too.
+		passCancelled bool
+	}{
+		{name: "key use refused"},
+		{name: "key use refused and pass cancelled", passCancelled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, _ := newSigningFixtureFor(t, wotscTestType)
+			ctx, cancelPass := context.WithCancel(context.Background())
+			defer cancelPass()
+			uses := 0
+			f.svc.Rotating.KeyUse = func(use context.Context) (context.Context, func()) {
+				uses++
+				f.svc.IsUnlocked = func() bool { return false }
+				if tc.passCancelled {
+					cancelPass()
+				}
+				refused, cancel := context.WithCancel(use)
+				cancel()
+				return refused, func() {}
+			}
+			before := f.store.loads
+			reports := f.svc.FillStageTables(ctx, f.session, StageFillOptions{})
+			if len(reports) != 1 || reports[0].Err != nil || reports[0].Observed || reports[0].Pending {
+				t.Fatalf("reports = %+v, want one quiet stop with no error", reports)
+			}
+			if uses != 1 || f.store.loads != before {
+				t.Fatalf("%d key uses and %d seed loads, want the identity read's one refused use and none", uses, f.store.loads-before)
+			}
+		})
+	}
+}
+
+// The stateless-hash (SLH-DSA) sign reads the chain once more after signing,
+// inside its key use. A lock that cuts that read short answers locked, as a key
+// use the lock cuts does everywhere else; the request's own end answers
+// unavailable. A lock there once answered unavailable("context canceled").
+func TestSLHReleaseReadCutByALockAnswersLocked(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want ErrorKind
+	}{
+		{"lock", ErrorLocked},
+		{"request cancelled", ErrorUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, audit := newSigningFixtureFor(t, slhTestType)
+			prep := mustPrepare(t, f, f.spend(1000, 1100))
+			var cutKeyUse context.CancelFunc
+			f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				use, cancel := context.WithCancel(ctx)
+				cutKeyUse = cancel
+				return use, cancel
+			}
+			ctx, cancelRequest := context.WithCancel(context.Background())
+			defer cancelRequest()
+			reads := 0
+			f.svc.Rotating.Chain = rotatingChainFunc(func(readCtx context.Context, genesis []byte, account types.Address) (chainread.AccountView, error) {
+				reads++
+				if reads < 2 {
+					return f.chain.ReadAccount(readCtx, genesis, account)
+				}
+				// The release re-read, under the signing window's key use.
+				switch tc.name {
+				case "lock":
+					f.svc.IsUnlocked = func() bool { return false }
+					cutKeyUse()
+				case "request cancelled":
+					cancelRequest()
+				}
+				<-readCtx.Done()
+				return chainread.AccountView{}, readCtx.Err()
+			})
+			resp, err := f.svc.SignRotatingWithContext(ctx, signerapi.RotatingSignRequest{Account: f.account.String(), Transactions: prep.Transactions}, f.session)
+			if reads != 2 {
+				t.Fatalf("chain reads %d, want two", reads)
+			}
+			if resp != nil || err == nil || err.Kind != tc.want {
+				t.Fatalf("response %v, error %v, want kind %v", resp, err, tc.want)
+			}
+			if len(audit.releases) != 0 {
+				t.Fatal("a signature cut short was audited as released")
+			}
+		})
+	}
+}
+
+type rotatingChainFunc func(ctx context.Context, genesisHash []byte, account types.Address) (chainread.AccountView, error)
+
+func (f rotatingChainFunc) ReadAccount(ctx context.Context, genesisHash []byte, account types.Address) (chainread.AccountView, error) {
+	return f(ctx, genesisHash, account)
+}
+
 // A request that joins another derivation of the same stages decides by its own
 // key use when that derivation ends without a result: the other request was
 // cancelled, or its key use was stopped. Either way the waiter derives under its

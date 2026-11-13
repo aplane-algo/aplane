@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -385,19 +386,29 @@ func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	}
 }
 
-func TestGenerationRequirementIsNotAppliedWhenItCannotBeSaved(t *testing.T) {
+// A requirement turned on is restrictive, so it is in effect even when it
+// cannot be saved; one turned off is not applied unless it is saved.
+func TestGenerationRequirementCannotBeSaved(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
 	writeRootConfig(t, deps)
+	ir.Config().SetGenerationRequirements(false, true)
 	// A directory where the runtime config belongs makes the save fail.
 	if err := os.MkdirAll(productruntime.ConfigPath(deps.dataDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingRequireContained, Value: "true"})
-	if err == nil {
-		t.Fatal("the save did not fail")
+	if protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved {
+		t.Fatalf("turning a requirement on: error = %v, want %s", err, protocol.ResultCodeAppliedNotSaved)
 	}
-	if admin, _ := ir.Config().GenerationRequirements(); admin {
-		t.Fatal("a requirement stayed active after it could not be saved")
+	if contained, _ := ir.Config().GenerationRequirements(); !contained {
+		t.Fatal("a requirement turned on is not in effect after its save failed")
+	}
+	err = svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingRequireCosigner, Value: "false"})
+	if err == nil || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved {
+		t.Fatalf("turning a requirement off: error = %v, want a plain save failure", err)
+	}
+	if _, cosigner := ir.Config().GenerationRequirements(); !cosigner {
+		t.Fatal("a requirement turned off was applied after its save failed")
 	}
 }
 
@@ -468,90 +479,252 @@ func TestUpdateAdminSettingRefusesNonCanonicalBooleans(t *testing.T) {
 	}
 }
 
-// saveFailureCase is one setting change whose save is made to fail.
-type saveFailureCase struct {
-	name     string
-	key      string
-	from, to string
-	// target is the file the setting is saved in.
-	target func(dataDir string) string
-	live   func(svc Service, ir *productruntime.Runtime) string
-	stored func(t *testing.T, dataDir string) string
+// settingChange is one change of a writable setting from a saved starting
+// value. restrictive is its direction: a restrictive change is in effect from
+// before its save until whatever the save does; any other change (theme
+// included) takes effect only once its file has replaced the old one.
+type settingChange struct {
+	key, from, to string
+	restrictive   bool
 }
 
-func saveFailureCases() []saveFailureCase {
-	runtimeTarget := productruntime.ConfigPath
-	autoApproveLive := func(_ Service, ir *productruntime.Runtime) string {
-		return strconv.FormatBool(ir.Config().UserAutoApprove())
+func (c settingChange) name() string {
+	return c.key + "=" + c.from + "->" + c.to
+}
+
+// settingChanges is every writable setting in each direction. A
+// passphrase_timeout is restrictive when it is shorter than the current one,
+// 0 being none.
+func settingChanges() []settingChange {
+	return []settingChange{
+		{adminproto.AdminSettingUserAutoApprove, "true", "false", true},
+		{adminproto.AdminSettingUserAutoApprove, "false", "true", false},
+		{adminproto.AdminSettingRequireContained, "false", "true", true},
+		{adminproto.AdminSettingRequireContained, "true", "false", false},
+		{adminproto.AdminSettingRequireCosigner, "false", "true", true},
+		{adminproto.AdminSettingRequireCosigner, "true", "false", false},
+		{adminproto.AdminSettingLockOnDisconnect, "false", "true", true},
+		{adminproto.AdminSettingLockOnDisconnect, "true", "false", false},
+		{adminproto.AdminSettingPassphraseTimeout, "0", "15m", true},
+		{adminproto.AdminSettingPassphraseTimeout, "30m", "15m", true},
+		{adminproto.AdminSettingPassphraseTimeout, "15m", "30m", false},
+		{adminproto.AdminSettingPassphraseTimeout, "15m", "0", false},
+		{adminproto.AdminSettingTheme, "auto", "dark", false},
 	}
-	autoApproveStored := func(t *testing.T, dataDir string) string {
-		t.Helper()
-		stored, err := productruntime.LoadStoredConfig(dataDir)
+}
+
+// settingTarget is the file key is saved in.
+func settingTarget(dataDir, key string) string {
+	if key == adminproto.AdminSettingTheme {
+		return filepath.Join(dataDir, "config.yaml")
+	}
+	return productruntime.ConfigPath(dataDir)
+}
+
+// normalSetting writes value as liveSetting and storedSetting report it.
+func normalSetting(t *testing.T, key, value string) string {
+	t.Helper()
+	if key != adminproto.AdminSettingPassphraseTimeout {
+		return value
+	}
+	d, err := serverconfig.ParsePassphraseTimeout(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d.String()
+}
+
+// liveSetting is the value readers see now.
+func liveSetting(t *testing.T, svc Service, ir *productruntime.Runtime, key string) string {
+	t.Helper()
+	cfg := ir.Config()
+	contained, cosigner := cfg.GenerationRequirements()
+	switch key {
+	case adminproto.AdminSettingUserAutoApprove:
+		return strconv.FormatBool(cfg.UserAutoApprove())
+	case adminproto.AdminSettingRequireContained:
+		return strconv.FormatBool(contained)
+	case adminproto.AdminSettingRequireCosigner:
+		return strconv.FormatBool(cosigner)
+	case adminproto.AdminSettingLockOnDisconnect:
+		return strconv.FormatBool(cfg.LockOnDisconnect())
+	case adminproto.AdminSettingPassphraseTimeout:
+		return cfg.SessionTimeout().String()
+	case adminproto.AdminSettingTheme:
+		return svc.Deps.Theme()
+	}
+	t.Fatalf("no live reader for %s", key)
+	return ""
+}
+
+// storedSetting is the value the next start loads.
+func storedSetting(t *testing.T, dataDir, key string) string {
+	t.Helper()
+	if key == adminproto.AdminSettingTheme {
+		cfg, err := serverconfig.LoadServerConfig(dataDir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stored.UserAutoApprove == nil {
+		return cfg.Theme
+	}
+	stored, err := productruntime.LoadStoredConfig(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := func(v *bool) string {
+		if v == nil {
 			return "unset"
 		}
-		return strconv.FormatBool(*stored.UserAutoApprove)
+		return strconv.FormatBool(*v)
 	}
-	return []saveFailureCase{
-		{
-			name: "enable auto-approve", key: adminproto.AdminSettingUserAutoApprove, from: "false", to: "true",
-			target: runtimeTarget, live: autoApproveLive, stored: autoApproveStored,
-		},
-		{
-			name: "disable auto-approve", key: adminproto.AdminSettingUserAutoApprove, from: "true", to: "false",
-			target: runtimeTarget, live: autoApproveLive, stored: autoApproveStored,
-		},
-		{
-			name: "theme", key: adminproto.AdminSettingTheme, from: "auto", to: "dark",
-			target: func(dataDir string) string { return filepath.Join(dataDir, "config.yaml") },
-			live:   func(svc Service, _ *productruntime.Runtime) string { return svc.Deps.Theme() },
-			stored: func(t *testing.T, dataDir string) string {
-				t.Helper()
-				cfg, err := serverconfig.LoadServerConfig(dataDir)
-				if err != nil {
-					t.Fatal(err)
-				}
-				return cfg.Theme
-			},
-		},
+	switch key {
+	case adminproto.AdminSettingUserAutoApprove:
+		return b(stored.UserAutoApprove)
+	case adminproto.AdminSettingRequireContained:
+		return b(stored.RequireContained)
+	case adminproto.AdminSettingRequireCosigner:
+		return b(stored.RequireCosigner)
+	case adminproto.AdminSettingLockOnDisconnect:
+		return b(stored.LockOnDisconnect)
+	case adminproto.AdminSettingPassphraseTimeout:
+		return normalSetting(t, key, stored.PassphraseTimeout)
 	}
+	t.Fatalf("no stored reader for %s", key)
+	return ""
 }
 
-// startSaveFailureCase sets tc.from, both live and saved.
-func startSaveFailureCase(t *testing.T, tc saveFailureCase) (Service, *productruntime.Runtime, *fakeDeps) {
+// startSettingChange sets c.from, both live and saved.
+func startSettingChange(t *testing.T, c settingChange) (Service, *productruntime.Runtime, *fakeDeps) {
 	t.Helper()
 	svc, ir, deps := setupAdminService(t)
 	writeRootConfig(t, deps)
-	if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: tc.key, Value: tc.from}); err != nil {
-		t.Fatalf("UpdateAdminSetting(%s=%s) error = %v", tc.key, tc.from, err)
+	if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
+		t.Fatalf("UpdateAdminSetting(%s=%s) error = %v", c.key, c.from, err)
 	}
-	if live, stored := tc.live(svc, ir), tc.stored(t, deps.dataDir); live != tc.from || stored != tc.from {
-		t.Fatalf("start state: live %s, saved %s; want %s", live, stored, tc.from)
-	}
+	requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "start state")
 	return svc, ir, deps
 }
 
-// A save that fails before its rename leaves the old file in place, so the
-// setting stays what it was, live and saved.
-func TestUpdateAdminSettingFailureBeforeRenameChangesNothing(t *testing.T) {
-	for _, tc := range saveFailureCases() {
-		for _, op := range []fsutil.HookOp{fsutil.OpFileSync, fsutil.OpRename} {
-			t.Run(tc.name+"/"+string(op), func(t *testing.T) {
-				svc, ir, deps := startSaveFailureCase(t, tc)
-				failDurableWriteAt(t, op, tc.target(deps.dataDir))
+func requireSetting(t *testing.T, svc Service, ir *productruntime.Runtime, deps *fakeDeps, key, live, stored, when string) {
+	t.Helper()
+	wantLive, wantStored := normalSetting(t, key, live), normalSetting(t, key, stored)
+	if gotLive, gotStored := liveSetting(t, svc, ir, key), storedSetting(t, deps.dataDir, key); gotLive != wantLive || gotStored != wantStored {
+		t.Fatalf("%s: live %s, saved %s; want live %s, saved %s", when, gotLive, gotStored, wantLive, wantStored)
+	}
+}
 
-				err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: tc.key, Value: tc.to})
+// heldSave is an update running in the background with its durable write
+// held at one step.
+type heldSave struct {
+	reached    chan struct{}
+	released   chan struct{}
+	releaseErr error
+	result     chan error
+	once       sync.Once
+	err        error
+}
+
+// holdSave runs update with the durable write held at op on path until
+// finish. Every exit path, a failed assertion included, releases the hold and
+// waits for update before it clears the hook, so no update is left parked
+// inside the write holding the mutation lock and clearing the hook never
+// races it.
+func holdSave(t *testing.T, op fsutil.HookOp, path string, update func() error) *heldSave {
+	t.Helper()
+	h := &heldSave{reached: make(chan struct{}), released: make(chan struct{}), result: make(chan error, 1)}
+	var reachOnce sync.Once
+	fsutil.TestHook = func(got fsutil.HookOp, gotPath string) error {
+		if got == op && gotPath == path {
+			reachOnce.Do(func() { close(h.reached) })
+			<-h.released
+			return h.releaseErr
+		}
+		return nil
+	}
+	go func() { h.result <- update() }()
+	t.Cleanup(func() {
+		_ = h.finish(nil)
+		fsutil.TestHook = nil
+	})
+	select {
+	case <-h.reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the save never reached the held step")
+	}
+	return h
+}
+
+// finish lets the held step return err (nil lets it go on) and returns the
+// update's result. Later calls return the same result.
+func (h *heldSave) finish(err error) error {
+	h.once.Do(func() {
+		h.releaseErr = err
+		close(h.released)
+		h.err = <-h.result
+	})
+	return h.err
+}
+
+// A restrictive change is in effect while its save runs; a permissive one is
+// not in effect until its file has replaced the old one. Either way the
+// completed save leaves the new value live and saved.
+func TestSettingDirectionDecidesWhenAChangeTakesEffect(t *testing.T) {
+	for _, c := range settingChanges() {
+		t.Run(c.name(), func(t *testing.T) {
+			svc, ir, deps := startSettingChange(t, c)
+			held := holdSave(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key), func() error {
+				return svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+			})
+			during := c.from
+			if c.restrictive {
+				during = c.to
+			}
+			if got, want := liveSetting(t, svc, ir, c.key), normalSetting(t, c.key, during); got != want {
+				t.Fatalf("live during the save = %s, want %s (restrictive %v)", got, want, c.restrictive)
+			}
+			if err := held.finish(nil); err != nil {
+				t.Fatalf("UpdateAdminSetting error = %v", err)
+			}
+			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the save")
+		})
+	}
+}
+
+// A save that fails before its rename leaves the old file in place, so a
+// restart loads the old value. A permissive change is then not applied. A
+// restrictive one stays in effect, coded applied_not_saved with an error
+// that says so; memory never goes back to the permissive value it replaced.
+// The external-edit check compares root config.yaml with the startup
+// config, not memory with the identity's file, so the next update is not
+// refused.
+func TestUpdateAdminSettingFailureBeforeRename(t *testing.T) {
+	for _, c := range settingChanges() {
+		for _, op := range []fsutil.HookOp{fsutil.OpFileSync, fsutil.OpRename} {
+			t.Run(c.name()+"/"+string(op), func(t *testing.T) {
+				svc, ir, deps := startSettingChange(t, c)
+				failDurableWriteAt(t, op, settingTarget(deps.dataDir, c.key))
+
+				err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 				fsutil.TestHook = nil
-				if err == nil || errors.Is(err, fsutil.ErrPublishedNotDurable) || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotDurable ||
-					!strings.Contains(err.Error(), "unchanged") {
-					t.Fatalf("UpdateAdminSetting error = %v, want the save failure with the setting unchanged", err)
+				if err == nil || errors.Is(err, fsutil.ErrPublishedNotDurable) || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotDurable {
+					t.Fatalf("UpdateAdminSetting error = %v, want a save failure before the rename", err)
 				}
-				if live, stored := tc.live(svc, ir), tc.stored(t, deps.dataDir); live != tc.from || stored != tc.from {
-					t.Fatalf("after the failed save: live %s, saved %s; want both %s", live, stored, tc.from)
+				if c.restrictive {
+					if protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved ||
+						!strings.Contains(err.Error(), "in effect now, but it was not saved, so a restart loads the old value") {
+						t.Fatalf("UpdateAdminSetting error = %v (code %q), want %s: in effect, not saved", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotSaved)
+					}
+					requireSetting(t, svc, ir, deps, c.key, c.to, c.from, "after the failed save")
+				} else {
+					if protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved || !strings.Contains(err.Error(), "unchanged") {
+						t.Fatalf("UpdateAdminSetting error = %v (code %q), want the save failure with the setting unchanged", err, protocol.CodeForError(err))
+					}
+					requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after the failed save")
 				}
+				if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to}); err != nil {
+					t.Fatalf("next UpdateAdminSetting error = %v", err)
+				}
+				requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the next save")
 			})
 		}
 	}
@@ -559,31 +732,27 @@ func TestUpdateAdminSettingFailureBeforeRenameChangesNothing(t *testing.T) {
 
 // A save that fails after its rename (the directory sync) has put the new
 // file in place, which is what the next start loads. The new value then takes
-// effect, the error says its durability is unconfirmed, and memory never
-// goes back to a value the file no longer holds.
+// effect, in either direction, the error says its durability is unconfirmed,
+// and memory never goes back to a value the file no longer holds.
 func TestUpdateAdminSettingFailureAfterRenamePublishesTheSavedValue(t *testing.T) {
-	for _, tc := range saveFailureCases() {
-		t.Run(tc.name, func(t *testing.T) {
-			svc, ir, deps := startSaveFailureCase(t, tc)
-			failDurableWriteAt(t, fsutil.OpDirSync, filepath.Dir(tc.target(deps.dataDir)))
+	for _, c := range settingChanges() {
+		t.Run(c.name(), func(t *testing.T) {
+			svc, ir, deps := startSettingChange(t, c)
+			failDurableWriteAt(t, fsutil.OpDirSync, filepath.Dir(settingTarget(deps.dataDir, c.key)))
 
-			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: tc.key, Value: tc.to})
+			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 			fsutil.TestHook = nil
 			if !errors.Is(err, fsutil.ErrPublishedNotDurable) || protocol.CodeForError(err) != protocol.ResultCodeAppliedNotDurable ||
 				!strings.Contains(err.Error(), "in effect") || !strings.Contains(err.Error(), "durability is not confirmed") {
 				t.Fatalf("UpdateAdminSetting error = %v (code %q), want %s: in effect with durability unconfirmed", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotDurable)
 			}
-			if live, stored := tc.live(svc, ir), tc.stored(t, deps.dataDir); live != tc.to || stored != tc.to {
-				t.Fatalf("after the unsynced save: live %s, saved %s; want both %s", live, stored, tc.to)
-			}
+			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the unsynced save")
 			// Memory and file agree, so the next change is not refused as an
 			// external edit.
-			if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: tc.key, Value: tc.from}); err != nil {
+			if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
 				t.Fatalf("next UpdateAdminSetting error = %v", err)
 			}
-			if live, stored := tc.live(svc, ir), tc.stored(t, deps.dataDir); live != tc.from || stored != tc.from {
-				t.Fatalf("after the next save: live %s, saved %s; want both %s", live, stored, tc.from)
-			}
+			requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after the next save")
 		})
 	}
 }

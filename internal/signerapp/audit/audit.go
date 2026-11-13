@@ -60,6 +60,7 @@ const (
 	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
 	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
+	AuditSettingNotDurable                AuditEventType = "SETTING_NOT_DURABLE"
 	AuditClientEnrollmentRequested        AuditEventType = "CLIENT_ENROLLMENT_REQUESTED"
 	AuditClientEnrolled                   AuditEventType = "CLIENT_ENROLLED"
 	AuditClientEnrollmentRejected         AuditEventType = "CLIENT_ENROLLMENT_REJECTED"
@@ -938,6 +939,22 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 	entry.Event = AuditIdentityLocked
 	entry.Outcome = "locked"
 	entry.Reason = reason
+	a.Log(entry)
+}
+
+// LogSettingNotDurableContext records an admin setting change that is in
+// effect but whose save did not complete: code is applied_not_durable (the
+// new file is in place, its directory sync failed) or applied_not_saved (the
+// old file is still in place, so a restart loads the old value). Nothing else
+// durable records such a change, so after a power loss this entry is the
+// trace of it. reason is the result's error, which names the setting and the
+// value now in effect.
+func (a *AuditLogger) LogSettingNotDurableContext(ctx adminserver.SessionContext, key, code, reason string) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditSettingNotDurable
+	entry.Outcome = "applied"
+	entry.ResultCode = code
+	entry.Reason = fmt.Sprintf("setting=%s: %s", key, reason)
 	a.Log(entry)
 }
 

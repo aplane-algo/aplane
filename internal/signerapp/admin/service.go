@@ -172,11 +172,16 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		return fmt.Errorf("config.yaml has been modified externally; restart apsigner to apply changes before making further edits")
 	}
 
-	// The new value is a candidate until it is saved: publish makes it live
+	// The new value is a candidate until it is published. A restrictive one
+	// (user_auto_approve off; require_contained, require_cosigner or
+	// lock_on_disconnect on; a shorter passphrase_timeout) is published before
+	// the save, so it is in effect for as long as the save takes and stays in
+	// effect if the save fails. Any other value, theme included, is published
 	// only once the save returns, so no reader (a signing request included)
-	// ever sees a value that was not saved.
+	// ever sees a permissive value that was not saved.
 	var saveValue interface{}
 	var publish func()
+	var restrictive bool
 	icfg := ir.Config()
 
 	switch req.Key {
@@ -186,20 +191,20 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 			return err
 		}
 		_, cosigner := icfg.GenerationRequirements()
-		saveValue, publish = v, func() { icfg.SetGenerationRequirements(v, cosigner) }
+		saveValue, publish, restrictive = v, func() { icfg.SetGenerationRequirements(v, cosigner) }, v
 	case adminproto.AdminSettingRequireCosigner:
 		v, err := parseBoolSetting(req)
 		if err != nil {
 			return err
 		}
 		contained, _ := icfg.GenerationRequirements()
-		saveValue, publish = v, func() { icfg.SetGenerationRequirements(contained, v) }
+		saveValue, publish, restrictive = v, func() { icfg.SetGenerationRequirements(contained, v) }, v
 	case adminproto.AdminSettingUserAutoApprove:
 		v, err := parseBoolSetting(req)
 		if err != nil {
 			return err
 		}
-		saveValue, publish = v, func() { icfg.SetUserAutoApprove(v) }
+		saveValue, publish, restrictive = v, func() { icfg.SetUserAutoApprove(v) }, !v
 	case adminproto.AdminSettingLockOnDisconnect:
 		v, err := parseBoolSetting(req)
 		if err != nil {
@@ -208,7 +213,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if passphraseMethod := s.detectPassphraseMethod(); passphraseMethod != "none" && v {
 			return fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		}
-		saveValue, publish = v, func() { icfg.SetLockOnDisconnect(v) }
+		saveValue, publish, restrictive = v, func() { icfg.SetLockOnDisconnect(v) }, v
 	case adminproto.AdminSettingPassphraseTimeout:
 		duration, err := serverconfig.ParsePassphraseTimeout(req.Value)
 		if err != nil {
@@ -218,6 +223,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 			return fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
 		}
 		saveValue, publish = req.Value, func() { icfg.SetSessionTimeout(duration) }
+		restrictive = timeoutRestricts(duration, icfg.SessionTimeout())
 	case adminproto.AdminSettingTheme:
 		v := strings.ToLower(req.Value)
 		if v != "auto" && v != "dark" && v != "light" {
@@ -228,6 +234,9 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
 
+	if restrictive {
+		publish()
+	}
 	mut := storemut.New(s.Deps.KeyPaths())
 	var saveErr error
 	if req.Key == adminproto.AdminSettingTheme {
@@ -237,17 +246,34 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	}
 	switch {
 	case saveErr == nil:
-		publish()
+		if !restrictive {
+			publish()
+		}
 		return nil
 	case errors.Is(saveErr, fsutil.ErrPublishedNotDurable):
 		// The new file is in place and is what the next start loads, so
 		// memory follows it rather than keep a value the file no longer holds.
-		publish()
+		if !restrictive {
+			publish()
+		}
 		return protocol.WithCode(protocol.ResultCodeAppliedNotDurable,
 			fmt.Errorf("%s is set to %v and in effect, but its durability is not confirmed: %w", req.Key, saveValue, saveErr))
+	case restrictive:
+		// The old file is still in place. Memory keeps the restrictive value
+		// rather than go back to the permissive one it replaced.
+		return protocol.WithCode(protocol.ResultCodeAppliedNotSaved,
+			fmt.Errorf("%s is set to %v and in effect now, but it was not saved, so a restart loads the old value: %w", req.Key, saveValue, saveErr))
 	default:
 		return fmt.Errorf("failed to save config.yaml; %s is unchanged: %w", req.Key, saveErr)
 	}
+}
+
+// timeoutRestricts reports whether passphrase timeout next is shorter than
+// current, where 0 is no timeout: a non-zero next below a non-zero current,
+// or any non-zero next when current is 0. Setting 0 or a timeout as long or
+// longer is permissive.
+func timeoutRestricts(next, current time.Duration) bool {
+	return next > 0 && (current == 0 || next < current)
 }
 
 // parseBoolSetting accepts exactly "true" or "false" for a boolean setting.

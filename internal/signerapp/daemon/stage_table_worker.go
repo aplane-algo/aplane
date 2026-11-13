@@ -265,7 +265,7 @@ func passSession(parent context.Context, generation func() uint64, cancelContext
 // running then (in a stage table write, which no cancellation reaches) makes
 // the stop incomplete, reported as ErrStillRunning: it writes nothing to the
 // audit log and holds no key material outside a key use, which
-// Runtime.Destroy waits for, so teardown goes on.
+// Runtime.EndKeyUses drains before Runtime.Destroy, so teardown goes on.
 func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 	var cancel context.CancelFunc
 	done := make(chan struct{})

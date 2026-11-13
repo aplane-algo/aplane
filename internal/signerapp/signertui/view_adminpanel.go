@@ -136,8 +136,17 @@ func boolStr(b bool) string {
 func (m Model) renderAdminPanel() string {
 	var sb strings.Builder
 
-	sb.WriteString(titleStyle.Render("Settings"))
-	sb.WriteString("\n\n")
+	if m.admin.unsavedWarning != "" {
+		// The warning takes the title's margin line, so the panel is no
+		// taller with it than without.
+		sb.WriteString(titleStyle.MarginBottom(0).Render("Settings"))
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render("Warning: " + m.admin.unsavedWarning))
+		sb.WriteString("\n\n")
+	} else {
+		sb.WriteString(titleStyle.Render("Settings"))
+		sb.WriteString("\n\n")
+	}
 
 	rows := m.adminRows()
 	if len(rows) == 0 {
