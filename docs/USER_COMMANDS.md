@@ -678,6 +678,13 @@ Clear all ASAs from the local cache.
 asa clear
 ```
 
+The cache is kept per network name. An asset's ID, name, unit name and decimals
+never change on a chain, so a cached entry stays right for as long as the
+network name means the same chain. Run `asa clear` after a LocalNet reset, or
+after pointing a custom network at another chain: the same asset ID can then be
+a different asset with other decimals, and an amount typed for it would be
+converted with the old ones.
+
 ## Configuration Commands
 
 ### network
