@@ -121,7 +121,7 @@ Sweep complete: 0 succeeded, 2 failed
 `
 
 const replJSSendFailed = "send() error submitting transaction: failed to sign and submit: failed to submit transaction: Post \"{node}/v2/transactions\": EOF\n" +
-	"\tat github.com/aplane-algo/aplane/internal/jsapi.(*API).jsSend-fm (native)\n\tat <eval>:1:5(4)\n"
+	"\tat github.com/aplane-algo/aplane/internal/jsapi.(*API).hostCall.func1 (native)\n\tat <eval>:1:5(4)\n"
 
 const replJSPluginFailed = `
 DRAFT: plugin-built transaction(s); apsigner sets the final fees and group ID, and its policy and approval apply to the final group
@@ -139,4 +139,4 @@ Submitting to network...
 `
 
 const replJSPluginError = "plugin() error: failed to submit transaction: Post \"{node}/v2/transactions\": EOF\n" +
-	"\tat github.com/aplane-algo/aplane/internal/jsapi.(*API).jsPlugin-fm (native)\n\tat <eval>:1:7(3)\n"
+	"\tat github.com/aplane-algo/aplane/internal/jsapi.(*API).hostCall.func1 (native)\n\tat <eval>:1:7(3)\n"
