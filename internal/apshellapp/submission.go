@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -69,7 +70,8 @@ func (a *App) signTransactions(ctx context.Context, txns []types.Transaction, wa
 // caller does to a transaction it was given reaches another. CheckPluginGroup
 // is its only constructor. The review renders it and SubmitPluginTransactions
 // signs or submits it, so both see the same transactions, and neither can
-// reach a group that skipped the check.
+// reach a group that skipped the check. It also holds the step's arg: words,
+// resolved at the check for the group's senders.
 type PluginGroup struct {
 	checked          bool
 	mode             string
@@ -79,6 +81,7 @@ type PluginGroup struct {
 	groupIDDiscarded bool
 	signed           *engine.PregroupedSignedGroup // pregrouped-signed only
 	rekeyTargets     txnreview.FindingContext
+	lsigArgs         engine.LsigArgs
 }
 
 // PluginCheckOptions is what CheckPluginGroup is told about the review that
@@ -88,6 +91,9 @@ type PluginCheckOptions struct {
 	// pregrouped-signed group, whose review is its only gate, is refused
 	// without one.
 	Interactive bool
+	// LsigArgs is the command's arg: words, for the first result of a plugin
+	// command only. Each target must be a sender in the group.
+	LsigArgs cmdspec.LsigArgs
 }
 
 // errPregroupedNonInteractive refuses a pregrouped-signed group for a review
@@ -151,6 +157,11 @@ var ErrUncheckedPluginGroup = errors.New("internal error: the plugin group was n
 // with a mode it does not know, is refused before anything is decoded. A
 // pregrouped-signed group for a review that cannot ask the user is refused
 // once decoded, before any key list is fetched: it could never be submitted.
+// So is a group the step's arg: words cannot be given to: a pregrouped-signed
+// group with any (the plugin signs every transaction), a target that is not
+// one of the group's senders or that repeats a name (resolveLsigArgs), and a
+// presign-plan group in which an argument reaches a slot the plugin signs
+// (refusePluginSignedLsigArgs).
 //
 // A group in which any transaction rekeys an account is judged against the key
 // list fetched from the signer for this check (judgeRekeys), and is refused
@@ -197,6 +208,19 @@ func (a *App) CheckPluginGroup(ctx context.Context, result *jsonrpc.ExecuteResul
 	}
 	if err != nil {
 		return nil, err
+	}
+	if len(opts.LsigArgs) > 0 {
+		if result.GroupMode == jsonrpc.GroupModePregroupedSigned {
+			return nil, fmt.Errorf("groupMode %q does not allow LogicSig arguments: the plugin signs every transaction; run the command without its arg: words", jsonrpc.GroupModePregroupedSigned)
+		}
+		if group.lsigArgs, err = a.resolveLsigArgs(opts.LsigArgs, groupSenders(txns)); err != nil {
+			return nil, err
+		}
+		if result.GroupMode == jsonrpc.GroupModePresignPlan {
+			if err := refusePluginSignedLsigArgs(txns, group.lsigArgs, group.pluginSigners); err != nil {
+				return nil, err
+			}
+		}
 	}
 	group.encoded = make([][]byte, len(txns))
 	for i, txn := range txns {
@@ -286,6 +310,20 @@ func (a *App) judgeRekeys(ctx context.Context, txns []types.Transaction) (txnrev
 	return targets, nil
 }
 
+// groupSenders is the distinct senders of txns, in order: the accounts a
+// plugin group sends from.
+func groupSenders(txns []types.Transaction) []string {
+	seen := make(map[string]bool, len(txns))
+	senders := make([]string, 0, len(txns))
+	for _, txn := range txns {
+		if sender := txn.Sender.String(); !seen[sender] {
+			seen[sender] = true
+			senders = append(senders, sender)
+		}
+	}
+	return senders
+}
+
 func clonePluginSigners(signers []jsonrpc.PluginSigner) []jsonrpc.PluginSigner {
 	if signers == nil {
 		return nil
@@ -309,18 +347,19 @@ func clonePluginSigners(signers []jsonrpc.PluginSigner) []jsonrpc.PluginSigner {
 // in the default flow before the group goes to the signer, which then applies
 // the same rule at every position; for pregrouped-signed before it is
 // broadcast; for presign-plan at the start of submission, before planning,
-// the plugin's signing and the signer's approval.
-func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
+// the plugin's signing and the signer's approval. The LogicSig arguments are
+// those the check resolved, each transaction getting its sender's.
+func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, group *PluginGroup) (*GroupSubmitSummary, error) {
 	if group == nil || !group.checked {
 		return nil, ErrUncheckedPluginGroup
 	}
 	switch group.mode {
 	case "":
-		return a.submitDefaultDraft(ctx, group, lsigArgs)
+		return a.submitDefaultDraft(ctx, group)
 	case jsonrpc.GroupModePregroupedSigned:
-		return a.submitPregroupedSigned(ctx, group, lsigArgs)
+		return a.submitPregroupedSigned(ctx, group)
 	case jsonrpc.GroupModePresignPlan:
-		return a.submitPresignPlan(ctx, pluginName, group, lsigArgs)
+		return a.submitPresignPlan(ctx, pluginName, group)
 	default:
 		return nil, ErrUncheckedPluginGroup
 	}
@@ -328,7 +367,7 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, g
 
 // submitDefaultDraft signs the default flow's draft, APlane-managed slots
 // only, through apsigner and submits it.
-func (a *App) submitDefaultDraft(ctx context.Context, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
+func (a *App) submitDefaultDraft(ctx context.Context, group *PluginGroup) (*GroupSubmitSummary, error) {
 	if !a.eng.IsConnected() {
 		return nil, fmt.Errorf("not connected to signer")
 	}
@@ -341,8 +380,7 @@ func (a *App) submitDefaultDraft(ctx context.Context, group *PluginGroup, lsigAr
 		return nil, err
 	}
 
-	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(txns))
-	submit, err := a.eng.SignAndSubmitGroup(ctx, txns, lsigArgsSlice)
+	submit, err := a.eng.SignAndSubmitGroup(ctx, txns, group.lsigArgs)
 	if err != nil {
 		if submit != nil {
 			return newGroupSubmitSummary(
@@ -369,11 +407,9 @@ func (a *App) submitDefaultDraft(ctx context.Context, group *PluginGroup, lsigAr
 // unlike the other plugin paths — it does NOT require a signer connection, only
 // an algod client (checked downstream in SubmitPregroupedSigned), unless the
 // group rekeys, which is judged against the signer's key list. It fails closed
-// if the result mixes in any APlane-managed signing.
-func (a *App) submitPregroupedSigned(ctx context.Context, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
-	if len(lsigArgs) > 0 {
-		return nil, fmt.Errorf("groupMode %q does not allow lsig args", jsonrpc.GroupModePregroupedSigned)
-	}
+// if the result mixes in any APlane-managed signing. It takes no LogicSig
+// arguments: CheckPluginGroup refused a group given any.
+func (a *App) submitPregroupedSigned(ctx context.Context, group *PluginGroup) (*GroupSubmitSummary, error) {
 	txns, err := group.Transactions()
 	if err != nil {
 		return nil, err
@@ -404,7 +440,7 @@ func (a *App) submitPregroupedSigned(ctx context.Context, group *PluginGroup, ls
 // before this call. The managed slots then go through apsigner /sign, so
 // apsigner's policy + approval over the canonical group remains the
 // authoritative human-acceptance gate for signer-owned keys.
-func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *PluginGroup, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
+func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *PluginGroup) (*GroupSubmitSummary, error) {
 	signers := group.pluginSigners
 	if len(signers) == 0 {
 		return nil, fmt.Errorf("groupMode %q requires pluginSigners", jsonrpc.GroupModePresignPlan)
@@ -478,9 +514,8 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *P
 		return out, nil
 	}
 
-	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(txns))
 	confirmed := !a.eng.GetSimulate()
-	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, authorizations, signSlots, lsigArgsSlice)
+	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, authorizations, signSlots, group.lsigArgs)
 	if err != nil {
 		if submit != nil {
 			return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), err
@@ -488,15 +523,4 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *P
 		return nil, err
 	}
 	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), nil
-}
-
-func perTxnLsigArgs(lsigArgs map[string][]byte, count int) []map[string][]byte {
-	if len(lsigArgs) == 0 || count == 0 {
-		return nil
-	}
-	perTxn := make([]map[string][]byte, count)
-	for i := range perTxn {
-		perTxn[i] = lsigArgs
-	}
-	return perTxn
 }

@@ -70,7 +70,7 @@ func TestReviewPregroupedSignedFailsClosedWhenAutoConfirm(t *testing.T) {
 		AutoConfirm: true,
 	}
 
-	_, cancelled, err := reviewPluginTransactions(state, pregroupedSignedResult(t))
+	_, cancelled, err := reviewPluginTransactions(state, pregroupedSignedResult(t), nil)
 	if err == nil || !strings.Contains(err.Error(), "non-interactive") {
 		t.Fatalf("reviewPluginTransactions() error = %v, want non-interactive rejection", err)
 	}
@@ -96,7 +96,7 @@ func TestReviewPregroupedSignedIgnoresRequiresApprovalFalse(t *testing.T) {
 	result := pregroupedSignedResult(t)
 	result.RequiresApproval = false
 
-	_, cancelled, err := reviewPluginTransactions(state, result)
+	_, cancelled, err := reviewPluginTransactions(state, result, nil)
 	if err != nil {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestReviewPregroupedSignedRendersDecodedGroupAndApproves(t *testing.T) {
 		},
 	}
 
-	_, cancelled, err := reviewPluginTransactions(state, pregroupedSignedResult(t))
+	_, cancelled, err := reviewPluginTransactions(state, pregroupedSignedResult(t), nil)
 	if err != nil {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}

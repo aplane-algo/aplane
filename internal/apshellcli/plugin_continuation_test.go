@@ -30,6 +30,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -669,5 +670,74 @@ func TestJSPluginOutcome(t *testing.T) {
 				t.Fatalf("data = %#v, want %#v", data, tt.wantData)
 			}
 		})
+	}
+}
+
+// A plugin command's arg: words apply to its first result only. A first
+// result with no transactions has nothing to give them to, so the command is
+// refused there, its continuation not run, rather than the words dropped.
+func TestPluginArgumentsNeedTransactionsInTheFirstResult(t *testing.T) {
+	state, scripted := scriptedPluginShell(t,
+		map[string]any{"success": true, "message": "step 1", "continuation": map[string]any{"command": "wf", "args": []string{"_step2"}}},
+		map[string]any{"success": true, "message": "done"},
+	)
+	_, err := runScript(t, state, `JSON.stringify(plugin("wf", "start", "arg:preimage=text:x"))`)
+	if err == nil || !strings.Contains(err.Error(), apshellapp.ErrLsigArgsWithoutTransactions.Error()) {
+		t.Fatalf("plugin() error = %v, want the arguments refused for a first result without transactions", err)
+	}
+	if got := len(scripted.executeCalls()); got != 1 {
+		t.Fatalf("plugin executed %d step(s), want 1: the continuation must not run", got)
+	}
+
+	pr := &PluginResult{}
+	err = processPluginResultStructured(state, pr, &jsonrpc.ExecuteResult{Success: true, Message: "nothing to sign"},
+		cmdspec.LsigArgs{{Target: "alice", Name: "preimage", Value: []byte("x")}}, nil)
+	if !errors.Is(err, apshellapp.ErrLsigArgsWithoutTransactions) {
+		t.Fatalf("processPluginResultStructured() error = %v, want ErrLsigArgsWithoutTransactions", err)
+	}
+
+	// Without arguments the same chain runs to its end.
+	state, scripted = scriptedPluginShell(t,
+		map[string]any{"success": true, "message": "step 1", "continuation": map[string]any{"command": "wf", "args": []string{"_step2"}}},
+		map[string]any{"success": true, "message": "done"},
+	)
+	if _, err := runScript(t, state, `JSON.stringify(plugin("wf", "start"))`); err != nil {
+		t.Fatalf("plugin() without arguments error = %v", err)
+	}
+	if got := len(scripted.executeCalls()); got != 2 {
+		t.Fatalf("plugin executed %d step(s), want 2", got)
+	}
+}
+
+// A plugin that fails is reported by its own message whether or not the
+// command gave arg: words: a failed first result has no transactions, and is
+// not the result without transactions the words are refused for. The REPL
+// and MCP (execPlugin) report {success: false, message}, and JS plugin()
+// returns it, as without the words.
+func TestPluginFailureWithArgumentsKeepsThePluginsMessage(t *testing.T) {
+	failure := map[string]any{"success": false, "message": "the swap is not open"}
+
+	state, _ := scriptedPluginShell(t, failure)
+	pr, handled := execPlugin(state, "wf", []string{"start", "arg:preimage=text:x"})
+	if !handled || pr == nil {
+		t.Fatalf("execPlugin() handled = %v, result = %v", handled, pr)
+	}
+	if pr.Success || pr.Message != "the swap is not open" {
+		t.Fatalf("execPlugin() = success %v, message %q; want the plugin's own failure", pr.Success, pr.Message)
+	}
+
+	for _, words := range []string{`, "arg:preimage=text:x"`, `, "arg:alice:preimage=text:x"`, ``} {
+		state, _ := scriptedPluginShell(t, failure)
+		out, err := runScript(t, state, `JSON.stringify(plugin("wf", "start"`+words+`))`)
+		if err != nil {
+			t.Fatalf("plugin() with%s error = %v, want the plugin's failure returned", words, err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("plugin() returned %q: %v", out, err)
+		}
+		if got["success"] != false || got["message"] != "the swap is not open" {
+			t.Fatalf("plugin() with%s = %v, want {success: false, message: the plugin's}", words, got)
+		}
 	}
 }

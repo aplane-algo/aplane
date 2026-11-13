@@ -116,7 +116,7 @@ func rekeyUsageLines() []string {
 		"rekey list",
 		"rekey refresh",
 		"rekey refresh <address|alias>",
-		"rekey <account> to <signer> [fee=<microalgos>] [nowait] [arg:name=value]",
+		"rekey <account> to <signer> [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]",
 	}
 }
 

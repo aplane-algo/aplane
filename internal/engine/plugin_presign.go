@@ -66,13 +66,17 @@ type PluginSlotAuthorization struct {
 // plugin will attach during the callback. LogicSig resources are forwarded to
 // /plan without combining program bytes, argument bytes, and opcode cost; native
 // PQ is forwarded as its scheme tag. An absent entry means ordinary authorization.
+// Each managed slot gets the LogicSig arguments args gives its sender. A
+// plugin-signed slot gets none: the plugin's sign request has no field for
+// them, and the caller refuses a group whose arguments reach one
+// (apshellapp.CheckPluginGroup).
 func (e *Engine) SignAndSubmitWithPluginSigners(
 	ctx context.Context,
 	txns []types.Transaction,
 	pluginSignerRefs map[string]string,
 	pluginSlotAuthorizations map[string]PluginSlotAuthorization,
 	signSlots PluginSlotSigner,
-	lsigArgs []map[string][]byte,
+	args LsigArgs,
 ) (*PluginSubmitResult, error) {
 	if len(pluginSignerRefs) == 0 {
 		return nil, fmt.Errorf("pre-sign planning requires at least one plugin signer")
@@ -92,6 +96,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if err := assertPluginSignersMatched(txns, pluginSignerRefs); err != nil {
 		return nil, err
 	}
+	lsigArgs := args.place(txns)
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}

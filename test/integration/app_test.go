@@ -1375,7 +1375,7 @@ func TestPreparedGroupDepositFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndAppCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, engine.LsigArgs{}, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup(simulate) error = %v", err)
 		}
@@ -1419,7 +1419,7 @@ func TestPreparedGroupDepositFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndAppCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, engine.LsigArgs{}, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup() error = %v", err)
 		}
@@ -1517,7 +1517,7 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndMethodCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, engine.LsigArgs{}, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup(simulate) error = %v", err)
 		}
@@ -1570,7 +1570,7 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndMethodCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, engine.LsigArgs{}, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup() error = %v", err)
 		}

@@ -34,12 +34,18 @@ type AppCallRawRequest struct {
 	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
-	LsigArgs         map[string][]byte
+	LsigArgs         cmdspec.LsigArgs
 }
 
 // AppCallRaw executes the semantic part of a raw app call.
 func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRawResult, error) {
 	fromAddr, accounts, foreignAssets, err := a.resolveAppCallInputs(req.From, req.Accounts, req.AssetRefs)
+	if err != nil {
+		return nil, err
+	}
+	// A companion payment is from the same account as the call, so a target
+	// that names it reaches both transactions.
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{fromAddr})
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +70,6 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		Note:       req.Note,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -96,9 +101,6 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 			Amount:     req.PayAmount,
 			Fee:        req.Fee,
 			UseFlatFee: req.UseFlatFee,
-			// The payment is from the same account as the call, so it needs
-			// the same LogicSig arguments to be authorized.
-			LsigArgs: req.LsigArgs,
 		})
 		if err != nil {
 			return nil, err
@@ -110,7 +112,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 			return nil, err
 		}
 
-		submit, err := a.eng.ExecutePreparedGroup(ctx, group.engineGroup, req.Wait)
+		submit, err := a.eng.ExecutePreparedGroup(ctx, group.engineGroup, lsigArgs, req.Wait)
 		if err != nil {
 			return nil, fmt.Errorf("grouped raw app call failed: %w", err)
 		}
@@ -124,7 +126,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		return result, nil
 	}
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("raw app call failed: %w", err)
 	}

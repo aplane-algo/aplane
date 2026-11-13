@@ -19,14 +19,13 @@ import (
 // SendPaymentParams contains parameters for sending ALGO.
 // All addresses must be resolved 58-character Algorand addresses.
 type SendPaymentParams struct {
-	From       string            // Resolved sender address (58-char)
-	To         string            // Resolved receiver address (58-char)
-	Amount     uint64            // Amount in microAlgos
-	Note       string            // Optional note
-	Fee        uint64            // Optional custom fee in microAlgos
-	UseFlatFee bool              // If true, use Fee as flat fee
-	Close      bool              // If true, close account and send remaining balance to To
-	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs (e.g., HTLC preimage)
+	From       string // Resolved sender address (58-char)
+	To         string // Resolved receiver address (58-char)
+	Amount     uint64 // Amount in microAlgos
+	Note       string // Optional note
+	Fee        uint64 // Optional custom fee in microAlgos
+	UseFlatFee bool   // If true, use Fee as flat fee
+	Close      bool   // If true, close account and send remaining balance to To
 }
 
 // PreparePayment validates and prepares an ALGO payment transaction
@@ -81,7 +80,6 @@ func (e *Engine) PreparePayment(ctx context.Context, params SendPaymentParams) (
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
 		AmountInUnits:  params.Amount,
-		LsigArgs:       params.LsigArgs,
 	}, balanceCheck, nil
 }
 
@@ -135,11 +133,10 @@ func (e *Engine) checkPaymentBalances(ctx context.Context, fromAddr, toAddr stri
 // CloseAccountParams contains parameters for closing an account.
 // All addresses must be resolved 58-character Algorand addresses.
 type CloseAccountParams struct {
-	From       string            // Account to close (58-char)
-	CloseTo    string            // Address to receive remaining ALGO (58-char)
-	Fee        uint64            // Optional custom fee in microAlgos
-	UseFlatFee bool              // If true, use Fee as flat fee
-	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs (e.g., HTLC preimage)
+	From       string // Account to close (58-char)
+	CloseTo    string // Address to receive remaining ALGO (58-char)
+	Fee        uint64 // Optional custom fee in microAlgos
+	UseFlatFee bool   // If true, use Fee as flat fee
 }
 
 // CloseAccountCheckResult contains validation results for a close operation.
@@ -234,7 +231,6 @@ func (e *Engine) PrepareClose(ctx context.Context, params CloseAccountParams) (*
 	return &TransactionPrepResult{
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
-		LsigArgs:       params.LsigArgs,
 	}, checkResult, nil
 }
 

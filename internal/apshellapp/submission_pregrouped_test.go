@@ -11,6 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
 
@@ -44,7 +45,7 @@ func TestSubmitPregroupedSignedRejections(t *testing.T) {
 	tests := []struct {
 		name    string
 		result  *jsonrpc.ExecuteResult
-		lsig    map[string][]byte
+		lsig    cmdspec.LsigArgs
 		wantSub string
 	}{
 		{
@@ -53,8 +54,8 @@ func TestSubmitPregroupedSignedRejections(t *testing.T) {
 				GroupMode:    jsonrpc.GroupModePregroupedSigned,
 				Transactions: group,
 			},
-			lsig:    map[string][]byte{"k": []byte("v")},
-			wantSub: "does not allow lsig args",
+			lsig:    cmdspec.LsigArgs{{Name: "k", Value: []byte("v")}},
+			wantSub: `groupMode "pregrouped-signed" does not allow LogicSig arguments`,
 		},
 		{
 			name:    "empty transactions rejected",

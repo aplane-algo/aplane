@@ -843,6 +843,24 @@ without the value would be too small for the group that `/sign` later
 receives with it. An optional argument left out counts as 0 bytes. Signing
 still refuses any argument over the network's 4096-byte limit.
 
+`lsig_args` is for a key that runs a program. A sign-mode position whose key
+type is native (`ed25519` or native PQ `falcon1024`, a key that signs the
+transaction itself; the authorization kind its registered metadata declares,
+as `/keytypes` reports it) and that carries `lsig_args` is refused with 400
+(`transaction N: lsig_args were given for <address>, whose <key type> key is
+native and takes no LogicSig arguments`, N counted from 1), before planning,
+policy or approval, on `/plan`, `/sign`, and a held contextual position on
+`/sign/component`. Before, the arguments were dropped without a word. Every
+key type now refuses an argument it does not take. The key type alone decides,
+so a native key is refused whether or not its metadata entry is present.
+
+apshell places a command's arguments by the sending account, as the user
+addresses them (`arg:<name>=<value>` for every transaction,
+`arg:<account>:<name>=<value>` for one account's; see
+[USER_COMMANDS.md](USER_COMMANDS.md#logicsig-arguments)), and never by what a
+key declares. An argument given for every transaction of a group with a
+native position reaches that position, and this refusal names it.
+
 ---
 
 ## Dummy Transactions and Fee Pooling
@@ -1128,7 +1146,7 @@ txIDs, submittedTxns, err := clientsign.SignAndSubmitViaGroup(
     clientsign.SubmitOptions{
         WaitForConfirmation: waitForConfirmation,
         Verbose:             verbose,
-        LsigArgsMap:         lsigArgsMap, // nil if no generic lsigs
+        LsigArgsMap:         lsigArgsMap, // one map per position; nil if none
     },
 )
 ```
@@ -2319,6 +2337,7 @@ Additional compatibility-sensitive request failures:
 - immutable pre-grouped transactions that would require extra dummies: `400`
 - requests whose required dummies would push the group above 16 transactions: `400`
 - invalid runtime args or generic LogicSig arg decoding: `400`
+- `lsig_args` on a sign-mode entry whose key is native (ed25519 or native PQ): `400`
 - a required runtime argument that declares no size, left out of `/plan`,
   `/sign`, or a `/sign/component` held contextual position: `400`
 - missing TEAL compile algod configuration for generic LogicSig generation: `500`

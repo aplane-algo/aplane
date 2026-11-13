@@ -59,7 +59,7 @@ type appDeployArgs struct {
 	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
-	LsigArgs         map[string][]byte
+	LsigArgs         cmdspec.LsigArgs
 }
 
 func (a *appDeployArgs) toAppRequest() apshellapp.AppDeployRequest {
@@ -85,11 +85,11 @@ func (a *appDeployArgs) toAppRequest() apshellapp.AppDeployRequest {
 func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 	params := &appDeployArgs{Wait: true}
 	if len(args) < 2 || args[0] != "from" || args[1] == "" {
-		return nil, fmt.Errorf("usage: app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]")
+		return nil, fmt.Errorf("usage: app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]")
 	}
 	params.From = args[1]
 
-	// Every option app deploy takes, but arg:<name>, is single-valued.
+	// Every option app deploy takes, but arg:, is single-valued.
 	seen := cmdspec.SeenOptions{}
 	setProgram := func(kind, value string, compiled bool) error {
 		if value == "" {

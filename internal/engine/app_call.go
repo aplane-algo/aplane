@@ -31,7 +31,6 @@ type RawAppCallParams struct {
 	Note          string
 	Fee           uint64
 	UseFlatFee    bool
-	LsigArgs      map[string][]byte
 }
 
 type MethodAppCallParams struct {
@@ -147,7 +146,6 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 	return &TransactionPrepResult{
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
-		LsigArgs:       params.LsigArgs,
 		AppCallInfo:    &appspecAppCallInfoRaw,
 	}, nil
 }
@@ -208,7 +206,7 @@ var appspecAppCallInfoRaw = signerapi.AppCallInfo{Mode: "raw"}
 //     matches, and at index 0 when the ID is the called app's and the list
 //     doesn't have it.
 //
-// TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs pins all three.
+// TestPrepareAppCallRaw_SuccessIncludesReferences pins all three.
 func ensureAppReferences(curAppID uint64, foreignApps []uint64, boxes []types.AppBoxReference) []uint64 {
 	result := make([]uint64, len(foreignApps), len(foreignApps)+len(boxes))
 	copy(result, foreignApps)

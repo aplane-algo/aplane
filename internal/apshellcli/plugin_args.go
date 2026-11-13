@@ -10,9 +10,9 @@ import (
 )
 
 // extractPluginLsigArgs separates arg: tokens from plugin command args.
-func extractPluginLsigArgs(args []string) ([]string, map[string][]byte, error) {
+func extractPluginLsigArgs(args []string) ([]string, cmdspec.LsigArgs, error) {
 	var cleanArgs []string
-	var lsigArgs map[string][]byte
+	var lsigArgs cmdspec.LsigArgs
 	for _, a := range args {
 		if strings.HasPrefix(a, "arg:") {
 			if err := cmdspec.AddLsigArg(&lsigArgs, a); err != nil {

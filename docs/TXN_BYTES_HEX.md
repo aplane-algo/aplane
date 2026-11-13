@@ -39,7 +39,8 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
 - `txn_bytes_hex` — TX-prefixed msgpack-encoded unsigned transaction, hex
   encoded. Required for sign mode and foreign mode.
 - `lsig_args` — name-keyed caller runtime arguments for generic or composed
-  LogicSigs.
+  LogicSigs. A native key (ed25519 or native PQ) takes none: `lsig_args` on a
+  sign-mode entry for one is refused with 400.
 - `lsig_resources` — optional structured LogicSig resource hint used in
   foreign mode. It carries `program_bytes`, `argument_bytes`, and
   `max_opcode_cost` for the selected authorization path. Required for

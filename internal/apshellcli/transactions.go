@@ -25,8 +25,8 @@ import (
 
 // parseValidateLsigArgs reads what may follow validate's account: arg:
 // tokens only.
-func parseValidateLsigArgs(args []string) (map[string][]byte, error) {
-	var lsigArgs map[string][]byte
+func parseValidateLsigArgs(args []string) (cmdspec.LsigArgs, error) {
+	var lsigArgs cmdspec.LsigArgs
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "arg:") {
 			return nil, fmt.Errorf("unknown validate argument: %s", arg)
@@ -42,7 +42,7 @@ func parseValidateLsigArgs(args []string) (map[string][]byte, error) {
 // workflow to apshellapp, and rendering the result.
 func (r *REPLState) runValidate(args []string) (command.Result, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("usage: validate <account> [arg:name=value]\n  Sends a 0 ALGO self-send transaction to validate account signing capability")
+		return nil, fmt.Errorf("usage: validate <account> [arg:[<account>:]<name>=<value>]\n  Sends a 0 ALGO self-send transaction to validate account signing capability")
 	}
 
 	lsigArgs, err := parseValidateLsigArgs(args[1:])

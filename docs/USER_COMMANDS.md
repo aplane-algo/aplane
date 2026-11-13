@@ -46,7 +46,7 @@ send <amount> <asset> from <sender> to <receiver> [options]
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
 | `atomic` | Send as atomic group (with sets) |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to all LSig senders in the transaction group. Not accepted on an atomic send to or from a set |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 
 A word a command does not take is refused, on this and every transaction
 command, so a mistyped option can't be ignored. A line may end with a
@@ -61,6 +61,7 @@ send 1 algo from alice to @friends atomic
 send 1 algo from [alice bob charlie] to treasury atomic
 send 0.5 algo from lsig-account to bob arg:preimage=hello
 send 0.5 algo from lsig-account to bob arg:preimage=hex:abcdef
+send 0.5 algo from [hashlock-a hashlock-b] to bob atomic arg:hashlock-a:preimage=text:one arg:hashlock-b:preimage=text:two
 ```
 
 ---
@@ -86,7 +87,7 @@ sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to each generated sweep transaction. |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument: for every sweep transaction, or, with `<account>:`, for that source account's only. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -95,6 +96,7 @@ sweep usdc from [alice bob charlie] to treasury
 sweep algo from @team to main leaving 1             # Leave 1 ALGO in each
 sweep usdc from @validators to cold leaving 100
 sweep algo from @lsigs to treasury arg:preimage=text:secret
+sweep algo from @team to treasury arg:carol:preimage=text:secret   # Only carol's transaction gets it
 ```
 
 ---
@@ -117,7 +119,7 @@ before closing, even if the account has no created or opted-in applications.
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -208,7 +210,7 @@ optin <asset> for <account> [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -234,7 +236,7 @@ optout <asset> from <account> [to <dest>] [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -265,7 +267,7 @@ keyreg
 | `keydilution=<n>` | Key dilution, as reported for the participation key (required for `online`; no default) |
 | `eligible=true` | Mark as incentive-eligible, which sets a 2 ALGO fee. Only when going online; refused with `offline`. The value must be `true` or `false` |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -322,13 +324,13 @@ sign group.json nowait
 Validate signing capability by sending 0 ALGO to self.
 
 ```
-validate <account|@setname> [arg:name=value]
+validate <account|@setname> [arg:[<account>:]<name>=<value>]
 ```
 
 **Options:**
 | Option | Description |
 |--------|-------------|
-| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to each generated validation transaction. |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument: for every validation transaction, or, with `<account>:`, for that account's only. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -547,7 +549,7 @@ rekey                           # Show rekey command forms
 rekey list                      # Show all rekeyed accounts
 rekey refresh                   # Rebuild auth cache
 rekey refresh <address|alias>   # Refresh one auth-cache entry
-rekey <account> to <signer> [arg:name=value]  # Rekey account
+rekey <account> to <signer> [arg:[<account>:]<name>=<value>]  # Rekey account
 ```
 
 The target must sign for itself: the command queries the target on chain and
@@ -578,7 +580,7 @@ is decided by the `rekeys` setting as before (see
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument used when the account's current auth address is a LogicSig |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument, used when the account's current auth address is a LogicSig. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -612,7 +614,7 @@ key, the target is foreign, and the `rekeys` setting decides it.
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `arg:name=<value>` | LogicSig argument used when the account's current auth address is a LogicSig |
+| `arg:[<account>:]<name>=<value>` | LogicSig argument, used when the account's current auth address is a LogicSig. See [LogicSig Arguments](#logicsig-arguments) |
 
 **Examples:**
 ```
@@ -1170,13 +1172,15 @@ app read global <app-id>
 app read local <app-id> <account>
 app read box <app-id> <box-name>
 app read boxes <app-id>
-app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]
-app call <app-id> <method> --abi <path>|abi=<path> from <account> [--arg <value>|arg=<value> ...] [--pay <microalgos>|pay=<microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]
-app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>|pay=<microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]
+app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
+app call <app-id> <method> --abi <path>|abi=<path> from <account> [--arg <value>|arg=<value> ...] [--pay <microalgos>|pay=<microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
+app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>|pay=<microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]
 ```
 
 Byte-oriented values such as app boxes, raw app args, and LogicSig `arg:`
-values accept the forms listed in [Byte Encodings](#byte-encodings).
+values accept the forms listed in [Byte Encodings](#byte-encodings). A
+`--pay` companion payment is sent by the same account as the call, so the
+call's [LogicSig arguments](#logicsig-arguments) reach both.
 An ABI argument (`--arg`) for a `uintN`, `byte` or `ufixedNxM` type must be a
 plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
 `1_000` and `null` are refused: they are not read as octal, hex, a grouped
@@ -1615,6 +1619,71 @@ In an interactive shell session, execute shell commands by prefixing with `!`:
 | `usdc` | ASA by unit name (from cache) |
 | `31566704` | ASA by ID |
 
+### LogicSig Arguments
+
+A LogicSig account's program can read values given when a transaction is
+signed: a hashlock account, for example, pays only when given the
+`preimage` of its stored hash. A command takes them as `arg:` words, in one
+of two forms:
+
+| Form | Goes to |
+|------|---------|
+| `arg:<name>=<value>` | Every transaction the command builds |
+| `arg:<account>:<name>=<value>` | Only the transactions sent by `<account>`, an address or an alias |
+
+The value takes any of the [Byte Encodings](#byte-encodings) and may hold
+`:` and `=`; the word is split at its first `=`. Before it, no `:` means no
+account, and one `:` separates the account from the name. An argument name
+may not contain `:`, and a set (`@name`) cannot be the account.
+
+A command with one sending account needs no account in the word. Name the
+account when a command sends from several accounts that take different
+arguments, or the same name with different values:
+
+```
+send 1 algo from [alice dave] to bob atomic arg:alice:preimage=text:x arg:dave:secret=text:y
+send 1 algo from [alice dave] to bob atomic arg:alice:preimage=text:x arg:dave:preimage=text:y
+sweep algo from @team to treasury arg:carol:preimage=text:x
+myplugin swap arg:alice:preimage=hex:abcd
+```
+
+The rules:
+
+- A transaction gets the arguments given with no account and those for its
+  sender, and no others. The account is the sender, not the key it is
+  rekeyed to; the signer finds the key that signs for it.
+- An account that is not one of the accounts the command was asked to send
+  from is refused before anything is sent. For a set, the set is expanded
+  first, and a `sweep` source that is then skipped (nothing to sweep, not
+  opted in, or the destination itself) still counts: its line in the sweep's
+  results says why nothing was sent from it.
+- A name may be given once for each transaction. The same name twice with no
+  account, or twice for one account however it is written (an alias and its
+  address, or two aliases), is refused, and so is a name given both with no
+  account and for an account. No form overrides another.
+- apshell does not look up which names a key takes in order to place an
+  argument. Before asking the signer it checks each transaction's arguments
+  against the names the key that signs for the sender declares, as far as
+  the cached key list says (a plugin's `presign-plan` group skips this
+  check), and the signer refuses any argument a key does not take. A native
+  key (ed25519, native Falcon) takes none, so an argument given with no
+  account over a group or set that includes a native account is refused on
+  that account's position: name the LogicSig account instead.
+- An atomic `send` to or from a set carries arguments like any other send,
+  each position getting its own sender's.
+- In a plugin command, the arguments go to the plugin's first result only,
+  and the accounts are the senders of the transactions it returns. A first
+  result that succeeds with no transactions, an argument that reaches a
+  transaction the plugin signs itself (a `presign-plan` slot), and any
+  argument for a `pregrouped-signed` result are refused before anything is
+  shown or sent. A plugin that fails is reported by its own message.
+- Two transactions from the same sender in one command get the same
+  arguments.
+
+In scripts, `lsigArgs: { name: value }` on `close()` and `sweep()` is the
+form with no account: every transaction the call builds. See
+[USER_JSAPI.md](USER_JSAPI.md).
+
 ### Byte Encodings
 
 Byte-oriented values — LogicSig `arg:` values, raw app args, app box names,
@@ -1663,14 +1732,16 @@ Many transaction commands support these options:
 An option that takes one value may be given once. A second value is refused
 with `<option> given more than once` rather than replacing the first, so
 `app call ... --pay 100000 ... pay=10000000` and `... from alice ... from treasury`
-are errors. This covers `fee=`, `note=`, `arg:<name>=` for the same name, the
+are errors. This covers `fee=`, `note=`, an `arg:` name given twice with no
+account or twice for one account (see
+[LogicSig Arguments](#logicsig-arguments)), the
 app call options `from`, `--abi`/`abi=`, `--pay`/`pay=` (one option in either
 spelling), `oncomp=`, the approval and clear programs in any of their
 spellings, `app deploy`'s schema options and `extra-pages=`, sweep's
 `leaving`, keyreg's `key=value` options, `generate` parameters, and the value
 flags of `rotate recover`, `enroll` and `endpoints add`. Options that build a
 list still repeat: `--arg`/`arg=`, `arg-raw=`, `account=`, `app=`, `asset=`,
-`box=`, and `arg:` with different names. Flags without a value, such as
+`box=`, and `arg:` with different names, or one name for different accounts. Flags without a value, such as
 `nowait` and `atomic`, may be repeated and mean the same once or twice.
 
 ---

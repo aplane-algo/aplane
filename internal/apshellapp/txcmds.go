@@ -24,7 +24,7 @@ type OptInRequest struct {
 	AssetRef   string
 	Fee        uint64
 	UseFlatFee bool
-	LsigArgs   map[string][]byte
+	LsigArgs   cmdspec.LsigArgs
 	Wait       bool
 }
 
@@ -35,7 +35,7 @@ type OptOutRequest struct {
 	CloseTo    string
 	Fee        uint64
 	UseFlatFee bool
-	LsigArgs   map[string][]byte
+	LsigArgs   cmdspec.LsigArgs
 	Wait       bool
 }
 
@@ -51,7 +51,7 @@ type KeyRegRequest struct {
 	KeyDilution       uint64
 	IncentiveEligible bool
 	Wait              bool
-	LsigArgs          map[string][]byte
+	LsigArgs          cmdspec.LsigArgs
 }
 
 // RekeyRequest captures parsed rekey inputs.
@@ -60,7 +60,7 @@ type RekeyRequest struct {
 	Target     string
 	Fee        uint64
 	UseFlatFee bool
-	LsigArgs   map[string][]byte
+	LsigArgs   cmdspec.LsigArgs
 	Wait       bool
 	// BeforeSubmit, when set, is given the result as far as it is known once
 	// the transaction is prepared and before it is signed: the accounts and
@@ -74,7 +74,7 @@ type UnrekeyRequest struct {
 	Account    string
 	Fee        uint64
 	UseFlatFee bool
-	LsigArgs   map[string][]byte
+	LsigArgs   cmdspec.LsigArgs
 	Wait       bool
 	// BeforeSubmit is RekeyRequest.BeforeSubmit for an unrekey.
 	BeforeSubmit func(*RekeyCommandResult)
@@ -86,7 +86,7 @@ type CloseRequest struct {
 	CloseTo    string
 	Fee        uint64
 	UseFlatFee bool
-	LsigArgs   map[string][]byte
+	LsigArgs   cmdspec.LsigArgs
 	Wait       bool
 	// BeforeSubmit, when set, is given the result as far as it is known once
 	// the transaction is prepared and before it is signed, so the host can
@@ -110,14 +110,18 @@ type SweepRequest struct {
 	LeavingRaw *uint64
 	Fee        uint64
 	UseFlatFee bool
-	LsigArgs   map[string][]byte
-	Wait       bool
+	LsigArgs   cmdspec.LsigArgs
+	// UntargetedLsigArgs is the JS API's lsigArgs option: arguments by name
+	// for every transaction the sweep builds. A request gives these or
+	// LsigArgs, not both.
+	UntargetedLsigArgs map[string][]byte
+	Wait               bool
 }
 
 // ValidateRequest captures parsed account validation inputs.
 type ValidateRequest struct {
 	Account  string
-	LsigArgs map[string][]byte
+	LsigArgs cmdspec.LsigArgs
 }
 
 // ResolveIncentiveEligibility queries current status and resolves whether to charge the fee.
@@ -144,6 +148,10 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 	if len(addresses) == 0 {
 		return nil, fmt.Errorf("no addresses found for %q", req.Account)
 	}
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, addresses)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &ValidateCommandResult{
 		Input: req.Account,
@@ -152,10 +160,9 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 	for _, addr := range addresses {
 		item := ValidateItemResult{Address: addr}
 		prepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
-			From:     addr,
-			To:       addr,
-			Amount:   0,
-			LsigArgs: req.LsigArgs,
+			From:   addr,
+			To:     addr,
+			Amount: 0,
 		})
 		if err != nil {
 			item.Error = fmt.Sprintf("failed to prepare: %v", err)
@@ -164,7 +171,7 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 			continue
 		}
 
-		submit, err := a.eng.SignAndSubmit(ctx, prepResult, true)
+		submit, err := a.eng.SignAndSubmit(ctx, prepResult, lsigArgs, true)
 		if err != nil {
 			if submit != nil {
 				item.TxID = submit.TxID
@@ -219,6 +226,10 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{address})
+	if err != nil {
+		return nil, err
+	}
 
 	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())
 	if err != nil {
@@ -230,14 +241,13 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 		AssetID:    meta.AssetID,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("opt-in failed: %w", err)
 	}
@@ -260,6 +270,10 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve account %q: %w", req.Account, err)
 	}
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{accountAddr})
+	if err != nil {
+		return nil, err
+	}
 
 	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())
 	if err != nil {
@@ -280,7 +294,6 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 		CloseTo:    closeToAddr,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -288,7 +301,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 	prep := preparedTxnFromEngine(prepResult)
 	check := optOutCheckDetailsFromEngine(checkResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("opt-out failed: %w", err)
 	}
@@ -329,6 +342,10 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{address})
+	if err != nil {
+		return nil, err
+	}
 
 	prepResult, err := a.eng.PrepareKeyReg(ctx, engine.KeyRegParams{
 		Account:           address,
@@ -340,14 +357,13 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		VoteLast:          voteLast,
 		KeyDilution:       keyDilution,
 		IncentiveEligible: req.IncentiveEligible,
-		LsigArgs:          req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
@@ -383,7 +399,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, false)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, engine.LsigArgs{}, false)
 	if err != nil {
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
@@ -453,13 +469,16 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve to address: %w", err)
 	}
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{fromAddress})
+	if err != nil {
+		return nil, err
+	}
 
 	prepResult, checkResult, err := a.eng.PrepareRekey(ctx, engine.RekeyParams{
 		From:       fromAddress,
 		To:         toAddress,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -484,7 +503,7 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		req.BeforeSubmit(&announced)
 	}
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("rekey transaction failed: %w", err)
 	}
@@ -506,6 +525,10 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{address})
+	if err != nil {
+		return nil, err
+	}
 
 	balanceEngineResult, err := a.eng.GetAccountBalanceRaw(ctx, address)
 	if err != nil {
@@ -521,7 +544,6 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 		To:         address,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -542,7 +564,7 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 		req.BeforeSubmit(&announced)
 	}
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("unrekey transaction failed: %w", err)
 	}
@@ -655,13 +677,16 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 	if fromAddress == toAddress {
 		return nil, fmt.Errorf("cannot close account to itself")
 	}
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, []string{fromAddress})
+	if err != nil {
+		return nil, err
+	}
 
 	prepResult, checkResult, err := a.eng.PrepareClose(ctx, engine.CloseAccountParams{
 		From:       fromAddress,
 		CloseTo:    toAddress,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -681,7 +706,7 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 		req.BeforeSubmit(&announced)
 	}
 
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("close failed: %w", err)
 	}
@@ -727,6 +752,18 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	toAddress, err := cmdspec.ResolveSingleAddress(req.ToRaw, resolver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve destination address: %w", err)
+	}
+	// A target is checked against every source asked for, including one the
+	// sweep then skips: its item says why nothing was sent from it.
+	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, fromAddresses)
+	if err != nil {
+		return nil, err
+	}
+	if len(req.UntargetedLsigArgs) > 0 {
+		if len(req.LsigArgs) > 0 {
+			return nil, fmt.Errorf("internal error: sweep was given LogicSig arguments both as arg: words and as untargeted arguments")
+		}
+		lsigArgs = engine.UntargetedLsigArgs(req.UntargetedLsigArgs)
 	}
 
 	assetMeta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())
@@ -851,7 +888,6 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   req.LsigArgs,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -863,7 +899,6 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
-				LsigArgs:   req.LsigArgs,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -875,7 +910,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			continue
 		}
 
-		submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
+		submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 		if err != nil {
 			if submit != nil {
 				item.TxID = submit.TxID

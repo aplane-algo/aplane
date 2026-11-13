@@ -199,6 +199,11 @@ own planning step.
 4. Sign-mode entries must resolve to signer-managed signing authority.
 5. Foreign entries are never signer-owned work, even when they participate in
    planning context.
+6. A sign-mode entry for a key whose key type is native (ed25519 or
+   native PQ) must not carry `lsig_args`: a native key takes no runtime
+   arguments, and planning refuses the request with 400 rather than signing
+   with them dropped (`verifySignableKeys`). `sign_boundary.tla` carries no
+   arguments, so this is checked by Go tests, not modeled.
 
 ### Decode and Network Validation
 

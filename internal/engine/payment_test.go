@@ -72,9 +72,6 @@ func TestSendPaymentParams_Defaults(t *testing.T) {
 	if params.Note != "" {
 		t.Error("Default Note should be empty")
 	}
-	if params.LsigArgs != nil {
-		t.Error("Default LsigArgs should be nil")
-	}
 }
 
 // TestCloseAccountParams_Defaults tests CloseAccountParams structure
@@ -90,9 +87,6 @@ func TestCloseAccountParams_Defaults(t *testing.T) {
 	}
 	if params.UseFlatFee != false {
 		t.Error("Default UseFlatFee should be false")
-	}
-	if params.LsigArgs != nil {
-		t.Error("Default LsigArgs should be nil")
 	}
 }
 
@@ -249,26 +243,6 @@ func TestSendPaymentParams_WithClose(t *testing.T) {
 
 	if !params.Close {
 		t.Error("Close should be true")
-	}
-}
-
-// TestSendPaymentParams_WithLsigArgs tests LogicSig arguments
-func TestSendPaymentParams_WithLsigArgs(t *testing.T) {
-	params := SendPaymentParams{
-		From:   testAddress(1).String(),
-		To:     testAddress(2).String(),
-		Amount: 1000000,
-		LsigArgs: map[string][]byte{
-			"preimage": []byte("secret"),
-		},
-	}
-
-	if params.LsigArgs == nil {
-		t.Fatal("LsigArgs should not be nil")
-	}
-
-	if string(params.LsigArgs["preimage"]) != "secret" {
-		t.Errorf("LsigArgs[preimage] = %q, want 'secret'", params.LsigArgs["preimage"])
 	}
 }
 

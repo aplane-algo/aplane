@@ -85,7 +85,7 @@ func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error submitting transaction: %v", err)))
 	}
@@ -228,7 +228,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error preparing grouped call: %v", err)))
 		}
 
-		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, opts.Wait)
+		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.LsigArgs{}, opts.Wait)
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error submitting grouped call: %v", err)))
 		}
@@ -240,7 +240,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error submitting transaction: %v", err)))
 	}
@@ -334,7 +334,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing grouped call: %v", err)))
 		}
 
-		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, opts.Wait)
+		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.LsigArgs{}, opts.Wait)
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCall() error submitting grouped call: %v", err)))
 		}
@@ -346,7 +346,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prepared.Prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prepared.Prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error submitting transaction: %v", err)))
 	}

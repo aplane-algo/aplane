@@ -811,12 +811,18 @@ PreparedGroup
   -> ordered entries
   -> transaction
   -> signing context
-  -> per-entry LogicSig args
   -> optional app-call approval metadata
 ```
 
 Prepared groups are not authorization proofs. They are structured transaction
 intent plus metadata required for the signer path.
+
+LogicSig arguments are not part of a prepared transaction or group. A
+command's `arg:` words resolve to one `engine.LsigArgs` per submission:
+arguments for every transaction, and arguments for each sending account,
+keyed by its address. The submit methods take it and set each position's
+`lsig_args` from its sender's entry and the untargeted ones. It is runtime
+only; nothing persists it.
 
 ### Signer Request Entries
 

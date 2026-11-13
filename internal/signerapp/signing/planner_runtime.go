@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
@@ -371,9 +372,34 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		if err := rejectRotatingKeyType(i, keyType); err != nil {
 			return 0, err
 		}
+		// LogicSig arguments go to a program. A native key signs the
+		// transaction itself and has no program to give them to, so a request
+		// that sends them for one is refused here, on /plan, /sign and
+		// /sign/component alike, before planning or approval, rather than
+		// signed with them dropped. The key type decides, so the refusal does
+		// not depend on the key's metadata entry.
+		if len(txReq.LsigArgs) > 0 && isNativeKeyType(keyType) {
+			return 0, badRequest(fmt.Sprintf("transaction %d: lsig_args were given for %s, whose %s key is native and takes no LogicSig arguments",
+				i+1, txReq.AuthAddress, keytypefmt.Display(keyType)))
+		}
 		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))
 		signableCount++
 	}
 
 	return signableCount, nil
+}
+
+// isNativeKeyType reports whether a key of this type signs a transaction
+// itself, with no program to pass LogicSig arguments to: an ed25519 or a
+// native post-quantum (Falcon) key. It reads the authorization kind the key
+// type's registered metadata declares (algorithm.GetMetadata), which /keytypes
+// reports as authorization_kind and which resolves a native algorithm only by
+// its exact key type. A key type with no registered metadata is not native.
+func isNativeKeyType(keyType string) bool {
+	meta, err := algorithm.GetMetadata(keyType)
+	if err != nil {
+		return false
+	}
+	kind := meta.AuthorizationKind()
+	return kind == algorithm.AuthorizationEd25519 || kind == algorithm.AuthorizationNativePQ
 }

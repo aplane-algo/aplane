@@ -685,6 +685,39 @@ Continuation argument normalization follows the same manifest-driven rules as th
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`
 metadata for it and will pass continuation args through unchanged.
 
+### LogicSig Arguments (`arg:`)
+
+apshell takes a plugin command's `arg:` words out of its arguments before the
+plugin runs; the plugin never sees them. They are placed on the transactions
+of the plugin's result as on any command (see
+[USER_COMMANDS.md](USER_COMMANDS.md#logicsig-arguments)): `arg:<name>=<value>`
+goes to every transaction, and `arg:<account>:<name>=<value>` only to the
+transactions that account sends. To name an account, the user must know which
+accounts the plugin's transactions send from.
+
+- **First result only.** The words apply to the plugin's first result; a
+  continuation's results get none. A first result that succeeds with no
+  transactions has nothing to give them to, so the command is refused there
+  and its continuation is not run (`apshellapp.ErrLsigArgsWithoutTransactions`,
+  in `processPluginResultStructured`), rather than the words being dropped. A
+  first result that fails is reported as the plugin's own failure, as without
+  the words.
+- **Resolved at the check.** `apshellapp.CheckPluginGroup` resolves the words
+  against the senders of the result's transactions, before the review: an
+  account that sends none of them, or a name given twice to one transaction,
+  is refused before anything is shown or sent. The group keeps the resolved
+  arguments, and submission places them by sender.
+- **Plugin-signed positions take none.** In `presign-plan`, apshell asks the
+  plugin to sign its slots with no arguments (`signTransactions` requests
+  carry none), so an argument that reaches a plugin-signed slot, given for
+  every transaction or naming its account, is refused by the same check,
+  before anything is shown or sent. Name the managed accounts instead.
+- **`pregrouped-signed` takes none.** The plugin signs every transaction, so
+  any `arg:` word is refused once the result is decoded.
+- In the default flow and for `presign-plan`'s managed slots, the signer
+  judges each argument against the key that signs, and refuses one a key does
+  not take, a native key's included.
+
 ### Unsupported `localSigners`
 
 Top-level `localSigners` is intentionally unsupported. APlane does not accept

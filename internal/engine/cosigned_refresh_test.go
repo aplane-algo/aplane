@@ -70,7 +70,7 @@ func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
 	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
 
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer", nil).Transaction
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer").Transaction
 	if got := eng.signerCacheKeyType(cosigned); got != "ed25519" {
 		t.Fatalf("precondition signer cache key type for cosigned authorizer = %q, want stale ed25519", got)
 	}
@@ -140,7 +140,7 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
 	eng.AuthCache.AuthAddresses[sender] = cosigned
 
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer", nil).Transaction
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer").Transaction
 	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
 		t.Fatalf("refreshSubmitSigningState() error = %v", err)
 	}

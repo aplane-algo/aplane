@@ -7,6 +7,54 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A LogicSig argument can name the account it is for
+
+- **`arg:<account>:<name>=<value>` gives an argument to one account's
+  transactions.** A command gave every `arg:` word to every transaction it
+  built, so a group with two LogicSig accounts that take different arguments
+  (a hashlock's `preimage` and another's `secret`, or a hashlock and a Falcon
+  LogicSig account) was refused by each account for the other's argument and
+  could not be signed, and two hashlock accounts in one group could not be
+  given different preimages. `arg:<name>=<value>` still goes to every
+  transaction; with an address or an alias before the name, the argument goes
+  only to the transactions that account sends. An account that is not one of
+  those the command was asked to send from is refused before anything is
+  sent; for a set the set is expanded first, and a `sweep` source that is
+  skipped still counts. A name given twice to one transaction is refused once
+  each account is resolved to an address: twice for one account (an alias and
+  its address, or two aliases), or both with no account and for an account.
+  An argument name may not contain `:`. apshell places arguments only by the
+  account named, never by what a key declares. See
+  [USER_COMMANDS.md](USER_COMMANDS.md#logicsig-arguments).
+- **The signer refuses `lsig_args` for a native key.** An ed25519 or native
+  Falcon key has no program to give arguments to; `/plan`, `/sign` and
+  `/sign/component` dropped them without a word, so a mistyped argument on a
+  native account was ignored. They now answer 400 naming the position and the
+  key, before planning or approval. An argument given with no account to a
+  group or set that includes a native account is therefore refused on that
+  account's position: name the LogicSig account instead. HTTP API and SDK
+  callers that sent `lsig_args` to a native key get the same 400.
+- **An atomic `send` to or from a set carries LogicSig arguments**, each
+  position getting its own sender's. It refused `arg:` before.
+- **Plugin commands.** The arguments go to the plugin's first result, and the
+  accounts are the senders of its transactions. A first result that succeeds
+  with no transactions is refused rather than its arguments dropped, and its
+  continuation is not run; one that fails is reported as the plugin's own
+  failure. An argument that reaches a `presign-plan` position the plugin
+  signs, given for every transaction or naming its account, is refused
+  before the group is shown: the plugin is asked to sign with no arguments.
+  `pregrouped-signed` still takes none.
+- **The client's check of required arguments and lengths reads the key that
+  signs.** It ran before the auth address was refreshed and read the
+  sender's own key, so an account rekeyed to a LogicSig key was checked
+  against the wrong key's arguments, and a LogicSig account rekeyed to a
+  native key was refused for its own key's required argument. It now runs
+  after the refresh, against the key that signs for the sender.
+- JavaScript's `lsigArgs` option is unchanged and goes to every transaction
+  the call builds; the JS API has no per-account form.
+- Known limit: two transactions from the same sender in one command get the
+  same arguments.
+
 ## The rotating approval prompt states the signer's charge
 
 - **`/sign/rotating/sign` prompts with the fee prepare added.** The

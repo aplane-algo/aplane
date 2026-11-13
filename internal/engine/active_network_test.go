@@ -208,7 +208,7 @@ func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 			return err
 		}},
 		{"default plugin group", func(eng *Engine) error {
-			_, err := eng.SignAndSubmitGroup(context.Background(), mainnetTxns, nil)
+			_, err := eng.SignAndSubmitGroup(context.Background(), mainnetTxns, LsigArgs{})
 			return err
 		}},
 		{"presign-plan", func(eng *Engine) error {
@@ -217,7 +217,7 @@ func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 				func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
 					t.Error("the plugin was asked to sign a slot for another network")
 					return nil, nil
-				}, nil)
+				}, LsigArgs{})
 			return err
 		}},
 		{"plan() sign request", func(eng *Engine) error {

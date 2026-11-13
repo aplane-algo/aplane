@@ -848,7 +848,7 @@ template_variables:          # strict mode only
     constant: <kind>         # byte for address/bytes, int for uint64
 
 runtime_args:               # optional
-  - name: <id>              # used in CLI tokens as arg:<id>=<value>
+  - name: <id>              # used in CLI tokens as arg:<id>=<value> or arg:<account>:<id>=<value>; no ':' in it
     label: "<Label>"
     description: "<text>"
     type: <type>            # bytes | string | uint64

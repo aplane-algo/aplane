@@ -252,7 +252,12 @@ Rules:
 5. The generic/composed template registered under the key's `key_type` is not
    consulted to assemble args at sign time.
 6. Runtime args supplied by a caller must match the stored signing-argument
-   contract.
+   contract. A native key (ed25519 or native PQ) has none: a sign-mode entry
+   that supplies `lsig_args` for a key whose key type is native is
+   refused at planning (`verifySignableKeys`), on `/plan`, `/sign` and a held
+   contextual position on `/sign/component`, before policy and approval,
+   rather than signed with them dropped. No TLA model carries runtime args;
+   this is checked by Go tests, not modeled.
 
 ## Invariants
 

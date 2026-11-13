@@ -24,7 +24,6 @@ type PreparedGroup struct {
 type PreparedGroupEntry struct {
 	Transaction    types.Transaction
 	SigningContext *SigningContext
-	LsigArgs       map[string][]byte
 	AppCallInfo    *signerapi.AppCallInfo
 }
 
@@ -67,7 +66,6 @@ func PrepareGroup(preps ...*TransactionPrepResult) (*PreparedGroup, error) {
 		entries[i] = PreparedGroupEntry{
 			Transaction:    prep.Transaction,
 			SigningContext: prep.SigningContext,
-			LsigArgs:       prep.LsigArgs,
 			AppCallInfo:    prep.AppCallInfo,
 		}
 	}
@@ -87,21 +85,6 @@ func (g *PreparedGroup) Transactions() []types.Transaction {
 	return txns
 }
 
-// LsigArgsMap returns per-entry LogicSig args in transaction order.
-func (g *PreparedGroup) LsigArgsMap() []map[string][]byte {
-	if g == nil {
-		return nil
-	}
-	lsigArgs := make([]map[string][]byte, len(g.Entries))
-	for i, entry := range g.Entries {
-		if len(entry.LsigArgs) == 0 {
-			continue
-		}
-		lsigArgs[i] = entry.LsigArgs
-	}
-	return lsigArgs
-}
-
 // AppCallInfoMap returns per-entry app-call metadata in transaction order.
 func (g *PreparedGroup) AppCallInfoMap() []*signerapi.AppCallInfo {
 	if g == nil {
@@ -114,9 +97,10 @@ func (g *PreparedGroup) AppCallInfoMap() []*signerapi.AppCallInfo {
 	return info
 }
 
-// ExecutePreparedGroup signs and submits a prepared group using the
-// existing grouped signing/submission flow and the caller's context.
-func (e *Engine) ExecutePreparedGroup(ctx context.Context, group *PreparedGroup, wait bool) (*PreparedGroupSubmitResult, error) {
+// ExecutePreparedGroup signs and submits a prepared group, each transaction
+// with the arguments args gives its sender, using the existing grouped
+// signing/submission flow and the caller's context.
+func (e *Engine) ExecutePreparedGroup(ctx context.Context, group *PreparedGroup, args LsigArgs, wait bool) (*PreparedGroupSubmitResult, error) {
 	if group == nil {
 		return nil, fmt.Errorf("prepared group is nil")
 	}
@@ -128,9 +112,8 @@ func (e *Engine) ExecutePreparedGroup(ctx context.Context, group *PreparedGroup,
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
 	opts := e.defaultSubmitOptions(ctx, wait, &writeNotices, &output)
-	opts.LsigArgsMap = group.LsigArgsMap()
 	opts.AppCallInfo = group.AppCallInfoMap()
-	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, opts)
+	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, args, opts)
 	result := &PreparedGroupSubmitResult{
 		TxIDs:        txIDs,
 		Transactions: originalSubmittedTransactions(txns, submittedTxns),

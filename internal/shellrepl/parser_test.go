@@ -5,6 +5,7 @@ package shellrepl
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
@@ -111,8 +112,8 @@ func TestParseSendCommand(t *testing.T) {
 			args:    []string{"1", "algo", "from", "alice", "to", "bob", "arg:preimage=hello"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p TransactionParams) {
-				if !bytes.Equal(p.LsigArgs["preimage"], []byte("hello")) {
-					t.Errorf("LsigArgs[preimage] = %v, want %v", p.LsigArgs["preimage"], []byte("hello"))
+				if !bytes.Equal(lsigArgValue(p.LsigArgs, "preimage"), []byte("hello")) {
+					t.Errorf("LsigArgs[preimage] = %v, want %v", lsigArgValue(p.LsigArgs, "preimage"), []byte("hello"))
 				}
 			},
 		},
@@ -121,8 +122,8 @@ func TestParseSendCommand(t *testing.T) {
 			args:    []string{"1", "algo", "from", "alice", "to", "bob", "arg:preimage=0x68656c6c6f"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p TransactionParams) {
-				if !bytes.Equal(p.LsigArgs["preimage"], []byte("hello")) {
-					t.Errorf("LsigArgs[preimage] = %v, want %v", p.LsigArgs["preimage"], []byte("hello"))
+				if !bytes.Equal(lsigArgValue(p.LsigArgs, "preimage"), []byte("hello")) {
+					t.Errorf("LsigArgs[preimage] = %v, want %v", lsigArgValue(p.LsigArgs, "preimage"), []byte("hello"))
 				}
 			},
 		},
@@ -131,8 +132,8 @@ func TestParseSendCommand(t *testing.T) {
 			args:    []string{"1", "algo", "from", "alice", "to", "bob", "arg:preimage=text:hello"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p TransactionParams) {
-				if !bytes.Equal(p.LsigArgs["preimage"], []byte("hello")) {
-					t.Errorf("LsigArgs[preimage] = %v, want %v", p.LsigArgs["preimage"], []byte("hello"))
+				if !bytes.Equal(lsigArgValue(p.LsigArgs, "preimage"), []byte("hello")) {
+					t.Errorf("LsigArgs[preimage] = %v, want %v", lsigArgValue(p.LsigArgs, "preimage"), []byte("hello"))
 				}
 			},
 		},
@@ -141,8 +142,8 @@ func TestParseSendCommand(t *testing.T) {
 			args:    []string{"1", "algo", "from", "alice", "to", "bob", "arg:preimage=b64:aGVsbG8="},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p TransactionParams) {
-				if !bytes.Equal(p.LsigArgs["preimage"], []byte("hello")) {
-					t.Errorf("LsigArgs[preimage] = %v, want %v", p.LsigArgs["preimage"], []byte("hello"))
+				if !bytes.Equal(lsigArgValue(p.LsigArgs, "preimage"), []byte("hello")) {
+					t.Errorf("LsigArgs[preimage] = %v, want %v", lsigArgValue(p.LsigArgs, "preimage"), []byte("hello"))
 				}
 			},
 		},
@@ -322,7 +323,7 @@ func TestParseOptinCommand(t *testing.T) {
 			args:    []string{"usdc", "for", "alice", "arg:preimage=text:secret"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p OptInParams) {
-				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+				if got := string(lsigArgValue(p.LsigArgs, "preimage")); got != "secret" {
 					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
 				}
 			},
@@ -468,7 +469,7 @@ func TestParseOptoutCommand(t *testing.T) {
 				if p.Wait {
 					t.Error("Wait should be false with nowait flag")
 				}
-				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+				if got := string(lsigArgValue(p.LsigArgs, "preimage")); got != "secret" {
 					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
 				}
 			},
@@ -721,7 +722,7 @@ func TestParseRekeyCommand(t *testing.T) {
 			isUnrekey: false,
 			wantErr:   false,
 			checkFunc: func(t *testing.T, p RekeyParams) {
-				if got := string(p.LsigArgs["rekey_preimage"]); got != "secret" {
+				if got := string(lsigArgValue(p.LsigArgs, "rekey_preimage")); got != "secret" {
 					t.Errorf("LsigArgs[rekey_preimage] = %q, want secret", got)
 				}
 			},
@@ -856,7 +857,7 @@ func TestParseTakeCommand(t *testing.T) {
 				if p.Wait {
 					t.Error("Wait should be false with nowait flag")
 				}
-				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+				if got := string(lsigArgValue(p.LsigArgs, "preimage")); got != "secret" {
 					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
 				}
 			},
@@ -965,7 +966,7 @@ func TestParseSweepCommand(t *testing.T) {
 				if p.Wait {
 					t.Error("Wait should be false with nowait flag")
 				}
-				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+				if got := string(lsigArgValue(p.LsigArgs, "preimage")); got != "secret" {
 					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
 				}
 			},
@@ -1201,7 +1202,7 @@ func TestSharedTrailingArgsRefuseUnknownWordsAndRepeatedFees(t *testing.T) {
 	parse := func(args ...string) error {
 		var wait, flat bool
 		var fee uint64
-		var lsigArgs map[string][]byte
+		var lsigArgs cmdspec.LsigArgs
 		return parseWaitFeeLsigTrailingArgs(args, &wait, &fee, &flat, &lsigArgs)
 	}
 	if err := parse("fee=1000", "nowait", "arg:preimage=text:x"); err != nil {
@@ -1288,7 +1289,55 @@ func TestCommandsRefuseRepeatedSingleValuedOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("well-formed send refused: %v", err)
 	}
-	if string(p.LsigArgs["preimage"]) != "a" || string(p.LsigArgs["hashlock"]) != "b" || p.Note != "n" {
+	if string(lsigArgValue(p.LsigArgs, "preimage")) != "a" || string(lsigArgValue(p.LsigArgs, "hashlock")) != "b" || p.Note != "n" {
 		t.Fatalf("send parsed as %+v", p)
+	}
+}
+
+// lsigArgValue is the value of the untargeted arg:<name> word in args, or nil.
+func lsigArgValue(args cmdspec.LsigArgs, name string) []byte {
+	for _, arg := range args {
+		if arg.Untargeted() && arg.Name == name {
+			return arg.Value
+		}
+	}
+	return nil
+}
+
+// Every command that takes arg: words reads both forms and keeps the targets
+// as written, for the command to resolve; a name holding ':' is refused.
+func TestCommandsReadTargetedLsigArgs(t *testing.T) {
+	p, err := ParseSendCommand([]string{"1", "algo", "from", "[", "alice", "bob", "]", "to", "carol",
+		"arg:alice:preimage=text:a", "arg:bob:preimage=text:b", "arg:hashlock=text:c"})
+	if err != nil {
+		t.Fatalf("send with targeted arguments refused: %v", err)
+	}
+	want := cmdspec.LsigArgs{
+		{Target: "alice", Name: "preimage", Value: []byte("a")},
+		{Target: "bob", Name: "preimage", Value: []byte("b")},
+		{Name: "hashlock", Value: []byte("c")},
+	}
+	if len(p.LsigArgs) != len(want) {
+		t.Fatalf("LsigArgs = %+v, want %+v", p.LsigArgs, want)
+	}
+	for i := range want {
+		if p.LsigArgs[i].Target != want[i].Target || p.LsigArgs[i].Name != want[i].Name || !bytes.Equal(p.LsigArgs[i].Value, want[i].Value) {
+			t.Fatalf("LsigArgs[%d] = %+v, want %+v", i, p.LsigArgs[i], want[i])
+		}
+	}
+
+	bad := "arg:alice:pre:image=text:a"
+	for name, parse := range map[string]func() error{
+		"send": func() error {
+			_, err := ParseSendCommand([]string{"1", "algo", "from", "alice", "to", "bob", bad})
+			return err
+		},
+		"sweep": func() error { _, err := ParseSweepCommand([]string{"algo", "to", "bob", bad}); return err },
+		"close": func() error { _, err := ParseCloseCommand([]string{"alice", "to", "bob", bad}); return err },
+		"rekey": func() error { _, err := ParseRekeyCommand([]string{"alice", "to", "bob", bad}, false); return err },
+	} {
+		if err := parse(); err == nil || !strings.Contains(err.Error(), "an argument name may not contain ':'") {
+			t.Errorf("%s with %s: error = %v, want it refused", name, bad, err)
+		}
 	}
 }
