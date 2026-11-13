@@ -231,7 +231,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 		return nil, err
 	}
 
-	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolverForTransaction(ctx))
+	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAIDResolverForTransaction(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
 	}
@@ -275,7 +275,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 		return nil, err
 	}
 
-	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolverForTransaction(ctx))
+	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAIDResolverForTransaction(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
 	}

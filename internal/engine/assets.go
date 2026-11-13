@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/asa"
@@ -74,51 +73,69 @@ func (e *Core) ASAResolver() asa.Resolver {
 }
 
 // TransactionASAResolver resolves the asset of a transaction a command
-// builds. It does not trust the ASA cache: an asset that is not built in is
-// read from algod, and its cache entry is refreshed with what was read.
+// builds. It does not trust the ASA cache: what the transaction needs is read
+// from algod, and the asset's cache entry is refreshed with what was read.
 type TransactionASAResolver struct {
-	ctx context.Context
-	eng *Engine
+	ctx    context.Context
+	eng    *Engine
+	idOnly bool
 }
 
 // ASAResolverForTransaction returns the asset resolver for a command that
-// builds a transaction. Display paths keep using ASAResolver.
+// converts an amount of the asset (send, sweep): an asset that is not built
+// in is read from algod for its decimals. Display paths keep using
+// ASAResolver.
 func (e *Engine) ASAResolverForTransaction(ctx context.Context) TransactionASAResolver {
 	return TransactionASAResolver{ctx: ctx, eng: e}
 }
 
-// ResolveMetadata resolves ref to the asset's metadata as algod reports it
-// now. A built-in asset is answered from the reviewed table without a read.
-// An asset named by name or unit name must still carry that name on the
-// network; when it does not, its corrected cache entry is kept and the
-// command is refused, because the name stood for another asset.
+// ASAIDResolverForTransaction returns the asset resolver for a command that
+// needs only the asset's ID (opt-in, opt-out, app-call asset references). It
+// reads algod only to confirm a name that came from the cache. For an ID or a
+// registry alias the metadata is the ID with cached names for display, and its
+// decimals are unknown (SourceIDOnly) unless the asset is built in.
+func (e *Engine) ASAIDResolverForTransaction(ctx context.Context) TransactionASAResolver {
+	return TransactionASAResolver{ctx: ctx, eng: e, idOnly: true}
+}
+
+// ResolveMetadata resolves ref for a transaction. A built-in asset is
+// answered from the reviewed table without a read. A name that only the
+// cache gave must still be the asset's name on the network; when it is not,
+// the corrected cache entry is kept and the command is refused, because the
+// name stood for another asset.
 func (r TransactionASAResolver) ResolveMetadata(ref string) (asa.Metadata, error) {
 	e := r.eng
 	ref = strings.TrimSpace(ref)
-	assetID, err := e.ASAResolver().ResolveID(ref)
+	assetID, match, err := e.ASAResolver().MatchID(ref)
 	if err != nil {
 		return asa.Metadata{}, err
 	}
 	if meta, ok := asa.BuiltinMetadata(e.Network, assetID); ok {
 		return meta, nil
 	}
-	if e.AlgodClient == nil {
-		return asa.Metadata{}, ErrNoAlgodClient
+	byCachedName := match == cache.ASARefByCachedName
+	if r.idOnly && !byCachedName {
+		meta := asa.Metadata{Network: e.Network, AssetID: assetID, Source: asa.SourceIDOnly}
+		if cached, ok := e.AsaCache.Assets[assetID]; ok {
+			meta.UnitName, meta.Name = cached.UnitName, cached.Name
+		}
+		return meta, nil
 	}
-	params, err := cache.FetchASAParams(r.ctx, e.AlgodClient, assetID)
+
+	live, err := r.readASA(assetID)
 	if err != nil {
-		return asa.Metadata{}, fmt.Errorf("failed to get asset %d: %w", assetID, err)
+		if r.idOnly {
+			return asa.Metadata{}, fmt.Errorf("cannot confirm that %q still names asset %d on %s: %w. Use the asset ID", ref, assetID, e.Network, err)
+		}
+		return asa.Metadata{}, err
 	}
-	live := cache.ASAInfoFromParams(params)
 	refreshErr := e.refreshCachedASA(assetID, live)
-	_, parseErr := strconv.ParseUint(ref, 10, 64)
-	byName := parseErr != nil
-	if byName && !live.MatchesReference(ref) {
+	if byCachedName && !live.MatchesReference(ref) {
 		corrected := "the cache entry has been corrected"
 		if refreshErr != nil {
 			corrected = fmt.Sprintf("correcting the cache entry failed: %v", refreshErr)
 		}
-		return asa.Metadata{}, fmt.Errorf("the cached name %q no longer matches asset %d on %s, which is now %q (unit %q); %s. Check the asset and run the command again",
+		return asa.Metadata{}, fmt.Errorf("the cached name %q no longer matches asset %d on %s, which is now %q (unit %q); %s. Name the asset by its ID or its current name",
 			ref, assetID, e.Network, live.Name, live.UnitName, corrected)
 	}
 	if refreshErr != nil {
@@ -132,6 +149,18 @@ func (r TransactionASAResolver) ResolveMetadata(ref string) (asa.Metadata, error
 		Decimals: live.Decimals,
 		Source:   asa.SourceLive,
 	}, nil
+}
+
+// readASA reads an asset's parameters from algod.
+func (r TransactionASAResolver) readASA(assetID uint64) (cache.ASAInfo, error) {
+	if r.eng.AlgodClient == nil {
+		return cache.ASAInfo{}, ErrNoAlgodClient
+	}
+	params, err := cache.FetchASAParams(r.ctx, r.eng.AlgodClient, assetID)
+	if err != nil {
+		return cache.ASAInfo{}, fmt.Errorf("failed to get asset %d: %w", assetID, err)
+	}
+	return cache.ASAInfoFromParams(params), nil
 }
 
 // refreshCachedASA stores what algod reported for an asset when its cache

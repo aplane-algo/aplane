@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,7 +37,10 @@ var (
 // liveAssetNetwork is an algod whose asset liveAssetID may differ from what
 // the client cached, as after a LocalNet reset. It counts what it is asked.
 type liveAssetNetwork struct {
+	chain    string // the client's network; testnet when empty
+	assetID  uint64 // the one asset algod knows; liveAssetID when zero
 	asset    models.AssetParams
+	missing  bool   // asset reads answer 404, as for a destroyed asset
 	fail     bool   // asset reads answer 500
 	holdings uint64 // each account's balance of liveAssetID
 
@@ -72,11 +76,16 @@ func (n *liveAssetNetwork) handler(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "algod is down"})
 			return
 		}
-		if r.URL.Path != "/v2/assets/900100" {
-			http.NotFound(w, r)
+		id := n.assetID
+		if id == 0 {
+			id = liveAssetID
+		}
+		if n.missing || r.URL.Path != fmt.Sprintf("/v2/assets/%d", id) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "asset does not exist"})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(models.Asset{Index: liveAssetID, Params: n.asset})
+		_ = json.NewEncoder(w).Encode(models.Asset{Index: id, Params: n.asset})
 	case "account":
 		address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
 		_ = json.NewEncoder(w).Encode(models.Account{
@@ -94,12 +103,17 @@ func (n *liveAssetNetwork) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 // liveAssetApp returns an app whose ASA cache, in memory and on disk, holds
-// cached for liveAssetID, and whose algod is network. No signer is
-// connected: a transaction is prepared and then fails to sign.
+// cached for liveAssetID (no entry when cached is zero), and whose algod is
+// network. No signer is connected: a transaction is prepared and then fails
+// to sign.
 func liveAssetApp(t *testing.T, network *liveAssetNetwork, cached cache.ASAInfo) (*App, *cache.Store) {
 	t.Helper()
-	if _, builtin := asa.BuiltinMetadata("testnet", liveAssetID); builtin {
-		t.Fatalf("asset %d is built in on testnet; the test needs one that is not", liveAssetID)
+	chain := network.chain
+	if chain == "" {
+		chain = "testnet"
+	}
+	if _, builtin := asa.BuiltinMetadata(chain, liveAssetID); builtin {
+		t.Fatalf("asset %d is built in on %s; the test needs one that is not", liveAssetID, chain)
 	}
 	network.requests = map[string]int{}
 	server := httptest.NewServer(http.HandlerFunc(network.handler))
@@ -110,15 +124,17 @@ func liveAssetApp(t *testing.T, network *liveAssetNetwork, cached cache.ASAInfo)
 	}
 
 	store := cache.NewStore(t.TempDir())
-	onDisk := cache.LoadASACacheFromStore(store, "testnet")
-	onDisk.Assets[liveAssetID] = cached
-	if err := onDisk.SaveCache("testnet"); err != nil {
+	onDisk := cache.LoadASACacheFromStore(store, chain)
+	if cached != (cache.ASAInfo{}) {
+		onDisk.Assets[liveAssetID] = cached
+	}
+	if err := onDisk.SaveCache(chain); err != nil {
 		t.Fatalf("SaveCache() error = %v", err)
 	}
-	eng, err := engine.NewEngine("testnet",
+	eng, err := engine.NewEngine(chain,
 		engine.WithAlgodClient(client),
 		engine.WithCacheStore(store),
-		engine.WithASACache(cache.LoadASACacheFromStore(store, "testnet")),
+		engine.WithASACache(cache.LoadASACacheFromStore(store, chain)),
 	)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
@@ -182,7 +198,7 @@ func TestSendRefusesAStaleCachedName(t *testing.T) {
 	if err == nil {
 		t.Fatalf("ExecuteSend() = %+v, want the stale name refused", result)
 	}
-	for _, want := range []string{`the cached name "old" no longer matches asset 900100 on testnet`, "the cache entry has been corrected", "run the command again"} {
+	for _, want := range []string{`the cached name "old" no longer matches asset 900100 on testnet`, "the cache entry has been corrected", "Name the asset by its ID or its current name"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want it to contain %q", err, want)
 		}
@@ -361,4 +377,97 @@ func TestDisplayPathsUseTheCache(t *testing.T) {
 		t.Fatalf("algod asset reads = %d, want 0 on display paths", got)
 	}
 	assertCachedASA(t, app, store, staleOld)
+}
+
+// chipsAliasID is the mainnet target of the "chips" convenience alias, which
+// has no built-in metadata.
+const chipsAliasID = 388592191
+
+// A convenience alias is not a cached name: the asset it points at need not
+// carry it. send reads the asset for its decimals and proceeds.
+func TestSendByAliasUsesLiveDecimalsWithoutANameCheck(t *testing.T) {
+	if _, builtin := asa.BuiltinMetadata("mainnet", chipsAliasID); builtin {
+		t.Fatalf("asset %d has built-in metadata; the test needs an alias without it", chipsAliasID)
+	}
+	network := &liveAssetNetwork{
+		chain: "mainnet", assetID: chipsAliasID,
+		asset: models.AssetParams{Name: "Another Name", UnitName: "XYZ", Decimals: 3, Total: 1_000_000, Creator: liveFrom},
+	}
+	app, store := liveAssetApp(t, network, cache.ASAInfo{})
+
+	plan, err := app.PrepareSend(context.Background(), SendRequest{
+		AmountText: "5", AssetRef: "chips", FromRaw: []string{liveFrom}, ToRaw: []string{liveTo},
+	})
+	if err != nil {
+		t.Fatalf("PrepareSend() error = %v", err)
+	}
+	if plan.Amount.Meta.AssetID != chipsAliasID || plan.Amount.Raw != 5_000 || plan.Amount.Meta.Source != asa.SourceLive {
+		t.Fatalf("amount = %+v, want 5000 base units of asset %d with the live 3 decimals", plan.Amount, chipsAliasID)
+	}
+	if got := network.count("asset"); got != 1 {
+		t.Fatalf("algod asset reads = %d, want 1", got)
+	}
+	want := cache.ASAInfo{Name: "Another Name", UnitName: "XYZ", Decimals: 3}
+	if got := cache.LoadASACacheFromStore(store, "mainnet").Assets[chipsAliasID]; got != want {
+		t.Fatalf("cache entry on disk = %+v, want %+v", got, want)
+	}
+}
+
+// optout needs only the asset ID: by ID it reads nothing, so an account can
+// opt out of an asset its creator destroyed.
+func TestOptOutByIDOfADestroyedAssetReadsNothing(t *testing.T) {
+	for name, cached := range map[string]cache.ASAInfo{"cached": staleOld, "not cached": {}} {
+		t.Run(name, func(t *testing.T) {
+			network := &liveAssetNetwork{missing: true}
+			app, store := liveAssetApp(t, network, cached)
+
+			_, err := app.OptOut(context.Background(), OptOutRequest{Account: liveFrom, AssetRef: "900100"})
+			if err == nil || !strings.Contains(err.Error(), "opt-out failed") {
+				t.Fatalf("OptOut() error = %v, want the prepared opt-out to fail at signing", err)
+			}
+			if got := network.count("asset"); got != 0 {
+				t.Fatalf("algod asset reads = %d, want 0", got)
+			}
+			if network.count("params") == 0 {
+				t.Fatal("the opt-out was not prepared")
+			}
+			assertCachedASA(t, app, store, cached)
+		})
+	}
+}
+
+// A cached name cannot be confirmed when the asset is gone: the user is told
+// to give the ID.
+func TestOptOutByCachedNameOfADestroyedAssetAsksForTheID(t *testing.T) {
+	network := &liveAssetNetwork{missing: true}
+	app, store := liveAssetApp(t, network, staleOld)
+
+	_, err := app.OptOut(context.Background(), OptOutRequest{Account: liveFrom, AssetRef: "OLD"})
+	if err == nil || !strings.Contains(err.Error(), `cannot confirm that "OLD" still names asset 900100 on testnet`) ||
+		!strings.Contains(err.Error(), "Use the asset ID") {
+		t.Fatalf("OptOut() error = %v, want to be told to use the asset ID", err)
+	}
+	if got := network.count("account") + network.count("params"); got != 0 {
+		t.Fatalf("network saw %d account/params reads: the opt-out was being prepared", got)
+	}
+	assertCachedASA(t, app, store, staleOld)
+}
+
+// App-call asset references by ID, alias or built-in name read nothing.
+func TestAppCallForeignAssetsByIDReadNothing(t *testing.T) {
+	network := &liveAssetNetwork{chain: "mainnet", missing: true}
+	app, _ := liveAssetApp(t, network, staleOld)
+
+	_, err := app.AppCallRaw(context.Background(), AppCallRawRequest{
+		AppID: 1, From: liveFrom, AssetRefs: []cmdspec.AssetRef{"900100", "900101", "chips", "usdc"},
+	})
+	if err == nil || strings.Contains(err.Error(), "asset") {
+		t.Fatalf("AppCallRaw() error = %v, want the prepared call to fail at signing", err)
+	}
+	if got := network.count("asset"); got != 0 {
+		t.Fatalf("algod asset reads = %d, want 0", got)
+	}
+	if network.count("params") == 0 {
+		t.Fatal("the app call was not prepared")
+	}
 }

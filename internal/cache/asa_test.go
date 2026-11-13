@@ -94,6 +94,35 @@ func TestResolveASAReferenceRefusesCachedAssetSharingBuiltinAlias(t *testing.T) 
 	}
 }
 
+// A reference that the registry and a cached entry give for the same ID is
+// the registry's: only a name nothing but the cache gave is a cached name.
+func TestMatchASAReferenceReportsHowItMatched(t *testing.T) {
+	cache := ASACache{
+		Assets: map[uint64]ASAInfo{
+			900100:    {Name: "Old Token", UnitName: "OLD", Decimals: 6},
+			31566704:  {Name: "USDC", UnitName: "USDC", Decimals: 6},
+			388592191: {Name: "chips", UnitName: "CHIPS", Decimals: 6},
+		},
+	}
+	for _, tt := range []struct {
+		ref   string
+		id    uint64
+		match ASARefMatch
+	}{
+		{"900100", 900100, ASARefByID},
+		{"old", 900100, ASARefByCachedName},
+		{"Old Token", 900100, ASARefByCachedName},
+		{"usdc", 31566704, ASARefByRegistry},
+		{"chips", 388592191, ASARefByRegistry},
+		{"pepe", 1096015467, ASARefByRegistry},
+	} {
+		id, match, err := cache.MatchASAReference(tt.ref, "mainnet")
+		if err != nil || id != tt.id || match != tt.match {
+			t.Errorf("MatchASAReference(%q) = (%d, %d, %v), want (%d, %d, nil)", tt.ref, id, match, err, tt.id, tt.match)
+		}
+	}
+}
+
 func TestResolveBuiltinASAReferenceAndInfo(t *testing.T) {
 	if id, ok := ResolveBuiltinASAReference("testnet", "USDC"); !ok || id != 10458941 {
 		t.Fatalf("ResolveBuiltinASAReference(testnet, USDC) = (%d, %v), want (10458941, true)", id, ok)

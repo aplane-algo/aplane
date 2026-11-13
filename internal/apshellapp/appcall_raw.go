@@ -196,7 +196,7 @@ func (a *App) resolveAppCallInputs(ctx context.Context, from string, accountRefs
 		accounts = append(accounts, resolved)
 	}
 
-	foreignAssets, err := cmdspec.ResolveForeignAssetIDs(a.Network(), assetRefs, a.eng.ASAResolverForTransaction(ctx))
+	foreignAssets, err := cmdspec.ResolveForeignAssetIDs(a.Network(), assetRefs, a.eng.ASAIDResolverForTransaction(ctx))
 	if err != nil {
 		return "", nil, nil, err
 	}

@@ -327,7 +327,10 @@ is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
 `leaving` (what to keep in each account, in microAlgos or the asset's base
 units), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
 no `note`. An option that is present must have a value: `{leaving: undefined}`
-is an error, not "leave nothing".
+is an error, not "leave nothing". Like the shell command, an ASA `sweep()`
+reads an asset that is not built in from the network, and fails if it cannot;
+`sendAsset()`, `optIn()` and `optOut()` take an asset ID and base units, so
+they convert nothing and use no cached metadata.
 
 It returns `{asset, to, simulated, succeeded, failed, items}`, where each item
 is `{from, amount, txid, confirmed, skipped, error}`. `amount` is what was to

@@ -68,22 +68,30 @@ func BuiltinMetadataByRef(network, ref string) (Metadata, bool) {
 }
 
 func (r Resolver) ResolveID(ref string) (uint64, error) {
+	assetID, _, err := r.MatchID(ref)
+	return assetID, err
+}
+
+// MatchID resolves ref as ResolveID does and reports how it matched: by
+// numeric ID, by the built-in table or a convenience alias, or by a name only
+// the cache gave.
+func (r Resolver) MatchID(ref string) (uint64, cache.ASARefMatch, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return 0, fmt.Errorf("empty asset reference")
+		return 0, 0, fmt.Errorf("empty asset reference")
 	}
 	if assetID, err := strconv.ParseUint(ref, 10, 64); err == nil {
-		return assetID, nil
+		return assetID, cache.ASARefByID, nil
 	}
 	if r.Cache == nil {
 		if assetID, ok, err := asaregistry.ResolveReference(r.Network, ref); err != nil {
-			return 0, err
+			return 0, 0, err
 		} else if ok {
-			return assetID, nil
+			return assetID, cache.ASARefByRegistry, nil
 		}
-		return 0, fmt.Errorf("asset %q not found on %s (no ASA cache available)", ref, r.Network)
+		return 0, 0, fmt.Errorf("asset %q not found on %s (no ASA cache available)", ref, r.Network)
 	}
-	return r.Cache.ResolveASAReference(ref, r.Network)
+	return r.Cache.MatchASAReference(ref, r.Network)
 }
 
 func (r Resolver) ResolveMetadata(ref string) (Metadata, error) {

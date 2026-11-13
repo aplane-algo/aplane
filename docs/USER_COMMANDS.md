@@ -1626,16 +1626,27 @@ In an interactive shell session, execute shell commands by prefixing with `!`:
 | Reference | Description |
 |-----------|-------------|
 | `algo` | Native ALGO currency |
-| `usdc` | ASA by unit name or name (from the built-in table or the cache) |
+| `usdc` | ASA by unit name or name (from the built-in table, a built-in alias such as `chips` on mainnet, or the cache) |
 | `31566704` | ASA by ID |
 
-The ASA cache is a display aid. A command that builds a transaction (`send`,
-`sweep`, `optin`, `optout`, and an app call's `asset=` references) reads an
-asset that is not built in from the network, uses its decimals and names as
-they are there, and corrects the cache entry. When the asset was named by
-unit name or name and no longer carries that name on this network (after a
-LocalNet reset, for example), the command is refused: check the asset and
-run the command again.
+The ASA cache is a display aid; commands that build a transaction do not
+trust it for an asset that is not built in:
+
+- `send` and `sweep` convert an amount, so they read the asset from the
+  network, use its decimals and names as they are there, and correct the
+  cache entry. If the asset cannot be read, the command fails.
+- `optin`, `optout` and an app call's `asset=` references need only the
+  asset ID. Given an ID, a built-in name or a built-in alias, they use that
+  ID without reading the asset to resolve it, so you can opt out of an asset
+  its creator destroyed.
+- A unit name or name that only the cache knows is checked against the
+  network in every one of these commands. If the asset no longer carries that
+  name (after a LocalNet reset, for example), the command is refused, the
+  cache entry is corrected, and you name the asset by its ID or its current
+  name. If the asset cannot be read, give its ID.
+
+A built-in alias names an asset without being one of its on-chain names, so
+it is never refused for not matching them.
 
 ### LogicSig Arguments
 

@@ -141,11 +141,31 @@ func (cache *ASACache) GetASAInfoWithContext(ctx context.Context, algodClient *a
 	return info, nil
 }
 
+// ASARefMatch says how a reference named its asset.
+type ASARefMatch int
+
+const (
+	// ASARefByID is a numeric asset ID.
+	ASARefByID ASARefMatch = iota
+	// ASARefByRegistry is a built-in name or convenience alias from the
+	// reviewed table, including one a cached entry for the same ID shares.
+	ASARefByRegistry
+	// ASARefByCachedName is a unit name or name only a cached entry gave.
+	ASARefByCachedName
+)
+
 // ResolveASAReference resolves an ASA reference (ID or unit name) to an ID
 func (cache *ASACache) ResolveASAReference(asaRef string, network string) (uint64, error) {
+	assetID, _, err := cache.MatchASAReference(asaRef, network)
+	return assetID, err
+}
+
+// MatchASAReference resolves an ASA reference as ResolveASAReference does and
+// reports how it matched.
+func (cache *ASACache) MatchASAReference(asaRef string, network string) (uint64, ASARefMatch, error) {
 	// Try parsing as ID first
 	if asaID, err := strconv.ParseUint(asaRef, 10, 64); err == nil {
-		return asaID, nil
+		return asaID, ASARefByID, nil
 	}
 
 	matches := make(map[uint64]struct{})
@@ -158,21 +178,27 @@ func (cache *ASACache) ResolveASAReference(asaRef string, network string) (uint6
 	// cache: anyone can create an ASA with any name, so a cached asset that
 	// shares a built-in alias makes the reference ambiguous instead of
 	// taking it over.
-	if id, ok, err := asaregistry.ResolveReference(network, asaRef); err != nil {
-		return 0, err
-	} else if ok {
+	id, inRegistry, err := asaregistry.ResolveReference(network, asaRef)
+	if err != nil {
+		return 0, 0, err
+	}
+	if inRegistry {
 		matches[id] = struct{}{}
 	}
 
 	ids := sortedAssetIDs(matches)
 	if len(ids) == 1 {
-		return ids[0], nil
+		// One candidate that the registry gave is the registry's ID.
+		if inRegistry {
+			return ids[0], ASARefByRegistry, nil
+		}
+		return ids[0], ASARefByCachedName, nil
 	}
 	if len(ids) > 1 {
-		return 0, fmt.Errorf("ASA reference '%s' is ambiguous on %s; matches asset IDs %s. Use the ASA ID explicitly", asaRef, network, formatAssetIDList(ids))
+		return 0, 0, fmt.Errorf("ASA reference '%s' is ambiguous on %s; matches asset IDs %s. Use the ASA ID explicitly", asaRef, network, formatAssetIDList(ids))
 	}
 
-	return 0, fmt.Errorf("ASA reference '%s' not found in %s cache or built-ins. Use ASA ID or ensure the asset is cached by using 'info <asa_id>' first", asaRef, network)
+	return 0, 0, fmt.Errorf("ASA reference '%s' not found in %s cache or built-ins. Use ASA ID or ensure the asset is cached by using 'info <asa_id>' first", asaRef, network)
 }
 
 // MatchesReference reports whether ref names the asset by its unit name or
