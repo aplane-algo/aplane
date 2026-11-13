@@ -10,6 +10,7 @@ import (
 	"math"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
@@ -182,6 +183,7 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 			if !errors.Is(err, engine.ErrSimulationFailed) {
 				item.Error = err.Error()
 			}
+			item.Submission = appresult.SubmissionFromError(err)
 			result.FailureCount++
 			result.Items = append(result.Items, item)
 			continue
@@ -814,6 +816,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		LeavingMinimumBalance: leaveMinimumBalance,
 	}
 
+	var submissionFailures []*signing.SubmissionError
 	for _, fromAddress := range fromAddresses {
 		item := SweepItemResult{From: fromAddress, To: toAddress}
 		if fromAddress == toAddress {
@@ -923,6 +926,11 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			} else {
 				item.Error = fmt.Sprintf("transaction failed: %v", err)
 			}
+			item.Submission = appresult.SubmissionFromError(err)
+			var failure *signing.SubmissionError
+			if errors.As(err, &failure) {
+				submissionFailures = append(submissionFailures, failure)
+			}
 			result.FailureCount++
 			result.Items = append(result.Items, item)
 			continue
@@ -940,7 +948,10 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	decorateSweepResult(result)
 
 	if result.FailureCount > 0 && result.SuccessCount == 0 {
-		return result, fmt.Errorf("all %d transaction(s) failed", result.FailureCount)
+		return result, &failedItemsError{
+			msg:      fmt.Sprintf("all %d transaction(s) failed", result.FailureCount),
+			failures: submissionFailures,
+		}
 	}
 	return result, nil
 }

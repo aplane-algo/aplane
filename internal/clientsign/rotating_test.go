@@ -680,6 +680,26 @@ func TestSignAndSubmitRotatingSubmitsCheckedSignedGroup(t *testing.T) {
 		}
 	})
 
+	// A submit call that gets no answer keeps its outcome, and the signed
+	// group's IDs, through the rotating flow's wrapping.
+	t.Run("keeps a lost submission's outcome", func(t *testing.T) {
+		answered, err := run(t, honest, func(w http.ResponseWriter, _ []byte) {
+			if conn, _, hijackErr := w.(http.Hijacker).Hijack(); hijackErr == nil {
+				_ = conn.Close()
+			}
+		})
+		var failure *signing.SubmissionError
+		if !errors.As(err, &failure) || failure.State != signing.SubmissionUnknown {
+			t.Fatalf("err = %v, want an unknown submission outcome", err)
+		}
+		if len(failure.TxIDs) != len(answered.Signed) || failure.TxIDs[0] != answered.TxID {
+			t.Fatalf("TxIDs = %v, want the %d signed transactions, %s first", failure.TxIDs, len(answered.Signed), answered.TxID)
+		}
+		if !strings.HasPrefix(err.Error(), "submit rotating spend "+answered.TxID+": failed to submit transaction") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
 	t.Run("refuses a misreported stage before submitting", func(t *testing.T) {
 		_, err := run(t, func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) *signerapi.RotatingSignResponse {
 			resp := honest(prep, txns)

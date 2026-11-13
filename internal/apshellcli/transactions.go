@@ -66,6 +66,7 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 	for i, item := range result.Items {
 		projection.Items[i] = validateItemProjection{
 			Address: item.Address, TxID: item.TxID, Confirmed: item.Confirmed, Error: item.Error,
+			Submission: item.Submission,
 		}
 	}
 	return newShellCommandResult(func(w io.Writer) error {

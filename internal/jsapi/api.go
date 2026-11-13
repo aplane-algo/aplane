@@ -491,7 +491,7 @@ func (a *API) jsPlugin(call goja.FunctionCall) goja.Value {
 	// Execute the plugin
 	success, message, data, presentation, err := executor.ExecutePlugin(pluginName, args)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("plugin() error: %v", err)))
+		a.throwSubmitError(fmt.Errorf("plugin() error: %w", err))
 	}
 
 	// Return result object
