@@ -108,9 +108,12 @@ func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.Authoriza
 // LogicSig resource dummies and priced program bytes, plus the native-PQ fee
 // contribution. Sweep flows reserve it before choosing a spend-everything
 // amount. The calculation is local and deterministic because this release
-// implements one compiled v42 consensus contract.
+// implements one compiled v42 consensus contract. It reserves for the key
+// that signs for sender, as BuildSigningContext picks it from the cached auth
+// address: a rotating account's own, at any stage.
 func (e *Core) AuthorizationFeeReserve(sender string) (uint64, error) {
-	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
+	authAddr, _ := e.GetAuthAddress(sender)
+	effectiveSigner := e.signingAddressFor(sender, authAddr)
 	profile, ok := e.signerCacheLogicSigResourceProfile(effectiveSigner)
 	isNativeFalcon := e.signerCacheKeyType(effectiveSigner) == nativefalcon.KeyType
 	if !ok && !isNativeFalcon {

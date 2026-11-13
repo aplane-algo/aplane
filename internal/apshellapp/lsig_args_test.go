@@ -32,6 +32,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -46,6 +47,10 @@ var (
 	argsFalcon = types.Address{48}.String() // native Falcon: takes no arguments
 	// argsRekeyed is an ed25519 key rekeyed to argsFalcon on the test node.
 	argsRekeyed = types.Address{49}.String()
+	// argsRotating is a rotating account rekeyed to argsStage on the test
+	// node, a stage the signer never lists.
+	argsRotating = types.Address{50}.String()
+	argsStage    = types.Address{51}.String()
 )
 
 func argsTestKeys() []signerapi.KeyInfo {
@@ -57,6 +62,9 @@ func argsTestKeys() []signerapi.KeyInfo {
 		{Address: argsNative, KeyType: "ed25519"},
 		{Address: argsFalcon, KeyType: "falcon1024"},
 		{Address: argsRekeyed, KeyType: "ed25519"},
+		{Address: argsRotating, KeyType: rotatingkey.RotatingTripleXmssV1, SigningFlow: signerapi.SigningFlowRotating1,
+			LogicSigResources: &signerapi.LogicSigResourceProfile{Default: &signerapi.LogicSigResourceUsage{
+				ProgramBytes: 4_500, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000}}},
 		htlc(argsHTLC), htlc(argsHTLC2),
 		{Address: argsSecret, KeyType: "example.secret.v1", IsGenericLsig: true,
 			SigningArgs: []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", MaxSize: 32}}},
@@ -124,8 +132,11 @@ func newArgsFixture(t *testing.T) *argsFixture {
 		case strings.HasPrefix(r.URL.Path, "/v2/accounts/") && !strings.Contains(strings.TrimPrefix(r.URL.Path, "/v2/accounts/"), "/"):
 			address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
 			account := models.Account{Address: address, Amount: 5_000_000, MinBalance: 100_000, Status: "Offline"}
-			if address == argsRekeyed {
+			switch address {
+			case argsRekeyed:
 				account.AuthAddr = argsFalcon
+			case argsRotating:
+				account.AuthAddr = argsStage
 			}
 			_ = json.NewEncoder(w).Encode(account)
 		default:

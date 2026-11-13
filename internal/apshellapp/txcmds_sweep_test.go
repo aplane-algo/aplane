@@ -306,3 +306,33 @@ func TestSweepSkipsAnAccountWithNothingToSend(t *testing.T) {
 		t.Fatalf("Sweep() = %+v, %v; want the source to fail to be prepared", result, err)
 	}
 }
+
+// A rotating account is reserved for as itself at any stage. The sweep's
+// first build caches its auth address, a stage the signer never lists, and
+// the reserve must still be the account's own profile's, not 0. The reserve
+// read before the sweep, with nothing cached, is that profile's. Its payment
+// goes through the rotating flow, which the test signer does not record, so
+// the amount is checked on the item.
+func TestSweepReservesForARotatingAccountAtAnyStage(t *testing.T) {
+	const balance, leaving, perByte = 5_000_000, 4_930_000, 25
+	f := newArgsFixture(t)
+	f.perByteFee.Store(perByte)
+	reserve, err := f.eng.AuthorizationFeeReserve(argsRotating)
+	if err != nil || reserve == 0 {
+		t.Fatalf("AuthorizationFeeReserve() = %d, %v; want the profile's reserve", reserve, err)
+	}
+	left := uint64(leaving)
+	result, _ := f.app.Sweep(context.Background(), SweepRequest{
+		AssetRef: "algo", FromRaw: []string{argsRotating}, ToRaw: "dest", LeavingRaw: &left, Wait: true,
+	})
+	if result == nil || len(result.Items) != 1 || result.Items[0].SkippedReason != "" || result.Items[0].Amount.Raw == 0 {
+		t.Fatalf("Sweep() result = %+v", result)
+	}
+	if auth, _ := f.eng.GetAuthAddress(argsRotating); auth != argsStage {
+		t.Fatalf("cached auth address = %q, want the stage %s", auth, argsStage)
+	}
+	fee := f.suggestedFee(t, argsRotating, balance-leaving, perByte)
+	if got := result.Items[0].Amount.Raw + fee + reserve; got != balance-leaving {
+		t.Fatalf("amount %d + fee %d + reserve %d = %d, want %d", result.Items[0].Amount.Raw, fee, reserve, got, balance-leaving)
+	}
+}
