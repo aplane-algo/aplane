@@ -462,3 +462,97 @@ func TestPlanningRefusesAMissingRequiredUnsizedArgument(t *testing.T) {
 		t.Fatalf("component request without the argument: err = %v, want bad request %q", err, missing)
 	}
 }
+
+// LogicSig arguments go to a program, and a native key has none: a request
+// that sends lsig_args for a key whose record says it is native (ed25519 or
+// native Falcon) is refused with a bad request, on /plan and /sign, which plan
+// alike, and on /sign/component for a held contextual position, before
+// anything is planned or approved. A LogicSig key's arguments, and a native
+// key sent none, plan as before; a key whose record names no category is
+// left to signing.
+func TestPlanningRefusesLsigArgsForANativeKey(t *testing.T) {
+	falcon, ed25519Key, lsig, unrecorded := types.Address{7}, types.Address{8}, types.Address{9}, types.Address{10}
+	service, authorizer, txn := frozenBoundedTestServiceWith(t, 4_500, map[string]string{
+		falcon.String(): nativefalcon.KeyType, ed25519Key.String(): "ed25519",
+		lsig.String(): "aplane.test-generic.v1", unrecorded.String(): "ed25519",
+	})
+	baseSnapshot := service.Planner.Snapshot
+	service.Planner.Snapshot = func() PlannerRuntimeSnapshot {
+		snapshot := baseSnapshot()
+		snapshot.KeyMetadata = maps.Clone(snapshot.KeyMetadata)
+		snapshot.KeyMetadata[falcon.String()] = PlannerKeyMetadata{Category: "native_pq"}
+		snapshot.KeyMetadata[ed25519Key.String()] = PlannerKeyMetadata{Category: "ed25519"}
+		snapshot.KeyMetadata[lsig.String()] = PlannerKeyMetadata{
+			Category:          lsigprovider.CategoryGenericLsig,
+			LogicSigResources: &lsigresource.Profile{ProgramBytes: 100, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}},
+			SigningArgs:       []lsigprovider.RuntimeArgDef{{Name: "preimage", Type: "bytes", MaxSize: 64}},
+		}
+		return snapshot
+	}
+	positionTxn := func(sender types.Address) types.Transaction {
+		return types.Transaction{
+			Type:             types.PaymentTx,
+			Header:           types.Header{Sender: sender, Fee: 1_000, FirstValid: 1, LastValid: 10, GenesisHash: txn.GenesisHash},
+			PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{3}, Amount: 1},
+		}
+	}
+	preimage := map[string]string{"preimage": "6f70656e"}
+	groupRequest := func(position types.Address, lsigArgs map[string]string) signerapi.GroupSignRequest {
+		return signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+			{AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)},
+			{AuthAddress: position.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(positionTxn(position)), LsigArgs: lsigArgs},
+		}}
+	}
+	refusal := func(position types.Address) string {
+		return "transaction 2: lsig_args were given for " + position.String()
+	}
+	const native = "key is native and takes no LogicSig arguments"
+	wantRefused := func(endpoint string, position types.Address, err *ServiceError) {
+		t.Helper()
+		if err == nil || err.Kind != ErrorBadRequest || !strings.HasPrefix(err.Message, refusal(position)) || !strings.HasSuffix(err.Message, native) {
+			t.Fatalf("%s with lsig_args for native %s: err = %v, want bad request %q...%q", endpoint, position, err, refusal(position), native)
+		}
+	}
+
+	for _, position := range []types.Address{falcon, ed25519Key} {
+		_, err := service.Planner.PlanGroup(groupRequest(position, preimage))
+		wantRefused("/sign", position, err)
+		_, err = service.Planner.PreviewGroup(groupRequest(position, preimage))
+		wantRefused("/plan", position, err)
+		if _, err := service.Planner.PlanGroup(groupRequest(position, nil)); err != nil {
+			t.Fatalf("/sign for native %s without lsig_args: %v", position, err)
+		}
+	}
+	for _, position := range []types.Address{lsig, unrecorded} {
+		if _, err := service.Planner.PlanGroup(groupRequest(position, preimage)); err != nil {
+			t.Fatalf("/sign with lsig_args for %s, not recorded as native: %v", position, err)
+		}
+	}
+
+	// /sign/component: a held contextual position is sized from the
+	// signer's records, and so is checked as /plan checked it.
+	planned, planErr := service.Planner.PlanGroup(groupRequest(falcon, nil))
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+	request := func(lsigArgs map[string]string) signerapi.ComponentRequest {
+		componentRequest := signerapi.ComponentRequest{
+			Targets: []signerapi.ComponentTarget{{
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+			}},
+			ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1, AuthAddress: falcon.String(), LsigArgs: lsigArgs}},
+		}
+		for i, plannedTxn := range planned.AllTxns {
+			componentRequest.GroupBytesHex = append(componentRequest.GroupBytesHex, txnutil.EncodeWithPrefixHex(plannedTxn))
+			if i > 1 {
+				componentRequest.DummyPositions = append(componentRequest.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+			}
+		}
+		return componentRequest
+	}
+	if _, _, err := service.ValidateFrozenComponentContext(request(nil)); err != nil {
+		t.Fatalf("/sign/component without lsig_args: %v", err)
+	}
+	_, _, err := service.ValidateFrozenComponentContext(request(preimage))
+	wantRefused("/sign/component", falcon, err)
+}
