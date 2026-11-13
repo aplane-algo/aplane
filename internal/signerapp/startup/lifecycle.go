@@ -24,11 +24,12 @@ type LifecycleService struct {
 
 // ErrStillRunning marks a stop that gave up waiting for its service's own
 // work, which is still running but uses neither the audit log nor key
-// material outside a key use, so teardown may go on: lifecycle records the
-// stop as incomplete and still destroys the runtime (which waits for key
-// uses) and closes the audit log. A stop that returns the shutdown context's
-// deadline error instead means a request handler may still be using both, so
-// lifecycle skips teardown.
+// material outside a key use, so teardown may go on. Like any stop error
+// other than the shutdown context's deadline error, it makes lifecycle record
+// the stop as incomplete and still tear down: wait for key uses, close the
+// audit log and zero the keyring. It must not wrap the deadline error, which
+// means a request handler may still be using both, so lifecycle skips
+// teardown.
 var ErrStillRunning = errors.New("still running")
 
 // ServerAuditLogger captures the shutdown hooks needed for audit shutdown.
@@ -127,7 +128,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		}
 		if err := svc.Stop(shutdownCtx); err != nil {
 			shutdownErrors = append(shutdownErrors, svc.Name+": "+err.Error())
-			if !errors.Is(err, ErrStillRunning) && errors.Is(err, context.DeadlineExceeded) {
+			if errors.Is(err, context.DeadlineExceeded) {
 				handlersMayBeRunning = true
 			}
 			if plan.Warn != nil {
@@ -153,17 +154,13 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	}
 
 	// No request handler is running, but a background key user (a stage
-	// table derivation, a key export) may still hold key material. Destroy
-	// refuses new key uses, waits for the registered ones with a deadline of
-	// its own, so other services' stops cannot use up its wait, and zeroes the
-	// keyring whether or not they released.
+	// table derivation, a key export) may still hold key material.
+	// EndKeyUses refuses new key uses and waits for the registered ones with
+	// a deadline of its own, so other services' stops cannot use up its wait.
 	keyUseInFlight := false
 	if plan.ProductRuntime != nil {
-		if plan.Info != nil {
-			plan.Info("zeroing cached keys and the keyring")
-		}
 		drainCtx, cancelDrain := context.WithTimeout(context.Background(), timeout)
-		err := plan.ProductRuntime.Destroy(drainCtx)
+		err := plan.ProductRuntime.EndKeyUses(drainCtx)
 		cancelDrain()
 		if err != nil {
 			keyUseInFlight = true
@@ -174,6 +171,8 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		}
 	}
 
+	// The stop is recorded before Destroy, which takes locks without a bound:
+	// a key operation stalled inside one must not cost the record.
 	if plan.AuditLog != nil {
 		if len(shutdownErrors) == 0 {
 			plan.AuditLog.LogServerStop()
@@ -187,6 +186,14 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		} else {
 			_ = plan.AuditLog.Close()
 		}
+	}
+
+	// The keyring is zeroed whether or not every key user released.
+	if plan.ProductRuntime != nil {
+		if plan.Info != nil {
+			plan.Info("zeroing cached keys and the keyring")
+		}
+		plan.ProductRuntime.Destroy()
 	}
 
 	if plan.Info != nil {

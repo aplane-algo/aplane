@@ -1818,28 +1818,32 @@ All service stops share one 5 s shutdown deadline.
    outside a key use, so its stop reports `ErrStillRunning`: the stop is
    incomplete, but teardown goes on and the worker is left to the process
    exit.
-5. Call `Destroy(ctx)` on the product runtime, with a 5 s deadline of its own:
+5. Call `EndKeyUses(ctx)` on the product runtime, with a 5 s deadline of its
+   own:
    - `StopKeyWatcher()` — prevents new reloads.
    - refuse every new key use (`KeyUseContext` returns a cancelled context, as
      while locked; the signer is not locked, which would run the lock cleanup
      and its unbounded drain).
    - drain the registered key users, as a lock does, but only until the
-     deadline, then take the passphrase lock, so a lock cleanup racing
-     shutdown cannot interleave.
+     deadline.
+6. Write `SERVER_STOP`, or `SERVER_STOP_INCOMPLETE` naming every incomplete
+   stop, and close the audit log. Everything up to here is bounded, so the
+   record is written before the step that is not.
+7. Call `Destroy()` on the product runtime:
+   - take the passphrase lock, so a lock cleanup racing shutdown cannot
+     interleave.
    - `keySession.Destroy()` — drain in-flight key retrieval operations.
    - `keyStore.ClearKeys()` — zero every term key.
    The passphrase, session and keystore cache locks are taken without a
    bound, so a key operation stalled inside one (a hung filesystem) still
-   holds shutdown.
-6. Write `SERVER_STOP`, or `SERVER_STOP_INCOMPLETE` naming every incomplete
-   stop, and close the audit log.
+   holds shutdown, after its stop record.
 
 A key user that still holds key material at the drain deadline decrypted its
 own copy under the read locks that `keySession.Destroy()` and `ClearKeys()`
 wait for, so the session and keyring are cleared under it without disturbing
 it, and any load it starts afterward fails as locked. Its copy is zeroed when
 it releases or is reclaimed by the operating system at the exit that follows.
-`Destroy` reports it, and lifecycle writes `SERVER_STOP_INCOMPLETE` instead of
+`EndKeyUses` reports it, and lifecycle writes `SERVER_STOP_INCOMPLETE` instead of
 `SERVER_STOP` and leaves the audit log open for that user's final record (a
 key export writes one), after flushing its pending rate-limited summaries,
 which a close would have written.

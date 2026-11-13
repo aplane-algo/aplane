@@ -16,6 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -401,10 +402,8 @@ func TestShutdownEndsTheStartContextsBeforeAnyStop(t *testing.T) {
 }
 
 // A stop reporting ErrStillRunning is recorded as incomplete and teardown
-// goes on, even when its error also carries a context deadline, which on its
-// own means a handler may still run and teardown is skipped. The final line
-// says the shutdown was incomplete; it once said "shutdown complete" after
-// any stop error.
+// goes on. The final line says the shutdown was incomplete; it once said
+// "shutdown complete" after any stop error.
 func TestShutdownTearsDownPastAServiceStillRunning(t *testing.T) {
 	t.Parallel()
 
@@ -415,7 +414,7 @@ func TestShutdownTearsDownPastAServiceStillRunning(t *testing.T) {
 	shutdownLifecycle([]LifecycleService{{
 		Name: "rotating stage table worker",
 		Stop: func(ctx context.Context) error {
-			return fmt.Errorf("%w at the shutdown deadline: %w", ErrStillRunning, context.DeadlineExceeded)
+			return fmt.Errorf("%w at the shutdown deadline", ErrStillRunning)
 		},
 	}}, LifecyclePlan{
 		ProductRuntime: ir,
@@ -438,5 +437,89 @@ func TestShutdownTearsDownPastAServiceStillRunning(t *testing.T) {
 	mu.Unlock()
 	if !strings.HasPrefix(last, "shutdown finished incomplete: rotating stage table worker") {
 		t.Fatalf("final shutdown line = %q, want it to say the shutdown was incomplete", last)
+	}
+}
+
+// A stop error carrying the shutdown deadline skips teardown even when it
+// also reports ErrStillRunning: a handler may still run. ErrStillRunning
+// once overrode the deadline here.
+func TestShutdownSkipsTeardownForADeadlineEvenWithErrStillRunning(t *testing.T) {
+	t.Parallel()
+
+	ir := newLifecycleTestRuntime(t)
+	audit := &lifecycleAuditRecorder{}
+	shutdownLifecycle([]LifecycleService{{
+		Name: "HTTP server",
+		Stop: func(context.Context) error {
+			return fmt.Errorf("%w: %w", ErrStillRunning, context.DeadlineExceeded)
+		},
+	}}, LifecyclePlan{ProductRuntime: ir, AuditLog: audit})
+
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatal("the runtime was destroyed after a stop that reported the shutdown deadline")
+	}
+	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || closed {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want an incomplete record and an open logger", stopped, incompleteReason, closed)
+	}
+}
+
+// The stop is recorded before the keyring is zeroed, which takes locks
+// without a bound: here a reload holds the passphrase lock the zeroing
+// needs, and the record is already written while the zeroing waits. The
+// record was once written only after the zeroing returned, so a key
+// operation stalled inside one of those locks left no record at all.
+func TestShutdownRecordsTheStopBeforeZeroing(t *testing.T) {
+	t.Parallel()
+
+	ir := newLifecycleTestRuntime(t)
+	reloading := make(chan struct{})
+	releaseReload := make(chan struct{})
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		close(reloading)
+		<-releaseReload
+		return nil, nil
+	})
+	reloaded := make(chan struct{})
+	go func() {
+		defer close(reloaded)
+		_, _ = ir.Reload()
+	}()
+	<-reloading
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseReload) }) }
+	t.Cleanup(func() { release(); <-reloaded })
+
+	audit := &lifecycleAuditRecorder{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		shutdownLifecycle(nil, LifecyclePlan{ProductRuntime: ir, ShutdownTimeout: time.Second, AuditLog: audit})
+	}()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if stopped, _, closed := audit.snapshot(); stopped && closed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no stop record while the zeroing waited for a lock")
+		}
+	}
+	select {
+	case <-done:
+		t.Fatal("shutdown finished while the reload held the passphrase lock")
+	default:
+	}
+	release()
+	waitDone(t, done)
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("runtime key session error = %v, want ErrStoreLocked once the reload released the lock", err)
+	}
+}
+
+func waitDone(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown did not finish")
 	}
 }

@@ -239,8 +239,9 @@ func TestDestroyRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
 
 		close(start)
 		destroyCtx, endDestroy := context.WithTimeout(context.Background(), keyUseTestTimeout)
-		err := ir.Destroy(destroyCtx)
+		err := ir.EndKeyUses(destroyCtx)
 		endDestroy()
+		ir.Destroy()
 		n := holding.Load()
 		endRound()
 		wg.Wait()
@@ -269,7 +270,7 @@ func TestDestroyRefusesAKeyUseWhileItDrains(t *testing.T) {
 	requireLive(t, held, "key use registered before shutdown")
 
 	destroyed := make(chan error, 1)
-	go func() { destroyed <- ir.Destroy(context.Background()) }()
+	go func() { destroyed <- ir.EndKeyUses(context.Background()) }()
 	waitClosed(t, held.Done(), "Destroy to cancel the registered key use")
 
 	ctx, release := ir.KeyUseContext(context.Background())

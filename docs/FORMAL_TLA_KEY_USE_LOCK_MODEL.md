@@ -98,14 +98,15 @@ for each.
   too changes only what is recorded, and `SReturn` leaves it out.
 - A check and the release it guards are one step (`SReturn`, `EDeliver`), for
   the reason above.
-- Shutdown (`Runtime.Destroy`) is not modeled; the process exits right after
-  it. `startup/lifecycle.go` skips the teardown when a request handler may
-  still run. Otherwise `Destroy` first makes `KeyUseContext` refuse every new
-  key use (its `destroyed` flag, set under `keyUseMu`, so a registration lands
-  wholly before it and is drained, or after it and is refused, as with
-  `RegisterChecksLock`), without locking the signer. It then drains the
-  registered key users as a lock does (`drainKeyUsers`), but only until its
-  deadline, and clears the session whether or not they released. A holder
+- Shutdown (`Runtime.EndKeyUses`, then `Runtime.Destroy`) is not modeled; the
+  process exits right after it. `startup/lifecycle.go` skips the teardown when
+  a request handler may still run. Otherwise `EndKeyUses` first makes
+  `KeyUseContext` refuse every new key use (its `destroyed` flag, set under
+  `keyUseMu`, so a registration lands wholly before it and is drained, or
+  after it and is refused, as with `RegisterChecksLock`), without locking the
+  signer. It then drains the registered key users as a lock does
+  (`drainKeyUsers`), but only until its deadline, and `Destroy` clears the
+  session whether or not they released. A holder
   still running then (the stage table worker, an export) keeps its own
   decrypted copy, which no clear can reach, until it releases or the process
   exits, and lifecycle records `SERVER_STOP_INCOMPLETE`.

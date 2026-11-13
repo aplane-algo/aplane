@@ -13,7 +13,9 @@ import (
 
 // settingNotDurableWarningPrefix starts the warning for a setting change that
 // is in effect but whose save the signer could not confirm durable
-// (applied_not_durable). It stays until the next key on the admin panel.
+// (applied_not_durable). It names the setting, not the value, which the
+// panel shows as stored. It is shown only on the admin panel and stays until
+// the next key there.
 const settingNotDurableWarningPrefix = "Setting in effect, durability not confirmed: "
 
 // handleAdminPanelKeys handles keyboard input on the admin panel screen.

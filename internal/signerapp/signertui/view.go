@@ -646,8 +646,9 @@ func (m Model) renderStatusBar() string {
 		parts = append(parts, statusConnectedStyle.Render(m.lastNotice))
 	}
 
-	// Warning if any
-	if m.lastWarning != "" {
+	// Warning if any. A setting's durability warning belongs to the admin
+	// panel and shows only there.
+	if m.lastWarning != "" && (m.viewState == ViewAdminPanel || !strings.HasPrefix(m.lastWarning, settingNotDurableWarningPrefix)) {
 		parts = append(parts, warningStyle.Render("Warning: "+m.lastWarning))
 	}
 

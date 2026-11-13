@@ -1244,8 +1244,9 @@ signer settings and status:
 
 After a setting change, success or failure, the panel re-reads the settings,
 so a change that took effect with its durability unconfirmed
-(`applied_not_durable`) shows its new value, with a warning, not an update
-failure, that stays until the next key on the panel.
+(`applied_not_durable`) shows its stored value, with a warning naming the
+setting, not an update failure, that shows only on the panel and stays until
+the next key there.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

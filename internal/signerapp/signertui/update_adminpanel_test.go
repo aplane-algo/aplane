@@ -186,7 +186,7 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
 		Error: "user_auto_approve is set to true and in effect, but its durability is not confirmed: file replaced, but its directory sync failed: injected",
 	})
-	want := "Setting in effect, durability not confirmed: user_auto_approve = true"
+	want := "Setting in effect, durability not confirmed: user_auto_approve"
 	if got := next.(Model); got.lastError != "" || got.lastWarning != want {
 		t.Fatalf("lastError = %q, lastWarning = %q; want no error and the warning %q", got.lastError, got.lastWarning, want)
 	}
@@ -258,5 +258,27 @@ func TestSettingNotDurableWarningStaysUntilTheNextAdminPanelKey(t *testing.T) {
 	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyDown})
 	if got := next.(Model).lastWarning; got != "" {
 		t.Fatalf("warning after the next admin panel key = %q, want it cleared", got)
+	}
+}
+
+// The durability warning names the setting, not the echoed request value,
+// which can differ from what the signer stored (a theme is lower-cased), and
+// it shows only on the admin panel, not in the status line of a view the
+// operator moved to before the result arrived.
+func TestSettingNotDurableWarningShowsOnlyOnTheAdminPanel(t *testing.T) {
+	m := approvalTestModel(ViewKeyList)
+	next, _ := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingTheme, Value: "Dark", Code: protocol.ResultCodeAppliedNotDurable,
+	})
+	m = next.(Model)
+	if strings.Contains(m.lastWarning, "Dark") {
+		t.Fatalf("warning = %q, want it without the echoed value", m.lastWarning)
+	}
+	if bar := m.renderStatusBar(); strings.Contains(bar, "durability not confirmed") {
+		t.Fatalf("status bar on the key list = %q, want no durability warning there", bar)
+	}
+	m.viewState = ViewAdminPanel
+	if bar := m.renderStatusBar(); !strings.Contains(bar, "durability not confirmed: theme") {
+		t.Fatalf("status bar on the admin panel = %q, want the durability warning", bar)
 	}
 }

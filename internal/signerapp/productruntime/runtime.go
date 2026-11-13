@@ -94,7 +94,7 @@ type Runtime struct {
 	keyUseCtx    context.Context
 	keyUseCancel context.CancelFunc
 	keyUsers     sync.WaitGroup
-	// destroyed is set under keyUseMu when Destroy begins. From then on
+	// destroyed is set under keyUseMu when EndKeyUses begins. From then on
 	// KeyUseContext refuses every key use as it does while locked, since
 	// shutdown does not lock the signer.
 	destroyed bool
@@ -1141,7 +1141,7 @@ const keyUseDrainWarnAfter = 5 * time.Second
 // returned context is cancelled the moment the signer locks, and release must
 // be called once the caller holds no key material; Lock waits for every
 // registered user to release before it clears the session. While the signer
-// is locked, and once Destroy has begun, the returned context is already
+// is locked, and once EndKeyUses has begun, the returned context is already
 // cancelled and release is a no-op.
 func (ir *Runtime) KeyUseContext(parent context.Context) (context.Context, func()) {
 	if parent == nil {
@@ -1177,7 +1177,7 @@ func (ir *Runtime) KeyUseContext(parent context.Context) (context.Context, func(
 // locks, without registering a key user: Lock does not wait for it. It is
 // for work that must stop at lock but holds no key material, such as a
 // background pass's chain reads and pacing sleeps. While the signer is
-// locked, and once Destroy has begun, the returned context is already
+// locked, and once EndKeyUses has begun, the returned context is already
 // cancelled.
 func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
@@ -1202,10 +1202,10 @@ func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, c
 // drainKeyUsers cancels every key user's context and waits for them to
 // release their key material. Its caller has already made KeyUseContext
 // refuse new users, so none can register meanwhile: a lock runs it inside the
-// lock transition, after the state is locked, and Destroy after setting
+// lock transition, after the state is locked, and EndKeyUses after setting
 // destroyed. A lock gives it a context that never ends and waits for as long
 // as it takes, printing warning if that is more than keyUseDrainWarnAfter.
-// Only Destroy bounds the wait; drainKeyUsers reports whether every user had
+// Only EndKeyUses bounds the wait; drainKeyUsers reports whether every user had
 // released by the time ctx ended.
 func (ir *Runtime) drainKeyUsers(ctx context.Context, warning string) bool {
 	ir.keyUseMu.Lock()
@@ -1424,34 +1424,42 @@ func (ir *Runtime) StopKeyWatcher() {
 
 // --- Shutdown ---
 
-// ErrKeyUseInFlight reports a shutdown that cleared the session and zeroed
-// the keyring while a key user still held its own copy of key material.
+// ErrKeyUseInFlight reports a key user that still held its own copy of key
+// material when EndKeyUses stopped waiting for it.
 var ErrKeyUseInFlight = errors.New("a key use still held key material at the shutdown deadline")
 
-// Destroy cleans up the product runtime for shutdown. It first makes
-// KeyUseContext refuse every new key use, as a lock does, without locking the
-// signer (which would run the lock cleanup and its unbounded drain). Then, like
-// a lock, it cancels the registered key users and waits for them to release
-// their key material, but only until ctx ends, since the process exits right
-// after. Then it clears the session and zeroes the keyring under the
-// passphrase lock, so a lock cleanup racing shutdown (an admin session closing
-// on its way out) cannot interleave with it. Those locks, the session's and
-// the keystore's are taken without a bound: a holder stalled inside one (a
-// decryption on a hung filesystem) still holds shutdown.
-//
-// Clearing them under a key user that has not released is safe: the user
-// decrypted its own copy (FileKeyStore.Get, WithKeyring) under the read lock
-// that ClearKeys and the session's Destroy wait for, so it keeps working on
-// that copy, and any load it starts afterward fails as locked. Its copy is
-// zeroed when it releases, or reclaimed by the operating system at the
-// process exit that follows; Destroy then returns ErrKeyUseInFlight so
-// shutdown does not record a complete stop.
-func (ir *Runtime) Destroy(ctx context.Context) error {
+// EndKeyUses is the bounded first step of shutdown. It stops the key watcher
+// and makes KeyUseContext refuse every new key use, as a lock does, without
+// locking the signer (which would run the lock cleanup and its unbounded
+// drain). Then, like a lock, it cancels the registered key users and waits for
+// them to release their key material, but only until ctx ends, since the
+// process exits right after. It returns ErrKeyUseInFlight if one had not
+// released by then. Destroy follows it.
+func (ir *Runtime) EndKeyUses(ctx context.Context) error {
 	ir.StopKeyWatcher()
 	ir.keyUseMu.Lock()
 	ir.destroyed = true
 	ir.keyUseMu.Unlock()
-	drained := ir.drainKeyUsers(ctx, "")
+	if !ir.drainKeyUsers(ctx, "") {
+		return ErrKeyUseInFlight
+	}
+	return nil
+}
+
+// Destroy clears the session and zeroes the keyring for shutdown, after
+// EndKeyUses. It takes the passphrase lock, so a lock cleanup racing shutdown
+// (an admin session closing on its way out) cannot interleave with it. That
+// lock, the session's and the keystore's are taken without a bound: a holder
+// stalled inside one (a decryption on a hung filesystem) holds Destroy, so
+// shutdown records its stop before calling it.
+//
+// Clearing them under a key user that EndKeyUses gave up on is safe: the user
+// decrypted its own copy (FileKeyStore.Get, WithKeyring) under the read lock
+// that ClearKeys and the session's Destroy wait for, so it keeps working on
+// that copy, and any load it starts afterward fails as locked. Its copy is
+// zeroed when it releases, or reclaimed by the operating system at the
+// process exit that follows.
+func (ir *Runtime) Destroy() {
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
 	if ir.keySession != nil {
@@ -1460,17 +1468,13 @@ func (ir *Runtime) Destroy(ctx context.Context) error {
 	if ir.keyStore != nil {
 		ir.keyStore.ClearKeys()
 	}
-	if !drained {
-		return ErrKeyUseInFlight
-	}
-	return nil
 }
 
 // --- Internal ---
 
 func (ir *Runtime) performLockCleanup() {
 	// Watcher stays running — it will mark dirty instead of reloading while locked.
-	// StopKeyWatcher is only called on shutdown via Destroy().
+	// StopKeyWatcher is only called on shutdown via EndKeyUses().
 
 	// Background holders of key material go first, so clearing the session
 	// below really is the end of every copy of a seed.

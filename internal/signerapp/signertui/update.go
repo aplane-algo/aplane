@@ -651,8 +651,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case msg.Code == protocol.ResultCodeAppliedNotDurable:
 			// Saved and in effect; only its durability is unconfirmed. The
-			// warning stays until the next key on the admin panel.
-			m.setPersistentWarning(settingNotDurableWarningPrefix + msg.Key + " = " + msg.Value)
+			// warning stays until the next key on the admin panel, which
+			// shows the stored value once the settings are re-read.
+			m.setPersistentWarning(settingNotDurableWarningPrefix + msg.Key)
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
 		}
