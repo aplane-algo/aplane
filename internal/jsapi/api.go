@@ -18,7 +18,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/dop251/goja"
 
@@ -284,9 +286,16 @@ func (a *API) RegisterAll(vm *goja.Runtime) error {
 // nor the error it throws would reach the script. The call itself is not cut
 // short: it ends on its own terms, under the cancelled context, and when it
 // ends after the cancellation its outcome is printed on the script's output.
+//
+// A call made once the context is already cancelled, in the moment before
+// the interrupt reaches the script, is not run: it throws at once and prints
+// nothing, so a loop that catches errors cannot fill the output.
 func (a *API) hostCall(name string, fn func(goja.FunctionCall) goja.Value) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) (returned goja.Value) {
 		ctx := a.Context()
+		if err := ctx.Err(); err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("%s() not run: the script was interrupted (%v)", name, err)))
+		}
 		defer func() {
 			if ctx.Err() == nil {
 				return
@@ -314,11 +323,28 @@ func thrownMessage(thrown interface{}) string {
 	}
 }
 
+// reportedValueLimit caps how much of a value hostCall prints: a host call can
+// return hundreds of accounts or a group's signed transaction bytes.
+const reportedValueLimit = 256
+
+// reportedValue renders v as one line of JSON (or its string form when it has
+// none), cut at reportedValueLimit bytes with a marker giving the full size.
 func reportedValue(v goja.Value) string {
+	var text string
 	if data, err := json.Marshal(v.Export()); err == nil {
-		return string(data)
+		text = string(data)
+	} else {
+		text = v.String()
 	}
-	return v.String()
+	text = strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(text)
+	if len(text) <= reportedValueLimit {
+		return text
+	}
+	cut := reportedValueLimit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s... (truncated: %d of %d bytes shown)", text[:cut], cut, len(text))
 }
 
 // output helper for internal use.

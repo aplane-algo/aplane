@@ -63,15 +63,17 @@ func (r *GojaRunner) Run(code string) (result Result, err error) {
 
 // RunWithContext executes JavaScript code and makes ctx available to host-side
 // API calls made by the script. Cancelling ctx interrupts the script at its
-// next instruction and the run returns an error wrapping ctx.Err(). A host
-// call running at that moment is not stopped: it ends on its own terms, under
-// the same cancelled context, and the API reports its outcome on the output.
+// next instruction. A host call running at that moment is not stopped: it
+// ends on its own terms, under the same cancelled context, and the API
+// reports its outcome on the output. A run that ends while ctx is cancelled
+// returns an error wrapping ctx.Err() whatever ended it, the interrupt or an
+// error of the script's own, such as that host call's; see interruptedError.
 func (r *GojaRunner) RunWithContext(ctx context.Context, code string) (result Result, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, fmt.Errorf("script interrupted: %w", err)
+		return Result{}, interruptedError(err, nil)
 	}
 	r.emitStartupWarning()
 	restoreCtx := r.api.SetContext(ctx)
@@ -82,6 +84,15 @@ func (r *GojaRunner) RunWithContext(ctx context.Context, code string) (result Re
 	verbose := state.verbose
 	simulate := state.simulate
 	defer r.api.RestoreModeState(writeMode, verbose, simulate)
+
+	// Deferred before the recover below, so it runs after it and also sees
+	// an error made from a panic.
+	defer func() {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			result = Result{}
+			err = interruptedError(ctxErr, err)
+		}
+	}()
 
 	defer func() {
 		recovered := recover()
@@ -105,10 +116,6 @@ func (r *GojaRunner) RunWithContext(ctx context.Context, code string) (result Re
 	// Deferred, so a Go panic out of a host call also ends the watcher.
 	defer r.interruptOnCancel(ctx)()
 	value, err := r.vm.RunString(code)
-	var interrupted *goja.InterruptedError
-	if errors.As(err, &interrupted) && ctx.Err() != nil {
-		return Result{}, fmt.Errorf("script interrupted: %w", ctx.Err())
-	}
 	if err != nil {
 		// Convert Goja exceptions to regular errors with clean messages
 		if jsErr, ok := err.(*goja.Exception); ok {
@@ -194,6 +201,19 @@ func (r *GojaRunner) interruptOnCancel(ctx context.Context) (stop func()) {
 		<-watcherDone
 		r.vm.ClearInterrupt()
 	}
+}
+
+// interruptedError is the error of a run that ended while its context was
+// cancelled. It wraps ctxErr, so errors.Is reports the cancellation to callers
+// that print "Interrupted" for it. When the script's own error ended the run
+// before the interrupt did (a host call failing under the cancelled context,
+// say), it wraps that error as well and keeps its text.
+func interruptedError(ctxErr, scriptErr error) error {
+	var interrupted *goja.InterruptedError
+	if scriptErr == nil || errors.As(scriptErr, &interrupted) {
+		return fmt.Errorf("script interrupted: %w", ctxErr)
+	}
+	return fmt.Errorf("script interrupted: %w; the script ended with: %w", ctxErr, scriptErr)
 }
 
 // Runtime returns the underlying Goja runtime.

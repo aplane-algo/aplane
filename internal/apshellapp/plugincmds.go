@@ -6,7 +6,9 @@ package apshellapp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
@@ -41,88 +43,54 @@ func ValidatePluginExecuteResult(result *jsonrpc.ExecuteResult) error {
 	return validatePluginResult(result)
 }
 
-func normalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) ([]string, error) {
+func normalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) []string {
 	if plugin == nil {
-		return args, nil
+		return args
 	}
 	if manifestCmd := plugin.Manifest.FindCommand(commandName); manifestCmd != nil && len(manifestCmd.ArgSpecs) > 0 {
 		normalized, err := normalizePluginAddressArgs(manifestCmd.ArgSpecs, args)
 		if err != nil {
-			return nil, fmt.Errorf("plugin '%s' command '%s': arg_specs: %w", plugin.Manifest.Name, commandName, err)
+			// Normalization only uppercases addresses, so a spec it cannot
+			// read is no reason to refuse the command.
+			logger().Debug("plugin arg_specs unreadable; the arguments from there on are passed as typed",
+				"plugin", plugin.Manifest.Name, "command", commandName, "error", err)
 		}
-		return normalized, nil
+		return normalized
 	}
-	return args, nil
+	return args
 }
 
 // NormalizePluginCommandArgs normalizes plugin arguments using the app-owned ArgSpec rules.
-func NormalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) ([]string, error) {
+func NormalizePluginCommandArgs(plugin *discovery.Plugin, commandName string, args []string) []string {
 	return normalizePluginCommandArgs(plugin, commandName, args)
 }
 
+var pluginAddressArg = regexp.MustCompile(`^[A-Za-z2-7]{58}$`)
+
 // normalizePluginAddressArgs uppercases the arguments the specs declare as
-// addresses. Discovery refuses a manifest whose branches this would trip on
-// (manifest.validateArgSpecs); the checks here keep specs that did not come
-// through discovery from panicking.
+// addresses, reading branches with cmdspec.ArgSpecAt as completion does. At a
+// branch it cannot read it stops and returns the reason: that argument and
+// those after it stay as typed.
 func normalizePluginAddressArgs(specs []cmdspec.ArgSpec, args []string) ([]string, error) {
-	if len(specs) == 0 || len(args) == 0 {
-		return args, nil
-	}
-
-	result := make([]string, len(args))
-	copy(result, args)
-
-	addrPattern := regexp.MustCompile(`^[A-Za-z2-7]{58}$`)
-
-	currentSpecs := specs
-	currentOffset := 0
-
-	for i := 0; i < len(args); i++ {
-		specIdx := i - currentOffset
-		if specIdx >= len(currentSpecs) {
-			break
+	result := slices.Clone(args)
+	for i := range result {
+		spec, err := cmdspec.ArgSpecAt(specs, args, i)
+		if err != nil {
+			return result, err
 		}
-
-		spec := currentSpecs[specIdx]
-
-		if len(spec.Branches) > 0 {
-			var matchedBranch *cmdspec.ArgBranch
-			for _, branch := range spec.Branches {
-				if branch.When.Arg < 0 {
-					return nil, fmt.Errorf("branch when.arg is %d; an argument index must not be negative", branch.When.Arg)
-				}
-				if branch.When.Arg < len(args) {
-					argValue := args[branch.When.Arg]
-					matched, err := regexp.MatchString(branch.When.Matches, argValue)
-					if err != nil {
-						return nil, fmt.Errorf("branch when.matches does not compile: %w", err)
-					}
-					if matched {
-						matchedBranch = &branch
-						break
-					}
-				}
-			}
-
-			if matchedBranch != nil {
-				if len(matchedBranch.Specs) == 0 {
-					return nil, fmt.Errorf("branch matching %q has no specs", matchedBranch.When.Matches)
-				}
-				currentSpecs = matchedBranch.Specs
-				currentOffset = i
-				specIdx = 0
-				spec = currentSpecs[specIdx]
-			} else {
-				continue
-			}
-		}
-
-		if spec.Type == cmdspec.ArgTypeAddress && addrPattern.MatchString(result[i]) {
+		if spec != nil && spec.Type == cmdspec.ArgTypeAddress && pluginAddressArg.MatchString(result[i]) {
 			result[i] = strings.ToUpper(result[i])
 		}
 	}
-
 	return result, nil
+}
+
+// logger returns the plugin logger. It is made at each call, because a logger
+// kept from package initialization would miss the handler the host installs.
+// The component matches plugin discovery's; "plugin" is reserved for what
+// plugins themselves print.
+func logger() *slog.Logger {
+	return slog.With("component", "plugins")
 }
 
 // ExecutePluginCommand resolves and executes a plugin command against the current network context.
@@ -144,10 +112,7 @@ func (a *App) ExecutePluginCommand(_ context.Context, commandName string, args [
 		return nil, err
 	}
 
-	normalizedArgs, err := normalizePluginCommandArgs(plugin, commandName, args)
-	if err != nil {
-		return nil, err
-	}
+	normalizedArgs := normalizePluginCommandArgs(plugin, commandName, args)
 	result, err := a.Plugins.ExecuteCommand(plugin.Manifest.Name, commandName, normalizedArgs, pluginContext)
 	if err != nil {
 		return nil, err
@@ -177,10 +142,7 @@ func (a *App) ContinuePluginCommand(_ context.Context, plugin *discovery.Plugin,
 	}
 	pluginContext.Continuation = cont.Context
 
-	normalizedArgs, err := normalizePluginCommandArgs(plugin, cont.Command, cont.Args)
-	if err != nil {
-		return nil, err
-	}
+	normalizedArgs := normalizePluginCommandArgs(plugin, cont.Command, cont.Args)
 	result, err := a.Plugins.ExecuteCommand(plugin.Manifest.Name, cont.Command, normalizedArgs, pluginContext)
 	if err != nil {
 		return nil, err

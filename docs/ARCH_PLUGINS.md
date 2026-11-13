@@ -265,13 +265,28 @@ For commands with subcommands that have different argument patterns, use `branch
 | `when.matches` | Regex pattern (Go RE2 syntax) to match against the argument value; must compile |
 | `specs` | ArgSpecs to use when condition matches; at least one is required, and they may branch again |
 
-Argument normalization and tab completion index the typed arguments by
-`when.arg`, compile `when.matches`, and take the first of `specs` once a branch
-matches. Discovery therefore checks every branch, nested ones included, for
-those three rules; a manifest that breaks one is invalid, so the plugin is not
-loaded and discovery warns with the field's path, for example
-`command[0] "my-command": arg_specs[1].branches[0]: when.arg is -1; an argument
-index must not be negative`.
+Argument normalization (uppercasing `address` arguments before the plugin
+runs) and tab completion read branches with one resolver, `cmdspec.ArgSpecAt`,
+so they select the same spec at every position:
+
+- Specs apply by position. A spec with `branches` stands for the first branch
+  whose `when.matches` matches the argument at `when.arg`. That branch's
+  `specs` then apply from the branching spec's position on, in place of the
+  rest of the list it was in, so specs after a branching spec are never used.
+  The first of them may itself branch, at any depth.
+- When no branch matches, no spec applies at that position or after it:
+  completion offers nothing there, and normalization passes those arguments
+  as typed.
+
+Discovery checks every branch, nested ones included, for the three rules in
+the table (`cmdspec.ValidateArgSpecs`); a manifest that breaks one is
+invalid, so the plugin is not loaded and discovery warns with the field's
+path, for example `command[0] "my-command": arg_specs[1].branches[0]: when.arg
+is -1; an argument index must not be negative`. The resolver checks the
+branches it reads by the same rules, for specs that did not come through
+discovery: at a branch that breaks one, completion offers nothing, and
+normalization passes the arguments from there on as typed and logs the reason
+at `debug`. The command still runs.
 
 ### JSON-RPC Protocol
 

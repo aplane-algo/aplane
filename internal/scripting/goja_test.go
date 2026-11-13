@@ -438,17 +438,23 @@ func TestGojaRunnerCancelDuringAHostCallKeepsWhatItReturned(t *testing.T) {
 	requireRunsNormally(t, runner)
 }
 
+// However the run ends once its context is cancelled, the caller can tell it
+// was cancelled (apconsole prints "Interrupted" by errors.Is), and an error of
+// the script's own that ended it keeps its text.
 func TestGojaRunnerCancelDuringAHostCallKeepsTheErrorItThrew(t *testing.T) {
+	hostErr := "plugin() error: step 2 failed after step 1 submitted TXID1"
 	for _, tt := range []struct {
 		name string
 		code string
+		// wantScriptErr: the host call's error, not the interrupt, ends the run.
+		wantScriptErr bool
 	}{
-		// The script would have caught the error, but the interrupt
-		// stops it first.
+		// The script would have caught the error, but the interrupt, or
+		// the next host call refusing to run, stops it first.
 		{name: "caught", code: `try { plugin("swap") } catch (e) { print("caught " + e) } while (true) {}`},
 		// The error ends the run itself, before the VM sees the interrupt,
 		// which goja then leaves set; the next run must not inherit it.
-		{name: "uncaught", code: `plugin("swap")`},
+		{name: "uncaught", code: `plugin("swap")`, wantScriptErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := newRunnerForTest(t)
@@ -464,16 +470,38 @@ func TestGojaRunnerCancelDuringAHostCallKeepsTheErrorItThrew(t *testing.T) {
 			close(executor.release)
 
 			err := waitForRun(t, done)
-			if err == nil {
-				t.Fatal("run error = nil, want the cancellation or the host call's error")
+			requireCancelled(t, err)
+			if tt.wantScriptErr {
+				var runnerErr *RunnerError
+				if !errors.As(err, &runnerErr) || !strings.Contains(err.Error(), "the script ended with: "+hostErr) {
+					t.Fatalf("run error = %v, want it to keep the script's error %q", err, hostErr)
+				}
 			}
-			want := "plugin() ended after the script was interrupted, failing with: plugin() error: step 2 failed after step 1 submitted TXID1"
-			if got := output.String(); !strings.Contains(got, want) {
-				t.Fatalf("output = %q, want %q", got, want)
+			want := "plugin() ended after the script was interrupted, failing with: " + hostErr
+			if got := output.String(); !strings.Contains(got, want) || strings.Contains(got, "caught") {
+				t.Fatalf("output = %q, want %q and nothing from the catch block", got, want)
 			}
 			requireRunsNormally(t, runner)
 		})
 	}
+}
+
+// A script that runs to its end once its context is cancelled, because the
+// host call in flight returned before the interrupt reached it, still reports
+// the cancellation rather than a result.
+func TestGojaRunnerRunThatFinishesAfterTheCancelReportsIt(t *testing.T) {
+	runner := newRunnerForTest(t)
+	executor := newBlockingPluginExecutor(nil)
+	runner.SetPluginExecutor(executor)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := runAsync(runner, ctx, `plugin("swap")`)
+	<-executor.started
+	cancel()
+	close(executor.release)
+
+	requireCancelled(t, waitForRun(t, done))
+	requireRunsNormally(t, runner)
 }
 
 // A host call that ends before the cancellation reached the script on its

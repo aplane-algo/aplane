@@ -4,7 +4,11 @@
 package apshellapp
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,13 +83,10 @@ func TestNormalizePluginCommandArgs(t *testing.T) {
 		},
 	}
 
-	got, err := normalizePluginCommandArgs(plugin, "next", []string{
+	got := normalizePluginCommandArgs(plugin, "next", []string{
 		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay5hfkq",
 		"to",
 	})
-	if err != nil {
-		t.Fatalf("normalizePluginCommandArgs() error = %v", err)
-	}
 
 	if got[0] != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ" {
 		t.Fatalf("arg0 = %q, want uppercase address", got[0])
@@ -95,103 +96,213 @@ func TestNormalizePluginCommandArgs(t *testing.T) {
 	}
 }
 
-// The manifest loader refuses these specs; argument normalization still has
-// to answer them with an error, not a panic, for specs that did not come
-// through it.
-func TestNormalizePluginArgsRefusesUnreadableBranches(t *testing.T) {
-	keywordThen := func(branches ...cmdspec.ArgBranch) []cmdspec.ArgSpec {
-		return []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeKeyword}, {Branches: branches}}
+const lowerPluginAddress = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay5hfkq"
+
+// captureDebugLog sends slog's default logger to a buffer at debug level for
+// the rest of the test.
+func captureDebugLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	var out bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	return &out
+}
+
+// The manifest loader refuses these specs. Normalization only uppercases
+// addresses, so for specs that did not come through the loader it leaves the
+// arguments from the unreadable branch on as typed, logs why at debug level,
+// and still hands the arguments over.
+func TestNormalizePluginArgsPassesArgumentsAtAnUnreadableBranchAsTyped(t *testing.T) {
+	upper := strings.ToUpper(lowerPluginAddress)
+	addressThen := func(branches ...cmdspec.ArgBranch) []cmdspec.ArgSpec {
+		return []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}, {Branches: branches}}
 	}
 	address := []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}}
 	tests := []struct {
 		name  string
 		specs []cmdspec.ArgSpec
 		args  []string
-		want  string
+		want  []string
+		log   string
 	}{
 		{
 			name:  "negative index",
-			specs: keywordThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: -1, Matches: "^a$"}, Specs: address}),
-			args:  []string{"a", "b"},
-			want:  "when.arg is -1",
+			specs: addressThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: -1, Matches: ""}, Specs: address}),
+			args:  []string{lowerPluginAddress, lowerPluginAddress},
+			want:  []string{upper, lowerPluginAddress},
+			log:   "argument 1: branches[0]: when.arg is -1",
 		},
 		{
 			name:  "matching branch without specs",
-			specs: keywordThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: 0, Matches: "^a$"}}),
-			args:  []string{"a", "b"},
-			want:  "has no specs",
+			specs: addressThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: 0, Matches: ""}}),
+			args:  []string{lowerPluginAddress, lowerPluginAddress},
+			want:  []string{upper, lowerPluginAddress},
+			log:   "specs is empty",
 		},
 		{
 			name:  "pattern that does not compile",
-			specs: keywordThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: 0, Matches: "(a"}, Specs: address}),
-			args:  []string{"a", "b"},
-			want:  "when.matches does not compile",
+			specs: addressThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: 0, Matches: "(a"}, Specs: address}),
+			args:  []string{lowerPluginAddress, lowerPluginAddress},
+			want:  []string{upper, lowerPluginAddress},
+			log:   "when.matches does not compile",
 		},
 		{
 			name: "negative index in a nested branch",
-			specs: keywordThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: 0, Matches: "^a$"}, Specs: []cmdspec.ArgSpec{
-				{Type: cmdspec.ArgTypeKeyword},
-				{Branches: []cmdspec.ArgBranch{{When: cmdspec.ArgCondition{Arg: -3, Matches: ""}, Specs: address}}},
-			}}),
-			args: []string{"a", "b", "c"},
-			want: "when.arg is -3",
+			specs: []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeKeyword}, {Branches: []cmdspec.ArgBranch{{
+				When: cmdspec.ArgCondition{Arg: 0, Matches: "^a$"},
+				Specs: []cmdspec.ArgSpec{
+					{Type: cmdspec.ArgTypeAddress},
+					{Branches: []cmdspec.ArgBranch{{When: cmdspec.ArgCondition{Arg: -3, Matches: ""}, Specs: address}}},
+				},
+			}}}},
+			args: []string{"a", lowerPluginAddress, lowerPluginAddress},
+			want: []string{"a", upper, lowerPluginAddress},
+			log:  "argument 2: branches[0]: when.arg is -3",
 		},
 		{
-			name: "empty nested branch",
-			specs: keywordThen(cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: 0, Matches: "^a$"}, Specs: []cmdspec.ArgSpec{
-				{Type: cmdspec.ArgTypeKeyword},
-				{Branches: []cmdspec.ArgBranch{{When: cmdspec.ArgCondition{Arg: 2, Matches: "^c$"}}}},
-			}}),
-			args: []string{"a", "b", "c"},
-			want: "has no specs",
+			name: "empty branch nested as a branch's first spec",
+			specs: []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}, {Branches: []cmdspec.ArgBranch{{
+				When:  cmdspec.ArgCondition{Arg: 0, Matches: ""},
+				Specs: []cmdspec.ArgSpec{{Branches: []cmdspec.ArgBranch{{When: cmdspec.ArgCondition{Arg: 0, Matches: ""}}}}},
+			}}}},
+			args: []string{lowerPluginAddress, lowerPluginAddress},
+			want: []string{upper, lowerPluginAddress},
+			log:  "specs is empty",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := normalizePluginAddressArgs(tt.specs, tt.args)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("normalizePluginAddressArgs() error = %v, want %q", err, tt.want)
-			}
-
+			logged := captureDebugLog(t)
 			plugin := &discovery.Plugin{Manifest: &manifest.Manifest{
 				Name:     "branchy",
 				Commands: []manifest.Command{{Name: "go", ArgSpecs: tt.specs}},
 			}}
-			_, err = NormalizePluginCommandArgs(plugin, "go", tt.args)
-			if err == nil || !strings.Contains(err.Error(), "plugin 'branchy' command 'go': arg_specs: ") {
-				t.Fatalf("NormalizePluginCommandArgs() error = %v, want it to name the plugin and command", err)
+			got := NormalizePluginCommandArgs(plugin, "go", tt.args)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("NormalizePluginCommandArgs() = %q, want %q", got, tt.want)
+			}
+			for _, want := range []string{"level=DEBUG", "component=plugins", "plugin=branchy", "command=go", tt.log} {
+				if !strings.Contains(logged.String(), want) {
+					t.Fatalf("log = %q, want it to contain %q", logged.String(), want)
+				}
 			}
 		})
 	}
 }
 
+// recordingPluginRuntime finds one plugin for every command and records the
+// arguments each command is run with.
+type recordingPluginRuntime struct {
+	fakePluginRuntime
+	plugin *discovery.Plugin
+	ran    [][]string
+}
+
+func (r *recordingPluginRuntime) FindByCommand(string) (*discovery.Plugin, error) {
+	return r.plugin, nil
+}
+
+func (r *recordingPluginRuntime) ExecuteCommand(_, _ string, args []string, _ jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
+	r.ran = append(r.ran, args)
+	return &jsonrpc.ExecuteResult{Success: true}, nil
+}
+
+// A plugin command, or a continuation step after earlier steps submitted
+// transactions, is not refused for a spec normalization cannot read.
+func TestPluginCommandsRunDespiteAnUnreadableBranch(t *testing.T) {
+	captureDebugLog(t)
+	specs := []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}, {Branches: []cmdspec.ArgBranch{
+		{When: cmdspec.ArgCondition{Arg: -1, Matches: ""}, Specs: []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}}},
+	}}}
+	plugin := &discovery.Plugin{Manifest: &manifest.Manifest{
+		Name:     "branchy",
+		Commands: []manifest.Command{{Name: "go", ArgSpecs: specs}},
+	}}
+	plugins := &recordingPluginRuntime{plugin: plugin}
+	app := newEndpointTestApp(t, t.TempDir())
+	app.Plugins = plugins
+	args := []string{lowerPluginAddress, lowerPluginAddress}
+	want := []string{strings.ToUpper(lowerPluginAddress), lowerPluginAddress}
+
+	if _, err := app.ExecutePluginCommand(context.Background(), "go", args); err != nil {
+		t.Fatalf("ExecutePluginCommand() error = %v", err)
+	}
+	if _, err := app.ContinuePluginCommand(context.Background(), plugin, &jsonrpc.Continuation{Command: "go", Args: args}); err != nil {
+		t.Fatalf("ContinuePluginCommand() error = %v", err)
+	}
+	if len(plugins.ran) != 2 || !slices.Equal(plugins.ran[0], want) || !slices.Equal(plugins.ran[1], want) {
+		t.Fatalf("plugin ran with %q, want %q twice", plugins.ran, want)
+	}
+}
+
+// A branch whose first spec branches again is followed, at any depth.
 func TestNormalizePluginArgsFollowsNestedBranches(t *testing.T) {
-	specs := []cmdspec.ArgSpec{
-		{Type: cmdspec.ArgTypeKeyword},
-		{Branches: []cmdspec.ArgBranch{{
-			When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"},
-			Specs: []cmdspec.ArgSpec{
+	address := []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}}
+	tests := []struct {
+		name  string
+		specs []cmdspec.ArgSpec
+		args  []string
+		at    int
+	}{
+		{
+			name: "after a keyword",
+			specs: []cmdspec.ArgSpec{
 				{Type: cmdspec.ArgTypeKeyword},
 				{Branches: []cmdspec.ArgBranch{{
-					When:  cmdspec.ArgCondition{Arg: 1, Matches: "^to$"},
-					Specs: []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}},
+					When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"},
+					Specs: []cmdspec.ArgSpec{
+						{Type: cmdspec.ArgTypeKeyword},
+						{Branches: []cmdspec.ArgBranch{{When: cmdspec.ArgCondition{Arg: 1, Matches: "^to$"}, Specs: address}}},
+					},
 				}}},
 			},
-		}}},
+			args: []string{"pay", "to", lowerPluginAddress},
+			at:   2,
+		},
+		{
+			name: "as the branch's first spec",
+			specs: []cmdspec.ArgSpec{
+				{Type: cmdspec.ArgTypeKeyword},
+				{Branches: []cmdspec.ArgBranch{{
+					When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"},
+					Specs: []cmdspec.ArgSpec{{Branches: []cmdspec.ArgBranch{
+						{When: cmdspec.ArgCondition{Arg: 0, Matches: "^info$"}, Specs: []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeNumber}}},
+						{When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"}, Specs: address},
+					}}},
+				}}},
+			},
+			args: []string{"pay", lowerPluginAddress},
+			at:   1,
+		},
+		{
+			name: "three deep at one position",
+			specs: []cmdspec.ArgSpec{{Branches: []cmdspec.ArgBranch{{
+				When: cmdspec.ArgCondition{Arg: 0, Matches: ""},
+				Specs: []cmdspec.ArgSpec{{Branches: []cmdspec.ArgBranch{{
+					When:  cmdspec.ArgCondition{Arg: 0, Matches: ""},
+					Specs: []cmdspec.ArgSpec{{Branches: []cmdspec.ArgBranch{{When: cmdspec.ArgCondition{Arg: 0, Matches: ""}, Specs: address}}}},
+				}}}},
+			}}}},
+			args: []string{lowerPluginAddress},
+			at:   0,
+		},
 	}
-	lower := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay5hfkq"
-
-	got, err := normalizePluginAddressArgs(specs, []string{"pay", "to", lower})
-	if err != nil {
-		t.Fatalf("normalizePluginAddressArgs() error = %v", err)
-	}
-	if got[2] != strings.ToUpper(lower) {
-		t.Fatalf("arg2 = %q, want the nested address uppercased", got[2])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizePluginAddressArgs(tt.specs, tt.args)
+			if err != nil {
+				t.Fatalf("normalizePluginAddressArgs() error = %v", err)
+			}
+			if got[tt.at] != strings.ToUpper(lowerPluginAddress) {
+				t.Fatalf("arg%d = %q, want the nested address uppercased", tt.at, got[tt.at])
+			}
+		})
 	}
 }
 
 // FuzzNormalizePluginAddressArgs feeds arbitrary arg_specs and arguments to
-// the normalizer: it may refuse them, but must never panic.
+// the normalizer: it must never panic, and always hands back every argument.
 func FuzzNormalizePluginAddressArgs(f *testing.F) {
 	for _, seed := range []struct{ specs, args string }{
 		{`[{"type":"address"}]`, "x"},
@@ -209,8 +320,7 @@ func FuzzNormalizePluginAddressArgs(f *testing.F) {
 			return
 		}
 		args := strings.Fields(argLine)
-		got, err := normalizePluginAddressArgs(specs, args)
-		if err == nil && len(got) != len(args) {
+		if got, _ := normalizePluginAddressArgs(specs, args); len(got) != len(args) {
 			t.Fatalf("normalizePluginAddressArgs() returned %d args for %d", len(got), len(args))
 		}
 	})

@@ -119,9 +119,11 @@ wait:
 	}
 }
 
-// The MCP js tool passes its request context: cancelling it stops an endless
-// script and the tool answers with the cancellation.
-func TestMCPJSCancelInterruptsAnEndlessScript(t *testing.T) {
+// captureJSExecution, which the MCP js tool calls, runs the script under the
+// context it is given: cancelling that context stops an endless script and
+// the next call runs. This is not MCP cancellation: the stdio server's tool
+// contexts are never cancelled (see the js tool in docs/ARCH_SHELL.md).
+func TestCaptureJSExecutionStopsWhenItsContextIsCancelled(t *testing.T) {
 	session := newJSInterruptSession(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(50*time.Millisecond, cancel)

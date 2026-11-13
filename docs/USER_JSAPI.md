@@ -37,22 +37,27 @@ enumerate them.
 
 ### Stopping a Script
 
-Ctrl-C in the `apshell` prompt or the apconsole shell pane, and a cancelled
-MCP `js` call, stop the script at its next JavaScript instruction, a loop such
-as `while (true) {}` included; `try`/`catch` does not catch the stop. The shell
-prints `Interrupted` (MCP returns `script interrupted: context canceled`), and
-the next script runs normally. `apshell -js` and `apshell -e` do not trap
-Ctrl-C, so it ends the process.
+Ctrl-C in the `apshell` prompt or the apconsole shell pane stops the script at
+its next JavaScript instruction, a loop such as `while (true) {}` included;
+`try`/`catch` does not catch the stop. The shell prints `Interrupted`, and the
+next script runs normally. `apshell -js` and `apshell -e` do not trap Ctrl-C,
+so it ends the process. An MCP `js` call cannot be stopped this way: apshell's
+MCP server does not act on a client's cancel, so the call runs until its
+script ends.
 
 A function the script called that is still running is not cut short. It ends
 on its own terms under the cancelled command, so a wait for signer approval or
 for confirmation ends at once with the function's own error. The script never
 sees what the function returns or throws, so apshell prints it before
-`Interrupted`:
+`Interrupted`, a returned value as one line of JSON cut at 256 bytes with a
+note of its full size:
 
 ```text
 send() ended after the script was interrupted, failing with: send() error submitting transaction: failed to sign and submit: confirmation failed: context canceled
 ```
+
+A function the script calls after Ctrl-C, in the moment before the stop
+reaches the script, does not run and prints nothing.
 
 A transaction already submitted stays submitted. An error from a wait for
 confirmation does not name the transaction ID, so look the account up before

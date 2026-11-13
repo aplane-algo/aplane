@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
@@ -90,31 +91,162 @@ func TestPluginCompletionOffersNothingForUnreadableBranches(t *testing.T) {
 }
 
 func TestPluginCompletionFollowsNestedBranches(t *testing.T) {
-	specs := []cmdspec.ArgSpec{
-		{Type: cmdspec.ArgTypeKeyword, Values: []string{"pay"}},
-		{Branches: []cmdspec.ArgBranch{{
-			When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"},
-			Specs: []cmdspec.ArgSpec{
-				{Type: cmdspec.ArgTypeKeyword, Values: []string{"to"}},
+	address := []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}}
+	tests := []struct {
+		name  string
+		specs []cmdspec.ArgSpec
+	}{
+		{
+			name: "after a keyword",
+			specs: []cmdspec.ArgSpec{
+				{Type: cmdspec.ArgTypeKeyword, Values: []string{"pay"}},
 				{Branches: []cmdspec.ArgBranch{{
-					When:  cmdspec.ArgCondition{Arg: 1, Matches: "^to$"},
-					Specs: []cmdspec.ArgSpec{{Type: cmdspec.ArgTypeAddress}},
+					When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"},
+					Specs: []cmdspec.ArgSpec{
+						{Type: cmdspec.ArgTypeKeyword, Values: []string{"via"}},
+						{Branches: []cmdspec.ArgBranch{{When: cmdspec.ArgCondition{Arg: 1, Matches: "^via$"}, Specs: address}}},
+					},
 				}}},
 			},
-		}}},
+		},
+		{
+			name: "as the branch's first spec",
+			specs: []cmdspec.ArgSpec{
+				{Type: cmdspec.ArgTypeKeyword, Values: []string{"pay"}},
+				{Branches: []cmdspec.ArgBranch{{
+					When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"},
+					Specs: []cmdspec.ArgSpec{{Branches: []cmdspec.ArgBranch{
+						{When: cmdspec.ArgCondition{Arg: 0, Matches: "^info$"}, Specs: address},
+						{When: cmdspec.ArgCondition{Arg: 0, Matches: "^pay$"}, Specs: []cmdspec.ArgSpec{
+							{Type: cmdspec.ArgTypeKeyword, Values: []string{"via"}},
+							{Type: cmdspec.ArgTypeAddress},
+						}},
+					}}},
+				}}},
+			},
+		},
 	}
 	addr := crypto.GenerateAccount().Address.String()
-	completer := pluginCompleter(specs, addr)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			completer := pluginCompleter(tt.specs, addr)
 
-	line := "branchy pay to "
-	suggestions, offset := completer.Do([]rune(line), len(line))
-	if offset != 0 || len(suggestions) != 1 || string(suggestions[0]) != addr+" " {
-		t.Fatalf("Do(%q) = %q, %d; want the address", line, suggestions, offset)
+			line := "branchy pay "
+			suggestions, _ := completer.Do([]rune(line), len(line))
+			if len(suggestions) != 1 || string(suggestions[0]) != "via " {
+				t.Fatalf("Do(%q) = %q; want the nested keyword", line, suggestions)
+			}
+			line = "branchy pay via "
+			suggestions, offset := completer.Do([]rune(line), len(line))
+			if offset != 0 || len(suggestions) != 1 || string(suggestions[0]) != addr+" " {
+				t.Fatalf("Do(%q) = %q, %d; want the address", line, suggestions, offset)
+			}
+		})
 	}
-	line = "branchy pay "
-	suggestions, _ = completer.Do([]rune(line), len(line))
-	if len(suggestions) != 1 || string(suggestions[0]) != "to " {
-		t.Fatalf("Do(%q) = %q; want the nested keyword", line, suggestions)
+}
+
+// TestPluginCompletionAndNormalizationSelectTheSameSpecs gives the same specs
+// and arguments to completion and to plugin argument normalization: at every
+// position completion resolves the expected spec, from the arguments typed so
+// far as from all of them, and normalization uppercases an address exactly
+// where that spec is an address.
+func TestPluginCompletionAndNormalizationSelectTheSameSpecs(t *testing.T) {
+	keyword := cmdspec.ArgSpec{Type: cmdspec.ArgTypeKeyword, Values: []string{"pay", "info", "via"}}
+	address := cmdspec.ArgSpec{Type: cmdspec.ArgTypeAddress}
+	number := cmdspec.ArgSpec{Type: cmdspec.ArgTypeNumber}
+	when := func(arg int, matches string, specs ...cmdspec.ArgSpec) cmdspec.ArgBranch {
+		return cmdspec.ArgBranch{When: cmdspec.ArgCondition{Arg: arg, Matches: matches}, Specs: specs}
+	}
+	branching := func(branches ...cmdspec.ArgBranch) cmdspec.ArgSpec {
+		return cmdspec.ArgSpec{Branches: branches}
+	}
+	// A stands for an address in lower case, which normalization uppercases
+	// where the spec is an address.
+	const A = "A"
+	tests := []struct {
+		name  string
+		specs []cmdspec.ArgSpec
+		args  []string
+		want  []string // spec type at each position; "-" for none
+	}{
+		{
+			name:  "plain list",
+			specs: []cmdspec.ArgSpec{address, keyword, address},
+			args:  []string{A, "pay", A, A},
+			want:  []string{"address", "keyword", "address", "-"},
+		},
+		{
+			name:  "branch after a keyword",
+			specs: []cmdspec.ArgSpec{keyword, branching(when(0, "^pay$", address, number))},
+			args:  []string{"pay", A, A},
+			want:  []string{"keyword", "address", "number"},
+		},
+		{
+			name:  "no branch matches",
+			specs: []cmdspec.ArgSpec{keyword, branching(when(0, "^pay$", address)), address},
+			args:  []string{"info", A, A},
+			want:  []string{"keyword", "-", "-"},
+		},
+		{
+			name:  "branch nested later in a branch",
+			specs: []cmdspec.ArgSpec{keyword, branching(when(0, "^pay$", keyword, branching(when(1, "^via$", address))))},
+			args:  []string{"pay", "via", A},
+			want:  []string{"keyword", "keyword", "address"},
+		},
+		{
+			name: "branch nested as a branch's first spec",
+			specs: []cmdspec.ArgSpec{keyword, branching(when(0, "^pay$",
+				branching(when(0, "^info$", number), when(0, "^pay$", address, address)),
+			))},
+			args: []string{"pay", A, A},
+			want: []string{"keyword", "address", "address"},
+		},
+		{
+			name: "nested branch that matches nothing",
+			specs: []cmdspec.ArgSpec{keyword, branching(when(0, "^pay$",
+				branching(when(0, "^info$", address)),
+			)), address},
+			args: []string{"pay", A, A},
+			want: []string{"keyword", "-", "-"},
+		},
+		{
+			name:  "branch that cannot be read",
+			specs: []cmdspec.ArgSpec{address, branching(when(-1, "", address)), address},
+			args:  []string{A, A, A},
+			want:  []string{"address", "-", "-"},
+		},
+	}
+	lower := strings.ToLower(crypto.GenerateAccount().Address.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := make([]string, len(tt.args))
+			for i, arg := range tt.args {
+				if arg == A {
+					arg = lower
+				}
+				args[i] = arg
+			}
+			plugin := &discovery.Plugin{Manifest: &manifest.Manifest{
+				Name:     "branchy",
+				Commands: []manifest.Command{{Name: "branchy", ArgSpecs: tt.specs}},
+			}}
+			normalized := apshellapp.NormalizePluginCommandArgs(plugin, "branchy", args)
+
+			for i := range args {
+				for _, typed := range [][]string{args[:i], args} {
+					got := "-"
+					if spec := resolveArgSpec(tt.specs, typed, i); spec != nil {
+						got = spec.Type
+					}
+					if got != tt.want[i] {
+						t.Fatalf("completion at %d with %d typed = %q, want %q", i, len(typed), got, tt.want[i])
+					}
+				}
+				if uppercased := normalized[i] != args[i]; uppercased != (tt.want[i] == "address" && args[i] == lower) {
+					t.Fatalf("normalization at %d: %q -> %q, but completion resolves %q", i, args[i], normalized[i], tt.want[i])
+				}
+			}
+		})
 	}
 }
 
