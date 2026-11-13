@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/partkeyparse"
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // OptInRequest captures parsed opt-in inputs.
@@ -853,46 +854,34 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			}
 		}
 
-		authorizationReserve, err := authorizationFeeReserveForSweep(
-			assetMeta.AssetID,
-			fromAddress,
-			a.eng.AuthorizationFeeReserve,
-		)
+		amounts, err := a.settleSweepAmounts(ctx, assetMeta.AssetID, fromAddress, toAddress, balance, leaving, req.Fee, req.UseFlatFee)
 		if err != nil {
-			item.Error = fmt.Sprintf("failed to plan authorization fee reserve: %v", err)
+			item.Error = err.Error()
 			result.FailureCount++
 			result.Items = append(result.Items, item)
 			continue
 		}
-		txnFee, err := a.sweepPaymentFee(ctx, assetMeta.AssetID, fromAddress, toAddress, balance, leaving, req.Fee, req.UseFlatFee)
-		if err != nil {
-			item.Error = fmt.Sprintf("failed to prepare transaction: %v", err)
-			result.FailureCount++
-			result.Items = append(result.Items, item)
-			continue
-		}
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leaving, assetMeta.AssetID, txnFee, authorizationReserve)
-		if !ok {
+		if !amounts.ok {
 			what := "leaving amount"
 			if leaveMinimumBalance {
 				what = "minimum balance"
 			}
 			item.SkippedReason = fmt.Sprintf("balance %d <= %s %d", balance, what, leaving)
 			if assetMeta.AssetID == 0 && balance > leaving {
-				item.SkippedReason = fmt.Sprintf("balance %d cannot cover %s %d plus fee reserve %d", balance, what, leaving, feeReserve)
+				item.SkippedReason = fmt.Sprintf("balance %d leaves nothing to send after the %s %d and fee reserve %d", balance, what, leaving, amounts.feeReserve)
 			}
 			result.Items = append(result.Items, item)
 			continue
 		}
 
-		item.Amount = asa.AmountFromRaw(sendAmount, assetMeta)
+		item.Amount = asa.AmountFromRaw(amounts.send, assetMeta)
 		var prep *PreparedTxn
 		if assetMeta.AssetID == 0 {
 			prepResult, _, prepErr := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 				From:       fromAddress,
 				To:         toAddress,
 				Amount:     item.Amount.Raw,
-				Fee:        txnFee,
+				Fee:        amounts.txnFee,
 				UseFlatFee: true,
 			})
 			prep = preparedTxnFromEngine(prepResult)
@@ -963,6 +952,42 @@ func authorizationFeeReserveForSweep(
 		return 0, nil
 	}
 	return reserve(sender)
+}
+
+// sweepAmounts is what one account's sweep sends and the fees it reserves.
+type sweepAmounts struct {
+	send       uint64 // the amount to send
+	txnFee     uint64 // the fee an ALGO payment is built with
+	feeReserve uint64 // txnFee plus the authorization reserve
+	ok         bool   // false: nothing to send
+}
+
+// settleSweepAmounts settles what one account's sweep sends. An account with
+// nothing to send even at the smallest fee its payment could carry, the
+// user's flat fee or else the protocol minimum, is skipped before anything is
+// built, so a network or signer failure cannot turn that skip into a failure.
+// Otherwise the payment's fee is read from a build (sweepPaymentFee), and only
+// then the authorization reserve: the build looks up and caches the account's
+// auth address, so the reserve is for the key that signs, not the account's
+// own when it is rekeyed.
+func (a *App) settleSweepAmounts(ctx context.Context, assetID uint64, from, to string, balance, leaving, fee uint64, useFlatFee bool) (sweepAmounts, error) {
+	smallestFee := signing.DefaultMinFee
+	if useFlatFee {
+		smallestFee = fee
+	}
+	if _, feeReserve, ok := sweepSendAmount(balance, leaving, assetID, smallestFee, 0); !ok {
+		return sweepAmounts{feeReserve: feeReserve}, nil
+	}
+	txnFee, err := a.sweepPaymentFee(ctx, assetID, from, to, balance, leaving, fee, useFlatFee)
+	if err != nil {
+		return sweepAmounts{}, fmt.Errorf("failed to prepare transaction: %w", err)
+	}
+	reserve, err := authorizationFeeReserveForSweep(assetID, from, a.eng.AuthorizationFeeReserve)
+	if err != nil {
+		return sweepAmounts{}, fmt.Errorf("failed to plan authorization fee reserve: %w", err)
+	}
+	send, feeReserve, ok := sweepSendAmount(balance, leaving, assetID, txnFee, reserve)
+	return sweepAmounts{send: send, txnFee: txnFee, feeReserve: feeReserve, ok: ok}, nil
 }
 
 // sweepPaymentFee returns the fee an ALGO sweep's payment pays. It builds the

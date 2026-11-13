@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -178,9 +179,16 @@ func (f *argsFixture) suggestedFee(t *testing.T, from string, amount, perByte ui
 // An ALGO sweep leaves the account exactly what is to be left, whatever fee
 // algod suggests: the payment pays the fee the largest amount the sweep could
 // send is given, and the amount is what remains after that fee and the
-// authorization charge the signer adds on top (2,000 microAlgos for native
-// Falcon). The fixture's accounts hold 5,000,000, so leaving 4,930,000 makes
-// the largest amount, 70,000, encode two bytes longer than the amount sent.
+// authorization charge the signer adds on top. The fixture's accounts hold
+// 5,000,000, so leaving 4,930,000 makes the largest amount, 70,000, encode two
+// bytes longer than the amount sent.
+//
+// The fixture's signer answers 503 and never applies a charge: charge is the
+// one the signer would add, given here (2,000 for native Falcon: one PQ fee
+// contribution at the 1,000 minimum fee). So these cases pin the client's
+// arithmetic and which key it reserves for, not the signer's charge. A rekeyed
+// account's auth address is not cached when the sweep starts, so the reserve
+// must be for the key it is rekeyed to.
 func TestSweepLeavesExactlyTheLeavingAmount(t *testing.T) {
 	const balance, leaving, perByte = 5_000_000, 4_930_000, 25
 	for _, tc := range []struct {
@@ -196,10 +204,14 @@ func TestSweepLeavesExactlyTheLeavingAmount(t *testing.T) {
 		{"a flat fee", argsNative, perByte, 3_000, true, 0},
 		{"a flat zero", argsNative, perByte, 0, true, 0},
 		{"native Falcon", argsFalcon, perByte, 0, false, 2_000},
+		{"rekeyed to native Falcon", argsRekeyed, perByte, 0, false, 2_000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newArgsFixture(t)
 			f.perByteFee.Store(tc.perByte)
+			if _, cached := f.eng.GetAuthAddress(tc.from); cached {
+				t.Fatalf("auth address of %s is cached before the sweep", tc.from)
+			}
 			left := uint64(leaving)
 			result, _ := f.app.Sweep(context.Background(), SweepRequest{
 				AssetRef: "algo", FromRaw: []string{tc.from}, ToRaw: "dest", LeavingRaw: &left,
@@ -234,27 +246,63 @@ func TestSweepLeavesExactlyTheLeavingAmount(t *testing.T) {
 	}
 }
 
-// An account that cannot cover what is to be left plus the fee reserve is
-// skipped, and told the reserve: its payment's fee and the authorization
-// charge. Nothing is sent. With the minimum fee assumed, this account would
-// have sent 2,000 and been left below 4,995,000.
-func TestSweepSkipsAnAccountThatCannotCoverTheFee(t *testing.T) {
-	const balance, leaving, perByte, charge = 5_000_000, 4_995_000, 25, 2_000
+// An account with nothing left to send after what is to be left and the fee
+// reserve is skipped, not failed, and told the reserve. Nothing is sent. The
+// fixture's accounts hold 5,000,000.
+//   - Short of the reserve: at 25 microAlgos a byte the payment's fee and the
+//     2,000 Falcon charge exceed the 5,000 above what is to be left. With the
+//     minimum fee assumed, it would have sent 2,000 and been left below it.
+//   - Exactly the reserve: the minimum fee and the Falcon charge leave nothing.
+//   - Below the smallest fee the payment could carry (the minimum, or a flat
+//     fee given): skipped before anything is built, so a source that cannot
+//     be prepared (the signer holds no key for dest) is still only skipped.
+func TestSweepSkipsAnAccountWithNothingToSend(t *testing.T) {
+	const balance, perByte, charge = 5_000_000, 25, 2_000
+	f0 := newArgsFixture(t)
+	shortReserve := f0.suggestedFee(t, argsFalcon, 5_000, perByte) + charge
+	for _, tc := range []struct {
+		name        string
+		from, to    string
+		leaving     uint64
+		perByte     uint64
+		fee         uint64
+		useFlatFee  bool
+		wantReserve uint64
+	}{
+		{"short of the reserve", argsFalcon, "dest", balance - 5_000, perByte, 0, false, shortReserve},
+		{"exactly the reserve", argsFalcon, "dest", balance - 1_000 - charge, 0, 0, false, 1_000 + charge},
+		{"below the minimum fee, cannot be prepared", argsDest, "nat", balance - 500, 0, 0, false, 1_000},
+		{"below a flat fee, cannot be prepared", argsDest, "nat", balance - 2_500, 0, 3_000, true, 3_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newArgsFixture(t)
+			f.perByteFee.Store(tc.perByte)
+			left := tc.leaving
+			result, err := f.app.Sweep(context.Background(), SweepRequest{
+				AssetRef: "algo", FromRaw: []string{tc.from}, ToRaw: tc.to, LeavingRaw: &left,
+				Fee: tc.fee, UseFlatFee: tc.useFlatFee, Wait: true,
+			})
+			if err != nil {
+				t.Fatalf("Sweep() error = %v (items %+v)", err, result.Items)
+			}
+			want := fmt.Sprintf("balance %d leaves nothing to send after the leaving amount %d and fee reserve %d", balance, tc.leaving, tc.wantReserve)
+			if len(result.Items) != 1 || result.Items[0].SkippedReason != want || result.FailureCount != 0 {
+				t.Fatalf("sweep items = %+v, failures %d; want skipped: %s", result.Items, result.FailureCount, want)
+			}
+			if got := f.signerPosts.Load(); got != 0 {
+				t.Fatalf("signer requests = %d, want none", got)
+			}
+		})
+	}
+
+	// The source above cannot be prepared: with more to send it fails.
 	f := newArgsFixture(t)
-	f.perByteFee.Store(perByte)
-	left := uint64(leaving)
+	left := uint64(balance - 50_000)
 	result, err := f.app.Sweep(context.Background(), SweepRequest{
-		AssetRef: "algo", FromRaw: []string{argsFalcon}, ToRaw: "dest", LeavingRaw: &left, Wait: true,
+		AssetRef: "algo", FromRaw: []string{argsDest}, ToRaw: "nat", LeavingRaw: &left, Wait: true,
 	})
-	if err != nil {
-		t.Fatalf("Sweep() error = %v", err)
-	}
-	reserve := f.suggestedFee(t, argsFalcon, balance-leaving, perByte) + charge
-	want := fmt.Sprintf("balance %d cannot cover leaving amount %d plus fee reserve %d", balance, leaving, reserve)
-	if len(result.Items) != 1 || result.Items[0].SkippedReason != want {
-		t.Fatalf("sweep items = %+v, want skipped: %s", result.Items, want)
-	}
-	if got := f.signerPosts.Load(); got != 0 {
-		t.Fatalf("signer requests = %d, want none", got)
+	if err == nil || result == nil || len(result.Items) != 1 ||
+		!strings.HasPrefix(result.Items[0].Error, "failed to prepare transaction: ") {
+		t.Fatalf("Sweep() = %+v, %v; want the source to fail to be prepared", result, err)
 	}
 }

@@ -77,7 +77,7 @@ sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 For `algo`, each account sends its balance less the amount to leave, its
 transaction's fee, and the fee the signer adds for its authorization, so it is
 left with exactly that amount. The fee is the network's suggested fee, or
-`fee=`. An account whose balance cannot cover all three is skipped.
+`fee=`. An account with nothing left to send after those three is skipped.
 
 **Arguments:**
 | Argument | Description |

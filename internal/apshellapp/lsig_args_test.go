@@ -44,6 +44,8 @@ var (
 	argsPlugin = types.Address{46}.String() // a presign-plan slot the plugin signs
 	argsDest   = types.Address{47}.String() // a receiver the signer holds no key for
 	argsFalcon = types.Address{48}.String() // native Falcon: takes no arguments
+	// argsRekeyed is an ed25519 key rekeyed to argsFalcon on the test node.
+	argsRekeyed = types.Address{49}.String()
 )
 
 func argsTestKeys() []signerapi.KeyInfo {
@@ -54,6 +56,7 @@ func argsTestKeys() []signerapi.KeyInfo {
 	return []signerapi.KeyInfo{
 		{Address: argsNative, KeyType: "ed25519"},
 		{Address: argsFalcon, KeyType: "falcon1024"},
+		{Address: argsRekeyed, KeyType: "ed25519"},
 		htlc(argsHTLC), htlc(argsHTLC2),
 		{Address: argsSecret, KeyType: "example.secret.v1", IsGenericLsig: true,
 			SigningArgs: []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", MaxSize: 32}}},
@@ -120,7 +123,11 @@ func newArgsFixture(t *testing.T) *argsFixture {
 			})
 		case strings.HasPrefix(r.URL.Path, "/v2/accounts/") && !strings.Contains(strings.TrimPrefix(r.URL.Path, "/v2/accounts/"), "/"):
 			address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
-			_ = json.NewEncoder(w).Encode(models.Account{Address: address, Amount: 5_000_000, MinBalance: 100_000, Status: "Offline"})
+			account := models.Account{Address: address, Amount: 5_000_000, MinBalance: 100_000, Status: "Offline"}
+			if address == argsRekeyed {
+				account.AuthAddr = argsFalcon
+			}
+			_ = json.NewEncoder(w).Encode(account)
 		default:
 			http.Error(w, "test node", http.StatusServiceUnavailable)
 		}
