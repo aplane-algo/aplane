@@ -150,7 +150,7 @@ func (cache *ASACache) ResolveASAReference(asaRef string, network string) (uint6
 
 	matches := make(map[uint64]struct{})
 	for asaID, info := range cache.Assets {
-		if equalAssetRef(info.UnitName, asaRef) || equalAssetRef(info.Name, asaRef) {
+		if info.MatchesReference(asaRef) {
 			matches[asaID] = struct{}{}
 		}
 	}
@@ -173,6 +173,12 @@ func (cache *ASACache) ResolveASAReference(asaRef string, network string) (uint6
 	}
 
 	return 0, fmt.Errorf("ASA reference '%s' not found in %s cache or built-ins. Use ASA ID or ensure the asset is cached by using 'info <asa_id>' first", asaRef, network)
+}
+
+// MatchesReference reports whether ref names the asset by its unit name or
+// name, compared as ResolveASAReference compares them.
+func (info ASAInfo) MatchesReference(ref string) bool {
+	return equalAssetRef(info.UnitName, ref) || equalAssetRef(info.Name, ref)
 }
 
 func equalAssetRef(value, ref string) bool {

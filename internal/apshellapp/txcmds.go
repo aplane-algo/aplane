@@ -231,7 +231,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 		return nil, err
 	}
 
-	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())
+	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolverForTransaction(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
 	}
@@ -275,7 +275,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 		return nil, err
 	}
 
-	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())
+	meta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolverForTransaction(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
 	}
@@ -766,7 +766,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		lsigArgs = engine.UntargetedLsigArgs(req.UntargetedLsigArgs)
 	}
 
-	assetMeta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())
+	assetMeta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolverForTransaction(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
 	}
@@ -797,7 +797,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		leavingAmount = asa.AmountFromRaw(0, assetMeta)
 		leaveMinimumBalance = assetMeta.AssetID == 0
 	} else {
-		leavingAmount, err = cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
+		leavingAmount, err = asa.AmountFromDisplay(req.LeavingText, assetMeta)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert leaving amount: %w", err)
 		}

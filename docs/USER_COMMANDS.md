@@ -637,7 +637,8 @@ unrekey alice arg:preimage=text:secret
 
 ### asa list
 
-List all ASAs in the local cache.
+List all ASAs in the local cache. The cache is for display; a transaction
+reads its asset from the network (see [Asset References](#asset-references)).
 
 ```
 asa list
@@ -1625,8 +1626,16 @@ In an interactive shell session, execute shell commands by prefixing with `!`:
 | Reference | Description |
 |-----------|-------------|
 | `algo` | Native ALGO currency |
-| `usdc` | ASA by unit name (from cache) |
+| `usdc` | ASA by unit name or name (from the built-in table or the cache) |
 | `31566704` | ASA by ID |
+
+The ASA cache is a display aid. A command that builds a transaction (`send`,
+`sweep`, `optin`, `optout`, and an app call's `asset=` references) reads an
+asset that is not built in from the network, uses its decimals and names as
+they are there, and corrects the cache entry. When the asset was named by
+unit name or name and no longer carries that name on this network (after a
+LocalNet reset, for example), the command is refused: check the asset and
+run the command again.
 
 ### LogicSig Arguments
 

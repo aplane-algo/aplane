@@ -39,7 +39,7 @@ type AppCallRawRequest struct {
 
 // AppCallRaw executes the semantic part of a raw app call.
 func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRawResult, error) {
-	fromAddr, accounts, foreignAssets, err := a.resolveAppCallInputs(req.From, req.Accounts, req.AssetRefs)
+	fromAddr, accounts, foreignAssets, err := a.resolveAppCallInputs(ctx, req.From, req.Accounts, req.AssetRefs)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func appendAppCallRawConfirmedLines(result *AppCallRawResult) {
 	}
 }
 
-func (a *App) resolveAppCallInputs(from string, accountRefs []string, assetRefs []cmdspec.AssetRef) (string, []string, []uint64, error) {
+func (a *App) resolveAppCallInputs(ctx context.Context, from string, accountRefs []string, assetRefs []cmdspec.AssetRef) (string, []string, []uint64, error) {
 	resolver := a.eng.NewAddressResolver()
 	fromAddr, err := resolver.ResolveSingle(from)
 	if err != nil {
@@ -196,7 +196,7 @@ func (a *App) resolveAppCallInputs(from string, accountRefs []string, assetRefs 
 		accounts = append(accounts, resolved)
 	}
 
-	foreignAssets, err := cmdspec.ResolveForeignAssetIDs(a.Network(), assetRefs, a.eng.ASAResolver())
+	foreignAssets, err := cmdspec.ResolveForeignAssetIDs(a.Network(), assetRefs, a.eng.ASAResolverForTransaction(ctx))
 	if err != nil {
 		return "", nil, nil, err
 	}

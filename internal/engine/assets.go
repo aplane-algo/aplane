@@ -6,6 +6,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
@@ -65,8 +67,80 @@ func (e *Engine) GetASAInfoWithContext(ctx context.Context, assetID uint64, forc
 }
 
 // ASAResolver returns a shared ASA metadata/reference resolver for the engine's current network.
+// It answers from the ASA cache, which is a display aid; a command that
+// builds a transaction uses ASAResolverForTransaction.
 func (e *Core) ASAResolver() asa.Resolver {
 	return asa.NewResolver(e.Network, &e.AsaCache, e.AlgodClient)
+}
+
+// TransactionASAResolver resolves the asset of a transaction a command
+// builds. It does not trust the ASA cache: an asset that is not built in is
+// read from algod, and its cache entry is refreshed with what was read.
+type TransactionASAResolver struct {
+	ctx context.Context
+	eng *Engine
+}
+
+// ASAResolverForTransaction returns the asset resolver for a command that
+// builds a transaction. Display paths keep using ASAResolver.
+func (e *Engine) ASAResolverForTransaction(ctx context.Context) TransactionASAResolver {
+	return TransactionASAResolver{ctx: ctx, eng: e}
+}
+
+// ResolveMetadata resolves ref to the asset's metadata as algod reports it
+// now. A built-in asset is answered from the reviewed table without a read.
+// An asset named by name or unit name must still carry that name on the
+// network; when it does not, its corrected cache entry is kept and the
+// command is refused, because the name stood for another asset.
+func (r TransactionASAResolver) ResolveMetadata(ref string) (asa.Metadata, error) {
+	e := r.eng
+	ref = strings.TrimSpace(ref)
+	assetID, err := e.ASAResolver().ResolveID(ref)
+	if err != nil {
+		return asa.Metadata{}, err
+	}
+	if meta, ok := asa.BuiltinMetadata(e.Network, assetID); ok {
+		return meta, nil
+	}
+	if e.AlgodClient == nil {
+		return asa.Metadata{}, ErrNoAlgodClient
+	}
+	params, err := cache.FetchASAParams(r.ctx, e.AlgodClient, assetID)
+	if err != nil {
+		return asa.Metadata{}, fmt.Errorf("failed to get asset %d: %w", assetID, err)
+	}
+	live := cache.ASAInfoFromParams(params)
+	refreshErr := e.refreshCachedASA(assetID, live)
+	_, parseErr := strconv.ParseUint(ref, 10, 64)
+	byName := parseErr != nil
+	if byName && !live.MatchesReference(ref) {
+		corrected := "the cache entry has been corrected"
+		if refreshErr != nil {
+			corrected = fmt.Sprintf("correcting the cache entry failed: %v", refreshErr)
+		}
+		return asa.Metadata{}, fmt.Errorf("the cached name %q no longer matches asset %d on %s, which is now %q (unit %q); %s. Check the asset and run the command again",
+			ref, assetID, e.Network, live.Name, live.UnitName, corrected)
+	}
+	if refreshErr != nil {
+		logger().Warn("failed to refresh the ASA cache entry", "asset_id", assetID, "network", e.Network, "error", refreshErr)
+	}
+	return asa.Metadata{
+		Network:  e.Network,
+		AssetID:  assetID,
+		UnitName: live.UnitName,
+		Name:     live.Name,
+		Decimals: live.Decimals,
+		Source:   asa.SourceLive,
+	}, nil
+}
+
+// refreshCachedASA stores what algod reported for an asset when its cache
+// entry is missing or differs.
+func (e *Engine) refreshCachedASA(assetID uint64, live cache.ASAInfo) error {
+	if cached, ok := e.AsaCache.Assets[assetID]; ok && cached == live {
+		return nil
+	}
+	return e.storeCachedASA(&ASAInfo{AssetID: assetID, UnitName: live.UnitName, Name: live.Name, Decimals: live.Decimals})
 }
 
 // SaveASACache persists the ASA cache to disk for the current network.
@@ -85,17 +159,22 @@ func (e *Engine) AddASAToCache(ctx context.Context, assetID uint64) (*ASAInfo, e
 		return nil, err
 	}
 
-	err = e.withClientDataLock(func() error {
+	if err := e.storeCachedASA(info); err != nil {
+		return info, fmt.Errorf("added to cache but failed to save: %w", err)
+	}
+	return info, nil
+}
+
+// storeCachedASA writes one asset's entry to the ASA cache under the client
+// data lock, reloading the file first so entries other processes wrote stay.
+func (e *Engine) storeCachedASA(info *ASAInfo) error {
+	return e.withClientDataLock(func() error {
 		if e.DataDir != "" {
 			e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, e.Network)
 		}
 		e.cacheASA(info)
 		return e.AsaCache.SaveCacheLocked(e.Network)
 	})
-	if err != nil {
-		return info, fmt.Errorf("added to cache but failed to save: %w", err)
-	}
-	return info, nil
 }
 
 // cacheASA adds an asset to the internal cache

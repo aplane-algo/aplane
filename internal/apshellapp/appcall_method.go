@@ -41,7 +41,7 @@ type AppCallMethodRequest struct {
 
 // AppCallMethod executes the semantic part of an ABI/method app call.
 func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*AppCallMethodResult, error) {
-	fromAddr, accounts, foreignAssets, err := a.resolveAppCallInputs(req.From, req.Accounts, req.AssetRefs)
+	fromAddr, accounts, foreignAssets, err := a.resolveAppCallInputs(ctx, req.From, req.Accounts, req.AssetRefs)
 	if err != nil {
 		return nil, err
 	}

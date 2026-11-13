@@ -296,10 +296,20 @@ writer.
 The Engine exposes resolver-backed ASA access through methods such as:
 
 - `ASAResolver()`
+- `ASAResolverForTransaction(ctx)`
 - `ResolveASAReference(...)`
 - `GetASAInfoWithContext(...)`
 
 Callers use those entry points or `internal/asa` directly rather than reaching into `AsaCache` for reference resolution or display formatting.
+
+The ASA cache is a display aid. `ASAResolver()` answers from it, and balances,
+holdings, `asa list`, completion, and the plugin context's asset list show
+cached metadata. A command that builds a transaction resolves its asset
+through `ASAResolverForTransaction(ctx)` instead: an asset that is not built
+in is read from algod, its live decimals and names are used, and the cache
+entry is corrected with what was read. An asset named by unit name or name
+must still carry that name; if it does not, the command is refused. A built-in
+asset comes from the reviewed table with no read.
 
 #### Functional Options Pattern
 
@@ -740,13 +750,13 @@ match an operator's intent:
 | **AuthCache** | Blockchain `auth-addr` | Account rekeyed externally | Wrong signer → transaction rejected by network |
 | **AliasCache** | Persisted operator alias state | Another client changes an alias | A stale resolved address may still be a valid recipient; inspect the resolved transaction |
 | **SetCache** | Persisted operator set state | Another client changes membership | Stale recipients may still be valid addresses |
-| **ASACache** | Blockchain + builtins | Stale or incorrect metadata | Display-unit conversion may select unintended base units; the signer sees those base units |
+| **ASACache** | Blockchain + builtins | Stale or incorrect metadata | Display only: a transaction reads its asset from algod, so a stale entry cannot set its base units; a stale name is refused |
 
 **Note**: There is no LSig cache in the Engine. LSig bytecode is stored in the signer's key files and retrieved per-signing-operation.
 
 The blockchain enforces the effective authorizer, and apsigner applies policy
 to decoded transaction bytes. Neither can infer an intended recipient or
-display-unit amount from a stale alias/set/ASA cache. Shared client mutations
+display-unit amount from a stale alias or set cache. Shared client mutations
 use the cooperative lock, and passive cache watching refreshes snapshots at
 command boundaries; those mechanisms improve freshness rather than prove intent.
 
@@ -755,7 +765,8 @@ command boundaries; those mechanisms improve freshness rather than prove intent.
   `/status` keyset-revision changes, and cosigned submit paths whose cached
   signer row is missing current signing-flow or cosigner metadata
 - AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key
-- ASACache: fetches from blockchain on cache miss
+- ASACache: fetches from blockchain on cache miss; a command that builds a
+  transaction rereads its asset and corrects the entry
 
 #### Algod Client
 

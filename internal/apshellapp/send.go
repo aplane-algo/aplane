@@ -28,7 +28,7 @@ type SendRequest struct {
 }
 
 // PrepareSend resolves addresses, amount metadata, and execution mode for a send command.
-func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error) {
+func (a *App) PrepareSend(ctx context.Context, req SendRequest) (*SendPlan, error) {
 	resolver := a.eng.NewAddressResolver()
 
 	fromAddresses, err := cmdspec.ResolveAddressList(req.FromRaw, resolver)
@@ -49,7 +49,7 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 		return nil, err
 	}
 
-	amount, err := cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.AmountText, a.eng.ASAResolver())
+	amount, err := cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.AmountText, a.eng.ASAResolverForTransaction(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve amount for asset %q: %w", req.AssetRef, err)
 	}
