@@ -21,6 +21,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
@@ -701,5 +702,44 @@ func TestReviewRefusesANonInteractivePregroupedGroupBeforeTheKeyList(t *testing.
 	}
 	if out.Len() != 0 || f.keyFetches.Load() != 0 {
 		t.Fatalf("shown %q and fetched the key list %d time(s) before the refusal", out.String(), f.keyFetches.Load())
+	}
+}
+
+// A presign-plan group whose LogicSig arguments reach a slot the plugin signs,
+// untargeted or naming its account, is refused by the check the review starts
+// with: nothing is shown and nothing is asked.
+func TestReviewRefusesArgumentsForAPluginSignedSlotBeforeShowingIt(t *testing.T) {
+	pluginTxn := approvalTestPayment(1, 2, 1)
+	plugin := pluginTxn.Sender.String()
+	for name, token := range map[string]string{"untargeted": "arg:preimage=text:x", "for the plugin's account": "arg:" + plugin + ":preimage=text:x"} {
+		t.Run(name, func(t *testing.T) {
+			eng, err := newIsolatedTestEngine(t, "testnet")
+			if err != nil {
+				t.Fatalf("NewEngine() error = %v", err)
+			}
+			var out bytes.Buffer
+			asked := false
+			state := &REPLState{
+				Out: &out, App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir()),
+				LineReader: func() (string, error) { asked = true; return "y", nil },
+			}
+			var args cmdspec.LsigArgs
+			if err := cmdspec.AddLsigArg(&args, token); err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+				Success:       true,
+				GroupMode:     jsonrpc.GroupModePresignPlan,
+				Transactions:  rawIntents(approvalTestPayment(7, 2, 1), pluginTxn),
+				PluginSigners: []jsonrpc.PluginSigner{{Address: plugin, Kind: jsonrpc.PluginSignerKindCallback, SignerRef: "ref"}},
+			}, args)
+			want := "transaction 2: LogicSig arguments reach " + plugin + ", which the plugin signs"
+			if err == nil || !strings.HasPrefix(err.Error(), want) {
+				t.Fatalf("reviewPluginTransactions() error = %v, want %q", err, want)
+			}
+			if out.Len() != 0 || asked {
+				t.Fatalf("the refused group was shown (asked: %v):\n%s", asked, out.String())
+			}
+		})
 	}
 }

@@ -563,7 +563,10 @@ methods take them.
   resolution, a name given twice to one transaction: twice for one account,
   or both untargeted and for an account. It returns an `engine.LsigArgs`.
   For a plugin command it runs in `CheckPluginGroup`, against the senders of
-  the first result's transactions; the group keeps the result.
+  the first result's transactions, before the review; the check then refuses
+  a presign-plan group in which an argument reaches a slot the plugin signs
+  (`::refusePluginSignedLsigArgs`: the plugin's sign request has no field for
+  them), and the group keeps the result.
 - `engine.LsigArgs` (`internal/engine/lsig_args.go`) is the only way to hand
   the engine arguments: its fields are unexported, and it is made by
   `NewLsigArgs(untargeted, bySender)` or `UntargetedLsigArgs(m)` (the JS API's
@@ -571,10 +574,9 @@ methods take them.
   `signAndSubmitGroup` (single, atomic, prepared group, default plugin draft,
   and through it the rotating and cosigned routes) and
   `SignAndSubmitWithPluginSigners` set each position's map from
-  `LsigArgs.For(sender)`. The engine judges nothing in it, with two
-  exceptions: a presign-plan position the plugin signs refuses any argument
-  (the plugin's sign request has no field for them), and the existing
-  pre-sign check (`validateSubmitLsigArgs`) compares each position's map with
+  `LsigArgs.For(sender)`; a presign-plan slot the plugin signs gets none.
+  The engine judges nothing in it, except through the existing pre-sign
+  check (`validateSubmitLsigArgs`), which compares each position's map with
   the declared arguments of the sender's effective signer in the signer
   cache, after `refreshSubmitSigningState`. A key the cache describes no
   arguments for passes; the signer judges every key, and refuses

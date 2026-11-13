@@ -158,8 +158,10 @@ var ErrUncheckedPluginGroup = errors.New("internal error: the plugin group was n
 // pregrouped-signed group for a review that cannot ask the user is refused
 // once decoded, before any key list is fetched: it could never be submitted.
 // So is a group the step's arg: words cannot be given to: a pregrouped-signed
-// group with any (the plugin signs every transaction), or a target that is
-// not one of the group's senders or that repeats a name (resolveLsigArgs).
+// group with any (the plugin signs every transaction), a target that is not
+// one of the group's senders or that repeats a name (resolveLsigArgs), and a
+// presign-plan group in which an argument reaches a slot the plugin signs
+// (refusePluginSignedLsigArgs).
 //
 // A group in which any transaction rekeys an account is judged against the key
 // list fetched from the signer for this check (judgeRekeys), and is refused
@@ -213,6 +215,11 @@ func (a *App) CheckPluginGroup(ctx context.Context, result *jsonrpc.ExecuteResul
 		}
 		if group.lsigArgs, err = a.resolveLsigArgs(opts.LsigArgs, groupSenders(txns)); err != nil {
 			return nil, err
+		}
+		if result.GroupMode == jsonrpc.GroupModePresignPlan {
+			if err := refusePluginSignedLsigArgs(txns, group.lsigArgs, group.pluginSigners); err != nil {
+				return nil, err
+			}
 		}
 	}
 	group.encoded = make([][]byte, len(txns))

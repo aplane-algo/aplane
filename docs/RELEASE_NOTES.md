@@ -40,10 +40,10 @@ before it was renamed `enroll`.
   accounts are the senders of its transactions. A first result that succeeds
   with no transactions is refused rather than its arguments dropped, and its
   continuation is not run; one that fails is reported as the plugin's own
-  failure. An argument that reaches a `presign-plan`
-  position the plugin signs, given for every transaction or naming its
-  account, is refused before `/plan`: the plugin is asked to sign with no
-  arguments. `pregrouped-signed` still takes none.
+  failure. An argument that reaches a `presign-plan` position the plugin
+  signs, given for every transaction or naming its account, is refused
+  before the group is shown: the plugin is asked to sign with no arguments.
+  `pregrouped-signed` still takes none.
 - **The client's check of required arguments and lengths reads the key that
   signs.** It ran before the auth address was refreshed and read the
   sender's own key, so an account rekeyed to a LogicSig key was checked

@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"fmt"
 	"maps"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -20,9 +19,11 @@ import (
 // Nothing can hand the engine a bare map of arguments: a caller says whom
 // they are for, with UntargetedLsigArgs or NewLsigArgs. apshellapp builds the
 // value from a command's arg: words, having resolved each target to an
-// address and refused a target the command does not send from and a name
-// given twice to one transaction; the JS API's lsigArgs option is
-// UntargetedLsigArgs. The engine judges nothing in it: it places it.
+// address and refused a target the command does not send from, a name given
+// twice to one transaction, and, for a plugin group, an argument that reaches
+// a presign-plan slot the plugin signs (apshellapp.CheckPluginGroup); the JS
+// API's lsigArgs option is UntargetedLsigArgs. The engine judges nothing in
+// it: it places it, and a presign-plan slot the plugin signs gets none.
 //
 // A value is never changed once made: its constructors copy what they are
 // given and For returns a new map.
@@ -93,25 +94,6 @@ func (a LsigArgs) place(txns []types.Transaction) []map[string][]byte {
 		placed[i] = a.For(txn.Sender.String())
 	}
 	return placed
-}
-
-// refusePluginSignedLsigArgs refuses a presign-plan group in which a
-// plugin-signed position gets an argument, untargeted or addressed to its
-// sender: the plugin is asked to sign its positions with no arguments (a
-// PluginSlotSignRequest has no field for them), so an argument placed there
-// would be dropped. placed is the group's placement; positions are named from
-// one, as the command's input is.
-func refusePluginSignedLsigArgs(txns []types.Transaction, placed []map[string][]byte, pluginSignerRefs map[string]string) error {
-	for i, txn := range txns {
-		if i >= len(placed) || len(placed[i]) == 0 {
-			continue
-		}
-		sender := txn.Sender.String()
-		if _, owned := pluginSignerRefs[sender]; owned {
-			return fmt.Errorf("transaction %d: LogicSig arguments reach %s, which the plugin signs: a plugin-signed transaction takes no arguments; give each argument a target, an account apsigner signs for (arg:<account>:<name>=<value>)", i+1, sender)
-		}
-	}
-	return nil
 }
 
 func cloneLsigArgMap(args map[string][]byte) map[string][]byte {

@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
 
 // ErrLsigArgsWithoutTransactions refuses a plugin command given arg: words
@@ -89,6 +92,26 @@ func (a *App) resolveLsigArgs(args cmdspec.LsigArgs, senders []string) (engine.L
 	untargeted := values[""]
 	delete(values, "")
 	return engine.NewLsigArgs(untargeted, values), nil
+}
+
+// refusePluginSignedLsigArgs refuses a presign-plan group in which a slot a
+// plugin signer sends gets an argument, untargeted or addressed to its
+// account: apshell asks the plugin to sign its slots with no arguments (a
+// signTransactions request has no field for them), so an argument placed
+// there would be dropped. Positions are named from one, as the review names
+// them.
+func refusePluginSignedLsigArgs(txns []types.Transaction, args engine.LsigArgs, signers []jsonrpc.PluginSigner) error {
+	pluginSigned := make(map[string]bool, len(signers))
+	for _, signer := range signers {
+		pluginSigned[signer.Address] = true
+	}
+	for i, txn := range txns {
+		sender := txn.Sender.String()
+		if pluginSigned[sender] && len(args.For(sender)) > 0 {
+			return fmt.Errorf("transaction %d: LogicSig arguments reach %s, which the plugin signs: a plugin-signed transaction takes no arguments; give each argument a target, an account apsigner signs for (arg:<account>:<name>=<value>)", i+1, sender)
+		}
+	}
+	return nil
 }
 
 // untargetedLsigArgs is the JS API's lsigArgs option as arg: words: each name

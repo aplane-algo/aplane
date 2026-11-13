@@ -710,9 +710,8 @@ accounts the plugin's transactions send from.
 - **Plugin-signed positions take none.** In `presign-plan`, apshell asks the
   plugin to sign its slots with no arguments (`signTransactions` requests
   carry none), so an argument that reaches a plugin-signed slot, given for
-  every transaction or naming its account, is refused before `/plan`
-  (`engine.SignAndSubmitWithPluginSigners`). Name the managed accounts
-  instead.
+  every transaction or naming its account, is refused by the same check,
+  before anything is shown or sent. Name the managed accounts instead.
 - **`pregrouped-signed` takes none.** The plugin signs every transaction, so
   any `arg:` word is refused once the result is decoded.
 - In the default flow and for `presign-plan`'s managed slots, the signer

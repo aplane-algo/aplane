@@ -404,7 +404,8 @@ func TestDefaultPluginDraftPlacesArgumentsBySender(t *testing.T) {
 
 // A presign-plan group gives a word for a managed account to that position;
 // a word that reaches the plugin-signed position, untargeted or addressed to
-// it, is refused before anything is sent.
+// it, is refused by the check, before the group is reviewed or anything is
+// sent.
 func TestPresignPlanGroupArguments(t *testing.T) {
 	presign := func(f *argsFixture) *jsonrpc.ExecuteResult {
 		return &jsonrpc.ExecuteResult{
@@ -422,7 +423,10 @@ func TestPresignPlanGroupArguments(t *testing.T) {
 	for name, token := range map[string]string{"untargeted": "arg:preimage=a", "for the plugin's account": "arg:" + argsPlugin + ":preimage=a"} {
 		t.Run(name, func(t *testing.T) {
 			f := newArgsFixture(t)
-			err := checkAndSubmit(context.Background(), f.app, presign(f), words(t, token))
+			group, err := f.app.CheckPluginGroup(context.Background(), presign(f), PluginCheckOptions{Interactive: true, LsigArgs: words(t, token)})
+			if group != nil {
+				t.Fatal("CheckPluginGroup() returned a group for review")
+			}
 			wantRefusedBeforeSending(t, f, err, "transaction 2: LogicSig arguments reach "+argsPlugin+", which the plugin signs")
 		})
 	}

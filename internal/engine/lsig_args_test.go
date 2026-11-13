@@ -275,12 +275,11 @@ func TestSubmitChecksLsigArgsAgainstTheEffectiveSigner(t *testing.T) {
 	})
 }
 
-// A presign-plan position the plugin signs is sent to the plugin with no
-// arguments, so an argument that reaches one, addressed to its sender or
-// untargeted, is refused before anything is sent: no /plan, no plugin
-// signing, no algod read. An argument addressed to a managed position goes
-// to it alone.
-func TestSignAndSubmitWithPluginSignersRefusesArgumentsForAPluginSignedPosition(t *testing.T) {
+// The engine places a presign-plan group's arguments on the managed slots
+// only: a slot the plugin signs goes to /plan as foreign, with no arguments
+// (the caller, apshellapp.CheckPluginGroup, refuses a group whose arguments
+// reach one). An argument addressed to a managed slot goes to it alone.
+func TestSignAndSubmitWithPluginSignersPlacesArgumentsOnManagedSlots(t *testing.T) {
 	plugin, managed := testAddress(21), testAddress(22)
 	keys := []signerapi.KeyInfo{{Address: managed.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true,
 		SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", MaxSize: 64}}}}
@@ -288,40 +287,20 @@ func TestSignAndSubmitWithPluginSignersRefusesArgumentsForAPluginSignedPosition(
 	preimage := map[string][]byte{"preimage": []byte("open")}
 
 	for name, args := range map[string]LsigArgs{
-		"addressed to the plugin's sender": NewLsigArgs(nil, map[string]map[string][]byte{plugin.String(): preimage}),
+		"addressed to the managed account": NewLsigArgs(nil, map[string]map[string][]byte{managed.String(): preimage}),
 		"untargeted":                       UntargetedLsigArgs(preimage),
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newLsigArgsEngine(t, keys, nil)
-			var pluginCalls atomic.Int32
 			_, err := f.eng.SignAndSubmitWithPluginSigners(context.Background(),
 				[]types.Transaction{f.payment(t, managed), f.payment(t, plugin)}, refs, nil,
-				func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
-					pluginCalls.Add(1)
-					return nil, errors.New("not reached")
-				}, args)
-			want := "transaction 2: LogicSig arguments reach " + plugin.String() + ", which the plugin signs"
-			if err == nil || !strings.HasPrefix(err.Error(), want) {
-				t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want %q", err, want)
+				func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) { return nil, errors.New("not reached") }, args)
+			if err == nil || !strings.Contains(err.Error(), "group planning failed") {
+				t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want the test signer's /plan refusal", err)
 			}
-			if got := f.signerCalls.Load(); got != 0 {
-				t.Fatalf("signer calls = %d, want 0", got)
-			}
-			if pluginCalls.Load() != 0 {
-				t.Fatal("the plugin was asked to sign")
+			if got := sentArgs(t, plansOf(f)); len(got) != 1 || !reflect.DeepEqual(got[0], []map[string]string{{"preimage": "open"}, nil}) {
+				t.Fatalf("/plan lsig_args = %v, want preimage at the managed slot only", got)
 			}
 		})
-	}
-
-	f := newLsigArgsEngine(t, keys, nil)
-	args := NewLsigArgs(nil, map[string]map[string][]byte{managed.String(): preimage})
-	_, err := f.eng.SignAndSubmitWithPluginSigners(context.Background(),
-		[]types.Transaction{f.payment(t, managed), f.payment(t, plugin)}, refs, nil,
-		func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) { return nil, errors.New("not reached") }, args)
-	if err == nil || strings.Contains(err.Error(), "LogicSig arguments reach") {
-		t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want the test signer's /plan refusal", err)
-	}
-	if got := sentArgs(t, plansOf(f)); len(got) != 1 || !reflect.DeepEqual(got[0], []map[string]string{{"preimage": "open"}, nil}) {
-		t.Fatalf("/plan lsig_args = %v, want preimage at the managed position only", got)
 	}
 }
