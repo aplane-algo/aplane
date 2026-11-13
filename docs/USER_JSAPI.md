@@ -316,7 +316,10 @@ call builds. The JS API has no form that names an account, as
 that take different arguments is written as one `sweep()` per account, or
 run as the shell's `sweep` command. A name a key does not take is refused,
 and a native account (ed25519, native Falcon) takes none, so `lsigArgs` on a
-`sweep()` that includes one fails that account's transaction. See
+`sweep()` that includes one fails that account's transaction. A name is
+passed on as given, in `close()` and `sweep()` alike: the shell's rule that a
+name may not contain `:` keeps its two `arg:` forms apart and does not apply
+to an object key, and a name the signing key does not declare is refused. See
 [USER_COMMANDS.md](USER_COMMANDS.md#logicsig-arguments).
 
 `sweep()` is the shell's `sweep` command. It does not close the account; that

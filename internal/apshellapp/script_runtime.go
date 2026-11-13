@@ -69,10 +69,10 @@ func (s jsSweeper) Sweep(ctx context.Context, req jsapi.SweepRequest) (*jsapi.Sw
 		LeavingRaw: leaving,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
-		// sweep()'s lsigArgs is untargeted, for every transaction: the JS API
-		// names no accounts for arguments.
-		LsigArgs: untargetedLsigArgs(req.LsigArgs),
-		Wait:     req.Wait,
+		// sweep()'s lsigArgs is untargeted, for every transaction, as
+		// close()'s is: the JS API names no accounts for arguments.
+		UntargetedLsigArgs: req.LsigArgs,
+		Wait:               req.Wait,
 	})
 	out, err := sweepResultForScript(result, err)
 	if out != nil {

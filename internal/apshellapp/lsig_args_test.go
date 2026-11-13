@@ -27,12 +27,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/dop251/goja"
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/jsapi"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -445,17 +443,46 @@ func TestAppCallCompanionPaymentGetsTheSendersArguments(t *testing.T) {
 	f.wantSent(t, false, []map[string]string{sentArgs("preimage", "a"), sentArgs("preimage", "a")})
 }
 
-// A script's close() takes lsigArgs as untargeted arguments, for every
-// transaction it builds.
-func TestScriptCloseLsigArgsAreUntargeted(t *testing.T) {
-	f := newArgsFixture(t)
-	vm := goja.New()
-	if err := jsapi.NewAPI(f.eng, false, nil).RegisterAll(vm); err != nil {
-		t.Fatalf("RegisterAll() error = %v", err)
+// A script's close() and sweep() take lsigArgs as untargeted arguments, for
+// every transaction the call builds, by one route
+// (engine.UntargetedLsigArgs), so a name is treated alike by both: one
+// holding ':' is passed on as it is, and here refused by the client's
+// pre-sign check for a key that does not declare it, before anything is
+// signed.
+func TestScriptLsigArgsAreUntargeted(t *testing.T) {
+	run := func(t *testing.T, f *argsFixture, code string) error {
+		t.Helper()
+		_, err := f.app.Scripts.EnsureRunner(func(string) {}, nil).Run(code)
+		return err
 	}
-	if _, err := vm.RunString(`close("hl", "dest", {lsigArgs: {preimage: "text:open"}})`); err == nil ||
+
+	f := newArgsFixture(t)
+	if err := run(t, f, `close("hl", "dest", {lsigArgs: {preimage: "text:open"}})`); err == nil ||
 		!strings.Contains(err.Error(), "close() error submitting transaction") {
 		t.Fatalf("close() error = %v, want the test signer's refusal", err)
 	}
 	f.wantSent(t, false, []map[string]string{sentArgs("preimage", "open")})
+
+	f = newArgsFixture(t)
+	if err := run(t, f, `sweep(["hl", "hl2"], "dest", {lsigArgs: {preimage: "text:open"}})`); err == nil ||
+		!strings.Contains(err.Error(), "all 2 transaction(s) failed") {
+		t.Fatalf("sweep() error = %v, want the test signer's refusal of both", err)
+	}
+	f.wantSent(t, false, []map[string]string{sentArgs("preimage", "open")}, []map[string]string{sentArgs("preimage", "open")})
+
+	for name, code := range map[string]string{
+		"close": `close("hl", "dest", {lsigArgs: {"pre:image": "text:open"}})`,
+		"sweep": `sweep(["hl"], "dest", {lsigArgs: {"pre:image": "text:open"}})`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newArgsFixture(t)
+			err := run(t, f, code)
+			if err == nil || !strings.Contains(err.Error(), "invalid LogicSig arguments: unknown argument 'pre:image' for this account type") {
+				t.Fatalf("%s() error = %v, want the pre-sign check's refusal of the name", name, err)
+			}
+			if got := f.signerPosts.Load(); got != 0 {
+				t.Fatalf("signer requests = %d, want none", got)
+			}
+		})
+	}
 }

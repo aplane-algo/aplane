@@ -111,7 +111,11 @@ type SweepRequest struct {
 	Fee        uint64
 	UseFlatFee bool
 	LsigArgs   cmdspec.LsigArgs
-	Wait       bool
+	// UntargetedLsigArgs is the JS API's lsigArgs option: arguments by name
+	// for every transaction the sweep builds. A request gives these or
+	// LsigArgs, not both.
+	UntargetedLsigArgs map[string][]byte
+	Wait               bool
 }
 
 // ValidateRequest captures parsed account validation inputs.
@@ -754,6 +758,12 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, fromAddresses)
 	if err != nil {
 		return nil, err
+	}
+	if len(req.UntargetedLsigArgs) > 0 {
+		if len(req.LsigArgs) > 0 {
+			return nil, fmt.Errorf("internal error: sweep was given LogicSig arguments both as arg: words and as untargeted arguments")
+		}
+		lsigArgs = engine.UntargetedLsigArgs(req.UntargetedLsigArgs)
 	}
 
 	assetMeta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())

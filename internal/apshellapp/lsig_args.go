@@ -6,7 +6,6 @@ package apshellapp
 import (
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -112,22 +111,4 @@ func refusePluginSignedLsigArgs(txns []types.Transaction, args engine.LsigArgs, 
 		}
 	}
 	return nil
-}
-
-// untargetedLsigArgs is the JS API's lsigArgs option as arg: words: each name
-// untargeted, for every transaction, in name order.
-func untargetedLsigArgs(args map[string][]byte) cmdspec.LsigArgs {
-	if len(args) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(args))
-	for name := range args {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	words := make(cmdspec.LsigArgs, len(names))
-	for i, name := range names {
-		words[i] = cmdspec.LsigArg{Name: name, Value: args[name]}
-	}
-	return words
 }
