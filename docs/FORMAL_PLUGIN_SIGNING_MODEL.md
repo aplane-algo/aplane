@@ -313,9 +313,10 @@ what was reviewed.
   `arg:<account>:<name>=<value>` on that account's. The refusals they add come
   before anything is sent and change none of the modeled gates or their order:
   - `internal/apshellcli/external_plugins.go::processPluginResultStructured`
-    refuses arguments given for a first result with no transactions
-    (`apshellapp.ErrLsigArgsWithoutTransactions`), before its continuation
-    runs;
+    refuses arguments given for a successful first result with no
+    transactions (`apshellapp.ErrLsigArgsWithoutTransactions`), before its
+    continuation runs; a failed first result is reported as the plugin's
+    failure;
   - `internal/apshellapp/submission.go::CheckPluginGroup` refuses any
     arguments for a pregrouped-signed group, and resolves the others against
     the group's senders (`internal/apshellapp/lsig_args.go::resolveLsigArgs`),

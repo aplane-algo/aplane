@@ -55,8 +55,9 @@ var errPluginTransactionCancelled = errors.New("transaction cancelled by user")
 // transactions are reviewed and submitted before its continuation runs, and
 // the chain ends only when a step returns no continuation. It is the one
 // continuation loop: the REPL, MCP and JS plugin() all run plugins through it.
-// The command's arg: words apply to the first result only, which must have
-// transactions for them to reach; a continuation's results get none.
+// The command's arg: words apply to the first result only, which, when it
+// succeeds, must have transactions for them to reach; a failed first result
+// is reported as the plugin's own failure. A continuation's results get none.
 func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonrpc.ExecuteResult, lsigArgs cmdspec.LsigArgs, plugin *discovery.Plugin) error {
 	for {
 		// Update top-level fields from the current result
@@ -65,7 +66,7 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 		pr.Data = result.Data
 		pr.Presentation = result.Presentation
 
-		if len(lsigArgs) > 0 && len(result.Transactions) == 0 {
+		if result.Success && len(lsigArgs) > 0 && len(result.Transactions) == 0 {
 			return apshellapp.ErrLsigArgsWithoutTransactions
 		}
 		if len(result.Transactions) > 0 {

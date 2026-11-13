@@ -37,9 +37,10 @@ before it was renamed `enroll`.
 - **An atomic `send` to or from a set carries LogicSig arguments**, each
   position getting its own sender's. It refused `arg:` before.
 - **Plugin commands.** The arguments go to the plugin's first result, and the
-  accounts are the senders of its transactions. A first result with no
-  transactions is refused rather than its arguments dropped, and its
-  continuation is not run. An argument that reaches a `presign-plan`
+  accounts are the senders of its transactions. A first result that succeeds
+  with no transactions is refused rather than its arguments dropped, and its
+  continuation is not run; one that fails is reported as the plugin's own
+  failure. An argument that reaches a `presign-plan`
   position the plugin signs, given for every transaction or naming its
   account, is refused before `/plan`: the plugin is asked to sign with no
   arguments. `pregrouped-signed` still takes none.

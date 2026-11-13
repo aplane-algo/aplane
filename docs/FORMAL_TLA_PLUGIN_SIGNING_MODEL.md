@@ -57,8 +57,8 @@ none of its gates: `CheckPluginGroup` refuses any for a pregrouped-signed
 group, and an argument whose account is not a sender of the group or whose
 name repeats for one transaction (`apshellapp/lsig_args.go::resolveLsigArgs`),
 after the decode and the non-interactive refusal and before the first rekey
-judgment; `processPluginResultStructured` refuses arguments for a first result
-with no transactions; and `SignAndSubmitWithPluginSigners` refuses an argument
+judgment; `processPluginResultStructured` refuses arguments for a successful
+first result with no transactions; and `SignAndSubmitWithPluginSigners` refuses an argument
 placed on a plugin-signed slot, after its slot-ownership checks and before the
 network precondition and `/plan`. TLC verifies that no
 enumerated combination reaches submission without satisfying every named

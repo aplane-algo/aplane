@@ -1673,9 +1673,10 @@ The rules:
   each position getting its own sender's.
 - In a plugin command, the arguments go to the plugin's first result only,
   and the accounts are the senders of the transactions it returns. A first
-  result with no transactions, an argument that reaches a transaction the
-  plugin signs itself (a `presign-plan` slot), and any argument for a
-  `pregrouped-signed` result are refused before anything is sent.
+  result that succeeds with no transactions, an argument that reaches a
+  transaction the plugin signs itself (a `presign-plan` slot), and any
+  argument for a `pregrouped-signed` result are refused before anything is
+  shown or sent. A plugin that fails is reported by its own message.
 - Two transactions from the same sender in one command get the same
   arguments.
 

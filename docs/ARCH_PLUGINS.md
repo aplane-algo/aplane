@@ -696,10 +696,12 @@ transactions that account sends. To name an account, the user must know which
 accounts the plugin's transactions send from.
 
 - **First result only.** The words apply to the plugin's first result; a
-  continuation's results get none. A first result with no transactions has
-  nothing to give them to, so the command is refused there and its
-  continuation is not run (`apshellapp.ErrLsigArgsWithoutTransactions`, in
-  `processPluginResultStructured`), rather than the words being dropped.
+  continuation's results get none. A first result that succeeds with no
+  transactions has nothing to give them to, so the command is refused there
+  and its continuation is not run (`apshellapp.ErrLsigArgsWithoutTransactions`,
+  in `processPluginResultStructured`), rather than the words being dropped. A
+  first result that fails is reported as the plugin's own failure, as without
+  the words.
 - **Resolved at the check.** `apshellapp.CheckPluginGroup` resolves the words
   against the senders of the result's transactions, before the review: an
   account that sends none of them, or a name given twice to one transaction,
