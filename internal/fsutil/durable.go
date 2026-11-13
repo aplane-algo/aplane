@@ -4,12 +4,21 @@
 package fsutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
+
+// ErrPublishedNotDurable marks a durable write that renamed every new file
+// into place but could not fsync a parent directory afterward. The new
+// content is what the paths now hold and what a reader or the next start
+// sees, but it may not survive a crash. Every other failure of the durable
+// write helpers happens before the first rename and leaves the targets as
+// they were, except a rename failing partway through a multi-file set.
+var ErrPublishedNotDurable = errors.New("file replaced, but its directory sync failed")
 
 // DurableFileProfile is a closed set of ownership and permission policies for
 // durable publication. Callers choose an artifact purpose instead of passing
@@ -98,7 +107,9 @@ func runHook(op HookOp, path string) error {
 // WriteFileDurable writes data to path atomically and durably: temp file in
 // the destination directory, fsync of the file, rename over the destination,
 // fsync of the parent directory. On return the new content survives a crash
-// or power loss.
+// or power loss. An error wrapping ErrPublishedNotDurable means the new
+// content is in place but may not survive one; any other error means path
+// still holds its old content.
 //
 // Unlike WriteFile it never falls back to an unsynced in-place write.
 func WriteFileDurable(path string, data []byte) error {
@@ -269,7 +280,7 @@ func writeFileSetDurableWithPolicies(plans []durableWritePlan) error {
 	sort.Strings(orderedDirs)
 	for _, dir := range orderedDirs {
 		if err := SyncDir(dir); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrPublishedNotDurable, err)
 		}
 	}
 	return nil

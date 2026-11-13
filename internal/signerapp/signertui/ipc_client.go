@@ -811,6 +811,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Success: result.Success,
 			Key:     result.Key,
 			Value:   result.Value,
+			Code:    result.Code,
 			Error:   result.Error,
 		}
 	}),

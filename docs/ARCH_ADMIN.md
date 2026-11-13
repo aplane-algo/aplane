@@ -538,7 +538,7 @@ without overlays and bounds; neither takes mnemonic import.
 
 - `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
-- `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
+- `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_durable"` means the value is saved and in effect but its durability is not confirmed (see Writable Settings)
 
 #### Policy Messages
 
@@ -713,6 +713,29 @@ Writable admin settings:
   `aplane.ed25519.v1`), the plain program included
 - `theme`
 
+`update_admin_setting` validates the value before anything changes. The
+boolean settings (`user_auto_approve`, `lock_on_disconnect`,
+`require_contained`, `require_cosigner`) accept exactly `true` or `false`;
+any other value is refused with `code:"invalid_request"`. A valid value is
+saved first (`identities/default/config.yaml`, or root `config.yaml` for
+`theme`, written durably) and takes effect only once the save returns, so no
+reader, a signing request included, sees a value that was not saved. Until
+then readers keep the old value, which the file held until the new one
+replaced it:
+
+- A save that fails before the new file replaces the old one changes
+  nothing. The result fails and the setting keeps its value.
+- A save whose file replacement succeeded but whose directory sync failed
+  leaves the new file in place, which is what the next start loads. The new
+  value takes effect as the save returns, as after a full save, and is never
+  reset to the old value. The result fails with
+  `code:"applied_not_durable"` and an error saying the setting is in effect
+  but its durability is not confirmed.
+
+An admin client re-reads `get_admin_settings` after any
+`update_admin_setting_result`, a failed one included, to show the state the
+signer holds.
+
 Node role is not a writable admin setting. It is initialized once in root
 `node.yaml`, integrity-bound to the store, and changed only by creating a
 separate signer data root.
@@ -775,8 +798,10 @@ error-message codes are defined in `internal/protocol/error_codes.go`:
 Consumers should branch on message `type` and `code` first, and use `error` for display or fallback handling.
 
 Specific admin result messages may define additional stable result-local codes,
-including `key_type_in_use` for template disable/removal or compiled-provider disable and
-`restore_rate_limited` for managed restore preview/restore throttling. The Go
+including `key_type_in_use` for template disable/removal or compiled-provider disable,
+`restore_rate_limited` for managed restore preview/restore throttling, and
+`applied_not_durable` for a setting change that is in effect but whose
+directory sync failed. The Go
 source of truth for these result-local codes is `internal/protocol`, except the
 policy result codes (for example `policy_snapshot_changed`, `policy_unavailable`,
 and `identity_locked`), which `internal/signerapp/policyapply` and
@@ -1216,6 +1241,12 @@ signer settings and status:
 - A `Policies` row that opens the policies view
 - SSH enabled state, port, fingerprint, and connected-client count
 - Build information
+
+After a setting change, success or failure, the panel re-reads the settings,
+so a change that took effect with its durability unconfirmed
+(`applied_not_durable`) shows its stored value, with a warning naming the
+setting, not an update failure, that shows only on the panel and stays until
+the next key there.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

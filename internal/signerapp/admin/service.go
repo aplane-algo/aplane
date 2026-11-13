@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -170,83 +172,94 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		return fmt.Errorf("config.yaml has been modified externally; restart apsigner to apply changes before making further edits")
 	}
 
-	var err error
-	var saveKey string
+	// The new value is a candidate until it is saved: publish makes it live
+	// only once the save returns, so no reader (a signing request included)
+	// ever sees a value that was not saved.
 	var saveValue interface{}
+	var publish func()
 	icfg := ir.Config()
-
-	oldTheme := s.Deps.Theme()
-	oldUserAutoApprove := icfg.UserAutoApprove()
-	oldLockOnDisconnect := icfg.LockOnDisconnect()
-	oldSessionTimeout := icfg.SessionTimeout()
-	oldRequireContained, oldRequireCosigner := icfg.GenerationRequirements()
 
 	switch req.Key {
 	case adminproto.AdminSettingRequireContained:
-		v := req.Value == "true"
-		icfg.SetGenerationRequirements(v, oldRequireCosigner)
-		saveKey, saveValue = req.Key, v
+		v, err := parseBoolSetting(req)
+		if err != nil {
+			return err
+		}
+		_, cosigner := icfg.GenerationRequirements()
+		saveValue, publish = v, func() { icfg.SetGenerationRequirements(v, cosigner) }
 	case adminproto.AdminSettingRequireCosigner:
-		v := req.Value == "true"
-		icfg.SetGenerationRequirements(oldRequireContained, v)
-		saveKey, saveValue = req.Key, v
+		v, err := parseBoolSetting(req)
+		if err != nil {
+			return err
+		}
+		contained, _ := icfg.GenerationRequirements()
+		saveValue, publish = v, func() { icfg.SetGenerationRequirements(contained, v) }
 	case adminproto.AdminSettingUserAutoApprove:
-		v := req.Value == "true"
-		icfg.SetUserAutoApprove(v)
-		saveKey, saveValue = adminproto.AdminSettingUserAutoApprove, v
+		v, err := parseBoolSetting(req)
+		if err != nil {
+			return err
+		}
+		saveValue, publish = v, func() { icfg.SetUserAutoApprove(v) }
 	case adminproto.AdminSettingLockOnDisconnect:
-		v := req.Value == "true"
-		passphraseMethod := s.detectPassphraseMethod()
-		if passphraseMethod != "none" && v {
-			err = fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
-		} else {
-			icfg.SetLockOnDisconnect(v)
-			saveKey, saveValue = adminproto.AdminSettingLockOnDisconnect, v
+		v, err := parseBoolSetting(req)
+		if err != nil {
+			return err
 		}
+		if passphraseMethod := s.detectPassphraseMethod(); passphraseMethod != "none" && v {
+			return fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
+		}
+		saveValue, publish = v, func() { icfg.SetLockOnDisconnect(v) }
 	case adminproto.AdminSettingPassphraseTimeout:
-		duration, parseErr := serverconfig.ParsePassphraseTimeout(req.Value)
-		if parseErr != nil {
-			err = parseErr
-		} else {
-			passphraseMethod := s.detectPassphraseMethod()
-			if passphraseMethod != "none" && duration > 0 {
-				err = fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
-			} else {
-				icfg.SetSessionTimeout(duration)
-				saveKey, saveValue = adminproto.AdminSettingPassphraseTimeout, req.Value
-			}
+		duration, err := serverconfig.ParsePassphraseTimeout(req.Value)
+		if err != nil {
+			return err
 		}
+		if passphraseMethod := s.detectPassphraseMethod(); passphraseMethod != "none" && duration > 0 {
+			return fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
+		}
+		saveValue, publish = req.Value, func() { icfg.SetSessionTimeout(duration) }
 	case adminproto.AdminSettingTheme:
 		v := strings.ToLower(req.Value)
 		if v != "auto" && v != "dark" && v != "light" {
-			err = fmt.Errorf("invalid theme %q (must be auto, dark, or light)", req.Value)
-		} else {
-			s.Deps.SetTheme(v)
-			saveKey, saveValue = adminproto.AdminSettingTheme, v
+			return fmt.Errorf("invalid theme %q (must be auto, dark, or light)", req.Value)
 		}
+		saveValue, publish = v, func() { s.Deps.SetTheme(v) }
 	default:
-		err = protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
+		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
 
-	if err == nil && saveKey != "" {
-		mut := storemut.New(s.Deps.KeyPaths())
-		var saveErr error
-		if saveKey == adminproto.AdminSettingTheme {
-			saveErr = mut.SaveServerSetting(s.Deps.DataDir(), saveKey, saveValue)
-		} else {
-			saveErr = mut.SaveRuntimeSetting(s.Deps.DataDir(), saveKey, saveValue)
-		}
-		if saveErr != nil {
-			s.Deps.SetTheme(oldTheme)
-			icfg.SetUserAutoApprove(oldUserAutoApprove)
-			icfg.SetLockOnDisconnect(oldLockOnDisconnect)
-			icfg.SetSessionTimeout(oldSessionTimeout)
-			icfg.SetGenerationRequirements(oldRequireContained, oldRequireCosigner)
-			err = fmt.Errorf("failed to save config.yaml: %w", saveErr)
-		}
+	mut := storemut.New(s.Deps.KeyPaths())
+	var saveErr error
+	if req.Key == adminproto.AdminSettingTheme {
+		saveErr = mut.SaveServerSetting(s.Deps.DataDir(), req.Key, saveValue)
+	} else {
+		saveErr = mut.SaveRuntimeSetting(s.Deps.DataDir(), req.Key, saveValue)
 	}
+	switch {
+	case saveErr == nil:
+		publish()
+		return nil
+	case errors.Is(saveErr, fsutil.ErrPublishedNotDurable):
+		// The new file is in place and is what the next start loads, so
+		// memory follows it rather than keep a value the file no longer holds.
+		publish()
+		return protocol.WithCode(protocol.ResultCodeAppliedNotDurable,
+			fmt.Errorf("%s is set to %v and in effect, but its durability is not confirmed: %w", req.Key, saveValue, saveErr))
+	default:
+		return fmt.Errorf("failed to save config.yaml; %s is unchanged: %w", req.Key, saveErr)
+	}
+}
 
-	return err
+// parseBoolSetting accepts exactly "true" or "false" for a boolean setting.
+func parseBoolSetting(req adminproto.UpdateAdminSettingRequest) (bool, error) {
+	switch req.Value {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return false, protocol.WithCode(protocol.ErrCodeInvalidRequest,
+		fmt.Errorf("invalid %s value %q (must be true or false)", req.Key, req.Value))
 }
 
 func (s Service) detectPassphraseMethod() string {

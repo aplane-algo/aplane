@@ -4,10 +4,16 @@
 package tui
 
 import (
+	"bufio"
+	"encoding/json"
+	"io"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -141,5 +147,138 @@ func TestBoundedSettingsAreHiddenOnCosignerNodes(t *testing.T) {
 		if strings.HasPrefix(row.label, "Bounded:") {
 			t.Fatalf("a cosigner node offers %q", row.label)
 		}
+	}
+}
+
+// A failed setting update can still be in effect (saved, its durability
+// unconfirmed), so the panel re-reads the settings after a failure as after a
+// success, instead of keeping the value it showed before. That result is
+// coded applied_not_durable and shown as a warning that does not say
+// "failed"; it once read "Setting update failed" like a refused change.
+func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	client := NewAdminClient(&queueConnector{conns: []io.ReadWriteCloser{clientConn}})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	defer client.Disconnect()
+
+	sent := make(chan string, 4)
+	go func() {
+		reader := bufio.NewReader(serverConn)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var base protocol.BaseMessage
+			if json.Unmarshal(line, &base) == nil {
+				sent <- base.Type
+			}
+		}
+	}()
+
+	m := approvalTestModel(ViewAdminPanel)
+	m.adminClient = client
+	m.admin.settings = &AdminSettings{UserAutoApprove: false}
+	next, cmd := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
+		Error: "user_auto_approve is set to true and in effect, but its durability is not confirmed: file replaced, but its directory sync failed: injected",
+	})
+	want := "Setting in effect, durability not confirmed: user_auto_approve"
+	if got := next.(Model); got.lastError != "" || got.lastWarning != want {
+		t.Fatalf("lastError = %q, lastWarning = %q; want no error and the warning %q", got.lastError, got.lastWarning, want)
+	}
+	// A lone listener wait blocks until the client disconnects.
+	produced := make(chan tea.Msg, 1)
+	go func() { produced <- cmd() }()
+	var batch tea.BatchMsg
+	select {
+	case msg := <-produced:
+		var ok bool
+		if batch, ok = msg.(tea.BatchMsg); !ok {
+			t.Fatalf("command after a failed update = %T, want a batch that re-reads the settings", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the command after a failed update only waits for messages; it does not re-read the settings")
+	}
+	for _, c := range batch {
+		go c()
+	}
+	select {
+	case msgType := <-sent:
+		if msgType != protocol.MsgTypeGetAdminSettings {
+			t.Fatalf("sent %q after a failed update, want %q", msgType, protocol.MsgTypeGetAdminSettings)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no get_admin_settings sent after a failed update")
+	}
+}
+
+// A refused or unsaved setting change is shown as a failure.
+func TestUnappliedSettingUpdateIsShownAsAFailure(t *testing.T) {
+	m := approvalTestModel(ViewAdminPanel)
+	next, _ := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true",
+		Code: protocol.ErrCodeInternal, Error: "failed to save config.yaml; user_auto_approve is unchanged: injected",
+	})
+	if got := next.(Model); got.lastError != "Setting update failed: failed to save config.yaml; user_auto_approve is unchanged: injected" || got.lastWarning != "" {
+		t.Fatalf("lastError = %q, lastWarning = %q; want the failure as an error", got.lastError, got.lastWarning)
+	}
+}
+
+// The applied_not_durable warning stays on screen, as a failure would, until
+// the next key on the admin panel. It once cleared itself after 5s.
+func TestSettingNotDurableWarningStaysUntilTheNextAdminPanelKey(t *testing.T) {
+	m := approvalTestModel(ViewAdminPanel)
+	m.admin.settings = &AdminSettings{}
+	next, cmd := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
+	})
+	if next.(Model).lastWarning == "" {
+		t.Fatal("no warning shown for a setting in effect with its durability unconfirmed")
+	}
+	// Nothing is scheduled to clear it: with no client, every command the
+	// update returns completes at once, and a clearing timer would not.
+	ran := make(chan struct{})
+	go func() {
+		defer close(ran)
+		if batch, ok := cmd().(tea.BatchMsg); ok {
+			for _, c := range batch {
+				c()
+			}
+		}
+	}()
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the update scheduled a command that clears the warning later")
+	}
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := next.(Model).lastWarning; got != "" {
+		t.Fatalf("warning after the next admin panel key = %q, want it cleared", got)
+	}
+}
+
+// The durability warning names the setting, not the echoed request value,
+// which can differ from what the signer stored (a theme is lower-cased), and
+// it shows only on the admin panel, not in the status line of a view the
+// operator moved to before the result arrived.
+func TestSettingNotDurableWarningShowsOnlyOnTheAdminPanel(t *testing.T) {
+	m := approvalTestModel(ViewKeyList)
+	next, _ := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingTheme, Value: "Dark", Code: protocol.ResultCodeAppliedNotDurable,
+	})
+	m = next.(Model)
+	if strings.Contains(m.lastWarning, "Dark") {
+		t.Fatalf("warning = %q, want it without the echoed value", m.lastWarning)
+	}
+	if bar := m.renderStatusBar(); strings.Contains(bar, "durability not confirmed") {
+		t.Fatalf("status bar on the key list = %q, want no durability warning there", bar)
+	}
+	m.viewState = ViewAdminPanel
+	if bar := m.renderStatusBar(); !strings.Contains(bar, "durability not confirmed: theme") {
+		t.Fatalf("status bar on the admin panel = %q, want the durability warning", bar)
 	}
 }

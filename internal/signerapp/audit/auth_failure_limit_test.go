@@ -235,3 +235,26 @@ func TestCosignerRejectionFloodIsSummarized(t *testing.T) {
 		t.Fatalf("summary = %+v, want %d suppressed", summary, flood-authFailureBurst)
 	}
 }
+
+// A shutdown that leaves the log open still records the pending summary, and
+// the log stays usable for entries written after it.
+func TestFlushSummariesWritesThePendingSummaryAndKeepsTheLogOpen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	for i := 0; i < authFailureBurst+3; i++ {
+		a.LogAuthFailed("127.0.0.1:1", "invalid_credentials")
+	}
+	a.FlushSummaries()
+	entries := readAuditEntries(t, path)
+	if got := countEvents(entries, AuditAuthFailuresSuppressed); got != 1 || entries[len(entries)-1].SuppressedCount != 3 {
+		t.Fatalf("summary entries = %d (last %+v), want one counting 3", got, entries[len(entries)-1])
+	}
+	a.LogServerStop()
+	if got := countEvents(readAuditEntries(t, path), AuditServerStop); got != 1 {
+		t.Fatalf("SERVER_STOP entries after the flush = %d, want 1", got)
+	}
+}
