@@ -245,11 +245,19 @@ func TestAtomicSendGivesEachLogicSigAccountItsArgument(t *testing.T) {
 			Atomic: true, Wait: true, LsigArgs: targetWords(t, tokens...),
 		})
 	}
+	// A hashlock's address follows from its template and hash alone, so on a
+	// chain an earlier run used it still holds what that run left: balances
+	// are compared with what they were before any send here, not with the
+	// funding amount.
+	before := make(map[string]uint64)
+	for _, account := range []string{first, second, native} {
+		before[account] = env.balance(t, account)
+	}
 	unchanged := func(when string) {
 		t.Helper()
 		for _, account := range []string{first, second, native} {
-			if got := env.balance(t, account); got != funding {
-				t.Fatalf("%s: balance of %s = %d, want %d: nothing may move", when, account, got, funding)
+			if got := env.balance(t, account); got != before[account] {
+				t.Fatalf("%s: balance of %s = %d, want %d: nothing may move", when, account, got, before[account])
 			}
 		}
 	}
@@ -290,7 +298,7 @@ func TestAtomicSendGivesEachLogicSigAccountItsArgument(t *testing.T) {
 			t.Fatalf("transaction %d carried LogicSig arguments %q, want %q", i, got, want[i])
 		}
 	}
-	if got := env.balance(t, native); got > funding-amount {
+	if got := env.balance(t, native); got > before[native]-amount {
 		t.Fatalf("native balance = %d, want the payment taken", got)
 	}
 
