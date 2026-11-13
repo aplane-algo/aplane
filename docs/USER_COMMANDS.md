@@ -39,6 +39,11 @@ send <amount> <asset> from <sender> to <receiver> [options]
 | `<sender>` | Address, alias, or `@setname` |
 | `<receiver>` | Address, alias, or `@setname` |
 
+Each account in a set of senders or receivers gets its own transaction, so a
+set that names an account more than once (an alias and its address, or a set
+and one of its members listed again) is refused, naming the account, before
+anything is sent.
+
 **Options:**
 | Option | Description |
 |--------|-------------|

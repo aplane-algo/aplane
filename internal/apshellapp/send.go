@@ -45,6 +45,9 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 	if isFromSet && isToSet {
 		return nil, fmt.Errorf("cannot have multiple senders AND multiple receivers. Use: 1-to-many, many-to-1, or 1-to-1")
 	}
+	if err := a.refuseRepeatedSendAccounts(fromAddresses, toAddresses); err != nil {
+		return nil, err
+	}
 
 	amount, err := cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.AmountText, a.eng.ASAResolver())
 	if err != nil {

@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## `send` refuses an account listed twice in a set
+
+- **A set of senders or receivers may name each account once.** `send`
+  built one transaction per listed account without looking for repeats, so
+  `send 100 usdc from treasury to [@team bob]`, with bob also in `@team`,
+  built two transfers to bob, and a plain send submitted each on its own.
+  The sets are now expanded to addresses and a repeat on either side (an
+  alias and its address, a set and one of its members listed again, or a
+  stored set holding an address twice) is refused, naming the account and
+  whether it is a sender or a recipient, before anything is prepared. This
+  holds for plain and atomic sends. `sweep`, `validate` and `balance` are
+  unchanged.
+
 ## A LogicSig argument can name the account it is for
 
 - **`arg:<account>:<name>=<value>` gives an argument to one account's
