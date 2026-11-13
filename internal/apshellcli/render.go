@@ -89,8 +89,8 @@ type PluginResult struct {
 	appresult.Plugin
 	humanSteps []pluginHumanStep
 	// failedStepTxIDs are the IDs a failing step's submission returned with
-	// its error. Only JS plugin()'s error reads them; they are not projected
-	// or rendered.
+	// its error. Only JS plugin()'s error reads them; they are not rendered.
+	// The machine projection reports that step through Submissions.
 	failedStepTxIDs []string
 }
 

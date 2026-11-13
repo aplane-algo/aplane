@@ -166,6 +166,9 @@ type Plugin struct {
 	Data         interface{}           `json:"data,omitempty"`
 	Presentation *jsonrpc.Presentation `json:"presentation,omitempty"`
 	Steps        []PluginStep          `json:"steps,omitempty"`
+	// Submissions is the outcome of a step's failed submission, when the
+	// failure came at or after algod's submit call.
+	Submissions []Submission `json:"submissions,omitempty"`
 }
 
 // AppDeploy is the canonical structured result for app deployment commands.

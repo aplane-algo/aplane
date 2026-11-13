@@ -97,6 +97,22 @@ try {
 }
 ```
 
+A function that submits transactions throws a failure of its signing and
+submission step as an `Error` object, not a string. These functions are
+`send()`, `sendAsset()`, `validate()`, `close()`, `optIn()`, `optOut()`,
+`keyreg()`, `rekey()`, `unrekey()`, `sign()`, `atomicSend()`,
+`atomicSendAsset()`, `appDeploy()`, `appCallRaw()` and `appCall()`. For
+`sweep()` and `plugin()`, any failure of the run is thrown this way. The
+text is the same as before: an uncaught error, `"failed: " + e`, `String(e)`
+and `e.message` all give it. Two things differ from a thrown string:
+`typeof e` is `"object"`, and `print(e)` prints `map[value:<text>]`, because
+`print()` does not convert an `Error` to its text. Use `print(String(e))`.
+The error keeps the submission's outcome, so the MCP `js` tool reports the
+transaction IDs and how far their submission got (see
+[ARCH_SHELL.md](ARCH_SHELL.md#submission-outcomes)). These functions still
+throw their other failures, such as a bad argument or a failed preparation,
+as strings.
+
 Scripts do not have direct filesystem, network, process, or private-key access.
 They operate through the exported shell functions, and signing still routes
 through normal signer approval and policy boundaries.

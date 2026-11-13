@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -36,45 +37,32 @@ func SubmitTransactionsWithContext(
 
 	_, _ = fmt.Fprintln(w, "\nSubmitting to network...")
 
+	// Compute all transaction IDs before submitting
 	var txIDs []string
-	isGroup := len(signedTxns) > 1
-
-	if isGroup {
-		// For atomic groups, concatenate all signed transactions into a single blob
-		// This is required for Algorand to properly validate the group
-		var blob []byte
-		for _, signedTxn := range signedTxns {
-			blob = append(blob, signedTxn...)
-		}
-
-		// Compute all transaction IDs before submitting
-		for _, signedTxn := range signedTxns {
-			var stxn types.SignedTxn
-			if err := msgpack.Decode(signedTxn, &stxn); err != nil {
-				return nil, fmt.Errorf("failed to decode signed transaction: %w", err)
-			}
-			txID := crypto.GetTxID(stxn.Txn)
-			txIDs = append(txIDs, txID)
-		}
-
-		// Submit the entire group as a single blob
-		_, err := algodClient.SendRawTransaction(blob).Do(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to submit transaction group: %w", cleanSubmitError(err))
-		}
-	} else {
-		// Submit single transaction
+	for _, signedTxn := range signedTxns {
 		var stxn types.SignedTxn
-		if err := msgpack.Decode(signedTxns[0], &stxn); err != nil {
+		if err := msgpack.Decode(signedTxn, &stxn); err != nil {
 			return nil, fmt.Errorf("failed to decode signed transaction: %w", err)
 		}
-		txID := crypto.GetTxID(stxn.Txn)
-		txIDs = append(txIDs, txID)
+		txIDs = append(txIDs, crypto.GetTxID(stxn.Txn))
+	}
 
-		_, err := algodClient.SendRawTransaction(signedTxns[0]).Do(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to submit transaction: %w", cleanSubmitError(err))
-		}
+	// For atomic groups, concatenate all signed transactions into a single blob
+	// This is required for Algorand to properly validate the group
+	what := "transaction"
+	blob := signedTxns[0]
+	if len(signedTxns) > 1 {
+		what = "transaction group"
+		blob = bytes.Join(signedTxns, nil)
+	}
+
+	// From here a failure is a *SubmissionError naming the IDs and how far
+	// the group got, which every caller keeps when it wraps the error.
+	if err := ctx.Err(); err != nil {
+		return nil, submissionFailure(txIDs, SubmissionNotSent, fmt.Errorf("failed to submit %s: %w", what, err))
+	}
+	if _, err := algodClient.SendRawTransaction(blob).Do(ctx); err != nil {
+		return nil, submissionFailure(txIDs, submitCallState(err), fmt.Errorf("failed to submit %s: %w", what, cleanSubmitError(err)))
 	}
 
 	_, _ = fmt.Fprintln(w, "✓ Transaction(s) submitted")
@@ -93,7 +81,7 @@ func SubmitTransactionsWithContext(
 		confirmedTxn, err := transaction.WaitForConfirmation(algodClient, txIDs[0], confirmationTimeoutRounds, ctx)
 		if err != nil {
 			_, _ = fmt.Fprintln(w)
-			return txIDs, fmt.Errorf("confirmation failed: %w", err)
+			return txIDs, submissionFailure(txIDs, SubmissionSubmitted, fmt.Errorf("confirmation failed: %w", err))
 		}
 		_, _ = fmt.Fprintf(w, "\n✓ Confirmed in round %d\n", confirmedTxn.ConfirmedRound)
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -330,6 +331,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 				itemResult.Warnings = append(itemResult.Warnings, warningsFromTransactionWriteNotices(submit.WriteNotices)...)
 			}
 			itemResult.Error = fmt.Sprintf("transaction failed: %v", err)
+			itemResult.Submission = appresult.SubmissionFromError(err)
 			result.LastError = itemResult.Error
 			result.FailureCount++
 		} else {

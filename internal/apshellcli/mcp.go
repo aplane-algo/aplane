@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/clientenroll"
 	"github.com/aplane-algo/aplane/internal/command"
@@ -270,7 +271,11 @@ func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
 
 	result, err := state.executeCommandResult(cmd)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error())
+		var machine []byte
+		if result != nil {
+			machine, _ = result.MarshalMachine()
+		}
+		return mcpErrorResult(err.Error(), err, machine)
 	}
 	if result == nil {
 		name := cmd.Name
@@ -288,6 +293,41 @@ func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
 
 func mcpJSONTextResult(data []byte) *mcp.CallToolResult {
 	return mcp.NewToolResultText(string(data))
+}
+
+// mcpErrorJSON is the structured content of an MCP error result: the error
+// text, the outcome of each submission the error carries, and the command's
+// structured result when it returned one with the error.
+type mcpErrorJSON struct {
+	Error       string                 `json:"error"`
+	Submissions []appresult.Submission `json:"submissions,omitempty"`
+	Result      json.RawMessage        `json:"result,omitempty"`
+}
+
+// mcpErrorResult is a failed tool call whose first text content is text. When
+// err carries submission outcomes (appresult.SubmissionsFromError), or the
+// command returned a structured result with it (machine), each outcome's
+// sentence is appended to that text, and a second text content holds
+// mcpErrorJSON. Any other error is its text alone, as before.
+func mcpErrorResult(text string, err error, machine []byte) *mcp.CallToolResult {
+	submissions := appresult.SubmissionsFromError(err)
+	if len(submissions) == 0 && len(machine) == 0 {
+		return mcp.NewToolResultError(text)
+	}
+	for _, submission := range submissions {
+		text += "\n" + submission.Message
+	}
+	data, marshalErr := json.Marshal(mcpErrorJSON{Error: err.Error(), Submissions: submissions, Result: machine})
+	if marshalErr != nil {
+		return mcp.NewToolResultError(text)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			mcp.TextContent{Type: "text", Text: text},
+			mcp.TextContent{Type: "text", Text: string(data)},
+		},
+		IsError: true,
+	}
 }
 
 func mcpReferenceText(state *REPLState) string {
@@ -358,7 +398,7 @@ func mcpJSExecutionResult(ctx context.Context, state *REPLState, code string) *m
 		if resp.Output != "" {
 			msg = resp.Output + "\nError: " + msg
 		}
-		return mcp.NewToolResultError(msg)
+		return mcpErrorResult(msg, err, nil)
 	}
 	data, marshalErr := json.Marshal(resp)
 	if marshalErr != nil {

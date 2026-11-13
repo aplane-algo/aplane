@@ -1534,7 +1534,8 @@ but produces structured JSON instead of terminal text.
 
 **Compatibility-bearing.** The tool names, parameters, and response shapes in
 this section, including the [`js`](#js-tool), [`doc`](#doc-tool),
-[`jssave`](#jssave-tool), and [`jslist`](#jslist-tool) subsections, are the MCP
+[`jssave`](#jssave-tool), and [`jslist`](#jslist-tool) subsections, and the
+error result shape in [Submission Outcomes](#submission-outcomes), are the MCP
 tool contract that [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) indexes. MCP clients
 and LLM prompts depend on them; change them only as a deliberate contract
 change.
@@ -1575,7 +1576,7 @@ Response shape:
 - `value`: the JSON-serialized return value of the last expression (omitted if `undefined`/`null`)
 - `output`: captured `print()` output (omitted if empty)
 
-Errors are returned as MCP error results. If `print()` output was produced before the error, it is prepended to the error message.
+Errors are returned as MCP error results. If `print()` output was produced before the error, it is prepended to the error message. An error that carries a submission outcome also has the structured content described in [Submission Outcomes](#submission-outcomes).
 
 The `code` argument is required.
 
@@ -1697,6 +1698,69 @@ data field.
 
 JSON results are returned as text containing JSON bytes via `mcp.NewToolResultText(string(data))`, not as typed JSON content objects.
 
+#### Submission Outcomes
+
+Every submission goes through `internal/signing/ed25519.go::SubmitTransactionsWithContext`.
+When it fails at or after the submit call, the error is a
+`*signing.SubmissionError` with the IDs of every signed transaction in the
+group, budget dummies included, and how far the group got:
+
+| `state` | `submitted` | Meaning |
+|---|---|---|
+| `submitted` | `true` | algod accepted the group, and the confirmation wait then failed or timed out |
+| `unknown` | `false` | the submit call ended without a 400 answer from algod (a lost connection, another status, the context ending during the call), so algod may have the group |
+| `rejected` | `false` | algod answered the submit call with HTTP 400. A group already in the ledger gets this answer too, so it says nothing about whether the group is on the network: the reason decides |
+| `not_sent` | `false` | the context had ended before the submit call was made, so nothing was sent |
+
+The vocabulary follows the SDK's `SubmissionError`: `submitted` is true only
+when algod's submit call succeeded. aplane does not interpret algod's answer:
+`rejected` hands over its reason, with no matching on its text. The error's text is unchanged, and every
+layer above wraps it with `%w`. `appresult.SubmissionsFromError` reads one
+outcome for each `SubmissionError` in the error, following wrapped and joined
+errors. An error without one did not fail at a submit call or a confirmation
+wait. It says nothing about submissions that completed before the failure:
+earlier ones in the same script or plugin run, or a confirmed deploy whose
+created app `app deploy` then could not look up.
+
+`execute` and `js` turn an error into an MCP error result through
+`mcpErrorResult`. An error with no outcome, from a command that returned no
+structured result with it, is its text alone, as before. Otherwise the first
+text content is the error text, then one sentence for each outcome. The
+second text content is JSON: `error`, `submissions`, and `result`. `result`
+is the command's structured result, when the command returned one with its
+error:
+
+```json
+{
+  "error": "atomic transaction group failed: failed to sign and submit atomic group: confirmation failed: wait for transaction id AAAA… timed out",
+  "submissions": [
+    {
+      "state": "submitted",
+      "submitted": true,
+      "txids": ["AAAA…", "BBBB…"],
+      "error": "confirmation failed: wait for transaction id AAAA… timed out",
+      "message": "Submitted: algod accepted transaction(s) AAAA…, BBBB…, and their confirmation was not seen. Check these IDs on the network before retrying."
+    }
+  ]
+}
+```
+
+The text names transaction IDs only, never transaction contents or argument
+values. Nothing retries.
+
+Commands that report items record each item's outcome as `submission` on the
+item: non-atomic `send`, `validate` and `sweep`. A `sweep` in which every item
+failed returns an error that joins the items' errors without changing its
+text, `all N transaction(s) failed`. Its MCP error result therefore lists each
+item's outcome in `submissions` and carries the sweep's own result, whose
+items keep their reasons. A plugin step whose submission failed is still a
+plugin result (see [success:false Handling](#successfalse-handling)), with its
+outcome in `submissions`. JavaScript functions that submit throw their failure
+through `jsapi`'s `throwSubmitError`, as a goja `GoError` that keeps the error.
+`scripting.RunnerError` unwraps to it, so the `js` tool reports the same
+outcomes. The REPL output is unchanged: it prints the error text and the
+submission output, which lists the IDs.
+
 #### Blocked Commands
 
 | Command | Reason |
@@ -1738,7 +1802,10 @@ This prevents stray `fmt.Printf` calls from corrupting the MCP transport.
 Plugin commands that return `success: false` (e.g., usage messages, validation
 errors) are returned as normal MCP tool results with the full JSON payload,
 not as MCP transport errors. This matches the REPL contract where these are
-informational messages, not hard failures.
+informational messages, not hard failures. A step whose submission failed at
+or after algod's submit call is reported the same way, with `success: false`,
+the steps that completed in `steps`, and the failing step's outcome in
+`submissions` (see [Submission Outcomes](#submission-outcomes)).
 
 #### Plugin Documentation (mcp.md)
 

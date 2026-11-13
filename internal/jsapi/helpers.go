@@ -101,6 +101,19 @@ func makeMicroalgosFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Valu
 	}
 }
 
+// throwSubmitError throws the failure of a function that submits. The
+// exception is an Error whose message is err's text, and whose string form,
+// uncaught or concatenated, is that text alone, as the string thrown before
+// it was. It carries err, so the host reads the submission's outcome from the
+// error the run returns (scripting.RunnerError's Cause). Every submitting
+// function throws its submission failure through here.
+func (a *API) throwSubmitError(err error) {
+	obj := a.runtime.NewGoError(err)
+	// A GoError's name would print "GoError: " before the message.
+	_ = obj.DefineDataProperty("name", a.runtime.ToValue(""), goja.FLAG_TRUE, goja.FLAG_TRUE, goja.FLAG_FALSE)
+	panic(obj)
+}
+
 // requireArgs panics with a JS exception if the call has fewer than n arguments.
 func (a *API) requireArgs(call goja.FunctionCall, n int, msg string) {
 	if len(call.Arguments) < n {

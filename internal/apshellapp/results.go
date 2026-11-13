@@ -494,6 +494,9 @@ type ValidateItemResult struct {
 	Output    string
 	Error     string
 	Warnings  []Warning
+	// Submission is the item's failed submission, when its failure came at
+	// or after algod's submit call.
+	Submission *appresult.Submission
 }
 
 // ValidateCommandResult describes the semantic outcome of a validate command.
@@ -652,6 +655,9 @@ type SweepItemResult struct {
 	// own Output; a script is given this instead.
 	SimulationFailure string
 	Warnings          []Warning
+	// Submission is the item's failed submission, when its failure came at
+	// or after algod's submit call.
+	Submission *appresult.Submission
 }
 
 // SweepCommandResult describes the semantic outcome of a sweep command.
@@ -892,6 +898,9 @@ type SendItemResult struct {
 	Output         string
 	Error          string
 	Warnings       []Warning
+	// Submission is the item's failed submission, when its failure came at
+	// or after algod's submit call.
+	Submission *appresult.Submission
 }
 
 // NonAtomicSendResult describes the outcome of a non-atomic send flow.

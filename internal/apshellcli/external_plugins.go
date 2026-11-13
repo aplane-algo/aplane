@@ -80,6 +80,7 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 
 			submit, err := submitPluginTransactions(r, plugin.Manifest.Name, group)
 			if err != nil {
+				pr.Submissions = appresult.SubmissionsFromError(err)
 				if submit != nil {
 					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
 					// Kept for JS plugin()'s error only. The submission returned
