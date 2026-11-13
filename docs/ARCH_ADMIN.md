@@ -713,6 +713,27 @@ Writable admin settings:
   `aplane.ed25519.v1`), the plain program included
 - `theme`
 
+`update_admin_setting` validates the value before anything changes. The
+boolean settings (`user_auto_approve`, `lock_on_disconnect`,
+`require_contained`, `require_cosigner`) accept exactly `true` or `false`;
+any other value is refused with `code:"invalid_request"`. A valid value is
+saved first (`identities/default/config.yaml`, or root `config.yaml` for
+`theme`, written durably) and takes effect only once the new file is in
+place, so no reader, a signing request included, sees a value the file
+does not hold:
+
+- A save that fails before the new file replaces the old one changes
+  nothing. The result fails and the setting keeps its value.
+- A save whose file replacement succeeded but whose directory sync failed
+  leaves the new file in place, which is what the next start loads. The new
+  value takes effect and the result fails with an error saying the setting
+  is in effect but its durability is not confirmed. Memory always matches
+  the file and is never reset to the old value.
+
+An admin client re-reads `get_admin_settings` after any
+`update_admin_setting_result`, a failed one included, to show the state the
+signer holds.
+
 Node role is not a writable admin setting. It is initialized once in root
 `node.yaml`, integrity-bound to the store, and changed only by creating a
 separate signer data root.
@@ -1216,6 +1237,10 @@ signer settings and status:
 - A `Policies` row that opens the policies view
 - SSH enabled state, port, fingerprint, and connected-client count
 - Build information
+
+After a setting change, success or failure, the panel re-reads the settings,
+so a change that took effect with its durability unconfirmed shows its new
+value beside the error.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

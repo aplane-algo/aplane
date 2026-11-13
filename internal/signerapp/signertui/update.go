@@ -648,13 +648,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
-		if msg.Success {
-			// Refresh settings after successful update
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd())
-		} else {
+		if !msg.Success {
 			m.lastError = "Setting update failed: " + msg.Error
 		}
-		return m, m.waitForMessageCmd()
+		// Re-read the settings either way: a failed update can still be in
+		// effect (saved, its durability unconfirmed), so the panel shows what
+		// the signer holds rather than what it showed before.
+		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd())
 
 	case PolicyLoadedMsg:
 		return m.handlePolicyLoaded(msg)

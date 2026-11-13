@@ -1514,7 +1514,18 @@ audit logger and runtime key state intact for process exit. A non-deadline stop
 error occurs only after handlers have drained; lifecycle closes the audit log
 and destroys runtime state normally. SSH stop uses the same lifecycle deadline
 and reports a deadline error until its accept loop and all connection handlers
-have exited.
+have exited. The rotating stage table worker's stop does the same while the
+worker is still in a pass (a derivation, or a stage table write, which no
+cancellation reaches), so the runtime it may be using is never destroyed
+underneath it. Shutdown therefore takes at most the shared lifecycle
+deadline; on the retention path nothing is zeroed in process and the
+operating system reclaims key material at the exit that follows.
+
+`RunLifecycle` returns the error of a service that failed to start (an HTTP
+port that cannot be bound, for example) or stopped serving with an error,
+after the same shutdown, and the daemon then exits 1. A run ended by a
+shutdown signal exits 0, even when a stop was incomplete; that is recorded as
+`SERVER_STOP_INCOMPLETE` instead.
 
 ### Server-Side Application Boundary
 

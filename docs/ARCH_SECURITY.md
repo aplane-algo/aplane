@@ -1826,7 +1826,8 @@ that handler and leaves the logger open for its final records. A non-deadline
 error is reported only after handlers have drained, so the logger is closed and
 runtime key state is destroyed normally. The SSH server applies the lifecycle
 deadline to its accept loop and connection handlers and returns the deadline
-error rather than treating an incomplete drain as success. The clean shutdown
+error rather than treating an incomplete drain as success, and so does the
+rotating stage table worker while it is still in a pass. The clean shutdown
 destroy path stops watcher dispatch before draining key operations and zeroing
 the keyring.
 

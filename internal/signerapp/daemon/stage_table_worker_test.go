@@ -23,7 +23,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerops"
@@ -681,4 +683,119 @@ func TestWorkerRestoresAfterALockItNeverSaw(t *testing.T) {
 		rec, _ := server.rotatingReleases.ForLeafChoice(account)
 		return rec.TxID != "PLANTED" && !releaseMemoryHeld(server, account)
 	})
+}
+
+// stopAuditRecorder records the lifecycle's audit shutdown calls.
+type stopAuditRecorder struct {
+	mu         sync.Mutex
+	stopped    bool
+	incomplete string
+	closed     bool
+}
+
+func (r *stopAuditRecorder) LogServerStop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stopped = true
+}
+
+func (r *stopAuditRecorder) LogServerStopIncomplete(reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.incomplete = reason
+}
+
+func (r *stopAuditRecorder) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	return nil
+}
+
+// A worker still in its pass at the shutdown deadline is reported as a
+// deadline error. Its stop once returned nil, so shutdown went on to close
+// the audit log and destroy the runtime underneath the worker. Now the stop
+// is recorded as incomplete and the runtime is left for process exit; the
+// run itself still ended by a signal, so it is not a failure.
+func TestStageTableWorkerOutlivingTheShutdownDeadline(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 50
+	server.stageFillBatch, server.stageFillMaxDeriv = 2, 50
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		return algod.MakeClientWithTransport(serverURL, token, nil, node.transport())
+	}
+	installRotatingKey(t, server)
+	node.set("", 100)
+
+	// The pass stalls in its table write, which no cancellation reaches.
+	stalled := make(chan struct{})
+	proceed := make(chan struct{})
+	var stallOnce, proceedOnce sync.Once
+	release := func() { proceedOnce.Do(func() { close(proceed) }) }
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && strings.Contains(path, "stages") {
+			stallOnce.Do(func() { close(stalled) })
+			<-proceed
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+	defer release()
+
+	worker := stageTableWorkerService(server)
+	audit := &stopAuditRecorder{}
+	runCtx, signal := context.WithCancel(context.Background())
+	defer signal()
+	err := signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
+		ProductRuntime:  ir,
+		ShutdownTimeout: 50 * time.Millisecond,
+		AuditLog:        audit,
+		Services: []signerstartup.LifecycleService{
+			worker,
+			{
+				Name: "stall trigger",
+				Start: func(context.Context, chan<- error) error {
+					ir.WakeStageWork()
+					select {
+					case <-stalled:
+					case <-time.After(10 * time.Second):
+						return errors.New("the worker's table write never started")
+					}
+					signal()
+					return nil
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunLifecycle = %v, want nil for a run ended by a signal", err)
+	}
+	audit.mu.Lock()
+	stopped, incomplete, closed := audit.stopped, audit.incomplete, audit.closed
+	audit.mu.Unlock()
+	if stopped || closed || !strings.Contains(incomplete, "rotating stage table worker") || !strings.Contains(incomplete, context.DeadlineExceeded.Error()) {
+		t.Fatalf("audit shutdown = stopped %v closed %v incomplete %q; want the worker's deadline recorded and the log left open", stopped, closed, incomplete)
+	}
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatal("the runtime was destroyed while the worker was still running")
+	}
+
+	// Once the worker has gone, its stop reports nothing, even past a
+	// deadline that is ready at the same moment.
+	release()
+	if err := worker.Stop(context.Background()); err != nil {
+		t.Fatalf("stop after the worker resumed = %v", err)
+	}
+	expired, cancelExpired := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancelExpired()
+	for i := 0; i < 20; i++ {
+		if err := worker.Stop(expired); err != nil {
+			t.Fatalf("stop of an exited worker with an expired deadline = %v", err)
+		}
+	}
 }

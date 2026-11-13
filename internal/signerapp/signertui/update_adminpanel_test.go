@@ -4,10 +4,16 @@
 package tui
 
 import (
+	"bufio"
+	"encoding/json"
+	"io"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -141,5 +147,68 @@ func TestBoundedSettingsAreHiddenOnCosignerNodes(t *testing.T) {
 		if strings.HasPrefix(row.label, "Bounded:") {
 			t.Fatalf("a cosigner node offers %q", row.label)
 		}
+	}
+}
+
+// A failed setting update can still be in effect (saved, its durability
+// unconfirmed), so the panel re-reads the settings after a failure as after a
+// success, instead of keeping the value it showed before.
+func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	client := NewAdminClient(&queueConnector{conns: []io.ReadWriteCloser{clientConn}})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	defer client.Disconnect()
+
+	sent := make(chan string, 4)
+	go func() {
+		reader := bufio.NewReader(serverConn)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var base protocol.BaseMessage
+			if json.Unmarshal(line, &base) == nil {
+				sent <- base.Type
+			}
+		}
+	}()
+
+	m := approvalTestModel(ViewAdminPanel)
+	m.adminClient = client
+	m.admin.settings = &AdminSettings{UserAutoApprove: false}
+	next, cmd := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true",
+		Error: "user_auto_approve is set to true and in effect, but its durability is not confirmed: injected",
+	})
+	if got := next.(Model).lastError; !strings.Contains(got, "durability is not confirmed") {
+		t.Fatalf("lastError = %q, want the signer's error shown", got)
+	}
+	// A lone listener wait blocks until the client disconnects.
+	produced := make(chan tea.Msg, 1)
+	go func() { produced <- cmd() }()
+	var batch tea.BatchMsg
+	select {
+	case msg := <-produced:
+		var ok bool
+		if batch, ok = msg.(tea.BatchMsg); !ok {
+			t.Fatalf("command after a failed update = %T, want a batch that re-reads the settings", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the command after a failed update only waits for messages; it does not re-read the settings")
+	}
+	for _, c := range batch {
+		go c()
+	}
+	select {
+	case msgType := <-sent:
+		if msgType != protocol.MsgTypeGetAdminSettings {
+			t.Fatalf("sent %q after a failed update, want %q", msgType, protocol.MsgTypeGetAdminSettings)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no get_admin_settings sent after a failed update")
 	}
 }

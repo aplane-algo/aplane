@@ -6,6 +6,7 @@ package startup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -41,8 +42,10 @@ type LifecyclePlan struct {
 }
 
 // RunLifecycle owns service start, wait, shutdown ordering, audit shutdown,
-// and product runtime destruction for the signer process.
-func RunLifecycle(ctx context.Context, plan LifecyclePlan) {
+// and product runtime destruction for the signer process. It returns the
+// service start failure or serve failure that ended the run, after shutting
+// down, and nil when ctx ended it; the signer exits non-zero on an error.
+func RunLifecycle(ctx context.Context, plan LifecyclePlan) error {
 	if plan.ProductRuntime != nil && plan.StartWatcher != nil && plan.ProductRuntime.IsUnlocked() {
 		plan.StartWatcher(plan.ProductRuntime)
 	}
@@ -58,23 +61,28 @@ func RunLifecycle(ctx context.Context, plan LifecyclePlan) {
 				plan.Error("failed to start " + svc.Name + ": " + err.Error())
 			}
 			shutdownLifecycle(started, plan)
-			return
+			return fmt.Errorf("failed to start %s: %w", svc.Name, err)
 		}
 		started = append(started, svc)
 	}
 
+	var runErr error
 	select {
 	case <-ctx.Done():
 		if plan.Info != nil {
 			plan.Info("shutdown signal received, cleaning up")
 		}
 	case err := <-errs:
-		if err != nil && plan.Error != nil {
-			plan.Error("server error: " + err.Error())
+		if err != nil {
+			if plan.Error != nil {
+				plan.Error("server error: " + err.Error())
+			}
+			runErr = fmt.Errorf("server error: %w", err)
 		}
 	}
 
 	shutdownLifecycle(started, plan)
+	return runErr
 }
 
 func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {

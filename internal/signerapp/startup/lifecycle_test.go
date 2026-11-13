@@ -69,7 +69,11 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T)
 		},
 	}
 
-	RunLifecycle(ctx, plan)
+	// A run ended by its context (a shutdown signal) is not a failure: the
+	// signer exits 0.
+	if err := RunLifecycle(ctx, plan); err != nil {
+		t.Fatalf("RunLifecycle after cancel = %v, want nil", err)
+	}
 
 	want := []string{"watcher", "start:svc1", "start:svc2", "stop:svc2", "stop:svc1"}
 	if !reflect.DeepEqual(events, want) {
@@ -205,5 +209,91 @@ func TestShutdownLifecycleDestroysRuntimeAfterNonDeadlineStopError(t *testing.T)
 	}
 	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || !closed {
 		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want incomplete record and closed logger", stopped, incompleteReason, closed)
+	}
+}
+
+func newLifecycleTestRuntime(t *testing.T) *productruntime.Runtime {
+	t.Helper()
+	root := t.TempDir()
+	ir := productruntime.New(productruntime.Config{
+		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+		KeyPaths: storepaths.NewPaths(root),
+	})
+	ir.SetUnlocked()
+	ir.SnapshotKeySession().InitializeSession()
+	return ir
+}
+
+// A service that cannot start (an HTTP port that cannot be bound) ends the
+// run with its error, so the signer exits non-zero; the services already
+// started are still stopped and the runtime destroyed. It once returned
+// nothing and the signer exited 0.
+func TestRunLifecycleReturnsAStartFailure(t *testing.T) {
+	t.Parallel()
+
+	ir := newLifecycleTestRuntime(t)
+	bindErr := errors.New("address already in use")
+	var mu sync.Mutex
+	var events []string
+	record := func(event string) {
+		mu.Lock()
+		events = append(events, event)
+		mu.Unlock()
+	}
+	err := RunLifecycle(context.Background(), LifecyclePlan{
+		ProductRuntime:  ir,
+		ShutdownTimeout: time.Second,
+		Services: []LifecycleService{
+			{
+				Name:  "SSH server",
+				Start: func(context.Context, chan<- error) error { record("start:ssh"); return nil },
+				Stop:  func(context.Context) error { record("stop:ssh"); return nil },
+			},
+			{
+				Name:  "HTTP server",
+				Start: func(context.Context, chan<- error) error { return bindErr },
+				Stop:  func(context.Context) error { record("stop:http"); return nil },
+			},
+		},
+	})
+	if !errors.Is(err, bindErr) {
+		t.Fatalf("RunLifecycle = %v, want the start failure", err)
+	}
+	if want := []string{"start:ssh", "stop:ssh"}; !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %v, want %v", events, want)
+	}
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
+	}
+}
+
+// A service that stops serving with an error ends the run with that error,
+// after the same shutdown, so the signer exits non-zero.
+func TestRunLifecycleReturnsAServeFailure(t *testing.T) {
+	t.Parallel()
+
+	ir := newLifecycleTestRuntime(t)
+	serveErr := errors.New("accept failed")
+	stopped := false
+	err := RunLifecycle(context.Background(), LifecyclePlan{
+		ProductRuntime:  ir,
+		ShutdownTimeout: time.Second,
+		Services: []LifecycleService{{
+			Name: "HTTP server",
+			Start: func(_ context.Context, errs chan<- error) error {
+				go func() { errs <- serveErr }()
+				return nil
+			},
+			Stop: func(context.Context) error { stopped = true; return nil },
+		}},
+	})
+	if !errors.Is(err, serveErr) {
+		t.Fatalf("RunLifecycle = %v, want the serve failure", err)
+	}
+	if !stopped {
+		t.Fatal("the failed service was not stopped")
+	}
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
 	}
 }

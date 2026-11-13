@@ -100,7 +100,8 @@ for each.
   the reason above.
 - Shutdown (`Runtime.Destroy`) is not modeled. It drains and clears only after
   every service has stopped, and `startup/lifecycle.go` skips the teardown when
-  a handler may still run, so no holder can exist or start by then.
+  a handler or the stage table worker may still run (its stop reports the
+  deadline error), so no holder can exist or start by then.
 - `MaxLocks` bounds the number of lock transitions, so the claim is over
   executions with at most that many locks.
 

@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -259,7 +260,10 @@ func passSession(parent context.Context, generation func() uint64, cancelContext
 	return session, ctx, cancel, true
 }
 
-// stageTableWorkerService runs the worker for the life of the daemon.
+// stageTableWorkerService runs the worker for the life of the daemon. Its
+// stop reports the deadline error when the worker is still running at the
+// deadline, so lifecycle leaves the runtime state the worker may still be
+// using in place until process exit instead of destroying it underneath.
 func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 	var cancel context.CancelFunc
 	done := make(chan struct{})
@@ -281,9 +285,16 @@ func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 			cancel()
 			select {
 			case <-done:
+				return nil
 			case <-ctx.Done():
 			}
-			return nil
+			// The deadline and the worker's exit can be ready together.
+			select {
+			case <-done:
+				return nil
+			default:
+				return fmt.Errorf("worker still running: %w", ctx.Err())
+			}
 		},
 	}
 }
