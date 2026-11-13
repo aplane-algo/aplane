@@ -362,11 +362,11 @@ func TestJSPluginListsTheRunsTransactionIDsAfterAFailure(t *testing.T) {
 	})
 }
 
-// The REPL and MCP record a failed run as main does: the steps that completed
-// their submission, and nothing of the failing step, whose IDs come back with
-// its error. A run of one step is reported at the top level only when it
-// completes.
-func TestPluginRunRecordOfAFailedRunIsUnchanged(t *testing.T) {
+// The REPL and MCP record a failed run as the steps that completed their
+// submission, and the failing step's submission outcome in submissions: its
+// state and every ID it returned with its error. A run of one step is
+// reported at the top level only when it completes.
+func TestPluginRunRecordOfAFailedRun(t *testing.T) {
 	project := func(t *testing.T, pr *PluginResult) map[string]any {
 		t.Helper()
 		var got map[string]any
@@ -375,21 +375,33 @@ func TestPluginRunRecordOfAFailedRunIsUnchanged(t *testing.T) {
 		}
 		return got
 	}
+	submitted := func(ids []string) []any {
+		txids := make([]any, len(ids))
+		for i, id := range ids {
+			txids[i] = id
+		}
+		return []any{map[string]any{
+			"state": "submitted", "submitted": true, "txids": txids,
+			"error": "confirmation failed: HTTP 503: status unavailable\n",
+			"message": "Submitted: algod accepted transaction(s) " + strings.Join(ids, ", ") +
+				", and waiting for their confirmation ended with: HTTP 503: status unavailable. Check these IDs on the network before retrying.",
+		}}
+	}
 	t.Run("one step", func(t *testing.T) {
-		step, _ := pregroupedStep(t, "fund", nil)
+		step, stepIDs := pregroupedStep(t, "fund", nil)
 		client, _ := confirmationFailingAlgod(t, 0)
 		state, _ := scriptedPluginShellWithAlgod(t, client, step)
 		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
 
 		pr, _ := execPlugin(state, "wf", []string{"start"})
 		got := project(t, pr)
-		want := map[string]any{"plugin": "workflow", "success": false, "message": pr.Message}
+		want := map[string]any{"plugin": "workflow", "success": false, "message": pr.Message, "submissions": submitted(stepIDs)}
 		if !reflect.DeepEqual(got, want) || !strings.Contains(pr.Message, "confirmation failed") {
 			t.Fatalf("MCP result = %v, want %v", got, want)
 		}
 	})
 	t.Run("later step", func(t *testing.T) {
-		second, _ := pregroupedStep(t, "claim", nil)
+		second, secondIDs := pregroupedStep(t, "claim", nil)
 		first, firstIDs := pregroupedStep(t, "fund", map[string]any{"command": "wf", "args": []string{"_claim"}})
 		client, _ := confirmationFailingAlgod(t, 1)
 		state, _ := scriptedPluginShellWithAlgod(t, client, first, second)
@@ -402,7 +414,8 @@ func TestPluginRunRecordOfAFailedRunIsUnchanged(t *testing.T) {
 			ids[i] = id
 		}
 		want := map[string]any{"plugin": "workflow", "success": false, "message": pr.Message,
-			"steps": []any{map[string]any{"message": "fund", "txids": ids}}}
+			"steps":       []any{map[string]any{"message": "fund", "txids": ids}},
+			"submissions": submitted(secondIDs)}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("MCP result = %v, want %v", got, want)
 		}

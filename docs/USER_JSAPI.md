@@ -35,6 +35,35 @@ JavaScript (receiving a `{value, output}` JSON object) and use `js_reference`
 to fetch this reference. Use `jssave` to persist snippets and `jslist` to
 enumerate them.
 
+### Stopping a Script
+
+Ctrl-C in the `apshell` prompt or the apconsole shell pane stops the script at
+its next JavaScript instruction, a loop such as `while (true) {}` included;
+`try`/`catch` does not catch the stop. The shell prints `Interrupted`, and the
+next script runs normally. `apshell -js` and `apshell -e` do not trap Ctrl-C,
+so it ends the process. An MCP `js` call cannot be stopped this way: apshell's
+MCP server does not act on a client's cancel, so the call runs until its
+script ends.
+
+A function the script called that is still running is not cut short. It ends
+on its own terms under the cancelled command, so a wait for signer approval or
+for confirmation ends at once with the function's own error. The script never
+sees what the function returns or throws, so apshell prints it before
+`Interrupted`, a returned value as one line of JSON cut at 256 bytes with a
+note of its full size:
+
+```text
+send() ended after the script was interrupted, failing with: send() error submitting transaction: failed to sign and submit: confirmation failed: context canceled
+```
+
+A function the script calls after Ctrl-C, in the moment before the stop
+reaches the script, does not run and prints nothing.
+
+A transaction already submitted stays submitted. An error from a wait for
+confirmation does not name the transaction ID, so look the account up before
+running the script again. `plugin()` lists the IDs its run produced in its
+error (see [Plugins](#plugins)).
+
 ## Conventions
 
 Amounts are integer microAlgos unless otherwise stated. Use:
@@ -96,6 +125,49 @@ try {
   print("send failed: " + e)
 }
 ```
+
+A function that submits transactions throws a failure of its signing and
+submission step as an `Error` object, not a string. These functions are
+`send()`, `sendAsset()`, `validate()`, `close()`, `optIn()`, `optOut()`,
+`keyreg()`, `rekey()`, `unrekey()`, `sign()`, `atomicSend()`,
+`atomicSendAsset()`, `appDeploy()`, `appCallRaw()` and `appCall()`. For
+`sweep()` and `plugin()`, any failure of the run is thrown this way. The
+text is the same as before: an uncaught error, `"failed: " + e`, `String(e)`
+and `e.message` all give it. Two things differ from a thrown string:
+`typeof e` is `"object"`, and `print(e)` prints the object's properties
+(`map[... value:<text>]`), because `print()` does not convert an `Error` to
+its text. Use `print(String(e))`. These functions still throw their other
+failures, such as a bad argument or a failed preparation, as strings.
+
+When the failure came at or after algod's submit call, the error says which
+transactions it concerns and how far they got:
+
+- `e.txids`: the IDs of the transactions whose submission failed, in group
+  order. Look them up before retrying: some may be on the network.
+- `e.submission`: how far their submission got: `"submitted"` (algod
+  accepted them; the wait for their confirmation then failed), `"unknown"`
+  (algod gave no answer, or answered with an HTTP status other than 400),
+  `"rejected"` (algod answered with HTTP 400; read the reason in the
+  message, since a transaction already in the ledger is answered this way
+  too) or `"not_sent"` (nothing was sent).
+
+A `sweep()` in which several transactions failed this way has every one of
+their IDs in `e.txids` and no `e.submission`; its message gives each
+account's reason. A failure before the submit call has neither property.
+
+```javascript
+try {
+  send("alice", "bob", algo(1))
+} catch (e) {
+  if (e.txids) {
+    print("submission " + e.submission + ": check " + e.txids.join(", ") + " before retrying")
+  }
+}
+```
+
+The MCP `js` tool reports the outcome of every such failure of the run, the
+caught ones too, in its result's `submissions` (see
+[ARCH_SHELL.md](ARCH_SHELL.md#submission-outcomes)). Nothing retries.
 
 Scripts do not have direct filesystem, network, process, or private-key access.
 They operate through the exported shell functions, and signing still routes

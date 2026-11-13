@@ -173,6 +173,8 @@ func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
 			Tables:   tables,
 			Locks:    &signersigning.RotatingLocks{},
 			Releases: releases,
+			// Nothing locks this service; the daemon wires the runtime's KeyUseContext.
+			KeyUse: func(ctx context.Context) (context.Context, func()) { return ctx, func() {} },
 		},
 	}
 	secret := &coresigning.RotatingKeyMaterial{Seed: bytes.Clone(seed[:]), GenesisHash: genesis[:]}

@@ -16,8 +16,11 @@ package jsapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/dop251/goja"
 
@@ -269,12 +272,79 @@ func (a *API) RegisterAll(vm *goja.Runtime) error {
 	}
 
 	for _, b := range bindings {
-		if err := vm.Set(b.name, b.fn); err != nil {
+		if err := vm.Set(b.name, a.hostCall(b.name, b.fn)); err != nil {
 			return fmt.Errorf("failed to register %s: %w", b.name, err)
 		}
 	}
 
 	return nil
+}
+
+// hostCall wraps a binding so that its outcome is not lost when the script is
+// cancelled while it runs. The runner then interrupts the script at its next
+// instruction, so neither the value the call returns (a transaction ID, say)
+// nor the error it throws would reach the script. The call itself is not cut
+// short: it ends on its own terms, under the cancelled context, and when it
+// ends after the cancellation its outcome is printed on the script's output.
+//
+// A call made once the context is already cancelled, in the moment before
+// the interrupt reaches the script, is not run: it throws at once and prints
+// nothing, so a loop that catches errors cannot fill the output.
+func (a *API) hostCall(name string, fn func(goja.FunctionCall) goja.Value) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) (returned goja.Value) {
+		ctx := a.Context()
+		if err := ctx.Err(); err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("%s() not run: the script was interrupted (%v)", name, err)))
+		}
+		defer func() {
+			if ctx.Err() == nil {
+				return
+			}
+			if thrown := recover(); thrown != nil {
+				a.outputMsg(fmt.Sprintf("%s() ended after the script was interrupted, failing with: %s", name, thrownMessage(thrown)))
+				panic(thrown)
+			}
+			if returned != nil && !goja.IsUndefined(returned) && !goja.IsNull(returned) {
+				a.outputMsg(fmt.Sprintf("%s() ended after the script was interrupted, returning: %s", name, reportedValue(returned)))
+			}
+		}()
+		return fn(call)
+	}
+}
+
+func thrownMessage(thrown interface{}) string {
+	switch v := thrown.(type) {
+	case goja.Value:
+		return v.String()
+	case error:
+		return v.Error()
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+// reportedValueLimit caps how much of a value hostCall prints: a host call can
+// return hundreds of accounts or a group's signed transaction bytes.
+const reportedValueLimit = 256
+
+// reportedValue renders v as one line of JSON (or its string form when it has
+// none), cut at reportedValueLimit bytes with a marker giving the full size.
+func reportedValue(v goja.Value) string {
+	var text string
+	if data, err := json.Marshal(v.Export()); err == nil {
+		text = string(data)
+	} else {
+		text = v.String()
+	}
+	text = strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(text)
+	if len(text) <= reportedValueLimit {
+		return text
+	}
+	cut := reportedValueLimit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s... (truncated: %d of %d bytes shown)", text[:cut], cut, len(text))
 }
 
 // output helper for internal use.
@@ -421,7 +491,7 @@ func (a *API) jsPlugin(call goja.FunctionCall) goja.Value {
 	// Execute the plugin
 	success, message, data, presentation, err := executor.ExecutePlugin(pluginName, args)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("plugin() error: %v", err)))
+		a.throwSubmitError(fmt.Errorf("plugin() error: %w", err))
 	}
 
 	// Return result object

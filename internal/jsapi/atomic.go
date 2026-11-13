@@ -87,7 +87,7 @@ func (a *API) jsAtomicSend(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("atomicSend() error submitting transactions: %v", err)))
+		a.throwSubmitError(fmt.Errorf("atomicSend() error submitting transactions: %w", err))
 	}
 
 	txids := make([]interface{}, len(result.TxIDs))
@@ -182,7 +182,7 @@ func (a *API) jsAtomicSendAsset(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("atomicSendAsset() error submitting transactions: %v", err)))
+		a.throwSubmitError(fmt.Errorf("atomicSendAsset() error submitting transactions: %w", err))
 	}
 
 	txids := make([]interface{}, len(result.TxIDs))

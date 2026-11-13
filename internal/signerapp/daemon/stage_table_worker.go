@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -150,7 +151,7 @@ func (fs *Signer) restoreReleases(ctx context.Context, ir *productruntime.Runtim
 	ctx, cancel := ir.LockCancelContext(ctx)
 	defer cancel()
 	svc := &signersigning.Service{Planner: fs.newPlannerWithAudit(nil), Console: signerConsole{}, IsUnlocked: ir.IsUnlocked, Rotating: fs.rotatingDeps(ir)}
-	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), generation, audited, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), generation, audited)
 	if err != nil {
 		logWarnf("rotating release memory: %v", err)
 	}
@@ -212,7 +213,6 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 		Batch:          fs.stageFillBatch,
 		MaxDerivations: fs.stageFillMaxDeriv,
 		Parallel:       1,
-		KeyUse:         ir.KeyUseContext,
 		Session:        &session,
 		Pace: func(d time.Duration) {
 			select {
@@ -259,7 +259,13 @@ func passSession(parent context.Context, generation func() uint64, cancelContext
 	return session, ctx, cancel, true
 }
 
-// stageTableWorkerService runs the worker for the life of the daemon.
+// stageTableWorkerService runs the worker for the life of the daemon. The
+// worker stops when shutdown begins, since its context is the Start context,
+// and its stop waits for it until the shutdown deadline. A worker still
+// running then (in a stage table write, which no cancellation reaches) makes
+// the stop incomplete, reported as ErrStillRunning: it writes nothing to the
+// audit log and holds no key material outside a key use, which
+// Runtime.Destroy waits for, so teardown goes on.
 func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 	var cancel context.CancelFunc
 	done := make(chan struct{})
@@ -267,7 +273,7 @@ func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 		Name: "rotating stage table worker",
 		Start: func(ctx context.Context, _ chan<- error) error {
 			var workerCtx context.Context
-			workerCtx, cancel = context.WithCancel(context.Background())
+			workerCtx, cancel = context.WithCancel(ctx)
 			go func() {
 				defer close(done)
 				fs.runStageTableWorker(workerCtx)
@@ -281,9 +287,16 @@ func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 			cancel()
 			select {
 			case <-done:
+				return nil
 			case <-ctx.Done():
 			}
-			return nil
+			// The deadline and the worker's exit can be ready together.
+			select {
+			case <-done:
+				return nil
+			default:
+				return fmt.Errorf("%w at the shutdown deadline", signerstartup.ErrStillRunning)
+			}
 		},
 	}
 }

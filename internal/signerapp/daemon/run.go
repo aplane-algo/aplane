@@ -321,7 +321,9 @@ func Run(dataDir string) int {
 	runCtx, stopSignals := signalContext()
 	defer stopSignals()
 
-	signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
+	// A service that fails to start or serve exits non-zero (RunLifecycle has
+	// already logged it); a shutdown signal exits 0.
+	runErr := signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
 		ProductRuntime:  ir,
 		ShutdownTimeout: 5 * time.Second,
 		AuditLog:        auditLog,
@@ -385,6 +387,9 @@ func Run(dataDir string) int {
 			logErrorf("%s", msg)
 		},
 	})
+	if runErr != nil {
+		return 1
+	}
 	return 0
 }
 

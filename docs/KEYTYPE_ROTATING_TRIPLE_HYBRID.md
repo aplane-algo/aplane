@@ -398,7 +398,9 @@ with several leaves per stage; see
 A lock stops a sign in flight: the sign holds its seed in a key use that the lock
 waits for, and it rechecks the lock generation after the audit write, so a
 signature isn't returned once a lock began. `key_use_lock.tla` checks that; see
-[FORMAL_TLA_KEY_USE_LOCK_MODEL.md](FORMAL_TLA_KEY_USE_LOCK_MODEL.md).
+[FORMAL_TLA_KEY_USE_LOCK_MODEL.md](FORMAL_TLA_KEY_USE_LOCK_MODEL.md). Every other
+load of the seed in prepare and sign (the identity read and each stage
+derivation) is a key use of its own, which a lock also waits for.
 
 ### 8.2 Release memory and alerts
 

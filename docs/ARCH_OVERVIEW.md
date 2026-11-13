@@ -1437,7 +1437,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
 | `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `productruntime.Runtime.policyMu` | Effective node policy (`nodePolicy`) |
-| `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for background key holders (stage-table worker), drained on lock |
+| `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for key holders outside an admin session (stage-table worker, rotating prepare and sign, mnemonic export), drained on lock |
 | `productruntime.Runtime.rotatingStatusMu` | Rotating alerts and notes published to `/status` and apadmin |
 | `productruntime.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
@@ -1514,7 +1514,32 @@ audit logger and runtime key state intact for process exit. A non-deadline stop
 error occurs only after handlers have drained; lifecycle closes the audit log
 and destroys runtime state normally. SSH stop uses the same lifecycle deadline
 and reports a deadline error until its accept loop and all connection handlers
-have exited.
+have exited. Every service's start context ends when shutdown begins, so the
+rotating stage table worker stops its passes then rather than at its turn,
+last, in the stop order. A worker still running at the deadline is in a stage
+table write that no cancellation reaches; it writes no audit entries and holds
+no key material outside a key use, so its stop reports `ErrStillRunning`:
+lifecycle records `SERVER_STOP_INCOMPLETE` naming the worker and tears down
+as usual. Whenever no request handler may still be running,
+`Runtime.EndKeyUses` refuses every new key use and waits for the registered
+ones with a deadline of its own; lifecycle then writes the stop record, and
+`Runtime.Destroy` zeroes the keyring whether or not they released. A key use
+still in flight at that deadline keeps its own decrypted copy until it
+releases or the process exits, and lifecycle records `SERVER_STOP_INCOMPLETE`
+and leaves the audit log open, its pending summaries flushed. The waits for
+services and for key users are bounded; the locks `Destroy` takes
+(passphrase, session, keystore cache) are not, so a key operation stalled
+inside one, on a hung filesystem for example, still holds shutdown, but only
+after the stop record is written. On the retention path, a request handler
+possibly still running,
+nothing is zeroed in process and the operating system reclaims key material
+at the exit that follows.
+
+`RunLifecycle` returns the error of a service that failed to start (an HTTP
+port that cannot be bound, for example) or stopped serving with an error,
+after the same shutdown, and the daemon then exits 1. A run ended by a
+shutdown signal exits 0, even when a stop was incomplete; that is recorded as
+`SERVER_STOP_INCOMPLETE` instead.
 
 ### Server-Side Application Boundary
 

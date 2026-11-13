@@ -220,6 +220,9 @@ func TestWriteFileDurableFailureBeforeRenameLeavesTargetUntouched(t *testing.T) 
 		if !errors.Is(err, injected) {
 			t.Fatalf("failAt=%s: err = %v, want %v", failAt, err, injected)
 		}
+		if errors.Is(err, ErrPublishedNotDurable) {
+			t.Fatalf("failAt=%s: err = %v, a failure before the rename must not claim the file was replaced", failAt, err)
+		}
 
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
@@ -239,9 +242,14 @@ func TestWriteFileDurableFailureBeforeRenameLeavesTargetUntouched(t *testing.T) 
 	}
 }
 
+// A directory sync fails after the rename: the error says so, so a caller
+// can tell a replaced file from an untouched one.
 func TestWriteFileDurableDirSyncFailureIsReported(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "target.bin")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	injected := errors.New("injected dir-sync")
 	TestHook = func(op HookOp, hookPath string) error {
@@ -252,8 +260,12 @@ func TestWriteFileDurableDirSyncFailureIsReported(t *testing.T) {
 	}
 	defer func() { TestHook = nil }()
 
-	if err := WriteFileDurable(path, []byte("new")); !errors.Is(err, injected) {
-		t.Fatalf("err = %v, want %v", err, injected)
+	err := WriteFileDurable(path, []byte("new"))
+	if !errors.Is(err, injected) || !errors.Is(err, ErrPublishedNotDurable) {
+		t.Fatalf("err = %v, want %v wrapped in ErrPublishedNotDurable", err, injected)
+	}
+	if data, readErr := os.ReadFile(path); readErr != nil || string(data) != "new" {
+		t.Fatalf("contents = %q, %v; want the new content in place", data, readErr)
 	}
 }
 

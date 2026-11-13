@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -44,6 +45,9 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 	isToSet := len(toAddresses) > 1
 	if isFromSet && isToSet {
 		return nil, fmt.Errorf("cannot have multiple senders AND multiple receivers. Use: 1-to-many, many-to-1, or 1-to-1")
+	}
+	if err := a.refuseRepeatedSendAccounts(fromAddresses, toAddresses); err != nil {
+		return nil, err
 	}
 
 	amount, err := cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.AmountText, a.eng.ASAResolver())
@@ -330,6 +334,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 				itemResult.Warnings = append(itemResult.Warnings, warningsFromTransactionWriteNotices(submit.WriteNotices)...)
 			}
 			itemResult.Error = fmt.Sprintf("transaction failed: %v", err)
+			itemResult.Submission = appresult.SubmissionFromError(err)
 			result.LastError = itemResult.Error
 			result.FailureCount++
 		} else {

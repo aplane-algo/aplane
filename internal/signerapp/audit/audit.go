@@ -449,6 +449,15 @@ func (a *AuditLogger) reopenCurrent() {
 	}
 }
 
+// FlushSummaries writes the pending summaries of rate-limited entries without
+// closing the log, for a shutdown that leaves the log open because something
+// may still write to it. Close flushes them too.
+func (a *AuditLogger) FlushSummaries() {
+	for _, l := range []*entryLimiter{&a.authFailures, &a.cosignerRejections} {
+		l.flush(a)
+	}
+}
+
 // Close closes the audit log file
 func (a *AuditLogger) Close() error {
 	for _, l := range []*entryLimiter{&a.authFailures, &a.cosignerRejections} {

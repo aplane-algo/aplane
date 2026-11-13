@@ -43,7 +43,7 @@ func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, true)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("validate() error: %v", err)))
+		a.throwSubmitError(fmt.Errorf("validate() error: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
@@ -85,7 +85,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("send() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("send() error submitting transaction: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
@@ -144,7 +144,7 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 
 	result, err := sweeper.Sweep(a.Context(), req)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error: %v", err)))
+		a.throwSubmitError(fmt.Errorf("sweep() error: %w", err))
 	}
 
 	items := make([]interface{}, 0, len(result.Items))
@@ -202,7 +202,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("sendAsset() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("sendAsset() error submitting transaction: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
@@ -236,7 +236,7 @@ func (a *API) jsOptIn(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("optIn() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("optIn() error submitting transaction: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
@@ -279,7 +279,7 @@ func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("optOut() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("optOut() error submitting transaction: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
@@ -363,7 +363,7 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, true)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("keyreg() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("keyreg() error submitting transaction: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
@@ -450,7 +450,7 @@ func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("rekey() error submitting transaction: %w", err))
 	}
 
 	out := map[string]interface{}{
@@ -488,7 +488,7 @@ func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("unrekey() error submitting transaction: %w", err))
 	}
 
 	out := map[string]interface{}{
@@ -551,7 +551,7 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 	// API names no accounts for arguments.
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("close() error submitting transaction: %v", err)))
+		a.throwSubmitError(fmt.Errorf("close() error submitting transaction: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
@@ -586,7 +586,7 @@ func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.SignAndSubmitTransactions(a.Context(), txns, wait)
 	if err != nil {
-		panic(a.runtime.ToValue(fmt.Sprintf("sign() error: %v", err)))
+		a.throwSubmitError(fmt.Errorf("sign() error: %w", err))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{

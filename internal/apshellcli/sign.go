@@ -22,11 +22,14 @@ func (r *REPLState) runSign(args []string) (command.Result, error) {
 	filepath := args[0]
 	waitForConfirmation := true
 
-	// Check for nowait flag
+	// Only nowait may follow the file. Any other word is refused rather than
+	// dropped: the file's transactions are already built, so a fee=, note= or
+	// arg: word could not apply to them, and ignoring it would hide that.
 	for _, arg := range args[1:] {
-		if arg == "nowait" {
-			waitForConfirmation = false
+		if arg != "nowait" {
+			return nil, fmt.Errorf("unexpected argument %q for sign: only [nowait] may follow the file; see `help sign`", arg)
 		}
+		waitForConfirmation = false
 	}
 
 	result, err := r.app().SignFile(r.commandContext(), apshellapp.SignFileRequest{

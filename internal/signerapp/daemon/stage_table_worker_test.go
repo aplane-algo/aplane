@@ -23,7 +23,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerops"
@@ -498,40 +500,6 @@ func TestWorkerPublishesRotatingStatus(t *testing.T) {
 	}
 }
 
-// A real lock has to wait for a sign in progress: that is what makes "no copy
-// of a seed outlives the unlocked state" true for the sign path.
-func TestLockWaitsForTheRotatingSignPath(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-	ir := server.productRuntime()
-	deps := server.rotatingDeps(ir)
-	if deps.KeyUse == nil {
-		t.Fatal("the rotating sign path isn't registered as a key user")
-	}
-	ctx, release := deps.KeyUse(context.Background())
-	locked := make(chan struct{})
-	go func() {
-		ir.Lock()
-		close(locked)
-	}()
-	select {
-	case <-ctx.Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("the lock didn't cancel the sign in progress")
-	}
-	select {
-	case <-locked:
-		t.Fatal("the lock finished while the sign still held the seed")
-	case <-time.After(100 * time.Millisecond):
-	}
-	release()
-	select {
-	case <-locked:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the lock didn't finish after the sign let go")
-	}
-}
-
 func releaseMemoryHeld(server *Signer, account string) bool {
 	_, restored := server.rotatingReleases.ForLeafChoice(account)
 	return !restored
@@ -618,7 +586,7 @@ func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
 	n, err := svc.RebuildReleaseMemory(ctx, session, generation, []signersigning.AuditedRelease{{
 		Account: account.String(), Stage: 0, TxID: "OLD", LastValid: 1000,
 		Leaves: []signersigning.LeafRelease{{Tree: 0, Index: 0, TxID: "OLD", LastValid: 1000}},
-	}}, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	}})
 	if n != 0 || !errors.Is(err, signersigning.ErrRestoreInterrupted) {
 		t.Fatalf("restore: rebuilt %d, err %v", n, err)
 	}
@@ -681,4 +649,248 @@ func TestWorkerRestoresAfterALockItNeverSaw(t *testing.T) {
 		rec, _ := server.rotatingReleases.ForLeafChoice(account)
 		return rec.TxID != "PLANTED" && !releaseMemoryHeld(server, account)
 	})
+}
+
+// stopAuditRecorder records the lifecycle's audit shutdown calls.
+type stopAuditRecorder struct {
+	mu         sync.Mutex
+	stopped    bool
+	incomplete string
+	closed     bool
+}
+
+func (r *stopAuditRecorder) LogServerStop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stopped = true
+}
+
+func (r *stopAuditRecorder) LogServerStopIncomplete(reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.incomplete = reason
+}
+
+func (r *stopAuditRecorder) FlushSummaries() {}
+
+func (r *stopAuditRecorder) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	return nil
+}
+
+// A worker stalled in a stage table write past the shutdown deadline, which
+// no cancellation reaches and during which it holds no key material, does not
+// keep the keyring in memory: shutdown zeroes it and closes the audit log,
+// and records SERVER_STOP_INCOMPLETE naming the worker. Its stop once
+// reported the deadline error here, so shutdown skipped the zeroing, and
+// then returned nil, so shutdown recorded a clean SERVER_STOP under a live
+// worker.
+func TestShutdownPastAStalledTableWriteZeroesTheKeyringAndRecordsTheWorker(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 50
+	server.stageFillBatch, server.stageFillMaxDeriv = 2, 50
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		return algod.MakeClientWithTransport(serverURL, token, nil, node.transport())
+	}
+	installRotatingKey(t, server)
+	node.set("", 100)
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("keyring before shutdown: %v", err)
+	}
+
+	stalled := make(chan struct{})
+	proceed := make(chan struct{})
+	var stallOnce, proceedOnce sync.Once
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && strings.Contains(path, "stages") {
+			stallOnce.Do(func() { close(stalled) })
+			<-proceed
+		}
+		return nil
+	}
+	worker := stageTableWorkerService(server)
+	// The worker reads the hook until it exits, so the hook is cleared only
+	// once the worker is released and gone.
+	defer func() {
+		proceedOnce.Do(func() { close(proceed) })
+		_ = worker.Stop(context.Background())
+		fsutil.TestHook = nil
+	}()
+
+	audit := &stopAuditRecorder{}
+	runCtx, signal := context.WithCancel(context.Background())
+	defer signal()
+	err := signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
+		ProductRuntime:  ir,
+		ShutdownTimeout: 200 * time.Millisecond,
+		AuditLog:        audit,
+		Services: []signerstartup.LifecycleService{
+			worker,
+			{
+				Name: "stall trigger",
+				Start: func(context.Context, chan<- error) error {
+					ir.WakeStageWork()
+					select {
+					case <-stalled:
+					case <-time.After(10 * time.Second):
+						return errors.New("the worker's table write never started")
+					}
+					signal()
+					return nil
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunLifecycle = %v, want nil for a run ended by a signal", err)
+	}
+	// The write is still stalled: proceed is closed only by the deferred call.
+	audit.mu.Lock()
+	stopped, incomplete, closed := audit.stopped, audit.incomplete, audit.closed
+	audit.mu.Unlock()
+	if stopped || incomplete != "rotating stage table worker: still running at the shutdown deadline" || !closed {
+		t.Fatalf("audit shutdown = stopped %v incomplete %q closed %v; want SERVER_STOP_INCOMPLETE naming the worker and the log closed", stopped, incomplete, closed)
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("keyring after shutdown: %v; want it zeroed", err)
+	}
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("key session after shutdown: %v; want it cleared", err)
+	}
+}
+
+// A worker that exits in time is a clean stop even when the services
+// stopped before it used the whole shared deadline: it stopped when shutdown
+// began, so its stop finds it gone and reports nothing.
+func TestShutdownAfterOtherServicesUsedTheDeadlineIsCompleteForAHealthyWorker(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("keyring before shutdown: %v", err)
+	}
+	worker := stageTableWorkerService(server)
+	defer func() { _ = worker.Stop(context.Background()) }()
+
+	audit := &stopAuditRecorder{}
+	runCtx, signal := context.WithCancel(context.Background())
+	defer signal()
+	err := signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
+		ProductRuntime:  ir,
+		ShutdownTimeout: 200 * time.Millisecond,
+		AuditLog:        audit,
+		Services: []signerstartup.LifecycleService{
+			worker,
+			{
+				Name:  "HTTP server",
+				Start: func(context.Context, chan<- error) error { signal(); return nil },
+				// A slow drain that ends just as the deadline does.
+				Stop: func(ctx context.Context) error { <-ctx.Done(); return nil },
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunLifecycle = %v, want nil for a run ended by a signal", err)
+	}
+	audit.mu.Lock()
+	stopped, incomplete, closed := audit.stopped, audit.incomplete, audit.closed
+	audit.mu.Unlock()
+	if !stopped || incomplete != "" || !closed {
+		t.Fatalf("audit shutdown = stopped %v incomplete %q closed %v; want SERVER_STOP and the log closed", stopped, incomplete, closed)
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("keyring after shutdown: %v; want it zeroed", err)
+	}
+}
+
+// The worker stops when shutdown begins, not at its turn in the stop order,
+// where it comes last. Here a serve failure ends the run while the worker is
+// in a chain read, and the read is cancelled while the service started after
+// the worker is still stopping. The worker once ran on a context of its own
+// until its own stop, so its passes went on through every other service's
+// drain and it met its stop with whatever was left of the deadline.
+func TestShutdownStopsTheWorkerFirst(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	entered := make(chan struct{})
+	readCancelled := make(chan struct{})
+	release := make(chan struct{})
+	var enteredOnce, cancelledOnce sync.Once
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/versions" {
+				raw, _ := json.Marshal(map[string]any{"genesis_hash_b64": testnetGenesisB64, "genesis_id": "testnet-v1.0", "versions": []string{"v2"}, "build": map[string]any{}})
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(raw))), Request: req}, nil
+			}
+			enteredOnce.Do(func() { close(entered) })
+			go func() {
+				select {
+				case <-req.Context().Done():
+					cancelledOnce.Do(func() { close(readCancelled) })
+				case <-release:
+				}
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       &stallingBody{ctx: req.Context(), release: release, entered: make(chan struct{})},
+				Request:    req,
+			}, nil
+		})
+		return algod.MakeClientWithTransport(serverURL, token, nil, rt)
+	}
+	installRotatingKey(t, server)
+
+	worker := stageTableWorkerService(server)
+	defer func() {
+		close(release)
+		_ = worker.Stop(context.Background())
+	}()
+
+	serveErr := errors.New("accept failed")
+	cancelledFirst := false
+	err := signerstartup.RunLifecycle(context.Background(), signerstartup.LifecyclePlan{
+		ProductRuntime:  ir,
+		ShutdownTimeout: 10 * time.Second,
+		Services: []signerstartup.LifecycleService{
+			worker,
+			{
+				Name: "HTTP server",
+				Start: func(_ context.Context, errs chan<- error) error {
+					ir.WakeStageWork()
+					select {
+					case <-entered:
+					case <-time.After(10 * time.Second):
+						return errors.New("the worker's chain read never started")
+					}
+					errs <- serveErr
+					return nil
+				},
+				Stop: func(context.Context) error {
+					select {
+					case <-readCancelled:
+						cancelledFirst = true
+					case <-time.After(5 * time.Second):
+					}
+					return nil
+				},
+			},
+		},
+	})
+	if !errors.Is(err, serveErr) {
+		t.Fatalf("RunLifecycle = %v, want the serve failure", err)
+	}
+	if !cancelledFirst {
+		t.Fatal("the worker's chain read was still running while the HTTP server stopped")
+	}
 }
