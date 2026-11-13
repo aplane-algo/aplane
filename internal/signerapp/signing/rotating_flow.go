@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -157,11 +158,26 @@ func (p *Planner) rebuildPreparedRotatingGroup(account string, presented types.T
 	return p.buildRotatingGroup(account, client, profile)
 }
 
+// errKeyUseRefused reports a request derivation that a lock cut short.
+var errKeyUseRefused = errors.New("signer is locked")
+
 // requestDeriver derives stages without background pacing, honoring the
-// family's parallelism cap and the request's context.
-func (s *Service) requestDeriver(account string, session *keystore.KeySession) stageDeriver {
-	opts := s.stageFillOptions(account, StageFillOptions{Parallel: runtime.GOMAXPROCS(0)})
-	return s.stageDeriver(account, session, opts)
+// family's parallelism cap and the request's context. Every seed load is
+// inside a deps.KeyUse window. The background deriver returns a lock's cut as
+// an empty result with no error. Here, while the request's context is live,
+// only a lock can produce one, by refusing or cancelling the key use or
+// closing the session, so it is reported as errKeyUseRefused and the request
+// answers locked instead of searching on.
+func (s *Service) requestDeriver(deps *RotatingDeps, account string, session *keystore.KeySession) stageDeriver {
+	opts := s.stageFillOptions(account, StageFillOptions{Parallel: runtime.GOMAXPROCS(0), KeyUse: deps.keyUse})
+	derive := s.stageDeriver(account, session, opts)
+	return func(ctx context.Context, from, to uint64) ([]types.Address, error) {
+		addrs, err := derive(ctx, from, to)
+		if err == nil && len(addrs) == 0 && from < to && ctx.Err() == nil {
+			return nil, errKeyUseRefused
+		}
+		return addrs, err
+	}
 }
 
 // liveStage finds the account's live stage from its authorizer: the account
@@ -209,6 +225,9 @@ func (s *Service) liveStage(ctx context.Context, deps *RotatingDeps, table *stag
 	profile, _ := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[account.String()])
 	for ctx.Err() == nil {
 		found, err := extendUntil(ctx, table, derive, authorizer, opts.batch(), opts)
+		if errors.Is(err, errKeyUseRefused) {
+			return 0, lockedError()
+		}
 		if err != nil {
 			return 0, internal(fmt.Sprintf("extend stage table: %v", err))
 		}
@@ -235,6 +254,9 @@ func derivedStageAddress(ctx context.Context, deps *RotatingDeps, table *stageta
 		return types.Address{}, badRequest("stage has no successor")
 	}
 	addrs, err := derive(ctx, stage, stage+1)
+	if errors.Is(err, errKeyUseRefused) {
+		return types.Address{}, lockedError()
+	}
 	if err != nil {
 		return types.Address{}, internal(fmt.Sprintf("derive stage %d: %v", stage, err))
 	}
@@ -291,7 +313,7 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 		return nil, badRequest("transaction must not set rekey_to; the signer sets it")
 	}
 
-	account, genesis, profile, svcErr := s.rotatingAccount(ctx, req.Account, session)
+	account, genesis, profile, svcErr := s.rotatingAccount(ctx, deps, req.Account, session)
 	if svcErr != nil {
 		return nil, svcErr
 	}
@@ -310,7 +332,7 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if table == nil {
 		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
 	}
-	derive := s.requestDeriver(req.Account, session)
+	derive := s.requestDeriver(deps, req.Account, session)
 
 	readCtx, cancelRead := context.WithTimeout(ctx, DefaultChainReadTimeout)
 	view, readErr := deps.Chain.ReadAccount(readCtx, genesis, account)
@@ -381,7 +403,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 	spend := allTxns[0]
 
-	account, genesis, profile, svcErr := s.rotatingAccount(ctx, req.Account, session)
+	account, genesis, profile, svcErr := s.rotatingAccount(ctx, deps, req.Account, session)
 	if svcErr != nil {
 		return nil, svcErr
 	}
@@ -411,7 +433,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, badRequest("rekey target is not a stage of this account; prepare the spend again")
 	}
 	stage := targetStage - 1
-	derive := s.requestDeriver(req.Account, session)
+	derive := s.requestDeriver(deps, req.Account, session)
 	derivedTarget, err := derivedStageAddress(ctx, deps, table, derive, targetStage)
 	if err != nil {
 		return nil, err
@@ -693,13 +715,28 @@ func (s *Service) releaseRefused(ctx context.Context, deps *RotatingDeps, accoun
 
 // rotatingAccount returns the account address, genesis hash and resource
 // profile of a rotating key. The seed is opened only long enough to copy the
-// genesis hash out.
-func (s *Service) rotatingAccount(ctx context.Context, account string, session *keystore.KeySession) (types.Address, []byte, *lsigresource.Profile, *ServiceError) {
-	rs, svcErr := s.openRotatingSession(ctx, account, session)
+// genesis hash out, inside a key use, and zeroed before the key use ends. A
+// key use the lock refused or cancelled answers locked.
+func (s *Service) rotatingAccount(ctx context.Context, deps *RotatingDeps, account string, session *keystore.KeySession) (types.Address, []byte, *lsigresource.Profile, *ServiceError) {
+	useCtx, endKeyUse := deps.keyUse(ctx)
+	defer endKeyUse()
+	refused := func() *ServiceError {
+		if ctx.Err() != nil {
+			return unavailable(ctx.Err().Error())
+		}
+		return lockedError()
+	}
+	if useCtx.Err() != nil {
+		return types.Address{}, nil, nil, refused()
+	}
+	rs, svcErr := s.openRotatingSession(useCtx, account, session)
 	if svcErr != nil {
 		return types.Address{}, nil, nil, svcErr
 	}
 	defer rs.close()
+	if useCtx.Err() != nil {
+		return types.Address{}, nil, nil, refused()
+	}
 	return rs.account, bytes.Clone(rs.secret.GenesisHash), rs.profile, nil
 }
 

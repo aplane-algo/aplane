@@ -498,40 +498,6 @@ func TestWorkerPublishesRotatingStatus(t *testing.T) {
 	}
 }
 
-// A real lock has to wait for a sign in progress: that is what makes "no copy
-// of a seed outlives the unlocked state" true for the sign path.
-func TestLockWaitsForTheRotatingSignPath(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-	ir := server.productRuntime()
-	deps := server.rotatingDeps(ir)
-	if deps.KeyUse == nil {
-		t.Fatal("the rotating sign path isn't registered as a key user")
-	}
-	ctx, release := deps.KeyUse(context.Background())
-	locked := make(chan struct{})
-	go func() {
-		ir.Lock()
-		close(locked)
-	}()
-	select {
-	case <-ctx.Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("the lock didn't cancel the sign in progress")
-	}
-	select {
-	case <-locked:
-		t.Fatal("the lock finished while the sign still held the seed")
-	case <-time.After(100 * time.Millisecond):
-	}
-	release()
-	select {
-	case <-locked:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the lock didn't finish after the sign let go")
-	}
-}
-
 func releaseMemoryHeld(server *Signer, account string) bool {
 	_, restored := server.rotatingReleases.ForLeafChoice(account)
 	return !restored

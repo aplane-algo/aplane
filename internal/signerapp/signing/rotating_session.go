@@ -44,9 +44,10 @@ type RotatingDeps struct {
 	// in. nil means one unending session.
 	Recovery       *RotatingRecovery
 	LockGeneration func() uint64
-	// KeyUse, if set, brackets the sign path's use of a loaded seed: its
-	// context is cancelled the moment the signer locks, and a lock waits for
-	// release before it reports the seed gone. Nil means nothing to wait for.
+	// KeyUse brackets every window in which prepare or sign holds a loaded
+	// seed: its context is cancelled the moment the signer locks, and a lock
+	// waits for release before it reports the seed gone. It is required:
+	// rotatingDeps refuses deps without it.
 	KeyUse func(context.Context) (context.Context, func())
 	// DiscoveryTimeout bounds a request's scan for an unknown live stage.
 	// Zero means DefaultDiscoveryTimeout.
@@ -57,9 +58,6 @@ type RotatingDeps struct {
 // keyUse opens a window for holding a seed. The returned release is safe to
 // call more than once.
 func (d *RotatingDeps) keyUse(ctx context.Context) (context.Context, func()) {
-	if d.KeyUse == nil {
-		return ctx, func() {}
-	}
 	useCtx, release := d.KeyUse(ctx)
 	return useCtx, sync.OnceFunc(release)
 }
@@ -115,7 +113,8 @@ func (rs *rotatingSession) stageAddress(stage uint64) (types.Address, error) {
 
 func (s *Service) rotatingDeps() (*RotatingDeps, *ServiceError) {
 	if s.Planner == nil || s.Planner.Snapshot == nil || s.Rotating == nil ||
-		s.Rotating.Chain == nil || s.Rotating.Tables == nil || s.Rotating.Locks == nil {
+		s.Rotating.Chain == nil || s.Rotating.Tables == nil || s.Rotating.Locks == nil ||
+		s.Rotating.KeyUse == nil {
 		return nil, internal("rotating signing is not configured")
 	}
 	return s.Rotating, nil

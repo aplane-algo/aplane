@@ -59,7 +59,9 @@ type StageFillOptions struct {
 	// returns a context that is cancelled when the signer locks and a
 	// release to call once the seed is zeroed. The runtime's lock waits for
 	// every release. Nothing that can block on I/O or the network happens
-	// inside a window.
+	// inside a window. Prepare and sign set it from RotatingDeps.KeyUse and
+	// the daemon's worker passes the runtime's; unset, it is a no-op, which
+	// only the table-fill and restore tests rely on.
 	KeyUse func(ctx context.Context) (context.Context, func())
 	// Session, if set, is the lock generation the caller read when it
 	// created the pass's context, so the recovery session the pass acts in

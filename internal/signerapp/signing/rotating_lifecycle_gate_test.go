@@ -108,14 +108,16 @@ func TestRotatingSignStopsAtALifecycleChange(t *testing.T) {
 	}
 }
 
-// The seed has to be gone before the audit write, and a lock arriving during
-// that write still has to stop the signature. The release stays on record, which
-// only makes its leaf look used.
+// Every seed load in prepare and sign is a key use, and each one ends before the
+// request moves on. The seed has to be gone before the audit write, and a lock
+// arriving during that write still has to stop the signature. The release stays
+// on record, which only makes its leaf look used.
 func TestRotatingSignEndsItsKeyUseBeforeTheAuditWrite(t *testing.T) {
 	f, audit := newSigningFixtureFor(t, wotscTestType)
-	active := 0
+	active, opened := 0, 0
 	f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
 		active++
+		opened++
 		useCtx, cancel := context.WithCancel(ctx)
 		return useCtx, func() {
 			active--
@@ -123,10 +125,20 @@ func TestRotatingSignEndsItsKeyUseBeforeTheAuditWrite(t *testing.T) {
 		}
 	}
 	prep := mustPrepare(t, f, f.spend(1000, 1100))
-	active = 0
+	// Prepare on stage 0 loads the seed twice: for the account's identity and to
+	// derive the target, stage 1.
+	if opened != 2 || active != 0 || f.store.loads != 2 {
+		t.Fatalf("prepare opened %d key uses for %d seed loads and left %d open; want 2 for 2, all ended", opened, f.store.loads, active)
+	}
+	opened, f.store.loads = 0, 0
 	audit.onRelease = func() {
 		if active != 0 {
 			t.Error("the audit write ran while the seed was held")
+		}
+		// Sign loads the seed three times: for the account's identity, to derive
+		// the target before approval, and to sign after it.
+		if opened != 3 || f.store.loads != 3 {
+			t.Errorf("sign opened %d key uses for %d seed loads; want 3 for 3", opened, f.store.loads)
 		}
 		f.svc.IsUnlocked = func() bool { return false }
 	}
@@ -136,6 +148,71 @@ func TestRotatingSignEndsItsKeyUseBeforeTheAuditWrite(t *testing.T) {
 	}
 	if rec, held := f.svc.Rotating.Releases.Get(f.account.String()); !held || len(rec.Leaves) != 1 {
 		t.Fatalf("the leaf isn't on record as used: %+v", rec)
+	}
+}
+
+// A key use the signer refuses because it is locking answers locked and loads
+// nothing, wherever in prepare or sign it lands. The runtime refuses exactly
+// when it no longer reads unlocked, so the double flips both together. A
+// refusal during discovery has to end the search rather than retry it until the
+// discovery timeout.
+func TestRotatingRequestsAnswerLockedWhenAKeyUseIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// refuse is the request's first key use the lock refuses.
+		refuse          int
+		sign            bool
+		authorizerStage uint64
+	}{
+		{name: "prepare/account identity", refuse: 1},
+		{name: "prepare/live stage", refuse: 2, authorizerStage: 1},
+		{name: "prepare/target", refuse: 2},
+		{name: "sign/account identity", refuse: 1, sign: true},
+		{name: "sign/target", refuse: 2, sign: true},
+		{name: "sign/signature", refuse: 3, sign: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, audit := newSigningFixtureFor(t, wotscTestType)
+			var prep *signerapi.RotatingPrepareResponse
+			if tc.sign {
+				prep = mustPrepare(t, f, f.spend(1000, 1100))
+			}
+			if tc.authorizerStage != 0 {
+				f.chain.authorizer = f.stageAddress(t, tc.authorizerStage)
+			}
+			uses := 0
+			f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				uses++
+				if uses < tc.refuse {
+					return ctx, func() {}
+				}
+				f.svc.IsUnlocked = func() bool { return false }
+				refused, cancel := context.WithCancel(ctx)
+				cancel()
+				return refused, func() {}
+			}
+			// A spin would run to this bound and then report the stage unproven.
+			f.svc.Rotating.DiscoveryTimeout = time.Minute
+			before := f.store.loads
+			var err *ServiceError
+			if tc.sign {
+				_, err = f.sign(t, prep.Transactions)
+			} else {
+				_, err = f.prepare(t, f.spend(1000, 1100))
+			}
+			if err == nil || err.Kind != ErrorLocked {
+				t.Fatalf("error = %v, want the locked error", err)
+			}
+			if uses != tc.refuse {
+				t.Fatalf("the request asked for %d key uses, want %d: it went on after the refusal or never reached it", uses, tc.refuse)
+			}
+			if loads := f.store.loads - before; loads != tc.refuse-1 {
+				t.Fatalf("%d seed loads, want %d: a refused key use loaded the seed", loads, tc.refuse-1)
+			}
+			if len(audit.releases) != 0 {
+				t.Fatalf("a refused request released a signature: %+v", audit.releases)
+			}
+		})
 	}
 }
 

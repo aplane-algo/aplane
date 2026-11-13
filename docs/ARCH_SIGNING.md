@@ -1756,7 +1756,11 @@ address derived from the seed, adds the resource dummies the key type's
 profile needs (two for the WOTS+C triple), sets fees
 and the group ID with the same group builder `/sign` and `/plan` use, and
 returns the exact unsigned group. It stores nothing.
-Preparation needs no approval and reveals nothing secret. An account whose
+Preparation needs no approval and reveals nothing secret. Each time prepare
+loads the seed (to read the key's identity, and for each derivation) it holds
+it in a key use, as sign does (below): the chain read and table writes happen
+outside those windows, and a lock that refuses or cuts one short ends the
+request with the locked error. An account whose
 live stage the signer has not found yet is refused with
 `rotating_stage_unproven` after a bounded foreground search (30 s); the
 background scan continues and a retry succeeds once it has caught up.
@@ -1809,8 +1813,13 @@ authorizer and window rules to that round (`rotating_stage_changed` or
 released). It then writes a
 `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, and for
 a leaf family the tree and leaf index) with a durable sync, records the
-release in memory, and responds. The sign path is a key user: a lock cancels it
-and waits for the seed to be zeroed, which happens before the audit write. It
+release in memory, and responds. The sign path is a key user for every load
+of the seed: the identity read and the target derivation before approval each
+hold it in a short key use of their own, and the signing window after approval
+holds it in a third. Neither earlier window spans the approval wait or a chain
+read. A lock cancels each one and waits for the seed to be zeroed, which for the
+signing window happens before the audit write; a refused or cancelled key use
+answers with the locked error. It
 refuses the release if the signer locked since approval, the request was cancelled
 or the key was removed, both before that write and after the last audit write.
 The last audit write is the `SIGN_APPROVED` entry for the group as signed; a

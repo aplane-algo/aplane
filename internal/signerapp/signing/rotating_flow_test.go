@@ -1063,7 +1063,7 @@ func TestStatusSurvivesTableWriteFailures(t *testing.T) {
 func TestDerivedStageAddressToleratesConcurrentTableGrowth(t *testing.T) {
 	f, _ := newSigningFixture(t)
 	tb := f.table(t)
-	derive := f.svc.requestDeriver(f.account.String(), f.session)
+	derive := f.svc.requestDeriver(f.svc.Rotating, f.account.String(), f.session)
 	// A deriver that, like a concurrent fill, publishes the very range being
 	// derived before the caller appends it.
 	racing := func(ctx context.Context, from, to uint64) ([]types.Address, error) {

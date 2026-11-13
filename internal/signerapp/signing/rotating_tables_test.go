@@ -209,7 +209,10 @@ func newRotatingFixtureFor(t testing.TB, kind rotatingTestType) *rotatingFixture
 		// A generous automatic allowance: the fill tests exercise lookahead
 		// and search mechanics; the recovery tests set their own bounds.
 		Rotating: &RotatingDeps{Chain: chain, Tables: tables, Locks: &RotatingLocks{}, Recovery: &RotatingRecovery{MaxStages: 1 << 20, Timeout: time.Hour},
-			LockGeneration: func() uint64 { return f.lockGen }},
+			LockGeneration: func() uint64 { return f.lockGen },
+			// The fixture has no runtime to lock; tests of the lock replace this,
+			// and internal/signerapp/daemon runs the real one.
+			KeyUse: func(ctx context.Context) (context.Context, func()) { return ctx, func() {} }},
 	}
 	f.svc = svc
 	svc.Rotating.Recovery.SetGenerationSource(func() uint64 { return f.lockGen })
