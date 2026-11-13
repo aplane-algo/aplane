@@ -52,10 +52,6 @@ type KeyRegRequest struct {
 	IncentiveEligible bool
 	Wait              bool
 	LsigArgs          cmdspec.LsigArgs
-	// BeforeSubmit, when set, is given what an online registration decided
-	// about incentive eligibility once the transaction is prepared and
-	// before it is signed, so the host can say whether the 2 ALGO fee is paid.
-	BeforeSubmit func(*IncentiveEligibilityResult)
 }
 
 // RekeyRequest captures parsed rekey inputs.
@@ -128,22 +124,16 @@ type ValidateRequest struct {
 	LsigArgs cmdspec.LsigArgs
 }
 
-// announceIncentive hands beforeSubmit the engine's incentive eligibility
-// decision for a prepared online registration. An offline one has none.
-func announceIncentive(prep *engine.TransactionPrepResult, beforeSubmit func(*IncentiveEligibilityResult)) {
-	decision := prep.Incentive
-	if decision == nil {
-		return
+// withIncentive records on result what a registration that asked for
+// incentive eligibility found: the engine set the 2 ALGO fee unless the
+// account was eligible already.
+func withIncentive(result *KeyRegCommandResult, prep *engine.TransactionPrepResult) *KeyRegCommandResult {
+	if prep.Incentive != nil {
+		cache.Debug("incentive eligibility requested", "already_eligible", prep.Incentive.AlreadyEligible)
+		result.IncentiveRequested = true
+		result.AlreadyIncentiveEligible = prep.Incentive.AlreadyEligible
 	}
-	cache.Debug("incentive eligibility", "requested", decision.Requested,
-		"already_eligible", decision.AlreadyEligible, "fee_charged", decision.FeeCharged)
-	if beforeSubmit != nil {
-		beforeSubmit(&IncentiveEligibilityResult{
-			AlreadyEligible: decision.AlreadyEligible,
-			Requested:       decision.Requested,
-			ChargeFee:       decision.FeeCharged,
-		})
-	}
+	return result
 }
 
 // Validate resolves and validates one account or address set via 0-ALGO self-send transactions.
@@ -370,14 +360,13 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		return nil, err
 	}
 	prep := preparedTxnFromEngine(prepResult)
-	announceIncentive(prepResult, req.BeforeSubmit)
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
 
-	return &KeyRegCommandResult{
+	return withIncentive(&KeyRegCommandResult{
 		Account:        address,
 		Mode:           mode,
 		VoteFirst:      voteFirst,
@@ -387,13 +376,11 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		Confirmed:      submit.Confirmed,
 		Output:         submit.Output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, nil
+	}, prepResult), nil
 }
 
 // KeyRegFromPartKey prepares and submits online keyreg from parsed goal output.
-// beforeSubmit is KeyRegRequest.BeforeSubmit.
-func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.ParsedInfo, incentiveEligible bool,
-	beforeSubmit func(*IncentiveEligibilityResult)) (*KeyRegCommandResult, error) {
+func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.ParsedInfo, incentiveEligible bool) (*KeyRegCommandResult, error) {
 	prepResult, err := a.eng.PrepareKeyReg(ctx, engine.KeyRegParams{
 		Account:           parsed.ParentAddress,
 		Mode:              "online",
@@ -409,7 +396,6 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		return nil, fmt.Errorf("failed to prepare keyreg: %w", err)
 	}
 	prep := preparedTxnFromEngine(prepResult)
-	announceIncentive(prepResult, beforeSubmit)
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, engine.LsigArgs{}, false)
 	if err != nil {
@@ -429,7 +415,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		confirmed = true
 	}
 
-	return &KeyRegCommandResult{
+	return withIncentive(&KeyRegCommandResult{
 		Account:        parsed.ParentAddress,
 		Mode:           "online",
 		VoteFirst:      parsed.VoteFirst,
@@ -439,7 +425,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		Confirmed:      confirmed,
 		Output:         output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, nil
+	}, prepResult), nil
 }
 
 // ListRekeys returns all cached rekey relationships.

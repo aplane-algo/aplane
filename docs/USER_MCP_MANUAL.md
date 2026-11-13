@@ -635,6 +635,12 @@ each MCP server instance uses its own:
   [blocked-command table](#commands-blocked-from-execute) before using `execute`.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /
   `microalgos()`).
+- **`keyreg ... eligible=true` costs 2 ALGO unless the account is eligible
+  already.** The result's `incentive_requested` and
+  `already_incentive_eligible` say which: requested and not already eligible
+  means the transaction carries the 2 ALGO fee. Eligibility is algod's current
+  view, so two eligible registrations sent before the first confirms each pay
+  it.
 - **Asset names resolve per network.** Inspect with `plan()` and remember that
   `simulate` requests executable signatures before anything irreversible.
 

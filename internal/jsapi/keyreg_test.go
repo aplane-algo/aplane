@@ -108,7 +108,7 @@ func newKeyregFixture(t *testing.T) *keyregFixture {
 	eng.SignerCache.Keys = map[string]string{
 		keyregEligible: "ed25519", keyregIneligible: "ed25519", keyregUnknown: "ed25519",
 	}
-	// Each account signs for itself, so only the eligibility check asks
+	// Each account signs for itself, so only the eligibility read asks
 	// algod about the account.
 	if eng.AuthCache.AuthAddresses == nil {
 		eng.AuthCache.AuthAddresses = map[string]string{}
@@ -156,6 +156,9 @@ func TestKeyregPaysTheIncentiveFeeOnlyToBecomeEligible(t *testing.T) {
 		{"eligible already", keyregEligible, true, 1000},
 		{"not eligible yet", keyregIneligible, true, 2_000_000},
 		{"not requested", keyregIneligible, false, 1000},
+		// No request, no read: algod failing to answer for the account
+		// does not stop a renewal.
+		{"not requested, eligibility unreadable", keyregUnknown, false, 1000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -179,8 +182,8 @@ func TestKeyregPaysTheIncentiveFeeOnlyToBecomeEligible(t *testing.T) {
 	}
 }
 
-// A registration whose account's eligibility can't be read is refused before
-// signing, so it neither pays a fee that may not be owed nor drops the request.
+// A request for eligibility that can't be read is refused before signing, so
+// it neither pays a fee that may not be owed nor drops the request.
 func TestKeyregRefusesWhenEligibilityCannotBeRead(t *testing.T) {
 	f := newKeyregFixture(t)
 	if got := f.keyreg(t, keyregUnknown, true); !strings.Contains(got, "failed to query incentive eligibility") {

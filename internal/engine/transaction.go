@@ -26,7 +26,7 @@ type TransactionPrepResult struct {
 	AssetInfo      *ASAInfo               // For ASA transactions
 	AmountInUnits  uint64                 // Amount in base units
 	AppCallInfo    *signerapi.AppCallInfo // Optional app-call metadata for signer approval rendering
-	Incentive      *IncentiveDecision     // For an online key registration
+	Incentive      *IncentiveDecision     // For a key registration that asked for incentive eligibility
 }
 
 // SubmitResult contains the result of submitting a transaction

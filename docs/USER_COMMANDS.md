@@ -277,7 +277,9 @@ keyreg lsig-account offline arg:preimage=text:secret
 keyreg alice online votekey=ABC... selkey=DEF... sproofkey=GHI... eligible=true
 ```
 
-**Paste Mode:** Running `keyreg` with no arguments enters interactive paste mode for the output of `goal account partkeyinfo`.
+**Incentive fee:** with `eligible=true` the command reads the account's eligibility from algod, and refuses the registration if algod can't answer. After the submission it prints `Incentive eligibility requested: 2 ALGO fee`, or `Already incentive eligible: no incentive fee paid` when the account was eligible already. The read is algod's current view, so two eligible registrations sent before the first confirms each pay the fee.
+
+**Paste Mode:** Running `keyreg` with no arguments enters interactive paste mode for the output of `goal account partkeyinfo`. It asks whether to request incentive eligibility, and the same fee rules apply.
 
 **Tip:** Copy-paste participation keys from `goal account partkeyinfo` output.
 

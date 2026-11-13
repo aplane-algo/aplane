@@ -130,7 +130,8 @@ func onlineKeyReg(addr string, eligible bool) KeyRegParams {
 
 // The 2 ALGO fee is paid only to become eligible: an account that is
 // eligible already keeps its eligibility through the registration at the
-// ordinary fee. The decision is on the result, asked for or not.
+// ordinary fee. Eligibility is read only when it is asked for, and what the
+// read found is on the result.
 func TestPrepareKeyReg_IncentiveFee(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -161,24 +162,24 @@ func TestPrepareKeyReg_IncentiveFee(t *testing.T) {
 			if uint64(result.Transaction.Fee) != tt.wantFee {
 				t.Errorf("txn.Fee = %d, want %d", result.Transaction.Fee, tt.wantFee)
 			}
-			want := IncentiveDecision{
-				Requested:       tt.requested,
-				AlreadyEligible: tt.alreadyEligible,
-				FeeCharged:      tt.wantFee == 2_000_000,
-			}
-			if result.Incentive == nil || *result.Incentive != want {
-				t.Errorf("Incentive = %+v, want %+v", result.Incentive, want)
+			switch {
+			case !tt.requested && result.Incentive != nil:
+				t.Errorf("Incentive = %+v for a registration that did not ask for eligibility", *result.Incentive)
+			case tt.requested && (result.Incentive == nil || result.Incentive.AlreadyEligible != tt.alreadyEligible):
+				t.Errorf("Incentive = %+v, want AlreadyEligible %v", result.Incentive, tt.alreadyEligible)
 			}
 		})
 	}
 }
 
-// Without the account's eligibility an online registration is refused, so it
-// neither pays a fee that may not be owed nor drops a request for eligibility.
-func TestPrepareKeyReg_RefusedWhenEligibilityCannotBeRead(t *testing.T) {
+// A request for eligibility whose read fails is refused, so it neither pays
+// a fee that may not be owed nor drops the request. Without a request there
+// is no read, so algod failing to answer for the account changes nothing.
+func TestPrepareKeyReg_EligibilityThatCannotBeRead(t *testing.T) {
 	for _, requested := range []bool{true, false} {
 		addr := testAddr(1)
 		transport := newAccountMockTransport(t)
+		transport.txParams.Fee = 0
 		transport.addAccount(addr, 10_000_000)
 		eng := setupEngineWithMockAlgod(t, transport)
 		// The account signs for itself, so building the signing context asks
@@ -186,9 +187,19 @@ func TestPrepareKeyReg_RefusedWhenEligibilityCannotBeRead(t *testing.T) {
 		eng.AuthCache.AuthAddresses[addr] = ""
 		delete(transport.accounts, addr)
 
-		_, err := eng.PrepareKeyReg(context.Background(), onlineKeyReg(addr, requested))
-		if err == nil || !strings.Contains(err.Error(), "failed to query incentive eligibility") {
-			t.Errorf("requested=%v: PrepareKeyReg() error = %v, want the eligibility lookup error", requested, err)
+		result, err := eng.PrepareKeyReg(context.Background(), onlineKeyReg(addr, requested))
+		if requested {
+			if err == nil || !strings.Contains(err.Error(), "failed to query incentive eligibility") {
+				t.Errorf("requested: PrepareKeyReg() error = %v, want the eligibility lookup error", err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("not requested: PrepareKeyReg() error = %v, want no read and no error", err)
+		}
+		if uint64(result.Transaction.Fee) != 1000 || result.Incentive != nil {
+			t.Errorf("not requested: fee = %d, incentive = %+v; want the ordinary fee and no decision",
+				result.Transaction.Fee, result.Incentive)
 		}
 	}
 }

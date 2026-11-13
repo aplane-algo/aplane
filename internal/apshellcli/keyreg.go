@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/partkeyparse"
 
 	"github.com/chzyer/readline"
@@ -96,12 +95,9 @@ func (r *REPLState) keyRegPasteMode() error {
 	if err != nil {
 		return err
 	}
+	r.println()
 
-	result, err := r.app().KeyRegFromPartKey(r.commandContext(), parsedInfo, incentiveEligible,
-		func(incentive *apshellapp.IncentiveEligibilityResult) {
-			reportIncentiveEligibility(r, incentive, true)
-			r.println()
-		})
+	result, err := r.app().KeyRegFromPartKey(r.commandContext(), parsedInfo, incentiveEligible)
 	if err != nil {
 		return err
 	}
@@ -110,6 +106,7 @@ func (r *REPLState) keyRegPasteMode() error {
 	if !r.app().IsSimulateEnabled() {
 		r.printf("Key registration submitted: %s\n", result.TxID)
 	}
+	reportIncentiveEligibility(r, result, true)
 	if result.Confirmed {
 		r.printf("\n%s is now ONLINE (participating)\n", r.app().FormatAddress(parsedInfo.ParentAddress, ""))
 		r.printf("Participation valid from round %d to %d\n", parsedInfo.VoteFirst, parsedInfo.VoteLast)

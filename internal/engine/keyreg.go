@@ -27,12 +27,11 @@ type KeyRegParams struct {
 	IncentiveEligible bool   // Request incentive eligibility (2 ALGO unless already eligible)
 }
 
-// IncentiveDecision is what an online key registration decided about
-// incentive eligibility and its 2 ALGO fee.
+// IncentiveDecision is what a registration that asked for incentive
+// eligibility found: it carries the 2 ALGO fee unless the account is
+// eligible already.
 type IncentiveDecision struct {
-	Requested       bool // The caller asked for incentive eligibility
-	AlreadyEligible bool // algod reports the account eligible already
-	FeeCharged      bool // The registration pays the 2 ALGO fee: requested and not eligible already
+	AlreadyEligible bool // algod reported the account eligible, so the fee is the ordinary one
 }
 
 func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*TransactionPrepResult, error) {
@@ -94,26 +93,24 @@ func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*Trans
 		return nil, fmt.Errorf("failed to create keyreg transaction: %w", err)
 	}
 
-	// Going online reads whether the account is incentive eligible already.
-	// Eligibility survives later registrations, so the fee is paid only to
-	// become eligible. A failed lookup refuses the registration rather than
-	// pay 2 ALGO that may not be owed or drop a request for eligibility.
+	// A request for incentive eligibility reads whether the account is
+	// eligible already. Eligibility survives later registrations, so the fee
+	// is paid only to become eligible. A failed read refuses the registration
+	// rather than pay 2 ALGO that may not be owed or drop the request. The
+	// read is algod's current view: a registration sent before an earlier one
+	// confirms pays the fee again.
 	var incentive *IncentiveDecision
-	if params.Mode == "online" {
+	if params.IncentiveEligible {
 		alreadyEligible, err := e.GetIncentiveEligibility(ctx, params.Account)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query incentive eligibility: %w", err)
 		}
-		incentive = &IncentiveDecision{
-			Requested:       params.IncentiveEligible,
-			AlreadyEligible: alreadyEligible,
-			FeeCharged:      params.IncentiveEligible && !alreadyEligible,
-		}
+		incentive = &IncentiveDecision{AlreadyEligible: alreadyEligible}
 	}
 
 	// 2 ALGO is the protocol-defined minimum fee for incentive eligibility (AVM v11+).
 	const incentiveFeeMicroAlgos = 2_000_000
-	if incentive != nil && incentive.FeeCharged {
+	if incentive != nil && !incentive.AlreadyEligible {
 		txnObj.Fee = types.MicroAlgos(incentiveFeeMicroAlgos)
 	}
 
