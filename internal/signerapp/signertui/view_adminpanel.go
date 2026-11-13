@@ -5,9 +5,12 @@ package tui
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/version"
 )
 
@@ -132,16 +135,33 @@ func boolStr(b bool) string {
 	return "false"
 }
 
+// unsavedSettingsWarning is the panel's one-line warning for the settings in
+// effect without a completed save: what the result said for a single one,
+// or, for several, a line naming them in key order.
+func (m Model) unsavedSettingsWarning() string {
+	keys := slices.Sorted(maps.Keys(m.admin.unsaved))
+	switch {
+	case len(keys) == 0:
+		return ""
+	case len(keys) > 1:
+		return "Warning: in effect, save not confirmed: " + strings.Join(keys, ", ")
+	case m.admin.unsaved[keys[0]] == protocol.ResultCodeAppliedNotSaved:
+		return "Warning: " + keys[0] + " is in effect but not saved; a restart reverts it"
+	default:
+		return "Warning: " + keys[0] + " is in effect; its durability is not confirmed"
+	}
+}
+
 // renderAdminPanel renders the admin control panel view.
 func (m Model) renderAdminPanel() string {
 	var sb strings.Builder
 
-	if m.admin.unsavedWarning != "" {
-		// The warning takes the title's margin line, so the panel is no
-		// taller with it than without.
+	if warning := m.unsavedSettingsWarning(); warning != "" {
+		// The warning takes the title's margin line and is cut to the
+		// panel's width, so the panel is no taller with it than without.
 		sb.WriteString(titleStyle.MarginBottom(0).Render("Settings"))
 		sb.WriteString("\n")
-		sb.WriteString(warningStyle.Render("Warning: " + m.admin.unsavedWarning))
+		sb.WriteString(warningStyle.Render(ellipsize(warning, m.tableWidth())))
 		sb.WriteString("\n\n")
 	} else {
 		sb.WriteString(titleStyle.Render("Settings"))

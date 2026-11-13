@@ -293,10 +293,12 @@ func TestEndKeyUsesRefusesAKeyUseWhileItDrains(t *testing.T) {
 	}
 }
 
-// Destroy is safe without EndKeyUses before it: it stops the key watcher and
-// refuses every new key use itself, then clears the session, and it does not
-// wait for a key use already registered (that bounded wait is EndKeyUses's).
-// It once relied on EndKeyUses having done the first two.
+// Destroy is safe without EndKeyUses before it: it stops the key watcher,
+// refuses every new key use and cancels the key uses and lock-cancel
+// contexts already handed out, then clears the session, and it does not wait
+// for a key use still registered (that bounded wait is EndKeyUses's). It once
+// relied on EndKeyUses having done the first three, and then cancelled
+// nothing already handed out.
 func TestDestroyAloneStopsTheWatcherAndRefusesKeyUsesWithoutWaiting(t *testing.T) {
 	root := t.TempDir()
 	ir := New(Config{
@@ -314,6 +316,9 @@ func TestDestroyAloneStopsTheWatcherAndRefusesKeyUsesWithoutWaiting(t *testing.T
 	held, releaseHeld := ir.KeyUseContext(context.Background())
 	defer releaseHeld()
 	requireLive(t, held, "key use registered before Destroy")
+	heldLockCtx, cancelHeldLockCtx := ir.LockCancelContext(context.Background())
+	defer cancelHeldLockCtx()
+	requireLive(t, heldLockCtx, "lock-cancel context taken before Destroy")
 
 	destroyed := make(chan struct{})
 	go func() {
@@ -322,6 +327,8 @@ func TestDestroyAloneStopsTheWatcherAndRefusesKeyUsesWithoutWaiting(t *testing.T
 	}()
 	waitClosed(t, destroyed, "Destroy to return with a key use still registered")
 	waitClosed(t, watcherCtx.Done(), "Destroy to stop the key watcher")
+	waitClosed(t, held.Done(), "Destroy to cancel the key use registered before it")
+	waitClosed(t, heldLockCtx.Done(), "Destroy to cancel the lock-cancel context taken before it")
 	ctx, release := ir.KeyUseContext(context.Background())
 	requireCancelled(t, ctx, "key use requested after Destroy")
 	release()

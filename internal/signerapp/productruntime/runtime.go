@@ -1445,19 +1445,25 @@ func (ir *Runtime) EndKeyUses(ctx context.Context) error {
 	return nil
 }
 
-// refuseKeyUses stops the key watcher and makes KeyUseContext refuse every
-// new key use from now on. It is idempotent.
+// refuseKeyUses stops the key watcher, makes KeyUseContext refuse every new
+// key use from now on, and cancels the contexts of the key uses and
+// lock-cancel contexts already handed out, as drainKeyUsers does first. It
+// does not wait for them. It is idempotent.
 func (ir *Runtime) refuseKeyUses() {
 	ir.StopKeyWatcher()
 	ir.keyUseMu.Lock()
 	ir.destroyed = true
+	if ir.keyUseCancel != nil {
+		ir.keyUseCancel()
+	}
 	ir.keyUseMu.Unlock()
 }
 
 // Destroy clears the session and zeroes the keyring for shutdown. It first
-// stops the key watcher and refuses new key uses, as EndKeyUses does, so it is
-// safe without EndKeyUses before it, but it does not wait for the registered
-// key users: that bounded wait is EndKeyUses's, which shutdown runs first. It
+// stops the key watcher, refuses new key uses and cancels the ones already
+// registered, as EndKeyUses does, so it is safe without EndKeyUses before it,
+// but it does not wait for the registered key users: that bounded wait is
+// EndKeyUses's, which shutdown runs first. It
 // takes the passphrase lock, so a lock cleanup racing shutdown (an admin
 // session closing on its way out) cannot interleave with it. That lock, the
 // session's and the keystore's are taken without a bound: a holder stalled

@@ -59,7 +59,7 @@ func (r Reader) ReadAccount(ctx context.Context, genesisHash []byte, account typ
 	}
 	info, err := client.AccountInformation(account.String()).Exclude([]string{"all"}).Do(ctx)
 	if err != nil {
-		return AccountView{}, fmt.Errorf("%w: read account: %v", ErrUnavailable, err)
+		return AccountView{}, fmt.Errorf("%w: read account: %w", ErrUnavailable, err)
 	}
 	view := AccountView{Authorizer: account, Round: info.Round}
 	if info.AuthAddr != "" {
@@ -111,7 +111,7 @@ func (r Reader) client(ctx context.Context, genesisHash []byte) (*algod.Client, 
 	}
 	versions, err := client.Versions().Do(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: algod for network %s: %v", ErrUnavailable, network, err)
+		return nil, fmt.Errorf("%w: algod for network %s: %w", ErrUnavailable, network, err)
 	}
 	if !bytes.Equal(versions.GenesisHash, genesisHash) {
 		return nil, fmt.Errorf("%w: algod for network %s serves a different genesis hash", ErrUnavailable, network)

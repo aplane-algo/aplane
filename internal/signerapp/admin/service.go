@@ -173,12 +173,14 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	}
 
 	// The new value is a candidate until it is published. A restrictive one
-	// (user_auto_approve off; require_contained, require_cosigner or
-	// lock_on_disconnect on; a shorter passphrase_timeout) is published before
-	// the save, so it is in effect for as long as the save takes and stays in
-	// effect if the save fails. Any other value, theme included, is published
-	// only once the save returns, so no reader (a signing request included)
-	// ever sees a permissive value that was not saved.
+	// (user_auto_approve turned off; require_contained, require_cosigner or
+	// lock_on_disconnect turned on; a shorter passphrase_timeout) is published
+	// before the save, so it is in effect for as long as the save takes and
+	// stays in effect if the save fails. Any other value, theme and the value
+	// already in effect included, is published only once the save returns, so
+	// no reader (a signing request included) ever sees a permissive value that
+	// was not saved, and a failed save of an unchanged value reports nothing
+	// in effect that a restart would undo.
 	var saveValue interface{}
 	var publish func()
 	var restrictive bool
@@ -190,21 +192,21 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if err != nil {
 			return err
 		}
-		_, cosigner := icfg.GenerationRequirements()
-		saveValue, publish, restrictive = v, func() { icfg.SetGenerationRequirements(v, cosigner) }, v
+		contained, cosigner := icfg.GenerationRequirements()
+		saveValue, publish, restrictive = v, func() { icfg.SetGenerationRequirements(v, cosigner) }, v && !contained
 	case adminproto.AdminSettingRequireCosigner:
 		v, err := parseBoolSetting(req)
 		if err != nil {
 			return err
 		}
-		contained, _ := icfg.GenerationRequirements()
-		saveValue, publish, restrictive = v, func() { icfg.SetGenerationRequirements(contained, v) }, v
+		contained, cosigner := icfg.GenerationRequirements()
+		saveValue, publish, restrictive = v, func() { icfg.SetGenerationRequirements(contained, v) }, v && !cosigner
 	case adminproto.AdminSettingUserAutoApprove:
 		v, err := parseBoolSetting(req)
 		if err != nil {
 			return err
 		}
-		saveValue, publish, restrictive = v, func() { icfg.SetUserAutoApprove(v) }, !v
+		saveValue, publish, restrictive = v, func() { icfg.SetUserAutoApprove(v) }, !v && icfg.UserAutoApprove()
 	case adminproto.AdminSettingLockOnDisconnect:
 		v, err := parseBoolSetting(req)
 		if err != nil {
@@ -213,7 +215,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if passphraseMethod := s.detectPassphraseMethod(); passphraseMethod != "none" && v {
 			return fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		}
-		saveValue, publish, restrictive = v, func() { icfg.SetLockOnDisconnect(v) }, v
+		saveValue, publish, restrictive = v, func() { icfg.SetLockOnDisconnect(v) }, v && !icfg.LockOnDisconnect()
 	case adminproto.AdminSettingPassphraseTimeout:
 		duration, err := serverconfig.ParsePassphraseTimeout(req.Value)
 		if err != nil {

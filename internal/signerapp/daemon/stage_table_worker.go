@@ -223,7 +223,11 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 	}
 	reports := svc.FillStageTables(ctx, ir.SnapshotKeySession(), opts)
 	wait := stageTableIdleInterval
+	stopped := false
 	for _, r := range reports {
+		if r.Stopped {
+			stopped = true
+		}
 		if r.Discarded != nil {
 			logWarnf("rotating account %s: %v; rebuilding its stage table from the seed", r.Account, r.Discarded)
 		}
@@ -235,8 +239,12 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 			wait = stageTableBusyInterval
 		}
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || stopped {
 		// Locked or shutting down mid-pass: nothing to schedule or publish.
+		// A lock refuses key uses before it cancels the pass's context, so
+		// a pass it cut can still have a live context; the report it cut
+		// says so. The status from the last full pass stands until the
+		// locked worker clears it.
 		return stageTableIdleInterval
 	}
 	fs.publishRotatingStatus(ir, svc, reports)

@@ -1825,8 +1825,9 @@ SLH-DSA's read after signing comes before the seed is zeroed. That read runs
 under the window's context, so a lock cancels it instead of waiting for it.
 A lock cancels each window and waits for the seed to be zeroed, which for the
 signing window happens before the audit write; a refused or cancelled key use
-(the stateless re-read cut short by the lock included) answers with the locked
-error, and a request whose own context ended answers `unavailable`. It
+(the stateless re-read cancelled by the lock included) answers with the locked
+error; a request whose own context ended, or a re-read that failed for its own
+reason (the node's error, its own timeout), answers `unavailable`. It
 refuses the release if the signer locked since approval, the request was cancelled
 or the key was removed, both before that write and after the last audit write.
 The last audit write is the `SIGN_APPROVED` entry for the group as signed; a

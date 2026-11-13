@@ -1841,10 +1841,10 @@ All service stops share one 5 s shutdown deadline.
    stop, and close the audit log. Everything up to here is bounded, so the
    record is written before the step that is not.
 7. Call `Destroy()` on the product runtime:
-   - stop the key watcher and refuse new key uses itself, as `EndKeyUses`
-     does (both are idempotent), so `Destroy` is safe on its own; it does
-     not wait for registered key users, which is `EndKeyUses`'s bounded
-     wait.
+   - stop the key watcher, refuse new key uses and cancel the contexts of
+     the key uses already registered itself, as `EndKeyUses` does (all
+     idempotent), so `Destroy` is safe on its own; it does not wait for
+     registered key users, which is `EndKeyUses`'s bounded wait.
    - take the passphrase lock, so a lock cleanup racing shutdown cannot
      interleave.
    - `keySession.Destroy()` — drain in-flight key retrieval operations.

@@ -123,9 +123,10 @@ for each.
   after it and is refused, as with `RegisterChecksLock`), without locking the
   signer. It then drains the registered key users as a lock does
   (`drainKeyUsers`), but only until its deadline, and `Destroy` clears the
-  session whether or not they released. `Destroy` sets the same flag and
-  stops the key watcher itself (`refuseKeyUses`, idempotent), so it is safe
-  without `EndKeyUses`, but it never waits for a key user. A holder
+  session whether or not they released. `Destroy` sets the same flag,
+  cancels the registered key uses' context and stops the key watcher itself
+  (`refuseKeyUses`, idempotent), so it is safe without `EndKeyUses`, but it
+  never waits for a key user. A holder
   still running then (the stage table worker, an export) keeps its own
   decrypted copy, which no clear can reach, until it releases or the process
   exits, and lifecycle records `SERVER_STOP_INCOMPLETE`.

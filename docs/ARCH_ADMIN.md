@@ -720,22 +720,25 @@ any other value is refused with `code:"invalid_request"`. A valid value is
 saved durably to `identities/default/config.yaml` (root `config.yaml` for
 `theme`). When it takes effect depends on the change's direction:
 
-- Restrictive: `user_auto_approve` set to `false`; `require_contained`,
-  `require_cosigner` or `lock_on_disconnect` set to `true`; a
+- Restrictive: `user_auto_approve` turned off; `require_contained`,
+  `require_cosigner` or `lock_on_disconnect` turned on; a
   `passphrase_timeout` shorter than the current one, that is a non-zero
   timeout below a non-zero current one, or any non-zero timeout when the
   current one is `0` (none). The value takes effect before the save starts,
   so a hung or slow disk cannot keep the old, more permissive value in
   effect, and it stays in effect whatever the save does.
-- Permissive: every other change, `passphrase_timeout` set to `0` or to a
-  timeout as long or longer included. `theme` has no direction and is
+- Permissive: every other request, the value already in effect and
+  `passphrase_timeout` set to `0` or to a timeout as long or longer
+  included. `theme` has no direction and is
   handled as permissive. The value takes effect only once its file has
   replaced the old one, so no reader, a signing request included, ever sees
   a permissive value that was not saved. Until then readers keep the old
   value.
 
-A change to the value already in effect needs no special handling: it goes
-through the same path and leaves the setting as it was.
+A request for the value already in effect is therefore not restrictive: it
+takes the save-first path, so a failed save answers the plain "unchanged"
+failure and writes no audit entry, since nothing in effect would be undone by
+a restart.
 
 | Save outcome | Restrictive change | Permissive change |
 |---|---|---|
@@ -1265,12 +1268,16 @@ signer settings and status:
 After a setting change, success or failure, the panel re-reads the settings,
 so it shows the value in effect. A change in effect without a completed save
 (`applied_not_durable` or `applied_not_saved`) is not shown as an update
-failure: the panel itself shows a warning under its title naming the setting
-and saying it is in effect with its durability unconfirmed, or in effect but
-not saved so a restart reverts it. The warning takes the title's margin line,
-so the panel is no taller with it, and it is the panel's own: no key, timer or
-other warning clears it, and it stays until the next setting update result
-replaces it or, for any other outcome, clears it.
+failure: the panel itself shows a warning under its title. For one setting
+it names the setting and says it is in effect with its durability
+unconfirmed, or in effect but not saved so a restart reverts it; for several
+it is one line naming them all, in key order. The warning takes the title's
+margin line and is cut to the panel's width, so the panel is never taller
+with it, and it is the panel's own: no key, timer or other warning clears it.
+Each setting's entry stays until the next update result for that setting
+replaces it or, for any other outcome, clears it; a result for another
+setting leaves it. A new authenticated session clears them all, since the
+signer may have restarted and loaded the saved values.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

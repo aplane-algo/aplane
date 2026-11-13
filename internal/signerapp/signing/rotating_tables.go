@@ -141,6 +141,10 @@ type StageTableReport struct {
 	// Err is set when the account could not be processed (chain read,
 	// derivation or write failure). Completed probes remain cached.
 	Err error
+	// Stopped reports that a lock cut the pass before it observed the
+	// account (at the identity read): the report says nothing about it, and
+	// the pass must not be published.
+	Stopped bool
 }
 
 // FillStageTables extends every rotating account's stage address table. For
@@ -254,9 +258,12 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	if svcErr != nil {
 		// A lock during the identity read is where the pass stops, as it is
 		// one step later in the deriver (backgroundDeriver): not an account
-		// error. The pass's context, which the lock also cancels, may end
-		// first, so either report is the lock's.
-		if svcErr.Kind != ErrorLocked && ctx.Err() == nil {
+		// error, and nothing observed to publish. The pass's context, which
+		// the lock also cancels, may end first, so either report is the
+		// lock's.
+		if svcErr.Kind == ErrorLocked || ctx.Err() != nil {
+			report.Stopped = true
+		} else {
 			report.Err = errors.New(svcErr.Message)
 		}
 		return report

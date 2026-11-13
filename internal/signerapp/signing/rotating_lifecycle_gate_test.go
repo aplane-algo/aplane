@@ -405,7 +405,8 @@ func TestStageDerivationReportsALockOnlyWhenTheKeyUseWasStopped(t *testing.T) {
 
 // A lock during the stage table fill's identity read is where the pass stops,
 // as it is one step later in the deriver: no account error, so the worker
-// logs no warning. The lock refuses or cuts the read's key use, and it also
+// logs no warning, and the report is marked stopped, so the worker publishes
+// nothing from the pass. The lock refuses or cuts the read's key use, and it also
 // cancels the pass's context, which may be seen first. The report once
 // carried "signer is locked" or "context canceled", whichever came first.
 func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
@@ -434,8 +435,8 @@ func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
 			}
 			before := f.store.loads
 			reports := f.svc.FillStageTables(ctx, f.session, StageFillOptions{})
-			if len(reports) != 1 || reports[0].Err != nil || reports[0].Observed || reports[0].Pending {
-				t.Fatalf("reports = %+v, want one quiet stop with no error", reports)
+			if len(reports) != 1 || reports[0].Err != nil || !reports[0].Stopped || reports[0].Observed || reports[0].Pending {
+				t.Fatalf("reports = %+v, want one quiet stop with no error, marked stopped", reports)
 			}
 			if uses != 1 || f.store.loads != before {
 				t.Fatalf("%d key uses and %d seed loads, want the identity read's one refused use and none", uses, f.store.loads-before)
@@ -447,7 +448,10 @@ func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
 // The stateless-hash (SLH-DSA) sign reads the chain once more after signing,
 // inside its key use. A lock that cuts that read short answers locked, as a key
 // use the lock cuts does everywhere else; the request's own end answers
-// unavailable. A lock there once answered unavailable("context canceled").
+// unavailable, and so does a read that failed for its own reason (the node's
+// error, its own timeout) with a lock landing just after it. A lock there once
+// answered unavailable("context canceled"), and then any failed read with the
+// key use ended answered locked.
 func TestSLHReleaseReadCutByALockAnswersLocked(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -455,6 +459,8 @@ func TestSLHReleaseReadCutByALockAnswersLocked(t *testing.T) {
 	}{
 		{"lock", ErrorLocked},
 		{"request cancelled", ErrorUnavailable},
+		{"node error, then lock", ErrorUnavailable},
+		{"read timeout, then lock", ErrorUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, audit := newSigningFixtureFor(t, slhTestType)
@@ -473,16 +479,26 @@ func TestSLHReleaseReadCutByALockAnswersLocked(t *testing.T) {
 				if reads < 2 {
 					return f.chain.ReadAccount(readCtx, genesis, account)
 				}
-				// The release re-read, under the signing window's key use.
-				switch tc.name {
-				case "lock":
+				// The release re-read, under the signing window's key use. The
+				// errors are wrapped as the chain reader wraps them.
+				lock := func() {
 					f.svc.IsUnlocked = func() bool { return false }
 					cutKeyUse()
+				}
+				switch tc.name {
+				case "lock":
+					lock()
 				case "request cancelled":
 					cancelRequest()
+				case "node error, then lock":
+					lock()
+					return chainread.AccountView{}, fmt.Errorf("%w: read account: %w", chainread.ErrUnavailable, errors.New("HTTP 500"))
+				case "read timeout, then lock":
+					lock()
+					return chainread.AccountView{}, fmt.Errorf("%w: read account: %w", chainread.ErrUnavailable, context.DeadlineExceeded)
 				}
 				<-readCtx.Done()
-				return chainread.AccountView{}, readCtx.Err()
+				return chainread.AccountView{}, fmt.Errorf("%w: read account: %w", chainread.ErrUnavailable, readCtx.Err())
 			})
 			resp, err := f.svc.SignRotatingWithContext(ctx, signerapi.RotatingSignRequest{Account: f.account.String(), Transactions: prep.Transactions}, f.session)
 			if reads != 2 {

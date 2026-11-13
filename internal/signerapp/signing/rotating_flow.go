@@ -605,10 +605,13 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		cancelRead()
 		if readErr != nil {
 			// The read runs under the key use, so a lock cuts it short. Only
-			// the report differs: a key use the lock cut answers locked, as
-			// it does everywhere else; the request's own end, or the read's
-			// own failure, answers unavailable.
-			if ctx.Err() != nil && requestCtx.Err() == nil {
+			// the report differs: a read the lock cut (cancelled, with the
+			// key use ended and the request live) answers locked, as a key
+			// use the lock cuts does everywhere else. The request's own end,
+			// or the read's own failure (its own timeout expires as
+			// DeadlineExceeded) answers unavailable, even if a lock lands
+			// just after.
+			if errors.Is(readErr, context.Canceled) && ctx.Err() != nil && requestCtx.Err() == nil {
 				return nil, lockedError()
 			}
 			return nil, unavailable(readErr.Error())

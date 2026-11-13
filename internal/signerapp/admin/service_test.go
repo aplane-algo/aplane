@@ -730,6 +730,30 @@ func TestUpdateAdminSettingFailureBeforeRename(t *testing.T) {
 	}
 }
 
+// A request for the value already in effect is not restrictive, whatever the
+// value: it takes the save-first path, so a failed save answers the plain
+// "unchanged" failure. It once answered applied_not_saved ("a restart loads
+// the old value") and was audited, although nothing changed.
+func TestUnchangedValueWhoseSaveFailsReportsNothingInEffect(t *testing.T) {
+	for _, c := range settingChanges() {
+		if !c.restrictive {
+			continue
+		}
+		t.Run(c.key+"="+c.to, func(t *testing.T) {
+			same := settingChange{key: c.key, from: c.to, to: c.to}
+			svc, ir, deps := startSettingChange(t, same)
+			failDurableWriteAt(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key))
+
+			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+			fsutil.TestHook = nil
+			if err == nil || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved || !strings.Contains(err.Error(), "unchanged") {
+				t.Fatalf("UpdateAdminSetting error = %v (code %q), want the plain unchanged failure", err, protocol.CodeForError(err))
+			}
+			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the failed save")
+		})
+	}
+}
+
 // A save that fails after its rename (the directory sync) has put the new
 // file in place, which is what the next start loads. The new value then takes
 // effect, in either direction, the error says its durability is unconfirmed,

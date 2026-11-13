@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -259,6 +261,59 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 	// A pass while locked does nothing and reports idle.
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval || table.Len() != n {
 		t.Fatalf("locked pass: wait %v, len %d", wait, table.Len())
+	}
+}
+
+// A lock refuses key uses before it cancels the pass's context, so a pass can
+// reach an account's identity read refused while its own context is still
+// live. That account was not observed, and the pass publishes nothing: the
+// status from the last full pass stands until the locked worker clears it. It
+// once published the cut pass, the unobserved account's alerts dropped. The
+// lock's first step is played by moving the runtime out of the unlocked state
+// during the first account's chain read, before the second's identity read.
+func TestPassCutByALockPublishesNothing(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	hub := &recordingAdminHub{}
+	server.hub = hub
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	var armed atomic.Bool
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.HasPrefix(req.URL.Path, "/v2/accounts/") && armed.CompareAndSwap(true, false) {
+				ir.SetRecovery()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+	installRotatingKey(t, server)
+	installRotatingKey(t, server)
+	node.set("", 100)
+	server.fillStageTables(context.Background(), ir)
+	before := ir.RotatingAccountStatuses()
+	if len(before) != 2 || before[0].Classification != signerapi.RotatingClassStage || before[1].Classification != signerapi.RotatingClassStage {
+		t.Fatalf("statuses after a full pass = %+v, want both accounts at a stage", before)
+	}
+
+	node.set("", 150)
+	armed.Store(true)
+	hub.statusCalled = false
+	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
+		t.Fatalf("wait after the cut pass = %v, want idle", wait)
+	}
+	if armed.Load() {
+		t.Fatal("the cut never happened")
+	}
+	if after := ir.RotatingAccountStatuses(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("statuses after the cut pass = %+v, want the last full pass's %+v", after, before)
+	}
+	if hub.statusCalled {
+		t.Fatal("apadmin was told a status from the cut pass")
 	}
 }
 
