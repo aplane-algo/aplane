@@ -6,6 +6,7 @@ package startup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -84,7 +85,20 @@ type lifecycleAuditRecorder struct {
 	mu               sync.Mutex
 	stopped          bool
 	incompleteReason string
+	flushed          bool
 	closed           bool
+}
+
+func (r *lifecycleAuditRecorder) FlushSummaries() {
+	r.mu.Lock()
+	r.flushed = true
+	r.mu.Unlock()
+}
+
+func (r *lifecycleAuditRecorder) summariesFlushed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.flushed || r.closed
 }
 
 func (r *lifecycleAuditRecorder) LogServerStopIncomplete(reason string) {
@@ -159,8 +173,8 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 	if _, err := ir.SnapshotKeySession().GetKey("missing"); errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime was destroyed after timed-out handler stop: %v", err)
 	}
-	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || closed {
-		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want incomplete record and open logger", stopped, incompleteReason, closed)
+	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || closed || !audit.summariesFlushed() {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v flushed %v, want incomplete record, flushed summaries and open logger", stopped, incompleteReason, closed, audit.summariesFlushed())
 	}
 	warningsMu.Lock()
 	gotWarnings := append([]string(nil), warnings...)
@@ -335,8 +349,8 @@ func TestShutdownBoundsItsWaitForAKeyUse(t *testing.T) {
 	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
 	}
-	if stopped, incompleteReason, closed := audit.snapshot(); stopped || !strings.Contains(incompleteReason, "key use") || closed {
-		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want the key use recorded and the logger open", stopped, incompleteReason, closed)
+	if stopped, incompleteReason, closed := audit.snapshot(); stopped || !strings.Contains(incompleteReason, "key use") || closed || !audit.summariesFlushed() {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v flushed %v, want the key use recorded, summaries flushed and the logger open", stopped, incompleteReason, closed, audit.summariesFlushed())
 	}
 }
 
@@ -383,5 +397,46 @@ func TestShutdownEndsTheStartContextsBeforeAnyStop(t *testing.T) {
 		if len(endedAtStop) == 0 || slices.Contains(endedAtStop, false) {
 			t.Fatalf("failStart=%v: Start context ended at each stop = %v, want true at every one", failStart, endedAtStop)
 		}
+	}
+}
+
+// A stop reporting ErrStillRunning is recorded as incomplete and teardown
+// goes on, even when its error also carries a context deadline, which on its
+// own means a handler may still run and teardown is skipped. The final line
+// says the shutdown was incomplete; it once said "shutdown complete" after
+// any stop error.
+func TestShutdownTearsDownPastAServiceStillRunning(t *testing.T) {
+	t.Parallel()
+
+	ir := newLifecycleTestRuntime(t)
+	audit := &lifecycleAuditRecorder{}
+	var mu sync.Mutex
+	var infos []string
+	shutdownLifecycle([]LifecycleService{{
+		Name: "rotating stage table worker",
+		Stop: func(ctx context.Context) error {
+			return fmt.Errorf("%w at the shutdown deadline: %w", ErrStillRunning, context.DeadlineExceeded)
+		},
+	}}, LifecyclePlan{
+		ProductRuntime: ir,
+		AuditLog:       audit,
+		Info: func(message string) {
+			mu.Lock()
+			infos = append(infos, message)
+			mu.Unlock()
+		},
+	})
+
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after teardown", err)
+	}
+	if stopped, incompleteReason, closed := audit.snapshot(); stopped || !strings.HasPrefix(incompleteReason, "rotating stage table worker: still running") || !closed {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want the worker recorded and a closed logger", stopped, incompleteReason, closed)
+	}
+	mu.Lock()
+	last := infos[len(infos)-1]
+	mu.Unlock()
+	if !strings.HasPrefix(last, "shutdown finished incomplete: rotating stage table worker") {
+		t.Fatalf("final shutdown line = %q, want it to say the shutdown was incomplete", last)
 	}
 }

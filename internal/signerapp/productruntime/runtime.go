@@ -94,6 +94,10 @@ type Runtime struct {
 	keyUseCtx    context.Context
 	keyUseCancel context.CancelFunc
 	keyUsers     sync.WaitGroup
+	// destroyed is set under keyUseMu when Destroy begins. From then on
+	// KeyUseContext refuses every key use as it does while locked, since
+	// shutdown does not lock the signer.
+	destroyed bool
 
 	// Rotating account status from the last background pass: warnings need
 	// action, notes are information. Published to /status and apadmin.
@@ -1137,13 +1141,14 @@ const keyUseDrainWarnAfter = 5 * time.Second
 // returned context is cancelled the moment the signer locks, and release must
 // be called once the caller holds no key material; Lock waits for every
 // registered user to release before it clears the session. While the signer
-// is locked the returned context is already cancelled and release is a no-op.
+// is locked, and once Destroy has begun, the returned context is already
+// cancelled and release is a no-op.
 func (ir *Runtime) KeyUseContext(parent context.Context) (context.Context, func()) {
 	if parent == nil {
 		parent = context.Background()
 	}
 	ir.keyUseMu.Lock()
-	if !ir.IsUnlocked() {
+	if ir.destroyed || !ir.IsUnlocked() {
 		ir.keyUseMu.Unlock()
 		ctx, cancel := context.WithCancel(parent)
 		cancel()
@@ -1172,14 +1177,15 @@ func (ir *Runtime) KeyUseContext(parent context.Context) (context.Context, func(
 // locks, without registering a key user: Lock does not wait for it. It is
 // for work that must stop at lock but holds no key material, such as a
 // background pass's chain reads and pacing sleeps. While the signer is
-// locked the returned context is already cancelled.
+// locked, and once Destroy has begun, the returned context is already
+// cancelled.
 func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
 		parent = context.Background()
 	}
 	ctx, cancel := context.WithCancel(parent)
 	ir.keyUseMu.Lock()
-	if !ir.IsUnlocked() {
+	if ir.destroyed || !ir.IsUnlocked() {
 		ir.keyUseMu.Unlock()
 		cancel()
 		return ctx, cancel
@@ -1194,12 +1200,14 @@ func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, c
 }
 
 // drainKeyUsers cancels every key user's context and waits for them to
-// release their key material. In a lock it runs inside the lock transition,
-// after the state is already locked, so no new user can register meanwhile,
-// and it is given a context that never ends: a lock waits for as long as it
-// takes. Only Destroy bounds the wait; drainKeyUsers reports whether every
-// user had released by the time ctx ended.
-func (ir *Runtime) drainKeyUsers(ctx context.Context) bool {
+// release their key material. Its caller has already made KeyUseContext
+// refuse new users, so none can register meanwhile: a lock runs it inside the
+// lock transition, after the state is locked, and Destroy after setting
+// destroyed. A lock gives it a context that never ends and waits for as long
+// as it takes, printing warning if that is more than keyUseDrainWarnAfter.
+// Only Destroy bounds the wait; drainKeyUsers reports whether every user had
+// released by the time ctx ended.
+func (ir *Runtime) drainKeyUsers(ctx context.Context, warning string) bool {
 	ir.keyUseMu.Lock()
 	if ir.keyUseCancel != nil {
 		ir.keyUseCancel()
@@ -1211,14 +1219,18 @@ func (ir *Runtime) drainKeyUsers(ctx context.Context) bool {
 		ir.keyUsers.Wait()
 		close(done)
 	}()
-	warn := time.NewTimer(keyUseDrainWarnAfter)
-	defer warn.Stop()
+	var warnAfter <-chan time.Time
+	if warning != "" {
+		warn := time.NewTimer(keyUseDrainWarnAfter)
+		defer warn.Stop()
+		warnAfter = warn.C
+	}
 	for {
 		select {
 		case <-done:
 			return true
-		case <-warn.C:
-			fmt.Printf("⚠️  Warning: lock is waiting for background key users to release key material\n")
+		case <-warnAfter:
+			fmt.Printf("⚠️  Warning: %s\n", warning)
 		case <-ctx.Done():
 			select {
 			case <-done:
@@ -1416,12 +1428,16 @@ func (ir *Runtime) StopKeyWatcher() {
 // the keyring while a key user still held its own copy of key material.
 var ErrKeyUseInFlight = errors.New("a key use still held key material at the shutdown deadline")
 
-// Destroy cleans up the product runtime for shutdown. Like a lock, it first
-// cancels background key users and waits for them to release their key
-// material, but only until ctx ends, since the process exits right after.
-// Then it clears the session and zeroes the keyring under the passphrase
-// lock, so a lock cleanup racing shutdown (an admin session closing on its
-// way out) cannot interleave with it.
+// Destroy cleans up the product runtime for shutdown. It first makes
+// KeyUseContext refuse every new key use, as a lock does, without locking the
+// signer (which would run the lock cleanup and its unbounded drain). Then, like
+// a lock, it cancels the registered key users and waits for them to release
+// their key material, but only until ctx ends, since the process exits right
+// after. Then it clears the session and zeroes the keyring under the
+// passphrase lock, so a lock cleanup racing shutdown (an admin session closing
+// on its way out) cannot interleave with it. Those locks, the session's and
+// the keystore's are taken without a bound: a holder stalled inside one (a
+// decryption on a hung filesystem) still holds shutdown.
 //
 // Clearing them under a key user that has not released is safe: the user
 // decrypted its own copy (FileKeyStore.Get, WithKeyring) under the read lock
@@ -1432,7 +1448,10 @@ var ErrKeyUseInFlight = errors.New("a key use still held key material at the shu
 // shutdown does not record a complete stop.
 func (ir *Runtime) Destroy(ctx context.Context) error {
 	ir.StopKeyWatcher()
-	drained := ir.drainKeyUsers(ctx)
+	ir.keyUseMu.Lock()
+	ir.destroyed = true
+	ir.keyUseMu.Unlock()
+	drained := ir.drainKeyUsers(ctx, "")
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
 	if ir.keySession != nil {
@@ -1455,7 +1474,7 @@ func (ir *Runtime) performLockCleanup() {
 
 	// Background holders of key material go first, so clearing the session
 	// below really is the end of every copy of a seed.
-	ir.drainKeyUsers(context.Background())
+	ir.drainKeyUsers(context.Background(), "lock is waiting for background key users to release key material")
 
 	ir.passphraseLock.Lock()
 	if ir.keySession != nil {

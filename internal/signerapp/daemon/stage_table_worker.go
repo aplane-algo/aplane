@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -262,9 +263,10 @@ func passSession(parent context.Context, generation func() uint64, cancelContext
 // stageTableWorkerService runs the worker for the life of the daemon. The
 // worker stops when shutdown begins, since its context is the Start context,
 // and its stop waits for it until the shutdown deadline. A worker still
-// running then (a stage table write, which no cancellation reaches) is not
-// an incomplete stop: outside a key use it holds no key material, and
-// Runtime.Destroy waits, bounded, for a key use it is in.
+// running then (in a stage table write, which no cancellation reaches) makes
+// the stop incomplete, reported as ErrStillRunning: it writes nothing to the
+// audit log and holds no key material outside a key use, which
+// Runtime.Destroy waits for, so teardown goes on.
 func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 	var cancel context.CancelFunc
 	done := make(chan struct{})
@@ -286,10 +288,16 @@ func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 			cancel()
 			select {
 			case <-done:
+				return nil
 			case <-ctx.Done():
-				logWarnf("rotating stage table worker is still running at the shutdown deadline; it holds no key material outside a key use")
 			}
-			return nil
+			// The deadline and the worker's exit can be ready together.
+			select {
+			case <-done:
+				return nil
+			default:
+				return fmt.Errorf("%w at the shutdown deadline", signerstartup.ErrStillRunning)
+			}
 		},
 	}
 }

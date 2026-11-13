@@ -2,10 +2,14 @@ package productruntime
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // These tests anchor KU2 in docs/FORMAL_TRACEABILITY.md: the register guard
@@ -186,5 +190,103 @@ func TestKeyUseRacingLockIsDrainedOrRefused(t *testing.T) {
 		if n != 0 {
 			t.Fatalf("round %d: Lock returned with %d key uses still holding", round, n)
 		}
+	}
+}
+
+// Destroy refuses every key use from the moment it begins, as a lock does,
+// though it does not lock the signer. Key uses racing it are either drained
+// or refused, so it returns with none holding, and one requested after it is
+// refused too. Shutdown once left KeyUseContext handing out fresh live
+// contexts while it drained, adding to the wait group it was waiting on.
+func TestDestroyRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
+	const (
+		rounds  = 20
+		holders = 8
+	)
+	for round := 0; round < rounds; round++ {
+		root := t.TempDir()
+		ir := New(Config{
+			KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+			KeyPaths: storepaths.NewPaths(root),
+		})
+		ir.SetUnlocked()
+		ir.SnapshotKeySession().InitializeSession()
+
+		// roundCtx only unblocks holders if a broken guard leaves one waiting
+		// on a context nothing will cancel.
+		roundCtx, endRound := context.WithCancel(context.Background())
+		var holding atomic.Int64
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := 0; i < holders; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				for roundCtx.Err() == nil {
+					ctx, release := ir.KeyUseContext(roundCtx)
+					if ctx.Err() != nil {
+						release()
+						return
+					}
+					holding.Add(1)
+					<-ctx.Done()
+					holding.Add(-1)
+					release()
+				}
+			}()
+		}
+
+		close(start)
+		destroyCtx, endDestroy := context.WithTimeout(context.Background(), keyUseTestTimeout)
+		err := ir.Destroy(destroyCtx)
+		endDestroy()
+		n := holding.Load()
+		endRound()
+		wg.Wait()
+		if err != nil || n != 0 {
+			t.Fatalf("round %d: Destroy = %v with %d key uses still holding; want every racing key use drained or refused", round, err, n)
+		}
+
+		ctx, release := ir.KeyUseContext(context.Background())
+		requireCancelled(t, ctx, "key use requested after Destroy")
+		release()
+		lockCtx, cancel := ir.LockCancelContext(context.Background())
+		requireCancelled(t, lockCtx, "lock-cancel context taken after Destroy")
+		cancel()
+		if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+			t.Fatalf("round %d: key session after Destroy = %v, want ErrStoreLocked", round, err)
+		}
+	}
+}
+
+// A key use requested while Destroy waits for one already registered is
+// refused at once, and Destroy still waits for the registered one.
+func TestDestroyRefusesAKeyUseWhileItDrains(t *testing.T) {
+	ir := New(Config{})
+	ir.SetUnlocked()
+	held, releaseHeld := ir.KeyUseContext(context.Background())
+	requireLive(t, held, "key use registered before shutdown")
+
+	destroyed := make(chan error, 1)
+	go func() { destroyed <- ir.Destroy(context.Background()) }()
+	waitClosed(t, held.Done(), "Destroy to cancel the registered key use")
+
+	ctx, release := ir.KeyUseContext(context.Background())
+	requireCancelled(t, ctx, "key use requested while Destroy drains")
+	release()
+	select {
+	case err := <-destroyed:
+		t.Fatalf("Destroy returned %v before the registered key use released", err)
+	default:
+	}
+	releaseHeld()
+	select {
+	case err := <-destroyed:
+		if err != nil {
+			t.Fatalf("Destroy = %v after every key use released", err)
+		}
+	case <-time.After(keyUseTestTimeout):
+		t.Fatal("Destroy did not return after the registered key use released")
 	}
 }

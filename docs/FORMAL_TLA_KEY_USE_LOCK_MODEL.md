@@ -100,15 +100,15 @@ for each.
   the reason above.
 - Shutdown (`Runtime.Destroy`) is not modeled; the process exits right after
   it. `startup/lifecycle.go` skips the teardown when a request handler may
-  still run. Otherwise `Destroy` drains key users as a lock does
-  (`drainKeyUsers`), but only until its deadline, and clears the session either
-  way. A holder still running then (the stage table worker, an export) keeps
-  its own decrypted copy, which no clear can reach, until it releases or the
-  process exits, and lifecycle records `SERVER_STOP_INCOMPLETE`. The stage
-  table worker starts no load after the drain, since its context ended when
-  shutdown began. `Destroy` does not mark the signer locked before it drains,
-  so a key use another path registers between the drain and the clear is not
-  refused; every load after the clear fails as locked.
+  still run. Otherwise `Destroy` first makes `KeyUseContext` refuse every new
+  key use (its `destroyed` flag, set under `keyUseMu`, so a registration lands
+  wholly before it and is drained, or after it and is refused, as with
+  `RegisterChecksLock`), without locking the signer. It then drains the
+  registered key users as a lock does (`drainKeyUsers`), but only until its
+  deadline, and clears the session whether or not they released. A holder
+  still running then (the stage table worker, an export) keeps its own
+  decrypted copy, which no clear can reach, until it releases or the process
+  exits, and lifecycle records `SERVER_STOP_INCOMPLETE`.
 - `MaxLocks` bounds the number of lock transitions, so the claim is over
   executions with at most that many locks.
 

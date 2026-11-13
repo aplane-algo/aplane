@@ -22,10 +22,22 @@ type LifecycleService struct {
 	Stop  func(ctx context.Context) error
 }
 
+// ErrStillRunning marks a stop that gave up waiting for its service's own
+// work, which is still running but uses neither the audit log nor key
+// material outside a key use, so teardown may go on: lifecycle records the
+// stop as incomplete and still destroys the runtime (which waits for key
+// uses) and closes the audit log. A stop that returns the shutdown context's
+// deadline error instead means a request handler may still be using both, so
+// lifecycle skips teardown.
+var ErrStillRunning = errors.New("still running")
+
 // ServerAuditLogger captures the shutdown hooks needed for audit shutdown.
 type ServerAuditLogger interface {
 	LogServerStop()
 	LogServerStopIncomplete(reason string)
+	// FlushSummaries writes pending rate-limited summaries when the log is
+	// left open, which Close would otherwise have written.
+	FlushSummaries()
 	Close() error
 }
 
@@ -115,7 +127,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		}
 		if err := svc.Stop(shutdownCtx); err != nil {
 			shutdownErrors = append(shutdownErrors, svc.Name+": "+err.Error())
-			if errors.Is(err, context.DeadlineExceeded) {
+			if !errors.Is(err, ErrStillRunning) && errors.Is(err, context.DeadlineExceeded) {
 				handlersMayBeRunning = true
 			}
 			if plan.Warn != nil {
@@ -132,6 +144,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	if handlersMayBeRunning {
 		if plan.AuditLog != nil {
 			plan.AuditLog.LogServerStopIncomplete(strings.Join(shutdownErrors, "; "))
+			plan.AuditLog.FlushSummaries()
 		}
 		if plan.Warn != nil {
 			plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
@@ -139,10 +152,11 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		return
 	}
 
-	// Every service has stopped, but a background key user (a stage table
-	// derivation, a key export) may still hold key material. Destroy waits
-	// for it with a deadline of its own, so other services' stops cannot use
-	// up its wait, and zeroes the keyring either way.
+	// No request handler is running, but a background key user (a stage
+	// table derivation, a key export) may still hold key material. Destroy
+	// refuses new key uses, waits for the registered ones with a deadline of
+	// its own, so other services' stops cannot use up its wait, and zeroes the
+	// keyring whether or not they released.
 	keyUseInFlight := false
 	if plan.ProductRuntime != nil {
 		if plan.Info != nil {
@@ -168,12 +182,18 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		}
 		// A key user still running may write its audit record when it ends
 		// (a key export does).
-		if !keyUseInFlight {
+		if keyUseInFlight {
+			plan.AuditLog.FlushSummaries()
+		} else {
 			_ = plan.AuditLog.Close()
 		}
 	}
 
 	if plan.Info != nil {
-		plan.Info("shutdown complete")
+		if len(shutdownErrors) == 0 {
+			plan.Info("shutdown complete")
+		} else {
+			plan.Info("shutdown finished incomplete: " + strings.Join(shutdownErrors, "; "))
+		}
 	}
 }

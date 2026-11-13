@@ -705,6 +705,8 @@ func (r *stopAuditRecorder) LogServerStopIncomplete(reason string) {
 	r.incomplete = reason
 }
 
+func (r *stopAuditRecorder) FlushSummaries() {}
+
 func (r *stopAuditRecorder) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -712,12 +714,14 @@ func (r *stopAuditRecorder) Close() error {
 	return nil
 }
 
-// A shutdown while the worker is stalled in a stage table write, which no
-// cancellation reaches and during which it holds no key material, is a
-// complete stop: the keyring is zeroed and SERVER_STOP recorded. The worker's
-// stop once reported the deadline error here, so shutdown recorded
-// SERVER_STOP_INCOMPLETE and left the keyring in memory until exit.
-func TestShutdownDuringAStalledTableWriteZeroesTheKeyring(t *testing.T) {
+// A worker stalled in a stage table write past the shutdown deadline, which
+// no cancellation reaches and during which it holds no key material, does not
+// keep the keyring in memory: shutdown zeroes it and closes the audit log,
+// and records SERVER_STOP_INCOMPLETE naming the worker. Its stop once
+// reported the deadline error here, so shutdown skipped the zeroing, and
+// then returned nil, so shutdown recorded a clean SERVER_STOP under a live
+// worker.
+func TestShutdownPastAStalledTableWriteZeroesTheKeyringAndRecordsTheWorker(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	ir := server.productRuntime()
@@ -785,14 +789,58 @@ func TestShutdownDuringAStalledTableWriteZeroesTheKeyring(t *testing.T) {
 	audit.mu.Lock()
 	stopped, incomplete, closed := audit.stopped, audit.incomplete, audit.closed
 	audit.mu.Unlock()
-	if !stopped || incomplete != "" || !closed {
-		t.Fatalf("audit shutdown = stopped %v incomplete %q closed %v; want SERVER_STOP and the log closed", stopped, incomplete, closed)
+	if stopped || incomplete != "rotating stage table worker: still running at the shutdown deadline" || !closed {
+		t.Fatalf("audit shutdown = stopped %v incomplete %q closed %v; want SERVER_STOP_INCOMPLETE naming the worker and the log closed", stopped, incomplete, closed)
 	}
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("keyring after shutdown: %v; want it zeroed", err)
 	}
 	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("key session after shutdown: %v; want it cleared", err)
+	}
+}
+
+// A worker that exits in time is a clean stop even when the services
+// stopped before it used the whole shared deadline: it stopped when shutdown
+// began, so its stop finds it gone and reports nothing.
+func TestShutdownAfterOtherServicesUsedTheDeadlineIsCompleteForAHealthyWorker(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("keyring before shutdown: %v", err)
+	}
+	worker := stageTableWorkerService(server)
+	defer func() { _ = worker.Stop(context.Background()) }()
+
+	audit := &stopAuditRecorder{}
+	runCtx, signal := context.WithCancel(context.Background())
+	defer signal()
+	err := signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
+		ProductRuntime:  ir,
+		ShutdownTimeout: 200 * time.Millisecond,
+		AuditLog:        audit,
+		Services: []signerstartup.LifecycleService{
+			worker,
+			{
+				Name:  "HTTP server",
+				Start: func(context.Context, chan<- error) error { signal(); return nil },
+				// A slow drain that ends just as the deadline does.
+				Stop: func(ctx context.Context) error { <-ctx.Done(); return nil },
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunLifecycle = %v, want nil for a run ended by a signal", err)
+	}
+	audit.mu.Lock()
+	stopped, incomplete, closed := audit.stopped, audit.incomplete, audit.closed
+	audit.mu.Unlock()
+	if !stopped || incomplete != "" || !closed {
+		t.Fatalf("audit shutdown = stopped %v incomplete %q closed %v; want SERVER_STOP and the log closed", stopped, incomplete, closed)
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("keyring after shutdown: %v; want it zeroed", err)
 	}
 }
 

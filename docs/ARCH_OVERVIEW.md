@@ -1517,15 +1517,21 @@ and reports a deadline error until its accept loop and all connection handlers
 have exited. Every service's start context ends when shutdown begins, so the
 rotating stage table worker stops its passes then rather than at its turn,
 last, in the stop order. A worker still running at the deadline is in a stage
-table write that no cancellation reaches and holds no key material, so its
-stop reports nothing and the shutdown stays complete. `Runtime.Destroy` then
-waits for background key users with a deadline of its own and zeroes the
-keyring either way: a key use still in flight at that deadline keeps its own
-decrypted copy until it releases or the process exits, and lifecycle records
-`SERVER_STOP_INCOMPLETE` and leaves the audit log open. Shutdown therefore
-takes at most the shared stop deadline plus one more for key users; on the
-retention path nothing is zeroed in process and the operating system reclaims
-key material at the exit that follows.
+table write that no cancellation reaches; it writes no audit entries and holds
+no key material outside a key use, so its stop reports `ErrStillRunning`:
+lifecycle records `SERVER_STOP_INCOMPLETE` naming the worker and tears down
+as usual. Whenever no request handler may still be running, `Runtime.Destroy`
+first refuses every new key use, then waits for the registered ones with a
+deadline of its own, and zeroes the keyring whether or not they released: a
+key use still in flight at that deadline keeps its own decrypted copy until
+it releases or the process exits, and lifecycle records
+`SERVER_STOP_INCOMPLETE` and leaves the audit log open, its pending summaries
+flushed. The waits for services and for key users are bounded; the locks
+`Destroy` then takes (passphrase, session, keystore cache) are not, so a key
+operation stalled inside one, on a hung filesystem for example, still holds
+shutdown. On the retention path, a request handler possibly still running,
+nothing is zeroed in process and the operating system reclaims key material
+at the exit that follows.
 
 `RunLifecycle` returns the error of a service that failed to start (an HTTP
 port that cannot be bound, for example) or stopped serving with an error,

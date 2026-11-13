@@ -153,8 +153,8 @@ func TestBoundedSettingsAreHiddenOnCosignerNodes(t *testing.T) {
 // A failed setting update can still be in effect (saved, its durability
 // unconfirmed), so the panel re-reads the settings after a failure as after a
 // success, instead of keeping the value it showed before. That result is
-// coded applied_not_durable and shown as a warning; it once read "Setting
-// update failed" like a refused change.
+// coded applied_not_durable and shown as a warning that does not say
+// "failed"; it once read "Setting update failed" like a refused change.
 func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = serverConn.Close() }()
@@ -182,13 +182,13 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 	m := approvalTestModel(ViewAdminPanel)
 	m.adminClient = client
 	m.admin.settings = &AdminSettings{UserAutoApprove: false}
-	inEffect := "user_auto_approve is set to true and in effect, but its durability is not confirmed: injected"
 	next, cmd := m.Update(AdminSettingUpdatedMsg{
-		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true",
-		Code: protocol.ResultCodeAppliedNotDurable, Error: inEffect,
+		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
+		Error: "user_auto_approve is set to true and in effect, but its durability is not confirmed: file replaced, but its directory sync failed: injected",
 	})
-	if got := next.(Model); got.lastError != "" || got.lastWarning != inEffect {
-		t.Fatalf("lastError = %q, lastWarning = %q; want no error and the signer's message as a warning", got.lastError, got.lastWarning)
+	want := "Setting in effect, durability not confirmed: user_auto_approve = true"
+	if got := next.(Model); got.lastError != "" || got.lastWarning != want {
+		t.Fatalf("lastError = %q, lastWarning = %q; want no error and the warning %q", got.lastError, got.lastWarning, want)
 	}
 	// A lone listener wait blocks until the client disconnects.
 	produced := make(chan tea.Msg, 1)
@@ -225,5 +225,38 @@ func TestUnappliedSettingUpdateIsShownAsAFailure(t *testing.T) {
 	})
 	if got := next.(Model); got.lastError != "Setting update failed: failed to save config.yaml; user_auto_approve is unchanged: injected" || got.lastWarning != "" {
 		t.Fatalf("lastError = %q, lastWarning = %q; want the failure as an error", got.lastError, got.lastWarning)
+	}
+}
+
+// The applied_not_durable warning stays on screen, as a failure would, until
+// the next key on the admin panel. It once cleared itself after 5s.
+func TestSettingNotDurableWarningStaysUntilTheNextAdminPanelKey(t *testing.T) {
+	m := approvalTestModel(ViewAdminPanel)
+	m.admin.settings = &AdminSettings{}
+	next, cmd := m.Update(AdminSettingUpdatedMsg{
+		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
+	})
+	if next.(Model).lastWarning == "" {
+		t.Fatal("no warning shown for a setting in effect with its durability unconfirmed")
+	}
+	// Nothing is scheduled to clear it: with no client, every command the
+	// update returns completes at once, and a clearing timer would not.
+	ran := make(chan struct{})
+	go func() {
+		defer close(ran)
+		if batch, ok := cmd().(tea.BatchMsg); ok {
+			for _, c := range batch {
+				c()
+			}
+		}
+	}()
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the update scheduled a command that clears the warning later")
+	}
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := next.(Model).lastWarning; got != "" {
+		t.Fatalf("warning after the next admin panel key = %q, want it cleared", got)
 	}
 }
