@@ -26,11 +26,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// heldSeed is a seed load parked mid-request: the context it was loaded under
-// and the seed bytes the request was handed.
+// heldSeed is a seed load parked mid-request: the context it was loaded under.
 type heldSeed struct {
-	ctx  context.Context
-	seed []byte
+	ctx context.Context
 }
 
 // holdingSeedStore hands out a rotating seed and parks one load, chosen by its
@@ -42,15 +40,49 @@ type holdingSeedStore struct {
 	loads  atomic.Int32
 	held   chan heldSeed
 	resume chan struct{}
+	// parked is the seed the parked load handed out, once it has.
+	parked atomic.Pointer[[]byte]
 }
 
 func (s *holdingSeedStore) Get(ctx context.Context, _ string) (*coresigning.KeyMaterial, error) {
 	copied := &coresigning.RotatingKeyMaterial{Seed: bytes.Clone(s.secret.Seed), GenesisHash: bytes.Clone(s.secret.GenesisHash)}
 	if s.loads.Add(1) == s.holdAt {
-		s.held <- heldSeed{ctx: ctx, seed: copied.Seed}
+		seed := copied.Seed
+		s.parked.Store(&seed)
+		s.held <- heldSeed{ctx: ctx}
 		<-s.resume
 	}
 	return &coresigning.KeyMaterial{Type: rotatingkey.RotatingTripleWotscV1, Category: keys.CategoryRotatingLsig, Value: copied}, nil
+}
+
+// windowEnd is what the parked load's key use saw as it ended: whether the
+// seed was zero by then and whether the lock had already finished.
+type windowEnd struct {
+	ended, zeroed, lockDone atomic.Bool
+}
+
+// observeWindowEnd wraps the service's key use so that the first window to end
+// after the parked load records a windowEnd before it releases. That runs on
+// the request's own goroutine, after the request zeroed the seed if it did, so
+// reading the seed there can't race with the zeroing.
+func observeWindowEnd(fx *rotatingLockFixture, store *holdingSeedStore, locked <-chan struct{}) *windowEnd {
+	end := &windowEnd{}
+	inner := fx.svc.Rotating.KeyUse
+	fx.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+		useCtx, release := inner(ctx)
+		return useCtx, func() {
+			if seed := store.parked.Load(); seed != nil && !end.ended.Swap(true) {
+				end.zeroed.Store(allZero(*seed))
+				select {
+				case <-locked:
+					end.lockDone.Store(true)
+				default:
+				}
+			}
+			release()
+		}
+	}
+	return end
 }
 
 // rotatingLockFixture is an unlocked signer holding one rotating account, with
@@ -120,9 +152,10 @@ func allZero(b []byte) bool {
 
 // Every rotating seed load in prepare and sign is a key use the real lock
 // waits for. Each case parks one load while the request holds the decrypted
-// seed and starts a lock: the lock has to cancel that load's context, must not
-// finish while the load is parked, and once it finishes the seed has to be
-// zeroed. The request then answers locked.
+// seed and starts a lock: the lock has to cancel that load's context and must
+// not finish while the load stays parked, given time to, and the seed has to
+// be zeroed before that load's key use ends, while the lock is still waiting.
+// The request then answers locked.
 func TestLockWaitsForEveryRotatingSeedLoad(t *testing.T) {
 	prepareRequest := func(t *testing.T, fx *rotatingLockFixture) func(*keystore.KeySession) *signersigning.ServiceError {
 		return func(session *keystore.KeySession) *signersigning.ServiceError {
@@ -189,6 +222,8 @@ func TestLockWaitsForEveryRotatingSeedLoad(t *testing.T) {
 			}
 			run := tc.request(t, fx)
 			store := &holdingSeedStore{secret: fx.secret, holdAt: tc.hold, held: make(chan heldSeed, 1), resume: make(chan struct{})}
+			locked := make(chan struct{})
+			end := observeWindowEnd(fx, store, locked)
 			session := keystore.NewKeySession(store)
 			session.InitializeSession()
 			t.Cleanup(session.Destroy)
@@ -212,7 +247,6 @@ func TestLockWaitsForEveryRotatingSeedLoad(t *testing.T) {
 				t.Fatalf("the request never reached seed load %d", tc.hold)
 			}
 
-			locked := make(chan struct{})
 			go func() {
 				fx.ir.Lock()
 				close(locked)
@@ -225,11 +259,12 @@ func TestLockWaitsForEveryRotatingSeedLoad(t *testing.T) {
 			case <-time.After(30 * time.Second):
 				t.Fatal("the lock never cancelled the load: it isn't a key use")
 			}
-			// The load is still parked, so a lock that waits can't be done.
+			// The load is still parked. A lock that cancels without waiting
+			// finishes well within this.
 			select {
 			case <-locked:
 				t.Fatal("the lock finished while the request held the seed")
-			default:
+			case <-time.After(100 * time.Millisecond):
 			}
 			resume()
 			select {
@@ -237,8 +272,13 @@ func TestLockWaitsForEveryRotatingSeedLoad(t *testing.T) {
 			case <-time.After(30 * time.Second):
 				t.Fatal("the lock never finished after the request let go of the seed")
 			}
-			if !allZero(held.seed) {
-				t.Fatal("the lock finished before the request zeroed the seed")
+			switch {
+			case !end.ended.Load():
+				t.Fatal("the parked load's key use never ended")
+			case end.lockDone.Load():
+				t.Fatal("the lock finished before the parked load's key use ended")
+			case !end.zeroed.Load():
+				t.Fatal("the parked load's key use ended before the request zeroed the seed")
 			}
 			select {
 			case err := <-done:

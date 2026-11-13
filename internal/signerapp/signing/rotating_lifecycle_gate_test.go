@@ -216,6 +216,263 @@ func TestRotatingRequestsAnswerLockedWhenAKeyUseIsRefused(t *testing.T) {
 	}
 }
 
+// A bad account is refused as such while the signer is locking: it is checked
+// against the key index before any key use, so it gets its 400, not the
+// locked error, and asks for no key use.
+func TestRotatingRequestsRefuseABadAccountBeforeAnyKeyUse(t *testing.T) {
+	held := types.Address{7, 31: 7}.String()
+	for _, sign := range []bool{false, true} {
+		for _, tc := range []struct{ name, account string }{
+			{name: "unknown address", account: types.Address{9, 31: 9}.String()},
+			{name: "not a rotating account", account: held},
+			{name: "malformed account", account: "NOT-AN-ADDRESS"},
+		} {
+			name := "prepare/" + tc.name
+			if sign {
+				name = "sign/" + tc.name
+			}
+			t.Run(name, func(t *testing.T) {
+				f, _ := newSigningFixtureFor(t, wotscTestType)
+				f.held = []string{held}
+				var prep *signerapi.RotatingPrepareResponse
+				if sign {
+					prep = mustPrepare(t, f, f.spend(1000, 1100))
+				}
+				uses := 0
+				f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+					uses++
+					f.svc.IsUnlocked = func() bool { return false }
+					refused, cancel := context.WithCancel(ctx)
+					cancel()
+					return refused, func() {}
+				}
+				var err *ServiceError
+				if sign {
+					_, err = f.svc.SignRotatingWithContext(context.Background(), signerapi.RotatingSignRequest{
+						Account: tc.account, Transactions: prep.Transactions,
+					}, f.session)
+				} else {
+					_, err = f.svc.PrepareRotatingWithContext(context.Background(), signerapi.RotatingPrepareRequest{
+						Account: tc.account, TxnBytesHex: txnutil.EncodeWithPrefixHex(f.spend(1000, 1100)),
+					}, f.session)
+				}
+				if err == nil || err.Kind != ErrorBadRequest {
+					t.Fatalf("error = %v, want a bad request", err)
+				}
+				if uses != 0 {
+					t.Fatalf("a bad request asked for %d key uses", uses)
+				}
+			})
+		}
+	}
+}
+
+// Deps without KeyUse load no seed anywhere: every load answers "not
+// configured" instead, a helper reached directly doesn't panic, and the paths
+// that load no seed (status, recovery cancel) keep working.
+func TestRotatingWithoutKeyUseLoadsNoSeedAndKeepsItsStatus(t *testing.T) {
+	f, _ := newSigningFixtureFor(t, wotscTestType)
+	other := types.Address{4, 2, 31: 7}
+	f.held = []string{other.String()}
+	f.chain.authorizer = other
+	report := f.fill(t, StageFillOptions{})
+	f.svc.Rotating.KeyUse = nil
+	before := f.store.loads
+
+	if _, err := f.prepare(t, f.spend(1000, 1100)); err == nil || err.Kind != ErrorInternal || !strings.Contains(err.Message, "not configured") {
+		t.Fatalf("prepare: %v, want not configured", err)
+	}
+	if _, err := f.svc.requestDeriver(f.account.String(), f.session)(context.Background(), 1, 2); !errors.Is(err, errKeyUseNotConfigured) {
+		t.Fatalf("deriver: %v, want not configured", err)
+	}
+	if reports := f.svc.FillStageTables(context.Background(), f.session, StageFillOptions{}); len(reports) != 1 || reports[0].Err == nil {
+		t.Fatalf("fill without KeyUse: %+v, want the account's error", reports)
+	}
+	if f.store.loads != before {
+		t.Fatalf("%d seed loads without KeyUse", f.store.loads-before)
+	}
+	if _, notes := f.svc.RotatingStatus([]StageTableReport{report}); len(notes) != 1 {
+		t.Fatalf("status without KeyUse: notes %v", notes)
+	}
+	if _, err := f.svc.RecoverRotatingWithContext(context.Background(), signerapi.RotatingRecoverRequest{
+		Account: f.account.String(), Action: signerapi.RotatingRecoverActionCancel,
+	}); err != nil {
+		t.Fatalf("recovery cancel without KeyUse: %v", err)
+	}
+}
+
+// loadHookStore runs onLoad, if set, each time the seed is loaded, after the
+// copy exists.
+type loadHookStore struct {
+	base   *rotatingKeyStore
+	loads  atomic.Int32
+	onLoad func()
+}
+
+func (s *loadHookStore) Get(ctx context.Context, account string) (*coresigning.KeyMaterial, error) {
+	key, err := s.base.Get(ctx, account)
+	s.loads.Add(1)
+	if s.onLoad != nil {
+		s.onLoad()
+	}
+	return key, err
+}
+
+// A derivation reports a lock (errKeyUseRefused) exactly when the lock stopped
+// its key use before a stage was derived: refused it, cancelled it, or had
+// cleared the session. A caller that ended its own request gets an empty
+// result and no lock, so it isn't answered "locked". The decision is taken
+// where the key use was stopped, not read back from the request's context
+// afterwards. The background deriver takes a lock as a quiet stop.
+func TestStageDerivationReportsALockOnlyWhenTheKeyUseWasStopped(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// arrange sets up the key use and the load for one derivation under
+		// parent, which cancel ends.
+		arrange func(f *rotatingFixture, store *loadHookStore, session *keystore.KeySession, cancel context.CancelFunc)
+		locked  bool
+		kind    ErrorKind
+		loads   int32
+	}{
+		{name: "key use refused", locked: true, kind: ErrorLocked, arrange: func(f *rotatingFixture, _ *loadHookStore, _ *keystore.KeySession, _ context.CancelFunc) {
+			f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				refused, stop := context.WithCancel(ctx)
+				stop()
+				return refused, func() {}
+			}
+		}},
+		{name: "key use cancelled while the seed loads", locked: true, kind: ErrorLocked, loads: 1, arrange: func(f *rotatingFixture, store *loadHookStore, _ *keystore.KeySession, _ context.CancelFunc) {
+			var stop context.CancelFunc
+			f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				var use context.Context
+				use, stop = context.WithCancel(ctx)
+				return use, func() {}
+			}
+			store.onLoad = func() { stop() }
+		}},
+		{name: "session already cleared", locked: true, kind: ErrorLocked, arrange: func(_ *rotatingFixture, _ *loadHookStore, session *keystore.KeySession, _ context.CancelFunc) {
+			session.Destroy()
+		}},
+		{name: "key use refused, request then cancelled", locked: true, kind: ErrorLocked, arrange: func(f *rotatingFixture, _ *loadHookStore, _ *keystore.KeySession, cancel context.CancelFunc) {
+			f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				refused, stop := context.WithCancel(ctx)
+				stop()
+				return refused, cancel
+			}
+		}},
+		{name: "request cancelled while the seed loads", kind: ErrorUnavailable, loads: 1, arrange: func(_ *rotatingFixture, store *loadHookStore, _ *keystore.KeySession, cancel context.CancelFunc) {
+			store.onLoad = cancel
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, background := range []bool{false, true} {
+				f := newRotatingFixture(t)
+				store := &loadHookStore{base: f.store}
+				session := keystore.NewKeySession(store)
+				session.InitializeSession()
+				t.Cleanup(session.Destroy)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				tc.arrange(f, store, session, cancel)
+				account := f.account.String()
+				if background {
+					addrs, err := f.svc.backgroundDeriver(account, session, StageFillOptions{})(ctx, 1, 2)
+					if len(addrs) != 0 || err != nil {
+						t.Fatalf("background: %d addresses, err %v; want a quiet stop", len(addrs), err)
+					}
+					continue
+				}
+				var raw error
+				derive := func(ctx context.Context, from, to uint64) ([]types.Address, error) {
+					addrs, err := f.svc.requestDeriver(account, session)(ctx, from, to)
+					raw = err
+					return addrs, err
+				}
+				_, svcErr := derivedStageAddress(ctx, f.svc.Rotating, f.table(t), derive, 1)
+				if got := errors.Is(raw, errKeyUseRefused); got != tc.locked {
+					t.Fatalf("deriver error = %v; reports a lock: %v, want %v", raw, got, tc.locked)
+				}
+				if svcErr == nil || svcErr.Kind != tc.kind {
+					t.Fatalf("request error = %v, want kind %v", svcErr, tc.kind)
+				}
+				if n := store.loads.Load(); n != tc.loads {
+					t.Fatalf("%d seed loads, want %d", n, tc.loads)
+				}
+			}
+		})
+	}
+}
+
+// A request that joins another derivation of the same stages decides by its own
+// key use when that derivation ends without a result: the other request was
+// cancelled, or its key use was stopped. Either way the waiter derives under its
+// own window instead of answering locked.
+func TestJoinedDerivationRetriesUnderItsOwnKeyUse(t *testing.T) {
+	for _, mode := range []string{"other request cancelled", "other key use cancelled"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newRotatingFixture(t)
+			entered, park := make(chan struct{}), make(chan struct{})
+			store := &loadHookStore{base: f.store}
+			store.onLoad = func() {
+				if store.loads.Load() == 1 {
+					close(entered)
+					<-park
+				}
+			}
+			session := keystore.NewKeySession(store)
+			session.InitializeSession()
+			t.Cleanup(session.Destroy)
+			var stopFirst context.CancelFunc
+			var uses atomic.Int32
+			f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				if uses.Add(1) == 1 {
+					var use context.Context
+					use, stopFirst = context.WithCancel(ctx)
+					return use, func() {}
+				}
+				return ctx, func() {}
+			}
+			account := f.account.String()
+			leaderCtx, cancelLeader := context.WithCancel(context.Background())
+			defer cancelLeader()
+			leaderDone := make(chan struct{})
+			go func() {
+				defer close(leaderDone)
+				_, _ = f.svc.requestDeriver(account, session)(leaderCtx, 1, 2)
+			}()
+			<-entered
+
+			waiting := make(chan struct{})
+			type result struct {
+				addr types.Address
+				err  *ServiceError
+			}
+			got := make(chan result, 1)
+			table := f.table(t)
+			go func() {
+				ctx := &waitObservedContext{Context: context.Background(), waiting: waiting}
+				addr, err := derivedStageAddress(ctx, f.svc.Rotating, table, f.svc.requestDeriver(account, session), 1)
+				got <- result{addr, err}
+			}()
+			<-waiting
+			if mode == "other request cancelled" {
+				cancelLeader()
+			} else {
+				stopFirst()
+			}
+			close(park)
+			<-leaderDone
+			r := <-got
+			if r.err != nil || r.addr != f.stageAddress(t, 1) {
+				t.Fatalf("waiter: %v, %v; want stage 1 under its own key use", r.addr, r.err)
+			}
+			if n := uses.Load(); n != 2 {
+				t.Fatalf("%d key uses, want the other request's and the waiter's own", n)
+			}
+		})
+	}
+}
+
 // groupWithPick builds a second spend of the same stage whose TxID picks leaf.
 func groupWithPick(t *testing.T, f *rotatingFixture, prep *signerapi.RotatingPrepareResponse, leaf uint32) []string {
 	t.Helper()
@@ -270,7 +527,7 @@ func TestRotatingLeafChoiceRefusesADelayedReset(t *testing.T) {
 			// Once the log is restored, the same transaction takes an unused leaf.
 			if n, rebuildErr := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{{
 				Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
-			}}, StageFillOptions{}); rebuildErr != nil || n != 1 {
+			}}); rebuildErr != nil || n != 1 {
 				t.Fatalf("restore: rebuilt %d, err %v", n, rebuildErr)
 			}
 			f.svc.Rotating.Releases.RestoredAll()
@@ -288,14 +545,17 @@ func TestRotatingLeafChoiceRefusesADelayedReset(t *testing.T) {
 func restoreInterruptedBy(t *testing.T, f *rotatingFixture, first ReleaseRecord, ctx context.Context, stop func()) (int, error) {
 	t.Helper()
 	ran := false
-	n, err := f.svc.RebuildReleaseMemory(ctx, f.session, f.lockGen, []AuditedRelease{{
-		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
-	}}, StageFillOptions{KeyUse: func(parent context.Context) (context.Context, func()) {
+	keyUse := f.svc.Rotating.KeyUse
+	f.svc.Rotating.KeyUse = func(parent context.Context) (context.Context, func()) {
 		ran = true
 		stop()
 		cancelled, cancel := context.WithCancel(parent)
 		cancel()
 		return cancelled, func() {}
+	}
+	defer func() { f.svc.Rotating.KeyUse = keyUse }()
+	n, err := f.svc.RebuildReleaseMemory(ctx, f.session, f.lockGen, []AuditedRelease{{
+		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
 	}})
 	if !ran {
 		t.Fatal("the restore never reached the derivation")
@@ -365,9 +625,10 @@ func TestRestoreBoundToAnEarlierGenerationStaysHeld(t *testing.T) {
 	f.lockGen++ // The lock lands before RebuildReleaseMemory runs.
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
+	f.svc.Rotating.KeyUse = func(context.Context) (context.Context, func()) { return cancelled, func() {} }
 	_, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, generation, []AuditedRelease{{
 		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
-	}}, StageFillOptions{KeyUse: func(context.Context) (context.Context, func()) { return cancelled, func() {} }})
+	}})
 	if !errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("error = %v, want an interrupted restore", err)
 	}
@@ -395,7 +656,7 @@ func restoreWithAFailedDerivation(t *testing.T, f *rotatingFixture) (int, error)
 	t.Cleanup(session.Destroy)
 	return f.svc.RebuildReleaseMemory(context.Background(), session, f.lockGen, []AuditedRelease{{
 		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
-	}}, StageFillOptions{})
+	}})
 }
 
 // A key that really can't be loaded isn't a cut, so nothing about the failure says
@@ -414,7 +675,7 @@ func TestFailedRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
 	t.Cleanup(session.Destroy)
 	_, err := f.svc.RebuildReleaseMemory(context.Background(), session, generation, []AuditedRelease{{
 		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
-	}}, StageFillOptions{})
+	}})
 	if !errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("error = %v, want an interrupted restore", err)
 	}

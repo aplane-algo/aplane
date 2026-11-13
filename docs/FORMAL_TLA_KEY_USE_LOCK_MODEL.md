@@ -21,8 +21,10 @@ Code that holds loaded key material outside an admin session registers a key
 use with `Runtime.KeyUseContext`. For a rotating seed that is every load in
 prepare and sign: the identity read (`rotatingAccount`) and each stage
 derivation (`requestDeriver`) in both, and the sign's signing window after
-approval. `rotatingDeps` refuses deps without `KeyUse`, so none of them runs
-unregistered. A lock cancels every registered key use and
+approval; the stage table fill and the release restore use the same identity
+read and deriver. Every one of them opens its window through
+`RotatingDeps.keyUse`, which refuses to open one without `KeyUse`, so none of
+them loads a seed unregistered. A lock cancels every registered key use and
 waits for each to release before it clears the session. Two holders release
 something to a caller: a rotating sign returns a signature, and a mnemonic
 export delivers a recovery phrase. This model asks what a lock guarantees
@@ -95,8 +97,9 @@ for each.
   and the sign's two loads before approval are holders of the same kind: each
   registers, loads, zeroes the seed and releases, returns nothing to a caller
   while it holds the seed, and answers locked when its key use is refused or
-  cut short. `Register`, a held step and `Release` describe them, so KU2
-  covers them without new actions.
+  cut short (the deriver reports that as `errKeyUseRefused`, decided where the
+  window was stopped). `Register`, a held step and `Release` describe them, so
+  KU2 covers them without new actions.
 - The model takes as given that every load of key material is registered; it
   cannot see a load that is not. For rotating seeds,
   `TestLockWaitsForEveryRotatingSeedLoad` parks each load of prepare and sign

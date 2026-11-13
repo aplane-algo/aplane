@@ -4,7 +4,6 @@
 package signing
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -55,14 +54,6 @@ type StageFillOptions struct {
 	// ChainReadTimeout bounds each authorizer read. Zero means
 	// DefaultChainReadTimeout.
 	ChainReadTimeout time.Duration
-	// KeyUse, if set, brackets every window in which the seed is held: it
-	// returns a context that is cancelled when the signer locks and a
-	// release to call once the seed is zeroed. The runtime's lock waits for
-	// every release. Nothing that can block on I/O or the network happens
-	// inside a window. Prepare and sign set it from RotatingDeps.KeyUse and
-	// the daemon's worker passes the runtime's; unset, it is a no-op, which
-	// only the table-fill and restore tests rely on.
-	KeyUse func(ctx context.Context) (context.Context, func())
 	// Session, if set, is the lock generation the caller read when it
 	// created the pass's context, so the recovery session the pass acts in
 	// is the one that owns its cancellation. Unset, the pass reads the
@@ -96,13 +87,6 @@ func (o StageFillOptions) chainReadTimeout() time.Duration {
 		return DefaultChainReadTimeout
 	}
 	return o.ChainReadTimeout
-}
-
-func (o StageFillOptions) keyUse(ctx context.Context) (context.Context, func()) {
-	if o.KeyUse == nil {
-		return ctx, func() {}
-	}
-	return o.KeyUse(ctx)
 }
 
 // stageFillOptions intersects caller budgets with the family's operational
@@ -175,8 +159,8 @@ type StageTableReport struct {
 // The seed is loaded only for the duration of one chunk of derivations and
 // zeroed before anything that can block: the chain read, the table write
 // and the pacing sleep all run with no key material in memory. Each chunk
-// is bracketed by KeyUse so the signer's lock can cut a pass short and wait
-// for the seed to be released.
+// is bracketed by RotatingDeps.KeyUse so the signer's lock can cut a pass
+// short and wait for the seed to be released.
 //
 // No account lock is taken. Derivation is a pure function of the seed, the
 // table serializes its own writes and tolerates two fills deriving the same
@@ -224,6 +208,35 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 // account. Each call opens the seed, derives, and zeroes the seed again.
 type stageDeriver func(ctx context.Context, from, to uint64) ([]types.Address, error)
 
+// errKeyUseRefused is a derivation the lock stopped before it derived
+// anything: it refused or cancelled the key use, or had already cleared the
+// session the seed would load from. A request answers it as locked; the
+// background fill and restore stop on it as on any cut.
+var errKeyUseRefused = errors.New("signer is locked")
+
+// keyUseCut says why a window ended before a stage was derived: the caller's
+// own context if that ended, else the lock.
+func keyUseCut(parent context.Context) error {
+	if err := parent.Err(); err != nil {
+		return err
+	}
+	return errKeyUseRefused
+}
+
+// backgroundDeriver is the table fill's deriver: a lock is where a pass
+// stops, not a failure, so its refusal comes back as an empty result with no
+// error and the pass writes what it has and ends quietly.
+func (s *Service) backgroundDeriver(account string, session *keystore.KeySession, opts StageFillOptions) stageDeriver {
+	derive := s.stageDeriver(account, session, opts)
+	return func(ctx context.Context, from, to uint64) ([]types.Address, error) {
+		addrs, err := derive(ctx, from, to)
+		if errors.Is(err, errKeyUseRefused) {
+			return addrs, nil
+		}
+		return addrs, err
+	}
+}
+
 func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
 	opts = s.stageFillOptions(account, opts)
 	report := s.fillStageTableOnce(ctx, deps, gen, account, session, opts)
@@ -237,7 +250,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 
 	// Identity and network come from the key file; the seed is opened and
 	// closed again inside the call.
-	acct, genesis, svcErr := s.rotatingIdentity(ctx, account, session, opts)
+	acct, genesis, _, svcErr := s.rotatingAccount(ctx, deps, account, session)
 	if svcErr != nil {
 		report.Err = errors.New(svcErr.Message)
 		return report
@@ -291,7 +304,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	report.Observed, report.Authorizer, report.Round = true, view.Authorizer, view.Round
 
 	opts.searchAnchor = releaseSearchAnchor(deps, account)
-	derive := s.stageDeriver(account, session, opts)
+	derive := s.backgroundDeriver(account, session, opts)
 	budget := opts.maxDerivations()
 	held := knownAddressesFromSnapshot(s.Planner.Snapshot())
 	proven, class := classifyAuthorizer(table, acct, view.Authorizer, held)
@@ -379,7 +392,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 			}
 		}
 	}
-	if limit, capped := s.treeFrontier(ctx, account, session, opts, proven); capped && target > limit {
+	if limit, capped := s.treeFrontier(ctx, account, session, proven); capped && target > limit {
 		target = limit
 	}
 	from := table.FirstMissing(proven)
@@ -410,28 +423,13 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	return report
 }
 
-// rotatingIdentity returns the account address and genesis hash of a
-// rotating key. It opens the key material only long enough to copy the
-// genesis hash out, inside a KeyUse window.
-func (s *Service) rotatingIdentity(ctx context.Context, account string, session *keystore.KeySession, opts StageFillOptions) (types.Address, []byte, *ServiceError) {
-	ctx, release := opts.keyUse(ctx)
-	defer release()
-	if ctx.Err() != nil {
-		return types.Address{}, nil, lockedError()
-	}
-	rs, svcErr := s.openRotatingSession(ctx, account, session)
-	if svcErr != nil {
-		return types.Address{}, nil, svcErr
-	}
-	defer rs.close()
-	return rs.account, bytes.Clone(rs.secret.GenesisHash), nil
-}
-
 // stageDeriver returns the deriver for one account. Every call loads the
-// seed inside a KeyUse window, derives the requested stages with up to
-// opts.Parallel in flight, zeroes the seed, releases the window, and only
-// then paces. A cancelled window (the signer locked) returns the contiguous
-// prefix derived so far with no error, so the caller can write it and stop.
+// seed inside a RotatingDeps.KeyUse window, derives the requested stages with
+// up to opts.Parallel in flight, zeroes the seed, releases the window, and
+// only then paces. A window the lock cuts short after some stages returns
+// that contiguous prefix with no error, so the caller can write it; one the
+// lock stops before any stage returns errKeyUseRefused. A caller whose own
+// context ended gets what was derived and no error.
 func (s *Service) stageDeriver(account string, session *keystore.KeySession, opts StageFillOptions) stageDeriver {
 	return func(parent context.Context, from, to uint64) ([]types.Address, error) {
 		count := int(to - from)
@@ -440,20 +438,27 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 		}
 		started := time.Now()
 		work := func() ([]types.Address, error) {
-			ctx, release := opts.keyUse(parent)
+			ctx, release, useErr := s.Rotating.keyUse(parent)
+			if useErr != nil {
+				return nil, useErr
+			}
 			defer release()
 			if ctx.Err() != nil {
-				return nil, nil
+				return nil, keyUseCut(parent)
 			}
 			rs, svcErr := s.openRotatingSession(ctx, account, session)
 			if svcErr != nil {
 				if svcErr.Kind == ErrorLocked {
-					return nil, nil
+					return nil, keyUseCut(parent)
 				}
 				return nil, errors.New(svcErr.Message)
 			}
 			defer rs.close()
-			return deriveRange(ctx, rs, from, to, opts)
+			addrs, err := deriveRange(ctx, rs, from, to, opts)
+			if err == nil && len(addrs) == 0 && ctx.Err() != nil {
+				return nil, keyUseCut(parent)
+			}
+			return addrs, err
 		}
 		key := stageJobKey{account: account, from: from, to: to, credential: s.Rotating.Tables.Epoch()}
 		if s.Rotating.LockGeneration != nil {
@@ -484,7 +489,7 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions) (found, pending bool, spent int, err error) {
 	unpaced := opts
 	unpaced.Pace = nil
-	base := s.stageDeriver(account, session, unpaced)
+	base := s.backgroundDeriver(account, session, unpaced)
 	// derive caps every call at what the grant may still spend, charges the
 	// grant for what came back, and paces afterwards with the seed released.
 	// A zero result is a cut: extendUntil and extendTo write the prefix
@@ -690,7 +695,7 @@ func sortStrings(s []string) { sort.Strings(s) }
 // reaches it; a late build is handled by the signing path's own readiness
 // check, not assumed away. It reports false for a family without shared
 // trees.
-func (s *Service) treeFrontier(ctx context.Context, account string, session *keystore.KeySession, opts StageFillOptions, live uint64) (uint64, bool) {
+func (s *Service) treeFrontier(ctx context.Context, account string, session *keystore.KeySession, live uint64) (uint64, bool) {
 	profile, ok := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[account])
 	if !ok || profile.StagesPerTree <= 0 {
 		return 0, false
@@ -700,9 +705,9 @@ func (s *Service) treeFrontier(ctx context.Context, account string, session *key
 	next := (tree + 1) * per
 	ready := false
 	func() {
-		ctx, release := opts.keyUse(ctx)
+		ctx, release, err := s.Rotating.keyUse(ctx)
 		defer release()
-		if ctx.Err() != nil {
+		if err != nil || ctx.Err() != nil {
 			return
 		}
 		rs, svcErr := s.openRotatingSession(ctx, account, session)

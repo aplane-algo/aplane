@@ -1760,7 +1760,10 @@ Preparation needs no approval and reveals nothing secret. Each time prepare
 loads the seed (to read the key's identity, and for each derivation) it holds
 it in a key use, as sign does (below): the chain read and table writes happen
 outside those windows, and a lock that refuses or cuts one short ends the
-request with the locked error. An account whose
+request with the locked error. Both endpoints check the account against the key
+index before the first key use, so an account that is malformed, unknown or not
+rotating gets `bad_request`, not the locked error, even while the signer locks.
+An account whose
 live stage the signer has not found yet is refused with
 `rotating_stage_unproven` after a bounded foreground search (30 s); the
 background scan continues and a retry succeeds once it has caught up.
@@ -1817,7 +1820,10 @@ release in memory, and responds. The sign path is a key user for every load
 of the seed: the identity read and the target derivation before approval each
 hold it in a short key use of their own, and the signing window after approval
 holds it in a third. Neither earlier window spans the approval wait or a chain
-read. A lock cancels each one and waits for the seed to be zeroed, which for the
+read. The signing window spans one chain read, for a stateless family only:
+SLH-DSA's read after signing comes before the seed is zeroed. That read runs
+under the window's context, so a lock cancels it instead of waiting for it.
+A lock cancels each window and waits for the seed to be zeroed, which for the
 signing window happens before the audit write; a refused or cancelled key use
 answers with the locked error. It
 refuses the release if the signer locked since approval, the request was cancelled

@@ -158,26 +158,13 @@ func (p *Planner) rebuildPreparedRotatingGroup(account string, presented types.T
 	return p.buildRotatingGroup(account, client, profile)
 }
 
-// errKeyUseRefused reports a request derivation that a lock cut short.
-var errKeyUseRefused = errors.New("signer is locked")
-
 // requestDeriver derives stages without background pacing, honoring the
 // family's parallelism cap and the request's context. Every seed load is
-// inside a deps.KeyUse window. The background deriver returns a lock's cut as
-// an empty result with no error. Here, while the request's context is live,
-// only a lock can produce one, by refusing or cancelling the key use or
-// closing the session, so it is reported as errKeyUseRefused and the request
-// answers locked instead of searching on.
-func (s *Service) requestDeriver(deps *RotatingDeps, account string, session *keystore.KeySession) stageDeriver {
-	opts := s.stageFillOptions(account, StageFillOptions{Parallel: runtime.GOMAXPROCS(0), KeyUse: deps.keyUse})
-	derive := s.stageDeriver(account, session, opts)
-	return func(ctx context.Context, from, to uint64) ([]types.Address, error) {
-		addrs, err := derive(ctx, from, to)
-		if err == nil && len(addrs) == 0 && from < to && ctx.Err() == nil {
-			return nil, errKeyUseRefused
-		}
-		return addrs, err
-	}
+// inside a RotatingDeps.KeyUse window. A window the lock refuses or cuts short
+// comes back as errKeyUseRefused, and liveStage and derivedStageAddress answer
+// exactly that with the locked error.
+func (s *Service) requestDeriver(account string, session *keystore.KeySession) stageDeriver {
+	return s.stageDeriver(account, session, s.stageFillOptions(account, StageFillOptions{Parallel: runtime.GOMAXPROCS(0)}))
 }
 
 // liveStage finds the account's live stage from its authorizer: the account
@@ -332,7 +319,7 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if table == nil {
 		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
 	}
-	derive := s.requestDeriver(deps, req.Account, session)
+	derive := s.requestDeriver(req.Account, session)
 
 	readCtx, cancelRead := context.WithTimeout(ctx, DefaultChainReadTimeout)
 	view, readErr := deps.Chain.ReadAccount(readCtx, genesis, account)
@@ -433,7 +420,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, badRequest("rekey target is not a stage of this account; prepare the spend again")
 	}
 	stage := targetStage - 1
-	derive := s.requestDeriver(deps, req.Account, session)
+	derive := s.requestDeriver(req.Account, session)
 	derivedTarget, err := derivedStageAddress(ctx, deps, table, derive, targetStage)
 	if err != nil {
 		return nil, err
@@ -541,7 +528,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// From here until the signature is decided the seed is in memory, so a
 	// lock cancels this work and waits for it. requestCtx outlives that window.
 	requestCtx := ctx
-	ctx, endKeyUse := deps.keyUse(ctx)
+	ctx, endKeyUse, useErr := deps.keyUse(ctx)
+	if useErr != nil {
+		return nil, internal(useErr.Error())
+	}
 	defer endKeyUse()
 	if refused := s.releaseRefused(ctx, deps, req.Account, lockGeneration); refused != nil {
 		return nil, refused
@@ -638,7 +628,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 
 	// The last check that can stop a signature for every family. The seed
 	// goes before the audit write: users of key material never hold it across
-	// I/O, so a stalled disk can't keep a lock from completing.
+	// a disk write, so a stalled disk can't keep a lock from completing. (The
+	// stateless re-read above is the one network read inside the window; it
+	// runs under the window's context, which the lock cancels.)
 	if refused := s.releaseRefused(ctx, deps, req.Account, lockGeneration); refused != nil {
 		return nil, refused
 	}
@@ -714,11 +706,20 @@ func (s *Service) releaseRefused(ctx context.Context, deps *RotatingDeps, accoun
 }
 
 // rotatingAccount returns the account address, genesis hash and resource
-// profile of a rotating key. The seed is opened only long enough to copy the
-// genesis hash out, inside a key use, and zeroed before the key use ends. A
-// key use the lock refused or cancelled answers locked.
+// profile of a rotating key, for prepare, sign and the stage table fill. The
+// account is checked against the key index first, with no key use, so a bad
+// request gets its own refusal whatever the signer is doing. The seed is then
+// opened only long enough to copy the genesis hash out, inside a key use, and
+// zeroed before the key use ends. A key use the lock refused or cut short
+// answers locked; one ended by the caller's own context answers unavailable.
 func (s *Service) rotatingAccount(ctx context.Context, deps *RotatingDeps, account string, session *keystore.KeySession) (types.Address, []byte, *lsigresource.Profile, *ServiceError) {
-	useCtx, endKeyUse := deps.keyUse(ctx)
+	if _, svcErr := s.indexedRotatingKey(account); svcErr != nil {
+		return types.Address{}, nil, nil, svcErr
+	}
+	useCtx, endKeyUse, useErr := deps.keyUse(ctx)
+	if useErr != nil {
+		return types.Address{}, nil, nil, internal(useErr.Error())
+	}
 	defer endKeyUse()
 	refused := func() *ServiceError {
 		if ctx.Err() != nil {

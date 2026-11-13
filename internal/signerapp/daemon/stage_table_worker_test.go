@@ -584,7 +584,7 @@ func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
 	n, err := svc.RebuildReleaseMemory(ctx, session, generation, []signersigning.AuditedRelease{{
 		Account: account.String(), Stage: 0, TxID: "OLD", LastValid: 1000,
 		Leaves: []signersigning.LeafRelease{{Tree: 0, Index: 0, TxID: "OLD", LastValid: 1000}},
-	}}, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	}})
 	if n != 0 || !errors.Is(err, signersigning.ErrRestoreInterrupted) {
 		t.Fatalf("restore: rebuilt %d, err %v", n, err)
 	}

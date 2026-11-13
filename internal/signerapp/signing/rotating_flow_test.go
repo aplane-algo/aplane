@@ -929,7 +929,7 @@ func TestRebuildReleaseMemoryDerivesVerifiedAddresses(t *testing.T) {
 	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{
 		{Account: f.account.String(), Stage: 3, TxID: "TX", LastValid: 500, Reused: true},
 		{Account: types.Address{5}.String(), Stage: 1, TxID: "GONE", LastValid: 9},
-	}, StageFillOptions{})
+	})
 	if err != nil || n != 1 {
 		t.Fatalf("rebuilt %d, err %v", n, err)
 	}
@@ -1063,7 +1063,7 @@ func TestStatusSurvivesTableWriteFailures(t *testing.T) {
 func TestDerivedStageAddressToleratesConcurrentTableGrowth(t *testing.T) {
 	f, _ := newSigningFixture(t)
 	tb := f.table(t)
-	derive := f.svc.requestDeriver(f.svc.Rotating, f.account.String(), f.session)
+	derive := f.svc.requestDeriver(f.account.String(), f.session)
 	// A deriver that, like a concurrent fill, publishes the very range being
 	// derived before the caller appends it.
 	racing := func(ctx context.Context, from, to uint64) ([]types.Address, error) {
@@ -1244,7 +1244,7 @@ func testRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T, kind rotatingTe
 	if n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{{
 		Account: f.account.String(), Stage: 0, TxID: "EARLIER", LastValid: 900,
 		Leaves: []LeafRelease{{Tree: profile.TreeOf(0), Index: picked, TxID: "EARLIER", LastValid: 900}},
-	}}, StageFillOptions{}); err != nil || n != 1 {
+	}}); err != nil || n != 1 {
 		t.Fatalf("restore: rebuilt %d, err %v", n, err)
 	}
 	resp := mustSign(t, f, prep.Transactions)

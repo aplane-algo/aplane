@@ -475,14 +475,15 @@ func TestFillStageTablesHoldsNoSeedDuringIO(t *testing.T) {
 	f := newRotatingFixture(t)
 	var mu sync.Mutex
 	active, windows, writesSeen, violations := 0, 0, 0, 0
-	opts := StageFillOptions{Horizon: 7, Batch: 2, MaxDerivations: 8, KeyUse: func(ctx context.Context) (context.Context, func()) {
+	opts := StageFillOptions{Horizon: 7, Batch: 2, MaxDerivations: 8}
+	f.svc.Rotating.KeyUse = func(ctx context.Context) (context.Context, func()) {
 		mu.Lock()
 		active++
 		windows++
 		mu.Unlock()
 		var once sync.Once
 		return ctx, func() { once.Do(func() { mu.Lock(); active--; mu.Unlock() }) }
-	}}
+	}
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if strings.HasSuffix(path, ".stages") || strings.Contains(path, ".stages.tmp-") {
 			mu.Lock()
