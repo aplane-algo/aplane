@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Plugin reviews name draft fees as before planning
+
+- **The fee line of a plugin review says when the fees are not final.** In
+  the default flow and in `presign-plan`, apsigner plans the group after the
+  review and may raise its fees, but the review showed `Fees paid by
+  APlane-managed accounts` as if they were final. The line now reads `Fees
+  paid by APlane-managed accounts before planning`, and says that any raise
+  is reported when the command ends, as the `Fee adjustment` and `[PLUGIN]
+  Signer raised fees` lines already do. The line is shown whenever the group
+  has an APlane-managed slot, a zero total included. A total too large for
+  64 bits is shown as too large to add up, where it used to wrap to a
+  smaller number or vanish.
+
 ## A payment to the zero address is a warning
 
 - **Warning analysis flags ALGO paid to the zero address.** A builder that

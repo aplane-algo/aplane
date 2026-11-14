@@ -35,6 +35,13 @@ const wantDraftTitle = "DRAFT: plugin-built transaction(s); apsigner sets the fi
 
 const wantDiscardedNotice = "The plugin set a group ID; it is discarded, and apsigner computes the group ID over the final group."
 
+// wantManagedFees is the fee line of a review of a group apsigner plans after
+// the review, for fees of algo ALGO.
+func wantManagedFees(algo string) string {
+	return "Fees paid by APlane-managed accounts before planning: " + algo +
+		" ALGO (apsigner may raise them when it plans the group; any raise is reported when the command ends)"
+}
+
 // approvalTestPayment is a payment of amount from one test address to another.
 func approvalTestPayment(from, to byte, amount uint64) types.Transaction {
 	return types.Transaction{
@@ -156,7 +163,7 @@ func TestReviewPluginTransactionsRendersTheDecodedDraft(t *testing.T) {
 		"Payment: 2.500000 ALGO",
 		"To:   " + reviewTestAddress(2).String(),
 		"!! CloseRemainderTo = " + reviewTestAddress(3).String(),
-		"Fees paid by APlane-managed accounts: 0.001000 ALGO",
+		wantManagedFees("0.001000"),
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("review is missing %q:\n%s", want, rendered)
@@ -739,6 +746,48 @@ func TestReviewRefusesArgumentsForAPluginSignedSlotBeforeShowingIt(t *testing.T)
 			}
 			if out.Len() != 0 || asked {
 				t.Fatalf("the refused group was shown (asked: %v):\n%s", asked, out.String())
+			}
+		})
+	}
+}
+
+// A group apsigner plans after the review, in the default flow and in
+// presign-plan, may pay more than its draft: the fees its APlane-managed
+// slots pay are named as the fees before planning. A pregrouped-signed group
+// is submitted as signed and has no APlane-managed slot, so it has no such
+// line.
+func TestReviewNamesTheManagedFeesAsBeforePlanning(t *testing.T) {
+	plugin := approvalTestPayment(7, 2, 1)
+	managed := approvalTestPayment(1, 7, 2)
+	managed.Fee = 2000
+	signers := []jsonrpc.PluginSigner{{Address: plugin.Sender.String(), Kind: jsonrpc.PluginSignerKindCallback, SignerRef: "ref"}}
+	for name, c := range map[string]struct {
+		result *jsonrpc.ExecuteResult
+		want   string
+	}{
+		"default": {&jsonrpc.ExecuteResult{RequiresApproval: true, Transactions: rawIntents(managed)}, wantManagedFees("0.002000")},
+		"presign-plan": {&jsonrpc.ExecuteResult{
+			GroupMode: jsonrpc.GroupModePresignPlan, Transactions: rawIntents(plugin, managed), PluginSigners: signers,
+		}, wantManagedFees("0.002000")},
+		"pregrouped-signed": {&jsonrpc.ExecuteResult{
+			GroupMode: jsonrpc.GroupModePregroupedSigned, Transactions: pregroupedIntents(t, plugin, managed),
+		}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var out bytes.Buffer
+			state := &REPLState{Out: &out, LineReader: func() (string, error) { return "n", nil }}
+			if _, _, err := reviewPluginTransactions(state, c.result, nil); err != nil {
+				t.Fatalf("reviewPluginTransactions() error = %v", err)
+			}
+			rendered := out.String()
+			if c.want == "" {
+				if strings.Contains(rendered, "Fees paid by") {
+					t.Errorf("a group with no APlane-managed slot has a fee line:\n%s", rendered)
+				}
+				return
+			}
+			if !strings.Contains(rendered, c.want+"\n") {
+				t.Errorf("review is missing %q:\n%s", c.want, rendered)
 			}
 		})
 	}

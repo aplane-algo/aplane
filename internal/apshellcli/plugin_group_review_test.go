@@ -5,6 +5,7 @@ package apshellcli
 
 import (
 	"encoding/base64"
+	"math"
 	"strings"
 	"testing"
 
@@ -91,7 +92,7 @@ func TestPluginReviewEscapesThePluginsTransactionType(t *testing.T) {
 	renderPluginGroupReview(r, "REVIEW", []pluginReviewSlot{{
 		txn:  types.Transaction{Type: types.TxType("pay\x1b[2K\r  [1] forged"), Header: types.Header{Sender: reviewTestAddress(1)}},
 		role: slotRolePluginSigned,
-	}}, txnreview.FindingContext{})
+	}}, pluginReviewFacts{})
 	if strings.ContainsAny(out.String(), "\x1b\r") {
 		t.Fatalf("the review printed raw control bytes from the transaction type:\n%q", out.String())
 	}
@@ -172,5 +173,34 @@ func TestPluginReviewMarksIrreversibleAndIncompleteKeyRegistrations(t *testing.T
 	}, txnreview.FindingContext{}), "\n")
 	if !strings.Contains(half, "!! KeyRegistration = incomplete") {
 		t.Errorf("a key registration with one key missing is not marked:\n%s", half)
+	}
+}
+
+// The fee line adds the APlane-managed slots' fees without wrapping: a sum
+// too large for 64 bits is said to be, and fees of zero are shown, not left
+// out.
+func TestPluginReviewFeeLineNeverWrapsOrVanishes(t *testing.T) {
+	managed := func(fee uint64) pluginReviewSlot {
+		return pluginReviewSlot{txn: types.Transaction{
+			Type: types.PaymentTx, Header: types.Header{Sender: reviewTestAddress(1), Fee: types.MicroAlgos(fee)},
+		}, role: slotRoleManaged}
+	}
+	for _, tc := range []struct {
+		name  string
+		slots []pluginReviewSlot
+		want  string
+	}{
+		{"overflow", []pluginReviewSlot{managed(math.MaxUint64), managed(2)},
+			"Fees paid by APlane-managed accounts: more than 18446744073709.551615 ALGO, too large to add up\n"},
+		{"largest sum", []pluginReviewSlot{managed(math.MaxUint64 - 1), managed(1)},
+			"Fees paid by APlane-managed accounts: 18446744073709.551615 ALGO\n"},
+		{"zero", []pluginReviewSlot{managed(0)},
+			"Fees paid by APlane-managed accounts: 0.000000 ALGO\n"},
+	} {
+		var out strings.Builder
+		renderPluginGroupReview(&REPLState{Out: &out}, "REVIEW", tc.slots, pluginReviewFacts{})
+		if !strings.HasSuffix(out.String(), tc.want) {
+			t.Errorf("%s: review does not end with %q:\n%s", tc.name, tc.want, out.String())
+		}
 	}
 }

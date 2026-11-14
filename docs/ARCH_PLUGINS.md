@@ -861,7 +861,10 @@ The `groupMode` field is the top-level selector for the flow; `presign-plan` req
 Supporting machinery: a **per-plugin state directory** (`APSHELL_PLUGIN_STATE_DIR`) for
 persisting keys, cursors, or watermarks across invocations, and a role-aware review
 renderer that shows, per slot, which party signs it and which fees APlane-managed
-accounts pay.
+accounts pay. When apsigner plans the group after the review, in the default flow
+and in `presign-plan`, the review names those fees as the fees before planning,
+since planning may raise them; a sum too large for 64 bits is shown as such,
+never wrapped.
 
 **Trust boundary.** In `presign-plan`, apsigner still owns its slots — it applies its
 full policy and approval to the managed transactions, exactly as for a direct `/sign`.
@@ -885,7 +888,11 @@ command's output, shown when the command ends: after the group is submitted or
 simulated, or with the error when a later step fails (the plugin's
 `signTransactions` callback, apsigner's `/sign`, or the checks of what either
 returns). They are not shown before the plugin signs or apsigner approves, and
-not at all when the plan itself is refused.
+not at all when the plan itself is refused. The review before planning
+therefore names the APlane-managed slots' fees as `Fees paid by
+APlane-managed accounts before planning`, and says that a raise is reported
+when the command ends. Apsigner's prompt, when it asks, shows the planned
+group.
 
 Signed bytes are submitted as given, so in both modes every signed transaction
 must be the canonical encoding of what it decodes to: a plugin-signed slot, a

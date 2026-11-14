@@ -210,7 +210,7 @@ func reviewPresignPlan(r *REPLState, group *apshellapp.PluginGroup) (bool, error
 		return false, err
 	}
 	slots := presignReviewSlots(txns, group.PluginSigners())
-	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots, group.RekeyTargets())
+	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots, reviewFactsOf(group))
 	renderDiscardedGroupIDNotice(r, group.GroupIDDiscarded())
 
 	if r.AutoConfirm {
