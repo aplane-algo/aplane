@@ -162,19 +162,29 @@ func ValidateGroupPlan(original, planned []types.Transaction, mutations *signera
 			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
 		}
 	}
-	groupID, err := ValidateCanonicalGroupID(planned)
+	// A dummy is rebuilt from the first original transaction.
+	if len(original) == 0 {
+		if len(planned) != 0 {
+			return fmt.Errorf("signer appended %d transaction(s) to an empty group", len(planned))
+		}
+		return nil
+	}
+	return ValidateCanonicalGroupAndDummies(original[0], planned, len(original))
+}
+
+// ValidateCanonicalGroupAndDummies checks that group carries the group ID
+// computed over itself, and that its transactions after the first
+// originalCount are the canonical resource dummies for it, rebuilt from
+// firstOriginal's validity window and genesis (ValidateCanonicalDummyTxns).
+func ValidateCanonicalGroupAndDummies(firstOriginal types.Transaction, group []types.Transaction, originalCount int) error {
+	groupID, err := ValidateCanonicalGroupID(group)
 	if err != nil {
 		return err
 	}
-	appended := len(planned) - len(original)
-	if appended == 0 {
+	if len(group) == originalCount {
 		return nil
 	}
-	// A dummy is rebuilt from the first original transaction.
-	if len(original) == 0 {
-		return fmt.Errorf("signer appended %d transaction(s) to an empty group", appended)
-	}
-	_, err = ValidateCanonicalDummyTxns(original[0], groupID, planned, len(original))
+	_, err = ValidateCanonicalDummyTxns(firstOriginal, groupID, group, originalCount)
 	return err
 }
 
@@ -189,6 +199,7 @@ func ValidateGroupPlan(original, planned []types.Transaction, mutations *signera
 // Run it after ValidateGroupPlan, which leaves a reported fee raise as the
 // only change it can find.
 func ValidateUnsignedFees(original, planned []types.Transaction, unsigned map[int]string) error {
+	// It guards planned[i] below; ValidateGroupPlan has refused a short group.
 	if len(planned) < len(original) {
 		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(planned), len(original))
 	}

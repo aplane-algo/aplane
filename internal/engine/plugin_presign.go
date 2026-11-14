@@ -131,9 +131,6 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		return nil, fmt.Errorf("group planning failed: %w", err)
 	}
 	originalCount := len(txns)
-	if len(planResp.Transactions) < originalCount {
-		return nil, fmt.Errorf("group planning returned %d transaction(s), want at least %d", len(planResp.Transactions), originalCount)
-	}
 	// Canonical, as the cosigned plan check requires: bytes that decode
 	// leniently could differ from what the signer froze.
 	canonicalTxns, err := clientsign.DecodePlannedGroup(planResp.Transactions)

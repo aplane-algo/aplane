@@ -418,23 +418,6 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 	return nil
 }
 
-// validateCanonicalDummies requires the positions after originalCount to be
-// exactly the canonical resource dummies the signer's planner builds for this
-// group: the check every other client path runs, which rebuilds each dummy
-// from the first original's validity window and genesis and the group's
-// canonical ID, so nothing (a lease, a validity window, a note) can differ.
-func validateCanonicalDummies(firstOriginal types.Transaction, planned []types.Transaction, originalCount int) error {
-	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
-	if err != nil {
-		return err
-	}
-	if len(planned) == originalCount {
-		return nil
-	}
-	_, err = clientsign.ValidateCanonicalDummyTxns(firstOriginal, groupID, planned, originalCount)
-	return err
-}
-
 func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
 	for _, target := range targets {
 		if target.Index < 0 || target.Index >= len(planned) {
@@ -719,7 +702,9 @@ func signCosignedDummies(group frozenGroup) ([]string, error) {
 	if len(group.Txns) == 0 || group.OriginalCount < 1 || group.OriginalCount > len(group.Txns) {
 		return nil, fmt.Errorf("frozen group has %d position(s) for %d original(s)", len(group.Txns), group.OriginalCount)
 	}
-	if err := validateCanonicalDummies(group.Txns[0], group.Txns, group.OriginalCount); err != nil {
+	// The dummies are checked again before they are signed: the frozen
+	// group's must be exactly the planner's canonical ones.
+	if err := clientsign.ValidateCanonicalGroupAndDummies(group.Txns[0], group.Txns, group.OriginalCount); err != nil {
 		return nil, err
 	}
 	signedDummies, err := signing.SignDummyTransactions(group.Txns[group.OriginalCount:])
