@@ -164,20 +164,17 @@ func (s Service) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) er
 
 func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingRequest) error {
 	ir := s.Runtime
-	cfg := s.Deps.Config()
 	icfg := ir.Config()
 	unsaved := slices.Contains(icfg.UnsavedSettings(), req.Key)
 
 	// The new value is a candidate until it is published. A restrictive one
-	// (user_auto_approve turned off; require_contained, require_cosigner or
-	// lock_on_disconnect turned on; or a retry of the value in effect while
-	// it is ahead of the file) is published before anything else, so it is
-	// in effect for as long as the external-edit check and the save take,
-	// and stays in effect if either fails. Any other value (theme,
-	// passphrase_timeout, the value already saved) is published only once
-	// the save returns, so no reader, a signing request included, ever sees
-	// a permissive value that was not saved, and a failed save of an
-	// unchanged value reports nothing in effect that a restart would undo.
+	// (see restricts) is published before the save, so it is in effect for
+	// as long as the save takes and stays in effect if the save fails. Any
+	// other value (theme, passphrase_timeout, the value already saved) is
+	// published only once the save returns, so no reader, a signing request
+	// included, ever sees a permissive value that was not saved, and a failed
+	// save of an unchanged value reports nothing in effect that a restart
+	// would undo.
 	var saveValue interface{}
 	var publish func()
 	var restrictive bool
@@ -190,7 +187,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		}
 		contained, cosigner := icfg.GenerationRequirements()
 		saveValue, publish = v, func() { icfg.SetGenerationRequirements(v, cosigner) }
-		restrictive = v && (!contained || unsaved)
+		restrictive = restricts(true, v, contained, unsaved)
 	case adminproto.AdminSettingRequireCosigner:
 		v, err := parseBoolSetting(req)
 		if err != nil {
@@ -198,14 +195,14 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		}
 		contained, cosigner := icfg.GenerationRequirements()
 		saveValue, publish = v, func() { icfg.SetGenerationRequirements(contained, v) }
-		restrictive = v && (!cosigner || unsaved)
+		restrictive = restricts(true, v, cosigner, unsaved)
 	case adminproto.AdminSettingUserAutoApprove:
 		v, err := parseBoolSetting(req)
 		if err != nil {
 			return err
 		}
 		saveValue, publish = v, func() { icfg.SetUserAutoApprove(v) }
-		restrictive = !v && (icfg.UserAutoApprove() || unsaved)
+		restrictive = restricts(false, v, icfg.UserAutoApprove(), unsaved)
 	case adminproto.AdminSettingLockOnDisconnect:
 		v, err := parseBoolSetting(req)
 		if err != nil {
@@ -215,7 +212,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 			return fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		}
 		saveValue, publish = v, func() { icfg.SetLockOnDisconnect(v) }
-		restrictive = v && (!icfg.LockOnDisconnect() || unsaved)
+		restrictive = restricts(true, v, icfg.LockOnDisconnect(), unsaved)
 	case adminproto.AdminSettingPassphraseTimeout:
 		// Only the admin client enforces the timeout, so publishing it early
 		// would change nothing in the signer: it is never restrictive.
@@ -249,19 +246,9 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 			fmt.Errorf("%s is set to %v and in effect now, but it was not saved, so a restart loads the old value: %w", req.Key, saveValue, err))
 	}
 
-	var checkErr error
-	if changed, err := serverconfig.ConfigFileChanged(s.Deps.DataDir(), *cfg); err != nil {
-		checkErr = fmt.Errorf("failed to check config file: %w", err)
-	} else if changed {
-		checkErr = errors.New("config.yaml has been modified externally; restart apsigner to apply changes before making further edits")
-	}
-	if checkErr != nil {
-		if restrictive {
-			return notSaved(checkErr)
-		}
-		return checkErr
-	}
-
+	// The save rewrites only this key: an edit to another key of the file
+	// made while the signer runs stays in the file and takes effect at the
+	// next start.
 	mut := storemut.New(s.Deps.KeyPaths())
 	var saveErr error
 	if req.Key == adminproto.AdminSettingTheme {
@@ -288,6 +275,15 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	default:
 		return fmt.Errorf("failed to save config.yaml; %s is unchanged: %w", req.Key, saveErr)
 	}
+}
+
+// restricts reports whether a request for boolean setting value requested is
+// restrictive, current being the value in effect: requested is the
+// setting's restrictive value (restrictiveValue), and it differs from the
+// value in effect or the setting is unsaved (in effect ahead of the file, so
+// the request retries the save).
+func restricts(restrictiveValue, requested, current, unsaved bool) bool {
+	return requested == restrictiveValue && (current != restrictiveValue || unsaved)
 }
 
 // parseBoolSetting accepts exactly "true" or "false" for a boolean setting.

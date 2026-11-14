@@ -285,7 +285,7 @@ func TestRotatingWithoutKeyUseLoadsNoSeedAndKeepsItsStatus(t *testing.T) {
 	if _, err := f.svc.requestDeriver(f.account.String(), f.session)(context.Background(), 1, 2); !errors.Is(err, errKeyUseNotConfigured) {
 		t.Fatalf("deriver: %v, want not configured", err)
 	}
-	if reports := f.svc.FillStageTables(context.Background(), f.session, StageFillOptions{}); len(reports) != 1 || reports[0].Err == nil {
+	if reports, _ := f.svc.FillStageTables(context.Background(), f.session, StageFillOptions{}); len(reports) != 1 || reports[0].Err == nil {
 		t.Fatalf("fill without KeyUse: %+v, want the account's error", reports)
 	}
 	if f.store.loads != before {
@@ -405,12 +405,11 @@ func TestStageDerivationReportsALockOnlyWhenTheKeyUseWasStopped(t *testing.T) {
 
 // A lock during the stage table fill's identity read is not an account error,
 // as one step later in the deriver it is not, so the worker logs no warning.
-// When the lock refused or cut the account's key use (errKeyUseRefused) the
-// report is marked stopped, and the worker leaves only it out of what it
-// publishes. When the pass's own context has ended too it is a quiet stop,
-// which the worker does not publish at all. The report once carried "signer
-// is locked" or "context canceled", whichever came first, and then marked
-// both cases stopped.
+// When the lock refused or cut the account's key use (errKeyUseRefused) with
+// the pass still live, FillStageTables reports the pass cut and stops, and the
+// worker publishes nothing from it. When the pass's own context has ended too
+// it is a quiet stop, which the worker does not publish either. The report
+// once carried "signer is locked" or "context canceled", whichever came first.
 func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -436,14 +435,50 @@ func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
 				return refused, func() {}
 			}
 			before := f.store.loads
-			reports := f.svc.FillStageTables(ctx, f.session, StageFillOptions{})
-			if len(reports) != 1 || reports[0].Err != nil || reports[0].Stopped == tc.passCancelled || reports[0].Observed || reports[0].Pending {
-				t.Fatalf("reports = %+v, want one quiet stop with no error, marked stopped only while the pass is live", reports)
+			reports, cut := f.svc.FillStageTables(ctx, f.session, StageFillOptions{})
+			if tc.passCancelled {
+				if cut || len(reports) != 1 || reports[0].Err != nil || reports[0].Observed || reports[0].Pending {
+					t.Fatalf("reports = %+v, cut %v; want one quiet stop with no error, not cut", reports, cut)
+				}
+			} else if !cut || len(reports) != 0 {
+				t.Fatalf("reports = %+v, cut %v; want the pass cut at the refused account", reports, cut)
 			}
 			if uses != 1 || f.store.loads != before {
 				t.Fatalf("%d key uses and %d seed loads, want the identity read's one refused use and none", uses, f.store.loads-before)
 			}
 		})
+	}
+}
+
+// invalidMaterialStore loads a key of the wrong type, then runs after.
+type invalidMaterialStore struct {
+	base  *rotatingKeyStore
+	after func()
+}
+
+func (s *invalidMaterialStore) Get(ctx context.Context, account string) (*coresigning.KeyMaterial, error) {
+	key, err := s.base.Get(ctx, account)
+	if key != nil {
+		key.Type = "ed25519"
+	}
+	s.after()
+	return key, err
+}
+
+// An identity read that fails for the account's own reason is the account's
+// error even when the pass's context ends just after it: only a locked answer
+// or the pass's own end during the read is a quiet stop. The pass's end was
+// once checked first and hid the error.
+func TestFillReportsAnIdentityReadErrorWhenThePassEndsJustAfter(t *testing.T) {
+	f, _ := newSigningFixtureFor(t, wotscTestType)
+	ctx, cancelPass := context.WithCancel(context.Background())
+	defer cancelPass()
+	session := keystore.NewKeySession(&invalidMaterialStore{base: f.store, after: cancelPass})
+	session.InitializeSession()
+	t.Cleanup(session.Destroy)
+	reports, cut := f.svc.FillStageTables(ctx, session, StageFillOptions{})
+	if cut || len(reports) != 1 || reports[0].Err == nil || !strings.Contains(reports[0].Err.Error(), "invalid material") {
+		t.Fatalf("reports = %+v, cut %v; want the account's invalid-material error", reports, cut)
 	}
 }
 

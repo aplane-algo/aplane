@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -265,15 +266,18 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 
 // A lock refuses key uses before it cancels the pass's context, so a pass can
 // reach an account's identity read refused while its own context is still
-// live. That account was not observed, and its report is left out of what the
-// pass publishes; what the pass observed for the other accounts is published
-// as usual. The pass once published the unobserved account as such, and then
-// discarded the whole pass. The lock's first step is played by moving the
-// runtime out of the unlocked state during the first account's chain read,
-// before the second's identity read.
-func TestPassPublishesItsObservationsWithoutAStoppedAccount(t *testing.T) {
+// live. Such a pass is treated as not having happened: it publishes nothing,
+// and the status and alerts from the last complete pass stand until the
+// locked worker clears them. The pass once published the unobserved account,
+// dropping its alerts, and then published every other account without it.
+// The lock's first step is played by moving the runtime out of the unlocked
+// state during the first account's chain read, before the second's identity
+// read.
+func TestPassCutByALockPublishesNothing(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
+	hub := &recordingAdminHub{}
+	server.hub = hub
 	ir := server.productRuntime()
 
 	node := &mockAccountNode{}
@@ -289,25 +293,42 @@ func TestPassPublishesItsObservationsWithoutAStoppedAccount(t *testing.T) {
 			return base.RoundTrip(req)
 		}))
 	}
-	installRotatingKey(t, server)
-	installRotatingKey(t, server)
-	node.set("", 100)
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	// The pass visits accounts in address order; the second one is cut.
+	second := b
+	if b.String() < a.String() {
+		second = a
+	}
+	// A release from the second account's stage 0 that expired unconfirmed:
+	// an alert while the account is observed at its stage 0.
+	server.rotatingReleases.Record(signersigning.ReleaseRecord{
+		Account: second.String(), Stage: 0, StageAddr: second, TxID: "EXPIREDTX", LastValid: 120,
+	})
+	node.set("", 130)
 	server.fillStageTables(context.Background(), ir)
-	before := ir.RotatingAccountStatuses()
-	if len(before) != 2 || before[0].Classification != signerapi.RotatingClassStage || before[1].Classification != signerapi.RotatingClassStage {
-		t.Fatalf("statuses after a full pass = %+v, want both accounts at a stage", before)
+	before, alerts := ir.RotatingAccountStatuses(), ir.RotatingAlerts()
+	if len(before) != 2 || before[1].Account != second.String() || len(alerts) != 1 || !strings.Contains(alerts[0], "EXPIREDTX") {
+		t.Fatalf("after a full pass: statuses %+v, alerts %v; want both accounts and the expired release's alert", before, alerts)
 	}
 
 	node.set("", 150)
 	armed.Store(true)
-	server.fillStageTables(context.Background(), ir)
+	hub.statusCalled = false
+	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
+		t.Fatalf("wait after the cut pass = %v, want idle", wait)
+	}
 	if armed.Load() {
 		t.Fatal("the cut never happened")
 	}
-	after := ir.RotatingAccountStatuses()
-	if len(after) != 1 || after[0].Account != before[0].Account || after[0].Round != 150 ||
-		after[0].Classification != signerapi.RotatingClassStage {
-		t.Fatalf("statuses after the cut pass = %+v, want only %s, observed at round 150", after, before[0].Account)
+	if after := ir.RotatingAccountStatuses(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("statuses after the cut pass = %+v, want the last complete pass's %+v", after, before)
+	}
+	if after := ir.RotatingAlerts(); !reflect.DeepEqual(after, alerts) {
+		t.Fatalf("alerts after the cut pass = %v, want the last complete pass's %v", after, alerts)
+	}
+	if hub.statusCalled {
+		t.Fatal("apadmin was told a status from the cut pass")
 	}
 }
 

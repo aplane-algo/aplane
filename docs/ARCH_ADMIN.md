@@ -718,18 +718,26 @@ boolean settings (`user_auto_approve`, `lock_on_disconnect`,
 `require_contained`, `require_cosigner`) accept exactly `true` or `false`;
 any other value is refused with `code:"invalid_request"`. A valid value is
 saved durably to `identities/default/config.yaml` (root `config.yaml` for
-`theme`). When it takes effect depends on the change's direction:
+`theme`).
+
+Both files are read when apsigner starts. A setting changed through
+`update_admin_setting` takes effect while the signer runs and rewrites only
+its own key in the file: the file's other keys keep their values (comments
+and key order are not kept). An edit to either file made while apsigner runs,
+by hand or by another tool, takes effect at the next start; the running
+signer does not re-read it, and an update of another key leaves the edit in
+the file.
+
+When an update takes effect depends on the change's direction:
 
 - Restrictive: `user_auto_approve` turned off, or `require_contained`,
   `require_cosigner` or `lock_on_disconnect` turned on, from the value in
   effect; or a request for the value in effect while that value is unsaved
-  (below), which tries the save again. The value takes effect before
-  anything else the update does: before the external-edit check and the
-  save, so neither a refusal nor a hung or slow disk can keep the old, more
-  permissive value in effect, and it stays in effect whatever they do. It
-  still waits for the store mutation lock the update runs under, so an
-  update queued behind another store mutation takes effect when that one
-  finishes.
+  (below), which tries the save again. The value takes effect before the
+  save, so a hung or slow disk cannot keep the old, more permissive value in
+  effect, and it stays in effect whatever the save does. It still waits for
+  the store mutation lock the update runs under, so an update queued behind
+  another store mutation takes effect when that one finishes.
 - Permissive: every other request, `theme`, `passphrase_timeout` and a
   request for the value already saved included. The value takes effect only
   once its file has replaced the old one, so no reader, a signing request
@@ -738,16 +746,15 @@ saved durably to `identities/default/config.yaml` (root `config.yaml` for
   answers the plain "unchanged" failure and writes no audit entry, since
   nothing in effect would be undone by a restart.
 
-The rule covers only the three boolean settings the signer itself enforces.
+The rule covers only the four boolean settings the signer itself enforces.
 `passphrase_timeout` is not one of them: only the admin client enforces it
 (it disconnects after the timeout), so publishing a shorter timeout early
 would change nothing in the signer.
 
 | Outcome | Restrictive change | Permissive change |
 |---|---|---|
-| Saved | `success:true`; in effect from before the check and save | `success:true`; in effect once the save returns |
-| External-edit check refuses or fails | `success:false`, `code:"applied_not_saved"` with the check's reason: in effect now, never reset to the old value, but not saved, so a restart loads the old value | `success:false`, no result-local code: nothing changed |
-| Save fails before the new file replaces the old one | `success:false`, `code:"applied_not_saved"`, the same | `success:false`, no result-local code: nothing changed, the setting keeps the value in effect |
+| Saved | `success:true`; in effect from before the save | `success:true`; in effect once the save returns |
+| Save fails before the new file replaces the old one | `success:false`, `code:"applied_not_saved"`: in effect now, never reset to the old value, but not saved, so a restart loads the old value | `success:false`, no result-local code: nothing changed, the setting keeps the value in effect |
 | File replaced, directory sync fails | `success:false`, `code:"applied_not_durable"`: in effect, and the new file is what the next start loads, but its durability is not confirmed | the same; the value takes effect as the save returns and is never reset to the old value |
 
 A setting answered `applied_not_saved` is unsaved: the signer holds it, in
@@ -761,10 +768,7 @@ leave it. A restart loads the saved value, so the set starts empty.
 
 The two in-effect failures each write one `SETTING_NOT_DURABLE` audit entry
 (see [ARCH_SECURITY.md](ARCH_SECURITY.md)), the only durable trace of a
-change a power loss or restart can undo. The external-edit check that refuses
-an update after root `config.yaml` changed on disk compares that file with
-the process's startup configuration, not memory with the identity's file, so
-an unsaved value alone does not make the next update fail.
+change a power loss or restart can undo.
 
 An admin client re-reads `get_admin_settings` after any
 `update_admin_setting_result`, a failed one included, to show the state the
@@ -836,8 +840,8 @@ including `key_type_in_use` for template disable/removal or compiled-provider di
 `restore_rate_limited` for managed restore preview/restore throttling,
 `applied_not_durable` for a setting change that is in effect but whose
 directory sync failed, and `applied_not_saved` for a restrictive setting
-change that is in effect but not saved, because the external-edit check
-refused it or its save failed before its file replaced the old one. The Go
+change that is in effect but whose save failed before its file replaced the
+old one. The Go
 source of truth for these result-local codes is `internal/protocol`, except the
 policy result codes (for example `policy_snapshot_changed`, `policy_unavailable`,
 and `identity_locked`), which `internal/signerapp/policyapply` and
@@ -1287,10 +1291,12 @@ restart reverts it; for several it is one line naming them all, in key
 order. The warning is drawn only from the signer's settings, so a new login
 or a second apadmin shows it, and nothing but settings that no longer list
 the setting clears it. It takes the title's margin line and is cut to the
-panel's width, so the panel is never taller with it. A saved value whose
-durability is unconfirmed (`applied_not_durable`) is not unsaved; the
-status line warns of it, naming the setting, in words that say it is in
-effect.
+panel's width, so the panel is never taller with it. While the panel is
+shown, the status line also carries the last in-effect result: the signer's
+reason a value was not saved (`applied_not_saved`), or, for a saved value
+whose durability is unconfirmed (`applied_not_durable`, which is not
+unsaved), a warning naming the setting in words that say it is in effect. A
+later successful update of the same setting clears it.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

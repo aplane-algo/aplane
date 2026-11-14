@@ -188,9 +188,9 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
 		Error: "user_auto_approve is set to true and in effect, but its durability is not confirmed: file replaced, but its directory sync failed: injected",
 	})
-	want := "user_auto_approve is in effect; its durability is not confirmed"
-	if got := next.(Model); got.lastError != "" || got.lastWarning != want {
-		t.Fatalf("lastError = %q, lastWarning = %q; want no error and the warning %q", got.lastError, got.lastWarning, want)
+	want := "Warning: user_auto_approve is in effect; its durability is not confirmed"
+	if got := next.(Model); got.lastError != "" || !strings.Contains(stripANSI(got.renderStatusBar()), want) {
+		t.Fatalf("lastError = %q, status bar = %q; want no error and the warning %q", got.lastError, stripANSI(got.renderStatusBar()), want)
 	}
 	// A lone listener wait blocks until the client disconnects.
 	produced := make(chan tea.Msg, 1)
@@ -227,8 +227,8 @@ func TestUnappliedSettingUpdateIsShownAsAFailure(t *testing.T) {
 		Code: protocol.ErrCodeInternal, Error: "failed to save config.yaml; user_auto_approve is unchanged: injected",
 	})
 	if got := next.(Model); got.lastError != "Setting update failed: failed to save config.yaml; user_auto_approve is unchanged: injected" ||
-		got.lastWarning != "" {
-		t.Fatalf("lastError = %q, lastWarning = %q; want the failure as an error", got.lastError, got.lastWarning)
+		got.lastWarning != "" || got.admin.settingWarning != "" {
+		t.Fatalf("lastError = %q, lastWarning = %q, setting warning = %q; want the failure as an error", got.lastError, got.lastWarning, got.admin.settingWarning)
 	}
 }
 
@@ -344,5 +344,50 @@ func TestAdminSettingsMessageCarriesUnsavedSettings(t *testing.T) {
 	msg, ok := decoded.(AdminSettingsMsg)
 	if !ok || len(msg.Settings.UnsavedSettings) != 1 || msg.Settings.UnsavedSettings[0] != adminproto.AdminSettingUserAutoApprove {
 		t.Fatalf("decoded = %#v, want unsaved_settings [user_auto_approve]", decoded)
+	}
+}
+
+// A result that leaves its setting in effect without a completed save puts a
+// warning on the status line, shown only on the admin panel: the signer's
+// reason for a value it did not save, or that a saved value's durability is
+// not confirmed. A later successful result for the same setting clears it; a
+// result for another setting does not. The durability warning once stayed on
+// every view for good, and the reason for an unsaved value was never shown.
+func TestSettingResultWarningIsThePanelsUntilTheSettingSaves(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  AdminSettingUpdatedMsg
+		want string
+	}{
+		{"not durable", AdminSettingUpdatedMsg{Key: adminproto.AdminSettingUserAutoApprove, Value: "false", Code: protocol.ResultCodeAppliedNotDurable,
+			Error: "user_auto_approve is set to false and in effect, but its durability is not confirmed: injected"},
+			"Warning: user_auto_approve is in effect; its durability is not confirmed"},
+		{"not saved", AdminSettingUpdatedMsg{Key: adminproto.AdminSettingUserAutoApprove, Value: "false", Code: protocol.ResultCodeAppliedNotSaved,
+			Error: "user_auto_approve is set to false and in effect now, but it was not saved, so a restart loads the old value: disk full"},
+			"Warning: user_auto_approve is set to false and in effect now, but it was not saved, so a restart loads the old value: disk full"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := approvalTestModel(ViewAdminPanel)
+			m.admin.settings = &AdminSettings{PassphraseMethod: "none", Theme: "auto"}
+			next, _ := m.Update(tc.msg)
+			m = next.(Model)
+			if bar := stripANSI(m.renderStatusBar()); !strings.Contains(bar, tc.want) || strings.Contains(bar, "failed") {
+				t.Fatalf("status bar on the admin panel = %q, want %q and no failure", bar, tc.want)
+			}
+			m.viewState = ViewKeyList
+			if bar := stripANSI(m.renderStatusBar()); strings.Contains(bar, "in effect") {
+				t.Fatalf("status bar on the key list = %q, want the warning on the admin panel only", bar)
+			}
+			m.viewState = ViewAdminPanel
+			next, _ = m.Update(AdminSettingUpdatedMsg{Success: true, Key: adminproto.AdminSettingTheme, Value: "dark"})
+			m = next.(Model)
+			if bar := stripANSI(m.renderStatusBar()); !strings.Contains(bar, tc.want) {
+				t.Fatalf("status bar after another setting saved = %q, want %q", bar, tc.want)
+			}
+			next, _ = m.Update(AdminSettingUpdatedMsg{Success: true, Key: adminproto.AdminSettingUserAutoApprove, Value: "false"})
+			if bar := stripANSI(next.(Model).renderStatusBar()); strings.Contains(bar, "in effect") {
+				t.Fatalf("status bar after the setting saved = %q, want the warning cleared", bar)
+			}
+		})
 	}
 }

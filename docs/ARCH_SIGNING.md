@@ -2181,9 +2181,10 @@ stored provenance was available. These fields do not change `/sign` behavior.
   still scanning for, or an authorizer it could not place. Clients must
   tolerate this field being omitted.
 - `rotating[]`: optional, one `signerapi.RotatingAccountStatus` per rotating
-  account from the worker's last pass (an account whose key use a lock
-  refused or cut during that pass is left out, since the pass observed
-  nothing for it): `account`, the observed `authorizer`
+  account from the worker's last complete pass (a pass during which a lock
+  refused or cut an account's key use is treated as not having happened and
+  publishes nothing, so this and the alerts in `warnings` stay as the pass
+  before it left them): `account`, the observed `authorizer`
   and `round` (absent when the last read failed), `classification`
   (`stage`, `held_key`, `unknown`, `unobserved`), `stage` when classified as
   a stage, `cached_entries` (the number of sparse address records),

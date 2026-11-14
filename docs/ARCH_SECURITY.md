@@ -1477,9 +1477,9 @@ Store-management audit semantics:
   `SETTING_NOT_DURABLE`, with the admin session's attribution,
   `outcome:"applied"`, `result_code` `applied_not_durable` (the new file is
   in place, its directory sync failed) or `applied_not_saved` (a restrictive
-  value in effect whose save failed before the rename, or whose update the
-  external-edit check refused, so a restart loads the old value), and a
-  `reason` of `setting=<key>: ` followed by the result's error,
+  value in effect whose save failed before the rename, so a restart loads
+  the old value), and a `reason` of `setting=<key>: ` followed by the
+  result's error,
   which names the value in effect (see
   [Writable Settings](ARCH_ADMIN.md#writable-settings))
 - generation maintenance is audited in intent/result pairs: each `*_INTENT`

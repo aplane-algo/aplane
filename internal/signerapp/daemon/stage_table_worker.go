@@ -221,14 +221,7 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 			}
 		},
 	}
-	var reports []signersigning.StageTableReport
-	for _, r := range svc.FillStageTables(ctx, ir.SnapshotKeySession(), opts) {
-		// An account whose key use the lock refused or cut was not
-		// observed: its report says nothing, and the rest of the pass stands.
-		if !r.Stopped {
-			reports = append(reports, r)
-		}
-	}
+	reports, cut := svc.FillStageTables(ctx, ir.SnapshotKeySession(), opts)
 	wait := stageTableIdleInterval
 	for _, r := range reports {
 		if r.Discarded != nil {
@@ -242,8 +235,11 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 			wait = stageTableBusyInterval
 		}
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || cut {
 		// Locked or shutting down mid-pass: nothing to schedule or publish.
+		// A pass the lock cut is treated as not having happened, so the
+		// status from the last complete pass stands until the locked worker
+		// clears it.
 		return stageTableIdleInterval
 	}
 	fs.publishRotatingStatus(ir, svc, reports)

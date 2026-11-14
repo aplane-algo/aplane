@@ -56,8 +56,7 @@ func (d *fakeDeps) Theme() string {
 	return d.theme
 }
 
-// SetTheme updates the process config too, as the signer's does, so the
-// external-change check compares the file with the live theme.
+// SetTheme updates the process config too, as the signer's does.
 func (d *fakeDeps) SetTheme(v string) {
 	d.theme = v
 	d.config.Theme = v
@@ -413,8 +412,8 @@ func TestGenerationRequirementCannotBeSaved(t *testing.T) {
 	}
 }
 
-// writeRootConfig gives the service the config.yaml its external-change
-// check reads.
+// writeRootConfig gives the service a root config.yaml, which a theme save
+// rewrites.
 func writeRootConfig(t *testing.T, deps *fakeDeps) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
@@ -493,7 +492,7 @@ func (c settingChange) name() string {
 	return c.key + "=" + c.from + "->" + c.to
 }
 
-// settingChanges is every writable setting in each direction. Only the three
+// settingChanges is every writable setting in each direction. Only the four
 // boolean settings the signer enforces are ever restrictive: only the admin
 // client enforces passphrase_timeout, so a shorter one is not.
 func settingChanges() []settingChange {
@@ -642,10 +641,8 @@ func TestSettingDirectionDecidesWhenAChangeTakesEffect(t *testing.T) {
 // A save that fails before its rename leaves the old file in place, so a
 // restart loads the old value. A permissive change is then not applied. A
 // restrictive one stays in effect, coded applied_not_saved with an error
-// that says so; memory never goes back to the permissive value it replaced.
-// The external-edit check compares root config.yaml with the startup
-// config, not memory with the identity's file, so the next update is not
-// refused.
+// that says so; memory never goes back to the permissive value it replaced,
+// and the next update is not refused.
 func TestUpdateAdminSettingFailureBeforeRename(t *testing.T) {
 	for _, c := range settingChanges() {
 		for _, op := range []fsutil.HookOp{fsutil.OpFileSync, fsutil.OpRename} {
@@ -720,8 +717,7 @@ func TestUpdateAdminSettingFailureAfterRenamePublishesTheSavedValue(t *testing.T
 				t.Fatalf("UpdateAdminSetting error = %v (code %q), want %s: in effect with durability unconfirmed", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotDurable)
 			}
 			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the unsynced save")
-			// Memory and file agree, so the next change is not refused as an
-			// external edit.
+			// The next change goes through as usual.
 			if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
 				t.Fatalf("next UpdateAdminSetting error = %v", err)
 			}
@@ -798,43 +794,52 @@ func TestUnsavedSettingIsReportedUntilASaveSucceeds(t *testing.T) {
 	}
 }
 
-// A restrictive value is published before the external-edit check, so it is
-// in effect even when the check refuses the update; it is then in effect but
-// not saved, answered and reported as for a failed save. A permissive value
-// the check refuses is not applied. The check once ran first, so a refused
-// restrictive change left the permissive value in effect.
-func TestRestrictiveValueIsInEffectWhenTheExternalEditCheckRefuses(t *testing.T) {
-	for _, c := range settingChanges() {
-		if c.key == adminproto.AdminSettingTheme {
-			continue
+// config.yaml is read when the signer starts: an edit to the file while it
+// runs takes effect at the next start, and a setting changed through the
+// admin protocol rewrites only its own key. Hand edits to other keys of
+// either file (the identity's config.yaml and root config.yaml) therefore
+// stay in the file, do not change what is in effect, and do not stop the
+// update. The update was once refused while root config.yaml differed from
+// the startup configuration.
+func TestSettingSaveKeepsAHandEditToAnotherKey(t *testing.T) {
+	svc, ir, deps := setupAdminService(t)
+	writeRootConfig(t, deps)
+	if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "false"}); err != nil {
+		t.Fatal(err)
+	}
+	identityPath := productruntime.ConfigPath(deps.dataDir)
+	rootPath := filepath.Join(deps.dataDir, "config.yaml")
+	// Hand edits while the signer runs, to keys the updates below leave alone.
+	if err := os.WriteFile(identityPath, []byte("user_auto_approve: false\nlock_on_disconnect: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rootPath, []byte("theme: auto\napproval_wait: 7m\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, req := range []adminproto.UpdateAdminSettingRequest{
+		{Key: adminproto.AdminSettingUserAutoApprove, Value: "true"},
+		{Key: adminproto.AdminSettingTheme, Value: "dark"},
+	} {
+		if err := svc.UpdateAdminSetting(req); err != nil {
+			t.Fatalf("UpdateAdminSetting(%s=%s) after a hand edit: %v", req.Key, req.Value, err)
 		}
-		t.Run(c.name(), func(t *testing.T) {
-			svc, ir, deps := startSettingChange(t, c)
-			// Root config.yaml no longer matches the startup config.
-			if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\nuser_auto_approve: true\n"), 0o640); err != nil {
-				t.Fatal(err)
-			}
-			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
-			if err == nil || !strings.Contains(err.Error(), "modified externally") {
-				t.Fatalf("UpdateAdminSetting error = %v, want the external-edit refusal", err)
-			}
-			if c.restrictive {
-				if protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved || !strings.Contains(err.Error(), "in effect now, but it was not saved") {
-					t.Fatalf("UpdateAdminSetting error = %v (code %q), want %s", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotSaved)
-				}
-				requireSetting(t, svc, ir, deps, c.key, c.to, c.from, "after the refusal")
-				if got := unsavedSettings(svc); !reflect.DeepEqual(got, []string{c.key}) {
-					t.Fatalf("unsaved after the refusal = %v, want [%s]", got, c.key)
-				}
-				return
-			}
-			if protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved {
-				t.Fatalf("UpdateAdminSetting error = %v, want a plain refusal", err)
-			}
-			requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after the refusal")
-			if got := unsavedSettings(svc); len(got) != 0 {
-				t.Fatalf("unsaved after a permissive refusal = %v, want none", got)
-			}
-		})
+	}
+	stored, err := productruntime.LoadStoredConfig(deps.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.UserAutoApprove == nil || !*stored.UserAutoApprove || stored.LockOnDisconnect == nil || !*stored.LockOnDisconnect {
+		t.Fatalf("identity config = %+v, want user_auto_approve replaced and the hand-edited lock_on_disconnect kept", stored)
+	}
+	root, err := serverconfig.LoadServerConfig(deps.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Theme != "dark" || root.ApprovalWait != "7m" {
+		t.Fatalf("root config theme %q, approval_wait %q; want theme replaced and the hand-edited approval_wait kept", root.Theme, root.ApprovalWait)
+	}
+	if ir.Config().LockOnDisconnect() {
+		t.Fatal("a hand edit took effect while the signer runs")
 	}
 }

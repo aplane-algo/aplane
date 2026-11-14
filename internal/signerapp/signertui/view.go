@@ -650,6 +650,10 @@ func (m Model) renderStatusBar() string {
 	if m.lastWarning != "" {
 		parts = append(parts, warningStyle.Render("Warning: "+m.lastWarning))
 	}
+	// A setting update's in-effect warning belongs to the admin panel.
+	if m.viewState == ViewAdminPanel && m.admin.settingWarning != "" {
+		parts = append(parts, warningStyle.Render("Warning: "+m.admin.settingWarning))
+	}
 
 	// Error if any
 	if m.lastError != "" {

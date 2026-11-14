@@ -648,17 +648,25 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
-		// In effect without a completed save is not a failure. A value not
-		// saved at all is the signer's to report: the panel draws its warning
-		// from the settings re-read below. A saved value whose durability is
-		// unconfirmed is warned of here, by the setting's name, not the
-		// echoed request value, which can differ from what the signer holds.
+		// In effect without a completed save is not a failure. The panel
+		// draws its unsaved warning from the settings re-read below; the
+		// status line says why the value was not saved, or that a saved
+		// value's durability is unconfirmed, naming the setting rather than
+		// the echoed request value, which can differ from what the signer
+		// holds.
 		switch {
 		case msg.Code == protocol.ResultCodeAppliedNotSaved:
+			reason := msg.Error
+			if reason == "" {
+				reason = msg.Key + " is in effect but not saved"
+			}
+			m.admin.settingWarning, m.admin.settingWarningKey = reason, msg.Key
 		case msg.Code == protocol.ResultCodeAppliedNotDurable:
-			m.setPersistentWarning(msg.Key + " is in effect; its durability is not confirmed")
+			m.admin.settingWarning, m.admin.settingWarningKey = msg.Key+" is in effect; its durability is not confirmed", msg.Key
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
+		case msg.Key == m.admin.settingWarningKey:
+			m.admin.settingWarning, m.admin.settingWarningKey = "", ""
 		}
 		// Re-read the settings either way: a failed update can still be in
 		// effect (saved, its durability unconfirmed), so the panel shows what
