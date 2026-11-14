@@ -434,7 +434,7 @@ vet: compile-docassets
 # Tagged files are invisible to the default build graph, so refactors can break
 # them silently; only the integration harness builds with this tag otherwise.
 # This produces no artifacts - it only type-checks the tagged sources.
-testmode-check:
+testmode-check: compile-docassets
 	@echo "Compile-checking testmode-tagged sources..."
 	@go build -tags testmode $$(go list -tags testmode -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/aplane-algo/aplane/temp/')
 	@go vet -tags testmode ./cmd/apadmin/
@@ -625,7 +625,7 @@ lint: compile-docassets
 
 # Run staticcheck across the module (single definition shared by the
 # pre-commit hook and CI; installation is environment-specific).
-staticcheck:
+staticcheck: compile-docassets
 	@if ! command -v staticcheck >/dev/null 2>&1; then \
 		echo "Error: staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@2026.2.2"; \
 		exit 1; \
@@ -642,7 +642,7 @@ race-cover-test: compile-docassets
 	CGO_ENABLED=1 go test -race -timeout 45m -coverprofile=coverage.out -covermode=atomic $$(go list ./... | grep -v '/test/integration' | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/')
 
 # Compile every package without producing artifacts.
-build-check:
+build-check: compile-docassets
 	@echo "Building all packages..."
 	@go build $$(go list -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/aplane-algo/aplane/temp/')
 	@echo "Cross-compiling apshell for windows/amd64..."
@@ -742,7 +742,7 @@ WITH_TEST_ENV = set -a && . ./.env.test && set +a &&
 # fixture state or mismatched passphrases. Linked worktrees get their own
 # fixture root; see test/setup-test-env.sh.
 # Requires APLANE_INTEGRATION_NETWORK=testnet or localnet.
-integration-test:
+integration-test: compile-docassets
 	@echo "Running integration tests..."
 	@./test/setup-test-env.sh
 	@echo "Loading environment from regenerated .env.test"
@@ -770,13 +770,13 @@ logicsig-opcode-validation:
 	@APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) ./test/setup-test-env.sh
 	@set -a && . ./.env.test && set +a && APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) INTEGRATION=1 go test -count=1 -timeout 30m -v -run '^(TestIncludedKeyTypesSignInBatchedGroups|TestBoundedGeneralResourceMatrix|TestCorridorDeclaredOpcodeCeilings)$$' $(INTEGRATION_TEST_PKG)
 
-soak-test-localnet:
+soak-test-localnet: compile-docassets
 	@echo "Running LocalNet soak test..."
 	@APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 	@echo "Loading environment from regenerated .env.test"
 	@set -a && . ./.env.test && set +a && APLANE_INTEGRATION_NETWORK=localnet APLANE_SOAK=1 APLANE_SOAK_DURATION=$(APLANE_SOAK_DURATION) APLANE_SOAK_MAX_ITERATIONS=$(APLANE_SOAK_MAX_ITERATIONS) APLANE_SOAK_RESTART_EVERY=$(APLANE_SOAK_RESTART_EVERY) APLANE_SOAK_FALCON_EVERY=$(APLANE_SOAK_FALCON_EVERY) INTEGRATION=1 go test $(SOAK_GO_ARGS) $(SOAK_TEST_PKG)
 
-apshell-command-coverage-localnet:
+apshell-command-coverage-localnet: compile-docassets
 	@echo "Running LocalNet apshell command coverage..."
 	@APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 	@echo "Loading environment from regenerated .env.test"
@@ -784,7 +784,7 @@ apshell-command-coverage-localnet:
 
 # Run integration tests using the existing .env.test and /tmp fixture as-is.
 # This is faster, but can fail if the shared test environment is stale.
-integration-test-reuse:
+integration-test-reuse: compile-docassets
 	@echo "Running integration tests with existing fixture..."
 	@main=0; composite=0; sdk=0; \
 	if [ -f .env.test ]; then \
