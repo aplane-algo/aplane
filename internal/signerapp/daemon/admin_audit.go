@@ -64,9 +64,9 @@ func (s signerAdminServices) LogIdentityLockedContext(ctx adminserver.SessionCon
 	}
 }
 
-func (s signerAdminServices) LogSettingNotDurableContext(ctx adminserver.SessionContext, key, code, reason string) {
+func (s signerAdminServices) LogSettingSaveErrorContext(ctx adminserver.SessionContext, key, value string, inEffect bool, cause string) {
 	if audit := s.auditLogger(); audit != nil {
-		audit.LogSettingNotDurableContext(ctx, key, code, reason)
+		audit.LogSettingSaveErrorContext(ctx, key, value, inEffect, cause)
 	}
 }
 

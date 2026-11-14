@@ -1310,7 +1310,7 @@ Events:
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
-- `SETTING_NOT_DURABLE`
+- `SETTING_SAVE_ERROR`
 - `CLIENT_ENROLLMENT_REQUESTED`
 - `CLIENT_ENROLLED`
 - `CLIENT_ENROLLMENT_REJECTED`
@@ -1472,15 +1472,15 @@ Store-management audit semantics:
   (or `failed`) and `witness_key_id` identifies the authority, with no
   public-key material in the entry
 - admin setting changes (`update_admin_setting`) are not audited in general.
-  The exception is a change left in effect without a completed save, which
-  nothing else durable records and a power loss or restart can undo:
-  `SETTING_NOT_DURABLE`, with the admin session's attribution,
-  `outcome:"applied"`, `result_code` `applied_not_durable` (the new file is
-  in place, its directory sync failed) or `applied_not_saved` (a restrictive
-  value in effect whose save failed before the rename, so a restart loads
-  the old value), and a `reason` of `setting=<key>: ` followed by the
-  result's error,
-  which names the value in effect (see
+  The exception is a save that fails: `SETTING_SAVE_ERROR`, with the admin
+  session's attribution and a `reason` of `setting=<key> value=<value>
+  in_effect=<true|false>: <cause>`. `in_effect=true` (`outcome:"applied"`) is
+  a restrictive value left in effect but not saved (`applied_not_saved`),
+  which a restart reverts and nothing else durable records;
+  `in_effect=false` (`outcome:"failed"`) is a change that took no effect. A
+  request refused before any save (a bad value, a headless-mode refusal, an
+  unknown setting) writes none, and neither does a save whose directory
+  flush failed after the rename, which is a success (see
   [Writable Settings](ARCH_ADMIN.md#writable-settings))
 - generation maintenance is audited in intent/result pairs: each `*_INTENT`
   entry is written durably before the store changes, and a durable-write

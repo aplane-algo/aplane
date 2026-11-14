@@ -323,7 +323,8 @@ func (s *loadHookStore) Get(ctx context.Context, account string) (*coresigning.K
 // cleared the session. A caller that ended its own request gets an empty
 // result and no lock, so it isn't answered "locked". The decision is taken
 // where the key use was stopped, not read back from the request's context
-// afterwards. The background deriver takes a lock as a quiet stop.
+// afterwards. The background deriver takes a lock as a quiet stop that cuts
+// the pass.
 func TestStageDerivationReportsALockOnlyWhenTheKeyUseWasStopped(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -376,9 +377,10 @@ func TestStageDerivationReportsALockOnlyWhenTheKeyUseWasStopped(t *testing.T) {
 				tc.arrange(f, store, session, cancel)
 				account := f.account.String()
 				if background {
-					addrs, err := f.svc.backgroundDeriver(account, session, StageFillOptions{})(ctx, 1, 2)
-					if len(addrs) != 0 || err != nil {
-						t.Fatalf("background: %d addresses, err %v; want a quiet stop", len(addrs), err)
+					var cut bool
+					addrs, err := f.svc.backgroundDeriver(account, session, StageFillOptions{}, &cut)(ctx, 1, 2)
+					if len(addrs) != 0 || err != nil || cut != tc.locked {
+						t.Fatalf("background: %d addresses, err %v, cut %v; want a quiet stop that cuts the pass only for a lock", len(addrs), err, cut)
 					}
 					continue
 				}

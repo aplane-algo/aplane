@@ -13,6 +13,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
+// reachTimeout bounds the wait for the write to reach the held step.
+var reachTimeout = 10 * time.Second
+
 // HeldWrite is an update running in the background with its durable write
 // held at one step.
 type HeldWrite struct {
@@ -32,8 +35,10 @@ type HeldWrite struct {
 // its result. Every exit path of the test, a failed assertion included,
 // releases the hold and waits for update before it clears the hook, so no
 // update is left parked inside the write holding a mutation lock and
-// clearing the hook never races it. A test whose other cleanup could wait on
-// that lock registers it before calling Hold, so this cleanup runs first.
+// clearing the hook never races it, except when the write never reached the
+// held step: the cleanup then does not wait for an update that may never
+// return. A test whose other cleanup could wait on that lock registers it
+// before calling Hold, so this cleanup runs first.
 func Hold(t testing.TB, op fsutil.HookOp, path string, update func() error) *HeldWrite {
 	t.Helper()
 	h := &HeldWrite{reached: make(chan struct{}), released: make(chan struct{}), result: make(chan error, 1)}
@@ -58,7 +63,10 @@ func Hold(t testing.TB, op fsutil.HookOp, path string, update func() error) *Hel
 			h.err = err
 		})
 		t.Fatalf("the update returned before its write reached the held step: %v", err)
-	case <-time.After(10 * time.Second):
+	case <-time.After(reachTimeout):
+		// The update may be stuck elsewhere: release anything that reaches
+		// the step later, and do not wait for it.
+		h.once.Do(func() { close(h.released) })
 		t.Fatal("the write never reached the held step")
 	}
 	return h

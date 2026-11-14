@@ -538,7 +538,7 @@ without overlays and bounds; neither takes mnemonic import.
 
 - `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`, optional `unsaved_settings` (the settings in effect but not saved, which a restart reverts, in key order; see Writable Settings)
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
-- `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_durable"` means the value is saved and in effect but its durability is not confirmed, and with `code:"applied_not_saved"` that a restrictive value is in effect but was not saved, so a restart loads the old value (see Writable Settings)
+- `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_saved"` means a restrictive value is in effect but was not saved, so a restart loads the old value (see Writable Settings)
 
 #### Policy Messages
 
@@ -755,20 +755,29 @@ would change nothing in the signer.
 |---|---|---|
 | Saved | `success:true`; in effect from before the save | `success:true`; in effect once the save returns |
 | Save fails before the new file replaces the old one | `success:false`, `code:"applied_not_saved"`: in effect now, never reset to the old value, but not saved, so a restart loads the old value | `success:false`, no result-local code: nothing changed, the setting keeps the value in effect |
-| File replaced, directory sync fails | `success:false`, `code:"applied_not_durable"`: in effect, and the new file is what the next start loads, but its durability is not confirmed | the same; the value takes effect as the save returns and is never reset to the old value |
+
+Once the new file has replaced the old one the save has succeeded. The
+directory flush that follows the rename is best effort: a failed flush does
+not show that the change missed the disk, so the signer claims neither way.
+It writes one warning to its log, naming the setting and the flush error
+(it points at a failing disk), and answers success; nothing is sent to the
+client or written to the audit log. This holds for `theme` too, whose save
+of root `config.yaml` goes through the same durable write.
 
 A setting answered `applied_not_saved` is unsaved: the signer holds it, in
 memory only, and reports it in `admin_settings` as `unsaved_settings` until
 a save of that setting succeeds, with any value, after which memory and file
-agree again. An `applied_not_durable` save is not unsaved (its file is in
-place) and clears the entry too. Nothing else clears it: a refused request, a
+agree again. Nothing else clears it: a refused request, a
 permissive change whose save fails (memory keeps the restrictive value), and
 a retry whose save fails again (answered `applied_not_saved` once more) all
 leave it. A restart loads the saved value, so the set starts empty.
 
-The two in-effect failures each write one `SETTING_NOT_DURABLE` audit entry
-(see [ARCH_SECURITY.md](ARCH_SECURITY.md)), the only durable trace of a
-change a power loss or restart can undo.
+Every save that fails, either kind, writes one `SETTING_SAVE_ERROR` audit
+entry (see [ARCH_SECURITY.md](ARCH_SECURITY.md)) with the setting, the value
+and the cause, and whether the value is in effect anyway: for
+`applied_not_saved` it is the only durable trace of a change a restart
+undoes. A request refused before any save is attempted (a bad value, a
+headless-mode refusal, an unknown setting) writes none.
 
 An admin client re-reads `get_admin_settings` after any
 `update_admin_setting_result`, a failed one included, to show the state the
@@ -837,11 +846,9 @@ Consumers should branch on message `type` and `code` first, and use `error` for 
 
 Specific admin result messages may define additional stable result-local codes,
 including `key_type_in_use` for template disable/removal or compiled-provider disable,
-`restore_rate_limited` for managed restore preview/restore throttling,
-`applied_not_durable` for a setting change that is in effect but whose
-directory sync failed, and `applied_not_saved` for a restrictive setting
-change that is in effect but whose save failed before its file replaced the
-old one. The Go
+`restore_rate_limited` for managed restore preview/restore throttling, and
+`applied_not_saved` for a restrictive setting change that is in effect but
+whose save failed before its file replaced the old one. The Go
 source of truth for these result-local codes is `internal/protocol`, except the
 policy result codes (for example `policy_snapshot_changed`, `policy_unavailable`,
 and `identity_locked`), which `internal/signerapp/policyapply` and
@@ -1295,14 +1302,12 @@ panel's width, so the panel is never taller with it. The row of an unsaved
 setting adds "(unsaved; Enter retries the save)": Enter on it re-sends the
 value in effect, which the signer takes as a retry of the save, instead of
 toggling it. To turn the setting back, retry until the save succeeds, then
-toggle. While the panel is shown, the status line also carries the last
-in-effect result, cut to the room the line leaves so it stays one row: the
-signer's reason a value was not saved (`applied_not_saved`), or, for a saved
-value whose durability is unconfirmed (`applied_not_durable`, which is not
-unsaved), a warning naming the setting in words that say it is in effect. A
-later successful update of the same setting and a new authenticated session
-clear either; a settings re-read that no longer lists the setting unsaved
-clears the `applied_not_saved` reason.
+toggle. While the panel is shown, the status line also carries the signer's
+reason for the last `applied_not_saved` result, cut to the room the line
+leaves so it stays one row, and left out when that room is under 30 columns
+(too narrow to name the setting). A later successful update of the same
+setting, a new authenticated session, and a settings re-read that no longer
+lists the setting unsaved clear it.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

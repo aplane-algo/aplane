@@ -62,9 +62,9 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 		t.Fatal("production audit does not satisfy policy and ASA set mutation probes")
 	}
 	if _, ok := audit.(interface {
-		LogSettingNotDurableContext(adminserver.SessionContext, string, string, string)
+		LogSettingSaveErrorContext(adminserver.SessionContext, string, string, bool, string)
 	}); !ok {
-		t.Fatal("production audit does not satisfy the setting durability probe")
+		t.Fatal("production audit does not satisfy the setting save error probe")
 	}
 }
 

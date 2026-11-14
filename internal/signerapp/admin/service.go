@@ -47,6 +47,8 @@ type Service struct {
 	ASAChain ASAChain
 	// Now is the clock for ASA set changes; nil is time.Now.
 	Now func() time.Time
+	// Warnf logs an operator-facing warning; nil drops it.
+	Warnf func(format string, args ...any)
 }
 
 var detectPrimaryOutboundIPv4 = primaryOutboundIPv4
@@ -250,12 +252,13 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	case saveErr == nil || errors.Is(saveErr, fsutil.ErrPublishedNotDurable):
 		// The new file is in place and is what the next start loads, so
 		// memory follows it (a restrictive value already does) and is no
-		// longer ahead of it.
+		// longer ahead of it. The directory flush after the rename is best
+		// effort: its failure does not say the change missed the disk, so
+		// it is a success, logged because it points at a failing disk.
 		publish()
 		icfg.SetUnsaved(req.Key, false)
-		if saveErr != nil {
-			return protocol.WithCode(protocol.ResultCodeAppliedNotDurable,
-				fmt.Errorf("%s is set to %v and in effect, but its durability is not confirmed: %w", req.Key, saveValue, saveErr))
+		if saveErr != nil && s.Warnf != nil {
+			s.Warnf("setting %s saved, but its directory flush failed: %v", req.Key, saveErr)
 		}
 		return nil
 	case restrictive:
@@ -264,9 +267,9 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		// signer reports the setting unsaved until a save of it succeeds.
 		icfg.SetUnsaved(req.Key, true)
 		return protocol.WithCode(protocol.ResultCodeAppliedNotSaved,
-			fmt.Errorf("%s is set to %v and in effect now, but it was not saved, so a restart loads the old value: %w", req.Key, saveValue, saveErr))
+			&adminproto.SettingSaveError{Key: req.Key, Value: fmt.Sprint(saveValue), InEffect: true, Err: saveErr})
 	default:
-		return fmt.Errorf("failed to save config.yaml; %s is unchanged: %w", req.Key, saveErr)
+		return &adminproto.SettingSaveError{Key: req.Key, Value: fmt.Sprint(saveValue), Err: saveErr}
 	}
 }
 

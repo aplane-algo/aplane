@@ -332,6 +332,59 @@ func TestPassCutByALockPublishesNothing(t *testing.T) {
 	}
 }
 
+// A lock that refuses the key use of the last account's derivation, after
+// that account's identity and chain reads, cuts the pass as one at the
+// identity read does: the pass publishes nothing and the last complete pass's
+// status stands. The deriver once turned the refusal into a quiet stop the
+// pass did not hear of, so the half-filled report was published.
+func TestPassCutAtADerivationPublishesNothing(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	node.set("", 130)
+	var armed atomic.Bool
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	last := b
+	if b.String() < a.String() {
+		last = a
+	}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/v2/accounts/"+last.String() && armed.CompareAndSwap(true, false) {
+				// The lock's first step, after the last account's identity
+				// read and before its derivations.
+				ir.SetRecovery()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+	server.fillStageTables(context.Background(), ir)
+	before := ir.RotatingAccountStatuses()
+	if len(before) != 2 {
+		t.Fatalf("statuses after a full pass = %+v, want both accounts", before)
+	}
+
+	// A longer lookahead gives the next pass derivations to do.
+	server.config.Rotating.StageHorizon = 5
+	node.set("", 150)
+	armed.Store(true)
+	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
+		t.Fatalf("wait after the cut pass = %v, want idle", wait)
+	}
+	if armed.Load() {
+		t.Fatal("the cut never happened")
+	}
+	if after := ir.RotatingAccountStatuses(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("statuses after the pass cut at a derivation = %+v, want the last complete pass's %+v", after, before)
+	}
+}
+
 // syncBuffer is a log destination tests read while other goroutines write.
 type syncBuffer struct {
 	mu  sync.Mutex

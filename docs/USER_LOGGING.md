@@ -209,7 +209,7 @@ LogicSig argument values.
 | `SESSION_CONNECTED` | IPC admin session established |
 | `SESSION_DISCONNECTED` | Session ended |
 | `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
-| `SETTING_NOT_DURABLE` | An admin setting change is in effect but its save did not complete; `result_code` is `applied_not_durable` (saved, durability not confirmed) or `applied_not_saved` (not saved, so a restart loads the old value), and `reason` names the setting and the value in effect. Other setting changes are not audited |
+| `SETTING_SAVE_ERROR` | An admin setting change could not be saved; `reason` names the setting, the value, `in_effect=true` (`outcome` `applied`: a restrictive value left in effect, which a restart reverts) or `in_effect=false` (`outcome` `failed`: nothing changed), and the cause. Refused requests and other setting changes are not audited |
 | `CLIENT_ENROLLMENT_REQUESTED` | A client asked to be enrolled; the request waits for the operator (principal `client:<fingerprint>`, `client_label` carries the requested label) |
 | `CLIENT_ENROLLED` | Client SSH key enrolled by the operator, by approving its request or importing the key (`client_label` carries its display label; `remote_addr` is empty for an import) |
 | `CLIENT_ENROLLMENT_REJECTED` | The operator rejected a waiting enrollment request |

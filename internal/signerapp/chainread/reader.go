@@ -85,7 +85,7 @@ func (r Reader) ReadAsset(ctx context.Context, genesisHash []byte, assetID uint6
 	}
 	asset, err := client.GetAssetByID(assetID).Do(ctx)
 	if err != nil {
-		return models.AssetParams{}, fmt.Errorf("%w: read asset %d: %v", ErrUnavailable, assetID, err)
+		return models.AssetParams{}, fmt.Errorf("%w: read asset %d: %w", ErrUnavailable, assetID, err)
 	}
 	if asset.Index != assetID {
 		return models.AssetParams{}, fmt.Errorf("%w: node returned asset %d for asset %d", ErrUnavailable, asset.Index, assetID)

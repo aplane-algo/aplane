@@ -99,33 +99,36 @@ func TestCosignerReferenceAuditIncludesWitnessKeyID(t *testing.T) {
 	}
 }
 
-// A setting in effect without a completed save is the only durable trace of
-// that change, so the entry names the session, the setting, the result code
-// and the error.
-func TestSettingNotDurableAuditNamesTheSettingAndOutcome(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "audit.log")
-	a, err := NewAuditLogger(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a.LogSettingNotDurableContext(adminserver.SessionContext{
-		SessionID: "admin-7", Transport: "ipc", AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
-	}, "user_auto_approve", "applied_not_saved", "user_auto_approve is set to false and in effect now, but it was not saved")
-	if err := a.Close(); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var entry AuditEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		t.Fatal(err)
-	}
-	if entry.Event != AuditSettingNotDurable || entry.Outcome != "applied" || entry.ResultCode != "applied_not_saved" ||
-		entry.AdminSessionID != "admin-7" || entry.Principal != "system:product-admin" ||
-		entry.Reason != "setting=user_auto_approve: user_auto_approve is set to false and in effect now, but it was not saved" {
-		t.Fatalf("audit entry = %+v", entry)
+// A failed setting save is recorded with the session, the setting, the value
+// it tried to save, the cause, and whether that value is in effect anyway
+// (outcome "applied") or nothing changed (outcome "failed").
+func TestSettingSaveErrorAuditNamesTheSettingValueAndWhetherInEffect(t *testing.T) {
+	for _, inEffect := range []bool{true, false} {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		a, err := NewAuditLogger(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.LogSettingSaveErrorContext(adminserver.SessionContext{
+			SessionID: "admin-7", Transport: "ipc", AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
+		}, "user_auto_approve", "false", inEffect, "disk full")
+		if err := a.Close(); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entry AuditEntry
+		if err := json.Unmarshal(data, &entry); err != nil {
+			t.Fatal(err)
+		}
+		outcome := map[bool]string{true: "applied", false: "failed"}[inEffect]
+		reason := fmt.Sprintf("setting=user_auto_approve value=false in_effect=%t: disk full", inEffect)
+		if entry.Event != AuditSettingSaveError || entry.Outcome != outcome || entry.Reason != reason ||
+			entry.AdminSessionID != "admin-7" || entry.Principal != "system:product-admin" {
+			t.Fatalf("in effect %v: audit entry = %+v", inEffect, entry)
+		}
 	}
 }
 

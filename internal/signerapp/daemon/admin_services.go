@@ -770,7 +770,7 @@ func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminserver.Sessi
 }
 
 func (s signerAdminServices) adminApp() signeradmin.Service {
-	return signeradmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime(), ASAChain: signerASAChain{signer: s.signer}}
+	return signeradmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime(), ASAChain: signerASAChain{signer: s.signer}, Warnf: logWarnf}
 }
 
 // signerASAChain is the node's network mapping and its genesis-checked algod

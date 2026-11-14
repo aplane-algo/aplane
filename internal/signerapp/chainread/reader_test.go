@@ -154,10 +154,10 @@ func TestReadAccountFailsClosed(t *testing.T) {
 // A read cut short by its context still reports ErrUnavailable, with the
 // context's error in the chain, so a caller can tell a cancelled read (a
 // rotating sign answers a lock with the locked error) from the node's own
-// failure. Both the genesis check and the account read are covered. The
-// context's error was once formatted into the text and lost.
+// failure. The genesis check, the account read and the asset read are
+// covered. The context's error was once formatted into the text and lost.
 func TestReadAccountCutByItsContextKeepsTheContextError(t *testing.T) {
-	for _, at := range []string{"/versions", "/v2/accounts/"} {
+	for _, at := range []string{"/versions", "/v2/accounts/", "/v2/assets/"} {
 		t.Run(at, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -172,7 +172,12 @@ func TestReadAccountCutByItsContextKeepsTheContextError(t *testing.T) {
 				served.Config.Handler.ServeHTTP(w, r)
 			}))
 			t.Cleanup(srv.Close)
-			_, err := readerFor(srv).ReadAccount(ctx, testnetGenesis, account)
+			var err error
+			if at == "/v2/assets/" {
+				_, err = readerFor(srv).ReadAsset(ctx, testnetGenesis, 42)
+			} else {
+				_, err = readerFor(srv).ReadAccount(ctx, testnetGenesis, account)
+			}
 			if !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.Canceled) {
 				t.Fatalf("err = %v, want ErrUnavailable wrapping context.Canceled", err)
 			}

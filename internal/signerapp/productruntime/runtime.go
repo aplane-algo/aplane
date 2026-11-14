@@ -1201,6 +1201,16 @@ func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, c
 	return ctx, func() { stop(); cancel() }
 }
 
+// cancelKeyUses cancels, under keyUseMu, the contexts of the key uses and
+// lock-cancel contexts handed out, without waiting for them.
+func (ir *Runtime) cancelKeyUses() {
+	ir.keyUseMu.Lock()
+	if ir.keyUseCancel != nil {
+		ir.keyUseCancel()
+	}
+	ir.keyUseMu.Unlock()
+}
+
 // drainKeyUsers cancels every key user's context and waits for them to
 // release their key material. Its caller has already made KeyUseContext
 // refuse new users, so none can register meanwhile: a lock runs it inside the
@@ -1210,11 +1220,7 @@ func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, c
 // Only EndKeyUses bounds the wait; drainKeyUsers reports whether every user had
 // released by the time ctx ended.
 func (ir *Runtime) drainKeyUsers(ctx context.Context, warning string) bool {
-	ir.keyUseMu.Lock()
-	if ir.keyUseCancel != nil {
-		ir.keyUseCancel()
-	}
-	ir.keyUseMu.Unlock()
+	ir.cancelKeyUses()
 
 	done := make(chan struct{})
 	go func() {
@@ -1473,13 +1479,8 @@ func (ir *Runtime) refuseKeyUses() {
 // or reclaimed by the operating system at the process exit that follows.
 func (ir *Runtime) Destroy() {
 	ir.refuseKeyUses()
-	// Cancel the key uses and lock-cancel contexts already handed out, as
-	// drainKeyUsers does first, without waiting for them.
-	ir.keyUseMu.Lock()
-	if ir.keyUseCancel != nil {
-		ir.keyUseCancel()
-	}
-	ir.keyUseMu.Unlock()
+	// As drainKeyUsers does first, without waiting for them.
+	ir.cancelKeyUses()
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
 	if ir.keySession != nil {

@@ -386,12 +386,11 @@ type adminPanelState struct {
 	settingWarning settingResultWarning
 }
 
-// settingResultWarning is what an update result coded applied_not_saved
-// (text is the signer's reason) or applied_not_durable left to say about key.
-// A later successful result for key and a new session clear either kind; a
-// settings re-read in which key is no longer unsaved clears applied_not_saved.
+// settingResultWarning is the signer's reason (text) an update result coded
+// applied_not_saved gave for key. A later successful result for key, a new
+// session, and a settings re-read in which key is no longer unsaved clear it.
 type settingResultWarning struct {
-	key, code, text string
+	key, text string
 }
 
 // clientsState is the enrolled-clients screen and its revocation dialog.

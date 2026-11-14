@@ -73,3 +73,35 @@ func TestHoldFailsOnlyTheHeldWrite(t *testing.T) {
 		t.Fatalf("a later matching write = %v, want it to go through", later)
 	}
 }
+
+// When the write never reaches the held step, Hold fails the test and its
+// cleanup returns without waiting for an update that may never return. The
+// cleanup once waited on the update's result forever.
+func TestHoldCleanupDoesNotWaitForAStuckUpdate(t *testing.T) {
+	defer func(d time.Duration) { reachTimeout = d }(reachTimeout)
+	reachTimeout = 50 * time.Millisecond
+	tb := &fatalTB{TB: t, fatal: make(chan string, 1)}
+	stuck := make(chan struct{})
+	defer close(stuck)
+	go func() {
+		Hold(tb, fsutil.OpRename, "/never/written", func() error { <-stuck; return nil })
+	}()
+	select {
+	case msg := <-tb.fatal:
+		if !strings.Contains(msg, "never reached the held step") {
+			t.Fatalf("fatal = %q", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Hold did not fail for a write that never reached the held step")
+	}
+	done := make(chan struct{})
+	go func() {
+		tb.runCleanups()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Hold's cleanup waits for an update that never returns")
+	}
+}

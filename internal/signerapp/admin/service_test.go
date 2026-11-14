@@ -6,6 +6,7 @@ package admin
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -652,8 +653,9 @@ func TestUpdateAdminSettingFailureBeforeRename(t *testing.T) {
 
 				err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 				fsutil.TestHook = nil
-				if err == nil || errors.Is(err, fsutil.ErrPublishedNotDurable) || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotDurable {
-					t.Fatalf("UpdateAdminSetting error = %v, want a save failure before the rename", err)
+				var saveErr *adminproto.SettingSaveError
+				if !errors.As(err, &saveErr) || saveErr.Key != c.key || saveErr.InEffect != c.restrictive {
+					t.Fatalf("UpdateAdminSetting error = %v, want a save error for %s, in effect %v", err, c.key, c.restrictive)
 				}
 				if c.restrictive {
 					if protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved ||
@@ -700,21 +702,26 @@ func TestUnchangedValueWhoseSaveFailsReportsNothingInEffect(t *testing.T) {
 	}
 }
 
-// A save that fails after its rename (the directory sync) has put the new
-// file in place, which is what the next start loads. The new value then takes
-// effect, in either direction, the error says its durability is unconfirmed,
-// and memory never goes back to a value the file no longer holds.
-func TestUpdateAdminSettingFailureAfterRenamePublishesTheSavedValue(t *testing.T) {
+// A save whose directory flush fails after its rename has put the new file in
+// place, which is what the next start loads. The flush is best effort: a
+// failed one does not say the change missed the disk, so the update is a
+// success, in either direction, theme (root config.yaml) included, and the
+// signer logs one warning naming the setting and the flush error.
+func TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning(t *testing.T) {
 	for _, c := range settingChanges() {
 		t.Run(c.name(), func(t *testing.T) {
 			svc, ir, deps := startSettingChange(t, c)
+			var warnings []string
+			svc.Warnf = func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
 			failDurableWriteAt(t, fsutil.OpDirSync, filepath.Dir(settingTarget(deps.dataDir, c.key)))
 
 			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 			fsutil.TestHook = nil
-			if !errors.Is(err, fsutil.ErrPublishedNotDurable) || protocol.CodeForError(err) != protocol.ResultCodeAppliedNotDurable ||
-				!strings.Contains(err.Error(), "in effect") || !strings.Contains(err.Error(), "durability is not confirmed") {
-				t.Fatalf("UpdateAdminSetting error = %v (code %q), want %s: in effect with durability unconfirmed", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotDurable)
+			if err != nil {
+				t.Fatalf("UpdateAdminSetting error = %v, want success", err)
+			}
+			if len(warnings) != 1 || !strings.Contains(warnings[0], c.key) || !strings.Contains(warnings[0], "injected dir-sync failure") {
+				t.Fatalf("warnings = %q, want one naming %s and the flush error", warnings, c.key)
 			}
 			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the unsynced save")
 			// The next change goes through as usual.
@@ -778,8 +785,8 @@ func TestUnsavedSettingIsReportedUntilASaveSucceeds(t *testing.T) {
 				fsutil.TestHook = nil
 				if last == fsutil.OpDirSync {
 					failDurableWriteAt(t, fsutil.OpDirSync, filepath.Dir(target))
-					if err := update(c.to); protocol.CodeForError(err) != protocol.ResultCodeAppliedNotDurable {
-						t.Fatalf("unsynced retry: error = %v, want %s", err, protocol.ResultCodeAppliedNotDurable)
+					if err := update(c.to); err != nil {
+						t.Fatalf("unsynced retry: error = %v, want success", err)
 					}
 					fsutil.TestHook = nil
 				} else if err := update(c.to); err != nil {

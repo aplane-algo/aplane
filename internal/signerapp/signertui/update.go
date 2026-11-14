@@ -646,7 +646,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			initStyles()
 		}
 		m.admin.settings = &msg.Settings
-		if w := m.admin.settingWarning; w.code == protocol.ResultCodeAppliedNotSaved && !slices.Contains(msg.Settings.UnsavedSettings, w.key) {
+		if w := m.admin.settingWarning; w.key != "" && !slices.Contains(msg.Settings.UnsavedSettings, w.key) {
 			// Saved since, perhaps by another admin client.
 			m.admin.settingWarning = settingResultWarning{}
 		}
@@ -655,30 +655,24 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
-		// In effect without a completed save is not a failure. The panel
-		// draws its unsaved warning from the settings re-read below; the
-		// status line says why the value was not saved, or that a saved
-		// value's durability is unconfirmed, naming the setting rather than
-		// the echoed request value, which can differ from what the signer
-		// holds.
+		// A value in effect but not saved is not a failure. The panel draws
+		// its unsaved warning from the settings re-read below; the status
+		// line gives the signer's reason.
 		switch {
 		case msg.Code == protocol.ResultCodeAppliedNotSaved:
 			reason := msg.Error
 			if reason == "" {
 				reason = msg.Key + " is in effect but not saved"
 			}
-			m.admin.settingWarning = settingResultWarning{key: msg.Key, code: msg.Code, text: reason}
-		case msg.Code == protocol.ResultCodeAppliedNotDurable:
-			m.admin.settingWarning = settingResultWarning{key: msg.Key, code: msg.Code,
-				text: msg.Key + " is in effect; its durability is not confirmed"}
+			m.admin.settingWarning = settingResultWarning{key: msg.Key, text: reason}
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
 		case msg.Key == m.admin.settingWarning.key:
 			m.admin.settingWarning = settingResultWarning{}
 		}
 		// Re-read the settings either way: a failed update can still be in
-		// effect (saved, its durability unconfirmed), so the panel shows what
-		// the signer holds rather than what it showed before.
+		// effect (a restrictive value not saved), so the panel shows what the
+		// signer holds rather than what it showed before.
 		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd())
 
 	case PolicyLoadedMsg:

@@ -60,7 +60,7 @@ const (
 	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
 	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
-	AuditSettingNotDurable                AuditEventType = "SETTING_NOT_DURABLE"
+	AuditSettingSaveError                 AuditEventType = "SETTING_SAVE_ERROR"
 	AuditClientEnrollmentRequested        AuditEventType = "CLIENT_ENROLLMENT_REQUESTED"
 	AuditClientEnrolled                   AuditEventType = "CLIENT_ENROLLED"
 	AuditClientEnrollmentRejected         AuditEventType = "CLIENT_ENROLLMENT_REJECTED"
@@ -942,19 +942,20 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 	a.Log(entry)
 }
 
-// LogSettingNotDurableContext records an admin setting change that is in
-// effect but whose save did not complete: code is applied_not_durable (the
-// new file is in place, its directory sync failed) or applied_not_saved (the
-// old file is still in place, so a restart loads the old value). Nothing else
-// durable records such a change, so after a power loss this entry is the
-// trace of it. reason is the result's error, which names the setting and the
-// value now in effect.
-func (a *AuditLogger) LogSettingNotDurableContext(ctx adminserver.SessionContext, key, code, reason string) {
+// LogSettingSaveErrorContext records an admin setting update whose save
+// failed: the setting, the value it tried to save, and the cause. inEffect
+// reports whether that value is in effect anyway (a restrictive value
+// published before the save, which a restart reverts; nothing else durable
+// records it) or nothing changed. The outcome says the same: "applied" or
+// "failed".
+func (a *AuditLogger) LogSettingSaveErrorContext(ctx adminserver.SessionContext, key, value string, inEffect bool, cause string) {
 	entry := sessionAuditFields(ctx)
-	entry.Event = AuditSettingNotDurable
-	entry.Outcome = "applied"
-	entry.ResultCode = code
-	entry.Reason = fmt.Sprintf("setting=%s: %s", key, reason)
+	entry.Event = AuditSettingSaveError
+	entry.Outcome = "failed"
+	if inEffect {
+		entry.Outcome = "applied"
+	}
+	entry.Reason = fmt.Sprintf("setting=%s value=%s in_effect=%t: %s", key, value, inEffect, cause)
 	a.Log(entry)
 }
 

@@ -4,6 +4,7 @@
 package adminserver
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/adminproto"
 
@@ -102,14 +103,15 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 	}
 	request := adminproto.UpdateAdminSettingRequest{Key: msg.Key, Value: msg.Value}
 	err := s.settingsServices.UpdateAdminSetting(request)
-	// A change in effect whose save did not complete leaves no durable trace
-	// of its own: after a power loss the old value comes back. The audit log
-	// records it.
-	if code := protocol.CodeForError(err); code == protocol.ResultCodeAppliedNotDurable || code == protocol.ResultCodeAppliedNotSaved {
+	// Every failed save is audited, a value left in effect without one (which
+	// a restart reverts, and which nothing else durable records) included. A
+	// request refused before any save is not a save error.
+	var saveErr *adminproto.SettingSaveError
+	if errors.As(err, &saveErr) {
 		if audit, ok := s.audit.(interface {
-			LogSettingNotDurableContext(SessionContext, string, string, string)
+			LogSettingSaveErrorContext(SessionContext, string, string, bool, string)
 		}); ok {
-			audit.LogSettingNotDurableContext(s.SessionContext(), msg.Key, code, err.Error())
+			audit.LogSettingSaveErrorContext(s.SessionContext(), saveErr.Key, saveErr.Value, saveErr.InEffect, saveErr.Err.Error())
 		}
 	}
 	_ = s.WriteJSON(ProtocolUpdateAdminSettingResultMessage(msg.ID, request, err))
