@@ -7,6 +7,22 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## JSON transaction files must state what they decode to
+
+- **`sign <file>` and JS `sign()` compare a JSON transaction with what was
+  decoded from it.** The SDK's decoder accepted a 31-byte `votekey` and
+  padded it with a zero (the account then can't vote), turned a 16-byte `am`
+  into a different hash, cut a 33-byte key, rounded `9007199254740993.0`,
+  and read `1e3`, `"5"` and a list of byte numbers without a word. Each
+  transaction in a JSON object or array is now compared, field by field,
+  with the SDK's JSON encoding of the decoded transaction, and a difference
+  is refused, naming the transaction and the field. Addresses may still be
+  base32, so a `txnjson/` file reads back. A field may be given empty (`0`,
+  `false`, `""`, `[]`, `{}`) where the encoding leaves it out, but a zero
+  address or all-zero hash written out is refused. Unknown keys were
+  already refused by the decoder. The `{"txn": [...]}` and msgpack forms are
+  unchanged.
+
 ## Write mode keeps every digit
 
 - **A `txnjson/` file states the transaction's numbers exactly.** Write mode

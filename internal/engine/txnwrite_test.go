@@ -17,6 +17,8 @@ import (
 	sdkjson "github.com/algorand/go-algorand-sdk/v2/encoding/json"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/algo"
 )
 
 func TestWriteTransactionJSONDisabledReturnsEmpty(t *testing.T) {
@@ -401,4 +403,81 @@ func txnwriteLookup(doc map[string]interface{}, path string) interface{} {
 		value = object[key]
 	}
 	return value
+}
+
+func TestWriteTransactionJSONFileReadsBackAsTheSameTransaction(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	header := types.Header{
+		Sender:      testAddrToAddress(1),
+		Fee:         types.MicroAlgos(math.MaxUint64),
+		FirstValid:  types.Round(10_000_000_000_000_001),
+		LastValid:   types.Round(math.MaxUint64),
+		Note:        []byte("note"),
+		GenesisID:   "testnet-v1.0",
+		GenesisHash: [32]byte{1, 2, 3},
+		Group:       [32]byte{4},
+		Lease:       [32]byte{5},
+		RekeyTo:     testAddrToAddress(2),
+	}
+	var keyreg types.KeyregTxnFields
+	for i := range keyreg.VotePK {
+		keyreg.VotePK[i], keyreg.SelectionPK[i] = byte(i+1), byte(i+2)
+	}
+	keyreg.StateProofPK[63] = 9
+	keyreg.VoteFirst, keyreg.VoteLast, keyreg.VoteKeyDilution = 1, 3_000_000, 1733
+
+	txns := map[string]types.Transaction{
+		"payment": {Type: types.PaymentTx, Header: header, PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: testAddrToAddress(3), Amount: math.MaxUint64, CloseRemainderTo: testAddrToAddress(4),
+		}},
+		"keyreg": {Type: types.KeyRegistrationTx, Header: header, KeyregTxnFields: keyreg},
+		"asset config": {Type: types.AssetConfigTx, Header: header, AssetConfigTxnFields: types.AssetConfigTxnFields{
+			ConfigAsset: 7,
+			AssetParams: types.AssetParams{
+				Total: math.MaxUint64, Decimals: 6, DefaultFrozen: true, UnitName: "U", AssetName: "A", URL: "u",
+				MetadataHash: [32]byte{8}, Manager: testAddrToAddress(5), Reserve: testAddrToAddress(6),
+				Freeze: testAddrToAddress(7), Clawback: testAddrToAddress(8),
+			},
+		}},
+		"asset transfer": {Type: types.AssetTransferTx, Header: header, AssetTransferTxnFields: types.AssetTransferTxnFields{
+			XferAsset: 7, AssetAmount: math.MaxUint64, AssetSender: testAddrToAddress(9),
+			AssetReceiver: testAddrToAddress(10), AssetCloseTo: testAddrToAddress(11),
+		}},
+		"asset freeze": {Type: types.AssetFreezeTx, Header: header, AssetFreezeTxnFields: types.AssetFreezeTxnFields{
+			FreezeAccount: testAddrToAddress(12), FreezeAsset: 7, AssetFrozen: true,
+		}},
+		"app call": {Type: types.ApplicationCallTx, Header: header, ApplicationFields: types.ApplicationFields{
+			ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+				ApplicationID: 9, OnCompletion: types.OptInOC, ApplicationArgs: [][]byte{{}, []byte("x")},
+				Accounts: []types.Address{testAddrToAddress(13)}, ForeignAssets: []types.AssetIndex{0, 7},
+				ForeignApps: []types.AppIndex{11}, BoxReferences: []types.BoxReference{{Name: []byte("b")}, {ForeignAppIdx: 1}},
+				LocalStateSchema: types.StateSchema{NumUint: 1}, GlobalStateSchema: types.StateSchema{NumByteSlice: 2},
+				ApprovalProgram: []byte{6, 129, 1}, ClearStateProgram: []byte{6, 129, 1}, ExtraProgramPages: 1,
+			},
+		}},
+	}
+
+	eng := &Engine{Core: &Core{WriteMode: true}}
+	for name, txn := range txns {
+		t.Run(name, func(t *testing.T) {
+			filename, err := eng.WriteTransactionJSON(txn, "READBACK")
+			if err != nil {
+				t.Fatalf("WriteTransactionJSON() error = %v", err)
+			}
+			parsed, err := algo.ParseTransactionFile(filename)
+			if err != nil {
+				data, _ := os.ReadFile(filename)
+				t.Fatalf("ParseTransactionFile() error = %v\n%s", err, data)
+			}
+			if len(parsed) != 1 || !bytes.Equal(msgpack.Encode(parsed[0]), msgpack.Encode(txn)) {
+				t.Fatalf("read back %+v, want %+v", parsed, txn)
+			}
+		})
+	}
 }

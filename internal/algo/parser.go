@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	sdkjson "github.com/algorand/go-algorand-sdk/v2/encoding/json"
@@ -85,20 +87,219 @@ func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
 		return txns, nil
 	}
 
-	var txnArray []types.Transaction
-	if err := sdkjson.Decode(jsonData, &txnArray); err == nil {
-		if len(txnArray) == 0 {
+	var txns []types.Transaction
+	if jsonData[0] == '[' {
+		if err := sdkjson.Decode(jsonData, &txns); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON: not a valid transaction array: %w", err)
+		}
+		if len(txns) == 0 {
 			return nil, fmt.Errorf("empty transaction array")
 		}
-		return txnArray, nil
+	} else {
+		var txn types.Transaction
+		if err := sdkjson.Decode(jsonData, &txn); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON: not a valid transaction: %w", err)
+		}
+		txns = []types.Transaction{txn}
 	}
-
-	var txn types.Transaction
-	if err := sdkjson.Decode(jsonData, &txn); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: not a valid transaction or transaction array: %w", err)
+	if err := checkJSONStatesDecoded(jsonData, txns); err != nil {
+		return nil, err
 	}
+	return txns, nil
+}
 
-	return []types.Transaction{txn}, nil
+// checkJSONStatesDecoded compares a JSON transaction file, value by value,
+// with the SDK's own JSON encoding of the transactions decoded from it. The
+// decoder pads or cuts a fixed-size byte field to its size, reads 1e3, 2.0
+// and the string "5" as integers and rounds a fraction past 2^53, so a file
+// could show one transaction and carry another. A difference is refused.
+//
+// Three things may differ from the encoding: an address may be written in
+// base32, as write mode writes it; base64 is compared by the bytes it
+// decodes to; and a field the encoding leaves out may be given empty, as 0,
+// false, "", [] or an object of such fields.
+func checkJSONStatesDecoded(jsonData []byte, txns []types.Transaction) error {
+	given, err := decodeJSONExactly(jsonData)
+	if err != nil {
+		return fmt.Errorf("failed to parse JSON: %w", err)
+	}
+	entries, isArray := given.([]interface{})
+	if !isArray {
+		entries = []interface{}{given}
+	}
+	if len(entries) != len(txns) {
+		return fmt.Errorf("the file holds %d transaction(s) but %d decoded", len(entries), len(txns))
+	}
+	for i, txn := range txns {
+		decoded, err := decodeJSONExactly(sdkjson.Encode(txn))
+		if err != nil {
+			return fmt.Errorf("transaction %d: re-encoding: %w", i+1, err)
+		}
+		if err := sameJSONValue("", entries[i], decoded); err != nil {
+			return fmt.Errorf("transaction %d: %w", i+1, err)
+		}
+	}
+	return nil
+}
+
+// decodeJSONExactly decodes one JSON document with every number kept as the
+// text it was written as.
+func decodeJSONExactly(data []byte) (interface{}, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// sameJSONValue reports the first place where a value from the file differs
+// from the value the transaction encodes there.
+func sameJSONValue(path string, given, decoded interface{}) error {
+	switch g := given.(type) {
+	case map[string]interface{}:
+		d, ok := decoded.(map[string]interface{})
+		if !ok {
+			return kindMismatch(path, given, decoded)
+		}
+		for _, key := range slices.Sorted(maps.Keys(g)) {
+			field := joinJSONPath(path, key)
+			value, present := d[key]
+			if !present {
+				// The encoding leaves out a field at its zero value.
+				switch g[key].(type) {
+				case map[string]interface{}:
+					value = map[string]interface{}{}
+				case json.Number:
+					value = json.Number("0")
+				default:
+					if !isEmptyJSONValue(g[key]) {
+						return fmt.Errorf("field %q decodes to no value: leave it out", field)
+					}
+					continue
+				}
+			}
+			if err := sameJSONValue(field, g[key], value); err != nil {
+				return err
+			}
+		}
+		for _, key := range slices.Sorted(maps.Keys(d)) {
+			if _, present := g[key]; !present {
+				return fmt.Errorf("field %q is in the decoded transaction but not in the file", joinJSONPath(path, key))
+			}
+		}
+		return nil
+	case []interface{}:
+		d, ok := decoded.([]interface{})
+		if !ok {
+			return kindMismatch(path, given, decoded)
+		}
+		if len(g) != len(d) {
+			return fmt.Errorf("field %q holds %d entries but decodes to %d", path, len(g), len(d))
+		}
+		for i := range g {
+			if err := sameJSONValue(fmt.Sprintf("%s[%d]", path, i), g[i], d[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	case json.Number:
+		d, ok := decoded.(json.Number)
+		if !ok {
+			return kindMismatch(path, given, decoded)
+		}
+		if strings.Trim(string(g), "0123456789") != "" {
+			return fmt.Errorf("field %q is %s: write a whole number in plain digits", path, g)
+		}
+		if g != d {
+			return fmt.Errorf("field %q is %s but decodes to %s", path, g, d)
+		}
+		return nil
+	case string:
+		d, ok := decoded.(string)
+		if !ok {
+			return kindMismatch(path, given, decoded)
+		}
+		if g == d {
+			return nil
+		}
+		return sameBytes(path, g, d)
+	case bool:
+		d, ok := decoded.(bool)
+		if !ok {
+			return kindMismatch(path, given, decoded)
+		}
+		if g != d {
+			return fmt.Errorf("field %q is %t but decodes to %t", path, g, d)
+		}
+		return nil
+	default:
+		return fmt.Errorf("field %q has no value", path)
+	}
+}
+
+// sameBytes compares a string from the file with the base64 the transaction
+// encodes, by the bytes each stands for. The file may give an address in
+// base32.
+func sameBytes(path, given, decoded string) error {
+	want, err := base64.StdEncoding.DecodeString(decoded)
+	if err != nil {
+		return fmt.Errorf("field %q is %q but decodes to %q", path, given, decoded)
+	}
+	var have []byte
+	if address, err := types.DecodeAddress(given); err == nil {
+		have = address[:]
+	} else if have, err = base64.StdEncoding.DecodeString(given); err != nil {
+		return fmt.Errorf("field %q is %q but decodes to %q", path, given, decoded)
+	}
+	if len(have) != len(want) {
+		return fmt.Errorf("field %q holds %d bytes but the field takes %d", path, len(have), len(want))
+	}
+	if !bytes.Equal(have, want) {
+		return fmt.Errorf("field %q is %q but decodes to %q", path, given, decoded)
+	}
+	return nil
+}
+
+func joinJSONPath(path, key string) string {
+	if path == "" {
+		return key
+	}
+	return path + "." + key
+}
+
+func isEmptyJSONValue(v interface{}) bool {
+	switch v := v.(type) {
+	case string:
+		return v == ""
+	case bool:
+		return !v
+	case []interface{}:
+		return len(v) == 0
+	}
+	return false
+}
+
+func kindMismatch(path string, given, decoded interface{}) error {
+	return fmt.Errorf("field %q is %s in the file but %s in the decoded transaction",
+		path, jsonKind(given), jsonKind(decoded))
+}
+
+func jsonKind(v interface{}) string {
+	switch v.(type) {
+	case map[string]interface{}:
+		return "an object"
+	case []interface{}:
+		return "an array"
+	case json.Number:
+		return "a number"
+	case string:
+		return "a string"
+	case bool:
+		return "true or false"
+	}
+	return "null"
 }
 
 // txnListWrapper recognises the `{"txn": [...]}` file form. The object may

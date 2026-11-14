@@ -4,6 +4,7 @@
 package algo
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -311,5 +312,141 @@ func TestParseTransactionsRefusesWhatADecoderWouldQuietlyDrop(t *testing.T) {
 		if txns, err := ParseTransactions([]byte(data)); err == nil {
 			t.Errorf("%s: parsed %d transaction(s), want refused", name, len(txns))
 		}
+	}
+}
+
+// parserJSONWith encodes txn as the SDK writes it and replaces or adds the
+// given top-level fields with raw JSON.
+func parserJSONWith(t *testing.T, txn types.Transaction, fields map[string]string) string {
+	t.Helper()
+	decoder := json.NewDecoder(strings.NewReader(string(sdkjson.Encode(txn))))
+	decoder.UseNumber()
+	var doc map[string]interface{}
+	if err := decoder.Decode(&doc); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	for key, raw := range fields {
+		doc[key] = json.RawMessage(raw)
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	return string(out)
+}
+
+func parserTestKeyreg(t *testing.T) types.Transaction {
+	t.Helper()
+	txn := parserTestPayment(t, 0)
+	txn.Type = types.KeyRegistrationTx
+	txn.PaymentTxnFields = types.PaymentTxnFields{}
+	for i := range txn.VotePK {
+		txn.VotePK[i] = byte(i + 1)
+		txn.SelectionPK[i] = byte(i + 101)
+	}
+	for i := range txn.StateProofPK {
+		txn.StateProofPK[i] = byte(i + 7)
+	}
+	txn.VoteFirst, txn.VoteLast, txn.VoteKeyDilution = 1, 3_000_000, 1733
+	return txn
+}
+
+func TestParseTransactionsJSONRefusesWhatTheDecoderWouldChange(t *testing.T) {
+	b64 := func(n int, first byte) string {
+		b := make([]byte, n)
+		b[0] = first
+		return `"` + base64.StdEncoding.EncodeToString(b) + `"`
+	}
+	payment := parserTestPayment(t, 1)
+	keyreg := parserTestKeyreg(t)
+	acfg := parserTestPayment(t, 0)
+	acfg.Type = types.AssetConfigTx
+	acfg.PaymentTxnFields = types.PaymentTxnFields{}
+	acfg.AssetParams.Total = 5
+
+	cases := []struct {
+		name string
+		data string
+		want []string
+	}{
+		{"31-byte vote key", parserJSONWith(t, keyreg, map[string]string{"votekey": b64(31, 9)}),
+			[]string{"transaction 1", `"votekey"`, "holds 31 bytes but the field takes 32"}},
+		{"33-byte vote key", parserJSONWith(t, keyreg, map[string]string{"votekey": b64(33, 9)}),
+			[]string{"transaction 1", `"votekey"`, "holds 33 bytes"}},
+		{"63-byte state proof key", parserJSONWith(t, keyreg, map[string]string{"sprfkey": b64(63, 9)}),
+			[]string{`"sprfkey"`, "holds 63 bytes but the field takes 64"}},
+		{"31 zero bytes for a vote key", parserJSONWith(t, keyreg, map[string]string{"votekey": `"` + base64.StdEncoding.EncodeToString(make([]byte, 31)) + `"`}),
+			[]string{`"votekey"`, "decodes to no value"}},
+		{"16-byte metadata hash", parserJSONWith(t, acfg, map[string]string{"apar": `{"am":` + b64(16, 9) + `,"t":5}`}),
+			[]string{`"apar.am"`, "holds 16 bytes but the field takes 32"}},
+		{"amount with a fraction past 2^53", parserJSONWith(t, payment, map[string]string{"amt": `9007199254740993.0`}),
+			[]string{`"amt"`, "9007199254740993.0", "plain digits"}},
+		{"amount in exponent form", parserJSONWith(t, payment, map[string]string{"amt": `1e3`}),
+			[]string{`"amt"`, "plain digits"}},
+		{"zero amount written 0.0", parserJSONWith(t, payment, map[string]string{"amt": `0.0`}),
+			[]string{`"amt"`, "plain digits"}},
+		{"amount as a string", parserJSONWith(t, payment, map[string]string{"amt": `"5"`}),
+			[]string{`"amt"`, "is a string in the file but a number"}},
+		{"genesis ID as a number", parserJSONWith(t, payment, map[string]string{"gen": `5`}),
+			[]string{`"gen"`, "is a number in the file but a string"}},
+		{"lease as a short list of numbers", parserJSONWith(t, payment, map[string]string{"lx": `[1,2,3]`}),
+			[]string{`"lx"`, "is an array in the file but a string"}},
+		{"misspelled amount", parserJSONWith(t, payment, map[string]string{"amnt": `5`}),
+			[]string{"amnt"}},
+		{"second transaction in an array", "[" + string(sdkjson.Encode(payment)) + "," +
+			parserJSONWith(t, keyreg, map[string]string{"votekey": b64(31, 9)}) + "]",
+			[]string{"transaction 2", `"votekey"`, "holds 31 bytes"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			txns, err := ParseTransactions([]byte(tc.data))
+			if err == nil {
+				t.Fatalf("parsed %d transaction(s), want refused: %s", len(txns), tc.data)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestParseTransactionsJSONReadsWhatItStates(t *testing.T) {
+	payment := parserTestPayment(t, 18446744073709551615)
+	payment.Note = []byte("note")
+	payment.Lease = [32]byte{4}
+	keyreg := parserTestKeyreg(t)
+	two := "[" + string(sdkjson.Encode(payment)) + "," + string(sdkjson.Encode(keyreg)) + "]"
+
+	addresses := parserJSONWith(t, payment, map[string]string{
+		"snd": `"` + payment.Sender.String() + `"`,
+		"rcv": `"` + payment.Receiver.String() + `"`,
+	})
+	empties := parserJSONWith(t, payment, map[string]string{
+		"gen": `""`, "nonpart": `false`, "votefst": `0`, "apfa": `[]`, "apar": `{"t":0,"am":""}`,
+	})
+
+	cases := []struct {
+		name string
+		data string
+		want []types.Transaction
+	}{
+		{"single transaction", string(sdkjson.Encode(payment)), []types.Transaction{payment}},
+		{"array of two", two, []types.Transaction{payment, keyreg}},
+		{"keyreg with full-length keys", string(sdkjson.Encode(keyreg)), []types.Transaction{keyreg}},
+		{"base32 addresses", addresses, []types.Transaction{payment}},
+		{"fields given empty", empties, []types.Transaction{payment}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			txns, err := ParseTransactions([]byte(tc.data))
+			if err != nil {
+				t.Fatalf("ParseTransactions() error = %v\n%s", err, tc.data)
+			}
+			if !bytes.Equal(msgpack.Encode(txns), msgpack.Encode(tc.want)) {
+				t.Fatalf("parsed %+v, want %+v", txns, tc.want)
+			}
+		})
 	}
 }

@@ -559,7 +559,8 @@ it registers.
 | `sign(filepath, { wait = true } = {})` | `{ txids, confirmed }` |
 | `plan(signRequests)` | `{ transactions, mutations? }` |
 
-`sign()` reads an external transaction file, verifies the live algod is
+`sign()` reads an external transaction file by the rules of the shell's
+[`sign`](USER_COMMANDS.md#sign), verifies the live algod is
 running supported consensus v42 or v43, signs, submits, and optionally waits.
 Each transaction must be for the active algod's network: a genesis hash, or a
 set genesis ID, that differs from the algod's is refused before signing, as

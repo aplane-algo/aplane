@@ -321,6 +321,17 @@ names the same key twice, a JSON `null`, a transaction with no type, or a
 `{"txn": [...]}` file holding any other key is refused, so what is signed is
 what the file shows.
 
+A JSON transaction object must state exactly the transaction decoded from
+it. Each one is compared, field by field, with the SDK's JSON encoding of
+that transaction, and any difference is refused, naming the transaction and
+the field: an unknown key, a fixed-size byte field such as `votekey` or
+`am` of the wrong length, a number that is not plain digits (`1e3`, `2.0`),
+a number written as a string, or bytes written as a list of numbers.
+Addresses may be base32 or base64, so a file from [`write`](#write) mode
+reads back as the same transaction. A field may be written empty (`0`,
+`false`, `""`, `[]` or `{}`) where the encoding leaves it out; a zero
+address or an all-zero hash must be left out.
+
 Each transaction must be for the network apshell is on: its genesis hash, and
 its genesis ID when it has one, must be the active algod's. A file written on
 mainnet and signed while apshell is on testnet is refused before the signer
