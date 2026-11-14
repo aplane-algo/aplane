@@ -68,10 +68,8 @@ func exactTransactionJSON(txn types.Transaction) ([]byte, error) {
 
 	// Numbers stay as written: a float64 would round an amount past 2^53 and
 	// put 2^64-1 in exponent form.
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var formatted interface{}
-	if err := decoder.Decode(&formatted); err != nil {
+	formatted, err := algo.DecodeJSONExactly(data)
+	if err != nil {
 		return nil, fmt.Errorf("the SDK's JSON for it is not valid JSON: %w", err)
 	}
 

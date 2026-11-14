@@ -125,7 +125,7 @@ func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
 // spells it, and a field the encoding leaves out, at its zero value, must be
 // left out of the file too.
 func checkJSONStatesDecoded(jsonData []byte, txns []types.Transaction) error {
-	given, err := decodeJSONExactly(jsonData)
+	given, err := DecodeJSONExactly(jsonData)
 	if err != nil {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
@@ -141,7 +141,7 @@ func checkJSONStatesDecoded(jsonData []byte, txns []types.Transaction) error {
 		if _, isObject := entries[i].(map[string]interface{}); !isObject {
 			return fmt.Errorf("transaction %d is %s, not a transaction object", i+1, jsonKind(entries[i]))
 		}
-		decoded, err := decodeJSONExactly(sdkjson.Encode(txn))
+		decoded, err := DecodeJSONExactly(sdkjson.Encode(txn))
 		if err != nil {
 			// A state proof with reveals: its map is written with bare keys.
 			return fmt.Errorf("transaction %d cannot be read from JSON: the SDK does not write it as valid JSON, so the file cannot be checked against it", i+1)
@@ -153,9 +153,9 @@ func checkJSONStatesDecoded(jsonData []byte, txns []types.Transaction) error {
 	return nil
 }
 
-// decodeJSONExactly decodes one JSON document with every number kept as the
+// DecodeJSONExactly decodes one JSON document with every number kept as the
 // text it was written as.
-func decodeJSONExactly(data []byte) (interface{}, error) {
+func DecodeJSONExactly(data []byte) (interface{}, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	var value interface{}
@@ -319,12 +319,14 @@ func txnListWrapper(jsonData []byte) (entries []string, isWrapper bool, err erro
 // decoders turn a \u escape for half a surrogate pair into U+FFFD, which is
 // not the text the file shows.
 func checkJSONText(data []byte) error {
-	for i := 0; i < len(data); {
-		r, size := utf8.DecodeRune(data[i:])
-		if r == utf8.RuneError && size == 1 {
-			return fmt.Errorf("the file is not valid UTF-8 (byte %d)", i)
+	if !utf8.Valid(data) {
+		for i := 0; i < len(data); {
+			r, size := utf8.DecodeRune(data[i:])
+			if r == utf8.RuneError && size == 1 {
+				return fmt.Errorf("the file is not valid UTF-8 (byte %d)", i)
+			}
+			i += size
 		}
-		i += size
 	}
 	// A backslash appears only inside a string, where it starts an escape.
 	for i := 0; i < len(data); i++ {
