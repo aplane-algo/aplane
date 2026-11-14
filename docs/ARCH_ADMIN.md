@@ -743,8 +743,9 @@ When an update takes effect depends on the change's direction:
   once its file has replaced the old one, so no reader, a signing request
   included, ever sees a permissive value that was not saved. Until then
   readers keep the old value. A failed save of the value already saved
-  answers the plain "unchanged" failure and writes no audit entry, since
-  nothing in effect would be undone by a restart.
+  answers the plain "unchanged" failure, not `applied_not_saved`, since
+  nothing in effect would be undone by a restart; like every failed save it
+  writes a `SETTING_SAVE_ERROR` entry, with `in_effect=false`.
 
 The rule covers only the four boolean settings the signer itself enforces.
 `passphrase_timeout` is not one of them: only the admin client enforces it
@@ -764,10 +765,13 @@ It writes one warning to its log, naming the setting and the flush error
 client or written to the audit log. This holds for `theme` too, whose save
 of root `config.yaml` goes through the same durable write.
 
-A setting answered `applied_not_saved` is unsaved: the signer holds it, in
-memory only, and reports it in `admin_settings` as `unsaved_settings` until
-a save of that setting succeeds, with any value, after which memory and file
-agree again. Nothing else clears it: a refused request, a
+A restrictive value is unsaved from the moment it takes effect, before its
+save: the signer holds that, in memory only, and reports it in
+`admin_settings` as `unsaved_settings` (a read that takes no lock the update
+holds, so another admin session sees it while the save is still running or
+hung) until a save of that setting succeeds, with any value, after which
+memory and file agree again. A setting answered `applied_not_saved` is
+therefore still listed. Nothing else clears it: a refused request, a
 permissive change whose save fails (memory keeps the restrictive value), and
 a retry whose save fails again (answered `applied_not_saved` once more) all
 leave it. A restart loads the saved value, so the set starts empty.
@@ -1305,7 +1309,10 @@ toggling it. To turn the setting back, retry until the save succeeds, then
 toggle. While the panel is shown, the status line also carries the signer's
 reason for the last `applied_not_saved` result, cut to the room the line
 leaves so it stays one row, and left out when that room is under 30 columns
-(too narrow to name the setting). A later successful update of the same
+(too narrow to name the setting). When the result answers a retry of a
+setting already unsaved, the line starts with the way out instead, "restart
+apsigner for the saved value; <setting> still not saved: <reason>", so the
+cut keeps it. A later successful update of the same
 setting, a new authenticated session, and a settings re-read that no longer
 lists the setting unsaved clear it.
 

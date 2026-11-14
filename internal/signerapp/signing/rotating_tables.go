@@ -174,7 +174,8 @@ type StageTableReport struct {
 // cut reports that the lock refused or cut an account's key use while the
 // pass was live: a lock is landing, and the pass is not to be published. A
 // lock refuses key uses before it cancels the pass's context, so a pass it
-// cuts can still have a live context. The pass stops there.
+// cuts can still have a live context. The pass stops there; the reports up
+// to and including that account's are returned for their log lines.
 func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySession, opts StageFillOptions) (reports []StageTableReport, cut bool) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil {
@@ -204,10 +205,12 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 			break
 		}
 		report, cut := s.fillStageTable(ctx, deps, gen, account, session, opts)
+		// The cut account's report goes back too, for what it has to log
+		// (a discarded table, a real error); the caller publishes nothing.
+		reports = append(reports, report)
 		if cut {
 			return reports, true
 		}
-		reports = append(reports, report)
 	}
 	return reports, false
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,8 @@ type fakeDeps struct {
 
 	processMutationCalls  int
 	identityMutationCalls int
+	warningsMu            sync.Mutex
+	warnings              []string
 }
 
 func (d *fakeDeps) DataDir() string {
@@ -65,6 +68,14 @@ func (d *fakeDeps) SetTheme(v string) {
 
 func (d *fakeDeps) SSHInfo() SSHInfo {
 	return d.sshInfo
+}
+
+// Warnf records the warning. It runs under the mutation lock d.mu stands
+// for, so it takes its own.
+func (d *fakeDeps) Warnf(format string, args ...any) {
+	d.warningsMu.Lock()
+	defer d.warningsMu.Unlock()
+	d.warnings = append(d.warnings, fmt.Sprintf(format, args...))
 }
 
 func (d *fakeDeps) WithProcessConfigMutation(fn func() error) error {
@@ -681,7 +692,7 @@ func TestUpdateAdminSettingFailureBeforeRename(t *testing.T) {
 // A request for the value already in effect is not restrictive, whatever the
 // value: it takes the save-first path, so a failed save answers the plain
 // "unchanged" failure. It once answered applied_not_saved ("a restart loads
-// the old value") and was audited, although nothing changed.
+// the old value"), although nothing changed.
 func TestUnchangedValueWhoseSaveFailsReportsNothingInEffect(t *testing.T) {
 	for _, c := range settingChanges() {
 		if !c.restrictive {
@@ -711,8 +722,6 @@ func TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning(t *testing.T
 	for _, c := range settingChanges() {
 		t.Run(c.name(), func(t *testing.T) {
 			svc, ir, deps := startSettingChange(t, c)
-			var warnings []string
-			svc.Warnf = func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
 			failDurableWriteAt(t, fsutil.OpDirSync, filepath.Dir(settingTarget(deps.dataDir, c.key)))
 
 			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
@@ -720,8 +729,8 @@ func TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning(t *testing.T
 			if err != nil {
 				t.Fatalf("UpdateAdminSetting error = %v, want success", err)
 			}
-			if len(warnings) != 1 || !strings.Contains(warnings[0], c.key) || !strings.Contains(warnings[0], "injected dir-sync failure") {
-				t.Fatalf("warnings = %q, want one naming %s and the flush error", warnings, c.key)
+			if len(deps.warnings) != 1 || !strings.Contains(deps.warnings[0], c.key) || !strings.Contains(deps.warnings[0], "injected dir-sync failure") {
+				t.Fatalf("warnings = %q, want one naming %s and the flush error", deps.warnings, c.key)
 			}
 			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the unsynced save")
 			// The next change goes through as usual.
@@ -848,5 +857,33 @@ func TestSettingSaveKeepsAHandEditToAnotherKey(t *testing.T) {
 	}
 	if ir.Config().LockOnDisconnect() {
 		t.Fatal("a hand edit took effect while the signer runs")
+	}
+}
+
+// A restrictive value is reported unsaved from the moment it is published,
+// before its save, so a save that hangs leaves it listed; the save that puts
+// the new file in place clears it. A permissive value is never listed. The
+// setting was once marked unsaved only when the save returned an error, so a
+// hung save showed nothing. admin_settings takes no lock the update holds.
+func TestRestrictiveValueIsReportedUnsavedWhileItsSaveIsHeld(t *testing.T) {
+	for _, c := range settingChanges() {
+		if c.key == adminproto.AdminSettingTheme {
+			continue
+		}
+		t.Run(c.name(), func(t *testing.T) {
+			svc, _, deps := startSettingChange(t, c)
+			held := fsutiltest.Hold(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key), func() error {
+				return svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+			})
+			if got := unsavedSettings(svc); slices.Contains(got, c.key) != c.restrictive {
+				t.Fatalf("unsaved during the held save = %v, want %s listed only for a restrictive change (%v)", got, c.key, c.restrictive)
+			}
+			if err := held.Finish(nil); err != nil {
+				t.Fatalf("UpdateAdminSetting error = %v", err)
+			}
+			if got := unsavedSettings(svc); len(got) != 0 {
+				t.Fatalf("unsaved after the save = %v, want none", got)
+			}
+		})
 	}
 }

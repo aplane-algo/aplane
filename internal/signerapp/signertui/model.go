@@ -386,9 +386,11 @@ type adminPanelState struct {
 	settingWarning settingResultWarning
 }
 
-// settingResultWarning is the signer's reason (text) an update result coded
-// applied_not_saved gave for key. A later successful result for key, a new
-// session, and a settings re-read in which key is no longer unsaved clear it.
+// settingResultWarning is the status-line text for the signer's reason an
+// update result coded applied_not_saved gave for key: the reason itself, or,
+// for a failed retry of a setting already unsaved, how to return to the saved
+// value ahead of it. A later successful result for key, a new session, and a
+// settings re-read in which key is no longer unsaved clear it.
 type settingResultWarning struct {
 	key, text string
 }

@@ -672,7 +672,7 @@ func (m Model) renderStatusBar() string {
 			room -= len(" | ")
 		}
 		if room >= minSettingWarningWidth {
-			parts = slices.Insert(parts, settingAt, warningStyle.Render(ellipsize("Warning: "+w, room)))
+			parts = slices.Insert(parts, settingAt, warningStyle.Render(ellipsize(w, room)))
 		}
 	}
 

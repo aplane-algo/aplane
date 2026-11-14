@@ -664,7 +664,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if reason == "" {
 				reason = msg.Key + " is in effect but not saved"
 			}
-			m.admin.settingWarning = settingResultWarning{key: msg.Key, text: reason}
+			text := "Warning: " + reason
+			if m.settingUnsaved(msg.Key) {
+				// A retry of a save that had failed failed again: the way
+				// out goes ahead of the cause, so the line's cut keeps it.
+				text = "restart apsigner for the saved value; " + msg.Key + " still not saved: " + reason
+			}
+			m.admin.settingWarning = settingResultWarning{key: msg.Key, text: text}
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
 		case msg.Key == m.admin.settingWarning.key:

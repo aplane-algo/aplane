@@ -523,7 +523,8 @@ func TestPopulatedSettingsPanelFitsAtMinSize(t *testing.T) {
 				t.Fatalf("standalone %v: line wider than the %d-column window: %q", standalone, MinWidth, line)
 			}
 		}
-		if bar := lines[len(lines)-1]; !strings.Contains(bar, "Warning: lock_on_disconnect is set to") || !strings.HasSuffix(strings.TrimRight(bar, " "), "...") {
+		// The setting is already unsaved, so this is a failed retry.
+		if bar := lines[len(lines)-1]; !strings.Contains(bar, "restart apsigner for the saved value") || !strings.HasSuffix(strings.TrimRight(bar, " "), "...") {
 			t.Fatalf("standalone %v: status line %q, want the cut warning", standalone, bar)
 		}
 	}
@@ -548,5 +549,34 @@ func TestSettingResultWarningIsDroppedWithoutRoom(t *testing.T) {
 	}
 	if !strings.Contains(stripANSI(m.renderAdminPanel()), "Warning: lock_on_disconnect is in effect but not saved") {
 		t.Fatal("the panel's unsaved warning is gone too")
+	}
+}
+
+// The first applied_not_saved for a setting shows the signer's reason. A
+// failed retry, for a setting the signer already lists unsaved, shows the way
+// out ahead of the reason, so it survives the cut at 80 columns with the usual
+// status parts present: restart apsigner to return to the saved value.
+func TestFailedRetryOfAnUnsavedSettingSaysHowToReturnToTheSavedValue(t *testing.T) {
+	result := AdminSettingUpdatedMsg{Key: adminproto.AdminSettingLockOnDisconnect, Value: "true", Code: protocol.ResultCodeAppliedNotSaved,
+		Error: "lock_on_disconnect is set to true and in effect now, but it was not saved, so a restart loads the old value: no space left on device"}
+	for _, tc := range []struct {
+		name    string
+		unsaved []string
+		want    string
+	}{
+		{"first failure", nil, "Warning: lock_on_disconnect is set to"},
+		{"failed retry", []string{adminproto.AdminSettingLockOnDisconnect}, "restart apsigner for the saved value"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sizedForTest(t, Model{viewState: ViewAdminPanel, connectionState: ConnectionConnected,
+				signerStatusKnown: true, signerState: signerRuntimeUnlocked, keyCount: 12,
+				admin: adminPanelState{editingRow: -1, settings: &AdminSettings{PassphraseMethod: "none", Theme: "auto",
+					UnsavedSettings: tc.unsaved}}}, MinWidth, MinHeight)
+			next, _ := m.Update(result)
+			bar := stripANSI(next.(Model).renderStatusBar())
+			if lipgloss.Width(bar) > MinWidth || !strings.Contains(bar, tc.want) {
+				t.Fatalf("status bar = %q (%d wide), want %q within %d columns", bar, lipgloss.Width(bar), tc.want, MinWidth)
+			}
+		})
 	}
 }

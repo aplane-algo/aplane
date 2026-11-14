@@ -38,6 +38,8 @@ type Deps interface {
 	WithProcessConfigMutation(fn func() error) error
 	WithStoreMutation(fn func() error) error
 	SSHInfo() SSHInfo
+	// Warnf logs an operator-facing warning to the signer's log.
+	Warnf(format string, args ...any)
 }
 
 type Service struct {
@@ -47,8 +49,6 @@ type Service struct {
 	ASAChain ASAChain
 	// Now is the clock for ASA set changes; nil is time.Now.
 	Now func() time.Time
-	// Warnf logs an operator-facing warning; nil drops it.
-	Warnf func(format string, args ...any)
 }
 
 var detectPrimaryOutboundIPv4 = primaryOutboundIPv4
@@ -236,7 +236,11 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	}
 
 	if restrictive {
+		// In effect and ahead of the file until the save puts the new file
+		// in place, which clears it below: a save that hangs leaves it
+		// reported unsaved.
 		publish()
+		icfg.SetUnsaved(req.Key, true)
 	}
 	// The save rewrites only this key: an edit to another key of the file
 	// made while the signer runs stays in the file and takes effect at the
@@ -257,15 +261,14 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		// it is a success, logged because it points at a failing disk.
 		publish()
 		icfg.SetUnsaved(req.Key, false)
-		if saveErr != nil && s.Warnf != nil {
-			s.Warnf("setting %s saved, but its directory flush failed: %v", req.Key, saveErr)
+		if saveErr != nil {
+			s.Deps.Warnf("setting %s saved, but its directory flush failed: %v", req.Key, saveErr)
 		}
 		return nil
 	case restrictive:
 		// The old file is still in place. Memory keeps the restrictive value
 		// rather than go back to the permissive one it replaced, and the
 		// signer reports the setting unsaved until a save of it succeeds.
-		icfg.SetUnsaved(req.Key, true)
 		return protocol.WithCode(protocol.ResultCodeAppliedNotSaved,
 			&adminproto.SettingSaveError{Key: req.Key, Value: fmt.Sprint(saveValue), InEffect: true, Err: saveErr})
 	default:

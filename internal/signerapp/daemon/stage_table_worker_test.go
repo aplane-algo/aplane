@@ -385,6 +385,56 @@ func TestPassCutAtADerivationPublishesNothing(t *testing.T) {
 	}
 }
 
+// A pass cut at an account still logs what that account's report has to
+// say, here that its unreadable stage table was discarded (a one-time event),
+// though the pass publishes nothing. The cut account's report was once dropped
+// before the worker saw it.
+func TestPassCutAtAnAccountStillLogsItsDiscardedTable(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	last := b
+	if b.String() < a.String() {
+		last = a
+	}
+	// An unreadable table file, which the pass discards when it opens it.
+	tablePath := ir.KeyPaths().StageTablePath(last.String())
+	if err := os.MkdirAll(filepath.Dir(tablePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tablePath, []byte("not a stage table"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	node := &mockAccountNode{}
+	node.set("", 130)
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/v2/accounts/"+last.String() {
+				// The lock's first step, before the last account derives.
+				ir.SetRecovery()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+
+	server.fillStageTables(context.Background(), ir)
+	if !strings.Contains(logs.String(), "rotating account "+last.String()+": ") || !strings.Contains(logs.String(), "rebuilding its stage table from the seed") {
+		t.Fatalf("log = %q, want the cut account's discarded table", logs.String())
+	}
+	if got := ir.RotatingAccountStatuses(); len(got) != 0 {
+		t.Fatalf("statuses after the cut pass = %+v, want nothing published", got)
+	}
+}
+
 // syncBuffer is a log destination tests read while other goroutines write.
 type syncBuffer struct {
 	mu  sync.Mutex
