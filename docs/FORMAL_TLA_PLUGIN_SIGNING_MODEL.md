@@ -110,6 +110,12 @@ The restored spec passes.
   outcome, so a check that skipped the plugin slots, which the signer never
   judges, is a counterexample. The default flow is not enumerated; it applies
   the same refusal (`apshellapp/submission.go`), anchored by Go tests.
+- **Plan preservation is one boolean per slot.** `planPreserved` stands for
+  the whole of `validatePluginPlan` for that slot. On a managed slot it
+  allows a fee raise the mutation report lists; on a plugin-owned slot it
+  allows no fee change. The spec's comments on PS4 and on the slot domain
+  still word the earlier rule, a reported fee raise on any slot. The checked
+  logic is the same under either rule, since the boolean is per slot.
 - **The key list, and the check and submission as two steps, are not
   modeled.** The model has no state for the signer's key list or whether
   apshell could fetch it, and no step between the check and submission.
@@ -153,8 +159,8 @@ ordinary signer policy/approval pipeline. It does not prove the
 Go code implements the procedure (code-review responsibility, anchored by
 the PS traceability rows), and it does not claim anything about the honest
 gaps recorded in FORMAL_PLUGIN_SIGNING_MODEL.md (no local signature
-cryptography, fee exemption, self-consistent malicious groups, non-canonical
-encoding).
+cryptography, the managed slots' fee exemption, self-consistent malicious
+groups, non-canonical encoding).
 
 ## Linking back
 

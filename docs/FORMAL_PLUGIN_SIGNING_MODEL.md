@@ -148,10 +148,17 @@ without overflow to a `total_fees_delta` that is not negative), and append
 canonical budget dummies; the report's counts must match the group. For every
 original slot — plugin and managed alike — any other change (sender, validity
 window, lease, note, amount, receiver, app id, args, rekey, positional
-reorder) rejects with "plan modified ... slot". Anchor:
+reorder) rejects with "plan modified ... slot". A fee may rise on a managed
+slot only: a plugin-owned slot goes to `/plan` as foreign, and the signer
+never raises the fee of a slot it does not sign, so a plan that changes a
+plugin-owned slot's fee rejects with "plan changed the fee of plugin-owned
+slot ...", even when the report lists the change. Anchor:
 `internal/engine/plugin_presign.go::validatePluginPlan` (applied to both slot
-classes), whose fee and field reconciliation is the ordinary `/sign` path's
-`internal/clientsign/verify.go::ValidateOriginalPositions`. The draft it
+classes), through every `/plan` answer's check,
+`internal/clientsign/verify.go::ValidateGroupPlan`, whose fee and field
+reconciliation is the ordinary `/sign` path's
+`internal/clientsign/verify.go::ValidateOriginalPositions`, and then the
+plugin-owned slots' fees, `::ValidateUnsignedFees`. The draft it
 compares against is the one reading of the plugin's raw intents
 (`internal/engine/plugin_transactions.go::DecodePluginDraft`: canonical
 decode, group ID cleared, a discarded one reported), which
@@ -276,10 +283,13 @@ what was reviewed.
   signatures (sig/msig/lsig contents), on either the client or the signer;
   the chain validates at submit. A plugin substituting *signature* bytes
   (not transaction bytes) produces a group that fails at algod, not before.
-- **Reported fee increases are allowed by PS4** by design: `/plan` exists to set fees. Managed
-  slot fees are bounded by apsigner policy and shown at approval;
-  plugin-slot fees are re-signed by the plugin against the canonical bytes,
-  so the plugin sees what it pays.
+- **Reported fee increases on managed slots are allowed by PS4** by design:
+  `/plan` exists to set fees. Managed slot fees are bounded by apsigner
+  policy and shown at approval. A plugin-owned slot's fee may not change at
+  all: the signer never raises it (the authorization cost the plugin
+  declares for it is charged to the managed slots), and the plugin signs the
+  slot with no approval of apsigner's. The model's `planPreserved` is one
+  boolean per slot and stands for both rules; it does not carry the fee.
 - **A self-consistent malicious group passes PS2** — the digest check proves
   internal consistency, not benignity. Catching a bad-but-consistent group
   is exactly what PS3's decoded review and PS6's approval display are for.

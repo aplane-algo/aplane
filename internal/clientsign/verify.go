@@ -160,6 +160,31 @@ func ValidateGroupPlan(original, planned []types.Transaction, mutations *signera
 	return err
 }
 
+// ValidateUnsignedFees refuses a planned group that changed the fee of an
+// original position the signer does not sign. The signer's planner raises
+// fees only on the positions it signs: a foreign or passthrough position is
+// never a fee target, and the authorization cost a foreign position declares
+// (lsig_resources, pq_scheme) is charged to the signer's own positions. So
+// the fee of such a position must come back as the client sent it, whether or
+// not the report lists it; the fees are compared directly. unsigned maps the
+// zero-based index of each such position to the name its error gives it.
+// Run it after ValidateGroupPlan, which leaves a reported fee raise as the
+// only change it can find.
+func ValidateUnsignedFees(original, planned []types.Transaction, unsigned map[int]string) error {
+	if len(planned) < len(original) {
+		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(planned), len(original))
+	}
+	for i := range original {
+		kind, ok := unsigned[i]
+		if !ok || planned[i].Fee == original[i].Fee {
+			continue
+		}
+		return fmt.Errorf("plan changed the fee of %s slot at index %d from %d to %d microAlgos; the signer may raise fees only on the slots it signs",
+			kind, i, original[i].Fee, planned[i].Fee)
+	}
+	return nil
+}
+
 // UnreportedChangeError is an original position of a planned or signed group
 // that differs from the transaction the client sent by more than the signer
 // may change.

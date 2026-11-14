@@ -142,10 +142,11 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	}
 
 	// --- Guardrail: /plan may only make its contracted mutations ---
-	// Only the group id and reported fee increases may change an original slot,
-	// and appended slots must be the planner's canonical budget dummies. For
-	// plugin-owned slots this protects the plugin's HPKE envelope/proof (and the
-	// plugin pays any fee it signs). For APlane-managed slots it matters just as
+	// Only the group id may change an original slot, and a reported fee
+	// increase a managed one; appended slots must be the planner's canonical
+	// budget dummies. For plugin-owned slots this protects the plugin's HPKE
+	// envelope/proof, and the fee the plugin built, which it then signs without
+	// the signer's approval. For APlane-managed slots it matters just as
 	// much: a Falcon-funded Mithras deposit's funder payment + app-call carry
 	// HPKE-bound fields (sender/firstValid/lastValid/lease/appId), so a re-stamp
 	// here would silently mint an unspendable UTXO. Enforce it rather than trust
@@ -340,6 +341,12 @@ func assertPluginSignersMatched(txns []types.Transaction, refs map[string]string
 // path's fee and field reconciliation, then the group ID and the dummies); a
 // slot changed beyond its group ID and reported fee is named here as managed
 // or plugin-owned.
+//
+// A reported fee raise is then allowed on managed slots only. A plugin-owned
+// slot goes to /plan as foreign, so the signer never raises its fee: the
+// authorization cost it declares is charged to the managed slots. The plugin
+// signs the slot with no approval of the signer's, so a raise there would come
+// out of the plugin's account unseen; any change to its fee is refused.
 func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi.MutationReport, pluginSignerRefs map[string]string) error {
 	err := clientsign.ValidateGroupPlan(draft, planned, mutations)
 	var changed *clientsign.UnreportedChangeError
@@ -350,7 +357,16 @@ func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi
 		}
 		return fmt.Errorf("plan modified %s slot at index %d beyond its group id and reported fee", owner, changed.Index)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	pluginOwned := make(map[int]string)
+	for i, txn := range draft {
+		if _, owned := pluginSignerRefs[txn.Sender.String()]; owned {
+			pluginOwned[i] = "plugin-owned"
+		}
+	}
+	return clientsign.ValidateUnsignedFees(draft, planned, pluginOwned)
 }
 
 // verifySignedAgainstPlan checks the /sign response against the frozen plan

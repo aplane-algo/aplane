@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apshell checks more of what the signer plans
+
+- **A `presign-plan` plan may not change the fee of a slot the plugin
+  signs.** The plan check let a fee rise on any slot the mutation report
+  listed. The signer never raises the fee of a slot it does not sign: it
+  charges the authorization cost the plugin declares for its slot to the
+  APlane-managed slots. So a faulty signer could raise the plugin's fee, and
+  the plugin then signed it with no approval of the signer's. Such a plan is
+  now refused before the plugin is called, as `plan changed the fee of
+  plugin-owned slot at index N from A to B microAlgos`, whether or not the
+  report lists the change. A raise on a managed slot is unchanged. Nothing
+  changes while the signer plans correctly.
+
 ## Plugin reviews say who authorizes each slot
 
 - **A pregrouped-signed review names each slot's authorizer.** That review is
