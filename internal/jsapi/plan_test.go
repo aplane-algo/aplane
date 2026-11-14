@@ -62,6 +62,19 @@ func planRegroup(t *testing.T, txns []types.Transaction) {
 	}
 }
 
+// planSelfGrouped is txn carrying the group ID of a group of one, computed
+// over itself: a single pre-grouped transaction, which the planner accepts and
+// leaves as it is.
+func planSelfGrouped(t *testing.T, txn types.Transaction) types.Transaction {
+	t.Helper()
+	gid, err := algoCrypto.ComputeGroupID([]types.Transaction{txn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	txn.Group = gid
+	return txn
+}
+
 // planGroup builds the plan the signer's planner makes of drafts: each fee
 // in raises raised by its amount, dummies canonical resource dummies
 // appended, and the group ID over the final group. The report counts the
@@ -194,8 +207,14 @@ func TestPlanReturnsACheckedPlanUnchanged(t *testing.T) {
 		{"txnBytesHex": txnutil.EncodeWithPrefixHex(pq), "pqScheme": signerapi.PQSchemeFalcon1024},
 	}
 	single := planTestTxn(t, "single")
+	selfGrouped := planSelfGrouped(t, planTestTxn(t, "self-grouped"))
 	pre := []types.Transaction{planTestTxn(t, "passthrough"), planTestTxn(t, "managed")}
 	planRegroup(t, pre)
+	pair := []types.Transaction{planTestTxn(t, "first"), planTestTxn(t, "second")}
+	planRegroup(t, pair)
+	unchanged := func(t *testing.T, drafts []types.Transaction) ([]types.Transaction, *signerapi.MutationReport) {
+		return drafts, nil
+	}
 
 	for _, tc := range []struct {
 		name     string
@@ -221,6 +240,13 @@ func TestPlanReturnsACheckedPlanUnchanged(t *testing.T) {
 		}, func(t *testing.T, drafts []types.Transaction) ([]types.Transaction, *signerapi.MutationReport) {
 			return planGroup(t, drafts, map[int]uint64{0: 2000}, 0, 0, 0)
 		}},
+		{"single transaction with its own group ID, nothing changed", []map[string]interface{}{
+			{"authAddress": selfGrouped.Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(selfGrouped)},
+		}, unchanged},
+		{"pre-grouped pair, nothing changed", []map[string]interface{}{
+			{"authAddress": pair[0].Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(pair[0])},
+			{"authAddress": pair[1].Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(pair[1])},
+		}, unchanged},
 		{"pre-grouped with a passthrough, unchanged", []map[string]interface{}{
 			{"signedTxnHex": signedPassthroughHex(pre[0])},
 			{"authAddress": pre[1].Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(pre[1])},
@@ -280,6 +306,27 @@ func TestPlanRefusesAPlanTheSignerMayNotHaveMade(t *testing.T) {
 	passthroughRequests := []map[string]interface{}{
 		{"signedTxnHex": signedPassthroughHex(pre[0])},
 		{"authAddress": pre[1].Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(pre[1])},
+	}
+	single, selfGrouped := planTestTxn(t, "single"), planSelfGrouped(t, planTestTxn(t, "self-grouped"))
+	singleRequests := []map[string]interface{}{
+		{"authAddress": single.Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(single)},
+	}
+	selfGroupedRequests := []map[string]interface{}{
+		{"authAddress": selfGrouped.Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(selfGrouped)},
+	}
+	pair := []types.Transaction{planTestTxn(t, "first"), planTestTxn(t, "second")}
+	planRegroup(t, pair)
+	pairRequests := []map[string]interface{}{
+		{"authAddress": pair[0].Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(pair[0])},
+		{"authAddress": pair[1].Sender.String(), "txnBytesHex": txnutil.EncodeWithPrefixHex(pair[1])},
+	}
+	// regroupedAs gives every transaction of drafts the group ID group.
+	regroupedAs := func(drafts []types.Transaction, group types.Digest) []types.Transaction {
+		out := append([]types.Transaction(nil), drafts...)
+		for i := range out {
+			out[i].Group = group
+		}
+		return out
 	}
 	// valid is the planner's plan of the two requests: a raise on the
 	// sign-mode position and one dummy.
@@ -356,6 +403,29 @@ func TestPlanRefusesAPlanTheSignerMayNotHaveMade(t *testing.T) {
 			encoded[0] = "TXabc"
 			return signerapi.GroupPlanResponse{Transactions: encoded, Mutations: report}
 		}, "planned transaction at index 0: invalid hex"},
+		// The planner keeps a single transaction's group ID, none or its own,
+		// and changes nothing in a pre-grouped group.
+		{"a group ID given to a single transaction", singleRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+			return signerapi.GroupPlanResponse{
+				Transactions: encodePlan(regroupedAs(drafts, types.Digest{7})),
+				Mutations:    &signerapi.MutationReport{OriginalCount: 1, FinalCount: 1, GroupIDChanged: true},
+			}
+		}, "mutation reported a group ID change for a single transaction"},
+		{"a group ID given to a single transaction, not reported", singleRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+			return signerapi.GroupPlanResponse{Transactions: encodePlan(regroupedAs(drafts, types.Digest{7}))}
+		}, "signer changed unreported fields at original index 0"},
+		{"a single transaction's own group ID changed", selfGroupedRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+			return signerapi.GroupPlanResponse{
+				Transactions: encodePlan(regroupedAs(drafts, types.Digest{7})),
+				Mutations:    &signerapi.MutationReport{OriginalCount: 1, FinalCount: 1, GroupIDChanged: true},
+			}
+		}, "mutation reported a group ID change for a single transaction"},
+		{"a pre-grouped pair regrouped with nothing to change it", pairRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+			return signerapi.GroupPlanResponse{
+				Transactions: encodePlan(regroupedAs(drafts, types.Digest{7})),
+				Mutations:    &signerapi.MutationReport{OriginalCount: 2, FinalCount: 2, GroupIDChanged: true},
+			}
+		}, "signer changed an existing group ID without a fee or membership mutation"},
 		// The signer raises fees only on the positions it signs, so a raise on
 		// a foreign or passthrough position is refused even when reported.
 		{"a reported fee raise on a foreign position", requests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {

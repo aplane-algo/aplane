@@ -210,6 +210,23 @@ func TestValidatePluginPlan(t *testing.T) {
 		return p, r
 	})
 
+	// The shared group ID rule: originals that all carry a group ID keep it
+	// unless a fee raise or appended dummies change the group. A presign draft
+	// has its group ID cleared, so this exercises the check, not the flow.
+	t.Run("pre-grouped draft regrouped with nothing to change it -> error", func(t *testing.T) {
+		grouped := append([]types.Transaction(nil), drafts...)
+		regroupPlan(t, grouped)
+		planned := append([]types.Transaction(nil), grouped...)
+		for i := range planned {
+			planned[i].Group = types.Digest{0x32}
+		}
+		report := &signerapi.MutationReport{GroupIDChanged: true, OriginalCount: 2, FinalCount: 2, ForeignCount: 1}
+		err := validatePluginPlan(grouped, planned, report, refs)
+		if err == nil || !strings.Contains(err.Error(), "existing group ID") {
+			t.Fatalf("got %v, want the existing group ID change refused", err)
+		}
+	})
+
 	// The signer raises fees only on the slots it signs. A plugin-owned slot
 	// goes to /plan as foreign, so a raise on it is refused even when the
 	// report lists it, while the same raise on the managed slot passes.

@@ -28,6 +28,12 @@ before it was renamed `enroll`.
   passthrough position's fee may not change, as in `presign-plan`. A plan
   that fails throws `plan() error: invalid group plan: <reason>`. A plan that
   passes is returned unchanged, with its mutation report.
+- **Every plan check holds the group ID to the planner's rules.** The
+  `presign-plan`, cosigned and JS `plan()` checks share one function. A
+  single transaction must come back with the group ID it was sent with, and
+  a report of a group ID change for one is refused. A group whose
+  transactions all carry a group ID may not come back regrouped without a
+  fee raise or a dummy. Only the cosigned check refused that before.
 
 ## Plugin reviews say who authorizes each slot
 

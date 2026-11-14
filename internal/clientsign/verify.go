@@ -56,9 +56,9 @@ func validateSignedGroupMutations(
 // validateMutationReportCounts checks the counts of a mutation report against a
 // group the signer returned for originalCount sign-only positions: the counts
 // validateReportCounts checks, and then that the report claims no passthrough
-// or foreign positions and reports a group ID change exactly when the group
-// needs one. endpoint names the response in the passthrough and foreign
-// errors. The fields of each position are ValidateOriginalPositions' to check.
+// or foreign positions and reports a group ID change whenever it appended
+// dummies. endpoint names the response in the passthrough and foreign errors.
+// The fields of each position are ValidateOriginalPositions' to check.
 func validateMutationReportCounts(endpoint string, originalCount, returnedCount int, mutations *signerapi.MutationReport) error {
 	if err := validateReportCounts(originalCount, returnedCount, mutations); err != nil {
 		return err
@@ -76,9 +76,6 @@ func validateMutationReportCounts(endpoint string, originalCount, returnedCount 
 	if appended > 0 && !mutations.GroupIDChanged {
 		return fmt.Errorf("mutation appended dummies without reporting a group ID change")
 	}
-	if returnedCount == 1 && mutations.GroupIDChanged {
-		return fmt.Errorf("mutation reported a group ID change for a single transaction")
-	}
 	return nil
 }
 
@@ -86,6 +83,9 @@ func validateMutationReportCounts(endpoint string, originalCount, returnedCount 
 // the signer returned for originalCount positions: the group keeps every
 // original, the signer may append transactions only with a report, and the
 // report must count the request, the returned group and the appended dummies.
+// A report may not claim a group ID change for a single transaction: the
+// signer assigns a group ID only to two or more, and keeps a single
+// transaction's as it was sent, none or its own.
 func validateReportCounts(originalCount, returnedCount int, mutations *signerapi.MutationReport) error {
 	if returnedCount < originalCount {
 		return fmt.Errorf("signer returned %d transaction(s), want at least %d", returnedCount, originalCount)
@@ -105,6 +105,9 @@ func validateReportCounts(originalCount, returnedCount int, mutations *signerapi
 	}
 	if mutations.DummiesAdded != appended {
 		return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
+	}
+	if returnedCount == 1 && mutations.GroupIDChanged {
+		return fmt.Errorf("mutation reported a group ID change for a single transaction")
 	}
 	return nil
 }
@@ -134,15 +137,30 @@ func DecodePlannedGroup(transactions []string) ([]types.Transaction, error) {
 // counts, each original position (ValidateOriginalPositions: only the group ID
 // and the fee raises the report lists may differ), the group ID over the final
 // group, and the canonical resource dummies appended after the originals. The
-// presign-plan flow, the cosigned flow and JS plan() check their /plan answer
-// with it. Its errors name a position by its zero-based index; an original
-// position changed beyond what the report allows is an *UnreportedChangeError.
+// group ID rules follow the planner. A single transaction keeps the group ID
+// it was sent with, so a report of a change to it is refused. A changed group
+// ID on originals that all carry one is refused unless the report also lists
+// a fee raise or appended dummies. The presign-plan flow, the cosigned flow
+// and JS plan() check their /plan answer with it. Its errors name a position
+// by its zero-based index; an original position changed beyond what the
+// report allows is an *UnreportedChangeError.
 func ValidateGroupPlan(original, planned []types.Transaction, mutations *signerapi.MutationReport) error {
 	if err := validateReportCounts(len(original), len(planned), mutations); err != nil {
 		return err
 	}
 	if err := ValidateOriginalPositions(original, planned, mutations); err != nil {
 		return err
+	}
+	if mutations != nil && mutations.GroupIDChanged && len(original) > 0 &&
+		len(planned) == len(original) && len(mutations.FeesModified) == 0 {
+		var zero types.Digest
+		requiresAssignment := false
+		for i := range original {
+			requiresAssignment = requiresAssignment || original[i].Group == zero
+		}
+		if !requiresAssignment {
+			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
+		}
 	}
 	groupID, err := ValidateCanonicalGroupID(planned)
 	if err != nil {

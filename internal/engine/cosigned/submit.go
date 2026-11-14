@@ -218,7 +218,7 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 	for i, entry := range decoded.Entries {
 		planned[i] = entry.Txn
 	}
-	if err := validatePlannedGroup(original, planned, response.Mutations); err != nil {
+	if err := clientsign.ValidateGroupPlan(original, planned, response.Mutations); err != nil {
 		return frozenGroup{}, fmt.Errorf("invalid group plan: %w", err)
 	}
 	if dummies := len(planned) - len(original); dummies > 0 {
@@ -413,30 +413,6 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 	for i, txn := range assembled {
 		if got := txnutil.EncodeWithPrefixHex(txn); got != groupBytesHex[i] {
 			return fmt.Errorf("assembled transaction at index %d does not match the frozen canonical bytes", i)
-		}
-	}
-	return nil
-}
-
-// validatePlannedGroup permits only the planner's contracted mutations to
-// original positions: reported fee pooling and group-ID assignment. Appended
-// positions must be canonical budget dummies. The check is every /plan
-// answer's (clientsign.ValidateGroupPlan: the report's counts, then the
-// ordinary /sign path's fee and field reconciliation, then the group ID and
-// the dummies), and a group ID that changed with nothing to make it change
-// is refused after it.
-func validatePlannedGroup(original, planned []types.Transaction, mutations *signerapi.MutationReport) error {
-	if err := clientsign.ValidateGroupPlan(original, planned, mutations); err != nil {
-		return err
-	}
-	if mutations != nil && mutations.GroupIDChanged && len(planned) == len(original) && len(mutations.FeesModified) == 0 {
-		var zero types.Digest
-		requiresAssignment := false
-		for i := range original {
-			requiresAssignment = requiresAssignment || original[i].Group == zero
-		}
-		if !requiresAssignment {
-			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
 		}
 	}
 	return nil

@@ -620,7 +620,10 @@ client algod is running supported consensus v42 or v43 before contacting apsigne
 the canonical encoding of what it decodes to. The group may differ from what
 was sent only in the group ID, in a fee raise the mutation report lists, and
 in canonical resource dummies appended after the originals, and the report's
-counts must match the group. Only a position sent with `authAddress` may have
+counts must match the group. The group ID changes only as the planner changes
+it. A single transaction comes back with the group ID it was sent with, none
+or its own. A group whose transactions all carry one may come back regrouped
+only with a fee raise or dummies. Only a position sent with `authAddress` may have
 its fee raised: the signer does not sign a foreign or passthrough position, so
 it never raises that position's fee. A passthrough position is compared with
 the transaction inside its `signedTxnHex`. A plan that fails the check throws
