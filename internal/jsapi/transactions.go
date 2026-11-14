@@ -596,7 +596,9 @@ func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 }
 
 // jsPlan sends transactions to the signer's /plan endpoint for group planning
-// without signing or triggering approval. Returns the planned group and mutations.
+// without signing or triggering approval. Returns the planned group and
+// mutations as the signer returned them, once the engine has checked them
+// against the requests; a plan that fails the check throws, with the reason.
 // plan([{authAddress, txnBytesHex, ...}, ...]) - Plan a transaction group
 func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "plan() requires an array of sign requests")

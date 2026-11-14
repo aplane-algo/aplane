@@ -19,6 +19,15 @@ before it was renamed `enroll`.
   plugin-owned slot at index N from A to B microAlgos`, whether or not the
   report lists the change. A raise on a managed slot is unchanged. Nothing
   changes while the signer plans correctly.
+- **JS `plan()` checks the plan before it returns it.** It handed the
+  signer's answer to the script unchecked, so a faulty signer could change a
+  field, and a script could pass the changed bytes on to a counterparty.
+  `plan()` now applies the check the `presign-plan` and cosigned flows apply:
+  canonical bytes, the report's counts, no change but the group ID and the
+  fee raises the report lists, and canonical dummies appended. A foreign or
+  passthrough position's fee may not change, as in `presign-plan`. A plan
+  that fails throws `plan() error: invalid group plan: <reason>`. A plan that
+  passes is returned unchanged, with its mutation report.
 
 ## Plugin reviews say who authorizes each slot
 

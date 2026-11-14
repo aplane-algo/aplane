@@ -134,8 +134,8 @@ func DecodePlannedGroup(transactions []string) ([]types.Transaction, error) {
 // counts, each original position (ValidateOriginalPositions: only the group ID
 // and the fee raises the report lists may differ), the group ID over the final
 // group, and the canonical resource dummies appended after the originals. The
-// presign-plan flow and the cosigned flow check their /plan answer with it.
-// Its errors name a position by its zero-based index; an original
+// presign-plan flow, the cosigned flow and JS plan() check their /plan answer
+// with it. Its errors name a position by its zero-based index; an original
 // position changed beyond what the report allows is an *UnreportedChangeError.
 func ValidateGroupPlan(original, planned []types.Transaction, mutations *signerapi.MutationReport) error {
 	if err := validateReportCounts(len(original), len(planned), mutations); err != nil {

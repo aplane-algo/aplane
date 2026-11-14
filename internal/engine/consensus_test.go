@@ -227,7 +227,14 @@ func TestGroupPlanningForwardsAfterConsensusValidation(t *testing.T) {
 					http.NotFound(w, r)
 					return
 				}
-				_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: []string{"545801"}})
+				// The plan must pass apshell's check of it: a single
+				// transaction the signer changed nothing in.
+				var req signerapi.GroupSignRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: []string{req.Requests[0].TxnBytesHex}})
 			}))
 			defer server.Close()
 

@@ -615,6 +615,18 @@ signer checks the program and argument byte counts against the signed envelope
 and uses the declared reviewed opcode ceiling. `plan()` validates that the live
 client algod is running supported consensus v42 or v43 before contacting apsigner.
 
+`plan()` checks the signer's answer before it returns it, as the
+`presign-plan` plugin flow checks its plan. Each returned transaction must be
+the canonical encoding of what it decodes to. The group may differ from what
+was sent only in the group ID, in a fee raise the mutation report lists, and
+in canonical resource dummies appended after the originals, and the report's
+counts must match the group. Only a position sent with `authAddress` may have
+its fee raised: the signer does not sign a foreign or passthrough position, so
+it never raises that position's fee. A passthrough position is compared with
+the transaction inside its `signedTxnHex`. A plan that fails the check throws
+`plan() error: invalid group plan: <reason>`, and the script gets no plan.
+A plan that passes is returned as the signer sent it.
+
 ## Application Interaction
 
 ### Reads
