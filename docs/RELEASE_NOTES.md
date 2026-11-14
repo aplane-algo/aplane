@@ -31,8 +31,12 @@ before it was renamed `enroll`.
   left out, as the encoding leaves it out: the decoder read `"amt": ""` as
   no amount and `"note": {}` as no note, and any explicit `0`, `false`,
   `""`, `[]` or `{}` field is now refused. An empty entry inside a list is
-  written as the SDK writes it. Unknown keys were already refused by the
-  decoder. The `{"txn": [...]}` and msgpack forms are unchanged.
+  written as the SDK writes it. A file that is not valid UTF-8 is refused:
+  the SDK signed the raw bytes of an asset name such as `a\xffb` while the
+  comparison read U+FFFD. A `\u` escape for half a surrogate pair, which
+  both decoders read as U+FFFD, is refused too. Unknown keys were already
+  refused by the decoder. The `{"txn": [...]}` and msgpack forms are
+  unchanged.
 
 ## Write mode keeps every digit
 

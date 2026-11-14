@@ -13,7 +13,10 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	sdkjson "github.com/algorand/go-algorand-sdk/v2/encoding/json"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -54,6 +57,9 @@ func ParseTransactions(data []byte) ([]types.Transaction, error) {
 }
 
 func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
+	if err := checkJSONText(jsonData); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
 	// encoding/json and the SDK's decoder both let a repeated key replace an
 	// earlier one, so a file could show one amount and carry another.
 	if err := rejectDuplicateJSONKeys(jsonData); err != nil {
@@ -307,6 +313,52 @@ func txnListWrapper(jsonData []byte) (entries []string, isWrapper bool, err erro
 		return nil, false, fmt.Errorf("\"txn\" must be a list of base64 strings: %w", err)
 	}
 	return entries, true, nil
+}
+
+// checkJSONText refuses text a decoder would replace. The SDK's decoder
+// keeps bytes that are not UTF-8, which encoding/json reads as U+FFFD, so an
+// asset name could be compared as one text and signed as another; and both
+// decoders turn a \u escape for half a surrogate pair into U+FFFD, which is
+// not the text the file shows.
+func checkJSONText(data []byte) error {
+	for i := 0; i < len(data); {
+		r, size := utf8.DecodeRune(data[i:])
+		if r == utf8.RuneError && size == 1 {
+			return fmt.Errorf("the file is not valid UTF-8 (byte %d)", i)
+		}
+		i += size
+	}
+	// A backslash appears only inside a string, where it starts an escape.
+	for i := 0; i < len(data); i++ {
+		if data[i] != '\\' {
+			continue
+		}
+		i++
+		r, ok := jsonEscapedRune(data, i)
+		if !ok || !utf16.IsSurrogate(r) {
+			continue
+		}
+		i += 4
+		if low, ok := jsonEscapedRune(data, i+2); ok && data[i+1] == '\\' &&
+			utf16.DecodeRune(r, low) != utf8.RuneError {
+			i += 6
+			continue
+		}
+		return fmt.Errorf("the file has \\u%04x, half of a surrogate pair, which a decoder reads as U+FFFD", r)
+	}
+	return nil
+}
+
+// jsonEscapedRune reads the code unit of a \uXXXX escape whose u is at i.
+func jsonEscapedRune(data []byte, i int) (rune, bool) {
+	if i+5 > len(data) || data[i] != 'u' {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(string(data[i+1:i+5]), 16, 16)
+	if err != nil {
+		return 0, false
+	}
+	return rune(n), true
 }
 
 // rejectDuplicateJSONKeys walks one JSON document and refuses a key that

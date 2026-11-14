@@ -515,3 +515,57 @@ func TestParseTransactionsJSONRefusesAFieldTheEncodingLeavesOut(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTransactionsJSONRefusesTextADecoderWouldReplace(t *testing.T) {
+	payment := parserTestPayment(t, 1)
+	acfg := parserTestPayment(t, 0)
+	acfg.Type = types.AssetConfigTx
+	acfg.PaymentTxnFields = types.PaymentTxnFields{}
+	acfg.AssetParams.Total = 5
+	withParam := func(key, raw string) string {
+		return parserJSONWith(t, acfg, map[string]string{"apar": `{"t":5,"` + key + `":"` + raw + `"}`})
+	}
+
+	refused := map[string]struct{ data, want string }{
+		"invalid byte in an asset name": {withParam("an", "a\xffb"), "not valid UTF-8"},
+		"invalid byte in a unit name":   {withParam("un", "\xc3"), "not valid UTF-8"},
+		"invalid byte in a URL":         {withParam("au", "http://a/\xed\xa0\x80"), "not valid UTF-8"},
+		"invalid byte in a genesis ID": {parserJSONWith(t, payment, map[string]string{"gen": "\"testnet\xfe\""}),
+			"not valid UTF-8"},
+		"lone high surrogate":       {withParam("an", `a\ud800b`), `\ud800, half of a surrogate pair`},
+		"lone low surrogate":        {withParam("an", `a\udc00b`), `\udc00, half of a surrogate pair`},
+		"high surrogate at the end": {withParam("an", `a\ud83d`), `\ud83d, half of a surrogate pair`},
+		"two high surrogates":       {withParam("an", `\ud83d\ud83d`), `\ud83d, half of a surrogate pair`},
+		"lone surrogate in a gen":   {parserJSONWith(t, payment, map[string]string{"gen": `"\uDBFF"`}), `\udbff`},
+		"surrogate after an escape": {withParam("an", `\"\ud800`), `\ud800`},
+	}
+	for name, tc := range refused {
+		t.Run(name, func(t *testing.T) {
+			txns, err := ParseTransactions([]byte(tc.data))
+			if err == nil {
+				t.Fatalf("parsed %d transaction(s), want refused: %q", len(txns), tc.data)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+
+	accepted := map[string]struct{ data, name string }{
+		"surrogate pair":                      {withParam("an", `a😀b`), "a\U0001F600b"},
+		"literal emoji":                       {withParam("an", "a\U0001F600b"), "a\U0001F600b"},
+		"escaped backslash before u":          {withParam("an", `a\\ud800`), `a\ud800`},
+		"replacement character written as is": {withParam("an", "a�b"), "a�b"},
+	}
+	for name, tc := range accepted {
+		t.Run(name, func(t *testing.T) {
+			txns, err := ParseTransactions([]byte(tc.data))
+			if err != nil {
+				t.Fatalf("ParseTransactions() error = %v\n%q", err, tc.data)
+			}
+			if got := txns[0].AssetParams.AssetName; got != tc.name {
+				t.Fatalf("asset name = %q, want %q", got, tc.name)
+			}
+		})
+	}
+}

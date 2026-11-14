@@ -332,7 +332,9 @@ reads back as the same transaction. A field at its zero value (`0`,
 `false`, `""`, an empty list or object, a zero address or hash) must be left
 out, as the encoding leaves it out: `"amt": ""` and `"fee": 0` are refused.
 Inside a list an entry keeps its place, so an empty entry is written as the
-SDK writes it (`""`, `0` or `{}`).
+SDK writes it (`""`, `0` or `{}`). A JSON file that is not valid UTF-8, or
+that holds a `\u` escape for half a surrogate pair (such as `\ud800` alone),
+is refused: a decoder would sign other text than the file shows.
 
 Each transaction must be for the network apshell is on: its genesis hash, and
 its genesis ID when it has one, must be the active algod's. A file written on
