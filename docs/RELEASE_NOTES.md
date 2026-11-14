@@ -51,9 +51,16 @@ before it was renamed `enroll`.
   any other and warned of nothing. A payment of a non-zero amount to it is
   now a warning (`Receiver`), in the signer's approval prompt and in
   apshell's review of a plugin group. Like every warning, it asks for review
-  under `always_review_warnings` and on a passthrough or foreign slot. It
-  refuses nothing. A zero payment to the zero address, an asset transfer to
-  it and an unset close-to are not flagged.
+  under `always_review_warnings` on the signer's own slots. On a passthrough
+  or foreign slot it asks for review even with `always_review_warnings` off,
+  as every warning does there: a group in which another party's slot pays
+  ALGO to the zero address is now reviewed under `always_review_warnings`.
+  Such a group was already left to the operator, since Always Approve never
+  applies to one, so whether it prompts is unchanged: it does with User
+  Auto-Approve off and does not with it on. What changes is the review rule
+  the console and audit log record for it. It refuses nothing. A zero
+  payment to the zero address, an asset transfer to it and an unset
+  close-to are not flagged.
 
 ## JS app calls refuse reference lists that are not arrays
 

@@ -1044,7 +1044,10 @@ Edit the scalar settings at the top level, next to `key`:
   asset reconfigure, destroy, freeze, or unfreeze, a payment of ALGO to the
   zero address, or a fee above 1 ALGO. A
   rotating account's own rotation, the rekey to the next stage the signer
-  derives itself, is not a finding.
+  derives itself, is not a finding. A transaction in the group that this
+  node does not sign (a passthrough or foreign slot) is sent to review as
+  `always_review_warnings` on any of these findings, a payment of ALGO to
+  the zero address included, even with `always_review_warnings` off.
 - `max_fee_microalgos` rejects a transaction whose fee, as finally signed,
   exceeds the cap. That fee includes anything the signer adds for LogicSig
   budget or post-quantum keys, so set the cap above what those keys need.

@@ -414,8 +414,10 @@ Warning analysis covers the fields below. The rules live in `internal/txnreview/
 
 `always_review_warnings` governs only the signer's own legs. A warning on a
 passthrough or foreign leg of a group this signer co-signs always forces
-review even with `always_review_warnings` off. User Auto-Approve satisfies
-that review without a prompt.
+review even with `always_review_warnings` off. That includes a payment of
+ALGO to the zero address: a group in which another party's leg pays a
+non-zero amount to it asks for review whatever `always_review_warnings`
+says. User Auto-Approve satisfies that review without a prompt.
 Warnings on the signer's own legs are still displayed when
 `always_review_warnings:false`; they simply do not force review in that mode.
 
