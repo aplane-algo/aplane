@@ -15,8 +15,9 @@ plugin-produced transaction group to reach submission.
           non-interactive outcome never submits.
   - PS4 : plan preservation — presign-plan submits only if every slot's
           canonical transaction preserved the draft, except a canonical
-          group ID and fee increases the mutation report lists, with
-          only canonical dummies appended.
+          group ID and, on APlane-managed slots only, fee increases the
+          mutation report lists (a plugin-owned slot's fee may not
+          change), with only canonical dummies appended.
   - PS5 : signed-slot byte match and index discipline — presign-plan
           submits only if every plugin-returned slot byte-matches its
           canonical transaction and the returned index set is exact.
@@ -89,7 +90,8 @@ PregroupedCase == [
 \* Presign-plan slots: plugin-owned (signed by the plugin callback against
 \* the canonical bytes) or managed (signed by apsigner). planPreserved is
 \* the draft-vs-canonical comparison (validatePluginPlan: canonical group ID,
-\* reported fee increases only, canonical dummies appended); txnMatch is
+\* reported fee increases on APlane-managed slots only, no fee change on a
+\* plugin-owned slot, canonical dummies appended); txnMatch is
 \* the plugin-returned slot's byte match against the canonical transaction;
 \* rekeyTargetOK is the client's check of the slot's draft that it does not
 \* rekey to an address the signer holds an aplane key for that is not a

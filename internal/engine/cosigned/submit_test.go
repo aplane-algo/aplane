@@ -775,14 +775,14 @@ func TestValidatePlannedGroup(t *testing.T) {
 		TotalFeesDelta: 1_000, OriginalCount: 1, FinalCount: 2,
 	}
 
-	if err := validatePlannedGroup([]types.Transaction{original}, planned, mutations); err != nil {
+	if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, planned, mutations); err != nil {
 		t.Fatalf("valid plan: unexpected error %v", err)
 	}
 
 	t.Run("wrong counts", func(t *testing.T) {
 		bad := *mutations
 		bad.OriginalCount = 2
-		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "original_count") {
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "original_count") {
 			t.Fatalf("error = %v, want original_count rejection", err)
 		}
 	})
@@ -790,7 +790,7 @@ func TestValidatePlannedGroup(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[0].Receiver = testAddress(3)
 		// Zero-based, as this path's other positions are.
-		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields at original index 0") {
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields at original index 0") {
 			t.Fatalf("error = %v, want original mutation rejection", err)
 		}
 	})
@@ -798,14 +798,14 @@ func TestValidatePlannedGroup(t *testing.T) {
 		bad := *mutations
 		bad.FeesModified = nil
 		bad.TotalFeesDelta = 0
-		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "unreported fields") {
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "unreported fields") {
 			t.Fatalf("error = %v, want fee mutation rejection", err)
 		}
 	})
 	t.Run("wrong fee delta", func(t *testing.T) {
 		bad := *mutations
 		bad.TotalFeesDelta++
-		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "total_fees_delta") {
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "total_fees_delta") {
 			t.Fatalf("error = %v, want fee delta rejection", err)
 		}
 	})
@@ -815,14 +815,14 @@ func TestValidatePlannedGroup(t *testing.T) {
 		unchanged[0].Fee = original.Fee
 		bad := *mutations
 		bad.TotalFeesDelta = 0
-		if err := validatePlannedGroup([]types.Transaction{original}, unchanged, &bad); err == nil || !strings.Contains(err.Error(), "original index 0 did not increase the fee") {
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, unchanged, &bad); err == nil || !strings.Contains(err.Error(), "original index 0 did not increase the fee") {
 			t.Fatalf("error = %v, want an unchanged reported fee refused", err)
 		}
 	})
 	t.Run("negative fee delta", func(t *testing.T) {
 		bad := *mutations
 		bad.TotalFeesDelta = -1
-		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "must not be negative") {
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "must not be negative") {
 			t.Fatalf("error = %v, want a negative total refused", err)
 		}
 	})
@@ -836,7 +836,7 @@ func TestValidatePlannedGroup(t *testing.T) {
 		report := &signerapi.MutationReport{
 			FeesModified: []int{0, 1}, GroupIDChanged: true, OriginalCount: 2, FinalCount: 2,
 		}
-		if err := validatePlannedGroup(pair, overflowing, report); err == nil || !strings.Contains(err.Error(), "overflows uint64") {
+		if err := clientsign.ValidateGroupPlan(pair, overflowing, report); err == nil || !strings.Contains(err.Error(), "overflows uint64") {
 			t.Fatalf("error = %v, want rises that wrap around refused", err)
 		}
 	})
@@ -856,7 +856,7 @@ func TestValidatePlannedGroup(t *testing.T) {
 			badPlanned := append([]types.Transaction(nil), planned...)
 			edit(&badPlanned[1])
 			regroupForTest(t, badPlanned)
-			if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical resource dummy") {
+			if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical resource dummy") {
 				t.Fatalf("error = %v, want the dummy refused", err)
 			}
 			if _, err := signCosignedDummies(frozenGroup{Txns: badPlanned, OriginalCount: 1}); err == nil || !strings.Contains(err.Error(), "canonical resource dummy") {
@@ -867,7 +867,7 @@ func TestValidatePlannedGroup(t *testing.T) {
 	t.Run("appended dummy outside the group", func(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[1].Group = types.Digest{0x45}
-		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical group ID") {
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical group ID") {
 			t.Fatalf("error = %v, want the stray group ID refused", err)
 		}
 	})
@@ -877,7 +877,26 @@ func TestValidatePlannedGroup(t *testing.T) {
 			t.Fatalf("signCosignedDummies() = %d, %v; want one signed dummy", len(signed), err)
 		}
 	})
+	// A pre-grouped pair regrouped with no fee raise and no dummy. The
+	// refusal comes before the check of the new group ID itself.
 	t.Run("gratuitous existing group change", func(t *testing.T) {
+		grouped := []types.Transaction{original, testPaymentTxn(t, testAddress(3), testAddress(4), "bounded")}
+		regroupForTest(t, grouped)
+		regrouped := append([]types.Transaction(nil), grouped...)
+		for i := range regrouped {
+			regrouped[i].Group = types.Digest{0x32}
+		}
+		report := &signerapi.MutationReport{
+			GroupIDChanged: true, OriginalCount: 2, FinalCount: 2,
+		}
+		if err := clientsign.ValidateGroupPlan(grouped, regrouped, report); err == nil ||
+			!strings.Contains(err.Error(), "existing group ID") {
+			t.Fatalf("error = %v, want gratuitous regrouping rejection", err)
+		}
+	})
+	// The signer never gives a single transaction a group ID or changes the
+	// one it carries.
+	t.Run("group ID change for a single transaction", func(t *testing.T) {
 		grouped := original
 		grouped.Group = types.Digest{0x31}
 		regrouped := grouped
@@ -885,9 +904,9 @@ func TestValidatePlannedGroup(t *testing.T) {
 		report := &signerapi.MutationReport{
 			GroupIDChanged: true, OriginalCount: 1, FinalCount: 1,
 		}
-		if err := validatePlannedGroup([]types.Transaction{grouped}, []types.Transaction{regrouped}, report); err == nil ||
-			!strings.Contains(err.Error(), "existing group ID") {
-			t.Fatalf("error = %v, want gratuitous regrouping rejection", err)
+		if err := clientsign.ValidateGroupPlan([]types.Transaction{grouped}, []types.Transaction{regrouped}, report); err == nil ||
+			!strings.Contains(err.Error(), "group ID change for a single transaction") {
+			t.Fatalf("error = %v, want the single transaction's group change refused", err)
 		}
 	})
 	t.Run("fee exceeds advertised ceiling", func(t *testing.T) {

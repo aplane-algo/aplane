@@ -524,6 +524,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		eng.AlgodClient = algodClient
 
 		var gotReq signerapi.GroupSignRequest
+		var planned []string
 		signerClient := signerclient.NewSignerClient("http://signer.test")
 		signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			if r.URL.Path != "/plan" {
@@ -535,20 +536,20 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 				t.Fatalf("decode request: %v", err)
 			}
-			return jsonResponse(r, http.StatusOK, signerapi.GroupPlanResponse{
-				Transactions: []string{"TXabc", "TXdef", "TXghi"},
-				Mutations: &signerapi.MutationReport{
-					DummiesAdded:     1,
-					GroupIDChanged:   true,
-					FeesModified:     []int{0, 2},
-					TotalFeesDelta:   3000,
-					OriginalCount:    3,
-					FinalCount:       4,
-					PassthroughCount: 0,
-					ForeignCount:     2,
-					Reason:           "lsig_budget",
-				},
-			})
+			// plan() checks the answer against the requests, so the signer
+			// answers as its planner would: the sign-mode position charged,
+			// one dummy, the group ID set.
+			drafts := make([]types.Transaction, len(gotReq.Requests))
+			for i, request := range gotReq.Requests {
+				txn, err := txnutil.DecodePrefixedHex(request.TxnBytesHex)
+				if err != nil {
+					t.Fatalf("decode request %d: %v", i, err)
+				}
+				drafts[i] = txn
+			}
+			plannedTxns, report := planGroup(t, drafts, map[int]uint64{0: 3000}, 1, 2, 0)
+			planned = encodePlan(plannedTxns)
+			return jsonResponse(r, http.StatusOK, signerapi.GroupPlanResponse{Transactions: planned, Mutations: report})
 		})}
 
 		eng.Connection.SignerClient = signerClient
@@ -602,7 +603,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			t.Fatalf("request = %#v, want mapped sign requests", gotReq.Requests)
 		}
 
-		if planned, err := stringArray(got["transactions"]); err != nil || !reflect.DeepEqual(planned, []string{"TXabc", "TXdef", "TXghi"}) {
+		if returned, err := stringArray(got["transactions"]); err != nil || !reflect.DeepEqual(returned, planned) {
 			t.Fatalf("transactions = %#v, want planned transactions", got["transactions"])
 		}
 
@@ -614,9 +615,9 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			t.Fatalf("mutations = %#v, want mapped mutation fields", mutations)
 		}
 		feesModified, _ := jsArray(mutations["feesModified"])
-		if !reflect.DeepEqual(feesModified, []interface{}{float64(0), float64(2)}) &&
-			!reflect.DeepEqual(mutations["feesModified"], []int{0, 2}) {
-			t.Fatalf("feesModified = %#v, want [0 2]", mutations["feesModified"])
+		if !reflect.DeepEqual(feesModified, []interface{}{float64(0)}) &&
+			!reflect.DeepEqual(mutations["feesModified"], []int{0}) {
+			t.Fatalf("feesModified = %#v, want [0]", mutations["feesModified"])
 		}
 		if toUint64Value(api.runtime, mutations["totalFeesDelta"]) != 3000 || mutations["reason"] != "lsig_budget" {
 			t.Fatalf("mutations = %#v, want fee delta and reason", mutations)

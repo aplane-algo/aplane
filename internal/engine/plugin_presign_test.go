@@ -209,6 +209,54 @@ func TestValidatePluginPlan(t *testing.T) {
 		regroupPlan(t, p)
 		return p, r
 	})
+
+	// The shared group ID rule: originals that all carry a group ID keep it
+	// unless a fee raise or appended dummies change the group. A presign draft
+	// has its group ID cleared, so this exercises the check, not the flow.
+	t.Run("pre-grouped draft regrouped with nothing to change it -> error", func(t *testing.T) {
+		grouped := append([]types.Transaction(nil), drafts...)
+		regroupPlan(t, grouped)
+		planned := append([]types.Transaction(nil), grouped...)
+		for i := range planned {
+			planned[i].Group = types.Digest{0x32}
+		}
+		report := &signerapi.MutationReport{GroupIDChanged: true, OriginalCount: 2, FinalCount: 2, ForeignCount: 1}
+		err := validatePluginPlan(grouped, planned, report, refs)
+		if err == nil || !strings.Contains(err.Error(), "existing group ID") {
+			t.Fatalf("got %v, want the existing group ID change refused", err)
+		}
+	})
+
+	// The signer raises fees only on the slots it signs. A plugin-owned slot
+	// goes to /plan as foreign, so a raise on it is refused even when the
+	// report lists it, while the same raise on the managed slot passes.
+	t.Run("reported fee raise on the managed slot -> ok", func(t *testing.T) {
+		planned, report := presignPlan(t, drafts, 2000, 0)
+		if err := validatePluginPlan(drafts, planned, report, refs); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	raisePlugin := func(t *testing.T, managedDelta uint64) error {
+		t.Helper()
+		planned, report := presignPlan(t, drafts, managedDelta, 1)
+		planned[1].Fee += 2000
+		regroupPlan(t, planned)
+		report.FeesModified = append(report.FeesModified, 1)
+		report.TotalFeesDelta += 2000
+		return validatePluginPlan(drafts, planned, report, refs)
+	}
+	const pluginRaise = "plan changed the fee of plugin-owned slot at index 1 from 1000 to 3000 microAlgos; " +
+		"the signer may raise fees only on the slots it signs"
+	t.Run("reported fee raise on the plugin slot -> error", func(t *testing.T) {
+		if err := raisePlugin(t, 0); err == nil || err.Error() != pluginRaise {
+			t.Fatalf("got %v, want %q", err, pluginRaise)
+		}
+	})
+	t.Run("reported fee raises on both slots -> error naming the plugin slot", func(t *testing.T) {
+		if err := raisePlugin(t, 2000); err == nil || err.Error() != pluginRaise {
+			t.Fatalf("got %v, want %q", err, pluginRaise)
+		}
+	})
 }
 
 func TestVerifySignedAgainstPlan(t *testing.T) {
@@ -747,6 +795,96 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 	}
 }
 
+// The signer never raises the fee of a slot it does not sign. A plan that
+// raises the plugin's slot, with a report that lists the raise, is refused
+// before the plugin is asked to sign that fee.
+func TestSignAndSubmitWithPluginSignersRefusesAFeeRaiseOnAPluginSlot(t *testing.T) {
+	pluginAddress, err := signing.DummyAddress()
+	if err != nil {
+		t.Fatalf("signing.DummyAddress() error = %v", err)
+	}
+	managedAccount := crypto.GenerateAccount()
+	resources := &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+		MaxOpcodeCost: 20_000,
+	}
+	txns := []types.Transaction{
+		presignTestTxn(t, pluginAddress.String(), "plugin"),
+		presignTestTxn(t, managedAccount.Address.String(), "managed"),
+	}
+
+	var signCalls atomic.Int32
+	signerMux := http.NewServeMux()
+	signerMux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		drafts := make([]types.Transaction, len(req.Requests))
+		for i, item := range req.Requests {
+			txn, err := txnutil.DecodePrefixedHex(item.TxnBytesHex)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			drafts[i] = txn
+		}
+		// presignPlan raises the first slot, which is the plugin's here.
+		planned, report := presignPlan(t, drafts, 2000, 0)
+		encoded := make([]string, len(planned))
+		for i, txn := range planned {
+			encoded[i] = txnutil.EncodeWithPrefixHex(txn)
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: encoded, Mutations: report})
+	})
+	signerMux.HandleFunc("/sign", func(w http.ResponseWriter, r *http.Request) {
+		signCalls.Add(1)
+		http.Error(w, "must not be reached", http.StatusInternalServerError)
+	})
+	signerServer := httptest.NewServer(signerMux)
+	defer signerServer.Close()
+
+	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(presignAlgodParams())
+	}))
+	defer algodServer.Close()
+	algodClient, err := algod.MakeClient(algodServer.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
+
+	var pluginCalls atomic.Int32
+	result, err := engine.SignAndSubmitWithPluginSigners(
+		context.Background(),
+		txns,
+		map[string]string{pluginAddress.String(): "plugin-ref"},
+		map[string]PluginSlotAuthorization{pluginAddress.String(): {LsigResources: resources}},
+		func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) {
+			pluginCalls.Add(1)
+			return nil, errors.New("must not be reached")
+		},
+		LsigArgs{},
+	)
+	want := "invalid group plan: plan changed the fee of plugin-owned slot at index 0 from 1000 to 3000 microAlgos; " +
+		"the signer may raise fees only on the slots it signs"
+	if err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+	if result != nil {
+		t.Fatalf("result = %+v, want none for a refused plan", result)
+	}
+	if pluginCalls.Load() != 0 || signCalls.Load() != 0 {
+		t.Fatalf("plugin signer calls = %d, /sign calls = %d, want none after a refused plan", pluginCalls.Load(), signCalls.Load())
+	}
+}
+
 // What the accepted plan changed is reported, and the report survives a step
 // after the plan that fails: it comes back with the error, as a failed
 // submission's output does, rather than being dropped with it.
@@ -760,9 +898,11 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 		ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
 		MaxOpcodeCost: 20_000,
 	}
+	// The managed slot comes first: presignPlan raises the first slot's fee,
+	// and the signer raises fees only on the slots it signs.
 	txns := []types.Transaction{
-		presignTestTxn(t, pluginAddress.String(), "plugin"),
 		presignTestTxn(t, managedAccount.Address.String(), "managed"),
+		presignTestTxn(t, pluginAddress.String(), "plugin"),
 	}
 
 	var signCalls atomic.Int32

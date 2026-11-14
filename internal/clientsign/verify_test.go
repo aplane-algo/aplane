@@ -295,3 +295,79 @@ func suggestedParamsFromTransaction(txn types.Transaction) types.SuggestedParams
 		FlatFee:         true,
 	}
 }
+
+// ValidateGroupPlan holds a plan to the planner's group ID rules: a single
+// transaction keeps the group ID it was sent with, none or its own, and a
+// group whose originals all carry one keeps it unless a fee raise or appended
+// dummies change the group.
+func TestValidateGroupPlanGroupIDRules(t *testing.T) {
+	single := verificationPayment(1, 2)
+	selfGrouped := single
+	gid, err := sdkcrypto.ComputeGroupID([]types.Transaction{single})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selfGrouped.Group = gid
+	withGroup := func(txn types.Transaction, group types.Digest) types.Transaction {
+		txn.Group = group
+		return txn
+	}
+	withFee := func(txn types.Transaction, fee types.MicroAlgos) types.Transaction {
+		txn.Fee = fee
+		return txn
+	}
+	pair := []types.Transaction{verificationPayment(1, 2), verificationPayment(3, 4)}
+	grouped := append([]types.Transaction(nil), pair...)
+	pairID, err := sdkcrypto.ComputeGroupID(grouped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range grouped {
+		grouped[i].Group = pairID
+	}
+	regrouped := append([]types.Transaction(nil), grouped...)
+	for i := range regrouped {
+		regrouped[i].Group = types.Digest{0x32}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		original []types.Transaction
+		planned  []types.Transaction
+		report   *signerapi.MutationReport
+		want     string // empty: accepted
+	}{
+		{"single without a group ID, unchanged", []types.Transaction{single}, []types.Transaction{single}, nil, ""},
+		{"single without a group ID, fee raised", []types.Transaction{single}, []types.Transaction{withFee(single, 3000)},
+			&signerapi.MutationReport{OriginalCount: 1, FinalCount: 1, FeesModified: []int{0}, TotalFeesDelta: 2000}, ""},
+		{"single with its own group ID, unchanged", []types.Transaction{selfGrouped}, []types.Transaction{selfGrouped}, nil, ""},
+		{"single given a group ID, reported", []types.Transaction{single}, []types.Transaction{withGroup(single, types.Digest{7})},
+			&signerapi.MutationReport{OriginalCount: 1, FinalCount: 1, GroupIDChanged: true}, "group ID change for a single transaction"},
+		{"single given a group ID with a fee raise, reported", []types.Transaction{single},
+			[]types.Transaction{withGroup(withFee(single, 3000), types.Digest{7})},
+			&signerapi.MutationReport{OriginalCount: 1, FinalCount: 1, GroupIDChanged: true, FeesModified: []int{0}, TotalFeesDelta: 2000},
+			"group ID change for a single transaction"},
+		{"single given a group ID, not reported", []types.Transaction{single}, []types.Transaction{withGroup(single, types.Digest{7})},
+			nil, "unreported fields at original index 0"},
+		{"single with its own group ID, changed, reported", []types.Transaction{selfGrouped}, []types.Transaction{withGroup(single, types.Digest{7})},
+			&signerapi.MutationReport{OriginalCount: 1, FinalCount: 1, GroupIDChanged: true}, "group ID change for a single transaction"},
+		{"single with its own group ID, removed, not reported", []types.Transaction{selfGrouped}, []types.Transaction{single},
+			&signerapi.MutationReport{OriginalCount: 1, FinalCount: 1}, "unreported fields at original index 0"},
+		{"pre-grouped pair, unchanged", grouped, grouped, nil, ""},
+		{"pre-grouped pair regrouped with nothing to change it", grouped, regrouped,
+			&signerapi.MutationReport{OriginalCount: 2, FinalCount: 2, GroupIDChanged: true}, "existing group ID"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateGroupPlan(tc.original, tc.planned, tc.report)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("ValidateGroupPlan() error = %v, want accepted", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ValidateGroupPlan() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

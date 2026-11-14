@@ -218,7 +218,7 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 	for i, entry := range decoded.Entries {
 		planned[i] = entry.Txn
 	}
-	if err := validatePlannedGroup(original, planned, response.Mutations); err != nil {
+	if err := clientsign.ValidateGroupPlan(original, planned, response.Mutations); err != nil {
 		return frozenGroup{}, fmt.Errorf("invalid group plan: %w", err)
 	}
 	if dummies := len(planned) - len(original); dummies > 0 {
@@ -416,69 +416,6 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 		}
 	}
 	return nil
-}
-
-// validatePlannedGroup permits only the planner's contracted mutations to
-// original positions: reported fee pooling and group-ID assignment. Appended
-// positions must be canonical budget dummies.
-func validatePlannedGroup(original, planned []types.Transaction, mutations *signerapi.MutationReport) error {
-	if len(planned) < len(original) {
-		return fmt.Errorf("signer returned %d group positions, want at least %d", len(planned), len(original))
-	}
-	appended := len(planned) - len(original)
-	if mutations == nil {
-		if appended != 0 {
-			return fmt.Errorf("signer appended %d group positions without a mutation report", appended)
-		}
-	} else {
-		if mutations.OriginalCount != len(original) {
-			return fmt.Errorf("mutation original_count %d does not match request count %d", mutations.OriginalCount, len(original))
-		}
-		if mutations.FinalCount != len(planned) {
-			return fmt.Errorf("mutation final_count %d does not match returned count %d", mutations.FinalCount, len(planned))
-		}
-		if mutations.DummiesAdded != appended {
-			return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
-		}
-	}
-
-	// The fee and field reconciliation is the ordinary /sign path's: reported
-	// fees may only rise, the rises must sum to total_fees_delta without
-	// overflow, and nothing else may change but the group ID.
-	if err := clientsign.ValidateOriginalPositions(original, planned, mutations); err != nil {
-		return err
-	}
-	if mutations != nil && mutations.GroupIDChanged && appended == 0 && len(mutations.FeesModified) == 0 {
-		var zero types.Digest
-		requiresAssignment := false
-		for i := range original {
-			requiresAssignment = requiresAssignment || original[i].Group == zero
-		}
-		if !requiresAssignment {
-			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
-		}
-	}
-	if len(original) == 0 {
-		return nil
-	}
-	return validateCanonicalDummies(original[0], planned, len(original))
-}
-
-// validateCanonicalDummies requires the positions after originalCount to be
-// exactly the canonical resource dummies the signer's planner builds for this
-// group: the check every other client path runs, which rebuilds each dummy
-// from the first original's validity window and genesis and the group's
-// canonical ID, so nothing (a lease, a validity window, a note) can differ.
-func validateCanonicalDummies(firstOriginal types.Transaction, planned []types.Transaction, originalCount int) error {
-	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
-	if err != nil {
-		return err
-	}
-	if len(planned) == originalCount {
-		return nil
-	}
-	_, err = clientsign.ValidateCanonicalDummyTxns(firstOriginal, groupID, planned, originalCount)
-	return err
 }
 
 func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
@@ -765,7 +702,9 @@ func signCosignedDummies(group frozenGroup) ([]string, error) {
 	if len(group.Txns) == 0 || group.OriginalCount < 1 || group.OriginalCount > len(group.Txns) {
 		return nil, fmt.Errorf("frozen group has %d position(s) for %d original(s)", len(group.Txns), group.OriginalCount)
 	}
-	if err := validateCanonicalDummies(group.Txns[0], group.Txns, group.OriginalCount); err != nil {
+	// The dummies are checked again before they are signed: the frozen
+	// group's must be exactly the planner's canonical ones.
+	if err := clientsign.ValidateCanonicalGroupAndDummies(group.Txns[0], group.Txns, group.OriginalCount); err != nil {
 		return nil, err
 	}
 	signedDummies, err := signing.SignDummyTransactions(group.Txns[group.OriginalCount:])

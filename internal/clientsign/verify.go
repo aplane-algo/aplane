@@ -5,12 +5,14 @@ package clientsign
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -52,13 +54,39 @@ func validateSignedGroupMutations(
 }
 
 // validateMutationReportCounts checks the counts of a mutation report against a
-// group the signer returned for originalCount sign-only positions: it may
-// append transactions only with a report, which must count the request, the
-// returned group and the appended dummies, claim no passthrough or foreign
-// positions, and report a group ID change exactly when the group needs one.
-// endpoint names the response in the passthrough and foreign errors. The
-// fields of each position are ValidateOriginalPositions' to check.
+// group the signer returned for originalCount sign-only positions: the counts
+// validateReportCounts checks, and then that the report claims no passthrough
+// or foreign positions and reports a group ID change whenever it appended
+// dummies. endpoint names the response in the passthrough and foreign errors.
+// The fields of each position are ValidateOriginalPositions' to check.
 func validateMutationReportCounts(endpoint string, originalCount, returnedCount int, mutations *signerapi.MutationReport) error {
+	if err := validateReportCounts(originalCount, returnedCount, mutations); err != nil {
+		return err
+	}
+	if mutations == nil {
+		return nil
+	}
+	appended := returnedCount - originalCount
+	if mutations.PassthroughCount != 0 {
+		return fmt.Errorf("%s returned %d passthrough transaction(s) for sign-only input", endpoint, mutations.PassthroughCount)
+	}
+	if mutations.ForeignCount != 0 {
+		return fmt.Errorf("%s returned %d foreign transaction(s) for sign-only input", endpoint, mutations.ForeignCount)
+	}
+	if appended > 0 && !mutations.GroupIDChanged {
+		return fmt.Errorf("mutation appended dummies without reporting a group ID change")
+	}
+	return nil
+}
+
+// validateReportCounts checks the counts of a mutation report against a group
+// the signer returned for originalCount positions: the group keeps every
+// original, the signer may append transactions only with a report, and the
+// report must count the request, the returned group and the appended dummies.
+// A report may not claim a group ID change for a single transaction: the
+// signer assigns a group ID only to two or more, and keeps a single
+// transaction's as it was sent, none or its own.
+func validateReportCounts(originalCount, returnedCount int, mutations *signerapi.MutationReport) error {
 	if returnedCount < originalCount {
 		return fmt.Errorf("signer returned %d transaction(s), want at least %d", returnedCount, originalCount)
 	}
@@ -78,17 +106,110 @@ func validateMutationReportCounts(endpoint string, originalCount, returnedCount 
 	if mutations.DummiesAdded != appended {
 		return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
 	}
-	if mutations.PassthroughCount != 0 {
-		return fmt.Errorf("%s returned %d passthrough transaction(s) for sign-only input", endpoint, mutations.PassthroughCount)
-	}
-	if mutations.ForeignCount != 0 {
-		return fmt.Errorf("%s returned %d foreign transaction(s) for sign-only input", endpoint, mutations.ForeignCount)
-	}
-	if appended > 0 && !mutations.GroupIDChanged {
-		return fmt.Errorf("mutation appended dummies without reporting a group ID change")
-	}
 	if returnedCount == 1 && mutations.GroupIDChanged {
 		return fmt.Errorf("mutation reported a group ID change for a single transaction")
+	}
+	return nil
+}
+
+// DecodePlannedGroup decodes the transactions of a /plan answer. Each must be
+// the TX-prefixed canonical encoding of what it decodes to: bytes that decode
+// leniently could differ from the group the signer froze. Its errors name a
+// transaction by its zero-based index and wrap the canonical decoder's.
+func DecodePlannedGroup(transactions []string) ([]types.Transaction, error) {
+	planned := make([]types.Transaction, len(transactions))
+	for i, txnHex := range transactions {
+		raw, err := hex.DecodeString(txnHex)
+		if err != nil {
+			return nil, fmt.Errorf("planned transaction at index %d: invalid hex: %w", i, err)
+		}
+		txn, err := canonical.DecodeTXPrefixed(raw)
+		if err != nil {
+			return nil, fmt.Errorf("planned transaction at index %d: %w", i, err)
+		}
+		planned[i] = txn
+	}
+	return planned, nil
+}
+
+// ValidateGroupPlan checks a group the signer planned, decoded canonically,
+// against the transactions the client sent for it: the mutation report's
+// counts, each original position (ValidateOriginalPositions: only the group ID
+// and the fee raises the report lists may differ), the group ID over the final
+// group, and the canonical resource dummies appended after the originals. The
+// group ID rules follow the planner. A single transaction keeps the group ID
+// it was sent with, so a report of a change to it is refused. A changed group
+// ID on originals that all carry one is refused unless the report also lists
+// a fee raise or appended dummies. The presign-plan flow, the cosigned flow
+// and JS plan() check their /plan answer with it. Its errors name a position
+// by its zero-based index; an original position changed beyond what the
+// report allows is an *UnreportedChangeError.
+func ValidateGroupPlan(original, planned []types.Transaction, mutations *signerapi.MutationReport) error {
+	if err := validateReportCounts(len(original), len(planned), mutations); err != nil {
+		return err
+	}
+	if err := ValidateOriginalPositions(original, planned, mutations); err != nil {
+		return err
+	}
+	if mutations != nil && mutations.GroupIDChanged && len(original) > 0 &&
+		len(planned) == len(original) && len(mutations.FeesModified) == 0 {
+		var zero types.Digest
+		requiresAssignment := false
+		for i := range original {
+			requiresAssignment = requiresAssignment || original[i].Group == zero
+		}
+		if !requiresAssignment {
+			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
+		}
+	}
+	// A dummy is rebuilt from the first original transaction.
+	if len(original) == 0 {
+		if len(planned) != 0 {
+			return fmt.Errorf("signer appended %d transaction(s) to an empty group", len(planned))
+		}
+		return nil
+	}
+	return ValidateCanonicalGroupAndDummies(original[0], planned, len(original))
+}
+
+// ValidateCanonicalGroupAndDummies checks that group carries the group ID
+// computed over itself, and that its transactions after the first
+// originalCount are the canonical resource dummies for it, rebuilt from
+// firstOriginal's validity window and genesis (ValidateCanonicalDummyTxns).
+func ValidateCanonicalGroupAndDummies(firstOriginal types.Transaction, group []types.Transaction, originalCount int) error {
+	groupID, err := ValidateCanonicalGroupID(group)
+	if err != nil {
+		return err
+	}
+	if len(group) == originalCount {
+		return nil
+	}
+	_, err = ValidateCanonicalDummyTxns(firstOriginal, groupID, group, originalCount)
+	return err
+}
+
+// ValidateUnsignedFees refuses a planned group that changed the fee of an
+// original position the signer does not sign. The signer's planner raises
+// fees only on the positions it signs: a foreign or passthrough position is
+// never a fee target, and the authorization cost a foreign position declares
+// (lsig_resources, pq_scheme) is charged to the signer's own positions. So
+// the fee of such a position must come back as the client sent it, whether or
+// not the report lists it; the fees are compared directly. unsigned maps the
+// zero-based index of each such position to the name its error gives it.
+// Run it after ValidateGroupPlan, which leaves a reported fee raise as the
+// only change it can find.
+func ValidateUnsignedFees(original, planned []types.Transaction, unsigned map[int]string) error {
+	// It guards planned[i] below; ValidateGroupPlan has refused a short group.
+	if len(planned) < len(original) {
+		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(planned), len(original))
+	}
+	for i := range original {
+		kind, ok := unsigned[i]
+		if !ok || planned[i].Fee == original[i].Fee {
+			continue
+		}
+		return fmt.Errorf("plan changed the fee of %s slot at index %d from %d to %d microAlgos; the signer may raise fees only on the slots it signs",
+			kind, i, original[i].Fee, planned[i].Fee)
 	}
 	return nil
 }
@@ -111,8 +232,9 @@ func (e *UnreportedChangeError) Error() string {
 // changed, and in a fee the report lists, which must have risen. The rises
 // must sum, without overflowing, to the report's total_fees_delta, which must
 // not be negative. A position that differs in anything else is an
-// *UnreportedChangeError. The ordinary /sign response, the cosigned /plan and
-// the plugin presign /plan all run this one check. Its errors name a position
+// *UnreportedChangeError. The ordinary /sign response, the rotating prepare
+// and the /plan answers ValidateGroupPlan checks all run this one check. Its
+// errors name a position
 // by its zero-based index, as the report's fee indices do and as every check
 // of a response in this package does.
 func ValidateOriginalPositions(original, returned []types.Transaction, mutations *signerapi.MutationReport) error {

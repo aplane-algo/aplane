@@ -681,7 +681,11 @@ Before it freezes the `/plan` result, the client checks it with the same
 reconciliation the ordinary `/sign` path uses: each original position may
 differ from the draft only in its group ID and in a fee the mutation report
 lists, which must have risen; the rises must sum, without overflowing, to a
-non-negative `total_fees_delta`. Appended positions must be exactly the
+non-negative `total_fees_delta`. The group ID changes only as the planner
+changes it: never on a single transaction, and on a group whose positions all
+carried one only with a fee raise or appended dummies. The presign-plan flow
+and JS `plan()` check their plans with the same function
+(`clientsign.ValidateGroupPlan`). Appended positions must be exactly the
 planner's canonical resource dummies, rebuilt from the first original's
 validity window and genesis and the group's canonical ID, so a dummy with
 another lease, window or note is refused; the client checks them again

@@ -26,7 +26,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
-	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -132,29 +131,19 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		return nil, fmt.Errorf("group planning failed: %w", err)
 	}
 	originalCount := len(txns)
-	if len(planResp.Transactions) < originalCount {
-		return nil, fmt.Errorf("group planning returned %d transaction(s), want at least %d", len(planResp.Transactions), originalCount)
-	}
-	canonicalTxns := make([]types.Transaction, len(planResp.Transactions))
-	for i, txnHex := range planResp.Transactions {
-		// Canonical, as the cosigned plan check requires: bytes that decode
-		// leniently could differ from what the signer froze.
-		raw, err := hex.DecodeString(txnHex)
-		if err != nil {
-			return nil, fmt.Errorf("planned transaction at index %d: invalid hex: %w", i, err)
-		}
-		txn, err := canonical.DecodeTXPrefixed(raw)
-		if err != nil {
-			return nil, fmt.Errorf("planned transaction at index %d: %w", i, err)
-		}
-		canonicalTxns[i] = txn
+	// Canonical, as the cosigned plan check requires: bytes that decode
+	// leniently could differ from what the signer froze.
+	canonicalTxns, err := clientsign.DecodePlannedGroup(planResp.Transactions)
+	if err != nil {
+		return nil, err
 	}
 
 	// --- Guardrail: /plan may only make its contracted mutations ---
-	// Only the group id and reported fee increases may change an original slot,
-	// and appended slots must be the planner's canonical budget dummies. For
-	// plugin-owned slots this protects the plugin's HPKE envelope/proof (and the
-	// plugin pays any fee it signs). For APlane-managed slots it matters just as
+	// Only the group id may change an original slot, and a reported fee
+	// increase a managed one; appended slots must be the planner's canonical
+	// budget dummies. For plugin-owned slots this protects the plugin's HPKE
+	// envelope/proof, and the fee the plugin built, which it then signs without
+	// the signer's approval. For APlane-managed slots it matters just as
 	// much: a Falcon-funded Mithras deposit's funder payment + app-call carry
 	// HPKE-bound fields (sender/firstValid/lastValid/lease/appId), so a re-stamp
 	// here would silently mint an unspendable UTXO. Enforce it rather than trust
@@ -344,50 +333,37 @@ func assertPluginSignersMatched(txns []types.Transaction, refs map[string]string
 // canonical budget dummies appended after them. Any other change (sender,
 // validity window, lease, genesis, amount, app id, args) could silently break a
 // plugin slot's HPKE envelope or proof, or a managed funder slot's HPKE
-// binding, so it is rejected.
+// binding, so it is rejected. The check is every /plan answer's
+// (clientsign.ValidateGroupPlan: the report's counts, then the ordinary /sign
+// path's fee and field reconciliation, then the group ID and the dummies); a
+// slot changed beyond its group ID and reported fee is named here as managed
+// or plugin-owned.
+//
+// A reported fee raise is then allowed on managed slots only. A plugin-owned
+// slot goes to /plan as foreign, so the signer never raises its fee: the
+// authorization cost it declares is charged to the managed slots. The plugin
+// signs the slot with no approval of the signer's, so a raise there would come
+// out of the plugin's account unseen; any change to its fee is refused.
 func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi.MutationReport, pluginSignerRefs map[string]string) error {
-	if len(planned) < len(draft) {
-		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(planned), len(draft))
-	}
-	appended := len(planned) - len(draft)
-	if mutations == nil {
-		if appended != 0 {
-			return fmt.Errorf("signer appended %d transaction(s) without a mutation report", appended)
-		}
-	} else {
-		if mutations.OriginalCount != len(draft) {
-			return fmt.Errorf("mutation original_count %d does not match request count %d", mutations.OriginalCount, len(draft))
-		}
-		if mutations.FinalCount != len(planned) {
-			return fmt.Errorf("mutation final_count %d does not match returned count %d", mutations.FinalCount, len(planned))
-		}
-		if mutations.DummiesAdded != appended {
-			return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
-		}
-	}
-	// The fee and field reconciliation is the ordinary /sign path's: reported
-	// fees may only rise, the rises must sum to total_fees_delta without
-	// overflow, and nothing else may change but the group ID.
-	if err := clientsign.ValidateOriginalPositions(draft, planned, mutations); err != nil {
-		var changed *clientsign.UnreportedChangeError
-		if !errors.As(err, &changed) {
-			return err
-		}
+	err := clientsign.ValidateGroupPlan(draft, planned, mutations)
+	var changed *clientsign.UnreportedChangeError
+	if errors.As(err, &changed) {
 		owner := "managed"
 		if _, owned := pluginSignerRefs[draft[changed.Index].Sender.String()]; owned {
 			owner = "plugin"
 		}
 		return fmt.Errorf("plan modified %s slot at index %d beyond its group id and reported fee", owner, changed.Index)
 	}
-	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
 	if err != nil {
 		return err
 	}
-	if appended == 0 {
-		return nil
+	pluginOwned := make(map[int]string)
+	for i, txn := range draft {
+		if _, owned := pluginSignerRefs[txn.Sender.String()]; owned {
+			pluginOwned[i] = "plugin-owned"
+		}
 	}
-	_, err = clientsign.ValidateCanonicalDummyTxns(draft[0], groupID, planned, len(draft))
-	return err
+	return clientsign.ValidateUnsignedFees(draft, planned, pluginOwned)
 }
 
 // verifySignedAgainstPlan checks the /sign response against the frozen plan

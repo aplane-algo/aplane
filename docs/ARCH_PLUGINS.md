@@ -808,8 +808,9 @@ either structured `lsigResources` for the LogicSig path it will attach or a
 canonicalizes the group: it adds resource dummies from the declared argument
 and opcode ceilings, prices program bytes, fixes the aggregate fee, and
 recomputes the group ID, while a guard asserts every original slot's
-transaction fields are preserved (only a canonical group ID and the fee increases the
-mutation report lists may change; see below). APlane then
+transaction fields are preserved (only a canonical group ID may change, and the
+fee increases the mutation report lists, on APlane-managed slots only; see
+below). APlane then
 calls the plugin's `signTransactions` method to sign its owned slots over the *canonical*
 bytes. APlane verifies that each returned signed envelope preserves the planned
 transaction and matches its declared authorization class. For LogicSig slots,
@@ -892,6 +893,13 @@ APlane also checks apsigner's work in `presign-plan`, as it does for ordinary an
 cosigned signing. The `/plan` result may only assign the group ID over the final
 group, raise the fees the mutation report lists, and append the planner's canonical
 budget dummies; any other change to a slot is rejected before the plugin is called.
+Only an APlane-managed slot's fee may rise. Apsigner does not sign a
+plugin-owned slot, so it never raises that slot's fee: the authorization cost
+the plugin declares for it (`lsigResources` or `pqScheme`) is charged to the
+managed slots. The plugin then signs its slot with no approval of apsigner's,
+so a plan that changes a plugin-owned slot's fee is refused, even when the
+report lists the change, as `plan changed the fee of plugin-owned slot at
+index <n> from <old> to <new> microAlgos`.
 The `/sign` result must sign exactly the planned transactions and return every
 plugin-signed and dummy slot byte-for-byte as sent, or nothing is broadcast.
 Once the plan has passed these checks, apshell records what it changed, as the
