@@ -484,6 +484,13 @@ func TestCancelledPassLogsOnlyRealAccountErrors(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader(`{"message":"node is down"}`)), Request: req}, nil
 			case "/v2/accounts/" + second.String():
 				ir.Lock()
+				// The lock's cancellation reaches the read's context through
+				// a derived context, so wait for it as a real transport does.
+				select {
+				case <-req.Context().Done():
+				case <-time.After(10 * time.Second):
+					return nil, errors.New("the lock did not cancel the chain read")
+				}
 				return nil, req.Context().Err()
 			}
 			return base.RoundTrip(req)
