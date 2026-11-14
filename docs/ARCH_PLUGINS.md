@@ -867,10 +867,10 @@ Supporting machinery: a **per-plugin state directory** (`APSHELL_PLUGIN_STATE_DI
 persisting keys, cursors, or watermarks across invocations, and a role-aware review
 renderer that shows, per slot, which party signs it, its valid rounds and who
 authorizes a slot handed over signed, and the fees APlane-managed accounts pay.
-When apsigner plans the group after the review, in the default flow and in
-`presign-plan`, the review names those fees as the fees before planning, since
-planning may raise them; a sum too large for 64 bits is shown as such, never
-wrapped. A slot the plugin signs carries two independent marks. `THIS SIGNER
+Apsigner plans every group with an APlane-managed slot after the review, in the
+default flow and in `presign-plan` (a `pregrouped-signed` group has none), so the
+review always names those fees as the fees before planning, since planning may
+raise them; a sum too large for 64 bits is shown as such, never wrapped. A slot the plugin signs carries two independent marks. `THIS SIGNER
 HOLDS THE APLANE KEY FOR THE SENDER; apsigner does not sign this slot` is shown
 when the signer holds the sender's aplane key, whoever the envelope names as
 authorizing the slot. `THIS SIGNER HOLDS THE APLANE KEY FOR <address>, NAMED IN

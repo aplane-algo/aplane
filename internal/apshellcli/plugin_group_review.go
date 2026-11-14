@@ -64,10 +64,6 @@ type pluginReviewFacts struct {
 	// held is every address apshell knows the signer holds an aplane key for
 	// (apshellapp.PluginGroup.HeldAddresses).
 	held map[string]bool
-	// planned is set when apsigner plans the group after the review, as it
-	// does in the default flow and presign-plan: the fees shown are then the
-	// draft's, before planning.
-	planned bool
 }
 
 // reviewFactsOf is what the check found for group, for its review.
@@ -75,7 +71,6 @@ func reviewFactsOf(group *apshellapp.PluginGroup) pluginReviewFacts {
 	return pluginReviewFacts{
 		rekeyTargets: group.RekeyTargets(),
 		held:         group.HeldAddresses(),
-		planned:      group.Mode() != jsonrpc.GroupModePregroupedSigned,
 	}
 }
 
@@ -107,7 +102,7 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 			r.printf("        %s\n", line)
 		}
 	}
-	if line := managedFeesLine(slots, facts.planned); line != "" {
+	if line := managedFeesLine(slots); line != "" {
 		r.println(line)
 	}
 }
@@ -142,12 +137,16 @@ func pluginSlotLines(s pluginReviewSlot, held map[string]bool) []string {
 
 // managedFeesLine sums the fees of the APlane-managed slots, or is empty when
 // there are none. A sum too large for 64 bits is said to be, never wrapped.
-// When apsigner plans the group after the review, it may raise these fees, so
-// the line names them as the fees before planning; the raise itself is
-// reported in the command's output (the default flow's "Fee adjustment" line,
-// presign-plan's "[PLUGIN] Signer raised fees" line), and apsigner's prompt,
-// when it asks, shows the planned group.
-func managedFeesLine(slots []pluginReviewSlot, planned bool) string {
+// A group with an APlane-managed slot is always planned by apsigner after the
+// review: the default flow's draft goes to /sign (or to the rotating or
+// cosigned route, which plan it too), and a presign-plan group to /plan. A
+// pregrouped-signed group has no APlane-managed slot. Planning may raise these
+// fees, so the line names them as the fees before planning; the raise itself
+// is reported in the command's output (the "Fee adjustment", "[PLUGIN] Signer
+// raised fees", "[COSIGNED] Signer raised fees" or rotating "Signer raised the
+// spend's fee" line), and apsigner's prompt, when it asks, shows the planned
+// group.
+func managedFeesLine(slots []pluginReviewSlot) string {
 	var total uint64
 	managed, overflow := false, false
 	for _, s := range slots {
@@ -162,19 +161,12 @@ func managedFeesLine(slots []pluginReviewSlot, planned bool) string {
 	if !managed {
 		return ""
 	}
-	label := "Fees paid by APlane-managed accounts"
-	if planned {
-		label += " before planning"
-	}
 	amount := asaset.FormatFixed(total, 6) + " ALGO"
 	if overflow {
 		amount = "more than " + asaset.FormatFixed(math.MaxUint64, 6) + " ALGO, too large to add up"
 	}
-	line := label + ": " + amount
-	if planned {
-		line += " (apsigner may raise them when it plans the group; any raise is reported when the command ends)"
-	}
-	return line
+	return "Fees paid by APlane-managed accounts before planning: " + amount +
+		" (apsigner may raise them when it plans the group; any raise is reported when the command ends)"
 }
 
 // pluginReviewLines lists what one slot does: the shared description the

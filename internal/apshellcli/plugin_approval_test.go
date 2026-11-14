@@ -35,11 +35,10 @@ const wantDraftTitle = "DRAFT: plugin-built transaction(s); apsigner sets the fi
 
 const wantDiscardedNotice = "The plugin set a group ID; it is discarded, and apsigner computes the group ID over the final group."
 
-// wantManagedFees is the fee line of a review of a group apsigner plans after
-// the review, for fees of algo ALGO.
-func wantManagedFees(algo string) string {
-	return "Fees paid by APlane-managed accounts before planning: " + algo +
-		" ALGO (apsigner may raise them when it plans the group; any raise is reported when the command ends)"
+// wantManagedFees is a review's fee line for APlane-managed fees of amount.
+func wantManagedFees(amount string) string {
+	return "Fees paid by APlane-managed accounts before planning: " + amount +
+		" (apsigner may raise them when it plans the group; any raise is reported when the command ends)"
 }
 
 // approvalTestPayment is a payment of amount from one test address to another.
@@ -163,7 +162,7 @@ func TestReviewPluginTransactionsRendersTheDecodedDraft(t *testing.T) {
 		"Payment: 2.500000 ALGO",
 		"To:   " + reviewTestAddress(2).String(),
 		"!! CloseRemainderTo = " + reviewTestAddress(3).String(),
-		wantManagedFees("0.001000"),
+		wantManagedFees("0.001000 ALGO"),
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("review is missing %q:\n%s", want, rendered)
@@ -765,10 +764,10 @@ func TestReviewNamesTheManagedFeesAsBeforePlanning(t *testing.T) {
 		result *jsonrpc.ExecuteResult
 		want   string
 	}{
-		"default": {&jsonrpc.ExecuteResult{RequiresApproval: true, Transactions: rawIntents(managed)}, wantManagedFees("0.002000")},
+		"default": {&jsonrpc.ExecuteResult{RequiresApproval: true, Transactions: rawIntents(managed)}, wantManagedFees("0.002000 ALGO")},
 		"presign-plan": {&jsonrpc.ExecuteResult{
 			GroupMode: jsonrpc.GroupModePresignPlan, Transactions: rawIntents(plugin, managed), PluginSigners: signers,
-		}, wantManagedFees("0.002000")},
+		}, wantManagedFees("0.002000 ALGO")},
 		"pregrouped-signed": {&jsonrpc.ExecuteResult{
 			GroupMode: jsonrpc.GroupModePregroupedSigned, Transactions: pregroupedIntents(t, plugin, managed),
 		}, ""},

@@ -12,6 +12,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
@@ -176,30 +177,34 @@ func TestPluginReviewMarksIrreversibleAndIncompleteKeyRegistrations(t *testing.T
 	}
 }
 
-// The fee line adds the APlane-managed slots' fees without wrapping: a sum
-// too large for 64 bits is said to be, and fees of zero are shown, not left
-// out.
+// The fee line of a plugin draft, as the user sees it, adds the
+// APlane-managed slots' fees without wrapping: a sum too large for 64 bits is
+// said to be, and fees of zero are shown, not left out. Every such line names
+// the fees as before planning.
 func TestPluginReviewFeeLineNeverWrapsOrVanishes(t *testing.T) {
-	managed := func(fee uint64) pluginReviewSlot {
-		return pluginReviewSlot{txn: types.Transaction{
-			Type: types.PaymentTx, Header: types.Header{Sender: reviewTestAddress(1), Fee: types.MicroAlgos(fee)},
-		}, role: slotRoleManaged}
+	draft := func(fees ...uint64) []jsonrpc.TransactionIntent {
+		txns := make([]types.Transaction, len(fees))
+		for i, fee := range fees {
+			txns[i] = approvalTestPayment(1, byte(2+i), 1)
+			txns[i].Fee = types.MicroAlgos(fee)
+		}
+		return rawIntents(txns...)
 	}
 	for _, tc := range []struct {
-		name  string
-		slots []pluginReviewSlot
-		want  string
+		name   string
+		intent []jsonrpc.TransactionIntent
+		want   string
 	}{
-		{"overflow", []pluginReviewSlot{managed(math.MaxUint64), managed(2)},
-			"Fees paid by APlane-managed accounts: more than 18446744073709.551615 ALGO, too large to add up\n"},
-		{"largest sum", []pluginReviewSlot{managed(math.MaxUint64 - 1), managed(1)},
-			"Fees paid by APlane-managed accounts: 18446744073709.551615 ALGO\n"},
-		{"zero", []pluginReviewSlot{managed(0)},
-			"Fees paid by APlane-managed accounts: 0.000000 ALGO\n"},
+		{"overflow", draft(math.MaxUint64, 2), wantManagedFees("more than 18446744073709.551615 ALGO, too large to add up")},
+		{"largest sum", draft(math.MaxUint64-1, 1), wantManagedFees("18446744073709.551615 ALGO")},
+		{"zero", draft(0), wantManagedFees("0.000000 ALGO")},
 	} {
 		var out strings.Builder
-		renderPluginGroupReview(&REPLState{Out: &out}, "REVIEW", tc.slots, pluginReviewFacts{})
-		if !strings.HasSuffix(out.String(), tc.want) {
+		state := &REPLState{Out: &out, AutoConfirm: true}
+		if _, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{RequiresApproval: true, Transactions: tc.intent}, nil); err != nil {
+			t.Fatalf("%s: reviewPluginTransactions() error = %v", tc.name, err)
+		}
+		if !strings.HasSuffix(out.String(), "\n"+tc.want+"\n") {
 			t.Errorf("%s: review does not end with %q:\n%s", tc.name, tc.want, out.String())
 		}
 	}
