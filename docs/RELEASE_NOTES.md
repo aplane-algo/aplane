@@ -48,6 +48,13 @@ before it was renamed `enroll`.
   2^64 was written as a number that is not a uint64, in a file named after
   the real transaction ID. Numbers are now copied as written. Addresses are
   still base32 and the indentation is unchanged.
+- **A `txnjson/` file is written only if it reads back as its transaction.**
+  Write mode now reads each file with the reader `sign` uses before writing
+  it, and requires the transaction it is named after. An asset name that is
+  not UTF-8 was written as U+FFFD, a nil app argument as `null`, and a state
+  proof with reveals as invalid JSON; such a transaction is now not written,
+  and a warning says it cannot be written exactly as JSON and why. The
+  submission is unaffected.
 
 ## `send` refuses an account listed twice in a set
 

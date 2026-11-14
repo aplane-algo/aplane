@@ -1347,6 +1347,14 @@ write off                       # Disable write mode
 
 When write mode is active, the prompt shows a `w` flag (e.g., `testnet w>`).
 
+A file is written only if it reads back, by the rules of [`sign`](#sign), as
+the transaction it is named after. One that would not (an asset name that is
+not UTF-8, a missing app argument the SDK writes as `null`, a state proof
+with reveals) is not written, and the command shows `Warning: failed to
+write transaction JSON: transaction <txid> cannot be written exactly as
+JSON: <reason>`. The transaction has already been submitted by then; the
+warning does not change that.
+
 ---
 
 ### verbose

@@ -11,7 +11,10 @@ import (
 	"os"
 
 	sdkjson "github.com/algorand/go-algorand-sdk/v2/encoding/json"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/algo"
 )
 
 // TransactionWriteNotice records the result of writing a submitted transaction
@@ -25,9 +28,15 @@ type TransactionWriteNotice struct {
 // WriteTransactionJSON writes a transaction to txnjson/<txid>.json if WriteMode is enabled.
 // In simulate mode, uses the suffix .sim.json instead of .json.
 // Returns the filename if written, empty string if WriteMode is disabled.
+// A transaction whose JSON would not read back as itself is not written.
 func (e *Engine) WriteTransactionJSON(txn types.Transaction, txID string) (string, error) {
 	if !e.WriteMode {
 		return "", nil
+	}
+
+	formatted, err := exactTransactionJSON(txn)
+	if err != nil {
+		return "", fmt.Errorf("transaction %s cannot be written exactly as JSON: %w", txID, err)
 	}
 
 	// Create directory if it doesn't exist
@@ -35,16 +44,35 @@ func (e *Engine) WriteTransactionJSON(txn types.Transaction, txID string) (strin
 		return "", fmt.Errorf("failed to create txnjson directory: %w", err)
 	}
 
+	// Write to file (use .sim.json suffix in simulate mode)
+	suffix := ".json"
+	if e.Simulate {
+		suffix = ".sim.json"
+	}
+	filename := fmt.Sprintf("txnjson/%s%s", txID, suffix)
+	if err := os.WriteFile(filename, formatted, 0600); err != nil {
+		return "", fmt.Errorf("failed to write transaction file: %w", err)
+	}
+
+	return filename, nil
+}
+
+// exactTransactionJSON formats a transaction for a txnjson/ file and reads
+// the result back with the reader sign uses. The file is named after the
+// transaction's ID, so it has to read back as that transaction: the SDK's
+// encoder writes text that is not UTF-8 as U+FFFD, a nil app argument as
+// null, and a state proof's reveals as invalid JSON.
+func exactTransactionJSON(txn types.Transaction) ([]byte, error) {
 	// Use SDK's JSON encoder (outputs base64 addresses, not byte arrays)
 	data := sdkjson.Encode(txn)
 
 	// Numbers stay as written: a float64 would round an amount past 2^53 and
-	// put 2^64-1 in exponent form, in a file named after the real ID.
+	// put 2^64-1 in exponent form.
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	var formatted interface{}
 	if err := decoder.Decode(&formatted); err != nil {
-		return "", fmt.Errorf("failed to unmarshal for formatting: %w", err)
+		return nil, fmt.Errorf("the SDK's JSON for it is not valid JSON: %w", err)
 	}
 
 	// Convert known address fields from base64 to base32
@@ -54,20 +82,17 @@ func (e *Engine) WriteTransactionJSON(txn types.Transaction, txID string) (strin
 
 	indented, err := json.MarshalIndent(formatted, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal with indentation: %w", err)
+		return nil, err
 	}
 
-	// Write to file (use .sim.json suffix in simulate mode)
-	suffix := ".json"
-	if e.Simulate {
-		suffix = ".sim.json"
+	parsed, err := algo.ParseTransactions(indented)
+	if err != nil {
+		return nil, err
 	}
-	filename := fmt.Sprintf("txnjson/%s%s", txID, suffix)
-	if err := os.WriteFile(filename, indented, 0600); err != nil {
-		return "", fmt.Errorf("failed to write transaction file: %w", err)
+	if len(parsed) != 1 || !bytes.Equal(msgpack.Encode(parsed[0]), msgpack.Encode(txn)) {
+		return nil, fmt.Errorf("it reads back as another transaction")
 	}
-
-	return filename, nil
+	return indented, nil
 }
 
 // WriteTxnCallback returns a TxnWriter callback for use with signing.SubmitOptions

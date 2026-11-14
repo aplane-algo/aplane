@@ -481,3 +481,46 @@ func TestWriteTransactionJSONFileReadsBackAsTheSameTransaction(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteTransactionJSONRefusesJSONThatDoesNotReadBack(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	header := types.Header{
+		Sender: testAddrToAddress(1), Fee: 1000, FirstValid: 1, LastValid: 100,
+		GenesisHash: [32]byte{1, 2, 3}, GenesisID: "testnet-v1.0",
+	}
+	txns := map[string]types.Transaction{
+		// Written as "a�b", which reads back as other bytes.
+		"asset name that is not UTF-8": {Type: types.AssetConfigTx, Header: header,
+			AssetConfigTxnFields: types.AssetConfigTxnFields{AssetParams: types.AssetParams{Total: 1, AssetName: "a\xffb"}}},
+		// Written as null, which the reader refuses.
+		"nil app argument": {Type: types.ApplicationCallTx, Header: header, ApplicationFields: types.ApplicationFields{
+			ApplicationCallTxnFields: types.ApplicationCallTxnFields{ApplicationID: 9, ApplicationArgs: [][]byte{[]byte("x"), nil}},
+		}},
+		// The SDK writes the reveals map with bare keys, which is not JSON.
+		"state proof with reveals": {Type: types.StateProofTx, Header: header, StateProofTxnFields: types.StateProofTxnFields{
+			StateProof: types.StateProof{SignedWeight: 1, Reveals: map[uint64]types.Reveal{3: {Part: types.Participant{Weight: 1}}}},
+		}},
+	}
+
+	eng := &Engine{Core: &Core{WriteMode: true}}
+	for name, txn := range txns {
+		t.Run(name, func(t *testing.T) {
+			var notices []TransactionWriteNotice
+			eng.WriteTxnCallback(&notices)(txn, "NOTEXACT")
+			want := "transaction NOTEXACT cannot be written exactly as JSON"
+			if len(notices) != 1 || !strings.Contains(notices[0].Error, want) || notices[0].Filename != "" {
+				t.Fatalf("notices = %#v, want one error containing %q", notices, want)
+			}
+			if _, err := os.Stat("txnjson"); !os.IsNotExist(err) {
+				entries, _ := os.ReadDir("txnjson")
+				t.Fatalf("txnjson exists (%v), holding %d file(s); want nothing written", err, len(entries))
+			}
+		})
+	}
+}
