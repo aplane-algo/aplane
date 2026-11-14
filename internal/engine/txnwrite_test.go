@@ -4,12 +4,18 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"math"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
+	sdkjson "github.com/algorand/go-algorand-sdk/v2/encoding/json"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -274,4 +280,125 @@ func testAddrToAddress(index int) types.Address {
 		panic(err)
 	}
 	return addr
+}
+
+func TestWriteTransactionJSONWritesLargeNumbersDigitForDigit(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Past 2^53 a float64 holds only even numbers, so this one would be
+	// written as 10000000000000000.
+	const pastFloat = uint64(10_000_000_000_000_001)
+	const maxUint64 = uint64(math.MaxUint64)
+	sender := testAddrToAddress(1)
+	receiver := testAddrToAddress(2)
+	header := types.Header{
+		Sender:      sender,
+		Fee:         types.MicroAlgos(pastFloat),
+		FirstValid:  types.Round(pastFloat),
+		LastValid:   types.Round(maxUint64),
+		GenesisHash: [32]byte{1, 2, 3},
+		GenesisID:   "testnet-v1.0",
+	}
+	digits := func(n uint64) string { return strconv.FormatUint(n, 10) }
+
+	cases := []struct {
+		name    string
+		txn     types.Transaction
+		numbers map[string]string
+		addrs   map[string]string
+	}{
+		{
+			name: "payment",
+			txn: types.Transaction{
+				Type:             types.PaymentTx,
+				Header:           header,
+				PaymentTxnFields: types.PaymentTxnFields{Receiver: receiver, Amount: types.MicroAlgos(maxUint64)},
+			},
+			numbers: map[string]string{
+				"amt": digits(maxUint64), "fee": digits(pastFloat), "fv": digits(pastFloat), "lv": digits(maxUint64),
+			},
+			addrs: map[string]string{"snd": sender.String(), "rcv": receiver.String()},
+		},
+		{
+			name: "asset transfer",
+			txn: types.Transaction{
+				Type:   types.AssetTransferTx,
+				Header: header,
+				AssetTransferTxnFields: types.AssetTransferTxnFields{
+					XferAsset: types.AssetIndex(pastFloat), AssetAmount: maxUint64, AssetReceiver: receiver,
+				},
+			},
+			numbers: map[string]string{"aamt": digits(maxUint64), "xaid": digits(pastFloat)},
+			addrs:   map[string]string{"snd": sender.String(), "arcv": receiver.String()},
+		},
+		{
+			name: "asset config",
+			txn: types.Transaction{
+				Type:   types.AssetConfigTx,
+				Header: header,
+				AssetConfigTxnFields: types.AssetConfigTxnFields{
+					AssetParams: types.AssetParams{Total: maxUint64, Manager: receiver},
+				},
+			},
+			numbers: map[string]string{"apar.t": digits(maxUint64), "lv": digits(maxUint64)},
+			addrs:   map[string]string{"snd": sender.String(), "apar.m": receiver.String()},
+		},
+	}
+
+	eng := &Engine{Core: &Core{WriteMode: true}}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			filename, err := eng.WriteTransactionJSON(tc.txn, "BIG")
+			if err != nil {
+				t.Fatalf("WriteTransactionJSON() error = %v", err)
+			}
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) error = %v", filename, err)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(data))
+			decoder.UseNumber()
+			var doc map[string]interface{}
+			if err := decoder.Decode(&doc); err != nil {
+				t.Fatalf("decode written file: %v\n%s", err, data)
+			}
+			for path, want := range tc.numbers {
+				got, ok := txnwriteLookup(doc, path).(json.Number)
+				if !ok || got.String() != want {
+					t.Errorf("%s = %v, want %s\n%s", path, txnwriteLookup(doc, path), want, data)
+				}
+			}
+			for path, want := range tc.addrs {
+				if got := txnwriteLookup(doc, path); got != want {
+					t.Errorf("%s = %v, want base32 %s", path, got, want)
+				}
+			}
+
+			var back types.Transaction
+			if err := sdkjson.Decode(data, &back); err != nil {
+				t.Fatalf("SDK decode of written file: %v\n%s", err, data)
+			}
+			if !bytes.Equal(msgpack.Encode(back), msgpack.Encode(tc.txn)) {
+				t.Fatalf("written file decodes to another transaction:\n%s", data)
+			}
+		})
+	}
+}
+
+// txnwriteLookup follows a dotted path of object keys.
+func txnwriteLookup(doc map[string]interface{}, path string) interface{} {
+	var value interface{} = doc
+	for _, key := range strings.Split(path, ".") {
+		object, ok := value.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		value = object[key]
+	}
+	return value
 }

@@ -7,6 +7,15 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Write mode keeps every digit
+
+- **A `txnjson/` file states the transaction's numbers exactly.** Write mode
+  read the SDK's JSON through float64 before indenting it, so an amount,
+  fee, round, asset ID or asset total past 2^53 was rounded, and one near
+  2^64 was written as a number that is not a uint64, in a file named after
+  the real transaction ID. Numbers are now copied as written. Addresses are
+  still base32 and the indentation is unchanged.
+
 ## `send` refuses an account listed twice in a set
 
 - **A set of senders or receivers may name each account once.** `send`

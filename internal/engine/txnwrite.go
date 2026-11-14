@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -37,9 +38,12 @@ func (e *Engine) WriteTransactionJSON(txn types.Transaction, txID string) (strin
 	// Use SDK's JSON encoder (outputs base64 addresses, not byte arrays)
 	data := sdkjson.Encode(txn)
 
-	// Add indentation for readability
+	// Numbers stay as written: a float64 would round an amount past 2^53 and
+	// put 2^64-1 in exponent form, in a file named after the real ID.
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
 	var formatted interface{}
-	if err := json.Unmarshal(data, &formatted); err != nil {
+	if err := decoder.Decode(&formatted); err != nil {
 		return "", fmt.Errorf("failed to unmarshal for formatting: %w", err)
 	}
 
