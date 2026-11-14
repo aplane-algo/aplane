@@ -432,10 +432,31 @@ func TestPlanRefusesAPlanTheSignerMayNotHaveMade(t *testing.T) {
 			planned, report := planGroup(t, drafts, map[int]uint64{0: 2000, 1: 2000}, 1, 1, 0)
 			return signerapi.GroupPlanResponse{Transactions: encodePlan(planned), Mutations: report}
 		}, "plan changed the fee of foreign slot at index 1 from 1000 to 3000 microAlgos; the signer may raise fees only on the slots it signs"},
-		{"a reported fee raise on a passthrough position", passthroughRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+		// A group with a passthrough position is immutable: any change would
+		// void the position's signature, so the planner makes none.
+		{"a reported fee raise on the passthrough position", passthroughRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
 			planned, report := planGroup(t, drafts, map[int]uint64{0: 2000}, 0, 0, 1)
 			return signerapi.GroupPlanResponse{Transactions: encodePlan(planned), Mutations: report}
-		}, "plan changed the fee of passthrough slot at index 0 from 1000 to 3000 microAlgos; the signer may raise fees only on the slots it signs"},
+		}, "a group with a passthrough position is immutable, but the signer changed the transaction at index 0"},
+		// The raise alone, the group ID left as it was: no fee anywhere in the
+		// group may rise, not even the signer's own position's.
+		{"a reported fee raise on the sign-mode position of a passthrough group", passthroughRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+			planned := append([]types.Transaction(nil), drafts...)
+			planned[1].Fee += 2000
+			return signerapi.GroupPlanResponse{Transactions: encodePlan(planned), Mutations: &signerapi.MutationReport{
+				OriginalCount: 2, FinalCount: 2, PassthroughCount: 1, FeesModified: []int{1}, TotalFeesDelta: 2000,
+			}}
+		}, "a group with a passthrough position is immutable, but the signer changed the transaction at index 1"},
+		{"a dummy appended to a passthrough group", passthroughRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+			planned, report := planGroup(t, drafts, nil, 1, 0, 1)
+			return signerapi.GroupPlanResponse{Transactions: encodePlan(planned), Mutations: report}
+		}, "a group with a passthrough position is immutable, but the signer returned 3 transaction(s) for its 2"},
+		{"a passthrough group regrouped", passthroughRequests, func(t *testing.T, drafts []types.Transaction) signerapi.GroupPlanResponse {
+			return signerapi.GroupPlanResponse{
+				Transactions: encodePlan(regroupedAs(drafts, types.Digest{7})),
+				Mutations:    &signerapi.MutationReport{OriginalCount: 2, FinalCount: 2, GroupIDChanged: true, PassthroughCount: 1},
+			}
+		}, "a group with a passthrough position is immutable, but the signer changed the transaction at index 0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			vm := planTestAPI(t, func(drafts []types.Transaction) signerapi.GroupPlanResponse {

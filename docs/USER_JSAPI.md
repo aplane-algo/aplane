@@ -624,9 +624,12 @@ counts must match the group. The group ID changes only as the planner changes
 it. A single transaction comes back with the group ID it was sent with, none
 or its own. A group whose transactions all carry one may come back regrouped
 only with a fee raise or dummies. Only a position sent with `authAddress` may have
-its fee raised: the signer does not sign a foreign or passthrough position, so
-it never raises that position's fee. A passthrough position is compared with
-the transaction inside its `signedTxnHex`. A plan that fails the check throws
+its fee raised: the signer does not sign a foreign position, so it never
+raises that position's fee. A group with a passthrough position must come back
+exactly as it was sent, with nothing appended. Any change would void the
+passthrough signature, so the signer changes nothing in such a group. A
+passthrough position is compared with the transaction inside its
+`signedTxnHex`. A plan that fails the check throws
 `plan() error: invalid group plan: <reason>`, and the script gets no plan.
 A plan that passes is returned as the signer sent it.
 

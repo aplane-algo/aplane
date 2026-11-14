@@ -4,10 +4,12 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
@@ -129,9 +131,12 @@ func (e *Core) RequestGroupPlanWithContext(ctx context.Context, requests []signe
 // is decoded canonically, the group may differ from the transactions sent only
 // as clientsign.ValidateGroupPlan allows (the report's counts, the group ID, a
 // fee raise the report lists, canonical dummies appended), and the fee of a
-// foreign or passthrough position, which the signer does not sign, may not
-// change at all. txns are the requests' transactions, a passthrough entry's
-// being the one inside its signed bytes.
+// foreign position, which the signer does not sign, may not change at all. A
+// group with a passthrough position may not change at all: the signer plans
+// it as immutable (no fee raise anywhere, no dummies, no new group ID), since
+// any change would void the signature the position carries. txns are the
+// requests' transactions, a passthrough entry's being the one inside its
+// signed bytes.
 func validateGroupPlanAnswer(requests []signerapi.SignRequest, txns []types.Transaction, response *signerapi.GroupPlanResponse) error {
 	if response == nil {
 		return errors.New("signer returned no plan")
@@ -140,19 +145,30 @@ func validateGroupPlanAnswer(requests []signerapi.SignRequest, txns []types.Tran
 	if err != nil {
 		return err
 	}
-	if err := clientsign.ValidateGroupPlan(txns, planned, response.Mutations); err != nil {
-		return err
-	}
-	unsigned := make(map[int]string)
+	foreign := make(map[int]string)
+	passthrough := false
 	for i, request := range requests {
 		switch mode, _ := request.Mode(); mode {
 		case signerapi.RequestModeForeign:
-			unsigned[i] = "foreign"
+			foreign[i] = "foreign"
 		case signerapi.RequestModePassthrough:
-			unsigned[i] = "passthrough"
+			passthrough = true
 		}
 	}
-	return clientsign.ValidateUnsignedFees(txns, planned, unsigned)
+	if passthrough {
+		if len(planned) != len(txns) {
+			return fmt.Errorf("a group with a passthrough position is immutable, but the signer returned %d transaction(s) for its %d", len(planned), len(txns))
+		}
+		for i := range txns {
+			if !bytes.Equal(msgpack.Encode(planned[i]), msgpack.Encode(txns[i])) {
+				return fmt.Errorf("a group with a passthrough position is immutable, but the signer changed the transaction at index %d", i)
+			}
+		}
+	}
+	if err := clientsign.ValidateGroupPlan(txns, planned, response.Mutations); err != nil {
+		return err
+	}
+	return clientsign.ValidateUnsignedFees(txns, planned, foreign)
 }
 
 func (e *Core) RequestGroupSignWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {

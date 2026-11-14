@@ -117,8 +117,8 @@ ceilings leave too little room for it, planning fails.
 apshell holds the signer to this in `presign-plan` and in JS `plan()`. A slot
 the plugin signs goes to `/plan` as foreign, so a plan that changes its fee
 is refused, even when the mutation report lists the change. `plan()` refuses
-a plan that changes the fee of any foreign or passthrough position it sent in
-the same way.
+a plan that changes the fee of any foreign position it sent in the same way,
+and any change at all to a group with a passthrough position.
 
 A cosigned group follows the same order. Every position of a cosigned group
 is signed by this signer, and the client sends each one as the signer's own,
