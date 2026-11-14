@@ -526,6 +526,15 @@ are all required to go online. They belong to the participation key, so there
 are no defaults: a registration with the wrong window or dilution goes through
 but can't vote.
 
+`eligible: true` asks for incentive eligibility. `keyreg()` then reads the
+account's eligibility from algod and sets the 2 ALGO fee only when the account
+is not eligible yet; an eligible account keeps its eligibility at the ordinary
+fee, as on the command line. A failed read refuses the registration. Without
+`eligible` there is no read. The read is algod's current view, so two eligible
+registrations sent before the first confirms each pay the fee. The result
+does not say which fee was paid; `incentiveEligible()` tells a script before
+it registers.
+
 `participation()` returns:
 
 ```javascript

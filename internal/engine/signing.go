@@ -25,6 +25,19 @@ type SigningContext struct {
 	AuthorizationKind algorithm.AuthorizationKind
 }
 
+// signingAddressFor returns the address whose key signs for sender, given
+// sender's auth address: sender itself when it is not rekeyed, otherwise the
+// auth address. A rotating account is the exception: it is authorized by its
+// current stage, which the signer derives from the account's key and never
+// lists. The signer holds the account itself, so it signs for the account at
+// any stage.
+func (e *Core) signingAddressFor(sender, authAddr string) string {
+	if authAddr == "" || authAddr == sender || e.signerCacheSigningFlow(sender) == signerapi.SigningFlowRotating1 {
+		return sender
+	}
+	return authAddr
+}
+
 // BuildSigningContext builds a complete signing context using the
 // caller's context for blockchain lookups.
 func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string) (*SigningContext, error) {
@@ -72,22 +85,7 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 		}
 	}
 
-	// Determine which address to use for signing
-	var signingAddr string
-	if authAddr == "" || authAddr == address {
-		// No rekey set, account signs for itself
-		signingAddr = address
-	} else {
-		// Account is rekeyed to authAddr
-		signingAddr = authAddr
-	}
-
-	// A rotating account is authorized by its current stage, which the
-	// signer derives from the account's key and never lists. The signer holds
-	// the account itself, so it signs for the account at any stage.
-	if e.signerCacheSigningFlow(address) == signerapi.SigningFlowRotating1 {
-		signingAddr = address
-	}
+	signingAddr := e.signingAddressFor(address, authAddr)
 
 	// Check if we can sign (address is in SignerCache).
 	// If the cached auth address is stale (e.g., account was rekeyed mid-session),
@@ -95,12 +93,8 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	if !e.signerCacheHasAddress(signingAddr) && cached {
 		refreshedAuth, err := e.RefreshAuthAddressWithContext(ctx, address)
 		if err == nil {
-			if refreshedAuth == "" || refreshedAuth == address {
-				signingAddr = address
-			} else {
-				signingAddr = refreshedAuth
-				authAddr = refreshedAuth
-			}
+			signingAddr = e.signingAddressFor(address, refreshedAuth)
+			authAddr = refreshedAuth
 		}
 	}
 	if !e.signerCacheHasAddress(signingAddr) {

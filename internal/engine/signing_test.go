@@ -216,3 +216,44 @@ func TestIsRekeyed(t *testing.T) {
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && strings.Contains(s, substr))
 }
+
+// A cached auth address whose key the signer does not hold is refreshed once
+// from the chain, and the signing address is picked again from the refreshed
+// one.
+func TestBuildSigningContext_StaleAuthCacheRefreshed(t *testing.T) {
+	sender, onChain, stale := testAddr(1), testAddr(2), testAddr(3)
+	for _, tc := range []struct {
+		name      string
+		chainAuth string // sender's auth address on chain
+		cached    string // sender's stale cached auth address
+		held      string // the one key the signer holds
+		want      string // SigningAddr, or the address the error names
+		wantErr   bool
+	}{
+		{"rekeyed since it was cached", onChain, "", onChain, onChain, false},
+		{"rekeyed back to itself", "", stale, sender, sender, false},
+		{"rekeyed to a key not held", onChain, stale, sender, onChain, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transport := newAccountMockTransport(t)
+			transport.addAccountFull(models.Account{
+				Address: sender, Amount: 1_000_000, MinBalance: 100_000, AuthAddr: tc.chainAuth, Status: "Offline",
+			})
+			eng := setupEngineWithMockAlgod(t, transport)
+			eng.SignerCache = cache.NewSignerCache()
+			eng.SignerCache.AddAddress(tc.held, "ed25519")
+			eng.AuthCache.AuthAddresses[sender] = tc.cached
+
+			ctx, err := eng.BuildSigningContext(context.Background(), sender)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "rekeyed to "+tc.want+" but that address is not signable") {
+					t.Fatalf("BuildSigningContext() error = %v, want it to name %s as not signable", err, tc.want)
+				}
+				return
+			}
+			if err != nil || ctx.SigningAddr != tc.want {
+				t.Fatalf("BuildSigningContext() = %+v, %v; want SigningAddr %s", ctx, err, tc.want)
+			}
+		})
+	}
+}

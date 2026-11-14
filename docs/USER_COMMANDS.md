@@ -79,6 +79,11 @@ Sweep assets from multiple accounts to a single destination.
 sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 ```
 
+For `algo`, each account sends its balance less the amount to leave, its
+transaction's fee, and the fee the signer adds for its authorization, so it is
+left with exactly that amount. The fee is the network's suggested fee, or
+`fee=`. An account with nothing left to send after those three is skipped.
+
 **Arguments:**
 | Argument | Description |
 |----------|-------------|
@@ -270,7 +275,7 @@ keyreg
 | `votefirst=<round>` | First round the participation key is valid for (required for `online`; no default) |
 | `votelast=<round>` | Last round the participation key is valid for (required for `online`; no default) |
 | `keydilution=<n>` | Key dilution, as reported for the participation key (required for `online`; no default) |
-| `eligible=true` | Mark as incentive-eligible, which sets a 2 ALGO fee. Only when going online; refused with `offline`. The value must be `true` or `false` |
+| `eligible=true` | Mark as incentive-eligible, which sets a 2 ALGO fee unless the account is eligible already. Only when going online; refused with `offline`. The value must be `true` or `false` |
 | `nowait` | Don't wait for confirmation |
 | `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 
@@ -282,7 +287,9 @@ keyreg lsig-account offline arg:preimage=text:secret
 keyreg alice online votekey=ABC... selkey=DEF... sproofkey=GHI... eligible=true
 ```
 
-**Paste Mode:** Running `keyreg` with no arguments enters interactive paste mode for the output of `goal account partkeyinfo`.
+**Incentive fee:** with `eligible=true` the command reads the account's eligibility from algod, and refuses the registration if algod can't answer. After the submission it prints `Incentive eligibility requested: 2 ALGO fee`, or `Already incentive eligible: no incentive fee paid` when the account was eligible already. The read is algod's current view, so two eligible registrations sent before the first confirms each pay the fee.
+
+**Paste Mode:** Running `keyreg` with no arguments enters interactive paste mode for the output of `goal account partkeyinfo`. It asks whether to request incentive eligibility, and the same fee rules apply.
 
 **Tip:** Copy-paste participation keys from `goal account partkeyinfo` output.
 

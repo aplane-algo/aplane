@@ -32,6 +32,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -43,6 +44,13 @@ var (
 	argsSecret = types.Address{44}.String() // generic LogicSig: secret
 	argsPlugin = types.Address{46}.String() // a presign-plan slot the plugin signs
 	argsDest   = types.Address{47}.String() // a receiver the signer holds no key for
+	argsFalcon = types.Address{48}.String() // native Falcon: takes no arguments
+	// argsRekeyed is an ed25519 key rekeyed to argsFalcon on the test node.
+	argsRekeyed = types.Address{49}.String()
+	// argsRotating is a rotating account rekeyed to argsStage on the test
+	// node, a stage the signer never lists.
+	argsRotating = types.Address{50}.String()
+	argsStage    = types.Address{51}.String()
 )
 
 func argsTestKeys() []signerapi.KeyInfo {
@@ -52,6 +60,11 @@ func argsTestKeys() []signerapi.KeyInfo {
 	}
 	return []signerapi.KeyInfo{
 		{Address: argsNative, KeyType: "ed25519"},
+		{Address: argsFalcon, KeyType: "falcon1024"},
+		{Address: argsRekeyed, KeyType: "ed25519"},
+		{Address: argsRotating, KeyType: rotatingkey.RotatingTripleXmssV1, SigningFlow: signerapi.SigningFlowRotating1,
+			LogicSigResources: &signerapi.LogicSigResourceProfile{Default: &signerapi.LogicSigResourceUsage{
+				ProgramBytes: 4_500, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000}}},
 		htlc(argsHTLC), htlc(argsHTLC2),
 		{Address: argsSecret, KeyType: "example.secret.v1", IsGenericLsig: true,
 			SigningArgs: []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", MaxSize: 32}}},
@@ -60,9 +73,10 @@ func argsTestKeys() []signerapi.KeyInfo {
 
 // argsFixture is an app on testnet with a test signer that lists
 // argsTestKeys and records each /sign and /plan request, answering 503, and a
-// test node with every account funded and offline. Aliases: hl and hashlock
-// both name argsHTLC, hl2 argsHTLC2, sec argsSecret, nat argsNative; the set
-// lsigs is hl and hl2.
+// test node with every account funded and offline, suggesting perByteFee
+// (zero unless set: the minimum fee). Aliases: hl and hashlock both name
+// argsHTLC, hl2 argsHTLC2, sec argsSecret, nat argsNative; the set lsigs is
+// hl and hl2.
 type argsFixture struct {
 	app         *App
 	eng         *engine.Engine
@@ -71,6 +85,7 @@ type argsFixture struct {
 	signs       [][]signerapi.SignRequest
 	plans       [][]signerapi.SignRequest
 	signerPosts atomic.Int32
+	perByteFee  atomic.Uint64
 }
 
 func newArgsFixture(t *testing.T) *argsFixture {
@@ -111,12 +126,19 @@ func newArgsFixture(t *testing.T) *argsFixture {
 		switch {
 		case r.URL.Path == "/v2/transactions/params":
 			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
-				ConsensusVersion: string(protocol.ConsensusV43), MinFee: 1000, LastRound: 1000,
+				ConsensusVersion: string(protocol.ConsensusV43), Fee: f.perByteFee.Load(), MinFee: 1000, LastRound: 1000,
 				GenesisId: "testnet-v1.0", GenesisHash: f.genesis,
 			})
 		case strings.HasPrefix(r.URL.Path, "/v2/accounts/") && !strings.Contains(strings.TrimPrefix(r.URL.Path, "/v2/accounts/"), "/"):
 			address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
-			_ = json.NewEncoder(w).Encode(models.Account{Address: address, Amount: 5_000_000, MinBalance: 100_000, Status: "Offline"})
+			account := models.Account{Address: address, Amount: 5_000_000, MinBalance: 100_000, Status: "Offline"}
+			switch address {
+			case argsRekeyed:
+				account.AuthAddr = argsFalcon
+			case argsRotating:
+				account.AuthAddr = argsStage
+			}
+			_ = json.NewEncoder(w).Encode(account)
 		default:
 			http.Error(w, "test node", http.StatusServiceUnavailable)
 		}

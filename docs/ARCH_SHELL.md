@@ -473,7 +473,7 @@ type KeyRegParams struct {
     VoteFirst         uint64
     VoteLast          uint64
     KeyDilution       uint64
-    IncentiveEligible bool
+    IncentiveEligible bool   // 2 ALGO fee unless already eligible; see below
 }
 
 // RekeyParams for rekeying accounts
@@ -585,6 +585,23 @@ methods take them.
 Which names a key takes is never used to place an argument. A transaction
 file (`sign`) carries none. Two transactions from one sender in one command
 get the same arguments.
+
+#### Key Registration Incentive Fee
+
+`KeyRegParams.IncentiveEligible` asks for incentive eligibility, which a
+registration gets by carrying a 2 ALGO fee. `PrepareKeyReg` refuses it on an
+offline registration. When it is set, `PrepareKeyReg` reads the account's
+eligibility from algod and sets the 2 ALGO fee only when the account is not
+eligible yet: an eligible account keeps its eligibility at the ordinary fee.
+A failed read refuses the registration. Without the request there is no read.
+What the read found is `TransactionPrepResult.Incentive` (`AlreadyEligible`),
+nil when nothing was requested. `apshellapp` copies it to
+`KeyRegCommandResult` (`IncentiveRequested`, `AlreadyIncentiveEligible`); the
+shell prints it after the submission, and the keyreg projection carries it as
+`incentive_requested` and `already_incentive_eligible`. The command line and
+JavaScript `keyreg()` both go through `PrepareKeyReg`. The read is algod's
+current view, so two eligible registrations sent before the first confirms
+each pay the fee.
 
 #### Available Transaction Methods
 

@@ -125,18 +125,16 @@ type ValidateRequest struct {
 	LsigArgs cmdspec.LsigArgs
 }
 
-// ResolveIncentiveEligibility queries current status and resolves whether to charge the fee.
-func (a *App) ResolveIncentiveEligibility(ctx context.Context, address string, requested bool) (*IncentiveEligibilityResult, error) {
-	cache.Debug("checking incentive eligibility", "address", address)
-	alreadyEligible, err := a.eng.GetIncentiveEligibility(ctx, address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query incentive eligibility: %w", err)
+// withIncentive records on result what a registration that asked for
+// incentive eligibility found: the engine set the 2 ALGO fee unless the
+// account was eligible already.
+func withIncentive(result *KeyRegCommandResult, prep *engine.TransactionPrepResult) *KeyRegCommandResult {
+	if prep.Incentive != nil {
+		cache.Debug("incentive eligibility requested", "already_eligible", prep.Incentive.AlreadyEligible)
+		result.IncentiveRequested = true
+		result.AlreadyIncentiveEligible = prep.Incentive.AlreadyEligible
 	}
-	return &IncentiveEligibilityResult{
-		AlreadyEligible: alreadyEligible,
-		Requested:       requested,
-		ChargeFee:       !alreadyEligible && requested,
-	}, nil
+	return result
 }
 
 // Validate resolves and validates one account or address set via 0-ALGO self-send transactions.
@@ -370,7 +368,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
 
-	return &KeyRegCommandResult{
+	return withIncentive(&KeyRegCommandResult{
 		Account:        address,
 		Mode:           mode,
 		VoteFirst:      voteFirst,
@@ -380,7 +378,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		Confirmed:      submit.Confirmed,
 		Output:         submit.Output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, nil
+	}, prepResult), nil
 }
 
 // KeyRegFromPartKey prepares and submits online keyreg from parsed goal output.
@@ -419,7 +417,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		confirmed = true
 	}
 
-	return &KeyRegCommandResult{
+	return withIncentive(&KeyRegCommandResult{
 		Account:        parsed.ParentAddress,
 		Mode:           "online",
 		VoteFirst:      parsed.VoteFirst,
@@ -429,7 +427,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		Confirmed:      confirmed,
 		Output:         output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, nil
+	}, prepResult), nil
 }
 
 // ListRekeys returns all cached rekey relationships.
@@ -857,40 +855,32 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			}
 		}
 
-		authorizationReserve, err := authorizationFeeReserveForSweep(
-			assetMeta.AssetID,
-			fromAddress,
-			a.eng.AuthorizationFeeReserve,
-		)
+		amounts, err := a.settleSweepAmounts(ctx, assetMeta.AssetID, fromAddress, toAddress, balance, leaving, req.Fee, req.UseFlatFee)
 		if err != nil {
-			item.Error = fmt.Sprintf("failed to plan authorization fee reserve: %v", err)
+			item.Error = err.Error()
 			result.FailureCount++
 			result.Items = append(result.Items, item)
 			continue
 		}
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leaving, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
-		if !ok {
+		if !amounts.ok {
 			what := "leaving amount"
 			if leaveMinimumBalance {
 				what = "minimum balance"
 			}
-			item.SkippedReason = fmt.Sprintf("balance %d <= %s %d", balance, what, leaving)
-			if assetMeta.AssetID == 0 && balance > leaving {
-				item.SkippedReason = fmt.Sprintf("balance %d cannot cover %s %d plus fee reserve %d", balance, what, leaving, feeReserve)
-			}
+			item.SkippedReason = amounts.skipReason(balance, leaving, what)
 			result.Items = append(result.Items, item)
 			continue
 		}
 
-		item.Amount = asa.AmountFromRaw(sendAmount, assetMeta)
+		item.Amount = asa.AmountFromRaw(amounts.send, assetMeta)
 		var prep *PreparedTxn
 		if assetMeta.AssetID == 0 {
 			prepResult, _, prepErr := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 				From:       fromAddress,
 				To:         toAddress,
 				Amount:     item.Amount.Raw,
-				Fee:        req.Fee,
-				UseFlatFee: req.UseFlatFee,
+				Fee:        amounts.txnFee,
+				UseFlatFee: true,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -956,44 +946,95 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	return result, nil
 }
 
-func authorizationFeeReserveForSweep(
-	assetID uint64,
-	sender string,
-	reserve func(string) (uint64, error),
-) (uint64, error) {
-	// The reserve affects only the amount of ALGO that can be swept. An ASA
-	// sweep sends asset units, so querying authorization resources cannot alter
-	// its amount and must not introduce an unrelated algod/profile failure.
-	if assetID != 0 {
-		return 0, nil
+// sweepAmounts is what one account's sweep sends and the fees it reserves.
+type sweepAmounts struct {
+	send       uint64 // the amount to send
+	txnFee     uint64 // the fee an ALGO payment is built with
+	feeReserve uint64 // what the balance above leaving was compared against
+	early      bool   // feeReserve is the smallest fee alone: nothing was built
+	ok         bool   // false: nothing to send
+}
+
+// skipReason says why an account with nothing to send is skipped, naming what
+// its balance was compared against.
+func (s sweepAmounts) skipReason(balance, leaving uint64, what string) string {
+	switch {
+	case balance <= leaving:
+		return fmt.Sprintf("balance %d <= %s %d", balance, what, leaving)
+	case s.early:
+		return fmt.Sprintf("balance %d leaves nothing to send after the %s %d and a fee of at least %d", balance, what, leaving, s.feeReserve)
+	default:
+		return fmt.Sprintf("balance %d leaves nothing to send after the %s %d and fee reserve %d", balance, what, leaving, s.feeReserve)
 	}
-	return reserve(sender)
+}
+
+// settleSweepAmounts settles what one account's sweep sends. An ASA sweep
+// sends all above what is to be left: its fee is paid in ALGO, not the swept
+// asset, so nothing is built or reserved. An ALGO account with nothing to send
+// even at the smallest fee its payment could carry, the user's flat fee or
+// else the protocol minimum, is skipped before anything is built, so a network
+// or signer failure cannot turn that skip into a failure. Otherwise the
+// payment's fee and the address that signs it come from a build
+// (sweepPaymentFee), and the authorization reserve is for that address: a
+// rekeyed account's auth address, a rotating account itself.
+func (a *App) settleSweepAmounts(ctx context.Context, assetID uint64, from, to string, balance, leaving, fee uint64, useFlatFee bool) (sweepAmounts, error) {
+	if assetID != 0 {
+		send, _, ok := sweepSendAmount(balance, leaving, 0, 0)
+		return sweepAmounts{send: send, ok: ok}, nil
+	}
+	smallestFee := signing.DefaultMinFee
+	if useFlatFee {
+		smallestFee = fee
+	}
+	if _, feeReserve, ok := sweepSendAmount(balance, leaving, smallestFee, 0); !ok {
+		return sweepAmounts{feeReserve: feeReserve, early: true}, nil
+	}
+	txnFee, signingAddr, err := a.sweepPaymentFee(ctx, from, to, balance-leaving, fee, useFlatFee)
+	if err != nil {
+		return sweepAmounts{}, fmt.Errorf("failed to prepare transaction: %w", err)
+	}
+	reserve, err := a.eng.AuthorizationFeeReserve(signingAddr)
+	if err != nil {
+		return sweepAmounts{}, fmt.Errorf("failed to plan authorization fee reserve: %w", err)
+	}
+	send, feeReserve, ok := sweepSendAmount(balance, leaving, txnFee, reserve)
+	return sweepAmounts{send: send, txnFee: txnFee, feeReserve: feeReserve, ok: ok}, nil
+}
+
+// sweepPaymentFee builds an ALGO sweep's payment carrying largest, the most it
+// could send, and returns the fee that transaction was given and the address
+// that signs it. algod's suggested fee is per byte, and a smaller amount never
+// encodes larger, so no amount the sweep sends costs more. The sweep builds its
+// payment with this fee fixed, which leaves the account exactly what is to be
+// left. A flat fee the user gave, zero included, comes back as given.
+func (a *App) sweepPaymentFee(ctx context.Context, from, to string, largest, fee uint64, useFlatFee bool) (txnFee uint64, signingAddr string, err error) {
+	prep, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
+		From:       from,
+		To:         to,
+		Amount:     largest,
+		Fee:        fee,
+		UseFlatFee: useFlatFee,
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	return uint64(prep.Transaction.Fee), prep.SigningContext.SigningAddr, nil
 }
 
 // sweepSendAmount computes how much to send so the account is left with exactly
-// `leaving`. For ALGO sweeps the fee reserve is the base transaction fee plus
-// authorizationFeeReserve — LogicSig dummy/program fees or the native-PQ fee
-// contribution — so sweeping from a non-Ed25519 account does not overspend.
-// ASA sweeps pay their fee from the ALGO balance, not the swept asset, so the
-// authorization reserve does not apply there.
-func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
+// `leaving`, reserving txnFee, the fee of the payment the sweep builds
+// (sweepPaymentFee), plus authorizationFeeReserve, the LogicSig dummy/program
+// fees or native-PQ fee contribution the signer adds on top, so sweeping from a
+// non-Ed25519 account does not overspend.
+func sweepSendAmount(balance, leaving, txnFee, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
 	if balance <= leaving {
 		return 0, 0, false
 	}
 	available := balance - leaving
-	if assetID != 0 {
-		return available, 0, true
-	}
-	// A flat fee is authoritative when opted in, including an explicit flat
-	// zero, matching the unified fee model (engine.getSuggestedParamsWithFee).
-	baseFee := uint64(signing.DefaultMinFee)
-	if useFlatFee {
-		baseFee = fee
-	}
-	if authorizationFeeReserve > math.MaxUint64-baseFee {
+	if authorizationFeeReserve > math.MaxUint64-txnFee {
 		return 0, math.MaxUint64, false
 	}
-	feeReserve = baseFee + authorizationFeeReserve
+	feeReserve = txnFee + authorizationFeeReserve
 	if available <= feeReserve {
 		return 0, feeReserve, false
 	}
