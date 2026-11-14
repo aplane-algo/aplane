@@ -151,7 +151,7 @@ func (g *PluginGroup) GroupIDDiscarded() bool { return g.groupIDDiscarded }
 
 // HeldAddresses is every address apshell knows the signer holds an aplane key
 // for, as the check found it, for the review to mark a slot the plugin signs
-// from one of them. When the group rekeys it is the key list the rekey rule
+// whose sender, or an address its envelope names, is one of them. When the group rekeys it is the key list the rekey rule
 // was judged from; otherwise it is apshell's signer cache, the list the
 // plugin's context was built from, which can be out of date. It is a display
 // fact: the rekey rule never reads the cache, and an address missing here is

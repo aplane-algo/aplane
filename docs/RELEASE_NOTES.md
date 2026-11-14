@@ -17,12 +17,18 @@ before it was renamed `enroll`.
   the sender or by a named authorizer, a multisig, a LogicSig account or a
   delegated LogicSig. Nothing checks the signature here; the network does.
 - **Every plugin review shows each slot's valid rounds.**
-- **A slot the plugin signs from an account the signer holds is marked.** It
-  reads `THIS SIGNER HOLDS THE APLANE KEY FOR THE SENDER` (or `FOR THE NAMED
-  AUTHORIZER`), in pregrouped-signed and presign-plan reviews. The held
-  addresses are the key list the check fetched when the group rekeys, and
-  otherwise apshell's signer cache, which can be out of date. The mark is
-  advice. It refuses nothing and fetches nothing.
+- **A slot the plugin signs is marked for each held aplane key it involves.**
+  `THIS SIGNER HOLDS THE APLANE KEY FOR THE SENDER; apsigner does not sign
+  this slot` is shown when the signer holds the sender's key, whoever the
+  envelope names. `THIS SIGNER HOLDS THE APLANE KEY FOR <address>, NAMED IN
+  THIS SLOT'S AUTHORIZATION; apsigner does not sign this slot` is shown, as
+  well, for each other held address the signed envelope names: its auth
+  address and every multisig subsignature key, a LogicSig's multisig
+  included. A presign-plan slot is not signed yet at the review, so only its
+  sender is judged there. The held addresses are the key list the check
+  fetched when the group rekeys, and otherwise apshell's signer cache, which
+  can be out of date. The marks are advice. They refuse nothing and fetch
+  nothing.
 
 ## Plugin reviews name draft fees as before planning
 

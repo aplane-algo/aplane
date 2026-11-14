@@ -870,10 +870,16 @@ authorizes a slot handed over signed, and the fees APlane-managed accounts pay.
 When apsigner plans the group after the review, in the default flow and in
 `presign-plan`, the review names those fees as the fees before planning, since
 planning may raise them; a sum too large for 64 bits is shown as such, never
-wrapped. A slot the plugin signs from an account the signer holds an aplane key
-for, or that names such an account as its authorizer, is marked `THIS SIGNER
-HOLDS THE APLANE KEY FOR THE SENDER` (or `FOR THE NAMED AUTHORIZER`): the plugin,
-not apsigner, signs it.
+wrapped. A slot the plugin signs carries two independent marks. `THIS SIGNER
+HOLDS THE APLANE KEY FOR THE SENDER; apsigner does not sign this slot` is shown
+when the signer holds the sender's aplane key, whoever the envelope names as
+authorizing the slot. `THIS SIGNER HOLDS THE APLANE KEY FOR <address>, NAMED IN
+THIS SLOT'S AUTHORIZATION; apsigner does not sign this slot` is shown for each
+other address the signed envelope names that the signer holds: its auth address
+and every multisig subsignature key, the envelope's own multisig and its
+LogicSig's (`txnreview.AuthorizationAddresses`). A `presign-plan` slot is
+unsigned at the review, so only its sender is judged; apshell does not look up
+an account's auth address on chain.
 
 **Trust boundary.** In `presign-plan`, apsigner still owns its slots — it applies its
 full policy and approval to the managed transactions, exactly as for a direct `/sign`.
@@ -1433,7 +1439,10 @@ or
   holds no aplane key for, is not held: a rekey to it warns of losing control
   and is not refused
 - A slot the plugin signs is marked when the signer holds the aplane key for
-  its sender, or for the authorizer its signed envelope names. The held
+  its sender, and, separately, for each other address its signed envelope
+  names in its authorization (auth address and multisig subsignature keys).
+  A `presign-plan` slot is unsigned at the review, so only its sender is
+  judged. The held
   addresses are the key list fetched for the check when the group rekeys, and
   otherwise apshell's signer cache, the list the plugin's context was built
   from, which can be out of date; the cache is read for this mark only, never

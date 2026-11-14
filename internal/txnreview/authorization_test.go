@@ -4,6 +4,7 @@
 package txnreview
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -87,5 +88,41 @@ func TestAuthorization(t *testing.T) {
 	both := signed(func(s *types.SignedTxn) { s.Sig = types.Signature{9}; s.Msig = msig })
 	if got := Authorization(both); !strings.Contains(got, "MALFORMED, more than one kind: single signature; multisig, 2 of 3") {
 		t.Errorf("two kinds: Authorization() = %q", got)
+	}
+}
+
+// The addresses an envelope names in its authorization are its auth address
+// and every multisig subsignature key, its own and its LogicSig's, once each,
+// whether or not a subsignature is filled in.
+func TestAuthorizationAddresses(t *testing.T) {
+	sender, authorizer := types.Address{1}, types.Address{2}
+	a, b, c := crypto.GenerateAccount(), crypto.GenerateAccount(), crypto.GenerateAccount()
+	msig := func(accounts ...crypto.Account) types.MultisigSig {
+		subsigs := make([]types.MultisigSubsig, len(accounts))
+		for i, account := range accounts {
+			subsigs[i] = types.MultisigSubsig{Key: account.PublicKey}
+		}
+		subsigs[0].Sig = types.Signature{9}
+		return types.MultisigSig{Version: 1, Threshold: 1, Subsigs: subsigs}
+	}
+	program := []byte{0x06, 0x81, 0x01}
+	for _, tc := range []struct {
+		name string
+		stxn types.SignedTxn
+		want []types.Address
+	}{
+		{"single signature by the sender", types.SignedTxn{Sig: types.Signature{9}}, nil},
+		{"named authorizer", types.SignedTxn{Sig: types.Signature{9}, AuthAddr: authorizer}, []types.Address{authorizer}},
+		{"multisig", types.SignedTxn{Msig: msig(a, b)}, []types.Address{a.Address, b.Address}},
+		{"multisig named as the authorizer, a key repeated", types.SignedTxn{Msig: msig(a, b, a), AuthAddr: authorizer},
+			[]types.Address{authorizer, a.Address, b.Address}},
+		{"LogicSig account", types.SignedTxn{Lsig: types.LogicSig{Logic: program}}, nil},
+		{"LogicSig delegated by a multisig", types.SignedTxn{Lsig: types.LogicSig{Logic: program, Msig: msig(b, c)}}, []types.Address{b.Address, c.Address}},
+		{"LogicSig delegated by an lmsig", types.SignedTxn{Lsig: types.LogicSig{Logic: program, LMsig: msig(c)}}, []types.Address{c.Address}},
+	} {
+		tc.stxn.Txn = types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: sender}}
+		if got := AuthorizationAddresses(tc.stxn); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: AuthorizationAddresses() = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

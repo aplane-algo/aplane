@@ -43,13 +43,17 @@ type pluginReviewSlot struct {
 	signed *types.SignedTxn
 }
 
-// Marks for a plugin-signed slot that moves an account the signer holds: the
-// signer's own prompt never sees a pregrouped-signed group, and shows a
-// presign-plan slot the plugin signs only as passthrough.
-const (
-	heldSenderText     = "THIS SIGNER HOLDS THE APLANE KEY FOR THE SENDER: the plugin, not apsigner, signs this slot"
-	heldAuthorizerText = "THIS SIGNER HOLDS THE APLANE KEY FOR THE NAMED AUTHORIZER: the plugin, not apsigner, signs this slot"
-)
+// heldSenderText marks a plugin-signed slot whose sender the signer holds the
+// aplane key for: the signer's own prompt never sees a pregrouped-signed
+// group, and shows a presign-plan slot the plugin signs only as passthrough.
+// It says only what is so, whoever the envelope names as authorizing the slot.
+const heldSenderText = "THIS SIGNER HOLDS THE APLANE KEY FOR THE SENDER; apsigner does not sign this slot"
+
+// heldAuthorizationKeyText marks a plugin-signed slot whose envelope names, in
+// its authorization, an address the signer holds the aplane key for.
+func heldAuthorizationKeyText(address types.Address) string {
+	return "THIS SIGNER HOLDS THE APLANE KEY FOR " + address.String() + ", NAMED IN THIS SLOT'S AUTHORIZATION; apsigner does not sign this slot"
+}
 
 // pluginReviewFacts is what the review of a plugin group knows beyond its
 // transactions.
@@ -77,8 +81,8 @@ func reviewFactsOf(group *apshellapp.PluginGroup) pluginReviewFacts {
 
 // renderPluginGroupReview prints an honest review of a plugin-built group: per
 // slot it shows the role (who signs it) and the type; for a slot handed over
-// signed, who its envelope says authorizes it; for a slot the plugin signs
-// from an account the signer holds, a mark saying so; then the transaction's
+// signed, who its envelope says authorizes it; for a slot the plugin signs,
+// a mark for each held aplane key it involves (pluginSlotLines); then the transaction's
 // description, its valid rounds, and the findings the signer's warning rules
 // give for it, marked `!!`, given what facts says of rekey targets. It
 // summarizes the fees paid by APlane-managed accounts.
@@ -110,8 +114,11 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 
 // pluginSlotLines is what the review says of a slot before its transaction:
 // who authorizes a slot handed over signed, as its envelope claims, and, for a
-// slot the plugin signs, whether the signer holds the aplane key for its
-// sender or for the authorizer its envelope names.
+// slot the plugin signs, two marks, each shown on its own: that the signer
+// holds the aplane key for the sender, and, for each other address the
+// envelope names in its authorization (txnreview.AuthorizationAddresses: the
+// auth address and every multisig subsignature key), that it holds that one's.
+// A presign-plan slot is not signed yet, so only its sender can be judged.
 func pluginSlotLines(s pluginReviewSlot, held map[string]bool) []string {
 	var lines []string
 	if s.signed != nil {
@@ -120,11 +127,15 @@ func pluginSlotLines(s pluginReviewSlot, held map[string]bool) []string {
 	if s.role != slotRolePluginSigned {
 		return lines
 	}
-	switch {
-	case held[s.txn.Sender.String()]:
+	if held[s.txn.Sender.String()] {
 		lines = append(lines, heldSenderText)
-	case s.signed != nil && !s.signed.AuthAddr.IsZero() && held[s.signed.AuthAddr.String()]:
-		lines = append(lines, heldAuthorizerText)
+	}
+	if s.signed != nil {
+		for _, address := range txnreview.AuthorizationAddresses(*s.signed) {
+			if address != s.txn.Sender && held[address.String()] {
+				lines = append(lines, heldAuthorizationKeyText(address))
+			}
+		}
 	}
 	return lines
 }

@@ -6,7 +6,6 @@ package apshellcli
 import (
 	"bytes"
 	"encoding/base64"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -178,24 +177,42 @@ func signedGroupIntents(t *testing.T, stxns ...types.SignedTxn) []jsonrpc.Transa
 
 // The pregrouped-signed review is the only gate such a group gets, so for
 // each slot it says who the envelope names as authorizing it and with what,
-// and the rounds the slot is valid in. A slot that spends from, or is
-// authorized by, an address the signer holds an aplane key for is marked: the
-// plugin, not apsigner, signs it. Here a delegated LogicSig spends from a held
-// account, and another from an account rekeyed to a held key.
+// and the rounds the slot is valid in. Two marks follow, each on its own: one
+// when the signer holds the aplane key for the slot's sender, whoever the
+// envelope names, and one for each other address the envelope names in its
+// authorization (its auth address and every multisig subsignature key, its
+// own or its LogicSig's) that the signer holds the aplane key for.
 func TestReviewPregroupedSignedSaysWhoAuthorizesEachSlot(t *testing.T) {
 	program := []byte{0x06, 0x81, 0x01}
 	logicSigAccount := crypto.AddressFromProgram(program)
-	first, second := crypto.GenerateAccount(), crypto.GenerateAccount()
-	multisig, err := crypto.MultisigAccountWithParams(1, 2, []types.Address{first.Address, second.Address})
-	if err != nil {
-		t.Fatal(err)
+	// heldKey and heldLsigKey are subsignature keys the signer holds; the
+	// others it does not.
+	first, second, heldKey, heldLsigKey := crypto.GenerateAccount(), crypto.GenerateAccount(), crypto.GenerateAccount(), crypto.GenerateAccount()
+	multisigOf := func(accounts ...crypto.Account) (types.MultisigSig, types.Address) {
+		t.Helper()
+		addresses := make([]types.Address, len(accounts))
+		subsigs := make([]types.MultisigSubsig, len(accounts))
+		for i, account := range accounts {
+			addresses[i] = account.Address
+			subsigs[i] = types.MultisigSubsig{Key: account.PublicKey, Sig: types.Signature{byte(i + 1)}}
+		}
+		account, err := crypto.MultisigAccountWithParams(1, uint8(len(accounts)), addresses)
+		if err != nil {
+			t.Fatal(err)
+		}
+		address, err := account.Address()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return types.MultisigSig{Version: 1, Threshold: uint8(len(accounts)), Subsigs: subsigs}, address
 	}
-	multisigAddress, err := multisig.Address()
-	if err != nil {
-		t.Fatal(err)
-	}
-	plainSender, rekeyed, authorizer := reviewTestAddress(31), reviewTestAddress(32), reviewTestAddress(33)
-	held, rekeyedToHeld, heldAuthorizer := reviewTestAddress(34), reviewTestAddress(35), reviewTestAddress(36)
+	unheldMsig, unheldMsigAddress := multisigOf(first, second)
+	heldMsig, heldMsigAddress := multisigOf(first, heldKey)
+	lsigMsig, lsigMsigAddress := multisigOf(second, heldLsigKey)
+
+	held, heldToo, heldBoth := reviewTestAddress(34), reviewTestAddress(37), reviewTestAddress(38)
+	heldAuthorizer, heldAuthorizerToo := reviewTestAddress(36), reviewTestAddress(39)
+	plainSender, rekeyed, authorizer, rekeyedToHeld := reviewTestAddress(31), reviewTestAddress(32), reviewTestAddress(33), reviewTestAddress(35)
 	pay := func(sender types.Address) types.Transaction {
 		return types.Transaction{
 			Type:             types.PaymentTx,
@@ -203,24 +220,52 @@ func TestReviewPregroupedSignedSaysWhoAuthorizesEachSlot(t *testing.T) {
 			PaymentTxnFields: types.PaymentTxnFields{Receiver: reviewTestAddress(2), Amount: 1},
 		}
 	}
-	stxns := []types.SignedTxn{
-		{Sig: types.Signature{1}, Txn: pay(plainSender)},
-		{Sig: types.Signature{1}, AuthAddr: authorizer, Txn: pay(rekeyed)},
-		{Lsig: types.LogicSig{Logic: program}, Txn: pay(logicSigAccount)},
-		{Lsig: types.LogicSig{Logic: program, Sig: types.Signature{1}}, Txn: pay(held)},
-		{Msig: types.MultisigSig{Version: 1, Threshold: 2, Subsigs: []types.MultisigSubsig{
-			{Key: first.PublicKey, Sig: types.Signature{1}}, {Key: second.PublicKey, Sig: types.Signature{2}},
-		}}, Txn: pay(multisigAddress)},
-		{Lsig: types.LogicSig{Logic: program, Sig: types.Signature{1}}, AuthAddr: heldAuthorizer, Txn: pay(rekeyedToHeld)},
+	delegated := types.LogicSig{Logic: program, Sig: types.Signature{1}}
+	cases := []struct {
+		name       string
+		stxn       types.SignedTxn
+		authorized string
+		marks      []string
+	}{
+		{"plain signature", types.SignedTxn{Sig: types.Signature{1}, Txn: pay(plainSender)},
+			plainSender.String() + " (single signature, not verified here)", nil},
+		{"signature by another address", types.SignedTxn{Sig: types.Signature{1}, AuthAddr: authorizer, Txn: pay(rekeyed)},
+			authorizer.String() + " (single signature, named as the sender's authorizer, not verified here)", nil},
+		{"LogicSig account", types.SignedTxn{Lsig: types.LogicSig{Logic: program}, Txn: pay(logicSigAccount)},
+			logicSigAccount.String() + " (LogicSig account, not verified here)", nil},
+		{"LogicSig delegated by a held sender", types.SignedTxn{Lsig: delegated, Txn: pay(held)},
+			held.String() + " (LogicSig delegated by a single signature, not verified here)", []string{heldSenderText}},
+		{"multisig with no held key", types.SignedTxn{Msig: unheldMsig, Txn: pay(unheldMsigAddress)},
+			unheldMsigAddress.String() + " (multisig, 2 of 2, not verified here)", nil},
+		{"multisig with a held subsignature key", types.SignedTxn{Msig: heldMsig, Txn: pay(heldMsigAddress)},
+			heldMsigAddress.String() + " (multisig, 2 of 2, not verified here)", []string{heldAuthorizationKeyText(heldKey.Address)}},
+		{"LogicSig delegated by a held authorizer", types.SignedTxn{Lsig: delegated, AuthAddr: heldAuthorizer, Txn: pay(rekeyedToHeld)},
+			heldAuthorizer.String() + " (LogicSig delegated by a single signature, named as the sender's authorizer, not verified here)",
+			[]string{heldAuthorizationKeyText(heldAuthorizer)}},
+		{"held sender, foreign authorizer", types.SignedTxn{Sig: types.Signature{1}, AuthAddr: authorizer, Txn: pay(heldToo)},
+			authorizer.String() + " (single signature, named as the sender's authorizer, not verified here)", []string{heldSenderText}},
+		{"held sender and held authorizer", types.SignedTxn{Sig: types.Signature{1}, AuthAddr: heldAuthorizerToo, Txn: pay(heldBoth)},
+			heldAuthorizerToo.String() + " (single signature, named as the sender's authorizer, not verified here)",
+			[]string{heldSenderText, heldAuthorizationKeyText(heldAuthorizerToo)}},
+		{"LogicSig delegated by a multisig with a held subsignature key",
+			types.SignedTxn{Lsig: types.LogicSig{Logic: program, Msig: lsigMsig}, Txn: pay(lsigMsigAddress)},
+			lsigMsigAddress.String() + " (LogicSig delegated by multisig, 2 of 2, not verified here)",
+			[]string{heldAuthorizationKeyText(heldLsigKey.Address)}},
+	}
+	stxns := make([]types.SignedTxn, len(cases))
+	for i, tc := range cases {
+		stxns[i] = tc.stxn
 	}
 
 	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
-		{Address: held.String(), KeyType: "ed25519"}, {Address: heldAuthorizer.String(), KeyType: "ed25519"},
-	}); err != nil {
+	var keys []signerapi.KeyInfo
+	for _, address := range []types.Address{held, heldToo, heldBoth, heldAuthorizer, heldAuthorizerToo, heldKey.Address, heldLsigKey.Address} {
+		keys = append(keys, signerapi.KeyInfo{Address: address.String(), KeyType: "ed25519"})
+	}
+	if err := eng.PopulateSignerCache(keys); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	var out bytes.Buffer
@@ -231,35 +276,33 @@ func TestReviewPregroupedSignedSaysWhoAuthorizesEachSlot(t *testing.T) {
 		t.Fatalf("reviewPluginTransactions() error = %v", err)
 	}
 
-	wants := [][]string{
-		{"Authorized by: " + plainSender.String() + " (single signature, not verified here)"},
-		{"Authorized by: " + authorizer.String() + " (single signature, named as the sender's authorizer, not verified here)"},
-		{"Authorized by: " + logicSigAccount.String() + " (LogicSig account, not verified here)"},
-		{"Authorized by: " + held.String() + " (LogicSig delegated by a single signature, not verified here)", heldSenderText},
-		{"Authorized by: " + multisigAddress.String() + " (multisig, 2 of 2, not verified here)"},
-		{"Authorized by: " + heldAuthorizer.String() + " (LogicSig delegated by a single signature, named as the sender's authorizer, not verified here)", heldAuthorizerText},
-	}
 	blocks := reviewSlotBlocks(out.String())
-	if len(blocks) != len(wants) {
-		t.Fatalf("review has %d slot(s), want %d:\n%s", len(blocks), len(wants), out.String())
+	if len(blocks) != len(cases) {
+		t.Fatalf("review has %d slot(s), want %d:\n%s", len(blocks), len(cases), out.String())
 	}
-	for i, want := range wants {
+	for i, tc := range cases {
 		block := blocks[i]
-		if got := block[1 : 1+len(want)]; !reflect.DeepEqual(got, want) {
-			t.Errorf("slot %d opens with %q, want %q", i+1, got, want)
+		if want := "Authorized by: " + tc.authorized; block[1] != want {
+			t.Errorf("%s: slot opens with %q, want %q", tc.name, block[1], want)
 		}
-		if len(want) == 1 && (block[2] == heldSenderText || block[2] == heldAuthorizerText) {
-			t.Errorf("slot %d is marked as held: %q", i+1, block)
+		var marks []string
+		for _, line := range block {
+			if strings.HasPrefix(line, "THIS SIGNER HOLDS") {
+				marks = append(marks, line)
+			}
+		}
+		if !slices.Equal(marks, tc.marks) || !slices.Equal(block[2:2+len(tc.marks)], tc.marks) {
+			t.Errorf("%s: marks %q, want %q right after the authorization", tc.name, marks, tc.marks)
 		}
 		if !slices.Contains(block, "Valid rounds: 1000 - 2000") {
-			t.Errorf("slot %d does not show its valid rounds:\n%s", i+1, strings.Join(block, "\n"))
+			t.Errorf("%s: no valid rounds:\n%s", tc.name, strings.Join(block, "\n"))
 		}
 	}
 }
 
 // A presign-plan slot the plugin signs from an account the signer holds is
-// marked too; a slot apsigner signs is not, and no draft slot claims an
-// authorizer, since none is signed before the review.
+// marked too; a slot apsigner signs is not. A draft slot is not signed before
+// the review, so it claims no authorizer and only its sender is judged.
 func TestReviewPresignPlanMarksAPluginSignedSlotFromAHeldAccount(t *testing.T) {
 	plugin := approvalTestPayment(34, 2, 1)
 	managed := approvalTestPayment(1, 34, 2)
