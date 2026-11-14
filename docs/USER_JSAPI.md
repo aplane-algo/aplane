@@ -559,7 +559,8 @@ it registers.
 | `sign(filepath, { wait = true } = {})` | `{ txids, confirmed }` |
 | `plan(signRequests)` | `{ transactions, mutations? }` |
 
-`sign()` reads an external transaction file, verifies the live algod is
+`sign()` reads an external transaction file by the rules of the shell's
+[`sign`](USER_COMMANDS.md#sign), verifies the live algod is
 running supported consensus v42 or v43, signs, submits, and optionally waits.
 Each transaction must be for the active algod's network: a genesis hash, or a
 set genesis ID, that differs from the algod's is refused before signing, as
@@ -687,6 +688,10 @@ appCallRaw(appId, from, appArgs, options = {})
 }
 ```
 
+`accounts`, `apps`, `assets` and `boxes` must each be an array when given;
+any other value, `null` and `undefined` included, is refused. An empty array
+is an empty list.
+
 `apps` is sent exactly as listed: in that order, with any repeats, and with
 the called app if you list it. A program reads the list by position, so it is
 never tidied. A box reference to another app adds that app at the end only
@@ -733,7 +738,8 @@ appCall(appId, method, abiPath, from, args, options = {})
 ```
 
 `args` is an array with one entry per method argument, converted by the
-argument's ABI type. Options are the same as `appCallRaw`.
+argument's ABI type; anything other than an array is refused. Options are the
+same as `appCallRaw`.
 
 | JavaScript value | Accepted for |
 |------------------|--------------|

@@ -7,6 +7,55 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## JS app calls refuse reference lists that are not arrays
+
+- **`appCall()` and `appCallRaw()` refuse `apps`, `assets` or `boxes` that is
+  not an array.** `{apps: 456}`, `{assets: "31566704"}` or `{boxes: "name"}`
+  was read as an empty list, so the call was built with no foreign
+  references and no error. Each is now refused as `invalid apps: expected an
+  array, got a number`, as `accounts` already was; `null` and `undefined`
+  are refused too. `appCall()`'s `args` is refused the same way when it is
+  not an array; it was read as no arguments. An empty array is unchanged.
+
+## JSON transaction files must state what they decode to
+
+- **`sign <file>` and JS `sign()` compare a JSON transaction with what was
+  decoded from it.** The SDK's decoder accepted a 31-byte `votekey` and
+  padded it with a zero (the account then can't vote), turned a 16-byte `am`
+  into a different hash, cut a 33-byte key, rounded `9007199254740993.0`,
+  and read `1e3`, `"5"` and a list of byte numbers without a word. Each
+  transaction in a JSON object or array is now compared, field by field,
+  with the SDK's JSON encoding of the decoded transaction, and a difference
+  is refused, naming the transaction and the field. Base64 must be spelled
+  as the SDK spells it, so `"QR=="` (stray bits) and a value with a line
+  break in it are refused. Addresses may still be base32, so a `txnjson/`
+  file reads back. A field at its zero value must be
+  left out, as the encoding leaves it out: the decoder read `"amt": ""` as
+  no amount and `"note": {}` as no note, and any explicit `0`, `false`,
+  `""`, `[]` or `{}` field is now refused. An empty entry inside a list is
+  written as the SDK writes it. A file that is not valid UTF-8 is refused:
+  the SDK signed the raw bytes of an asset name such as `a\xffb` while the
+  comparison read U+FFFD. A `\u` escape for half a surrogate pair, which
+  both decoders read as U+FFFD, is refused too. Unknown keys were already
+  refused by the decoder. The `{"txn": [...]}` and msgpack forms are
+  unchanged.
+
+## Write mode keeps every digit
+
+- **A `txnjson/` file states the transaction's numbers exactly.** Write mode
+  read the SDK's JSON through float64 before indenting it, so an amount,
+  fee, round, asset ID or asset total past 2^53 was rounded, and one near
+  2^64 was written as a number that is not a uint64, in a file named after
+  the real transaction ID. Numbers are now copied as written. Addresses are
+  still base32 and the indentation is unchanged.
+- **A `txnjson/` file is written only if it reads back as its transaction.**
+  Write mode now reads each file with the reader `sign` uses before writing
+  it, and requires the transaction it is named after. An asset name that is
+  not UTF-8 was written as U+FFFD, a nil app argument as `null`, and a state
+  proof with reveals as invalid JSON; such a transaction is now not written,
+  and a warning says it cannot be written exactly as JSON and why. The
+  submission is unaffected.
+
 ## `send` refuses an account listed twice in a set
 
 - **A set of senders or receivers may name each account once.** `send`

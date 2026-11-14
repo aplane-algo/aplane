@@ -321,6 +321,22 @@ names the same key twice, a JSON `null`, a transaction with no type, or a
 `{"txn": [...]}` file holding any other key is refused, so what is signed is
 what the file shows.
 
+A JSON transaction object must state exactly the transaction decoded from
+it. Each one is compared, field by field, with the SDK's JSON encoding of
+that transaction, and any difference is refused, naming the transaction and
+the field: an unknown key, a fixed-size byte field such as `votekey` or
+`am` of the wrong length, a number that is not plain digits (`1e3`, `2.0`),
+a number written as a string, or bytes written as a list of numbers.
+Base64 must be spelled as the SDK spells it: padded, with no line breaks and
+no stray bits after the data. Addresses may be base32 or base64, so a file
+from [`write`](#write) mode reads back as the same transaction. A field at its zero value (`0`,
+`false`, `""`, an empty list or object, a zero address or hash) must be left
+out, as the encoding leaves it out: `"amt": ""` and `"fee": 0` are refused.
+Inside a list an entry keeps its place, so an empty entry is written as the
+SDK writes it (`""`, `0` or `{}`). A JSON file that is not valid UTF-8, or
+that holds a `\u` escape for half a surrogate pair (such as `\ud800` alone),
+is refused: a decoder would sign other text than the file shows.
+
 Each transaction must be for the network apshell is on: its genesis hash, and
 its genesis ID when it has one, must be the active algod's. A file written on
 mainnet and signed while apshell is on testnet is refused before the signer
@@ -1330,6 +1346,14 @@ write off                       # Disable write mode
 ```
 
 When write mode is active, the prompt shows a `w` flag (e.g., `testnet w>`).
+
+A file is written only if it reads back, by the rules of [`sign`](#sign), as
+the transaction it is named after. One that would not (an asset name that is
+not UTF-8, a missing app argument the SDK writes as `null`, a state proof
+with reveals) is not written, and the command shows `Warning: failed to
+write transaction JSON: transaction <txid> cannot be written exactly as
+JSON: <reason>`. The transaction has already been submitted by then; the
+warning does not change that.
 
 ---
 

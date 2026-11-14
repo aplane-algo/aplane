@@ -24,7 +24,10 @@ func abiArgsFromJS(t *testing.T, script string, types ...string) ([][]byte, erro
 	if err != nil {
 		t.Fatalf("run %s: %v", script, err)
 	}
-	rawArgs := toInterfaceArray(value)
+	rawArgs, err := jsArray(value.Export())
+	if err != nil {
+		t.Fatalf("%s: %v", script, err)
+	}
 	if len(rawArgs) != len(types) {
 		t.Fatalf("%s exported %d argument(s), want %d", script, len(rawArgs), len(types))
 	}

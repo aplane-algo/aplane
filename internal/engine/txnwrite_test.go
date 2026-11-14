@@ -4,13 +4,21 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"math"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
+	sdkjson "github.com/algorand/go-algorand-sdk/v2/encoding/json"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/algo"
 )
 
 func TestWriteTransactionJSONDisabledReturnsEmpty(t *testing.T) {
@@ -274,4 +282,245 @@ func testAddrToAddress(index int) types.Address {
 		panic(err)
 	}
 	return addr
+}
+
+func TestWriteTransactionJSONWritesLargeNumbersDigitForDigit(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Past 2^53 a float64 holds only even numbers, so this one would be
+	// written as 10000000000000000.
+	const pastFloat = uint64(10_000_000_000_000_001)
+	const maxUint64 = uint64(math.MaxUint64)
+	sender := testAddrToAddress(1)
+	receiver := testAddrToAddress(2)
+	header := types.Header{
+		Sender:      sender,
+		Fee:         types.MicroAlgos(pastFloat),
+		FirstValid:  types.Round(pastFloat),
+		LastValid:   types.Round(maxUint64),
+		GenesisHash: [32]byte{1, 2, 3},
+		GenesisID:   "testnet-v1.0",
+	}
+	digits := func(n uint64) string { return strconv.FormatUint(n, 10) }
+
+	cases := []struct {
+		name    string
+		txn     types.Transaction
+		numbers map[string]string
+		addrs   map[string]string
+	}{
+		{
+			name: "payment",
+			txn: types.Transaction{
+				Type:             types.PaymentTx,
+				Header:           header,
+				PaymentTxnFields: types.PaymentTxnFields{Receiver: receiver, Amount: types.MicroAlgos(maxUint64)},
+			},
+			numbers: map[string]string{
+				"amt": digits(maxUint64), "fee": digits(pastFloat), "fv": digits(pastFloat), "lv": digits(maxUint64),
+			},
+			addrs: map[string]string{"snd": sender.String(), "rcv": receiver.String()},
+		},
+		{
+			name: "asset transfer",
+			txn: types.Transaction{
+				Type:   types.AssetTransferTx,
+				Header: header,
+				AssetTransferTxnFields: types.AssetTransferTxnFields{
+					XferAsset: types.AssetIndex(pastFloat), AssetAmount: maxUint64, AssetReceiver: receiver,
+				},
+			},
+			numbers: map[string]string{"aamt": digits(maxUint64), "xaid": digits(pastFloat)},
+			addrs:   map[string]string{"snd": sender.String(), "arcv": receiver.String()},
+		},
+		{
+			name: "asset config",
+			txn: types.Transaction{
+				Type:   types.AssetConfigTx,
+				Header: header,
+				AssetConfigTxnFields: types.AssetConfigTxnFields{
+					AssetParams: types.AssetParams{Total: maxUint64, Manager: receiver},
+				},
+			},
+			numbers: map[string]string{"apar.t": digits(maxUint64), "lv": digits(maxUint64)},
+			addrs:   map[string]string{"snd": sender.String(), "apar.m": receiver.String()},
+		},
+	}
+
+	eng := &Engine{Core: &Core{WriteMode: true}}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			filename, err := eng.WriteTransactionJSON(tc.txn, "BIG")
+			if err != nil {
+				t.Fatalf("WriteTransactionJSON() error = %v", err)
+			}
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) error = %v", filename, err)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(data))
+			decoder.UseNumber()
+			var doc map[string]interface{}
+			if err := decoder.Decode(&doc); err != nil {
+				t.Fatalf("decode written file: %v\n%s", err, data)
+			}
+			for path, want := range tc.numbers {
+				got, ok := txnwriteLookup(doc, path).(json.Number)
+				if !ok || got.String() != want {
+					t.Errorf("%s = %v, want %s\n%s", path, txnwriteLookup(doc, path), want, data)
+				}
+			}
+			for path, want := range tc.addrs {
+				if got := txnwriteLookup(doc, path); got != want {
+					t.Errorf("%s = %v, want base32 %s", path, got, want)
+				}
+			}
+
+			var back types.Transaction
+			if err := sdkjson.Decode(data, &back); err != nil {
+				t.Fatalf("SDK decode of written file: %v\n%s", err, data)
+			}
+			if !bytes.Equal(msgpack.Encode(back), msgpack.Encode(tc.txn)) {
+				t.Fatalf("written file decodes to another transaction:\n%s", data)
+			}
+		})
+	}
+}
+
+// txnwriteLookup follows a dotted path of object keys.
+func txnwriteLookup(doc map[string]interface{}, path string) interface{} {
+	var value interface{} = doc
+	for _, key := range strings.Split(path, ".") {
+		object, ok := value.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		value = object[key]
+	}
+	return value
+}
+
+func TestWriteTransactionJSONFileReadsBackAsTheSameTransaction(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	header := types.Header{
+		Sender:      testAddrToAddress(1),
+		Fee:         types.MicroAlgos(math.MaxUint64),
+		FirstValid:  types.Round(10_000_000_000_000_001),
+		LastValid:   types.Round(math.MaxUint64),
+		Note:        []byte("note"),
+		GenesisID:   "testnet-v1.0",
+		GenesisHash: [32]byte{1, 2, 3},
+		Group:       [32]byte{4},
+		Lease:       [32]byte{5},
+		RekeyTo:     testAddrToAddress(2),
+	}
+	var keyreg types.KeyregTxnFields
+	for i := range keyreg.VotePK {
+		keyreg.VotePK[i], keyreg.SelectionPK[i] = byte(i+1), byte(i+2)
+	}
+	keyreg.StateProofPK[63] = 9
+	keyreg.VoteFirst, keyreg.VoteLast, keyreg.VoteKeyDilution = 1, 3_000_000, 1733
+
+	txns := map[string]types.Transaction{
+		"payment": {Type: types.PaymentTx, Header: header, PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: testAddrToAddress(3), Amount: math.MaxUint64, CloseRemainderTo: testAddrToAddress(4),
+		}},
+		"keyreg": {Type: types.KeyRegistrationTx, Header: header, KeyregTxnFields: keyreg},
+		"asset config": {Type: types.AssetConfigTx, Header: header, AssetConfigTxnFields: types.AssetConfigTxnFields{
+			ConfigAsset: 7,
+			AssetParams: types.AssetParams{
+				Total: math.MaxUint64, Decimals: 6, DefaultFrozen: true, UnitName: "U", AssetName: "A", URL: "u",
+				MetadataHash: [32]byte{8}, Manager: testAddrToAddress(5), Reserve: testAddrToAddress(6),
+				Freeze: testAddrToAddress(7), Clawback: testAddrToAddress(8),
+			},
+		}},
+		"asset transfer": {Type: types.AssetTransferTx, Header: header, AssetTransferTxnFields: types.AssetTransferTxnFields{
+			XferAsset: 7, AssetAmount: math.MaxUint64, AssetSender: testAddrToAddress(9),
+			AssetReceiver: testAddrToAddress(10), AssetCloseTo: testAddrToAddress(11),
+		}},
+		"asset freeze": {Type: types.AssetFreezeTx, Header: header, AssetFreezeTxnFields: types.AssetFreezeTxnFields{
+			FreezeAccount: testAddrToAddress(12), FreezeAsset: 7, AssetFrozen: true,
+		}},
+		"app call": {Type: types.ApplicationCallTx, Header: header, ApplicationFields: types.ApplicationFields{
+			ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+				ApplicationID: 9, OnCompletion: types.OptInOC, ApplicationArgs: [][]byte{{}, []byte("x")},
+				Accounts: []types.Address{testAddrToAddress(13)}, ForeignAssets: []types.AssetIndex{0, 7},
+				ForeignApps: []types.AppIndex{11}, BoxReferences: []types.BoxReference{{Name: []byte("b")}, {ForeignAppIdx: 1}},
+				LocalStateSchema: types.StateSchema{NumUint: 1}, GlobalStateSchema: types.StateSchema{NumByteSlice: 2},
+				ApprovalProgram: []byte{6, 129, 1}, ClearStateProgram: []byte{6, 129, 1}, ExtraProgramPages: 1,
+			},
+		}},
+	}
+
+	eng := &Engine{Core: &Core{WriteMode: true}}
+	for name, txn := range txns {
+		t.Run(name, func(t *testing.T) {
+			filename, err := eng.WriteTransactionJSON(txn, "READBACK")
+			if err != nil {
+				t.Fatalf("WriteTransactionJSON() error = %v", err)
+			}
+			parsed, err := algo.ParseTransactionFile(filename)
+			if err != nil {
+				data, _ := os.ReadFile(filename)
+				t.Fatalf("ParseTransactionFile() error = %v\n%s", err, data)
+			}
+			if len(parsed) != 1 || !bytes.Equal(msgpack.Encode(parsed[0]), msgpack.Encode(txn)) {
+				t.Fatalf("read back %+v, want %+v", parsed, txn)
+			}
+		})
+	}
+}
+
+func TestWriteTransactionJSONRefusesJSONThatDoesNotReadBack(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	header := types.Header{
+		Sender: testAddrToAddress(1), Fee: 1000, FirstValid: 1, LastValid: 100,
+		GenesisHash: [32]byte{1, 2, 3}, GenesisID: "testnet-v1.0",
+	}
+	txns := map[string]types.Transaction{
+		// Written as "a�b", which reads back as other bytes.
+		"asset name that is not UTF-8": {Type: types.AssetConfigTx, Header: header,
+			AssetConfigTxnFields: types.AssetConfigTxnFields{AssetParams: types.AssetParams{Total: 1, AssetName: "a\xffb"}}},
+		// Written as null, which the reader refuses.
+		"nil app argument": {Type: types.ApplicationCallTx, Header: header, ApplicationFields: types.ApplicationFields{
+			ApplicationCallTxnFields: types.ApplicationCallTxnFields{ApplicationID: 9, ApplicationArgs: [][]byte{[]byte("x"), nil}},
+		}},
+		// The SDK writes the reveals map with bare keys, which is not JSON.
+		"state proof with reveals": {Type: types.StateProofTx, Header: header, StateProofTxnFields: types.StateProofTxnFields{
+			StateProof: types.StateProof{SignedWeight: 1, Reveals: map[uint64]types.Reveal{3: {Part: types.Participant{Weight: 1}}}},
+		}},
+	}
+
+	eng := &Engine{Core: &Core{WriteMode: true}}
+	for name, txn := range txns {
+		t.Run(name, func(t *testing.T) {
+			var notices []TransactionWriteNotice
+			eng.WriteTxnCallback(&notices)(txn, "NOTEXACT")
+			want := "transaction NOTEXACT cannot be written exactly as JSON"
+			if len(notices) != 1 || !strings.Contains(notices[0].Error, want) || notices[0].Filename != "" {
+				t.Fatalf("notices = %#v, want one error containing %q", notices, want)
+			}
+			if _, err := os.Stat("txnjson"); !os.IsNotExist(err) {
+				entries, _ := os.ReadDir("txnjson")
+				t.Fatalf("txnjson exists (%v), holding %d file(s); want nothing written", err, len(entries))
+			}
+		})
+	}
 }

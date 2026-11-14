@@ -613,7 +613,8 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		if toUint64Value(api.runtime, mutations["dummiesAdded"]) != 1 || mutations["groupIDChanged"] != true {
 			t.Fatalf("mutations = %#v, want mapped mutation fields", mutations)
 		}
-		if !reflect.DeepEqual(toInterfaceSliceValue(mutations["feesModified"]), []interface{}{float64(0), float64(2)}) &&
+		feesModified, _ := jsArray(mutations["feesModified"])
+		if !reflect.DeepEqual(feesModified, []interface{}{float64(0), float64(2)}) &&
 			!reflect.DeepEqual(mutations["feesModified"], []int{0, 2}) {
 			t.Fatalf("feesModified = %#v, want [0 2]", mutations["feesModified"])
 		}
