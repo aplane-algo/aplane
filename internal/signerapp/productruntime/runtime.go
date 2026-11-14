@@ -1445,17 +1445,12 @@ func (ir *Runtime) EndKeyUses(ctx context.Context) error {
 	return nil
 }
 
-// refuseKeyUses stops the key watcher, makes KeyUseContext refuse every new
-// key use from now on, and cancels the contexts of the key uses and
-// lock-cancel contexts already handed out, as drainKeyUsers does first. It
-// does not wait for them. It is idempotent.
+// refuseKeyUses stops the key watcher and makes KeyUseContext refuse every
+// new key use from now on. It is idempotent.
 func (ir *Runtime) refuseKeyUses() {
 	ir.StopKeyWatcher()
 	ir.keyUseMu.Lock()
 	ir.destroyed = true
-	if ir.keyUseCancel != nil {
-		ir.keyUseCancel()
-	}
 	ir.keyUseMu.Unlock()
 }
 
@@ -1478,6 +1473,13 @@ func (ir *Runtime) refuseKeyUses() {
 // or reclaimed by the operating system at the process exit that follows.
 func (ir *Runtime) Destroy() {
 	ir.refuseKeyUses()
+	// Cancel the key uses and lock-cancel contexts already handed out, as
+	// drainKeyUsers does first, without waiting for them.
+	ir.keyUseMu.Lock()
+	if ir.keyUseCancel != nil {
+		ir.keyUseCancel()
+	}
+	ir.keyUseMu.Unlock()
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
 	if ir.keySession != nil {

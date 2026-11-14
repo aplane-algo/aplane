@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -266,16 +265,15 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 
 // A lock refuses key uses before it cancels the pass's context, so a pass can
 // reach an account's identity read refused while its own context is still
-// live. That account was not observed, and the pass publishes nothing: the
-// status from the last full pass stands until the locked worker clears it. It
-// once published the cut pass, the unobserved account's alerts dropped. The
-// lock's first step is played by moving the runtime out of the unlocked state
-// during the first account's chain read, before the second's identity read.
-func TestPassCutByALockPublishesNothing(t *testing.T) {
+// live. That account was not observed, and its report is left out of what the
+// pass publishes; what the pass observed for the other accounts is published
+// as usual. The pass once published the unobserved account as such, and then
+// discarded the whole pass. The lock's first step is played by moving the
+// runtime out of the unlocked state during the first account's chain read,
+// before the second's identity read.
+func TestPassPublishesItsObservationsWithoutAStoppedAccount(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	hub := &recordingAdminHub{}
-	server.hub = hub
 	ir := server.productRuntime()
 
 	node := &mockAccountNode{}
@@ -302,18 +300,14 @@ func TestPassCutByALockPublishesNothing(t *testing.T) {
 
 	node.set("", 150)
 	armed.Store(true)
-	hub.statusCalled = false
-	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
-		t.Fatalf("wait after the cut pass = %v, want idle", wait)
-	}
+	server.fillStageTables(context.Background(), ir)
 	if armed.Load() {
 		t.Fatal("the cut never happened")
 	}
-	if after := ir.RotatingAccountStatuses(); !reflect.DeepEqual(after, before) {
-		t.Fatalf("statuses after the cut pass = %+v, want the last full pass's %+v", after, before)
-	}
-	if hub.statusCalled {
-		t.Fatal("apadmin was told a status from the cut pass")
+	after := ir.RotatingAccountStatuses()
+	if len(after) != 1 || after[0].Account != before[0].Account || after[0].Round != 150 ||
+		after[0].Classification != signerapi.RotatingClassStage {
+		t.Fatalf("statuses after the cut pass = %+v, want only %s, observed at round 150", after, before[0].Account)
 	}
 }
 

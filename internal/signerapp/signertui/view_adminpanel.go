@@ -5,12 +5,10 @@ package tui
 
 import (
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/version"
 )
 
@@ -135,20 +133,21 @@ func boolStr(b bool) string {
 	return "false"
 }
 
-// unsavedSettingsWarning is the panel's one-line warning for the settings in
-// effect without a completed save: what the result said for a single one,
-// or, for several, a line naming them in key order.
+// unsavedSettingsWarning is the panel's one-line warning for the settings the
+// signer holds in effect but not saved: one named in full, or several named in
+// key order.
 func (m Model) unsavedSettingsWarning() string {
-	keys := slices.Sorted(maps.Keys(m.admin.unsaved))
-	switch {
-	case len(keys) == 0:
+	if m.admin.settings == nil {
 		return ""
-	case len(keys) > 1:
-		return "Warning: in effect, save not confirmed: " + strings.Join(keys, ", ")
-	case m.admin.unsaved[keys[0]] == protocol.ResultCodeAppliedNotSaved:
+	}
+	keys := slices.Sorted(slices.Values(m.admin.settings.UnsavedSettings))
+	switch len(keys) {
+	case 0:
+		return ""
+	case 1:
 		return "Warning: " + keys[0] + " is in effect but not saved; a restart reverts it"
 	default:
-		return "Warning: " + keys[0] + " is in effect; its durability is not confirmed"
+		return "Warning: in effect but not saved: " + strings.Join(keys, ", ")
 	}
 }
 

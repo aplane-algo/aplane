@@ -380,12 +380,6 @@ type adminPanelState struct {
 	selectedRow int
 	editingRow  int // -1 = none
 	editValue   string
-	// unsaved maps each setting an update result left in effect without a
-	// completed save to that result's code (applied_not_durable or
-	// applied_not_saved). The next result for the same setting replaces or
-	// clears its entry; a new authenticated session clears them all. It is
-	// replaced, never written in place, since models are copied by value.
-	unsaved map[string]string
 }
 
 // clientsState is the enrolled-clients screen and its revocation dialog.
@@ -839,6 +833,9 @@ type AdminSettings struct {
 	EndpointAdvertiseURL string
 	EndpointDisplayURL   string
 	Theme                string
+	// UnsavedSettings are the settings the signer holds in effect but not
+	// saved; the panel's warning is drawn from them.
+	UnsavedSettings []string
 }
 
 // AdminSettingsMsg is sent when admin settings are received

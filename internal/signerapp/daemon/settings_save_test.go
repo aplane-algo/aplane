@@ -7,71 +7,18 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/fsutil/fsutiltest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
-
-// heldSave is an update running in the background with its durable write
-// held at one step.
-type heldSave struct {
-	reached    chan struct{}
-	released   chan struct{}
-	releaseErr error
-	result     chan error
-	once       sync.Once
-	err        error
-}
-
-// holdSave runs update with the durable write held at op on path until
-// finish. Every exit path, a failed assertion included, releases the hold and
-// waits for update before it clears the hook: a test that stopped while the
-// hook was blocked once left the update parked inside the durable write,
-// holding the store mutation lock, and cleared the hook while that goroutine
-// could still read it.
-func holdSave(t *testing.T, op fsutil.HookOp, path string, update func() error) *heldSave {
-	t.Helper()
-	h := &heldSave{reached: make(chan struct{}), released: make(chan struct{}), result: make(chan error, 1)}
-	var reachOnce sync.Once
-	fsutil.TestHook = func(got fsutil.HookOp, gotPath string) error {
-		if got == op && gotPath == path {
-			reachOnce.Do(func() { close(h.reached) })
-			<-h.released
-			return h.releaseErr
-		}
-		return nil
-	}
-	go func() { h.result <- update() }()
-	t.Cleanup(func() {
-		_ = h.finish(nil)
-		fsutil.TestHook = nil
-	})
-	select {
-	case <-h.reached:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the save never reached the held step")
-	}
-	return h
-}
-
-// finish lets the held step return err (nil lets it go on) and returns the
-// update's result. Later calls return the same result.
-func (h *heldSave) finish(err error) error {
-	h.once.Do(func() {
-		h.releaseErr = err
-		close(h.released)
-		h.err = <-h.result
-	})
-	return h.err
-}
 
 // A signing request reads user_auto_approve once, when its approval service
 // is built, and takes no lock the settings update holds. Turning auto-approve
@@ -125,7 +72,7 @@ func TestSigningSeesAutoApproveByTheChangesDirection(t *testing.T) {
 				if failure.op == fsutil.OpDirSync {
 					hookPath = filepath.Dir(configPath)
 				}
-				held := holdSave(t, failure.op, hookPath, func() error { return update(change.to) })
+				held := fsutiltest.Hold(t, failure.op, hookPath, func() error { return update(change.to) })
 				during := change.from
 				if change.restrictive {
 					during = change.to
@@ -133,7 +80,7 @@ func TestSigningSeesAutoApproveByTheChangesDirection(t *testing.T) {
 				if got := signingSees(); got != during {
 					t.Fatalf("a request built during the save got auto-approve %v, want %v", got, during)
 				}
-				err := held.finish(errors.New("injected " + string(failure.op) + " failure"))
+				err := held.Finish(errors.New("injected " + string(failure.op) + " failure"))
 
 				live, saved := change.from, change.from
 				if failure.replaced || change.restrictive {
@@ -165,7 +112,8 @@ func TestSigningSeesAutoApproveByTheChangesDirection(t *testing.T) {
 // applied_not_durable (file replaced, directory sync failed) or
 // applied_not_saved (a restrictive change whose save failed before the
 // rename), an error that says the setting is in effect, settings that then
-// report the new value, which the TUI re-reads after any result, and one
+// report the new value (and, for applied_not_saved only, the setting as
+// unsaved), which the TUI re-reads after any result, and one
 // SETTING_NOT_DURABLE entry, since nothing else durable records the change.
 // A save that fails before the rename of a permissive change writes none: the
 // setting is unchanged.
@@ -243,6 +191,13 @@ func TestSettingInEffectWithoutACompletedSaveReachesTheAdminClientAndTheAuditLog
 			}
 			if !reflectJSONSubset(msgs[1], map[string]any{"type": protocol.MsgTypeAdminSettings, "id": "req-2", "user_auto_approve": live == "true"}) {
 				t.Fatalf("admin_settings after the save = %#v, want user_auto_approve %s", msgs[1], live)
+			}
+			// Only a value not saved at all is reported unsaved: an unsynced
+			// file is in place.
+			unsaved, reported := msgs[1]["unsaved_settings"]
+			if wantUnsaved := tc.code == protocol.ResultCodeAppliedNotSaved; reported != wantUnsaved ||
+				(wantUnsaved && !reflect.DeepEqual(unsaved, []any{adminproto.AdminSettingUserAutoApprove})) {
+				t.Fatalf("admin_settings unsaved_settings = %v (reported %v), want it only for %s", unsaved, reported, protocol.ResultCodeAppliedNotSaved)
 			}
 
 			auditPath := filepath.Join(server.dataDir, "audit.log")

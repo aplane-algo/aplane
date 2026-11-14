@@ -803,6 +803,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 				EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
 				EndpointDisplayURL:   settings.EndpointDisplayURL,
 				Theme:                settings.Theme,
+				UnsavedSettings:      settings.UnsavedSettings,
 			},
 		}
 	}),

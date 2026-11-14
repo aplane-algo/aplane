@@ -536,7 +536,7 @@ without overlays and bounds; neither takes mnemonic import.
 
 #### Admin and Policy Settings
 
-- `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
+- `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`, optional `unsaved_settings` (the settings in effect but not saved, which a restart reverts; see Writable Settings)
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_durable"` means the value is saved and in effect but its durability is not confirmed, and with `code:"applied_not_saved"` that a restrictive value is in effect but was not saved, so a restart loads the old value (see Writable Settings)
 
@@ -720,38 +720,51 @@ any other value is refused with `code:"invalid_request"`. A valid value is
 saved durably to `identities/default/config.yaml` (root `config.yaml` for
 `theme`). When it takes effect depends on the change's direction:
 
-- Restrictive: `user_auto_approve` turned off; `require_contained`,
-  `require_cosigner` or `lock_on_disconnect` turned on; a
-  `passphrase_timeout` shorter than the current one, that is a non-zero
-  timeout below a non-zero current one, or any non-zero timeout when the
-  current one is `0` (none). The value takes effect before the save starts,
-  so a hung or slow disk cannot keep the old, more permissive value in
-  effect, and it stays in effect whatever the save does.
-- Permissive: every other request, the value already in effect and
-  `passphrase_timeout` set to `0` or to a timeout as long or longer
-  included. `theme` has no direction and is
-  handled as permissive. The value takes effect only once its file has
-  replaced the old one, so no reader, a signing request included, ever sees
-  a permissive value that was not saved. Until then readers keep the old
-  value.
+- Restrictive: `user_auto_approve` turned off, or `require_contained`,
+  `require_cosigner` or `lock_on_disconnect` turned on, from the value in
+  effect; or a request for the value in effect while that value is unsaved
+  (below), which tries the save again. The value takes effect before
+  anything else the update does: before the external-edit check and the
+  save, so neither a refusal nor a hung or slow disk can keep the old, more
+  permissive value in effect, and it stays in effect whatever they do. It
+  still waits for the store mutation lock the update runs under, so an
+  update queued behind another store mutation takes effect when that one
+  finishes.
+- Permissive: every other request, `theme`, `passphrase_timeout` and a
+  request for the value already saved included. The value takes effect only
+  once its file has replaced the old one, so no reader, a signing request
+  included, ever sees a permissive value that was not saved. Until then
+  readers keep the old value. A failed save of the value already saved
+  answers the plain "unchanged" failure and writes no audit entry, since
+  nothing in effect would be undone by a restart.
 
-A request for the value already in effect is therefore not restrictive: it
-takes the save-first path, so a failed save answers the plain "unchanged"
-failure and writes no audit entry, since nothing in effect would be undone by
-a restart.
+The rule covers only the three boolean settings the signer itself enforces.
+`passphrase_timeout` is not one of them: only the admin client enforces it
+(it disconnects after the timeout), so publishing a shorter timeout early
+would change nothing in the signer.
 
-| Save outcome | Restrictive change | Permissive change |
+| Outcome | Restrictive change | Permissive change |
 |---|---|---|
-| Saved | `success:true`; in effect from before the save | `success:true`; in effect once the save returns |
-| Fails before the new file replaces the old one | `success:false`, `code:"applied_not_saved"`: in effect now, never reset to the old value, but not saved, so a restart loads the old value | `success:false`, no result-local code: nothing changed, the setting keeps its value |
+| Saved | `success:true`; in effect from before the check and save | `success:true`; in effect once the save returns |
+| External-edit check refuses or fails | `success:false`, `code:"applied_not_saved"` with the check's reason: in effect now, never reset to the old value, but not saved, so a restart loads the old value | `success:false`, no result-local code: nothing changed |
+| Save fails before the new file replaces the old one | `success:false`, `code:"applied_not_saved"`, the same | `success:false`, no result-local code: nothing changed, the setting keeps the value in effect |
 | File replaced, directory sync fails | `success:false`, `code:"applied_not_durable"`: in effect, and the new file is what the next start loads, but its durability is not confirmed | the same; the value takes effect as the save returns and is never reset to the old value |
+
+A setting answered `applied_not_saved` is unsaved: the signer holds it, in
+memory only, and reports it in `admin_settings` as `unsaved_settings` until
+a save of that setting succeeds, with any value, after which memory and file
+agree again. An `applied_not_durable` save is not unsaved (its file is in
+place) and clears the entry too. Nothing else clears it: a refused request, a
+permissive change whose save fails (memory keeps the restrictive value), and
+a retry whose save fails again (answered `applied_not_saved` once more) all
+leave it. A restart loads the saved value, so the set starts empty.
 
 The two in-effect failures each write one `SETTING_NOT_DURABLE` audit entry
 (see [ARCH_SECURITY.md](ARCH_SECURITY.md)), the only durable trace of a
 change a power loss or restart can undo. The external-edit check that refuses
 an update after root `config.yaml` changed on disk compares that file with
 the process's startup configuration, not memory with the identity's file, so
-a restrictive value left unsaved does not make the next update fail.
+an unsaved value alone does not make the next update fail.
 
 An admin client re-reads `get_admin_settings` after any
 `update_admin_setting_result`, a failed one included, to show the state the
@@ -823,8 +836,8 @@ including `key_type_in_use` for template disable/removal or compiled-provider di
 `restore_rate_limited` for managed restore preview/restore throttling,
 `applied_not_durable` for a setting change that is in effect but whose
 directory sync failed, and `applied_not_saved` for a restrictive setting
-change that is in effect but whose save failed before its file replaced the
-old one. The Go
+change that is in effect but not saved, because the external-edit check
+refused it or its save failed before its file replaced the old one. The Go
 source of truth for these result-local codes is `internal/protocol`, except the
 policy result codes (for example `policy_snapshot_changed`, `policy_unavailable`,
 and `identity_locked`), which `internal/signerapp/policyapply` and
@@ -1267,17 +1280,17 @@ signer settings and status:
 
 After a setting change, success or failure, the panel re-reads the settings,
 so it shows the value in effect. A change in effect without a completed save
-(`applied_not_durable` or `applied_not_saved`) is not shown as an update
-failure: the panel itself shows a warning under its title. For one setting
-it names the setting and says it is in effect with its durability
-unconfirmed, or in effect but not saved so a restart reverts it; for several
-it is one line naming them all, in key order. The warning takes the title's
-margin line and is cut to the panel's width, so the panel is never taller
-with it, and it is the panel's own: no key, timer or other warning clears it.
-Each setting's entry stays until the next update result for that setting
-replaces it or, for any other outcome, clears it; a result for another
-setting leaves it. A new authenticated session clears them all, since the
-signer may have restarted and loaded the saved values.
+is not shown as an update failure. For the settings the signer reports
+unsaved (`unsaved_settings`) the panel shows a warning under its title: for
+one it names the setting and says it is in effect but not saved, so a
+restart reverts it; for several it is one line naming them all, in key
+order. The warning is drawn only from the signer's settings, so a new login
+or a second apadmin shows it, and nothing but settings that no longer list
+the setting clears it. It takes the title's margin line and is cut to the
+panel's width, so the panel is never taller with it. A saved value whose
+durability is unconfirmed (`applied_not_durable`) is not unsaved; the
+status line warns of it, naming the setting, in words that say it is in
+effect.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

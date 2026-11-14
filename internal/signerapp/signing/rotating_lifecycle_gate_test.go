@@ -403,12 +403,14 @@ func TestStageDerivationReportsALockOnlyWhenTheKeyUseWasStopped(t *testing.T) {
 	}
 }
 
-// A lock during the stage table fill's identity read is where the pass stops,
-// as it is one step later in the deriver: no account error, so the worker
-// logs no warning, and the report is marked stopped, so the worker publishes
-// nothing from the pass. The lock refuses or cuts the read's key use, and it also
-// cancels the pass's context, which may be seen first. The report once
-// carried "signer is locked" or "context canceled", whichever came first.
+// A lock during the stage table fill's identity read is not an account error,
+// as one step later in the deriver it is not, so the worker logs no warning.
+// When the lock refused or cut the account's key use (errKeyUseRefused) the
+// report is marked stopped, and the worker leaves only it out of what it
+// publishes. When the pass's own context has ended too it is a quiet stop,
+// which the worker does not publish at all. The report once carried "signer
+// is locked" or "context canceled", whichever came first, and then marked
+// both cases stopped.
 func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -435,8 +437,8 @@ func TestFillStopsQuietlyAtALockDuringTheIdentityRead(t *testing.T) {
 			}
 			before := f.store.loads
 			reports := f.svc.FillStageTables(ctx, f.session, StageFillOptions{})
-			if len(reports) != 1 || reports[0].Err != nil || !reports[0].Stopped || reports[0].Observed || reports[0].Pending {
-				t.Fatalf("reports = %+v, want one quiet stop with no error, marked stopped", reports)
+			if len(reports) != 1 || reports[0].Err != nil || reports[0].Stopped == tc.passCancelled || reports[0].Observed || reports[0].Pending {
+				t.Fatalf("reports = %+v, want one quiet stop with no error, marked stopped only while the pass is live", reports)
 			}
 			if uses != 1 || f.store.loads != before {
 				t.Fatalf("%d key uses and %d seed loads, want the identity read's one refused use and none", uses, f.store.loads-before)

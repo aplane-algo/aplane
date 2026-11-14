@@ -141,9 +141,9 @@ type StageTableReport struct {
 	// Err is set when the account could not be processed (chain read,
 	// derivation or write failure). Completed probes remain cached.
 	Err error
-	// Stopped reports that a lock cut the pass before it observed the
-	// account (at the identity read): the report says nothing about it, and
-	// the pass must not be published.
+	// Stopped reports that the lock refused or cut this account's key use
+	// at the identity read (errKeyUseRefused), so the pass observed nothing
+	// for it: the worker leaves the report out of what it publishes.
 	Stopped bool
 }
 
@@ -256,14 +256,19 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	// closed again inside the call.
 	acct, genesis, _, svcErr := s.rotatingAccount(ctx, deps, account, session)
 	if svcErr != nil {
-		// A lock during the identity read is where the pass stops, as it is
-		// one step later in the deriver (backgroundDeriver): not an account
-		// error, and nothing observed to publish. The pass's context, which
-		// the lock also cancels, may end first, so either report is the
-		// lock's.
-		if svcErr.Kind == ErrorLocked || ctx.Err() != nil {
+		// A lock during the identity read is not an account error, as one
+		// step later in the deriver (backgroundDeriver) it is not.
+		switch {
+		case ctx.Err() != nil:
+			// The pass's own context ended, which a lock or shutdown also
+			// does: a quiet stop, and the worker publishes nothing.
+		case svcErr.Kind == ErrorLocked:
+			// rotatingAccount answers locked exactly where the deriver
+			// reports errKeyUseRefused: the lock refused or cut this
+			// account's key use, or had cleared the session. Nothing was
+			// observed for this account; the rest of the pass stands.
 			report.Stopped = true
-		} else {
+		default:
 			report.Err = errors.New(svcErr.Message)
 		}
 		return report

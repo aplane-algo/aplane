@@ -38,6 +38,10 @@ type AdminSettings struct {
 	// (aplane.falcon1024.v1, aplane.ed25519.v1), only.
 	RequireContained bool
 	RequireCosigner  bool
+	// UnsavedSettings are the settings whose value in effect is ahead of
+	// identities/default/config.yaml: a restrictive value whose save did not
+	// complete. A restart loads the saved value.
+	UnsavedSettings []string
 }
 
 const (

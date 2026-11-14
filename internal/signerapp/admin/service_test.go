@@ -9,15 +9,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/fsutil/fsutiltest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -464,7 +465,7 @@ func TestUpdateAdminSettingRefusesNonCanonicalBooleans(t *testing.T) {
 				if err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
 					t.Fatalf("UpdateAdminSetting(%s=%q) error = %v, want an invalid_request refusal", key, value, err)
 				}
-				if after := svc.BuildAdminSettings(); after != before {
+				if after := svc.BuildAdminSettings(); !reflect.DeepEqual(after, before) {
 					t.Fatalf("settings changed by a refused value:\nbefore %+v\nafter  %+v", before, after)
 				}
 				diskAfter, err := os.ReadFile(productruntime.ConfigPath(deps.dataDir))
@@ -492,9 +493,9 @@ func (c settingChange) name() string {
 	return c.key + "=" + c.from + "->" + c.to
 }
 
-// settingChanges is every writable setting in each direction. A
-// passphrase_timeout is restrictive when it is shorter than the current one,
-// 0 being none.
+// settingChanges is every writable setting in each direction. Only the three
+// boolean settings the signer enforces are ever restrictive: only the admin
+// client enforces passphrase_timeout, so a shorter one is not.
 func settingChanges() []settingChange {
 	return []settingChange{
 		{adminproto.AdminSettingUserAutoApprove, "true", "false", true},
@@ -505,8 +506,8 @@ func settingChanges() []settingChange {
 		{adminproto.AdminSettingRequireCosigner, "true", "false", false},
 		{adminproto.AdminSettingLockOnDisconnect, "false", "true", true},
 		{adminproto.AdminSettingLockOnDisconnect, "true", "false", false},
-		{adminproto.AdminSettingPassphraseTimeout, "0", "15m", true},
-		{adminproto.AdminSettingPassphraseTimeout, "30m", "15m", true},
+		{adminproto.AdminSettingPassphraseTimeout, "0", "15m", false},
+		{adminproto.AdminSettingPassphraseTimeout, "30m", "15m", false},
 		{adminproto.AdminSettingPassphraseTimeout, "15m", "30m", false},
 		{adminproto.AdminSettingPassphraseTimeout, "15m", "0", false},
 		{adminproto.AdminSettingTheme, "auto", "dark", false},
@@ -613,58 +614,6 @@ func requireSetting(t *testing.T, svc Service, ir *productruntime.Runtime, deps 
 	}
 }
 
-// heldSave is an update running in the background with its durable write
-// held at one step.
-type heldSave struct {
-	reached    chan struct{}
-	released   chan struct{}
-	releaseErr error
-	result     chan error
-	once       sync.Once
-	err        error
-}
-
-// holdSave runs update with the durable write held at op on path until
-// finish. Every exit path, a failed assertion included, releases the hold and
-// waits for update before it clears the hook, so no update is left parked
-// inside the write holding the mutation lock and clearing the hook never
-// races it.
-func holdSave(t *testing.T, op fsutil.HookOp, path string, update func() error) *heldSave {
-	t.Helper()
-	h := &heldSave{reached: make(chan struct{}), released: make(chan struct{}), result: make(chan error, 1)}
-	var reachOnce sync.Once
-	fsutil.TestHook = func(got fsutil.HookOp, gotPath string) error {
-		if got == op && gotPath == path {
-			reachOnce.Do(func() { close(h.reached) })
-			<-h.released
-			return h.releaseErr
-		}
-		return nil
-	}
-	go func() { h.result <- update() }()
-	t.Cleanup(func() {
-		_ = h.finish(nil)
-		fsutil.TestHook = nil
-	})
-	select {
-	case <-h.reached:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the save never reached the held step")
-	}
-	return h
-}
-
-// finish lets the held step return err (nil lets it go on) and returns the
-// update's result. Later calls return the same result.
-func (h *heldSave) finish(err error) error {
-	h.once.Do(func() {
-		h.releaseErr = err
-		close(h.released)
-		h.err = <-h.result
-	})
-	return h.err
-}
-
 // A restrictive change is in effect while its save runs; a permissive one is
 // not in effect until its file has replaced the old one. Either way the
 // completed save leaves the new value live and saved.
@@ -672,7 +621,7 @@ func TestSettingDirectionDecidesWhenAChangeTakesEffect(t *testing.T) {
 	for _, c := range settingChanges() {
 		t.Run(c.name(), func(t *testing.T) {
 			svc, ir, deps := startSettingChange(t, c)
-			held := holdSave(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key), func() error {
+			held := fsutiltest.Hold(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key), func() error {
 				return svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 			})
 			during := c.from
@@ -682,7 +631,7 @@ func TestSettingDirectionDecidesWhenAChangeTakesEffect(t *testing.T) {
 			if got, want := liveSetting(t, svc, ir, c.key), normalSetting(t, c.key, during); got != want {
 				t.Fatalf("live during the save = %s, want %s (restrictive %v)", got, want, c.restrictive)
 			}
-			if err := held.finish(nil); err != nil {
+			if err := held.Finish(nil); err != nil {
 				t.Fatalf("UpdateAdminSetting error = %v", err)
 			}
 			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the save")
@@ -777,6 +726,115 @@ func TestUpdateAdminSettingFailureAfterRenamePublishesTheSavedValue(t *testing.T
 				t.Fatalf("next UpdateAdminSetting error = %v", err)
 			}
 			requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after the next save")
+		})
+	}
+}
+
+// unsavedSettings is what admin_settings reports as in effect but not saved.
+func unsavedSettings(svc Service) []string {
+	return svc.BuildAdminSettings().UnsavedSettings
+}
+
+// The signer reports a restrictive value whose save failed as unsaved until a
+// save of that setting succeeds, whatever else happens to it meanwhile: a
+// refused request, a permissive request whose save fails (memory keeps the
+// restrictive value), and a retry of the value in effect whose save fails
+// again, which tries the save and answers applied_not_saved rather than the
+// plain "unchanged" failure. A save that succeeds, or whose file is in place
+// with its directory sync failed, clears it, since memory and file then
+// agree. The TUI once held this itself, and a retry of the unsaved value was
+// classed unchanged.
+func TestUnsavedSettingIsReportedUntilASaveSucceeds(t *testing.T) {
+	for _, c := range settingChanges() {
+		if !c.restrictive {
+			continue
+		}
+		for _, last := range []fsutil.HookOp{"", fsutil.OpDirSync} {
+			t.Run(c.name()+"/cleared by "+map[fsutil.HookOp]string{"": "a save", fsutil.OpDirSync: "an unsynced save"}[last], func(t *testing.T) {
+				svc, ir, deps := startSettingChange(t, c)
+				target := settingTarget(deps.dataDir, c.key)
+				update := func(v string) error {
+					return svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: v})
+				}
+				failDurableWriteAt(t, fsutil.OpRename, target)
+				if err := update(c.to); protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved {
+					t.Fatalf("restrictive change: error = %v, want %s", err, protocol.ResultCodeAppliedNotSaved)
+				}
+				if got := unsavedSettings(svc); !reflect.DeepEqual(got, []string{c.key}) {
+					t.Fatalf("unsaved after the failed save = %v, want [%s]", got, c.key)
+				}
+
+				if err := update("maybe"); protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+					t.Fatalf("refused value: error = %v", err)
+				}
+				if err := update(c.from); err == nil || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved || !strings.Contains(err.Error(), "unchanged") {
+					t.Fatalf("permissive change whose save fails: error = %v, want the plain unchanged failure", err)
+				}
+				requireSetting(t, svc, ir, deps, c.key, c.to, c.from, "after the permissive change's failed save")
+				err := update(c.to)
+				if protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved || !strings.Contains(err.Error(), "not saved") {
+					t.Fatalf("retry of the unsaved value: error = %v (code %q), want %s", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotSaved)
+				}
+				if got := unsavedSettings(svc); !reflect.DeepEqual(got, []string{c.key}) {
+					t.Fatalf("unsaved after the refusal, the failed permissive save and the failed retry = %v, want [%s]", got, c.key)
+				}
+
+				fsutil.TestHook = nil
+				if last == fsutil.OpDirSync {
+					failDurableWriteAt(t, fsutil.OpDirSync, filepath.Dir(target))
+					if err := update(c.to); protocol.CodeForError(err) != protocol.ResultCodeAppliedNotDurable {
+						t.Fatalf("unsynced retry: error = %v, want %s", err, protocol.ResultCodeAppliedNotDurable)
+					}
+					fsutil.TestHook = nil
+				} else if err := update(c.to); err != nil {
+					t.Fatalf("retry that saves: error = %v", err)
+				}
+				if got := unsavedSettings(svc); len(got) != 0 {
+					t.Fatalf("unsaved after the save = %v, want none", got)
+				}
+				requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the save")
+			})
+		}
+	}
+}
+
+// A restrictive value is published before the external-edit check, so it is
+// in effect even when the check refuses the update; it is then in effect but
+// not saved, answered and reported as for a failed save. A permissive value
+// the check refuses is not applied. The check once ran first, so a refused
+// restrictive change left the permissive value in effect.
+func TestRestrictiveValueIsInEffectWhenTheExternalEditCheckRefuses(t *testing.T) {
+	for _, c := range settingChanges() {
+		if c.key == adminproto.AdminSettingTheme {
+			continue
+		}
+		t.Run(c.name(), func(t *testing.T) {
+			svc, ir, deps := startSettingChange(t, c)
+			// Root config.yaml no longer matches the startup config.
+			if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\nuser_auto_approve: true\n"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+			if err == nil || !strings.Contains(err.Error(), "modified externally") {
+				t.Fatalf("UpdateAdminSetting error = %v, want the external-edit refusal", err)
+			}
+			if c.restrictive {
+				if protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved || !strings.Contains(err.Error(), "in effect now, but it was not saved") {
+					t.Fatalf("UpdateAdminSetting error = %v (code %q), want %s", err, protocol.CodeForError(err), protocol.ResultCodeAppliedNotSaved)
+				}
+				requireSetting(t, svc, ir, deps, c.key, c.to, c.from, "after the refusal")
+				if got := unsavedSettings(svc); !reflect.DeepEqual(got, []string{c.key}) {
+					t.Fatalf("unsaved after the refusal = %v, want [%s]", got, c.key)
+				}
+				return
+			}
+			if protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved {
+				t.Fatalf("UpdateAdminSetting error = %v, want a plain refusal", err)
+			}
+			requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after the refusal")
+			if got := unsavedSettings(svc); len(got) != 0 {
+				t.Fatalf("unsaved after a permissive refusal = %v, want none", got)
+			}
 		})
 	}
 }

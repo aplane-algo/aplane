@@ -8,7 +8,6 @@ package tui
 
 import (
 	"fmt"
-	"maps"
 	"sort"
 	"time"
 
@@ -141,10 +140,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
 			m.resetActivityState()
-			// A new session may be with a restarted signer, which loaded
-			// the saved values: a setting this TUI saw left unsaved may no
-			// longer be in effect.
-			m.admin.unsaved = nil
 		} else if msg.Code == protocol.ErrCodeLoginTimeout {
 			// The signer gave up on this login and closes the connection;
 			// stay disconnected rather than retake its single login slot.
@@ -653,22 +648,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
-		// In effect without a completed save is not a failure: the panel
-		// warns until the next result for that setting, and the re-read below
-		// shows the value in effect. The warning names the setting, not the
+		// In effect without a completed save is not a failure. A value not
+		// saved at all is the signer's to report: the panel draws its warning
+		// from the settings re-read below. A saved value whose durability is
+		// unconfirmed is warned of here, by the setting's name, not the
 		// echoed request value, which can differ from what the signer holds.
-		unsaved := maps.Clone(m.admin.unsaved)
-		delete(unsaved, msg.Key)
 		switch {
-		case msg.Code == protocol.ResultCodeAppliedNotDurable, msg.Code == protocol.ResultCodeAppliedNotSaved:
-			if unsaved == nil {
-				unsaved = map[string]string{}
-			}
-			unsaved[msg.Key] = msg.Code
+		case msg.Code == protocol.ResultCodeAppliedNotSaved:
+		case msg.Code == protocol.ResultCodeAppliedNotDurable:
+			m.setPersistentWarning(msg.Key + " is in effect; its durability is not confirmed")
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
 		}
-		m.admin.unsaved = unsaved
 		// Re-read the settings either way: a failed update can still be in
 		// effect (saved, its durability unconfirmed), so the panel shows what
 		// the signer holds rather than what it showed before.

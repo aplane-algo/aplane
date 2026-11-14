@@ -471,6 +471,7 @@ func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSet
 		EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
 		EndpointDisplayURL:   settings.EndpointDisplayURL,
 		Theme:                settings.Theme,
+		UnsavedSettings:      settings.UnsavedSettings,
 	}
 }
 
