@@ -613,3 +613,26 @@ func TestParseTransactionsJSONRefusesBase64NotSpelledAsEncoded(t *testing.T) {
 		t.Fatalf("canonical base64: %v", err)
 	}
 }
+
+func TestParseTransactionsJSONNamesAnEntryThatIsNotATransaction(t *testing.T) {
+	single := string(sdkjson.Encode(parserTestPayment(t, 1)))
+	stateProof := `{"type":"stpf","snd":"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","sp":{"r":{"3":{"p":{"w":1}}},"w":1}}`
+	cases := map[string]struct{ data, want string }{
+		"empty array as the second entry": {"[" + single + ", []]", "transaction 2 is an array, not a transaction object"},
+		"array as the only entry":         {"[[]]", "transaction 1 is an array, not a transaction object"},
+		"array holding a type":            {"[" + single + `, ["pay"]]`, "transaction 2 is an array, not a transaction object"},
+		"state proof with reveals": {stateProof,
+			"transaction 1 cannot be read from JSON: the SDK does not write it as valid JSON"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			txns, err := ParseTransactions([]byte(tc.data))
+			if err == nil {
+				t.Fatalf("parsed %d transaction(s), want refused", len(txns))
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}

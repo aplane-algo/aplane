@@ -137,9 +137,14 @@ func checkJSONStatesDecoded(jsonData []byte, txns []types.Transaction) error {
 		return fmt.Errorf("the file holds %d transaction(s) but %d decoded", len(entries), len(txns))
 	}
 	for i, txn := range txns {
+		// The decoder reads an array into a struct by position.
+		if _, isObject := entries[i].(map[string]interface{}); !isObject {
+			return fmt.Errorf("transaction %d is %s, not a transaction object", i+1, jsonKind(entries[i]))
+		}
 		decoded, err := decodeJSONExactly(sdkjson.Encode(txn))
 		if err != nil {
-			return fmt.Errorf("transaction %d: re-encoding: %w", i+1, err)
+			// A state proof with reveals: its map is written with bare keys.
+			return fmt.Errorf("transaction %d cannot be read from JSON: the SDK does not write it as valid JSON, so the file cannot be checked against it", i+1)
 		}
 		if err := sameJSONValue("", entries[i], decoded); err != nil {
 			return fmt.Errorf("transaction %d: %w", i+1, err)
