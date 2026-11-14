@@ -381,12 +381,17 @@ type adminPanelState struct {
 	editingRow  int // -1 = none
 	editValue   string
 	// settingWarning is the status-line warning, shown only on the admin
-	// panel, for the last update result that left settingWarningKey in
-	// effect without a completed save: the signer's reason a value was not
-	// saved, or that a saved value's durability is not confirmed. A later
-	// successful result for that setting clears it.
-	settingWarning    string
-	settingWarningKey string
+	// panel, for the last update result that left its setting in effect
+	// without a completed save.
+	settingWarning settingResultWarning
+}
+
+// settingResultWarning is what an update result coded applied_not_saved
+// (text is the signer's reason) or applied_not_durable left to say about key.
+// A later successful result for key and a new session clear either kind; a
+// settings re-read in which key is no longer unsaved clears applied_not_saved.
+type settingResultWarning struct {
+	key, code, text string
 }
 
 // clientsState is the enrolled-clients screen and its revocation dialog.

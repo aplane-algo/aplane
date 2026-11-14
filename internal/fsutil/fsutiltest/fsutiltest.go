@@ -6,6 +6,7 @@ package fsutiltest
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 // HeldWrite is an update running in the background with its durable write
 // held at one step.
 type HeldWrite struct {
+	holding    atomic.Bool
 	reached    chan struct{}
 	released   chan struct{}
 	releaseErr error
@@ -24,22 +26,24 @@ type HeldWrite struct {
 }
 
 // Hold runs update with the durable write held at op on path until Finish.
-// Every exit path of the test, a failed assertion included, releases the
-// hold and waits for update before it clears the hook, so no update is left
-// parked inside the write holding a mutation lock and clearing the hook
-// never races it. A test whose other cleanup could wait on that lock
-// registers it before calling Hold, so this cleanup runs first.
-func Hold(t *testing.T, op fsutil.HookOp, path string, update func() error) *HeldWrite {
+// Only the first matching write is held, and Finish's error is returned to
+// it alone; later matching writes in the same test go through. An update
+// that returns before it reaches the held step fails the test at once with
+// its result. Every exit path of the test, a failed assertion included,
+// releases the hold and waits for update before it clears the hook, so no
+// update is left parked inside the write holding a mutation lock and
+// clearing the hook never races it. A test whose other cleanup could wait on
+// that lock registers it before calling Hold, so this cleanup runs first.
+func Hold(t testing.TB, op fsutil.HookOp, path string, update func() error) *HeldWrite {
 	t.Helper()
 	h := &HeldWrite{reached: make(chan struct{}), released: make(chan struct{}), result: make(chan error, 1)}
-	var reachOnce sync.Once
 	fsutil.TestHook = func(got fsutil.HookOp, gotPath string) error {
-		if got == op && gotPath == path {
-			reachOnce.Do(func() { close(h.reached) })
-			<-h.released
-			return h.releaseErr
+		if got != op || gotPath != path || !h.holding.CompareAndSwap(false, true) {
+			return nil
 		}
-		return nil
+		close(h.reached)
+		<-h.released
+		return h.releaseErr
 	}
 	go func() { h.result <- update() }()
 	t.Cleanup(func() {
@@ -48,6 +52,12 @@ func Hold(t *testing.T, op fsutil.HookOp, path string, update func() error) *Hel
 	})
 	select {
 	case <-h.reached:
+	case err := <-h.result:
+		h.once.Do(func() {
+			close(h.released)
+			h.err = err
+		})
+		t.Fatalf("the update returned before its write reached the held step: %v", err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("the write never reached the held step")
 	}

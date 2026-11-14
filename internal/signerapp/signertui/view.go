@@ -9,6 +9,7 @@ package tui
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -650,14 +651,24 @@ func (m Model) renderStatusBar() string {
 	if m.lastWarning != "" {
 		parts = append(parts, warningStyle.Render("Warning: "+m.lastWarning))
 	}
-	// A setting update's in-effect warning belongs to the admin panel.
-	if m.viewState == ViewAdminPanel && m.admin.settingWarning != "" {
-		parts = append(parts, warningStyle.Render("Warning: "+m.admin.settingWarning))
-	}
+	settingAt := len(parts)
 
 	// Error if any
 	if m.lastError != "" {
 		parts = append(parts, errorStyle.Render("Error: "+m.lastError))
+	}
+
+	// A setting update's in-effect warning belongs to the admin panel. It is
+	// cut to the room the rest of the line leaves, so the line stays one row
+	// and takes none from the panel.
+	if w := m.admin.settingWarning.text; m.viewState == ViewAdminPanel && w != "" {
+		room := m.tableWidth() - lipgloss.Width(strings.Join(parts, " | "))
+		if len(parts) > 0 {
+			room -= len(" | ")
+		}
+		if w = ellipsize("Warning: "+w, room); w != "" {
+			parts = slices.Insert(parts, settingAt, warningStyle.Render(w))
+		}
 	}
 
 	return helpStyle.Render(strings.Join(parts, " | "))

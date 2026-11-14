@@ -135,12 +135,12 @@ func boolStr(b bool) string {
 
 // unsavedSettingsWarning is the panel's one-line warning for the settings the
 // signer holds in effect but not saved: one named in full, or several named in
-// key order.
+// the key order the signer reports them in.
 func (m Model) unsavedSettingsWarning() string {
 	if m.admin.settings == nil {
 		return ""
 	}
-	keys := slices.Sorted(slices.Values(m.admin.settings.UnsavedSettings))
+	keys := m.admin.settings.UnsavedSettings
 	switch len(keys) {
 	case 0:
 		return ""
@@ -149,6 +149,16 @@ func (m Model) unsavedSettingsWarning() string {
 	default:
 		return "Warning: in effect but not saved: " + strings.Join(keys, ", ")
 	}
+}
+
+// unsavedRowNote follows the value of a setting the signer holds in effect but
+// not saved, on which enter retries the save instead of toggling.
+const unsavedRowNote = "  (unsaved; Enter retries the save)"
+
+// settingUnsaved reports whether the signer holds setting key in effect but
+// not saved.
+func (m Model) settingUnsaved(key string) bool {
+	return m.admin.settings != nil && slices.Contains(m.admin.settings.UnsavedSettings, key)
 }
 
 // renderAdminPanel renders the admin control panel view.
@@ -209,6 +219,9 @@ func (m Model) renderAdminPanel() string {
 					valueStr = "ON"
 				} else {
 					valueStr = "OFF"
+				}
+				if m.settingUnsaved(r.key) {
+					valueStr += unsavedRowNote
 				}
 			} else {
 				valueStr = r.value

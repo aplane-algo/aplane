@@ -4,6 +4,7 @@
 package cmdlog
 
 import (
+	"io"
 	"log"
 	"os"
 )
@@ -18,6 +19,11 @@ func New(prefix string) *Logger {
 	return &Logger{
 		logger: log.New(os.Stderr, prefix+" ", log.LstdFlags|log.LUTC),
 	}
+}
+
+// SetOutput sets where the logger writes; tests capture it with this.
+func (l *Logger) SetOutput(w io.Writer) {
+	l.logger.SetOutput(w)
 }
 
 func (l *Logger) Infof(format string, args ...any) {

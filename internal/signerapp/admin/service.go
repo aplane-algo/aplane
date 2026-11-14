@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -165,7 +164,7 @@ func (s Service) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) er
 func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingRequest) error {
 	ir := s.Runtime
 	icfg := ir.Config()
-	unsaved := slices.Contains(icfg.UnsavedSettings(), req.Key)
+	unsaved := icfg.IsUnsaved(req.Key)
 
 	// The new value is a candidate until it is published. A restrictive one
 	// (see restricts) is published before the save, so it is in effect for
@@ -237,15 +236,6 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	if restrictive {
 		publish()
 	}
-	// notSaved answers a restrictive value left in effect ahead of the file,
-	// which the signer then reports as unsaved until a save of the setting
-	// succeeds.
-	notSaved := func(err error) error {
-		icfg.SetUnsaved(req.Key, true)
-		return protocol.WithCode(protocol.ResultCodeAppliedNotSaved,
-			fmt.Errorf("%s is set to %v and in effect now, but it was not saved, so a restart loads the old value: %w", req.Key, saveValue, err))
-	}
-
 	// The save rewrites only this key: an edit to another key of the file
 	// made while the signer runs stays in the file and takes effect at the
 	// next start.
@@ -270,8 +260,11 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		return nil
 	case restrictive:
 		// The old file is still in place. Memory keeps the restrictive value
-		// rather than go back to the permissive one it replaced.
-		return notSaved(saveErr)
+		// rather than go back to the permissive one it replaced, and the
+		// signer reports the setting unsaved until a save of it succeeds.
+		icfg.SetUnsaved(req.Key, true)
+		return protocol.WithCode(protocol.ResultCodeAppliedNotSaved,
+			fmt.Errorf("%s is set to %v and in effect now, but it was not saved, so a restart loads the old value: %w", req.Key, saveValue, saveErr))
 	default:
 		return fmt.Errorf("failed to save config.yaml; %s is unchanged: %w", req.Key, saveErr)
 	}

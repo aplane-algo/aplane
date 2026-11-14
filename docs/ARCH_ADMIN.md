@@ -536,7 +536,7 @@ without overlays and bounds; neither takes mnemonic import.
 
 #### Admin and Policy Settings
 
-- `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`, optional `unsaved_settings` (the settings in effect but not saved, which a restart reverts; see Writable Settings)
+- `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`, optional `unsaved_settings` (the settings in effect but not saved, which a restart reverts, in key order; see Writable Settings)
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_durable"` means the value is saved and in effect but its durability is not confirmed, and with `code:"applied_not_saved"` that a restrictive value is in effect but was not saved, so a restart loads the old value (see Writable Settings)
 
@@ -1291,12 +1291,18 @@ restart reverts it; for several it is one line naming them all, in key
 order. The warning is drawn only from the signer's settings, so a new login
 or a second apadmin shows it, and nothing but settings that no longer list
 the setting clears it. It takes the title's margin line and is cut to the
-panel's width, so the panel is never taller with it. While the panel is
-shown, the status line also carries the last in-effect result: the signer's
-reason a value was not saved (`applied_not_saved`), or, for a saved value
-whose durability is unconfirmed (`applied_not_durable`, which is not
+panel's width, so the panel is never taller with it. The row of an unsaved
+setting adds "(unsaved; Enter retries the save)": Enter on it re-sends the
+value in effect, which the signer takes as a retry of the save, instead of
+toggling it. To turn the setting back, retry until the save succeeds, then
+toggle. While the panel is shown, the status line also carries the last
+in-effect result, cut to the room the line leaves so it stays one row: the
+signer's reason a value was not saved (`applied_not_saved`), or, for a saved
+value whose durability is unconfirmed (`applied_not_durable`, which is not
 unsaved), a warning naming the setting in words that say it is in effect. A
-later successful update of the same setting clears it.
+later successful update of the same setting and a new authenticated session
+clear either; a settings re-read that no longer lists the setting unsaved
+clears the `applied_not_saved` reason.
 
 Backup creation and managed restore open directly from the key list with `b`
 and `r`.

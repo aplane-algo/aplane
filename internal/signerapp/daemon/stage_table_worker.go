@@ -222,20 +222,27 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 		},
 	}
 	reports, cut := svc.FillStageTables(ctx, ir.SnapshotKeySession(), opts)
+	// A pass the lock (or shutdown) cancelled or cut is classified once. The
+	// reads it cancelled fail with the cancellation itself, which the chain
+	// reader keeps in the error chain: that is the lock, not the account's
+	// error, so only other errors are logged.
+	stopped := ctx.Err() != nil || cut
 	wait := stageTableIdleInterval
 	for _, r := range reports {
 		if r.Discarded != nil {
 			logWarnf("rotating account %s: %v; rebuilding its stage table from the seed", r.Account, r.Discarded)
 		}
 		if r.Err != nil {
-			logWarnf("rotating account %s: stage table: %v", r.Account, r.Err)
+			if !stopped || !errors.Is(r.Err, context.Canceled) {
+				logWarnf("rotating account %s: stage table: %v", r.Account, r.Err)
+			}
 			continue
 		}
 		if r.Pending {
 			wait = stageTableBusyInterval
 		}
 	}
-	if ctx.Err() != nil || cut {
+	if stopped {
 		// Locked or shutting down mid-pass: nothing to schedule or publish.
 		// A pass the lock cut is treated as not having happened, so the
 		// status from the last complete pass stands until the locked worker

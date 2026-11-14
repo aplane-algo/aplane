@@ -332,6 +332,71 @@ func TestPassCutByALockPublishesNothing(t *testing.T) {
 	}
 }
 
+// syncBuffer is a log destination tests read while other goroutines write.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// A lock that cancels a pass during an account's chain read fails that read
+// with the cancellation itself, which is the lock, not the account's error:
+// the worker does not log it. A real error from the same pass is still logged.
+// The cancelled read was once logged as "stage table: ... context canceled".
+func TestCancelledPassLogsOnlyRealAccountErrors(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	// The pass visits accounts in address order: the first one's read fails
+	// at the node, and the lock lands during the second one's.
+	first, second := a, b
+	if b.String() < a.String() {
+		first, second = b, a
+	}
+	node := &mockAccountNode{}
+	node.set("", 100)
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/v2/accounts/" + first.String():
+				return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader(`{"message":"node is down"}`)), Request: req}, nil
+			case "/v2/accounts/" + second.String():
+				ir.Lock()
+				return nil, req.Context().Err()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+
+	server.fillStageTables(context.Background(), ir)
+	out := logs.String()
+	if !strings.Contains(out, "rotating account "+first.String()+": stage table:") || !strings.Contains(out, "node is down") {
+		t.Fatalf("log = %q, want the first account's real error", out)
+	}
+	if strings.Contains(out, "rotating account "+second.String()+": stage table:") {
+		t.Fatalf("log = %q, want nothing for the read the lock cancelled", out)
+	}
+}
+
 // TestLockCompletesWhileATableWriteIsStalled pins that the seed is released
 // before table I/O: a stalled fsync must not keep the lock from completing,
 // because nothing sensitive is in memory during the write.

@@ -96,10 +96,16 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if row.isBool {
-				// Toggle boolean
+				// Toggle boolean, except that a setting in effect but not
+				// saved re-sends the value in effect, which the signer takes
+				// as a retry of its save. Turning it back is a toggle once
+				// it is saved.
 				newValue := "true"
 				if row.value == "true" {
 					newValue = "false"
+				}
+				if m.settingUnsaved(row.key) {
+					newValue = row.value
 				}
 				return m, m.sendUpdateAdminSettingCmd(row.key, newValue)
 			}

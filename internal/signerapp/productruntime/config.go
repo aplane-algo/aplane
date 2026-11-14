@@ -163,6 +163,14 @@ func (c *RuntimeConfig) SetUnsaved(key string, unsaved bool) {
 	c.unsaved[key] = true
 }
 
+// IsUnsaved reports whether setting key's value here is ahead of the saved
+// file.
+func (c *RuntimeConfig) IsUnsaved(key string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.unsaved[key]
+}
+
 // UnsavedSettings returns, sorted, the settings whose value here is ahead of
 // the saved file.
 func (c *RuntimeConfig) UnsavedSettings() []string {
