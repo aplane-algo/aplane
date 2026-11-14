@@ -182,9 +182,9 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 
 	appID := toUint64(a.runtime, call.Arguments[0])
 	from := a.stringArg(call, 1)
-	appArgs, err := requiredJSArray(call.Arguments[2], "appCallRaw() appArgs")
+	appArgs, err := jsArray(call.Arguments[2].Export())
 	if err != nil {
-		panic(a.runtime.ToValue(err.Error()))
+		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() appArgs: %v", err)))
 	}
 
 	opts := a.parseAppCallOptions(call, 3, "appCallRaw()", appID)
@@ -248,21 +248,6 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 	return a.submitResultValue(result, "")
 }
 
-func requiredJSArray(value goja.Value, label string) ([]interface{}, error) {
-	switch raw := value.Export().(type) {
-	case []interface{}:
-		return raw, nil
-	case []string:
-		result := make([]interface{}, len(raw))
-		for i, item := range raw {
-			result[i] = item
-		}
-		return result, nil
-	default:
-		return nil, fmt.Errorf("%s must be an array", label)
-	}
-}
-
 func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 5, "appCall() requires appId, method, abiPath, from, and args arguments")
 
@@ -270,7 +255,10 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 	method := a.stringArg(call, 1)
 	abiPath := a.stringArg(call, 2)
 	from := a.stringArg(call, 3)
-	rawArgs := toInterfaceArray(call.Arguments[4])
+	rawArgs, err := jsArray(call.Arguments[4].Export())
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("appCall() args: %v", err)))
+	}
 	if abiPath == "" {
 		panic(a.runtime.ToValue("appCall() error preparing transaction: ABI path is required"))
 	}
@@ -504,7 +492,10 @@ func (a *API) resolveAppAccounts(from string, accounts []string, funcName string
 // which always encodes as index 0, whether or not the called app is also in
 // `apps`. An object naming an `appId` asks for that app's position in the list.
 func (a *API) parseBoxRefsValue(v interface{}, funcName string) []types.AppBoxReference {
-	values := toInterfaceSliceValue(v)
+	values, err := jsArray(v)
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("%s invalid boxes: %v", funcName, err)))
+	}
 	refs := make([]types.AppBoxReference, 0, len(values))
 	for i, raw := range values {
 		switch box := raw.(type) {
@@ -764,7 +755,10 @@ func parseOnCompletionString(raw string) (types.OnCompletion, error) {
 }
 
 func toUint64SliceValue(v interface{}) ([]uint64, error) {
-	values := toInterfaceSliceValue(v)
+	values, err := jsArray(v)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]uint64, 0, len(values))
 	for i, item := range values {
 		switch raw := item.(type) {

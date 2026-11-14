@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## JS app calls refuse reference lists that are not arrays
+
+- **`appCall()` and `appCallRaw()` refuse `apps`, `assets` or `boxes` that is
+  not an array.** `{apps: 456}`, `{assets: "31566704"}` or `{boxes: "name"}`
+  was read as an empty list, so the call was built with no foreign
+  references and no error. Each is now refused as `invalid apps: expected an
+  array, got a number`, as `accounts` already was; `null` and `undefined`
+  are refused too. `appCall()`'s `args` is refused the same way when it is
+  not an array; it was read as no arguments. An empty array is unchanged.
+
 ## JSON transaction files must state what they decode to
 
 - **`sign <file>` and JS `sign()` compare a JSON transaction with what was

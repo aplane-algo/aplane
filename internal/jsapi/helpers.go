@@ -523,21 +523,19 @@ func (a *API) pluginArg(call goja.FunctionCall, index int) string {
 	}
 }
 
-func toInterfaceArray(v goja.Value) []interface{} {
-	return toInterfaceSliceValue(v.Export())
-}
-
-func toInterfaceSliceValue(v interface{}) []interface{} {
+// jsArray reads an exported JavaScript array. Anything else is an error:
+// read as an empty list, {apps: 456} would build a call with no foreign apps.
+func jsArray(v interface{}) ([]interface{}, error) {
 	switch arr := v.(type) {
 	case []interface{}:
-		return arr
+		return arr, nil
 	case []string:
 		result := make([]interface{}, len(arr))
 		for i, item := range arr {
 			result[i] = item
 		}
-		return result
+		return result, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("expected an array, got %s", jsTypeName(v))
 	}
 }

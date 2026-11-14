@@ -340,8 +340,60 @@ func TestAppCallRawRejectsNonArrayArgs(t *testing.T) {
 
 	addr := types.Address{}.String()
 	_, err = vm.RunString(fmt.Sprintf(`appCallRaw(123, %q, "not-array")`, addr))
-	if err == nil || !strings.Contains(err.Error(), "appCallRaw() appArgs must be an array") {
+	if err == nil || !strings.Contains(err.Error(), "appCallRaw() appArgs: expected an array, got a string") {
 		t.Fatalf("expected non-array appArgs error, got %v", err)
+	}
+}
+
+func TestAppCallRefusesReferenceListsThatAreNotArrays(t *testing.T) {
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	vm := goja.New()
+	api := NewAPI(eng, false, nil)
+	if err := api.RegisterAll(vm); err != nil {
+		t.Fatalf("failed to register API: %v", err)
+	}
+
+	addr := types.Address{}.String()
+	raw := func(options string) string { return fmt.Sprintf(`appCallRaw(123, %q, [], %s)`, addr, options) }
+	abi := func(args, options string) string {
+		return fmt.Sprintf(`appCall(123, "m", "/nonexistent/app.arc32.json", %q, %s, %s)`, addr, args, options)
+	}
+
+	refused := map[string]string{
+		raw(`{apps: 456}`):           "appCallRaw() invalid apps: expected an array, got a number",
+		raw(`{assets: "31566704"}`):  "appCallRaw() invalid assets: expected an array, got a string",
+		raw(`{boxes: "name"}`):       "appCallRaw() invalid boxes: expected an array, got a string",
+		raw(`{boxes: {name: "x"}}`):  "appCallRaw() invalid boxes: expected an array, got an object",
+		raw(`{apps: null}`):          "appCallRaw() invalid apps: expected an array, got null or undefined",
+		raw(`{assets: undefined}`):   "appCallRaw() invalid assets: expected an array, got null or undefined",
+		abi(`[]`, `{apps: 456}`):     "appCall() invalid apps: expected an array, got a number",
+		abi(`[]`, `{assets: "7"}`):   "appCall() invalid assets: expected an array, got a string",
+		abi(`[]`, `{boxes: "name"}`): "appCall() invalid boxes: expected an array, got a string",
+		abi(`5`, `{}`):               "appCall() args: expected an array, got a number",
+		abi(`"text:x"`, `{}`):        "appCall() args: expected an array, got a string",
+		abi(`undefined`, `{}`):       "appCall() args: expected an array, got null or undefined",
+	}
+	for script, want := range refused {
+		_, err := vm.RunString(script)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: got %v, want an error containing %q", script, err, want)
+		}
+	}
+
+	// Arrays, empty ones included, get the call past its options.
+	for _, options := range []string{`{apps: [], assets: [], boxes: []}`, `{apps: [1], assets: [2], boxes: ["text:b"]}`} {
+		_, err = vm.RunString(raw(options))
+		if err == nil || !strings.Contains(err.Error(), engine.ErrNoAlgodClient.Error()) {
+			t.Fatalf("appCallRaw with %s: got %v, want %v", options, err, engine.ErrNoAlgodClient)
+		}
+	}
+	_, err = vm.RunString(abi(`[]`, `{apps: [], assets: [], boxes: []}`))
+	if err == nil || !strings.Contains(err.Error(), "appCall() error preparing transaction") {
+		t.Fatalf("appCall with empty lists: got %v, want the ABI file error", err)
 	}
 }
 
