@@ -1825,7 +1825,9 @@ SLH-DSA's read after signing comes before the seed is zeroed. That read runs
 under the window's context, so a lock cancels it instead of waiting for it.
 A lock cancels each window and waits for the seed to be zeroed, which for the
 signing window happens before the audit write; a refused or cancelled key use
-answers with the locked error. It
+(the stateless re-read cancelled by the lock included) answers with the locked
+error; a request whose own context ended, or a re-read that failed for its own
+reason (the node's error, its own timeout), answers `unavailable`. It
 refuses the release if the signer locked since approval, the request was cancelled
 or the key was removed, both before that write and after the last audit write.
 The last audit write is the `SIGN_APPROVED` entry for the group as signed; a
@@ -2179,7 +2181,10 @@ stored provenance was available. These fields do not change `/sign` behavior.
   still scanning for, or an authorizer it could not place. Clients must
   tolerate this field being omitted.
 - `rotating[]`: optional, one `signerapi.RotatingAccountStatus` per rotating
-  account from the worker's last pass: `account`, the observed `authorizer`
+  account from the worker's last complete pass (a pass during which a lock
+  refused or cut an account's key use is treated as not having happened and
+  publishes nothing, so this and the alerts in `warnings` stay as the pass
+  before it left them): `account`, the observed `authorizer`
   and `round` (absent when the last read failed), `classification`
   (`stage`, `held_key`, `unknown`, `unobserved`), `stage` when classified as
   a stage, `cached_entries` (the number of sparse address records),

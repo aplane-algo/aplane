@@ -64,6 +64,12 @@ func (s signerAdminServices) LogIdentityLockedContext(ctx adminserver.SessionCon
 	}
 }
 
+func (s signerAdminServices) LogSettingNotDurableContext(ctx adminserver.SessionContext, key, code, reason string) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogSettingNotDurableContext(ctx, key, code, reason)
+	}
+}
+
 func (s signerAdminServices) LogGenerationQuarantinePruneIntentDurableContext(
 	ctx adminserver.SessionContext,
 	operationID string,

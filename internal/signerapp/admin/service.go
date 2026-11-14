@@ -70,6 +70,7 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 
 	requireContained, requireCosigner := icfg.GenerationRequirements()
 	return adminproto.AdminSettings{
+		UnsavedSettings:      icfg.UnsavedSettings(),
 		UserAutoApprove:      icfg.UserAutoApprove(),
 		RequireContained:     requireContained,
 		RequireCosigner:      requireCosigner,
@@ -162,22 +163,20 @@ func (s Service) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) er
 
 func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingRequest) error {
 	ir := s.Runtime
-	cfg := s.Deps.Config()
+	icfg := ir.Config()
+	unsaved := icfg.IsUnsaved(req.Key)
 
-	changed, checkErr := serverconfig.ConfigFileChanged(s.Deps.DataDir(), *cfg)
-	if checkErr != nil {
-		return fmt.Errorf("failed to check config file: %w", checkErr)
-	}
-	if changed {
-		return fmt.Errorf("config.yaml has been modified externally; restart apsigner to apply changes before making further edits")
-	}
-
-	// The new value is a candidate until it is saved: publish makes it live
-	// only once the save returns, so no reader (a signing request included)
-	// ever sees a value that was not saved.
+	// The new value is a candidate until it is published. A restrictive one
+	// (see restricts) is published before the save, so it is in effect for
+	// as long as the save takes and stays in effect if the save fails. Any
+	// other value (theme, passphrase_timeout, the value already saved) is
+	// published only once the save returns, so no reader, a signing request
+	// included, ever sees a permissive value that was not saved, and a failed
+	// save of an unchanged value reports nothing in effect that a restart
+	// would undo.
 	var saveValue interface{}
 	var publish func()
-	icfg := ir.Config()
+	var restrictive bool
 
 	switch req.Key {
 	case adminproto.AdminSettingRequireContained:
@@ -185,21 +184,24 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if err != nil {
 			return err
 		}
-		_, cosigner := icfg.GenerationRequirements()
+		contained, cosigner := icfg.GenerationRequirements()
 		saveValue, publish = v, func() { icfg.SetGenerationRequirements(v, cosigner) }
+		restrictive = restricts(true, v, contained, unsaved)
 	case adminproto.AdminSettingRequireCosigner:
 		v, err := parseBoolSetting(req)
 		if err != nil {
 			return err
 		}
-		contained, _ := icfg.GenerationRequirements()
+		contained, cosigner := icfg.GenerationRequirements()
 		saveValue, publish = v, func() { icfg.SetGenerationRequirements(contained, v) }
+		restrictive = restricts(true, v, cosigner, unsaved)
 	case adminproto.AdminSettingUserAutoApprove:
 		v, err := parseBoolSetting(req)
 		if err != nil {
 			return err
 		}
 		saveValue, publish = v, func() { icfg.SetUserAutoApprove(v) }
+		restrictive = restricts(false, v, icfg.UserAutoApprove(), unsaved)
 	case adminproto.AdminSettingLockOnDisconnect:
 		v, err := parseBoolSetting(req)
 		if err != nil {
@@ -209,7 +211,10 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 			return fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		}
 		saveValue, publish = v, func() { icfg.SetLockOnDisconnect(v) }
+		restrictive = restricts(true, v, icfg.LockOnDisconnect(), unsaved)
 	case adminproto.AdminSettingPassphraseTimeout:
+		// Only the admin client enforces the timeout, so publishing it early
+		// would change nothing in the signer: it is never restrictive.
 		duration, err := serverconfig.ParsePassphraseTimeout(req.Value)
 		if err != nil {
 			return err
@@ -228,6 +233,12 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
 
+	if restrictive {
+		publish()
+	}
+	// The save rewrites only this key: an edit to another key of the file
+	// made while the signer runs stays in the file and takes effect at the
+	// next start.
 	mut := storemut.New(s.Deps.KeyPaths())
 	var saveErr error
 	if req.Key == adminproto.AdminSettingTheme {
@@ -236,18 +247,36 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		saveErr = mut.SaveRuntimeSetting(s.Deps.DataDir(), req.Key, saveValue)
 	}
 	switch {
-	case saveErr == nil:
-		publish()
-		return nil
-	case errors.Is(saveErr, fsutil.ErrPublishedNotDurable):
+	case saveErr == nil || errors.Is(saveErr, fsutil.ErrPublishedNotDurable):
 		// The new file is in place and is what the next start loads, so
-		// memory follows it rather than keep a value the file no longer holds.
+		// memory follows it (a restrictive value already does) and is no
+		// longer ahead of it.
 		publish()
-		return protocol.WithCode(protocol.ResultCodeAppliedNotDurable,
-			fmt.Errorf("%s is set to %v and in effect, but its durability is not confirmed: %w", req.Key, saveValue, saveErr))
+		icfg.SetUnsaved(req.Key, false)
+		if saveErr != nil {
+			return protocol.WithCode(protocol.ResultCodeAppliedNotDurable,
+				fmt.Errorf("%s is set to %v and in effect, but its durability is not confirmed: %w", req.Key, saveValue, saveErr))
+		}
+		return nil
+	case restrictive:
+		// The old file is still in place. Memory keeps the restrictive value
+		// rather than go back to the permissive one it replaced, and the
+		// signer reports the setting unsaved until a save of it succeeds.
+		icfg.SetUnsaved(req.Key, true)
+		return protocol.WithCode(protocol.ResultCodeAppliedNotSaved,
+			fmt.Errorf("%s is set to %v and in effect now, but it was not saved, so a restart loads the old value: %w", req.Key, saveValue, saveErr))
 	default:
 		return fmt.Errorf("failed to save config.yaml; %s is unchanged: %w", req.Key, saveErr)
 	}
+}
+
+// restricts reports whether a request for boolean setting value requested is
+// restrictive, current being the value in effect: requested is the
+// setting's restrictive value (restrictiveValue), and it differs from the
+// value in effect or the setting is unsaved (in effect ahead of the file, so
+// the request retries the save).
+func restricts(restrictiveValue, requested, current, unsaved bool) bool {
+	return requested == restrictiveValue && (current != restrictiveValue || unsaved)
 }
 
 // parseBoolSetting accepts exactly "true" or "false" for a boolean setting.

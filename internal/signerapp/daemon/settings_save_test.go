@@ -7,31 +7,36 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/fsutil/fsutiltest"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // A signing request reads user_auto_approve once, when its approval service
-// is built, and takes no lock the settings update holds. The update once
-// published the new value before saving it, so a request built during the
-// save kept a value that was then reset, or never saved at all. The save
-// here is held at the step where it fails; a request built meanwhile must
-// get the saved value, and one built afterward the value the file holds.
-func TestSigningNeverSeesAnUnsavedAutoApprove(t *testing.T) {
+// is built, and takes no lock the settings update holds. Turning auto-approve
+// on is permissive: the update once published it before saving it, so a
+// request built during the save kept a value that was then reset, or never
+// saved at all. Turning it off is restrictive: it is in effect from before
+// the save, however long the save takes, and stays in effect if the save
+// fails before its rename (a restart then loads the old value). The save
+// here is held at the step where it fails.
+func TestSigningSeesAutoApproveByTheChangesDirection(t *testing.T) {
 	for _, change := range []struct {
 		name     string
 		from, to bool
+		// restrictive: the new value is in effect before the save returns.
+		restrictive bool
 	}{
-		{"enable", false, true},
-		{"disable", true, false},
+		{"enable", false, true, false},
+		{"disable", true, false, true},
 	} {
 		for _, failure := range []struct {
 			name string
@@ -44,7 +49,7 @@ func TestSigningNeverSeesAnUnsavedAutoApprove(t *testing.T) {
 		} {
 			t.Run(change.name+"/"+failure.name, func(t *testing.T) {
 				server, cleanup := setupTestSigner(t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 				if err := os.WriteFile(filepath.Join(server.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
 					t.Fatal(err)
 				}
@@ -67,101 +72,151 @@ func TestSigningNeverSeesAnUnsavedAutoApprove(t *testing.T) {
 				if failure.op == fsutil.OpDirSync {
 					hookPath = filepath.Dir(configPath)
 				}
-				reached := make(chan struct{})
-				release := make(chan struct{})
-				var once sync.Once
-				fsutil.TestHook = func(op fsutil.HookOp, path string) error {
-					if op == failure.op && path == hookPath {
-						once.Do(func() { close(reached) })
-						<-release
-						return errors.New("injected " + string(op) + " failure")
-					}
-					return nil
+				held := fsutiltest.Hold(t, failure.op, hookPath, func() error { return update(change.to) })
+				during := change.from
+				if change.restrictive {
+					during = change.to
 				}
-				defer func() { fsutil.TestHook = nil }()
+				if got := signingSees(); got != during {
+					t.Fatalf("a request built during the save got auto-approve %v, want %v", got, during)
+				}
+				err := held.Finish(errors.New("injected " + string(failure.op) + " failure"))
 
-				result := make(chan error, 1)
-				go func() { result <- update(change.to) }()
-				select {
-				case <-reached:
-				case <-time.After(10 * time.Second):
-					close(release)
-					t.Fatal("the save never reached the injected failure")
+				live, saved := change.from, change.from
+				if failure.replaced || change.restrictive {
+					live = change.to
 				}
-				if got := signingSees(); got != change.from {
-					t.Fatalf("a request built during the save got auto-approve %v; the saved value is %v", got, change.from)
-				}
-				close(release)
-				err := <-result
-				fsutil.TestHook = nil
-
-				want := change.from
 				if failure.replaced {
-					want = change.to
+					saved = change.to
 				}
 				if err == nil || errors.Is(err, fsutil.ErrPublishedNotDurable) != failure.replaced {
 					t.Fatalf("UpdateAdminSetting error = %v, want a failure that reports whether the file was replaced (%v)", err, failure.replaced)
 				}
-				if got := signingSees(); got != want {
-					t.Fatalf("a request built after the save got auto-approve %v, want %v", got, want)
+				if got := signingSees(); got != live {
+					t.Fatalf("a request built after the save got auto-approve %v, want %v", got, live)
 				}
 				stored, loadErr := productruntime.LoadStoredConfig(server.dataDir)
 				if loadErr != nil {
 					t.Fatal(loadErr)
 				}
-				if stored.UserAutoApprove == nil || *stored.UserAutoApprove != want {
-					t.Fatalf("saved auto-approve = %v, want %v, the value signing uses", stored.UserAutoApprove, want)
+				if stored.UserAutoApprove == nil || *stored.UserAutoApprove != saved {
+					t.Fatalf("saved auto-approve = %v, want %v", stored.UserAutoApprove, saved)
 				}
 			})
 		}
 	}
 }
 
-// What an admin client receives when the save is in place but its directory
-// sync failed: a failed result coded applied_not_durable whose error says the
-// setting is in effect, and settings that then report the new value, which
-// the TUI re-reads after any result.
-func TestUnsyncedSettingSaveReachesTheAdminClientAsInEffect(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-	if err := os.WriteFile(filepath.Join(server.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	identityDir := filepath.Dir(productruntime.ConfigPath(server.dataDir))
-	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
-		if op == fsutil.OpDirSync && path == identityDir {
-			return errors.New("injected dir-sync failure")
-		}
-		return nil
-	}
-	defer func() { fsutil.TestHook = nil }()
+// What an admin client receives when a setting is in effect but its save did
+// not complete, and what the audit log records of it: a failed result coded
+// applied_not_durable (file replaced, directory sync failed) or
+// applied_not_saved (a restrictive change whose save failed before the
+// rename), an error that says the setting is in effect, settings that then
+// report the new value (and, for applied_not_saved only, the setting as
+// unsaved), which the TUI re-reads after any result, and one
+// SETTING_NOT_DURABLE entry, since nothing else durable records the change.
+// A save that fails before the rename of a permissive change writes none: the
+// setting is unchanged.
+func TestSettingInEffectWithoutACompletedSaveReachesTheAdminClientAndTheAuditLog(t *testing.T) {
+	for _, tc := range []struct {
+		name, value string
+		op          fsutil.HookOp
+		code        string
+		errText     []string
+	}{
+		{"unsynced", "true", fsutil.OpDirSync, protocol.ResultCodeAppliedNotDurable, []string{"in effect", "durability is not confirmed"}},
+		{"unsaved restrictive", "false", fsutil.OpRename, protocol.ResultCodeAppliedNotSaved, []string{"in effect now", "not saved", "a restart loads the old value"}},
+		{"unsaved permissive", "true", fsutil.OpRename, "", []string{"unchanged"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, cleanup := setupTestSigner(t)
+			t.Cleanup(cleanup)
+			if err := os.WriteFile(filepath.Join(server.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			ir := server.productRuntime()
+			// Start from the opposite value, saved, so the change is real.
+			start := strconv.FormatBool(tc.value != "true")
+			if err := server.adminServices().adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+				Key: adminproto.AdminSettingUserAutoApprove, Value: start,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			configPath := productruntime.ConfigPath(server.dataDir)
+			hookPath := configPath
+			if tc.op == fsutil.OpDirSync {
+				hookPath = filepath.Dir(configPath)
+			}
+			fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+				if op == tc.op && path == hookPath {
+					return errors.New("injected " + string(op) + " failure")
+				}
+				return nil
+			}
+			t.Cleanup(func() { fsutil.TestHook = nil })
 
-	recorder := &ipcJSONRecorderConn{}
-	ir := server.productRuntime()
-	session := newBoundTestSession(&IPCServer{signer: server}, recorder, ir)
-	session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
-		BaseMessage: protocol.BaseMessage{ID: "req-1"},
-		Key:         adminproto.AdminSettingUserAutoApprove,
-		Value:       "true",
-	})
-	fsutil.TestHook = nil
-	session.HandleGetAdminSettings("req-2")
+			recorder := &ipcJSONRecorderConn{}
+			session := newBoundTestSession(&IPCServer{signer: server}, recorder, ir)
+			session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+				BaseMessage: protocol.BaseMessage{ID: "req-1"},
+				Key:         adminproto.AdminSettingUserAutoApprove,
+				Value:       tc.value,
+			})
+			fsutil.TestHook = nil
+			session.HandleGetAdminSettings("req-2")
 
-	msgs := recorder.messages(t)
-	if len(msgs) != 2 {
-		t.Fatalf("message count = %d, want 2", len(msgs))
-	}
-	if !reflectJSONSubset(msgs[0], map[string]any{
-		"type": protocol.MsgTypeUpdateAdminSettingResult, "id": "req-1", "success": false,
-		"key": adminproto.AdminSettingUserAutoApprove, "value": "true",
-		"code": protocol.ResultCodeAppliedNotDurable,
-	}) {
-		t.Fatalf("update_admin_setting_result = %#v", msgs[0])
-	}
-	if errText, _ := msgs[0]["error"].(string); !strings.Contains(errText, "in effect") || !strings.Contains(errText, "durability is not confirmed") {
-		t.Fatalf("update_admin_setting_result error = %q, want in effect with durability unconfirmed", errText)
-	}
-	if !reflectJSONSubset(msgs[1], map[string]any{"type": protocol.MsgTypeAdminSettings, "id": "req-2", "user_auto_approve": true}) {
-		t.Fatalf("admin_settings after the unsynced save = %#v, want user_auto_approve true", msgs[1])
+			msgs := recorder.messages(t)
+			if len(msgs) != 2 {
+				t.Fatalf("message count = %d, want 2", len(msgs))
+			}
+			want := map[string]any{
+				"type": protocol.MsgTypeUpdateAdminSettingResult, "id": "req-1", "success": false,
+				"key": adminproto.AdminSettingUserAutoApprove, "value": tc.value,
+			}
+			if tc.code != "" {
+				want["code"] = tc.code
+			}
+			if !reflectJSONSubset(msgs[0], want) {
+				t.Fatalf("update_admin_setting_result = %#v", msgs[0])
+			}
+			errText, _ := msgs[0]["error"].(string)
+			for _, part := range tc.errText {
+				if !strings.Contains(errText, part) {
+					t.Fatalf("update_admin_setting_result error = %q, want it to say %q", errText, part)
+				}
+			}
+			live := tc.value
+			if tc.code == "" {
+				live = start
+			}
+			if !reflectJSONSubset(msgs[1], map[string]any{"type": protocol.MsgTypeAdminSettings, "id": "req-2", "user_auto_approve": live == "true"}) {
+				t.Fatalf("admin_settings after the save = %#v, want user_auto_approve %s", msgs[1], live)
+			}
+			// Only a value not saved at all is reported unsaved: an unsynced
+			// file is in place.
+			unsaved, reported := msgs[1]["unsaved_settings"]
+			if wantUnsaved := tc.code == protocol.ResultCodeAppliedNotSaved; reported != wantUnsaved ||
+				(wantUnsaved && !reflect.DeepEqual(unsaved, []any{adminproto.AdminSettingUserAutoApprove})) {
+				t.Fatalf("admin_settings unsaved_settings = %v (reported %v), want it only for %s", unsaved, reported, protocol.ResultCodeAppliedNotSaved)
+			}
+
+			auditPath := filepath.Join(server.dataDir, "audit.log")
+			if tc.code == "" {
+				if data, err := os.ReadFile(auditPath); err != nil || strings.Contains(string(data), string(signeraudit.AuditSettingNotDurable)) {
+					t.Fatalf("audit log for an unchanged setting = %q (%v), want no %s entry", data, err, signeraudit.AuditSettingNotDurable)
+				}
+				return
+			}
+			entries := auditEntries(t, auditPath, string(signeraudit.AuditSettingNotDurable))
+			if len(entries) != 1 {
+				t.Fatalf("SETTING_NOT_DURABLE entries = %#v, want one", entries)
+			}
+			reason, _ := entries[0]["reason"].(string)
+			sessionID, _ := entries[0]["admin_session_id"].(string)
+			if entries[0]["result_code"] != tc.code || entries[0]["outcome"] != "applied" || entries[0]["transport"] != "ipc" ||
+				sessionID == "" || reason != "setting="+adminproto.AdminSettingUserAutoApprove+": "+errText {
+				t.Fatalf("SETTING_NOT_DURABLE entry = %#v", entries[0])
+			}
+		})
 	}
 }

@@ -151,6 +151,35 @@ func TestReadAccountFailsClosed(t *testing.T) {
 	}
 }
 
+// A read cut short by its context still reports ErrUnavailable, with the
+// context's error in the chain, so a caller can tell a cancelled read (a
+// rotating sign answers a lock with the locked error) from the node's own
+// failure. Both the genesis check and the account read are covered. The
+// context's error was once formatted into the text and lost.
+func TestReadAccountCutByItsContextKeepsTheContextError(t *testing.T) {
+	for _, at := range []string{"/versions", "/v2/accounts/"} {
+		t.Run(at, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			node := &fakeNode{genesis: testnetGenesis, round: 5}
+			served := node.serve(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasPrefix(r.URL.Path, at) {
+					cancel()
+					<-r.Context().Done()
+					return
+				}
+				served.Config.Handler.ServeHTTP(w, r)
+			}))
+			t.Cleanup(srv.Close)
+			_, err := readerFor(srv).ReadAccount(ctx, testnetGenesis, account)
+			if !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.Canceled) {
+				t.Fatalf("err = %v, want ErrUnavailable wrapping context.Canceled", err)
+			}
+		})
+	}
+}
+
 func TestReadAssetFromTheVerifiedNode(t *testing.T) {
 	creator := types.Address{3}.String()
 	node := &fakeNode{genesis: testnetGenesis, assetIndex: 42, asset: map[string]any{

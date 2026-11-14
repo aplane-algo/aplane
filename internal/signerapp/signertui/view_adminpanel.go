@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -132,12 +133,49 @@ func boolStr(b bool) string {
 	return "false"
 }
 
+// unsavedSettingsWarning is the panel's one-line warning for the settings the
+// signer holds in effect but not saved: one named in full, or several named in
+// the key order the signer reports them in.
+func (m Model) unsavedSettingsWarning() string {
+	if m.admin.settings == nil {
+		return ""
+	}
+	keys := m.admin.settings.UnsavedSettings
+	switch len(keys) {
+	case 0:
+		return ""
+	case 1:
+		return "Warning: " + keys[0] + " is in effect but not saved; a restart reverts it"
+	default:
+		return "Warning: in effect but not saved: " + strings.Join(keys, ", ")
+	}
+}
+
+// unsavedRowNote follows the value of a setting the signer holds in effect but
+// not saved, on which enter retries the save instead of toggling.
+const unsavedRowNote = "  (unsaved; Enter retries the save)"
+
+// settingUnsaved reports whether the signer holds setting key in effect but
+// not saved.
+func (m Model) settingUnsaved(key string) bool {
+	return m.admin.settings != nil && slices.Contains(m.admin.settings.UnsavedSettings, key)
+}
+
 // renderAdminPanel renders the admin control panel view.
 func (m Model) renderAdminPanel() string {
 	var sb strings.Builder
 
-	sb.WriteString(titleStyle.Render("Settings"))
-	sb.WriteString("\n\n")
+	if warning := m.unsavedSettingsWarning(); warning != "" {
+		// The warning takes the title's margin line and is cut to the
+		// panel's width, so the panel is no taller with it than without.
+		sb.WriteString(titleStyle.MarginBottom(0).Render("Settings"))
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render(ellipsize(warning, m.tableWidth())))
+		sb.WriteString("\n\n")
+	} else {
+		sb.WriteString(titleStyle.Render("Settings"))
+		sb.WriteString("\n\n")
+	}
 
 	rows := m.adminRows()
 	if len(rows) == 0 {
@@ -181,6 +219,9 @@ func (m Model) renderAdminPanel() string {
 					valueStr = "ON"
 				} else {
 					valueStr = "OFF"
+				}
+				if m.settingUnsaved(r.key) {
+					valueStr += unsavedRowNote
 				}
 			} else {
 				valueStr = r.value

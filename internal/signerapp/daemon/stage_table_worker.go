@@ -221,22 +221,32 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 			}
 		},
 	}
-	reports := svc.FillStageTables(ctx, ir.SnapshotKeySession(), opts)
+	reports, cut := svc.FillStageTables(ctx, ir.SnapshotKeySession(), opts)
+	// A pass the lock (or shutdown) cancelled or cut is classified once. The
+	// reads it cancelled fail with the cancellation itself, which the chain
+	// reader keeps in the error chain: that is the lock, not the account's
+	// error, so only other errors are logged.
+	stopped := ctx.Err() != nil || cut
 	wait := stageTableIdleInterval
 	for _, r := range reports {
 		if r.Discarded != nil {
 			logWarnf("rotating account %s: %v; rebuilding its stage table from the seed", r.Account, r.Discarded)
 		}
 		if r.Err != nil {
-			logWarnf("rotating account %s: stage table: %v", r.Account, r.Err)
+			if !stopped || !errors.Is(r.Err, context.Canceled) {
+				logWarnf("rotating account %s: stage table: %v", r.Account, r.Err)
+			}
 			continue
 		}
 		if r.Pending {
 			wait = stageTableBusyInterval
 		}
 	}
-	if ctx.Err() != nil {
+	if stopped {
 		// Locked or shutting down mid-pass: nothing to schedule or publish.
+		// A pass the lock cut is treated as not having happened, so the
+		// status from the last complete pass stands until the locked worker
+		// clears it.
 		return stageTableIdleInterval
 	}
 	fs.publishRotatingStatus(ir, svc, reports)
@@ -265,7 +275,7 @@ func passSession(parent context.Context, generation func() uint64, cancelContext
 // running then (in a stage table write, which no cancellation reaches) makes
 // the stop incomplete, reported as ErrStillRunning: it writes nothing to the
 // audit log and holds no key material outside a key use, which
-// Runtime.Destroy waits for, so teardown goes on.
+// Runtime.EndKeyUses drains before Runtime.Destroy, so teardown goes on.
 func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 	var cancel context.CancelFunc
 	done := make(chan struct{})

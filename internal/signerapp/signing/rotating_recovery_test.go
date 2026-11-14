@@ -470,7 +470,7 @@ func TestCancelledPassDoesNotPruneOrBind(t *testing.T) {
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	f.present = false
-	if reports := f.svc.FillStageTables(cancelled, f.session, opts); reports != nil {
+	if reports, _ := f.svc.FillStageTables(cancelled, f.session, opts); reports != nil {
 		t.Fatalf("cancelled pass reported work: %+v", reports)
 	}
 	f.present = true
@@ -487,7 +487,7 @@ func TestCancelledPassDoesNotPruneOrBind(t *testing.T) {
 		c := captured
 		staleOpts := opts
 		staleOpts.Session = &c
-		if reports := f.svc.FillStageTables(context.Background(), f.session, staleOpts); reports != nil {
+		if reports, _ := f.svc.FillStageTables(context.Background(), f.session, staleOpts); reports != nil {
 			t.Fatalf("captured %d, live %d: pass reported work: %+v", captured, f.lockGen, reports)
 		}
 	}
@@ -499,7 +499,7 @@ func TestCancelledPassDoesNotPruneOrBind(t *testing.T) {
 	live := f.lockGen
 	liveOpts := opts
 	liveOpts.Session = &live
-	if reports := f.svc.FillStageTables(context.Background(), f.session, liveOpts); len(reports) != 1 {
+	if reports, _ := f.svc.FillStageTables(context.Background(), f.session, liveOpts); len(reports) != 1 {
 		t.Fatalf("live-session pass = %+v", reports)
 	}
 	if st := f.state(); st.Grant == nil || st.AllowanceSpent != 2 {

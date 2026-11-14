@@ -347,6 +347,12 @@ Keeping live admin and offline unlock setup in separate tools prevents the
 running daemon's in-memory state from drifting out of sync with the signer
 config files on disk.
 
+apsigner reads `config.yaml` and `identities/default/config.yaml` when it
+starts. An edit to either file while it runs takes effect at the next
+restart. A setting changed through `apadmin` takes effect while the signer
+runs and rewrites only its own key in the file, so other keys keep their
+values, a hand edit included (comments and key order are not kept).
+
 ### Fields
 
 See [USER_CONFIG_REFERENCE.md](USER_CONFIG_REFERENCE.md) for field-level reference.

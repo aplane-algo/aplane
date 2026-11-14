@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestValidateAdminSettingValuePassphraseTimeout(t *testing.T) {
@@ -150,10 +151,11 @@ func TestBoundedSettingsAreHiddenOnCosignerNodes(t *testing.T) {
 	}
 }
 
-// A failed setting update can still be in effect (saved, its durability
-// unconfirmed), so the panel re-reads the settings after a failure as after a
-// success, instead of keeping the value it showed before. That result is
-// coded applied_not_durable and shown as a warning that does not say
+// A failed setting update can still be in effect (saved with its durability
+// unconfirmed, or a restrictive change not saved at all), so the panel
+// re-reads the settings after a failure as after a success, instead of
+// keeping the value it showed before. A saved value whose durability is
+// unconfirmed (applied_not_durable) is warned of in words that do not say
 // "failed"; it once read "Setting update failed" like a refused change.
 func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
@@ -186,9 +188,9 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
 		Error: "user_auto_approve is set to true and in effect, but its durability is not confirmed: file replaced, but its directory sync failed: injected",
 	})
-	want := "Setting in effect, durability not confirmed: user_auto_approve"
-	if got := next.(Model); got.lastError != "" || got.lastWarning != want {
-		t.Fatalf("lastError = %q, lastWarning = %q; want no error and the warning %q", got.lastError, got.lastWarning, want)
+	want := "Warning: user_auto_approve is in effect; its durability is not confirmed"
+	if got := next.(Model); got.lastError != "" || !strings.Contains(stripANSI(got.renderStatusBar()), want) {
+		t.Fatalf("lastError = %q, status bar = %q; want no error and the warning %q", got.lastError, stripANSI(got.renderStatusBar()), want)
 	}
 	// A lone listener wait blocks until the client disconnects.
 	produced := make(chan tea.Msg, 1)
@@ -216,69 +218,322 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 	}
 }
 
-// A refused or unsaved setting change is shown as a failure.
+// A refused change, or a permissive one that was not saved, is not in effect
+// and is shown as a failure.
 func TestUnappliedSettingUpdateIsShownAsAFailure(t *testing.T) {
 	m := approvalTestModel(ViewAdminPanel)
 	next, _ := m.Update(AdminSettingUpdatedMsg{
 		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true",
 		Code: protocol.ErrCodeInternal, Error: "failed to save config.yaml; user_auto_approve is unchanged: injected",
 	})
-	if got := next.(Model); got.lastError != "Setting update failed: failed to save config.yaml; user_auto_approve is unchanged: injected" || got.lastWarning != "" {
-		t.Fatalf("lastError = %q, lastWarning = %q; want the failure as an error", got.lastError, got.lastWarning)
+	if got := next.(Model); got.lastError != "Setting update failed: failed to save config.yaml; user_auto_approve is unchanged: injected" ||
+		got.lastWarning != "" || got.admin.settingWarning != (settingResultWarning{}) {
+		t.Fatalf("lastError = %q, lastWarning = %q, setting warning = %+v; want the failure as an error", got.lastError, got.lastWarning, got.admin.settingWarning)
 	}
 }
 
-// The applied_not_durable warning stays on screen, as a failure would, until
-// the next key on the admin panel. It once cleared itself after 5s.
-func TestSettingNotDurableWarningStaysUntilTheNextAdminPanelKey(t *testing.T) {
+// The Settings panel's unsaved-setting warning is drawn from the settings the
+// signer reports, so a new login or a second apadmin shows it and nothing the
+// TUI receives clears it but settings without the setting: not a key, a
+// timer, another warning or error, nor a refusal or other result for the
+// setting. It names the setting and says it is in effect, never "failed".
+// The warning was once the TUI's own, lost to a login, a second apadmin, or
+// the next result for the setting.
+func TestUnsavedSettingWarningComesFromTheSigner(t *testing.T) {
+	want := "Warning: user_auto_approve is in effect but not saved; a restart reverts it"
+	unsaved := AdminSettings{PassphraseMethod: "none", Theme: "auto", UnsavedSettings: []string{adminproto.AdminSettingUserAutoApprove}}
+
+	// A fresh TUI, as after a login or in a second apadmin.
 	m := approvalTestModel(ViewAdminPanel)
-	m.admin.settings = &AdminSettings{}
-	next, cmd := m.Update(AdminSettingUpdatedMsg{
-		Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "true", Code: protocol.ResultCodeAppliedNotDurable,
-	})
-	if next.(Model).lastWarning == "" {
-		t.Fatal("no warning shown for a setting in effect with its durability unconfirmed")
+	next, _ := m.Update(AdminSettingsMsg{Settings: unsaved})
+	m = next.(Model)
+	panel := stripANSI(m.renderAdminPanel())
+	if !strings.Contains(panel, want) || strings.Contains(strings.ToLower(panel), "failed") {
+		t.Fatalf("panel from the signer's settings:\n%s\nwant %q and no failure", panel, want)
 	}
-	// Nothing is scheduled to clear it: with no client, every command the
-	// update returns completes at once, and a clearing timer would not.
-	ran := make(chan struct{})
+
+	for _, msg := range []tea.Msg{
+		tea.KeyMsg{Type: tea.KeyDown},
+		AdminSettingUpdatedMsg{Success: false, Key: adminproto.AdminSettingUserAutoApprove, Value: "maybe", Code: protocol.ErrCodeInvalidRequest, Error: "refused"},
+		AdminSettingUpdatedMsg{Success: true, Key: adminproto.AdminSettingUserAutoApprove, Value: "false"},
+		AdminSettingUpdatedMsg{Success: true, Key: adminproto.AdminSettingTheme, Value: "dark"},
+	} {
+		next, _ = m.Update(msg)
+		m = next.(Model)
+	}
+	m.setTransientWarning("another warning")
+	if panel := stripANSI(m.renderAdminPanel()); !strings.Contains(panel, want) {
+		t.Fatalf("panel after a key, results for the setting and another warning:\n%s\nwant %q", panel, want)
+	}
+	if bar := stripANSI(m.renderStatusBar()); strings.Contains(bar, "not saved") {
+		t.Fatalf("status bar = %q, want the unsaved warning on the panel only", bar)
+	}
+
+	saved := unsaved
+	saved.UnsavedSettings = nil
+	next, _ = m.Update(AdminSettingsMsg{Settings: saved})
+	if panel := stripANSI(next.(Model).renderAdminPanel()); strings.Contains(panel, "not saved") {
+		t.Fatalf("panel after the signer reports the setting saved:\n%s\nwant no warning", panel)
+	}
+}
+
+// Several unsaved settings share the panel's one warning line, which names
+// them in the key order the signer reports them in.
+func TestSeveralUnsavedSettingsShareOneWarningLine(t *testing.T) {
+	settings := &AdminSettings{PassphraseMethod: "none", Theme: "auto",
+		UnsavedSettings: []string{adminproto.AdminSettingLockOnDisconnect, adminproto.AdminSettingUserAutoApprove}}
+	m := Model{viewState: ViewAdminPanel, admin: adminPanelState{editingRow: -1, settings: settings}}
+	want := "Warning: in effect but not saved: lock_on_disconnect, user_auto_approve"
+	if got := m.unsavedSettingsWarning(); got != want {
+		t.Fatalf("warning = %q, want %q", got, want)
+	}
+}
+
+// The panel fits 80x24 with the warning as it does without it: the warning
+// takes the title's margin line and is cut to the panel's width, so it adds
+// no row, a line naming every restrictive setting included, and is on screen
+// whatever the panel shows below it. apadmin is never narrower than MinWidth
+// (below it shows only the resize screen, and apconsole's signer pane is
+// exactly MinWidth), so that is the width tested.
+func TestUnsavedSettingWarningAddsNoRowAtMinSize(t *testing.T) {
+	base := AdminSettings{
+		PassphraseMethod: "none", Theme: "auto", NodeRole: "signer", SSHEnabled: true, SSHPort: 2222,
+		SSHFingerprint: "SHA256:Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+	}
+	plain := base
+	for _, standalone := range []bool{false, true} {
+		for _, keys := range [][]string{
+			{adminproto.AdminSettingLockOnDisconnect},
+			{adminproto.AdminSettingLockOnDisconnect, adminproto.AdminSettingRequireContained,
+				adminproto.AdminSettingRequireCosigner, adminproto.AdminSettingUserAutoApprove},
+		} {
+			warnedSettings := base
+			warnedSettings.UnsavedSettings = keys
+			without := sizedForTest(t, Model{viewState: ViewAdminPanel, standalone: standalone,
+				admin: adminPanelState{editingRow: -1, settings: &plain}}, MinWidth, MinHeight)
+			warned := without
+			warned.admin.settings = &warnedSettings
+			warning := warned.unsavedSettingsWarning()
+			panel := stripANSI(warned.renderAdminPanel())
+			if got, want := renderedBlockHeight(panel), renderedBlockHeight(without.renderAdminPanel()); got != want {
+				t.Fatalf("%v: panel is %d rows with the warning, %d without", keys, got, want)
+			}
+			for _, line := range strings.Split(panel, "\n") {
+				if lipgloss.Width(line) > MinWidth {
+					t.Fatalf("%v: line wider than the %d-column window: %q", keys, MinWidth, line)
+				}
+			}
+			shown := ellipsize(warning, MinWidth)
+			if view := stripANSI(warned.View()); !strings.Contains(view, shown) {
+				t.Fatalf("standalone %v, %v: warning %q not on screen at %dx%d:\n%s", standalone, keys, shown, MinWidth, MinHeight, view)
+			}
+			if len(keys) > 1 && (lipgloss.Width(warning) <= MinWidth || !strings.HasSuffix(shown, "...")) {
+				t.Fatalf("warning %q is not long enough to be cut at %d columns; the test needs a longer one", warning, MinWidth)
+			}
+		}
+	}
+}
+
+// The settings message carries the signer's unsaved settings to the panel.
+func TestAdminSettingsMessageCarriesUnsavedSettings(t *testing.T) {
+	decoded, err := signerMessageDecoders[MsgTypeAdminSettings]([]byte(
+		`{"type":"admin_settings","id":"1","theme":"auto","unsaved_settings":["user_auto_approve"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, ok := decoded.(AdminSettingsMsg)
+	if !ok || len(msg.Settings.UnsavedSettings) != 1 || msg.Settings.UnsavedSettings[0] != adminproto.AdminSettingUserAutoApprove {
+		t.Fatalf("decoded = %#v, want unsaved_settings [user_auto_approve]", decoded)
+	}
+}
+
+// A result that leaves its setting in effect without a completed save puts a
+// warning on the status line, shown only on the admin panel: the signer's
+// reason for a value it did not save, or that a saved value's durability is
+// not confirmed. A later successful result for the same setting clears it; a
+// result for another setting does not. The durability warning once stayed on
+// every view for good, and the reason for an unsaved value was never shown.
+func TestSettingResultWarningIsThePanelsUntilTheSettingSaves(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  AdminSettingUpdatedMsg
+		want string
+	}{
+		{"not durable", AdminSettingUpdatedMsg{Key: adminproto.AdminSettingUserAutoApprove, Value: "false", Code: protocol.ResultCodeAppliedNotDurable,
+			Error: "user_auto_approve is set to false and in effect, but its durability is not confirmed: injected"},
+			"Warning: user_auto_approve is in effect; its durability is not confirmed"},
+		{"not saved", AdminSettingUpdatedMsg{Key: adminproto.AdminSettingUserAutoApprove, Value: "false", Code: protocol.ResultCodeAppliedNotSaved,
+			Error: "user_auto_approve is set to false and in effect now, but it was not saved, so a restart loads the old value: disk full"},
+			// The reason is cut to the room the status line leaves.
+			"Warning: user_auto_approve is set to false and in effect now"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := approvalTestModel(ViewAdminPanel)
+			m.admin.settings = &AdminSettings{PassphraseMethod: "none", Theme: "auto"}
+			next, _ := m.Update(tc.msg)
+			m = next.(Model)
+			if bar := stripANSI(m.renderStatusBar()); !strings.Contains(bar, tc.want) || strings.Contains(bar, "failed") {
+				t.Fatalf("status bar on the admin panel = %q, want %q and no failure", bar, tc.want)
+			}
+			m.viewState = ViewKeyList
+			if bar := stripANSI(m.renderStatusBar()); strings.Contains(bar, "in effect") {
+				t.Fatalf("status bar on the key list = %q, want the warning on the admin panel only", bar)
+			}
+			m.viewState = ViewAdminPanel
+			next, _ = m.Update(AdminSettingUpdatedMsg{Success: true, Key: adminproto.AdminSettingTheme, Value: "dark"})
+			m = next.(Model)
+			if bar := stripANSI(m.renderStatusBar()); !strings.Contains(bar, tc.want) {
+				t.Fatalf("status bar after another setting saved = %q, want %q", bar, tc.want)
+			}
+			next, _ = m.Update(AdminSettingUpdatedMsg{Success: true, Key: adminproto.AdminSettingUserAutoApprove, Value: "false"})
+			if bar := stripANSI(next.(Model).renderStatusBar()); strings.Contains(bar, "in effect") {
+				t.Fatalf("status bar after the setting saved = %q, want the warning cleared", bar)
+			}
+		})
+	}
+}
+
+// sentSettingUpdates connects m to a pipe and returns the update_admin_setting
+// messages it sends.
+func sentSettingUpdates(t *testing.T, m *Model) <-chan protocol.UpdateAdminSettingMessage {
+	t.Helper()
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = serverConn.Close() })
+	client := NewAdminClient(&queueConnector{conns: []io.ReadWriteCloser{clientConn}})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(client.Disconnect)
+	m.adminClient = client
+	sent := make(chan protocol.UpdateAdminSettingMessage, 4)
 	go func() {
-		defer close(ran)
-		if batch, ok := cmd().(tea.BatchMsg); ok {
-			for _, c := range batch {
-				c()
+		reader := bufio.NewReader(serverConn)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var msg protocol.UpdateAdminSettingMessage
+			if json.Unmarshal(line, &msg) == nil && msg.Type == protocol.MsgTypeUpdateAdminSetting {
+				sent <- msg
 			}
 		}
 	}()
-	select {
-	case <-ran:
-	case <-time.After(2 * time.Second):
-		t.Fatal("the update scheduled a command that clears the warning later")
-	}
-	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyDown})
-	if got := next.(Model).lastWarning; got != "" {
-		t.Fatalf("warning after the next admin panel key = %q, want it cleared", got)
+	return sent
+}
+
+// Enter on a setting the signer holds in effect but not saved re-sends the
+// value in effect, which the signer takes as a retry of its save, and the row
+// says so; on any other setting Enter toggles. Enter once always toggled, so a
+// retry after applied_not_saved for user_auto_approve=false sent true, which
+// saved and turned auto-approve back on.
+func TestEnterOnAnUnsavedSettingRetriesItsSave(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		unsaved []string
+		want    string
+	}{
+		{"unsaved", []string{adminproto.AdminSettingUserAutoApprove}, "false"},
+		{"saved", nil, "true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := approvalTestModel(ViewAdminPanel)
+			m.admin.editingRow = -1
+			m.admin.settings = &AdminSettings{PassphraseMethod: "none", Theme: "auto", UnsavedSettings: tc.unsaved}
+			sent := sentSettingUpdates(t, &m)
+			for i, row := range m.adminRows() {
+				if row.key == adminproto.AdminSettingUserAutoApprove {
+					m.admin.selectedRow = i
+				}
+			}
+			panel := stripANSI(m.renderAdminPanel())
+			if note := strings.TrimSpace(unsavedRowNote); strings.Contains(panel, note) != (tc.unsaved != nil) {
+				t.Fatalf("panel:\n%s\nwant the row note %q only for an unsaved setting", panel, note)
+			}
+			_, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd == nil {
+				t.Fatal("enter sent nothing")
+			}
+			go cmd()
+			select {
+			case msg := <-sent:
+				if msg.Key != adminproto.AdminSettingUserAutoApprove || msg.Value != tc.want {
+					t.Fatalf("enter sent %s=%s, want %s=%s", msg.Key, msg.Value, adminproto.AdminSettingUserAutoApprove, tc.want)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("no update_admin_setting sent")
+			}
+		})
 	}
 }
 
-// The durability warning names the setting, not the echoed request value,
-// which can differ from what the signer stored (a theme is lower-cased), and
-// it shows only on the admin panel, not in the status line of a view the
-// operator moved to before the result arrived.
-func TestSettingNotDurableWarningShowsOnlyOnTheAdminPanel(t *testing.T) {
-	m := approvalTestModel(ViewKeyList)
-	next, _ := m.Update(AdminSettingUpdatedMsg{
-		Success: false, Key: adminproto.AdminSettingTheme, Value: "Dark", Code: protocol.ResultCodeAppliedNotDurable,
-	})
-	m = next.(Model)
-	if strings.Contains(m.lastWarning, "Dark") {
-		t.Fatalf("warning = %q, want it without the echoed value", m.lastWarning)
+// The status-line warning from an in-effect result does not outlive what it
+// says: an applied_not_saved reason goes when a settings re-read no longer
+// lists its setting unsaved, and either kind goes on a new authenticated
+// session, since the signer may have restarted. It once stayed until that
+// setting next saved through this apadmin.
+func TestSettingResultWarningClearsWhenNoLongerTrue(t *testing.T) {
+	notSaved := AdminSettingUpdatedMsg{Key: adminproto.AdminSettingUserAutoApprove, Value: "false", Code: protocol.ResultCodeAppliedNotSaved, Error: "not saved: disk full"}
+	notDurable := AdminSettingUpdatedMsg{Key: adminproto.AdminSettingUserAutoApprove, Value: "false", Code: protocol.ResultCodeAppliedNotDurable}
+	settings := func(unsaved ...string) AdminSettingsMsg {
+		return AdminSettingsMsg{Settings: AdminSettings{PassphraseMethod: "none", Theme: "auto", UnsavedSettings: unsaved}}
 	}
-	if bar := m.renderStatusBar(); strings.Contains(bar, "durability not confirmed") {
-		t.Fatalf("status bar on the key list = %q, want no durability warning there", bar)
+	for _, tc := range []struct {
+		name  string
+		steps []tea.Msg
+		kept  bool
+	}{
+		{"not saved, still unsaved", []tea.Msg{notSaved, settings(adminproto.AdminSettingUserAutoApprove)}, true},
+		{"not saved, saved since", []tea.Msg{notSaved, settings(adminproto.AdminSettingUserAutoApprove), settings()}, false},
+		{"not saved, new session", []tea.Msg{notSaved, settings(adminproto.AdminSettingUserAutoApprove), AuthResultMsg{Success: true}}, false},
+		{"not durable, settings re-read", []tea.Msg{notDurable, settings()}, true},
+		{"not durable, new session", []tea.Msg{notDurable, AuthResultMsg{Success: true}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := approvalTestModel(ViewAdminPanel)
+			for _, msg := range tc.steps {
+				next, _ := m.Update(msg)
+				m = next.(Model)
+			}
+			if got := m.admin.settingWarning.text != ""; got != tc.kept {
+				t.Fatalf("setting warning = %+v, want kept %v", m.admin.settingWarning, tc.kept)
+			}
+		})
 	}
-	m.viewState = ViewAdminPanel
-	if bar := m.renderStatusBar(); !strings.Contains(bar, "durability not confirmed: theme") {
-		t.Fatalf("status bar on the admin panel = %q, want the durability warning", bar)
+}
+
+// At 80x24 with the Settings panel full, a connected and unlocked signer, an
+// unsaved setting and the signer's long reason for it, every line fits the
+// window: the status-line warning is cut to the room the line leaves, so it
+// takes no row from the panel. It once ran past the edge and wrapped.
+func TestPopulatedSettingsPanelFitsAtMinSize(t *testing.T) {
+	for _, standalone := range []bool{false, true} {
+		m := sizedForTest(t, Model{viewState: ViewAdminPanel, standalone: standalone, connectionState: ConnectionConnected,
+			signerStatusKnown: true, signerState: signerRuntimeUnlocked, keyCount: 12,
+			admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
+				PassphraseMethod: "none", Theme: "auto", NodeRole: "signer", SSHEnabled: true, SSHPort: 2222,
+				SSHFingerprint:  "SHA256:Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+				UnsavedSettings: []string{adminproto.AdminSettingLockOnDisconnect},
+			}}}, MinWidth, MinHeight)
+		plain := m
+		plainSettings := *m.admin.settings
+		plainSettings.UnsavedSettings = nil
+		plain.admin.settings = &plainSettings
+		next, _ := m.Update(AdminSettingUpdatedMsg{Key: adminproto.AdminSettingLockOnDisconnect, Value: "true", Code: protocol.ResultCodeAppliedNotSaved,
+			Error: "lock_on_disconnect is set to true and in effect now, but it was not saved, so a restart loads the old value: failed to write runtime config: no space left on device"})
+		m = next.(Model)
+		view := stripANSI(m.View())
+		lines := strings.Split(view, "\n")
+		if want := len(strings.Split(stripANSI(plain.View()), "\n")); len(lines) != want || len(lines) > MinHeight {
+			t.Fatalf("standalone %v: %d lines, want %d as without the warnings:\n%s", standalone, len(lines), want, view)
+		}
+		for _, line := range lines {
+			if lipgloss.Width(line) > MinWidth {
+				t.Fatalf("standalone %v: line wider than the %d-column window: %q", standalone, MinWidth, line)
+			}
+		}
+		if bar := lines[len(lines)-1]; !strings.Contains(bar, "Warning: lock_on_disconnect is set to") || !strings.HasSuffix(strings.TrimRight(bar, " "), "...") {
+			t.Fatalf("standalone %v: status line %q, want the cut warning", standalone, bar)
+		}
 	}
 }

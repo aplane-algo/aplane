@@ -8,6 +8,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -140,6 +141,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
 			m.resetActivityState()
+			// The signer may have restarted since that result.
+			m.admin.settingWarning = settingResultWarning{}
 		} else if msg.Code == protocol.ErrCodeLoginTimeout {
 			// The signer gave up on this login and closes the connection;
 			// stay disconnected rather than retake its single login slot.
@@ -643,19 +646,35 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			initStyles()
 		}
 		m.admin.settings = &msg.Settings
+		if w := m.admin.settingWarning; w.code == protocol.ResultCodeAppliedNotSaved && !slices.Contains(msg.Settings.UnsavedSettings, w.key) {
+			// Saved since, perhaps by another admin client.
+			m.admin.settingWarning = settingResultWarning{}
+		}
 		m.syncKeyListTabWithMode()
 		timeoutCmd := m.applyAdminSettingsTimeout(msg.Settings)
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
+		// In effect without a completed save is not a failure. The panel
+		// draws its unsaved warning from the settings re-read below; the
+		// status line says why the value was not saved, or that a saved
+		// value's durability is unconfirmed, naming the setting rather than
+		// the echoed request value, which can differ from what the signer
+		// holds.
 		switch {
+		case msg.Code == protocol.ResultCodeAppliedNotSaved:
+			reason := msg.Error
+			if reason == "" {
+				reason = msg.Key + " is in effect but not saved"
+			}
+			m.admin.settingWarning = settingResultWarning{key: msg.Key, code: msg.Code, text: reason}
 		case msg.Code == protocol.ResultCodeAppliedNotDurable:
-			// Saved and in effect; only its durability is unconfirmed. The
-			// warning stays until the next key on the admin panel, which
-			// shows the stored value once the settings are re-read.
-			m.setPersistentWarning(settingNotDurableWarningPrefix + msg.Key)
+			m.admin.settingWarning = settingResultWarning{key: msg.Key, code: msg.Code,
+				text: msg.Key + " is in effect; its durability is not confirmed"}
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
+		case msg.Key == m.admin.settingWarning.key:
+			m.admin.settingWarning = settingResultWarning{}
 		}
 		// Re-read the settings either way: a failed update can still be in
 		// effect (saved, its durability unconfirmed), so the panel shows what

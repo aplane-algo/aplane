@@ -141,6 +141,10 @@ type StageTableReport struct {
 	// Err is set when the account could not be processed (chain read,
 	// derivation or write failure). Completed probes remain cached.
 	Err error
+	// keyUseRefused reports that, with the pass still live, the lock refused
+	// or cut this account's key use at the identity read (errKeyUseRefused):
+	// the pass is cut, and FillStageTables says so.
+	keyUseRefused bool
 }
 
 // FillStageTables extends every rotating account's stage address table. For
@@ -170,23 +174,28 @@ type StageTableReport struct {
 // The table is a cache. Every address it holds was derived from the seed by
 // this routine, and signing re-derives whatever it uses, so nothing here
 // changes what the signer signs.
-func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySession, opts StageFillOptions) []StageTableReport {
+//
+// cut reports that the lock refused or cut an account's key use while the
+// pass was live: a lock is landing, and the pass is not to be published. A
+// lock refuses key uses before it cancels the pass's context, so a pass it
+// cuts can still have a live context. The pass stops there.
+func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySession, opts StageFillOptions) (reports []StageTableReport, cut bool) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil {
-		return nil
+		return nil, false
 	}
 	if ctx.Err() != nil {
 		// A cancelled pass resuming after a lock must not bind, prune or
 		// derive: the inventory it would read is the locked signer's empty
 		// one, and the session it would bind may already be a later
 		// unlock's.
-		return nil
+		return nil, false
 	}
 	gen, ok := deps.recoverySession(opts.Session)
 	if !ok {
 		// This pass belongs to a session a lock has ended; a later unlock
 		// is already live. Its context is cancelled or about to be.
-		return nil
+		return nil, false
 	}
 	accounts := s.rotatingAccounts()
 	live := make(map[string]bool, len(accounts))
@@ -194,14 +203,17 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 		live[a] = true
 	}
 	deps.Recovery.Prune(gen, func(account string) bool { return live[account] })
-	var reports []StageTableReport
 	for _, account := range accounts {
 		if ctx.Err() != nil {
 			break
 		}
-		reports = append(reports, s.fillStageTable(ctx, deps, gen, account, session, opts))
+		report := s.fillStageTable(ctx, deps, gen, account, session, opts)
+		if report.keyUseRefused {
+			return reports, true
+		}
+		reports = append(reports, report)
 	}
-	return reports
+	return reports, false
 }
 
 // stageDeriver derives a contiguous range of stage addresses for one
@@ -212,7 +224,7 @@ type stageDeriver func(ctx context.Context, from, to uint64) ([]types.Address, e
 // anything: it refused or cancelled the key use, or had already cleared the
 // session the seed would load from. A request answers it as locked; the
 // background fill and restore stop on it as on any cut.
-var errKeyUseRefused = errors.New("signer is locked")
+var errKeyUseRefused = errors.New(lockedMessage)
 
 // keyUseCut says why a window ended before a stage was derived: the caller's
 // own context if that ended, else the lock.
@@ -252,7 +264,23 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	// closed again inside the call.
 	acct, genesis, _, svcErr := s.rotatingAccount(ctx, deps, account, session)
 	if svcErr != nil {
-		report.Err = errors.New(svcErr.Message)
+		// A lock during the identity read is not an account error, as one
+		// step later in the deriver (backgroundDeriver) it is not. Any
+		// other error is the account's, even if the pass ended just after.
+		switch {
+		case svcErr.Kind == ErrorLocked:
+			// rotatingAccount answers locked exactly where the deriver
+			// reports errKeyUseRefused: the lock refused or cut this
+			// account's key use, or had cleared the session. With the pass
+			// still live, that cuts the pass.
+			report.keyUseRefused = ctx.Err() == nil
+		case svcErr.Kind == ErrorUnavailable && ctx.Err() != nil:
+			// rotatingAccount answers unavailable only when the pass's own
+			// context ended during the read, which a lock or shutdown also
+			// does: a quiet stop, and the worker publishes nothing.
+		default:
+			report.Err = errors.New(svcErr.Message)
+		}
 		return report
 	}
 	present := func() bool {

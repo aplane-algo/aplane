@@ -9,7 +9,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
@@ -451,61 +450,6 @@ func SaveSetting(dataDir, key string, value interface{}) error {
 	}
 
 	return nil
-}
-
-// ConfigFileChanged checks whether the on-disk config.yaml has been modified
-// externally (e.g., by appass) since apsigner loaded it. Compares the mutable
-// fields that could conflict if stale.
-func ConfigFileChanged(dataDir string, startup ServerConfig) (bool, error) {
-	disk, err := LoadServerConfig(dataDir)
-	if err != nil {
-		return false, err
-	}
-
-	if disk.PassphraseTimeout != startup.PassphraseTimeout {
-		return true, nil
-	}
-	if disk.ApprovalWait != startup.ApprovalWait {
-		return true, nil
-	}
-	if disk.UserAutoApprove != startup.UserAutoApprove {
-		return true, nil
-	}
-	if disk.Theme != startup.Theme {
-		return true, nil
-	}
-	if disk.Endpoint.SignerPort != startup.Endpoint.SignerPort {
-		return true, nil
-	}
-	if disk.Endpoint.SSH.Port != startup.Endpoint.SSH.Port {
-		return true, nil
-	}
-	if disk.Endpoint.SSH.ListenAddress != startup.Endpoint.SSH.ListenAddress {
-		return true, nil
-	}
-	if disk.Endpoint.AdvertiseURL != startup.Endpoint.AdvertiseURL {
-		return true, nil
-	}
-	if disk.ShouldLockOnDisconnect() != startup.ShouldLockOnDisconnect() {
-		return true, nil
-	}
-	if !reflect.DeepEqual(disk.PassphraseCommandEnv, startup.PassphraseCommandEnv) {
-		return true, nil
-	}
-	if !reflect.DeepEqual(disk.Networks, startup.Networks) {
-		return true, nil
-	}
-	// Compare passphrase_command_argv
-	if len(disk.PassphraseCommandArgv) != len(startup.PassphraseCommandArgv) {
-		return true, nil
-	}
-	for i := range disk.PassphraseCommandArgv {
-		if disk.PassphraseCommandArgv[i] != startup.PassphraseCommandArgv[i] {
-			return true, nil
-		}
-	}
-
-	return false, nil
 }
 
 // ParsePassphraseTimeout parses an admin idle timeout string into a time.Duration.

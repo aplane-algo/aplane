@@ -41,3 +41,20 @@ func TestPolicyStateIsOneConsistentView(t *testing.T) {
 		}
 	}
 }
+
+// The unsaved settings are reported in key order, which admin_settings
+// carries as is and apadmin shows without sorting again; a save clears its
+// setting.
+func TestUnsavedSettingsAreReportedInKeyOrder(t *testing.T) {
+	cfg := NewRuntimeConfig(false, false, 0, 0)
+	for _, key := range []string{"user_auto_approve", "lock_on_disconnect", "require_contained"} {
+		cfg.SetUnsaved(key, true)
+	}
+	cfg.SetUnsaved("require_contained", false)
+	if got := cfg.UnsavedSettings(); len(got) != 2 || got[0] != "lock_on_disconnect" || got[1] != "user_auto_approve" {
+		t.Fatalf("UnsavedSettings = %v, want [lock_on_disconnect user_auto_approve]", got)
+	}
+	if !cfg.IsUnsaved("user_auto_approve") || cfg.IsUnsaved("require_contained") {
+		t.Fatal("IsUnsaved disagrees with UnsavedSettings")
+	}
+}

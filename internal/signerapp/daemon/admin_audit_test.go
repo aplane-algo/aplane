@@ -61,6 +61,11 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 	}); !ok {
 		t.Fatal("production audit does not satisfy policy and ASA set mutation probes")
 	}
+	if _, ok := audit.(interface {
+		LogSettingNotDurableContext(adminserver.SessionContext, string, string, string)
+	}); !ok {
+		t.Fatal("production audit does not satisfy the setting durability probe")
+	}
 }
 
 func TestDurableCredentialRestoreIntentGate(t *testing.T) {

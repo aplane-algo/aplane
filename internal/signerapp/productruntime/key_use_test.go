@@ -193,12 +193,13 @@ func TestKeyUseRacingLockIsDrainedOrRefused(t *testing.T) {
 	}
 }
 
-// Destroy refuses every key use from the moment it begins, as a lock does,
+// EndKeyUses refuses every key use from the moment it begins, as a lock does,
 // though it does not lock the signer. Key uses racing it are either drained
-// or refused, so it returns with none holding, and one requested after it is
-// refused too. Shutdown once left KeyUseContext handing out fresh live
-// contexts while it drained, adding to the wait group it was waiting on.
-func TestDestroyRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
+// or refused, so it returns with none holding, and one requested after it, or
+// after the Destroy that follows it, is refused too. Shutdown once left
+// KeyUseContext handing out fresh live contexts while it drained, adding to
+// the wait group it was waiting on.
+func TestEndKeyUsesRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
 	const (
 		rounds  = 20
 		holders = 8
@@ -238,15 +239,15 @@ func TestDestroyRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
 		}
 
 		close(start)
-		destroyCtx, endDestroy := context.WithTimeout(context.Background(), keyUseTestTimeout)
-		err := ir.EndKeyUses(destroyCtx)
-		endDestroy()
+		drainCtx, endDrain := context.WithTimeout(context.Background(), keyUseTestTimeout)
+		err := ir.EndKeyUses(drainCtx)
+		endDrain()
 		ir.Destroy()
 		n := holding.Load()
 		endRound()
 		wg.Wait()
 		if err != nil || n != 0 {
-			t.Fatalf("round %d: Destroy = %v with %d key uses still holding; want every racing key use drained or refused", round, err, n)
+			t.Fatalf("round %d: EndKeyUses = %v with %d key uses still holding; want every racing key use drained or refused", round, err, n)
 		}
 
 		ctx, release := ir.KeyUseContext(context.Background())
@@ -261,33 +262,80 @@ func TestDestroyRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
 	}
 }
 
-// A key use requested while Destroy waits for one already registered is
-// refused at once, and Destroy still waits for the registered one.
-func TestDestroyRefusesAKeyUseWhileItDrains(t *testing.T) {
+// A key use requested while EndKeyUses waits for one already registered is
+// refused at once, and EndKeyUses still waits for the registered one.
+func TestEndKeyUsesRefusesAKeyUseWhileItDrains(t *testing.T) {
 	ir := New(Config{})
 	ir.SetUnlocked()
 	held, releaseHeld := ir.KeyUseContext(context.Background())
 	requireLive(t, held, "key use registered before shutdown")
 
-	destroyed := make(chan error, 1)
-	go func() { destroyed <- ir.EndKeyUses(context.Background()) }()
-	waitClosed(t, held.Done(), "Destroy to cancel the registered key use")
+	ended := make(chan error, 1)
+	go func() { ended <- ir.EndKeyUses(context.Background()) }()
+	waitClosed(t, held.Done(), "EndKeyUses to cancel the registered key use")
 
 	ctx, release := ir.KeyUseContext(context.Background())
-	requireCancelled(t, ctx, "key use requested while Destroy drains")
+	requireCancelled(t, ctx, "key use requested while EndKeyUses drains")
 	release()
 	select {
-	case err := <-destroyed:
-		t.Fatalf("Destroy returned %v before the registered key use released", err)
+	case err := <-ended:
+		t.Fatalf("EndKeyUses returned %v before the registered key use released", err)
 	default:
 	}
 	releaseHeld()
 	select {
-	case err := <-destroyed:
+	case err := <-ended:
 		if err != nil {
-			t.Fatalf("Destroy = %v after every key use released", err)
+			t.Fatalf("EndKeyUses = %v after every key use released", err)
 		}
 	case <-time.After(keyUseTestTimeout):
-		t.Fatal("Destroy did not return after the registered key use released")
+		t.Fatal("EndKeyUses did not return after the registered key use released")
+	}
+}
+
+// Destroy is safe without EndKeyUses before it: it stops the key watcher,
+// refuses every new key use and cancels the key uses and lock-cancel
+// contexts already handed out, then clears the session, and it does not wait
+// for a key use still registered (that bounded wait is EndKeyUses's). It once
+// relied on EndKeyUses having done the first three, and then cancelled
+// nothing already handed out.
+func TestDestroyAloneStopsTheWatcherAndRefusesKeyUsesWithoutWaiting(t *testing.T) {
+	root := t.TempDir()
+	ir := New(Config{
+		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+		KeyPaths: storepaths.NewPaths(root),
+	})
+	ir.SetUnlocked()
+	ir.SnapshotKeySession().InitializeSession()
+	watching := make(chan context.Context, 1)
+	ir.EnsureKeyWatcher(func(_ []string, ctx context.Context, _ func() error) error {
+		watching <- ctx
+		return nil
+	})
+	watcherCtx := <-watching
+	held, releaseHeld := ir.KeyUseContext(context.Background())
+	defer releaseHeld()
+	requireLive(t, held, "key use registered before Destroy")
+	heldLockCtx, cancelHeldLockCtx := ir.LockCancelContext(context.Background())
+	defer cancelHeldLockCtx()
+	requireLive(t, heldLockCtx, "lock-cancel context taken before Destroy")
+
+	destroyed := make(chan struct{})
+	go func() {
+		ir.Destroy()
+		close(destroyed)
+	}()
+	waitClosed(t, destroyed, "Destroy to return with a key use still registered")
+	waitClosed(t, watcherCtx.Done(), "Destroy to stop the key watcher")
+	waitClosed(t, held.Done(), "Destroy to cancel the key use registered before it")
+	waitClosed(t, heldLockCtx.Done(), "Destroy to cancel the lock-cancel context taken before it")
+	ctx, release := ir.KeyUseContext(context.Background())
+	requireCancelled(t, ctx, "key use requested after Destroy")
+	release()
+	lockCtx, cancel := ir.LockCancelContext(context.Background())
+	requireCancelled(t, lockCtx, "lock-cancel context taken after Destroy")
+	cancel()
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("key session after Destroy = %v, want ErrStoreLocked", err)
 	}
 }

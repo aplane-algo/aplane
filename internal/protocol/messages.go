@@ -1189,6 +1189,9 @@ type AdminSettingsMessage struct {
 	EndpointAdvertiseURL string `json:"endpoint_advertise_url,omitempty"`
 	EndpointDisplayURL   string `json:"endpoint_display_url,omitempty"`
 	Theme                string `json:"theme"`
+	// UnsavedSettings are the settings in effect but not saved: a restrictive
+	// value whose save did not complete, which a restart reverts.
+	UnsavedSettings []string `json:"unsaved_settings,omitempty"`
 }
 
 // UpdateAdminSettingMessage requests a change to a single admin setting.

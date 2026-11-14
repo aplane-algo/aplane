@@ -113,6 +113,10 @@ const (
 	// nonetheless saved and in effect: the new file replaced the old one, but
 	// its directory sync failed, so the change may not survive a crash.
 	ResultCodeAppliedNotDurable = "applied_not_durable"
+	// ResultCodeAppliedNotSaved reports a failed result whose change is in
+	// effect but was not saved at all: the save failed before the new file
+	// replaced the old one, so the next start loads the old value.
+	ResultCodeAppliedNotSaved = "applied_not_saved"
 
 	ResultCodeStoreBusy            = "store_busy"
 	ResultCodeListFailed           = "list_failed"
