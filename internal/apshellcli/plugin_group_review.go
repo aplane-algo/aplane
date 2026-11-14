@@ -7,11 +7,15 @@ package apshellcli
 // role-aware (which party signs each slot). What each transaction does is
 // described by internal/txnreview, the describer the signer's approval prompt
 // uses; a type it does not know is shown with a line saying its fields are
-// not shown, never as a harmless transaction.
+// not shown, never as a harmless transaction. Who authorizes a slot the plugin
+// handed over signed is named by txnreview.Authorization, as the signer's
+// prompt names a passthrough slot's authorizer.
 
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
+	"math/bits"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -34,15 +38,50 @@ const (
 type pluginReviewSlot struct {
 	txn  types.Transaction
 	role string
+	// signed is the slot's signed transaction when the plugin handed it over
+	// signed (pregrouped-signed), and nil for a slot signed after the review.
+	signed *types.SignedTxn
+}
+
+// heldSenderText marks a plugin-signed slot whose sender the signer holds the
+// aplane key for: the signer's own prompt never sees a pregrouped-signed
+// group, and shows a presign-plan slot the plugin signs only as passthrough.
+// It says only what is so, whoever the envelope names as authorizing the slot.
+const heldSenderText = "THIS SIGNER HOLDS THE APLANE KEY FOR THE SENDER; apsigner does not sign this slot"
+
+// heldAuthorizationKeyText marks a plugin-signed slot whose envelope names, in
+// its authorization, an address the signer holds the aplane key for.
+func heldAuthorizationKeyText(address types.Address) string {
+	return "THIS SIGNER HOLDS THE APLANE KEY FOR " + address.String() + ", NAMED IN THIS SLOT'S AUTHORIZATION; apsigner does not sign this slot"
+}
+
+// pluginReviewFacts is what the review of a plugin group knows beyond its
+// transactions.
+type pluginReviewFacts struct {
+	// rekeyTargets is what is known of rekey targets
+	// (apshellapp.PluginGroup.RekeyTargets).
+	rekeyTargets txnreview.FindingContext
+	// held is every address apshell knows the signer holds an aplane key for
+	// (apshellapp.PluginGroup.HeldAddresses).
+	held map[string]bool
+}
+
+// reviewFactsOf is what the check found for group, for its review.
+func reviewFactsOf(group *apshellapp.PluginGroup) pluginReviewFacts {
+	return pluginReviewFacts{
+		rekeyTargets: group.RekeyTargets(),
+		held:         group.HeldAddresses(),
+	}
 }
 
 // renderPluginGroupReview prints an honest review of a plugin-built group: per
-// slot it shows the role (who signs it) and the type, then the transaction's
-// description and the findings the signer's warning rules give for it, marked
-// `!!`, with rekeyTargets as what is known of rekey targets
-// (apshellapp.PluginGroup.RekeyTargets). It summarizes the fees paid by
-// APlane-managed accounts.
-func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlot, rekeyTargets txnreview.FindingContext) {
+// slot it shows the role (who signs it) and the type; for a slot handed over
+// signed, who its envelope says authorizes it; for a slot the plugin signs,
+// a mark for each held aplane key it involves (pluginSlotLines); then the transaction's
+// description, its valid rounds, and the findings the signer's warning rules
+// give for it, marked `!!`, given what facts says of rekey targets. It
+// summarizes the fees paid by APlane-managed accounts.
+func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlot, facts pluginReviewFacts) {
 	r.printf("\n%s\n", title)
 	// Only a group that is submitted as it is has its group ID yet: a draft's
 	// is assigned when the signer plans it, so none is shown for one.
@@ -53,28 +92,88 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	}
 	r.printf("%d transaction(s):\n", len(slots))
 
-	var managedFees uint64
 	for i, s := range slots {
 		txn := s.txn
 		// The type is the plugin's text: escaped, so it can't draw over the
 		// lines that follow.
 		// The sender and fee are in the description that follows.
 		r.printf("  [%d] %-13s %s\n", i+1, s.role, termsafe.Line(txnTypeLabel(txn.Type)))
-		for _, line := range pluginReviewLines(txn, rekeyTargets) {
+		for _, line := range append(pluginSlotLines(s, facts.held), pluginReviewLines(txn, facts.rekeyTargets)...) {
 			r.printf("        %s\n", line)
 		}
-		if s.role == slotRoleManaged {
-			managedFees += uint64(txn.Fee)
-		}
 	}
-	if managedFees > 0 {
-		r.printf("Fees paid by APlane-managed accounts: %s ALGO\n", asaset.FormatFixed(managedFees, 6))
+	if line := managedFeesLine(slots); line != "" {
+		r.println(line)
 	}
 }
 
+// pluginSlotLines is what the review says of a slot before its transaction:
+// who authorizes a slot handed over signed, as its envelope claims, and, for a
+// slot the plugin signs, two marks, each shown on its own: that the signer
+// holds the aplane key for the sender, and, for each other address the
+// envelope names in its authorization (txnreview.AuthorizationAddresses: the
+// auth address and every multisig subsignature key), that it holds that one's.
+// A presign-plan slot is not signed yet, so only its sender can be judged.
+func pluginSlotLines(s pluginReviewSlot, held map[string]bool) []string {
+	var lines []string
+	if s.signed != nil {
+		lines = append(lines, "Authorized by: "+txnreview.Authorization(*s.signed))
+	}
+	if s.role != slotRolePluginSigned {
+		return lines
+	}
+	if held[s.txn.Sender.String()] {
+		lines = append(lines, heldSenderText)
+	}
+	if s.signed != nil {
+		for _, address := range txnreview.AuthorizationAddresses(*s.signed) {
+			if address != s.txn.Sender && held[address.String()] {
+				lines = append(lines, heldAuthorizationKeyText(address))
+			}
+		}
+	}
+	return lines
+}
+
+// managedFeesLine sums the fees of the APlane-managed slots, or is empty when
+// there are none. A sum too large for 64 bits is said to be, never wrapped.
+// A group with an APlane-managed slot is always planned by apsigner after the
+// review: the default flow's draft goes to /sign (or to the rotating or
+// cosigned route, which plan it too), and a presign-plan group to /plan. A
+// pregrouped-signed group has no APlane-managed slot. Planning may raise these
+// fees, so the line names them as the fees before planning; the raise itself
+// is reported in the command's output (the "Fee adjustment", "[PLUGIN] Signer
+// raised fees", "[COSIGNED] Signer raised fees" or rotating "Signer raised the
+// spend's fee" line), and apsigner's prompt, when it asks, shows the planned
+// group.
+func managedFeesLine(slots []pluginReviewSlot) string {
+	var total uint64
+	managed, overflow := false, false
+	for _, s := range slots {
+		if s.role != slotRoleManaged {
+			continue
+		}
+		managed = true
+		var carry uint64
+		total, carry = bits.Add64(total, uint64(s.txn.Fee), 0)
+		overflow = overflow || carry != 0
+	}
+	if !managed {
+		return ""
+	}
+	amount := asaset.FormatFixed(total, 6) + " ALGO"
+	if overflow {
+		amount = "more than " + asaset.FormatFixed(math.MaxUint64, 6) + " ALGO, too large to add up"
+	}
+	return "Fees paid by APlane-managed accounts before planning: " + amount +
+		" (apsigner may raise them when it plans the group; any raise is reported when the command ends)"
+}
+
 // pluginReviewLines lists what one slot does: the shared description the
-// signer's approval prompt is built from, then the findings the signer's
-// warning rules give, marked `!!`, given what ctx says about rekey targets. A
+// signer's approval prompt is built from, the rounds it is valid in, which the
+// signer's approval clients show for a whole request, then the findings the
+// signer's warning rules give, marked `!!`, given what ctx says about rekey
+// targets. A
 // plugin-signed slot never reaches the signer, so this can be the only review
 // it gets. The two reviews use one describer and one set of warning rules, so
 // they say the same thing about the same bytes given the same facts. The facts
@@ -88,6 +187,7 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 func pluginReviewLines(txn types.Transaction, ctx txnreview.FindingContext) []string {
 	network, _ := apconfig.DefaultGenesisHashNetworkResolver().NetworkForGenesisHashBytes(txn.GenesisHash[:])
 	lines := strings.Split(txnreview.Describe(txn, txnreview.View{Network: network}), "\n")
+	lines = append(lines, validRoundsLine(txn))
 	for _, finding := range txnreview.Findings(txn, ctx) {
 		lines = append(lines, fmt.Sprintf("!! %s = %s", finding.Field, finding.Value))
 		for _, line := range strings.Split(finding.Message, "\n") {
@@ -95,6 +195,16 @@ func pluginReviewLines(txn types.Transaction, ctx txnreview.FindingContext) []st
 		}
 	}
 	return lines
+}
+
+// validRoundsLine is the rounds txn is valid in, from its first to its last
+// valid round. A window that ends before it begins is said to be empty.
+func validRoundsLine(txn types.Transaction) string {
+	line := fmt.Sprintf("  Valid rounds: %d - %d", txn.FirstValid, txn.LastValid)
+	if txn.LastValid < txn.FirstValid {
+		line += " (empty: no round is valid)"
+	}
+	return line
 }
 
 func txnTypeLabel(t types.TxType) string {
@@ -105,17 +215,22 @@ func txnTypeLabel(t types.TxType) string {
 }
 
 // renderPregroupedSignedGroup renders an all-plugin-signed group (apsigner not
-// involved) through the shared honest renderer.
+// involved) through the shared honest renderer, each slot with its signed
+// transaction, so the review says who authorizes it.
 func renderPregroupedSignedGroup(r *REPLState, group *apshellapp.PluginGroup) error {
-	txns, err := group.Transactions()
+	stxns, err := group.SignedTransactions()
 	if err != nil {
 		return err
 	}
-	slots := make([]pluginReviewSlot, len(txns))
-	for i, txn := range txns {
-		slots[i] = pluginReviewSlot{txn: txn, role: slotRolePluginSigned}
+	// The review is this group's only gate: never show it as empty.
+	if len(stxns) == 0 {
+		return fmt.Errorf("internal error: the checked pregrouped-signed group has no signed transactions")
 	}
-	renderPluginGroupReview(r, "LOCAL REVIEW — plugin-signed group (apsigner NOT involved; submitted verbatim)", slots, group.RekeyTargets())
+	slots := make([]pluginReviewSlot, len(stxns))
+	for i := range stxns {
+		slots[i] = pluginReviewSlot{txn: stxns[i].Txn, role: slotRolePluginSigned, signed: &stxns[i]}
+	}
+	renderPluginGroupReview(r, "LOCAL REVIEW — plugin-signed group (apsigner NOT involved; submitted verbatim)", slots, reviewFactsOf(group))
 	return nil
 }
 
@@ -174,7 +289,7 @@ func renderDefaultPluginDraft(r *REPLState, group *apshellapp.PluginGroup) error
 	for i, txn := range drafts {
 		slots[i] = pluginReviewSlot{txn: txn, role: slotRoleManaged}
 	}
-	renderPluginGroupReview(r, defaultDraftTitle, slots, group.RekeyTargets())
+	renderPluginGroupReview(r, defaultDraftTitle, slots, reviewFactsOf(group))
 	renderDiscardedGroupIDNotice(r, group.GroupIDDiscarded())
 	return nil
 }

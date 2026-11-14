@@ -5,12 +5,14 @@ package apshellcli
 
 import (
 	"encoding/base64"
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
@@ -91,7 +93,7 @@ func TestPluginReviewEscapesThePluginsTransactionType(t *testing.T) {
 	renderPluginGroupReview(r, "REVIEW", []pluginReviewSlot{{
 		txn:  types.Transaction{Type: types.TxType("pay\x1b[2K\r  [1] forged"), Header: types.Header{Sender: reviewTestAddress(1)}},
 		role: slotRolePluginSigned,
-	}}, txnreview.FindingContext{})
+	}}, pluginReviewFacts{})
 	if strings.ContainsAny(out.String(), "\x1b\r") {
 		t.Fatalf("the review printed raw control bytes from the transaction type:\n%q", out.String())
 	}
@@ -144,6 +146,18 @@ func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
 	}
 }
 
+// A payment of ALGO to the zero address, as a builder that leaves the
+// receiver unset makes it, is marked as the signer's prompt warns of it.
+func TestPluginReviewMarksAPaymentToTheZeroAddress(t *testing.T) {
+	burn := strings.Join(pluginReviewLinesOf(types.Transaction{
+		Type: types.PaymentTx, Header: types.Header{Sender: reviewTestAddress(1)},
+		PaymentTxnFields: types.PaymentTxnFields{Amount: 5},
+	}), "\n")
+	if !strings.Contains(burn, "!! Receiver = "+types.Address{}.String()) || !strings.Contains(burn, "the ALGO is lost") {
+		t.Errorf("a payment to the zero address is not marked:\n%s", burn)
+	}
+}
+
 // The irreversible key registration and the half-set one are marked.
 func TestPluginReviewMarksIrreversibleAndIncompleteKeyRegistrations(t *testing.T) {
 	sender := reviewTestAddress(1)
@@ -160,5 +174,38 @@ func TestPluginReviewMarksIrreversibleAndIncompleteKeyRegistrations(t *testing.T
 	}, txnreview.FindingContext{}), "\n")
 	if !strings.Contains(half, "!! KeyRegistration = incomplete") {
 		t.Errorf("a key registration with one key missing is not marked:\n%s", half)
+	}
+}
+
+// The fee line of a plugin draft, as the user sees it, adds the
+// APlane-managed slots' fees without wrapping: a sum too large for 64 bits is
+// said to be, and fees of zero are shown, not left out. Every such line names
+// the fees as before planning.
+func TestPluginReviewFeeLineNeverWrapsOrVanishes(t *testing.T) {
+	draft := func(fees ...uint64) []jsonrpc.TransactionIntent {
+		txns := make([]types.Transaction, len(fees))
+		for i, fee := range fees {
+			txns[i] = approvalTestPayment(1, byte(2+i), 1)
+			txns[i].Fee = types.MicroAlgos(fee)
+		}
+		return rawIntents(txns...)
+	}
+	for _, tc := range []struct {
+		name   string
+		intent []jsonrpc.TransactionIntent
+		want   string
+	}{
+		{"overflow", draft(math.MaxUint64, 2), wantManagedFees("more than 18446744073709.551615 ALGO, too large to add up")},
+		{"largest sum", draft(math.MaxUint64-1, 1), wantManagedFees("18446744073709.551615 ALGO")},
+		{"zero", draft(0), wantManagedFees("0.000000 ALGO")},
+	} {
+		var out strings.Builder
+		state := &REPLState{Out: &out, AutoConfirm: true}
+		if _, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{RequiresApproval: true, Transactions: tc.intent}, nil); err != nil {
+			t.Fatalf("%s: reviewPluginTransactions() error = %v", tc.name, err)
+		}
+		if !strings.HasSuffix(out.String(), "\n"+tc.want+"\n") {
+			t.Errorf("%s: review does not end with %q:\n%s", tc.name, tc.want, out.String())
+		}
 	}
 }

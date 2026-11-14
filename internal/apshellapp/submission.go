@@ -80,7 +80,9 @@ type PluginGroup struct {
 	encoded          [][]byte // msgpack of each decoded transaction
 	groupIDDiscarded bool
 	signed           *engine.PregroupedSignedGroup // pregrouped-signed only
+	signedEncoded    [][]byte                      // msgpack of each signed transaction, pregrouped-signed only
 	rekeyTargets     txnreview.FindingContext
+	heldAddresses    map[string]bool
 	lsigArgs         engine.LsigArgs
 }
 
@@ -126,9 +128,35 @@ func (g *PluginGroup) Transactions() ([]types.Transaction, error) {
 	return txns, nil
 }
 
+// SignedTransactions returns a pregrouped-signed group's signed transactions,
+// envelopes included, decoded afresh from what the check kept, for the review
+// to say who authorizes each. It is nil for the other modes, whose
+// transactions are signed after the review.
+func (g *PluginGroup) SignedTransactions() ([]types.SignedTxn, error) {
+	if g.signedEncoded == nil {
+		return nil, nil
+	}
+	stxns := make([]types.SignedTxn, len(g.signedEncoded))
+	for i, raw := range g.signedEncoded {
+		if err := msgpack.Decode(raw, &stxns[i]); err != nil {
+			return nil, fmt.Errorf("internal error: decoding checked plugin signed transaction %d: %w", i+1, err)
+		}
+	}
+	return stxns, nil
+}
+
 // GroupIDDiscarded reports that decoding a draft cleared a group ID the plugin
 // set.
 func (g *PluginGroup) GroupIDDiscarded() bool { return g.groupIDDiscarded }
+
+// HeldAddresses is every address apshell knows the signer holds an aplane key
+// for, as the check found it, for the review to mark a slot the plugin signs
+// whose sender, or an address its envelope names, is one of them. When the group rekeys it is the key list the rekey rule
+// was judged from; otherwise it is apshell's signer cache, the list the
+// plugin's context was built from, which can be out of date. It is a display
+// fact: the rekey rule never reads the cache, and an address missing here is
+// not called foreign. It returns a copy.
+func (g *PluginGroup) HeldAddresses() map[string]bool { return maps.Clone(g.heldAddresses) }
 
 // RekeyTargets is what the key list the check fetched says of rekey targets,
 // for the review's rekey findings: the facts the check judged the group from.
@@ -226,11 +254,36 @@ func (a *App) CheckPluginGroup(ctx context.Context, result *jsonrpc.ExecuteResul
 	for i, txn := range txns {
 		group.encoded[i] = msgpack.Encode(txn)
 	}
+	if group.signed != nil {
+		stxns := group.signed.Transactions()
+		group.signedEncoded = make([][]byte, len(stxns))
+		for i, stxn := range stxns {
+			group.signedEncoded[i] = msgpack.Encode(stxn)
+		}
+	}
 	if group.rekeyTargets, err = a.judgeRekeys(ctx, txns); err != nil {
 		return nil, err
 	}
+	group.heldAddresses = a.heldAddresses(group.rekeyTargets)
 	group.checked = true
 	return group, nil
+}
+
+// heldAddresses is what PluginGroup.HeldAddresses returns: the held addresses
+// the rekey judgment fetched, when it fetched any, and otherwise those in
+// apshell's signer cache. It fetches nothing.
+func (a *App) heldAddresses(judged txnreview.FindingContext) map[string]bool {
+	if judged.KnownAddresses != nil {
+		return maps.Clone(judged.KnownAddresses)
+	}
+	if a == nil || a.eng == nil {
+		return nil
+	}
+	held := make(map[string]bool)
+	for _, address := range a.eng.SignerCacheAddresses() {
+		held[address] = true
+	}
+	return held
 }
 
 // decodePregroupedSigned decodes a pregrouped-signed result: every intent

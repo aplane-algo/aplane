@@ -17,8 +17,8 @@ import (
 const DefaultMaxFeeMicroAlgos = 1_000_000
 
 // Finding is one thing a reviewer must not miss in a transaction: a field
-// that hands over control or funds beyond the stated amount, or uses an
-// authority over someone else's holding.
+// that hands over control or funds beyond the stated amount, uses an
+// authority over someone else's holding, or sends ALGO where it is lost.
 type Finding struct {
 	Field    string
 	Value    string
@@ -139,6 +139,19 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 			Value:    txn.CloseRemainderTo.String(),
 			Critical: true,
 			Message:  "This transaction will close your account and send ALL remaining ALGO to another address.",
+		})
+	}
+
+	// The zero address has no key and no program, so ALGO paid to it can never
+	// be spent. A builder that leaves the receiver unset produces such a
+	// payment. A zero amount to it moves nothing and is left alone, and an
+	// unset close-to is no close at all.
+	if txn.Type == types.PaymentTx && txn.Amount > 0 && txn.Receiver.IsZero() {
+		violations = append(violations, Finding{
+			Field: "Receiver",
+			Value: txn.Receiver.String(),
+			Message: fmt.Sprintf("This payment sends %s ALGO to the zero address. No one can spend from it, so the ALGO is lost. "+
+				"A payment whose receiver was left unset has this address.", asaset.FormatFixed(uint64(txn.Amount), 6)),
 		})
 	}
 

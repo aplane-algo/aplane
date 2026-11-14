@@ -287,6 +287,50 @@
       }
     },
     {
+      "name": "a payment to the zero address is a warning",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": true,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "a zero payment to the zero address is not a warning",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": true,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
       "name": "a foreign slot's warning asks for review even with warnings off",
       "surface": "sign",
       "policies": {
@@ -317,6 +361,100 @@
       "expect": {
         "outcome": "review",
         "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "a foreign slot paying ALGO to the zero address asks for review even with warnings off",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": false,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "amount": 5
+        }
+      ],
+      "classes": {
+        "1": "foreign"
+      },
+      "expect": {
+        "outcome": "review",
+        "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "a passthrough slot paying ALGO to the zero address asks for review even with warnings off",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": false,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "amount": 5
+        }
+      ],
+      "classes": {
+        "1": "passthrough"
+      },
+      "expect": {
+        "outcome": "review",
+        "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "a zero payment to the zero address on a passthrough slot asks for nothing",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": false,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3"
+        }
+      ],
+      "classes": {
+        "1": "passthrough"
+      },
+      "expect": {
+        "outcome": "default"
       }
     },
     {

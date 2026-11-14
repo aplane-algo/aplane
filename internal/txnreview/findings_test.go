@@ -88,6 +88,30 @@ func TestFirstRekeyToInvalidTarget(t *testing.T) {
 	}
 }
 
+// A payment of ALGO to the zero address, such as one whose receiver was left
+// unset, is a warning: the ALGO can never be spent. It is advice, not a
+// critical finding, and a zero amount moves nothing.
+func TestZeroAddressPaymentFinding(t *testing.T) {
+	sender := types.Address{1}
+	payment := types.Transaction{
+		Type: types.PaymentTx, Header: types.Header{Sender: sender},
+		PaymentTxnFields: types.PaymentTxnFields{Amount: 2_500_000},
+	}
+	want := Finding{
+		Field: "Receiver",
+		Value: types.Address{}.String(),
+		Message: "This payment sends 2.500000 ALGO to the zero address. No one can spend from it, so the ALGO is lost. " +
+			"A payment whose receiver was left unset has this address.",
+	}
+	if got := Findings(payment, FindingContext{}); len(got) != 1 || got[0] != want {
+		t.Fatalf("Findings() = %+v, want [%+v]", got, want)
+	}
+	payment.Amount = 0
+	if got := Findings(payment, FindingContext{}); len(got) != 0 {
+		t.Fatalf("a zero payment to the zero address has findings: %+v", got)
+	}
+}
+
 func TestRekeyTargetNotValidText(t *testing.T) {
 	if got, want := RekeyTargetNotValidText("ADDR", "aplane.htlc.v1"), "cannot rekey to ADDR: this signer holds its aplane key (aplane.htlc.v1), which is not a valid rekey target"; got != want {
 		t.Errorf("RekeyTargetNotValidText() = %q, want %q", got, want)

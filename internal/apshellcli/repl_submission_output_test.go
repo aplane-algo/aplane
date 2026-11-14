@@ -133,7 +133,8 @@ DRAFT: plugin-built transaction(s); apsigner sets the final fees and group ID, a
           Fee: 0.001000 ALGO
           Network: testnet
           GenesisID: testnet-v1.0
-Fees paid by APlane-managed accounts: 0.001000 ALGO
+          Valid rounds: 1000 - 1900
+Fees paid by APlane-managed accounts before planning: 0.001000 ALGO (apsigner may raise them when it plans the group; any raise is reported when the command ends)
 
 Submitting to network...
 `

@@ -103,8 +103,16 @@ comparison), `planner.go`.
 
 Pregrouped-signed review is unconditional: the plugin's `RequiresApproval`
 flag is ignored, the rendering decodes the actual bytes (per slot: the role
-and type; then the description `internal/txnreview` builds, the same one the
-signer's approval prompt shows, with the network named from the genesis hash;
+and type; who the signed envelope says authorizes the slot and with what kind
+of signature, `txnreview.Authorization` on `PluginGroup.SignedTransactions`,
+the line the signer's prompt gives a passthrough slot; a mark when the signer
+holds the aplane key for the slot's sender, and one for each other address the
+envelope names in its authorization (`txnreview.AuthorizationAddresses`) that
+it holds, by `PluginGroup.HeldAddresses`, a display fact that is the PS8 key
+list when the group rekeys and apshell's signer cache otherwise, and gates
+nothing; then the description `internal/txnreview` builds, the same one the
+signer's approval prompt shows, with the network named from the genesis hash,
+and the slot's valid rounds;
 then every finding the signer's warning rules produce for those bytes, each
 marked `!!`; a type the describer does not know is shown with a line saying
 its fields are not shown, so opacity is displayed, never hidden; what a rekey

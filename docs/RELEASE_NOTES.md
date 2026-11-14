@@ -7,6 +7,61 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Plugin reviews say who authorizes each slot
+
+- **A pregrouped-signed review names each slot's authorizer.** That review is
+  the only gate a plugin-signed group gets, but it was built from the bare
+  transactions, so a slot spending from your own account through a delegated
+  LogicSig read like any other. Each slot now shows an `Authorized by:` line,
+  the one the signer's prompt gives a passthrough slot: a single signature by
+  the sender or by a named authorizer, a multisig, a LogicSig account or a
+  delegated LogicSig. Nothing checks the signature here; the network does.
+- **Every plugin review shows each slot's valid rounds.**
+- **A slot the plugin signs is marked for each held aplane key it involves.**
+  `THIS SIGNER HOLDS THE APLANE KEY FOR THE SENDER; apsigner does not sign
+  this slot` is shown when the signer holds the sender's key, whoever the
+  envelope names. `THIS SIGNER HOLDS THE APLANE KEY FOR <address>, NAMED IN
+  THIS SLOT'S AUTHORIZATION; apsigner does not sign this slot` is shown, as
+  well, for each other held address the signed envelope names: its auth
+  address and every multisig subsignature key, a LogicSig's multisig
+  included. A presign-plan slot is not signed yet at the review, so only its
+  sender is judged there. The held addresses are the key list the check
+  fetched when the group rekeys, and otherwise apshell's signer cache, which
+  can be out of date. The marks are advice. They refuse nothing and fetch
+  nothing.
+
+## Plugin reviews name draft fees as before planning
+
+- **The fee line of a plugin review says when the fees are not final.** In
+  the default flow and in `presign-plan`, apsigner plans the group after the
+  review and may raise its fees, but the review showed `Fees paid by
+  APlane-managed accounts` as if they were final. The line now reads `Fees
+  paid by APlane-managed accounts before planning`, and says that any raise
+  is reported when the command ends, as the `Fee adjustment` and `[PLUGIN]
+  Signer raised fees` lines already do. The line is shown whenever the group
+  has an APlane-managed slot, a zero total included. A total too large for
+  64 bits is shown as too large to add up, where it used to wrap to a
+  smaller number or vanish.
+
+## A payment to the zero address is a warning
+
+- **Warning analysis flags ALGO paid to the zero address.** A builder that
+  leaves a payment's receiver unset sends the amount to the zero address,
+  where no one can spend it. The approval prompt showed that address like
+  any other and warned of nothing. A payment of a non-zero amount to it is
+  now a warning (`Receiver`), in the signer's approval prompt and in
+  apshell's review of a plugin group. Like every warning, it asks for review
+  under `always_review_warnings` on the signer's own slots. On a passthrough
+  or foreign slot it asks for review even with `always_review_warnings` off,
+  as every warning does there: a group in which another party's slot pays
+  ALGO to the zero address is now reviewed under `always_review_warnings`.
+  Such a group was already left to the operator, since Always Approve never
+  applies to one, so whether it prompts is unchanged: it does with User
+  Auto-Approve off and does not with it on. What changes is the review rule
+  the console and audit log record for it. It refuses nothing. A zero
+  payment to the zero address, an asset transfer to it and an unset
+  close-to are not flagged.
+
 ## JS app calls refuse reference lists that are not arrays
 
 - **`appCall()` and `appCallRaw()` refuse `apps`, `assets` or `boxes` that is

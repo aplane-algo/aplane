@@ -103,3 +103,33 @@ func logicSigKind(lsig types.LogicSig, authorizer types.Address) string {
 	}
 	return "LogicSig account"
 }
+
+// AuthorizationAddresses lists, once each and in envelope order, the addresses
+// a signed transaction's envelope names in its authorization: its auth
+// address, and the key of every subsignature of its multisig and of its
+// LogicSig's multisig. The sender is not among them unless the envelope names
+// it. Nothing here says that any of them signed.
+func AuthorizationAddresses(stxn types.SignedTxn) []types.Address {
+	var addresses []types.Address
+	seen := make(map[types.Address]bool)
+	add := func(address types.Address) {
+		if !address.IsZero() && !seen[address] {
+			seen[address] = true
+			addresses = append(addresses, address)
+		}
+	}
+	add(stxn.AuthAddr)
+	for _, msig := range []types.MultisigSig{stxn.Msig, stxn.Lsig.Msig, stxn.Lsig.LMsig} {
+		for _, subsig := range msig.Subsigs {
+			// A key of another length is not an address: padding or cutting
+			// it would name one the envelope does not.
+			if len(subsig.Key) != len(types.Address{}) {
+				continue
+			}
+			var address types.Address
+			copy(address[:], subsig.Key)
+			add(address)
+		}
+	}
+	return addresses
+}

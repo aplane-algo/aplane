@@ -548,3 +548,83 @@ func TestCheckPluginGroupNamesThePregroupedModeOnce(t *testing.T) {
 		t.Fatalf("CheckPluginGroup(missing data) error = %v, want %q", err, want)
 	}
 }
+
+// The held addresses a review marks a plugin-signed slot by are the key list
+// the check fetched when the group rekeys, and otherwise the signer cache,
+// read without a fetch: a group with no rekey still asks the signer nothing.
+// They are copies.
+func TestPluginGroupHeldAddressesComeFromTheCheck(t *testing.T) {
+	f := newPluginRekeyFixture(t, rekeyTestKeys())
+	cached := types.Address{40}
+	if err := f.eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: cached.String(), KeyType: "ed25519"}}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	fetched := map[string]bool{}
+	for _, key := range rekeyTestKeys() {
+		fetched[key.Address] = true
+	}
+	for name, tc := range map[string]struct {
+		txn  types.Transaction
+		want map[string]bool
+	}{
+		"no rekey: the signer cache":    {rekeySubmitTestTxn(rekeyTestOther, types.Address{}), map[string]bool{cached.String(): true}},
+		"a rekey: the fetched key list": {rekeySubmitTestTxn(rekeyTestOther, rekeyTestNative), fetched},
+	} {
+		for mode, c := range pluginRekeyResults(t, tc.txn) {
+			f.resetCounts()
+			group, err := f.app.CheckPluginGroup(context.Background(), c.result, interactive)
+			if err != nil {
+				t.Fatalf("%s, %s: CheckPluginGroup() error = %v", name, mode, err)
+			}
+			if got := group.HeldAddresses(); !maps.Equal(got, tc.want) {
+				t.Errorf("%s, %s: HeldAddresses() = %v, want %v", name, mode, got, tc.want)
+			}
+			if tc.txn.RekeyTo.IsZero() && f.keyFetches.Load() != 0 {
+				t.Errorf("%s, %s: the check fetched the key list %d time(s)", name, mode, f.keyFetches.Load())
+			}
+			group.HeldAddresses()[rekeyTestForeign.String()] = true
+			if group.HeldAddresses()[rekeyTestForeign.String()] {
+				t.Errorf("%s, %s: a change to the returned addresses reached the group", name, mode)
+			}
+		}
+	}
+}
+
+// A pregrouped-signed group gives the review its signed transactions,
+// envelopes included, decoded afresh each time; a draft, signed after the
+// review, has none.
+func TestPluginGroupSignedTransactionsAreTheEnvelopesChecked(t *testing.T) {
+	for mode, c := range pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, types.Address{})) {
+		group, err := (&App{}).CheckPluginGroup(context.Background(), c.result, interactive)
+		if err != nil {
+			t.Fatalf("%s: CheckPluginGroup() error = %v", mode, err)
+		}
+		stxns, err := group.SignedTransactions()
+		if err != nil {
+			t.Fatalf("%s: SignedTransactions() error = %v", mode, err)
+		}
+		if mode != jsonrpc.GroupModePregroupedSigned {
+			if stxns != nil {
+				t.Errorf("%s: a draft has signed transactions", mode)
+			}
+			continue
+		}
+		if len(stxns) != len(c.result.Transactions) {
+			t.Fatalf("%s: %d signed transaction(s), want %d", mode, len(stxns), len(c.result.Transactions))
+		}
+		for i, stxn := range stxns {
+			if got := base64.StdEncoding.EncodeToString(msgpack.Encode(stxn)); got != c.result.Transactions[i].Encoded {
+				t.Errorf("%s: signed transaction %d is not the envelope checked", mode, i+1)
+			}
+		}
+		stxns[0].Sig = types.Signature{9}
+		stxns[0].Txn.Note = []byte("changed")
+		again, err := group.SignedTransactions()
+		if err != nil {
+			t.Fatalf("%s: SignedTransactions() error = %v", mode, err)
+		}
+		if again[0].Sig != (types.Signature{1}) || again[0].Txn.Note != nil {
+			t.Errorf("%s: a change to a returned signed transaction reached the group", mode)
+		}
+	}
+}
