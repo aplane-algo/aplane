@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -384,7 +385,7 @@ func TestParseTransactionsJSONRefusesWhatTheDecoderWouldChange(t *testing.T) {
 		{"amount in exponent form", parserJSONWith(t, payment, map[string]string{"amt": `1e3`}),
 			[]string{`"amt"`, "plain digits"}},
 		{"zero amount written 0.0", parserJSONWith(t, payment, map[string]string{"amt": `0.0`}),
-			[]string{`"amt"`, "plain digits"}},
+			[]string{`"amt"`, "decodes to no value"}},
 		{"amount as a string", parserJSONWith(t, payment, map[string]string{"amt": `"5"`}),
 			[]string{`"amt"`, "is a string in the file but a number"}},
 		{"genesis ID as a number", parserJSONWith(t, payment, map[string]string{"gen": `5`}),
@@ -423,9 +424,23 @@ func TestParseTransactionsJSONReadsWhatItStates(t *testing.T) {
 		"snd": `"` + payment.Sender.String() + `"`,
 		"rcv": `"` + payment.Receiver.String() + `"`,
 	})
-	empties := parserJSONWith(t, payment, map[string]string{
-		"gen": `""`, "nonpart": `false`, "votefst": `0`, "apfa": `[]`, "apar": `{"t":0,"am":""}`,
-	})
+	// Inside an array an entry keeps its place, so the SDK writes an empty
+	// one, and it reads back as written.
+	appCall := parserTestPayment(t, 0)
+	appCall.Type = types.ApplicationCallTx
+	appCall.PaymentTxnFields = types.PaymentTxnFields{}
+	appCall.ApplicationID = 5
+	appCall.ApplicationArgs = [][]byte{{}, []byte("x")}
+	appCall.ForeignAssets = []types.AssetIndex{0, 7}
+	appCall.Accounts = []types.Address{{}}
+	appCall.BoxReferences = []types.BoxReference{{}, {Name: []byte("x")}, {ForeignAppIdx: 1}}
+	appCall.Access = []types.ResourceRef{{}, {Holding: types.HoldingRef{Asset: 2}}}
+	emptyEntries := string(sdkjson.Encode(appCall))
+	for _, entry := range []string{`"apaa": [`, `""`, `"apbx": [`, `{}`, `"al": [`} {
+		if !strings.Contains(emptyEntries, entry) {
+			t.Fatalf("fixture: SDK encoding has no %s: %s", entry, emptyEntries)
+		}
+	}
 
 	cases := []struct {
 		name string
@@ -436,7 +451,7 @@ func TestParseTransactionsJSONReadsWhatItStates(t *testing.T) {
 		{"array of two", two, []types.Transaction{payment, keyreg}},
 		{"keyreg with full-length keys", string(sdkjson.Encode(keyreg)), []types.Transaction{keyreg}},
 		{"base32 addresses", addresses, []types.Transaction{payment}},
-		{"fields given empty", empties, []types.Transaction{payment}},
+		{"empty array entries as the SDK writes them", emptyEntries, []types.Transaction{appCall}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -446,6 +461,56 @@ func TestParseTransactionsJSONReadsWhatItStates(t *testing.T) {
 			}
 			if !bytes.Equal(msgpack.Encode(txns), msgpack.Encode(tc.want)) {
 				t.Fatalf("parsed %+v, want %+v", txns, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseTransactionsJSONRefusesAFieldTheEncodingLeavesOut(t *testing.T) {
+	payment := parserTestPayment(t, 1)
+	acfg := parserTestPayment(t, 0)
+	acfg.Type = types.AssetConfigTx
+	acfg.PaymentTxnFields = types.PaymentTxnFields{}
+	acfg.AssetParams.Total = 5
+	appCall := parserTestPayment(t, 0)
+	appCall.Type = types.ApplicationCallTx
+	appCall.PaymentTxnFields = types.PaymentTxnFields{}
+	appCall.ApplicationID = 5
+	appCall.BoxReferences = []types.BoxReference{{Name: []byte("x")}}
+	var zeroAddress types.Address
+	zero32 := `"` + base64.StdEncoding.EncodeToString(make([]byte, 32)) + `"`
+
+	cases := []struct {
+		name, data, field string
+	}{
+		{"amount as an empty string", parserJSONWith(t, payment, map[string]string{"amt": `""`}), "amt"},
+		{"amount 0", parserJSONWith(t, parserTestPayment(t, 0), map[string]string{"amt": `0`}), "amt"},
+		{"fee 0", parserJSONWith(t, payment, map[string]string{"fee": `0`}), "fee"},
+		{"empty note", parserJSONWith(t, payment, map[string]string{"note": `""`}), "note"},
+		{"note as an object", parserJSONWith(t, payment, map[string]string{"note": `{}`}), "note"},
+		{"note as an array", parserJSONWith(t, payment, map[string]string{"note": `[]`}), "note"},
+		{"lease as an empty array", parserJSONWith(t, payment, map[string]string{"lx": `[]`}), "lx"},
+		{"app args as an object", parserJSONWith(t, payment, map[string]string{"apaa": `{}`}), "apaa"},
+		{"boxes as an object", parserJSONWith(t, payment, map[string]string{"apbx": `{}`}), "apbx"},
+		{"asset params as an array", parserJSONWith(t, payment, map[string]string{"apar": `[]`}), "apar"},
+		{"asset params as an empty object", parserJSONWith(t, payment, map[string]string{"apar": `{}`}), "apar"},
+		{"heartbeat as an array", parserJSONWith(t, payment, map[string]string{"hb": `[]`}), "hb"},
+		{"nonparticipation false", parserJSONWith(t, payment, map[string]string{"nonpart": `false`}), "nonpart"},
+		{"empty genesis ID", parserJSONWith(t, payment, map[string]string{"gen": `""`}), "gen"},
+		{"zero close-to address", parserJSONWith(t, payment, map[string]string{"close": `"` + zeroAddress.String() + `"`}), "close"},
+		{"all-zero genesis hash", parserJSONWith(t, payment, map[string]string{"gh": zero32}), "gh"},
+		{"zero decimals beside a total", parserJSONWith(t, acfg, map[string]string{"apar": `{"t":5,"dc":0}`}), "apar.dc"},
+		{"box with app index 0 written out", parserJSONWith(t, appCall, map[string]string{"apbx": `[{"i":0,"n":"eA=="}]`}), "apbx[0].i"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			txns, err := ParseTransactions([]byte(tc.data))
+			if err == nil {
+				t.Fatalf("parsed %d transaction(s), want refused: %s", len(txns), tc.data)
+			}
+			want := fmt.Sprintf("field %q decodes to no value: leave it out", tc.field)
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not contain %q", err, want)
 			}
 		})
 	}

@@ -114,10 +114,10 @@ func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
 // and the string "5" as integers and rounds a fraction past 2^53, so a file
 // could show one transaction and carry another. A difference is refused.
 //
-// Three things may differ from the encoding: an address may be written in
-// base32, as write mode writes it; base64 is compared by the bytes it
-// decodes to; and a field the encoding leaves out may be given empty, as 0,
-// false, "", [] or an object of such fields.
+// Two things may differ from the encoding: an address may be written in
+// base32, as write mode writes it, and base64 is compared by the bytes it
+// decodes to. A field the encoding leaves out, at its zero value, must be
+// left out of the file too.
 func checkJSONStatesDecoded(jsonData []byte, txns []types.Transaction) error {
 	given, err := decodeJSONExactly(jsonData)
 	if err != nil {
@@ -167,18 +167,10 @@ func sameJSONValue(path string, given, decoded interface{}) error {
 			field := joinJSONPath(path, key)
 			value, present := d[key]
 			if !present {
-				// The encoding leaves out a field at its zero value.
-				switch g[key].(type) {
-				case map[string]interface{}:
-					value = map[string]interface{}{}
-				case json.Number:
-					value = json.Number("0")
-				default:
-					if !isEmptyJSONValue(g[key]) {
-						return fmt.Errorf("field %q decodes to no value: leave it out", field)
-					}
-					continue
-				}
+				// The encoding leaves out a field at its zero value, so
+				// anything written there, 0 or "" included, is not read as
+				// written: "amt": "" would send nothing.
+				return fmt.Errorf("field %q decodes to no value: leave it out", field)
 			}
 			if err := sameJSONValue(field, g[key], value); err != nil {
 				return err
@@ -267,18 +259,6 @@ func joinJSONPath(path, key string) string {
 		return key
 	}
 	return path + "." + key
-}
-
-func isEmptyJSONValue(v interface{}) bool {
-	switch v := v.(type) {
-	case string:
-		return v == ""
-	case bool:
-		return !v
-	case []interface{}:
-		return len(v) == 0
-	}
-	return false
 }
 
 func kindMismatch(path string, given, decoded interface{}) error {

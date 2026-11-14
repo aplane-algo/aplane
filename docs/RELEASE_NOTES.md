@@ -27,11 +27,12 @@ before it was renamed `enroll`.
   transaction in a JSON object or array is now compared, field by field,
   with the SDK's JSON encoding of the decoded transaction, and a difference
   is refused, naming the transaction and the field. Addresses may still be
-  base32, so a `txnjson/` file reads back. A field may be given empty (`0`,
-  `false`, `""`, `[]`, `{}`) where the encoding leaves it out, but a zero
-  address or all-zero hash written out is refused. Unknown keys were
-  already refused by the decoder. The `{"txn": [...]}` and msgpack forms are
-  unchanged.
+  base32, so a `txnjson/` file reads back. A field at its zero value must be
+  left out, as the encoding leaves it out: the decoder read `"amt": ""` as
+  no amount and `"note": {}` as no note, and any explicit `0`, `false`,
+  `""`, `[]` or `{}` field is now refused. An empty entry inside a list is
+  written as the SDK writes it. Unknown keys were already refused by the
+  decoder. The `{"txn": [...]}` and msgpack forms are unchanged.
 
 ## Write mode keeps every digit
 
