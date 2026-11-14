@@ -99,6 +99,39 @@ func TestCosignerReferenceAuditIncludesWitnessKeyID(t *testing.T) {
 	}
 }
 
+// A failed setting save is recorded with the session, the setting, the value
+// it tried to save, the cause, and whether that value is in effect anyway
+// (outcome "applied") or nothing changed (outcome "failed").
+func TestSettingSaveErrorAuditNamesTheSettingValueAndWhetherInEffect(t *testing.T) {
+	for _, inEffect := range []bool{true, false} {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		a, err := NewAuditLogger(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.LogSettingSaveErrorContext(adminserver.SessionContext{
+			SessionID: "admin-7", Transport: "ipc", AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
+		}, "user_auto_approve", "false", inEffect, "disk full")
+		if err := a.Close(); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entry AuditEntry
+		if err := json.Unmarshal(data, &entry); err != nil {
+			t.Fatal(err)
+		}
+		outcome := map[bool]string{true: "applied", false: "failed"}[inEffect]
+		reason := fmt.Sprintf("setting=user_auto_approve value=false in_effect=%t: disk full", inEffect)
+		if entry.Event != AuditSettingSaveError || entry.Outcome != outcome || entry.Reason != reason ||
+			entry.AdminSessionID != "admin-7" || entry.Principal != "system:product-admin" {
+			t.Fatalf("in effect %v: audit entry = %+v", inEffect, entry)
+		}
+	}
+}
+
 func TestLogRecoversAfterLostHandle(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.log")

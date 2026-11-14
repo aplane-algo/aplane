@@ -876,3 +876,7 @@ func (d signerAdminAppDeps) RestoreLimiter() backupadmin.RestoreLimiter {
 func (d signerAdminAppDeps) Logf(format string, args ...interface{}) {
 	logInfof(format, args...)
 }
+
+func (d signerAdminAppDeps) Warnf(format string, args ...any) {
+	logWarnf(format, args...)
+}

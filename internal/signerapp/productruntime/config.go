@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,6 +32,12 @@ type RuntimeConfig struct {
 
 	requireContained bool
 	requireCosigner  bool
+
+	// unsaved holds the settings whose value here is ahead of the saved
+	// file: a restrictive value published before a save that did not
+	// complete. Memory only: a restart loads the saved value, so it starts
+	// empty.
+	unsaved map[string]bool
 }
 
 // ConfigDefaults contains process-level defaults that the product overlay can
@@ -138,6 +146,37 @@ func (c *RuntimeConfig) SetSessionTimeout(d time.Duration) {
 	c.mu.Lock()
 	c.sessionTimeout = d
 	c.mu.Unlock()
+}
+
+// SetUnsaved records whether setting key's value here is ahead of the saved
+// file.
+func (c *RuntimeConfig) SetUnsaved(key string, unsaved bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !unsaved {
+		delete(c.unsaved, key)
+		return
+	}
+	if c.unsaved == nil {
+		c.unsaved = make(map[string]bool)
+	}
+	c.unsaved[key] = true
+}
+
+// IsUnsaved reports whether setting key's value here is ahead of the saved
+// file.
+func (c *RuntimeConfig) IsUnsaved(key string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.unsaved[key]
+}
+
+// UnsavedSettings returns, sorted, the settings whose value here is ahead of
+// the saved file.
+func (c *RuntimeConfig) UnsavedSettings() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return slices.Sorted(maps.Keys(c.unsaved))
 }
 
 // ApprovalWait returns the product's maximum manual signing approval wait.

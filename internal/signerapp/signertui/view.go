@@ -9,6 +9,7 @@ package tui
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -601,6 +602,10 @@ func renderedBlockHeight(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
+// minSettingWarningWidth is the least room the status line's setting warning
+// is shown in: "Warning: ", the longest setting name (18 columns) and "...".
+const minSettingWarningWidth = len("Warning: ") + 18 + len("...")
+
 // renderStatusBar renders the bottom status bar
 func (m Model) renderStatusBar() string {
 	var parts []string
@@ -646,15 +651,29 @@ func (m Model) renderStatusBar() string {
 		parts = append(parts, statusConnectedStyle.Render(m.lastNotice))
 	}
 
-	// Warning if any. A setting's durability warning belongs to the admin
-	// panel and shows only there.
-	if m.lastWarning != "" && (m.viewState == ViewAdminPanel || !strings.HasPrefix(m.lastWarning, settingNotDurableWarningPrefix)) {
+	// Warning if any
+	if m.lastWarning != "" {
 		parts = append(parts, warningStyle.Render("Warning: "+m.lastWarning))
 	}
+	settingAt := len(parts)
 
 	// Error if any
 	if m.lastError != "" {
 		parts = append(parts, errorStyle.Render("Error: "+m.lastError))
+	}
+
+	// A setting update's in-effect warning belongs to the admin panel. It is
+	// cut to the room the rest of the line leaves, so the line stays one row
+	// and takes none from the panel, and dropped when that room cannot hold
+	// even the setting's name; the panel's own unsaved warning still shows.
+	if w := m.admin.settingWarning.text; m.viewState == ViewAdminPanel && w != "" {
+		room := m.tableWidth() - lipgloss.Width(strings.Join(parts, " | "))
+		if len(parts) > 0 {
+			room -= len(" | ")
+		}
+		if room >= minSettingWarningWidth {
+			parts = slices.Insert(parts, settingAt, warningStyle.Render(ellipsize(w, room)))
+		}
 	}
 
 	return helpStyle.Render(strings.Join(parts, " | "))

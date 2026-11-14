@@ -8,6 +8,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -140,6 +141,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
 			m.resetActivityState()
+			// The signer may have restarted since that result.
+			m.admin.settingWarning = settingResultWarning{}
 		} else if msg.Code == protocol.ErrCodeLoginTimeout {
 			// The signer gave up on this login and closes the connection;
 			// stay disconnected rather than retake its single login slot.
@@ -643,23 +646,39 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			initStyles()
 		}
 		m.admin.settings = &msg.Settings
+		if w := m.admin.settingWarning; w.key != "" && !slices.Contains(msg.Settings.UnsavedSettings, w.key) {
+			// Saved since, perhaps by another admin client.
+			m.admin.settingWarning = settingResultWarning{}
+		}
 		m.syncKeyListTabWithMode()
 		timeoutCmd := m.applyAdminSettingsTimeout(msg.Settings)
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 
 	case AdminSettingUpdatedMsg:
+		// A value in effect but not saved is not a failure. The panel draws
+		// its unsaved warning from the settings re-read below; the status
+		// line gives the signer's reason.
 		switch {
-		case msg.Code == protocol.ResultCodeAppliedNotDurable:
-			// Saved and in effect; only its durability is unconfirmed. The
-			// warning stays until the next key on the admin panel, which
-			// shows the stored value once the settings are re-read.
-			m.setPersistentWarning(settingNotDurableWarningPrefix + msg.Key)
+		case msg.Code == protocol.ResultCodeAppliedNotSaved:
+			reason := msg.Error
+			if reason == "" {
+				reason = msg.Key + " is in effect but not saved"
+			}
+			text := "Warning: " + reason
+			if m.settingUnsaved(msg.Key) {
+				// A retry of a save that had failed failed again: the way
+				// out goes ahead of the cause, so the line's cut keeps it.
+				text = "restart apsigner for the saved value; " + msg.Key + " still not saved: " + reason
+			}
+			m.admin.settingWarning = settingResultWarning{key: msg.Key, text: text}
 		case !msg.Success:
 			m.lastError = "Setting update failed: " + msg.Error
+		case msg.Key == m.admin.settingWarning.key:
+			m.admin.settingWarning = settingResultWarning{}
 		}
 		// Re-read the settings either way: a failed update can still be in
-		// effect (saved, its durability unconfirmed), so the panel shows what
-		// the signer holds rather than what it showed before.
+		// effect (a restrictive value not saved), so the panel shows what the
+		// signer holds rather than what it showed before.
 		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd())
 
 	case PolicyLoadedMsg:

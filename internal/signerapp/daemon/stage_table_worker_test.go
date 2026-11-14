@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -259,6 +261,249 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 	// A pass while locked does nothing and reports idle.
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval || table.Len() != n {
 		t.Fatalf("locked pass: wait %v, len %d", wait, table.Len())
+	}
+}
+
+// A lock refuses key uses before it cancels the pass's context, so a pass can
+// reach an account's identity read refused while its own context is still
+// live. Such a pass is treated as not having happened: it publishes nothing,
+// and the status and alerts from the last complete pass stand until the
+// locked worker clears them. The pass once published the unobserved account,
+// dropping its alerts, and then published every other account without it.
+// The lock's first step is played by moving the runtime out of the unlocked
+// state during the first account's chain read, before the second's identity
+// read.
+func TestPassCutByALockPublishesNothing(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	hub := &recordingAdminHub{}
+	server.hub = hub
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	var armed atomic.Bool
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.HasPrefix(req.URL.Path, "/v2/accounts/") && armed.CompareAndSwap(true, false) {
+				ir.SetRecovery()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	// The pass visits accounts in address order; the second one is cut.
+	second := b
+	if b.String() < a.String() {
+		second = a
+	}
+	// A release from the second account's stage 0 that expired unconfirmed:
+	// an alert while the account is observed at its stage 0.
+	server.rotatingReleases.Record(signersigning.ReleaseRecord{
+		Account: second.String(), Stage: 0, StageAddr: second, TxID: "EXPIREDTX", LastValid: 120,
+	})
+	node.set("", 130)
+	server.fillStageTables(context.Background(), ir)
+	before, alerts := ir.RotatingAccountStatuses(), ir.RotatingAlerts()
+	if len(before) != 2 || before[1].Account != second.String() || len(alerts) != 1 || !strings.Contains(alerts[0], "EXPIREDTX") {
+		t.Fatalf("after a full pass: statuses %+v, alerts %v; want both accounts and the expired release's alert", before, alerts)
+	}
+
+	node.set("", 150)
+	armed.Store(true)
+	hub.statusCalled = false
+	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
+		t.Fatalf("wait after the cut pass = %v, want idle", wait)
+	}
+	if armed.Load() {
+		t.Fatal("the cut never happened")
+	}
+	if after := ir.RotatingAccountStatuses(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("statuses after the cut pass = %+v, want the last complete pass's %+v", after, before)
+	}
+	if after := ir.RotatingAlerts(); !reflect.DeepEqual(after, alerts) {
+		t.Fatalf("alerts after the cut pass = %v, want the last complete pass's %v", after, alerts)
+	}
+	if hub.statusCalled {
+		t.Fatal("apadmin was told a status from the cut pass")
+	}
+}
+
+// A lock that refuses the key use of the last account's derivation, after
+// that account's identity and chain reads, cuts the pass as one at the
+// identity read does: the pass publishes nothing and the last complete pass's
+// status stands. The deriver once turned the refusal into a quiet stop the
+// pass did not hear of, so the half-filled report was published.
+func TestPassCutAtADerivationPublishesNothing(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	node.set("", 130)
+	var armed atomic.Bool
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	last := b
+	if b.String() < a.String() {
+		last = a
+	}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/v2/accounts/"+last.String() && armed.CompareAndSwap(true, false) {
+				// The lock's first step, after the last account's identity
+				// read and before its derivations.
+				ir.SetRecovery()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+	server.fillStageTables(context.Background(), ir)
+	before := ir.RotatingAccountStatuses()
+	if len(before) != 2 {
+		t.Fatalf("statuses after a full pass = %+v, want both accounts", before)
+	}
+
+	// A longer lookahead gives the next pass derivations to do.
+	server.config.Rotating.StageHorizon = 5
+	node.set("", 150)
+	armed.Store(true)
+	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
+		t.Fatalf("wait after the cut pass = %v, want idle", wait)
+	}
+	if armed.Load() {
+		t.Fatal("the cut never happened")
+	}
+	if after := ir.RotatingAccountStatuses(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("statuses after the pass cut at a derivation = %+v, want the last complete pass's %+v", after, before)
+	}
+}
+
+// A pass cut at an account still logs what that account's report has to
+// say, here that its unreadable stage table was discarded (a one-time event),
+// though the pass publishes nothing. The cut account's report was once dropped
+// before the worker saw it.
+func TestPassCutAtAnAccountStillLogsItsDiscardedTable(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	last := b
+	if b.String() < a.String() {
+		last = a
+	}
+	// An unreadable table file, which the pass discards when it opens it.
+	tablePath := ir.KeyPaths().StageTablePath(last.String())
+	if err := os.MkdirAll(filepath.Dir(tablePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tablePath, []byte("not a stage table"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	node := &mockAccountNode{}
+	node.set("", 130)
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/v2/accounts/"+last.String() {
+				// The lock's first step, before the last account derives.
+				ir.SetRecovery()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+
+	server.fillStageTables(context.Background(), ir)
+	if !strings.Contains(logs.String(), "rotating account "+last.String()+": ") || !strings.Contains(logs.String(), "rebuilding its stage table from the seed") {
+		t.Fatalf("log = %q, want the cut account's discarded table", logs.String())
+	}
+	if got := ir.RotatingAccountStatuses(); len(got) != 0 {
+		t.Fatalf("statuses after the cut pass = %+v, want nothing published", got)
+	}
+}
+
+// syncBuffer is a log destination tests read while other goroutines write.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// A lock that cancels a pass during an account's chain read fails that read
+// with the cancellation itself, which is the lock, not the account's error:
+// the worker does not log it. A real error from the same pass is still logged.
+// The cancelled read was once logged as "stage table: ... context canceled".
+func TestCancelledPassLogsOnlyRealAccountErrors(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+
+	a, _ := installRotatingKey(t, server)
+	b, _ := installRotatingKey(t, server)
+	// The pass visits accounts in address order: the first one's read fails
+	// at the node, and the lock lands during the second one's.
+	first, second := a, b
+	if b.String() < a.String() {
+		first, second = b, a
+	}
+	node := &mockAccountNode{}
+	node.set("", 100)
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		base := node.transport()
+		return algod.MakeClientWithTransport(serverURL, token, nil, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/v2/accounts/" + first.String():
+				return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader(`{"message":"node is down"}`)), Request: req}, nil
+			case "/v2/accounts/" + second.String():
+				ir.Lock()
+				// The lock's cancellation reaches the read's context through
+				// a derived context, so wait for it as a real transport does.
+				select {
+				case <-req.Context().Done():
+				case <-time.After(10 * time.Second):
+					return nil, errors.New("the lock did not cancel the chain read")
+				}
+				return nil, req.Context().Err()
+			}
+			return base.RoundTrip(req)
+		}))
+	}
+
+	server.fillStageTables(context.Background(), ir)
+	out := logs.String()
+	if !strings.Contains(out, "rotating account "+first.String()+": stage table:") || !strings.Contains(out, "node is down") {
+		t.Fatalf("log = %q, want the first account's real error", out)
+	}
+	if strings.Contains(out, "rotating account "+second.String()+": stage table:") {
+		t.Fatalf("log = %q, want nothing for the read the lock cancelled", out)
 	}
 }
 

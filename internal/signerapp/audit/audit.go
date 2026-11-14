@@ -60,6 +60,7 @@ const (
 	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
 	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
+	AuditSettingSaveError                 AuditEventType = "SETTING_SAVE_ERROR"
 	AuditClientEnrollmentRequested        AuditEventType = "CLIENT_ENROLLMENT_REQUESTED"
 	AuditClientEnrolled                   AuditEventType = "CLIENT_ENROLLED"
 	AuditClientEnrollmentRejected         AuditEventType = "CLIENT_ENROLLMENT_REJECTED"
@@ -938,6 +939,23 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 	entry.Event = AuditIdentityLocked
 	entry.Outcome = "locked"
 	entry.Reason = reason
+	a.Log(entry)
+}
+
+// LogSettingSaveErrorContext records an admin setting update whose save
+// failed: the setting, the value it tried to save, and the cause. inEffect
+// reports whether that value is in effect anyway (a restrictive value
+// published before the save, which a restart reverts; nothing else durable
+// records it) or nothing changed. The outcome says the same: "applied" or
+// "failed".
+func (a *AuditLogger) LogSettingSaveErrorContext(ctx adminserver.SessionContext, key, value string, inEffect bool, cause string) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditSettingSaveError
+	entry.Outcome = "failed"
+	if inEffect {
+		entry.Outcome = "applied"
+	}
+	entry.Reason = fmt.Sprintf("setting=%s value=%s in_effect=%t: %s", key, value, inEffect, cause)
 	a.Log(entry)
 }
 

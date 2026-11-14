@@ -604,6 +604,16 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		fresh, readErr := deps.Chain.ReadAccount(readCtx, genesis, account)
 		cancelRead()
 		if readErr != nil {
+			// The read runs under the key use, so a lock cuts it short. Only
+			// the report differs: a read the lock cut (cancelled, with the
+			// key use ended and the request live) answers locked, as a key
+			// use the lock cuts does everywhere else. The request's own end,
+			// or the read's own failure (its own timeout expires as
+			// DeadlineExceeded) answers unavailable, even if a lock lands
+			// just after.
+			if errors.Is(readErr, context.Canceled) && ctx.Err() != nil && requestCtx.Err() == nil {
+				return nil, lockedError()
+			}
 			return nil, unavailable(readErr.Error())
 		}
 		if fresh.Authorizer != stageAddr {
@@ -713,7 +723,8 @@ func (s *Service) releaseRefused(ctx context.Context, deps *RotatingDeps, accoun
 // zeroed before the key use ends. A key use the lock refused or cut short
 // answers locked; one ended by the caller's own context answers unavailable.
 func (s *Service) rotatingAccount(ctx context.Context, deps *RotatingDeps, account string, session *keystore.KeySession) (types.Address, []byte, *lsigresource.Profile, *ServiceError) {
-	if _, svcErr := s.indexedRotatingKey(account); svcErr != nil {
+	indexed, svcErr := s.indexedRotatingKey(account)
+	if svcErr != nil {
 		return types.Address{}, nil, nil, svcErr
 	}
 	useCtx, endKeyUse, useErr := deps.keyUse(ctx)
@@ -730,7 +741,7 @@ func (s *Service) rotatingAccount(ctx context.Context, deps *RotatingDeps, accou
 	if useCtx.Err() != nil {
 		return types.Address{}, nil, nil, refused()
 	}
-	rs, svcErr := s.openRotatingSession(useCtx, account, session)
+	rs, svcErr := loadRotatingKey(useCtx, indexed, session)
 	if svcErr != nil {
 		return types.Address{}, nil, nil, svcErr
 	}

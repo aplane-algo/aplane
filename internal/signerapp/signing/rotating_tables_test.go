@@ -241,7 +241,7 @@ func (f *rotatingFixture) table(t testing.TB) *stagetable.Table {
 
 func (f *rotatingFixture) fill(t testing.TB, opts StageFillOptions) StageTableReport {
 	t.Helper()
-	reports := f.svc.FillStageTables(context.Background(), f.session, opts)
+	reports, _ := f.svc.FillStageTables(context.Background(), f.session, opts)
 	if len(reports) != 1 || reports[0].Account != f.account.String() {
 		t.Fatalf("reports = %+v", reports)
 	}
@@ -349,7 +349,7 @@ func TestFillStageTablesCancelledContextKeepsTablePrefixComplete(t *testing.T) {
 			cancel()
 		}
 	}}
-	reports := f.svc.FillStageTables(ctx, f.session, opts)
+	reports, _ := f.svc.FillStageTables(ctx, f.session, opts)
 	if len(reports) != 1 || reports[0].Err != nil || reports[0].Resolved {
 		t.Fatalf("reports = %+v", reports)
 	}
@@ -388,7 +388,7 @@ func TestFillStageTablesReportsDiscardedTable(t *testing.T) {
 
 func TestFillStageTablesWithoutDepsIsNoop(t *testing.T) {
 	svc := &Service{}
-	if reports := svc.FillStageTables(context.Background(), nil, StageFillOptions{}); reports != nil {
+	if reports, _ := svc.FillStageTables(context.Background(), nil, StageFillOptions{}); reports != nil {
 		t.Fatalf("reports = %+v", reports)
 	}
 }
@@ -455,7 +455,7 @@ func TestFillStageTablesStopsWhenTableDeletedMidPass(t *testing.T) {
 			}
 		}
 	}}
-	reports := f.svc.FillStageTables(context.Background(), f.session, opts)
+	reports, _ := f.svc.FillStageTables(context.Background(), f.session, opts)
 	if len(reports) != 1 || reports[0].Err == nil {
 		t.Fatalf("reports after delete = %+v, want an error", reports)
 	}

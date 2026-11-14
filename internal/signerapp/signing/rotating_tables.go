@@ -170,23 +170,29 @@ type StageTableReport struct {
 // The table is a cache. Every address it holds was derived from the seed by
 // this routine, and signing re-derives whatever it uses, so nothing here
 // changes what the signer signs.
-func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySession, opts StageFillOptions) []StageTableReport {
+//
+// cut reports that the lock refused or cut an account's key use while the
+// pass was live: a lock is landing, and the pass is not to be published. A
+// lock refuses key uses before it cancels the pass's context, so a pass it
+// cuts can still have a live context. The pass stops there; the reports up
+// to and including that account's are returned for their log lines.
+func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySession, opts StageFillOptions) (reports []StageTableReport, cut bool) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil {
-		return nil
+		return nil, false
 	}
 	if ctx.Err() != nil {
 		// A cancelled pass resuming after a lock must not bind, prune or
 		// derive: the inventory it would read is the locked signer's empty
 		// one, and the session it would bind may already be a later
 		// unlock's.
-		return nil
+		return nil, false
 	}
 	gen, ok := deps.recoverySession(opts.Session)
 	if !ok {
 		// This pass belongs to a session a lock has ended; a later unlock
 		// is already live. Its context is cancelled or about to be.
-		return nil
+		return nil, false
 	}
 	accounts := s.rotatingAccounts()
 	live := make(map[string]bool, len(accounts))
@@ -194,14 +200,19 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 		live[a] = true
 	}
 	deps.Recovery.Prune(gen, func(account string) bool { return live[account] })
-	var reports []StageTableReport
 	for _, account := range accounts {
 		if ctx.Err() != nil {
 			break
 		}
-		reports = append(reports, s.fillStageTable(ctx, deps, gen, account, session, opts))
+		report, cut := s.fillStageTable(ctx, deps, gen, account, session, opts)
+		// The cut account's report goes back too, for what it has to log
+		// (a discarded table, a real error); the caller publishes nothing.
+		reports = append(reports, report)
+		if cut {
+			return reports, true
+		}
 	}
-	return reports
+	return reports, false
 }
 
 // stageDeriver derives a contiguous range of stage addresses for one
@@ -212,7 +223,7 @@ type stageDeriver func(ctx context.Context, from, to uint64) ([]types.Address, e
 // anything: it refused or cancelled the key use, or had already cleared the
 // session the seed would load from. A request answers it as locked; the
 // background fill and restore stop on it as on any cut.
-var errKeyUseRefused = errors.New("signer is locked")
+var errKeyUseRefused = errors.New(lockedMessage)
 
 // keyUseCut says why a window ended before a stage was derived: the caller's
 // own context if that ended, else the lock.
@@ -225,26 +236,33 @@ func keyUseCut(parent context.Context) error {
 
 // backgroundDeriver is the table fill's deriver: a lock is where a pass
 // stops, not a failure, so its refusal comes back as an empty result with no
-// error and the pass writes what it has and ends quietly.
-func (s *Service) backgroundDeriver(account string, session *keystore.KeySession, opts StageFillOptions) stageDeriver {
+// error and the pass writes what it has and ends quietly. A refusal sets
+// *cut: the deriver returns errKeyUseRefused only while the caller's own
+// context is live, so the pass the lock cut is told apart from one whose
+// context ended.
+func (s *Service) backgroundDeriver(account string, session *keystore.KeySession, opts StageFillOptions, cut *bool) stageDeriver {
 	derive := s.stageDeriver(account, session, opts)
 	return func(ctx context.Context, from, to uint64) ([]types.Address, error) {
 		addrs, err := derive(ctx, from, to)
 		if errors.Is(err, errKeyUseRefused) {
+			*cut = true
 			return addrs, nil
 		}
 		return addrs, err
 	}
 }
 
-func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
+func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (StageTableReport, bool) {
 	opts = s.stageFillOptions(account, opts)
-	report := s.fillStageTableOnce(ctx, deps, gen, account, session, opts)
+	report, cut := s.fillStageTableOnce(ctx, deps, gen, account, session, opts)
 	report.Recovery = deps.Recovery.State(account)
-	return report
+	return report, cut
 }
 
-func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (report StageTableReport) {
+// fillStageTableOnce fills one account's table. cut reports that the lock
+// refused or cut one of its key uses, at the identity read or a derivation,
+// while the pass was live.
+func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (report StageTableReport, cut bool) {
 	report = StageTableReport{Account: account}
 	opts.persistBatches = true
 
@@ -252,8 +270,24 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	// closed again inside the call.
 	acct, genesis, _, svcErr := s.rotatingAccount(ctx, deps, account, session)
 	if svcErr != nil {
-		report.Err = errors.New(svcErr.Message)
-		return report
+		// A lock during the identity read is not an account error, as one
+		// step later in the deriver (backgroundDeriver) it is not. Any
+		// other error is the account's, even if the pass ended just after.
+		switch {
+		case svcErr.Kind == ErrorLocked:
+			// rotatingAccount answers locked exactly where the deriver
+			// reports errKeyUseRefused: the lock refused or cut this
+			// account's key use, or had cleared the session. With the pass
+			// still live, that cuts the pass.
+			cut = ctx.Err() == nil
+		case svcErr.Kind == ErrorUnavailable && ctx.Err() != nil:
+			// rotatingAccount answers unavailable only when the pass's own
+			// context ended during the read, which a lock or shutdown also
+			// does: a quiet stop, and the worker publishes nothing.
+		default:
+			report.Err = errors.New(svcErr.Message)
+		}
+		return report, cut
 	}
 	present := func() bool {
 		_, ok := s.Planner.Snapshot().KeyFiles[account]
@@ -262,7 +296,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	table, tableErr := deps.Tables.Table(acct, genesis, present, s.Planner.Snapshot().KeyTypes[account])
 	if table == nil {
 		report.Err = tableErr
-		return report
+		return report, cut
 	}
 	if errors.Is(tableErr, stagetable.ErrDiscarded) {
 		report.Discarded = tableErr
@@ -299,12 +333,12 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	cancelRead()
 	if readErr != nil {
 		report.Err = readErr
-		return report
+		return report, cut
 	}
 	report.Observed, report.Authorizer, report.Round = true, view.Authorizer, view.Round
 
 	opts.searchAnchor = releaseSearchAnchor(deps, account)
-	derive := s.backgroundDeriver(account, session, opts)
+	derive := s.backgroundDeriver(account, session, opts, &cut)
 	budget := opts.maxDerivations()
 	held := knownAddressesFromSnapshot(s.Planner.Snapshot())
 	proven, class := classifyAuthorizer(table, acct, view.Authorizer, held)
@@ -313,14 +347,14 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		budget--
 		if err != nil {
 			report.Err = err
-			return report
+			return report, cut
 		}
 		if len(addrs) != 1 {
-			return report
+			return report, cut
 		}
 		if _, err := table.RecordDerived(proven, addrs); err != nil {
 			report.Err = err
-			return report
+			return report, cut
 		}
 		if addrs[0] != view.Authorizer {
 			class = ClassUnknown
@@ -337,36 +371,36 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		// Rekeyed to a credential this signer holds: resolved without a
 		// stage, nothing to derive, and no search to continue.
 		deps.Recovery.reconcile(gen, account, StopHeldKey, nil)
-		return report
+		return report, cut
 	case ClassUnknown:
 		grant := deps.Recovery.grantFor(gen, account, view.Authorizer, table)
 		if grant == nil {
 			// Automatic recovery is disabled, exhausted or suppressed for
 			// this authorizer: unresolved and idle until an operator
 			// grants a search or the chain moves.
-			return report
+			return report, cut
 		}
-		found, pending, spent, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts)
+		found, pending, spent, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts, &cut)
 		report.Scanned = table.Len()
 		// Hinted probes consume work even when they do not extend the prefix.
 		budget -= spent
 		if grantErr != nil {
 			report.Err = grantErr
-			return report
+			return report, cut
 		}
 		if !found {
 			report.Pending = pending && ctx.Err() == nil
-			return report
+			return report, cut
 		}
 		proven, class = classifyAuthorizer(table, acct, view.Authorizer, held)
 		report.Class = class
 		if class != ClassStage {
-			return report
+			return report, cut
 		}
 	}
 	if proven >= math.MaxUint64-1 {
 		report.Err = errors.New("live stage has no representable successor")
-		return report
+		return report, cut
 	}
 	report.Resolved, report.Stage = true, proven
 	s.rememberStage(table, proven, view.Authorizer, view.Round)
@@ -384,11 +418,11 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 			budget -= len(addrs)
 			if _, e := table.RecordDerived(next, addrs); e != nil {
 				report.Err = e
-				return report
+				return report, cut
 			}
 			if err != nil {
 				report.Err = err
-				return report
+				return report, cut
 			}
 		}
 	}
@@ -414,13 +448,13 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		}
 		if err := publishStageBatch(table, opts.maxDerivations()-budget-len(addrs), opts.maxDerivations()-budget, opts); err != nil {
 			report.Err = err
-			return report
+			return report, cut
 		}
 		from = table.FirstMissing(from)
 	}
 	report.Scanned = table.Len()
 	report.Pending = report.Err == nil && ctx.Err() == nil && from < target
-	return report
+	return report, cut
 }
 
 // stageDeriver returns the deriver for one account. Every call loads the
@@ -486,10 +520,10 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 // returns whether the authorizer is now in the table, whether the grant is
 // still active with work left, the derivations spent (including probes), and
 // any derivation or write error.
-func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions) (found, pending bool, spent int, err error) {
+func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions, cut *bool) (found, pending bool, spent int, err error) {
 	unpaced := opts
 	unpaced.Pace = nil
-	base := s.backgroundDeriver(account, session, unpaced)
+	base := s.backgroundDeriver(account, session, unpaced, cut)
 	// derive caps every call at what the grant may still spend, charges the
 	// grant for what came back, and paces afterwards with the seed released.
 	// A zero result is a cut: extendUntil and extendTo write the prefix

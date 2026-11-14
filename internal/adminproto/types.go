@@ -4,6 +4,7 @@
 package adminproto
 
 import (
+	"fmt"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -38,6 +39,10 @@ type AdminSettings struct {
 	// (aplane.falcon1024.v1, aplane.ed25519.v1), only.
 	RequireContained bool
 	RequireCosigner  bool
+	// UnsavedSettings are the settings whose value in effect is ahead of
+	// identities/default/config.yaml: a restrictive value whose save did not
+	// complete. A restart loads the saved value.
+	UnsavedSettings []string
 }
 
 const (
@@ -475,6 +480,25 @@ type UpdateAdminSettingRequest struct {
 	Key   string
 	Value string
 }
+
+// SettingSaveError is a setting update whose save failed after its value was
+// accepted. InEffect reports whether the value is in effect anyway (a
+// restrictive value published before the save, which a restart reverts) or
+// nothing changed. A request refused before any save is not one.
+type SettingSaveError struct {
+	Key, Value string
+	InEffect   bool
+	Err        error
+}
+
+func (e *SettingSaveError) Error() string {
+	if e.InEffect {
+		return fmt.Sprintf("%s is set to %s and in effect now, but it was not saved, so a restart loads the old value: %v", e.Key, e.Value, e.Err)
+	}
+	return fmt.Sprintf("failed to save config.yaml; %s is unchanged: %v", e.Key, e.Err)
+}
+
+func (e *SettingSaveError) Unwrap() error { return e.Err }
 
 // PolicyDocument is one policy document's exact bytes in a check or apply
 // request. Key is "default" for the node default, or the selector of the key

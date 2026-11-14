@@ -1310,6 +1310,7 @@ Events:
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
+- `SETTING_SAVE_ERROR`
 - `CLIENT_ENROLLMENT_REQUESTED`
 - `CLIENT_ENROLLED`
 - `CLIENT_ENROLLMENT_REJECTED`
@@ -1470,6 +1471,17 @@ Store-management audit semantics:
   promotes, or removes a cosigner-reference record; `outcome` is the action
   (or `failed`) and `witness_key_id` identifies the authority, with no
   public-key material in the entry
+- admin setting changes (`update_admin_setting`) are not audited in general.
+  The exception is a save that fails: `SETTING_SAVE_ERROR`, with the admin
+  session's attribution and a `reason` of `setting=<key> value=<value>
+  in_effect=<true|false>: <cause>`. `in_effect=true` (`outcome:"applied"`) is
+  a restrictive value left in effect but not saved (`applied_not_saved`),
+  which a restart reverts and nothing else durable records;
+  `in_effect=false` (`outcome:"failed"`) is a change that took no effect. A
+  request refused before any save (a bad value, a headless-mode refusal, an
+  unknown setting) writes none, and neither does a save whose directory
+  flush failed after the rename, which is a success (see
+  [Writable Settings](ARCH_ADMIN.md#writable-settings))
 - generation maintenance is audited in intent/result pairs: each `*_INTENT`
   entry is written durably before the store changes, and a durable-write
   failure refuses the operation. `GENERATION_QUARANTINE_INTENT` and
@@ -1777,7 +1789,7 @@ Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
 
 1. Set the lock runtime state to `Locked`; if it was already locked, return without side effects.
 2. Run the identity lock callback (`performLockCleanup`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
-3. Drain background key users: cancel their contexts and wait for them to finish, before `passphraseLock` is taken.
+3. Drain key users: cancel their contexts and wait for them to finish, before `passphraseLock` is taken.
 4. Acquire `passphraseLock.WLock`:
    - `keySession.Destroy()` — blocks until in-flight `GetKey` calls release the
      session; request-wide draining is owned by the request server lifecycle.
@@ -1830,6 +1842,10 @@ All service stops share one 5 s shutdown deadline.
    stop, and close the audit log. Everything up to here is bounded, so the
    record is written before the step that is not.
 7. Call `Destroy()` on the product runtime:
+   - stop the key watcher, refuse new key uses and cancel the contexts of
+     the key uses already registered itself, as `EndKeyUses` does (all
+     idempotent), so `Destroy` is safe on its own; it does not wait for
+     registered key users, which is `EndKeyUses`'s bounded wait.
    - take the passphrase lock, so a lock cleanup racing shutdown cannot
      interleave.
    - `keySession.Destroy()` — drain in-flight key retrieval operations.

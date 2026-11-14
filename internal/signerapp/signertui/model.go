@@ -380,6 +380,19 @@ type adminPanelState struct {
 	selectedRow int
 	editingRow  int // -1 = none
 	editValue   string
+	// settingWarning is the status-line warning, shown only on the admin
+	// panel, for the last update result that left its setting in effect
+	// without a completed save.
+	settingWarning settingResultWarning
+}
+
+// settingResultWarning is the status-line text for the signer's reason an
+// update result coded applied_not_saved gave for key: the reason itself, or,
+// for a failed retry of a setting already unsaved, how to return to the saved
+// value ahead of it. A later successful result for key, a new session, and a
+// settings re-read in which key is no longer unsaved clear it.
+type settingResultWarning struct {
+	key, text string
 }
 
 // clientsState is the enrolled-clients screen and its revocation dialog.
@@ -833,6 +846,9 @@ type AdminSettings struct {
 	EndpointAdvertiseURL string
 	EndpointDisplayURL   string
 	Theme                string
+	// UnsavedSettings are the settings the signer holds in effect but not
+	// saved; the panel's warning is drawn from them.
+	UnsavedSettings []string
 }
 
 // AdminSettingsMsg is sent when admin settings are received

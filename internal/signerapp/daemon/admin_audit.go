@@ -64,6 +64,12 @@ func (s signerAdminServices) LogIdentityLockedContext(ctx adminserver.SessionCon
 	}
 }
 
+func (s signerAdminServices) LogSettingSaveErrorContext(ctx adminserver.SessionContext, key, value string, inEffect bool, cause string) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogSettingSaveErrorContext(ctx, key, value, inEffect, cause)
+	}
+}
+
 func (s signerAdminServices) LogGenerationQuarantinePruneIntentDurableContext(
 	ctx adminserver.SessionContext,
 	operationID string,

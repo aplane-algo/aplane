@@ -11,18 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// settingNotDurableWarningPrefix starts the warning for a setting change that
-// is in effect but whose save the signer could not confirm durable
-// (applied_not_durable). It names the setting, not the value, which the
-// panel shows as stored. It is shown only on the admin panel and stays until
-// the next key there.
-const settingNotDurableWarningPrefix = "Setting in effect, durability not confirmed: "
-
 // handleAdminPanelKeys handles keyboard input on the admin panel screen.
 func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if strings.HasPrefix(m.lastWarning, settingNotDurableWarningPrefix) {
-		m.clearWarning()
-	}
 	rows := m.adminRows()
 
 	// Handle editing mode
@@ -106,10 +96,16 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if row.isBool {
-				// Toggle boolean
+				// Toggle boolean, except that a setting in effect but not
+				// saved re-sends the value in effect, which the signer takes
+				// as a retry of its save. Turning it back is a toggle once
+				// it is saved.
 				newValue := "true"
 				if row.value == "true" {
 					newValue = "false"
+				}
+				if m.settingUnsaved(row.key) {
+					newValue = row.value
 				}
 				return m, m.sendUpdateAdminSettingCmd(row.key, newValue)
 			}
