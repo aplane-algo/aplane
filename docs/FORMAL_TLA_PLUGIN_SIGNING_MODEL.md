@@ -113,9 +113,8 @@ The restored spec passes.
 - **Plan preservation is one boolean per slot.** `planPreserved` stands for
   the whole of `validatePluginPlan` for that slot. On a managed slot it
   allows a fee raise the mutation report lists; on a plugin-owned slot it
-  allows no fee change. The spec's comments on PS4 and on the slot domain
-  still word the earlier rule, a reported fee raise on any slot. The checked
-  logic is the same under either rule, since the boolean is per slot.
+  allows no fee change, as the spec's comments on PS4 and on the slot domain
+  say.
 - **The key list, and the check and submission as two steps, are not
   modeled.** The model has no state for the signer's key list or whether
   apshell could fetch it, and no step between the check and submission.
