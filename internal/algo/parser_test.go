@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -567,5 +568,48 @@ func TestParseTransactionsJSONRefusesTextADecoderWouldReplace(t *testing.T) {
 				t.Fatalf("asset name = %q, want %q", got, tc.name)
 			}
 		})
+	}
+}
+
+func TestParseTransactionsJSONRefusesBase64NotSpelledAsEncoded(t *testing.T) {
+	payment := parserTestPayment(t, 1)
+	payment.Note = []byte("AB") // "QUI=" as the encoding spells it
+	canonicalReceiver := base64.StdEncoding.EncodeToString(payment.Receiver[:])
+	// The character before "=" carries two bits of padding; setting one
+	// still decodes to the same bytes.
+	trailingBit := canonicalReceiver[:42] + "B="
+	for _, spelling := range []string{`QUJ=`, `QU\nI=`, `QUI=\r\n`, trailingBit} {
+		raw, _ := strconv.Unquote(`"` + spelling + `"`)
+		want := payment.Note
+		if spelling == trailingBit {
+			want = payment.Receiver[:]
+		}
+		if b, err := base64.StdEncoding.DecodeString(raw); err != nil || !bytes.Equal(b, want) {
+			t.Fatalf("fixture: %q decodes to %x, %v", spelling, b, err)
+		}
+	}
+
+	cases := map[string]struct{ field, raw string }{
+		"non-zero trailing bits":     {"note", `"QUJ="`},
+		"line break inside":          {"note", `"QU\nI="`},
+		"line break at the end":      {"note", `"QUI=\r\n"`},
+		"address with a set pad bit": {"rcv", `"` + trailingBit + `"`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			data := parserJSONWith(t, payment, map[string]string{tc.field: tc.raw})
+			txns, err := ParseTransactions([]byte(data))
+			if err == nil {
+				t.Fatalf("parsed %d transaction(s), want refused: %s", len(txns), data)
+			}
+			if want := fmt.Sprintf("field %q is ", tc.field); !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not contain %q", err, want)
+			}
+		})
+	}
+
+	canonical := parserJSONWith(t, payment, map[string]string{"note": `"QUI="`, "rcv": `"` + canonicalReceiver + `"`})
+	if txns, err := ParseTransactions([]byte(canonical)); err != nil || !bytes.Equal(msgpack.Encode(txns[0]), msgpack.Encode(payment)) {
+		t.Fatalf("canonical base64: %v", err)
 	}
 }

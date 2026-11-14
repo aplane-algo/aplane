@@ -120,9 +120,9 @@ func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
 // and the string "5" as integers and rounds a fraction past 2^53, so a file
 // could show one transaction and carry another. A difference is refused.
 //
-// Two things may differ from the encoding: an address may be written in
-// base32, as write mode writes it, and base64 is compared by the bytes it
-// decodes to. A field the encoding leaves out, at its zero value, must be
+// Only one thing may differ from the encoding: an address may be written in
+// base32, as write mode writes it. Base64 must be spelled as the encoding
+// spells it, and a field the encoding leaves out, at its zero value, must be
 // left out of the file too.
 func checkJSONStatesDecoded(jsonData []byte, txns []types.Transaction) error {
 	given, err := decodeJSONExactly(jsonData)
@@ -237,27 +237,20 @@ func sameJSONValue(path string, given, decoded interface{}) error {
 	}
 }
 
-// sameBytes compares a string from the file with the base64 the transaction
-// encodes, by the bytes each stands for. The file may give an address in
-// base32.
+// sameBytes is called for a string from the file that differs from the one
+// the transaction encodes. Base64 has to be spelled as the encoding spells
+// it, since a decoder also takes non-zero trailing bits and line breaks; the
+// only other spelling is an address in base32.
 func sameBytes(path, given, decoded string) error {
-	want, err := base64.StdEncoding.DecodeString(decoded)
-	if err != nil {
-		return fmt.Errorf("field %q is %q but decodes to %q", path, given, decoded)
+	if want, err := base64.StdEncoding.DecodeString(decoded); err == nil {
+		if address, err := types.DecodeAddress(given); err == nil && bytes.Equal(address[:], want) {
+			return nil
+		}
+		if have, err := base64.StdEncoding.Strict().DecodeString(given); err == nil && len(have) != len(want) {
+			return fmt.Errorf("field %q holds %d bytes but the field takes %d", path, len(have), len(want))
+		}
 	}
-	var have []byte
-	if address, err := types.DecodeAddress(given); err == nil {
-		have = address[:]
-	} else if have, err = base64.StdEncoding.DecodeString(given); err != nil {
-		return fmt.Errorf("field %q is %q but decodes to %q", path, given, decoded)
-	}
-	if len(have) != len(want) {
-		return fmt.Errorf("field %q holds %d bytes but the field takes %d", path, len(have), len(want))
-	}
-	if !bytes.Equal(have, want) {
-		return fmt.Errorf("field %q is %q but decodes to %q", path, given, decoded)
-	}
-	return nil
+	return fmt.Errorf("field %q is %q but decodes to %q", path, given, decoded)
 }
 
 func joinJSONPath(path, key string) string {

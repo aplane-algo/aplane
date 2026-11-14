@@ -26,8 +26,10 @@ before it was renamed `enroll`.
   and read `1e3`, `"5"` and a list of byte numbers without a word. Each
   transaction in a JSON object or array is now compared, field by field,
   with the SDK's JSON encoding of the decoded transaction, and a difference
-  is refused, naming the transaction and the field. Addresses may still be
-  base32, so a `txnjson/` file reads back. A field at its zero value must be
+  is refused, naming the transaction and the field. Base64 must be spelled
+  as the SDK spells it, so `"QR=="` (stray bits) and a value with a line
+  break in it are refused. Addresses may still be base32, so a `txnjson/`
+  file reads back. A field at its zero value must be
   left out, as the encoding leaves it out: the decoder read `"amt": ""` as
   no amount and `"note": {}` as no note, and any explicit `0`, `false`,
   `""`, `[]` or `{}` field is now refused. An empty entry inside a list is

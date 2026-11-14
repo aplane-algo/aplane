@@ -327,8 +327,9 @@ that transaction, and any difference is refused, naming the transaction and
 the field: an unknown key, a fixed-size byte field such as `votekey` or
 `am` of the wrong length, a number that is not plain digits (`1e3`, `2.0`),
 a number written as a string, or bytes written as a list of numbers.
-Addresses may be base32 or base64, so a file from [`write`](#write) mode
-reads back as the same transaction. A field at its zero value (`0`,
+Base64 must be spelled as the SDK spells it: padded, with no line breaks and
+no stray bits after the data. Addresses may be base32 or base64, so a file
+from [`write`](#write) mode reads back as the same transaction. A field at its zero value (`0`,
 `false`, `""`, an empty list or object, a zero address or hash) must be left
 out, as the encoding leaves it out: `"amt": ""` and `"fee": 0` are refused.
 Inside a list an entry keeps its place, so an empty entry is written as the
