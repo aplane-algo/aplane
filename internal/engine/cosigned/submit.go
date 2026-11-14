@@ -420,35 +420,16 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 
 // validatePlannedGroup permits only the planner's contracted mutations to
 // original positions: reported fee pooling and group-ID assignment. Appended
-// positions must be canonical budget dummies.
+// positions must be canonical budget dummies. The check is every /plan
+// answer's (clientsign.ValidateGroupPlan: the report's counts, then the
+// ordinary /sign path's fee and field reconciliation, then the group ID and
+// the dummies), and a group ID that changed with nothing to make it change
+// is refused after it.
 func validatePlannedGroup(original, planned []types.Transaction, mutations *signerapi.MutationReport) error {
-	if len(planned) < len(original) {
-		return fmt.Errorf("signer returned %d group positions, want at least %d", len(planned), len(original))
-	}
-	appended := len(planned) - len(original)
-	if mutations == nil {
-		if appended != 0 {
-			return fmt.Errorf("signer appended %d group positions without a mutation report", appended)
-		}
-	} else {
-		if mutations.OriginalCount != len(original) {
-			return fmt.Errorf("mutation original_count %d does not match request count %d", mutations.OriginalCount, len(original))
-		}
-		if mutations.FinalCount != len(planned) {
-			return fmt.Errorf("mutation final_count %d does not match returned count %d", mutations.FinalCount, len(planned))
-		}
-		if mutations.DummiesAdded != appended {
-			return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
-		}
-	}
-
-	// The fee and field reconciliation is the ordinary /sign path's: reported
-	// fees may only rise, the rises must sum to total_fees_delta without
-	// overflow, and nothing else may change but the group ID.
-	if err := clientsign.ValidateOriginalPositions(original, planned, mutations); err != nil {
+	if err := clientsign.ValidateGroupPlan(original, planned, mutations); err != nil {
 		return err
 	}
-	if mutations != nil && mutations.GroupIDChanged && appended == 0 && len(mutations.FeesModified) == 0 {
+	if mutations != nil && mutations.GroupIDChanged && len(planned) == len(original) && len(mutations.FeesModified) == 0 {
 		var zero types.Digest
 		requiresAssignment := false
 		for i := range original {
@@ -458,10 +439,7 @@ func validatePlannedGroup(original, planned []types.Transaction, mutations *sign
 			return fmt.Errorf("signer changed an existing group ID without a fee or membership mutation")
 		}
 	}
-	if len(original) == 0 {
-		return nil
-	}
-	return validateCanonicalDummies(original[0], planned, len(original))
+	return nil
 }
 
 // validateCanonicalDummies requires the positions after originalCount to be
