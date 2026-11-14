@@ -144,6 +144,18 @@ func TestPluginReviewNamesTheNetworkAndKnowsHeldKeys(t *testing.T) {
 	}
 }
 
+// A payment of ALGO to the zero address, as a builder that leaves the
+// receiver unset makes it, is marked as the signer's prompt warns of it.
+func TestPluginReviewMarksAPaymentToTheZeroAddress(t *testing.T) {
+	burn := strings.Join(pluginReviewLinesOf(types.Transaction{
+		Type: types.PaymentTx, Header: types.Header{Sender: reviewTestAddress(1)},
+		PaymentTxnFields: types.PaymentTxnFields{Amount: 5},
+	}), "\n")
+	if !strings.Contains(burn, "!! Receiver = "+types.Address{}.String()) || !strings.Contains(burn, "the ALGO is lost") {
+		t.Errorf("a payment to the zero address is not marked:\n%s", burn)
+	}
+}
+
 // The irreversible key registration and the half-set one are marked.
 func TestPluginReviewMarksIrreversibleAndIncompleteKeyRegistrations(t *testing.T) {
 	sender := reviewTestAddress(1)

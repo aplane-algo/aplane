@@ -98,8 +98,9 @@ shipped default for the node role. On a signer node that is:
 A key with no file therefore rejects a rekey to an address this node does not
 hold, forces operator review of anything warning analysis flags (a rekey, an
 ALGO or ASA close-out, a clawback, an application delete, clear-state, or
-update, an asset reconfigure, destroy, freeze, or unfreeze, or a fee above 1
-ALGO), and leaves everything else to the operator default. Every transaction
+update, an asset reconfigure, destroy, freeze, or unfreeze, a payment of ALGO
+to the zero address, or a fee above 1 ALGO), and leaves everything else to the
+operator default. Every transaction
 type is allowed through, there is no fee cap, and a transfer that matches no
 route is neither rejected nor reviewed by routing: with `user_auto_approve:
 false` the operator is asked, with `user_auto_approve: true` it is signed.
@@ -1040,7 +1041,8 @@ Edit the scalar settings at the top level, next to `key`:
 - `always_review_warnings` requires an operator prompt when User Auto-Approve
   is off and warning analysis finds a rekey, an ALGO or
   ASA close-out, a clawback, an application delete, clear-state, or update, an
-  asset reconfigure, destroy, freeze, or unfreeze, or a fee above 1 ALGO. A
+  asset reconfigure, destroy, freeze, or unfreeze, a payment of ALGO to the
+  zero address, or a fee above 1 ALGO. A
   rotating account's own rotation, the rekey to the next stage the signer
   derives itself, is not a finding.
 - `max_fee_microalgos` rejects a transaction whose fee, as finally signed,

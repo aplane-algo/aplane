@@ -7,6 +7,18 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A payment to the zero address is a warning
+
+- **Warning analysis flags ALGO paid to the zero address.** A builder that
+  leaves a payment's receiver unset sends the amount to the zero address,
+  where no one can spend it. The approval prompt showed that address like
+  any other and warned of nothing. A payment of a non-zero amount to it is
+  now a warning (`Receiver`), in the signer's approval prompt and in
+  apshell's review of a plugin group. Like every warning, it asks for review
+  under `always_review_warnings` and on a passthrough or foreign slot. It
+  refuses nothing. A zero payment to the zero address, an asset transfer to
+  it and an unset close-to are not flagged.
+
 ## JS app calls refuse reference lists that are not arrays
 
 - **`appCall()` and `appCallRaw()` refuse `apps`, `assets` or `boxes` that is

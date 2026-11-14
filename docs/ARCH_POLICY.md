@@ -406,6 +406,10 @@ Warning analysis covers the fields below. The rules live in `internal/txnreview/
 - a key registration that marks the account nonparticipating (the signer
   refuses to sign one; the rule exists for a review that has no signer behind
   it), and one that carries only one of the vote and selection keys,
+- a payment of a non-zero ALGO amount to the zero address, which no one can
+  spend from (a builder that leaves the receiver unset makes one); a zero
+  payment to it, an asset transfer to it and an unset close-to are not
+  findings,
 - unusually high fees above 1 ALGO.
 
 `always_review_warnings` governs only the signer's own legs. A warning on a
@@ -1159,7 +1163,8 @@ signer key behaves like most signers: it signs under `user_auto_approve: true`
 and prompts under `false`. A foreign rekey is always rejected
 (`rekeys: reject_foreign_rekey`). Review rules
 for rekey, close-out, clawback, app update or delete, asset reconfigure, asset
-freeze, or high fee are satisfied automatically when User Auto-Approve is on.
+freeze, a payment to the zero address, or high fee are satisfied automatically
+when User Auto-Approve is on.
 
 ```json
 {

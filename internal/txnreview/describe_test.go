@@ -645,6 +645,21 @@ func TestFindingsCoverEveryHandoverAndUseOfAuthority(t *testing.T) {
 			Type: types.PaymentTx, Header: types.Header{Sender: sender},
 			PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, CloseRemainderTo: other},
 		}, []string{"CloseRemainderTo"}},
+		{"payment to the zero address", types.Transaction{
+			Type: types.PaymentTx, Header: types.Header{Sender: sender},
+			PaymentTxnFields: types.PaymentTxnFields{Amount: 5},
+		}, []string{"Receiver"}},
+		{"zero payment to the zero address", types.Transaction{
+			Type: types.PaymentTx, Header: types.Header{Sender: sender},
+		}, nil},
+		{"payment to the zero address that closes", types.Transaction{
+			Type: types.PaymentTx, Header: types.Header{Sender: sender},
+			PaymentTxnFields: types.PaymentTxnFields{Amount: 5, CloseRemainderTo: other},
+		}, []string{"CloseRemainderTo", "Receiver"}},
+		{"asset transfer to the zero address", types.Transaction{
+			Type: types.AssetTransferTx, Header: types.Header{Sender: sender},
+			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 7, AssetAmount: 5},
+		}, nil},
 		{"asset close and clawback", types.Transaction{
 			Type: types.AssetTransferTx, Header: types.Header{Sender: sender},
 			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 7, AssetCloseTo: other, AssetSender: other},
@@ -713,6 +728,10 @@ func TestEveryFindingIsAlsoShownInTheDescription(t *testing.T) {
 		"rekey and close": {
 			Type: types.PaymentTx, Header: types.Header{Sender: sender, RekeyTo: other},
 			PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, CloseRemainderTo: other},
+		},
+		"payment to the zero address": {
+			Type: types.PaymentTx, Header: types.Header{Sender: sender},
+			PaymentTxnFields: types.PaymentTxnFields{Amount: 5},
 		},
 		"asset close and clawback": {
 			Type: types.AssetTransferTx, Header: types.Header{Sender: sender},

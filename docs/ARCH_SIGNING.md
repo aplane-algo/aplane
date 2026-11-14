@@ -1060,7 +1060,8 @@ is built, then uses:
 - explicit auto-approval policy for narrow low-risk requests,
 - warning analysis for operator-visible risk surfacing: rekey, close-out,
   asset close, clawback, application delete, clear-state, or update, asset
-  reconfigure or destroy, asset freeze or unfreeze, and unusually high fees;
+  reconfigure or destroy, asset freeze or unfreeze, a payment of ALGO to the
+  zero address, and unusually high fees;
   under `always_review_warnings` these force review on the signer's own legs,
   and a warning on a passthrough or foreign leg forces review regardless; a
   rotating account's rekey to the next stage the signer derived itself is a
