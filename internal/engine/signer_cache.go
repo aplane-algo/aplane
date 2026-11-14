@@ -240,7 +240,9 @@ func (e *Core) signerCacheKeysSnapshot() map[string]string {
 	return keys
 }
 
-func (e *Core) signerCacheAddresses() []string {
+// SignerCacheAddresses returns, in no set order, the addresses the signer
+// cache lists: the signer's aplane keys as apshell last read them.
+func (e *Core) SignerCacheAddresses() []string {
 	keys := e.signerCacheKeysSnapshot()
 	addresses := make([]string, 0, len(keys))
 	for address := range keys {

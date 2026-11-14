@@ -787,7 +787,12 @@ checks the group is internally consistent and submits it without modification â€
 never involved. The plugin could have signed and broadcast these exact bytes itself; what
 APlane adds is governance, not signing power: a **mandatory client-side review** is the
 human-acceptance gate, it **fails closed** when run non-interactively (it will not
-broadcast a group the operator never saw). A group that rekeys an account to a held
+broadcast a group the operator never saw). For each slot the review says who the
+signed envelope names as authorizing it and with what kind of signature (a single
+signature by the sender or by a named authorizer, a multisig, a LogicSig account or
+a delegated LogicSig), as the signer's prompt names a passthrough slot's authorizer,
+and the rounds the slot is valid in. Nothing here checks the signature; the network
+does. A group that rekeys an account to a held
 aplane key that is not a valid rekey target is refused before the review, and a
 group with any rekey needs a signer connection, so that apshell can check it against
 the signer's key list (see [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)).
@@ -860,11 +865,15 @@ The `groupMode` field is the top-level selector for the flow; `presign-plan` req
 
 Supporting machinery: a **per-plugin state directory** (`APSHELL_PLUGIN_STATE_DIR`) for
 persisting keys, cursors, or watermarks across invocations, and a role-aware review
-renderer that shows, per slot, which party signs it and which fees APlane-managed
-accounts pay. When apsigner plans the group after the review, in the default flow
-and in `presign-plan`, the review names those fees as the fees before planning,
-since planning may raise them; a sum too large for 64 bits is shown as such,
-never wrapped.
+renderer that shows, per slot, which party signs it, its valid rounds and who
+authorizes a slot handed over signed, and the fees APlane-managed accounts pay.
+When apsigner plans the group after the review, in the default flow and in
+`presign-plan`, the review names those fees as the fees before planning, since
+planning may raise them; a sum too large for 64 bits is shown as such, never
+wrapped. A slot the plugin signs from an account the signer holds an aplane key
+for, or that names such an account as its authorizer, is marked `THIS SIGNER
+HOLDS THE APLANE KEY FOR THE SENDER` (or `FOR THE NAMED AUTHORIZER`): the plugin,
+not apsigner, signs it.
 
 **Trust boundary.** In `presign-plan`, apsigner still owns its slots â€” it applies its
 full policy and approval to the managed transactions, exactly as for a direct `/sign`.
@@ -1423,6 +1432,13 @@ or
   client signs for only through its auth address, or an address the signer
   holds no aplane key for, is not held: a rekey to it warns of losing control
   and is not refused
+- A slot the plugin signs is marked when the signer holds the aplane key for
+  its sender, or for the authorizer its signed envelope names. The held
+  addresses are the key list fetched for the check when the group rekeys, and
+  otherwise apshell's signer cache, the list the plugin's context was built
+  from, which can be out of date; the cache is read for this mark only, never
+  for the rekey rule, and an address it lacks is not called foreign. The mark
+  is advice and gates nothing
 - The review does not know an account's rekey-to list, which the signer's
   prompt reads. A rekey to an address on that list that the signer does not
   hold reads in the review as losing control, where the signer's prompt says

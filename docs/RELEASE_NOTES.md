@@ -7,6 +7,23 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Plugin reviews say who authorizes each slot
+
+- **A pregrouped-signed review names each slot's authorizer.** That review is
+  the only gate a plugin-signed group gets, but it was built from the bare
+  transactions, so a slot spending from your own account through a delegated
+  LogicSig read like any other. Each slot now shows an `Authorized by:` line,
+  the one the signer's prompt gives a passthrough slot: a single signature by
+  the sender or by a named authorizer, a multisig, a LogicSig account or a
+  delegated LogicSig. Nothing checks the signature here; the network does.
+- **Every plugin review shows each slot's valid rounds.**
+- **A slot the plugin signs from an account the signer holds is marked.** It
+  reads `THIS SIGNER HOLDS THE APLANE KEY FOR THE SENDER` (or `FOR THE NAMED
+  AUTHORIZER`), in pregrouped-signed and presign-plan reviews. The held
+  addresses are the key list the check fetched when the group rekeys, and
+  otherwise apshell's signer cache, which can be out of date. The mark is
+  advice. It refuses nothing and fetches nothing.
+
 ## Plugin reviews name draft fees as before planning
 
 - **The fee line of a plugin review says when the fees are not final.** In

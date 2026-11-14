@@ -67,7 +67,7 @@ func (e *Engine) BuildPluginContext() (jsonrpc.Context, error) {
 	if err := e.EnsureSignerCache(context.Background()); err != nil {
 		return jsonrpc.Context{}, err
 	}
-	accounts := e.signerCacheAddresses()
+	accounts := e.SignerCacheAddresses()
 
 	return jsonrpc.Context{
 		Network:    e.Network,
