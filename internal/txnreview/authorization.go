@@ -121,6 +121,11 @@ func AuthorizationAddresses(stxn types.SignedTxn) []types.Address {
 	add(stxn.AuthAddr)
 	for _, msig := range []types.MultisigSig{stxn.Msig, stxn.Lsig.Msig, stxn.Lsig.LMsig} {
 		for _, subsig := range msig.Subsigs {
+			// A key of another length is not an address: padding or cutting
+			// it would name one the envelope does not.
+			if len(subsig.Key) != len(types.Address{}) {
+				continue
+			}
 			var address types.Address
 			copy(address[:], subsig.Key)
 			add(address)

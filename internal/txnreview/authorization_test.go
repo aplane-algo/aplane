@@ -119,6 +119,9 @@ func TestAuthorizationAddresses(t *testing.T) {
 		{"LogicSig account", types.SignedTxn{Lsig: types.LogicSig{Logic: program}}, nil},
 		{"LogicSig delegated by a multisig", types.SignedTxn{Lsig: types.LogicSig{Logic: program, Msig: msig(b, c)}}, []types.Address{b.Address, c.Address}},
 		{"LogicSig delegated by an lmsig", types.SignedTxn{Lsig: types.LogicSig{Logic: program, LMsig: msig(c)}}, []types.Address{c.Address}},
+		{"multisig keys that are not 32 bytes name no address", types.SignedTxn{Msig: types.MultisigSig{Version: 1, Threshold: 1, Subsigs: []types.MultisigSubsig{
+			{Key: a.PublicKey[:31]}, {Key: append(append([]byte{}, a.PublicKey...), 7)}, {Key: b.PublicKey},
+		}}}, []types.Address{b.Address}},
 	} {
 		tc.stxn.Txn = types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: sender}}
 		if got := AuthorizationAddresses(tc.stxn); !slices.Equal(got, tc.want) {
