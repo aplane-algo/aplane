@@ -41,7 +41,10 @@ type Options struct {
 	AlgodToken    string
 	KMDURL        string
 	// IndexerURL is the LocalNet Indexer the signer may read a rotating
-	// account's last rekey from. It shares the LocalNet token.
+	// account's last rekey from, when given by flag or
+	// APLANE_LOCALNET_INDEXER_URL. It shares the LocalNet token. Empty means
+	// none was given: the signer gets DefaultIndexerURL only if its config
+	// has no localnet indexer entry.
 	IndexerURL string
 }
 
@@ -84,7 +87,6 @@ func NormalizeOptions(opts Options) Options {
 	opts.IndexerURL = NormalizeEndpointURL(firstNonEmpty(
 		opts.IndexerURL,
 		os.Getenv("APLANE_LOCALNET_INDEXER_URL"),
-		DefaultIndexerURL,
 	))
 	opts.AlgodToken = firstNonEmpty(
 		opts.AlgodToken,
@@ -135,6 +137,17 @@ func CheckReachable(ctx context.Context, opts Options) (LocalNetInfo, error) {
 	}, nil
 }
 
+// ValidateOptions refuses options the signer could not start with. An
+// Indexer URL must pass the signer's own rule for networks.<net>.indexer.
+func ValidateOptions(opts Options) error {
+	if opts.IndexerURL != "" {
+		if err := apconfig.ValidateIndexerServer(opts.IndexerURL); err != nil {
+			return fmt.Errorf("--indexer-url (or APLANE_LOCALNET_INDEXER_URL) is %w, such as %s", err, DefaultIndexerURL)
+		}
+	}
+	return nil
+}
+
 // Apply checks LocalNet reachability and updates the explicitly supplied target
 // data roots. A non-empty SignerDataDir updates apsigner config.yaml; a
 // non-empty ClientDataDir updates apclient config/plugin/env state.
@@ -142,6 +155,9 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 	opts = NormalizeOptions(opts)
 	if opts.SignerDataDir == "" && opts.ClientDataDir == "" {
 		return ApplyResult{}, fmt.Errorf("at least one of signer data directory or client data directory is required")
+	}
+	if err := ValidateOptions(opts); err != nil {
+		return ApplyResult{}, err
 	}
 
 	info, err := CheckReachable(ctx, opts)
@@ -195,9 +211,11 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 }
 
 // EnsureSignerLocalnetConfig writes networks.localnet algod, indexer and
-// genesis_hash settings to apsigner config.yaml. The Indexer uses the
-// LocalNet token, as every AlgoKit LocalNet service does; an empty
-// indexerURL leaves the indexer entry as it is.
+// genesis_hash settings to apsigner config.yaml. A given indexerURL is
+// written. Without one, DefaultIndexerURL is written only when the config
+// has no localnet indexer entry; an entry the operator set, or emptied to
+// turn the lookup off, is left alone. The Indexer uses the LocalNet token,
+// as every AlgoKit LocalNet service does.
 func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken, indexerURL string) (bool, string, error) {
 	if dataDir == "" {
 		return false, "", fmt.Errorf("signer data directory is required")
@@ -210,6 +228,9 @@ func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken, i
 		return false, "", fmt.Errorf("invalid localnet genesis hash: %w", err)
 	}
 	info.GenesisHash = canonicalGenesisHash
+	if err := ValidateOptions(Options{IndexerURL: indexerURL}); err != nil {
+		return false, "", err
+	}
 
 	path := filepath.Join(dataDir, "config.yaml")
 	doc, err := loadYAMLDocument(path)
@@ -241,6 +262,9 @@ func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken, i
 
 	changed = setScalarValue(algodCfg, "server", info.AlgodURL, 0) || changed
 	changed = setScalarValue(algodCfg, "token", algodToken, yaml.DoubleQuotedStyle) || changed
+	if indexerURL == "" && mappingValue(localnet, "indexer") == nil {
+		indexerURL = DefaultIndexerURL
+	}
 	if indexerURL != "" {
 		indexerCfg, didChange, err := ensureMappingValue(localnet, "indexer")
 		if err != nil {

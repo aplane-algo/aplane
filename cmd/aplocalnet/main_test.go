@@ -58,3 +58,11 @@ func TestApplyTargetSpecifiedUsesFlagsOrEnv(t *testing.T) {
 		t.Fatal("APSIGNER_DATA should specify a signer target")
 	}
 }
+
+func TestModelViewShowsTheDefaultIndexerWhenNoneIsGiven(t *testing.T) {
+	m := newModel(aplocalnet.Options{AlgodURL: "http://localhost:4001"})
+	m.busy = false
+	if view := m.View(); !strings.Contains(view, aplocalnet.DefaultIndexerURL+" unless the signer config has one") {
+		t.Fatalf("view missing the Indexer default:\n%s", view)
+	}
+}

@@ -328,10 +328,16 @@ Endpoint and token resolution:
 - algod token: `--algod-token`, then `APLANE_LOCALNET_TOKEN`, then the
   well-known AlgoKit LocalNet default token
   `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
-- Indexer URL: `--indexer-url`, then `APLANE_LOCALNET_INDEXER_URL`, then
-  `http://localhost:8980`; its token is the algod token. It is written to the
-  signer only and is not checked for reachability: an unreachable Indexer
-  leaves rotating stage searches as they are without one
+- Indexer URL: `--indexer-url`, then `APLANE_LOCALNET_INDEXER_URL`; its token
+  is the algod token. A given URL must pass the signer's own rule (an http or
+  https URL with a host, `config.ValidateIndexerServer`), or the tool refuses
+  it before writing anything, and it is then written over any existing
+  `networks.localnet.indexer`. With neither, `http://localhost:8980` is
+  written only when the signer config has no `networks.localnet.indexer`
+  entry; an entry the operator set, or emptied (`server: ""`) to keep the
+  lookup off, is left alone. It is written to the signer only and is not
+  checked for reachability: an unreachable Indexer leaves rotating stage
+  searches as they are without one
 - KMD URL: `--kmd-url`, then `APLANE_LOCALNET_KMD_URL`; if omitted, no
   persistent KMD override is written and the bundled LocalNet plugin uses its
   own default of `http://localhost:4002`

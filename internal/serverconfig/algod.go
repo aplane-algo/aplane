@@ -5,7 +5,6 @@ package serverconfig
 
 import (
 	"fmt"
-	"net/url"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
@@ -52,9 +51,8 @@ func mergeServerNetworkIndexerConfig(networks ServerNetworkConfigs) (map[string]
 		if cfg == nil || cfg.Indexer == nil || cfg.Indexer.Server == "" {
 			continue
 		}
-		u, err := url.Parse(cfg.Indexer.Server)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return nil, fmt.Errorf("networks.%s.indexer.server is not an http or https URL with a host", network)
+		if err := apconfig.ValidateIndexerServer(cfg.Indexer.Server); err != nil {
+			return nil, fmt.Errorf("networks.%s.indexer.server is %w", network, err)
 		}
 		if out == nil {
 			out = make(map[string]*apconfig.IndexerNetworkConfig)

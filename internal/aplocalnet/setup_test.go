@@ -398,34 +398,109 @@ networks_allowed:
 	}
 }
 
-func TestNormalizeOptionsDefaultsTheIndexer(t *testing.T) {
+func TestNormalizeOptionsLeavesTheIndexerUnsetWithoutFlagOrEnv(t *testing.T) {
 	t.Setenv("APLANE_LOCALNET_INDEXER_URL", "")
-	if opts := NormalizeOptions(Options{}); opts.IndexerURL != DefaultIndexerURL {
-		t.Fatalf("IndexerURL = %q, want %q", opts.IndexerURL, DefaultIndexerURL)
+	if opts := NormalizeOptions(Options{}); opts.IndexerURL != "" {
+		t.Fatalf("IndexerURL = %q, want none given", opts.IndexerURL)
 	}
 }
 
-// An empty Indexer URL leaves the signer's indexer entry alone.
-func TestEnsureSignerLocalnetConfigWithoutAnIndexerLeavesItAlone(t *testing.T) {
+const testLocalnetGenesis = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+
+// writeSignerConfig writes text as the signer's config.yaml and returns the
+// directory.
+func writeSignerConfig(t *testing.T, text string) string {
+	t.Helper()
 	dir := t.TempDir()
-	initial := `networks:
+	if text != "" {
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func localnetIndexer(t *testing.T, dir string) *serverconfig.ServerNetworkConfig {
+	t.Helper()
+	cfg, err := serverconfig.LoadServerConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadServerConfig: %v", err)
+	}
+	return cfg.Networks[NetworkID]
+}
+
+func TestEnsureSignerLocalnetConfigIndexerRules(t *testing.T) {
+	info := LocalNetInfo{AlgodURL: "http://localhost:4001", GenesisHash: testLocalnetGenesis}
+	operators := `networks:
   localnet:
     indexer:
       server: http://indexer.example:8980
       token: "kept"
 `
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(initial), 0o600); err != nil {
-		t.Fatal(err)
+	emptied := `networks:
+  localnet:
+    indexer:
+      server: ""
+`
+	for _, tc := range []struct {
+		name, config, given string
+		wantServer          string
+		wantToken           string
+	}{
+		{"none given, no entry: the default", "", "", DefaultIndexerURL, DefaultAlgodToken},
+		{"none given, the operator's entry: left alone", operators, "", "http://indexer.example:8980", "kept"},
+		{"none given, an emptied entry: left off", emptied, "", "", ""},
+		{"given: written over the operator's entry", operators, "http://localhost:8990", "http://localhost:8990", DefaultAlgodToken},
+		{"given, no entry: written", "", "http://localhost:8990", "http://localhost:8990", DefaultAlgodToken},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := writeSignerConfig(t, tc.config)
+			if _, _, err := EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken, tc.given); err != nil {
+				t.Fatal(err)
+			}
+			localnet := localnetIndexer(t, dir)
+			if localnet == nil || localnet.Indexer == nil {
+				if tc.wantServer == "" && tc.config == "" {
+					return
+				}
+				t.Fatalf("localnet = %#v, want an indexer entry", localnet)
+			}
+			if localnet.Indexer.Server != tc.wantServer || localnet.Indexer.Token != tc.wantToken {
+				t.Fatalf("indexer = %#v, want server %q token %q", localnet.Indexer, tc.wantServer, tc.wantToken)
+			}
+			// A second apply with the same input changes nothing.
+			changed, _, err := EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken, tc.given)
+			if err != nil || changed {
+				t.Fatalf("second apply changed %v, err %v", changed, err)
+			}
+		})
 	}
-	info := LocalNetInfo{AlgodURL: "http://localhost:4001", GenesisHash: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}
-	if _, _, err := EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken, ""); err != nil {
-		t.Fatal(err)
+}
+
+// An Indexer URL the signer would refuse is refused before anything is
+// written, without repeating it.
+func TestIndexerURLTheSignerWouldRefuseIsRefused(t *testing.T) {
+	info := LocalNetInfo{AlgodURL: "http://localhost:4001", GenesisHash: testLocalnetGenesis}
+	for _, bad := range []string{"localhost:8980", "ftp://indexer.example", "http://", "indexer.example"} {
+		err := ValidateOptions(Options{IndexerURL: bad})
+		if err == nil || !strings.Contains(err.Error(), "--indexer-url") || !strings.Contains(err.Error(), "http or https URL with a host") {
+			t.Fatalf("%q: ValidateOptions = %v", bad, err)
+		}
+		dir := writeSignerConfig(t, "")
+		if _, _, err := EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken, bad); err == nil {
+			t.Fatalf("%q: written", bad)
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, "config.yaml")); !os.IsNotExist(statErr) {
+			t.Fatalf("%q: config written despite the refusal", bad)
+		}
+		// Apply refuses it before it reaches for algod.
+		if _, err := Apply(context.Background(), Options{SignerDataDir: dir, IndexerURL: bad, AlgodURL: "http://127.0.0.1:1"}); err == nil || !strings.Contains(err.Error(), "--indexer-url") {
+			t.Fatalf("%q: Apply = %v", bad, err)
+		}
 	}
-	cfg, err := serverconfig.LoadServerConfig(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if idx := cfg.GetIndexerConfig(NetworkID); idx == nil || idx.Server != "http://indexer.example:8980" || idx.Token != "kept" {
-		t.Fatalf("indexer = %#v", idx)
+	// The signer's own loader refuses the same values.
+	dir := writeSignerConfig(t, "networks:\n  localnet:\n    indexer:\n      server: localhost:8980\n")
+	if _, err := serverconfig.LoadServerConfig(dir); err == nil {
+		t.Fatal("the signer's loader accepted localhost:8980")
 	}
 }

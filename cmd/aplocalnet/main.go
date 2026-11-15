@@ -72,7 +72,7 @@ func main() {
 	flag.StringVar(&algodURL, "algod-url", "", "LocalNet algod URL")
 	flag.StringVar(&algodToken, "algod-token", "", "LocalNet algod token")
 	flag.StringVar(&kmdURL, "kmd-url", "", "LocalNet KMD URL for the bundled localnet plugin")
-	flag.StringVar(&indexerURL, "indexer-url", "", "LocalNet Indexer URL written to the signer config")
+	flag.StringVar(&indexerURL, "indexer-url", "", "LocalNet Indexer URL written to the signer config (default "+aplocalnet.DefaultIndexerURL+" when the signer config has no localnet indexer)")
 	flag.BoolVar(&checkOnly, "check", false, "check LocalNet reachability without writing config")
 	flag.BoolVar(&applyOnly, "apply", false, "apply setup without launching the TUI")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
@@ -102,6 +102,10 @@ func main() {
 		KMDURL:        kmdURL,
 		IndexerURL:    indexerURL,
 	})
+	if err := aplocalnet.ValidateOptions(opts); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(2)
+	}
 
 	switch {
 	case checkOnly:
@@ -328,6 +332,8 @@ func (m model) View() string {
 	}
 	if m.opts.IndexerURL != "" {
 		sb.WriteString(kv("Indexer", m.opts.IndexerURL))
+	} else {
+		sb.WriteString(kv("Indexer", aplocalnet.DefaultIndexerURL+" unless the signer config has one"))
 	}
 	sb.WriteString(kv("Plugin", filepath.Join(m.opts.ClientDataDir, discovery.AvailableDirName, aplocalnet.PluginName)))
 	sb.WriteString("\n")
