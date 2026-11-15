@@ -1230,7 +1230,7 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
 | Stage number in every type: round trip for small and large stages, a different address for each stage, a changed stage byte, the shared prefix reader, a program without the prefix | each `stage` package's `stage_constant_test.go`; `internal/rotatingstage/rotatingstage_test.go`; `lsig/rotatingfamily/stageprog/guard_test.go` |
-| `SignStage` and `CheckStageOpens` refuse a derived program that embeds another stage, `SignStage` before any key signs | each `signerops` package's `signing_failure_test.go`; `lsig/rotatingfamily/stagesign`; the contract suite in `lsig/rotatingfamily/rotatingtest` |
+| `SignStage` and `CheckStageOpens` refuse a derived program that embeds another stage, `SignStage` before any key signs | each `signerops` package's `signing_failure_test.go`; `lsig/rotatingfamily/stagesign`. The contract suite in `lsig/rotatingfamily/rotatingtest` checks only that a stage 1 signature's program reads back stage 1 |
 | apshell refuses a signed spend whose program carries another stage number or none | `internal/clientsign/rotating_test.go` |
 | WOTS+C stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewotsc/stage/program_test.go`, `template_dump_test.go` |
 | Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |
