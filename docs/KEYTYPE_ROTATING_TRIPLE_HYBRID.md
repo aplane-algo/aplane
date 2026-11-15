@@ -314,11 +314,16 @@ construction.
 
 ### 5.5 Signer-side verification
 
-Before releasing anything, `StageOps.SignStage` re-parses the derived program,
-refuses it unless it embeds the stage being signed for, and verifies all three
-signatures locally through the scheme's `signerops.Verify`.
-XMSS also checks the leaf range and checksum cap. WOTS+C rejects an index outside
-0 to 63. Failed signatures are zeroed and refused.
+`StageOps.SignStage` checks in this order. It refuses a message that is not a
+32-byte transaction ID, then derives the stage's keys and program. It parses
+the derived program again with the strict `stage.Parse` and refuses it unless
+it embeds the stage being signed for (`stagesign.CheckStage`). Only then do
+the stage's keys sign, so a refusal that depends only on the program costs no
+one-time leaf. Last, it verifies all three signatures locally through the
+scheme's `signerops.Verify` before releasing anything. XMSS also checks the
+leaf range when it signs, and the leaf range and checksum cap when it
+verifies. WOTS+C rejects an index outside 0 to 63. Failed signatures are zeroed
+and refused.
 
 A signature is then released only if the signer hasn't locked since approval, the
 request hasn't been cancelled and the key is still present. The sign path is a key
@@ -406,15 +411,20 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    release if the signer locked since approval, the request was cancelled or
    the key was removed.
 3. **Open test.** `CheckStageOpens` test-signs the target stage locally before
-   any spend signature is released. The leaf variants sign the SHA-256 hash of
-   their derivation label followed by ` stage open test`: a fixed label, not a
-   TxID, so the test signature authorizes nothing. They test Ed25519 and Falcon
-   and check the embedded root and public seed, and XMSS also its leaf range. They
+   any spend signature is released. It first parses the target's derived
+   program and refuses it unless it embeds the target's stage number, so a
+   target whose program names another stage fails here, before the account is
+   rekeyed to it. The leaf variants then check the embedded root and public
+   seed, and XMSS also its leaf range, and sign the SHA-256 hash of their
+   derivation label followed by ` stage open test`: a fixed label, not a TxID,
+   so the test signature authorizes nothing. They test Ed25519 and Falcon and
    never sign with a target-stage leaf.
 
 Clients route on `signing_flow`, verify the prepared group preserves the
 intended spend except for the rotation, fee, group ID and canonical dummies,
-simulate that group, then sign and submit the exact bytes. The signer retains
+simulate that group, then sign and submit the exact bytes. apshell also
+requires the signed spend's program to carry the prepared stage's number;
+the SDKs do not check it yet. The signer retains
 no prepare session; policy evaluates the spend presented to sign.
 
 ### 8.1 One-time key and leaf selection
@@ -787,11 +797,11 @@ layer's root, which is the next layer's message. The final root must equal
 the embedded `PK.root`. There is no randomizer search, leaf range, checksum
 cap or signature grinding; every valid signature under the key is accepted.
 
-`StageOps.SignStage` re-parses the derived program, requires it to embed the
-stage being signed for, and verifies all three signatures locally before
-releasing them, as §5.5 describes; the leaf index the flow passes is ignored.
-For this variant the open test runs the same check, since it signs through
-the same path.
+`StageOps.SignStage` re-parses the derived program and requires it to embed
+the stage being signed for before the stage's keys sign, then verifies all
+three signatures locally before releasing them, as §5.5 describes; the leaf
+index the flow passes is ignored. The open test signs through the same path,
+so it runs the same checks.
 
 ### 11.5 Per-stage signing bound
 
@@ -1220,7 +1230,8 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
 | Stage number in every type: round trip for small and large stages, a different address for each stage, a changed stage byte, the shared prefix reader, a program without the prefix | each `stage` package's `stage_constant_test.go`; `internal/rotatingstage/rotatingstage_test.go`; `lsig/rotatingfamily/stageprog/guard_test.go` |
-| `SignStage` refuses a derived program that embeds another stage | each `signerops` package's `signing_failure_test.go`; the contract suite in `lsig/rotatingfamily/rotatingtest` |
+| `SignStage` and `CheckStageOpens` refuse a derived program that embeds another stage, `SignStage` before any key signs | each `signerops` package's `signing_failure_test.go`; `lsig/rotatingfamily/stagesign`; the contract suite in `lsig/rotatingfamily/rotatingtest` |
+| apshell refuses a signed spend whose program carries another stage number or none | `internal/clientsign/rotating_test.go` |
 | WOTS+C stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewotsc/stage/program_test.go`, `template_dump_test.go` |
 | Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |
 | Derivation, signing, verification and tampered fields; XMSS range violations and checksum above cap | `lsig/rotatingtriplexmss/signerops/keys_test.go`, `lsig/rotatingtriplewotsc/signerops/keys_test.go` |

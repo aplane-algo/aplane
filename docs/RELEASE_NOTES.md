@@ -26,9 +26,14 @@ before it was renamed `enroll`.
   is 2,672 bytes (2,675 salted) with a ceiling of 95,859. WOTS+C is 2,494
   (2,497) at exactly 15,723. SLH-DSA is 2,845 (2,848) with a ceiling of
   68,647. Group sizes and minimum fees do not change.
-- **The signer refuses to sign with a program that names another stage.**
-  Before it returns a spend's signatures, the signer parses the program it
-  derived again and requires it to carry the stage it signs for.
+- **The signer refuses a program that names another stage.** Before any
+  stage key signs, the signer parses the program it derived again and
+  requires it to carry the stage it signs for, so a refusal costs no
+  one-time leaf. The open test of the next stage, which runs before a spend
+  rekeys the account to it, makes the same check.
+- **apshell checks the stage number of a signed spend.** The spend's program
+  must carry the prepared stage's number, or the group is not submitted. The
+  SDKs do not check it yet.
 
 ## apshell checks more of what the signer plans
 
