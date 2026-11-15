@@ -15,8 +15,11 @@ before it was renamed `enroll`.
   search first reads the account's last confirmed rekey from the Indexer and
   tries the stage that spend's program names, plus one. The lookup is one
   request for at most eight results, within ten seconds and a 256 KiB
-  response, once per search; it takes the newest result the account sent,
-  so clawbacks another address sends cannot hide that spend. After a restore or
+  response, once per search; it takes the newest result the account sent.
+  Anyone holding the clawback address of any asset can hide that spend from
+  the lookup with eight zero-amount clawbacks naming the account, at one
+  minimum fee each; the signer then searches as it does without an Indexer.
+  After a restore or
   on a new machine the account usually resolves on the next pass, after one
   derivation. The stage is a candidate only: the signer accepts it when the
   address it derives from the seed is the authorizer its own algod reports.

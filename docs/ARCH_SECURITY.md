@@ -2065,7 +2065,7 @@ wrong or hostile Indexer can do:
 | Supplies a well-formed spend with a false stage | One derivation and its time charged to the grant, a miss, then the normal search with one stage less to spend; with one stage left, the search does not run |
 | Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
 | Answers slowly or not at all | At most 10 seconds of the worker; then that network's Indexer is not asked for 60 seconds, and the lookups of other accounts in that time ask nothing, come back `unavailable` at once and search without it. Lookups run inline in the worker's one pass, so a stalling Indexer costs a pass at most one timeout a minute, not one per account |
-| Puts results the account did not send first | Up to seven are skipped; eight leave no outgoing rekey and the search runs as without an Indexer |
+| Puts results the account did not send first, or anyone on chain sends zero-amount clawbacks naming the account | Up to seven are skipped; eight leave no outgoing rekey, and the search runs as without an Indexer. Any clawback address of any asset can do this for one minimum fee per transaction, so the shortcut can be suppressed, never turned into a wrong stage |
 | Sends a huge or malformed body, or redirects | Refused past 256 KiB, on any syntax error, repeated key or ninth result, or the redirect itself; the lookup is `unavailable` |
 | Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
 
@@ -2089,15 +2089,19 @@ use.
 Configuring one exposes two things: the Indexer provider learns which
 accounts the signer asks about (the algod provider already learns that from
 the authorizer reads), and the signer parses one more provider's responses.
-A lookup is one request for at most eight results, the newest first, and
-never a further page: `next-token` is ignored. It takes the first result
-whose top-level sender is the account. It asks for eight rather than one
-because the Indexer's sender role also matches a clawback's asset sender:
-whoever holds clawback rights over an asset the account opted into can send
-a zero-amount clawback that rekeys its own sender, and so put a result the
-account did not send ahead of its last spend at will. Such results are
-skipped; when none of the eight was sent by the account the outcome is
-`no_outgoing_rekey` and the search runs without the lookup. The signer
+A lookup is one request for at most eight results (`lookupLimit`), the
+newest first, and never a further page: `next-token` is ignored. It takes the
+first result whose top-level sender is the account; results sent by another
+address are skipped. They can be there because the Indexer's sender role also
+matches a clawback's asset sender, and a zero-amount clawback needs no opt-in
+by the account it names: any address that is the clawback address of any
+asset can send one naming any account as asset sender, rekeying its own
+sender. Eight such transactions sent after an account's spend hide that spend
+from the lookup, at one minimum fee each; when none of the eight was sent by
+the account the outcome is `no_outgoing_rekey` and the search runs without
+the lookup. Asking for eight rather than one raises the cost of suppressing
+the shortcut; it does not prevent it, and suppressing it gains nothing but
+the search the signer would have run anyway. The signer
 decodes the response itself, into only the fields the lookup checks
 (`internal/signerapp/chainread/lookup_decode.go`), under one set of rules:
 the whole body is read first, and one longer than 256 KiB is refused before

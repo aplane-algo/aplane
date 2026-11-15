@@ -66,14 +66,17 @@ const (
 	// without it.
 	MaxIndexerResponseBytes = 256 << 10
 	// lookupLimit is the results asked for in the one request; a response
-	// that begins one more is refused. It is eight, not one, because the
-	// Indexer's sender role also matches a clawback's asset sender: whoever
-	// holds clawback rights over an asset the account opted into can send a
-	// zero-amount clawback that rekeys its own sender, the clawback address,
-	// and so put a result the account did not send ahead of its last spend
-	// whenever it likes. A one-result query would then see no outgoing
-	// rekey; eight results in the same request see past such results at no
-	// cost. The lookup never asks for a further page.
+	// that holds one more is refused. The lookup never asks for a further
+	// page. More than one, because the Indexer's sender role also matches a
+	// clawback's asset sender, and a zero-amount clawback needs no opt-in by
+	// the account it names: any address that is the clawback address of any
+	// asset can send one naming any account as asset sender, rekeying its
+	// own sender, and so put a result the account did not send ahead of its
+	// last spend. lookupLimit such transactions sent after the spend hide it
+	// from the lookup, at one minimum fee each, and the worker then searches
+	// as it would without an Indexer. The limit raises the cost of
+	// suppressing the shortcut; it does not prevent it, and suppressing it
+	// gains nothing else. Tests and docs derive the number from here.
 	lookupLimit = 8
 
 	// indexerTokenHeader carries the Indexer API token, as the SDK sends it.

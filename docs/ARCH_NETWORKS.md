@@ -256,8 +256,10 @@ networks:
   of headers, its own connection with no keep-alive, no redirects, one
   attempt per grant, and only the
   fields it checks are decoded. It asks for eight because the Indexer's
-  sender role also matches a clawback's asset sender, and a clawback
-  another address sends can come before the account's last spend,
+  sender role also matches a clawback's asset sender: any clawback address
+  of any asset can name the account in a zero-amount clawback, with no
+  opt-in, and eight of those after its last spend suppress the lookup at one
+  minimum fee each, leaving the search as without an Indexer,
 - the setting is a file setting, read at start like algod's, and not an admin
   setting. The client (apshell) has no Indexer setting.
 

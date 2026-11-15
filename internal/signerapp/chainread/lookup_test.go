@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -200,7 +201,7 @@ func TestLookupStageNSpendIsCandidateNPlusOne(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", idx.requestCount())
 	}
 	req := idx.request(0)
-	if req.URL.Path != "/v2/transactions" || req.URL.RawQuery != "address="+lookupAccount.String()+"&address-role=sender&limit=8&rekey-to=true" {
+	if req.URL.Path != "/v2/transactions" || req.URL.RawQuery != "address="+lookupAccount.String()+"&address-role=sender&limit="+strconv.Itoa(lookupLimit)+"&rekey-to=true" {
 		t.Fatalf("request = %s?%s", req.URL.Path, req.URL.RawQuery)
 	}
 	if req.Header.Get("X-Indexer-API-Token") != indexerToken {
@@ -284,15 +285,15 @@ func TestLookupSkipsANewerClawbackSentByAnotherAddress(t *testing.T) {
 	}
 }
 
-// Eight results, none sent by the account: no outgoing rekey. The next
-// page, which holds the account's spend, is never asked for: the response's
-// next-token is ignored.
-func TestLookupEightResultsFromOtherSendersAreNoOutgoingRekey(t *testing.T) {
-	var eight []map[string]any
-	for i := 0; i < 8; i++ {
-		eight = append(eight, clawback(lookupAccount))
+// lookupLimit results, none sent by the account: no outgoing rekey. The
+// next page, which holds the account's spend, is never asked for: the
+// response's next-token is ignored.
+func TestLookupAllResultsFromOtherSendersAreNoOutgoingRekey(t *testing.T) {
+	var others []map[string]any
+	for i := 0; i < lookupLimit; i++ {
+		others = append(others, clawback(lookupAccount))
 	}
-	idx := &fakeIndexer{pages: [][]map[string]any{eight, {spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)}}}
+	idx := &fakeIndexer{pages: [][]map[string]any{others, {spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)}}}
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
 	if got.Outcome != LookupNoOutgoingRekey {
 		t.Fatalf("lookup = %+v, want no_outgoing_rekey", got)
@@ -318,21 +319,21 @@ func TestLookupEmptyAnswerIsNoOutgoingRekey(t *testing.T) {
 	}
 }
 
-// An Indexer that sends more than the eight results asked has its answer
-// refused when the ninth begins.
+// An Indexer that sends more than the lookupLimit results asked has its
+// answer refused.
 func TestLookupRefusesAnAnswerOfMoreResultsThanAsked(t *testing.T) {
 	var nine []map[string]any
-	for i := 0; i < 8; i++ {
+	for i := 0; i < lookupLimit; i++ {
 		nine = append(nine, clawback(lookupAccount))
 	}
 	nine = append(nine, spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false))
-	empties := make([]map[string]any, 9)
+	empties := make([]map[string]any, lookupLimit+1)
 	for i := range empties {
 		empties[i] = map[string]any{}
 	}
 	for name, results := range map[string][]map[string]any{
-		"eight others, then the spend": nine,
-		"nine empty objects":           empties,
+		"the limit's others, then the spend": nine,
+		"nine empty objects":                 empties,
 	} {
 		t.Run(name, func(t *testing.T) {
 			idx := &fakeIndexer{pages: [][]map[string]any{results}}

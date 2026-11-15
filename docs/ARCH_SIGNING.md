@@ -1989,8 +1989,11 @@ derivation: `chainread.Reader.LookupLastRotation` asks the Indexer chosen by
 genesis hash like algod, in one request, for the account's newest outgoing
 rekeys, at most eight, and takes the first whose top-level sender is the
 account. Results another address sent are skipped: the sender role also
-matches a clawback's asset sender, and a clawback that rekeys its own sender
-could otherwise hide the account's last spend from a one-result query. If
+matches a clawback's asset sender, and a zero-amount clawback needs no
+opt-in, so any clawback address of any asset can name the account. Eight of
+those sent after the account's spend hide it, at one minimum fee each, and
+the search then runs as without an Indexer; eight rather than one only
+raises the cost of suppressing the shortcut. If
 that result is a spend by the account, on the account's chain, handing the
 account to the authorizer the worker read from algod, signed by a stage
 program alone whose address is its signer, the candidate is the program's

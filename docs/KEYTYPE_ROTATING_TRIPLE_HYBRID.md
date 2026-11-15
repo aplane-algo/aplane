@@ -499,10 +499,13 @@ chain names one too:
    worker asks the Indexer once (`chainread.Reader.LookupLastRotation`), in
    one request, for the account's newest outgoing rekeys, at most eight, and
    takes the first whose top-level sender is the account. It asks for eight
-   because the Indexer's sender role also matches a clawback's asset sender:
-   whoever holds clawback rights over an asset the account opted into can
-   put a zero-amount clawback that rekeys its own sender ahead of the
-   account's last spend. That spend must be a top-level
+   because the Indexer's sender role also matches a clawback's asset sender,
+   and a zero-amount clawback needs no opt-in: any clawback address of any
+   asset can name the account in one that rekeys its own sender. Eight of
+   those sent after the account's spend hide it from the lookup, at one
+   minimum fee each, and the search runs as without an Indexer; the limit
+   raises the cost of suppressing the shortcut and does not prevent it.
+   That spend must be a top-level
    transaction sent by the account, on the account's chain, that hands the
    account to the authorizer the worker read from its own algod, signed by a
    stage program alone whose address is the spend's signer, with `auth-addr`
