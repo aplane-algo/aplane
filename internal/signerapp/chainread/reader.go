@@ -10,6 +10,12 @@
 // genesis-hash mapping and networks.<net>.algod, and its own genesis hash
 // must match before any answer is trusted. A missing mapping, a missing algod
 // entry, or a node on another network fails closed.
+//
+// Where networks.<net>.indexer is configured, LookupLastRotation also reads
+// a rotating account's newest outgoing rekey from that Indexer, chosen the
+// same way, to propose the stage a search tries first. Its answer is a
+// candidate only: the caller accepts a stage only when the address it
+// derives from the seed is the authorizer its own algod reported.
 package chainread
 
 import (
@@ -18,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 
@@ -58,6 +65,10 @@ type Reader struct {
 	// http.DefaultTransport. The lookup wraps it to cap every response body
 	// and to refuse redirects.
 	IndexerTransport http.RoundTripper
+
+	// LookupTimeout bounds one LookupLastRotation. Zero means
+	// DefaultLookupTimeout.
+	LookupTimeout time.Duration
 }
 
 // ReadAccount returns account's authorizer and the round of the read from the
