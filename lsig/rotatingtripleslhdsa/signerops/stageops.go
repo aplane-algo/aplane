@@ -47,7 +47,9 @@ func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) erro
 // SLH-DSA signature split as stage.ChunkSizes lists, then the Ed25519 and
 // Falcon signatures, as its arguments. SLH-DSA is stateless, so the leaf
 // index is ignored. A message that is not a 32-byte transaction ID is refused
-// before any key is derived.
+// before any key is derived. Before anything is returned the derived program
+// is parsed again, must embed stage i, and the signatures must verify against
+// it.
 func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, _ uint32, message []byte) (signing.RotatingStageSignature, error) {
 	if err := stagesign.CheckMessage(message); err != nil {
 		return signing.RotatingStageSignature{}, err
@@ -78,6 +80,10 @@ func signAndVerify(key *signing.RotatingKeyMaterial, i uint64, message []byte) (
 	if err != nil {
 		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
+	}
+	if embedded.Stage != i {
+		stagesign.ZeroArgs(args)
+		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d program embeds stage %d", i, embedded.Stage)
 	}
 	if err := Verify(embedded, message, slhSig, ed25519Sig, falconSig); err != nil {
 		stagesign.ZeroArgs(args)

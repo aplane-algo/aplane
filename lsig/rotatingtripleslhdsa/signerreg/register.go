@@ -70,7 +70,8 @@ func unpackPublicKeys(packed []byte) (*stage.PublicKeys, error) {
 	if len(packed) != packedSize {
 		return nil, fmt.Errorf("stage public key length %d invalid", len(packed))
 	}
-	pk := &stage.PublicKeys{}
+	// The record is stage 0's, whose number is fixed and not stored.
+	pk := &stage.PublicKeys{Stage: 0}
 	rest := packed[copy(pk.Seed[:], packed):]
 	rest = rest[copy(pk.Root[:], rest):]
 	rest = rest[copy(pk.Falcon[:], rest):]

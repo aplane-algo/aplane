@@ -4,8 +4,10 @@
 package stage
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +42,7 @@ func TestDumpTemplate(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	keys := &PublicKeys{}
+	keys := &PublicKeys{Stage: binary.BigEndian.Uint64(bytes.Repeat([]byte{fillStage}, 8))}
 	for i := range keys.Ed25519 {
 		keys.Ed25519[i] = fillEd25519
 	}
@@ -73,7 +75,7 @@ func TestDumpTemplate(t *testing.T) {
 		var b strings.Builder
 		b.WriteString("// SPDX-License-Identifier: AGPL-3.0-or-later\n// Copyright (C) 2026 APlane Project LLC\n\npackage stage\n\n")
 		fmt.Fprintf(&b, "// templateH%d is the stock v13 assembly of verifier_h%d.teal with placeholder\n", h, h)
-		b.WriteString("// constants: 0x33.. for the Ed25519 key, 0x44.. for the Falcon key, 0x11..\n// for the seed, 0x22.. for the root. It is frozen;\n// TestBuildMatchesStockAssembler re-derives the selected shape from TEALSource.\n")
+		b.WriteString("// constants: 0x77.. for the stage number, 0x33.. for the Ed25519 key, 0x44..\n// for the Falcon key, 0x11.. for the seed, 0x22.. for the root. It is frozen;\n// TestBuildMatchesStockAssembler re-derives the selected shape from TEALSource.\n")
 		fmt.Fprintf(&b, "var templateH%d = []byte{ // %d bytes\n", h, len(got))
 		for i := 0; i < len(got); i += 16 {
 			b.WriteString("\t")

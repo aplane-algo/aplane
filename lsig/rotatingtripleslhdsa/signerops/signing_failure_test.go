@@ -6,10 +6,12 @@ package signerops
 import (
 	"bytes"
 	"crypto/sha256"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/slhdsa"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/stage"
 )
 
 var failureTestMessage = func() []byte {
@@ -90,5 +92,30 @@ func TestSignStageRefusesOtherMessageSizes(t *testing.T) {
 	}
 	if len(*made) != 0 {
 		t.Fatal("a refused message reached the SLH-DSA key")
+	}
+}
+
+// TestSignStageRefusesAProgramOfAnotherStage makes derivation build a program
+// that embeds another stage number than the stage asked for, and checks that
+// SignStage refuses it and wipes the SLH-DSA signature it made. Every key in
+// the program is the stage's own, so the signatures would verify.
+func TestSignStageRefusesAProgramOfAnotherStage(t *testing.T) {
+	made := observeSLH(t, nil)
+	restore := buildProgram
+	t.Cleanup(func() { buildProgram = restore })
+	buildProgram = func(keys *stage.PublicKeys) (stage.Program, error) {
+		other := *keys
+		other.Stage++
+		return restore(&other)
+	}
+	sig, err := (StageOps{}).SignStage(fixedKeyMaterial(), 0, 0, failureTestMessage)
+	if err == nil || !strings.Contains(err.Error(), "embeds stage 1") {
+		t.Fatalf("SignStage for stage 0 with a stage 1 program: %v", err)
+	}
+	if sig.Program != nil || sig.Args != nil {
+		t.Fatal("SignStage returned a program or signatures with its refusal")
+	}
+	if len(*made) != 1 || !allZero((*made)[0]) {
+		t.Fatal("the refused SLH-DSA signature was not wiped")
 	}
 }

@@ -51,6 +51,7 @@ const (
 	fillFalcon  = 0x44
 	fillSeed    = 0x11
 	fillRoot    = 0x22
+	fillStage   = 0x77
 )
 
 var (
@@ -64,6 +65,9 @@ var (
 
 // PublicKeys are the constants embedded in a stage program.
 type PublicKeys struct {
+	// Stage is the stage number, the program's first constant. The program
+	// never reads it.
+	Stage   uint64
 	Ed25519 [ConstantSize]byte
 	Falcon  [FalconPublicKeySize]byte
 	Root    [HashSize]byte
@@ -99,6 +103,12 @@ func init() {
 	falconKeyOffset = find(fillFalcon, FalconPublicKeySize)
 	seedOffset = find(fillSeed, HashSize)
 	rootOffset = find(fillRoot, HashSize)
+	if find(fillStage, stageprog.StageSize) != stageprog.StageOffset {
+		panic("rotating slhdsa stage template: the stage constant is not at the stage prefix's offset")
+	}
+	if _, err := stageprog.ReadStage(template); err != nil {
+		panic(fmt.Sprintf("rotating slhdsa stage template: %v", err))
+	}
 }
 
 // Build assembles the stage program for keys. If the unsalted program's
@@ -113,6 +123,7 @@ func Build(keys *PublicKeys) (Program, error) {
 	}
 	base := make([]byte, UnsaltedProgramSize, SaltedProgramSize)
 	copy(base, template)
+	stageprog.PutStage(base, keys.Stage)
 	copy(base[ed25519KeyOffset:], keys.Ed25519[:])
 	copy(base[falconKeyOffset:], keys.Falcon[:])
 	copy(base[seedOffset:], keys.Seed[:])
@@ -128,6 +139,10 @@ func Build(keys *PublicKeys) (Program, error) {
 func Parse(bytecode []byte) (*PublicKeys, Program, error) {
 	keys := &PublicKeys{}
 	program, err := stageprog.ParseStrict(bytecode, UnsaltedProgramSize, func(code []byte) (Program, error) {
+		var err error
+		if keys.Stage, err = stageprog.ReadStage(code); err != nil {
+			return Program{}, err
+		}
 		copy(keys.Ed25519[:], code[ed25519KeyOffset:ed25519KeyOffset+ConstantSize])
 		copy(keys.Falcon[:], code[falconKeyOffset:falconKeyOffset+FalconPublicKeySize])
 		copy(keys.Seed[:], code[seedOffset:seedOffset+HashSize])
@@ -147,7 +162,8 @@ func TEALSource(keys *PublicKeys) string {
 }
 
 func substitute(teal string, keys *PublicKeys) string {
-	return strings.NewReplacer("@ED25519@", hex.EncodeToString(keys.Ed25519[:]),
+	return strings.NewReplacer("@STAGE@", stageprog.StageHex(keys.Stage),
+		"@ED25519@", hex.EncodeToString(keys.Ed25519[:]),
 		"@FALCON@", hex.EncodeToString(keys.Falcon[:]), "@SEED@", hex.EncodeToString(keys.Seed[:]),
 		"@ROOT@", hex.EncodeToString(keys.Root[:])).Replace(teal)
 }

@@ -388,6 +388,9 @@ func testStageOps(t *testing.T, s Scheme) {
 	if got, err := stageprog.Address(sig.Program); err != nil || got != a1 {
 		t.Fatalf("signing program's address %s (%v), want stage 1's %s", got, err, a1)
 	}
+	if got, err := stageprog.ReadStage(sig.Program); err != nil || got != 1 {
+		t.Fatalf("signing program embeds stage %d (%v), want 1", got, err)
+	}
 	if err := s.Verify(sig.Program, msg, sig.Args); err != nil {
 		t.Fatal(err)
 	}

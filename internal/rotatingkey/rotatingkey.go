@@ -49,8 +49,8 @@ var slhdsaShape = map[int]struct {
 	programBytes, argumentBytes, opcodeCost int
 	scheme                                  string
 }{
-	22: {2837, 4400 + 64 + 1423, 26825 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
-	63: {2866, 7856 + 64 + 1423, 40888 + 41*3570, "SLH-DSA-SHA2-128s"},
+	22: {2848, 4400 + 64 + 1423, 26827 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
+	63: {2877, 7856 + 64 + 1423, 40890 + 41*3570, "SLH-DSA-SHA2-128s"},
 }[RotatingSlhdsaHeight]
 
 const (

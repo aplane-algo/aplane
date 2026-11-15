@@ -5,6 +5,7 @@ package stageprog_test
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
@@ -13,8 +14,8 @@ import (
 	xmssstage "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 )
 
-// rotationGuard is what every rotating stage program shares after its
-// version byte and the stage prefix's constant, assembled by TEAL v13:
+// rotationGuard is what every rotating stage program shares after the stage
+// prefix (#pragma version 13; pushbytes <stage>; pop), assembled by TEAL v13:
 //
 //	txn RekeyTo; global ZeroAddress; !=; assert        a spend must rekey
 //	txn RekeyTo; txn Sender; !=; assert                but not to itself
@@ -30,34 +31,49 @@ var rotationGuard = []byte{
 	0x31, 0x04, 0x31, 0x02, 0x09, 0x81, 0x64, 0x0e, 0x44,
 }
 
+// stagePrograms builds stage n of each rotating key type with zero keys.
+func stagePrograms(t *testing.T, n uint64) map[string][]byte {
+	t.Helper()
+	_, lo, hi := xmssstage.RangeFor(n)
+	xmss, err := xmssstage.Build(&xmssstage.PublicKeys{Stage: n, Lo: lo, Hi: hi})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slh, err := slhstage.Build(&slhstage.PublicKeys{Stage: n})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wotsc, err := wotscstage.Build(&wotscstage.PublicKeys{Stage: n})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string][]byte{"XMSS": xmss.Bytecode, "SLH-DSA": slh.Bytecode, "WOTS+C": wotsc.Bytecode}
+}
+
 func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
-	xmss, err := xmssstage.Build(&xmssstage.PublicKeys{Stage: 0, Lo: 0, Hi: xmssstage.IndicesPerStage})
-	if err != nil {
-		t.Fatal(err)
-	}
-	slh, err := slhstage.Build(&slhstage.PublicKeys{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	wotsc, err := wotscstage.Build(&wotscstage.PublicKeys{Stage: 0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// guardAt is where the guard begins: after the version byte, or after the
-	// stage prefix in a program that carries its stage number.
-	for name, c := range map[string]struct {
-		program []byte
-		guardAt int
-	}{
-		"XMSS":    {xmss.Bytecode, stageprog.PrefixSize},
-		"SLH-DSA": {slh.Bytecode, 1},
-		"WOTS+C":  {wotsc.Bytecode, stageprog.PrefixSize},
-	} {
-		if c.program[0] != 0x0d || !bytes.HasPrefix(c.program[c.guardAt:], rotationGuard) {
-			t.Errorf("the %s stage program does not open with the rotation guard: % x", name, c.program[:c.guardAt+len(rotationGuard)])
+	for name, program := range stagePrograms(t, 0) {
+		if !bytes.HasPrefix(program[stageprog.PrefixSize:], rotationGuard) {
+			t.Errorf("the %s stage program does not open with the rotation guard after the stage prefix: % x", name, program[:stageprog.PrefixSize+len(rotationGuard)])
 		}
 	}
 	if xmssstage.MaxValidityWindow != 100 || slhstage.MaxValidityWindow != 100 || wotscstage.MaxValidityWindow != 100 {
 		t.Error("a stage package's validity window differs from the guard's 100 rounds")
+	}
+}
+
+// TestReadStageReadsEveryStageProgram checks the one reader of the stage
+// number against every key type's program, and that the same program without
+// the stage prefix, as stage programs were laid out before it, is refused.
+func TestReadStageReadsEveryStageProgram(t *testing.T) {
+	for _, n := range []uint64{0, 418, 1 << 40} {
+		for name, program := range stagePrograms(t, n) {
+			if got, err := stageprog.ReadStage(program); err != nil || got != n {
+				t.Errorf("%s stage %d: ReadStage returned %d, %v", name, n, got, err)
+			}
+			without := append([]byte{program[0]}, program[stageprog.PrefixSize:]...)
+			if _, err := stageprog.ReadStage(without); !errors.Is(err, stageprog.ErrInvalidProgram) {
+				t.Errorf("%s stage %d without the stage prefix: %v", name, n, err)
+			}
+		}
 	}
 }

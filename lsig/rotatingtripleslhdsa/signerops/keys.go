@@ -42,8 +42,13 @@ var signSLH = func(key *slhdsa.SigningKey, message []byte) ([]byte, error) {
 	return stage.Params.Sign(key, message, nil, nil)
 }
 
+// buildProgram is stage.Build; tests replace it to derive a program that
+// embeds a stage other than the one derived.
+var buildProgram = stage.Build
+
 // StageKeys owns one stage's private keys. Call Zero after use.
 type StageKeys struct {
+	stage     uint64
 	slh       *slhdsa.SigningKey
 	classical *stagesign.ClassicalKeys
 }
@@ -53,7 +58,7 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program
 	if d == nil {
 		return nil, stage.Program{}, errors.New("rotating slhdsa deriver is nil")
 	}
-	keys := &StageKeys{}
+	keys := &StageKeys{stage: i}
 	var secretSeed, prfSeed, publicSeed [slhdsa.N]byte
 	defer crypto.ZeroBytes(secretSeed[:])
 	defer crypto.ZeroBytes(prfSeed[:])
@@ -73,7 +78,7 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program
 		keys.Zero()
 		return nil, stage.Program{}, err
 	}
-	program, err := stage.Build(keys.PublicKeys())
+	program, err := buildProgram(keys.PublicKeys())
 	if err != nil {
 		keys.Zero()
 		return nil, stage.Program{}, fmt.Errorf("build stage %d program: %w", i, err)
@@ -81,9 +86,10 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program
 	return keys, program, nil
 }
 
-// PublicKeys returns the constants a stage program embeds.
+// PublicKeys returns the constants a stage program embeds, its stage number
+// among them.
 func (k *StageKeys) PublicKeys() *stage.PublicKeys {
-	pub := &stage.PublicKeys{Seed: k.slh.Public.Seed, Root: k.slh.Public.Root}
+	pub := &stage.PublicKeys{Stage: k.stage, Seed: k.slh.Public.Seed, Root: k.slh.Public.Root}
 	pub.Ed25519, pub.Falcon = k.classical.PublicKeys()
 	return pub
 }
