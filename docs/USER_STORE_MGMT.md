@@ -675,6 +675,12 @@ runtime. Verify the address matches your backup in the apadmin TUI key list. Aft
 `apstore rebuild`, start `apsigner`, unlock the product, and verify the
 restored addresses in apadmin.
 
+A restore shows that the key was read and loaded. To confirm it signs, run
+`validate <account>` from apshell: it sends 0 ALGO from the account to itself,
+which exercises the key, the node and the account's balance (it pays a fee).
+For a rotating account, first lock and unlock the signer and check
+`rotate status` (see [Restoring rotating accounts](#restoring-rotating-accounts)).
+
 ## Security Best Practices
 
 ### DO
