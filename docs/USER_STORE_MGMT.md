@@ -233,7 +233,7 @@ whose name carries no creation time.
 | Key | Action |
 |---|---|
 | `n` | Create a backup of every active key. You choose its export passphrase. |
-| `enter` | Enter the backup's passphrase and see what it holds: its sealed creation time and each key, with "present" when this signer already holds a key at that address. Select keys and restore from there. |
+| `enter` | Enter the backup's passphrase and see what it holds: its sealed creation time and each key, with "exists" when this signer already holds a key at that address. Select keys and restore from there. |
 | `x` | Export the backup to a directory on this machine (`ctrl+o` browses). Same checks as `apadmin backup export`. |
 | `i` | Import an archive from this machine (`ctrl+o` browses for `.tar.gz`/`.tgz`). The signer checks every key with the backup passphrase before adding it. Importing does not change keys. |
 | `d` | Delete the backup, after a confirmation. Export it first to keep a copy. |

@@ -128,7 +128,7 @@ func (m Model) restorePreviewHeader() string {
 	sb.WriteString(titleStyle.Render("Backup Contents"))
 	sb.WriteString("\n")
 	sb.WriteString(m.renderBackupViewHeader(popupWidth))
-	sb.WriteString(fmt.Sprintf("Selected: %d of %d (\"present\": this node holds a key at that address)\n",
+	sb.WriteString(fmt.Sprintf("Selected: %d of %d\n",
 		m.selectedRestoreCount(), len(m.restore.previewKeys)))
 	return sb.String()
 }
@@ -337,7 +337,7 @@ func restorePreviewFlags(key RestoreKeyInfo) string {
 		// The node holds a key at this address. Preview does not compare
 		// the two; restore's conflict check decides, and replacement still
 		// requires explicit confirmation.
-		suffix += "  present"
+		suffix += "  exists"
 	}
 	if key.HasPolicy {
 		suffix += "  +policy"

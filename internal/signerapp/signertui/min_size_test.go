@@ -186,11 +186,11 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 			{Address: address, KeyType: longType, AlreadyExists: true, HasPolicy: true},
 			{Address: address, KeyType: "aplane.rotating-triple-slhdsa.v1", StageHint: &hint, AlreadyExists: true, HasPolicy: true},
 		}}}, []string{
-			"wide.v1]  present  +policy", "slhdsa.v1]  present  +policy", "[ed25519]",
+			"wide.v1]  exists  +policy", "slhdsa.v1]  exists  +policy", "[ed25519]",
 		}},
 		{"restore row error", Model{viewState: ViewRestorePreview, restore: restoreState{previewKeys: []RestoreKeyInfo{
 			{Address: address, KeyType: longType, AlreadyExists: true, Error: "archive entry failed its integrity check"},
-		}}}, []string{"present  archive entry"}},
+		}}}, []string{"exists  archive entry"}},
 		{"cosigner references", Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: []CosignerReferenceInfo{
 			{Name: "a-reference-name-that-is-longer-than-any-window-has-room-for", ComponentKey: witnessKey, KeyType: "aplane.falcon1024.v1"},
 			{Name: "ops", ComponentKey: witnessKey, KeyType: "ed25519"},

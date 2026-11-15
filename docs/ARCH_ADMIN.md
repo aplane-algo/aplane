@@ -1162,7 +1162,7 @@ identifies the current screen. The enum has families for:
     `ViewRestoreDisplay`): the view names the backup with its sealed creation
     time (`restore_preview`'s `archive_created_at`), warns when that differs
     from the time in its name by more than a minute, and marks a key the node
-    already holds "present", never "same";
+    already holds "exists", never "same";
   - `x` export (`ViewBackupExport`) and `i` import (`ViewBackupImport`),
     driving the same file-side helpers as `apadmin backup export|import`
     (`internal/apadminapp/backup_transfer.go`) from response-driven state

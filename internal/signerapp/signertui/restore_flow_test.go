@@ -187,7 +187,7 @@ func TestRestorePreviewSelectsExistingKeysFreely(t *testing.T) {
 
 	view := got.renderRestorePreview()
 	plain := stripANSI(view)
-	if !strings.Contains(plain, "present") || strings.Contains(plain, "same") {
+	if !strings.Contains(plain, "exists") || strings.Contains(plain, "same") {
 		t.Fatalf("preview does not mark the conflicting key informationally:\n%s", plain)
 	}
 	if strings.Contains(plain, "Overwrite:") {
