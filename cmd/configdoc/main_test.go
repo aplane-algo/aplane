@@ -58,3 +58,23 @@ func sectionBetween(t *testing.T, s, start, end string) string {
 	}
 	return s[startIdx : startIdx+len(start)+endIdx]
 }
+
+// The signer's optional Indexer is listed beside its algod; the client has
+// no Indexer setting.
+func TestGeneratedReferenceListsTheSignerIndexerOnly(t *testing.T) {
+	out, err := exec.Command("go", "run", ".").Output()
+	if err != nil {
+		t.Fatalf("go run . error = %v", err)
+	}
+	doc := string(out)
+	signer := sectionBetween(t, doc, "## apsigner Configuration", "## Environment Variables")
+	for _, want := range []string{"`networks.<network>.indexer.server`", "`networks.<network>.indexer.token`"} {
+		if !strings.Contains(signer, want) {
+			t.Fatalf("apsigner section missing %s", want)
+		}
+	}
+	client := sectionBetween(t, doc, "## apshell Configuration", "## apsigner Configuration")
+	if strings.Contains(client, "indexer") {
+		t.Fatal("apshell section lists an Indexer setting")
+	}
+}

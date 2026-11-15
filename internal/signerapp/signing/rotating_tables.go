@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 
@@ -128,6 +129,9 @@ type StageTableReport struct {
 	Pending bool
 	// Recovery is the account's recovery state after the pass.
 	Recovery RecoveryState
+	// Lookup is the chain lookup this pass ran for the account's recovery
+	// grant, if it ran one and an Indexer is configured.
+	Lookup *StageLookupRecord
 	// Observed reports that the chain read succeeded; Authorizer and Round
 	// are then what the node reported, and ObservedSeq is the release
 	// memory's sequence just before the read. RotatingStatus uses these even
@@ -380,7 +384,11 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 			// grants a search or the chain moves.
 			return report, cut
 		}
-		found, pending, spent, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts, &cut)
+		lookup := func(ctx context.Context) (chainread.StageLookup, error) {
+			return deps.Chain.LookupLastRotation(ctx, genesis, acct, view.Authorizer)
+		}
+		found, pending, spent, ran, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts, &cut, lookup)
+		report.Lookup = ran
 		report.Scanned = table.Len()
 		// Hinted probes consume work even when they do not extend the prefix.
 		budget -= spent
@@ -518,9 +526,18 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 // counters are charged per derivation, so a grant of 100 derives at most
 // 100 and a cancel lands between two derivations, not after a batch. It
 // returns whether the authorizer is now in the table, whether the grant is
-// still active with work left, the derivations spent (including probes), and
-// any derivation or write error.
-func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions, cut *bool) (found, pending bool, spent int, err error) {
+// still active with work left, the derivations spent (including probes), the
+// chain lookup this pass ran (nil if none ran or no Indexer is configured),
+// and any derivation or write error.
+//
+// An unhinted grant begins, once, with lookupStage: an Indexer's reading of
+// the account's last rekey, which proposes one stage. The proposal is one
+// more candidate in front of the search, probed through the same charged
+// and paced deriver, and accepted only when its derived address is the
+// authorizer. Whatever the lookup gives other than a match leaves the search
+// as it would be without it: a miss stays in the table like any miss and is
+// never the table's hint, and every other outcome derives nothing.
+func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions, cut *bool, lookupStage func(context.Context) (chainread.StageLookup, error)) (found, pending bool, spent int, lookup *StageLookupRecord, err error) {
 	unpaced := opts
 	unpaced.Pace = nil
 	base := s.backgroundDeriver(account, session, unpaced, cut)
@@ -547,27 +564,72 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 		return addrs, err
 	}
 
+	// The chain lookup: before the grant's first derivation, once per grant,
+	// and not when an operator gave a hint. It opens no seed; only its probe
+	// derives, through derive. Only a verified other address at the stage
+	// rules the candidate out: a loaded entry is unverified, and deriving it
+	// confirms or repairs it. A probe that fails, in its derivation or its
+	// table write, is a probe not tried: the error is kept for the log, and
+	// the search runs as it would have.
+	if g.Hint == nil && budget > 0 && ctx.Err() == nil && rec.beginLookup(g) {
+		lookup = runStageLookup(ctx, lookupStage)
+		if lookup != nil && lookup.Outcome == chainread.LookupCandidate {
+			n := lookup.Stage
+			if a, ok := table.Address(n); ok && a != authorizer && table.Verified(n, a) {
+				lookup.Probe = ProbeAlreadyCached
+			} else {
+				addrs, probeErr := derive(ctx, n, n+1)
+				// No address and no error is a cut (a lock, a cancel, the
+				// grant's end): the probe did not run, and the search below
+				// stops too.
+				if probeErr == nil && len(addrs) == 1 {
+					budget--
+					if _, probeErr = table.RecordDerived(n, addrs); probeErr == nil {
+						probeErr = publishStageBatch(table, spent-1, spent, opts)
+					}
+					if probeErr == nil {
+						lookup.Probe = ProbeMissed
+						if addrs[0] == authorizer {
+							lookup.Probe = ProbeMatched
+						}
+					}
+				}
+				if probeErr != nil {
+					lookup.ProbeError = probeErr.Error()
+				}
+			}
+		}
+		if lookup != nil {
+			rec.setLookup(g, *lookup)
+		}
+		if lookup != nil && lookup.Probe == ProbeMatched {
+			stage := lookup.Stage
+			rec.finish(g, StopFound, &stage)
+			return true, false, spent, lookup, nil
+		}
+	}
+
 	if g.Hint != nil && g.Found == nil {
 		for budget > 0 && ctx.Err() == nil {
 			probes := rec.nextProbes(g, 1)
 			if len(probes) == 0 {
 				rec.finish(g, StopHintNotFound, nil)
-				return false, false, spent, nil
+				return false, false, spent, lookup, nil
 			}
 			stage := probes[0]
 			addrs, err := derive(ctx, stage, stage+1)
 			if err != nil {
-				return false, false, spent, err
+				return false, false, spent, lookup, err
 			}
 			if len(addrs) == 0 {
 				break
 			}
 			budget--
 			if _, err := table.RecordDerived(stage, addrs); err != nil {
-				return false, false, spent, err
+				return false, false, spent, lookup, err
 			}
 			if err := publishStageBatch(table, spent-len(addrs), spent, opts); err != nil {
-				return false, false, spent, err
+				return false, false, spent, lookup, err
 			}
 			if addrs[0] == authorizer {
 				rec.setFound(g, stage)
@@ -586,18 +648,18 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 		if budget > 0 {
 			found, err = extendUntil(ctx, table, derive, authorizer, budget, opts)
 			if err != nil {
-				return false, false, spent, err
+				return false, false, spent, lookup, err
 			}
 		}
 	}
 	if found {
 		stage, _ := table.Lookup(authorizer)
 		rec.finish(g, StopFound, &stage)
-		return true, false, spent, nil
+		return true, false, spent, lookup, nil
 	}
 	if !rec.progress(g) {
 		// Cancelled, superseded or invalidated while this pass ran.
-		return false, false, spent, nil
+		return false, false, spent, lookup, nil
 	}
 	switch {
 	case g.Charged >= g.MaxStages:
@@ -606,12 +668,26 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 		} else {
 			rec.finish(g, StopBudgetExhausted, nil)
 		}
-		return false, false, spent, nil
+		return false, false, spent, lookup, nil
 	case g.Active >= g.Timeout:
 		rec.finish(g, StopTimedOut, nil)
-		return false, false, spent, nil
+		return false, false, spent, lookup, nil
 	}
-	return false, true, spent, nil
+	return false, true, spent, lookup, nil
+}
+
+// runStageLookup runs a grant's chain lookup and keeps what it found. No
+// Indexer is no record; a caller mistake is recorded as unavailable, since
+// the search goes on either way.
+func runStageLookup(ctx context.Context, lookupStage func(context.Context) (chainread.StageLookup, error)) *StageLookupRecord {
+	result, err := lookupStage(ctx)
+	if err != nil {
+		result = chainread.StageLookup{Outcome: chainread.LookupUnavailable, Network: result.Network, Host: result.Host, Reason: err.Error()}
+	}
+	if result.Outcome == chainread.LookupNoIndexer {
+		return nil
+	}
+	return &StageLookupRecord{StageLookup: result}
 }
 
 // resolveStage maps the authorizer to a stage: the account itself is stage

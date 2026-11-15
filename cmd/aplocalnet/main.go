@@ -44,13 +44,15 @@ type applyMsg struct {
 }
 
 type model struct {
-	opts   aplocalnet.Options
-	busy   bool
-	status string
-	info   *aplocalnet.LocalNetInfo
-	result *aplocalnet.ApplyResult
-	err    string
-	width  int
+	opts aplocalnet.Options
+	// indexer says which LocalNet Indexer the signer config will name.
+	indexer string
+	busy    bool
+	status  string
+	info    *aplocalnet.LocalNetInfo
+	result  *aplocalnet.ApplyResult
+	err     string
+	width   int
 }
 
 func main() {
@@ -60,6 +62,7 @@ func main() {
 		algodURL      string
 		algodToken    string
 		kmdURL        string
+		indexerURL    string
 		checkOnly     bool
 		applyOnly     bool
 		showVersion   bool
@@ -71,6 +74,7 @@ func main() {
 	flag.StringVar(&algodURL, "algod-url", "", "LocalNet algod URL")
 	flag.StringVar(&algodToken, "algod-token", "", "LocalNet algod token")
 	flag.StringVar(&kmdURL, "kmd-url", "", "LocalNet KMD URL for the bundled localnet plugin")
+	flag.StringVar(&indexerURL, "indexer-url", "", "LocalNet Indexer URL written to the signer config (default "+aplocalnet.DefaultIndexerURL+" when the algod URL is the default and the signer config has no localnet indexer)")
 	flag.BoolVar(&checkOnly, "check", false, "check LocalNet reachability without writing config")
 	flag.BoolVar(&applyOnly, "apply", false, "apply setup without launching the TUI")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
@@ -98,7 +102,12 @@ func main() {
 		AlgodURL:      algodURL,
 		AlgodToken:    algodToken,
 		KMDURL:        kmdURL,
+		IndexerURL:    indexerURL,
 	})
+	if err := aplocalnet.ValidateOptions(opts); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(2)
+	}
 
 	switch {
 	case checkOnly:
@@ -189,6 +198,7 @@ func printApplyResult(result aplocalnet.ApplyResult) {
 	fmt.Printf("Genesis hash: %s\n", result.LocalNet.GenesisHash)
 	if result.SignerConfigPath != "" {
 		fmt.Printf("Signer config: %s (%s)\n", changedText(result.SignerConfigChanged), result.SignerConfigPath)
+		fmt.Printf("Signer Indexer: %s\n", result.SignerIndexer)
 	}
 	if result.ClientConfigPath != "" {
 		fmt.Printf("Client config: %s (%s)\n", changedText(result.ClientConfigChanged), result.ClientConfigPath)
@@ -226,10 +236,20 @@ func initStyles() {
 
 func newModel(opts aplocalnet.Options) model {
 	opts = aplocalnet.NormalizeOptions(opts)
+	indexer := "-"
+	if opts.SignerDataDir != "" {
+		plan, err := aplocalnet.PlanSignerIndexer(opts.SignerDataDir, opts.AlgodURL, opts.IndexerURL)
+		if err != nil {
+			indexer = "unknown: " + err.Error()
+		} else {
+			indexer = plan.String()
+		}
+	}
 	return model{
-		opts:   opts,
-		busy:   true,
-		status: "checking LocalNet",
+		opts:    opts,
+		indexer: indexer,
+		busy:    true,
+		status:  "checking LocalNet",
 	}
 }
 
@@ -323,6 +343,7 @@ func (m model) View() string {
 	if m.opts.KMDURL != "" {
 		sb.WriteString(kv("KMD", m.opts.KMDURL))
 	}
+	sb.WriteString(kv("Indexer", m.indexer))
 	sb.WriteString(kv("Plugin", filepath.Join(m.opts.ClientDataDir, discovery.AvailableDirName, aplocalnet.PluginName)))
 	sb.WriteString("\n")
 

@@ -7,6 +7,33 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The signer reads a rotating account's stage from its last spend
+
+- **An optional Indexer per network finds a rotating account's stage.**
+  Configure `networks.<network>.indexer` (`server`, `token`) in the signer's
+  `config.yaml`. When the signer cannot place an account's authorizer, its
+  search first reads the account's last confirmed rekey from the Indexer and
+  tries the stage that spend's program names, plus one. The lookup is one
+  request for one result, within ten seconds and a 128 KiB response, once
+  per search, used only if the account sent it. Anyone holding the clawback
+  address of any asset can hide that spend from the lookup with one
+  zero-amount clawback naming the account, at one minimum fee; the signer
+  then searches as it does without an Indexer. A larger limit would only
+  multiply that cost, so the lookup asks the Indexer for its lightest query.
+  After a restore or
+  on a new machine the account usually resolves on the next pass, after one
+  derivation. The stage is a candidate only: the signer accepts it when the
+  address it derives from the seed is the authorizer its own algod reports.
+  Without an Indexer, or when the lookup cannot be done or does not match,
+  the search runs as before; a candidate that does not match costs it one
+  stage. `rotate recover <account>` without `--stage` begins with the same
+  lookup. `rotate status` and `/status` (`recovery.lookup`) show what it
+  found, and the signer logs one line per lookup. The setting is file-only;
+  apshell and apadmin have none. `aplocalnet` writes the LocalNet Indexer
+  (`http://localhost:8980`) into the signer's config when it uses the
+  default algod and the config names none, or the one `--indexer-url`
+  gives, which must be an http or https URL with a host.
+
 ## Rotating stage programs carry their stage number
 
 - **Every stage program opens with its stage number.** The XMSS, WOTS+C

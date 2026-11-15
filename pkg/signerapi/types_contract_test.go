@@ -179,6 +179,7 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"status_response_rotating.json", assertContractRoundTrip[StatusResponse]},
 		{"rotating_recover_request.json", assertContractRoundTrip[RotatingRecoverRequest]},
 		{"rotating_recover_response.json", assertContractRoundTrip[RotatingRecoverResponse]},
+		{"rotating_recover_response_lookup.json", assertContractRoundTrip[RotatingRecoverResponse]},
 	}
 
 	for _, tt := range tests {

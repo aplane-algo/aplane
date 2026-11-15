@@ -210,6 +210,7 @@ Validation:
 - `teal_compile_network` and server `networks` keys must be valid network context tokens
 - `networks.<token>.algod` is normalized into the runtime algod map
 - `networks.<token>.genesis_hash` maps one base64 or hex encoded 32-byte genesis hash to that custom network context token
+- `networks.<token>.indexer` (`server`, `token`) is optional and normalized into the runtime Indexer map; a non-empty `server` must be an http or https URL with a host, and the load error names the network, not the URL. It is a file setting, not a writable admin setting. The stage table worker reads it to choose a rotating search's first candidate, and reports what that lookup found as the optional `/status` field `rotating[].recovery.lookup` (`signerapi.RotatingStageLookupStatus`, [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)), an additive field; the contract fixtures `status_response_rotating.json` and `rotating_recover_response_lookup.json` carry it
 - `mainnet`, `testnet`, and `betanet` are reserved built-in Algorand network tokens; custom genesis-hash mappings cannot use those tokens or remap their built-in genesis hashes
 - duplicate genesis-hash mappings and duplicate custom token mappings are rejected at config load
 - relative SSH server paths resolve against the signer data dir
@@ -327,6 +328,24 @@ Endpoint and token resolution:
 - algod token: `--algod-token`, then `APLANE_LOCALNET_TOKEN`, then the
   well-known AlgoKit LocalNet default token
   `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+- Indexer URL: `--indexer-url`, then `APLANE_LOCALNET_INDEXER_URL`; its token
+  is the algod token. A given URL must pass the signer's own rule (an http or
+  https URL with a host, `config.ValidateIndexerServer`), or the tool refuses
+  it before writing anything, and it is then written over any existing
+  `networks.localnet.indexer`. With neither, `http://localhost:8980` is
+  written only when the algod URL is the tool's own default
+  (`http://localhost:4001`) and the signer config has no
+  `networks.localnet.indexer` entry; an entry the operator set, or emptied
+  (`server: ""`) to keep the lookup off, is left alone. With another algod
+  URL no Indexer is written, since the default port may not be that
+  network's Indexer and the algod token would go to whatever listens there.
+  The tool reports what the signer config names afterwards, by host only
+  (`Signer Indexer:` and the TUI's `Indexer` line). Beside another algod it
+  warns: of a kept entry, that it may have been written for another algod
+  and `--indexer-url` replaces it; with none, that none was written and
+  `--indexer-url` adds one. It is written to the signer only and is not
+  checked for reachability: an unreachable Indexer leaves rotating stage
+  searches as they are without one
 - KMD URL: `--kmd-url`, then `APLANE_LOCALNET_KMD_URL`; if omitted, no
   persistent KMD override is written and the bundled LocalNet plugin uses its
   own default of `http://localhost:4002`
@@ -346,7 +365,8 @@ to `~/aplane/apsigner`. At least one target is required after resolution. For
 each selected target it then:
 
 - write signer `config.yaml` with `networks.localnet.algod.server`,
-  `networks.localnet.algod.token`, and `networks.localnet.genesis_hash`
+  `networks.localnet.algod.token`, `networks.localnet.indexer.server`,
+  `networks.localnet.indexer.token`, and `networks.localnet.genesis_hash`
 - write client `config.yaml` with `network: localnet`,
   `networks.localnet.algod.server`, and `networks.localnet.algod.token`
 - append `localnet` to a non-empty `networks_allowed` list when needed so the

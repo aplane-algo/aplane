@@ -33,7 +33,9 @@ func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.Rotati
 
 // chainReader reads chain state from the node configured for each network:
 // rotating accounts' authorizers, and assets an operator confirms into the
-// ASA set. It is the one place the signer reads the chain.
+// ASA set; and, where an Indexer is configured, a rotating account's last
+// rekey, for the stage its search tries first. It is the one place the
+// signer reads the chain.
 func (fs *Signer) chainReader() chainread.Reader {
 	makeClient := fs.makeAlgod
 	if makeClient == nil {
@@ -46,5 +48,13 @@ func (fs *Signer) chainReader() chainread.Reader {
 			return cfg.GetAlgodConfig(network)
 		},
 		MakeClient: makeClient,
+		// The Indexer is optional and, like algod, a file setting.
+		IndexerConfig: func(network string) *apconfig.IndexerNetworkConfig {
+			cfg := fs.ConfigSnapshot()
+			return cfg.GetIndexerConfig(network)
+		},
+		IndexerTransport: fs.indexerTransport,
+		LookupTimeout:    fs.indexerTimeout,
+		Pause:            &fs.indexerPause,
 	}
 }

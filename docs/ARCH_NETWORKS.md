@@ -220,9 +220,48 @@ stage is live. The rules for that read (`internal/signerapp/chainread`):
   client-supplied value,
 - every read is bounded (20 s), so a stalled node cannot hold the signer.
 
-No indexer is involved: the signer needs only the account's current
-authorizer, never its history. Ordinary `/plan` and `/sign` remain
+Signing never involves an Indexer: the signer needs only the account's
+current authorizer, never its history. Ordinary `/plan` and `/sign` remain
 network-independent.
+
+The one optional Indexer read is the stage table worker's. When a recovery
+search for a rotating account starts, the worker may look up the account's
+last rekey to choose the stage it tries first
+([ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)). The
+Indexer is configured per network on the signer only, beside its algod:
+
+```yaml
+networks:
+  mainnet:
+    algod:
+      server: https://configured-algod.example
+      token: ""
+    indexer:
+      server: https://configured-indexer.example
+      token: ""
+```
+
+- it is chosen as algod is: the key file's genesis hash, through the same
+  resolver, to a network token, then `networks.<net>.indexer`. Without one the
+  worker searches as it would anyway; it is never derived from the algod URL
+  and no public provider is built in,
+- every transaction it returns must carry the account's genesis hash, or the
+  answer is treated as another network's (`wrong_network`) and ignored,
+- its answer is a candidate only: a stage is accepted when the address
+  derived from the seed equals the authorizer read from the signer's own
+  algod,
+- a lookup is bounded: 10 s, one request for one result (a response that
+  holds a second is refused, and no further page is asked for), a 128 KiB
+  body read whole and checked as one JSON document, 16 KiB of headers, its
+  own connection with no keep-alive, no redirects, one attempt per grant,
+  and only the fields it checks are decoded. The result is used only if the
+  account sent it: the Indexer's sender role also matches a clawback's asset
+  sender, and any clawback address of any asset can name the account in a
+  zero-amount clawback, with no opt-in, at one minimum fee, which leaves the
+  search as without an Indexer. A larger limit would only multiply that
+  cost, so one result is asked for, the lightest query for the Indexer,
+- the setting is a file setting, read at start like algod's, and not an admin
+  setting. The client (apshell) has no Indexer setting.
 
 ## ASA Transfer Guards
 
@@ -278,6 +317,7 @@ Primary files:
 - `internal/config/genesishash.go` - built-in and custom genesis-hash resolver,
 - `internal/config/config.go` - client config validation,
 - `internal/serverconfig/serverconfig.go` - signer config validation,
+- `internal/signerapp/chainread` - the signer's algod reads and its optional Indexer lookup,
 - `internal/engine/engine.go` - client network switching,
 - `internal/apshellapp/network.go` - shell-facing network switching workflow,
 - `internal/signerapp/signing/planner.go` - signer transaction network validation,

@@ -40,6 +40,22 @@ const (
 	RotatingRecoverActionCancel = "cancel"
 )
 
+// Stage lookup outcomes and probe results reported in
+// RotatingStageLookupStatus. No outcome is reported when no Indexer is
+// configured: an absent lookup means none ran.
+const (
+	RotatingLookupCandidate        = "candidate"
+	RotatingLookupUnavailable      = "unavailable"
+	RotatingLookupNoOutgoingRekey  = "no_outgoing_rekey"
+	RotatingLookupNotCurrent       = "not_current"
+	RotatingLookupNotAStageProgram = "not_a_stage_program"
+	RotatingLookupWrongNetwork     = "wrong_network"
+
+	RotatingLookupProbeMatched       = "matched"
+	RotatingLookupProbeMissed        = "missed"
+	RotatingLookupProbeAlreadyCached = "already_cached"
+)
+
 // RotatingAccountStatus is one rotating account's view from the signer's
 // last background pass.
 type RotatingAccountStatus struct {
@@ -94,6 +110,28 @@ type RotatingRecoveryStatus struct {
 	AllowanceSpent       uint64 `json:"allowance_spent"`
 	AllowanceMax         uint64 `json:"allowance_max"`
 	SuppressedAuthorizer string `json:"suppressed_authorizer,omitempty"`
+
+	// Lookup reports the chain lookup a search began with, if one ran: the
+	// active grant's while Active, else the last stopped grant's.
+	Lookup *RotatingStageLookupStatus `json:"lookup,omitempty"`
+}
+
+// RotatingStageLookupStatus reports the chain lookup a recovery search began
+// with: the stage the account's last confirmed rekey read, through the
+// signer's Indexer, and whether the address derived for it was the
+// authorizer. It is a record of what the search tried first, never a stage
+// the signer accepted on the Indexer's word.
+type RotatingStageLookupStatus struct {
+	// Outcome is one of the RotatingLookup* outcomes.
+	Outcome string `json:"outcome"`
+	// Stage is the candidate, when Outcome is candidate.
+	Stage *uint64 `json:"stage,omitempty"`
+	// Probe is matched, missed or already_cached, when Outcome is candidate;
+	// empty when the probe was cut short.
+	Probe string `json:"probe,omitempty"`
+	// TxID and Round identify the spend that was read, when one was.
+	TxID  string `json:"tx_id,omitempty"`
+	Round uint64 `json:"round,omitempty"`
 }
 
 // RotatingRecoverRequest starts or cancels an operator recovery grant

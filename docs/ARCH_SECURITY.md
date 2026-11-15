@@ -2046,6 +2046,95 @@ types, and over-ceiling fees before signing. The only rekey authority is the
 spending key, and an account may declare no rekey operation at all. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
+### Outbound Chain Reads
+
+The signer reads the chain itself in two places, both through
+`internal/signerapp/chainread`: its own algod, for a rotating account's
+authorizer and for an asset an operator confirms into the ASA set; and, only
+when `networks.<token>.indexer` is configured, an Indexer, for the stage a
+rotating recovery search tries first. Both are chosen from the key's genesis
+hash and are file settings, not admin settings.
+
+The Indexer read proposes and never decides. The candidate is derived from
+the seed and accepted only when its address equals the authorizer the
+signer read from its own algod, the check every search probe makes. What a
+wrong or hostile Indexer can do:
+
+| It does | Effect |
+|---|---|
+| Supplies a well-formed spend with a false stage | One derivation and its time charged to the grant, a miss, then the normal search with one stage less to spend; with one stage left, the search does not run |
+| Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
+| An HTTP proxy from the environment sits in the path | It sees the account looked up and can answer as the Indexer, with the same effects as a hostile Indexer; for an `http://` Indexer it also sees the token. An `https://` Indexer keeps the token from it |
+| Answers slowly or not at all, or fails to answer | At most 10 seconds of the worker; then that network's Indexer is not asked for 60 seconds, and the lookups of other accounts in that time ask nothing, come back `unavailable` at once and search without it. Lookups run inline in the worker's one pass, so a stalling Indexer costs a pass at most one timeout a minute, not one per account. Only failures to reach the Indexer or be answered pause it; an answer refused for its body is `unavailable` for that account alone |
+| Puts a result the account did not send first, or anyone on chain sends a zero-amount clawback naming the account | No outgoing rekey, and the search runs as without an Indexer. Any clawback address of any asset can do this for one minimum fee, so the shortcut can be suppressed, never turned into a wrong stage |
+| Sends a huge or malformed body, or redirects | Refused past 128 KiB, on any syntax error, repeated key or second result, or the redirect itself; the lookup is `unavailable` |
+| Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
+
+For `aplane.rotating-triple-xmss.v1` that one derivation is dearer: a
+stage's address needs the public tree of its run of 1,024 stages, so a false
+stage in a tree the signer has not built costs a full tree build at a tree
+index the Indexer chose (seconds of CPU and about 4 MiB), and the built tree
+takes one of the account's three slots in the tree cache (16 across
+accounts), evicting the least recently used. An evicted live or next tree is
+built again when it is next needed. The cost stays bounded: once per grant,
+charged to the grant's active time like any probe, so within
+`rotating.recovery_timeout` for an automatic grant.
+
+It cannot make the signer accept a stage, change what is signed, write a hint
+into the stage table, or widen a search. At the edge of an automatic
+allowance it can end a search one stage early. Nothing it sends reaches a log
+line, status field or error except a transaction ID of the right form; the
+Indexer's token is in none of them. The lookup opens no seed and is not a key
+use.
+
+Configuring one exposes two things: the Indexer provider learns which
+accounts the signer asks about (the algod provider already learns that from
+the authorizer reads), and the signer parses one more provider's responses.
+A lookup is one request for one result (`lookupLimit`), the account's
+newest outgoing rekey, and never a further page: `next-token` is ignored. The
+result is used only if its top-level sender is the account; otherwise the
+outcome is `no_outgoing_rekey` and the search runs without the lookup. It can
+be another sender's because the Indexer's sender role also matches a
+clawback's asset sender, and a zero-amount clawback needs no opt-in by the
+account it names: any address that is the clawback address of any asset can
+send one naming any account as asset sender, rekeying its own sender, at one
+minimum fee, and so suppress the lookup after the account's spend.
+Suppressing it gains nothing but the search the signer would have run
+anyway. A larger limit would only multiply that negligible cost, not prevent
+it, so the lookup asks for one result: the simplest rule, and the lightest
+query for the Indexer, whose database stops at the account's newest
+matching transaction instead of walking back through older ones. The signer
+decodes the response itself, into only the fields the lookup checks
+(`internal/signerapp/chainread/lookup_decode.go`), under one set of rules:
+the whole body is read first, and one longer than 128 KiB is refused before
+anything is decoded, and only a clean end of the body makes it complete, so
+one the transport reports cut short (a Content-Length longer than the body,
+a chunked stream without its end) is refused too; the body must be a single JSON object followed only by
+whitespace, checked whole, so trailing data, truncation or a syntax error
+anywhere refuses it even after a matching result; `transactions` may appear
+once, every element is read, and a second element refuses the answer, the
+result being used only after the whole document is read; keys are compared byte for byte, without case or
+Unicode folding, a key written with an escape sequence is refused, and a key
+the lookup reads appearing twice in one object refuses the answer; every
+kept field has a fixed bound and form (a transaction ID or address its
+length, a program 16,000 bytes, the largest a group's pooled LogicSig size
+allows, all written without escape sequences); everything else is scanned
+past without being kept. So a lookup allocates at most the 128 KiB body
+buffer, one program of at most 16,000 bytes, and the syntax check's nesting
+stack, about 340 KB measured at worst, whatever the response holds;
+the SDK's models would have decoded a 1 MiB body of empty results into
+gigabytes. The request goes over the lookup's own HTTP transport, not the
+process default: keep-alives are off, so each lookup opens one connection
+and its token-bearing GET is never replayed on a reused one that died;
+response headers are capped at 16 KiB; the dial, TLS handshake and wait for
+headers each have a timeout within the 10-second deadline; no compression is
+asked for; and any response outside 2xx, redirects included, is refused
+unread. Like the signer's algod client (a clone of the process default
+transport), it takes an HTTP proxy from the environment (`HTTPS_PROXY`,
+`HTTP_PROXY`, `NO_PROXY`). A configured proxy sees which account is looked up
+and can answer as the Indexer, and for an `http://` Indexer it also sees the
+token in clear; use an `https://` Indexer when a proxy is in the path.
+
 ### Defense in Depth
 
 | Attack Vector | Mitigation |
@@ -2058,6 +2147,7 @@ spending key, and an account may declare no rekey operation at all. See
 | Socket hijacking | Permissions check, symlink rejection |
 | Blind signing | TxnBytesHex required, transaction verification |
 | Foreign LSig resource manipulation | `lsig_resources` is advisory; incorrect hints cause submission failure, not security bypass |
+| Hostile Indexer | Its stage is a candidate the seed derivation must confirm against algod's authorizer; one bounded lookup per grant (see Outbound Chain Reads) |
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |
@@ -2154,6 +2244,7 @@ Primary implementation files:
 - `internal/signerapp/daemon/admin_services.go`
 - `internal/signerapp/daemon/audit_attribution.go`
 - `internal/signerapp/audit/audit.go`
+- `internal/signerapp/chainread/reader.go`, `lookup.go`
 
 Compatibility-bearing references:
 

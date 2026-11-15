@@ -59,6 +59,9 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `networks.<network>.algod` | object | (none) | Algod settings for this network context token |
 | `networks.<network>.algod.server` | string | `(none)` | Algod server URL |
 | `networks.<network>.algod.token` | string | `(none)` | Algod API token |
+| `networks.<network>.indexer` | object | (none) | Optional Indexer for this network context token; the stage table worker reads a rotating account's last rekey from it to find the stage to try first |
+| `networks.<network>.indexer.server` | string | `(none)` | Indexer base URL; empty means no Indexer for this network |
+| `networks.<network>.indexer.token` | string | `(none)` | Indexer API token |
 | `networks.<network>.genesis_hash` | string | `(none)` | Custom signer policy genesis hash for this network context token |
 | `teal_compile_network` | string | `testnet` | Network context token whose algod is used for TEAL compilation |
 | `require_memory_protection` | bool | `false` | Fail startup if memory protection unavailable |
@@ -85,7 +88,8 @@ Node role is stored separately in root `node.yaml`.
 | `APLANE_SYSTEMD_MANAGED` | Set to 1 to mark the signer instance as systemd-managed (manual startup blocked unless overridden) | apsigner |
 | `APLANE_LOCALNET_ALGOD_URL` | Optional AlgoKit LocalNet algod override | aplocalnet, algokit-localnet plugin |
 | `APLANE_LOCALNET_KMD_URL` | Optional AlgoKit LocalNet KMD override | aplocalnet, algokit-localnet plugin |
-| `APLANE_LOCALNET_TOKEN` | Optional AlgoKit LocalNet algod/KMD token override | aplocalnet, algokit-localnet plugin |
+| `APLANE_LOCALNET_INDEXER_URL` | Optional AlgoKit LocalNet Indexer written to the signer config; without it the default is written only with the default algod URL and when the config has no localnet indexer | aplocalnet |
+| `APLANE_LOCALNET_TOKEN` | Optional AlgoKit LocalNet algod/KMD/Indexer token override | aplocalnet, algokit-localnet plugin |
 | `APLANE_LOCALNET_WALLET` | Optional KMD wallet name for LocalNet funding | algokit-localnet plugin |
 | `APLANE_LOCALNET_WALLET_PASSWORD` | Optional KMD wallet password for LocalNet funding | algokit-localnet plugin |
 | `TEST_PASSPHRASE` | Passphrase for automated testing (auto-unlocks apsigner) | apsigner, apadmin |

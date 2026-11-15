@@ -923,8 +923,13 @@ not contain the full stages cache or audit/leaf history. Restoring a credential
 successfully does not mean it is ready to spend yet; check `rotate status`.
 
 A matching hint at stage 50,000 requires preparing that stage and its
-successor, without rebuilding stages 0–49,999. Without a useful hint, discovery
-still has a bounded allowance. Record the live stage from `rotate status`
+successor, without rebuilding stages 0–49,999. With an Indexer configured for
+the network (`networks.<network>.indexer` in the signer's `config.yaml`), a
+rotating account resolves by itself after a restore: on the signer's next
+pass it reads the stage of the account's last confirmed spend, derives that
+one stage, and, if it matches the account's authorizer, is done. Without an
+Indexer, or when the lookup gives nothing, discovery still has a bounded
+allowance. Record the live stage from `rotate status`
 when making an offline recovery record. If automatic discovery stops, use
 `rotate recover <account> --stage N` with that candidate. A wrong or stale
 hint cannot establish signing authority and may require another bounded search.

@@ -3,7 +3,11 @@
 
 package config
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"net/url"
+)
 
 // AlgodNetworkConfig holds algod settings for a single network.
 type AlgodNetworkConfig struct {
@@ -13,6 +17,31 @@ type AlgodNetworkConfig struct {
 
 // AlgodConfig is a map of network name → settings.
 type AlgodConfig map[string]*AlgodNetworkConfig
+
+// IndexerNetworkConfig holds Indexer settings for a single network. Only the
+// signer reads one: it looks up a rotating account's last rekey there to
+// find the stage to try first. Empty Server means no Indexer.
+type IndexerNetworkConfig struct {
+	Server string `yaml:"server" description:"Indexer base URL; empty means no Indexer for this network" default:""`
+	Token  string `yaml:"token" description:"Indexer API token" default:""`
+}
+
+// ErrIndexerServerNotURL reports an Indexer server that is not an http or
+// https URL with a host.
+var ErrIndexerServerNotURL = errors.New("not an http or https URL with a host")
+
+// ValidateIndexerServer checks that server can be an Indexer's base URL: an
+// http or https URL with a host. It is the rule the signer's configuration
+// loader applies, so a setup tool that writes the setting can refuse what
+// the signer would. The error does not repeat server, which may hold a
+// credential.
+func ValidateIndexerServer(server string) error {
+	u, err := url.Parse(server)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ErrIndexerServerNotURL
+	}
+	return nil
+}
 
 // ClientNetworkConfig holds grouped apshell settings for a single network context token.
 type ClientNetworkConfig struct {

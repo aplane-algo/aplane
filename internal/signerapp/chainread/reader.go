@@ -10,6 +10,12 @@
 // genesis-hash mapping and networks.<net>.algod, and its own genesis hash
 // must match before any answer is trusted. A missing mapping, a missing algod
 // entry, or a node on another network fails closed.
+//
+// Where networks.<net>.indexer is configured, LookupLastRotation also reads
+// a rotating account's newest outgoing rekey from that Indexer, chosen the
+// same way, to propose the stage a search tries first. Its answer is a
+// candidate only: the caller accepts a stage only when the address it
+// derives from the seed is the authorizer its own algod reported.
 package chainread
 
 import (
@@ -17,6 +23,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"time"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 
@@ -48,6 +56,28 @@ type Reader struct {
 
 	// MakeClient builds an algod client.
 	MakeClient func(server, token string) (*algod.Client, error)
+
+	// IndexerConfig returns the Indexer configured for a network token, or
+	// nil when there is none. Optional: nil means no stage lookup.
+	IndexerConfig func(network string) *apconfig.IndexerNetworkConfig
+
+	// IndexerTransport carries the Indexer's requests. nil, as in
+	// production, means the package's own transport, with keep-alives off,
+	// response headers capped and dial, TLS and header timeouts. A
+	// RoundTripper set here bypasses all of those and is for tests. Either
+	// way the lookup wraps it to refuse every response outside 2xx,
+	// redirects among them; the body cap is enforced by the lookup's read of
+	// the body, not by the transport.
+	IndexerTransport http.RoundTripper
+
+	// LookupTimeout bounds one LookupLastRotation. Zero means
+	// DefaultLookupTimeout.
+	LookupTimeout time.Duration
+
+	// Pause, if set, keeps each network's Indexer from being asked again
+	// for IndexerPauseAfterFailure after a lookup it failed. The daemon
+	// shares one among every Reader it builds; nil means no pause.
+	Pause *IndexerPause
 }
 
 // ReadAccount returns account's authorizer and the round of the read from the

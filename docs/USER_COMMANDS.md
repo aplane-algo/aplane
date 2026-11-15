@@ -166,7 +166,16 @@ the signer's own view of it (its live stage and how many stages it has
 cached, whether it is locating the stage, preparing its successor, or ready
 at the last observation, and any search running
 or why the last one stopped), any signer alerts that name it, and notes such
-as a release still in flight. With no account it lists every signable
+as a release still in flight. When the signer has an Indexer
+(`networks.<network>.indexer`), a search begins by reading the stage of the
+account's last spend, and one more line says what that found, for example
+`lookup: stage 418 was read from the last spend (TXID, round R) and
+confirmed`, or, while the search is still running,
+`lookup: stage 418 read from the last spend (TXID) did not match; searching`.
+Other lookups say the Indexer could not be read, showed no rekey sent by the
+account, had a newest rekey that is not the current one, saw a rekey not
+signed by a stage program, or answered for another network; each ends in
+"searching" only while the search is still running. With no account it lists every signable
 rotating account. The signer refreshes its view about every 30 seconds
 while unlocked (longer when chain reads or stage derivation for other
 accounts are slow), so an alert can briefly outlive the rotation that
@@ -176,7 +185,11 @@ resolved it.
 is for the note "authorizer … is not among the N stage addresses this
 signer has cached": the signer searched on its own as far as its automatic
 allowance goes and stopped. Without options it searches forward from its
-last observation, interleaving lower gaps, up to `--max-stages` (default 4096) more stages. With `--stage N`
+last observation, interleaving lower gaps, up to `--max-stages` (default 4096) more stages; when the signer has an
+Indexer, it first tries the stage the account's last spend reads, so
+`rotate recover <account>` is also how to retry that lookup after the
+Indexer was down. A candidate that does not match costs the search one of
+its stages. With `--stage N`
 it derives stage N directly, probes `--window` (default 64) stages either
 side of it, and once one matches prepares the successor without rebuilding
 the preceding history; a wrong

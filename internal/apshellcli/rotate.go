@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -250,6 +251,9 @@ func renderRecoveryStatus(r *REPLState, indent string, rec *signerapi.RotatingRe
 		}
 		r.printf("%s\n", line)
 	}
+	if rec.Lookup != nil {
+		r.printf("%slookup: %s\n", indent, stageLookupLine(rec.Lookup, rec.Active))
+	}
 	if rec.AllowanceMax > 0 {
 		r.printf("%sautomatic allowance: %d of %d stages used this unlock\n", indent, rec.AllowanceSpent, rec.AllowanceMax)
 	} else {
@@ -258,4 +262,73 @@ func renderRecoveryStatus(r *REPLState, indent string, rec *signerapi.RotatingRe
 	if rec.SuppressedAuthorizer != "" {
 		r.printf("%sautomatic recovery exhausted for authorizer %s\n", indent, rec.SuppressedAuthorizer)
 	}
+}
+
+// stageLookupLine words the chain lookup a search began with. While the
+// grant is active the search goes on, and the line says so; once it has
+// stopped the line says only what the lookup found, and the stop line beside
+// it says why the grant ended. The transaction ID came from the signer's
+// Indexer and is escaped as request text is.
+func stageLookupLine(l *signerapi.RotatingStageLookupStatus, active bool) string {
+	spend := func(round bool) string {
+		ref := ""
+		if l.TxID != "" {
+			ref = termsafe.Line(l.TxID)
+		}
+		if round && l.Round != 0 {
+			if ref != "" {
+				ref += ", "
+			}
+			ref += fmt.Sprintf("round %d", l.Round)
+		}
+		if ref == "" {
+			return "the last spend"
+		}
+		return "the last spend (" + ref + ")"
+	}
+	stage := uint64(0)
+	if l.Stage != nil {
+		stage = *l.Stage
+	}
+	var now, then string
+	switch l.Outcome {
+	case signerapi.RotatingLookupCandidate:
+		switch l.Probe {
+		case signerapi.RotatingLookupProbeMatched:
+			// The grant ends at once; there is no active form.
+			line := fmt.Sprintf("stage %d was read from %s and confirmed", stage, spend(true))
+			now, then = line, line
+		case signerapi.RotatingLookupProbeMissed:
+			then = fmt.Sprintf("stage %d read from %s did not match", stage, spend(false))
+			now = then + "; searching"
+		case signerapi.RotatingLookupProbeAlreadyCached:
+			then = fmt.Sprintf("stage %d read from %s was not the authorizer's", stage, spend(false))
+			now = fmt.Sprintf("stage %d read from %s is not the authorizer's; searching", stage, spend(false))
+		default:
+			then = fmt.Sprintf("stage %d read from %s was not tried", stage, spend(false))
+			now = then + "; searching"
+		}
+	case signerapi.RotatingLookupUnavailable:
+		then = "the Indexer could not be read"
+		now = then + "; searching without it"
+	case signerapi.RotatingLookupNoOutgoingRekey:
+		then = "the Indexer showed no rekey sent by this account"
+		now = "the Indexer shows no rekey sent by this account; searching"
+	case signerapi.RotatingLookupNotCurrent:
+		then = "the Indexer's newest rekey for this account was not the current one"
+		now = "the Indexer's newest rekey for this account is not the current one; searching"
+	case signerapi.RotatingLookupNotAStageProgram:
+		then = "the account's last rekey was not signed by a stage program"
+		now = then + "; searching"
+	case signerapi.RotatingLookupWrongNetwork:
+		then = "the Indexer answered for another network"
+		now = then + "; searching without it"
+	default:
+		then = "outcome " + termsafe.Line(l.Outcome)
+		now = then + "; searching"
+	}
+	if active {
+		return now
+	}
+	return then
 }

@@ -41,6 +41,7 @@ func (s *afterKeyLoad) Get(ctx context.Context, account string) (*coresigning.Ke
 }
 
 type armingChain struct {
+	noStageLookup
 	base  *fakeRotatingChain
 	store *afterKeyLoad
 }
@@ -560,6 +561,10 @@ func (f rotatingChainFunc) ReadAccount(ctx context.Context, genesisHash []byte, 
 	return f(ctx, genesisHash, account)
 }
 
+func (rotatingChainFunc) LookupLastRotation(context.Context, []byte, types.Address, types.Address) (chainread.StageLookup, error) {
+	return chainread.StageLookup{Outcome: chainread.LookupNoIndexer}, nil
+}
+
 // A request that joins another derivation of the same stages decides by its own
 // key use when that derivation ends without a result: the other request was
 // cancelled, or its key use was stopped. Either way the waiter derives under its
@@ -921,6 +926,7 @@ func TestRotatingSignStopsAtALockDuringTheLastAuditWrite(t *testing.T) {
 
 // countingChain counts chain reads.
 type countingChain struct {
+	noStageLookup
 	base  *fakeRotatingChain
 	reads atomic.Int32
 }

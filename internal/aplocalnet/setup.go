@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,7 @@ const (
 	NetworkID           = "localnet"
 	PluginName          = "algokit-localnet"
 	DefaultAlgodURL     = "http://localhost:4001"
+	DefaultIndexerURL   = "http://localhost:8980"
 	DefaultAlgodToken   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	DefaultApplyTimeout = 15 * time.Second
 )
@@ -39,6 +41,12 @@ type Options struct {
 	AlgodURL      string
 	AlgodToken    string
 	KMDURL        string
+	// IndexerURL is the LocalNet Indexer the signer may read a rotating
+	// account's last rekey from, when given by flag or
+	// APLANE_LOCALNET_INDEXER_URL. It shares the LocalNet token. Empty means
+	// none was given: the signer gets DefaultIndexerURL only if its config
+	// has no localnet indexer entry.
+	IndexerURL string
 }
 
 // LocalNetInfo describes the reachable LocalNet.
@@ -61,7 +69,10 @@ type ApplyResult struct {
 	PluginAvailable         bool
 	EnvConfigPath           string
 	EnvConfigChanged        bool
-	Warnings                []string
+	// SignerIndexer says which LocalNet Indexer the signer config names
+	// after the apply, by host, and whether an entry already there was kept.
+	SignerIndexer string
+	Warnings      []string
 }
 
 // NormalizeOptions fills in LocalNet endpoint defaults.
@@ -76,6 +87,10 @@ func NormalizeOptions(opts Options) Options {
 	opts.KMDURL = NormalizeEndpointURL(firstNonEmpty(
 		opts.KMDURL,
 		os.Getenv("APLANE_LOCALNET_KMD_URL"),
+	))
+	opts.IndexerURL = NormalizeEndpointURL(firstNonEmpty(
+		opts.IndexerURL,
+		os.Getenv("APLANE_LOCALNET_INDEXER_URL"),
 	))
 	opts.AlgodToken = firstNonEmpty(
 		opts.AlgodToken,
@@ -126,6 +141,17 @@ func CheckReachable(ctx context.Context, opts Options) (LocalNetInfo, error) {
 	}, nil
 }
 
+// ValidateOptions refuses options the signer could not start with. An
+// Indexer URL must pass the signer's own rule for networks.<net>.indexer.
+func ValidateOptions(opts Options) error {
+	if opts.IndexerURL != "" {
+		if err := apconfig.ValidateIndexerServer(opts.IndexerURL); err != nil {
+			return fmt.Errorf("--indexer-url (or APLANE_LOCALNET_INDEXER_URL) is %w, such as %s", err, DefaultIndexerURL)
+		}
+	}
+	return nil
+}
+
 // Apply checks LocalNet reachability and updates the explicitly supplied target
 // data roots. A non-empty SignerDataDir updates apsigner config.yaml; a
 // non-empty ClientDataDir updates apclient config/plugin/env state.
@@ -133,6 +159,9 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 	opts = NormalizeOptions(opts)
 	if opts.SignerDataDir == "" && opts.ClientDataDir == "" {
 		return ApplyResult{}, fmt.Errorf("at least one of signer data directory or client data directory is required")
+	}
+	if err := ValidateOptions(opts); err != nil {
+		return ApplyResult{}, err
 	}
 
 	info, err := CheckReachable(ctx, opts)
@@ -144,12 +173,21 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 		LocalNet: info,
 	}
 	if opts.SignerDataDir != "" {
-		signerChanged, signerPath, err := EnsureSignerLocalnetConfig(opts.SignerDataDir, info, opts.AlgodToken)
+		// Planned before the write, which follows the same rule.
+		plan, err := PlanSignerIndexer(opts.SignerDataDir, info.AlgodURL, opts.IndexerURL)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		signerChanged, signerPath, err := EnsureSignerLocalnetConfig(opts.SignerDataDir, info, opts.AlgodToken, opts.IndexerURL)
 		if err != nil {
 			return ApplyResult{}, err
 		}
 		result.SignerConfigPath = signerPath
 		result.SignerConfigChanged = signerChanged
+		result.SignerIndexer = plan.String()
+		if warning := plan.warning(info.AlgodURL); warning != "" {
+			result.Warnings = append(result.Warnings, warning)
+		}
 	}
 	if opts.ClientDataDir != "" {
 		clientChanged, clientPath, err := EnsureClientLocalnetConfig(opts.ClientDataDir, info, opts.AlgodToken)
@@ -185,9 +223,106 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 	return result, nil
 }
 
-// EnsureSignerLocalnetConfig writes networks.localnet algod and genesis_hash
-// settings to apsigner config.yaml.
-func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken string) (bool, string, error) {
+// NoDefaultIndexerWarning is the line Apply reports when the signer is left
+// with no LocalNet Indexer because the algod URL given is not the default
+// LocalNet's.
+const NoDefaultIndexerWarning = "no LocalNet Indexer was written for the signer, since the algod URL is not the default; pass --indexer-url to give it one"
+
+// IndexerPlan is the LocalNet Indexer the signer config names once an apply
+// has run: Host is its server's host, empty for none, and Kept reports that
+// an entry already in the config is left as it is.
+type IndexerPlan struct {
+	Host string
+	Kept bool
+}
+
+// PlanSignerIndexer reports what an apply leaves in the signer config at
+// dataDir for algodURL and the given indexerURL, by the rule
+// EnsureSignerLocalnetConfig follows: a given URL is written; without one an
+// existing entry is kept, and otherwise the default is written beside the
+// default algod only.
+func PlanSignerIndexer(dataDir, algodURL, indexerURL string) (IndexerPlan, error) {
+	if indexerURL != "" {
+		return IndexerPlan{Host: serverHost(indexerURL)}, nil
+	}
+	doc, err := loadYAMLDocument(filepath.Join(dataDir, "config.yaml"))
+	if err != nil {
+		return IndexerPlan{}, err
+	}
+	root, err := documentMapping(doc)
+	if err != nil {
+		return IndexerPlan{}, err
+	}
+	if entry := mappingValue(mappingValue(mappingValue(root, "networks"), NetworkID), "indexer"); entry != nil {
+		server := ""
+		if v := mappingValue(entry, "server"); v != nil && v.Kind == yaml.ScalarNode {
+			server = v.Value
+		}
+		return IndexerPlan{Host: serverHost(server), Kept: true}, nil
+	}
+	if defaultLocalnetAlgod(algodURL) {
+		return IndexerPlan{Host: serverHost(DefaultIndexerURL)}, nil
+	}
+	return IndexerPlan{}, nil
+}
+
+// serverHost is a server URL's host, the only part shown, since a URL may
+// carry a credential; empty for an empty URL.
+func serverHost(server string) string {
+	if server == "" {
+		return ""
+	}
+	u, err := url.Parse(server)
+	if err != nil || u.Host == "" {
+		return "an entry that is not a URL"
+	}
+	return u.Host
+}
+
+// String words the plan for the tool's output.
+func (p IndexerPlan) String() string {
+	switch {
+	case p.Host != "" && p.Kept:
+		return p.Host + ", already in the signer config, left as it is"
+	case p.Host != "":
+		return p.Host
+	case p.Kept:
+		return "none: the signer config's entry is empty, left as it is"
+	}
+	return "none: pass --indexer-url for a non-default algod"
+}
+
+// warning is what an apply beside a non-default algod has to say about the
+// Indexer: an entry kept from before may have been written for another
+// algod, and with none the operator may want to give one.
+func (p IndexerPlan) warning(algodURL string) string {
+	switch {
+	case defaultLocalnetAlgod(algodURL):
+		return ""
+	case p.Host != "" && p.Kept:
+		return fmt.Sprintf("the signer config's LocalNet Indexer at %s was left as it is, but it may have been written for another algod than %s; pass --indexer-url to replace it", p.Host, serverHost(algodURL))
+	case p.Host == "":
+		return NoDefaultIndexerWarning
+	}
+	return ""
+}
+
+// defaultLocalnetAlgod reports whether algodURL is this tool's own default
+// LocalNet algod, beside which the default Indexer listens.
+func defaultLocalnetAlgod(algodURL string) bool {
+	return NormalizeEndpointURL(algodURL) == DefaultAlgodURL
+}
+
+// EnsureSignerLocalnetConfig writes networks.localnet algod, indexer and
+// genesis_hash settings to apsigner config.yaml. A given indexerURL is
+// written. Without one, DefaultIndexerURL is written only when info's algod
+// URL is the default LocalNet algod and the config has no localnet indexer
+// entry: with another algod the default port may not be that LocalNet's
+// Indexer, and the algod token is not sent to whatever listens there; an
+// entry the operator set, or emptied to turn the lookup off, is left alone.
+// The Indexer uses the LocalNet token, as every AlgoKit LocalNet service
+// does.
+func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken, indexerURL string) (bool, string, error) {
 	if dataDir == "" {
 		return false, "", fmt.Errorf("signer data directory is required")
 	}
@@ -199,6 +334,9 @@ func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken st
 		return false, "", fmt.Errorf("invalid localnet genesis hash: %w", err)
 	}
 	info.GenesisHash = canonicalGenesisHash
+	if err := ValidateOptions(Options{IndexerURL: indexerURL}); err != nil {
+		return false, "", err
+	}
 
 	path := filepath.Join(dataDir, "config.yaml")
 	doc, err := loadYAMLDocument(path)
@@ -230,6 +368,18 @@ func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken st
 
 	changed = setScalarValue(algodCfg, "server", info.AlgodURL, 0) || changed
 	changed = setScalarValue(algodCfg, "token", algodToken, yaml.DoubleQuotedStyle) || changed
+	if indexerURL == "" && defaultLocalnetAlgod(info.AlgodURL) && mappingValue(localnet, "indexer") == nil {
+		indexerURL = DefaultIndexerURL
+	}
+	if indexerURL != "" {
+		indexerCfg, didChange, err := ensureMappingValue(localnet, "indexer")
+		if err != nil {
+			return false, path, err
+		}
+		changed = changed || didChange
+		changed = setScalarValue(indexerCfg, "server", indexerURL, 0) || changed
+		changed = setScalarValue(indexerCfg, "token", algodToken, yaml.DoubleQuotedStyle) || changed
+	}
 	changed = setScalarValue(localnet, "genesis_hash", info.GenesisHash, yaml.DoubleQuotedStyle) || changed
 
 	if !changed {

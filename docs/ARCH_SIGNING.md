@@ -1979,12 +1979,60 @@ any grant still active for it. No search is ever
 read as proof that the account was exited; the note names the two
 remedies, `rotate recover` and deleting the key, and recommends neither.
 
+Candidates come from four places: the table's hint (a backup's sealed stage
+or the worker's last own observation), which the search goes forward from;
+release memory, when the table has no hint; an operator's `stage` hint; and,
+when `networks.<token>.indexer` is configured for the account's network, the
+chain. The chain's candidate is the search's first step. A grant without an
+operator's hint, automatic or operator, looks up once, before its first
+derivation: `chainread.Reader.LookupLastRotation` asks the Indexer chosen by
+genesis hash like algod, in one request, for the account's newest outgoing
+rekey, one result, and uses it only if its top-level sender is the account;
+otherwise the outcome is `no_outgoing_rekey` and the search runs. The sender
+role also matches a clawback's asset sender, and a zero-amount clawback needs
+no opt-in, so any clawback address of any asset can name the account and
+suppress the lookup at one minimum fee; a larger limit would only multiply
+that cost, so one result is asked for, the simplest rule and the lightest
+query for the Indexer. If
+that result is a spend by the account, on the account's chain, handing the
+account to the authorizer the worker read from algod, signed by a stage
+program alone whose address is its signer, the candidate is the program's
+stage number plus one. The worker derives it through the grant's deriver,
+charged to the grant and the pass, paced and bounded like every probe, and
+skips it only when the table holds a verified other address for that stage.
+A match finishes the grant as `found` after one derivation and is recorded
+as the worker's own observation. A miss stays in the table and is never the
+table's hint or a search anchor; on a grant's last stage it ends the grant as
+exhausted, as any probe would. Every other outcome (`unavailable`,
+`no_outgoing_rekey`, `not_current`, `not_a_stage_program`, `wrong_network`, or
+no Indexer) derives nothing, so the search that follows is the search without
+one. The lookup opens no seed and is not a key use; it runs within 10 seconds,
+one request for one result with no further page, a 128 KiB body and
+the fields it checks alone decoded, and is not retried within a
+grant: a new grant, after the authorizer changes, at the next unlock, or by
+`rotate recover`, looks up again. A lookup that fails to reach the Indexer
+or be answered by it pauses that network's Indexer for 60 seconds
+(`chainread.IndexerPause`, one per signer, shared by every chain reader): a
+connection, dial or TLS error, the lookup's own timeout, a status outside
+2xx (a redirect among them), headers too large to read, or a body the
+transport reports cut short. A grant whose lookup starts inside the pause
+asks nothing, its lookup is recorded as `unavailable`, and its search runs.
+A 2xx answer refused for what its body holds (over the cap, malformed,
+against a decoding rule, or a result without a confirmed round) is
+`unavailable` for that account only and pauses nothing; nor does a lookup
+its caller's own context ended, as a lock does, or any other outcome. Lookups run inline in the
+worker's single pass, so this keeps a stalling Indexer from holding the pass
+for one timeout per unknown account. A prepare's foreground discovery does not
+look up. The worker logs one info line per lookup.
+
 `POST /admin/rotating/recover` (action `keys.recover`, resource `key`;
 request `signerapi.RotatingRecoverRequest`, response
 `signerapi.RotatingRecoverResponse`) lets an operator grant a search with
 their own budget: `account`, `action` (`start` or `cancel`), and for a
 start the optional `stage` hint, `window` (probe radius, default 64, at most
 4,096), `max_stages` (default 4,096) and `timeout_seconds` (default 300).
+A start without `stage` begins with the chain lookup, like an automatic
+grant, so it is also how to retry a lookup after an Indexer outage.
 A start needs the signer unlocked and answers `locked` (403) otherwise; a
 cancel answers while locked, as a success that cancelled nothing. An
 operator grant replaces a running automatic grant, whose charge stands,
@@ -2010,6 +2058,8 @@ Restore: a rotating key restored from a backup, rebuilt or re-imported has
 its seed authority. Managed backups may also supply a sealed stage candidate;
 without one, record the observed stage from `rotate status` and use
 `rotate recover <account> --stage N` when discovery exhausts its allowance.
+With an Indexer configured, the account usually resolves on the worker's next
+pass by itself, one derivation after the lookup.
 The signer derives candidates and compares them with its configured chain;
 until a candidate matches the live authorizer, requests are refused with
 `rotating_stage_unproven` and `/status` carries a note. A backup far behind
@@ -2196,10 +2246,17 @@ stored provenance was available. These fields do not change `/sign` behavior.
   (`signerapi.RotatingRecoveryStatus`: the active grant's `kind`,
   `grant_id`, `stages_charged`, `max_stages`, `active_seconds`, `hint` and
   `found_stage`; why the last grant `stopped`, with `stopped_kind`,
-  `stopped_grant_id` and `stopped_stage`; and the automatic
-  `allowance_spent`, `allowance_max` and `suppressed_authorizer`). Absent
-  while locked or without rotating accounts. Clients must tolerate the
-  field being omitted.
+  `stopped_grant_id` and `stopped_stage`; the automatic
+  `allowance_spent`, `allowance_max` and `suppressed_authorizer`; and
+  optional `lookup` (`signerapi.RotatingStageLookupStatus`), the chain lookup
+  the active grant began with, or the last stopped grant's when none is
+  active: `outcome` (`candidate`, `unavailable`, `no_outgoing_rekey`,
+  `not_current`, `not_a_stage_program`, `wrong_network`), and for a
+  candidate its `stage` and `probe` (`matched`, `missed`, `already_cached`;
+  absent when the probe was cut short), with the spend's `tx_id` and
+  `round` when one was read. `lookup` is absent when no lookup ran,
+  including when no Indexer is configured). Absent while locked or without
+  rotating accounts. Clients must tolerate the field being omitted.
 
 `/keytypes` response:
 

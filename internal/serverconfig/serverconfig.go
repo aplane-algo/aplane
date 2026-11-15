@@ -52,9 +52,10 @@ type ServerConfig struct {
 	// This is the canonical on-disk network config.
 	Networks           ServerNetworkConfigs `yaml:"networks" description:"Grouped settings per network context token"`
 	TEALCompileNetwork string               `yaml:"teal_compile_network" description:"Network context token whose algod is used for TEAL compilation" default:"testnet"`
-	// Algod and GenesisHashNetworks are derived runtime indexes built from Networks.
-	Algod               apconfig.AlgodConfig `yaml:"-"`
-	GenesisHashNetworks map[string]string    `yaml:"-"`
+	// Algod, Indexer and GenesisHashNetworks are derived runtime indexes built from Networks.
+	Algod               apconfig.AlgodConfig                      `yaml:"-"`
+	Indexer             map[string]*apconfig.IndexerNetworkConfig `yaml:"-"`
+	GenesisHashNetworks map[string]string                         `yaml:"-"`
 	// Security settings
 	RequireMemoryProtection bool `yaml:"require_memory_protection" description:"Fail startup if memory protection unavailable" default:"false"`
 	// Operator-default approval setting. Policy rules live in the store policy documents.
@@ -127,6 +128,16 @@ func (c ServerConfig) Clone() ServerConfig {
 			out.Algod[network] = &cp
 		}
 	}
+	if c.Indexer != nil {
+		out.Indexer = make(map[string]*apconfig.IndexerNetworkConfig, len(c.Indexer))
+		for network, cfg := range c.Indexer {
+			if cfg == nil {
+				continue
+			}
+			cp := *cfg
+			out.Indexer[network] = &cp
+		}
+	}
 	if c.GenesisHashNetworks != nil {
 		out.GenesisHashNetworks = cloneServerStringMap(c.GenesisHashNetworks)
 	}
@@ -140,6 +151,10 @@ func (c ServerConfig) Clone() ServerConfig {
 			if cfg.Algod != nil {
 				algodCP := *cfg.Algod
 				cp.Algod = &algodCP
+			}
+			if cfg.Indexer != nil {
+				indexerCP := *cfg.Indexer
+				cp.Indexer = &indexerCP
 			}
 			out.Networks[network] = &cp
 		}
@@ -300,6 +315,9 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 	if config.Algod, err = mergeServerNetworkAlgodConfig(nil, config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)
 	}
+	if config.Indexer, err = mergeServerNetworkIndexerConfig(config.Networks); err != nil {
+		return ServerConfig{}, fmt.Errorf("invalid indexer in networks config: %w", err)
+	}
 	if config.GenesisHashNetworks, err = mergeServerNetworkGenesisHashConfig(nil, config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid genesis_hash in networks config: %w", err)
 	}
@@ -374,6 +392,18 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 // GetAlgodConfig returns the algod settings for the specified network.
 func (c *ServerConfig) GetAlgodConfig(network string) (*apconfig.AlgodNetworkConfig, error) {
 	return c.Algod.GetNetwork(network)
+}
+
+// GetIndexerConfig returns a copy of the Indexer settings for the specified
+// network, or nil when none is configured. The Indexer is optional: without
+// one the signer behaves as it would with no lookup at all.
+func (c *ServerConfig) GetIndexerConfig(network string) *apconfig.IndexerNetworkConfig {
+	cfg := c.Indexer[network]
+	if cfg == nil || cfg.Server == "" {
+		return nil
+	}
+	cp := *cfg
+	return &cp
 }
 
 // GetTEALCompileAlgod returns the algod config used for TEAL compilation.
