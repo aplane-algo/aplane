@@ -2055,6 +2055,15 @@ when `networks.<token>.indexer` is configured, an Indexer, for the stage a
 rotating recovery search tries first. Both are chosen from the key's genesis
 hash and are file settings, not admin settings.
 
+The signer has no built-in Indexer. The installer's generated config names
+Nodely's public Indexer for MainNet and TestNet, with no API token, beside
+the algod endpoints it names from the same provider. Whoever runs the
+configured Indexer learns which rotating accounts the worker looks up, as
+whoever runs the configured algod learns which accounts it reads. Deleting
+`networks.<token>.indexer` and restarting the signer ends that outbound read
+for the network; the setting is read at start. The installer never rewrites
+an existing `config.yaml`, so only a fresh install carries the entry.
+
 The Indexer read proposes and never decides. The candidate is derived from
 the seed and accepted only when its address equals the authorizer the
 signer read from its own algod, the check every search probe makes. What a

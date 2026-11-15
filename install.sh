@@ -1173,9 +1173,15 @@ networks:
     algod:
       server: https://testnet-api.4160.nodely.dev
       token: ""
+    indexer:
+      server: https://testnet-idx.4160.nodely.dev
+      token: ""
   mainnet:
     algod:
       server: https://mainnet-api.4160.nodely.dev
+      token: ""
+    indexer:
+      server: https://mainnet-idx.4160.nodely.dev
       token: ""
   localnet:
     algod:

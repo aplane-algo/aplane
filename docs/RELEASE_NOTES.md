@@ -11,7 +11,10 @@ before it was renamed `enroll`.
 
 - **An optional Indexer per network finds a rotating account's stage.**
   Configure `networks.<network>.indexer` (`server`, `token`) in the signer's
-  `config.yaml`. When the signer cannot place an account's authorizer, its
+  `config.yaml`. A fresh install's config names Nodely's public Indexer for
+  `mainnet` and `testnet`, beside the algod endpoints the installer writes;
+  an existing `config.yaml` is left as it is. The signer has no built-in
+  provider, so deleting the entry and restarting turns the lookup off. When the signer cannot place an account's authorizer, its
   search first reads the account's last confirmed rekey from the Indexer and
   tries the stage that spend's program names, plus one. The lookup is one
   request for one result, within ten seconds and a 128 KiB response, once
