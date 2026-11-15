@@ -9,10 +9,10 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-// The signer's view is behind when it is of another authorizer than the
-// account has now. A view the signer could not read has no authorizer and is
-// not called behind.
-func TestSignerBehind(t *testing.T) {
+// The signer's view differs when it is of another authorizer than apshell
+// read now. A view the signer could not read has no authorizer and does not
+// differ.
+func TestSignerViewDiffers(t *testing.T) {
 	for name, tc := range map[string]struct {
 		now, seen string
 		want      bool
@@ -22,8 +22,8 @@ func TestSignerBehind(t *testing.T) {
 		"the account not read":      {"STAGE7", "", false},
 		"stage 0, the account self": {"ACCT", "ACCT", false},
 	} {
-		if got := signerBehind(tc.now, signerapi.RotatingAccountStatus{Authorizer: tc.seen}); got != tc.want {
-			t.Errorf("%s: signerBehind = %v, want %v", name, got, tc.want)
+		if got := signerViewDiffers(tc.now, signerapi.RotatingAccountStatus{Authorizer: tc.seen}); got != tc.want {
+			t.Errorf("%s: signerViewDiffers = %v, want %v", name, got, tc.want)
 		}
 	}
 }

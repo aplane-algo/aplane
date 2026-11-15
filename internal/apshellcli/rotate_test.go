@@ -138,79 +138,88 @@ func TestRecoveryStatusPrintsTheLookupBesideTheStopLine(t *testing.T) {
 	}
 }
 
-// The authorizer line is read now and the signer's lines are from its last
-// finished pass. When the signer saw another authorizer, its stage is the
-// stage the account had: the line says so and names what the signer saw, and
-// does not call it the live stage.
-func TestSignerViewSaysWhenItIsBehindTheChain(t *testing.T) {
+// The authorizer line is read by apshell now and the signer's lines are from
+// its last finished pass. When the signer saw another authorizer the line
+// names what it saw and when, does not call that stage live, leaves out its
+// readiness, and says the alerts and notes below come from the same read. It
+// claims no direction: apshell's node may be the one that is behind.
+func TestSignerViewSaysWhenItSeesAnotherAuthorizer(t *testing.T) {
 	stage := uint64(6)
 	view := &signerapi.RotatingAccountStatus{
 		Account: "ACCT", Authorizer: "STAGE6ADDR", Round: 66970977,
 		Classification: signerapi.RotatingClassStage, Stage: &stage, Preparation: "ready", CachedEntries: 4103,
 	}
-	render := func(s *signerapi.RotatingAccountStatus, behind bool) string {
+	render := func(s *signerapi.RotatingAccountStatus, differs bool) string {
 		var out strings.Builder
-		renderSignerRotatingView(&REPLState{Out: &out}, "  ", s, behind)
+		renderSignerRotatingView(&REPLState{Out: &out}, "  ", s, differs)
 		return out.String()
 	}
+	const after = "    this view, and any alert or note below, is from that read; the signer reads again on its next pass\n" +
+		"    if the two still differ after that, apshell and the signer are reading different nodes or networks\n"
+
 	if got, want := render(view, false), "  signer: live stage 6, ready, 4103 cached entries\n"; got != want {
 		t.Errorf("current view:\n%s\nwant:\n%s", got, want)
 	}
-	want := "  signer: behind the chain; at round 66970977 it saw authorizer STAGE6ADDR, stage 6, ready, 4103 cached entries\n" +
-		"    the account has moved since; the signer's next pass will show it\n"
-	if got := render(view, true); got != want {
-		t.Errorf("view behind the chain:\n%s\nwant:\n%s", got, want)
+	got := render(view, true)
+	if want := "  signer: sees another authorizer; at round 66970977 it saw STAGE6ADDR, stage 6, 4103 cached entries\n" + after; got != want {
+		t.Errorf("differing view:\n%s\nwant:\n%s", got, want)
 	}
-	if got := render(view, true); strings.Contains(got, "live stage") {
-		t.Errorf("a view behind the chain calls its stage live:\n%s", got)
+	for _, word := range []string{"live stage", "ready", "behind", "moved"} {
+		if strings.Contains(got, word) {
+			t.Errorf("a differing view says %q:\n%s", word, got)
+		}
 	}
 
 	// Without a round the line still names what the signer saw.
 	noRound := *view
 	noRound.Round = 0
-	if got, want := render(&noRound, true), "  signer: behind the chain; it saw authorizer STAGE6ADDR, stage 6, ready, 4103 cached entries\n"+
-		"    the account has moved since; the signer's next pass will show it\n"; got != want {
-		t.Errorf("view behind the chain without a round:\n%s\nwant:\n%s", got, want)
+	if got, want := render(&noRound, true), "  signer: sees another authorizer; it saw STAGE6ADDR, stage 6, 4103 cached entries\n"+after; got != want {
+		t.Errorf("differing view without a round:\n%s\nwant:\n%s", got, want)
 	}
 
 	// The other readings say the same.
 	for class, words := range map[string]string{
-		signerapi.RotatingClassUnknown: "it saw authorizer STAGE6ADDR, authorizer not placed, 4103 cached entries",
-		signerapi.RotatingClassHeldKey: "it saw authorizer STAGE6ADDR, rekeyed to a key this signer holds, 4103 cached entries",
+		signerapi.RotatingClassUnknown: "it saw STAGE6ADDR, authorizer not placed, 4103 cached entries\n" + after,
+		signerapi.RotatingClassHeldKey: "it saw STAGE6ADDR, rekeyed to a key this signer holds, 4103 cached entries\n" + after,
 	} {
 		other := *view
 		other.Classification, other.Stage = class, nil
-		if got := render(&other, true); !strings.Contains(got, words) || !strings.Contains(got, "behind the chain") {
-			t.Errorf("%s behind the chain:\n%s\nwant it to say: %s", class, got, words)
+		if got := render(&other, true); !strings.HasSuffix(got, words) || !strings.Contains(got, "sees another authorizer") {
+			t.Errorf("%s with another authorizer:\n%s\nwant it to end: %s", class, got, words)
 		}
 	}
 
 	// A stage reading with no number still gets its signer line, so the
-	// follow-up is never left under the authorizer line alone.
+	// lines after it are never left under the authorizer line alone.
 	unnumbered := *view
 	unnumbered.Stage = nil
-	if got, want := render(&unnumbered, true), "  signer: behind the chain; at round 66970977 it saw authorizer STAGE6ADDR, a stage it did not number, ready, 4103 cached entries\n"+
-		"    the account has moved since; the signer's next pass will show it\n"; got != want {
-		t.Errorf("unnumbered stage behind the chain:\n%s\nwant:\n%s", got, want)
+	if got, want := render(&unnumbered, true), "  signer: sees another authorizer; at round 66970977 it saw STAGE6ADDR, a stage it did not number, 4103 cached entries\n"+after; got != want {
+		t.Errorf("unnumbered stage, differing:\n%s\nwant:\n%s", got, want)
 	}
 	if got, want := render(&unnumbered, false), "  signer: a stage it did not number, ready, 4103 cached entries\n"; got != want {
 		t.Errorf("unnumbered stage:\n%s\nwant:\n%s", got, want)
 	}
 
-	// The authorizer is the signer's text: escaped.
+	// The authorizer and the readiness are the signer's text: escaped.
 	hostile := *view
 	hostile.Authorizer = "BAD\x1b[2JADDR"
 	if got := render(&hostile, true); strings.Contains(got, "\x1b") {
 		t.Errorf("authorizer not escaped: %q", got)
 	}
+	hostile = *view
+	hostile.Preparation = "rea\x1b[2Jdy"
+	if got := render(&hostile, false); strings.Contains(got, "\x1b") {
+		t.Errorf("readiness not escaped: %q", got)
+	}
 }
 
-// Before the signer has finished a pass that read the account, and while it
-// is locked, it reports nothing: the output says so, not nothing at all.
-func TestSignerViewSaysWhenNothingIsReportedYet(t *testing.T) {
+// With no entry for the account in the signer's status, the output says so,
+// not nothing at all. The signer reports the keys it holds after a pass that
+// read them, and nothing while locked.
+func TestSignerViewSaysWhenThereIsNone(t *testing.T) {
 	var out strings.Builder
 	renderSignerRotatingView(&REPLState{Out: &out}, "  ", nil, false)
-	want := "  signer: nothing reported for this account yet; it reports after a background pass, while unlocked\n"
+	want := "  signer: no view of this account in its status; it reports the keys it holds after a background pass, while unlocked\n"
 	if out.String() != want {
 		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
 	}

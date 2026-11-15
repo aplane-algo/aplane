@@ -32,10 +32,10 @@ type rotatingAccountProjection struct {
 	Authorizer string   `json:"authorizer"`
 	Alerts     []string `json:"alerts,omitempty"`
 	Notes      []string `json:"notes,omitempty"`
-	// SignerBehind is set when the signer's view is of an authorizer the
-	// account no longer has: authorizer is read now, signer is the signer's
-	// last finished pass.
-	SignerBehind bool `json:"signer_behind,omitempty"`
+	// SignerViewDiffers is set when signer, the signer's last finished
+	// pass, is of another authorizer than authorizer, which apshell read
+	// now. When signer is absent the signer reported no view at all.
+	SignerViewDiffers bool `json:"signer_view_differs,omitempty"`
 	// Signer is the signer's own view of the account: observed authorizer,
 	// classification, cached entry count and recovery state.
 	Signer *signerapi.RotatingAccountStatus `json:"signer,omitempty"`
@@ -190,7 +190,7 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 	for _, status := range result.Accounts {
 		projection.Accounts = append(projection.Accounts, rotatingAccountProjection{
 			Account: status.Account, Authorizer: status.Authorizer, Alerts: status.Alerts, Notes: status.Notes,
-			SignerBehind: status.SignerBehind, Signer: status.Signer,
+			SignerViewDiffers: status.SignerViewDiffers, Signer: status.Signer,
 		})
 	}
 	return newShellCommandResult(func(w io.Writer) error {
@@ -201,7 +201,7 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 			}
 			for _, status := range result.Accounts {
 				r.printf("%s\n  authorizer: %s\n", r.app().FormatAddress(status.Account, ""), status.Authorizer)
-				renderSignerRotatingView(r, "  ", status.Signer, status.SignerBehind)
+				renderSignerRotatingView(r, "  ", status.Signer, status.SignerViewDiffers)
 				if len(status.Alerts) == 0 {
 					r.printf("  alerts: none\n")
 				}
@@ -220,40 +220,41 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 // count (sparse records, not coverage from stage 0) and recovery state for one
 // account.
 //
-// The signer's view is from its last finished pass, which read the chain
-// when it began; the authorizer printed above it is read now. behind says
-// the signer saw another authorizer: the account has moved since, by a spend
-// that confirmed after that read. Its stage is then the stage the account
-// had, and the line says so and names what the signer saw, so a stage beside
-// an authorizer it does not belong to is not read as a disagreement.
-func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.RotatingAccountStatus, behind bool) {
+// The authorizer printed above is read from apshell's algod now. The signer's
+// view is from its last finished pass, which read the signer's algod when it
+// began. differs says the signer saw another authorizer. Most often a spend
+// confirmed after the signer's read; it can also be apshell's node that is
+// behind, or the two reading different networks, and nothing here can tell
+// which. So the line claims no direction: it names what the signer saw and
+// when, does not call that stage live, leaves out its readiness, and the
+// lines after it say that the alerts and notes below come from the same read.
+func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.RotatingAccountStatus, differs bool) {
 	if s == nil {
-		// The signer reports an account once a pass that read it has
-		// finished, and nothing while locked.
-		r.printf("%ssigner: nothing reported for this account yet; it reports after a background pass, while unlocked\n", indent)
+		r.printf("%ssigner: no view of this account in its status; it reports the keys it holds after a background pass, while unlocked\n", indent)
 		return
 	}
 	lead := indent + "signer: "
-	if behind {
-		lead += "behind the chain; "
+	preparation := ", " + termsafe.Line(s.Preparation)
+	if differs {
+		lead += "sees another authorizer; "
 		if s.Round != 0 {
 			lead += fmt.Sprintf("at round %d ", s.Round)
 		}
-		lead += fmt.Sprintf("it saw authorizer %s, ", termsafe.Line(s.Authorizer))
+		lead += fmt.Sprintf("it saw %s, ", termsafe.Line(s.Authorizer))
+		// Readiness is of the stage the signer saw, not of the authorizer above.
+		preparation = ""
 	}
 	switch s.Classification {
 	case signerapi.RotatingClassStage:
-		if s.Stage != nil {
-			word := "live stage"
-			if behind {
-				word = "stage"
-			}
-			r.printf("%s%s %d, %s, %d cached entries\n", lead, word, *s.Stage, s.Preparation, s.CachedEntries)
-		} else {
-			// A signer that names no stage still gets its line, so what it
-			// saw, and the line that follows a view behind the chain, are
-			// never left without it.
-			r.printf("%sa stage it did not number, %s, %d cached entries\n", lead, termsafe.Line(s.Preparation), s.CachedEntries)
+		switch {
+		case s.Stage == nil:
+			// A signer that names no stage still gets its line, so the lines
+			// that follow a differing view are never left without it.
+			r.printf("%sa stage it did not number%s, %d cached entries\n", lead, preparation, s.CachedEntries)
+		case differs:
+			r.printf("%sstage %d%s, %d cached entries\n", lead, *s.Stage, preparation, s.CachedEntries)
+		default:
+			r.printf("%slive stage %d%s, %d cached entries\n", lead, *s.Stage, preparation, s.CachedEntries)
 		}
 	case signerapi.RotatingClassHeldKey:
 		r.printf("%srekeyed to a key this signer holds, %d cached entries\n", lead, s.CachedEntries)
@@ -262,8 +263,9 @@ func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.Rotating
 	default:
 		r.printf("%saccount not read in the last pass, %d cached entries\n", lead, s.CachedEntries)
 	}
-	if behind {
-		r.printf("%s  the account has moved since; the signer's next pass will show it\n", indent)
+	if differs {
+		r.printf("%s  this view, and any alert or note below, is from that read; the signer reads again on its next pass\n", indent)
+		r.printf("%s  if the two still differ after that, apshell and the signer are reading different nodes or networks\n", indent)
 	}
 	renderRecoveryStatus(r, indent, s.Recovery)
 }

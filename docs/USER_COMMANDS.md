@@ -182,22 +182,28 @@ while unlocked (longer when chain reads or stage derivation for other
 accounts are slow), so an alert can briefly outlive the rotation that
 resolved it.
 
-The `authorizer` line is read from algod when you run the command. The
-`signer` line is from the signer's last finished background pass, which read
-the chain when it began. Right after a spend confirms, and for longer while a
-signer is still building its stage table, the signer has not yet seen the new
-authorizer. The line then says so, and gives the stage the account had:
+The `authorizer` line is read from apshell's algod when you run the command.
+The `signer` line is from the signer's last finished background pass, which
+read the signer's own algod when it began. The two can name different
+authorizers. Most often a spend has confirmed since the signer's read: for up
+to about 30 seconds, and for longer while a signer is still building its
+stage table. The line then names what the signer saw, does not call that
+stage live, and leaves out its readiness:
 
 ```
   authorizer: N4JWUR...
-  signer: behind the chain; at round 66970977 it saw authorizer PMGZ6Y..., stage 6, ready, 4103 cached entries
-    the account has moved since; the signer's next pass will show it
+  signer: sees another authorizer; at round 66970977 it saw PMGZ6Y..., stage 6, 4103 cached entries
+    this view, and any alert or note below, is from that read; the signer reads again on its next pass
+    if the two still differ after that, apshell and the signer are reading different nodes or networks
 ```
 
-The stage a spend is signed with is read from the chain at that moment and
-does not depend on this view. Before the signer has finished a pass that read
-the account, and while it is locked, the line reads `signer: nothing reported
-for this account yet; it reports after a background pass, while unlocked`.
+The output does not say which read is the older one. apshell's node can be
+the one that is behind, and an apshell set to another network than the key's
+shows the same difference for as long as it stays there. The stage a spend is
+signed with is read from the chain at that moment and does not depend on this
+view. When the signer's status has no entry for the account, the line reads
+`signer: no view of this account in its status; it reports the keys it holds
+after a background pass, while unlocked`.
 
 `rotate recover` asks the signer to search for the account's live stage. It
 is for the note "authorizer … is not among the N stage addresses this
