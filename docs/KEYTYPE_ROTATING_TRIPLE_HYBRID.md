@@ -514,6 +514,14 @@ chain names one too:
    requests in ten seconds, reads at most 1 MiB per response, and runs once
    per grant.
 
+For XMSS a candidate that misses costs more than one stage's keys: deriving a
+stage's address needs the public tree of its run of 1,024 stages (§3), so a
+false stage in a tree not yet built costs a full tree build at a tree index
+the Indexer chose (seconds, about 4 MiB), and that tree takes one of the
+account's three cache slots, evicting the least recently used tree, which is
+rebuilt when it is next needed. It happens at most once per grant and is
+charged to the grant's active time.
+
 The spend need not be one this signer released: the lookup reads whatever
 the chain shows. It says nothing about releases that never confirmed, which
 one-time leaves were used, or whether the account left rotation and came

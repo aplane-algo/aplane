@@ -2068,6 +2068,16 @@ wrong or hostile Indexer can do:
 | Sends a huge or malformed body, or redirects | Cut at 1 MiB or refused; the lookup is `unavailable` |
 | Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
 
+For `aplane.rotating-triple-xmss.v1` that one derivation is dearer: a
+stage's address needs the public tree of its run of 1,024 stages, so a false
+stage in a tree the signer has not built costs a full tree build at a tree
+index the Indexer chose (seconds of CPU and about 4 MiB), and the built tree
+takes one of the account's three slots in the tree cache (16 across
+accounts), evicting the least recently used. An evicted live or next tree is
+built again when it is next needed. The cost stays bounded: once per grant,
+charged to the grant's active time like any probe, so within
+`rotating.recovery_timeout` for an automatic grant.
+
 It cannot make the signer accept a stage, change what is signed, write a hint
 into the stage table, or widen a search. At the edge of an automatic
 allowance it can end a search one stage early. Nothing it sends reaches a log
