@@ -50,13 +50,13 @@
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_deep",
-    "distinct_states": 54796612,
-    "depth": 38
+    "distinct_states": 100666564,
+    "depth": 35
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_deep",
-    "distinct_states": 547,
-    "depth": 21
+    "distinct_states": 886,
+    "depth": 15
   }
 ]

@@ -372,15 +372,20 @@ func (ir *Runtime) SetUnlocked() {
 }
 
 // SetRecovery marks this identity as recovery-blocked without permitting
-// signing. Production unlock paths should use TryRecoveryUnlock.
+// signing. Production unlock paths should use TryRecoveryUnlock. It ends the
+// unlocked session: the generation advances, and the contexts of the key uses
+// and passes handed out in that session are cancelled, so a stage table pass
+// stops and leaves the worker free to restore for the session a reconcile
+// opens. Nothing is drained or cleared; recovery keeps the keyring.
 func (ir *Runtime) SetRecovery() {
 	ir.lockRuntime.SetRecovery()
+	ir.cancelKeyUses()
 }
 
 // TryRecoveryUnlock opens the keyring without scanning or publishing
 // active credentials, then enters recovery state.
 func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
-	return ir.lockRuntime.TryRecovery(func() error {
+	ok, msg := ir.lockRuntime.TryRecovery(func() error {
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
 		if err := ir.keyStore.Unlock(passphrase); err != nil {
@@ -388,6 +393,11 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 		}
 		return nil
 	})
+	if ok {
+		// As SetRecovery: a session that was unlocked until now is over.
+		ir.cancelKeyUses()
+	}
+	return ok, msg
 }
 
 // Lock transitions this identity to the locked state.
@@ -1545,8 +1555,9 @@ func (ir *Runtime) notifyLocked() {
 	}
 }
 
-// LockGeneration returns the lock runtime's generation counter, advanced by
-// every lock and maintenance transition. Per-unlock state is keyed by it.
+// LockGeneration returns the lock runtime's session generation, advanced by
+// every lock and maintenance transition and by every entry into recovery from
+// the unlocked state. Per-session state is keyed by it.
 func (ir *Runtime) LockGeneration() uint64 {
 	return ir.lockRuntime.LockGeneration()
 }

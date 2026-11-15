@@ -922,6 +922,13 @@ verify the stage against the seed and the configured chain. The backup does
 not contain the full stages cache or audit/leaf history. Restoring a credential
 successfully does not mean it is ready to spend yet; check `rotate status`.
 
+The signer reads an XMSS or WOTS+C account's leaf history from its own audit
+log at unlock, for the accounts it holds at that moment. After restoring or
+importing such an account into a signer that has signed for it before, lock
+and unlock the signer before spending from it, so the history is read with the account
+present. Without that step a spend can sign on a leaf an earlier, unconfirmed
+spend from the same stage already used.
+
 A matching hint at stage 50,000 requires preparing that stage and its
 successor, without rebuilding stages 0–49,999. With an Indexer configured for
 the network (`networks.<network>.indexer` in the signer's `config.yaml`), a

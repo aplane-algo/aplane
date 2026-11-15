@@ -14,7 +14,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -755,7 +757,7 @@ func TestInterruptedRestoreKeepsTheAccountHeld(t *testing.T) {
 			if n != 0 || !errors.Is(err, ErrRestoreInterrupted) {
 				t.Fatalf("restore: rebuilt %d, err %v", n, err)
 			}
-			if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+			if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String(), 0); restored {
 				t.Fatal("an interrupted restore opened the account's wait")
 			}
 			short, stop := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -795,7 +797,7 @@ func TestRestoreBoundToAnEarlierGenerationStaysHeld(t *testing.T) {
 	if !errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("error = %v, want an interrupted restore", err)
 	}
-	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String(), 0); restored {
 		t.Fatal("a restore from before the lock opened the account's wait")
 	}
 }
@@ -842,7 +844,7 @@ func TestFailedRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
 	if !errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("error = %v, want an interrupted restore", err)
 	}
-	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String(), 0); restored {
 		t.Fatal("a failure from an earlier session opened the wait")
 	}
 }
@@ -857,7 +859,7 @@ func TestFailedRestoreStillOpensTheAccount(t *testing.T) {
 	if n != 0 || err == nil || errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("restore: rebuilt %d, err %v", n, err)
 	}
-	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); !restored {
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String(), 0); !restored {
 		t.Fatal("a failed restore left the account held")
 	}
 }
@@ -872,7 +874,7 @@ func TestFailedRestoreOnASignerThatCantSignStaysHeld(t *testing.T) {
 	if _, err := restoreWithAFailedDerivation(t, f); !errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("error = %v, want an interrupted restore", err)
 	}
-	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String(), 0); restored {
 		t.Fatal("a failure on a signer that can't sign opened the wait")
 	}
 }
@@ -922,6 +924,117 @@ func TestRotatingSignStopsAtALockDuringTheLastAuditWrite(t *testing.T) {
 				t.Fatalf("withheld reason = %q", withheld.reason)
 			}
 		})
+	}
+}
+
+// A recovery and a reconcile can both land during the last audit write and
+// leave the signer unlocked again. The session the signature was made in is
+// over all the same, so it is withheld, as after a lock. The real lock runtime
+// decides here: its recovery moves the generation.
+func TestRotatingSignStopsAtARecoveryRoundTripDuringTheLastAuditWrite(t *testing.T) {
+	for _, kind := range rotatingTestTypes {
+		t.Run(kind.keyType, func(t *testing.T) {
+			f, audit := newSigningFixtureFor(t, kind)
+			rt := signerruntime.New()
+			rt.SetUnlocked()
+			f.svc.IsUnlocked = rt.IsUnlocked
+			f.svc.Rotating.LockGeneration = rt.LockGeneration
+			prep := mustPrepare(t, f, f.spend(1000, 1100))
+			roundTrip := false
+			f.svc.AuditLog = &lockAfterSuccessAudit{recordingReleaseAudit: audit, lock: func() {
+				rt.SetRecovery()
+				roundTrip = rt.PromoteRecoveryToUnlocked()
+			}}
+			resp, err := f.sign(t, prep.Transactions)
+			if !roundTrip || !rt.IsUnlocked() {
+				t.Fatalf("the recovery round trip did not complete: %v, state %v", roundTrip, rt.GetState())
+			}
+			if resp != nil || err == nil || err.Kind != ErrorLocked {
+				t.Fatalf("response %v, error %v, want the signature withheld as after a lock", resp, err)
+			}
+			if len(audit.signed) != 1 || len(audit.withheld) != 1 {
+				t.Fatalf("signed %+v, withheld %+v; want one of each", audit.signed, audit.withheld)
+			}
+		})
+	}
+}
+
+// A recovery and a reconcile can both land while the operator is still
+// deciding. A lock fails a pending approval itself; recovery does not, so the
+// session read before the approval is what withholds the signature: the plan
+// and the verdict the operator approved belong to a session that is over.
+func TestRotatingSignStopsAtARecoveryRoundTripDuringApproval(t *testing.T) {
+	f, audit := newSigningFixtureFor(t, wotscTestType)
+	rt := signerruntime.New()
+	rt.SetUnlocked()
+	f.svc.IsUnlocked = rt.IsUnlocked
+	f.svc.Rotating.LockGeneration = rt.LockGeneration
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	off, asked := false, false
+	f.svc.Approval = &ApprovalService{
+		UserAutoApprove: &off,
+		HasClient:       func() bool { return true },
+		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+			asked = true
+			rt.SetRecovery()
+			return rt.PromoteRecoveryToUnlocked(), nil
+		},
+	}
+	resp, err := f.sign(t, prep.Transactions)
+	if !asked || !rt.IsUnlocked() {
+		t.Fatalf("the approval or the round trip did not happen: asked %v, state %v", asked, rt.GetState())
+	}
+	if resp != nil || err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("response %v, error %v, want a locked answer", resp, err)
+	}
+	if len(audit.releases) != 0 {
+		t.Fatalf("a leaf was released for a session that had ended: %+v", audit.releases)
+	}
+}
+
+// The memory serves the session the worker restored it for. A sign in any
+// other session waits for its own restore, and a wait whose session has
+// ended stops at once.
+func TestReleaseMemoryServesOnlyItsSession(t *testing.T) {
+	var m ReleaseMemory
+	m.Reset()
+	m.ServeSession(5)
+	m.Record(ReleaseRecord{Account: "A", Stage: 1, TxID: "T"})
+	m.RestoredAll()
+	if rec, open := m.ForLeafChoice("A", 5); !open || rec.TxID != "T" {
+		t.Fatalf("the session the memory serves: %+v, open %v", rec, open)
+	}
+	if _, open := m.ForLeafChoice("A", 6); open {
+		t.Fatal("a leaf could be chosen in a session the memory was not restored for")
+	}
+	// A sign whose session ended does not wait for a restore that will not come.
+	if err := m.AwaitRestored(context.Background(), "A", 4, func() uint64 { return 5 }); !errors.Is(err, ErrSessionEnded) {
+		t.Fatalf("a wait in an ended session: %v", err)
+	}
+	// A sign in the next session waits until the worker has restored for it.
+	current := func() uint64 { return 6 }
+	short, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := m.AwaitRestored(short, "A", 6, current); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a wait in a session not yet served: %v", err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- m.AwaitRestored(context.Background(), "A", 6, current) }()
+	m.Reset()
+	m.ServeSession(6)
+	select {
+	case err := <-waited:
+		t.Fatalf("the wait ended before the restore for its session: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	m.RestoredAll()
+	if err := <-waited; err != nil {
+		t.Fatalf("the wait after the restore for its session: %v", err)
+	}
+	// A memory no worker named a session for holds nobody on that account.
+	var plain ReleaseMemory
+	if _, open := plain.ForLeafChoice("A", 9); !open {
+		t.Fatal("a memory with no session named refused a leaf choice")
 	}
 }
 
@@ -1008,26 +1121,26 @@ func TestRotatingSignWaitsForARestoreAndThenSigns(t *testing.T) {
 func TestForLeafChoice(t *testing.T) {
 	m := &ReleaseMemory{}
 	m.Record(ReleaseRecord{Account: "A", Stage: 1, TxID: "T"})
-	if rec, restored := m.ForLeafChoice("A"); !restored || rec.TxID != "T" {
+	if rec, restored := m.ForLeafChoice("A", 0); !restored || rec.TxID != "T" {
 		t.Fatalf("a memory that was never reset: %+v, restored %v", rec, restored)
 	}
 	m.Reset()
-	if _, restored := m.ForLeafChoice("A"); restored {
+	if _, restored := m.ForLeafChoice("A", 0); restored {
 		t.Fatal("a held memory reported restored")
 	}
 	m.Restoring([]string{"A"})
-	if _, restored := m.ForLeafChoice("A"); restored {
+	if _, restored := m.ForLeafChoice("A", 0); restored {
 		t.Fatal("an account still restoring reported restored")
 	}
-	if _, restored := m.ForLeafChoice("B"); !restored {
+	if _, restored := m.ForLeafChoice("B", 0); !restored {
 		t.Fatal("an account with nothing to restore stayed held")
 	}
 	m.Restored("A")
-	if _, restored := m.ForLeafChoice("A"); !restored {
+	if _, restored := m.ForLeafChoice("A", 0); !restored {
 		t.Fatal("a restored account stayed held")
 	}
 	var none *ReleaseMemory
-	if _, restored := none.ForLeafChoice("A"); !restored {
+	if _, restored := none.ForLeafChoice("A", 0); !restored {
 		t.Fatal("no memory should hold nobody")
 	}
 }

@@ -15,21 +15,21 @@ import (
 func TestReleaseMemoryRestoreGate(t *testing.T) {
 	m := &ReleaseMemory{}
 	// A memory that was never reset holds nobody.
-	if err := m.AwaitRestored(context.Background(), "A"); err != nil {
+	if err := m.AwaitRestored(context.Background(), "A", 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Reset holds every account until the log has been read.
 	m.Reset()
 	short, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if err := m.AwaitRestored(short, "A"); !errors.Is(err, context.DeadlineExceeded) {
+	if err := m.AwaitRestored(short, "A", 0, nil); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("armed memory did not hold: %v", err)
 	}
 	// Reading the log names the accounts still pending; the rest go free.
 	waitA := make(chan error, 1)
-	go func() { waitA <- m.AwaitRestored(context.Background(), "A") }()
+	go func() { waitA <- m.AwaitRestored(context.Background(), "A", 0, nil) }()
 	m.Restoring([]string{"A", "B"})
-	if err := m.AwaitRestored(context.Background(), "C"); err != nil {
+	if err := m.AwaitRestored(context.Background(), "C", 0, nil); err != nil {
 		t.Fatalf("account without audit history held: %v", err)
 	}
 	select {
@@ -53,11 +53,11 @@ func TestReleaseMemoryRestoreGate(t *testing.T) {
 	m.Restoring([]string{"A"})
 	cancelled, cancelNow := context.WithCancel(context.Background())
 	cancelNow()
-	if err := m.AwaitRestored(cancelled, "A"); !errors.Is(err, context.Canceled) {
+	if err := m.AwaitRestored(cancelled, "A", 0, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled wait = %v", err)
 	}
 	m.RestoredAll()
-	if err := m.AwaitRestored(context.Background(), "A"); err != nil {
+	if err := m.AwaitRestored(context.Background(), "A", 0, nil); err != nil {
 		t.Fatal(err)
 	}
 }

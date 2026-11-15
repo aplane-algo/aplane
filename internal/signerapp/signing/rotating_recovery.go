@@ -32,8 +32,10 @@ import (
 //
 // Session ownership. Every operation on this memory belongs to one
 // unlocked session, identified by the lock runtime's generation: a counter
-// every lock and maintenance transition advances under the runtime's own
-// mutex and an unlock leaves unchanged. An operation captures its session
+// every lock and maintenance transition, and every entry into recovery from
+// the unlocked state, advances under the runtime's own mutex and an unlock
+// leaves unchanged. A recovery and the reconcile that ends it therefore begin
+// a new session here too, with fresh grants and allowances. An operation captures its session
 // once, when it starts (the worker pass together with the context a lock
 // cancels; an operator request at entry), and carries it into every call.
 // The memory holds a live reader of that generation and, under its own

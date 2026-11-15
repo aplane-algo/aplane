@@ -1955,10 +1955,13 @@ by `rotating.recovery_timeout`); once the allowance is spent or the timeout
 reached, that authorizer is suppressed for the rest of the unlock and the
 account is left unresolved with a `/status` note, exactly as a non-rotating
 account rekeyed to an address the signer does not hold is left alone. A
-lock followed by an unlock begins a new epoch with a fresh allowance.
+lock followed by an unlock begins a new epoch with a fresh allowance, and so
+does a recovery followed by a reconcile: recovery ends the unlocked session,
+and the grants, allowances and suppressions of that session go with it.
 Session ownership is one rule, enforced in one place: the session is the
-lock runtime's generation, which every lock and maintenance transition
-advances under the runtime's own mutex and an unlock leaves unchanged; an
+lock runtime's generation, which every lock and maintenance transition, and
+every entry into recovery from the unlocked state, advances under the
+runtime's own mutex and an unlock leaves unchanged; an
 operation captures it once when it starts (the worker pass together with
 the context a lock cancels, an operator request at entry) and carries it
 into every call; and the recovery memory, which holds a live reader of the
@@ -2081,7 +2084,12 @@ reads the leaf history and restore state together and refuses if a reset
 has made the history pending again.
 
 Each restore is bound to the lock generation captured before its session,
-context and unlocked-state check. A restore interrupted by a lock,
+context and unlocked-state check, and the memory serves only that session: a
+spend in any other session waits for a restore of its own. A session ends
+when the signer leaves the unlocked state, by a lock or by entering recovery,
+and both advance the generation. A reconcile that ends a recovery can bring
+back an account the earlier restore skipped, so the session it opens is
+restored again. A restore interrupted by a lock,
 cancellation, recovery or refused key use leaves unrestored accounts held;
 the worker retries instead of opening the wait. A completed restore with no
 entries, or an ordinary failure unrelated to interruption, opens the affected

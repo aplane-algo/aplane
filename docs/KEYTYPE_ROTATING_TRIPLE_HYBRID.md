@@ -451,7 +451,9 @@ with several leaves per stage; see
 [FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md](FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md).
 A lock stops a sign in flight: the sign holds its seed in a key use that the lock
 waits for, and it rechecks the lock generation after the audit write, so a
-signature isn't returned once a lock began. `key_use_lock.tla` checks that; see
+signature isn't returned once a lock began. Entering recovery advances the
+generation too, so a signature isn't returned across a recovery and the
+reconcile that ends it, although the signer is unlocked again by then. `key_use_lock.tla` checks that; see
 [FORMAL_TLA_KEY_USE_LOCK_MODEL.md](FORMAL_TLA_KEY_USE_LOCK_MODEL.md). Every other
 load of the seed in prepare and sign (the identity read and each stage
 derivation) is a key use of its own, which a lock also waits for.

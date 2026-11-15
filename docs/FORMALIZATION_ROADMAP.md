@@ -565,3 +565,38 @@ stage's history (a sign on a lagging read is not modeled), and the stage table
 worker publishes a pass's status only in the lock generation the pass ran in
 (`lockRuntime.WhileGeneration`, a read-side check that adds no transition to
 `key_use_lock.tla`).
+
+Follow-up (2026-11-15, recovery): entering recovery from the unlocked state
+now ends the unlocked session (`runtime.Runtime.SetRecovery` and
+`TryRecovery` advance the session generation, a counter kept apart from the
+one the unlock fence compares, and `productruntime` cancels the key uses the
+session handed out; nothing is cleared, since recovery keeps the keyring). Before, an
+unlocked, recovery, unlocked round trip left no trace: a rotating signature
+was returned across it during the audit write, where the equivalent lock
+round trip withheld it, and an account the session's restore had skipped
+could come back through the reconcile and sign with its leaf history missing.
+`key_use_lock.tla` gained `EnterRecovery`, `LeaveRecovery`, a ghost `ended`
+and the guard `RecoveryEndsSession`; KU1 now covers a recovery as well as a
+lock: 587 states at depth 13 (deep 886 at depth 15), and
+`key_use_lock_negative_recovery.cfg` violates KU1 in 270 states at depth 8.
+The depths fell although the model grew, because a recovery and its
+reconcile are two steps where a lock and an unlock are four, so the bound on
+transitions is reached sooner. Its other controls
+moved with the state space (`_recheck` 165, `_generation` 267, `_drain` 105,
+`_register` 137, `_register_export` 479). `rotating_leaf_release.tla` gained
+an account that may be absent at an unlock (`absent`), a `Recover` round trip
+and the same guard, standing there for the generation advance together with
+the memory serving only the session it was restored for
+(`ReleaseMemory.ServeSession`): 14,592,306 states at depth 31 (deep
+100,666,564 at depth 35), and `rotating_leaf_release_negative_recovery.cfg`
+violates LF1 in 12,942 states at depth 12 (`_wait` 605, `_recheck` 468, `_cut`
+3,085, `_seq` 14,863, `_lag` 15,008). Out of model, by the user's decision a
+documented operator step and not a guard: an account that returns by a plain
+reload in the same session (a restore that commits cleanly, or an import,
+after the session's restore skipped the account) has no hold;
+`USER_STORE_MGMT.md` says to lock and unlock after it. Also out of model: the
+sign reads its session before its approval, so a recovery during a pending
+approval withholds the signature (a Go test pins it), and the rotating
+recovery memory's grants and allowances, keyed by the same generation, begin
+afresh after a recovery. `AGENTS.md` names `SetRecovery` in
+the `key_use_lock.tla` row.
