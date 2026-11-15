@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -102,6 +103,25 @@ const (
 	StopHeldKey            = "account is rekeyed to a held key"
 )
 
+// What the probe of a chain lookup's candidate gave, as reported in status.
+const (
+	// ProbeMatched: the candidate's derived address is the authorizer.
+	ProbeMatched = "matched"
+	// ProbeMissed: the candidate was derived and is another address.
+	ProbeMissed = "missed"
+	// ProbeAlreadyCached: the table already held a verified other address
+	// for the candidate, so nothing was derived.
+	ProbeAlreadyCached = "already_cached"
+)
+
+// StageLookupRecord is what a grant's chain lookup found: the lookup's
+// result and, for a candidate, what its probe gave (empty when the probe was
+// cut short). It is set once and never changed.
+type StageLookupRecord struct {
+	chainread.StageLookup
+	Probe string
+}
+
 // Defaults for an operator grant.
 const (
 	DefaultOperatorRecoveryStages  uint64        = 4096
@@ -136,6 +156,11 @@ type RecoveryGrant struct {
 	Found     *uint64
 	nextProbe uint64 // probes issued so far: 0 = hint, then +1, -1, +2, -2 …
 	cancelled bool
+	// Lookup is what the grant's chain lookup found; nil until one ran, and
+	// when no Indexer is configured for the account's network. lookedUp
+	// records that it was attempted: a grant looks up once.
+	Lookup   *StageLookupRecord
+	lookedUp bool
 }
 
 // RecoveryStop records why the last grant ended.
@@ -146,6 +171,8 @@ type RecoveryStop struct {
 	Charged uint64
 	Stage   *uint64 // the stage found, when Reason is StopFound
 	At      time.Time
+	// Lookup is the stopped grant's chain lookup, if one ran.
+	Lookup *StageLookupRecord
 }
 
 // RecoveryState is one account's recovery status, snapshotted for status.
@@ -526,6 +553,39 @@ func (r *RotatingRecovery) nextProbes(g *RecoveryGrant, n uint64) []uint64 {
 	return out
 }
 
+// beginLookup marks g's chain lookup as attempted and reports whether the
+// caller is to run it: once per grant, and only while g is live.
+func (r *RotatingRecovery) beginLookup(g *RecoveryGrant) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cur := r.live(g)
+	if cur == nil || cur.lookedUp {
+		return false
+	}
+	cur.lookedUp = true
+	return true
+}
+
+// setLookup records what g's chain lookup found: on the grant while it is
+// the active one, or on its stop record if it ended while the lookup ran.
+func (r *RotatingRecovery) setLookup(g *RecoveryGrant, l StageLookupRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.admitLocked(g.Epoch) {
+		return
+	}
+	a, ok := r.accounts[g.Account]
+	if !ok {
+		return
+	}
+	switch {
+	case a.grant != nil && a.grant.ID == g.ID:
+		a.grant.Lookup = &l
+	case a.last != nil && a.last.GrantID == g.ID:
+		a.last.Lookup = &l
+	}
+}
+
 // finish ends g with reason if it is still the account's active grant.
 func (r *RotatingRecovery) finish(g *RecoveryGrant, reason string, stage *uint64) {
 	r.mu.Lock()
@@ -541,7 +601,7 @@ func (r *RotatingRecovery) finish(g *RecoveryGrant, reason string, stage *uint64
 }
 
 func (r *RotatingRecovery) stopLocked(a *recoveryAccount, g *RecoveryGrant, reason string, stage *uint64) {
-	a.last = &RecoveryStop{GrantID: g.ID, Kind: g.Kind, Reason: reason, Charged: g.Charged, Stage: stage, At: time.Now()}
+	a.last = &RecoveryStop{GrantID: g.ID, Kind: g.Kind, Reason: reason, Charged: g.Charged, Stage: stage, At: time.Now(), Lookup: g.Lookup}
 	if g.Kind == GrantAutomatic && (reason == StopAllowanceExhausted || reason == StopTimedOut) {
 		a.suppressed = g.Authorizer
 	}

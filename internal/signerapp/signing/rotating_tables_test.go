@@ -46,6 +46,29 @@ type fakeRotatingChain struct {
 	round      uint64
 	err        error
 	reads      int
+	// lookup answers LookupLastRotation; nil answers no_indexer. lookups
+	// counts the calls.
+	lookup  func(ctx context.Context, account, authorizer types.Address) (chainread.StageLookup, error)
+	lookups int
+}
+
+func (f *fakeRotatingChain) LookupLastRotation(ctx context.Context, genesisHash []byte, account, authorizer types.Address) (chainread.StageLookup, error) {
+	f.lookups++
+	if !bytes.Equal(genesisHash, rotatingTestGenesis) {
+		return chainread.StageLookup{}, errors.New("wrong network")
+	}
+	if f.lookup == nil {
+		return chainread.StageLookup{Outcome: chainread.LookupNoIndexer}, nil
+	}
+	return f.lookup(ctx, account, authorizer)
+}
+
+// noStageLookup gives a chain fake the Indexer lookup of a signer that has
+// none configured.
+type noStageLookup struct{}
+
+func (noStageLookup) LookupLastRotation(context.Context, []byte, types.Address, types.Address) (chainread.StageLookup, error) {
+	return chainread.StageLookup{Outcome: chainread.LookupNoIndexer}, nil
 }
 
 func (f *fakeRotatingChain) ReadAccount(_ context.Context, genesisHash []byte, account types.Address) (chainread.AccountView, error) {
@@ -520,7 +543,10 @@ func TestFillStageTablesHoldsNoSeedDuringIO(t *testing.T) {
 }
 
 // blockingChain never answers until its context ends.
-type blockingChain struct{ entered chan struct{} }
+type blockingChain struct {
+	noStageLookup
+	entered chan struct{}
+}
 
 func (c *blockingChain) ReadAccount(ctx context.Context, _ []byte, _ types.Address) (chainread.AccountView, error) {
 	close(c.entered)

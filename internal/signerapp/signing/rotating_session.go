@@ -21,9 +21,11 @@ import (
 )
 
 // RotatingChain reads an account's authorizer and the current round from the
-// signer's own node.
+// signer's own node, and, where an Indexer is configured, proposes the stage
+// a recovery search tries first from the account's last rekey.
 type RotatingChain interface {
 	ReadAccount(ctx context.Context, genesisHash []byte, account types.Address) (chainread.AccountView, error)
+	LookupLastRotation(ctx context.Context, genesisHash []byte, account, authorizer types.Address) (chainread.StageLookup, error)
 }
 
 // RotatingDeps are the long-lived dependencies of the rotating flow. The

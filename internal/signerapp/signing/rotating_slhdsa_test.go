@@ -89,6 +89,7 @@ func TestSLHAutomaticRecoveryPassBudget(t *testing.T) {
 }
 
 type releaseCheckChain struct {
+	noStageLookup
 	base      *fakeRotatingChain
 	calls     int
 	atRelease func()
