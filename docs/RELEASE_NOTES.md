@@ -47,6 +47,10 @@ before it was renamed `enroll`.
   account with no entry in the signer's status shows `no view of this account
   in its status`. The JSON result gains `signer_view_differs`.
 
+- **This release is new-install only.** The installer's minimum supported
+  upgrade version is v0.50.0, so an earlier install, or a development build
+  before v0.50.0, needs a fresh install root.
+
 ## Rotating stage programs carry their stage number
 
 - **Every stage program opens with its stage number.** The XMSS, WOTS+C
