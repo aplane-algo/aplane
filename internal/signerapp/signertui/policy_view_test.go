@@ -155,7 +155,7 @@ func TestPoliciesViewListsTheDefaultAndKeysAndOpensDocuments(t *testing.T) {
 	})
 	rendered := stripANSI(m.renderPolicies())
 	for _, want := range []string{"  node default\n", "node default (governs every key without its own policy)",
-		policyViewKeyB + "  default", policyViewKeyA + "  own policy", "set-digest", "a loads a policy file"} {
+		policyViewKeyB + "  default", policyViewKeyA + "  own policy", "set-digest", "cosigner node"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("policies view missing %q:\n%s", want, rendered)
 		}

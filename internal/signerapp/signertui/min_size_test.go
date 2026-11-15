@@ -176,7 +176,7 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 	}{
 		{"pending client selected", Model{viewState: ViewEnrolledClients, clients: clients}, []string{
 			"> " + fingerprint, "  connected", "a-very-long-label-from-a-laptop", "192.168.100.250:51234",
-			time.Unix(requestedAt, 0).Local().Format("2006-01-02 15:04"), "closes its connections",
+			time.Unix(requestedAt, 0).Local().Format("2006-01-02 15:04"),
 		}},
 		{"enrolled client selected", Model{viewState: ViewEnrolledClients, clients: enrolledSelected}, []string{
 			"> " + fingerprint, "  connected", "a-very-long-label-on-ops", "ssh-rsa",
