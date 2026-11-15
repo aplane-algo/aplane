@@ -165,9 +165,8 @@ func Build(keys *PublicKeys) (Program, error) {
 	if keys == nil {
 		return Program{}, fmt.Errorf("%w: nil public keys", ErrInvalidProgram)
 	}
-	if keys.Lo >= keys.Hi || keys.Hi > xmss.Leaves {
-		return Program{}, fmt.Errorf("%w: range [%d, %d)", ErrInvalidProgram, keys.Lo, keys.Hi)
-	}
+	// RangeFor always gives a range of IndicesPerStage leaves inside the
+	// tree, so this one comparison also bounds Lo and Hi.
 	if _, lo, hi := RangeFor(keys.Stage); keys.Lo != lo || keys.Hi != hi {
 		return Program{}, fmt.Errorf("%w: range [%d, %d) is not stage %d's [%d, %d)",
 			ErrInvalidProgram, keys.Lo, keys.Hi, keys.Stage, lo, hi)
