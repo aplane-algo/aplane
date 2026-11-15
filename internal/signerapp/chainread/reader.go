@@ -61,9 +61,13 @@ type Reader struct {
 	// nil when there is none. Optional: nil means no stage lookup.
 	IndexerConfig func(network string) *apconfig.IndexerNetworkConfig
 
-	// IndexerTransport carries the Indexer's requests; nil means
-	// http.DefaultTransport. The lookup wraps it to cap every response body
-	// and to refuse redirects.
+	// IndexerTransport carries the Indexer's requests. nil, as in
+	// production, means the package's own transport, with keep-alives off,
+	// response headers capped and dial, TLS and header timeouts. A
+	// RoundTripper set here bypasses all of those and is for tests. Either
+	// way the lookup wraps it to refuse every response outside 2xx,
+	// redirects among them; the body cap is enforced by the lookup's read of
+	// the body, not by the transport.
 	IndexerTransport http.RoundTripper
 
 	// LookupTimeout bounds one LookupLastRotation. Zero means
