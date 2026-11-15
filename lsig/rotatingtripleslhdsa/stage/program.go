@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto/slhdsa"
 	"github.com/aplane-algo/aplane/internal/falconparams"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 )
 
@@ -103,10 +104,10 @@ func init() {
 	falconKeyOffset = find(fillFalcon, FalconPublicKeySize)
 	seedOffset = find(fillSeed, HashSize)
 	rootOffset = find(fillRoot, HashSize)
-	if find(fillStage, stageprog.StageSize) != stageprog.StageOffset {
+	if find(fillStage, rotatingstage.StageSize) != rotatingstage.StageOffset {
 		panic("rotating slhdsa stage template: the stage constant is not at the stage prefix's offset")
 	}
-	if _, err := stageprog.ReadStage(template); err != nil {
+	if _, err := rotatingstage.ReadStage(template); err != nil {
 		panic(fmt.Sprintf("rotating slhdsa stage template: %v", err))
 	}
 }
@@ -123,7 +124,7 @@ func Build(keys *PublicKeys) (Program, error) {
 	}
 	base := make([]byte, UnsaltedProgramSize, SaltedProgramSize)
 	copy(base, template)
-	stageprog.PutStage(base, keys.Stage)
+	rotatingstage.PutStage(base, keys.Stage)
 	copy(base[ed25519KeyOffset:], keys.Ed25519[:])
 	copy(base[falconKeyOffset:], keys.Falcon[:])
 	copy(base[seedOffset:], keys.Seed[:])
@@ -140,7 +141,7 @@ func Parse(bytecode []byte) (*PublicKeys, Program, error) {
 	keys := &PublicKeys{}
 	program, err := stageprog.ParseStrict(bytecode, UnsaltedProgramSize, func(code []byte) (Program, error) {
 		var err error
-		if keys.Stage, err = stageprog.ReadStage(code); err != nil {
+		if keys.Stage, err = rotatingstage.ReadStage(code); err != nil {
 			return Program{}, err
 		}
 		copy(keys.Ed25519[:], code[ed25519KeyOffset:ed25519KeyOffset+ConstantSize])
@@ -162,7 +163,7 @@ func TEALSource(keys *PublicKeys) string {
 }
 
 func substitute(teal string, keys *PublicKeys) string {
-	return strings.NewReplacer("@STAGE@", stageprog.StageHex(keys.Stage),
+	return strings.NewReplacer("@STAGE@", rotatingstage.StageHex(keys.Stage),
 		"@ED25519@", hex.EncodeToString(keys.Ed25519[:]),
 		"@FALCON@", hex.EncodeToString(keys.Falcon[:]), "@SEED@", hex.EncodeToString(keys.Seed[:]),
 		"@ROOT@", hex.EncodeToString(keys.Root[:])).Replace(teal)

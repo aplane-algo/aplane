@@ -14,7 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -84,7 +84,7 @@ func TestProgramSizesAndCost(t *testing.T) {
 		fill      byte
 		prefix    []byte
 	}{
-		{stageprog.StageOffset, stageprog.StageSize, fillStage, []byte{0x0d, 0x80, stageprog.StageSize}},
+		{rotatingstage.StageOffset, rotatingstage.StageSize, fillStage, []byte{0x0d, 0x80, rotatingstage.StageSize}},
 		{ed25519KeyOffset, ConstantSize, fillEd25519, []byte{0x80, ConstantSize}},
 		{falconKeyOffset, FalconPublicKeySize, fillFalcon, []byte{0x80, 0x81, 0x0e}},
 		{rootOffset, ConstantSize, fillRoot, []byte{0x80, ConstantSize}},
@@ -160,7 +160,7 @@ func TestParseRejectsNonCanonicalPrograms(t *testing.T) {
 	if _, _, err := Parse(wrongSalt); !errors.Is(err, ErrInvalidProgram) {
 		t.Fatalf("wrong salt accepted: %v", err)
 	}
-	for _, off := range []int{0, 1, 2, stageprog.PrefixSize - 1, 21, falconKeyOffset - 1, seedOffset - 3, loOffset - 2, UnsaltedProgramSize - 1} {
+	for _, off := range []int{0, 1, 2, rotatingstage.PrefixSize - 1, 21, falconKeyOffset - 1, seedOffset - 3, loOffset - 2, UnsaltedProgramSize - 1} {
 		tampered := bytes.Clone(unsalted.Bytecode)
 		tampered[off] ^= 1
 		if _, _, err := Parse(tampered); !errors.Is(err, ErrInvalidProgram) {

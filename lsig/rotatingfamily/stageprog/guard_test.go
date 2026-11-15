@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 	slhstage "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/stage"
 	wotscstage "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/stage"
 	xmssstage "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
@@ -52,8 +52,8 @@ func stagePrograms(t *testing.T, n uint64) map[string][]byte {
 
 func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
 	for name, program := range stagePrograms(t, 0) {
-		if !bytes.HasPrefix(program[stageprog.PrefixSize:], rotationGuard) {
-			t.Errorf("the %s stage program does not open with the rotation guard after the stage prefix: % x", name, program[:stageprog.PrefixSize+len(rotationGuard)])
+		if !bytes.HasPrefix(program[rotatingstage.PrefixSize:], rotationGuard) {
+			t.Errorf("the %s stage program does not open with the rotation guard after the stage prefix: % x", name, program[:rotatingstage.PrefixSize+len(rotationGuard)])
 		}
 	}
 	if xmssstage.MaxValidityWindow != 100 || slhstage.MaxValidityWindow != 100 || wotscstage.MaxValidityWindow != 100 {
@@ -67,11 +67,11 @@ func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
 func TestReadStageReadsEveryStageProgram(t *testing.T) {
 	for _, n := range []uint64{0, 418, 1 << 40} {
 		for name, program := range stagePrograms(t, n) {
-			if got, err := stageprog.ReadStage(program); err != nil || got != n {
+			if got, err := rotatingstage.ReadStage(program); err != nil || got != n {
 				t.Errorf("%s stage %d: ReadStage returned %d, %v", name, n, got, err)
 			}
-			without := append([]byte{program[0]}, program[stageprog.PrefixSize:]...)
-			if _, err := stageprog.ReadStage(without); !errors.Is(err, stageprog.ErrInvalidProgram) {
+			without := append([]byte{program[0]}, program[rotatingstage.PrefixSize:]...)
+			if _, err := rotatingstage.ReadStage(without); !errors.Is(err, rotatingstage.ErrInvalidProgram) {
 				t.Errorf("%s stage %d without the stage prefix: %v", name, n, err)
 			}
 		}

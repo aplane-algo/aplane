@@ -10,7 +10,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 )
 
 // fixedKeys are deterministic keys for stage n, so the tests below see the
@@ -45,7 +45,7 @@ func TestStageRoundTrip(t *testing.T) {
 		if got.Stage != n || *got != *keys || parsed.Address != program.Address {
 			t.Fatalf("stage %d parsed as stage %d", n, got.Stage)
 		}
-		if embedded, err := stageprog.ReadStage(program.Bytecode); err != nil || embedded != n {
+		if embedded, err := rotatingstage.ReadStage(program.Bytecode); err != nil || embedded != n {
 			t.Fatalf("stage %d: the prefix reads %d, %v", n, embedded, err)
 		}
 	}
@@ -67,7 +67,7 @@ func TestStageNumberChangesTheAddress(t *testing.T) {
 	}
 	ua, ub := a.Bytecode[:UnsaltedProgramSize], b.Bytecode[:UnsaltedProgramSize]
 	for i := range ua {
-		inStage := i >= stageprog.StageOffset && i < stageprog.StageOffset+stageprog.StageSize
+		inStage := i >= rotatingstage.StageOffset && i < rotatingstage.StageOffset+rotatingstage.StageSize
 		if ua[i] != ub[i] && !inStage {
 			t.Fatalf("the programs differ at %d, outside the stage number", i)
 		}
@@ -88,12 +88,12 @@ func TestAlteredStageByte(t *testing.T) {
 			t.Fatal(err)
 		}
 		parsedAsOther, refused := 0, 0
-		for off := stageprog.StageOffset; off < stageprog.StageOffset+stageprog.StageSize; off++ {
+		for off := rotatingstage.StageOffset; off < rotatingstage.StageOffset+rotatingstage.StageSize; off++ {
 			for _, flip := range []byte{0x01, 0x04, 0x80} {
 				tampered := bytes.Clone(original.Bytecode)
 				tampered[off] ^= flip
 				altered := *keys
-				altered.Stage = binary.BigEndian.Uint64(tampered[stageprog.StageOffset:])
+				altered.Stage = binary.BigEndian.Uint64(tampered[rotatingstage.StageOffset:])
 				want, buildErr := Build(&altered)
 				got, parsed, err := Parse(tampered)
 				if err == nil && (got.Stage == n || parsed.Address == original.Address) {

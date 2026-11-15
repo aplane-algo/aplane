@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
-	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -89,7 +89,7 @@ func TestParseRejectsNonCanonicalPrograms(t *testing.T) {
 	if _, _, err := Parse(wrongSalt); !errors.Is(err, ErrInvalidProgram) {
 		t.Fatalf("wrong salt accepted: %v", err)
 	}
-	for _, off := range []int{0, 1, 2, stageprog.PrefixSize - 1, 21, falconKeyOffset - 1, seedOffset - 3, UnsaltedProgramSize - 1} {
+	for _, off := range []int{0, 1, 2, rotatingstage.PrefixSize - 1, 21, falconKeyOffset - 1, seedOffset - 3, UnsaltedProgramSize - 1} {
 		tampered := bytes.Clone(unsalted.Bytecode)
 		tampered[off] ^= 1
 		if _, _, err := Parse(tampered); !errors.Is(err, ErrInvalidProgram) {

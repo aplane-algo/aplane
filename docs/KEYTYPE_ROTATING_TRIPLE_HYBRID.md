@@ -19,6 +19,8 @@ authoritative sources:
 - `lsig/rotatingfamily/`: what all three rotating key types share:
   registration and the generator, the stage's Ed25519 and Falcon-1024 half,
   stage program salt search and strict parse, and the contract suite
+- `internal/rotatingstage/`: the stage prefix every stage program opens with
+  and its reader
 - `internal/rotatingkey/rotatingkey.go`: key type identifiers, frozen sizes
   and resource profiles
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md), [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)
@@ -146,9 +148,10 @@ a stage only when the address it derives from the seed equals the authorizer
 its own node reports. The width is fixed so every template keeps one size;
 `pushint` is not used because its encoding grows with the value. The constant
 adds 11 bytes and 2 opcode units (`pushbytes` and `pop`) to every stage
-program. Stage 0's number is 0. `lsig/rotatingfamily/stageprog` owns the
-layout: `StageOffset`, and `ReadStage`, which reads the number from the prefix
-alone. Whether a program is a stage program of a given type is that type's
+program. Stage 0's number is 0. `internal/rotatingstage` owns the layout:
+`StageOffset`, and `ReadStage`, which reads the number from the prefix alone.
+It imports only the standard library, so the stage packages and the signer's
+own chain reads share one owner. Whether a program is a stage program of a given type is that type's
 strict `stage.Parse` to decide.
 
 The XMSS program embeds seven constants: the stage number (8 bytes), the
@@ -329,7 +332,11 @@ way.
 ## 6. Resource profile and cost
 
 Each group member contributes 20,000 units of pooled LogicSig execution cost
-and 1,000 bytes of pooled large-argument allowance.
+and 1,000 bytes of pooled large-argument allowance. `lsigresource` sizes the
+group as the larger of the opcode units the spend and its dummies need and the
+argument units its arguments need. Program bytes don't enter it: they decide
+only whether the fee carries a program surcharge, and no rotating type pays
+one. That gives 5 for XMSS, 3 for WOTS+C and 6 for SLH-DSA (10 at h = 63).
 
 | Property | XMSS | WOTS+C |
 |---|---|---|
@@ -1212,7 +1219,7 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 | SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
-| Stage number in every type: round trip for small and large stages, a different address for each stage, a changed stage byte, the shared prefix reader, a program without the prefix | each `stage` package's `stage_constant_test.go`; `lsig/rotatingfamily/stageprog/program_test.go`, `guard_test.go` |
+| Stage number in every type: round trip for small and large stages, a different address for each stage, a changed stage byte, the shared prefix reader, a program without the prefix | each `stage` package's `stage_constant_test.go`; `internal/rotatingstage/rotatingstage_test.go`; `lsig/rotatingfamily/stageprog/guard_test.go` |
 | `SignStage` refuses a derived program that embeds another stage | each `signerops` package's `signing_failure_test.go`; the contract suite in `lsig/rotatingfamily/rotatingtest` |
 | WOTS+C stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewotsc/stage/program_test.go`, `template_dump_test.go` |
 | Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |

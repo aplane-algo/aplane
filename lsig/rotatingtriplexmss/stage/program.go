@@ -20,6 +20,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
 	"github.com/aplane-algo/aplane/internal/falconparams"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 )
 
@@ -148,10 +149,10 @@ func init() {
 	rootOffset = find(fillRoot, ConstantSize)
 	loOffset = find(fillLo, RangeBoundSize)
 	hiOffset = find(fillHi, RangeBoundSize)
-	if find(fillStage, stageprog.StageSize) != stageprog.StageOffset {
+	if find(fillStage, rotatingstage.StageSize) != rotatingstage.StageOffset {
 		panic("rotating xmss stage template: the stage constant is not at the stage prefix's offset")
 	}
-	if _, err := stageprog.ReadStage(template[:]); err != nil {
+	if _, err := rotatingstage.ReadStage(template[:]); err != nil {
 		panic(fmt.Sprintf("rotating xmss stage template: %v", err))
 	}
 }
@@ -173,7 +174,7 @@ func Build(keys *PublicKeys) (Program, error) {
 	}
 	base := make([]byte, UnsaltedProgramSize, SaltedProgramSize)
 	copy(base, template[:])
-	stageprog.PutStage(base, keys.Stage)
+	rotatingstage.PutStage(base, keys.Stage)
 	copy(base[ed25519KeyOffset:], keys.Ed25519[:])
 	copy(base[falconKeyOffset:], keys.Falcon[:])
 	copy(base[seedOffset:], keys.Seed[:])
@@ -192,7 +193,7 @@ func Parse(bytecode []byte) (*PublicKeys, Program, error) {
 	keys := &PublicKeys{}
 	program, err := stageprog.ParseStrict(bytecode, UnsaltedProgramSize, func(code []byte) (Program, error) {
 		var err error
-		if keys.Stage, err = stageprog.ReadStage(code); err != nil {
+		if keys.Stage, err = rotatingstage.ReadStage(code); err != nil {
 			return Program{}, err
 		}
 		copy(keys.Ed25519[:], code[ed25519KeyOffset:ed25519KeyOffset+ConstantSize])
@@ -232,7 +233,7 @@ func TEALSource(keys *PublicKeys) string {
 	prfPrefix[ConstantSize-1] = 3
 	copy(prfPrefix[ConstantSize:], keys.Seed[:])
 	return fmt.Sprintf(tealTemplate,
-		stageprog.StageHex(keys.Stage),
+		rotatingstage.StageHex(keys.Stage),
 		hex.EncodeToString(keys.Ed25519[:]),
 		hex.EncodeToString(keys.Falcon[:]),
 		hex.EncodeToString(lo[:]),
