@@ -85,10 +85,10 @@ func (o *StageOps) StageAddress(key *signing.RotatingKeyMaterial, i uint64) (typ
 }
 
 // CheckStageOpens proves stage i's derived keys match the constants embedded
-// in its program: it test-signs with the stage's Ed25519 and Falcon keys and
-// verifies against the program, and checks the program's root, seed and
-// range against the cached tree. It never signs with an XMSS leaf, so a
-// target stage keeps every leaf for spends.
+// in its program: the program must embed stage i, its root, seed and range
+// must be the cached tree's, and a test signature with the stage's Ed25519
+// and Falcon keys must verify against it. It never signs with an XMSS leaf,
+// so a target stage keeps every leaf for spends.
 func (o *StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) error {
 	keys, program, err := o.deriveFromMaterial(key, i)
 	if err != nil {
@@ -98,6 +98,9 @@ func (o *StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) e
 	embedded, _, err := stage.Parse(program.Bytecode)
 	if err != nil {
 		return fmt.Errorf("parse stage %d program: %w", i, err)
+	}
+	if err := stagesign.CheckStage(i, embedded.Stage); err != nil {
+		return err
 	}
 	if embedded.Root != keys.tree.PK.Root || embedded.Seed != keys.tree.PK.Seed || embedded.Lo != keys.lo || embedded.Hi != keys.hi {
 		return fmt.Errorf("stage %d program does not embed its tree", i)
@@ -117,6 +120,9 @@ func (o *StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) e
 // with [xmss_sig, ed25519_sig, falcon_sig] as its arguments. The caller
 // chooses the leaf inside the stage's range and records its use. A message
 // that is not a 32-byte transaction ID is refused before any key is derived.
+// The derived program is parsed again and must embed stage i before any key
+// signs, so a refused program costs no leaf; the signatures must then verify
+// against it before anything is returned.
 func (o *StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index uint32, message []byte) (signing.RotatingStageSignature, error) {
 	if err := stagesign.CheckMessage(message); err != nil {
 		return signing.RotatingStageSignature{}, err
@@ -126,16 +132,18 @@ func (o *StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index u
 		return signing.RotatingStageSignature{}, err
 	}
 	defer keys.Zero()
+	embedded, _, err := stage.Parse(program.Bytecode)
+	if err != nil {
+		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
+	}
+	if err := stagesign.CheckStage(i, embedded.Stage); err != nil {
+		return signing.RotatingStageSignature{}, err
+	}
 	xmssSig, edSig, falconSig, err := keys.Sign(message, index)
 	if err != nil {
 		return signing.RotatingStageSignature{}, fmt.Errorf("sign with stage %d: %w", i, err)
 	}
 	args := [][]byte{xmssSig, edSig, falconSig}
-	embedded, _, err := stage.Parse(program.Bytecode)
-	if err != nil {
-		stagesign.ZeroArgs(args)
-		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
-	}
 	if err := Verify(embedded, message, xmssSig, edSig, falconSig); err != nil {
 		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d signature does not verify: %w", i, err)

@@ -7,6 +7,34 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Rotating stage programs carry their stage number
+
+- **Every stage program opens with its stage number.** The XMSS, WOTS+C
+  and SLH-DSA rotating key types put the number in an eight-byte constant
+  right after `#pragma version 13`. The program never reads it. The program
+  of an account's last confirmed spend is public on chain, so it shows which
+  stage signed, and the live stage is that number plus one. Pass it to
+  `rotate recover <account> --stage N` after a restore. The number grants
+  nothing: the signer still accepts a stage only when the address it
+  derives matches the authorizer its own node reports.
+- **Rotating accounts from earlier builds cannot be opened.** Every stage
+  address changed, the account address among them, so this build derives a
+  different account from the same seed and cannot sign for one created
+  earlier. The key types keep their names. Empty every rotating account that
+  holds funds, on any network, before you use this build.
+- **Stage programs are 11 bytes longer and cost 2 more opcode units.** XMSS
+  is 2,672 bytes (2,675 salted) with a ceiling of 95,859. WOTS+C is 2,494
+  (2,497) at exactly 15,723. SLH-DSA is 2,845 (2,848) with a ceiling of
+  68,647. Group sizes and minimum fees do not change.
+- **The signer refuses a program that names another stage.** Before any
+  stage key signs, the signer parses the program it derived again and
+  requires it to carry the stage it signs for, so a refusal costs no
+  one-time leaf. The open test of the next stage, which runs before a spend
+  rekeys the account to it, makes the same check.
+- **apshell checks the stage number of a signed spend.** The spend's program
+  must carry the prepared stage's number, or the group is not submitted. The
+  SDKs do not check it yet.
+
 ## apshell checks more of what the signer plans
 
 - **A `presign-plan` plan may not change the fee of a slot the plugin

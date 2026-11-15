@@ -22,7 +22,7 @@ import (
 // TestDumpTemplate regenerates template_bytes.go from algod's assembler when
 // XMSS_TEMPLATE_OUT names the file to write, after a change to tealTemplate:
 //
-//	XMSS_TEMPLATE_OUT=lsig/rotatingtriplexmss/stage/template_bytes.go \\
+//	XMSS_TEMPLATE_OUT=$PWD/lsig/rotatingtriplexmss/stage/template_bytes.go \
 //	  go test ./lsig/rotatingtriplexmss/stage/ -run TestDumpTemplate
 //
 // It needs an algod (ALGOD_URL or TEAL_COMPILE_ALGOD_URL).
@@ -44,6 +44,7 @@ func TestDumpTemplate(t *testing.T) {
 	for i := range keys.Falcon {
 		keys.Falcon[i] = fillFalcon
 	}
+	keys.Stage = binary.BigEndian.Uint64(bytes.Repeat([]byte{fillStage}, 8))
 	keys.Lo = binary.BigEndian.Uint64(bytes.Repeat([]byte{fillLo}, 8))
 	keys.Hi = binary.BigEndian.Uint64(bytes.Repeat([]byte{fillHi}, 8))
 	result, err := client.TealCompile([]byte(TEALSource(keys))).Do(ctx)
@@ -63,7 +64,7 @@ func TestDumpTemplate(t *testing.T) {
 	b.WriteString("// SPDX-License-Identifier: AGPL-3.0-or-later\n// Copyright (C) 2026 APlane Project LLC\n\npackage stage\n\n")
 	b.WriteString("// UnsaltedProgramSize is the size of the frozen template; the salted form\n// adds the three-byte intcblock tail.\n")
 	fmt.Fprintf(&b, "const UnsaltedProgramSize = %d\n\n", len(got))
-	b.WriteString("// template is the stock v13 assembly of TEALSource with placeholder\n// constants: 0x33.. for the Ed25519 key, 0x44.. for the Falcon key, 0x11..\n// for the seed (inside the toByte(3) || SEED constant), 0x22.. for the root,\n// 0x55.. for the low range bound and 0x66.. for the high one. It is frozen;\n// TestBuildMatchesStockAssembler re-derives it from TEALSource.\n")
+	b.WriteString("// template is the stock v13 assembly of TEALSource with placeholder\n// constants: 0x77.. for the stage number, 0x33.. for the Ed25519 key, 0x44..\n// for the Falcon key, 0x11.. for the seed (inside the toByte(3) || SEED\n// constant), 0x22.. for the root, 0x55.. for the low range bound and 0x66..\n// for the high one. It is frozen; TestBuildMatchesStockAssembler re-derives it\n// from TEALSource.\n")
 	b.WriteString("var template = [UnsaltedProgramSize]byte{\n")
 	for i := 0; i < len(got); i += 16 {
 		b.WriteString("\t")

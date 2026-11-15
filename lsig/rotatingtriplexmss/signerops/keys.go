@@ -107,6 +107,10 @@ func GenerateTree(d *rotatinghybrid.Deriver, tree uint64) (*PublicTree, error) {
 // buffer.
 var signXmss = xmss.SignBounded
 
+// buildProgram is stage.Build; tests replace it to derive a program that
+// embeds a stage other than the one derived.
+var buildProgram = stage.Build
+
 // StageKeys are the private keys of one stage: its own Ed25519 and
 // Falcon-1024 keys and the seeds of the tree whose leaves it signs with.
 // Callers must Zero them.
@@ -143,7 +147,7 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64, tree *PublicTree) (*StageK
 		keys.Zero()
 		return nil, stage.Program{}, err
 	}
-	program, err := stage.Build(keys.PublicKeys())
+	program, err := buildProgram(keys.PublicKeys())
 	if err != nil {
 		keys.Zero()
 		return nil, stage.Program{}, fmt.Errorf("build stage %d program: %w", i, err)
@@ -151,9 +155,10 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64, tree *PublicTree) (*StageK
 	return keys, program, nil
 }
 
-// PublicKeys returns the constants a stage program embeds.
+// PublicKeys returns the constants a stage program embeds, its stage number
+// among them.
 func (k *StageKeys) PublicKeys() *stage.PublicKeys {
-	pub := &stage.PublicKeys{Root: k.tree.PK.Root, Seed: k.tree.PK.Seed, Lo: k.lo, Hi: k.hi}
+	pub := &stage.PublicKeys{Stage: k.stage, Root: k.tree.PK.Root, Seed: k.tree.PK.Seed, Lo: k.lo, Hi: k.hi}
 	pub.Ed25519, pub.Falcon = k.classical.PublicKeys()
 	return pub
 }

@@ -2,10 +2,10 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package stage builds and parses the stage program of a rotating XMSS
-// triple account. A stage program is a frozen TEAL v13 template with six
-// constants: the stage's Ed25519 and Falcon-1024 public keys, the XMSS root
-// and public seed of the tree the stage belongs to, and the stage's leaf
-// index range. It accepts a transaction that rekeys away from the sender,
+// triple account. A stage program is a frozen TEAL v13 template with seven
+// constants: the stage number, the stage's Ed25519 and Falcon-1024 public
+// keys, the XMSS root and public seed of the tree the stage belongs to, and
+// the stage's leaf index range. It accepts a transaction that rekeys away from the sender,
 // does not close out, has a validity window of at most 100 rounds, and
 // carries an RFC 8391 XMSS-SHA2_16_256 signature whose index lies in the
 // stage's range, an Ed25519 signature and a Falcon-1024 signature, all over
@@ -20,6 +20,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
 	"github.com/aplane-algo/aplane/internal/falconparams"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 )
 
@@ -80,6 +81,7 @@ const (
 	fillRoot    = 0x22
 	fillLo      = 0x55
 	fillHi      = 0x66
+	fillStage   = 0x77
 )
 
 var (
@@ -93,6 +95,9 @@ var (
 
 // PublicKeys are the constants embedded in a stage program.
 type PublicKeys struct {
+	// Stage is the stage number, the program's first constant. The program
+	// never reads it; Lo and Hi must be its range (RangeFor).
+	Stage   uint64
 	Ed25519 [ConstantSize]byte
 	Falcon  [FalconPublicKeySize]byte
 	Root    [ConstantSize]byte
@@ -144,20 +149,31 @@ func init() {
 	rootOffset = find(fillRoot, ConstantSize)
 	loOffset = find(fillLo, RangeBoundSize)
 	hiOffset = find(fillHi, RangeBoundSize)
+	if find(fillStage, rotatingstage.StageSize) != rotatingstage.StageOffset {
+		panic("rotating xmss stage template: the stage constant is not at the stage prefix's offset")
+	}
+	if _, err := rotatingstage.ReadStage(template[:]); err != nil {
+		panic(fmt.Sprintf("rotating xmss stage template: %v", err))
+	}
 }
 
 // Build assembles the stage program for keys. If the unsalted program's
 // address is on-curve, it appends intcblock 1 <salt> with the first salt in
 // [0, 128) that yields an off-curve address, exactly as the v13 assembler does.
+// It refuses a range that is not the stage's.
 func Build(keys *PublicKeys) (Program, error) {
 	if keys == nil {
 		return Program{}, fmt.Errorf("%w: nil public keys", ErrInvalidProgram)
 	}
-	if keys.Lo >= keys.Hi || keys.Hi > xmss.Leaves {
-		return Program{}, fmt.Errorf("%w: range [%d, %d)", ErrInvalidProgram, keys.Lo, keys.Hi)
+	// RangeFor always gives a range of IndicesPerStage leaves inside the
+	// tree, so this one comparison also bounds Lo and Hi.
+	if _, lo, hi := RangeFor(keys.Stage); keys.Lo != lo || keys.Hi != hi {
+		return Program{}, fmt.Errorf("%w: range [%d, %d) is not stage %d's [%d, %d)",
+			ErrInvalidProgram, keys.Lo, keys.Hi, keys.Stage, lo, hi)
 	}
 	base := make([]byte, UnsaltedProgramSize, SaltedProgramSize)
 	copy(base, template[:])
+	rotatingstage.PutStage(base, keys.Stage)
 	copy(base[ed25519KeyOffset:], keys.Ed25519[:])
 	copy(base[falconKeyOffset:], keys.Falcon[:])
 	copy(base[seedOffset:], keys.Seed[:])
@@ -175,6 +191,10 @@ func Build(keys *PublicKeys) (Program, error) {
 func Parse(bytecode []byte) (*PublicKeys, Program, error) {
 	keys := &PublicKeys{}
 	program, err := stageprog.ParseStrict(bytecode, UnsaltedProgramSize, func(code []byte) (Program, error) {
+		var err error
+		if keys.Stage, err = rotatingstage.ReadStage(code); err != nil {
+			return Program{}, err
+		}
 		copy(keys.Ed25519[:], code[ed25519KeyOffset:ed25519KeyOffset+ConstantSize])
 		copy(keys.Falcon[:], code[falconKeyOffset:falconKeyOffset+FalconPublicKeySize])
 		copy(keys.Seed[:], code[seedOffset:seedOffset+ConstantSize])
@@ -212,6 +232,7 @@ func TEALSource(keys *PublicKeys) string {
 	prfPrefix[ConstantSize-1] = 3
 	copy(prfPrefix[ConstantSize:], keys.Seed[:])
 	return fmt.Sprintf(tealTemplate,
+		rotatingstage.StageHex(keys.Stage),
 		hex.EncodeToString(keys.Ed25519[:]),
 		hex.EncodeToString(keys.Falcon[:]),
 		hex.EncodeToString(lo[:]),
@@ -222,6 +243,8 @@ func TEALSource(keys *PublicKeys) string {
 }
 
 const tealTemplate = `#pragma version 13
+pushbytes 0x%s
+pop
 txn RekeyTo
 global ZeroAddress
 !=
@@ -634,9 +657,10 @@ retsub
 
 const (
 	// BaseOpcodeCost is the cost of an accepting run before any chain step:
-	// the guards, ed25519verify_bare (1,900), falcon_verify (1,700), the
-	// message hash, the loop bookkeeping of all 67 chains, the L-tree and
-	// the 16-level authentication path. StepOpcodeCost is the cost of one
+	// the stage constant (pushbytes and pop, 2), the guards,
+	// ed25519verify_bare (1,900), falcon_verify (1,700), the message hash,
+	// the loop bookkeeping of all 67 chains, the L-tree and the 16-level
+	// authentication path. StepOpcodeCost is the cost of one
 	// chain step: three sha256 at 35 each (the two PRFs and the masked F),
 	// one b^ at 6 and 23 single-cost opcodes, the chain's PRF prefix being
 	// hoisted and the element kept on the stack. The LocalNet test confirms
@@ -644,7 +668,7 @@ const (
 	// Both branches of the path loop cost the same, so the only input the
 	// cost depends on is the step count. The salt tail follows the final
 	// return and never executes, so a salted program costs the same.
-	BaseOpcodeCost = 25_507
+	BaseOpcodeCost = 25_509
 	StepOpcodeCost = 134
 
 	// MaxOpcodeCost is the cost of the most expensive accepting run: the

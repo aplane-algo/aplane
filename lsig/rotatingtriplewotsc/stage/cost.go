@@ -10,10 +10,11 @@ const ChainSteps = 240
 // StepOpcodeCost is one chain step: 6 unit-cost instructions plus sha256 (35).
 const StepOpcodeCost = 41
 
-// BaseOpcodeCost is everything else in an accepted run: the guards, the Ed25519
-// and Falcon checks, the digest, the chain loop, the leaf compression and the
-// six tree nodes. None of it depends on the input.
-const BaseOpcodeCost = 5881
+// BaseOpcodeCost is everything else in an accepted run: the stage constant
+// (pushbytes and pop, 2), the guards, the Ed25519 and Falcon checks, the
+// digest, the chain loop, the leaf compression and the six tree nodes. None of
+// it depends on the input.
+const BaseOpcodeCost = 5883
 
 // MaxOpcodeCost is the exact cost of every accepted run, for every leaf and
 // TxID. The salt tail follows return and is unreachable. The LocalNet test

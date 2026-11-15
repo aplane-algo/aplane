@@ -6,10 +6,14 @@ package signerops
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stagesign"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 )
 
 var failureTestMessage = func() []byte {
@@ -101,5 +105,50 @@ func TestSignStageRefusesOtherMessageSizes(t *testing.T) {
 	}
 	if len(*made) != 0 {
 		t.Fatal("a refused message reached an XMSS leaf")
+	}
+}
+
+// deriveAnotherStage makes derivation build programs that embed a stage
+// number a tree further on than the stage derived, until the test ends. The
+// leaf range, and every key, are the stage's own, so only the stage number
+// is wrong and the signatures would verify.
+func deriveAnotherStage(t *testing.T) {
+	t.Helper()
+	restore := buildProgram
+	t.Cleanup(func() { buildProgram = restore })
+	buildProgram = func(keys *stage.PublicKeys) (stage.Program, error) {
+		other := *keys
+		other.Stage += stage.StagesPerTree
+		return restore(&other)
+	}
+}
+
+// TestSignStageRefusesAProgramOfAnotherStage checks that SignStage refuses a
+// derived program that embeds another stage number before any key signs: no
+// XMSS leaf is used for a refusal that depends only on the program.
+func TestSignStageRefusesAProgramOfAnotherStage(t *testing.T) {
+	ops, key := fixedStageOps(t)
+	made := observeXmss(t, nil)
+	deriveAnotherStage(t)
+	sig, err := ops.SignStage(key, 0, 3, failureTestMessage)
+	if !errors.Is(err, stagesign.ErrStageMismatch) || !strings.Contains(err.Error(), "stage 0 program embeds stage 1024") {
+		t.Fatalf("SignStage for stage 0 with a stage 1024 program: %v", err)
+	}
+	if sig.Program != nil || sig.Args != nil {
+		t.Fatal("SignStage returned a program or signatures with its refusal")
+	}
+	if len(*made) != 0 {
+		t.Fatalf("SignStage signed with %d XMSS leaves before refusing the program", len(*made))
+	}
+}
+
+// TestCheckStageOpensRefusesAProgramOfAnotherStage checks that the open test
+// of a rotation target refuses a program that embeds another stage number,
+// before the account could be rekeyed to it.
+func TestCheckStageOpensRefusesAProgramOfAnotherStage(t *testing.T) {
+	ops, key := fixedStageOps(t)
+	deriveAnotherStage(t)
+	if err := ops.CheckStageOpens(key, 1); !errors.Is(err, stagesign.ErrStageMismatch) || !strings.Contains(err.Error(), "stage 1 program embeds stage 1025") {
+		t.Fatalf("CheckStageOpens for stage 1 with a stage 1025 program: %v", err)
 	}
 }

@@ -3,7 +3,9 @@
 
 // Package stageprog finishes and validates frozen rotating stage programs.
 // It is client-safe: templates and public-key layouts belong to each scheme,
-// and no private-key operations or signer registration are linked here.
+// and no private-key operations or signer registration are linked here. The
+// stage prefix every stage program opens with belongs to
+// internal/rotatingstage.
 package stageprog
 
 import (
@@ -12,6 +14,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -31,7 +34,9 @@ var (
 	// The stage is unusable and must be skipped.
 	ErrNoOffCurveSalt = errors.New("no off-curve salt for rotating stage")
 	// ErrInvalidProgram reports bytes that are not a canonical stage program.
-	ErrInvalidProgram = errors.New("invalid rotating stage program")
+	// It is rotatingstage's error, so a missing stage prefix and a failed
+	// strict parse are the same error.
+	ErrInvalidProgram = rotatingstage.ErrInvalidProgram
 )
 
 // Program is a final, off-curve stage program and its address.

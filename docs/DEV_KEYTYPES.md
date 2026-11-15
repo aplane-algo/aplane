@@ -445,6 +445,8 @@ Characteristics:
 Typical code areas:
 - `internal/rotatingkey` (string classifiers, per-type profiles of frozen
   sizes, shared timing bounds)
+- `internal/rotatingstage` (the stage prefix every stage program opens with,
+  and its reader)
 - `internal/keys` (`rotating_lsig` validation through `RegisterRotatingCodec`)
 - `internal/stagetable` and `internal/storepaths` (the stage address cache)
 - `internal/signing` (`RotatingStageOps` registry)
@@ -475,8 +477,9 @@ Typical code areas:
 These are protocol-level key types, not templates. A new rotating stage
 scheme is a new key type on the same flow:
 - a `rotatingkey` profile;
-- a stage package with a frozen template and an assembler cross-check, built
-  on `stageprog`;
+- a stage package with a frozen template that opens with the
+  `internal/rotatingstage` prefix and an assembler cross-check, built on
+  `stageprog`;
 - the hash-based half of its stage on `stagesign`, with stage ops registered
   under the key type;
 - a stage 0 record layout and a `rotatingfamilyreg.Descriptor`;

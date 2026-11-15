@@ -16,6 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -497,10 +498,13 @@ func validateSignedRotatingGroup(prep *signerapi.RotatingPrepareResponse, prepar
 
 // validateRotatingSpendAuthorization checks that a signed rotating spend is
 // authorized by a stage program and nothing else, and that the program fits
-// the prepared stage: at stage 0 its address is the account itself, after it
-// is another address the signed transaction names as its signer, and it is
-// never the address the spend hands the account to. Which stage's program it
-// is the ledger checks: the client cannot derive stage addresses.
+// the prepared stage: it carries the prepared stage's number, at stage 0 its
+// address is the account itself, after it is another address the signed
+// transaction names as its signer, and it is never the address the spend
+// hands the account to. The stage number comes from the program's prefix,
+// which is all the client reads of it: the client cannot derive stage
+// addresses, so whether the program holds this account's keys for that stage
+// the ledger checks.
 func validateRotatingSpendAuthorization(stxn types.SignedTxn, stage uint64) error {
 	lsig := stxn.Lsig
 	if len(lsig.Logic) == 0 {
@@ -519,6 +523,13 @@ func validateRotatingSpendAuthorization(stxn types.SignedTxn, stage uint64) erro
 	}
 	if (program == spend.Sender) != (stage == 0) {
 		return fmt.Errorf("spend's stage program does not fit stage %d of the account", stage)
+	}
+	embedded, err := rotatingstage.ReadStage(lsig.Logic)
+	if err != nil {
+		return fmt.Errorf("spend's program carries no stage number, so it is not a stage program")
+	}
+	if embedded != stage {
+		return fmt.Errorf("spend's stage program is stage %d's, not the prepared stage %d", embedded, stage)
 	}
 	var wantSigner types.Address
 	if program != spend.Sender {

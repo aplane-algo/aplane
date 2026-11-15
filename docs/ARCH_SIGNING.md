@@ -1899,7 +1899,9 @@ Creating and using rotating accounts:
   stage, target, transaction ID and group ID echoed, every dummy carrying the
   canonical dummy authorization, and the spend authorized by a stage program
   alone that is the account itself only at stage 0, is named as the signer
-  after, and is never the rekey target. The client submits exactly the
+  after, and is never the rekey target. apshell also requires that program to
+  carry the prepared stage's number in its stage prefix; the SDKs do not check
+  it yet. The client submits exactly the
   returned bytes, and forwards the spend's app-call metadata for the approval
   prompt. A ledger refusal of the spend's authorizer is reported as another
   release from the same stage landing first, with the advice to prepare

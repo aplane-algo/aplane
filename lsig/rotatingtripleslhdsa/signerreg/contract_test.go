@@ -23,8 +23,8 @@ func TestContract(t *testing.T) {
 		NewKeyPayload: NewKeyPayload,
 		// The golden stage 0 addresses of lsig/rotatingtripleslhdsa/signerops.
 		GoldenAddress: map[int]string{
-			22: "UVL3MPUS3YTDF3YSVHNWN3UIQJGJ4OID6AIAEBN3MJLYAQFDD5ENE3FYHY",
-			63: "PGDSQUZ7TMOZ5DHTC64M4INDEF4I7QENPBZP7VB64YVEERMLGNE4IAYOVI",
+			22: "Z3EOPP5V2IK6ICYILRZRY3Y6RDHTRSMLQSH2EZ3QSZKJYPLUDGXEIFIKB4",
+			63: "QB3TEXDFJUVOIN4PBV7COQ34YCDA6VAYXGWOAJ7I4TDWYDSICHJCJQBKAM",
 		}[rotatingkey.RotatingSlhdsaHeight],
 		StageOps: signerops.StageOps{},
 		Verify: func(program, message []byte, args [][]byte) error {

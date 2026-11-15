@@ -48,6 +48,21 @@ func CheckMessage(message []byte) error {
 	return nil
 }
 
+// ErrStageMismatch reports a derived stage program that embeds a stage
+// number other than the stage it was derived for.
+var ErrStageMismatch = errors.New("stage program embeds another stage")
+
+// CheckStage refuses a derived stage program whose embedded stage number,
+// as the key type's strict Parse returned it, is not stage. Every key type's
+// SignStage and CheckStageOpens call it on the derived program before any
+// key signs, so a refusal costs no one-time key.
+func CheckStage(stage, embedded uint64) error {
+	if embedded != stage {
+		return fmt.Errorf("%w: stage %d program embeds stage %d", ErrStageMismatch, stage, embedded)
+	}
+	return nil
+}
+
 // OpenTestMessage is the fixed message a key type's open test signs, the
 // SHA-256 of its derivation label followed by " stage open test". It is the
 // hash of a label, not a transaction ID, so a signature over it cannot

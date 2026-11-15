@@ -425,7 +425,7 @@ meets by choosing the randomizer; (5) the key file is unchanged in shape with a 
 stage 0 record, and the tree's public nodes are an in-memory cache rebuilt
 from the seed; (6) `rotating1` unchanged, with the signer choosing the leaf
 and the stage table worker building the next tree from the midpoint of the
-live one; (7) 2,664-byte program, 4,179 argument bytes, 95,857 opcode
+live one; (7) 2,675-byte program, 4,179 argument bytes, 95,859 opcode
 ceiling, a five-transaction group; (8) oracle and reference vectors, every
 tampered field, both range violations, a valid signature above the checksum
 cap, tree rollover and the cost model at the step ceiling on LocalNet
@@ -985,6 +985,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/boundedmeta` | Durable, non-secret bounded-authorization metadata stored with a LogicSig key |
 | `internal/merkleallowlist` | Merkle recipient allowlist construction and proofs used by bounded templates |
 | `internal/rotatingkey` | Classify-axis leaf for rotating account key types and their frozen sizes |
+| `internal/rotatingstage` | The stage prefix every rotating stage program opens with: the stage number's offset and width, and a client-safe reader. Standard library only |
 | `lsig/rotatingtriplexmss` | Rotating Falcon-1024 + RFC 8391 XMSS + Ed25519 key type: stage program, signer-side operations with the public tree cache, and signer registration |
 | `lsig/rotatingtripleslhdsa` | Rotating Falcon-1024 + rescaled SLH-DSA-SHA2-128 + Ed25519 key type: stage program for the built-in hypertree height, signer-side operations, and signer registration |
 | `lsig/rotatingtriplewotsc` | Rotating Falcon-1024 + WOTS+C + Ed25519 key type: stage program, signer-side operations, and signer registration |

@@ -1,4 +1,7 @@
 #pragma version 13
+// The stage number, never read: it puts the stage into the hashed program.
+pushbytes 0x@STAGE@
+pop
 // SLH-DSA-SHA2-128 construction with a two-layer hypertree (h = 22,
 // d = 2, h' = 11; FORS and WOTS+ as SLH-DSA-SHA2-128s), pure interface,
 // empty context, over the raw TxID.

@@ -26,6 +26,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -37,10 +38,18 @@ var (
 	rotatingTarget  = types.Address{2}
 )
 
-// stubStageProgram stands in for a stage's program. The client cannot derive
-// stage addresses, so it checks only that the spend is authorized by a
-// program whose address fits the stage; any program serves.
-var stubStageProgram = []byte{0x0a, 0x81, 0x01}
+// stageProgramFor stands in for stage n's program: the stage prefix carrying
+// n, then pushint 1. The client cannot derive stage addresses, so it checks
+// that the spend is authorized by a program that carries the prepared stage
+// number and whose address fits the stage; any such program serves.
+func stageProgramFor(n uint64) []byte {
+	program := []byte{0x0d, 0x80, 0x08, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x81, 0x01}
+	rotatingstage.PutStage(program, n)
+	return program
+}
+
+// stubStageProgram is the program of stage 3, the stage preparedFor reports.
+var stubStageProgram = stageProgramFor(3)
 
 func rotatingOriginal() types.Transaction {
 	return types.Transaction{
@@ -338,7 +347,7 @@ func TestValidateSignedRotatingGroupRequiresPreparedBytes(t *testing.T) {
 // at stage 0, and never the next stage, which is the rekey target.
 func TestValidateSignedRotatingGroupChecksTheStageProgram(t *testing.T) {
 	original := rotatingOriginal()
-	stage := types.LogicSig{Logic: stubStageProgram}
+	stage := types.LogicSig{Logic: stageProgramFor(0)}
 	stageAddr := algocrypto.LogicSigAddress(stage)
 
 	nextStage := preparedFor(t, original, stageAddr, nil)
@@ -378,6 +387,61 @@ func TestValidateSignedRotatingGroupChecksTheStageProgram(t *testing.T) {
 	}
 	if _, err := validateSignedRotatingGroup(stageZero, prepared, signedRotatingFor(t, stageZero, prepared, stage)); err == nil || !strings.Contains(err.Error(), "spend's stage program does not fit stage 0 of the account") {
 		t.Fatalf("stage 0 spend signed by another address: err = %v", err)
+	}
+}
+
+// The spend's program must carry the prepared stage's number: the signer
+// derives and checks it, and a program for any other stage, or one without
+// the stage prefix, is refused before the group is submitted.
+func TestValidateSignedRotatingGroupChecksTheStageNumber(t *testing.T) {
+	original := rotatingOriginal()
+	prep := preparedFor(t, original, rotatingTarget, nil)
+	prepared, err := ValidatePreparedRotatingGroup(original, prep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateSignedRotatingGroup(prep, prepared, signedRotatingFor(t, prep, prepared, types.LogicSig{Logic: stageProgramFor(3)})); err != nil {
+		t.Fatalf("stage 3 program for a stage 3 spend refused: %v", err)
+	}
+	for _, tc := range []struct {
+		program []byte
+		want    string
+	}{
+		{stageProgramFor(4), "spend's stage program is stage 4's, not the prepared stage 3"},
+		{stageProgramFor(2), "spend's stage program is stage 2's, not the prepared stage 3"},
+		{[]byte{0x0d, 0x81, 0x01}, "spend's program carries no stage number"},
+	} {
+		resp := signedRotatingFor(t, prep, prepared, types.LogicSig{Logic: tc.program})
+		if _, err := validateSignedRotatingGroup(prep, prepared, resp); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("program % x: err = %v, want %q", tc.program, err, tc.want)
+		}
+	}
+
+	// At stage 0 the program is the account itself, and it must still carry
+	// stage 0: an account whose address is a stage 1 program is refused.
+	for _, tc := range []struct {
+		embedded uint64
+		want     string
+	}{
+		{0, ""},
+		{1, "spend's stage program is stage 1's, not the prepared stage 0"},
+	} {
+		lsig := types.LogicSig{Logic: stageProgramFor(tc.embedded)}
+		fresh := original
+		fresh.Sender = algocrypto.LogicSigAddress(lsig)
+		first := preparedFor(t, fresh, rotatingTarget, nil)
+		first.Stage, first.Target = 0, 1
+		prepared, err := ValidatePreparedRotatingGroup(fresh, first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = validateSignedRotatingGroup(first, prepared, signedRotatingFor(t, first, prepared, lsig))
+		if tc.want == "" && err != nil {
+			t.Fatalf("stage 0 program for a stage 0 spend refused: %v", err)
+		}
+		if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+			t.Fatalf("stage %d program for a stage 0 spend: err = %v, want %q", tc.embedded, err, tc.want)
+		}
 	}
 }
 

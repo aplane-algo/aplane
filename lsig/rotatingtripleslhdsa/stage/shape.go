@@ -42,7 +42,7 @@ var hypertrees = map[int]hypertree{
 		chunks:   []int{ForsChunkSize, 2 * (slhdsa.WotsSignatureSize + 11*slhdsa.N)},
 		teal:     tealH22,
 		template: templateH22,
-		base:     26825,
+		base:     26827,
 		step:     41,
 	},
 	63: {
@@ -50,7 +50,7 @@ var hypertrees = map[int]hypertree{
 		chunks:   []int{ForsChunkSize, 4 * (slhdsa.WotsSignatureSize + 9*slhdsa.N), 3 * (slhdsa.WotsSignatureSize + 9*slhdsa.N)},
 		teal:     tealH63,
 		template: templateH63,
-		base:     40888,
+		base:     40890,
 		step:     41,
 	},
 }

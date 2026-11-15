@@ -39,10 +39,10 @@ func (StageOps) StageAddress(key *signing.RotatingKeyMaterial, i uint64) (types.
 }
 
 // CheckStageOpens proves stage i's derived keys match the constants embedded
-// in its program: it test-signs with the stage's Ed25519 and Falcon keys and
-// verifies against the program, and checks the program's root and seed against
-// the rebuilt tree. It never signs with a WOTS+C leaf, because a leaf is
-// one-time and the check runs on a stage that hasn't spent yet.
+// in its program: the program must embed stage i, its root and seed must be
+// the rebuilt tree's, and a test signature with the stage's Ed25519 and Falcon
+// keys must verify against it. It never signs with a WOTS+C leaf, because a
+// leaf is one-time and the check runs on a stage that hasn't spent yet.
 func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) error {
 	keys, program, err := deriveFromMaterial(key, i)
 	if err != nil {
@@ -52,6 +52,9 @@ func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) erro
 	embedded, _, err := stage.Parse(program.Bytecode)
 	if err != nil {
 		return fmt.Errorf("parse stage %d program: %w", i, err)
+	}
+	if err := stagesign.CheckStage(i, embedded.Stage); err != nil {
+		return err
 	}
 	if embedded.Root != keys.hash.Public.Root || embedded.Seed != keys.hash.Public.Seed {
 		return fmt.Errorf("stage %d program does not embed its tree", i)
@@ -70,7 +73,10 @@ func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) erro
 // SignStage signs message with leaf index of stage i and returns the program
 // with [wotsc_sig, ed25519_sig, falcon_sig] as its arguments. The caller chooses
 // the leaf and records its use. A message that is not a 32-byte transaction ID
-// is refused before any key is derived.
+// is refused before any key is derived. The derived program is parsed again
+// and must embed stage i before any key signs, so a refused program costs no
+// leaf; the signatures must then verify against it before anything is
+// returned.
 func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index uint32, message []byte) (signing.RotatingStageSignature, error) {
 	if err := stagesign.CheckMessage(message); err != nil {
 		return signing.RotatingStageSignature{}, err
@@ -80,18 +86,20 @@ func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index uint
 		return signing.RotatingStageSignature{}, err
 	}
 	defer keys.Zero()
+	embedded, _, err := stage.Parse(program.Bytecode)
+	if err != nil {
+		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
+	}
+	if err := stagesign.CheckStage(i, embedded.Stage); err != nil {
+		return signing.RotatingStageSignature{}, err
+	}
 	hashSig, edSig, falconSig, err := keys.Sign(index, message)
 	if err != nil {
 		return signing.RotatingStageSignature{}, fmt.Errorf("sign with stage %d: %w", i, err)
 	}
 	args := [][]byte{hashSig, edSig, falconSig}
-	// On every error path the signatures are never handed to the caller, so
-	// they are wiped here; a WOTS+C signature can carry a chain's secret start.
-	embedded, _, err := stage.Parse(program.Bytecode)
-	if err != nil {
-		stagesign.ZeroArgs(args)
-		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
-	}
+	// A refused signature is never handed to the caller, so it is wiped
+	// here; a WOTS+C signature can carry a chain's secret start.
 	if err := Verify(embedded, message, hashSig, edSig, falconSig); err != nil {
 		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d signature does not verify: %w", i, err)

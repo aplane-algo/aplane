@@ -262,7 +262,7 @@ signatures are byte-compatible with the XMSS reference implementation: the
 package's vectors come from an independent implementation checked against
 it, and the reference's own SHA-256 vector is reproduced in the tests. The
 stage program verifies all of it with `sha256`, `concat`, `extract3`,
-`replace3`, `b^` and one subroutine, at 25,507 plus 134 per chain step: the
+`replace3`, `b^` and one subroutine, at 25,509 plus 134 per chain step: the
 `toByte(3) || SEED` prefix of every `PRF` call is hoisted into the per-phase
 address prefixes, a chain step is kept as `step << 32` so one `itob` yields
 both trailing address words, and the chain element and node inputs stay on
@@ -272,7 +272,7 @@ The stage accepts a signature only when the hashed message's WOTS+ checksum
 is at most 511 (`stage.MaxChecksum`). With a, b, d the hexadecimal digits of
 the checksum, a verifier runs exactly 45 + 255a + 15b chain steps, so the
 cap bounds an accepting run at 525 steps (a checksum of 512 already needs
-555) and the program's cost at 25,507 + 134 × 525 = 95,857, which with the
+555) and the program's cost at 25,509 + 134 × 525 = 95,859, which with the
 4,179 argument bytes makes a five-transaction group. The signer meets the
 cap by choosing the randomizer `r = PRF(SK_PRF, toByte(c, 28) ||
 toByte(idx, 4))` for the first counter c = 0, 1, ... (at most 64,
@@ -705,26 +705,29 @@ The design record for this new implementation of an established contract:
    An aged window (`rotating_window_not_current`) or changed stage
    (`rotating_stage_changed`) requires fresh preparation. No signature is
    released or recorded on those failures.
-6. **Resources and compatibility:** frozen TEAL v13 template, 2834 bytes
-   unsalted / 2837 salted, canonical first off-curve salt as other rotating
+6. **Resources and compatibility:** frozen TEAL v13 template, 2845 bytes
+   unsalted / 2848 salted, canonical first off-curve salt as other rotating
    stages. Args 0..3 are R+FORS (2928), both HT layers (1472), Ed25519 (64),
    Falcon (<=1423): 5887 bytes total. Each stays below the AVM byte-value
-   limit. The exact cost is 26825 + 41 times WOTS+ chain steps. A layer's
+   limit. The exact cost is 26827 + 41 times WOTS+ chain steps. A layer's
    checksum c lies in 0..480 and requires c + 45 - digitSum16(c) steps, at
-   most 510; two layers give a ceiling of 68645, inside four transactions.
+   most 510; two layers give a ceiling of 68647, inside four transactions.
    The argument bytes decide the group: planning uses 6 transactions (5
    dummies), with no program surcharge and 6000 microAlgos at minimum fees.
    The key-type ID, derivation labels and tags are unchanged; the stage
    template, stage identities and resource profile changed when the
    hypertree was rescaled, a pre-release freeze decision rather than a
-   compatible update. The height is a build-time constant
+   compatible update. They changed again, for all three rotating types, when
+   every stage program began to carry its stage number
+   ([KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#31-stage-program)).
+   The height is a build-time constant
    (`internal/rotatingkey.RotatingSlhdsaHeight`): the stage package carries a
    frozen verifier, template, argument layout and measured cost model for
    both 22 and 63, and `internal/rotatingkey` the matching literals, so
    changing the constant and rebuilding selects the standard
-   SLH-DSA-SHA2-128s shape instead (2863 / 2866 bytes, args R+FORS, four
+   SLH-DSA-SHA2-128s shape instead (2874 / 2877 bytes, args R+FORS, four
    HT layers, three HT layers, Ed25519, Falcon, 9343 bytes, cost
-   40888 + 41 times steps, ceiling 187258, ten transactions). The two
+   40890 + 41 times steps, ceiling 187260, ten transactions). The two
    heights are different accounts for the same seed. Released builds use
    22; the constant is for evaluation, not an operator setting.
 7. **Evidence:** strict parser and salted/unsalted stock-assembler equality;
@@ -768,8 +771,8 @@ The design record for this new implementation of an established contract:
 5. **Choreography and retries:** the existing leaf choice, release memory, audit
    restore and reuse reporting. State chooses the leaf, never whether to sign. The
    open test never signs with a leaf.
-6. **Resources and compatibility:** TEAL v13 template, not frozen, 2483 bytes unsalted /
-   2486 salted, 2115 argument bytes, exactly 15721 opcode units on every accepted run,
+6. **Resources and compatibility:** TEAL v13 template, not frozen, 2494 bytes unsalted /
+   2497 salted, 2115 argument bytes, exactly 15723 opcode units on every accepted run,
    a three-transaction group and no program surcharge.
 7. **Evidence:** vectors from a second implementation, the verifier run offline
    against the primitive with mutated verifiers, and on-chain acceptance, rejection

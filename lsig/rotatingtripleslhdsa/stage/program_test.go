@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/rotatingstage"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -28,6 +30,11 @@ func randomKeys(t *testing.T) *PublicKeys {
 			t.Fatal(err)
 		}
 	}
+	var stage [8]byte
+	if _, err := rand.Read(stage[:]); err != nil {
+		t.Fatal(err)
+	}
+	keys.Stage = binary.BigEndian.Uint64(stage[:])
 	return keys
 }
 
@@ -82,7 +89,7 @@ func TestParseRejectsNonCanonicalPrograms(t *testing.T) {
 	if _, _, err := Parse(wrongSalt); !errors.Is(err, ErrInvalidProgram) {
 		t.Fatalf("wrong salt accepted: %v", err)
 	}
-	for _, off := range []int{10, falconKeyOffset - 1, seedOffset - 3, UnsaltedProgramSize - 1} {
+	for _, off := range []int{0, 1, 2, rotatingstage.PrefixSize - 1, 21, falconKeyOffset - 1, seedOffset - 3, UnsaltedProgramSize - 1} {
 		tampered := bytes.Clone(unsalted.Bytecode)
 		tampered[off] ^= 1
 		if _, _, err := Parse(tampered); !errors.Is(err, ErrInvalidProgram) {
@@ -154,8 +161,8 @@ func TestSizesMatchPrimitive(t *testing.T) {
 var frozen = map[int]struct {
 	unsalted, salted, args, cost, group int
 }{
-	22: {2834, 2837, 5887, 68645, 6},
-	63: {2863, 2866, 9343, 187258, 10},
+	22: {2845, 2848, 5887, 68647, 6},
+	63: {2874, 2877, 9343, 187260, 10},
 }
 
 func TestResourceCeiling(t *testing.T) {

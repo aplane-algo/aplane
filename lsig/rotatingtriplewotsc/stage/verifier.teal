@@ -1,4 +1,7 @@
 #pragma version 13
+// The stage number, never read: it puts the stage into the hashed program.
+pushbytes 0x@STAGE@
+pop
 // Merkle tree of 64 WOTS+C keys over SHA-256, n = 16, w = 16, over the raw
 // TxID. Argument 0 is leaf (4) || R (16) || 32 chain values || 6 path nodes.
 // Scratch: 0 seed, 1 root, 2 seed||zero48, 3 digest, 4 leaf, 7 current node,

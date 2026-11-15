@@ -4,7 +4,9 @@ Status: implemented as three separate key types.
 `aplane.rotating-triple-xmss.v1` is frozen by its first release (v0.44.0) and
 `aplane.rotating-triple-slhdsa.v1` by its first release (v0.45.0); its design
 is in section 11. `aplane.rotating-triple-wotsc.v1` isn't frozen; its
-design is in section 12. This document specifies all three
+design is in section 12. All three changed in place once after those
+releases, when every stage program began to carry its stage number
+(sections 3.1 and 13). This document specifies all three
 for implementers and reviewers: their shared design and the hash-based schemes. It restates, and does not replace, the
 authoritative sources:
 
@@ -17,6 +19,8 @@ authoritative sources:
 - `lsig/rotatingfamily/`: what all three rotating key types share:
   registration and the generator, the stage's Ed25519 and Falcon-1024 half,
   stage program salt search and strict parse, and the contract suite
+- `internal/rotatingstage/`: the stage prefix every stage program opens with
+  and its reader
 - `internal/rotatingkey/rotatingkey.go`: key type identifiers, frozen sizes
   and resource profiles
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md), [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)
@@ -88,14 +92,14 @@ The XMSS values are frozen. The WOTS+C values aren't.
 | Maximum accepted chain steps | 525 | 240, on every accepted run |
 | Validity window cap | 100 rounds (`LastValid - FirstValid`) | same |
 | TEAL version | 13 | 13 |
-| Stage program bytes, unsalted / salted | 2,661 / 2,664 | 2,483 / 2,486 |
+| Stage program bytes, unsalted / salted | 2,672 / 2,675 | 2,494 / 2,497 |
 | Stage 0 public record bytes | 1,921 | 1,857 |
 | Hash-based signature bytes | 2,692 | 628 |
 | Ed25519 signature bytes | 64 | 64 |
 | Falcon-1024 signature bytes | at most 1,423, compressed | same |
 | Falcon-1024 public key bytes | 1,793 | 1,793 |
 | Maximum total argument bytes | 4,179 | 2,115 |
-| Maximum opcode cost | 95,857 | 15,721 |
+| Maximum opcode cost | 95,859 | 15,723 |
 | Group size | 5: one spend + four resource dummies | 3: one spend + two resource dummies |
 
 The stage packages own the templates and cost models. The corresponding
@@ -126,16 +130,42 @@ Every TEAL v13 stage template requires:
 5. `arg 2` is a valid Falcon-1024 signature of `TxID` under the embedded key.
 6. `arg 0` is a valid hash-based signature under the selected scheme.
 
-The XMSS program embeds six constants: the Ed25519 key (32 bytes), Falcon key
-(1,793), tree public seed (32), tree root (32), and `Lo` and `Hi` (8-byte
-big-endian integers). It requires a 2,692-byte signature, an index within
+Every stage program, of every type, opens with its stage number:
+
+```text
+#pragma version 13
+pushbytes 0x<stage n, 8 bytes big-endian>
+pop
+```
+
+In bytecode that is `0d 80 08 <8 bytes> 48`, so the number is at byte offset 3
+in all three types. The program never reads it. It is there so the hashed
+program names its stage: each stage's address is its own, and the program of
+an account's last confirmed spend, which is public on chain, shows the stage
+that signed it. The live stage is that number plus one, which an operator can
+pass to `rotate recover --stage`. The number grants nothing. The signer accepts
+a stage only when the address it derives from the seed equals the authorizer
+its own node reports. The width is fixed so every template keeps one size;
+`pushint` is not used because its encoding grows with the value. The constant
+adds 11 bytes and 2 opcode units (`pushbytes` and `pop`) to every stage
+program. Stage 0's number is 0. `internal/rotatingstage` owns the layout:
+`StageOffset`, and `ReadStage`, which reads the number from the prefix alone.
+It imports only the standard library, so the stage packages and the signer's
+own chain reads share one owner. Whether a program is a stage program of a given type is that type's
+strict `stage.Parse` to decide.
+
+The XMSS program embeds seven constants: the stage number (8 bytes), the
+Ed25519 key (32), Falcon key (1,793), tree public seed (32), tree root (32), and
+`Lo` and `Hi` (8-byte big-endian integers), which must be the stage's range. It
+requires a 2,692-byte signature, an index within
 `[Lo, Hi)`, a message checksum at most 511, and successful WOTS+, L-tree and
 authentication-path verification against the root.
 
-The WOTS+C program embeds four constants: the Ed25519 key (32 bytes), Falcon key
-(1,793), public seed (16) and tree root (16). It requires a 628-byte signature,
-a leaf index below 64, a digest whose digits sum to exactly 240, and successful
-chain and authentication-path verification against the root.
+The WOTS+C program embeds five constants: the stage number (8 bytes), the
+Ed25519 key (32), Falcon key (1,793), public seed (16) and tree root (16). It
+requires a 628-byte signature, a leaf index below 64, a digest whose digits sum
+to exactly 240, and successful chain and authentication-path verification
+against the root.
 
 The XMSS program verifies everything with `sha256`, `concat`, `extract3`,
 `replace3`, `b^`, `itob` and one subroutine (`hnode`). The `toByte(3) || SEED`
@@ -163,10 +193,17 @@ salt in `[0, 128)` giving an off-curve address, as the TEAL v13 assembler does.
 If none exists (probability about 2^-128) the stage is unusable
 (`ErrNoOffCurveSalt`).
 
-`stage.Parse` is the strict inverse: it accepts only bytes that `Build` would
-produce, including the canonical salt tail when required. No bytecode is
-stored in the key file. Stages are derived locally and offline, on requests and
-in the background, without trusting a node for addresses. For each scheme a
+`Build` writes the stage number into the prefix. XMSS's `Build` also refuses
+a `Lo` and `Hi` that are not the stage's range. `stage.Parse` is the strict
+inverse: it accepts only bytes that `Build` would produce, including the
+canonical salt tail when required, and returns the stage number with the
+keys. A program with one byte of its stage number changed parses as the stage
+it now names, at another address, when `Build` of that stage gives exactly
+those bytes. Otherwise it is refused: the salt no longer fits, or, for XMSS,
+the range is not the new stage's. It never parses as the original stage.
+
+No bytecode is stored in the key file. Stages are derived locally and offline,
+on requests and in the background, without trusting a node for addresses. For each scheme a
 test compares the local bytes against algod's assembler output for salted and
 unsalted stages.
 
@@ -277,10 +314,16 @@ construction.
 
 ### 5.5 Signer-side verification
 
-Before releasing anything, `StageOps.SignStage` re-parses the derived program
-and verifies all three signatures locally through the scheme's `signerops.Verify`.
-XMSS also checks the leaf range and checksum cap. WOTS+C rejects an index outside
-0 to 63. Failed signatures are zeroed and refused.
+`StageOps.SignStage` checks in this order. It refuses a message that is not a
+32-byte transaction ID, then derives the stage's keys and program. It parses
+the derived program again with the strict `stage.Parse` and refuses it unless
+it embeds the stage being signed for (`stagesign.CheckStage`). Only then do
+the stage's keys sign, so a refusal that depends only on the program costs no
+one-time leaf. Last, it verifies all three signatures locally through the
+scheme's `signerops.Verify` before releasing anything. XMSS also checks the
+leaf range when it signs, and the leaf range and checksum cap when it
+verifies. WOTS+C rejects an index outside 0 to 63. Failed signatures are zeroed
+and refused.
 
 A signature is then released only if the signer hasn't locked since approval, the
 request hasn't been cancelled and the key is still present. The sign path is a key
@@ -294,14 +337,18 @@ way.
 ## 6. Resource profile and cost
 
 Each group member contributes 20,000 units of pooled LogicSig execution cost
-and 1,000 bytes of pooled large-argument allowance.
+and 1,000 bytes of pooled large-argument allowance. `lsigresource` sizes the
+group as the larger of the opcode units the spend and its dummies need and the
+argument units its arguments need. Program bytes don't enter it: they decide
+only whether the fee carries a program surcharge, and no rotating type pays
+one. That gives 5 for XMSS, 3 for WOTS+C and 6 for SLH-DSA (10 at h = 63).
 
 | Property | XMSS | WOTS+C |
 |---|---|---|
-| Unsalted verifier cost | `25,507 + 134 * steps` | `5,881 + 41 * 240` |
+| Unsalted verifier cost | `25,509 + 134 * steps` | `5,883 + 41 * 240` |
 | Maximum chain steps | 525 | 240 |
 | Salt overhead | none; salt follows `return` | same |
-| Worst accepting run | 95,857 | 15,721, on every accepted run |
+| Worst accepting run | 95,859 | 15,723, on every accepted run |
 | Maximum argument bytes | 4,179 | 2,115 |
 | Group pool | 100,000 cost / 5,000 argument bytes | 60,000 cost / 3,000 argument bytes |
 | Resource dummies | 4 | 2 |
@@ -364,15 +411,20 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    release if the signer locked since approval, the request was cancelled or
    the key was removed.
 3. **Open test.** `CheckStageOpens` test-signs the target stage locally before
-   any spend signature is released. The leaf variants sign the SHA-256 hash of
-   their derivation label followed by ` stage open test`: a fixed label, not a
-   TxID, so the test signature authorizes nothing. They test Ed25519 and Falcon
-   and check the embedded root and public seed, and XMSS also its leaf range. They
+   any spend signature is released. It first parses the target's derived
+   program and refuses it unless it embeds the target's stage number, so a
+   target whose program names another stage fails here, before the account is
+   rekeyed to it. The leaf variants then check the embedded root and public
+   seed, and XMSS also its leaf range, and sign the SHA-256 hash of their
+   derivation label followed by ` stage open test`: a fixed label, not a TxID,
+   so the test signature authorizes nothing. They test Ed25519 and Falcon and
    never sign with a target-stage leaf.
 
 Clients route on `signing_flow`, verify the prepared group preserves the
 intended spend except for the rotation, fee, group ID and canonical dummies,
-simulate that group, then sign and submit the exact bytes. The signer retains
+simulate that group, then sign and submit the exact bytes. apshell also
+requires the signed spend's program to carry the prepared stage's number;
+the SDKs do not check it yet. The signer retains
 no prepare session; policy evaluates the spend presented to sign.
 
 ### 8.1 One-time key and leaf selection
@@ -589,7 +641,7 @@ transactions.
    [PROPOSAL_ROTATING_INTEGRATION.md](PROPOSAL_ROTATING_INTEGRATION.md).
 2. *Multi-stage release.* Several rotating slots in one group, each signed
    by the next stage in the chain. This needs its own design for budget (a
-   WOTS+C spend costs 15,721 and an XMSS spend up to 95,857 of a pool
+   WOTS+C spend costs 15,723 and an XMSS spend up to 95,859 of a pool
    that grows by 20,000 per member up to 16 members), release memory, audit
    and one-time key accounting.
 
@@ -643,12 +695,12 @@ of state over one group slot.
 | Signing variant | pure interface, empty context, deterministic `opt_rand = PK.seed` |
 | Validity window cap | 100 rounds, as the other variants |
 | TEAL version | 13 |
-| Stage program bytes, unsalted / salted | 2,834 / 2,837 |
+| Stage program bytes, unsalted / salted | 2,845 / 2,848 |
 | Stage 0 public record bytes | 1,857 |
 | SLH-DSA signature bytes | 4,400 (standard set: 7,856) |
 | Ed25519, Falcon-1024 signature bytes | 64; at most 1,423 |
 | Maximum total argument bytes | 5,887 |
-| Maximum opcode cost | 68,645 |
+| Maximum opcode cost | 68,647 |
 | Group size | 6: one spend + five resource dummies |
 | Go value | `slhdsa.Rescaled128`; `slhdsa.SHA2128s` is the standard set |
 
@@ -713,10 +765,11 @@ seed), 2 (Ed25519 seed), 3 (`SK.seed`), 4 (`SK.prf`) and 5 (`PK.seed`),
 each expansion including the genesis hash. Stage `n`'s SLH-DSA key is
 `KeyGenFromSeeds(SK.seed_n, SK.prf_n, PK.seed_n)` under the rescaled set;
 its root is the top of a 2,048-leaf tree, so derivation costs about four
-times the standard set's. The stage program embeds, in this order, `PK.seed` (16),
-`PK.root` (16), the Falcon-1024 public key (1,793) and the Ed25519 public
-key (32), and the stage 0 public record is the same 1,857 bytes. Program
-bytes are derived, never stored, as for the other variants.
+times the standard set's. The stage program embeds the stage number (8,
+§3.1) and, in this order, `PK.seed` (16), `PK.root` (16), the Falcon-1024
+public key (1,793) and the Ed25519 public key (32). The stage 0 public
+record is those four keys, 1,857 bytes. Program bytes are derived, never
+stored, as for the other variants.
 
 ### 11.4 Signing and arguments
 
@@ -744,9 +797,11 @@ layer's root, which is the next layer's message. The final root must equal
 the embedded `PK.root`. There is no randomizer search, leaf range, checksum
 cap or signature grinding; every valid signature under the key is accepted.
 
-`StageOps.SignStage` re-parses the derived program and verifies all three
-signatures locally before releasing them, as §5.5 describes; the leaf index
-the flow passes is ignored.
+`StageOps.SignStage` re-parses the derived program and requires it to embed
+the stage being signed for before the stage's keys sign, then verifies all
+three signatures locally before releasing them, as §5.5 describes; the leaf
+index the flow passes is ignored. The open test signs through the same path,
+so it runs the same checks.
 
 ### 11.5 Per-stage signing bound
 
@@ -843,11 +898,11 @@ in-flight release alerts work as for the other variants.
 
 | Property | SLH-DSA variant |
 |---|---|
-| Verifier cost | `26,825 + 41 * steps`, salted or not; the salt tail follows `return` |
+| Verifier cost | `26,827 + 41 * steps`, salted or not; the salt tail follows `return` |
 | Steps per layer | `c + 45 - digitSum16(c)` for checksum `c` in 0..480, at most 510 |
 | Maximum chain steps | 1,020 |
-| Worst accepting run | 68,645 |
-| Typical run | about 48,700 at the mean of 534 steps; LocalNet traces of 450 and 480 steps matched the model exactly |
+| Worst accepting run | 68,647 |
+| Typical run | about 48,700 at the mean of 534 steps; LocalNet traces of 450 and 480 steps matched the model exactly before the stage number added 2 to the base |
 | Maximum argument bytes | 5,887 |
 | Group pool | 120,000 cost / 6,000 argument bytes |
 | Resource dummies | 5 |
@@ -883,7 +938,7 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | Loss of state | possible undetected leaf reuse | same | none |
 | Group size | 5 | 3 | 6 |
 | Hash-based signature bytes | 2,692 | 628 | 4,400 |
-| Worst opcode cost | 95,857 | 15,721 | 68,645 |
+| Worst opcode cost | 95,859 | 15,723 | 68,647 |
 | Signing, this host | tree cache amortized | about 9 ms | about 0.2 s |
 | Stage derivation, this host | tree cache amortized | about 43 ms | about 100 ms |
 | Standing | RFC 8391 format and set, non-conformant signer | Published scheme, private instantiation | FIPS 205 construction, private parameter set |
@@ -1049,8 +1104,8 @@ cost model is one constant, not `base + step * steps`.
 | Group size | 3: one spend and two dummies |
 | Fee at minimum | 3,000 microAlgos, no program surcharge |
 | Group pool | 60,000 opcode units, 3,000 argument bytes |
-| Opcode cost | 15,721: 9,840 for chain steps plus 5,881 for everything else |
-| Stage program bytes | 2,483, or 2,486 salted |
+| Opcode cost | 15,723: 9,840 for chain steps plus 5,883 for everything else |
+| Stage program bytes | 2,494, or 2,497 salted |
 
 Arguments decide the group size, because `lsigresource` sizes the group from argument
 bytes and opcode cost. Program bytes don't affect it, but they do affect the fee: a
@@ -1116,7 +1171,7 @@ Measured on one development host and LocalNet:
 | Full stage derivation, with Falcon-1024 | 43 ms |
 | Full three-part signature | 8.6 ms |
 | Hash signature, Go | 40 microseconds |
-| On-chain cost | 15,721 in all 60 runs: 6 leaves, salted and not, 5 fresh accounts |
+| On-chain cost | 15,721 in all 60 runs: 6 leaves, salted and not, 5 fresh accounts. Measured before the stage number, which adds 2 |
 | Go against Python | All 14 vectors identical |
 | TEAL against Go | Agrees on all 64 leaves and every flipped byte; 8 of 8 mutated verifiers caught |
 | On-chain rejections | 21 of 21 |
@@ -1137,6 +1192,16 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
   to the TEAL changes every stage address. Changing these contracts mints a
   new key type version; it does not edit v1.
 - WOTS+C isn't frozen, so a change can derive different accounts from the same seed.
+- On 2026-11-14 all three v1 types changed in place: every stage program now
+  opens with its stage number (§3.1). The key type identifiers, derivation
+  labels and tags, signing procedures and stage 0 public records did not
+  change, but every stage address did, the account address among them. A
+  rotating account created by an earlier build cannot be opened by a build
+  with this change. This was a pre-release decision: the next release is
+  install-fresh and there were no outside users. No second template, version
+  switch or migration exists, and nothing reads the old programs. After a
+  release with these addresses in use, the same change would mint new
+  versions.
 - The three schemes have separate identifiers and derivation labels
   (`APLANE_ROTATING_TRIPLE_WOTSC_V1`, `APLANE_ROTATING_XMSS_V1` and
   `APLANE_ROTATING_TRIPLE_SLHDSA_V1`), so their addresses never collide by
@@ -1164,6 +1229,9 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 | SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
+| Stage number in every type: round trip for small and large stages, a different address for each stage, a changed stage byte, the shared prefix reader, a program without the prefix | each `stage` package's `stage_constant_test.go`; `internal/rotatingstage/rotatingstage_test.go`; `lsig/rotatingfamily/stageprog/guard_test.go` |
+| `SignStage` and `CheckStageOpens` refuse a derived program that embeds another stage, `SignStage` before any key signs | each `signerops` package's `signing_failure_test.go`; `lsig/rotatingfamily/stagesign`; the contract suite in `lsig/rotatingfamily/rotatingtest` |
+| apshell refuses a signed spend whose program carries another stage number or none | `internal/clientsign/rotating_test.go` |
 | WOTS+C stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewotsc/stage/program_test.go`, `template_dump_test.go` |
 | Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |
 | Derivation, signing, verification and tampered fields; XMSS range violations and checksum above cap | `lsig/rotatingtriplexmss/signerops/keys_test.go`, `lsig/rotatingtriplewotsc/signerops/keys_test.go` |
@@ -1190,6 +1258,12 @@ Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
   [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
 - Per-key-type exit and external-admin paths remain design-only.
 - Hinted stage scans and an in-flight release limit remain proposed.
+- The LocalNet on-chain tests have not been run since the stage number was
+  added. They compare each cost model with node traces, now 2 units higher,
+  and confirm a spend from each type.
+- Reading the stage number from the chain for recovery (an Indexer lookup
+  behind `rotate recover`) is designed, not built. Until then an operator
+  reads it from the last spend's program.
 - Grouping with other senders and multi-stage release are deferred by design
   (section 10.1).
 - A security proof for XMSS's checksum-bounded randomizer selection beyond the

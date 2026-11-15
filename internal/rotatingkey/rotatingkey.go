@@ -49,8 +49,8 @@ var slhdsaShape = map[int]struct {
 	programBytes, argumentBytes, opcodeCost int
 	scheme                                  string
 }{
-	22: {2837, 4400 + 64 + 1423, 26825 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
-	63: {2866, 7856 + 64 + 1423, 40888 + 41*3570, "SLH-DSA-SHA2-128s"},
+	22: {2848, 4400 + 64 + 1423, 26827 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
+	63: {2877, 7856 + 64 + 1423, 40890 + 41*3570, "SLH-DSA-SHA2-128s"},
 }[RotatingSlhdsaHeight]
 
 const (
@@ -83,16 +83,16 @@ const (
 	RotatingXmssStagePublicKeySize = 32 + 1793 + 32 + 32 + 32
 
 	// RotatingXmssMaxProgramBytes is the salted XMSS stage program.
-	RotatingXmssMaxProgramBytes = 2664
+	RotatingXmssMaxProgramBytes = 2675
 
 	// RotatingXmssMaxArgumentBytes is a 2,692-byte XMSS signature, a 64-byte
 	// Ed25519 signature and a Falcon-1024 signature of at most 1,423 bytes.
 	RotatingXmssMaxArgumentBytes = 2692 + 64 + 1423
 
 	// RotatingXmssMaxOpcodeCost is the worst accepting run of an XMSS stage
-	// program: 25,507 plus 134 per chain step over at most 525 steps, the
+	// program: 25,509 plus 134 per chain step over at most 525 steps, the
 	// most a signature within the stage's checksum cap of 511 can need.
-	RotatingXmssMaxOpcodeCost = 25507 + 134*525
+	RotatingXmssMaxOpcodeCost = 25509 + 134*525
 
 	// RotatingXmssLeavesPerStage and RotatingXmssStagesPerTree describe the
 	// XMSS triple's leaf allocation: a tree of 65,536 leaves split into
@@ -106,7 +106,7 @@ const (
 	RotatingWotscStagePublicKeySize = 16 + 16 + 1793 + 32
 
 	// RotatingWotscMaxProgramBytes is the salted WOTS+C stage program.
-	RotatingWotscMaxProgramBytes = 2486
+	RotatingWotscMaxProgramBytes = 2497
 
 	// RotatingWotscMaxArgumentBytes is a 628-byte WOTS+C signature, a 64-byte
 	// Ed25519 signature and a Falcon-1024 signature of at most 1,423 bytes.
@@ -114,7 +114,7 @@ const (
 
 	// RotatingWotscMaxOpcodeCost is the exact cost of every accepted run: the
 	// digit sum fixes the chain steps at 240, whatever the leaf or TxID.
-	RotatingWotscMaxOpcodeCost = 5881 + 41*240
+	RotatingWotscMaxOpcodeCost = 5883 + 41*240
 
 	// RotatingWotscLeavesPerStage is the size of each stage's own tree.
 	RotatingWotscLeavesPerStage = 64

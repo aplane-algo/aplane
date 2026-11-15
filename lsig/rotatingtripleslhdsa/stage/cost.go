@@ -8,7 +8,7 @@ package stage
 const MaxStepsPerLayer = 510
 
 // The verifier's cost is affine in the WOTS+ chain steps. The fixed work
-// includes 14 FORS leaves and 168 FORS path hashes, one FORS compression,
+// includes the stage constant (pushbytes and pop, 2), 14 FORS leaves and 168 FORS path hashes, one FORS compression,
 // one WOTS compression and h' path hashes per layer, two H_msg hashes, and
 // the Falcon/Ed25519 checks. All branches except the unrolled chain steps
 // have input-independent cost. Each chain step has 6 unit-cost

@@ -803,7 +803,7 @@ signer policy.
   1) and a Falcon-1024 signature over the TxID (argument 2), then verifies the
   WOTS+C signature against the stage's tree of 64 keys: the leaf index must be
   below 64 and the digest's digits must sum to exactly 240
-- every accepted run costs exactly 15721 opcode units, and signature arguments
+- every accepted run costs exactly 15723 opcode units, and signature arguments
   total at most 2115 bytes, so a spend needs two resource dummies
 - the signer, not TEAL, guarantees that every rekey targets the account's
   next never-revealed stage; the program accepts any other non-sender rekey
@@ -836,8 +836,8 @@ signer policy.
   counters 0, 1, ... (counter 0 being the RFC's own input), so every
   signature stays a valid RFC 8391 signature while the stage refuses some
   valid RFC signatures (`ARCH_CRYPTO.md`)
-- worst-case opcode cost 95,857 and 4,179 argument bytes, so a spend needs
-  four resource dummies; the cost is 25,507 plus 134 per chain step for
+- worst-case opcode cost 95,859 and 4,179 argument bytes, so a spend needs
+  four resource dummies; the cost is 25,509 plus 134 per chain step for
   both program shapes, pinned against the node's budget report at the step
   ceiling in the LocalNet test
 - the signer chooses the leaf and reports a repeat; a repeated leaf leaves
@@ -852,14 +852,16 @@ SLH-DSA (the SLH-DSA-SHA2-128s construction with a two-layer hypertree, not
 a FIPS 205 parameter set) over the TxID. Same transaction permissions and
 rotation guards as XMSS; no leaf index or checksum cap. Signature arguments
 total at most 5887 bytes, which needs a six-transaction group; the
-68645-opcode ceiling fits in four. Transaction policy belongs to signer approval; the program requires
+68647-opcode ceiling fits in four. Transaction policy belongs to signer approval; the program requires
 rekey away from sender, forbids ALGO close and caps the validity span at 100.
 See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-slh-dsa-accounts).
 
 Stage programs of every rotating type are assembled locally rather than
 through algod, using the TEAL v13 assembler's salt rule, and are cross-checked
-against the stock assembler in tests. Transaction policy beyond those checks
-lives in signer approval and local signer policy.
+against the stock assembler in tests. Each opens with its stage number, an
+eight-byte constant the program never reads, so every stage has its own
+address and a spend's program shows which stage signed it. Transaction policy
+beyond those checks lives in signer approval and local signer policy.
 
 #### Plain Host With Bounds
 

@@ -1,4 +1,7 @@
 #pragma version 13
+// The stage number, never read: it puts the stage into the hashed program.
+pushbytes 0x@STAGE@
+pop
 // SLH-DSA-SHA2-128s, pure interface, empty context, over the raw TxID.
 // Scratch: 0 seed, 1 root, 2 seed||zero48, 3 digest, 4 tree, 5 leaf,
 // 6 FORS message, 7 current node, 8 compressed address, 9 FORS tree,
