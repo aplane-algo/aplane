@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
@@ -272,11 +273,27 @@ func stageLookupLogLine(account string, l *signersigning.StageLookupRecord) stri
 		if probe == "" {
 			probe = "not run"
 		}
-		line += fmt.Sprintf(", stage %d from transaction %s (round %d), probe %s", l.Stage, l.TxID, l.Round, probe)
+		line += fmt.Sprintf(", stage %d from %s, probe %s", l.Stage, lookupSpend(l), probe)
 	case l.Reason != "":
 		line += " (" + l.Reason + ")"
 	}
 	return line
+}
+
+// lookupSpend names the spend a lookup read as rotate status does: by its
+// transaction ID and round, whichever of them the lookup kept.
+func lookupSpend(l *signersigning.StageLookupRecord) string {
+	var ref []string
+	if l.TxID != "" {
+		ref = append(ref, l.TxID)
+	}
+	if l.Round != 0 {
+		ref = append(ref, fmt.Sprintf("round %d", l.Round))
+	}
+	if len(ref) == 0 {
+		return "the last spend"
+	}
+	return "the last spend (" + strings.Join(ref, ", ") + ")"
 }
 
 // passSession captures a pass's session together with the context a lock

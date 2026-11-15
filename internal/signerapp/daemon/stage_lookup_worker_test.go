@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerops"
@@ -287,5 +288,29 @@ func TestLockDuringTheProbePublishesNothing(t *testing.T) {
 	}
 	if _, ok := table.Lookup(stage9); ok {
 		t.Fatal("the refused probe derived stage 9")
+	}
+}
+
+// The log line names the spend as rotate status does, leaving out what the
+// lookup did not keep.
+func TestStageLookupLogLineNamesTheSpendItRead(t *testing.T) {
+	record := func(txid string, round uint64) *signersigning.StageLookupRecord {
+		l := &signersigning.StageLookupRecord{Probe: signersigning.ProbeMissed}
+		l.Outcome, l.Network, l.Host, l.Stage, l.TxID, l.Round = chainread.LookupCandidate, "testnet", "indexer.example", 418, txid, round
+		return l
+	}
+	for _, tc := range []struct {
+		l    *signersigning.StageLookupRecord
+		want string
+	}{
+		{record(lookupWorkerTxID, 1234), "stage 418 from the last spend (" + lookupWorkerTxID + ", round 1234), probe missed"},
+		{record("", 1234), "stage 418 from the last spend (round 1234), probe missed"},
+		{record("", 0), "stage 418 from the last spend, probe missed"},
+	} {
+		got := stageLookupLogLine("ACCOUNT", tc.l)
+		want := "rotating account ACCOUNT: stage lookup on network testnet through Indexer indexer.example: candidate, " + tc.want
+		if got != want {
+			t.Errorf("log line\n got %q\nwant %q", got, want)
+		}
 	}
 }
