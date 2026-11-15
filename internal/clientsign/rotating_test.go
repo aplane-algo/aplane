@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -1021,5 +1022,68 @@ func TestRotatingSignRequestCarriesAppCallInfo(t *testing.T) {
 	}
 	if got := rotatingSignRequest("ACCOUNT", prep, SubmitOptions{}).AppCallInfo; got != nil {
 		t.Fatalf("app-call info without options = %+v, want none", got)
+	}
+}
+
+// TestSignAndSubmitRotatingDoesNotRepeatAnAmbiguousOutcome loses an answer
+// after the other side has acted on the request: a sign response cut short, a
+// sign response that fails the client's check, and a submission whose
+// acknowledgement is cut short. Each ends in an error after one prepare and
+// one sign. The client never prepares and signs the operation again, and an
+// unusable sign response is never submitted.
+func TestSignAndSubmitRotatingDoesNotRepeatAnAmbiguousOutcome(t *testing.T) {
+	for _, mode := range []string{"sign response cut short", "sign response fails the check", "submit response cut short"} {
+		t.Run(mode, func(t *testing.T) {
+			var prepareSeen types.Transaction
+			var signedID string
+			var signs, prepares, submits atomic.Int32
+			client := rotatingSigner(t, &prepareSeen, func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) (int, any) {
+				signs.Add(1)
+				signedID = algocrypto.GetTxID(txns[0])
+				answer := signedRotatingFor(t, prep, txns, types.LogicSig{Logic: stubStageProgram})
+				if mode == "sign response fails the check" {
+					answer.Stage++
+				}
+				return http.StatusOK, answer
+			})
+			transport := client.Client.Transport
+			client.Client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == "/sign/rotating/prepare" {
+					prepares.Add(1)
+				}
+				resp, err := transport.RoundTrip(req)
+				if err == nil && mode == "sign response cut short" && req.URL.Path == "/sign/rotating/sign" {
+					_ = resp.Body.Close()
+					resp.Body = io.NopCloser(strings.NewReader("{"))
+				}
+				return resp, err
+			})
+			var simulated []types.Transaction
+			algodClient := fakeAlgodWithSubmit(t, 1000, &simulated, func(w http.ResponseWriter, _ []byte) {
+				submits.Add(1)
+				// A 200 whose body ends early: the node accepted the group and
+				// the acknowledgement was lost.
+				w.Header().Set("Content-Length", "100")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, "{")
+			})
+			_, _, err := SignAndSubmitRotating(rotatingOriginal(), client, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Out: io.Discard}})
+			if err == nil || prepares.Load() != 1 || signs.Load() != 1 {
+				t.Fatalf("err = %v, prepares = %d, signs = %d; want an error after one of each", err, prepares.Load(), signs.Load())
+			}
+			if mode != "submit response cut short" {
+				if submits.Load() != 0 {
+					t.Fatalf("submissions = %d after an unusable sign response, want 0", submits.Load())
+				}
+				return
+			}
+			var failure *signing.SubmissionError
+			if submits.Load() != 1 || !errors.As(err, &failure) {
+				t.Fatalf("submissions = %d, err = %v; want one submission and a SubmissionError", submits.Load(), err)
+			}
+			if failure.State != signing.SubmissionUnknown || len(failure.TxIDs) == 0 || failure.TxIDs[0] != signedID {
+				t.Fatalf("failure = %+v, want an unknown outcome naming %s", failure, signedID)
+			}
+		})
 	}
 }
