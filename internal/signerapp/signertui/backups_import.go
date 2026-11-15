@@ -579,7 +579,7 @@ func (m Model) renderBackupImport() string {
 	}
 	body.WriteString("Archive file (.tar.gz or .tgz)  " + helpStyle.Render("ctrl+o browses") + "\n")
 	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(imp.path)))
-	body.WriteString("\nBackup passphrase  " + helpStyle.Render("the signer checks every key with it; not stored") + "\n")
+	body.WriteString("\nBackup passphrase\n")
 	body.WriteString(passStyle.Width(m.constrainParameterFieldWidth(44)).Render(strings.Repeat("*", len(imp.passphrase))))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("IMPORT")
