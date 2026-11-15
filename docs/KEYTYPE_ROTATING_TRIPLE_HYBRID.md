@@ -464,6 +464,12 @@ entries. It records the stage, TxID, `last_valid` and one-time leaf history
 (tree and index; a WOTS+C tree is always 0). Signing waits for audit
 restoration, bounded by the request context.
 
+A stage's history is dropped only when the node reports the next stage as the
+account's authorizer. Any other reading leaves it: a node that is behind can
+report an earlier stage after the release was made, and that does not show the
+stage is retired. For the same reason a release from an earlier stage never
+replaces a later stage's history.
+
 - A release that expires while its stage remains the authorizer raises a
   warning: it cannot confirm and the exposed stage still controls the account.
 - Releasing a second distinct transaction on the same leaf marks the stage

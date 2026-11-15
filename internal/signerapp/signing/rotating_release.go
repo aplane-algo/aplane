@@ -119,7 +119,9 @@ type ReleaseMemory struct {
 // with the next sequence number. When the entry it replaces is from the
 // same stage, r inherits that entry's released leaves and adds its own
 // unless the same transaction is already listed (a retry is one release);
-// r is marked Reused when two listed releases share a leaf.
+// r is marked Reused when two listed releases share a leaf. A release from
+// an earlier stage than the entry's is not recorded: the entry stays as it
+// is (the audit log still holds the release).
 func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	m.record(r, false)
 }
@@ -144,6 +146,13 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	if m.byAccount == nil {
 		m.byAccount = make(map[string]ReleaseRecord)
 	}
+	// A later stage's record is never replaced by an earlier stage's release,
+	// from the log or live, for any family: the account only moves forward, so
+	// a release from an earlier stage was signed on a chain read that was
+	// behind, and the later stage may still be live.
+	if prev, ok := m.byAccount[r.Account]; ok && prev.Stage > r.Stage {
+		return
+	}
 	if r.StatelessHash {
 		// A live observation made while restore was running takes precedence.
 		if prev, ok := m.byAccount[r.Account]; audited && ok && prev.Stage >= r.Stage {
@@ -161,9 +170,6 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	}
 	var leaves []LeafRelease
 	if prev, ok := m.byAccount[r.Account]; ok {
-		if audited && prev.Stage > r.Stage {
-			return
-		}
 		if prev.Stage == r.Stage {
 			r.Reused = r.Reused || prev.Reused
 			if audited {
@@ -492,9 +498,15 @@ func (s *Service) releaseAddresses(ctx context.Context, account string, stage ui
 //   - the same, within the validity, but a one-time leaf has signed more than
 //     one transaction: reused (warning), because the stage has lost its
 //     hash-based protection until the account moves;
-//   - authorizer anywhere else: the release landed or the account moved on;
-//     the memory is cleared and nothing is said. A record made after the
-//     pass's chain read is newer than the observation and is left alone;
+//   - authorizer is the next stage's address: a release landed and this
+//     stage is retired; the memory is cleared and nothing is said. A record
+//     made after the pass's chain read is newer than the observation and is
+//     left alone;
+//   - authorizer anywhere else: nothing is said and the memory is kept. The
+//     read may come from a node that is behind and shows an earlier stage, so
+//     it does not prove the stage is retired, and a kept record of a retired
+//     stage does no harm: the leaf choice ignores another stage's record and
+//     the next release from a later stage replaces it;
 //   - the authorizer is a credential this signer holds: a note that the
 //     account was rekeyed to it; the rotating stages no longer control it;
 //   - the authorizer is unknown and a recovery grant is searching: a note
@@ -527,7 +539,13 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 			continue
 		}
 		if r.Authorizer != rec.StageAddr {
-			deps.Releases.clearIfUnchanged(r.Account, rec.Seq)
+			// Only the address this stage hands the account to proves the
+			// stage is retired. A node that is behind can report an earlier
+			// stage after the release was made, and forgetting the stage's
+			// leaves on that reading would let the next transaction reuse one.
+			if r.Authorizer == rec.NextAddr {
+				deps.Releases.clearIfUnchanged(r.Account, rec.Seq)
+			}
 			continue
 		}
 		// The messages omit the current round so they stay identical across

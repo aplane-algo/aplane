@@ -82,6 +82,21 @@ func (r *Runtime) LockGeneration() uint64 {
 	return r.lockGen
 }
 
+// WhileGeneration runs fn if the signer is unlocked in the session generation
+// names, and reports whether it ran. It holds the state lock for reading, so
+// no Lock or BeginMaintenance transition falls between the check and fn: what
+// fn publishes was published in that session. fn must not call back into the
+// Runtime.
+func (r *Runtime) WhileGeneration(generation uint64, fn func()) bool {
+	r.stateMu.RLock()
+	defer r.stateMu.RUnlock()
+	if r.state != SignerStateUnlocked || r.lockGen != generation {
+		return false
+	}
+	fn()
+	return true
+}
+
 // GetState returns the current signer state.
 func (r *Runtime) GetState() SignerState {
 	r.stateMu.RLock()

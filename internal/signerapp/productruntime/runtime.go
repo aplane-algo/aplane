@@ -1107,6 +1107,20 @@ func (ir *Runtime) SetRotatingStatus(warnings, notes []string, accounts []signer
 	return true
 }
 
+// PublishRotatingStatus is SetRotatingStatus for a stage table pass that ran
+// in the unlocked session generation names. It publishes only while that
+// session is still the current one, checked together with the write, so a
+// pass that a lock overtook publishes nothing: the lock's cancellation
+// reaches the pass's context after the lock itself, and the context alone
+// does not say the session is over. published reports whether the status was
+// written, changed whether its warnings or notes differ from before.
+func (ir *Runtime) PublishRotatingStatus(generation uint64, warnings, notes []string, accounts []signerapi.RotatingAccountStatus) (changed, published bool) {
+	published = ir.lockRuntime.WhileGeneration(generation, func() {
+		changed = ir.SetRotatingStatus(warnings, notes, accounts)
+	})
+	return changed, published
+}
+
 // RotatingAccountStatuses returns the per-account rotating status from the
 // last pass.
 func (ir *Runtime) RotatingAccountStatuses() []signerapi.RotatingAccountStatus {

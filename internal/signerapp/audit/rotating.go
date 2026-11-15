@@ -41,7 +41,8 @@ type RotatingLeaf struct {
 
 // ReadRotatingReleases returns the newest ROTATING_RELEASE entry per account
 // from the audit log at path and its rotated predecessors (path+".2", then
-// path+".1", then path), oldest first so later entries win. The collected
+// path+".1", then path), oldest first so later entries win, except that an
+// entry from an earlier stage never replaces a later stage's. The collected
 // history feeds both one-time leaf selection and release alerts. Entries
 // the log rotated past are absent, and malformed lines are skipped; missing
 // history can cause undetected leaf reuse after release memory is rebuilt.
@@ -116,8 +117,14 @@ func readRotatingReleasesFrom(file string, acc map[string]*releaseAccumulator) e
 		}
 		leaf := RotatingLeaf{Tree: entry.RotatingTree, Index: entry.RotatingIndex, TxID: entry.TxID, LastValid: entry.RotatingLastValid}
 		a, ok := acc[entry.TxnAuth]
+		if ok && *entry.RotatingStage < a.r.Stage {
+			// An account only moves forward, so a release from an earlier
+			// stage than one already read was signed on a chain read that
+			// was behind. The later stage may still be live: its list stays.
+			continue
+		}
 		if !ok || a.r.Stage != *entry.RotatingStage {
-			// A new stage starts a fresh list; reuse is per stage.
+			// A later stage starts a fresh list; reuse is per stage.
 			a = &releaseAccumulator{
 				r:     RotatingRelease{Account: entry.TxnAuth, Stage: *entry.RotatingStage},
 				txids: make(map[string]bool),
