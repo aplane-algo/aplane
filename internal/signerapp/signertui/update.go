@@ -201,10 +201,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			// Signer locked; show unlock screen immediately regardless of
 			// current view. Any in-progress operation would fail anyway since
-			// the keyring has been zeroed.
+			// the keyring has been zeroed. Key types are not asked for: a
+			// locked signer cannot list them, and enterUnlocked loads them.
 			abort := m.interruptBackupTransfers(true)
 			m.applySignerLockedState()
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), abort)
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), abort)
 		}
 
 	case UnlockResultMsg:
@@ -234,7 +235,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.manualLock.pending = false
 			abort := m.interruptBackupTransfers(true)
 			m.applySignerLockedState()
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), abort)
+			return m, tea.Batch(m.waitForMessageCmd(), abort)
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 
