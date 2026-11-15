@@ -333,9 +333,13 @@ Endpoint and token resolution:
   https URL with a host, `config.ValidateIndexerServer`), or the tool refuses
   it before writing anything, and it is then written over any existing
   `networks.localnet.indexer`. With neither, `http://localhost:8980` is
-  written only when the signer config has no `networks.localnet.indexer`
-  entry; an entry the operator set, or emptied (`server: ""`) to keep the
-  lookup off, is left alone. It is written to the signer only and is not
+  written only when the algod URL is the tool's own default
+  (`http://localhost:4001`) and the signer config has no
+  `networks.localnet.indexer` entry; an entry the operator set, or emptied
+  (`server: ""`) to keep the lookup off, is left alone. With another algod
+  URL no Indexer is written, since the default port may not be that
+  network's Indexer and the algod token would go to whatever listens there,
+  and the tool prints one line saying to pass `--indexer-url`. It is written to the signer only and is not
   checked for reachability: an unreachable Indexer leaves rotating stage
   searches as they are without one
 - KMD URL: `--kmd-url`, then `APLANE_LOCALNET_KMD_URL`; if omitted, no

@@ -175,6 +175,9 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 		}
 		result.SignerConfigPath = signerPath
 		result.SignerConfigChanged = signerChanged
+		if opts.IndexerURL == "" && !defaultLocalnetAlgod(info.AlgodURL) {
+			result.Warnings = append(result.Warnings, NoDefaultIndexerWarning)
+		}
 	}
 	if opts.ClientDataDir != "" {
 		clientChanged, clientPath, err := EnsureClientLocalnetConfig(opts.ClientDataDir, info, opts.AlgodToken)
@@ -210,12 +213,25 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 	return result, nil
 }
 
+// NoDefaultIndexerWarning is the line Apply reports when it writes no
+// Indexer because the algod URL given is not the default LocalNet's.
+const NoDefaultIndexerWarning = "no LocalNet Indexer was written for the signer, since the algod URL is not the default; pass --indexer-url to give it one"
+
+// defaultLocalnetAlgod reports whether algodURL is this tool's own default
+// LocalNet algod, beside which the default Indexer listens.
+func defaultLocalnetAlgod(algodURL string) bool {
+	return NormalizeEndpointURL(algodURL) == DefaultAlgodURL
+}
+
 // EnsureSignerLocalnetConfig writes networks.localnet algod, indexer and
 // genesis_hash settings to apsigner config.yaml. A given indexerURL is
-// written. Without one, DefaultIndexerURL is written only when the config
-// has no localnet indexer entry; an entry the operator set, or emptied to
-// turn the lookup off, is left alone. The Indexer uses the LocalNet token,
-// as every AlgoKit LocalNet service does.
+// written. Without one, DefaultIndexerURL is written only when info's algod
+// URL is the default LocalNet algod and the config has no localnet indexer
+// entry: with another algod the default port may not be that LocalNet's
+// Indexer, and the algod token is not sent to whatever listens there; an
+// entry the operator set, or emptied to turn the lookup off, is left alone.
+// The Indexer uses the LocalNet token, as every AlgoKit LocalNet service
+// does.
 func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken, indexerURL string) (bool, string, error) {
 	if dataDir == "" {
 		return false, "", fmt.Errorf("signer data directory is required")
@@ -262,7 +278,7 @@ func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken, i
 
 	changed = setScalarValue(algodCfg, "server", info.AlgodURL, 0) || changed
 	changed = setScalarValue(algodCfg, "token", algodToken, yaml.DoubleQuotedStyle) || changed
-	if indexerURL == "" && mappingValue(localnet, "indexer") == nil {
+	if indexerURL == "" && defaultLocalnetAlgod(info.AlgodURL) && mappingValue(localnet, "indexer") == nil {
 		indexerURL = DefaultIndexerURL
 	}
 	if indexerURL != "" {

@@ -5,8 +5,12 @@ package aplocalnet
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -502,5 +506,64 @@ func TestIndexerURLTheSignerWouldRefuseIsRefused(t *testing.T) {
 	dir := writeSignerConfig(t, "networks:\n  localnet:\n    indexer:\n      server: localhost:8980\n")
 	if _, err := serverconfig.LoadServerConfig(dir); err == nil {
 		t.Fatal("the signer's loader accepted localhost:8980")
+	}
+}
+
+// With an algod other than the default LocalNet's and no Indexer given, no
+// Indexer is written: the default port may not be that network's Indexer,
+// and the algod token is not sent to whatever listens there.
+func TestEnsureSignerLocalnetConfigWritesNoDefaultIndexerBesideAnotherAlgod(t *testing.T) {
+	info := LocalNetInfo{AlgodURL: "http://localhost:4011", GenesisHash: testLocalnetGenesis}
+	dir := writeSignerConfig(t, "")
+	if _, _, err := EnsureSignerLocalnetConfig(dir, info, "custom-token", ""); err != nil {
+		t.Fatal(err)
+	}
+	if localnet := localnetIndexer(t, dir); localnet == nil || localnet.Indexer != nil {
+		t.Fatalf("localnet = %#v, want algod and no indexer", localnet)
+	}
+	// Given, it is written.
+	if _, _, err := EnsureSignerLocalnetConfig(dir, info, "custom-token", "http://localhost:8990"); err != nil {
+		t.Fatal(err)
+	}
+	if localnet := localnetIndexer(t, dir); localnet == nil || localnet.Indexer == nil || localnet.Indexer.Server != "http://localhost:8990" {
+		t.Fatalf("localnet = %#v, want the given indexer", localnet)
+	}
+}
+
+// fakeLocalnetAlgod answers the two reads CheckReachable makes.
+func fakeLocalnetAlgod(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v2/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"last-round": 5})
+		case "/versions":
+			_ = json.NewEncoder(w).Encode(map[string]any{"genesis_hash_b64": testLocalnetGenesis, "genesis_id": "devnet-v1", "versions": []string{"v2"}, "build": map[string]any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestApplyBesideANonDefaultAlgodSaysHowToAddAnIndexer(t *testing.T) {
+	t.Setenv("APLANE_LOCALNET_INDEXER_URL", "")
+	dir := writeSignerConfig(t, "")
+	result, err := Apply(context.Background(), Options{SignerDataDir: dir, AlgodURL: fakeLocalnetAlgod(t).URL, AlgodToken: "custom-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(result.Warnings, NoDefaultIndexerWarning) || !strings.Contains(NoDefaultIndexerWarning, "--indexer-url") {
+		t.Fatalf("warnings = %q, want the Indexer line", result.Warnings)
+	}
+	if localnet := localnetIndexer(t, dir); localnet == nil || localnet.Indexer != nil {
+		t.Fatalf("localnet = %#v, want no indexer", localnet)
+	}
+	// With an Indexer given, nothing to say.
+	result, err = Apply(context.Background(), Options{SignerDataDir: dir, AlgodURL: fakeLocalnetAlgod(t).URL, AlgodToken: "custom-token", IndexerURL: "http://localhost:8990"})
+	if err != nil || slices.Contains(result.Warnings, NoDefaultIndexerWarning) {
+		t.Fatalf("with an Indexer given: %q, %v", result.Warnings, err)
 	}
 }

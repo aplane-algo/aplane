@@ -29,9 +29,9 @@ before it was renamed `enroll`.
   lookup. `rotate status` and `/status` (`recovery.lookup`) show what it
   found, and the signer logs one line per lookup. The setting is file-only;
   apshell and apadmin have none. `aplocalnet` writes the LocalNet Indexer
-  (`http://localhost:8980`) into the signer's config when the config names
-  none, or the one `--indexer-url` gives, which must be an http or https URL
-  with a host.
+  (`http://localhost:8980`) into the signer's config when it uses the
+  default algod and the config names none, or the one `--indexer-url`
+  gives, which must be an http or https URL with a host.
 
 ## Rotating stage programs carry their stage number
 

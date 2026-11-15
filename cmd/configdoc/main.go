@@ -200,7 +200,7 @@ func printEnvVars() {
 		{"APLANE_SYSTEMD_MANAGED", "Set to 1 to mark the signer instance as systemd-managed (manual startup blocked unless overridden)", "apsigner"},
 		{"APLANE_LOCALNET_ALGOD_URL", "Optional AlgoKit LocalNet algod override", "aplocalnet, algokit-localnet plugin"},
 		{"APLANE_LOCALNET_KMD_URL", "Optional AlgoKit LocalNet KMD override", "aplocalnet, algokit-localnet plugin"},
-		{"APLANE_LOCALNET_INDEXER_URL", "Optional AlgoKit LocalNet Indexer written to the signer config; without it the default is written only when the config has no localnet indexer", "aplocalnet"},
+		{"APLANE_LOCALNET_INDEXER_URL", "Optional AlgoKit LocalNet Indexer written to the signer config; without it the default is written only with the default algod URL and when the config has no localnet indexer", "aplocalnet"},
 		{"APLANE_LOCALNET_TOKEN", "Optional AlgoKit LocalNet algod/KMD/Indexer token override", "aplocalnet, algokit-localnet plugin"},
 		{"APLANE_LOCALNET_WALLET", "Optional KMD wallet name for LocalNet funding", "algokit-localnet plugin"},
 		{"APLANE_LOCALNET_WALLET_PASSWORD", "Optional KMD wallet password for LocalNet funding", "algokit-localnet plugin"},

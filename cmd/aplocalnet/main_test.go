@@ -66,3 +66,11 @@ func TestModelViewShowsTheDefaultIndexerWhenNoneIsGiven(t *testing.T) {
 		t.Fatalf("view missing the Indexer default:\n%s", view)
 	}
 }
+
+func TestModelViewShowsNoDefaultIndexerBesideAnotherAlgod(t *testing.T) {
+	m := newModel(aplocalnet.Options{AlgodURL: "http://localhost:4011"})
+	m.busy = false
+	if view := m.View(); !strings.Contains(view, "pass --indexer-url") {
+		t.Fatalf("view missing the Indexer hint:\n%s", view)
+	}
+}
