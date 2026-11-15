@@ -929,6 +929,11 @@ and unlock the signer before spending from it, so the history is read with the a
 present. Without that step a spend can sign on a leaf an earlier, unconfirmed
 spend from the same stage already used.
 
+Where locking is not convenient, a `validate` of the account from apshell
+serves as well. It is a spend like any other, so it takes that one chance
+(about 1 in 64) itself; once it confirms, the account is on its next stage and
+the earlier stage's leaves no longer matter.
+
 A matching hint at stage 50,000 requires preparing that stage and its
 successor, without rebuilding stages 0–49,999. With an Indexer configured for
 the network (`networks.<network>.indexer` in the signer's `config.yaml`), a
