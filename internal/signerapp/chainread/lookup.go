@@ -51,17 +51,29 @@ const (
 	LookupWrongNetwork LookupOutcome = "wrong_network"
 )
 
-// Limits of one stage lookup.
+// Limits of one stage lookup: one request, for at most eight results,
+// within ten seconds, the body read included; the body capped; one attempt
+// per grant (the caller's).
 const (
-	// DefaultLookupTimeout bounds the whole lookup, every request included.
+	// DefaultLookupTimeout bounds the whole lookup, the body read included.
 	DefaultLookupTimeout = 10 * time.Second
-	// MaxIndexerResponseBytes caps each response body.
+	// MaxIndexerResponseBytes caps the response body. Eight results fit in
+	// it many times over: a stage-program spend is about 20 KB of JSON (a
+	// program of at most 2,877 bytes and arguments of at most 9,343, both
+	// base64 encoded), with room left for what the Indexer adds to an
+	// application call. A longer answer is unavailable, and the search runs
+	// without it.
 	MaxIndexerResponseBytes = 1 << 20
-	// lookupPageSize is the limit asked of each search request, and a page
-	// holding more is refused; lookupMaxRequests is the requests made (a
-	// search and one further page). So at most 16 results are examined.
-	lookupPageSize    = 8
-	lookupMaxRequests = 2
+	// lookupLimit is the results asked for in the one request; a response
+	// that begins one more is refused. It is eight, not one, because the
+	// Indexer's sender role also matches a clawback's asset sender: whoever
+	// holds clawback rights over an asset the account opted into can send a
+	// zero-amount clawback that rekeys its own sender, the clawback address,
+	// and so put a result the account did not send ahead of its last spend
+	// whenever it likes. A one-result query would then see no outgoing
+	// rekey; eight results in the same request see past such results at no
+	// cost. The lookup never asks for a further page.
+	lookupLimit = 8
 
 	// indexerTokenHeader carries the Indexer API token, as the SDK sends it.
 	indexerTokenHeader = "X-Indexer-API-Token"
@@ -94,12 +106,13 @@ type StageLookup struct {
 // caller derives the candidate from the seed and accepts it only if its
 // address is the authorizer the caller read from its own algod.
 //
-// The lookup makes at most two requests within DefaultLookupTimeout (or
-// LookupTimeout), body reads included, reads at most MaxIndexerResponseBytes
-// of each response, decodes at most eight results of a page, and keeps only
-// the fields it checks (lookup_decode.go). It never uses a spend older than
-// the newest outgoing rekey: that one must hand the account to authorizer,
-// which is also what makes an Indexer lagging behind algod harmless.
+// The lookup makes one request, for at most eight results, within
+// DefaultLookupTimeout (or LookupTimeout), the body read included; it reads
+// at most MaxIndexerResponseBytes, never asks for a further page, and keeps
+// only the fields it checks (lookup_decode.go). It never uses a spend older
+// than the newest the account sent: that one must hand the account to
+// authorizer, which is also what makes an Indexer lagging behind algod
+// harmless.
 //
 // It returns an error only for a caller mistake (an argument missing). Every
 // condition of the Indexer or the chain is an outcome.
@@ -179,43 +192,30 @@ type indexerSearch struct {
 	token  string
 }
 
-// newestOutgoingRekey returns the first result, newest first, whose
-// top-level sender is the account and which rekeys it. The sender role also
-// matches the asset sender of a clawback, which is skipped; inner
-// transactions are not looked at. nil with no reason means none was found
-// within the limits; a reason means the Indexer could not be read.
+// newestOutgoingRekey returns the newest result, among the at most eight
+// the one request returns, whose top-level sender is the account. Results
+// sent by another address are skipped: the sender role also matches a
+// clawback's asset sender (see lookupLimit). Inner transactions are not
+// looked at. nil with no reason means none of the results was sent by the
+// account; a reason means the Indexer could not be read.
 func (s indexerSearch) newestOutgoingRekey(ctx context.Context, account types.Address) (*indexerTxn, string) {
-	sender := account.String()
-	next := ""
-	for request := 0; request < lookupMaxRequests; request++ {
-		page, err := s.page(ctx, sender, next)
-		if err != nil {
-			return nil, unavailableReason(ctx, err)
-		}
-		if page.match != nil {
-			return page.match, ""
-		}
-		if page.next == "" {
-			break
-		}
-		next = page.next
+	txn, err := s.newest(ctx, account.String())
+	if err != nil {
+		return nil, unavailableReason(ctx, err)
 	}
-	return nil, ""
+	return txn, ""
 }
 
-// page requests one page of the account's outgoing rekeys, newest first,
-// and decodes it from the capped body.
-func (s indexerSearch) page(ctx context.Context, sender, next string) (indexerPage, error) {
+// newest makes the lookup's one request, for the account's newest outgoing
+// rekeys, and decodes the first sent by the account from the capped body.
+func (s indexerSearch) newest(ctx context.Context, sender string) (*indexerTxn, error) {
 	u := s.server
 	u.Path = strings.TrimRight(u.Path, "/") + "/v2/transactions"
 	q := url.Values{}
 	q.Set("address", sender)
 	q.Set("address-role", "sender")
 	q.Set("rekey-to", "true")
-	q.Set("limit", strconv.Itoa(lookupPageSize))
-	if next != "" {
-		q.Set("next", next)
-	}
+	q.Set("limit", strconv.Itoa(lookupLimit))
 	if u.RawQuery != "" {
 		u.RawQuery += "&" + q.Encode()
 	} else {
@@ -223,16 +223,16 @@ func (s indexerSearch) page(ctx context.Context, sender, next string) (indexerPa
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return indexerPage{}, err
+		return nil, err
 	}
 	req.Header.Set(indexerTokenHeader, s.token)
 	req.Header.Set("Accept", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return indexerPage{}, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return decodePage(resp.Body, sender)
+	return decodeNewest(resp.Body, sender)
 }
 
 // signingStage checks that the spend was signed by a stage program and
@@ -306,7 +306,7 @@ func unavailableReason(ctx context.Context, err error) string {
 	case errors.Is(err, errResponseTooLarge):
 		return fmt.Sprintf("the Indexer's response exceeded %d bytes", MaxIndexerResponseBytes)
 	case errors.Is(err, errTooManyResults):
-		return fmt.Sprintf("the Indexer returned more than the %d results asked", lookupPageSize)
+		return fmt.Sprintf("the Indexer returned more than the %d results asked", lookupLimit)
 	case errors.Is(err, errFieldTooLong):
 		return "a field of the Indexer's response exceeded its bound"
 	case errors.As(err, &status):

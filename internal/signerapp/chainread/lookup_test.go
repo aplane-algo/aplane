@@ -29,16 +29,28 @@ const indexerToken = "INDEXER-SECRET-TOKEN-0123456789"
 
 // fakeIndexer serves /v2/transactions from pages of results: a request
 // without a next token gets pages[0], one with next token "p<i>" gets
-// pages[i]. Every page but the last carries the next page's token.
+// pages[i]. Every page but the last carries the next page's token, which
+// the lookup must ignore. At the end of the test it checks that it saw
+// exactly one request, the lookup's one, or none when noRequests is set.
 type fakeIndexer struct {
-	mu       sync.Mutex
-	pages    [][]map[string]any
-	handler  http.HandlerFunc // replaces the page server when set
-	requests []*http.Request
+	mu         sync.Mutex
+	pages      [][]map[string]any
+	handler    http.HandlerFunc // replaces the page server when set
+	requests   []*http.Request
+	noRequests bool
 }
 
 func (f *fakeIndexer) serve(t *testing.T) *httptest.Server {
 	t.Helper()
+	t.Cleanup(func() {
+		want := 1
+		if f.noRequests {
+			want = 0
+		}
+		if got := f.requestCount(); got != want {
+			t.Errorf("the fake Indexer saw %d requests, want %d", got, want)
+		}
+	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.requests = append(f.requests, r.Clone(context.Background()))
@@ -181,15 +193,14 @@ func TestLookupStageNSpendIsCandidateNPlusOne(t *testing.T) {
 	if got.Network != "testnet" || got.Host != strings.TrimPrefix(srv.URL, "http://") {
 		t.Fatalf("lookup names network %q host %q", got.Network, got.Host)
 	}
-	// One request, asking for the account's outgoing rekeys, newest first,
-	// eight at a time, with the token as the SDK sends it.
+	// One request, for the account's newest outgoing rekey, with the token
+	// as the SDK sends it.
 	if idx.requestCount() != 1 {
 		t.Fatalf("requests = %d, want 1", idx.requestCount())
 	}
 	req := idx.request(0)
-	q := req.URL.Query()
-	if q.Get("address") != lookupAccount.String() || q.Get("address-role") != "sender" || q.Get("rekey-to") != "true" || q.Get("limit") != "8" {
-		t.Fatalf("query = %s", req.URL.RawQuery)
+	if req.URL.Path != "/v2/transactions" || req.URL.RawQuery != "address="+lookupAccount.String()+"&address-role=sender&limit=8&rekey-to=true" {
+		t.Fatalf("request = %s?%s", req.URL.Path, req.URL.RawQuery)
 	}
 	if req.Header.Get("X-Indexer-API-Token") != indexerToken {
 		t.Fatalf("token header = %q", req.Header.Get("X-Indexer-API-Token"))
@@ -207,7 +218,7 @@ func TestLookupStageZeroSpendIsCandidateOne(t *testing.T) {
 }
 
 func TestLookupWithoutAnIndexerAsksNothing(t *testing.T) {
-	idx := &fakeIndexer{}
+	idx := &fakeIndexer{noRequests: true}
 	srv := idx.serve(t)
 	for name, r := range map[string]Reader{
 		"no Indexer for the network": func() Reader {
@@ -239,7 +250,7 @@ func TestLookupWithoutAnIndexerAsksNothing(t *testing.T) {
 }
 
 func TestLookupRefusesACallerMistake(t *testing.T) {
-	r := lookupReaderFor((&fakeIndexer{}).serve(t))
+	r := lookupReaderFor((&fakeIndexer{noRequests: true}).serve(t))
 	for name, call := range map[string]func() error{
 		"short genesis": func() error {
 			_, err := r.LookupLastRotation(context.Background(), []byte{1}, lookupAccount, lookupAuthorizer)
@@ -260,84 +271,89 @@ func TestLookupRefusesACallerMistake(t *testing.T) {
 	}
 }
 
-func TestLookupFindsTheSpendBehindHeavyTrafficWithinTwoPages(t *testing.T) {
-	var first []map[string]any
-	for i := 0; i < 8; i++ {
-		first = append(first, clawback(lookupAccount))
-	}
-	p3 := stageProgram(3, "three")
-	idx := &fakeIndexer{pages: [][]map[string]any{first, {clawback(lookupAccount), spend(lookupAccount, lookupAuthorizer, p3, false)}}}
-	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
-	if got.Outcome != LookupCandidate || got.Stage != 4 {
-		t.Fatalf("lookup = %+v, want candidate 4", got)
-	}
-	if idx.requestCount() != 2 || idx.request(1).URL.Query().Get("next") != "p1" {
-		t.Fatalf("requests = %d, want the search and one further page", idx.requestCount())
-	}
-}
-
-// The sender role also matches a clawback's asset sender: a newer clawback
-// is skipped and the account's own rekey is used.
-func TestLookupSkipsANewerClawback(t *testing.T) {
-	p5 := stageProgram(5, "five")
-	idx := &fakeIndexer{pages: [][]map[string]any{{clawback(lookupAccount), spend(lookupAccount, lookupAuthorizer, p5, false)}}}
+// The sender role also matches a clawback's asset sender, and a clawback
+// that rekeys its own sender is a result the account did not send. The
+// lookup skips results sent by another address and uses the newest the
+// account sent.
+func TestLookupSkipsANewerClawbackSentByAnotherAddress(t *testing.T) {
+	idx := &fakeIndexer{pages: [][]map[string]any{{clawback(lookupAccount), spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)}}}
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
 	if got.Outcome != LookupCandidate || got.Stage != 6 {
 		t.Fatalf("lookup = %+v, want candidate 6 from the account's own rekey", got)
 	}
 }
 
-func TestLookupNoOutgoingRekeyInTwoPages(t *testing.T) {
-	page := func() []map[string]any {
-		var p []map[string]any
-		for i := 0; i < 8; i++ {
-			p = append(p, clawback(lookupAccount))
-		}
-		return p
+// Eight results, none sent by the account: no outgoing rekey. The next
+// page, which holds the account's spend, is never asked for: the response's
+// next-token is ignored.
+func TestLookupEightResultsFromOtherSendersAreNoOutgoingRekey(t *testing.T) {
+	var eight []map[string]any
+	for i := 0; i < 8; i++ {
+		eight = append(eight, clawback(lookupAccount))
 	}
-	// A third page holds the spend; the lookup never asks for it.
-	idx := &fakeIndexer{pages: [][]map[string]any{page(), page(), {spend(lookupAccount, lookupAuthorizer, stageProgram(1, "x"), false)}}}
+	idx := &fakeIndexer{pages: [][]map[string]any{eight, {spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)}}}
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
 	if got.Outcome != LookupNoOutgoingRekey {
 		t.Fatalf("lookup = %+v, want no_outgoing_rekey", got)
 	}
-	if idx.requestCount() != 2 {
-		t.Fatalf("requests = %d, want 2", idx.requestCount())
-	}
-	// An empty answer is the same outcome.
-	empty := &fakeIndexer{}
-	if got := lookup(t, lookupReaderFor(empty.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupNoOutgoingRekey || empty.requestCount() != 1 {
-		t.Fatalf("empty answer: %+v after %d requests", got, empty.requestCount())
+	if idx.requestCount() != 1 || idx.request(0).URL.Query().Get("next") != "" {
+		t.Fatalf("requests = %d, want the one request and no further page", idx.requestCount())
 	}
 }
 
-// An Indexer that sends more results than the eight asked has its page
-// refused before the ninth is decoded; a match among the first eight is read
-// without reading on.
-func TestLookupRefusesAPageOfMoreResultsThanAsked(t *testing.T) {
-	var page []map[string]any
-	for i := 0; i < 8; i++ {
-		page = append(page, clawback(lookupAccount))
+func TestLookupEmptyAnswerIsNoOutgoingRekey(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty array":         `{"current-round":5,"transactions":[]}`,
+		"null":                `{"current-round":5,"transactions":null}`,
+		"no transactions key": `{"current-round":5}`,
+		"a next-token alone":  `{"current-round":5,"next-token":"p1","transactions":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			idx := &fakeIndexer{handler: func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }}
+			if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupNoOutgoingRekey {
+				t.Fatalf("lookup = %+v, want no_outgoing_rekey", got)
+			}
+		})
 	}
-	page = append(page, spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false))
-	idx := &fakeIndexer{pages: [][]map[string]any{page, {spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)}}}
-	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
-	if got.Outcome != LookupUnavailable || idx.requestCount() != 1 {
-		t.Fatalf("lookup = %+v after %d requests, want unavailable after one", got, idx.requestCount())
-	}
+}
 
+// An Indexer that sends more than the eight results asked has its answer
+// refused when the ninth begins.
+func TestLookupRefusesAnAnswerOfMoreResultsThanAsked(t *testing.T) {
+	var nine []map[string]any
+	for i := 0; i < 8; i++ {
+		nine = append(nine, clawback(lookupAccount))
+	}
+	nine = append(nine, spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false))
+	empties := make([]map[string]any, 9)
+	for i := range empties {
+		empties[i] = map[string]any{}
+	}
+	for name, results := range map[string][]map[string]any{
+		"eight others, then the spend": nine,
+		"nine empty objects":           empties,
+	} {
+		t.Run(name, func(t *testing.T) {
+			idx := &fakeIndexer{pages: [][]map[string]any{results}}
+			if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupUnavailable {
+				t.Fatalf("lookup = %+v, want unavailable", got)
+			}
+		})
+	}
+	// The account's spend among the first eight is read without reading on.
 	early := []map[string]any{clawback(lookupAccount), spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)}
 	for i := 0; i < 20; i++ {
 		early = append(early, clawback(lookupAccount))
 	}
-	idx = &fakeIndexer{pages: [][]map[string]any{early}}
+	idx := &fakeIndexer{pages: [][]map[string]any{early}}
 	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupCandidate || got.Stage != 3 {
 		t.Fatalf("lookup = %+v, want the second result's candidate", got)
 	}
 }
 
 // An Indexer behind algod has not seen the spend that set the authorizer:
-// its newest outgoing rekey hands the account to an earlier address.
+// the newest spend it knows from the account hands it to an earlier
+// address. An older spend that would match is never used.
 func TestLookupNewestRekeyToAnotherAddressIsNotCurrent(t *testing.T) {
 	idx := &fakeIndexer{pages: [][]map[string]any{{
 		spend(lookupAccount, otherAddress, stageProgram(4, "four"), false),
@@ -346,6 +362,13 @@ func TestLookupNewestRekeyToAnotherAddressIsNotCurrent(t *testing.T) {
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
 	if got.Outcome != LookupNotCurrent || got.TxID != spendTxID || got.Round != 4321 {
 		t.Fatalf("lookup = %+v, want not_current naming the spend read", got)
+	}
+	// The newest the account sent rekeys nothing: not the current rekey.
+	notRekey := spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)
+	delete(notRekey, "rekey-to")
+	idx = &fakeIndexer{pages: [][]map[string]any{{notRekey}}}
+	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupNotCurrent {
+		t.Fatalf("result without rekey-to: %+v, want not_current", got)
 	}
 }
 
@@ -482,7 +505,7 @@ func TestLookupUnreadableIndexerIsUnavailableWithoutTheToken(t *testing.T) {
 // A redirect is refused, not followed: the lookup makes only the requests
 // it counts, and never sends the token to another host.
 func TestLookupRefusesARedirect(t *testing.T) {
-	target := &fakeIndexer{pages: [][]map[string]any{{spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)}}}
+	target := &fakeIndexer{noRequests: true, pages: [][]map[string]any{{spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)}}}
 	targetSrv := target.serve(t)
 	idx := &fakeIndexer{handler: func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, targetSrv.URL+r.URL.RequestURI(), http.StatusFound)

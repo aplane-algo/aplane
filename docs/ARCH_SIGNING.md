@@ -1985,9 +1985,13 @@ release memory, when the table has no hint; an operator's `stage` hint; and,
 when `networks.<token>.indexer` is configured for the account's network, the
 chain. The chain's candidate is the search's first step. A grant without an
 operator's hint, automatic or operator, looks up once, before its first
-derivation: `chainread.Reader.LookupLastRotation` reads the account's newest
-outgoing rekey from the Indexer chosen by genesis hash like algod, and if it
-is a top-level spend by the account, on the account's chain, handing the
+derivation: `chainread.Reader.LookupLastRotation` asks the Indexer chosen by
+genesis hash like algod, in one request, for the account's newest outgoing
+rekeys, at most eight, and takes the first whose top-level sender is the
+account. Results another address sent are skipped: the sender role also
+matches a clawback's asset sender, and a clawback that rekeys its own sender
+could otherwise hide the account's last spend from a one-result query. If
+that result is a spend by the account, on the account's chain, handing the
 account to the authorizer the worker read from algod, signed by a stage
 program alone whose address is its signer, the candidate is the program's
 stage number plus one. The worker derives it through the grant's deriver,
@@ -2000,8 +2004,8 @@ exhausted, as any probe would. Every other outcome (`unavailable`,
 `no_outgoing_rekey`, `not_current`, `not_a_stage_program`, `wrong_network`, or
 no Indexer) derives nothing, so the search that follows is the search without
 one. The lookup opens no seed and is not a key use; it runs within 10 seconds,
-two requests of at most eight results each, 1 MiB per response and the
-fields it checks alone decoded, and is not retried within a
+one request for at most eight results with no further page, a 1 MiB body and
+the fields it checks alone decoded, and is not retried within a
 grant: a new grant, after the authorizer changes, at the next unlock, or by
 `rotate recover`, looks up again. A prepare's foreground discovery does not
 look up. The worker logs one info line per lookup.

@@ -14,22 +14,23 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// The lookup decodes an Indexer page itself, from the capped body, into the
-// few fields it reads. The SDK's models would hold every field of every
+// The lookup decodes the Indexer's answer itself, from the capped body, into
+// the few fields it reads. The SDK's models would hold every field of every
 // result, several kilobytes each, so a 1 MiB body of empty objects would
-// cost gigabytes; here memory is bounded by the body cap and the page size.
+// cost gigabytes; here memory is bounded by the body cap and the eight
+// results asked for, of which only the one used is kept.
 //
 // What is read, by the Indexer's JSON names:
 //
-//	next-token
 //	transactions[].id, sender, rekey-to, auth-addr, confirmed-round, genesis-hash
 //	transactions[].signature.sig, multisig, pqsig                  (presence only)
 //	transactions[].signature.logicsig.logic
 //	transactions[].signature.logicsig.signature, multisig-signature,
 //	  logic-multisig-signature, pqsig                             (presence only)
 //
-// Every other field, at any depth (current-round, args, inner-txns, notes,
-// a newer Indexer's additions), is scanned past and never kept.
+// Every other field, at any depth (current-round, next-token, args,
+// inner-txns, notes, a newer Indexer's additions), is scanned past and never
+// kept.
 
 // Field bounds. A field longer than its bound refuses the page.
 const (
@@ -45,8 +46,6 @@ const (
 	// transaction, so no program is longer than 1,000 times the largest
 	// group.
 	maxLogicBytes = 1000 * types.MaxTxGroupSize
-	// maxNextTokenLength bounds the Indexer's opaque page token.
-	maxNextTokenLength = 256
 )
 
 var (
@@ -78,55 +77,40 @@ type indexerTxn struct {
 	} `json:"signature"`
 }
 
-// indexerPage is what the lookup keeps of one search page: the first result
-// the account sent that rekeys it, if any, and the next page's token.
-type indexerPage struct {
-	match *indexerTxn
-	next  string
-}
-
-// decodePage reads one page from body, a result at a time. It stops at the
-// first result whose top-level sender is sender and which rekeys it, and
-// refuses a page that holds more than lookupPageSize results before
-// decoding the one past the limit.
-func decodePage(body io.Reader, sender string) (indexerPage, error) {
-	var page indexerPage
+// decodeNewest reads the answer from body, a result at a time, newest
+// first, and returns the first whose top-level sender is sender, or nil when
+// none of them is. It stops decoding at that result. A response that begins
+// a result past the eight asked for is refused before it is decoded. Every
+// key but transactions, next-token among them, is scanned past.
+func decodeNewest(body io.Reader, sender string) (*indexerTxn, error) {
 	dec := json.NewDecoder(body)
 	if err := expectDelim(dec, '{'); err != nil {
-		return page, err
+		return nil, err
 	}
 	for dec.More() {
 		tok, err := dec.Token()
 		if err != nil {
-			return page, err
+			return nil, err
 		}
 		key, ok := tok.(string)
 		if !ok {
-			return page, errMalformedPage
+			return nil, errMalformedPage
 		}
-		switch key {
-		case "transactions":
-			match, err := decodeResults(dec, sender)
-			if err != nil || match != nil {
-				page.match = match
-				return page, err
-			}
-		case "next-token":
-			var next nextTokenText
-			if err := dec.Decode(&next); err != nil {
-				return page, err
-			}
-			page.next = string(next)
-		default:
+		if key != "transactions" {
 			if err := dec.Decode(&skipValue{}); err != nil {
-				return page, err
+				return nil, err
 			}
+			continue
+		}
+		if match, err := decodeResults(dec, sender); err != nil || match != nil {
+			return match, err
 		}
 	}
-	return page, expectDelim(dec, '}')
+	return nil, expectDelim(dec, '}')
 }
 
-// decodeResults reads the transactions array.
+// decodeResults reads the transactions array up to the first result sent by
+// sender: at most lookupLimit results, keeping only the one it returns.
 func decodeResults(dec *json.Decoder, sender string) (*indexerTxn, error) {
 	tok, err := dec.Token()
 	if err != nil {
@@ -139,14 +123,14 @@ func decodeResults(dec *json.Decoder, sender string) (*indexerTxn, error) {
 		return nil, errMalformedPage
 	}
 	for n := 0; dec.More(); n++ {
-		if n == lookupPageSize {
+		if n == lookupLimit {
 			return nil, errTooManyResults
 		}
 		var txn indexerTxn
 		if err := dec.Decode(&txn); err != nil {
 			return nil, err
 		}
-		if string(txn.Sender) == sender && txn.RekeyTo != "" {
+		if string(txn.Sender) == sender {
 			return &txn, nil
 		}
 	}
@@ -197,14 +181,6 @@ type addressText string
 func (a *addressText) UnmarshalJSON(raw []byte) error {
 	s, err := boundedString(raw, addressLength)
 	*a = addressText(s)
-	return err
-}
-
-type nextTokenText string
-
-func (n *nextTokenText) UnmarshalJSON(raw []byte) error {
-	s, err := boundedString(raw, maxNextTokenLength)
-	*n = nextTokenText(s)
 	return err
 }
 

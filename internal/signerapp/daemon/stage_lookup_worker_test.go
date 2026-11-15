@@ -314,3 +314,31 @@ func TestStageLookupLogLineNamesTheSpendItRead(t *testing.T) {
 		}
 	}
 }
+
+// When the Indexer's one result is a clawback another address sent, which
+// the sender role also matches, there is no outgoing rekey: the lookup
+// looks no further, and the worker finds the stage by its search.
+func TestWorkerSearchesWhenTheNewestResultIsAnotherSendersClawback(t *testing.T) {
+	server, node, idx, account, secret := lookupWorkerSigner(t)
+	ir := server.productRuntime()
+	other, _ := signerops.StageOps{}.StageAddress(secret, 40)
+	idx.txns = []map[string]any{{
+		"id": lookupWorkerTxID, "confirmed-round": 800, "genesis-hash": testnetGenesisB64,
+		"sender": other.String(), "rekey-to": other.String(), "tx-type": "axfer",
+		"asset-transfer-transaction": map[string]any{"asset-id": 7, "amount": 1, "receiver": other.String(), "sender": account.String()},
+	}}
+	stage2, _ := signerops.StageOps{}.StageAddress(secret, 2)
+	node.set(stage2.String(), 900)
+	server.fillStageTables(context.Background(), ir)
+	statuses := ir.RotatingAccountStatuses()
+	if len(statuses) != 1 || statuses[0].Stage == nil || *statuses[0].Stage != 2 {
+		t.Fatalf("statuses = %+v, want stage 2 found by the search", statuses)
+	}
+	rec := statuses[0].Recovery
+	if rec == nil || rec.Lookup == nil || rec.Lookup.Outcome != signerapi.RotatingLookupNoOutgoingRekey || rec.StoppedStage == nil || *rec.StoppedStage != 2 || rec.AllowanceSpent != 3 {
+		t.Fatalf("recovery = %+v, lookup %+v; want no_outgoing_rekey and stages 0, 1, 2 searched", rec, rec.Lookup)
+	}
+	if idx.requests.Load() != 1 {
+		t.Fatalf("Indexer requests = %d, want 1", idx.requests.Load())
+	}
+}

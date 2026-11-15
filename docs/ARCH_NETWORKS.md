@@ -250,9 +250,12 @@ networks:
 - its answer is a candidate only: a stage is accepted when the address
   derived from the seed equals the authorizer read from the signer's own
   algod,
-- a lookup is bounded: 10 s, two requests of at most eight results each
-  (a page of more is refused), 1 MiB per response, no redirects, and only
-  the fields it checks are decoded,
+- a lookup is bounded: 10 s, one request for at most eight results (a
+  response that begins a ninth is refused, and no further page is asked
+  for), a 1 MiB body, no redirects, one attempt per grant, and only the
+  fields it checks are decoded. It asks for eight because the Indexer's
+  sender role also matches a clawback's asset sender, and a clawback
+  another address sends can come before the account's last spend,
 - the setting is a file setting, read at start like algod's, and not an admin
   setting. The client (apshell) has no Indexer setting.
 

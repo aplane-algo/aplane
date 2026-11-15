@@ -13,16 +13,21 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
 // staticIndexer answers every request with body, from memory, so what a
-// lookup allocates is the lookup's own work.
-type staticIndexer struct{ body []byte }
+// lookup allocates is the lookup's own work. It counts the requests.
+type staticIndexer struct {
+	body     []byte
+	requests *atomic.Int32
+}
 
 func (s staticIndexer) RoundTrip(req *http.Request) (*http.Response, error) {
+	s.requests.Add(1)
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -31,13 +36,13 @@ func (s staticIndexer) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-func staticReader(body []byte) Reader {
+func staticReader(body []byte, requests *atomic.Int32) Reader {
 	return Reader{
 		Resolver: apconfig.DefaultGenesisHashNetworkResolver,
 		IndexerConfig: func(string) *apconfig.IndexerNetworkConfig {
 			return &apconfig.IndexerNetworkConfig{Server: "http://indexer.test", Token: indexerToken}
 		},
-		IndexerTransport: staticIndexer{body: body},
+		IndexerTransport: staticIndexer{body: body, requests: requests},
 	}
 }
 
@@ -45,10 +50,8 @@ func staticReader(body []byte) Reader {
 // the bytes allocated meanwhile (the most of three runs).
 func lookupAllocation(t *testing.T, body []byte) (StageLookup, uint64) {
 	t.Helper()
-	if len(body) > MaxIndexerResponseBytes {
-		t.Fatalf("test body is %d bytes, over the cap", len(body))
-	}
-	r := staticReader(body)
+	var requests atomic.Int32
+	r := staticReader(body, &requests)
 	var got StageLookup
 	var most uint64
 	for i := 0; i < 3; i++ {
@@ -63,16 +66,19 @@ func lookupAllocation(t *testing.T, body []byte) (StageLookup, uint64) {
 		assertNoToken(t, result)
 		got = result
 		most = max(most, after.TotalAlloc-before.TotalAlloc)
+		if n := requests.Load(); n != int32(i+1) {
+			t.Fatalf("lookup %d made %d requests in all, want one each", i+1, n)
+		}
 	}
 	return got, most
 }
 
-// requestAllocationBound is what one request may allocate on any response
-// within the 1 MiB cap: the decoder's buffer for the largest value it holds,
-// grown by doubling (about 2 MiB in all for a 1 MiB value), plus at most
-// eight results of bounded fields. A lookup makes at most two requests. The
-// SDK's models once took about 2.3 GB for the first body below.
-const requestAllocationBound = 3 << 20
+// allocationBound is what the lookup's one request may allocate on any
+// response: the decoder's buffer for the largest value it holds, at most the
+// body cap, grown by doubling (about twice the cap in all), plus at most
+// eight results of bounded fields, one at a time. The SDK's models once took
+// about 2.3 GB for the first body below.
+const allocationBound = 3 * MaxIndexerResponseBytes
 
 func jsonBody(t *testing.T, v any) []byte {
 	t.Helper()
@@ -100,43 +106,40 @@ func TestLookupAllocationIsBoundedByTheCapNotTheResults(t *testing.T) {
 	withUnknown := clawback(lookupAccount)
 	withUnknown["a-newer-indexer-field"] = map[string]any{"nested": []string{huge}}
 
-	maxLogic := make([]byte, maxLogicBytes)
-	var eightLarge []map[string]any
+	var eightLargest []map[string]any
 	for i := 0; i < 8; i++ {
 		txn := clawback(lookupAccount)
-		txn["signature"].(map[string]any)["logicsig"].(map[string]any)["logic"] = base64.StdEncoding.EncodeToString(maxLogic)
-		eightLarge = append(eightLarge, txn)
+		txn["signature"].(map[string]any)["logicsig"].(map[string]any)["logic"] = base64.StdEncoding.EncodeToString(make([]byte, maxLogicBytes))
+		eightLargest = append(eightLargest, txn)
 	}
 
 	for _, tc := range []struct {
 		name string
 		body []byte
 		want LookupOutcome
-		// requests is how many the body leads to: a page without a match
-		// that names a next page is followed once.
-		requests uint64
 	}{
-		// Refused at the ninth result, before it is decoded.
-		{"333,000 empty results", []byte(empties.String()), LookupUnavailable, 1},
-		// The match's arguments are scanned past, never kept.
-		{"enormous arguments on the spend", jsonBody(t, map[string]any{"transactions": []any{withArgs}}), LookupCandidate, 1},
+		// Refused when the ninth result begins, before it is decoded.
+		{"333,000 empty results", []byte(empties.String()), LookupUnavailable},
+		// The spend's arguments are scanned past, never kept.
+		{"enormous arguments on the spend", jsonBody(t, map[string]any{"transactions": []any{withArgs}}), LookupCandidate},
 		// An unknown field, at any depth, is scanned past.
-		{"enormous unknown field", jsonBody(t, map[string]any{"transactions": []any{withUnknown}}), LookupNoOutgoingRekey, 1},
-		// The same twice: the page names a next page, which is the same.
-		{"enormous unknown field on both pages", jsonBody(t, map[string]any{"transactions": []any{withUnknown}, "next-token": "p1"}), LookupNoOutgoingRekey, 2},
-		// Eight results, each with the largest program a group allows.
-		{"eight largest programs", jsonBody(t, map[string]any{"transactions": eightLarge}), LookupNoOutgoingRekey, 1},
+		{"enormous unknown field", jsonBody(t, map[string]any{"transactions": []any{withUnknown}}), LookupNoOutgoingRekey},
+		// A next-token, whatever its size, is never decoded or followed.
+		{"enormous next-token", jsonBody(t, map[string]any{"transactions": []any{clawback(lookupAccount)}, "next-token": huge}), LookupNoOutgoingRekey},
+		// Eight results from other senders, each with the largest program
+		// a group allows.
+		{"eight largest programs", jsonBody(t, map[string]any{"transactions": eightLargest}), LookupNoOutgoingRekey},
 		// Padding up to the cap before the value.
-		{"whitespace to the cap", []byte(strings.Repeat(" ", MaxIndexerResponseBytes-len(`{"transactions":[]}`)) + `{"transactions":[]}`), LookupNoOutgoingRekey, 1},
+		{"whitespace to the cap", []byte(strings.Repeat(" ", MaxIndexerResponseBytes-len(`{"transactions":[]}`)) + `{"transactions":[]}`), LookupNoOutgoingRekey},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, allocated := lookupAllocation(t, tc.body)
-			t.Logf("%d-byte body, %d request(s): %s, %d bytes allocated", len(tc.body), tc.requests, got.Outcome, allocated)
+			t.Logf("%d-byte body: %s, %d bytes allocated", len(tc.body), got.Outcome, allocated)
 			if got.Outcome != tc.want {
 				t.Fatalf("lookup = %+v, want %s", got, tc.want)
 			}
-			if bound := tc.requests * requestAllocationBound; allocated > bound {
-				t.Fatalf("lookup allocated %d bytes, over the %d bound", allocated, bound)
+			if allocated > allocationBound {
+				t.Fatalf("lookup allocated %d bytes, over the %d bound", allocated, allocationBound)
 			}
 		})
 	}
@@ -158,23 +161,17 @@ func TestLookupRefusesAFieldOverItsBound(t *testing.T) {
 		"genesis hash over 32 bytes": func(txn map[string]any) {
 			txn["genesis-hash"] = base64.StdEncoding.EncodeToString(make([]byte, 33))
 		},
-		"next token over its bound":       nil,
 		"an address that is not a string": func(txn map[string]any) { txn["sender"] = 12 },
 	}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {
 			txn := spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)
-			page := map[string]any{"transactions": []any{txn}}
-			if edit != nil {
-				edit(txn)
-			} else {
-				page = map[string]any{"transactions": []any{clawback(lookupAccount)}, "next-token": strings.Repeat("n", maxNextTokenLength+1)}
-			}
-			got, allocated := lookupAllocation(t, jsonBody(t, page))
+			edit(txn)
+			got, allocated := lookupAllocation(t, jsonBody(t, map[string]any{"transactions": []any{txn}}))
 			if got.Outcome != LookupUnavailable {
 				t.Fatalf("lookup = %+v, want unavailable", got)
 			}
-			if allocated > requestAllocationBound {
+			if allocated > allocationBound {
 				t.Fatalf("lookup allocated %d bytes", allocated)
 			}
 		})
@@ -219,18 +216,16 @@ func TestLookupFieldNamesAreTheIndexers(t *testing.T) {
 	txn := spend(lookupAccount, lookupAuthorizer, stageProgram(4, "four"), false)
 	txn["intra-round-offset"] = 3
 	body := jsonBody(t, map[string]any{"current-round": 9, "next-token": "abc", "transactions": []any{txn}})
-	page, err := decodePage(bytes.NewReader(body), lookupAccount.String())
-	if err != nil || page.match == nil {
-		t.Fatalf("decodePage = %+v, %v", page, err)
+	m, err := decodeNewest(bytes.NewReader(body), lookupAccount.String())
+	if err != nil || m == nil {
+		t.Fatalf("decodeNewest = %+v, %v", m, err)
 	}
-	m := page.match
 	if string(m.ID) != spendTxID || string(m.Sender) != lookupAccount.String() || string(m.RekeyTo) != lookupAuthorizer.String() ||
 		string(m.AuthAddr) != programAddress(stageProgram(4, "four")).String() || m.ConfirmedRound != 4321 ||
 		!bytes.Equal(m.GenesisHash, testnetGenesis) || !bytes.Equal(m.Signature.Logicsig.Logic, stageProgram(4, "four")) {
 		t.Fatalf("decoded %s", fmt.Sprintf("%+v", *m))
 	}
-	page, err = decodePage(bytes.NewReader(jsonBody(t, map[string]any{"next-token": "abc", "transactions": []any{}})), lookupAccount.String())
-	if err != nil || page.match != nil || page.next != "abc" {
-		t.Fatalf("decodePage = %+v, %v", page, err)
+	if m, err := decodeNewest(bytes.NewReader(jsonBody(t, map[string]any{"next-token": "abc", "transactions": []any{}})), lookupAccount.String()); err != nil || m != nil {
+		t.Fatalf("decodeNewest of an empty answer = %+v, %v", m, err)
 	}
 }

@@ -496,8 +496,13 @@ chain names one too:
 1. The constant. Every stage program carries its stage number (§3.1), and a
    spend signed by stage `n` rekeys the account to stage `n + 1`.
 2. The lookup. When a grant without an operator's stage hint starts, the
-   worker reads the account's newest outgoing rekey from the Indexer once
-   (`chainread.Reader.LookupLastRotation`). It must be a top-level
+   worker asks the Indexer once (`chainread.Reader.LookupLastRotation`), in
+   one request, for the account's newest outgoing rekeys, at most eight, and
+   takes the first whose top-level sender is the account. It asks for eight
+   because the Indexer's sender role also matches a clawback's asset sender:
+   whoever holds clawback rights over an asset the account opted into can
+   put a zero-amount clawback that rekeys its own sender ahead of the
+   account's last spend. That spend must be a top-level
    transaction sent by the account, on the account's chain, that hands the
    account to the authorizer the worker read from its own algod, signed by a
    stage program alone whose address is the spend's signer, with `auth-addr`
@@ -510,9 +515,10 @@ chain names one too:
    one, a spend not signed by a stage program, or a candidate that does not
    match: the search runs as it would without the lookup. A miss costs the
    search one stage and stays in the table like any miss; the candidate is
-   never the table's hint. The lookup opens no seed, makes at most two
-   requests in ten seconds, reads at most 1 MiB per response, and runs once
-   per grant.
+   never the table's hint. The lookup opens no seed, makes one request for
+   at most eight results in ten seconds and never asks for a further page,
+   reads at most 1 MiB, and runs once per grant. When none of the eight was
+   sent by the account, the search runs as it would without the lookup.
 
 For XMSS a candidate that misses costs more than one stage's keys: deriving a
 stage's address needs the public tree of its run of 1,024 stages (§3), so a
@@ -1277,7 +1283,7 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 | Stage number in every type: round trip for small and large stages, a different address for each stage, a changed stage byte, the shared prefix reader, a program without the prefix | each `stage` package's `stage_constant_test.go`; `internal/rotatingstage/rotatingstage_test.go`; `lsig/rotatingfamily/stageprog/guard_test.go` |
 | `SignStage` and `CheckStageOpens` refuse a derived program that embeds another stage, `SignStage` before any key signs | each `signerops` package's `signing_failure_test.go`; `lsig/rotatingfamily/stagesign`. The contract suite in `lsig/rotatingfamily/rotatingtest` checks only that a stage 1 signature's program reads back stage 1 |
 | apshell refuses a signed spend whose program carries another stage number or none | `internal/clientsign/rotating_test.go` |
-| Stage lookup through an Indexer: candidate from stage 0 and stage `n`, clawbacks and pagination, every refusal and outcome, limits, the token in no message | `internal/signerapp/chainread/lookup_test.go` |
+| Stage lookup through an Indexer: candidate from stage 0 and stage `n`, clawbacks from other senders, one request for at most eight results, every refusal and outcome, limits and bounded decoding, the token in no message | `internal/signerapp/chainread/lookup_test.go`, `lookup_bounds_test.go` |
 | The search's first step: a match after one derivation, a miss that leaves the search unchanged, the same search for every outcome but a candidate, verified and unverified cached entries, one lookup per grant, a grant's last stage, a lock during the lookup or the probe | `internal/signerapp/signing/rotating_lookup_test.go`, `internal/signerapp/daemon/stage_lookup_worker_test.go` |
 | WOTS+C stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewotsc/stage/program_test.go`, `template_dump_test.go` |
 | Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |
