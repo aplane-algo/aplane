@@ -535,7 +535,7 @@ func (m Model) renderPolicyApplyForm() string {
 	body.WriteString("\n\n")
 	body.WriteString("Policy file:\n")
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(apply.path)))
-	body.WriteString("\n" + helpStyle.Render("ctrl+o browses for the file. The file is checked and its changes shown before anything is applied."))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses"))
 	body.WriteString("\n")
 	if apply.busy != "" {
 		body.WriteString("\n")

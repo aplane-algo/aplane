@@ -213,7 +213,7 @@ func (m Model) renderBackupExport() string {
 	body.WriteString("\n" + subtitleStyle.Render(backup.FormatFileSize(export.target.Size)) + "\n\n")
 	body.WriteString("Destination directory:\n")
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(export.dir)))
-	body.WriteString("\n" + helpStyle.Render("ctrl+o browses. The archive keeps its name and stays encrypted under its backup passphrase."))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses"))
 	body.WriteString("\n")
 	if export.finishing != nil {
 		body.WriteString("\n" + subtitleStyle.Render("Verifying and saving the copy...") + "\n")

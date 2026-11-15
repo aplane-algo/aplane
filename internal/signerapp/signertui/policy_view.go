@@ -286,7 +286,7 @@ func (m Model) renderPolicies() string {
 		return header.String()
 	}
 	p := m.policies.policy
-	header.WriteString(subtitleStyle.Render(wrapPlainText(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; x exports the policy; apadmin policy covers remove and rescue", p.NodeRole), m.tableWidth())))
+	header.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node", p.NodeRole)))
 	header.WriteString("\n\n")
 	rows := m.policyRows()
 	var lines []string

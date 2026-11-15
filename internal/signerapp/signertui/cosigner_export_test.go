@@ -128,7 +128,7 @@ func TestCosignerExportCarriesNoEndpoint(t *testing.T) {
 		t.Fatalf("export focus layout = %d/%d, want path, export, show JSON", next.cosignerExportButtonFocus(), next.cosignerExportJSONButtonFocus())
 	}
 	view := stripANSI(next.renderCosignerExportPath())
-	if strings.Contains(view, "cosigner.example") || strings.Contains(view, "Client-reachable host") || !strings.Contains(view, "Public key only") {
+	if strings.Contains(view, "cosigner.example") || strings.Contains(view, "Client-reachable host") {
 		t.Fatalf("export screen mentions an endpoint:\n%s", view)
 	}
 

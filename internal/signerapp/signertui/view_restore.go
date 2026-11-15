@@ -37,10 +37,10 @@ func (m Model) renderRestorePassphrase() string {
 		}
 		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("Re-enter the export passphrase and press Enter to authorize replacement."))
+		sb.WriteString("\n\n")
 	} else {
-		sb.WriteString(subtitleStyle.Render("Enter the backup export passphrase before metadata is shown."))
+		sb.WriteString("Backup passphrase\n")
 	}
-	sb.WriteString("\n\n")
 
 	masked := strings.Repeat("*", len(m.restore.passphrase))
 	if masked == "" {

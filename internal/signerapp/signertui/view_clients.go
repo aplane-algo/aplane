@@ -24,8 +24,7 @@ func (m Model) renderEnrolledClients() string {
 		header.WriteString(subtitleStyle.Render("Loading enrollment requests and enrolled client keys..."))
 		return header.String()
 	}
-	header.WriteString(subtitleStyle.Render(wrapPlainText("Each key is one client's credential. Approving a request enrolls its key; revoking a key closes its connections.", m.tableWidth())))
-	header.WriteString("\n\n")
+	header.WriteString("\n")
 
 	labelWidth := m.clientLabelWidth()
 	lines := []string{fmt.Sprintf("Waiting for approval (%d)", len(m.clients.pending))}

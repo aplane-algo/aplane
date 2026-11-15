@@ -597,7 +597,7 @@ func (m Model) renderBackupImport() string {
 		body.WriteString("\n" + subtitleStyle.Render(fmt.Sprintf("Uploading... %s of %s",
 			backup.FormatFileSize(imp.offset), backup.FormatFileSize(imp.source.Size))) + "\n")
 	case importCommitting:
-		body.WriteString("\n" + subtitleStyle.Render(wrapPlainText("Checking the archive. This can take a while; esc leaves, and the result is reported on the Backups page.", width)) + "\n")
+		body.WriteString("\n" + subtitleStyle.Render("Checking the archive... esc leaves") + "\n")
 	}
 	if imp.err != "" {
 		body.WriteString("\n" + errorStyle.Render(wrapPlainText(terminalSafeLines(imp.err), width)) + "\n")

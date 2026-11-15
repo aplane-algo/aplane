@@ -435,7 +435,7 @@ func TestAccountCreationReusesAlreadyImportedSetupFileKey(t *testing.T) {
 		t.Fatalf("viewState = %v reuse = %v error = %q, want the existing names offered", m.viewState, m.cosigner.reuseAliases, m.cosigner.importError)
 	}
 	rendered := stripANSI(m.renderCosignerImportReview())
-	for _, want := range []string{"This key is already imported as treasury.", "USE TREASURY", "Nothing is imported or renamed."} {
+	for _, want := range []string{"This key is already imported as treasury.", "USE TREASURY"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("reuse review omitted %q:\n%s", want, rendered)
 		}

@@ -592,7 +592,7 @@ func (m Model) renderCosignerPicker() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Choose Cosigner"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Select an imported cosigner key for this account, or use the setup file exported by the cosigner."))
+	body.WriteString(subtitleStyle.Render("Select a cosigner key"))
 	body.WriteString("\n\n")
 	aliasWidth := m.cosignerPickerAliasWidth()
 	for index, choice := range m.cosigner.choices {
@@ -655,7 +655,6 @@ func (m Model) renderCosignerImportForm() string {
 	}
 	body.WriteString("\n\nReference name:\n")
 	body.WriteString(nameStyle.Width(m.constrainParameterFieldWidth(40)).Render(m.cosigner.importName))
-	body.WriteString("\n" + helpStyle.Render("Defaults from the filename or Witness Key ID; edit if needed."))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("REVIEW COSIGNER KEY")
 	if m.cosigner.importFocus == 2 {
@@ -716,8 +715,6 @@ func (m Model) renderCosignerReuseReview() string {
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.previewWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\n")
 	body.WriteString(buttonActiveStyle.Render("USE " + strings.ToUpper(primary)))
-	body.WriteString("\n")
-	body.WriteString(helpStyle.Render("Nothing is imported or renamed. Esc goes back."))
 	body.WriteString("\n")
 	return m.renderPopup(90, body.String())
 }

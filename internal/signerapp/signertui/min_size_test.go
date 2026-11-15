@@ -282,7 +282,7 @@ func TestPoliciesListFitsAtMinSize(t *testing.T) {
 	view := stripANSI(m.View())
 	for _, want := range []string{
 		address + "  key not held", "policy, key not held", "256 bytes", "applied 2023-11-14",
-		"apadmin policy covers remove and rescue", strings.Repeat("ab", 32)[:40],
+		strings.Repeat("ab", 32)[:40],
 	} {
 		if !strings.Contains(strings.Join(strings.Fields(view), " "), strings.Join(strings.Fields(want), " ")) {
 			t.Errorf("%q missing from:\n%s", want, view)
