@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -221,5 +222,20 @@ func TestZeroArgs(t *testing.T) {
 	ZeroArgs(args)
 	if !allZero(args[0]) || !allZero(args[2]) {
 		t.Fatal("ZeroArgs left bytes behind")
+	}
+}
+
+func TestCheckStage(t *testing.T) {
+	for _, n := range []uint64{0, 1, 418, math.MaxUint64} {
+		if err := CheckStage(n, n); err != nil {
+			t.Fatalf("stage %d refused its own number: %v", n, err)
+		}
+	}
+	err := CheckStage(2, 3)
+	if !errors.Is(err, ErrStageMismatch) || err.Error() != "stage program embeds another stage: stage 2 program embeds stage 3" {
+		t.Fatalf("stage 2 with a stage 3 program: %v", err)
+	}
+	if !errors.Is(CheckStage(math.MaxUint64, 0), ErrStageMismatch) {
+		t.Fatal("stage 0 program accepted for the last stage")
 	}
 }

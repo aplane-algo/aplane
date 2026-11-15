@@ -36,7 +36,8 @@ func (StageOps) StageAddress(key *signing.RotatingKeyMaterial, i uint64) (types.
 }
 
 // CheckStageOpens proves stage i's derived keys match the constants embedded
-// in its program. Test signatures are wiped before returning and never released.
+// in its program, its stage number among them, through the same path as
+// SignStage. Test signatures are wiped before returning and never released.
 func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) error {
 	sig, err := signAndVerify(key, i, openTestMessage)
 	stagesign.ZeroArgs(sig.Args)
@@ -47,9 +48,9 @@ func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) erro
 // SLH-DSA signature split as stage.ChunkSizes lists, then the Ed25519 and
 // Falcon signatures, as its arguments. SLH-DSA is stateless, so the leaf
 // index is ignored. A message that is not a 32-byte transaction ID is refused
-// before any key is derived. Before anything is returned the derived program
-// is parsed again, must embed stage i, and the signatures must verify against
-// it.
+// before any key is derived. The derived program is parsed again and must
+// embed stage i before any key signs; the signatures must then verify against
+// it before anything is returned.
 func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, _ uint32, message []byte) (signing.RotatingStageSignature, error) {
 	if err := stagesign.CheckMessage(message); err != nil {
 		return signing.RotatingStageSignature{}, err
@@ -63,6 +64,13 @@ func signAndVerify(key *signing.RotatingKeyMaterial, i uint64, message []byte) (
 		return signing.RotatingStageSignature{}, err
 	}
 	defer keys.Zero()
+	embedded, _, err := stage.Parse(program.Bytecode)
+	if err != nil {
+		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
+	}
+	if err := stagesign.CheckStage(i, embedded.Stage); err != nil {
+		return signing.RotatingStageSignature{}, err
+	}
 	slhSig, ed25519Sig, falconSig, err := keys.Sign(message)
 	if err != nil {
 		return signing.RotatingStageSignature{}, fmt.Errorf("sign with stage %d: %w", i, err)
@@ -74,17 +82,7 @@ func signAndVerify(key *signing.RotatingKeyMaterial, i uint64, message []byte) (
 		off += n
 	}
 	args = append(args, ed25519Sig, falconSig)
-	// On every error path the signatures are never handed to the caller, so
-	// they are wiped here.
-	embedded, _, err := stage.Parse(program.Bytecode)
-	if err != nil {
-		stagesign.ZeroArgs(args)
-		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
-	}
-	if embedded.Stage != i {
-		stagesign.ZeroArgs(args)
-		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d program embeds stage %d", i, embedded.Stage)
-	}
+	// A refused signature is never handed to the caller, so it is wiped here.
 	if err := Verify(embedded, message, slhSig, ed25519Sig, falconSig); err != nil {
 		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d signature does not verify: %w", i, err)

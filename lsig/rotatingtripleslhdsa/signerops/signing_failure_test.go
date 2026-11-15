@@ -6,11 +6,13 @@ package signerops
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/slhdsa"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stagesign"
 	"github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/stage"
 )
 
@@ -95,12 +97,12 @@ func TestSignStageRefusesOtherMessageSizes(t *testing.T) {
 	}
 }
 
-// TestSignStageRefusesAProgramOfAnotherStage makes derivation build a program
-// that embeds another stage number than the stage asked for, and checks that
-// SignStage refuses it and wipes the SLH-DSA signature it made. Every key in
-// the program is the stage's own, so the signatures would verify.
-func TestSignStageRefusesAProgramOfAnotherStage(t *testing.T) {
-	made := observeSLH(t, nil)
+// deriveAnotherStage makes derivation build programs that embed the next
+// stage number after the stage derived, until the test ends. Every key is
+// the stage's own, so only the stage number is wrong and the signatures would
+// verify.
+func deriveAnotherStage(t *testing.T) {
+	t.Helper()
 	restore := buildProgram
 	t.Cleanup(func() { buildProgram = restore })
 	buildProgram = func(keys *stage.PublicKeys) (stage.Program, error) {
@@ -108,14 +110,35 @@ func TestSignStageRefusesAProgramOfAnotherStage(t *testing.T) {
 		other.Stage++
 		return restore(&other)
 	}
+}
+
+// TestSignStageRefusesAProgramOfAnotherStage checks that SignStage refuses a
+// derived program that embeds another stage number before any key signs.
+func TestSignStageRefusesAProgramOfAnotherStage(t *testing.T) {
+	made := observeSLH(t, nil)
+	deriveAnotherStage(t)
 	sig, err := (StageOps{}).SignStage(fixedKeyMaterial(), 0, 0, failureTestMessage)
-	if err == nil || !strings.Contains(err.Error(), "embeds stage 1") {
+	if !errors.Is(err, stagesign.ErrStageMismatch) || !strings.Contains(err.Error(), "stage 0 program embeds stage 1") {
 		t.Fatalf("SignStage for stage 0 with a stage 1 program: %v", err)
 	}
 	if sig.Program != nil || sig.Args != nil {
 		t.Fatal("SignStage returned a program or signatures with its refusal")
 	}
-	if len(*made) != 1 || !allZero((*made)[0]) {
-		t.Fatal("the refused SLH-DSA signature was not wiped")
+	if len(*made) != 0 {
+		t.Fatalf("SignStage made %d SLH-DSA signatures before refusing the program", len(*made))
+	}
+}
+
+// TestCheckStageOpensRefusesAProgramOfAnotherStage checks that the open test
+// of a rotation target refuses a program that embeds another stage number,
+// before the account could be rekeyed to it.
+func TestCheckStageOpensRefusesAProgramOfAnotherStage(t *testing.T) {
+	made := observeSLH(t, nil)
+	deriveAnotherStage(t)
+	if err := (StageOps{}).CheckStageOpens(fixedKeyMaterial(), 1); !errors.Is(err, stagesign.ErrStageMismatch) || !strings.Contains(err.Error(), "stage 1 program embeds stage 2") {
+		t.Fatalf("CheckStageOpens for stage 1 with a stage 2 program: %v", err)
+	}
+	if len(*made) != 0 {
+		t.Fatalf("the open test made %d SLH-DSA signatures", len(*made))
 	}
 }
