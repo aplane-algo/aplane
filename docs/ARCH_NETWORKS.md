@@ -244,7 +244,10 @@ networks:
 - it is chosen as algod is: the key file's genesis hash, through the same
   resolver, to a network token, then `networks.<net>.indexer`. Without one the
   worker searches as it would anyway; it is never derived from the algod URL
-  and no public provider is built in,
+  and no public provider is built in. The installer's generated config names
+  Nodely's public Indexer for `mainnet` and `testnet`, beside the algod
+  endpoints it names from the same provider; that is configuration an
+  operator can read and remove, not a default in the signer,
 - every transaction it returns must carry the account's genesis hash, or the
   answer is treated as another network's (`wrong_network`) and ignored,
 - its answer is a candidate only: a stage is accepted when the address

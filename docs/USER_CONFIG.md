@@ -408,7 +408,22 @@ networks:
 `indexer.server` is the Indexer's base URL; leave it out, or empty, for no
 lookup on that network. `indexer.token` is sent as the Indexer API token. The
 signer never derives an Indexer from the algod URL and has no built-in
-provider. A URL that is not http or https with a host is a configuration
+provider: it asks only the Indexer its config file names.
+
+The installer writes one for `mainnet` and `testnet`, beside the algod
+endpoints it writes from the same provider, so a fresh install finds stages
+with no further setup:
+
+| Network | Indexer the installer writes |
+|---|---|
+| `mainnet` | `https://mainnet-idx.4160.nodely.dev` |
+| `testnet` | `https://testnet-idx.4160.nodely.dev` |
+
+These are [Nodely's public endpoints](https://nodely.io/docs/free/endpoints/),
+used with no API token. That provider then learns which rotating accounts the
+signer looks up. To stop that, delete the `indexer` entry for the network or
+point it at an Indexer you run. A config written by hand has no Indexer until
+you add one, and `localnet` gets one only from `aplocalnet`. A URL that is not http or https with a host is a configuration
 error naming the network. The token is never logged or shown in status. Like
 the algod entry, the setting is read from the file at start and cannot be
 changed through apadmin. The Indexer's answer is only a candidate: the signer
