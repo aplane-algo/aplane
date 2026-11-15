@@ -57,13 +57,13 @@ const (
 const (
 	// DefaultLookupTimeout bounds the whole lookup, the body read included.
 	DefaultLookupTimeout = 10 * time.Second
-	// MaxIndexerResponseBytes caps the response body. Eight results fit in
-	// it many times over: a stage-program spend is about 20 KB of JSON (a
+	// MaxIndexerResponseBytes caps the response body, which is read whole
+	// before it is decoded. A stage-program spend is about 20 KB of JSON (a
 	// program of at most 2,877 bytes and arguments of at most 9,343, both
-	// base64 encoded), with room left for what the Indexer adds to an
-	// application call. A longer answer is unavailable, and the search runs
+	// base64 encoded), so lookupLimit of them take about 160 KB; 256 KiB
+	// leaves a margin. A longer answer is unavailable, and the search runs
 	// without it.
-	MaxIndexerResponseBytes = 1 << 20
+	MaxIndexerResponseBytes = 256 << 10
 	// lookupLimit is the results asked for in the one request; a response
 	// that begins one more is refused. It is eight, not one, because the
 	// Indexer's sender role also matches a clawback's asset sender: whoever
@@ -169,10 +169,10 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 		return out, nil
 	}
 	out.Round = spend.ConfirmedRound
-	if id := string(spend.ID); isTxID(id) {
-		out.TxID = id
+	if isTxID(spend.ID) {
+		out.TxID = spend.ID
 	}
-	if string(spend.RekeyTo) != authorizer.String() {
+	if spend.RekeyTo != authorizer.String() {
 		out.Outcome, out.Reason = LookupNotCurrent, "the newest outgoing rekey hands the account to another address"
 		return out, nil
 	}
@@ -232,7 +232,18 @@ func (s indexerSearch) newest(ctx context.Context, sender string) (*indexerTxn, 
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return decodeNewest(resp.Body, sender)
+	// The whole body first, into one buffer of the cap and a byte: a longer
+	// body is refused before anything is decoded.
+	body := make([]byte, MaxIndexerResponseBytes+1)
+	n, err := io.ReadFull(resp.Body, body)
+	switch {
+	case err == nil:
+		return nil, errResponseTooLarge
+	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
+	default:
+		return nil, err
+	}
+	return decodeNewest(body[:n], sender)
 }
 
 // signingStage checks that the spend was signed by a stage program and
@@ -250,7 +261,7 @@ func signingStage(spend *indexerTxn, account types.Address) (uint64, string) {
 	}
 	signer := account
 	if spend.AuthAddr != "" {
-		authAddr, err := types.DecodeAddress(string(spend.AuthAddr))
+		authAddr, err := types.DecodeAddress(spend.AuthAddr)
 		if err != nil {
 			return 0, "the spend names an invalid signer"
 		}
@@ -309,6 +320,12 @@ func unavailableReason(ctx context.Context, err error) string {
 		return fmt.Sprintf("the Indexer returned more than the %d results asked", lookupLimit)
 	case errors.Is(err, errFieldTooLong):
 		return "a field of the Indexer's response exceeded its bound"
+	case errors.Is(err, errDuplicateKey):
+		return "the Indexer's response repeated a key"
+	case errors.Is(err, errEscapedKey):
+		return "the Indexer's response wrote a key with an escape sequence"
+	case errors.Is(err, errFieldNotAString):
+		return "the Indexer's response held a field in the wrong form"
 	case errors.As(err, &status):
 		return fmt.Sprintf("the Indexer answered HTTP %d", int(status))
 	}
@@ -326,8 +343,8 @@ func (e statusError) Error() string { return fmt.Sprintf("HTTP %d", int(e)) }
 func (e statusError) Unwrap() error { return errBadStatus }
 
 // indexerTransport refuses every response outside 2xx, redirects among
-// them, so the lookup makes only the requests it counts and only to the host
-// configured, and caps every body it hands on.
+// them, so the lookup makes only the request it counts and only to the host
+// configured.
 type indexerTransport struct{ base http.RoundTripper }
 
 func (t indexerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -339,27 +356,5 @@ func (t indexerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		_ = resp.Body.Close()
 		return nil, statusError(resp.StatusCode)
 	}
-	resp.Body = &cappedBody{body: resp.Body}
 	return resp, nil
 }
-
-// cappedBody reads at most one byte past MaxIndexerResponseBytes, and fails
-// with errResponseTooLarge once the body proves longer than the cap.
-type cappedBody struct {
-	body io.ReadCloser
-	read int64
-}
-
-func (b *cappedBody) Read(p []byte) (int, error) {
-	if room := MaxIndexerResponseBytes + 1 - b.read; int64(len(p)) > room {
-		p = p[:room]
-	}
-	n, err := b.body.Read(p)
-	b.read += int64(n)
-	if b.read > MaxIndexerResponseBytes {
-		return 0, errResponseTooLarge
-	}
-	return n, err
-}
-
-func (b *cappedBody) Close() error { return b.body.Close() }

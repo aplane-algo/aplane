@@ -4,23 +4,37 @@
 package chainread
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// The lookup decodes the Indexer's answer itself, from the capped body, into
-// the few fields it reads. The SDK's models would hold every field of every
-// result, several kilobytes each, so a 1 MiB body of empty objects would
-// cost gigabytes; here memory is bounded by the body cap and the eight
-// results asked for, of which only the one used is kept.
+// The lookup decodes the Indexer's answer itself, into the few fields it
+// reads, under one set of rules:
 //
-// What is read, by the Indexer's JSON names:
+//  1. The whole body is read first, up to MaxIndexerResponseBytes; a longer
+//     body is refused before anything is decoded.
+//  2. The body must be one JSON document, checked whole by json.Valid: one
+//     value, then only whitespace. A syntax error anywhere, trailing data or
+//     a truncated document refuses it, wherever a matching result is.
+//  3. That value must be an object. Its transactions key may appear once,
+//     holding an array (or null) of at most lookupLimit objects; a second
+//     transactions key, or an element past the limit, refuses the answer.
+//     Every element is read to the end of the document, and only then is
+//     the first whose top-level sender is the account picked.
+//  4. In every object the lookup reads (the top level, each result, its
+//     signature and signature.logicsig), keys are compared byte for byte
+//     with the names below: no case or Unicode folding, and a key written
+//     with an escape sequence refuses the answer. A key the lookup reads
+//     appearing twice in one object refuses it too.
+//  5. Each field read has a fixed bound and form (below). Every other value,
+//     at any depth, is scanned past without being kept.
+//
+// What is read, by the Indexer's JSON names (the SDK's models name them the
+// same way):
 //
 //	transactions[].id, sender, rekey-to, auth-addr, confirmed-round, genesis-hash
 //	transactions[].signature.sig, multisig, pqsig                  (presence only)
@@ -28,11 +42,13 @@ import (
 //	transactions[].signature.logicsig.signature, multisig-signature,
 //	  logic-multisig-signature, pqsig                             (presence only)
 //
-// Every other field, at any depth (current-round, next-token, args,
-// inner-txns, notes, a newer Indexer's additions), is scanned past and never
-// kept.
+// So memory is the body buffer plus at most lookupLimit results of bounded
+// fields, whatever the body holds.
 
-// Field bounds. A field longer than its bound refuses the page.
+// Field bounds and forms. A string field must be a JSON string without
+// escape sequences (the Indexer writes base32 and base64 plainly) no longer
+// than its bound, or null; confirmed-round a JSON integer that fits a uint64,
+// or null.
 const (
 	// txIDLength is a transaction ID's length: unpadded base32 of 32 bytes.
 	txIDLength = 52
@@ -52,189 +68,469 @@ var (
 	errMalformedPage   = errors.New("indexer response is malformed")
 	errTooManyResults  = errors.New("indexer returned more results than asked")
 	errFieldTooLong    = errors.New("indexer response field exceeds its bound")
-	errFieldNotAString = errors.New("indexer response field is not a string")
+	errFieldNotAString = errors.New("indexer response field is not a plain string")
+	errDuplicateKey    = errors.New("indexer response repeats a key")
+	errEscapedKey      = errors.New("indexer response writes a key with an escape sequence")
 )
 
 // indexerTxn is what the lookup reads of one result.
 type indexerTxn struct {
-	ID             txIDText    `json:"id"`
-	Sender         addressText `json:"sender"`
-	RekeyTo        addressText `json:"rekey-to"`
-	AuthAddr       addressText `json:"auth-addr"`
-	ConfirmedRound uint64      `json:"confirmed-round"`
-	GenesisHash    hashBytes   `json:"genesis-hash"`
+	ID             string
+	Sender         string
+	RekeyTo        string
+	AuthAddr       string
+	ConfirmedRound uint64
+	GenesisHash    []byte
 	Signature      struct {
-		Sig      presence `json:"sig"`
-		Multisig presence `json:"multisig"`
-		Pqsig    presence `json:"pqsig"`
-		Logicsig struct {
-			Logic                  programBytes `json:"logic"`
-			Signature              presence     `json:"signature"`
-			MultisigSignature      presence     `json:"multisig-signature"`
-			LogicMultisigSignature presence     `json:"logic-multisig-signature"`
-			Pqsig                  presence     `json:"pqsig"`
-		} `json:"logicsig"`
-	} `json:"signature"`
+		Sig, Multisig, Pqsig bool
+		Logicsig             struct {
+			Logic                                                       []byte
+			Signature, MultisigSignature, LogicMultisigSignature, Pqsig bool
+		}
+	}
 }
 
-// decodeNewest reads the answer from body, a result at a time, newest
-// first, and returns the first whose top-level sender is sender, or nil when
-// none of them is. It stops decoding at that result. A response that begins
-// a result past the eight asked for is refused before it is decoded. Every
-// key but transactions, next-token among them, is scanned past.
-func decodeNewest(body io.Reader, sender string) (*indexerTxn, error) {
-	dec := json.NewDecoder(body)
-	if err := expectDelim(dec, '{'); err != nil {
-		return nil, err
-	}
-	for dec.More() {
-		tok, err := dec.Token()
-		if err != nil {
-			return nil, err
-		}
-		key, ok := tok.(string)
-		if !ok {
-			return nil, errMalformedPage
-		}
-		if key != "transactions" {
-			if err := dec.Decode(&skipValue{}); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if match, err := decodeResults(dec, sender); err != nil || match != nil {
-			return match, err
-		}
-	}
-	return nil, expectDelim(dec, '}')
-}
-
-// decodeResults reads the transactions array up to the first result sent by
-// sender: at most lookupLimit results, keeping only the one it returns.
-func decodeResults(dec *json.Decoder, sender string) (*indexerTxn, error) {
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, err
-	}
-	if tok == nil {
-		return nil, nil
-	}
-	if tok != json.Delim('[') {
+// decodeNewest decodes data, the whole body, and returns the first result
+// whose top-level sender is sender, or nil when none is.
+func decodeNewest(data []byte, sender string) (*indexerTxn, error) {
+	if !json.Valid(data) {
 		return nil, errMalformedPage
 	}
-	for n := 0; dec.More(); n++ {
-		if n == lookupLimit {
-			return nil, errTooManyResults
-		}
-		var txn indexerTxn
-		if err := dec.Decode(&txn); err != nil {
-			return nil, err
-		}
-		if string(txn.Sender) == sender {
-			return &txn, nil
-		}
+	w := walker{data: data}
+	w.space()
+	if !w.at('{') {
+		return nil, errMalformedPage
 	}
-	return nil, expectDelim(dec, ']')
+	var match *indexerTxn
+	seen := false
+	err := w.object(func(key []byte) error {
+		if string(key) != "transactions" {
+			return w.skip()
+		}
+		if seen {
+			return errDuplicateKey
+		}
+		seen = true
+		var err error
+		match, err = w.results(sender)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return match, nil
 }
 
-func expectDelim(dec *json.Decoder, want json.Delim) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return err
+// results reads the transactions array: every element, at most
+// lookupLimit, keeping the first sent by sender.
+func (w *walker) results(sender string) (*indexerTxn, error) {
+	if w.null() {
+		return nil, nil
 	}
-	if tok != want {
+	if !w.at('[') {
+		return nil, errMalformedPage
+	}
+	var match *indexerTxn
+	n := 0
+	err := w.array(func() error {
+		if n == lookupLimit {
+			return errTooManyResults
+		}
+		n++
+		txn, err := w.result()
+		if err == nil && match == nil && txn.Sender == sender {
+			match = txn
+		}
+		return err
+	})
+	return match, err
+}
+
+// Bits of the keys read in a result, its signature and its logicsig, for the
+// duplicate check.
+const (
+	keyID = 1 << iota
+	keySender
+	keyRekeyTo
+	keyAuthAddr
+	keyConfirmedRound
+	keyGenesisHash
+	keySignature
+)
+
+func (w *walker) result() (*indexerTxn, error) {
+	if !w.at('{') {
+		return nil, errMalformedPage
+	}
+	txn := &indexerTxn{}
+	var seen uint
+	err := w.object(func(key []byte) error {
+		var bit uint
+		switch string(key) {
+		case "id":
+			bit = keyID
+		case "sender":
+			bit = keySender
+		case "rekey-to":
+			bit = keyRekeyTo
+		case "auth-addr":
+			bit = keyAuthAddr
+		case "confirmed-round":
+			bit = keyConfirmedRound
+		case "genesis-hash":
+			bit = keyGenesisHash
+		case "signature":
+			bit = keySignature
+		default:
+			return w.skip()
+		}
+		if seen&bit != 0 {
+			return errDuplicateKey
+		}
+		seen |= bit
+		var err error
+		switch bit {
+		case keyID:
+			txn.ID, err = w.text(txIDLength)
+		case keySender:
+			txn.Sender, err = w.text(addressLength)
+		case keyRekeyTo:
+			txn.RekeyTo, err = w.text(addressLength)
+		case keyAuthAddr:
+			txn.AuthAddr, err = w.text(addressLength)
+		case keyConfirmedRound:
+			txn.ConfirmedRound, err = w.uint()
+		case keyGenesisHash:
+			txn.GenesisHash, err = w.base64(genesisHashBytes)
+		case keySignature:
+			err = w.signature(txn)
+		}
+		return err
+	})
+	return txn, err
+}
+
+const (
+	sigSig = 1 << iota
+	sigMultisig
+	sigPqsig
+	sigLogicsig
+)
+
+func (w *walker) signature(txn *indexerTxn) error {
+	if w.null() {
+		return nil
+	}
+	if !w.at('{') {
 		return errMalformedPage
 	}
-	return nil
+	sig := &txn.Signature
+	var seen uint
+	return w.object(func(key []byte) error {
+		var bit uint
+		var present *bool
+		switch string(key) {
+		case "sig":
+			bit, present = sigSig, &sig.Sig
+		case "multisig":
+			bit, present = sigMultisig, &sig.Multisig
+		case "pqsig":
+			bit, present = sigPqsig, &sig.Pqsig
+		case "logicsig":
+			bit = sigLogicsig
+		default:
+			return w.skip()
+		}
+		if seen&bit != 0 {
+			return errDuplicateKey
+		}
+		seen |= bit
+		if present != nil {
+			*present = w.presence()
+			return w.skip()
+		}
+		return w.logicsig(txn)
+	})
 }
 
-// skipValue scans past a value without keeping it: the decoder hands
-// UnmarshalJSON a slice of its own buffer.
-type skipValue struct{}
+const (
+	lsigLogic = 1 << iota
+	lsigSignature
+	lsigMultisigSignature
+	lsigLogicMultisigSignature
+	lsigPqsig
+)
 
-func (*skipValue) UnmarshalJSON([]byte) error { return nil }
+func (w *walker) logicsig(txn *indexerTxn) error {
+	if w.null() {
+		return nil
+	}
+	if !w.at('{') {
+		return errMalformedPage
+	}
+	lsig := &txn.Signature.Logicsig
+	var seen uint
+	return w.object(func(key []byte) error {
+		var bit uint
+		var present *bool
+		switch string(key) {
+		case "logic":
+			bit = lsigLogic
+		case "signature":
+			bit, present = lsigSignature, &lsig.Signature
+		case "multisig-signature":
+			bit, present = lsigMultisigSignature, &lsig.MultisigSignature
+		case "logic-multisig-signature":
+			bit, present = lsigLogicMultisigSignature, &lsig.LogicMultisigSignature
+		case "pqsig":
+			bit, present = lsigPqsig, &lsig.Pqsig
+		default:
+			return w.skip()
+		}
+		if seen&bit != 0 {
+			return errDuplicateKey
+		}
+		seen |= bit
+		if present != nil {
+			*present = w.presence()
+			return w.skip()
+		}
+		var err error
+		lsig.Logic, err = w.base64(maxLogicBytes)
+		return err
+	})
+}
 
-// presence records whether a field holds anything: any value but null, an
-// empty string, an empty object or an empty array. Its content is not kept.
-type presence bool
+// walker reads a document json.Valid has accepted, so it skips values by
+// their delimiters alone. It keeps a position and nothing else.
+type walker struct {
+	data []byte
+	pos  int
+}
 
-func (p *presence) UnmarshalJSON(raw []byte) error {
-	switch string(bytes.TrimSpace(raw)) {
-	case "null", `""`, "{}", "[]":
-		*p = false
-	default:
-		*p = true
+func (w *walker) space() {
+	for w.pos < len(w.data) {
+		switch w.data[w.pos] {
+		case ' ', '\t', '\n', '\r':
+			w.pos++
+		default:
+			return
+		}
+	}
+}
+
+func (w *walker) at(c byte) bool { return w.pos < len(w.data) && w.data[w.pos] == c }
+
+// null consumes a null value and reports whether there was one.
+func (w *walker) null() bool {
+	if w.pos+4 <= len(w.data) && string(w.data[w.pos:w.pos+4]) == "null" {
+		w.pos += 4
+		return true
+	}
+	return false
+}
+
+// object reads the object at the position, calling member with each key as
+// written, positioned at the key's value, which member must consume.
+func (w *walker) object(member func(key []byte) error) error {
+	w.pos++ // '{'
+	for {
+		w.space()
+		if w.at('}') {
+			w.pos++
+			return nil
+		}
+		if w.at(',') {
+			w.pos++
+			w.space()
+		}
+		key, escaped := w.rawString()
+		if escaped {
+			return errEscapedKey
+		}
+		w.space()
+		w.pos++ // ':'
+		w.space()
+		if err := member(key); err != nil {
+			return err
+		}
+	}
+}
+
+// array reads the array at the position, calling element positioned at each
+// element, which element must consume.
+func (w *walker) array(element func() error) error {
+	w.pos++ // '['
+	for {
+		w.space()
+		if w.at(']') {
+			w.pos++
+			return nil
+		}
+		if w.at(',') {
+			w.pos++
+			w.space()
+		}
+		if err := element(); err != nil {
+			return err
+		}
+	}
+}
+
+// rawString consumes the string at the position and returns its content as
+// written, a slice of the body, and whether it holds an escape sequence.
+// Comparing it with a constant through string() allocates nothing; the
+// callers that keep it bound its length first.
+func (w *walker) rawString() ([]byte, bool) {
+	start := w.pos + 1
+	escaped := false
+	i := start
+	for ; i < len(w.data); i++ {
+		if c := w.data[i]; c == '\\' {
+			escaped = true
+			i++
+		} else if c == '"' {
+			break
+		}
+	}
+	w.pos = i + 1
+	return w.data[start:i], escaped
+}
+
+// skip consumes one value of any kind.
+func (w *walker) skip() error {
+	if w.pos >= len(w.data) {
+		return errMalformedPage
+	}
+	switch w.data[w.pos] {
+	case '"':
+		w.rawString()
+	case '{', '[':
+		depth := 0
+		for ; w.pos < len(w.data); w.pos++ {
+			switch w.data[w.pos] {
+			case '"':
+				w.rawString()
+				w.pos--
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+				if depth == 0 {
+					w.pos++
+					return nil
+				}
+			}
+		}
+		return errMalformedPage
+	default: // number, true, false, null
+		for w.pos < len(w.data) {
+			switch w.data[w.pos] {
+			case ',', '}', ']', ' ', '\t', '\n', '\r':
+				return nil
+			}
+			w.pos++
+		}
 	}
 	return nil
 }
 
-type txIDText string
-
-func (t *txIDText) UnmarshalJSON(raw []byte) error {
-	s, err := boundedString(raw, txIDLength)
-	*t = txIDText(s)
-	return err
+// presence reports whether the value at the position holds anything: any
+// value but null, an empty string, an empty object or an empty array. It
+// does not consume the value.
+func (w *walker) presence() bool {
+	switch {
+	case w.pos+4 <= len(w.data) && string(w.data[w.pos:w.pos+4]) == "null":
+		return false
+	case w.at('"'):
+		return w.pos+1 < len(w.data) && w.data[w.pos+1] != '"'
+	case w.at('{') || w.at('['):
+		close := byte('}')
+		if w.at('[') {
+			close = ']'
+		}
+		i := w.pos + 1
+		for i < len(w.data) && (w.data[i] == ' ' || w.data[i] == '\t' || w.data[i] == '\n' || w.data[i] == '\r') {
+			i++
+		}
+		return i >= len(w.data) || w.data[i] != close
+	}
+	return true
 }
 
-type addressText string
-
-func (a *addressText) UnmarshalJSON(raw []byte) error {
-	s, err := boundedString(raw, addressLength)
-	*a = addressText(s)
-	return err
-}
-
-type hashBytes []byte
-
-func (h *hashBytes) UnmarshalJSON(raw []byte) error {
-	b, err := boundedBase64(raw, genesisHashBytes)
-	*h = b
-	return err
-}
-
-type programBytes []byte
-
-func (p *programBytes) UnmarshalJSON(raw []byte) error {
-	b, err := boundedBase64(raw, maxLogicBytes)
-	*p = b
-	return err
-}
-
-// boundedString decodes a JSON string of at most max characters, refusing a
-// longer one by its raw length, before anything is allocated. An escaped
-// form longer than max is refused too; the Indexer never escapes these.
-func boundedString(raw []byte, max int) (string, error) {
-	if string(raw) == "null" {
+// text consumes a string field of at most max bytes, written without escape
+// sequences, or null.
+func (w *walker) text(max int) (string, error) {
+	if w.null() {
 		return "", nil
 	}
-	if len(raw) < 2 || raw[0] != '"' {
+	if !w.at('"') {
 		return "", errFieldNotAString
 	}
-	if len(raw)-2 > max {
-		return "", fmt.Errorf("%w: %d bytes, at most %d", errFieldTooLong, len(raw)-2, max)
+	s, escaped := w.rawString()
+	switch {
+	case escaped:
+		return "", errFieldNotAString
+	case len(s) > max:
+		return "", fmt.Errorf("%w: %d bytes, at most %d", errFieldTooLong, len(s), max)
 	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return "", err
-	}
-	return s, nil
+	return string(s), nil
 }
 
-// boundedBase64 decodes a JSON string of standard base64 holding at most
-// maxBytes bytes, refusing a longer one by its raw length first and, since
-// padding lets a few more bytes share that length, by its decoded length.
-func boundedBase64(raw []byte, maxBytes int) ([]byte, error) {
-	s, err := boundedString(raw, base64.StdEncoding.EncodedLen(maxBytes))
-	if err != nil || s == "" {
-		return nil, err
+// base64 consumes a field of standard base64 holding at most maxBytes, or
+// null. Padding lets a few more bytes share the longest encoding, so the
+// decoded length is checked too.
+func (w *walker) base64(maxBytes int) ([]byte, error) {
+	if w.null() {
+		return nil, nil
+	}
+	if !w.at('"') {
+		return nil, errFieldNotAString
+	}
+	s, escaped := w.rawString()
+	switch {
+	case escaped:
+		return nil, errFieldNotAString
+	case len(s) > base64.StdEncoding.EncodedLen(maxBytes):
+		return nil, fmt.Errorf("%w: %d bytes encoded, at most %d decoded", errFieldTooLong, len(s), maxBytes)
 	}
 	out := make([]byte, base64.StdEncoding.DecodedLen(len(s)))
-	n, err := base64.StdEncoding.Decode(out, []byte(s))
+	n, err := base64.StdEncoding.Decode(out, s)
 	if err != nil {
-		return nil, err
+		return nil, errMalformedPage
 	}
 	if n > maxBytes {
 		return nil, fmt.Errorf("%w: %d bytes, at most %d", errFieldTooLong, n, maxBytes)
 	}
 	return out[:n], nil
+}
+
+// uint consumes a JSON integer that fits a uint64, or null.
+func (w *walker) uint() (uint64, error) {
+	if w.null() {
+		return 0, nil
+	}
+	var v uint64
+	digits := 0
+	for w.pos < len(w.data) && w.data[w.pos] >= '0' && w.data[w.pos] <= '9' {
+		d := uint64(w.data[w.pos] - '0')
+		if v > (^uint64(0)-d)/10 {
+			return 0, errMalformedPage
+		}
+		v = v*10 + d
+		digits++
+		w.pos++
+	}
+	if digits == 0 {
+		return 0, errMalformedPage
+	}
+	// A fraction or exponent follows the digits of a number that is not an
+	// integer.
+	if w.pos < len(w.data) {
+		switch w.data[w.pos] {
+		case '.', 'e', 'E':
+			return 0, errMalformedPage
+		}
+	}
+	return v, nil
 }

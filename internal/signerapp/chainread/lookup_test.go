@@ -340,14 +340,15 @@ func TestLookupRefusesAnAnswerOfMoreResultsThanAsked(t *testing.T) {
 			}
 		})
 	}
-	// The account's spend among the first eight is read without reading on.
+	// Every element is read: the account's spend among the first results
+	// does not save an answer that goes on past the limit.
 	early := []map[string]any{clawback(lookupAccount), spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)}
-	for i := 0; i < 20; i++ {
+	for len(early) <= lookupLimit {
 		early = append(early, clawback(lookupAccount))
 	}
 	idx := &fakeIndexer{pages: [][]map[string]any{early}}
-	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupCandidate || got.Stage != 3 {
-		t.Fatalf("lookup = %+v, want the second result's candidate", got)
+	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupUnavailable {
+		t.Fatalf("lookup = %+v, want unavailable", got)
 	}
 }
 
@@ -571,13 +572,19 @@ func TestLookupReturnsAtOnceWhenItsContextIsCancelled(t *testing.T) {
 	}
 }
 
-// An Indexer ID that is not a transaction ID is not passed on.
+// An Indexer ID that is not a transaction ID is not passed on; one written
+// with an escape sequence refuses the answer, as any string field does.
 func TestLookupDropsAnIDThatIsNotATransactionID(t *testing.T) {
 	txn := spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)
-	txn["id"] = "\x1b[2Jnot-an-id"
+	txn["id"] = "not-a-transaction-id"
 	idx := &fakeIndexer{pages: [][]map[string]any{{txn}}}
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
 	if got.Outcome != LookupCandidate || got.TxID != "" {
 		t.Fatalf("lookup = %+v, want a candidate without the ID", got)
+	}
+	txn["id"] = "\x1b[2Jnot-an-id"
+	idx = &fakeIndexer{pages: [][]map[string]any{{txn}}}
+	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupUnavailable {
+		t.Fatalf("escaped ID: %+v, want unavailable", got)
 	}
 }

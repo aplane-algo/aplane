@@ -14,7 +14,7 @@ before it was renamed `enroll`.
   `config.yaml`. When the signer cannot place an account's authorizer, its
   search first reads the account's last confirmed rekey from the Indexer and
   tries the stage that spend's program names, plus one. The lookup is one
-  request for at most eight results, within ten seconds and a 1 MiB
+  request for at most eight results, within ten seconds and a 256 KiB
   response, once per search; it takes the newest result the account sent,
   so clawbacks another address sends cannot hide that spend. After a restore or
   on a new machine the account usually resolves on the next pass, after one

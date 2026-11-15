@@ -2004,7 +2004,7 @@ exhausted, as any probe would. Every other outcome (`unavailable`,
 `no_outgoing_rekey`, `not_current`, `not_a_stage_program`, `wrong_network`, or
 no Indexer) derives nothing, so the search that follows is the search without
 one. The lookup opens no seed and is not a key use; it runs within 10 seconds,
-one request for at most eight results with no further page, a 1 MiB body and
+one request for at most eight results with no further page, a 256 KiB body and
 the fields it checks alone decoded, and is not retried within a
 grant: a new grant, after the authorizer changes, at the next unlock, or by
 `rotate recover`, looks up again. A prepare's foreground discovery does not

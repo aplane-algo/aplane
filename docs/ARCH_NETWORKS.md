@@ -251,8 +251,9 @@ networks:
   derived from the seed equals the authorizer read from the signer's own
   algod,
 - a lookup is bounded: 10 s, one request for at most eight results (a
-  response that begins a ninth is refused, and no further page is asked
-  for), a 1 MiB body, no redirects, one attempt per grant, and only the
+  response that holds a ninth is refused, and no further page is asked
+  for), a 256 KiB body read whole and checked as one JSON document, no
+  redirects, one attempt per grant, and only the
   fields it checks are decoded. It asks for eight because the Indexer's
   sender role also matches a clawback's asset sender, and a clawback
   another address sends can come before the account's last spend,

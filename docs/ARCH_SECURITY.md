@@ -2066,7 +2066,7 @@ wrong or hostile Indexer can do:
 | Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
 | Answers slowly or not at all | At most 10 seconds of the worker, once per grant |
 | Puts results the account did not send first | Up to seven are skipped; eight leave no outgoing rekey and the search runs as without an Indexer |
-| Sends a huge or malformed body, or redirects | Cut at 1 MiB or refused; the lookup is `unavailable` |
+| Sends a huge or malformed body, or redirects | Refused past 256 KiB, on any syntax error, repeated key or ninth result, or the redirect itself; the lookup is `unavailable` |
 | Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
 
 For `aplane.rotating-triple-xmss.v1` that one derivation is dearer: a
@@ -2098,15 +2098,25 @@ a zero-amount clawback that rekeys its own sender, and so put a result the
 account did not send ahead of its last spend at will. Such results are
 skipped; when none of the eight was sent by the account the outcome is
 `no_outgoing_rekey` and the search runs without the lookup. The signer
-decodes the response itself, from the capped body, into only the fields the
-lookup checks (`internal/signerapp/chainread/lookup_decode.go`): a response
-that begins a ninth result is refused before it is decoded, every kept field
-has a fixed bound (a transaction ID or address its length, a program 16,000
-bytes, the largest a group's pooled LogicSig size allows), and everything
-else is scanned past without being kept. So a lookup allocates at most about
-2 MiB whatever the response holds, the decoder's buffer for a 1 MiB value; a
-body of 333,000 empty results, which the SDK's models would have decoded
-into gigabytes, is refused after about 20 KB.
+decodes the response itself, into only the fields the lookup checks
+(`internal/signerapp/chainread/lookup_decode.go`), under one set of rules:
+the whole body is read first, and one longer than 256 KiB is refused before
+anything is decoded; the body must be a single JSON object followed only by
+whitespace, checked whole, so trailing data, truncation or a syntax error
+anywhere refuses it even after a matching result; `transactions` may appear
+once, every element is read, and an element past the eighth refuses the
+answer, the first result sent by the account being picked only after the
+whole document is read; keys are compared byte for byte, without case or
+Unicode folding, a key written with an escape sequence is refused, and a key
+the lookup reads appearing twice in one object refuses the answer; every
+kept field has a fixed bound and form (a transaction ID or address its
+length, a program 16,000 bytes, the largest a group's pooled LogicSig size
+allows, all written without escape sequences); everything else is scanned
+past without being kept. So a lookup allocates at most the 256 KiB body
+buffer, eight programs of at most 16,000 bytes, and the syntax check's
+nesting stack, about 470 KB measured at worst, whatever the response holds;
+the SDK's models would have decoded a 1 MiB body of empty results into
+gigabytes.
 
 ### Defense in Depth
 

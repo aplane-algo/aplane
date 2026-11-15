@@ -517,7 +517,7 @@ chain names one too:
    search one stage and stays in the table like any miss; the candidate is
    never the table's hint. The lookup opens no seed, makes one request for
    at most eight results in ten seconds and never asks for a further page,
-   reads at most 1 MiB, and runs once per grant. When none of the eight was
+   reads at most 256 KiB, and runs once per grant. When none of the eight was
    sent by the account, the search runs as it would without the lookup.
 
 For XMSS a candidate that misses costs more than one stage's keys: deriving a
