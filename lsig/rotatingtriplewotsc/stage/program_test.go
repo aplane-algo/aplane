@@ -6,12 +6,14 @@ package stage
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/crypto/wotsc"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -24,6 +26,11 @@ func randomKeys(t *testing.T) *PublicKeys {
 			t.Fatal(err)
 		}
 	}
+	var stage [8]byte
+	if _, err := rand.Read(stage[:]); err != nil {
+		t.Fatal(err)
+	}
+	keys.Stage = binary.BigEndian.Uint64(stage[:])
 	return keys
 }
 
@@ -78,7 +85,7 @@ func TestParseRejectsNonCanonicalPrograms(t *testing.T) {
 	if _, _, err := Parse(wrongSalt); !errors.Is(err, ErrInvalidProgram) {
 		t.Fatalf("wrong salt accepted: %v", err)
 	}
-	for _, off := range []int{10, falconKeyOffset - 1, seedOffset - 3, UnsaltedProgramSize - 1} {
+	for _, off := range []int{0, 1, 2, stageprog.PrefixSize - 1, 21, falconKeyOffset - 1, seedOffset - 3, UnsaltedProgramSize - 1} {
 		tampered := bytes.Clone(unsalted.Bytecode)
 		tampered[off] ^= 1
 		if _, _, err := Parse(tampered); !errors.Is(err, ErrInvalidProgram) {
@@ -116,11 +123,11 @@ func TestResourceCeiling(t *testing.T) {
 	if wotsc.Len*(wotsc.W-1)-wotsc.TargetSum != ChainSteps {
 		t.Fatalf("ChainSteps %d does not follow from the parameters", ChainSteps)
 	}
-	if UnsaltedProgramSize != 2483 || SaltedProgramSize != 2486 || MaxArgumentBytes != 2115 {
+	if UnsaltedProgramSize != 2494 || SaltedProgramSize != 2497 || MaxArgumentBytes != 2115 {
 		t.Fatalf("frozen sizes changed: program %d/%d, arguments %d", UnsaltedProgramSize, SaltedProgramSize, MaxArgumentBytes)
 	}
-	if MaxOpcodeCost != 15721 {
-		t.Fatalf("opcode cost %d, want 15721", MaxOpcodeCost)
+	if MaxOpcodeCost != 15723 {
+		t.Fatalf("opcode cost %d, want 15723", MaxOpcodeCost)
 	}
 	byCost := (MaxOpcodeCost + 19999) / 20000
 	byArgs := (MaxArgumentBytes + 999) / 1000

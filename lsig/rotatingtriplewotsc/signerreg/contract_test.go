@@ -15,7 +15,7 @@ import (
 )
 
 // goldenAddress is the account of FixedSeed on FixedGenesis.
-const goldenAddress = "DKPKHH5SWTPRHLTHD5VJMMKEQWNOJOVQQH3QOURLM6K46IFQWPH4Z67E44"
+const goldenAddress = "4LFX5XWEBGHB74VU764TD7Z77OACN3DTFSIA664GDOLP4Y4WKWAV4HF7EM"
 
 // TestContract runs the rotating key type contract against the WOTS+C triple.
 func TestContract(t *testing.T) {

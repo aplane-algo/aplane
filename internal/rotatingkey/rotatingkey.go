@@ -106,7 +106,7 @@ const (
 	RotatingWotscStagePublicKeySize = 16 + 16 + 1793 + 32
 
 	// RotatingWotscMaxProgramBytes is the salted WOTS+C stage program.
-	RotatingWotscMaxProgramBytes = 2486
+	RotatingWotscMaxProgramBytes = 2497
 
 	// RotatingWotscMaxArgumentBytes is a 628-byte WOTS+C signature, a 64-byte
 	// Ed25519 signature and a Falcon-1024 signature of at most 1,423 bytes.
@@ -114,7 +114,7 @@ const (
 
 	// RotatingWotscMaxOpcodeCost is the exact cost of every accepted run: the
 	// digit sum fixes the chain steps at 240, whatever the leaf or TxID.
-	RotatingWotscMaxOpcodeCost = 5881 + 41*240
+	RotatingWotscMaxOpcodeCost = 5883 + 41*240
 
 	// RotatingWotscLeavesPerStage is the size of each stage's own tree.
 	RotatingWotscLeavesPerStage = 64

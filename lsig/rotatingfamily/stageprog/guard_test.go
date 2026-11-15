@@ -39,7 +39,7 @@ func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wotsc, err := wotscstage.Build(&wotscstage.PublicKeys{})
+	wotsc, err := wotscstage.Build(&wotscstage.PublicKeys{Stage: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
 	}{
 		"XMSS":    {xmss.Bytecode, stageprog.PrefixSize},
 		"SLH-DSA": {slh.Bytecode, 1},
-		"WOTS+C":  {wotsc.Bytecode, 1},
+		"WOTS+C":  {wotsc.Bytecode, stageprog.PrefixSize},
 	} {
 		if c.program[0] != 0x0d || !bytes.HasPrefix(c.program[c.guardAt:], rotationGuard) {
 			t.Errorf("the %s stage program does not open with the rotation guard: % x", name, c.program[:c.guardAt+len(rotationGuard)])
