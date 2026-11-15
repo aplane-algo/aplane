@@ -12,12 +12,12 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/rotatingstage"
 
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/indexer"
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -57,12 +57,14 @@ const (
 	DefaultLookupTimeout = 10 * time.Second
 	// MaxIndexerResponseBytes caps each response body.
 	MaxIndexerResponseBytes = 1 << 20
-	// lookupPageSize is the limit asked of each search request,
-	// lookupMaxRequests the requests made (a search and one further page),
-	// and lookupMaxResults the results examined in all.
+	// lookupPageSize is the limit asked of each search request, and a page
+	// holding more is refused; lookupMaxRequests is the requests made (a
+	// search and one further page). So at most 16 results are examined.
 	lookupPageSize    = 8
 	lookupMaxRequests = 2
-	lookupMaxResults  = 16
+
+	// indexerTokenHeader carries the Indexer API token, as the SDK sends it.
+	indexerTokenHeader = "X-Indexer-API-Token"
 )
 
 // StageLookup is the result of one LookupLastRotation. It holds no
@@ -93,8 +95,9 @@ type StageLookup struct {
 // address is the authorizer the caller read from its own algod.
 //
 // The lookup makes at most two requests within DefaultLookupTimeout (or
-// LookupTimeout), examines at most sixteen results, and reads at most
-// MaxIndexerResponseBytes of each response. It never uses a spend older than
+// LookupTimeout), body reads included, reads at most MaxIndexerResponseBytes
+// of each response, decodes at most eight results of a page, and keeps only
+// the fields it checks (lookup_decode.go). It never uses a spend older than
 // the newest outgoing rekey: that one must hand the account to authorizer,
 // which is also what makes an Indexer lagging behind algod harmless.
 //
@@ -129,11 +132,7 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	client, err := indexer.MakeClientWithTransport(cfg.Server, cfg.Token, nil, indexerTransport{base: base})
-	if err != nil {
-		out.Outcome, out.Reason = LookupUnavailable, "the configured server is not a URL"
-		return out, nil
-	}
+	search := indexerSearch{client: &http.Client{Transport: indexerTransport{base: base}}, server: *server, token: cfg.Token}
 	timeout := r.LookupTimeout
 	if timeout <= 0 {
 		timeout = DefaultLookupTimeout
@@ -141,7 +140,7 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	spend, reason := newestOutgoingRekey(ctx, client, account)
+	spend, reason := search.newestOutgoingRekey(ctx, account)
 	switch {
 	case reason != "":
 		out.Outcome, out.Reason = LookupUnavailable, reason
@@ -157,10 +156,10 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 		return out, nil
 	}
 	out.Round = spend.ConfirmedRound
-	if isTxID(spend.Id) {
-		out.TxID = spend.Id
+	if id := string(spend.ID); isTxID(id) {
+		out.TxID = id
 	}
-	if spend.RekeyTo != authorizer.String() {
+	if string(spend.RekeyTo) != authorizer.String() {
 		out.Outcome, out.Reason = LookupNotCurrent, "the newest outgoing rekey hands the account to another address"
 		return out, nil
 	}
@@ -173,58 +172,85 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 	return out, nil
 }
 
+// indexerSearch asks one Indexer for an account's outgoing rekeys.
+type indexerSearch struct {
+	client *http.Client
+	server url.URL
+	token  string
+}
+
 // newestOutgoingRekey returns the first result, newest first, whose
 // top-level sender is the account and which rekeys it. The sender role also
 // matches the asset sender of a clawback, which is skipped; inner
 // transactions are not looked at. nil with no reason means none was found
 // within the limits; a reason means the Indexer could not be read.
-func newestOutgoingRekey(ctx context.Context, client *indexer.Client, account types.Address) (*models.Transaction, string) {
+func (s indexerSearch) newestOutgoingRekey(ctx context.Context, account types.Address) (*indexerTxn, string) {
 	sender := account.String()
-	examined := 0
 	next := ""
-	for request := 0; request < lookupMaxRequests && examined < lookupMaxResults; request++ {
-		search := client.SearchForTransactions().AddressString(sender).AddressRole("sender").RekeyTo(true).Limit(lookupPageSize)
-		if next != "" {
-			search = search.NextToken(next)
-		}
-		page, err := search.Do(ctx)
+	for request := 0; request < lookupMaxRequests; request++ {
+		page, err := s.page(ctx, sender, next)
 		if err != nil {
 			return nil, unavailableReason(ctx, err)
 		}
-		for i := range page.Transactions {
-			if examined == lookupMaxResults {
-				break
-			}
-			examined++
-			if txn := &page.Transactions[i]; txn.Sender == sender && txn.RekeyTo != "" {
-				return txn, ""
-			}
+		if page.match != nil {
+			return page.match, ""
 		}
-		if page.NextToken == "" || len(page.Transactions) == 0 {
+		if page.next == "" {
 			break
 		}
-		next = page.NextToken
+		next = page.next
 	}
 	return nil, ""
+}
+
+// page requests one page of the account's outgoing rekeys, newest first,
+// and decodes it from the capped body.
+func (s indexerSearch) page(ctx context.Context, sender, next string) (indexerPage, error) {
+	u := s.server
+	u.Path = strings.TrimRight(u.Path, "/") + "/v2/transactions"
+	q := url.Values{}
+	q.Set("address", sender)
+	q.Set("address-role", "sender")
+	q.Set("rekey-to", "true")
+	q.Set("limit", strconv.Itoa(lookupPageSize))
+	if next != "" {
+		q.Set("next", next)
+	}
+	if u.RawQuery != "" {
+		u.RawQuery += "&" + q.Encode()
+	} else {
+		u.RawQuery = q.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return indexerPage{}, err
+	}
+	req.Header.Set(indexerTokenHeader, s.token)
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return indexerPage{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return decodePage(resp.Body, sender)
 }
 
 // signingStage checks that the spend was signed by a stage program and
 // nothing else, that the program is the account's signer, and that its stage
 // prefix fits that signer, and returns the program's stage. A reason means
 // it is not a stage program's spend.
-func signingStage(spend *models.Transaction, account types.Address) (uint64, string) {
+func signingStage(spend *indexerTxn, account types.Address) (uint64, string) {
 	sig := spend.Signature
 	lsig := sig.Logicsig
 	if len(lsig.Logic) == 0 {
 		return 0, "the spend was not signed by a program"
 	}
-	if len(sig.Sig) != 0 || !blankMultisig(sig.Multisig) || !blankPQsig(sig.Pqsig) ||
-		len(lsig.Signature) != 0 || !blankMultisig(lsig.MultisigSignature) || !blankMultisig(lsig.LogicMultisigSignature) || !blankPQsig(lsig.Pqsig) {
+	if sig.Sig || sig.Multisig || sig.Pqsig || lsig.Signature || lsig.MultisigSignature || lsig.LogicMultisigSignature || lsig.Pqsig {
 		return 0, "the spend carries a signature besides its program"
 	}
 	signer := account
 	if spend.AuthAddr != "" {
-		authAddr, err := types.DecodeAddress(spend.AuthAddr)
+		authAddr, err := types.DecodeAddress(string(spend.AuthAddr))
 		if err != nil {
 			return 0, "the spend names an invalid signer"
 		}
@@ -246,14 +272,6 @@ func signingStage(spend *models.Transaction, account types.Address) (uint64, str
 		return 0, fmt.Sprintf("stage %d has no representable successor", stage)
 	}
 	return stage, ""
-}
-
-func blankMultisig(m models.TransactionSignatureMultisig) bool {
-	return len(m.Subsignature) == 0 && m.Threshold == 0 && m.Version == 0
-}
-
-func blankPQsig(p models.TransactionSignaturePQsig) bool {
-	return len(p.PublicKey) == 0 && len(p.Signature) == 0 && p.Scheme == "" && p.Salt == 0
 }
 
 // isTxID reports whether id has the form of a transaction ID: 52 characters
@@ -287,6 +305,10 @@ func unavailableReason(ctx context.Context, err error) string {
 		return "the lookup was cancelled"
 	case errors.Is(err, errResponseTooLarge):
 		return fmt.Sprintf("the Indexer's response exceeded %d bytes", MaxIndexerResponseBytes)
+	case errors.Is(err, errTooManyResults):
+		return fmt.Sprintf("the Indexer returned more than the %d results asked", lookupPageSize)
+	case errors.Is(err, errFieldTooLong):
+		return "a field of the Indexer's response exceeded its bound"
 	case errors.As(err, &status):
 		return fmt.Sprintf("the Indexer answered HTTP %d", int(status))
 	}

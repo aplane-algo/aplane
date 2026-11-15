@@ -250,8 +250,9 @@ networks:
 - its answer is a candidate only: a stage is accepted when the address
   derived from the seed equals the authorizer read from the signer's own
   algod,
-- a lookup is bounded: 10 s, two requests, 16 results, 1 MiB per response,
-  no redirects,
+- a lookup is bounded: 10 s, two requests of at most eight results each
+  (a page of more is refused), 1 MiB per response, no redirects, and only
+  the fields it checks are decoded,
 - the setting is a file setting, read at start like algod's, and not an admin
   setting. The client (apshell) has no Indexer setting.
 

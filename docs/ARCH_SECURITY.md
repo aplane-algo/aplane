@@ -2077,8 +2077,16 @@ use.
 
 Configuring one exposes two things: the Indexer provider learns which
 accounts the signer asks about (the algod provider already learns that from
-the authorizer reads), and the signer parses one more provider's responses,
-the SDK's JSON models over a capped body.
+the authorizer reads), and the signer parses one more provider's responses.
+It decodes them itself, from the capped body, into only the fields the
+lookup checks (`internal/signerapp/chainread/lookup_decode.go`): a page of
+more than the eight results asked is refused before the ninth is decoded,
+every kept field has a fixed bound (a transaction ID or address its length,
+a program 16,000 bytes, the largest a group's pooled LogicSig size allows),
+and everything else is scanned past without being kept. So one request
+allocates at most about 2 MiB whatever the response holds, the decoder's
+buffer for a 1 MiB value; a body of 333,000 empty results, which the SDK's
+models would have decoded into gigabytes, is refused after about 20 KB.
 
 ### Defense in Depth
 

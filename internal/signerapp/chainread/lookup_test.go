@@ -311,18 +311,28 @@ func TestLookupNoOutgoingRekeyInTwoPages(t *testing.T) {
 	}
 }
 
-// An Indexer that sends more results than asked is examined only up to
-// sixteen results in all.
-func TestLookupExaminesAtMostSixteenResults(t *testing.T) {
+// An Indexer that sends more results than the eight asked has its page
+// refused before the ninth is decoded; a match among the first eight is read
+// without reading on.
+func TestLookupRefusesAPageOfMoreResultsThanAsked(t *testing.T) {
 	var page []map[string]any
-	for i := 0; i < 16; i++ {
+	for i := 0; i < 8; i++ {
 		page = append(page, clawback(lookupAccount))
 	}
 	page = append(page, spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false))
 	idx := &fakeIndexer{pages: [][]map[string]any{page, {spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)}}}
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
-	if got.Outcome != LookupNoOutgoingRekey || idx.requestCount() != 1 {
-		t.Fatalf("lookup = %+v after %d requests, want no_outgoing_rekey after one", got, idx.requestCount())
+	if got.Outcome != LookupUnavailable || idx.requestCount() != 1 {
+		t.Fatalf("lookup = %+v after %d requests, want unavailable after one", got, idx.requestCount())
+	}
+
+	early := []map[string]any{clawback(lookupAccount), spend(lookupAccount, lookupAuthorizer, stageProgram(2, "x"), false)}
+	for i := 0; i < 20; i++ {
+		early = append(early, clawback(lookupAccount))
+	}
+	idx = &fakeIndexer{pages: [][]map[string]any{early}}
+	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupCandidate || got.Stage != 3 {
+		t.Fatalf("lookup = %+v, want the second result's candidate", got)
 	}
 }
 
@@ -456,7 +466,7 @@ func TestLookupUnreadableIndexerIsUnavailableWithoutTheToken(t *testing.T) {
 	}
 	// A body of exactly the cap is read whole.
 	exact := `{"transactions":[]}`
-	exact += strings.Repeat(" ", MaxIndexerResponseBytes-len(exact))
+	exact = strings.Repeat(" ", MaxIndexerResponseBytes-len(exact)) + exact
 	idx := &fakeIndexer{handler: func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(exact)) }}
 	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupNoOutgoingRekey {
 		t.Fatalf("body at the cap: %+v, want no_outgoing_rekey", got)
