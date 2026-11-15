@@ -579,7 +579,7 @@ func (m Model) renderBackupImport() string {
 	}
 	body.WriteString("Archive file (.tar.gz or .tgz)  " + helpStyle.Render("ctrl+o browses") + "\n")
 	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(imp.path)))
-	body.WriteString("\nBackup passphrase  " + helpStyle.Render("the signer checks every key with it; not stored") + "\n")
+	body.WriteString("\nBackup passphrase\n")
 	body.WriteString(passStyle.Width(m.constrainParameterFieldWidth(44)).Render(strings.Repeat("*", len(imp.passphrase))))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("IMPORT")
@@ -597,7 +597,7 @@ func (m Model) renderBackupImport() string {
 		body.WriteString("\n" + subtitleStyle.Render(fmt.Sprintf("Uploading... %s of %s",
 			backup.FormatFileSize(imp.offset), backup.FormatFileSize(imp.source.Size))) + "\n")
 	case importCommitting:
-		body.WriteString("\n" + subtitleStyle.Render(wrapPlainText("Checking the archive. This can take a while; esc leaves, and the result is reported on the Backups page.", width)) + "\n")
+		body.WriteString("\n" + subtitleStyle.Render("Checking the archive... esc leaves") + "\n")
 	}
 	if imp.err != "" {
 		body.WriteString("\n" + errorStyle.Render(wrapPlainText(terminalSafeLines(imp.err), width)) + "\n")

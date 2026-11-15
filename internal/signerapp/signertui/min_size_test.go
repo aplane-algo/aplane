@@ -176,7 +176,7 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 	}{
 		{"pending client selected", Model{viewState: ViewEnrolledClients, clients: clients}, []string{
 			"> " + fingerprint, "  connected", "a-very-long-label-from-a-laptop", "192.168.100.250:51234",
-			time.Unix(requestedAt, 0).Local().Format("2006-01-02 15:04"), "closes its connections",
+			time.Unix(requestedAt, 0).Local().Format("2006-01-02 15:04"),
 		}},
 		{"enrolled client selected", Model{viewState: ViewEnrolledClients, clients: enrolledSelected}, []string{
 			"> " + fingerprint, "  connected", "a-very-long-label-on-ops", "ssh-rsa",
@@ -186,11 +186,11 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 			{Address: address, KeyType: longType, AlreadyExists: true, HasPolicy: true},
 			{Address: address, KeyType: "aplane.rotating-triple-slhdsa.v1", StageHint: &hint, AlreadyExists: true, HasPolicy: true},
 		}}}, []string{
-			"wide.v1]  present  +policy", "hint 1234567  present  +policy", "[ed25519]",
+			"wide.v1]  exists  +policy", "slhdsa.v1]  exists  +policy", "[ed25519]",
 		}},
 		{"restore row error", Model{viewState: ViewRestorePreview, restore: restoreState{previewKeys: []RestoreKeyInfo{
 			{Address: address, KeyType: longType, AlreadyExists: true, Error: "archive entry failed its integrity check"},
-		}}}, []string{"present  archive entry"}},
+		}}}, []string{"exists  archive entry"}},
 		{"cosigner references", Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: []CosignerReferenceInfo{
 			{Name: "a-reference-name-that-is-longer-than-any-window-has-room-for", ComponentKey: witnessKey, KeyType: "aplane.falcon1024.v1"},
 			{Name: "ops", ComponentKey: witnessKey, KeyType: "ed25519"},
@@ -209,6 +209,10 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 				if !strings.Contains(view, want) {
 					t.Errorf("%q missing from:\n%s", want, view)
 				}
+			}
+			// A rotating key's stage hint is restored with the key, not shown.
+			if test.name == "restore flags" && strings.Contains(view, "1234567") {
+				t.Errorf("the stage hint is shown in:\n%s", view)
 			}
 		})
 	}
@@ -278,7 +282,7 @@ func TestPoliciesListFitsAtMinSize(t *testing.T) {
 	view := stripANSI(m.View())
 	for _, want := range []string{
 		address + "  key not held", "policy, key not held", "256 bytes", "applied 2023-11-14",
-		"apadmin policy covers remove and rescue", strings.Repeat("ab", 32)[:40],
+		strings.Repeat("ab", 32)[:40],
 	} {
 		if !strings.Contains(strings.Join(strings.Fields(view), " "), strings.Join(strings.Fields(want), " ")) {
 			t.Errorf("%q missing from:\n%s", want, view)

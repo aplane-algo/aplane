@@ -279,8 +279,6 @@ func (m Model) renderCosignerReferences() string {
 	references := m.sortedCosignerReferences()
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Cosigner References"))
-	body.WriteString("\n")
-	body.WriteString(subtitleStyle.Render("Public witness authorities enrolled for cosigned-account generation."))
 	body.WriteString("\n\n")
 	if len(references) == 0 {
 		body.WriteString(wrapPlainText("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.", m.tableWidth()) + "\n")

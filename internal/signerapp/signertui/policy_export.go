@@ -219,11 +219,9 @@ func (m Model) renderPolicyExportForm() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Export Policy"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Writes every active policy document, exactly as stored, as default.json and <key>.json, with the node's context in .appolicy/node.json."))
-	body.WriteString("\n\n")
 	body.WriteString("Export directory (new or empty):\n")
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(export.path)))
-	body.WriteString("\n" + helpStyle.Render("ctrl+o browses for where to create it. Check, explain or edit the files offline with appolicy; install changes with apadmin policy apply."))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses"))
 	body.WriteString("\n")
 	if export.busy != "" {
 		body.WriteString("\n")

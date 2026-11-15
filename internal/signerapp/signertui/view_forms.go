@@ -24,8 +24,6 @@ func (m Model) renderBackupConfirm() string {
 		m.keyCount,
 		pluralKeys(m.keyCount),
 	)))
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("A signer-managed backup archive will be written to the identity backup store."))
 	sb.WriteString("\n\n")
 
 	exportStyle := inputInactiveStyle
@@ -622,10 +620,6 @@ func (m Model) renderGenerateDisplay() string {
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString(subtitleStyle.Render("Recovery material is stored encrypted in the signer keyfile."))
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("Use encrypted backups for recovery."))
-	sb.WriteString("\n")
 	if _, ok := m.generatedReceipt(); ok {
 		sb.WriteString("\n")
 		switch {

@@ -37,10 +37,10 @@ func (m Model) renderRestorePassphrase() string {
 		}
 		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("Re-enter the export passphrase and press Enter to authorize replacement."))
+		sb.WriteString("\n\n")
 	} else {
-		sb.WriteString(subtitleStyle.Render("Enter the backup export passphrase before metadata is shown."))
+		sb.WriteString("Backup passphrase\n")
 	}
-	sb.WriteString("\n\n")
 
 	masked := strings.Repeat("*", len(m.restore.passphrase))
 	if masked == "" {
@@ -128,7 +128,7 @@ func (m Model) restorePreviewHeader() string {
 	sb.WriteString(titleStyle.Render("Backup Contents"))
 	sb.WriteString("\n")
 	sb.WriteString(m.renderBackupViewHeader(popupWidth))
-	sb.WriteString(fmt.Sprintf("Selected: %d of %d (\"present\": this node holds a key at that address)\n",
+	sb.WriteString(fmt.Sprintf("Selected: %d of %d\n",
 		m.selectedRestoreCount(), len(m.restore.previewKeys)))
 	return sb.String()
 }
@@ -333,14 +333,11 @@ func restoreKeyTypeWidth(key RestoreKeyInfo) int {
 // restorePreviewFlags is the short, fixed vocabulary at the end of a key row.
 func restorePreviewFlags(key RestoreKeyInfo) string {
 	var suffix string
-	if key.StageHint != nil {
-		suffix += fmt.Sprintf("  hint %d", *key.StageHint)
-	}
 	if key.AlreadyExists {
 		// The node holds a key at this address. Preview does not compare
 		// the two; restore's conflict check decides, and replacement still
 		// requires explicit confirmation.
-		suffix += "  present"
+		suffix += "  exists"
 	}
 	if key.HasPolicy {
 		suffix += "  +policy"

@@ -86,14 +86,14 @@ func TestGeneratedScreenNamesEachWarning(t *testing.T) {
 			if strings.Contains(view, "See details") || strings.Contains(view, "things to read") || strings.Contains(view, "…") {
 				t.Fatalf("the screen cuts a warning or points elsewhere:\n%s", view)
 			}
-			// The account and what follows the warnings are still there, after them.
-			for _, want := range []string{"Address: " + testAddress(3), "Recovery material is stored encrypted"} {
+			// The account is still there.
+			for _, want := range []string{"Address: " + testAddress(3)} {
 				if !strings.Contains(view, want) {
 					t.Fatalf("the screen lacks %q:\n%s", want, view)
 				}
 			}
-			if strings.Index(view, "Recovery material") < at || strings.Index(view, "Address:") > strings.Index(view+"Warning:", "Warning:") {
-				t.Fatalf("the warnings are not between the account and the recovery note:\n%s", view)
+			if strings.Index(view, "Address:") > strings.Index(view+"Warning:", "Warning:") {
+				t.Fatalf("the warnings are not after the account:\n%s", view)
 			}
 		})
 	}
@@ -247,7 +247,7 @@ func TestGeneratedScreenWithWarningsFitsAt80x24(t *testing.T) {
 						t.Errorf("the screen lacks %q:\n%s", line, view)
 					}
 				}
-				for _, want := range []string{"Address: " + testAddress(3), "Use encrypted backups for recovery.", "save a resolved receipt"} {
+				for _, want := range []string{"Address: " + testAddress(3), "save a resolved receipt"} {
 					if !strings.Contains(flat, want) {
 						t.Errorf("the screen lacks %q:\n%s", want, view)
 					}
