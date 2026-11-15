@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -77,6 +78,7 @@ type Signer struct {
 	keyPaths          storepaths.Paths                   // Explicit keystore path owner
 	dataDir           string                             // Data directory path (for saving config)
 	makeAlgod         func(string, string) (*algod.Client, error)
+	indexerTransport  http.RoundTripper              // Tests answer the Indexer's requests; nil is the default transport
 	rotatingLocks     signersigning.RotatingLocks    // Serializes rotating sign per account
 	rotatingReleases  signersigning.ReleaseMemory    // Last release per rotating account, for status; rebuilt from the audit log at unlock
 	rotatingRecovery  signersigning.RotatingRecovery // Per-unlock stage recovery allowance and grants, keyed by the lock generation

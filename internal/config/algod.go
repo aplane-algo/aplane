@@ -14,6 +14,14 @@ type AlgodNetworkConfig struct {
 // AlgodConfig is a map of network name → settings.
 type AlgodConfig map[string]*AlgodNetworkConfig
 
+// IndexerNetworkConfig holds Indexer settings for a single network. Only the
+// signer reads one: it looks up a rotating account's last rekey there to
+// find the stage to try first. Empty Server means no Indexer.
+type IndexerNetworkConfig struct {
+	Server string `yaml:"server" description:"Indexer base URL; empty means no Indexer for this network" default:""`
+	Token  string `yaml:"token" description:"Indexer API token" default:""`
+}
+
 // ClientNetworkConfig holds grouped apshell settings for a single network context token.
 type ClientNetworkConfig struct {
 	Algod *AlgodNetworkConfig `yaml:"algod" description:"Algod settings for this network context token"`

@@ -59,6 +59,9 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `networks.<network>.algod` | object | (none) | Algod settings for this network context token |
 | `networks.<network>.algod.server` | string | `(none)` | Algod server URL |
 | `networks.<network>.algod.token` | string | `(none)` | Algod API token |
+| `networks.<network>.indexer` | object | (none) | Optional Indexer for this network context token; the stage table worker reads a rotating account's last rekey from it to find the stage to try first |
+| `networks.<network>.indexer.server` | string | `(none)` | Indexer base URL; empty means no Indexer for this network |
+| `networks.<network>.indexer.token` | string | `(none)` | Indexer API token |
 | `networks.<network>.genesis_hash` | string | `(none)` | Custom signer policy genesis hash for this network context token |
 | `teal_compile_network` | string | `testnet` | Network context token whose algod is used for TEAL compilation |
 | `require_memory_protection` | bool | `false` | Fail startup if memory protection unavailable |

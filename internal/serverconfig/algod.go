@@ -5,14 +5,16 @@ package serverconfig
 
 import (
 	"fmt"
+	"net/url"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
 // ServerNetworkConfig holds grouped apsigner settings for a single network context token.
 type ServerNetworkConfig struct {
-	Algod       *apconfig.AlgodNetworkConfig `yaml:"algod" description:"Algod settings for this network context token"`
-	GenesisHash string                       `yaml:"genesis_hash,omitempty" description:"Custom signer policy genesis hash for this network context token" default:""`
+	Algod       *apconfig.AlgodNetworkConfig   `yaml:"algod" description:"Algod settings for this network context token"`
+	Indexer     *apconfig.IndexerNetworkConfig `yaml:"indexer,omitempty" description:"Optional Indexer for this network context token; the stage table worker reads a rotating account's last rekey from it to find the stage to try first"`
+	GenesisHash string                         `yaml:"genesis_hash,omitempty" description:"Custom signer policy genesis hash for this network context token" default:""`
 }
 
 // ServerNetworkConfigs is a map of network context token → grouped apsigner settings.
@@ -34,6 +36,31 @@ func mergeServerNetworkAlgodConfig(legacy apconfig.AlgodConfig, networks ServerN
 		out[network] = cfg.Algod
 	}
 
+	return out, nil
+}
+
+// mergeServerNetworkIndexerConfig indexes the networks that name an Indexer
+// server. A server that is not an http or https URL with a host is an error
+// naming the network; the URL itself is not repeated, since an operator may
+// have put a credential in it.
+func mergeServerNetworkIndexerConfig(networks ServerNetworkConfigs) (map[string]*apconfig.IndexerNetworkConfig, error) {
+	var out map[string]*apconfig.IndexerNetworkConfig
+	for network, cfg := range networks {
+		if err := apconfig.ValidateNetworkID(network); err != nil {
+			return nil, err
+		}
+		if cfg == nil || cfg.Indexer == nil || cfg.Indexer.Server == "" {
+			continue
+		}
+		u, err := url.Parse(cfg.Indexer.Server)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, fmt.Errorf("networks.%s.indexer.server is not an http or https URL with a host", network)
+		}
+		if out == nil {
+			out = make(map[string]*apconfig.IndexerNetworkConfig)
+		}
+		out[network] = cfg.Indexer
+	}
 	return out, nil
 }
 

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 
@@ -48,6 +49,15 @@ type Reader struct {
 
 	// MakeClient builds an algod client.
 	MakeClient func(server, token string) (*algod.Client, error)
+
+	// IndexerConfig returns the Indexer configured for a network token, or
+	// nil when there is none. Optional: nil means no stage lookup.
+	IndexerConfig func(network string) *apconfig.IndexerNetworkConfig
+
+	// IndexerTransport carries the Indexer's requests; nil means
+	// http.DefaultTransport. The lookup wraps it to cap every response body
+	// and to refuse redirects.
+	IndexerTransport http.RoundTripper
 }
 
 // ReadAccount returns account's authorizer and the round of the read from the
