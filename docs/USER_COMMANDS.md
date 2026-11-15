@@ -173,6 +173,15 @@ account's last spend, and one more line says what that found, for example
 confirmed`, or, while the search is still running,
 `lookup: stage 418 read from the last spend (TXID) did not match; searching`.
 
+Other lookups say the Indexer could not be read, showed no rekey sent by the
+account, had a newest rekey that is not the current one, saw a rekey not
+signed by a stage program, or answered for another network; each ends in
+"searching" only while the search is still running. With no account it lists every signable
+rotating account. The signer refreshes its view about every 30 seconds
+while unlocked (longer when chain reads or stage derivation for other
+accounts are slow), so an alert can briefly outlive the rotation that
+resolved it.
+
 The `authorizer` line is read from algod when you run the command. The
 `signer` line is from the signer's last finished background pass, which read
 the chain when it began. Right after a spend confirms, and for longer while a
@@ -188,15 +197,7 @@ authorizer. The line then says so, and gives the stage the account had:
 The stage a spend is signed with is read from the chain at that moment and
 does not depend on this view. Before the signer has finished a pass that read
 the account, and while it is locked, the line reads `signer: nothing reported
-for this account yet`.
-Other lookups say the Indexer could not be read, showed no rekey sent by the
-account, had a newest rekey that is not the current one, saw a rekey not
-signed by a stage program, or answered for another network; each ends in
-"searching" only while the search is still running. With no account it lists every signable
-rotating account. The signer refreshes its view about every 30 seconds
-while unlocked (longer when chain reads or stage derivation for other
-accounts are slow), so an alert can briefly outlive the rotation that
-resolved it.
+for this account yet; it reports after a background pass, while unlocked`.
 
 `rotate recover` asks the signer to search for the account's live stage. It
 is for the note "authorizer … is not among the N stage addresses this

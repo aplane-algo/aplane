@@ -249,6 +249,11 @@ func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.Rotating
 				word = "stage"
 			}
 			r.printf("%s%s %d, %s, %d cached entries\n", lead, word, *s.Stage, s.Preparation, s.CachedEntries)
+		} else {
+			// A signer that names no stage still gets its line, so what it
+			// saw, and the line that follows a view behind the chain, are
+			// never left without it.
+			r.printf("%sa stage it did not number, %s, %d cached entries\n", lead, termsafe.Line(s.Preparation), s.CachedEntries)
 		}
 	case signerapi.RotatingClassHeldKey:
 		r.printf("%srekeyed to a key this signer holds, %d cached entries\n", lead, s.CachedEntries)

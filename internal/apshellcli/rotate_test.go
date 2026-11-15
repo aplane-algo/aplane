@@ -185,6 +185,18 @@ func TestSignerViewSaysWhenItIsBehindTheChain(t *testing.T) {
 		}
 	}
 
+	// A stage reading with no number still gets its signer line, so the
+	// follow-up is never left under the authorizer line alone.
+	unnumbered := *view
+	unnumbered.Stage = nil
+	if got, want := render(&unnumbered, true), "  signer: behind the chain; at round 66970977 it saw authorizer STAGE6ADDR, a stage it did not number, ready, 4103 cached entries\n"+
+		"    the account has moved since; the signer's next pass will show it\n"; got != want {
+		t.Errorf("unnumbered stage behind the chain:\n%s\nwant:\n%s", got, want)
+	}
+	if got, want := render(&unnumbered, false), "  signer: a stage it did not number, ready, 4103 cached entries\n"; got != want {
+		t.Errorf("unnumbered stage:\n%s\nwant:\n%s", got, want)
+	}
+
 	// The authorizer is the signer's text: escaped.
 	hostile := *view
 	hostile.Authorizer = "BAD\x1b[2JADDR"
