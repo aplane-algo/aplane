@@ -234,11 +234,14 @@ func TestLookupBodyRefusalsDoNotPause(t *testing.T) {
 		"a body in the wrong shape": []byte(`[]`),
 	} {
 		t.Run(name, func(t *testing.T) {
-			first := body
+			// The first request gets the refused body and every later one the
+			// good answer. The choice is made before the body is written: the
+			// lookup stops reading a long body at the cap and asks again while
+			// the first handler may still be writing.
+			var answered atomic.Bool
 			srv, requests := countingServer(t, func(w http.ResponseWriter, _ *http.Request) {
-				if first != nil {
-					_, _ = w.Write(first)
-					first = nil
+				if answered.CompareAndSwap(false, true) {
+					_, _ = w.Write(body)
 					return
 				}
 				_, _ = w.Write(good)

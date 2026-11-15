@@ -36,12 +36,20 @@ type RotateCommandResult struct {
 // flight or a stage the signer is still looking for. Signer is the
 // signer's own structured view of the account from its last background
 // pass, nil when the signer reported none.
+//
+// Authorizer is read from apshell's algod now; Signer is from the signer's
+// last finished pass, which read the signer's algod when it began.
+// SignerViewDiffers reports that the two name different authorizers. Most
+// often a spend confirmed after the signer's read, so what it says of the
+// stage describes the account before it moved; apshell's node being the one
+// behind, or the two reading different networks, look the same from here.
 type RotatingAccountStatus struct {
-	Account    string
-	Authorizer string
-	Alerts     []string
-	Notes      []string
-	Signer     *signerapi.RotatingAccountStatus
+	Account           string
+	Authorizer        string
+	Alerts            []string
+	Notes             []string
+	Signer            *signerapi.RotatingAccountStatus
+	SignerViewDiffers bool
 }
 
 // RotateStatusResult reports rotating accounts.
@@ -170,6 +178,7 @@ func (a *App) RotateStatus(ctx context.Context, account string) (*RotateStatusRe
 		status := RotatingAccountStatus{Account: address, Authorizer: authorizerOrSelf(authorizer, address)}
 		if s, ok := byAccount[address]; ok {
 			status.Signer = &s
+			status.SignerViewDiffers = signerViewDiffers(status.Authorizer, s)
 		}
 		for _, warning := range warnings {
 			if strings.Contains(warning, address) {
@@ -184,6 +193,17 @@ func (a *App) RotateStatus(ctx context.Context, account string) (*RotateStatusRe
 		result.Accounts = append(result.Accounts, status)
 	}
 	return result, nil
+}
+
+// signerViewDiffers reports that the signer's view of an account is of
+// another authorizer than the one apshell read now. The signer reads the
+// chain at the start of a pass and reports when the pass ends, so after a
+// spend confirms its view is of the account before it moved until the next
+// pass. Rounds are not compared: apshell's read does not carry one, and a
+// node that is behind, or another network, gives the same difference. A view
+// with no authorizer is one the signer could not read, and does not differ.
+func signerViewDiffers(authorizerNow string, s signerapi.RotatingAccountStatus) bool {
+	return s.Authorizer != "" && s.Authorizer != authorizerNow
 }
 
 func authorizerOrSelf(authorizer, address string) string {

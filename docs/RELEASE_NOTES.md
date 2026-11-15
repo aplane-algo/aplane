@@ -37,6 +37,16 @@ before it was renamed `enroll`.
   default algod and the config names none, or the one `--indexer-url`
   gives, which must be an http or https URL with a host.
 
+- **`rotate status` says when the signer's view is of another authorizer.**
+  The authorizer is read by apshell now and the signer's line is from its
+  last finished pass, so after a spend the two could show a stage beside an
+  authorizer it did not belong to. The signer line now reads `sees another
+  authorizer`, names the authorizer and round the signer saw, and no longer
+  calls that stage live or gives its readiness; it says the alerts and notes
+  below come from the same read. It does not say which read is older. An
+  account with no entry in the signer's status shows `no view of this account
+  in its status`. The JSON result gains `signer_view_differs`.
+
 ## Rotating stage programs carry their stage number
 
 - **Every stage program opens with its stage number.** The XMSS, WOTS+C

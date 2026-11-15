@@ -32,6 +32,10 @@ type rotatingAccountProjection struct {
 	Authorizer string   `json:"authorizer"`
 	Alerts     []string `json:"alerts,omitempty"`
 	Notes      []string `json:"notes,omitempty"`
+	// SignerViewDiffers is set when signer, the signer's last finished
+	// pass, is of another authorizer than authorizer, which apshell read
+	// now. When signer is absent the signer reported no view at all.
+	SignerViewDiffers bool `json:"signer_view_differs,omitempty"`
 	// Signer is the signer's own view of the account: observed authorizer,
 	// classification, cached entry count and recovery state.
 	Signer *signerapi.RotatingAccountStatus `json:"signer,omitempty"`
@@ -185,7 +189,8 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 	projection := rotateStatusProjection{Accounts: []rotatingAccountProjection{}}
 	for _, status := range result.Accounts {
 		projection.Accounts = append(projection.Accounts, rotatingAccountProjection{
-			Account: status.Account, Authorizer: status.Authorizer, Alerts: status.Alerts, Notes: status.Notes, Signer: status.Signer,
+			Account: status.Account, Authorizer: status.Authorizer, Alerts: status.Alerts, Notes: status.Notes,
+			SignerViewDiffers: status.SignerViewDiffers, Signer: status.Signer,
 		})
 	}
 	return newShellCommandResult(func(w io.Writer) error {
@@ -196,9 +201,7 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 			}
 			for _, status := range result.Accounts {
 				r.printf("%s\n  authorizer: %s\n", r.app().FormatAddress(status.Account, ""), status.Authorizer)
-				if s := status.Signer; s != nil {
-					renderSignerRotatingView(r, "  ", s)
-				}
+				renderSignerRotatingView(r, "  ", status.Signer, status.SignerViewDiffers)
 				if len(status.Alerts) == 0 {
 					r.printf("  alerts: none\n")
 				}
@@ -216,18 +219,53 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 // renderSignerRotatingView prints the signer's classification, cached entry
 // count (sparse records, not coverage from stage 0) and recovery state for one
 // account.
-func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.RotatingAccountStatus) {
+//
+// The authorizer printed above is read from apshell's algod now. The signer's
+// view is from its last finished pass, which read the signer's algod when it
+// began. differs says the signer saw another authorizer. Most often a spend
+// confirmed after the signer's read; it can also be apshell's node that is
+// behind, or the two reading different networks, and nothing here can tell
+// which. So the line claims no direction: it names what the signer saw and
+// when, does not call that stage live, leaves out its readiness, and the
+// lines after it say that the alerts and notes below come from the same read.
+func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.RotatingAccountStatus, differs bool) {
+	if s == nil {
+		r.printf("%ssigner: no view of this account in its status; it reports the keys it holds after a background pass, while unlocked\n", indent)
+		return
+	}
+	lead := indent + "signer: "
+	preparation := ", " + termsafe.Line(s.Preparation)
+	if differs {
+		lead += "sees another authorizer; "
+		if s.Round != 0 {
+			lead += fmt.Sprintf("at round %d ", s.Round)
+		}
+		lead += fmt.Sprintf("it saw %s, ", termsafe.Line(s.Authorizer))
+		// Readiness is of the stage the signer saw, not of the authorizer above.
+		preparation = ""
+	}
 	switch s.Classification {
 	case signerapi.RotatingClassStage:
-		if s.Stage != nil {
-			r.printf("%ssigner: live stage %d, %s, %d cached entries\n", indent, *s.Stage, s.Preparation, s.CachedEntries)
+		switch {
+		case s.Stage == nil:
+			// A signer that names no stage still gets its line, so the lines
+			// that follow a differing view are never left without it.
+			r.printf("%sa stage it did not number%s, %d cached entries\n", lead, preparation, s.CachedEntries)
+		case differs:
+			r.printf("%sstage %d%s, %d cached entries\n", lead, *s.Stage, preparation, s.CachedEntries)
+		default:
+			r.printf("%slive stage %d%s, %d cached entries\n", lead, *s.Stage, preparation, s.CachedEntries)
 		}
 	case signerapi.RotatingClassHeldKey:
-		r.printf("%ssigner: rekeyed to a key this signer holds, %d cached entries\n", indent, s.CachedEntries)
+		r.printf("%srekeyed to a key this signer holds, %d cached entries\n", lead, s.CachedEntries)
 	case signerapi.RotatingClassUnknown:
-		r.printf("%ssigner: authorizer not placed, %d cached entries\n", indent, s.CachedEntries)
+		r.printf("%sauthorizer not placed, %d cached entries\n", lead, s.CachedEntries)
 	default:
-		r.printf("%ssigner: account not read in the last pass, %d cached entries\n", indent, s.CachedEntries)
+		r.printf("%saccount not read in the last pass, %d cached entries\n", lead, s.CachedEntries)
+	}
+	if differs {
+		r.printf("%s  this view, and any alert or note below, is from that read; the signer reads again on its next pass\n", indent)
+		r.printf("%s  if the two still differ after that, apshell and the signer are reading different nodes or networks\n", indent)
 	}
 	renderRecoveryStatus(r, indent, s.Recovery)
 }
