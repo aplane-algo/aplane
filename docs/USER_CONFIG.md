@@ -416,6 +416,12 @@ accepts a stage when the address it derives from the seed is the authorizer
 its own algod reports, and when the Indexer is missing, slow or wrong it
 searches as it would without one. apshell has no Indexer setting.
 
+Like the signer's algod reads, the Indexer request goes through an HTTP
+proxy if the signer's environment names one (`HTTPS_PROXY`, `HTTP_PROXY`,
+`NO_PROXY`). Such a proxy sees which account is looked up and can answer as
+the Indexer, and for an `http://` Indexer it also sees the token. Use an
+`https://` Indexer when a proxy is in the path.
+
 `passphrase_command_argv` and `passphrase_command_env` are accepted in the
 top-level `config.yaml`. `appass` writes its configuration to
 `identities/default/unlock.yaml`, which takes precedence.

@@ -2064,6 +2064,7 @@ wrong or hostile Indexer can do:
 |---|---|
 | Supplies a well-formed spend with a false stage | One derivation and its time charged to the grant, a miss, then the normal search with one stage less to spend; with one stage left, the search does not run |
 | Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
+| An HTTP proxy from the environment sits in the path | It sees the account looked up and can answer as the Indexer, with the same effects as a hostile Indexer; for an `http://` Indexer it also sees the token. An `https://` Indexer keeps the token from it |
 | Answers slowly or not at all, or fails to answer | At most 10 seconds of the worker; then that network's Indexer is not asked for 60 seconds, and the lookups of other accounts in that time ask nothing, come back `unavailable` at once and search without it. Lookups run inline in the worker's one pass, so a stalling Indexer costs a pass at most one timeout a minute, not one per account. Only failures to reach the Indexer or be answered pause it; an answer refused for its body is `unavailable` for that account alone |
 | Puts results the account did not send first, or anyone on chain sends zero-amount clawbacks naming the account | Up to seven are skipped; eight leave no outgoing rekey, and the search runs as without an Indexer. Any clawback address of any asset can do this for one minimum fee per transaction, so the shortcut can be suppressed, never turned into a wrong stage |
 | Sends a huge or malformed body, or redirects | Refused past 256 KiB, on any syntax error, repeated key or ninth result, or the redirect itself; the lookup is `unavailable` |
@@ -2128,7 +2129,11 @@ and its token-bearing GET is never replayed on a reused one that died;
 response headers are capped at 16 KiB; the dial, TLS handshake and wait for
 headers each have a timeout within the 10-second deadline; no compression is
 asked for; and any response outside 2xx, redirects included, is refused
-unread.
+unread. Like the signer's algod client (a clone of the process default
+transport), it takes an HTTP proxy from the environment (`HTTPS_PROXY`,
+`HTTP_PROXY`, `NO_PROXY`). A configured proxy sees which account is looked up
+and can answer as the Indexer, and for an `http://` Indexer it also sees the
+token in clear; use an `https://` Indexer when a proxy is in the path.
 
 ### Defense in Depth
 
