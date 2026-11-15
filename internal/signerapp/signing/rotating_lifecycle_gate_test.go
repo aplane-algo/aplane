@@ -1142,4 +1142,16 @@ func TestEarlierStageReleaseKeepsALaterStagesHistory(t *testing.T) {
 	if got, _ := m.Get("A"); got.Stage != 3 || len(got.Leaves) != 1 {
 		t.Fatalf("stage 3 did not replace stage 2: %+v", got)
 	}
+
+	// A stateless-hash family keeps no leaves, but its record carries the
+	// alerts for the release in flight, so the same rule holds.
+	m.Record(ReleaseRecord{StatelessHash: true, Account: "S", Stage: 5, TxID: "T5", LastValid: 300})
+	m.Record(ReleaseRecord{StatelessHash: true, Account: "S", Stage: 4, TxID: "T4", LastValid: 290})
+	if got, _ := m.Get("S"); got.Stage != 5 || got.TxID != "T5" {
+		t.Fatalf("stateless stage 5's record after a stage 4 release: %+v", got)
+	}
+	m.Record(ReleaseRecord{StatelessHash: true, Account: "S", Stage: 5, TxID: "T5b", LastValid: 310})
+	if got, _ := m.Get("S"); got.Stage != 5 || got.TxID != "T5b" {
+		t.Fatalf("stateless stage 5's newer release was not recorded: %+v", got)
+	}
 }

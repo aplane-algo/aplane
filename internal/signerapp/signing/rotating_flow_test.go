@@ -1030,11 +1030,13 @@ func mustProfile(t *testing.T) *lsigresource.Profile {
 func TestStatusIgnoresObservationsOlderThanTheRelease(t *testing.T) {
 	f, _ := newSigningFixture(t)
 	acct := f.account.String()
-	// The pass read the chain (stage 0 live) before this release was made
-	// from stage 1.
+	// The pass read the chain before this release was made from stage 1. Its
+	// read shows the address the release hands the account to, the one
+	// reading that clears a record, so only the sequence guard keeps it: the
+	// read is older than the record and says nothing about it.
 	observedSeq := f.svc.Rotating.Releases.Seq()
 	f.svc.Rotating.Releases.Record(ReleaseRecord{Account: acct, Stage: 1, StageAddr: f.stageAddress(t, 1), NextAddr: f.stageAddress(t, 2), TxID: "T1", LastValid: 200})
-	stale := []StageTableReport{{Account: acct, Resolved: true, Observed: true, ObservedSeq: observedSeq, Authorizer: f.account, Round: 150}}
+	stale := []StageTableReport{{Account: acct, Resolved: true, Observed: true, ObservedSeq: observedSeq, Authorizer: f.stageAddress(t, 2), Round: 150}}
 	if w, n := f.svc.RotatingStatus(stale); len(w) != 0 || len(n) != 0 {
 		t.Fatalf("stale observation produced status: %v %v", w, n)
 	}

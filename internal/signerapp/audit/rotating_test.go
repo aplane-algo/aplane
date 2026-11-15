@@ -164,4 +164,17 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 	if r := got["ACCT5"]; r.Reused || len(r.Leaves) != 1 || r.Stage != 5 {
 		t.Fatalf("new stage = %+v", r)
 	}
+	// A release from an earlier stage, signed on a chain read that was behind,
+	// is logged after the later stage's: it does not replace that stage's
+	// list, and the stage's next release still joins it.
+	if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", "TX11", 4, 610, 2, 7); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", "TX12", 5, 620, 2, 65); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = ReadRotatingReleases(path)
+	if r := got["ACCT5"]; r.Stage != 5 || r.TxID != "TX12" || len(r.Leaves) != 2 || r.Leaves[0].TxID != "TX10" || r.Leaves[1].TxID != "TX12" || r.Reused {
+		t.Fatalf("stage 5 after an earlier stage's entry = %+v", r)
+	}
 }

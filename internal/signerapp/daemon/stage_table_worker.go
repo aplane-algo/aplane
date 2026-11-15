@@ -165,13 +165,16 @@ func (fs *Signer) restoreReleases(ctx context.Context, ir *productruntime.Runtim
 
 // publishRotatingStatus records a pass's warnings, notes and per-account
 // status on the runtime, logs what changed, and tells a connected apadmin.
-// session is the lock generation the pass ran in: once a lock has ended that
-// session nothing is published, logged or sent.
-func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signersigning.Service, reports []signersigning.StageTableReport, session uint64) {
+// session is the lock generation the pass ran in: the status is written only
+// while that session is current, and the result reports whether it was. The
+// log lines and the notice follow the write, so a lock just after it can
+// still find them sent; the locked worker then clears the status and says so.
+func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signersigning.Service, reports []signersigning.StageTableReport, session uint64) bool {
 	warnings, notes := svc.RotatingStatus(reports)
 	previous := ir.RotatingAlerts()
-	if changed, _ := ir.PublishRotatingStatus(session, warnings, notes, svc.RotatingAccountStatuses(reports)); !changed {
-		return
+	changed, published := ir.PublishRotatingStatus(session, warnings, notes, svc.RotatingAccountStatuses(reports))
+	if !changed {
+		return published
 	}
 	for _, w := range warnings {
 		if !slices.Contains(previous, w) {
@@ -184,6 +187,7 @@ func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signers
 		}
 	}
 	fs.notifyRotatingStatus(ir)
+	return true
 }
 
 func (fs *Signer) notifyRotatingStatus(ir *productruntime.Runtime) {
@@ -264,7 +268,10 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 	}
 	// A lock can still land between that check and the publish, so the
 	// publish itself is bound to the session.
-	fs.publishRotatingStatus(ir, svc, reports, session)
+	if !fs.publishRotatingStatus(ir, svc, reports, session) {
+		// The session ended after the check above: a stopped pass.
+		return stageTableIdleInterval
+	}
 	return wait
 }
 

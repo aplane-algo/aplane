@@ -119,7 +119,9 @@ type ReleaseMemory struct {
 // with the next sequence number. When the entry it replaces is from the
 // same stage, r inherits that entry's released leaves and adds its own
 // unless the same transaction is already listed (a retry is one release);
-// r is marked Reused when two listed releases share a leaf.
+// r is marked Reused when two listed releases share a leaf. A release from
+// an earlier stage than the entry's is not recorded: the entry stays as it
+// is (the audit log still holds the release).
 func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	m.record(r, false)
 }
@@ -144,6 +146,13 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	if m.byAccount == nil {
 		m.byAccount = make(map[string]ReleaseRecord)
 	}
+	// A later stage's record is never replaced by an earlier stage's release,
+	// from the log or live, for any family: the account only moves forward, so
+	// a release from an earlier stage was signed on a chain read that was
+	// behind, and the later stage may still be live.
+	if prev, ok := m.byAccount[r.Account]; ok && prev.Stage > r.Stage {
+		return
+	}
 	if r.StatelessHash {
 		// A live observation made while restore was running takes precedence.
 		if prev, ok := m.byAccount[r.Account]; audited && ok && prev.Stage >= r.Stage {
@@ -161,13 +170,6 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	}
 	var leaves []LeafRelease
 	if prev, ok := m.byAccount[r.Account]; ok {
-		// A later stage's history is never replaced by an earlier stage's
-		// release, from the log or live: the account only moves forward, so a
-		// release from an earlier stage was signed on a chain read that was
-		// behind, and the later stage may still be live.
-		if prev.Stage > r.Stage {
-			return
-		}
 		if prev.Stage == r.Stage {
 			r.Reused = r.Reused || prev.Reused
 			if audited {

@@ -125,7 +125,10 @@ for each.
   need. The real stage holds 64 leaves; the rotation logic is the same for any
   count.
 - A restore reads the log once, at `RestoreBegin`; the audited release names
-  the highest stage in the log with every leaf the log holds for it.
+  the highest stage in the log with every leaf the log holds for it. The
+  reader keeps that promise (`audit.ReadRotatingReleases`): an entry from an
+  earlier stage, which a sign on a lagging chain read can log after a later
+  stage's, never replaces the later stage's list.
 - `Lock` cuts a restore in flight short. It also stands for recovery, which stops a
   restore the same way without moving the generation: the model has no generation
   to tell them apart. The lock-generation fence on the sign path stops a release, not a leaf choice, and is
