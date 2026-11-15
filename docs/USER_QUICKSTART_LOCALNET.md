@@ -61,7 +61,9 @@ aplocalnet --algod-url http://localhost:<algod-port> --kmd-url http://localhost:
 Select the `apply` action in the TUI to apply the configuration. This:
 
 - Points apshell at the LocalNet algod and sets `localnet` as the default network
-- Updates `apsigner` `config.yaml` with the LocalNet genesis hash
+- Updates `apsigner` `config.yaml` with the LocalNet genesis hash and the
+  LocalNet Indexer (`http://localhost:8980`, or `--indexer-url`), which the
+  signer reads to find a rotating account's stage
 - Enables the bundled `algokit-localnet` plugin in `$APCLIENT_DATA/plugins.yaml`
 - Persists `--kmd-url` into `~/aplane/apenv.sh` when a KMD override is provided
 

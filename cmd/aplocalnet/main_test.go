@@ -12,14 +12,18 @@ import (
 
 func TestModelViewShowsConfiguredKMDURL(t *testing.T) {
 	m := newModel(aplocalnet.Options{
-		AlgodURL: "http://localhost:4001",
-		KMDURL:   "http://localhost:4012",
+		AlgodURL:   "http://localhost:4001",
+		KMDURL:     "http://localhost:4012",
+		IndexerURL: "http://localhost:8980",
 	})
 	m.busy = false
 
 	view := m.View()
 	if !strings.Contains(view, "http://localhost:4012") {
 		t.Fatalf("view missing KMD URL:\n%s", view)
+	}
+	if !strings.Contains(view, "http://localhost:8980") {
+		t.Fatalf("view missing Indexer URL:\n%s", view)
 	}
 	if strings.Contains(view, "u algod URL") {
 		t.Fatalf("view still advertises interactive algod URL edit:\n%s", view)

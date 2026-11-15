@@ -328,6 +328,10 @@ Endpoint and token resolution:
 - algod token: `--algod-token`, then `APLANE_LOCALNET_TOKEN`, then the
   well-known AlgoKit LocalNet default token
   `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+- Indexer URL: `--indexer-url`, then `APLANE_LOCALNET_INDEXER_URL`, then
+  `http://localhost:8980`; its token is the algod token. It is written to the
+  signer only and is not checked for reachability: an unreachable Indexer
+  leaves rotating stage searches as they are without one
 - KMD URL: `--kmd-url`, then `APLANE_LOCALNET_KMD_URL`; if omitted, no
   persistent KMD override is written and the bundled LocalNet plugin uses its
   own default of `http://localhost:4002`
@@ -347,7 +351,8 @@ to `~/aplane/apsigner`. At least one target is required after resolution. For
 each selected target it then:
 
 - write signer `config.yaml` with `networks.localnet.algod.server`,
-  `networks.localnet.algod.token`, and `networks.localnet.genesis_hash`
+  `networks.localnet.algod.token`, `networks.localnet.indexer.server`,
+  `networks.localnet.indexer.token`, and `networks.localnet.genesis_hash`
 - write client `config.yaml` with `network: localnet`,
   `networks.localnet.algod.server`, and `networks.localnet.algod.token`
 - append `localnet` to a non-empty `networks_allowed` list when needed so the

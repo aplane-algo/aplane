@@ -22,7 +22,8 @@ before it was renamed `enroll`.
   stage. `rotate recover <account>` without `--stage` begins with the same
   lookup. `rotate status` and `/status` (`recovery.lookup`) show what it
   found, and the signer logs one line per lookup. The setting is file-only;
-  apshell and apadmin have none.
+  apshell and apadmin have none. `aplocalnet` writes the LocalNet Indexer
+  (`http://localhost:8980`, or `--indexer-url`) into the signer's config.
 
 ## Rotating stage programs carry their stage number
 

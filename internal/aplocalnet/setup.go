@@ -28,6 +28,7 @@ const (
 	NetworkID           = "localnet"
 	PluginName          = "algokit-localnet"
 	DefaultAlgodURL     = "http://localhost:4001"
+	DefaultIndexerURL   = "http://localhost:8980"
 	DefaultAlgodToken   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	DefaultApplyTimeout = 15 * time.Second
 )
@@ -39,6 +40,9 @@ type Options struct {
 	AlgodURL      string
 	AlgodToken    string
 	KMDURL        string
+	// IndexerURL is the LocalNet Indexer the signer may read a rotating
+	// account's last rekey from. It shares the LocalNet token.
+	IndexerURL string
 }
 
 // LocalNetInfo describes the reachable LocalNet.
@@ -76,6 +80,11 @@ func NormalizeOptions(opts Options) Options {
 	opts.KMDURL = NormalizeEndpointURL(firstNonEmpty(
 		opts.KMDURL,
 		os.Getenv("APLANE_LOCALNET_KMD_URL"),
+	))
+	opts.IndexerURL = NormalizeEndpointURL(firstNonEmpty(
+		opts.IndexerURL,
+		os.Getenv("APLANE_LOCALNET_INDEXER_URL"),
+		DefaultIndexerURL,
 	))
 	opts.AlgodToken = firstNonEmpty(
 		opts.AlgodToken,
@@ -144,7 +153,7 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 		LocalNet: info,
 	}
 	if opts.SignerDataDir != "" {
-		signerChanged, signerPath, err := EnsureSignerLocalnetConfig(opts.SignerDataDir, info, opts.AlgodToken)
+		signerChanged, signerPath, err := EnsureSignerLocalnetConfig(opts.SignerDataDir, info, opts.AlgodToken, opts.IndexerURL)
 		if err != nil {
 			return ApplyResult{}, err
 		}
@@ -185,9 +194,11 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 	return result, nil
 }
 
-// EnsureSignerLocalnetConfig writes networks.localnet algod and genesis_hash
-// settings to apsigner config.yaml.
-func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken string) (bool, string, error) {
+// EnsureSignerLocalnetConfig writes networks.localnet algod, indexer and
+// genesis_hash settings to apsigner config.yaml. The Indexer uses the
+// LocalNet token, as every AlgoKit LocalNet service does; an empty
+// indexerURL leaves the indexer entry as it is.
+func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken, indexerURL string) (bool, string, error) {
 	if dataDir == "" {
 		return false, "", fmt.Errorf("signer data directory is required")
 	}
@@ -230,6 +241,15 @@ func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken st
 
 	changed = setScalarValue(algodCfg, "server", info.AlgodURL, 0) || changed
 	changed = setScalarValue(algodCfg, "token", algodToken, yaml.DoubleQuotedStyle) || changed
+	if indexerURL != "" {
+		indexerCfg, didChange, err := ensureMappingValue(localnet, "indexer")
+		if err != nil {
+			return false, path, err
+		}
+		changed = changed || didChange
+		changed = setScalarValue(indexerCfg, "server", indexerURL, 0) || changed
+		changed = setScalarValue(indexerCfg, "token", algodToken, yaml.DoubleQuotedStyle) || changed
+	}
 	changed = setScalarValue(localnet, "genesis_hash", info.GenesisHash, yaml.DoubleQuotedStyle) || changed
 
 	if !changed {

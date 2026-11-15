@@ -60,6 +60,7 @@ func main() {
 		algodURL      string
 		algodToken    string
 		kmdURL        string
+		indexerURL    string
 		checkOnly     bool
 		applyOnly     bool
 		showVersion   bool
@@ -71,6 +72,7 @@ func main() {
 	flag.StringVar(&algodURL, "algod-url", "", "LocalNet algod URL")
 	flag.StringVar(&algodToken, "algod-token", "", "LocalNet algod token")
 	flag.StringVar(&kmdURL, "kmd-url", "", "LocalNet KMD URL for the bundled localnet plugin")
+	flag.StringVar(&indexerURL, "indexer-url", "", "LocalNet Indexer URL written to the signer config")
 	flag.BoolVar(&checkOnly, "check", false, "check LocalNet reachability without writing config")
 	flag.BoolVar(&applyOnly, "apply", false, "apply setup without launching the TUI")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
@@ -98,6 +100,7 @@ func main() {
 		AlgodURL:      algodURL,
 		AlgodToken:    algodToken,
 		KMDURL:        kmdURL,
+		IndexerURL:    indexerURL,
 	})
 
 	switch {
@@ -322,6 +325,9 @@ func (m model) View() string {
 	sb.WriteString(kv("Algod", m.opts.AlgodURL))
 	if m.opts.KMDURL != "" {
 		sb.WriteString(kv("KMD", m.opts.KMDURL))
+	}
+	if m.opts.IndexerURL != "" {
+		sb.WriteString(kv("Indexer", m.opts.IndexerURL))
 	}
 	sb.WriteString(kv("Plugin", filepath.Join(m.opts.ClientDataDir, discovery.AvailableDirName, aplocalnet.PluginName)))
 	sb.WriteString("\n")

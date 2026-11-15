@@ -27,8 +27,12 @@ func TestNormalizeOptionsUsesAlgodOverrides(t *testing.T) {
 	t.Setenv("APLANE_LOCALNET_ALGOD_URL", " http://localhost:4011/ ")
 	t.Setenv("APLANE_LOCALNET_KMD_URL", " http://localhost:4012/ ")
 	t.Setenv("APLANE_LOCALNET_TOKEN", "env-token")
+	t.Setenv("APLANE_LOCALNET_INDEXER_URL", " http://localhost:8990/ ")
 
 	opts := NormalizeOptions(Options{})
+	if opts.IndexerURL != "http://localhost:8990" {
+		t.Fatalf("IndexerURL = %q, want %q", opts.IndexerURL, "http://localhost:8990")
+	}
 	if opts.AlgodURL != "http://localhost:4011" {
 		t.Fatalf("AlgodURL = %q, want %q", opts.AlgodURL, "http://localhost:4011")
 	}
@@ -43,7 +47,11 @@ func TestNormalizeOptionsUsesAlgodOverrides(t *testing.T) {
 		AlgodURL:   " http://localhost:4012/ ",
 		AlgodToken: "flag-token",
 		KMDURL:     " http://localhost:4013/ ",
+		IndexerURL: " http://localhost:8991/ ",
 	})
+	if opts.IndexerURL != "http://localhost:8991" {
+		t.Fatalf("flag IndexerURL = %q, want %q", opts.IndexerURL, "http://localhost:8991")
+	}
 	if opts.AlgodURL != "http://localhost:4012" {
 		t.Fatalf("flag AlgodURL = %q, want %q", opts.AlgodURL, "http://localhost:4012")
 	}
@@ -77,7 +85,7 @@ networks:
 		GenesisHash: newHash,
 		LastRound:   123,
 	}
-	changed, path, err := EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken)
+	changed, path, err := EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken, DefaultIndexerURL)
 	if err != nil {
 		t.Fatalf("EnsureSignerLocalnetConfig: %v", err)
 	}
@@ -105,6 +113,9 @@ networks:
 	if localnet.GenesisHash != newHash {
 		t.Fatalf("localnet genesis_hash = %q, want %q", localnet.GenesisHash, newHash)
 	}
+	if idx := cfg.GetIndexerConfig(NetworkID); idx == nil || idx.Server != DefaultIndexerURL || idx.Token != DefaultAlgodToken {
+		t.Fatalf("localnet indexer = %#v, want %s with the LocalNet token", idx, DefaultIndexerURL)
+	}
 	configInfo, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("Stat(config): %v", err)
@@ -113,7 +124,7 @@ networks:
 		t.Fatalf("signer config mode = %04o, want 0600", got)
 	}
 
-	changed, _, err = EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken)
+	changed, _, err = EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken, DefaultIndexerURL)
 	if err != nil {
 		t.Fatalf("EnsureSignerLocalnetConfig second call: %v", err)
 	}
@@ -384,5 +395,37 @@ networks_allowed:
 	}
 	if !strings.Contains(warnings[0], "networks_allowed") || !strings.Contains(warnings[0], NetworkID) {
 		t.Fatalf("warning = %q, want networks_allowed/localnet", warnings[0])
+	}
+}
+
+func TestNormalizeOptionsDefaultsTheIndexer(t *testing.T) {
+	t.Setenv("APLANE_LOCALNET_INDEXER_URL", "")
+	if opts := NormalizeOptions(Options{}); opts.IndexerURL != DefaultIndexerURL {
+		t.Fatalf("IndexerURL = %q, want %q", opts.IndexerURL, DefaultIndexerURL)
+	}
+}
+
+// An empty Indexer URL leaves the signer's indexer entry alone.
+func TestEnsureSignerLocalnetConfigWithoutAnIndexerLeavesItAlone(t *testing.T) {
+	dir := t.TempDir()
+	initial := `networks:
+  localnet:
+    indexer:
+      server: http://indexer.example:8980
+      token: "kept"
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info := LocalNetInfo{AlgodURL: "http://localhost:4001", GenesisHash: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}
+	if _, _, err := EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken, ""); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := serverconfig.LoadServerConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx := cfg.GetIndexerConfig(NetworkID); idx == nil || idx.Server != "http://indexer.example:8980" || idx.Token != "kept" {
+		t.Fatalf("indexer = %#v", idx)
 	}
 }

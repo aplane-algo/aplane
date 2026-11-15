@@ -397,6 +397,7 @@ for all of them. LocalNet setup creates a separate funding account per run.
 | `ALGOD_TOKEN` | Algod token. Defaults empty for testnet and the AlgoKit token for localnet. | Optional |
 | `APLANE_LOCALNET_ALGOD_URL` | LocalNet algod endpoint fallback when `ALGOD_URL` is unset. | Optional localnet |
 | `APLANE_LOCALNET_KMD_URL` | LocalNet KMD endpoint. | Optional localnet |
+| `APLANE_LOCALNET_INDEXER_URL` | LocalNet Indexer for the rotating stage lookup test (`TestRotatingStageLookupOnChain`). Defaults to `http://localhost:8980`; it takes the algod token. | Optional localnet |
 | `APLANE_LOCALNET_TOKEN` | LocalNet algod/KMD token fallback when `ALGOD_TOKEN` is unset. | Optional localnet |
 | `APLANE_LOCALNET_WALLET` | KMD wallet used to bootstrap the native Falcon funding account. | Optional localnet |
 | `APLANE_LOCALNET_WALLET_PASSWORD` | Password for the selected KMD wallet. | Optional localnet |
