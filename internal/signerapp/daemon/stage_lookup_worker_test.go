@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -19,6 +21,7 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerops"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -111,6 +114,9 @@ func lookupWorkerSigner(t *testing.T) (*Signer, *mockAccountNode, *mockIndexer, 
 func TestWorkerResolvesTheStageFromTheIndexerAfterOneDerivation(t *testing.T) {
 	server, node, idx, account, secret := lookupWorkerSigner(t)
 	ir := server.productRuntime()
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
 	stage9, _ := signerops.StageOps{}.StageAddress(secret, 9)
 	idx.txns = []map[string]any{indexerSpendFrom(t, secret, account, 8)}
 	node.set(stage9.String(), 900)
@@ -137,6 +143,65 @@ func TestWorkerResolvesTheStageFromTheIndexerAfterOneDerivation(t *testing.T) {
 	}
 	if idx.requests.Load() != 1 {
 		t.Fatalf("Indexer requests = %d, want 1", idx.requests.Load())
+	}
+	stage := uint64(9)
+	want := &signerapi.RotatingStageLookupStatus{Outcome: "candidate", Stage: &stage, Probe: "matched", TxID: lookupWorkerTxID, Round: 777}
+	if !reflect.DeepEqual(rec.Lookup, want) {
+		t.Fatalf("status lookup = %+v, want %+v", rec.Lookup, want)
+	}
+	// One info line for the lookup, naming the account, the network, the
+	// Indexer's host, the outcome, the candidate and its probe.
+	var lines []string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, "stage lookup") {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) != 1 {
+		t.Fatalf("lookup log lines = %q, want one", lines)
+	}
+	for _, want := range []string{"[INFO]", account.String(), "network testnet", "Indexer mock-indexer", "candidate", "stage 9", lookupWorkerTxID, "probe matched"} {
+		if !strings.Contains(lines[0], want) {
+			t.Fatalf("log line %q lacks %q", lines[0], want)
+		}
+	}
+	if strings.Contains(logs.String(), "mock-indexer-token") {
+		t.Fatal("the Indexer's token was logged")
+	}
+}
+
+// An Indexer that cannot be read is logged and reported as unavailable, the
+// search runs without it, and its token reaches neither the log nor the
+// status, even when the server echoes it back.
+func TestUnreadableIndexerIsReportedWithoutItsToken(t *testing.T) {
+	server, node, idx, _, secret := lookupWorkerSigner(t)
+	ir := server.productRuntime()
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+	idx.before = func(req *http.Request) error {
+		return fmt.Errorf("refused, token %s", req.Header.Get("X-Indexer-API-Token"))
+	}
+	stage2, _ := signerops.StageOps{}.StageAddress(secret, 2)
+	node.set(stage2.String(), 900)
+	server.fillStageTables(context.Background(), ir)
+	statuses := ir.RotatingAccountStatuses()
+	if len(statuses) != 1 || statuses[0].Recovery == nil || statuses[0].Recovery.Lookup == nil || statuses[0].Recovery.Lookup.Outcome != "unavailable" {
+		t.Fatalf("statuses = %+v", statuses)
+	}
+	// The search ran without the lookup: stages 0, 1 and 2.
+	if statuses[0].Stage == nil || *statuses[0].Stage != 2 {
+		t.Fatalf("status = %+v, want stage 2 found by the search", statuses[0])
+	}
+	raw, _ := json.Marshal(server.restServiceWithSigningAudit(nil).Status(ir))
+	if strings.Contains(string(raw), "mock-indexer-token") || !strings.Contains(string(raw), `"outcome":"unavailable"`) {
+		t.Fatalf("/status = %s", raw)
+	}
+	if !strings.Contains(logs.String(), "stage lookup on network testnet through Indexer mock-indexer: unavailable") {
+		t.Fatalf("logs = %s", logs.String())
+	}
+	if strings.Contains(logs.String(), "mock-indexer-token") {
+		t.Fatalf("the Indexer's token was logged: %s", logs.String())
 	}
 }
 

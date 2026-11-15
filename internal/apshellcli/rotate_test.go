@@ -6,6 +6,8 @@ package apshellcli
 import (
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestCmdRotateRejectsBadUsage(t *testing.T) {
@@ -48,5 +50,90 @@ func TestParseRotateRecover(t *testing.T) {
 	req, err = parseRotateRecover([]string{"vault"})
 	if err != nil || req.Cancel || req.Stage != nil || req.MaxStages != 0 {
 		t.Fatalf("bare recover parsed = %+v, %v", req, err)
+	}
+}
+
+func TestStageLookupLineWordsEachOutcomeActiveAndStopped(t *testing.T) {
+	stage := uint64(418)
+	const txid = "TXIDTXIDTXIDTXIDTXIDTXIDTXIDTXIDTXIDTXIDTXIDTXIDTXID"
+	candidate := func(probe string) *signerapi.RotatingStageLookupStatus {
+		return &signerapi.RotatingStageLookupStatus{Outcome: signerapi.RotatingLookupCandidate, Stage: &stage, Probe: probe, TxID: txid, Round: 9000}
+	}
+	other := func(outcome string) *signerapi.RotatingStageLookupStatus {
+		return &signerapi.RotatingStageLookupStatus{Outcome: outcome}
+	}
+	for _, tc := range []struct {
+		lookup          *signerapi.RotatingStageLookupStatus
+		active, stopped string
+	}{
+		{candidate(signerapi.RotatingLookupProbeMatched),
+			"stage 418 was read from the last spend (" + txid + ", round 9000) and confirmed",
+			"stage 418 was read from the last spend (" + txid + ", round 9000) and confirmed"},
+		{candidate(signerapi.RotatingLookupProbeMissed),
+			"stage 418 read from the last spend (" + txid + ") did not match; searching",
+			"stage 418 read from the last spend (" + txid + ") did not match"},
+		{candidate(signerapi.RotatingLookupProbeAlreadyCached),
+			"stage 418 read from the last spend (" + txid + ") is not the authorizer's; searching",
+			"stage 418 read from the last spend (" + txid + ") was not the authorizer's"},
+		{other(signerapi.RotatingLookupUnavailable),
+			"the Indexer could not be read; searching without it",
+			"the Indexer could not be read"},
+		{other(signerapi.RotatingLookupNoOutgoingRekey),
+			"the Indexer shows no rekey sent by this account; searching",
+			"the Indexer showed no rekey sent by this account"},
+		{other(signerapi.RotatingLookupNotCurrent),
+			"the Indexer's newest rekey for this account is not the current one; searching",
+			"the Indexer's newest rekey for this account was not the current one"},
+		{other(signerapi.RotatingLookupNotAStageProgram),
+			"the account's last rekey was not signed by a stage program; searching",
+			"the account's last rekey was not signed by a stage program"},
+		{other(signerapi.RotatingLookupWrongNetwork),
+			"the Indexer answered for another network; searching without it",
+			"the Indexer answered for another network"},
+	} {
+		name := tc.lookup.Outcome + "/" + tc.lookup.Probe
+		if got := stageLookupLine(tc.lookup, true); got != tc.active {
+			t.Errorf("%s active:\n got %q\nwant %q", name, got, tc.active)
+		}
+		if got := stageLookupLine(tc.lookup, false); got != tc.stopped {
+			t.Errorf("%s stopped:\n got %q\nwant %q", name, got, tc.stopped)
+		}
+		if strings.Contains(stageLookupLine(tc.lookup, false), "searching") {
+			t.Errorf("%s: the stopped wording says searching", name)
+		}
+	}
+}
+
+// The transaction ID comes from the signer's Indexer: control characters
+// in it are shown, not acted on.
+func TestStageLookupLineEscapesTheTransactionID(t *testing.T) {
+	stage := uint64(3)
+	l := &signerapi.RotatingStageLookupStatus{Outcome: signerapi.RotatingLookupCandidate, Stage: &stage, Probe: signerapi.RotatingLookupProbeMissed, TxID: "BAD\x1b[2J\u202eID"}
+	got := stageLookupLine(l, false)
+	if strings.ContainsAny(got, "\x1b\u202e") || !strings.Contains(got, `BAD\x1b[2J\u202eID`) {
+		t.Fatalf("line = %q, want the ID escaped", got)
+	}
+}
+
+func TestRecoveryStatusPrintsTheLookupBesideTheStopLine(t *testing.T) {
+	var out strings.Builder
+	r := &REPLState{Out: &out}
+	stage := uint64(418)
+	renderRecoveryStatus(r, "  ", &signerapi.RotatingRecoveryStatus{
+		Stopped: "found", StoppedKind: "automatic", StoppedGrantID: 2, StoppedStage: &stage,
+		AllowanceSpent: 1, AllowanceMax: 1024,
+		Lookup: &signerapi.RotatingStageLookupStatus{Outcome: signerapi.RotatingLookupCandidate, Stage: &stage, Probe: signerapi.RotatingLookupProbeMatched, Round: 77},
+	})
+	want := "  recovery: last automatic grant 2 stopped: found (stage 418)\n" +
+		"  lookup: stage 418 was read from the last spend (round 77) and confirmed\n" +
+		"  automatic allowance: 1 of 1024 stages used this unlock\n"
+	if out.String() != want {
+		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+	// No lookup ran: no line.
+	out.Reset()
+	renderRecoveryStatus(r, "  ", &signerapi.RotatingRecoveryStatus{Active: true, Kind: "automatic", GrantID: 3, MaxStages: 10, AllowanceMax: 10})
+	if strings.Contains(out.String(), "lookup") {
+		t.Fatalf("output without a lookup:\n%s", out.String())
 	}
 }

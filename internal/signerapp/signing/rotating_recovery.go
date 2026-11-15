@@ -106,12 +106,12 @@ const (
 // What the probe of a chain lookup's candidate gave, as reported in status.
 const (
 	// ProbeMatched: the candidate's derived address is the authorizer.
-	ProbeMatched = "matched"
+	ProbeMatched = signerapi.RotatingLookupProbeMatched
 	// ProbeMissed: the candidate was derived and is another address.
-	ProbeMissed = "missed"
+	ProbeMissed = signerapi.RotatingLookupProbeMissed
 	// ProbeAlreadyCached: the table already held a verified other address
 	// for the candidate, so nothing was derived.
-	ProbeAlreadyCached = "already_cached"
+	ProbeAlreadyCached = signerapi.RotatingLookupProbeAlreadyCached
 )
 
 // StageLookupRecord is what a grant's chain lookup found: the lookup's
@@ -633,6 +633,21 @@ func (r *RotatingRecovery) State(account string) RecoveryState {
 	return st
 }
 
+// lookupStatus projects a grant's chain lookup onto the wire. The lookup's
+// outcomes are the wire's values; the reason, the network and the Indexer's
+// host are for the log line only.
+func lookupStatus(l *StageLookupRecord) *signerapi.RotatingStageLookupStatus {
+	if l == nil {
+		return nil
+	}
+	out := &signerapi.RotatingStageLookupStatus{Outcome: string(l.Outcome), Probe: l.Probe, TxID: l.TxID, Round: l.Round}
+	if l.Outcome == chainread.LookupCandidate {
+		stage := l.Stage
+		out.Stage = &stage
+	}
+	return out
+}
+
 func staleSession() *ServiceError {
 	return unavailable("the signer's session changed while the request was in flight; retry")
 }
@@ -655,12 +670,16 @@ func recoveryStatus(st RecoveryState) *signerapi.RotatingRecoveryStatus {
 		out.ActiveSeconds = int64(g.Active / time.Second)
 		out.Hint = g.Hint
 		out.FoundStage = g.Found
+		out.Lookup = lookupStatus(g.Lookup)
 	}
 	if l := st.Last; l != nil {
 		out.Stopped = l.Reason
 		out.StoppedKind = string(l.Kind)
 		out.StoppedGrantID = l.GrantID
 		out.StoppedStage = l.Stage
+		if st.Grant == nil {
+			out.Lookup = lookupStatus(l.Lookup)
+		}
 	}
 	if !out.Active && out.Stopped == "" && out.AllowanceSpent == 0 && out.SuppressedAuthorizer == "" {
 		return nil

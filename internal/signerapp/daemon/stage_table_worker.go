@@ -11,6 +11,7 @@ import (
 	"time"
 
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
+	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -229,6 +230,9 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 	stopped := ctx.Err() != nil || cut
 	wait := stageTableIdleInterval
 	for _, r := range reports {
+		if r.Lookup != nil {
+			logInfof("%s", stageLookupLogLine(r.Account, r.Lookup))
+		}
 		if r.Discarded != nil {
 			logWarnf("rotating account %s: %v; rebuilding its stage table from the seed", r.Account, r.Discarded)
 		}
@@ -251,6 +255,25 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 	}
 	fs.publishRotatingStatus(ir, svc, reports)
 	return wait
+}
+
+// stageLookupLogLine words one chain lookup for the log: the account, the
+// network token, the Indexer's host, the outcome, and the candidate and its
+// probe when there is one. The Indexer's token is nowhere in a lookup's
+// result, so it cannot reach the line.
+func stageLookupLogLine(account string, l *signersigning.StageLookupRecord) string {
+	line := fmt.Sprintf("rotating account %s: stage lookup on network %s through Indexer %s: %s", account, l.Network, l.Host, l.Outcome)
+	switch {
+	case l.Outcome == chainread.LookupCandidate:
+		probe := l.Probe
+		if probe == "" {
+			probe = "not run"
+		}
+		line += fmt.Sprintf(", stage %d from transaction %s (round %d), probe %s", l.Stage, l.TxID, l.Round, probe)
+	case l.Reason != "":
+		line += " (" + l.Reason + ")"
+	}
+	return line
 }
 
 // passSession captures a pass's session together with the context a lock

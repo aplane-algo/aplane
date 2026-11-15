@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -627,5 +628,119 @@ func TestLookupIsAskedForTheObservedAuthorizer(t *testing.T) {
 	}
 	if gotAccount != f.account || gotAuthorizer != f.chain.authorizer {
 		t.Fatalf("lookup asked for %s / %s", gotAccount, gotAuthorizer)
+	}
+}
+
+func (f *rotatingFixture) recoveryStatusAfter(t *testing.T, opts StageFillOptions) *signerapi.RotatingRecoveryStatus {
+	t.Helper()
+	r := f.fill(t, opts)
+	statuses := f.svc.RotatingAccountStatuses([]StageTableReport{r})
+	if len(statuses) != 1 {
+		t.Fatalf("statuses = %+v", statuses)
+	}
+	return statuses[0].Recovery
+}
+
+func TestRecoveryStatusReportsTheLookup(t *testing.T) {
+	t.Run("match, on the stop", func(t *testing.T) {
+		f := newRotatingFixture(t)
+		f.recovery().Configure(100, time.Hour)
+		f.chain.authorizer = f.stageAddress(t, 37)
+		f.answerCandidate(37)
+		rec := f.recoveryStatusAfter(t, StageFillOptions{Horizon: 0, MaxDerivations: 4})
+		want := &signerapi.RotatingStageLookupStatus{Outcome: "candidate", Stage: ptr(uint64(37)), Probe: "matched", TxID: lookupTestTxID, Round: 900}
+		if rec == nil || rec.Active || rec.Stopped != StopFound || !reflect.DeepEqual(rec.Lookup, want) {
+			t.Fatalf("recovery = %+v, lookup %+v", rec, rec.Lookup)
+		}
+	})
+	t.Run("miss, on the active grant", func(t *testing.T) {
+		f := newRotatingFixture(t)
+		f.recovery().Configure(100, time.Hour)
+		f.chain.authorizer = f.stageAddress(t, 12)
+		f.answerCandidate(30)
+		rec := f.recoveryStatusAfter(t, StageFillOptions{Horizon: 0, MaxDerivations: 2})
+		want := &signerapi.RotatingStageLookupStatus{Outcome: "candidate", Stage: ptr(uint64(30)), Probe: "missed", TxID: lookupTestTxID, Round: 900}
+		if rec == nil || !rec.Active || !reflect.DeepEqual(rec.Lookup, want) {
+			t.Fatalf("recovery = %+v, lookup %+v", rec, rec.Lookup)
+		}
+	})
+	for _, o := range []chainread.LookupOutcome{chainread.LookupUnavailable, chainread.LookupNoOutgoingRekey, chainread.LookupNotCurrent, chainread.LookupNotAStageProgram, chainread.LookupWrongNetwork} {
+		t.Run(string(o), func(t *testing.T) {
+			f := newRotatingFixture(t)
+			f.recovery().Configure(100, time.Hour)
+			f.chain.authorizer = types.Address{0xde, 0xad, 31: 1}
+			f.answerOutcome(o)
+			rec := f.recoveryStatusAfter(t, StageFillOptions{Horizon: 0, MaxDerivations: 2})
+			if rec == nil || !rec.Active || !reflect.DeepEqual(rec.Lookup, &signerapi.RotatingStageLookupStatus{Outcome: string(o)}) {
+				t.Fatalf("recovery = %+v, lookup %+v", rec, rec.Lookup)
+			}
+		})
+	}
+	t.Run("no Indexer, no lookup", func(t *testing.T) {
+		f := newRotatingFixture(t)
+		f.recovery().Configure(100, time.Hour)
+		f.chain.authorizer = types.Address{0xde, 0xad, 31: 1}
+		rec := f.recoveryStatusAfter(t, StageFillOptions{Horizon: 0, MaxDerivations: 2})
+		if rec == nil || !rec.Active || rec.Lookup != nil {
+			t.Fatalf("recovery = %+v, lookup %+v", rec, rec.Lookup)
+		}
+	})
+	t.Run("the active grant's, not the last stop's", func(t *testing.T) {
+		f := newRotatingFixture(t)
+		f.recovery().Configure(100, time.Hour)
+		f.chain.authorizer = types.Address{0xde, 0xad, 31: 1}
+		f.answerOutcome(chainread.LookupNotCurrent)
+		f.fill(t, StageFillOptions{Horizon: 0, MaxDerivations: 2})
+		// An operator grant with a hint supersedes it: it looks nothing up,
+		// and the status shows no lookup for it.
+		hint := uint64(5)
+		resp, err := f.svc.RecoverRotatingWithContext(context.Background(), signerapi.RotatingRecoverRequest{Account: f.account.String(), Action: "start", Stage: &hint})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !resp.Recovery.Active || resp.Recovery.Stopped != StopSuperseded || resp.Recovery.Lookup != nil {
+			t.Fatalf("start response recovery = %+v", resp.Recovery)
+		}
+		// Cancelled, the operator grant is the last stop, and it had none.
+		cancel, err := f.svc.RecoverRotatingWithContext(context.Background(), signerapi.RotatingRecoverRequest{Account: f.account.String(), Action: "cancel"})
+		if err != nil || cancel.Recovery.Active || cancel.Recovery.Lookup != nil {
+			t.Fatalf("cancel response = %+v, %v", cancel, err)
+		}
+	})
+	t.Run("kept on the stop an operator cancel records", func(t *testing.T) {
+		f := newRotatingFixture(t)
+		f.recovery().Configure(0, time.Hour)
+		f.chain.authorizer = f.stageAddress(t, 12)
+		f.answerCandidate(30)
+		if _, err := f.svc.RecoverRotatingWithContext(context.Background(), signerapi.RotatingRecoverRequest{Account: f.account.String(), Action: "start"}); err != nil {
+			t.Fatal(err)
+		}
+		f.fill(t, StageFillOptions{Horizon: 0, MaxDerivations: 2})
+		cancel, err := f.svc.RecoverRotatingWithContext(context.Background(), signerapi.RotatingRecoverRequest{Account: f.account.String(), Action: "cancel"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l := cancel.Recovery.Lookup; cancel.Recovery.Active || cancel.Recovery.Stopped != StopCancelled || l == nil || l.Probe != "missed" || *l.Stage != 30 {
+			t.Fatalf("cancel recovery = %+v, lookup %+v", cancel.Recovery, cancel.Recovery.Lookup)
+		}
+	})
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// The lookup's outcomes are the wire's: every outcome the status can carry
+// has its signerapi value.
+func TestLookupOutcomesAreTheWireValues(t *testing.T) {
+	for outcome, wire := range map[chainread.LookupOutcome]string{
+		chainread.LookupCandidate:        signerapi.RotatingLookupCandidate,
+		chainread.LookupUnavailable:      signerapi.RotatingLookupUnavailable,
+		chainread.LookupNoOutgoingRekey:  signerapi.RotatingLookupNoOutgoingRekey,
+		chainread.LookupNotCurrent:       signerapi.RotatingLookupNotCurrent,
+		chainread.LookupNotAStageProgram: signerapi.RotatingLookupNotAStageProgram,
+		chainread.LookupWrongNetwork:     signerapi.RotatingLookupWrongNetwork,
+	} {
+		if string(outcome) != wire {
+			t.Errorf("outcome %q is %q on the wire", outcome, wire)
+		}
 	}
 }
