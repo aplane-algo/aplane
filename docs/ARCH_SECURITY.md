@@ -2060,7 +2060,9 @@ Nodely's public Indexer for MainNet and TestNet, with no API token, beside
 the algod endpoints it names from the same provider. Whoever runs the
 configured Indexer learns which rotating accounts the worker looks up, as
 whoever runs the configured algod learns which accounts it reads. Deleting
-`networks.<token>.indexer` ends that outbound read for the network.
+`networks.<token>.indexer` and restarting the signer ends that outbound read
+for the network; the setting is read at start. The installer never rewrites
+an existing `config.yaml`, so only a fresh install carries the entry.
 
 The Indexer read proposes and never decides. The candidate is derived from
 the seed and accepted only when its address equals the authorizer the

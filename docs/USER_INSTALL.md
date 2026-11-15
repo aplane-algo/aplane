@@ -94,7 +94,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 <install-path>/
 ├── apsigner/             # Signer data directory ($APSIGNER_DATA)
 │   ├── bin/               # apsigner, apadmin, apapprover, apstore, appass, approbe, appolicy, and other signer-side tools
-│   ├── config.yaml        # Signer config (ports, SSH, algod)
+│   ├── config.yaml        # Signer config (ports, SSH, algod, Indexer)
 │   ├── library/           # KeyType Library install sources
 │   │   └── templates/     # Optional template YAML install sources for apadmin
 │   ├── .ssh/              # SSH host key
@@ -1281,8 +1281,8 @@ every retained path with a one-line label. Security-relevant entries:
 - **`audit.log`** -- the signer's audit trail. Retain for compliance and
   forensics unless you have already exported it.
 - **`backups/`** -- encrypted backup tarballs (same protections as keys).
-- **`config.yaml`** -- operator-edited process configuration (algod endpoints
-  and ports). Preserved so uninstall does not silently discard operator state;
+- **`config.yaml`** -- operator-edited process configuration (algod and
+  Indexer endpoints, and ports). Preserved so uninstall does not silently discard operator state;
   product policy remains in the selected generation.
 
 What `uninstall.sh` *removes*: the `apsigner` systemd unit, the

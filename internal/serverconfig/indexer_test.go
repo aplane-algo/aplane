@@ -170,7 +170,24 @@ func TestNoIndexerEntryMeansNoIndexerOnPublicNetworks(t *testing.T) {
 			t.Errorf("%s Indexer = %+v, want none without an entry", network, got)
 		}
 	}
-	if def := DefaultServerConfig(); len(def.Indexer) != 0 {
+	// A default would be put in Networks, which the index is built from.
+	def := DefaultServerConfig()
+	if len(def.Indexer) != 0 {
 		t.Errorf("the default config names Indexers: %+v", def.Indexer)
+	}
+	for network, entry := range def.Networks {
+		if entry != nil && entry.Indexer != nil {
+			t.Errorf("the default config names an Indexer for %s: %+v", network, entry.Indexer)
+		}
+	}
+	// And with no config file at all.
+	none, err := LoadServerConfig(t.TempDir())
+	if err != nil {
+		t.Fatalf("LoadServerConfig with no file: %v", err)
+	}
+	for _, network := range []string{"mainnet", "testnet", "betanet"} {
+		if got := none.GetIndexerConfig(network); got != nil {
+			t.Errorf("%s Indexer with no config file = %+v, want none", network, got)
+		}
 	}
 }
