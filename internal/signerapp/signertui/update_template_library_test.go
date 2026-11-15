@@ -4,9 +4,13 @@
 package tui
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,33 +43,110 @@ func TestLibraryTemplatesMsgPreservesServerOrder(t *testing.T) {
 	}
 }
 
-func TestLockedSignerStatusFetchesKeyTypes(t *testing.T) {
-	m := Model{
-		viewState: ViewKeyList,
-		auth:      authState{passphraseInput: "secret", passphraseError: "old error"},
-	}
+// A locked signer cannot list key types (it answers "failed to read key type
+// activations"), so apadmin does not ask on a lock: the answer would sit on
+// the status line under the unlock screen. Unlocking loads them.
+func TestLockDoesNotAskForKeyTypes(t *testing.T) {
+	for name, event := range map[string]tea.Msg{
+		"signer reports locked": SignerStatusMsg{State: "locked", KeyCount: 12},
+		"manual lock succeeded": LockIdentityResultMsg{Success: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := Model{
+				viewState: ViewKeyList,
+				auth:      authState{passphraseInput: "secret", passphraseError: "old error"},
+			}
+			sent := sentMessageTypes(t, &m)
 
-	next, cmd := m.Update(SignerStatusMsg{State: "locked", KeyCount: 12})
-	got := next.(Model)
-	if got.signerState != signerRuntimeLocked || !got.signerStatusKnown {
-		t.Fatalf("signer status = state %v known %v, want locked and known", got.signerState, got.signerStatusKnown)
+			next, cmd := m.Update(event)
+			got := next.(Model)
+			if got.signerState != signerRuntimeLocked || !got.signerStatusKnown {
+				t.Fatalf("signer status = state %v known %v, want locked and known", got.signerState, got.signerStatusKnown)
+			}
+			if got.viewState != ViewUnlock {
+				t.Fatalf("viewState = %v, want ViewUnlock", got.viewState)
+			}
+			if got.auth.passphraseInput != "" || got.auth.passphraseError != "" {
+				t.Fatalf("passphrase state = input %q error %q, want cleared", got.auth.passphraseInput, got.auth.passphraseError)
+			}
+			runSends(cmd)
+			// A request sent after the lock's own marks the end of what it sent.
+			go func() { _ = got.adminClient.SendListCosignerReferences() }()
+			var types []string
+			for {
+				select {
+				case typ := <-sent:
+					if typ == protocol.MsgTypeListCosignerReferences {
+						for _, seen := range types {
+							if seen == protocol.MsgTypeListKeyTypes {
+								t.Fatalf("the lock asked for key types; sent %v", types)
+							}
+						}
+						want := 0 // the manual lock's result needs nothing more
+						if _, status := event.(SignerStatusMsg); status {
+							want = 1 // the admin settings request
+						}
+						if len(types) != want {
+							t.Fatalf("sent %v, want %d request(s)", types, want)
+						}
+						return
+					}
+					types = append(types, typ)
+				case <-time.After(5 * time.Second):
+					t.Fatalf("the marker request never arrived; sent %v", types)
+				}
+			}
+		})
 	}
-	if got.viewState != ViewUnlock {
-		t.Fatalf("viewState = %v, want ViewUnlock", got.viewState)
+}
+
+// sentMessageTypes connects m to a pipe and returns the type of each message
+// it sends.
+func sentMessageTypes(t *testing.T, m *Model) <-chan string {
+	t.Helper()
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = serverConn.Close() })
+	client := NewAdminClient(&queueConnector{conns: []io.ReadWriteCloser{clientConn}})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
 	}
-	if got.auth.passphraseInput != "" || got.auth.passphraseError != "" {
-		t.Fatalf("passphrase state = input %q error %q, want cleared", got.auth.passphraseInput, got.auth.passphraseError)
-	}
+	t.Cleanup(client.Disconnect)
+	m.adminClient = client
+	sent := make(chan string, 8)
+	go func() {
+		reader := bufio.NewReader(serverConn)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var msg struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(line, &msg) == nil {
+				sent <- msg.Type
+			}
+		}
+	}()
+	return sent
+}
+
+// runSends runs every command in cmd, each on its own goroutine: the one that
+// waits for the signer's next message does not return.
+func runSends(cmd tea.Cmd) {
 	if cmd == nil {
-		t.Fatal("Update returned nil cmd, want wait, key-type fetch, and admin settings fetch")
+		return
 	}
-	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("cmd message type = %T, want tea.BatchMsg", msg)
-	}
-	if len(batch) != 3 {
-		t.Fatalf("batch command count = %d, want wait, key-type fetch, and admin settings fetch", len(batch))
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	select {
+	case msg := <-done:
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range batch {
+				runSends(c)
+			}
+		}
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 
