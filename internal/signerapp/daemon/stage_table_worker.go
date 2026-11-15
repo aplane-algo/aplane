@@ -232,6 +232,9 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 	for _, r := range reports {
 		if r.Lookup != nil {
 			logInfof("%s", stageLookupLogLine(r.Account, r.Lookup))
+			if r.Lookup.ProbeError != "" {
+				logWarnf("rotating account %s: stage table: stage lookup probe of stage %d: %s", r.Account, r.Lookup.Stage, r.Lookup.ProbeError)
+			}
 		}
 		if r.Discarded != nil {
 			logWarnf("rotating account %s: %v; rebuilding its stage table from the seed", r.Account, r.Discarded)

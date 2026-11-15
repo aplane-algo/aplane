@@ -122,10 +122,16 @@ type rotatingKeyStore struct {
 	keyType string
 	seed    []byte
 	loads   int
+	// failNext fails the next seed load, and only that one.
+	failNext bool
 }
 
 func (s *rotatingKeyStore) Get(context.Context, string) (*coresigning.KeyMaterial, error) {
 	s.loads++
+	if s.failNext {
+		s.failNext = false
+		return nil, errors.New("injected seed load failure")
+	}
 	return &coresigning.KeyMaterial{
 		Type:     s.keyType,
 		Category: keys.CategoryRotatingLsig,

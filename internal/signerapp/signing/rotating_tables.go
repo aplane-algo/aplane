@@ -568,7 +568,9 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 	// and not when an operator gave a hint. It opens no seed; only its probe
 	// derives, through derive. Only a verified other address at the stage
 	// rules the candidate out: a loaded entry is unverified, and deriving it
-	// confirms or repairs it.
+	// confirms or repairs it. A probe that fails, in its derivation or its
+	// table write, is a probe not tried: the error is kept for the log, and
+	// the search runs as it would have.
 	if g.Hint == nil && budget > 0 && ctx.Err() == nil && rec.beginLookup(g) {
 		lookup = runStageLookup(ctx, lookupStage)
 		if lookup != nil && lookup.Outcome == chainread.LookupCandidate {
@@ -576,29 +578,29 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 			if a, ok := table.Address(n); ok && a != authorizer && table.Verified(n, a) {
 				lookup.Probe = ProbeAlreadyCached
 			} else {
-				var addrs []types.Address
-				addrs, err = derive(ctx, n, n+1)
-				// No address is a cut (a lock, a cancel, the grant's end):
-				// the probe did not run, and the search below stops too.
-				if err == nil && len(addrs) == 1 {
+				addrs, probeErr := derive(ctx, n, n+1)
+				// No address and no error is a cut (a lock, a cancel, the
+				// grant's end): the probe did not run, and the search below
+				// stops too.
+				if probeErr == nil && len(addrs) == 1 {
 					budget--
-					if _, err = table.RecordDerived(n, addrs); err == nil {
-						err = publishStageBatch(table, spent-1, spent, opts)
+					if _, probeErr = table.RecordDerived(n, addrs); probeErr == nil {
+						probeErr = publishStageBatch(table, spent-1, spent, opts)
 					}
-					if err == nil {
+					if probeErr == nil {
 						lookup.Probe = ProbeMissed
 						if addrs[0] == authorizer {
 							lookup.Probe = ProbeMatched
 						}
 					}
 				}
+				if probeErr != nil {
+					lookup.ProbeError = probeErr.Error()
+				}
 			}
 		}
 		if lookup != nil {
 			rec.setLookup(g, *lookup)
-		}
-		if err != nil {
-			return false, false, spent, lookup, err
 		}
 		if lookup != nil && lookup.Probe == ProbeMatched {
 			stage := lookup.Stage

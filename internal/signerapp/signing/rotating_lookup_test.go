@@ -744,3 +744,35 @@ func TestLookupOutcomesAreTheWireValues(t *testing.T) {
 		}
 	}
 }
+
+// A probe that fails is a probe not tried: the search runs in the same pass
+// and finds the stage, and the grant is charged only for derivations that
+// completed. Here the candidate is right, and its derivation alone fails.
+func TestLookupProbeFailureFallsThroughToTheSearch(t *testing.T) {
+	f := newRotatingFixture(t)
+	f.recovery().Configure(100, time.Hour)
+	f.chain.authorizer = f.stageAddress(t, 3)
+	f.chain.lookup = func(context.Context, types.Address, types.Address) (chainread.StageLookup, error) {
+		// The next seed load is the probe's.
+		f.store.failNext = true
+		return chainread.StageLookup{Outcome: chainread.LookupCandidate, Stage: 3, Round: 900}, nil
+	}
+	d := newDerivedOrder(t, f)
+	r := d.fill(StageFillOptions{Horizon: 0, MaxDerivations: 8})
+	if r.Err != nil || !r.Resolved || r.Stage != 3 {
+		t.Fatalf("report = %+v, want stage 3 found by the search in the same pass", r)
+	}
+	if want := []uint64{0, 1, 2, 3}; !reflect.DeepEqual(d.order[:4], want) {
+		t.Fatalf("derived %v, want the search %v", d.order, want)
+	}
+	if l := r.Lookup; l == nil || l.Probe != "" || l.ProbeError == "" || l.Stage != 3 {
+		t.Fatalf("lookup = %+v, want a candidate not tried, with its error", r.Lookup)
+	}
+	st := f.state()
+	if st.Last == nil || st.Last.Reason != StopFound || st.Last.Charged != 4 || st.AllowanceSpent != 4 {
+		t.Fatalf("state = %+v, want found with the four completed derivations charged", st)
+	}
+	if rec := recoveryStatus(st); rec.Lookup == nil || rec.Lookup.Probe != "" || rec.Lookup.Outcome != "candidate" {
+		t.Fatalf("status lookup = %+v", rec.Lookup)
+	}
+}

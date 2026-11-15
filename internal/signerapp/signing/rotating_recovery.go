@@ -116,10 +116,12 @@ const (
 
 // StageLookupRecord is what a grant's chain lookup found: the lookup's
 // result and, for a candidate, what its probe gave (empty when the probe was
-// cut short). It is set once and never changed.
+// cut short or failed). ProbeError is why a probe failed, for the log only.
+// It is set once and never changed.
 type StageLookupRecord struct {
 	chainread.StageLookup
-	Probe string
+	Probe      string
+	ProbeError string
 }
 
 // Defaults for an operator grant.
