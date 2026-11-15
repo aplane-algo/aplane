@@ -941,8 +941,11 @@ cannot tell them apart:
   stage derivation is random access, so the signer derives stage N directly
   and compares it to the chain, probes a few stages either side
   (`--window`, default 64), and once it matches prepares that stage and its
-  successor without deriving the entire earlier history. A wrong hint costs
-  time, never a wrong stage: a stage is accepted
+  successor without deriving the entire earlier history. To find N, open
+  the account's last confirmed spend in a block explorer that shows its
+  LogicSig program: bytes 3 to 10 of the program, counting from 0, are the
+  number of the stage that signed it, big-endian, and N is that number plus
+  one. A wrong hint costs time, never a wrong stage: a stage is accepted
   only when its derived address equals the chain's authorizer. The search
   runs in the background; `rotate status` shows its progress, and
   `rotate recover <account> cancel` stops it.

@@ -1262,10 +1262,10 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
   binary without that registration rejects the file; scanning reports it and
   reload fails into recovery.
 - Scanning and inventory never expose the stage public keys. The resource
-  profile is the same for every stage: XMSS triple 2664 program bytes, 4179
-  argument bytes and an opcode ceiling of 95857 (four resource dummies);
-  WOTS+C triple 2486, 2115 and 15721 (two resource dummies); SLH-DSA
-  triple 2837, 5887 and 68645.
+  profile is the same for every stage: XMSS triple 2675 program bytes, 4179
+  argument bytes and an opcode ceiling of 95859 (four resource dummies);
+  WOTS+C triple 2497, 2115 and 15723 (two resource dummies); SLH-DSA
+  triple 2848, 5887 and 68647.
 - The key file holds the signing authority. Which stage is live is read
   from the chain at every request, and the stage address table under
   `stages/` (below) is a cache rebuilt from the seed. XMSS and WOTS+C also
