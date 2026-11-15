@@ -26,7 +26,13 @@ Registration checks the state and joins the wait group under keyUseMu, so it
 lands wholly before or wholly after DrainBegin, but a LockState can come
 between a holder's start and its registration.
 
-Four guards are switchable:
+Recovery is a second way out of the unlocked state. The signer enters it
+when a store change ends in doubt and leaves it when a reconcile succeeds. It
+keeps the keyring, so nothing is cancelled, drained or cleared, but it ends
+the unlocked session all the same: signing is blocked while it lasts, and the
+store the session signed under may have changed by the time it ends.
+
+Five guards are switchable:
 
   RegisterChecksLock  registration refuses once the state is locked. Without
                       it, a holder registering after DrainBegin gets a fresh,
@@ -38,11 +44,14 @@ Four guards are switchable:
   GenerationCheck     that recheck compares the lock generation captured at
                       the start, not just the current state, so a lock and an
                       unlock in between still refuse.
+  RecoveryEndsSession entering recovery from the unlocked state moves the
+                      lock generation (runtime.Runtime.SetRecovery), so a
+                      recovery and a reconcile in between refuse as well.
 
 Properties:
 
-  KU1  a rotating signature is never returned once a lock has begun after
-       its sign started and before its final check;
+  KU1  a rotating signature is never returned once a lock or a recovery has
+       begun after its sign started and before its final check;
   KU2  the session is never cleared while a key use is registered;
   KU3  an export never delivers after the session was cleared.
 
@@ -71,7 +80,8 @@ Code anchors:
   - EStart/ERegister/ERead/EDeliver/ERelease transcribe
     internal/signerapp/keyadmin/export.go ExportKey.
   - LockState transcribes internal/signerapp/runtime/runtime.go Lock and
-    BeginMaintenance; DrainBegin and Wipe transcribe
+    BeginMaintenance; EnterRecovery and LeaveRecovery transcribe SetRecovery
+    and PromoteRecoveryToUnlocked there; DrainBegin and Wipe transcribe
     internal/signerapp/productruntime/runtime.go drainKeyUsers and
     performLockCleanup; registration transcribes KeyUseContext.
 
@@ -83,22 +93,24 @@ CONSTANTS
     DrainWaits,          \* BOOLEAN: Wipe waits for registered key uses
     FinalRecheck,        \* BOOLEAN: the sign rechecks before returning
     GenerationCheck,     \* BOOLEAN: the recheck compares lock generations
+    RecoveryEndsSession, \* BOOLEAN: entering recovery moves the lock generation
     MaxLocks             \* bound on lock transitions (keeps the space finite)
 
 Holders == {"sign", "export"}
 
 VARIABLES
-    life,       \* "unlocked" | "locking" | "draining" | "locked"
-    locks,      \* lock transitions so far
+    life,       \* "unlocked" | "recovery" | "locking" | "draining" | "locked"
+    locks,      \* lock and recovery transitions so far
     pc,         \* each holder's step
-    stale,      \* a LockState came after the holder started (generation moved)
+    stale,      \* the generation moved after the holder started
+    ended,      \* ghost: the unlocked session ended after the holder started
     cancelled,  \* the holder's key-use context is cancelled
     waited,     \* the drain will wait for the holder's key use
     leaked,     \* ghost: a signature was returned although stale
     wipedHeld,  \* ghost: the session was cleared while a key use was registered
     lateExport  \* ghost: an export delivered after the session was cleared
 
-vars == <<life, locks, pc, stale, cancelled, waited, leaked, wipedHeld, lateExport>>
+vars == <<life, locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld, lateExport>>
 
 \* Steps at which a holder has a registered key use.
 SignHolds == {"held", "made"}
@@ -112,6 +124,7 @@ Init ==
     /\ locks = 0
     /\ pc = [h \in Holders |-> "idle"]
     /\ stale = [h \in Holders |-> FALSE]
+    /\ ended = [h \in Holders |-> FALSE]
     /\ cancelled = [h \in Holders |-> FALSE]
     /\ waited = [h \in Holders |-> FALSE]
     /\ leaked = FALSE
@@ -131,7 +144,7 @@ Register(h, next) ==
        ELSE /\ pc' = [pc EXCEPT ![h] = next]
             /\ waited' = [waited EXCEPT ![h] = life \in {"unlocked", "locking"}]
             /\ cancelled' = [cancelled EXCEPT ![h] = FALSE]
-    /\ UNCHANGED <<life, locks, stale, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<life, locks, stale, ended, leaked, wipedHeld, lateExport>>
 
 \* Ending a key use (release).
 Release(h, next) ==
@@ -154,6 +167,7 @@ SStart ==
     /\ life = "unlocked"
     /\ pc' = [pc EXCEPT !["sign"] = "started"]
     /\ stale' = [stale EXCEPT !["sign"] = FALSE]
+    /\ ended' = [ended EXCEPT !["sign"] = FALSE]
     /\ UNCHANGED <<life, locks, cancelled, waited, leaked, wipedHeld, lateExport>>
 
 SRegister ==
@@ -167,22 +181,22 @@ SMake ==
        THEN /\ pc' = [pc EXCEPT !["sign"] = "made"]
             /\ UNCHANGED <<waited, cancelled>>
        ELSE Release("sign", "idle")
-    /\ UNCHANGED <<life, locks, stale, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<life, locks, stale, ended, leaked, wipedHeld, lateExport>>
 
 \* The seed is closed and the key use ends, before the audit write.
 SRelease ==
     /\ pc["sign"] = "made"
     /\ Release("sign", "released")
-    /\ UNCHANGED <<life, locks, stale, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<life, locks, stale, ended, leaked, wipedHeld, lateExport>>
 
 \* After the audit write: the last recheck and the return.
 SReturn ==
     /\ pc["sign"] = "released"
     /\ LET refused == FinalRecheck /\
                       (life # "unlocked" \/ (GenerationCheck /\ stale["sign"]))
-       IN  leaked' = (leaked \/ (~refused /\ stale["sign"]))
+       IN  leaked' = (leaked \/ (~refused /\ ended["sign"]))
     /\ pc' = [pc EXCEPT !["sign"] = "idle"]
-    /\ UNCHANGED <<life, locks, stale, cancelled, waited, wipedHeld, lateExport>>
+    /\ UNCHANGED <<life, locks, stale, ended, cancelled, waited, wipedHeld, lateExport>>
 
 ----------------------------------------------------------------------------
 (* Mnemonic export *)
@@ -193,6 +207,7 @@ EStart ==
     /\ life = "unlocked"
     /\ pc' = [pc EXCEPT !["export"] = "started"]
     /\ stale' = [stale EXCEPT !["export"] = FALSE]
+    /\ ended' = [ended EXCEPT !["export"] = FALSE]
     /\ UNCHANGED <<life, locks, cancelled, waited, leaked, wipedHeld, lateExport>>
 
 ERegister ==
@@ -206,7 +221,7 @@ ERead ==
        THEN /\ pc' = [pc EXCEPT !["export"] = "made"]
             /\ UNCHANGED <<waited, cancelled>>
        ELSE Release("export", "idle")
-    /\ UNCHANGED <<life, locks, stale, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<life, locks, stale, ended, leaked, wipedHeld, lateExport>>
 
 \* The second context check and the delivery, still holding the key.
 EDeliver ==
@@ -217,31 +232,52 @@ EDeliver ==
             /\ UNCHANGED <<waited, cancelled>>
        ELSE /\ Release("export", "idle")
             /\ UNCHANGED lateExport
-    /\ UNCHANGED <<life, locks, stale, leaked, wipedHeld>>
+    /\ UNCHANGED <<life, locks, stale, ended, leaked, wipedHeld>>
 
 ERelease ==
     /\ pc["export"] = "delivered"
     /\ Release("export", "idle")
-    /\ UNCHANGED <<life, locks, stale, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<life, locks, stale, ended, leaked, wipedHeld, lateExport>>
 
 ----------------------------------------------------------------------------
 (* Lock and unlock *)
 
-\* The state locks and the generation moves for every holder in flight.
+\* The state locks and the generation moves for every holder in flight. A
+\* signer in recovery locks the same way.
 LockState ==
-    /\ life = "unlocked"
+    /\ life \in {"unlocked", "recovery"}
     /\ locks < MaxLocks
     /\ life' = "locking"
     /\ locks' = locks + 1
     /\ stale' = [h \in Holders |-> stale[h] \/ pc[h] # "idle"]
+    /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
     /\ UNCHANGED <<pc, cancelled, waited, leaked, wipedHeld, lateExport>>
+
+\* SetRecovery from the unlocked state. The session ends for every holder in
+\* flight; the generation moves with it only under RecoveryEndsSession. The
+\* keyring stays: no key use is cancelled and nothing is cleared.
+EnterRecovery ==
+    /\ life = "unlocked"
+    /\ locks < MaxLocks
+    /\ life' = "recovery"
+    /\ locks' = locks + 1
+    /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
+    /\ stale' = [h \in Holders |->
+                    stale[h] \/ (RecoveryEndsSession /\ pc[h] # "idle")]
+    /\ UNCHANGED <<pc, cancelled, waited, leaked, wipedHeld, lateExport>>
+
+\* PromoteRecoveryToUnlocked: a reconcile succeeded.
+LeaveRecovery ==
+    /\ life = "recovery"
+    /\ life' = "unlocked"
+    /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld, lateExport>>
 
 \* drainKeyUsers cancels every registered key use and starts waiting.
 DrainBegin ==
     /\ life = "locking"
     /\ life' = "draining"
     /\ cancelled' = [h \in Holders |-> cancelled[h] \/ (Holding(h) /\ waited[h])]
-    /\ UNCHANGED <<locks, pc, stale, waited, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<locks, pc, stale, ended, waited, leaked, wipedHeld, lateExport>>
 
 \* The drain returns and the session is cleared.
 Wipe ==
@@ -249,18 +285,19 @@ Wipe ==
     /\ DrainWaits => \A h \in Holders : ~(Holding(h) /\ waited[h])
     /\ life' = "locked"
     /\ wipedHeld' = (wipedHeld \/ \E h \in Holders : Holding(h))
-    /\ UNCHANGED <<locks, pc, stale, cancelled, waited, leaked, lateExport>>
+    /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, lateExport>>
 
 Unlock ==
     /\ life = "locked"
     /\ life' = "unlocked"
-    /\ UNCHANGED <<locks, pc, stale, cancelled, waited, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld, lateExport>>
 
 ----------------------------------------------------------------------------
 Next ==
     \/ SStart \/ SRegister \/ SMake \/ SRelease \/ SReturn
     \/ EStart \/ ERegister \/ ERead \/ EDeliver \/ ERelease
     \/ LockState \/ DrainBegin \/ Wipe \/ Unlock
+    \/ EnterRecovery \/ LeaveRecovery
 
 Spec == Init /\ [][Next]_vars
 
@@ -268,14 +305,16 @@ Spec == Init /\ [][Next]_vars
 (* Invariants *)
 
 TypeOK ==
-    /\ life \in {"unlocked", "locking", "draining", "locked"}
+    /\ life \in {"unlocked", "recovery", "locking", "draining", "locked"}
     /\ locks \in 0..MaxLocks
     /\ pc["sign"] \in {"idle", "started", "held", "made", "released"}
     /\ pc["export"] \in {"idle", "started", "held", "made", "delivered"}
-    /\ \A h \in Holders : stale[h] \in BOOLEAN /\ cancelled[h] \in BOOLEAN /\ waited[h] \in BOOLEAN
+    /\ \A h \in Holders : stale[h] \in BOOLEAN /\ ended[h] \in BOOLEAN
+    /\ \A h \in Holders : cancelled[h] \in BOOLEAN /\ waited[h] \in BOOLEAN
     /\ leaked \in BOOLEAN /\ wipedHeld \in BOOLEAN /\ lateExport \in BOOLEAN
 
-\* KU1: no rotating signature is returned after a lock began during its sign.
+\* KU1: no rotating signature is returned after a lock or a recovery began
+\* during its sign.
 KU1_NoSignatureAfterLock == ~leaked
 
 \* KU2: the session is never cleared while a key use is registered.

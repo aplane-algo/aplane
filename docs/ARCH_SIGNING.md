@@ -2081,7 +2081,12 @@ reads the leaf history and restore state together and refuses if a reset
 has made the history pending again.
 
 Each restore is bound to the lock generation captured before its session,
-context and unlocked-state check. A restore interrupted by a lock,
+context and unlocked-state check, and the memory serves only that session: a
+spend in any other session waits for a restore of its own. A session ends
+when the signer leaves the unlocked state, by a lock or by entering recovery,
+and both advance the generation. A reconcile that ends a recovery can bring
+back an account the earlier restore skipped, so the session it opens is
+restored again. A restore interrupted by a lock,
 cancellation, recovery or refused key use leaves unrestored accounts held;
 the worker retries instead of opening the wait. A completed restore with no
 entries, or an ordinary failure unrelated to interruption, opens the affected

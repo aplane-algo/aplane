@@ -36,10 +36,13 @@ func (s SignerState) String() string {
 // Runtime owns signer lock state.
 type Runtime struct {
 	state SignerState
-	// lockGen increments on every Lock and maintenance fence. TryUnlock and
-	// maintenance completion re-check it before publishing unlocked state, so
-	// a racing lock wins instead of leaving the runtime reporting unlocked
-	// over a destroyed key session.
+	// lockGen increments on every Lock and maintenance fence, and when
+	// SetRecovery leaves the unlocked state. TryUnlock and maintenance
+	// completion re-check it before publishing unlocked state, so a racing
+	// lock wins instead of leaving the runtime reporting unlocked over a
+	// destroyed key session. Neither runs while the signer is unlocked, so
+	// the recovery advance never makes one of them lose to a lock that did
+	// not happen.
 	lockGen uint64
 	stateMu sync.RWMutex
 
@@ -72,10 +75,12 @@ func (r *Runtime) SetOnLock(fn func()) {
 }
 
 // LockGeneration returns the lock generation: a counter every Lock and
-// BeginMaintenance transition advances under the state mutex, and that an
-// unlock must find unchanged to succeed. Two unlocked sessions never share
-// a generation, so per-unlock state can be keyed by it and a transition
-// that was observed late cannot be mistaken for the current one.
+// BeginMaintenance transition, and every SetRecovery that leaves the
+// unlocked state, advances under the state mutex, and that an unlock must
+// find unchanged to succeed. Two unlocked sessions never share a generation,
+// and a session ends whenever the signer leaves the unlocked state, so
+// per-session state can be keyed by it and a transition that was observed
+// late cannot be mistaken for the current one.
 func (r *Runtime) LockGeneration() uint64 {
 	r.stateMu.RLock()
 	defer r.stateMu.RUnlock()
@@ -135,10 +140,17 @@ func (r *Runtime) PromoteRecoveryToUnlocked() bool {
 }
 
 // SetRecovery marks the runtime keyring-available for explicit recovery
-// administration without permitting signing.
+// administration without permitting signing. Leaving the unlocked state this
+// way ends the unlocked session as a lock does: the lock generation advances,
+// so work that began in that session finds it over even if the signer is
+// unlocked again by the time it looks. Nothing is cleared, because recovery
+// administration needs the keyring; the on-lock callback does not run.
 func (r *Runtime) SetRecovery() {
 	r.stateMu.Lock()
 	if r.activeMaintenanceID == 0 {
+		if r.state == SignerStateUnlocked {
+			r.lockGen++
+		}
 		r.state = SignerStateRecovery
 	}
 	r.stateMu.Unlock()

@@ -499,7 +499,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// that fails opens the wait: state chooses the leaf, never whether to
 	// sign.
 	if p, ok := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[req.Account]); ok && !p.StatelessHash {
-		if err := deps.Releases.AwaitRestored(ctx, req.Account); err != nil {
+		if err := deps.Releases.AwaitRestored(ctx, req.Account, lockGeneration, deps.LockGeneration); err != nil {
+			if errors.Is(err, ErrSessionEnded) {
+				return nil, lockedError()
+			}
 			return nil, unavailable("release memory is still being restored from the audit log: " + err.Error())
 		}
 	}
@@ -571,7 +574,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		// AwaitRestored above doesn't settle this: a reset can arrive after it,
 		// and choosing from the emptied memory would reuse a leaf. Reading the
 		// record and its restore state together closes that gap.
-		prior, restored := deps.Releases.ForLeafChoice(req.Account)
+		prior, restored := deps.Releases.ForLeafChoice(req.Account, lockGeneration)
 		if !restored {
 			return nil, unavailable("release memory is still being restored from the audit log")
 		}

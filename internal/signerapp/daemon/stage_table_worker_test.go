@@ -746,7 +746,7 @@ func TestWorkerPublishesRotatingStatus(t *testing.T) {
 }
 
 func releaseMemoryHeld(server *Signer, account string) bool {
-	_, restored := server.rotatingReleases.ForLeafChoice(account)
+	_, restored := server.rotatingReleases.ForLeafChoice(account, server.productRuntime().LockGeneration())
 	return !restored
 }
 
@@ -810,8 +810,9 @@ func TestRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
 	}
 }
 
-// Recovery can start after the restore's context exists. It cancels nothing and
-// moves no generation, and the only sign of it is the refused key use.
+// Recovery can start after the restore's context exists. It cancels nothing,
+// so the context still reads live; it ends the session, which the generation
+// shows, and the restore stops with its accounts held.
 func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -825,8 +826,11 @@ func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
 	svc := &signersigning.Service{Planner: server.newPlannerWithAudit(nil), Rotating: server.rotatingDeps(ir)}
 
 	ir.SetRecovery()
-	if ctx.Err() != nil || ir.LockGeneration() != generation {
-		t.Fatal("recovery moved something this test relies on it not moving")
+	if ctx.Err() != nil {
+		t.Fatal("recovery cancelled the restore's context; this test needs it live")
+	}
+	if ir.LockGeneration() == generation {
+		t.Fatal("recovery left the unlocked session's generation in place")
 	}
 	n, err := svc.RebuildReleaseMemory(ctx, session, generation, []signersigning.AuditedRelease{{
 		Account: account.String(), Stage: 0, TxID: "OLD", LastValid: 1000,
@@ -851,6 +855,42 @@ func TestFinishedRestoreOpensTheWait(t *testing.T) {
 	}
 	if releaseMemoryHeld(server, account) {
 		t.Fatal("a finished restore left the account held")
+	}
+}
+
+// A recovery and a reconcile leave the signer unlocked with its keyring, but
+// in a new session: the memory restored for the old one holds every account
+// until it is restored again, because the reconcile may have brought back an
+// account the first restore skipped.
+func TestRecoveryRoundTripHoldsTheMemoryForANewRestore(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	const account = "ACCOUNT"
+	server.rotatingReleases.Reset()
+	before := ir.LockGeneration()
+	if !server.rebuildReleaseMemory(context.Background(), ir, before) || releaseMemoryHeld(server, account) {
+		t.Fatal("the first restore did not open the wait")
+	}
+	ir.SetRecovery()
+	if !ir.PromoteRecoveryToUnlocked() {
+		t.Fatal("recovery did not promote")
+	}
+	if ir.LockGeneration() == before {
+		t.Fatal("the recovery round trip left the session's generation in place")
+	}
+	if !releaseMemoryHeld(server, account) {
+		t.Fatal("the memory restored before the recovery is open in the session after it")
+	}
+	// The worker's restore for the earlier session cannot open the new one.
+	if server.rebuildReleaseMemory(context.Background(), ir, before) {
+		t.Fatal("a restore for the session before the recovery reported that it finished")
+	}
+	if !releaseMemoryHeld(server, account) {
+		t.Fatal("a restore for the earlier session opened the wait")
+	}
+	if !server.rebuildReleaseMemory(context.Background(), ir, ir.LockGeneration()) || releaseMemoryHeld(server, account) {
+		t.Fatal("the restore for the new session did not open the wait")
 	}
 }
 
@@ -891,7 +931,7 @@ func TestWorkerRestoresAfterALockItNeverSaw(t *testing.T) {
 	ir.Lock()
 	ir.SetUnlocked()
 	eventually("the restore after the unseen lock", func() bool {
-		rec, _ := server.rotatingReleases.ForLeafChoice(account)
+		rec, _ := server.rotatingReleases.ForLeafChoice(account, server.productRuntime().LockGeneration())
 		return rec.TxID != "PLANTED" && !releaseMemoryHeld(server, account)
 	})
 }

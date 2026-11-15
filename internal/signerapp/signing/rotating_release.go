@@ -113,6 +113,13 @@ type ReleaseMemory struct {
 	armed   bool
 	pending map[string]bool
 	changed chan struct{}
+	// session is the unlocked session (lock generation) the worker is
+	// restoring, or restored, the memory for, once it has named one. A sign
+	// in any other session waits: the memory may predate a lock or a recovery
+	// the worker has not acted on yet, and so may be missing the history of
+	// an account that came back with the new session.
+	session      uint64
+	sessionNamed bool
 }
 
 // Record adds a live release to the account's entry and stamps the entry
@@ -261,16 +268,17 @@ func (m *ReleaseMemory) Get(account string) (ReleaseRecord, bool) {
 }
 
 // ForLeafChoice returns the account's entry and whether a leaf may be chosen
-// from it. The two are read together, so a Reset can't fall between them: a
-// memory that is held, or still restoring this account, may be missing the
-// stage's releases, and choosing from it could reuse a leaf.
-func (m *ReleaseMemory) ForLeafChoice(account string) (ReleaseRecord, bool) {
+// from it in the session generation names. The two are read together, so a
+// Reset can't fall between them: a memory that is held, still restoring this
+// account, or restored for another session may be missing the stage's
+// releases, and choosing from it could reuse a leaf.
+func (m *ReleaseMemory) ForLeafChoice(account string, generation uint64) (ReleaseRecord, bool) {
 	if m == nil {
 		return ReleaseRecord{}, true
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.byAccount[account], !m.armed && !m.pending[account]
+	return m.byAccount[account], m.open(account, generation)
 }
 
 // Clear forgets the account's entry.
@@ -296,6 +304,26 @@ func (m *ReleaseMemory) Reset() {
 	m.armed = true
 	m.pending = nil
 	m.signal()
+}
+
+// ServeSession names the unlocked session the next restore serves. Until
+// the worker names the session a sign runs in, that sign waits, however the
+// rest of the wait stands. A memory no worker ever named a session for holds
+// nobody on this account, so a caller without a worker is unaffected.
+func (m *ReleaseMemory) ServeSession(generation uint64) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.session, m.sessionNamed = generation, true
+	m.signal()
+}
+
+// open reports whether a leaf may be chosen for account in the session
+// generation names. The caller holds mu.
+func (m *ReleaseMemory) open(account string, generation uint64) bool {
+	return !m.armed && !m.pending[account] && (!m.sessionNamed || m.session == generation)
 }
 
 // Restoring records that the audit log has been read and names the
@@ -340,18 +368,28 @@ func (m *ReleaseMemory) RestoredAll() {
 	m.signal()
 }
 
+// ErrSessionEnded reports a wait for a restore whose session ended first.
+var ErrSessionEnded = errors.New("the unlocked session ended")
+
 // AwaitRestored returns once the account's audited release has been
-// restored after an unlock, or there is nothing to restore, or with ctx's
-// error. A memory that was never Reset holds nobody.
-func (m *ReleaseMemory) AwaitRestored(ctx context.Context, account string) error {
+// restored for the session generation names, or there is nothing to restore,
+// or with ctx's error. current, when given, reads the live lock generation:
+// once it is no longer generation the session is over and no restore for it
+// will come, so the wait ends with ErrSessionEnded. A memory that was never
+// Reset holds nobody.
+func (m *ReleaseMemory) AwaitRestored(ctx context.Context, account string, generation uint64, current func() uint64) error {
 	if m == nil {
 		return nil
 	}
 	for {
 		m.mu.Lock()
-		if !m.armed && !m.pending[account] {
+		if m.open(account, generation) {
 			m.mu.Unlock()
 			return nil
+		}
+		if current != nil && current() != generation {
+			m.mu.Unlock()
+			return ErrSessionEnded
 		}
 		if m.changed == nil {
 			m.changed = make(chan struct{})

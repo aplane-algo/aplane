@@ -352,3 +352,64 @@ func TestWhileGenerationRunsOnlyInItsSession(t *testing.T) {
 		t.Fatal("ran in recovery")
 	}
 }
+
+// Leaving the unlocked state for recovery ends the session: the generation
+// moves, so work from that session finds it over even after a reconcile has
+// unlocked the signer again. Nothing else that enters or leaves recovery
+// moves it, and the unlock and maintenance fences are not disturbed.
+func TestRecoveryEndsTheUnlockedSession(t *testing.T) {
+	rt := New()
+	var lockCalls atomic.Int32
+	rt.SetOnLock(func() { lockCalls.Add(1) })
+
+	// Locked to recovery is not the end of an unlocked session.
+	before := rt.LockGeneration()
+	rt.SetRecovery()
+	if rt.LockGeneration() != before || !rt.IsRecovery() {
+		t.Fatalf("locked to recovery: generation %d -> %d, state %v", before, rt.LockGeneration(), rt.GetState())
+	}
+	if !rt.PromoteRecoveryToUnlocked() || rt.LockGeneration() != before {
+		t.Fatal("leaving recovery moved the generation or failed")
+	}
+
+	session := rt.LockGeneration()
+	rt.SetRecovery()
+	if rt.LockGeneration() == session {
+		t.Fatal("unlocked to recovery left the session's generation in place")
+	}
+	if lockCalls.Load() != 0 {
+		t.Fatal("recovery ran the on-lock cleanup; it has to keep the keyring")
+	}
+	inRecovery := rt.LockGeneration()
+	rt.SetRecovery() // already there
+	if rt.LockGeneration() != inRecovery {
+		t.Fatal("recovery entered twice moved the generation twice")
+	}
+	if !rt.PromoteRecoveryToUnlocked() {
+		t.Fatal("recovery did not promote")
+	}
+	if rt.WhileGeneration(session, func() {}) {
+		t.Fatal("work from the session before the recovery ran in the session after it")
+	}
+	if !rt.WhileGeneration(rt.LockGeneration(), func() {}) {
+		t.Fatal("the session after the recovery is not current")
+	}
+
+	// During maintenance SetRecovery does nothing, so the fence still closes.
+	token := rt.BeginMaintenance()
+	fenced := rt.LockGeneration()
+	rt.SetRecovery()
+	if rt.LockGeneration() != fenced {
+		t.Fatal("recovery during maintenance moved the generation")
+	}
+	if !rt.FinishMaintenance(token, true) || !rt.IsUnlocked() {
+		t.Fatalf("maintenance did not republish: state %v", rt.GetState())
+	}
+
+	// An unlock that runs while the signer is locked is not made to lose.
+	rt.Lock()
+	ok, _, msg := rt.TryUnlock(func() (int, error) { return 1, nil }, nil)
+	if !ok {
+		t.Fatalf("unlock after a lock: %s", msg)
+	}
+}

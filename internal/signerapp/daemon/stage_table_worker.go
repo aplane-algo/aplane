@@ -118,6 +118,9 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 // only then does the wait open, and otherwise the accounts stay held for another
 // attempt.
 func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime, generation uint64) bool {
+	// Named before the log is read: a sign in any other session waits for
+	// its own restore, whatever this one finds.
+	fs.rotatingReleases.ServeSession(generation)
 	interrupted := fs.restoreReleases(ctx, ir, generation)
 	if interrupted || ir.LockGeneration() != generation {
 		fs.rotatingReleases.Reset()
