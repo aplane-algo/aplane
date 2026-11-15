@@ -1539,7 +1539,7 @@ Candidates come from the table's hint (a backup's, or the signer's own last
 observation), local release candidates, an operator's stage hint, and the
 chain. With `networks.<token>.indexer` configured, a recovery grant without an
 operator's hint first tries the stage the account's last confirmed rekey reads,
-found in one Indexer request for at most eight results, and skipped for a
+found in one Indexer request for one result, and skipped for a
 minute after that network's Indexer failed to answer a lookup
 (see [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)). That
 probe is an ordinary derivation: its address is retained like any probe, a

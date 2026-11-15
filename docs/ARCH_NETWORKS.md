@@ -250,16 +250,16 @@ networks:
 - its answer is a candidate only: a stage is accepted when the address
   derived from the seed equals the authorizer read from the signer's own
   algod,
-- a lookup is bounded: 10 s, one request for at most eight results (a
-  response that holds a ninth is refused, and no further page is asked
-  for), a 256 KiB body read whole and checked as one JSON document, 16 KiB
-  of headers, its own connection with no keep-alive, no redirects, one
-  attempt per grant, and only the
-  fields it checks are decoded. It asks for eight because the Indexer's
-  sender role also matches a clawback's asset sender: any clawback address
-  of any asset can name the account in a zero-amount clawback, with no
-  opt-in, and eight of those after its last spend suppress the lookup at one
-  minimum fee each, leaving the search as without an Indexer,
+- a lookup is bounded: 10 s, one request for one result (a response that
+  holds a second is refused, and no further page is asked for), a 128 KiB
+  body read whole and checked as one JSON document, 16 KiB of headers, its
+  own connection with no keep-alive, no redirects, one attempt per grant,
+  and only the fields it checks are decoded. The result is used only if the
+  account sent it: the Indexer's sender role also matches a clawback's asset
+  sender, and any clawback address of any asset can name the account in a
+  zero-amount clawback, with no opt-in, at one minimum fee, which leaves the
+  search as without an Indexer. A larger limit would only multiply that
+  cost, so one result is asked for, the lightest query for the Indexer,
 - the setting is a file setting, read at start like algod's, and not an admin
   setting. The client (apshell) has no Indexer setting.
 

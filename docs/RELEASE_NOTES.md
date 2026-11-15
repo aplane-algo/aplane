@@ -14,11 +14,12 @@ before it was renamed `enroll`.
   `config.yaml`. When the signer cannot place an account's authorizer, its
   search first reads the account's last confirmed rekey from the Indexer and
   tries the stage that spend's program names, plus one. The lookup is one
-  request for at most eight results, within ten seconds and a 256 KiB
-  response, once per search; it takes the newest result the account sent.
-  Anyone holding the clawback address of any asset can hide that spend from
-  the lookup with eight zero-amount clawbacks naming the account, at one
-  minimum fee each; the signer then searches as it does without an Indexer.
+  request for one result, within ten seconds and a 128 KiB response, once
+  per search, used only if the account sent it. Anyone holding the clawback
+  address of any asset can hide that spend from the lookup with one
+  zero-amount clawback naming the account, at one minimum fee; the signer
+  then searches as it does without an Indexer. A larger limit would only
+  multiply that cost, so the lookup asks the Indexer for its lightest query.
   After a restore or
   on a new machine the account usually resolves on the next pass, after one
   derivation. The stage is a candidate only: the signer accepts it when the

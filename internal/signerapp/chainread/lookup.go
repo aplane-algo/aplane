@@ -52,32 +52,35 @@ const (
 	LookupWrongNetwork LookupOutcome = "wrong_network"
 )
 
-// Limits of one stage lookup: one request, for at most eight results,
-// within ten seconds, the body read included; the body capped; one attempt
-// per grant (the caller's).
+// Limits of one stage lookup: one request, for one result, within ten
+// seconds, the body read included; the body capped; one attempt per grant
+// (the caller's).
 const (
 	// DefaultLookupTimeout bounds the whole lookup, the body read included.
 	DefaultLookupTimeout = 10 * time.Second
 	// MaxIndexerResponseBytes caps the response body, which is read whole
-	// before it is decoded. A stage-program spend is about 20 KB of JSON (a
-	// program of at most 2,877 bytes and arguments of at most 9,343, both
-	// base64 encoded), so lookupLimit of them take about 160 KB; 256 KiB
-	// leaves a margin. A longer answer is unavailable, and the search runs
-	// without it.
-	MaxIndexerResponseBytes = 256 << 10
+	// before it is decoded. The one result is the account's newest outgoing
+	// rekey: a stage-program spend is about 20 KB of JSON (a program of at
+	// most 2,877 bytes and arguments of at most 9,343, both base64
+	// encoded), and 128 KiB leaves room for what the Indexer adds when that
+	// spend is an application call (programs, logs, state deltas, a couple
+	// of hundred small inner transactions). A longer answer is unavailable,
+	// and the search runs without it.
+	MaxIndexerResponseBytes = 128 << 10
 	// lookupLimit is the results asked for in the one request; a response
-	// that holds one more is refused. The lookup never asks for a further
-	// page. More than one, because the Indexer's sender role also matches a
-	// clawback's asset sender, and a zero-amount clawback needs no opt-in by
-	// the account it names: any address that is the clawback address of any
-	// asset can send one naming any account as asset sender, rekeying its
-	// own sender, and so put a result the account did not send ahead of its
-	// last spend. lookupLimit such transactions sent after the spend hide it
-	// from the lookup, at one minimum fee each, and the worker then searches
-	// as it would without an Indexer. The limit raises the cost of
-	// suppressing the shortcut; it does not prevent it, and suppressing it
-	// gains nothing else. Tests and docs derive the number from here.
-	lookupLimit = 8
+	// that holds one more is refused, and the lookup never asks for a
+	// further page. The one result is used only if its top-level sender is
+	// the account. The Indexer's sender role also matches a clawback's
+	// asset sender, and a zero-amount clawback needs no opt-in by the
+	// account it names: any address that is the clawback address of any
+	// asset can name any account, at one minimum fee, and so put a result
+	// the account did not send ahead of its last spend. The lookup then
+	// finds no outgoing rekey, and the worker searches as it would without
+	// an Indexer. A larger limit would only multiply that negligible cost,
+	// not prevent it; one result is the simplest rule and the lightest query
+	// for the Indexer, whose database stops at the account's newest
+	// matching transaction instead of walking back through older ones.
+	lookupLimit = 1
 
 	// indexerTokenHeader carries the Indexer API token, as the SDK sends it.
 	indexerTokenHeader = "X-Indexer-API-Token"
@@ -110,12 +113,12 @@ type StageLookup struct {
 // caller derives the candidate from the seed and accepts it only if its
 // address is the authorizer the caller read from its own algod.
 //
-// The lookup makes one request, for at most eight results, within
+// The lookup makes one request, for one result (lookupLimit), within
 // DefaultLookupTimeout (or LookupTimeout), the body read included; it reads
 // at most MaxIndexerResponseBytes, never asks for a further page, and keeps
 // only the fields it checks (lookup_decode.go). It never uses a spend older
-// than the newest the account sent: that one must hand the account to
-// authorizer, which is also what makes an Indexer lagging behind algod
+// than the account's newest outgoing rekey: that one must hand the account
+// to authorizer, which is also what makes an Indexer lagging behind algod
 // harmless.
 //
 // It returns an error only for a caller mistake (an argument missing). Every
@@ -212,12 +215,12 @@ type indexerSearch struct {
 	token  string
 }
 
-// newestOutgoingRekey returns the newest result, among the at most eight
-// the one request returns, whose top-level sender is the account. Results
-// sent by another address are skipped: the sender role also matches a
+// newestOutgoingRekey returns the one request's result, the account's newest
+// outgoing rekey, if its top-level sender is the account. A result another
+// address sent is no outgoing rekey: the sender role also matches a
 // clawback's asset sender (see lookupLimit). Inner transactions are not
-// looked at. nil with no reason means none of the results was sent by the
-// account; a reason means the Indexer could not be read.
+// looked at. nil with no reason means no result was sent by the account; a
+// reason means the Indexer could not be read.
 //
 // failedToAnswer reports that the Indexer could not be reached or did not
 // answer: a connection, dial or TLS error, the lookup's timeout, a status
@@ -369,7 +372,7 @@ func unavailableReason(ctx context.Context, err error) string {
 	case errors.Is(err, errResponseTooLarge):
 		return fmt.Sprintf("the Indexer's response exceeded %d bytes", MaxIndexerResponseBytes)
 	case errors.Is(err, errTooManyResults):
-		return fmt.Sprintf("the Indexer returned more than the %d results asked", lookupLimit)
+		return fmt.Sprintf("the Indexer returned more results than the %d asked", lookupLimit)
 	case errors.Is(err, errFieldTooLong):
 		return "a field of the Indexer's response exceeded its bound"
 	case errors.Is(err, errDuplicateKey):

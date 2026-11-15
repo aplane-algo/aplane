@@ -1987,13 +1987,13 @@ chain. The chain's candidate is the search's first step. A grant without an
 operator's hint, automatic or operator, looks up once, before its first
 derivation: `chainread.Reader.LookupLastRotation` asks the Indexer chosen by
 genesis hash like algod, in one request, for the account's newest outgoing
-rekeys, at most eight, and takes the first whose top-level sender is the
-account. Results another address sent are skipped: the sender role also
-matches a clawback's asset sender, and a zero-amount clawback needs no
-opt-in, so any clawback address of any asset can name the account. Eight of
-those sent after the account's spend hide it, at one minimum fee each, and
-the search then runs as without an Indexer; eight rather than one only
-raises the cost of suppressing the shortcut. If
+rekey, one result, and uses it only if its top-level sender is the account;
+otherwise the outcome is `no_outgoing_rekey` and the search runs. The sender
+role also matches a clawback's asset sender, and a zero-amount clawback needs
+no opt-in, so any clawback address of any asset can name the account and
+suppress the lookup at one minimum fee; a larger limit would only multiply
+that cost, so one result is asked for, the simplest rule and the lightest
+query for the Indexer. If
 that result is a spend by the account, on the account's chain, handing the
 account to the authorizer the worker read from algod, signed by a stage
 program alone whose address is its signer, the candidate is the program's
@@ -2007,7 +2007,7 @@ exhausted, as any probe would. Every other outcome (`unavailable`,
 `no_outgoing_rekey`, `not_current`, `not_a_stage_program`, `wrong_network`, or
 no Indexer) derives nothing, so the search that follows is the search without
 one. The lookup opens no seed and is not a key use; it runs within 10 seconds,
-one request for at most eight results with no further page, a 256 KiB body and
+one request for one result with no further page, a 128 KiB body and
 the fields it checks alone decoded, and is not retried within a
 grant: a new grant, after the authorizer changes, at the next unlock, or by
 `rotate recover`, looks up again. A lookup that fails to reach the Indexer

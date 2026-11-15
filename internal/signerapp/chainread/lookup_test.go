@@ -274,26 +274,12 @@ func TestLookupRefusesACallerMistake(t *testing.T) {
 }
 
 // The sender role also matches a clawback's asset sender, and a clawback
-// that rekeys its own sender is a result the account did not send. The
-// lookup skips results sent by another address and uses the newest the
-// account sent.
-func TestLookupSkipsANewerClawbackSentByAnotherAddress(t *testing.T) {
-	idx := &fakeIndexer{pages: [][]map[string]any{{clawback(lookupAccount), spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)}}}
-	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
-	if got.Outcome != LookupCandidate || got.Stage != 6 {
-		t.Fatalf("lookup = %+v, want candidate 6 from the account's own rekey", got)
-	}
-}
-
-// lookupLimit results, none sent by the account: no outgoing rekey. The
-// next page, which holds the account's spend, is never asked for: the
-// response's next-token is ignored.
-func TestLookupAllResultsFromOtherSendersAreNoOutgoingRekey(t *testing.T) {
-	var others []map[string]any
-	for i := 0; i < lookupLimit; i++ {
-		others = append(others, clawback(lookupAccount))
-	}
-	idx := &fakeIndexer{pages: [][]map[string]any{others, {spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)}}}
+// that rekeys its own sender is a result the account did not send. When the
+// newest result is such a clawback there is no outgoing rekey, and the
+// search falls back: the next page, which holds the account's own spend, is
+// never asked for, and the response's next-token is ignored.
+func TestLookupNewestResultFromAnotherSenderIsNoOutgoingRekey(t *testing.T) {
+	idx := &fakeIndexer{pages: [][]map[string]any{{clawback(lookupAccount)}, {spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false)}}}
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
 	if got.Outcome != LookupNoOutgoingRekey {
 		t.Fatalf("lookup = %+v, want no_outgoing_rekey", got)
@@ -356,12 +342,9 @@ func TestLookupRefusesAnAnswerOfMoreResultsThanAsked(t *testing.T) {
 
 // An Indexer behind algod has not seen the spend that set the authorizer:
 // the newest spend it knows from the account hands it to an earlier
-// address. An older spend that would match is never used.
+// address.
 func TestLookupNewestRekeyToAnotherAddressIsNotCurrent(t *testing.T) {
-	idx := &fakeIndexer{pages: [][]map[string]any{{
-		spend(lookupAccount, otherAddress, stageProgram(4, "four"), false),
-		spend(lookupAccount, lookupAuthorizer, stageProgram(5, "five"), false),
-	}}}
+	idx := &fakeIndexer{pages: [][]map[string]any{{spend(lookupAccount, otherAddress, stageProgram(4, "four"), false)}}}
 	got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer)
 	if got.Outcome != LookupNotCurrent || got.TxID != spendTxID || got.Round != 4321 {
 		t.Fatalf("lookup = %+v, want not_current naming the spend read", got)

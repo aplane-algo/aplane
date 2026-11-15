@@ -2066,8 +2066,8 @@ wrong or hostile Indexer can do:
 | Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
 | An HTTP proxy from the environment sits in the path | It sees the account looked up and can answer as the Indexer, with the same effects as a hostile Indexer; for an `http://` Indexer it also sees the token. An `https://` Indexer keeps the token from it |
 | Answers slowly or not at all, or fails to answer | At most 10 seconds of the worker; then that network's Indexer is not asked for 60 seconds, and the lookups of other accounts in that time ask nothing, come back `unavailable` at once and search without it. Lookups run inline in the worker's one pass, so a stalling Indexer costs a pass at most one timeout a minute, not one per account. Only failures to reach the Indexer or be answered pause it; an answer refused for its body is `unavailable` for that account alone |
-| Puts results the account did not send first, or anyone on chain sends zero-amount clawbacks naming the account | Up to seven are skipped; eight leave no outgoing rekey, and the search runs as without an Indexer. Any clawback address of any asset can do this for one minimum fee per transaction, so the shortcut can be suppressed, never turned into a wrong stage |
-| Sends a huge or malformed body, or redirects | Refused past 256 KiB, on any syntax error, repeated key or ninth result, or the redirect itself; the lookup is `unavailable` |
+| Puts a result the account did not send first, or anyone on chain sends a zero-amount clawback naming the account | No outgoing rekey, and the search runs as without an Indexer. Any clawback address of any asset can do this for one minimum fee, so the shortcut can be suppressed, never turned into a wrong stage |
+| Sends a huge or malformed body, or redirects | Refused past 128 KiB, on any syntax error, repeated key or second result, or the redirect itself; the lookup is `unavailable` |
 | Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
 
 For `aplane.rotating-triple-xmss.v1` that one derivation is dearer: a
@@ -2090,38 +2090,38 @@ use.
 Configuring one exposes two things: the Indexer provider learns which
 accounts the signer asks about (the algod provider already learns that from
 the authorizer reads), and the signer parses one more provider's responses.
-A lookup is one request for at most eight results (`lookupLimit`), the
-newest first, and never a further page: `next-token` is ignored. It takes the
-first result whose top-level sender is the account; results sent by another
-address are skipped. They can be there because the Indexer's sender role also
-matches a clawback's asset sender, and a zero-amount clawback needs no opt-in
-by the account it names: any address that is the clawback address of any
-asset can send one naming any account as asset sender, rekeying its own
-sender. Eight such transactions sent after an account's spend hide that spend
-from the lookup, at one minimum fee each; when none of the eight was sent by
-the account the outcome is `no_outgoing_rekey` and the search runs without
-the lookup. Asking for eight rather than one raises the cost of suppressing
-the shortcut; it does not prevent it, and suppressing it gains nothing but
-the search the signer would have run anyway. The signer
+A lookup is one request for one result (`lookupLimit`), the account's
+newest outgoing rekey, and never a further page: `next-token` is ignored. The
+result is used only if its top-level sender is the account; otherwise the
+outcome is `no_outgoing_rekey` and the search runs without the lookup. It can
+be another sender's because the Indexer's sender role also matches a
+clawback's asset sender, and a zero-amount clawback needs no opt-in by the
+account it names: any address that is the clawback address of any asset can
+send one naming any account as asset sender, rekeying its own sender, at one
+minimum fee, and so suppress the lookup after the account's spend.
+Suppressing it gains nothing but the search the signer would have run
+anyway. A larger limit would only multiply that negligible cost, not prevent
+it, so the lookup asks for one result: the simplest rule, and the lightest
+query for the Indexer, whose database stops at the account's newest
+matching transaction instead of walking back through older ones. The signer
 decodes the response itself, into only the fields the lookup checks
 (`internal/signerapp/chainread/lookup_decode.go`), under one set of rules:
-the whole body is read first, and one longer than 256 KiB is refused before
+the whole body is read first, and one longer than 128 KiB is refused before
 anything is decoded, and only a clean end of the body makes it complete, so
 one the transport reports cut short (a Content-Length longer than the body,
 a chunked stream without its end) is refused too; the body must be a single JSON object followed only by
 whitespace, checked whole, so trailing data, truncation or a syntax error
 anywhere refuses it even after a matching result; `transactions` may appear
-once, every element is read, and an element past the eighth refuses the
-answer, the first result sent by the account being picked only after the
-whole document is read; keys are compared byte for byte, without case or
+once, every element is read, and a second element refuses the answer, the
+result being used only after the whole document is read; keys are compared byte for byte, without case or
 Unicode folding, a key written with an escape sequence is refused, and a key
 the lookup reads appearing twice in one object refuses the answer; every
 kept field has a fixed bound and form (a transaction ID or address its
 length, a program 16,000 bytes, the largest a group's pooled LogicSig size
 allows, all written without escape sequences); everything else is scanned
-past without being kept. So a lookup allocates at most the 256 KiB body
-buffer, eight programs of at most 16,000 bytes, and the syntax check's
-nesting stack, about 470 KB measured at worst, whatever the response holds;
+past without being kept. So a lookup allocates at most the 128 KiB body
+buffer, one program of at most 16,000 bytes, and the syntax check's nesting
+stack, about 340 KB measured at worst, whatever the response holds;
 the SDK's models would have decoded a 1 MiB body of empty results into
 gigabytes. The request goes over the lookup's own HTTP transport, not the
 process default: keep-alives are off, so each lookup opens one connection

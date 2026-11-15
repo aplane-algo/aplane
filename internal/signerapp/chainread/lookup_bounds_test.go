@@ -75,10 +75,10 @@ func lookupAllocation(t *testing.T, body []byte) (StageLookup, uint64) {
 
 // allocationBound is what one lookup may allocate on any response: the body
 // buffer (the cap and a byte), at most lookupLimit results with the largest
-// program each, and the syntax check's nesting stack and the HTTP exchange,
-// which stay well under the slack. The SDK's models once took about 2.3 GB
-// for a 1 MiB body of empty results.
-const allocationBound = MaxIndexerResponseBytes + lookupLimit*maxLogicBytes + 192<<10
+// program each, and the syntax check's nesting stack (about 190 KB at its
+// depth limit) and the HTTP exchange, which stay under the slack. The SDK's
+// models once took about 2.3 GB for a 1 MiB body of empty results.
+const allocationBound = MaxIndexerResponseBytes + lookupLimit*maxLogicBytes + 256<<10
 
 func jsonBody(t *testing.T, v any) []byte {
 	t.Helper()
