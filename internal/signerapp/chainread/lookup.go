@@ -150,11 +150,14 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 		out.Reason = fmt.Sprintf("the Indexer failed a lookup less than %s ago; not asked again before %s", IndexerPauseAfterFailure, until.UTC().Format(time.RFC3339))
 		return out, nil
 	}
-	// A request that ends unavailable pauses the network's Indexer, unless
-	// the caller's own context ended it (a lock, a shutdown).
+	// Only a failure to reach the Indexer or be answered by it pauses the
+	// network's Indexer, and not one the caller's own context caused (a
+	// lock, a shutdown). An answer refused for what it holds concerns this
+	// account alone, and pausing would cost every other account its lookup.
 	parent := ctx
+	failedToAnswer := false
 	defer func() {
-		if out.Outcome == LookupUnavailable && parent.Err() == nil {
+		if failedToAnswer && parent.Err() == nil {
 			r.Pause.fail(network)
 		}
 	}()
@@ -170,7 +173,7 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	spend, reason := search.newestOutgoingRekey(ctx, account)
+	spend, reason, failedToAnswer := search.newestOutgoingRekey(ctx, account)
 	switch {
 	case reason != "":
 		out.Outcome, out.Reason = LookupUnavailable, reason
@@ -215,13 +218,27 @@ type indexerSearch struct {
 // clawback's asset sender (see lookupLimit). Inner transactions are not
 // looked at. nil with no reason means none of the results was sent by the
 // account; a reason means the Indexer could not be read.
-func (s indexerSearch) newestOutgoingRekey(ctx context.Context, account types.Address) (*indexerTxn, string) {
+//
+// failedToAnswer reports that the Indexer could not be reached or did not
+// answer: a connection, dial or TLS error, the lookup's timeout, a status
+// outside 2xx (a redirect among them), headers too large to read, or a body
+// the transport reports cut short. A 2xx answer refused for its body (over
+// the cap, malformed, against a decoding rule) is not one.
+func (s indexerSearch) newestOutgoingRekey(ctx context.Context, account types.Address) (txn *indexerTxn, reason string, failedToAnswer bool) {
 	txn, err := s.newest(ctx, account.String())
 	if err != nil {
-		return nil, unavailableReason(ctx, err)
+		var failure answerFailure
+		return nil, unavailableReason(ctx, err), errors.As(err, &failure)
 	}
-	return txn, ""
+	return txn, "", false
 }
+
+// answerFailure marks an error of reaching the Indexer or reading its
+// answer, as opposed to one about what the answer holds.
+type answerFailure struct{ err error }
+
+func (f answerFailure) Error() string { return f.err.Error() }
+func (f answerFailure) Unwrap() error { return f.err }
 
 // newest makes the lookup's one request, for the account's newest outgoing
 // rekeys, and decodes the first sent by the account from the capped body.
@@ -246,21 +263,39 @@ func (s indexerSearch) newest(ctx context.Context, sender string) (*indexerTxn, 
 	req.Header.Set("Accept", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, answerFailure{err}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	// The whole body first, into one buffer of the cap and a byte: a longer
-	// body is refused before anything is decoded.
-	body := make([]byte, MaxIndexerResponseBytes+1)
-	n, err := io.ReadFull(resp.Body, body)
-	switch {
-	case err == nil:
-		return nil, errResponseTooLarge
-	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
-	default:
+	body, err := readBody(resp.Body)
+	if err != nil {
 		return nil, err
 	}
-	return decodeNewest(body[:n], sender)
+	return decodeNewest(body, sender)
+}
+
+// readBody reads the whole body before anything is decoded, into one buffer
+// of the cap and a byte. Only a clean end of the body, io.EOF itself, makes
+// it complete: any other error, the transport's own io.ErrUnexpectedEOF for
+// a body shorter than its Content-Length or a chunked stream without its
+// end among them, is a failed answer. A body longer than the cap is refused
+// as too large.
+func readBody(r io.Reader) ([]byte, error) {
+	body := make([]byte, MaxIndexerResponseBytes+1)
+	n := 0
+	for n < len(body) {
+		m, err := r.Read(body[n:])
+		n += m
+		if err == io.EOF {
+			if n > MaxIndexerResponseBytes {
+				return nil, errResponseTooLarge
+			}
+			return body[:n], nil
+		}
+		if err != nil {
+			return nil, answerFailure{err}
+		}
+	}
+	return nil, errResponseTooLarge
 }
 
 // signingStage checks that the spend was signed by a stage program and

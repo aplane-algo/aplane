@@ -9,7 +9,10 @@ import (
 )
 
 // IndexerPauseAfterFailure is how long a network's Indexer is not asked
-// after a lookup it failed. Lookups run inline in the stage table worker's
+// after it failed to answer a lookup: it could not be reached, did not
+// answer in time, answered outside 2xx, or sent headers too large or a body
+// cut short. An answer refused for what its body holds does not count; it
+// concerns one account. Lookups run inline in the stage table worker's
 // single pass, one per unknown account, so an Indexer that accepts
 // connections and stalls would otherwise hold the pass for the lookup
 // timeout once per account; with the pause it costs a pass at most one

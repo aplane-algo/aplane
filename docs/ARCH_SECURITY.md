@@ -2064,7 +2064,7 @@ wrong or hostile Indexer can do:
 |---|---|
 | Supplies a well-formed spend with a false stage | One derivation and its time charged to the grant, a miss, then the normal search with one stage less to spend; with one stage left, the search does not run |
 | Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
-| Answers slowly or not at all | At most 10 seconds of the worker; then that network's Indexer is not asked for 60 seconds, and the lookups of other accounts in that time ask nothing, come back `unavailable` at once and search without it. Lookups run inline in the worker's one pass, so a stalling Indexer costs a pass at most one timeout a minute, not one per account |
+| Answers slowly or not at all, or fails to answer | At most 10 seconds of the worker; then that network's Indexer is not asked for 60 seconds, and the lookups of other accounts in that time ask nothing, come back `unavailable` at once and search without it. Lookups run inline in the worker's one pass, so a stalling Indexer costs a pass at most one timeout a minute, not one per account. Only failures to reach the Indexer or be answered pause it; an answer refused for its body is `unavailable` for that account alone |
 | Puts results the account did not send first, or anyone on chain sends zero-amount clawbacks naming the account | Up to seven are skipped; eight leave no outgoing rekey, and the search runs as without an Indexer. Any clawback address of any asset can do this for one minimum fee per transaction, so the shortcut can be suppressed, never turned into a wrong stage |
 | Sends a huge or malformed body, or redirects | Refused past 256 KiB, on any syntax error, repeated key or ninth result, or the redirect itself; the lookup is `unavailable` |
 | Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
@@ -2105,7 +2105,9 @@ the search the signer would have run anyway. The signer
 decodes the response itself, into only the fields the lookup checks
 (`internal/signerapp/chainread/lookup_decode.go`), under one set of rules:
 the whole body is read first, and one longer than 256 KiB is refused before
-anything is decoded; the body must be a single JSON object followed only by
+anything is decoded, and only a clean end of the body makes it complete, so
+one the transport reports cut short (a Content-Length longer than the body,
+a chunked stream without its end) is refused too; the body must be a single JSON object followed only by
 whitespace, checked whole, so trailing data, truncation or a syntax error
 anywhere refuses it even after a matching result; `transactions` may appear
 once, every element is read, and an element past the eighth refuses the

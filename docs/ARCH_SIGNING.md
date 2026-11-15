@@ -2010,12 +2010,17 @@ one. The lookup opens no seed and is not a key use; it runs within 10 seconds,
 one request for at most eight results with no further page, a 256 KiB body and
 the fields it checks alone decoded, and is not retried within a
 grant: a new grant, after the authorizer changes, at the next unlock, or by
-`rotate recover`, looks up again. A lookup that ends `unavailable` pauses
-that network's Indexer for 60 seconds (`chainread.IndexerPause`, one per
-signer, shared by every chain reader): a grant whose lookup starts inside the
-pause asks nothing, its lookup is recorded as `unavailable`, and its search
-runs. A lookup the caller's own context ended, as a lock does, does not
-pause it, and an answered lookup never does. Lookups run inline in the
+`rotate recover`, looks up again. A lookup that fails to reach the Indexer
+or be answered by it pauses that network's Indexer for 60 seconds
+(`chainread.IndexerPause`, one per signer, shared by every chain reader): a
+connection, dial or TLS error, the lookup's own timeout, a status outside
+2xx (a redirect among them), headers too large to read, or a body the
+transport reports cut short. A grant whose lookup starts inside the pause
+asks nothing, its lookup is recorded as `unavailable`, and its search runs.
+A 2xx answer refused for what its body holds (over the cap, malformed,
+against a decoding rule, or a result without a confirmed round) is
+`unavailable` for that account only and pauses nothing; nor does a lookup
+its caller's own context ended, as a lock does, or any other outcome. Lookups run inline in the
 worker's single pass, so this keeps a stalling Indexer from holding the pass
 for one timeout per unknown account. A prepare's foreground discovery does not
 look up. The worker logs one info line per lookup.
