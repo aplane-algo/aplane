@@ -172,6 +172,23 @@ account's last spend, and one more line says what that found, for example
 `lookup: stage 418 was read from the last spend (TXID, round R) and
 confirmed`, or, while the search is still running,
 `lookup: stage 418 read from the last spend (TXID) did not match; searching`.
+
+The `authorizer` line is read from algod when you run the command. The
+`signer` line is from the signer's last finished background pass, which read
+the chain when it began. Right after a spend confirms, and for longer while a
+signer is still building its stage table, the signer has not yet seen the new
+authorizer. The line then says so, and gives the stage the account had:
+
+```
+  authorizer: N4JWUR...
+  signer: behind the chain; at round 66970977 it saw authorizer PMGZ6Y..., stage 6, ready, 4103 cached entries
+    the account has moved since; the signer's next pass will show it
+```
+
+The stage a spend is signed with is read from the chain at that moment and
+does not depend on this view. Before the signer has finished a pass that read
+the account, and while it is locked, the line reads `signer: nothing reported
+for this account yet`.
 Other lookups say the Indexer could not be read, showed no rekey sent by the
 account, had a newest rekey that is not the current one, saw a rekey not
 signed by a stage program, or answered for another network; each ends in

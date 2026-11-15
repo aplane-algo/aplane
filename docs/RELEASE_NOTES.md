@@ -37,6 +37,14 @@ before it was renamed `enroll`.
   default algod and the config names none, or the one `--indexer-url`
   gives, which must be an http or https URL with a host.
 
+- **`rotate status` says when the signer's view is behind the chain.** The
+  authorizer is read live and the signer's line is from its last finished
+  pass, so after a spend the two could show a stage beside an authorizer it
+  did not belong to. The signer line now reads `behind the chain`, names the
+  authorizer and round the signer saw, and no longer calls that stage live.
+  An account the signer has not reported yet shows `nothing reported for this
+  account yet`. The JSON result gains `signer_behind`.
+
 ## Rotating stage programs carry their stage number
 
 - **Every stage program opens with its stage number.** The XMSS, WOTS+C

@@ -32,6 +32,10 @@ type rotatingAccountProjection struct {
 	Authorizer string   `json:"authorizer"`
 	Alerts     []string `json:"alerts,omitempty"`
 	Notes      []string `json:"notes,omitempty"`
+	// SignerBehind is set when the signer's view is of an authorizer the
+	// account no longer has: authorizer is read now, signer is the signer's
+	// last finished pass.
+	SignerBehind bool `json:"signer_behind,omitempty"`
 	// Signer is the signer's own view of the account: observed authorizer,
 	// classification, cached entry count and recovery state.
 	Signer *signerapi.RotatingAccountStatus `json:"signer,omitempty"`
@@ -185,7 +189,8 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 	projection := rotateStatusProjection{Accounts: []rotatingAccountProjection{}}
 	for _, status := range result.Accounts {
 		projection.Accounts = append(projection.Accounts, rotatingAccountProjection{
-			Account: status.Account, Authorizer: status.Authorizer, Alerts: status.Alerts, Notes: status.Notes, Signer: status.Signer,
+			Account: status.Account, Authorizer: status.Authorizer, Alerts: status.Alerts, Notes: status.Notes,
+			SignerBehind: status.SignerBehind, Signer: status.Signer,
 		})
 	}
 	return newShellCommandResult(func(w io.Writer) error {
@@ -196,9 +201,7 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 			}
 			for _, status := range result.Accounts {
 				r.printf("%s\n  authorizer: %s\n", r.app().FormatAddress(status.Account, ""), status.Authorizer)
-				if s := status.Signer; s != nil {
-					renderSignerRotatingView(r, "  ", s)
-				}
+				renderSignerRotatingView(r, "  ", status.Signer, status.SignerBehind)
 				if len(status.Alerts) == 0 {
 					r.printf("  alerts: none\n")
 				}
@@ -216,18 +219,46 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 // renderSignerRotatingView prints the signer's classification, cached entry
 // count (sparse records, not coverage from stage 0) and recovery state for one
 // account.
-func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.RotatingAccountStatus) {
+//
+// The signer's view is from its last finished pass, which read the chain
+// when it began; the authorizer printed above it is read now. behind says
+// the signer saw another authorizer: the account has moved since, by a spend
+// that confirmed after that read. Its stage is then the stage the account
+// had, and the line says so and names what the signer saw, so a stage beside
+// an authorizer it does not belong to is not read as a disagreement.
+func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.RotatingAccountStatus, behind bool) {
+	if s == nil {
+		// The signer reports an account once a pass that read it has
+		// finished, and nothing while locked.
+		r.printf("%ssigner: nothing reported for this account yet; it reports after a background pass, while unlocked\n", indent)
+		return
+	}
+	lead := indent + "signer: "
+	if behind {
+		lead += "behind the chain; "
+		if s.Round != 0 {
+			lead += fmt.Sprintf("at round %d ", s.Round)
+		}
+		lead += fmt.Sprintf("it saw authorizer %s, ", termsafe.Line(s.Authorizer))
+	}
 	switch s.Classification {
 	case signerapi.RotatingClassStage:
 		if s.Stage != nil {
-			r.printf("%ssigner: live stage %d, %s, %d cached entries\n", indent, *s.Stage, s.Preparation, s.CachedEntries)
+			word := "live stage"
+			if behind {
+				word = "stage"
+			}
+			r.printf("%s%s %d, %s, %d cached entries\n", lead, word, *s.Stage, s.Preparation, s.CachedEntries)
 		}
 	case signerapi.RotatingClassHeldKey:
-		r.printf("%ssigner: rekeyed to a key this signer holds, %d cached entries\n", indent, s.CachedEntries)
+		r.printf("%srekeyed to a key this signer holds, %d cached entries\n", lead, s.CachedEntries)
 	case signerapi.RotatingClassUnknown:
-		r.printf("%ssigner: authorizer not placed, %d cached entries\n", indent, s.CachedEntries)
+		r.printf("%sauthorizer not placed, %d cached entries\n", lead, s.CachedEntries)
 	default:
-		r.printf("%ssigner: account not read in the last pass, %d cached entries\n", indent, s.CachedEntries)
+		r.printf("%saccount not read in the last pass, %d cached entries\n", lead, s.CachedEntries)
+	}
+	if behind {
+		r.printf("%s  the account has moved since; the signer's next pass will show it\n", indent)
 	}
 	renderRecoveryStatus(r, indent, s.Recovery)
 }
