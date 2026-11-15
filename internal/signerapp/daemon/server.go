@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -79,6 +81,8 @@ type Signer struct {
 	dataDir           string                             // Data directory path (for saving config)
 	makeAlgod         func(string, string) (*algod.Client, error)
 	indexerTransport  http.RoundTripper              // Tests answer the Indexer's requests; nil is the default transport
+	indexerTimeout    time.Duration                  // Tests shorten a stage lookup; 0 is chainread.DefaultLookupTimeout
+	indexerPause      chainread.IndexerPause         // Per-network pause after a failed stage lookup, shared by every chain reader
 	rotatingLocks     signersigning.RotatingLocks    // Serializes rotating sign per account
 	rotatingReleases  signersigning.ReleaseMemory    // Last release per rotating account, for status; rebuilt from the audit log at unlock
 	rotatingRecovery  signersigning.RotatingRecovery // Per-unlock stage recovery allowance and grants, keyed by the lock generation

@@ -342,3 +342,43 @@ func TestWorkerSearchesWhenTheNewestResultIsAnotherSendersClawback(t *testing.T)
 		t.Fatalf("Indexer requests = %d, want 1", idx.requests.Load())
 	}
 }
+
+// An Indexer that accepts the request and stalls holds the worker's pass for
+// one lookup timeout, not one per account: the lookups after it in the pause
+// ask nothing, and every account searches as it would without an Indexer.
+func TestStallingIndexerCostsAPassOneTimeout(t *testing.T) {
+	server, node, _, first, secret := lookupWorkerSigner(t)
+	ir := server.productRuntime()
+	installRotatingKey(t, server)
+	installRotatingKey(t, server)
+	var requests atomic.Int32
+	server.indexerTransport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	})
+	server.indexerTimeout = 200 * time.Millisecond
+	server.stageFillMaxDeriv = 2
+	// Every account reads this authorizer: the first account's stage 1,
+	// unknown to all three until their searches derive it.
+	stage1, _ := signerops.StageOps{}.StageAddress(secret, 1)
+	node.set(stage1.String(), 900)
+
+	server.fillStageTables(context.Background(), ir)
+	if n := requests.Load(); n != 1 {
+		t.Fatalf("the Indexer saw %d requests in one pass, want 1", n)
+	}
+	statuses := ir.RotatingAccountStatuses()
+	if len(statuses) != 3 {
+		t.Fatalf("statuses = %+v", statuses)
+	}
+	for _, st := range statuses {
+		rec := st.Recovery
+		if rec == nil || rec.Lookup == nil || rec.Lookup.Outcome != signerapi.RotatingLookupUnavailable || rec.AllowanceSpent == 0 {
+			t.Fatalf("account %s: recovery %+v, want the lookup unavailable and the search run", st.Account, rec)
+		}
+		if st.Account == first.String() && (st.Stage == nil || *st.Stage != 1) {
+			t.Fatalf("account %s: %+v, want stage 1 found by its search", st.Account, st)
+		}
+	}
+}

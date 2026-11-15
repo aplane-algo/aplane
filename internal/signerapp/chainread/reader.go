@@ -69,6 +69,11 @@ type Reader struct {
 	// LookupTimeout bounds one LookupLastRotation. Zero means
 	// DefaultLookupTimeout.
 	LookupTimeout time.Duration
+
+	// Pause, if set, keeps each network's Indexer from being asked again
+	// for IndexerPauseAfterFailure after a lookup it failed. The daemon
+	// shares one among every Reader it builds; nil means no pause.
+	Pause *IndexerPause
 }
 
 // ReadAccount returns account's authorizer and the round of the read from the

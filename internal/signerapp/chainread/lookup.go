@@ -117,11 +117,11 @@ type StageLookup struct {
 //
 // It returns an error only for a caller mistake (an argument missing). Every
 // condition of the Indexer or the chain is an outcome.
-func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, account, authorizer types.Address) (StageLookup, error) {
+func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, account, authorizer types.Address) (out StageLookup, err error) {
 	if len(genesisHash) != 32 || account.IsZero() || authorizer.IsZero() {
 		return StageLookup{}, errors.New("stage lookup needs the account's genesis hash, the account and its authorizer")
 	}
-	out := StageLookup{Outcome: LookupNoIndexer}
+	out = StageLookup{Outcome: LookupNoIndexer}
 	if r.Resolver == nil || r.IndexerConfig == nil {
 		return out, nil
 	}
@@ -142,6 +142,19 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 		return out, nil
 	}
 	out.Host = server.Host
+	if until, paused := r.Pause.paused(network); paused {
+		out.Outcome = LookupUnavailable
+		out.Reason = fmt.Sprintf("the Indexer failed a lookup less than %s ago; not asked again before %s", IndexerPauseAfterFailure, until.UTC().Format(time.RFC3339))
+		return out, nil
+	}
+	// A request that ends unavailable pauses the network's Indexer, unless
+	// the caller's own context ended it (a lock, a shutdown).
+	parent := ctx
+	defer func() {
+		if out.Outcome == LookupUnavailable && parent.Err() == nil {
+			r.Pause.fail(network)
+		}
+	}()
 	base := r.IndexerTransport
 	if base == nil {
 		base = indexerHTTP

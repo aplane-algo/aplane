@@ -54,5 +54,7 @@ func (fs *Signer) chainReader() chainread.Reader {
 			return cfg.GetIndexerConfig(network)
 		},
 		IndexerTransport: fs.indexerTransport,
+		LookupTimeout:    fs.indexerTimeout,
+		Pause:            &fs.indexerPause,
 	}
 }

@@ -2064,7 +2064,7 @@ wrong or hostile Indexer can do:
 |---|---|
 | Supplies a well-formed spend with a false stage | One derivation and its time charged to the grant, a miss, then the normal search with one stage less to spend; with one stage left, the search does not run |
 | Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
-| Answers slowly or not at all | At most 10 seconds of the worker, once per grant |
+| Answers slowly or not at all | At most 10 seconds of the worker; then that network's Indexer is not asked for 60 seconds, and the lookups of other accounts in that time ask nothing, come back `unavailable` at once and search without it. Lookups run inline in the worker's one pass, so a stalling Indexer costs a pass at most one timeout a minute, not one per account |
 | Puts results the account did not send first | Up to seven are skipped; eight leave no outgoing rekey and the search runs as without an Indexer |
 | Sends a huge or malformed body, or redirects | Refused past 256 KiB, on any syntax error, repeated key or ninth result, or the redirect itself; the lookup is `unavailable` |
 | Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
