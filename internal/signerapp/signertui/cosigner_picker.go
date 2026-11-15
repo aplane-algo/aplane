@@ -682,7 +682,6 @@ func (m Model) renderCosignerImportReview() string {
 	body.WriteString("Witness Key ID (compare the complete value):\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.previewWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\n")
-	body.WriteString("\n")
 	button := buttonActiveStyle.Render("IMPORT")
 	body.WriteString(button)
 	body.WriteString("\n")
