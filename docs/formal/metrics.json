@@ -83,28 +83,28 @@
   },
   {
     "spec": "rotating_leaf_release",
-    "distinct_states": 6868682,
+    "distinct_states": 7871090,
     "depth": 34
   },
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_negative_wait",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
-    "distinct_states": 812,
+    "distinct_states": 813,
     "depth": 8
   },
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_negative_recheck",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
-    "distinct_states": 492,
+    "distinct_states": 493,
     "depth": 9
   },
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_negative_cut",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
-    "distinct_states": 6292,
+    "distinct_states": 6629,
     "depth": 12
   },
   {
@@ -112,6 +112,13 @@
     "cfg": "rotating_leaf_release_negative_seq",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
     "distinct_states": 9273,
+    "depth": 12
+  },
+  {
+    "spec": "rotating_leaf_release",
+    "cfg": "rotating_leaf_release_negative_lag",
+    "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
+    "distinct_states": 9542,
     "depth": 12
   },
   {

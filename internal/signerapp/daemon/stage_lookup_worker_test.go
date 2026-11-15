@@ -254,6 +254,36 @@ func TestLockDuringTheLookupPublishesNothing(t *testing.T) {
 	}
 }
 
+// A pass's status is published only in the session the pass ran in. The
+// lock's cancellation reaches the pass's context a moment after the lock, so a
+// pass can finish with a live-looking context after its session ended; the
+// publish is bound to the session itself.
+func TestStatusPublishIsRefusedOnceItsSessionEnded(t *testing.T) {
+	server, node, _, _, _ := lookupWorkerSigner(t)
+	ir := server.productRuntime()
+	node.set("", 100)
+	server.fillStageTables(context.Background(), ir)
+	before := ir.RotatingAccountStatuses()
+	if len(before) != 1 {
+		t.Fatalf("statuses after a full pass = %+v", before)
+	}
+	session := ir.LockGeneration()
+	stale := []signerapi.RotatingAccountStatus{{Account: before[0].Account, Classification: signerapi.RotatingClassUnknown}}
+	if _, published := ir.PublishRotatingStatus(session, []string{"w"}, nil, before); !published {
+		t.Fatal("a publish in the current session was refused")
+	}
+	ir.Lock()
+	if changed, published := ir.PublishRotatingStatus(session, nil, []string{"n"}, stale); published || changed {
+		t.Fatalf("a publish after the lock: published %v changed %v", published, changed)
+	}
+	if after := ir.RotatingAccountStatuses(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("statuses after the refused publish = %+v, want %+v", after, before)
+	}
+	if alerts := ir.RotatingAlerts(); !reflect.DeepEqual(alerts, []string{"w"}) {
+		t.Fatalf("alerts after the refused publish = %v", alerts)
+	}
+}
+
 // A lock whose first step lands after the lookup refuses the probe's key
 // use: the pass is cut and publishes nothing.
 func TestLockDuringTheProbePublishesNothing(t *testing.T) {

@@ -21,7 +21,7 @@ audit log at unlock. The model checks that, outside the named loss cases, the
 memory is a complete record of the stage's releases whenever the signer can
 sign, so the leaf choice never reuses a leaf while an unused one remains.
 
-Five guards keep the memory complete, and one modeled loss class is excused
+Six guards keep the memory complete, and one modeled loss class is excused
 explicitly:
 
   WaitForRestore   a leaf-family sign waits (AwaitRestored) until the audit
@@ -38,6 +38,11 @@ explicitly:
                    memory only if no release was recorded after the pass read
                    the chain (Record/Seq/clearIfUnchanged), so a stale
                    observation never erases a newer release.
+  NextStageGuard   a status pass clears an account's memory only when the
+                   chain read shows the stage the remembered release hands
+                   the account to (RotatingStatus, rec.NextAddr). A node that
+                   is behind can report an earlier stage after the release
+                   was made; that reading does not show the stage is retired.
   MergeAudited     a restore merges the audited releases into the memory (it
                    keeps every leaf either side knows) instead of replacing
                    it.
@@ -51,15 +56,21 @@ explicitly:
 The negative controls turn off WaitForRestore (the memory is empty when the
 first post-unlock sign picks a leaf), RecheckAtChoice (a delayed Reset empties
 the memory after a sign was admitted), CutRestoreHolds (a cut restore opens the
-wait with the history missing) and SeqGuard (a stale observation erases
-the current release), each with every loss source off, and TLC reproduces
-the leaf reuse under a complete history.
+wait with the history missing), SeqGuard together with NextStageGuard (a pass
+that read the chain before a release erases it; with NextStageGuard on the
+sequence guard is redundant in this model, see the companion) and
+NextStageGuard alone with a lagging node (a read made after the release, from
+a node that is behind, erases it), each with every loss source off, and TLC
+reproduces the leaf reuse under a complete history.
 
 Scope: one account, one signer. Several signers sharing a seed and no memory
 collide with probability one in LeavesPerStage by design for TxIDs nobody
 chose (chooseLeaf) and are not modeled. Stateless-hash families keep no leaf history and are not
 modeled. Chain validity windows, expiry, and the stage-table recovery grants
-are not modeled; only release memory, restore and observation are. The
+are not modeled; only release memory, restore and observation are. A lagging
+node is modeled for the status pass's read only: a sign always reads the true
+chain here, so Record's rule that an earlier stage's release never replaces a
+later stage's history is not exercised. The
 key-use window and the lock-generation fence on the release are in
 key_use_lock.tla.
 
@@ -77,7 +88,8 @@ Code anchors:
     ReleaseMemory.Reset/Restoring/RecordAudited/Restored/RestoredAll and
     Service.RebuildReleaseMemory in rotating_release.go.
   - Observe/ApplyObservation transcribe the stage-table pass's ObservedSeq
-    capture (rotating_tables.go) and Service.RotatingStatus clearIfUnchanged.
+    capture (rotating_tables.go) and Service.RotatingStatus: the clear
+    (clearIfUnchanged) only when the authorizer is the record's NextAddr.
 
 See FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md for the prose companion.
 ***************************************************************************)
@@ -87,6 +99,8 @@ CONSTANTS
     RecheckAtChoice,  \* BOOLEAN: the leaf choice rechecks the restore state
     CutRestoreHolds,  \* BOOLEAN: a restore a lock cut short keeps accounts held
     SeqGuard,         \* BOOLEAN: observation clears only unchanged memory
+    NextStageGuard,   \* BOOLEAN: observation clears only on the next stage
+    NodeMayLag,       \* BOOLEAN: a status pass's chain read may show an earlier stage
     AuditMayFail,     \* BOOLEAN: the audit write may fail (best effort)
     AuditMayLose,     \* BOOLEAN: the log may drop an old entry
     RestoreMayFail,   \* BOOLEAN: the restore may fail and open the wait
@@ -348,20 +362,26 @@ AuditLose ==
 (* The status pass *)
 
 \* Observe is the stage-table pass capturing Seq and then reading the chain.
+\* A node that is behind (NodeMayLag) answers with a stage the account has
+\* already left; the chain only moves forward, so never a later one.
 Observe ==
     /\ obsStage = None
-    /\ obsStage' = chain
+    /\ obsStage' \in (IF NodeMayLag THEN 0..chain ELSE {chain})
     /\ obsSeq' = seq
     /\ UNCHANGED <<chain, phase, truth, audit, snap, memStage, memRecs, memSeq,
                    seq, admitted, resetDue, cut, lossy, bad, drift>>
 
 \* ApplyObservation is RotatingStatus after the read: an entry whose stage is
 \* not the one the chain read showed is cleared, unless (SeqGuard) a release
-\* was recorded after the read.
+\* was recorded after the read, and (NextStageGuard) only when the read shows
+\* the stage the entry hands the account to.
 ApplyObservation ==
     /\ obsStage # None
     /\ obsStage' = None
-    /\ IF memStage # None /\ memStage # obsStage /\ (~SeqGuard \/ memSeq <= obsSeq)
+    /\ IF /\ memStage # None
+          /\ memStage # obsStage
+          /\ (~NextStageGuard \/ obsStage = memStage + 1)
+          /\ (~SeqGuard \/ memSeq <= obsSeq)
        THEN /\ memStage' = None
             /\ memRecs' = {}
        ELSE UNCHANGED <<memStage, memRecs>>

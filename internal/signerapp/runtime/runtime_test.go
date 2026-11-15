@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestLockInvokesOnLockOnlyForUnlockedTransition(t *testing.T) {
@@ -298,5 +299,56 @@ func TestLockGenerationAdvancesOnEveryLockTransition(t *testing.T) {
 	r.FinishMaintenance(token, true)
 	if r.LockGeneration() != g1+1 {
 		t.Fatal("finishing maintenance changed the generation")
+	}
+}
+
+// WhileGeneration runs its function only in the unlocked session it names,
+// and a Lock that arrives while the function runs waits for it: nothing
+// published under it can land after that session has ended.
+func TestWhileGenerationRunsOnlyInItsSession(t *testing.T) {
+	rt := New()
+	ran := func(generation uint64) bool {
+		return rt.WhileGeneration(generation, func() {})
+	}
+	if ran(rt.LockGeneration()) {
+		t.Fatal("ran on a locked signer")
+	}
+	rt.SetUnlocked()
+	session := rt.LockGeneration()
+	if !ran(session) {
+		t.Fatal("did not run in the current unlocked session")
+	}
+
+	inside, release, locked := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go rt.WhileGeneration(session, func() {
+		close(inside)
+		<-release
+	})
+	<-inside
+	go func() {
+		rt.Lock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+		t.Fatal("a lock completed while the session's function was still running")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	<-locked
+
+	if ran(session) {
+		t.Fatal("ran in a session a lock had ended")
+	}
+	rt.SetUnlocked()
+	if ran(session) {
+		t.Fatal("ran for an earlier session after a new unlock")
+	}
+	if !ran(rt.LockGeneration()) {
+		t.Fatal("did not run in the new session")
+	}
+	rt.SetRecovery()
+	if ran(rt.LockGeneration()) {
+		t.Fatal("ran in recovery")
 	}
 }

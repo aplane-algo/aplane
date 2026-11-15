@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -1028,5 +1029,117 @@ func TestForLeafChoice(t *testing.T) {
 	var none *ReleaseMemory
 	if _, restored := none.ForLeafChoice("A"); !restored {
 		t.Fatal("no memory should hold nobody")
+	}
+}
+
+// A node that is behind (after an endpoint failover, say) can report an earlier
+// stage after the signer released from a later one. That reading does not show
+// the later stage is retired, so its leaves stay remembered and the next
+// transaction signs on an unused one. Only the next stage's address clears them.
+func TestLaggingNodeObservationKeepsLiveLeaves(t *testing.T) {
+	for _, kind := range []rotatingTestType{xmssTestType, wotscTestType} {
+		t.Run(kind.keyType, func(t *testing.T) {
+			f, audit := newSigningFixtureFor(t, kind)
+			acct := f.account.String()
+			first := mustPrepare(t, f, f.spend(1000, 1100))
+			f.land(t, mustSign(t, f, first.Transactions))
+			prep := mustPrepare(t, f, f.spend(1000, 1100))
+			mustSign(t, f, prep.Transactions)
+			prior, ok := f.svc.Rotating.Releases.Get(acct)
+			if !ok || prior.Stage != 1 || len(prior.Leaves) != 1 {
+				t.Fatalf("release from stage 1 not remembered: %+v", prior)
+			}
+			used := prior.Leaves[0]
+			profile, _ := rotatingkey.Lookup(kind.keyType)
+			lo, _ := profile.LeafRange(prior.Stage)
+			// A different transaction whose own pick is the leaf already used.
+			second := groupWithPick(t, f, prep, used.Index-uint32(lo))
+
+			// The node answers from before stage 0's spend confirmed.
+			live, round := f.chain.authorizer, f.chain.round
+			f.chain.authorizer, f.chain.round = f.account, 1000
+			report := f.fill(t, StageFillOptions{Horizon: 2})
+			if report.Err != nil || !report.Resolved || report.Stage != 0 {
+				t.Fatalf("lagging node observation: %+v", report)
+			}
+			if w, n := f.svc.RotatingStatus([]StageTableReport{report}); len(w) != 0 || len(n) != 0 {
+				t.Fatalf("an earlier stage's observation produced status: %v %v", w, n)
+			}
+			kept, ok := f.svc.Rotating.Releases.Get(acct)
+			if !ok || kept.Stage != 1 || len(kept.Leaves) != 1 {
+				t.Fatalf("an earlier stage's observation changed stage 1's history: %+v (remembered %v)", kept, ok)
+			}
+
+			// The node catches up; the next transaction takes an unused leaf.
+			f.chain.authorizer, f.chain.round = live, round
+			mustSign(t, f, second)
+			last := audit.releases[len(audit.releases)-1]
+			if last.Stage != prior.Stage || last.TxID == prior.TxID {
+				t.Fatal("the second sign did not release a distinct transaction from the same stage")
+			}
+			if last.Leaves[0].Index == used.Index {
+				t.Fatalf("leaf %d signed two different transactions", used.Index)
+			}
+			after, _ := f.svc.Rotating.Releases.Get(acct)
+			if after.Reused || len(after.Leaves) != 2 {
+				t.Fatalf("stage 1 history after the second release: %+v", after)
+			}
+
+			// The next stage's address is what retires the stage.
+			next := StageTableReport{Account: acct, Resolved: true, Stage: 2, Observed: true, ObservedSeq: f.svc.Rotating.Releases.Seq(), Authorizer: f.stageAddress(t, 2), Round: 1010}
+			f.svc.RotatingStatus([]StageTableReport{next})
+			if _, ok := f.svc.Rotating.Releases.Get(acct); ok {
+				t.Fatal("the next stage's address did not clear the retired stage's history")
+			}
+		})
+	}
+}
+
+// An observation that is neither the remembered stage nor the one it hands the
+// account to (an unknown authorizer, a held key, a stage further on) says
+// nothing certain about the remembered stage, so the history is kept.
+func TestStatusKeepsHistoryUnlessTheNextStageIsObserved(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	acct := f.account.String()
+	record := func() {
+		f.svc.Rotating.Releases.Reset()
+		f.svc.Rotating.Releases.RestoredAll()
+		f.svc.Rotating.Releases.Record(ReleaseRecord{Account: acct, Stage: 1, StageAddr: f.stageAddress(t, 1), NextAddr: f.stageAddress(t, 2), TxID: "T1", LastValid: 200})
+	}
+	for name, test := range map[string]struct {
+		authorizer types.Address
+		cleared    bool
+	}{
+		"the stage before":   {f.account, false},
+		"an unknown address": {types.Address{9}, false},
+		"two stages on":      {f.stageAddress(t, 3), false},
+		"the next stage":     {f.stageAddress(t, 2), true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			record()
+			report := StageTableReport{Account: acct, Resolved: true, Observed: true, ObservedSeq: f.svc.Rotating.Releases.Seq(), Authorizer: test.authorizer, Round: 150}
+			f.svc.RotatingStatus([]StageTableReport{report})
+			if _, ok := f.svc.Rotating.Releases.Get(acct); ok == test.cleared {
+				t.Fatalf("history remembered = %v, want cleared = %v", ok, test.cleared)
+			}
+		})
+	}
+}
+
+// A release from an earlier stage was signed on a chain read that was behind:
+// it never replaces a later stage's history.
+func TestEarlierStageReleaseKeepsALaterStagesHistory(t *testing.T) {
+	var m ReleaseMemory
+	later := ReleaseRecord{Account: "A", Stage: 2, TxID: "T2", LastValid: 200, Leaves: []LeafRelease{{Tree: 0, Index: 5, TxID: "T2", LastValid: 200}}}
+	m.Record(later)
+	m.Record(ReleaseRecord{Account: "A", Stage: 1, TxID: "T1", LastValid: 190, Leaves: []LeafRelease{{Tree: 0, Index: 5, TxID: "T1", LastValid: 190}}})
+	got, ok := m.Get("A")
+	if !ok || got.Stage != 2 || got.TxID != "T2" || len(got.Leaves) != 1 || got.Leaves[0].TxID != "T2" || got.Reused {
+		t.Fatalf("stage 2's history after a stage 1 release: %+v", got)
+	}
+	// A later stage still replaces it.
+	m.Record(ReleaseRecord{Account: "A", Stage: 3, TxID: "T3", LastValid: 210, Leaves: []LeafRelease{{Tree: 0, Index: 1, TxID: "T3", LastValid: 210}}})
+	if got, _ := m.Get("A"); got.Stage != 3 || len(got.Leaves) != 1 {
+		t.Fatalf("stage 3 did not replace stage 2: %+v", got)
 	}
 }

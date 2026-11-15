@@ -2,17 +2,20 @@
 
 > Status: TLC checked over the bounded finite state space (one account, three
 > stages, two leaves per stage, three transaction IDs per stage, at most four
-> memory records); the recorded positive run generated 6,868,682 distinct
-> states at depth 34 with no counterexamples, and the deep configuration
-> (five records) 46,925,814 distinct states at depth 38. Four expected-failure
-> negative controls each violate `LF1_NoReuseBeforeExhaustion` and must keep
-> producing that exact counterexample: `rotating_leaf_release_negative_wait.cfg`
-> (no restore check at all, 812 distinct states at depth 8),
-> `rotating_leaf_release_negative_recheck.cfg` (`RecheckAtChoice = FALSE`, 492
+> memory records, a status pass whose chain read may lag); the recorded
+> positive run generated 7,871,090 distinct states at depth 34 with no
+> counterexamples, and the deep configuration (five records) 54,796,612
+> distinct states at depth 38. Five expected-failure negative controls
+> each violate `LF1_NoReuseBeforeExhaustion` and must keep producing that exact
+> counterexample: `rotating_leaf_release_negative_wait.cfg` (no restore check
+> at all, 813 distinct states at depth 8),
+> `rotating_leaf_release_negative_recheck.cfg` (`RecheckAtChoice = FALSE`, 493
 > distinct states at depth 9), `rotating_leaf_release_negative_cut.cfg`
-> (`CutRestoreHolds = FALSE`, 6,292 distinct states at depth 12) and
-> `rotating_leaf_release_negative_seq.cfg` (`SeqGuard = FALSE`, 9,273 distinct
-> states at depth 12).
+> (`CutRestoreHolds = FALSE`, 6,629 distinct states at depth 12),
+> `rotating_leaf_release_negative_seq.cfg` (`SeqGuard = FALSE` and
+> `NextStageGuard = FALSE`, no lagging node, 9,273 distinct states at depth
+> 12) and `rotating_leaf_release_negative_lag.cfg` (`NextStageGuard = FALSE`
+> with a lagging node, 9,542 distinct states at depth 12).
 
 A rotating account of a leaf family (`rotatingkey.Profile.LeavesPerStage > 1`,
 today the XMSS and WOTS+C triples) holds several one-time leaves per stage. Signing the
@@ -62,8 +65,12 @@ history, so the question is whether the history is complete.
   stage than the memory's, and replaces an entry from an earlier stage.
 - `Observe` and `ApplyObservation` transcribe the stage-table pass capturing
   `Seq` before its chain read (`rotating_tables.go`) and
-  `Service.RotatingStatus` clearing an entry whose stage the chain no longer
-  shows through `clearIfUnchanged`.
+  `Service.RotatingStatus` clearing an entry through `clearIfUnchanged` when
+  the read shows the stage the entry hands the account to (the authorizer is
+  the record's `NextAddr`). With `NodeMayLag` the read may show any stage the
+  account has already left: a node that is behind, for example after an
+  endpoint failover. The chain only moves forward, so it never shows a later
+  stage than the true one.
 
 The guards are constants:
 
@@ -72,7 +79,16 @@ The guards are constants:
 | `WaitForRestore` | TRUE: `AwaitRestored` before the account lock | Without it the first sign after an unlock picks from an empty memory |
 | `RecheckAtChoice` | TRUE: `ForLeafChoice` under the account lock | Without it a delayed reset empties the memory after a sign was admitted |
 | `CutRestoreHolds` | TRUE: the wait opens only after `rebuildReleaseMemory` sees a restore finish, bound to the generation read before its context and session | Without it a restore a lock cut short opens the wait with the history missing |
-| `SeqGuard` | TRUE: `rec.Seq > r.ObservedSeq` skips the clear | Without it a stale observation erases a newer release |
+| `SeqGuard` | TRUE: `rec.Seq > r.ObservedSeq` skips the clear | Without it, and without `NextStageGuard`, a pass that read the chain before a release erases it |
+| `NextStageGuard` | TRUE: `RotatingStatus` clears only when `r.Authorizer == rec.NextAddr` | Without it a read from a node that is behind, made after the release, shows an earlier stage and erases the live stage's history |
+
+`NextStageGuard` covers what `SeqGuard` covers in this model: a read made
+before a release shows the stage the account was at then, which is never the
+one the later release hands the account to, so it clears nothing. With
+`NextStageGuard = TRUE` and `SeqGuard = FALSE` the positive run still finds no
+counterexample. The code keeps both. The sequence guard needs no address to be
+right, and it also covers a sign whose own chain read was behind, which this
+model does not have (see the limits).
 
 Loss is separate. `AuditMayFail`, `AuditMayLose`, and `RestoreMayFail` model
 the best-effort audit write (a failure is reported, not fatal), a log that
@@ -90,7 +106,8 @@ The negative controls (each with every loss source off):
 | `WaitForRestore = FALSE`, `RecheckAtChoice = FALSE` | LF1 fails: with no restore check at all, a sign picks from an empty memory |
 | `RecheckAtChoice = FALSE` | LF1 fails: the worker sees a lock, an unlock and restore follow, one transaction signs, a second is admitted, the delayed reset lands, and the second picks from the empty memory |
 | `CutRestoreHolds = FALSE` | LF1 fails: a lock cuts a restore short, the signer unlocks, the restore returns and opens the wait, and a sign picks from the empty memory |
-| `SeqGuard = FALSE` | LF1 fails: a status pass reads the chain, the release lands, the next stage signs, the stale pass clears that release, and the next transaction reuses its leaf |
+| `SeqGuard = FALSE`, `NextStageGuard = FALSE`, `NodeMayLag = FALSE` | LF1 fails: a status pass reads the chain, the release lands, the next stage signs, the stale pass clears that release, and the next transaction reuses its leaf |
+| `NextStageGuard = FALSE` (with `NodeMayLag = TRUE`) | LF1 fails: a release lands, the next stage signs, a status pass then reads a node that is behind and sees the earlier stage, clears the live stage's release, and the next transaction reuses its leaf |
 
 The harness (`scripts/run-formal-tests.py`) requires exactly that violation
 for each.
@@ -116,6 +133,14 @@ for each.
   key-use window and the recheck after the audit write are in
   [FORMAL_TLA_KEY_USE_LOCK_MODEL.md](FORMAL_TLA_KEY_USE_LOCK_MODEL.md). At most one sign is in flight,
   because the account lock serializes them.
+- A lagging node is modeled for the status pass's read only. A sign always
+  reads the true chain, so `ReleaseMemory.record`'s rule that a release from an
+  earlier stage never replaces a later stage's history is not exercised; a Go
+  test covers it (`TestEarlierStageReleaseKeepsALaterStagesHistory`).
+- An observation is always a stage. An authorizer that is not a stage (an
+  unknown address, a held key) clears nothing in the code, like an earlier or
+  a further stage; a retained entry for a retired stage is harmless, because
+  the leaf choice reads the memory only when it is about the live stage.
 - Validity windows, expiry, the stage-table recovery grants, and the one-time
   warning text are not modeled; they change what the signer reports, not the
   leaf it picks.
@@ -137,6 +162,8 @@ java -jar tla2tools.jar -config docs/formal/rotating_leaf_release.cfg \
 java -jar tla2tools.jar -config docs/formal/rotating_leaf_release_negative_wait.cfg \
   docs/formal/rotating_leaf_release.tla
 java -jar tla2tools.jar -config docs/formal/rotating_leaf_release_negative_seq.cfg \
+  docs/formal/rotating_leaf_release.tla
+java -jar tla2tools.jar -config docs/formal/rotating_leaf_release_negative_lag.cfg \
   docs/formal/rotating_leaf_release.tla
 ```
 

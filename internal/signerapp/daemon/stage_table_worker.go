@@ -165,10 +165,12 @@ func (fs *Signer) restoreReleases(ctx context.Context, ir *productruntime.Runtim
 
 // publishRotatingStatus records a pass's warnings, notes and per-account
 // status on the runtime, logs what changed, and tells a connected apadmin.
-func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signersigning.Service, reports []signersigning.StageTableReport) {
+// session is the lock generation the pass ran in: once a lock has ended that
+// session nothing is published, logged or sent.
+func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signersigning.Service, reports []signersigning.StageTableReport, session uint64) {
 	warnings, notes := svc.RotatingStatus(reports)
 	previous := ir.RotatingAlerts()
-	if !ir.SetRotatingStatus(warnings, notes, svc.RotatingAccountStatuses(reports)) {
+	if changed, _ := ir.PublishRotatingStatus(session, warnings, notes, svc.RotatingAccountStatuses(reports)); !changed {
 		return
 	}
 	for _, w := range warnings {
@@ -227,8 +229,11 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 	// A pass the lock (or shutdown) cancelled or cut is classified once. The
 	// reads it cancelled fail with the cancellation itself, which the chain
 	// reader keeps in the error chain: that is the lock, not the account's
-	// error, so only other errors are logged.
-	stopped := ctx.Err() != nil || cut
+	// error, so only other errors are logged. The lock generation is read as
+	// well as the context: a lock advances it before it cancels anything, and
+	// the cancellation reaches this pass's context a moment after the lock,
+	// so the context alone can still read live on a pass the lock ended.
+	stopped := ctx.Err() != nil || cut || ir.LockGeneration() != session
 	wait := stageTableIdleInterval
 	for _, r := range reports {
 		if r.Lookup != nil {
@@ -257,7 +262,9 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 		// clears it.
 		return stageTableIdleInterval
 	}
-	fs.publishRotatingStatus(ir, svc, reports)
+	// A lock can still land between that check and the publish, so the
+	// publish itself is bound to the session.
+	fs.publishRotatingStatus(ir, svc, reports, session)
 	return wait
 }
 

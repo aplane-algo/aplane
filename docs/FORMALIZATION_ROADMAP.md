@@ -542,3 +542,26 @@ record whose rekey-to list root disagrees with its metadata is refused at
 load (`74e8f042`). apadmin's archive and generations discard routing
 (`c2386189`) reaches the existing RB1-anchored handlers and adds no daemon
 caller.
+
+Follow-up (2026-11-15): `rotating_leaf_release.tla` gained a lagging node. A
+status pass's chain read may now show any stage the account has already left
+(`NodeMayLag`), and the clear is guarded by `NextStageGuard`: the memory is
+forgotten only when the read shows the stage the remembered release hands the
+account to (`RotatingStatus`, `rec.NextAddr`). An external audit found the gap
+the old model could not show, because its `Observe` always read the true
+chain: a read made after a release, from a node that was behind, showed an
+earlier stage, cleared the live stage's history, and the next transaction
+reused a leaf. LF1-LF3 hold over 7,871,090 states (depth 34; deep 54,796,612
+at depth 38). The new negative control `rotating_leaf_release_negative_lag.cfg`
+(`NextStageGuard = FALSE` with a lagging node) violates LF1 in 9,542 states at
+depth 12. `_negative_seq.cfg` now turns `NextStageGuard` off as well and has
+no lagging node (9,273 states at depth 12, unchanged): with `NextStageGuard`
+on, a read made before a release never shows the stage that release hands the
+account to, so the sequence guard decides nothing in this model; the code
+keeps it. The other controls moved with the larger state space (`_wait` 813,
+`_recheck` 493, `_cut` 6,629). Out of model, pinned by Go tests:
+`ReleaseMemory.record` never lets an earlier stage's release replace a later
+stage's history (a sign on a lagging read is not modeled), and the stage table
+worker publishes a pass's status only in the lock generation the pass ran in
+(`lockRuntime.WhileGeneration`, a read-side check that adds no transition to
+`key_use_lock.tla`).
