@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,10 @@ type ApplyResult struct {
 	PluginAvailable         bool
 	EnvConfigPath           string
 	EnvConfigChanged        bool
-	Warnings                []string
+	// SignerIndexer says which LocalNet Indexer the signer config names
+	// after the apply, by host, and whether an entry already there was kept.
+	SignerIndexer string
+	Warnings      []string
 }
 
 // NormalizeOptions fills in LocalNet endpoint defaults.
@@ -169,14 +173,20 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 		LocalNet: info,
 	}
 	if opts.SignerDataDir != "" {
+		// Planned before the write, which follows the same rule.
+		plan, err := PlanSignerIndexer(opts.SignerDataDir, info.AlgodURL, opts.IndexerURL)
+		if err != nil {
+			return ApplyResult{}, err
+		}
 		signerChanged, signerPath, err := EnsureSignerLocalnetConfig(opts.SignerDataDir, info, opts.AlgodToken, opts.IndexerURL)
 		if err != nil {
 			return ApplyResult{}, err
 		}
 		result.SignerConfigPath = signerPath
 		result.SignerConfigChanged = signerChanged
-		if opts.IndexerURL == "" && !defaultLocalnetAlgod(info.AlgodURL) {
-			result.Warnings = append(result.Warnings, NoDefaultIndexerWarning)
+		result.SignerIndexer = plan.String()
+		if warning := plan.warning(info.AlgodURL); warning != "" {
+			result.Warnings = append(result.Warnings, warning)
 		}
 	}
 	if opts.ClientDataDir != "" {
@@ -213,9 +223,89 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 	return result, nil
 }
 
-// NoDefaultIndexerWarning is the line Apply reports when it writes no
-// Indexer because the algod URL given is not the default LocalNet's.
+// NoDefaultIndexerWarning is the line Apply reports when the signer is left
+// with no LocalNet Indexer because the algod URL given is not the default
+// LocalNet's.
 const NoDefaultIndexerWarning = "no LocalNet Indexer was written for the signer, since the algod URL is not the default; pass --indexer-url to give it one"
+
+// IndexerPlan is the LocalNet Indexer the signer config names once an apply
+// has run: Host is its server's host, empty for none, and Kept reports that
+// an entry already in the config is left as it is.
+type IndexerPlan struct {
+	Host string
+	Kept bool
+}
+
+// PlanSignerIndexer reports what an apply leaves in the signer config at
+// dataDir for algodURL and the given indexerURL, by the rule
+// EnsureSignerLocalnetConfig follows: a given URL is written; without one an
+// existing entry is kept, and otherwise the default is written beside the
+// default algod only.
+func PlanSignerIndexer(dataDir, algodURL, indexerURL string) (IndexerPlan, error) {
+	if indexerURL != "" {
+		return IndexerPlan{Host: serverHost(indexerURL)}, nil
+	}
+	doc, err := loadYAMLDocument(filepath.Join(dataDir, "config.yaml"))
+	if err != nil {
+		return IndexerPlan{}, err
+	}
+	root, err := documentMapping(doc)
+	if err != nil {
+		return IndexerPlan{}, err
+	}
+	if entry := mappingValue(mappingValue(mappingValue(root, "networks"), NetworkID), "indexer"); entry != nil {
+		server := ""
+		if v := mappingValue(entry, "server"); v != nil && v.Kind == yaml.ScalarNode {
+			server = v.Value
+		}
+		return IndexerPlan{Host: serverHost(server), Kept: true}, nil
+	}
+	if defaultLocalnetAlgod(algodURL) {
+		return IndexerPlan{Host: serverHost(DefaultIndexerURL)}, nil
+	}
+	return IndexerPlan{}, nil
+}
+
+// serverHost is a server URL's host, the only part shown, since a URL may
+// carry a credential; empty for an empty URL.
+func serverHost(server string) string {
+	if server == "" {
+		return ""
+	}
+	u, err := url.Parse(server)
+	if err != nil || u.Host == "" {
+		return "an entry that is not a URL"
+	}
+	return u.Host
+}
+
+// String words the plan for the tool's output.
+func (p IndexerPlan) String() string {
+	switch {
+	case p.Host != "" && p.Kept:
+		return p.Host + ", already in the signer config, left as it is"
+	case p.Host != "":
+		return p.Host
+	case p.Kept:
+		return "none: the signer config's entry is empty, left as it is"
+	}
+	return "none: pass --indexer-url for a non-default algod"
+}
+
+// warning is what an apply beside a non-default algod has to say about the
+// Indexer: an entry kept from before may have been written for another
+// algod, and with none the operator may want to give one.
+func (p IndexerPlan) warning(algodURL string) string {
+	switch {
+	case defaultLocalnetAlgod(algodURL):
+		return ""
+	case p.Host != "" && p.Kept:
+		return fmt.Sprintf("the signer config's LocalNet Indexer at %s was left as it is, but it may have been written for another algod than %s; pass --indexer-url to replace it", p.Host, serverHost(algodURL))
+	case p.Host == "":
+		return NoDefaultIndexerWarning
+	}
+	return ""
+}
 
 // defaultLocalnetAlgod reports whether algodURL is this tool's own default
 // LocalNet algod, beside which the default Indexer listens.

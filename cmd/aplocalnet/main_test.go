@@ -4,6 +4,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,9 +14,10 @@ import (
 
 func TestModelViewShowsConfiguredKMDURL(t *testing.T) {
 	m := newModel(aplocalnet.Options{
-		AlgodURL:   "http://localhost:4001",
-		KMDURL:     "http://localhost:4012",
-		IndexerURL: "http://localhost:8980",
+		SignerDataDir: t.TempDir(),
+		AlgodURL:      "http://localhost:4001",
+		KMDURL:        "http://localhost:4012",
+		IndexerURL:    "http://localhost:8980",
 	})
 	m.busy = false
 
@@ -22,7 +25,7 @@ func TestModelViewShowsConfiguredKMDURL(t *testing.T) {
 	if !strings.Contains(view, "http://localhost:4012") {
 		t.Fatalf("view missing KMD URL:\n%s", view)
 	}
-	if !strings.Contains(view, "http://localhost:8980") {
+	if !strings.Contains(view, "localhost:8980") {
 		t.Fatalf("view missing Indexer URL:\n%s", view)
 	}
 	if strings.Contains(view, "u algod URL") {
@@ -59,18 +62,27 @@ func TestApplyTargetSpecifiedUsesFlagsOrEnv(t *testing.T) {
 	}
 }
 
-func TestModelViewShowsTheDefaultIndexerWhenNoneIsGiven(t *testing.T) {
-	m := newModel(aplocalnet.Options{AlgodURL: "http://localhost:4001"})
-	m.busy = false
-	if view := m.View(); !strings.Contains(view, aplocalnet.DefaultIndexerURL+" unless the signer config has one") {
-		t.Fatalf("view missing the Indexer default:\n%s", view)
+func TestModelViewShowsTheIndexerTheSignerWillName(t *testing.T) {
+	t.Setenv("APLANE_LOCALNET_INDEXER_URL", "")
+	withEntry := t.TempDir()
+	if err := os.WriteFile(filepath.Join(withEntry, "config.yaml"), []byte("networks:\n  localnet:\n    indexer:\n      server: http://indexer.example:8990\n      token: secret\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestModelViewShowsNoDefaultIndexerBesideAnotherAlgod(t *testing.T) {
-	m := newModel(aplocalnet.Options{AlgodURL: "http://localhost:4011"})
-	m.busy = false
-	if view := m.View(); !strings.Contains(view, "pass --indexer-url") {
-		t.Fatalf("view missing the Indexer hint:\n%s", view)
+	for _, tc := range []struct {
+		name, dir, algod, want string
+	}{
+		{"default algod, no entry", t.TempDir(), aplocalnet.DefaultAlgodURL, "localhost:8980"},
+		{"another algod, no entry", t.TempDir(), "http://localhost:4011", "none: pass --indexer-url"},
+		{"another algod, an entry", withEntry, "http://localhost:4011", "indexer.example:8990, already in the signer config, left as it is"},
+		{"default algod, an entry", withEntry, aplocalnet.DefaultAlgodURL, "indexer.example:8990, already in the signer config, left as it is"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newModel(aplocalnet.Options{SignerDataDir: tc.dir, AlgodURL: tc.algod})
+			m.busy = false
+			view := m.View()
+			if !strings.Contains(view, tc.want) || strings.Contains(view, "secret") {
+				t.Fatalf("view does not show %q (or shows the token):\n%s", tc.want, view)
+			}
+		})
 	}
 }

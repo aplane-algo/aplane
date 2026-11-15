@@ -567,3 +567,75 @@ func TestApplyBesideANonDefaultAlgodSaysHowToAddAnIndexer(t *testing.T) {
 		t.Fatalf("with an Indexer given: %q, %v", result.Warnings, err)
 	}
 }
+
+const operatorsIndexer = "networks:\n  localnet:\n    indexer:\n      server: http://user:pw@indexer.example:8990/idx\n      token: secret\n"
+
+// Beside another algod, an Indexer entry already in the signer config is
+// kept, said to be kept by its host alone, and flagged as possibly written
+// for another algod; "none was written" is only for a config with none.
+func TestApplyReportsTheIndexerTheSignerKeeps(t *testing.T) {
+	t.Setenv("APLANE_LOCALNET_INDEXER_URL", "")
+	dir := writeSignerConfig(t, operatorsIndexer)
+	algod := fakeLocalnetAlgod(t)
+	result, err := Apply(context.Background(), Options{SignerDataDir: dir, AlgodURL: algod.URL, AlgodToken: "custom-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(result.Warnings, NoDefaultIndexerWarning) {
+		t.Fatalf("warnings = %q: said none was written while an entry is kept", result.Warnings)
+	}
+	if !strings.Contains(result.SignerIndexer, "indexer.example:8990, already in the signer config, left as it is") {
+		t.Fatalf("SignerIndexer = %q", result.SignerIndexer)
+	}
+	kept := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "indexer.example:8990") && strings.Contains(w, "another algod") && strings.Contains(w, "--indexer-url") {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Fatalf("warnings = %q, want the kept entry flagged", result.Warnings)
+	}
+	for _, s := range append(result.Warnings, result.SignerIndexer) {
+		if strings.Contains(s, "pw") || strings.Contains(s, "secret") || strings.Contains(s, "/idx") {
+			t.Fatalf("%q shows more of the entry than its host", s)
+		}
+	}
+	if localnet := localnetIndexer(t, dir); localnet == nil || localnet.Indexer == nil || localnet.Indexer.Token != "secret" {
+		t.Fatalf("the operator's entry changed: %#v", localnet)
+	}
+
+	// No entry: none was written, and it says how to add one.
+	dir = writeSignerConfig(t, "")
+	result, err = Apply(context.Background(), Options{SignerDataDir: dir, AlgodURL: algod.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(result.Warnings, NoDefaultIndexerWarning) || !strings.HasPrefix(result.SignerIndexer, "none") {
+		t.Fatalf("warnings = %q, SignerIndexer = %q", result.Warnings, result.SignerIndexer)
+	}
+}
+
+// Beside the default algod, which Apply would reach for, the plan alone: a
+// kept entry is reported without a warning, and with none the default is
+// written.
+func TestPlanSignerIndexerBesideTheDefaultAlgod(t *testing.T) {
+	plan, err := PlanSignerIndexer(writeSignerConfig(t, operatorsIndexer), DefaultAlgodURL, "")
+	if err != nil || plan != (IndexerPlan{Host: "indexer.example:8990", Kept: true}) || plan.warning(DefaultAlgodURL) != "" {
+		t.Fatalf("plan = %+v, %v; warning %q", plan, err, plan.warning(DefaultAlgodURL))
+	}
+	plan, err = PlanSignerIndexer(writeSignerConfig(t, ""), DefaultAlgodURL, "")
+	if err != nil || plan != (IndexerPlan{Host: "localhost:8980"}) || plan.warning(DefaultAlgodURL) != "" {
+		t.Fatalf("plan = %+v, %v", plan, err)
+	}
+	emptied := writeSignerConfig(t, "networks:\n  localnet:\n    indexer:\n      server: \"\"\n")
+	if plan, _ := PlanSignerIndexer(emptied, DefaultAlgodURL, ""); plan != (IndexerPlan{Kept: true}) || !strings.Contains(plan.String(), "empty") {
+		t.Fatalf("emptied entry: %+v %q", plan, plan.String())
+	}
+	if plan, _ := PlanSignerIndexer(emptied, "http://localhost:4011", ""); plan.warning("http://localhost:4011") != NoDefaultIndexerWarning {
+		t.Fatalf("emptied entry beside another algod: %q", plan.warning("http://localhost:4011"))
+	}
+	if plan, _ := PlanSignerIndexer(writeSignerConfig(t, operatorsIndexer), "http://localhost:4011", "http://localhost:8990"); plan != (IndexerPlan{Host: "localhost:8990"}) {
+		t.Fatalf("given URL: %+v", plan)
+	}
+}

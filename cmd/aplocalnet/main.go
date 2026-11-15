@@ -44,13 +44,15 @@ type applyMsg struct {
 }
 
 type model struct {
-	opts   aplocalnet.Options
-	busy   bool
-	status string
-	info   *aplocalnet.LocalNetInfo
-	result *aplocalnet.ApplyResult
-	err    string
-	width  int
+	opts aplocalnet.Options
+	// indexer says which LocalNet Indexer the signer config will name.
+	indexer string
+	busy    bool
+	status  string
+	info    *aplocalnet.LocalNetInfo
+	result  *aplocalnet.ApplyResult
+	err     string
+	width   int
 }
 
 func main() {
@@ -196,6 +198,7 @@ func printApplyResult(result aplocalnet.ApplyResult) {
 	fmt.Printf("Genesis hash: %s\n", result.LocalNet.GenesisHash)
 	if result.SignerConfigPath != "" {
 		fmt.Printf("Signer config: %s (%s)\n", changedText(result.SignerConfigChanged), result.SignerConfigPath)
+		fmt.Printf("Signer Indexer: %s\n", result.SignerIndexer)
 	}
 	if result.ClientConfigPath != "" {
 		fmt.Printf("Client config: %s (%s)\n", changedText(result.ClientConfigChanged), result.ClientConfigPath)
@@ -233,10 +236,20 @@ func initStyles() {
 
 func newModel(opts aplocalnet.Options) model {
 	opts = aplocalnet.NormalizeOptions(opts)
+	indexer := "-"
+	if opts.SignerDataDir != "" {
+		plan, err := aplocalnet.PlanSignerIndexer(opts.SignerDataDir, opts.AlgodURL, opts.IndexerURL)
+		if err != nil {
+			indexer = "unknown: " + err.Error()
+		} else {
+			indexer = plan.String()
+		}
+	}
 	return model{
-		opts:   opts,
-		busy:   true,
-		status: "checking LocalNet",
+		opts:    opts,
+		indexer: indexer,
+		busy:    true,
+		status:  "checking LocalNet",
 	}
 }
 
@@ -330,13 +343,7 @@ func (m model) View() string {
 	if m.opts.KMDURL != "" {
 		sb.WriteString(kv("KMD", m.opts.KMDURL))
 	}
-	if m.opts.IndexerURL != "" {
-		sb.WriteString(kv("Indexer", m.opts.IndexerURL))
-	} else if m.opts.AlgodURL == aplocalnet.DefaultAlgodURL {
-		sb.WriteString(kv("Indexer", aplocalnet.DefaultIndexerURL+" unless the signer config has one"))
-	} else {
-		sb.WriteString(kv("Indexer", "none: pass --indexer-url for a non-default algod"))
-	}
+	sb.WriteString(kv("Indexer", m.indexer))
 	sb.WriteString(kv("Plugin", filepath.Join(m.opts.ClientDataDir, discovery.AvailableDirName, aplocalnet.PluginName)))
 	sb.WriteString("\n")
 

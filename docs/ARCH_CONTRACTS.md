@@ -338,8 +338,12 @@ Endpoint and token resolution:
   `networks.localnet.indexer` entry; an entry the operator set, or emptied
   (`server: ""`) to keep the lookup off, is left alone. With another algod
   URL no Indexer is written, since the default port may not be that
-  network's Indexer and the algod token would go to whatever listens there,
-  and the tool prints one line saying to pass `--indexer-url`. It is written to the signer only and is not
+  network's Indexer and the algod token would go to whatever listens there.
+  The tool reports what the signer config names afterwards, by host only
+  (`Signer Indexer:` and the TUI's `Indexer` line). Beside another algod it
+  warns: of a kept entry, that it may have been written for another algod
+  and `--indexer-url` replaces it; with none, that none was written and
+  `--indexer-url` adds one. It is written to the signer only and is not
   checked for reachability: an unreachable Indexer leaves rotating stage
   searches as they are without one
 - KMD URL: `--kmd-url`, then `APLANE_LOCALNET_KMD_URL`; if omitted, no
