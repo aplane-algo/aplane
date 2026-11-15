@@ -333,9 +333,6 @@ func restoreKeyTypeWidth(key RestoreKeyInfo) int {
 // restorePreviewFlags is the short, fixed vocabulary at the end of a key row.
 func restorePreviewFlags(key RestoreKeyInfo) string {
 	var suffix string
-	if key.StageHint != nil {
-		suffix += fmt.Sprintf("  hint %d", *key.StageHint)
-	}
 	if key.AlreadyExists {
 		// The node holds a key at this address. Preview does not compare
 		// the two; restore's conflict check decides, and replacement still

@@ -186,7 +186,7 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 			{Address: address, KeyType: longType, AlreadyExists: true, HasPolicy: true},
 			{Address: address, KeyType: "aplane.rotating-triple-slhdsa.v1", StageHint: &hint, AlreadyExists: true, HasPolicy: true},
 		}}}, []string{
-			"wide.v1]  present  +policy", "hint 1234567  present  +policy", "[ed25519]",
+			"wide.v1]  present  +policy", "slhdsa.v1]  present  +policy", "[ed25519]",
 		}},
 		{"restore row error", Model{viewState: ViewRestorePreview, restore: restoreState{previewKeys: []RestoreKeyInfo{
 			{Address: address, KeyType: longType, AlreadyExists: true, Error: "archive entry failed its integrity check"},
@@ -209,6 +209,10 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 				if !strings.Contains(view, want) {
 					t.Errorf("%q missing from:\n%s", want, view)
 				}
+			}
+			// A rotating key's stage hint is restored with the key, not shown.
+			if test.name == "restore flags" && strings.Contains(view, "1234567") {
+				t.Errorf("the stage hint is shown in:\n%s", view)
 			}
 		})
 	}
