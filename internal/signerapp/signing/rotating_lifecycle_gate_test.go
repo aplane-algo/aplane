@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
@@ -955,6 +956,39 @@ func TestRotatingSignStopsAtARecoveryRoundTripDuringTheLastAuditWrite(t *testing
 				t.Fatalf("signed %+v, withheld %+v; want one of each", audit.signed, audit.withheld)
 			}
 		})
+	}
+}
+
+// A recovery and a reconcile can both land while the operator is still
+// deciding. A lock fails a pending approval itself; recovery does not, so the
+// session read before the approval is what withholds the signature: the plan
+// and the verdict the operator approved belong to a session that is over.
+func TestRotatingSignStopsAtARecoveryRoundTripDuringApproval(t *testing.T) {
+	f, audit := newSigningFixtureFor(t, wotscTestType)
+	rt := signerruntime.New()
+	rt.SetUnlocked()
+	f.svc.IsUnlocked = rt.IsUnlocked
+	f.svc.Rotating.LockGeneration = rt.LockGeneration
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	off, asked := false, false
+	f.svc.Approval = &ApprovalService{
+		UserAutoApprove: &off,
+		HasClient:       func() bool { return true },
+		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+			asked = true
+			rt.SetRecovery()
+			return rt.PromoteRecoveryToUnlocked(), nil
+		},
+	}
+	resp, err := f.sign(t, prep.Transactions)
+	if !asked || !rt.IsUnlocked() {
+		t.Fatalf("the approval or the round trip did not happen: asked %v, state %v", asked, rt.GetState())
+	}
+	if resp != nil || err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("response %v, error %v, want a locked answer", resp, err)
+	}
+	if len(audit.releases) != 0 {
+		t.Fatalf("a leaf was released for a session that had ended: %+v", audit.releases)
 	}
 }
 

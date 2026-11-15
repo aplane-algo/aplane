@@ -73,7 +73,7 @@ history, so the question is whether the history is complete.
 - `Recover` is a recovery round trip in one step: `SetRecovery` from the
   unlocked state, a reconcile, and `PromoteRecoveryToUnlocked`
   (`internal/signerapp/runtime/runtime.go`). The account is in the inventory
-  afterwards. With `RecoveryEndsSession` the lock generation moved, so the
+  afterwards. With `RecoveryEndsSession` the session generation moved, so the
   memory restored for the earlier session is not used
   (`ReleaseMemory.ServeSession`, `ForLeafChoice`, `AwaitRestored`) and the
   worker resets it and restores again for the new session; the step folds
@@ -96,8 +96,7 @@ The guards are constants:
 | `CutRestoreHolds` | TRUE: the wait opens only after `rebuildReleaseMemory` sees a restore finish, bound to the generation read before its context and session | Without it a restore a lock cut short opens the wait with the history missing |
 | `SeqGuard` | TRUE: `rec.Seq > r.ObservedSeq` skips the clear | Without it, and without `NextStageGuard`, a pass that read the chain before a release erases it |
 | `NextStageGuard` | TRUE: `RotatingStatus` clears only when `r.Authorizer == rec.NextAddr` | Without it a read from a node that is behind, made after the release, shows an earlier stage and erases the live stage's history |
-
-| `RecoveryEndsSession` | TRUE: `SetRecovery` advances the lock generation, and the memory serves only the session named by `ServeSession` | Without it an account that was absent at the restore and came back through a recovery signs with its history missing and the wait open |
+| `RecoveryEndsSession` | TRUE: an entry into recovery (`SetRecovery`, `TryRecovery`) advances the session generation, and the memory serves only the session named by `ServeSession` | Without it an account that was absent at the restore and came back through a recovery signs with its history missing and the wait open |
 
 `NextStageGuard` covers what `SeqGuard` covers in this model: a read made
 before a release shows the stage the account was at then, which is never the
@@ -125,7 +124,6 @@ The negative controls (each with every loss source off):
 | `CutRestoreHolds = FALSE` | LF1 fails: a lock cuts a restore short, the signer unlocks, the restore returns and opens the wait, and a sign picks from the empty memory |
 | `SeqGuard = FALSE`, `NextStageGuard = FALSE`, `NodeMayLag = FALSE` | LF1 fails: a status pass reads the chain, the release lands, the next stage signs, the stale pass clears that release, and the next transaction reuses its leaf |
 | `NextStageGuard = FALSE` (with `NodeMayLag = TRUE`) | LF1 fails: a release lands, the next stage signs, a status pass then reads a node that is behind and sees the earlier stage, clears the live stage's release, and the next transaction reuses its leaf |
-
 | `RecoveryEndsSession = FALSE` | LF1 fails: a stage signs, the signer locks and unlocks into a generation without the account, the restore skips it and opens the wait, a recovery brings the account back, and the next transaction signs with no history |
 
 The harness (`scripts/run-formal-tests.py`) requires exactly that violation

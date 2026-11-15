@@ -378,6 +378,16 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if s.Approval == nil {
 		return nil, internal("signing service not fully configured")
 	}
+	// The session the request runs in, read before anything is decided for
+	// it: the plan, the policy verdict and the approval below all belong to
+	// this session, and the final check withholds the signature if it has
+	// ended by then. A lock fails a pending approval itself; an entry into
+	// recovery does not, and a reconcile can have the signer unlocked again
+	// before the operator answers.
+	var lockGeneration uint64
+	if deps.LockGeneration != nil {
+		lockGeneration = deps.LockGeneration()
+	}
 	group, decodeErr := canonical.DecodeGroupHex(req.Transactions)
 	if decodeErr != nil {
 		return nil, badRequest(decodeErr.Error())
@@ -488,10 +498,6 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, gateErr
 	}
 	defer release()
-	var lockGeneration uint64
-	if deps.LockGeneration != nil {
-		lockGeneration = deps.LockGeneration()
-	}
 
 	// A leaf family picks its one-time leaf from the stage's history, so a
 	// spend arriving before that history has been restored from the audit

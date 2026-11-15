@@ -2,22 +2,22 @@
 
 > Status: TLC checked over the bounded finite state space (one rotating sign
 > and one mnemonic export, each repeating, at most two lock or recovery
-> transitions); the recorded positive run generated 465 distinct states at
+> transitions); the recorded positive run generated 587 distinct states at
 > depth 13 with no counterexamples, and the deep configuration (three
-> transitions) 685 distinct states at depth 15. Six expected-failure
+> transitions) 886 distinct states at depth 15. Six expected-failure
 > negative controls must keep producing their exact counterexamples:
 > `key_use_lock_negative_recheck.cfg` (`FinalRecheck = FALSE`, violates
-> `KU1_NoSignatureAfterLock`, 156 distinct states at depth 7),
+> `KU1_NoSignatureAfterLock`, 165 distinct states at depth 7),
 > `key_use_lock_negative_generation.cfg` (`GenerationCheck = FALSE`, violates
-> `KU1_NoSignatureAfterLock`, 242 distinct states at depth 8),
+> `KU1_NoSignatureAfterLock`, 267 distinct states at depth 8),
 > `key_use_lock_negative_recovery.cfg` (`RecoveryEndsSession = FALSE`,
 > violates `KU1_NoSignatureAfterLock`, 270 distinct states at depth 8),
 > `key_use_lock_negative_drain.cfg` (`DrainWaits = FALSE`, violates
-> `KU2_NoKeyMaterialAtWipe`, 103 distinct states at depth 6),
+> `KU2_NoKeyMaterialAtWipe`, 105 distinct states at depth 6),
 > `key_use_lock_negative_register.cfg` (`RegisterChecksLock = FALSE`, violates
-> `KU2_NoKeyMaterialAtWipe`, 127 distinct states at depth 6) and
+> `KU2_NoKeyMaterialAtWipe`, 137 distinct states at depth 6) and
 > `key_use_lock_negative_register_export.cfg` (`RegisterChecksLock = FALSE`,
-> violates `KU3_NoExportAfterWipe`, 394 distinct states at depth 8).
+> violates `KU3_NoExportAfterWipe`, 479 distinct states at depth 8).
 
 Code that holds loaded key material outside an admin session registers a key
 use with `Runtime.KeyUseContext`. For a rotating seed that is every load in
@@ -64,11 +64,15 @@ waits for it; KU2 and KU3 cover that case.
   `internal/signerapp/runtime/runtime.go`: the state locks and the generation
   moves under `stateMu`. `DrainBegin` and `Wipe` transcribe `drainKeyUsers` and
   `performLockCleanup` in `internal/signerapp/productruntime/runtime.go`.
-- `EnterRecovery` and `LeaveRecovery` transcribe `SetRecovery` from the
-  unlocked state and `PromoteRecoveryToUnlocked` in the same file. Recovery
-  keeps the keyring: no key use is cancelled, nothing drains and nothing is
-  cleared. It ends the unlocked session, and `SetRecovery` moves the
-  generation to say so. A signer in recovery can be locked like an unlocked
+- `EnterRecovery` and `LeaveRecovery` transcribe `SetRecovery` and
+  `TryRecovery` from the unlocked state, and `PromoteRecoveryToUnlocked`, in
+  the same file. Recovery keeps the keyring: nothing drains and nothing is
+  cleared. It ends the unlocked session: the session generation moves, and
+  `productruntime`'s `SetRecovery` and `TryRecoveryUnlock` cancel the key
+  uses that session handed out (`cancelKeyUses`), without waiting for them.
+  The session generation is a counter of its own, apart from the one the
+  unlock fence compares, so an unlock that overlaps an entry into recovery
+  does not run the lock's cleanup. A signer in recovery can be locked like an unlocked
   one. `KeyUseContext` refuses a new key use in recovery, since the signer is
   not unlocked.
 - `Register` transcribes `KeyUseContext`: it checks the state and joins the
@@ -84,7 +88,7 @@ The guards are constants:
 | `DrainWaits` | TRUE: `drainKeyUsers` waits on `keyUsers` before the session is cleared | Without it the session is cleared under a holder |
 | `FinalRecheck` | TRUE: `releaseRefused(requestCtx, ...)` after the audit write | Without it a lock during the audit write still lets the signature out |
 | `GenerationCheck` | TRUE: `releaseRefused` compares `LockGeneration()` with the value captured at the start | Without it a lock and an unlock between the release and the return go unnoticed |
-| `RecoveryEndsSession` | TRUE: `SetRecovery` advances `lockGen` when it leaves the unlocked state | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
+| `RecoveryEndsSession` | TRUE: `SetRecovery` and `TryRecovery` advance the session generation when they leave the unlocked state, and the key uses handed out are cancelled | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
 
 The negative controls:
 
@@ -144,8 +148,12 @@ for each.
 - Recovery is modeled as leaving and re-entering the unlocked state. What a
   reconcile does to the store in between (the keys and policy it reloads) is
   not: KU1 says only that a signature made before it is not returned after
-  it. An export in flight is not stopped by recovery, because recovery clears
-  nothing and the keyring it reads stays loaded.
+  it. An export in flight has its key use cancelled and stops at its next
+  check; recovery clears nothing, so KU3 has nothing to say about it.
+- The sign reads its session before the plan, the policy verdict and the
+  approval (`SStart` is that read). A lock fails a pending approval itself;
+  recovery does not, and the session read is what withholds a signature
+  approved across a recovery.
 - `MaxLocks` bounds the number of lock and recovery transitions together, so
   the claim is over executions with at most that many.
 

@@ -36,14 +36,17 @@ func (s SignerState) String() string {
 // Runtime owns signer lock state.
 type Runtime struct {
 	state SignerState
-	// lockGen increments on every Lock and maintenance fence, and when
-	// SetRecovery leaves the unlocked state. TryUnlock and maintenance
-	// completion re-check it before publishing unlocked state, so a racing
-	// lock wins instead of leaving the runtime reporting unlocked over a
-	// destroyed key session. Neither runs while the signer is unlocked, so
-	// the recovery advance never makes one of them lose to a lock that did
-	// not happen.
+	// lockGen increments on every Lock and maintenance fence. TryUnlock and
+	// maintenance completion re-check it before publishing unlocked state, so
+	// a racing lock wins instead of leaving the runtime reporting unlocked
+	// over a destroyed key session.
 	lockGen uint64
+	// session identifies the unlocked session: it advances whenever the
+	// signer leaves the unlocked state, by a Lock, a maintenance fence or an
+	// entry into recovery. It is kept apart from lockGen because recovery
+	// destroys nothing: an unlock that raced an entry into recovery has not
+	// lost to a lock, and must not run the lock's cleanup.
+	session uint64
 	stateMu sync.RWMutex
 
 	onLock              func()
@@ -74,17 +77,17 @@ func (r *Runtime) SetOnLock(fn func()) {
 	r.onLock = fn
 }
 
-// LockGeneration returns the lock generation: a counter every Lock and
-// BeginMaintenance transition, and every SetRecovery that leaves the
-// unlocked state, advances under the state mutex, and that an unlock must
-// find unchanged to succeed. Two unlocked sessions never share a generation,
-// and a session ends whenever the signer leaves the unlocked state, so
-// per-session state can be keyed by it and a transition that was observed
-// late cannot be mistaken for the current one.
+// LockGeneration returns the session generation: a counter that advances,
+// under the state mutex, on every Lock and BeginMaintenance transition and
+// on every entry into recovery from the unlocked state (SetRecovery,
+// TryRecovery). Two unlocked sessions never share a generation, and a
+// session ends whenever the signer leaves the unlocked state, so per-session
+// state can be keyed by it and a transition that was observed late cannot be
+// mistaken for the current one.
 func (r *Runtime) LockGeneration() uint64 {
 	r.stateMu.RLock()
 	defer r.stateMu.RUnlock()
-	return r.lockGen
+	return r.session
 }
 
 // WhileGeneration runs fn if the signer is unlocked in the session generation
@@ -95,7 +98,7 @@ func (r *Runtime) LockGeneration() uint64 {
 func (r *Runtime) WhileGeneration(generation uint64, fn func()) bool {
 	r.stateMu.RLock()
 	defer r.stateMu.RUnlock()
-	if r.state != SignerStateUnlocked || r.lockGen != generation {
+	if r.state != SignerStateUnlocked || r.session != generation {
 		return false
 	}
 	fn()
@@ -141,19 +144,26 @@ func (r *Runtime) PromoteRecoveryToUnlocked() bool {
 
 // SetRecovery marks the runtime keyring-available for explicit recovery
 // administration without permitting signing. Leaving the unlocked state this
-// way ends the unlocked session as a lock does: the lock generation advances,
-// so work that began in that session finds it over even if the signer is
-// unlocked again by the time it looks. Nothing is cleared, because recovery
-// administration needs the keyring; the on-lock callback does not run.
+// way ends the unlocked session as a lock does: the session generation
+// advances, so work that began in that session finds it over even if the
+// signer is unlocked again by the time it looks. Nothing is cleared, because
+// recovery administration needs the keyring; the on-lock callback does not
+// run.
 func (r *Runtime) SetRecovery() {
 	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
 	if r.activeMaintenanceID == 0 {
-		if r.state == SignerStateUnlocked {
-			r.lockGen++
-		}
-		r.state = SignerStateRecovery
+		r.enterRecoveryLocked()
 	}
-	r.stateMu.Unlock()
+}
+
+// enterRecoveryLocked moves the state to recovery and, when that leaves the
+// unlocked state, ends the session. The caller holds stateMu for writing.
+func (r *Runtime) enterRecoveryLocked() {
+	if r.state == SignerStateUnlocked {
+		r.session++
+	}
+	r.state = SignerStateRecovery
 }
 
 // IsRecovery reports whether signing is blocked pending explicit activation
@@ -170,6 +180,7 @@ func (r *Runtime) Lock() bool {
 	wasActive := r.state == SignerStateUnlocked || r.state == SignerStateRecovery
 	r.state = SignerStateLocked
 	r.lockGen++
+	r.session++
 	onLock := r.onLock
 	r.stateMu.Unlock()
 
@@ -190,6 +201,7 @@ func (r *Runtime) BeginMaintenance() MaintenanceToken {
 	r.stateMu.Lock()
 	r.state = SignerStateLocked
 	r.lockGen++
+	r.session++
 	r.nextMaintenanceID++
 	if r.nextMaintenanceID == 0 {
 		r.nextMaintenanceID++
@@ -232,7 +244,9 @@ func (r *Runtime) FinishMaintenance(
 }
 
 // TryRecovery runs the keyring unlock function and enters recovery state
-// unless a concurrent lock wins.
+// unless a concurrent lock wins. Entered from the unlocked state (an unlock
+// request on a signer already unlocked, whose store then fails validation),
+// it ends the session as SetRecovery does.
 func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 	r.stateMu.RLock()
 	if r.activeMaintenanceID != 0 {
@@ -255,7 +269,7 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 		}
 		return false, LockedDuringUnlockMessage
 	}
-	r.state = SignerStateRecovery
+	r.enterRecoveryLocked()
 	r.stateMu.Unlock()
 	return true, ""
 }

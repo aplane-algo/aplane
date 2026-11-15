@@ -306,9 +306,9 @@ func (m *ReleaseMemory) Reset() {
 	m.signal()
 }
 
-// ServeSession names the unlocked session the next restore serves. Until
-// the worker names the session a sign runs in, that sign waits, however the
-// rest of the wait stands. A memory no worker ever named a session for holds
+// ServeSession names the unlocked session the next restore serves and holds
+// every account until that restore begins. Until the worker names the session
+// a sign runs in, that sign waits, however the rest of the wait stands. A memory no worker ever named a session for holds
 // nobody on this account, so a caller without a worker is unaffected.
 func (m *ReleaseMemory) ServeSession(generation uint64) {
 	if m == nil {
@@ -317,6 +317,10 @@ func (m *ReleaseMemory) ServeSession(generation uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.session, m.sessionNamed = generation, true
+	// Armed here as well as by Reset, so naming a session can never by itself
+	// open a memory restored for another one.
+	m.armed = true
+	m.pending = nil
 	m.signal()
 }
 
@@ -464,7 +468,8 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 	}
 	// A lock advances the generation before it cancels anything, and a key-use
 	// context can be cancelled before ctx is, so ctx alone can look alive.
-	// Recovery moves neither, so the signer's state is checked as well.
+	// The signer's state is checked as well: a restore handed the generation
+	// read during a recovery matches it, and still cannot finish.
 	interrupted := func() bool {
 		return ctx.Err() != nil ||
 			(deps.LockGeneration != nil && deps.LockGeneration() != generation) ||

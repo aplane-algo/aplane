@@ -28,8 +28,9 @@ between a holder's start and its registration.
 
 Recovery is a second way out of the unlocked state. The signer enters it
 when a store change ends in doubt and leaves it when a reconcile succeeds. It
-keeps the keyring, so nothing is cancelled, drained or cleared, but it ends
-the unlocked session all the same: signing is blocked while it lasts, and the
+keeps the keyring, so nothing is drained or cleared, but it ends the
+unlocked session all the same, and cancels the key uses that session handed
+out: signing is blocked while it lasts, and the
 store the session signed under may have changed by the time it ends.
 
 Five guards are switchable:
@@ -45,7 +46,8 @@ Five guards are switchable:
                       the start, not just the current state, so a lock and an
                       unlock in between still refuse.
   RecoveryEndsSession entering recovery from the unlocked state moves the
-                      lock generation (runtime.Runtime.SetRecovery), so a
+                      session generation (runtime.Runtime.SetRecovery and
+                      TryRecovery) and cancels the registered key uses, so a
                       recovery and a reconcile in between refuse as well.
 
 Properties:
@@ -81,7 +83,8 @@ Code anchors:
     internal/signerapp/keyadmin/export.go ExportKey.
   - LockState transcribes internal/signerapp/runtime/runtime.go Lock and
     BeginMaintenance; EnterRecovery and LeaveRecovery transcribe SetRecovery
-    and PromoteRecoveryToUnlocked there; DrainBegin and Wipe transcribe
+    and TryRecovery, and PromoteRecoveryToUnlocked, there, with
+    productruntime's cancelKeyUses on the way in; DrainBegin and Wipe transcribe
     internal/signerapp/productruntime/runtime.go drainKeyUsers and
     performLockCleanup; registration transcribes KeyUseContext.
 
@@ -253,9 +256,11 @@ LockState ==
     /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
     /\ UNCHANGED <<pc, cancelled, waited, leaked, wipedHeld, lateExport>>
 
-\* SetRecovery from the unlocked state. The session ends for every holder in
-\* flight; the generation moves with it only under RecoveryEndsSession. The
-\* keyring stays: no key use is cancelled and nothing is cleared.
+\* SetRecovery, or TryRecovery, from the unlocked state. The session ends for
+\* every holder in flight. Under RecoveryEndsSession the generation moves with
+\* it and every registered key use is cancelled (cancelKeyUses), so the
+\* session's work stops; nothing waits for it and nothing is cleared, because
+\* recovery keeps the keyring.
 EnterRecovery ==
     /\ life = "unlocked"
     /\ locks < MaxLocks
@@ -264,7 +269,9 @@ EnterRecovery ==
     /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
     /\ stale' = [h \in Holders |->
                     stale[h] \/ (RecoveryEndsSession /\ pc[h] # "idle")]
-    /\ UNCHANGED <<pc, cancelled, waited, leaked, wipedHeld, lateExport>>
+    /\ cancelled' = [h \in Holders |->
+                        cancelled[h] \/ (RecoveryEndsSession /\ Holding(h))]
+    /\ UNCHANGED <<pc, waited, leaked, wipedHeld, lateExport>>
 
 \* PromoteRecoveryToUnlocked: a reconcile succeeded.
 LeaveRecovery ==

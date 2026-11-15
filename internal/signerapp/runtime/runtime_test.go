@@ -413,3 +413,41 @@ func TestRecoveryEndsTheUnlockedSession(t *testing.T) {
 		t.Fatalf("unlock after a lock: %s", msg)
 	}
 }
+
+// TryRecovery is the other way into recovery, and it too can start from the
+// unlocked state: an unlock request on a signer already unlocked, whose store
+// then fails validation. It ends the session as SetRecovery does.
+func TestTryRecoveryFromUnlockedEndsTheSession(t *testing.T) {
+	rt := New()
+	rt.SetUnlocked()
+	session := rt.LockGeneration()
+	if ok, msg := rt.TryRecovery(func() error { return nil }); !ok {
+		t.Fatalf("TryRecovery: %s", msg)
+	}
+	if !rt.IsRecovery() || rt.LockGeneration() == session {
+		t.Fatalf("state %v, generation %d (was %d); want recovery in a new generation", rt.GetState(), rt.LockGeneration(), session)
+	}
+	// From locked it ends nothing.
+	rt.Lock()
+	locked := rt.LockGeneration()
+	if ok, msg := rt.TryRecovery(func() error { return nil }); !ok || rt.LockGeneration() != locked {
+		t.Fatalf("TryRecovery from locked: ok %v (%s), generation %d -> %d", ok, msg, locked, rt.LockGeneration())
+	}
+}
+
+// An entry into recovery destroys nothing, so an unlock that overlaps one has
+// not lost to a lock: the lock's cleanup must not run and wipe the keyring
+// recovery administration needs.
+func TestUnlockOverlappingRecoveryDoesNotRunTheLockCleanup(t *testing.T) {
+	rt := New()
+	var lockCalls atomic.Int32
+	rt.SetOnLock(func() { lockCalls.Add(1) })
+	rt.SetUnlocked()
+	ok, _, msg := rt.TryUnlock(func() (int, error) {
+		rt.SetRecovery()
+		return 1, nil
+	}, nil)
+	if msg == LockedDuringUnlockMessage || lockCalls.Load() != 0 {
+		t.Fatalf("an unlock overlapping recovery was treated as losing to a lock: ok %v, %q, %d cleanup(s)", ok, msg, lockCalls.Load())
+	}
+}

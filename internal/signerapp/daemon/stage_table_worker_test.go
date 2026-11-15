@@ -754,7 +754,7 @@ func releaseMemoryHeld(server *Signer, account string) bool {
 // whichever generation the restore was given: one read just after the lock
 // matches the current one, so the generation can't be the only thing consulted.
 func TestRestoreEndedByALockStaysHeld(t *testing.T) {
-	for _, mode := range []string{"generation from before the lock", "generation from after the lock", "recovery, which moves no generation"} {
+	for _, mode := range []string{"generation from before the lock", "generation from after the lock", "generation from before the recovery", "generation read in recovery"} {
 		t.Run(mode, func(t *testing.T) {
 			server, cleanup := setupTestSigner(t)
 			defer cleanup()
@@ -773,12 +773,14 @@ func TestRestoreEndedByALockStaysHeld(t *testing.T) {
 
 			server.rotatingReleases.Reset()
 			generation := ir.LockGeneration()
-			if mode == "recovery, which moves no generation" {
+			// Read during recovery the generation is the current one, so only
+			// the signer's state says the restore cannot finish.
+			if strings.Contains(mode, "recovery") {
 				ir.SetRecovery()
 			} else {
 				ir.Lock()
 			}
-			if mode == "generation from after the lock" {
+			if mode == "generation from after the lock" || mode == "generation read in recovery" {
 				generation = ir.LockGeneration()
 			}
 			if server.rebuildReleaseMemory(context.Background(), ir, generation) {
@@ -810,9 +812,9 @@ func TestRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
 	}
 }
 
-// Recovery can start after the restore's context exists. It cancels nothing,
-// so the context still reads live; it ends the session, which the generation
-// shows, and the restore stops with its accounts held.
+// Recovery can start after the restore's context exists. It ends the session:
+// the generation moves and the context is cancelled, as at a lock, and the
+// restore stops with its accounts held.
 func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -826,8 +828,11 @@ func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
 	svc := &signersigning.Service{Planner: server.newPlannerWithAudit(nil), Rotating: server.rotatingDeps(ir)}
 
 	ir.SetRecovery()
-	if ctx.Err() != nil {
-		t.Fatal("recovery cancelled the restore's context; this test needs it live")
+	// The cancellation reaches the context a moment after the transition.
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("recovery did not cancel a context from the session it ended")
 	}
 	if ir.LockGeneration() == generation {
 		t.Fatal("recovery left the unlocked session's generation in place")
