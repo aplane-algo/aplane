@@ -6,10 +6,12 @@ package signerops
 import (
 	"bytes"
 	"crypto/sha256"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 )
 
 var failureTestMessage = func() []byte {
@@ -101,5 +103,32 @@ func TestSignStageRefusesOtherMessageSizes(t *testing.T) {
 	}
 	if len(*made) != 0 {
 		t.Fatal("a refused message reached an XMSS leaf")
+	}
+}
+
+// TestSignStageRefusesAProgramOfAnotherStage makes derivation build a program
+// that embeds another stage number than the stage asked for, and checks that
+// SignStage refuses it and wipes the XMSS signature it made. The other number
+// is a tree further on, so the leaf range, and every key, are the stage's own
+// and the signatures would verify.
+func TestSignStageRefusesAProgramOfAnotherStage(t *testing.T) {
+	ops, key := fixedStageOps(t)
+	made := observeXmss(t, nil)
+	restore := buildProgram
+	t.Cleanup(func() { buildProgram = restore })
+	buildProgram = func(keys *stage.PublicKeys) (stage.Program, error) {
+		other := *keys
+		other.Stage += stage.StagesPerTree
+		return restore(&other)
+	}
+	sig, err := ops.SignStage(key, 0, 3, failureTestMessage)
+	if err == nil || !strings.Contains(err.Error(), "embeds stage 1024") {
+		t.Fatalf("SignStage for stage 0 with a stage 1024 program: %v", err)
+	}
+	if sig.Program != nil || sig.Args != nil {
+		t.Fatal("SignStage returned a program or signatures with its refusal")
+	}
+	if len(*made) != 1 || !allZero((*made)[0]) {
+		t.Fatal("the refused XMSS signature was not wiped")
 	}
 }

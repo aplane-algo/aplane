@@ -89,8 +89,9 @@ func unpackPublicKeys(packed []byte) ([signerops.AccountTagSize]byte, *stage.Pub
 	if len(packed) != packedSize {
 		return tag, nil, fmt.Errorf("stage public key length %d invalid", len(packed))
 	}
-	pk := &stage.PublicKeys{}
-	_, pk.Lo, pk.Hi = stage.RangeFor(0)
+	// The record is stage 0's, whose number and range are fixed and not stored.
+	pk := &stage.PublicKeys{Stage: 0}
+	_, pk.Lo, pk.Hi = stage.RangeFor(pk.Stage)
 	rest := packed[copy(tag[:], packed):]
 	rest = rest[copy(pk.Falcon[:], rest):]
 	rest = rest[copy(pk.Root[:], rest):]

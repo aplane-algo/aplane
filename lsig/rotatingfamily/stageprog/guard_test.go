@@ -7,15 +7,15 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 	slhstage "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/stage"
 	wotscstage "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/stage"
 	xmssstage "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 )
 
-// rotationGuard is the opening every rotating stage program shares, assembled
-// by TEAL v13:
+// rotationGuard is what every rotating stage program shares after its
+// version byte and the stage prefix's constant, assembled by TEAL v13:
 //
-//	#pragma version 13
 //	txn RekeyTo; global ZeroAddress; !=; assert        a spend must rekey
 //	txn RekeyTo; txn Sender; !=; assert                but not to itself
 //	txn CloseRemainderTo; global ZeroAddress; ==; assert   and not close out
@@ -24,7 +24,6 @@ import (
 // The templates are frozen and define addresses, so the guard cannot be
 // shared code; this test keeps the copies identical.
 var rotationGuard = []byte{
-	0x0d,
 	0x31, 0x20, 0x32, 0x03, 0x13, 0x44,
 	0x31, 0x20, 0x31, 0x00, 0x13, 0x44,
 	0x31, 0x09, 0x32, 0x03, 0x12, 0x44,
@@ -32,7 +31,7 @@ var rotationGuard = []byte{
 }
 
 func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
-	xmss, err := xmssstage.Build(&xmssstage.PublicKeys{Lo: 0, Hi: xmssstage.IndicesPerStage})
+	xmss, err := xmssstage.Build(&xmssstage.PublicKeys{Stage: 0, Lo: 0, Hi: xmssstage.IndicesPerStage})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,13 +43,18 @@ func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, program := range map[string][]byte{
-		"XMSS":    xmss.Bytecode,
-		"SLH-DSA": slh.Bytecode,
-		"WOTS+C":  wotsc.Bytecode,
+	// guardAt is where the guard begins: after the version byte, or after the
+	// stage prefix in a program that carries its stage number.
+	for name, c := range map[string]struct {
+		program []byte
+		guardAt int
+	}{
+		"XMSS":    {xmss.Bytecode, stageprog.PrefixSize},
+		"SLH-DSA": {slh.Bytecode, 1},
+		"WOTS+C":  {wotsc.Bytecode, 1},
 	} {
-		if !bytes.HasPrefix(program, rotationGuard) {
-			t.Errorf("the %s stage program does not open with the rotation guard: % x", name, program[:len(rotationGuard)])
+		if c.program[0] != 0x0d || !bytes.HasPrefix(c.program[c.guardAt:], rotationGuard) {
+			t.Errorf("the %s stage program does not open with the rotation guard: % x", name, c.program[:c.guardAt+len(rotationGuard)])
 		}
 	}
 	if xmssstage.MaxValidityWindow != 100 || slhstage.MaxValidityWindow != 100 || wotscstage.MaxValidityWindow != 100 {

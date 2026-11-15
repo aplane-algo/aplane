@@ -431,7 +431,7 @@ func (a *xmssAccount) stage(i uint64) *xmssStage {
 		a.t.Fatal(err)
 	}
 	s.falcon = kp
-	s.keys = &stage.PublicKeys{Root: s.tree.pk.Root, Seed: s.tree.pk.Seed, Lo: lo, Hi: hi}
+	s.keys = &stage.PublicKeys{Stage: i, Root: s.tree.pk.Root, Seed: s.tree.pk.Seed, Lo: lo, Hi: hi}
 	copy(s.keys.Ed25519[:], s.ed.Public().(ed25519.PublicKey))
 	copy(s.keys.Falcon[:], kp.PublicKey[:])
 	s.program, err = stage.Build(s.keys)

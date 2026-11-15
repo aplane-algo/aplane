@@ -117,6 +117,8 @@ func (o *StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) e
 // with [xmss_sig, ed25519_sig, falcon_sig] as its arguments. The caller
 // chooses the leaf inside the stage's range and records its use. A message
 // that is not a 32-byte transaction ID is refused before any key is derived.
+// Before anything is returned the derived program is parsed again, must embed
+// stage i, and the signatures must verify against it.
 func (o *StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index uint32, message []byte) (signing.RotatingStageSignature, error) {
 	if err := stagesign.CheckMessage(message); err != nil {
 		return signing.RotatingStageSignature{}, err
@@ -135,6 +137,10 @@ func (o *StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index u
 	if err != nil {
 		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
+	}
+	if embedded.Stage != i {
+		stagesign.ZeroArgs(args)
+		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d program embeds stage %d", i, embedded.Stage)
 	}
 	if err := Verify(embedded, message, xmssSig, edSig, falconSig); err != nil {
 		stagesign.ZeroArgs(args)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -30,7 +31,8 @@ func randomKeys(t *testing.T) *PublicKeys {
 	if _, err := rand.Read(stage[:]); err != nil {
 		t.Fatal(err)
 	}
-	_, keys.Lo, keys.Hi = RangeFor(uint64(stage[0]) | uint64(stage[1])<<8)
+	keys.Stage = uint64(stage[0]) | uint64(stage[1])<<8
+	_, keys.Lo, keys.Hi = RangeFor(keys.Stage)
 	return keys
 }
 
@@ -55,7 +57,7 @@ func keysWithSalt(t *testing.T, salted bool) (*PublicKeys, Program) {
 // its arguments need five size units, while the program fits in the free
 // program bytes of five.
 func TestProgramSizesAndCost(t *testing.T) {
-	if UnsaltedProgramSize != 2661 || SaltedProgramSize != 2664 {
+	if UnsaltedProgramSize != 2672 || SaltedProgramSize != 2675 {
 		t.Fatalf("program sizes %d/%d", UnsaltedProgramSize, SaltedProgramSize)
 	}
 	if MaxArgumentBytes != 4179 {
@@ -75,12 +77,14 @@ func TestProgramSizesAndCost(t *testing.T) {
 	}
 	// The constant slots hold the placeholders the template was assembled
 	// with, each preceded by its pushbytes length (the seed sits inside the
-	// 64-byte toByte(3) || SEED constant).
+	// 64-byte toByte(3) || SEED constant, the stage number right after the
+	// version byte).
 	for _, slot := range []struct {
 		off, size int
 		fill      byte
 		prefix    []byte
 	}{
+		{stageprog.StageOffset, stageprog.StageSize, fillStage, []byte{0x0d, 0x80, stageprog.StageSize}},
 		{ed25519KeyOffset, ConstantSize, fillEd25519, []byte{0x80, ConstantSize}},
 		{falconKeyOffset, FalconPublicKeySize, fillFalcon, []byte{0x80, 0x81, 0x0e}},
 		{rootOffset, ConstantSize, fillRoot, []byte{0x80, ConstantSize}},
@@ -156,7 +160,7 @@ func TestParseRejectsNonCanonicalPrograms(t *testing.T) {
 	if _, _, err := Parse(wrongSalt); !errors.Is(err, ErrInvalidProgram) {
 		t.Fatalf("wrong salt accepted: %v", err)
 	}
-	for _, off := range []int{10, falconKeyOffset - 1, seedOffset - 3, loOffset - 2, UnsaltedProgramSize - 1} {
+	for _, off := range []int{0, 1, 2, stageprog.PrefixSize - 1, 21, falconKeyOffset - 1, seedOffset - 3, loOffset - 2, UnsaltedProgramSize - 1} {
 		tampered := bytes.Clone(unsalted.Bytecode)
 		tampered[off] ^= 1
 		if _, _, err := Parse(tampered); !errors.Is(err, ErrInvalidProgram) {
