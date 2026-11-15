@@ -210,6 +210,7 @@ Validation:
 - `teal_compile_network` and server `networks` keys must be valid network context tokens
 - `networks.<token>.algod` is normalized into the runtime algod map
 - `networks.<token>.genesis_hash` maps one base64 or hex encoded 32-byte genesis hash to that custom network context token
+- `networks.<token>.indexer` (`server`, `token`) is optional and normalized into the runtime Indexer map; a non-empty `server` must be an http or https URL with a host, and the load error names the network, not the URL. It is a file setting, not a writable admin setting. The stage table worker reads it to choose a rotating search's first candidate, and reports what that lookup found as the optional `/status` field `rotating[].recovery.lookup` (`signerapi.RotatingStageLookupStatus`, [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)), an additive field; the contract fixtures `status_response_rotating.json` and `rotating_recover_response_lookup.json` carry it
 - `mainnet`, `testnet`, and `betanet` are reserved built-in Algorand network tokens; custom genesis-hash mappings cannot use those tokens or remap their built-in genesis hashes
 - duplicate genesis-hash mappings and duplicate custom token mappings are rejected at config load
 - relative SSH server paths resolve against the signer data dir

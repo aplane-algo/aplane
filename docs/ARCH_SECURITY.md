@@ -2046,6 +2046,40 @@ types, and over-ceiling fees before signing. The only rekey authority is the
 spending key, and an account may declare no rekey operation at all. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
+### Outbound Chain Reads
+
+The signer reads the chain itself in two places, both through
+`internal/signerapp/chainread`: its own algod, for a rotating account's
+authorizer and for an asset an operator confirms into the ASA set; and, only
+when `networks.<token>.indexer` is configured, an Indexer, for the stage a
+rotating recovery search tries first. Both are chosen from the key's genesis
+hash and are file settings, not admin settings.
+
+The Indexer read proposes and never decides. The candidate is derived from
+the seed and accepted only when its address equals the authorizer the
+signer read from its own algod, the check every search probe makes. What a
+wrong or hostile Indexer can do:
+
+| It does | Effect |
+|---|---|
+| Supplies a well-formed spend with a false stage | One derivation and its time charged to the grant, a miss, then the normal search with one stage less to spend; with one stage left, the search does not run |
+| Supplies an old spend | Rejected: its rekey target must be the authorizer algod reports |
+| Answers slowly or not at all | At most 10 seconds of the worker, once per grant |
+| Sends a huge or malformed body, or redirects | Cut at 1 MiB or refused; the lookup is `unavailable` |
+| Supplies false candidates on every grant | One derivation per grant, from that grant's budget; a grant starts per authorizer per unlock, or by an operator |
+
+It cannot make the signer accept a stage, change what is signed, write a hint
+into the stage table, or widen a search. At the edge of an automatic
+allowance it can end a search one stage early. Nothing it sends reaches a log
+line, status field or error except a transaction ID of the right form; the
+Indexer's token is in none of them. The lookup opens no seed and is not a key
+use.
+
+Configuring one exposes two things: the Indexer provider learns which
+accounts the signer asks about (the algod provider already learns that from
+the authorizer reads), and the signer parses one more provider's responses,
+the SDK's JSON models over a capped body.
+
 ### Defense in Depth
 
 | Attack Vector | Mitigation |
@@ -2058,6 +2092,7 @@ spending key, and an account may declare no rekey operation at all. See
 | Socket hijacking | Permissions check, symlink rejection |
 | Blind signing | TxnBytesHex required, transaction verification |
 | Foreign LSig resource manipulation | `lsig_resources` is advisory; incorrect hints cause submission failure, not security bypass |
+| Hostile Indexer | Its stage is a candidate the seed derivation must confirm against algod's authorizer; one bounded lookup per grant (see Outbound Chain Reads) |
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |
@@ -2154,6 +2189,7 @@ Primary implementation files:
 - `internal/signerapp/daemon/admin_services.go`
 - `internal/signerapp/daemon/audit_attribution.go`
 - `internal/signerapp/audit/audit.go`
+- `internal/signerapp/chainread/reader.go`, `lookup.go`
 
 Compatibility-bearing references:
 

@@ -1535,6 +1535,18 @@ after an initial 16-position interval, three forward probes alternate with
 one probe into the lowest gap. Coverage persists across restart; no maximum
 cached stage implies coverage below it. Explicit operator windows stay bounded.
 
+Candidates come from the table's hint (a backup's, or the signer's own last
+observation), local release candidates, an operator's stage hint, and the
+chain. With `networks.<token>.indexer` configured, a recovery grant without an
+operator's hint first tries the stage the account's last confirmed rekey reads
+(see [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)). That
+probe is an ordinary derivation: its address is retained like any probe, a
+miss included, and repairs or confirms an unverified record at that stage; a
+stage held with a verified other address is not derived again. The Indexer is
+never a hint source: the candidate is not stored as the hint and does not
+steer the search that follows, and only the worker's own seed-derived match
+becomes a `local_observation`.
+
 The optional hint records `stage`, optional `observed_round`, `authorizer`
 and source (`local_observation` or `backup`). Only a seed-derived address
 matching the configured chain produces a local observation. Merge hints by
@@ -1548,7 +1560,8 @@ Placement and lifecycle:
 - the cache sits beside `generations/`, outside generation transactions;
   mints and rollbacks do not rewind it
 - backups omit the full file, but may carry an optional stage hint in the
-  sealed manifest; a restore without a hint uses bounded discovery
+  sealed manifest; a restore without a hint uses bounded discovery, which,
+  with an Indexer configured, begins with the chain's candidate
 - deletion closes handles and removes the file; inventory reload starts a new
   derivation epoch and forgets verified memory while retaining cached progress,
   observations and open handles (the selector binds the seed, so a reload

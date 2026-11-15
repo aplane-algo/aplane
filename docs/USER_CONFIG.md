@@ -389,6 +389,33 @@ derivation time. The signer reads a rotating account's live stage from the
 network's `networks.<network>.algod` node, which must therefore be
 configured for that network.
 
+`networks.<network>.indexer` is optional. With it, a search for a rotating
+account's stage first tries the stage the account's last confirmed spend
+reads, so after a restore or on a new machine the account usually resolves
+on the signer's next pass, one derivation later:
+
+```yaml
+networks:
+  mainnet:
+    algod:
+      server: https://configured-algod.example
+      token: ""
+    indexer:
+      server: https://configured-indexer.example
+      token: ""
+```
+
+`indexer.server` is the Indexer's base URL; leave it out, or empty, for no
+lookup on that network. `indexer.token` is sent as the Indexer API token. The
+signer never derives an Indexer from the algod URL and has no built-in
+provider. A URL that is not http or https with a host is a configuration
+error naming the network. The token is never logged or shown in status. Like
+the algod entry, the setting is read from the file at start and cannot be
+changed through apadmin. The Indexer's answer is only a candidate: the signer
+accepts a stage when the address it derives from the seed is the authorizer
+its own algod reports, and when the Indexer is missing, slow or wrong it
+searches as it would without one. apshell has no Indexer setting.
+
 `passphrase_command_argv` and `passphrase_command_env` are accepted in the
 top-level `config.yaml`. `appass` writes its configuration to
 `identities/default/unlock.yaml`, which takes precedence.
