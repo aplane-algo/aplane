@@ -2116,7 +2116,13 @@ past without being kept. So a lookup allocates at most the 256 KiB body
 buffer, eight programs of at most 16,000 bytes, and the syntax check's
 nesting stack, about 470 KB measured at worst, whatever the response holds;
 the SDK's models would have decoded a 1 MiB body of empty results into
-gigabytes.
+gigabytes. The request goes over the lookup's own HTTP transport, not the
+process default: keep-alives are off, so each lookup opens one connection
+and its token-bearing GET is never replayed on a reused one that died;
+response headers are capped at 16 KiB; the dial, TLS handshake and wait for
+headers each have a timeout within the 10-second deadline; no compression is
+asked for; and any response outside 2xx, redirects included, is refused
+unread.
 
 ### Defense in Depth
 

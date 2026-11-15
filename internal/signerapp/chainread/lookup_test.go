@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -586,5 +587,56 @@ func TestLookupDropsAnIDThatIsNotATransactionID(t *testing.T) {
 	idx = &fakeIndexer{pages: [][]map[string]any{{txn}}}
 	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupUnavailable {
 		t.Fatalf("escaped ID: %+v, want unavailable", got)
+	}
+}
+
+// Each lookup opens its own connection and sends its GET once: a server that
+// drops a connection without answering sees one request for that lookup,
+// never a replay on another connection, whichever lookup it drops.
+func TestLookupSendsItsRequestOnceOnItsOwnConnection(t *testing.T) {
+	good := jsonBody(t, map[string]any{"transactions": []any{spend(lookupAccount, lookupAuthorizer, stageProgram(7, "x"), false)}})
+	for _, drop := range []int32{1, 2} {
+		t.Run(fmt.Sprintf("request %d dropped", drop), func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if requests.Add(1) == drop {
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err == nil {
+						_ = conn.Close()
+					}
+					return
+				}
+				_, _ = w.Write(good)
+			}))
+			t.Cleanup(srv.Close)
+			r := lookupReaderFor(srv)
+			for i := int32(1); i <= 2; i++ {
+				got, err := r.LookupLastRotation(context.Background(), testnetGenesis, lookupAccount, lookupAuthorizer)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := LookupCandidate
+				if i == drop {
+					want = LookupUnavailable
+				}
+				if got.Outcome != want {
+					t.Fatalf("lookup %d = %+v, want %s", i, got, want)
+				}
+				if n := requests.Load(); n != i {
+					t.Fatalf("after lookup %d the server saw %d requests, want %d", i, n, i)
+				}
+			}
+		})
+	}
+}
+
+// Response headers are capped like the body.
+func TestLookupRefusesOversizedResponseHeaders(t *testing.T) {
+	idx := &fakeIndexer{handler: func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Pad", strings.Repeat("h", 1<<20))
+		_, _ = w.Write([]byte(`{"transactions":[]}`))
+	}}
+	if got := lookup(t, lookupReaderFor(idx.serve(t)), lookupAccount, lookupAuthorizer); got.Outcome != LookupUnavailable {
+		t.Fatalf("lookup = %+v, want unavailable", got)
 	}
 }

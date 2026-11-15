@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -143,7 +144,7 @@ func (r Reader) LookupLastRotation(ctx context.Context, genesisHash []byte, acco
 	out.Host = server.Host
 	base := r.IndexerTransport
 	if base == nil {
-		base = http.DefaultTransport
+		base = indexerHTTP
 	}
 	search := indexerSearch{client: &http.Client{Transport: indexerTransport{base: base}}, server: *server, token: cfg.Token}
 	timeout := r.LookupTimeout
@@ -341,6 +342,26 @@ type statusError int
 
 func (e statusError) Error() string { return fmt.Sprintf("HTTP %d", int(e)) }
 func (e statusError) Unwrap() error { return errBadStatus }
+
+// indexerHTTP carries every Indexer request. It is the lookup's own, not
+// http.DefaultTransport: keep-alives are off, so each lookup opens its one
+// connection and net/http never replays the token-bearing GET on a reused
+// connection that died; response headers are capped like the body; and the
+// dial, TLS handshake and wait for headers each have a timeout inside the
+// lookup's overall deadline. No compression is asked for, so the body read
+// is the body sent.
+var indexerHTTP = &http.Transport{
+	Proxy:                  http.ProxyFromEnvironment,
+	DialContext:            (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+	TLSHandshakeTimeout:    5 * time.Second,
+	ResponseHeaderTimeout:  8 * time.Second,
+	MaxResponseHeaderBytes: maxIndexerHeaderBytes,
+	DisableKeepAlives:      true,
+	DisableCompression:     true,
+}
+
+// maxIndexerHeaderBytes caps the response headers.
+const maxIndexerHeaderBytes = 16 << 10
 
 // indexerTransport refuses every response outside 2xx, redirects among
 // them, so the lookup makes only the request it counts and only to the host

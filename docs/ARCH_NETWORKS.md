@@ -252,8 +252,9 @@ networks:
   algod,
 - a lookup is bounded: 10 s, one request for at most eight results (a
   response that holds a ninth is refused, and no further page is asked
-  for), a 256 KiB body read whole and checked as one JSON document, no
-  redirects, one attempt per grant, and only the
+  for), a 256 KiB body read whole and checked as one JSON document, 16 KiB
+  of headers, its own connection with no keep-alive, no redirects, one
+  attempt per grant, and only the
   fields it checks are decoded. It asks for eight because the Indexer's
   sender role also matches a clawback's asset sender, and a clawback
   another address sends can come before the account's last spend,
