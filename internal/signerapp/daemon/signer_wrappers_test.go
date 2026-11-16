@@ -47,7 +47,7 @@ func (fs *Signer) failAllPendingApprovals(reason string) {
 }
 
 func (fs *Signer) newApprovalServiceForRuntime(ir *productruntime.Runtime) *signersigning.ApprovalService {
-	return fs.newApprovalServiceWithAudit(ir, fs.auditLog, fs.generateTransactionDescriptionFromTxn)
+	return fs.newApprovalServiceWithAudit(ir, fs.auditLog)
 }
 
 // offerDisplacement sends a client_exists message to the new connection and waits

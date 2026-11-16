@@ -534,11 +534,20 @@ type ReconcileStoreResultMessage struct {
 	Error        string `json:"error,omitempty"`
 }
 
+// Policy violation severities. A notice is a finding shown without alarm,
+// such as a rekey to an account the signer holds a valid aplane key for;
+// whatever counts warnings counts it too.
+const (
+	ViolationSeverityCritical = "critical"
+	ViolationSeverityWarning  = "warning"
+	ViolationSeverityNotice   = "notice"
+)
+
 // PolicyViolation represents a dangerous transaction field detected by the policy engine
 type PolicyViolation struct {
 	Field    string `json:"field"`    // Field name (e.g., "RekeyTo", "CloseRemainderTo")
 	Value    string `json:"value"`    // The problematic value
-	Severity string `json:"severity"` // "warning" or "critical"
+	Severity string `json:"severity"` // ViolationSeverityCritical, ViolationSeverityWarning or ViolationSeverityNotice
 	Message  string `json:"message"`  // Human-readable explanation
 }
 
@@ -552,6 +561,8 @@ type SignRequestMessage struct {
 	FirstValid  uint64            `json:"first_valid"`          // First valid round (0 if unknown)
 	LastValid   uint64            `json:"last_valid"`           // Last valid round (0 if unknown)
 	Violations  []PolicyViolation `json:"violations,omitempty"` // Policy violations detected
+	// Review is the request as data. The description is printed from it.
+	Review *Review `json:"review,omitempty"`
 }
 
 // SignRequestCanceledMessage is sent to apadmin when a pending signing request

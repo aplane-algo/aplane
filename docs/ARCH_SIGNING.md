@@ -1061,7 +1061,8 @@ is built, then uses:
 - warning analysis for operator-visible risk surfacing: rekey, close-out,
   asset close, clawback, application delete, clear-state, or update, asset
   reconfigure or destroy, asset freeze or unfreeze, a payment of ALGO to the
-  zero address, and unusually high fees;
+  zero address, and unusually high fees; and, for the request as a whole,
+  two different accounts in it that look alike (shown, never a policy input);
   under `always_review_warnings` these force review on the signer's own legs,
   and a warning on a passthrough or foreign leg forces review regardless; a
   rotating account's rekey to the next stage the signer derived itself is a
@@ -1096,9 +1097,10 @@ with a bidirectional control. So:
   and shows a note, an app argument or a box name quoted or as hex;
 - `requestSigningApproval` (`internal/signerapp/signing/approval.go`), the
   one path by which a signing prompt reaches the operator, escapes the whole
-  prompt (description, addresses and policy warnings) with
-  `internal/termsafe`, keeping only newlines and tabs; the description the
-  daemon prints to its console is escaped the same way;
+  prompt (description, addresses, policy warnings and the review the
+  description is printed from) with `internal/termsafe`, keeping only
+  newlines and tabs; the description the daemon prints to its console is
+  escaped the same way;
 - apadmin and apapprover escape a request again where they decode it
   (`protocol.SignRequestMessage.TerminalSafe`), so a missed path on the
   signer still can't reach the terminal.

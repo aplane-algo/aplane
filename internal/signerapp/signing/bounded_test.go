@@ -150,21 +150,21 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 
 // A cosigned account's declared rekey needs the cosigner as well, and its
 // listed rekey takes the spending key alone; the approval text says which.
-func TestBuildApprovalDescriptionNamesTheCosignerOnACosignedRekey(t *testing.T) {
+func TestApprovalTextNamesTheCosignerOnACosignedRekey(t *testing.T) {
 	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
 	txn := testBoundedRekey()
 	for path, want := range map[boundedPath]string{
 		boundedPathSpendingKeyRekey: "Authorization: spending key and cosigner",
 		boundedPathListedRekey:      "Authorization: spending key only, to an address on the account's rekey-to list",
 	} {
-		description, _, _ := BuildApprovalDescription(
+		description := approvalText(
 			signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
 			&PlanResult{
 				AllTxns: []types.Transaction{txn}, PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
 				BoundedItems: []*boundedPlanItem{{Path: path, Metadata: metadata}},
 			},
 			[]types.Transaction{txn},
-			func(types.Transaction) string { return "transaction" },
+			describeAs("transaction"),
 		)
 		if !strings.Contains(description, want) {
 			t.Fatalf("%s approval description = %q, want containing %q", path, description, want)
@@ -172,10 +172,10 @@ func TestBuildApprovalDescriptionNamesTheCosignerOnACosignedRekey(t *testing.T) 
 	}
 }
 
-func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
+func TestApprovalTextNamesBoundedRekeyAuthority(t *testing.T) {
 	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	txn := testBoundedRekey()
-	description, _, _ := BuildApprovalDescription(
+	description := approvalText(
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
 		&PlanResult{
 			AllTxns:            []types.Transaction{txn},
@@ -187,7 +187,7 @@ func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
 			}},
 		},
 		[]types.Transaction{txn},
-		func(types.Transaction) string { return "transaction" },
+		describeAs("transaction"),
 	)
 	for _, want := range []string{
 		"Bounded authorization operation: REKEY",

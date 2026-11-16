@@ -440,7 +440,7 @@ without overlays and bounds; neither takes mnemonic import.
 
 #### Signing Approval and Client Enrollment
 
-- `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations`. The message `id` is a fresh, single-use prompt ID that apsigner generates for each prompt; it is never the HTTP client's `request_id`, so a `sign_response` can approve only the prompt the operator was shown. `first_valid` and `last_valid` are the rounds the request can be submitted in (for a group, the rounds every member is valid), or 0 when unknown; apadmin and apapprover both show them beside the description.
+- `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations` (each a `field`, `value`, `message` and `severity`: `critical`, `warning`, or `notice`, a finding shown without alarm and not counted among the warnings, such as a rekey to an account the signer holds a valid aplane key for). The message `id` is a fresh, single-use prompt ID that apsigner generates for each prompt; it is never the HTTP client's `request_id`, so a `sign_response` can approve only the prompt the operator was shown. `first_valid` and `last_valid` are the rounds the request can be submitted in (for a group, the rounds every member is valid), or 0 when unknown; apadmin and apapprover both show them beside the description. Optional `review` (`aplane.review.v1`) is the same request as data, for a client that draws it; see "Sign Request Review" below.
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
 - `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`enroll` username, `enroll [<label>]` command) to have its key enrolled, and the request now waits in the signer's queue. Its ID is `enroll-<fingerprint>`. It is sent when a new request is queued and, for every request still waiting, when an admin session authenticates, so a client may see the same request announced more than once. The label is the client's requested display text, bounded and printable, and carries no authority. The admin client answers with `approve_enrollment` or `reject_enrollment` by fingerprint; there is no response to this notification itself, and the SSH client is not waiting on it.
@@ -452,6 +452,60 @@ without overlays and bounds; neither takes mnemonic import.
 - `list_enrolled_keys` -> `enrolled_keys_list`: `keys[]`, each with `fingerprint`, optional `label`, `key_type`, and `connected` (the key has at least one live SSH connection); waiting requests are listed by `list_pending_enrollments`
 - `revoke_enrolled_key`: `fingerprint` -> `revoke_enrolled_key_result`: `success`, optional `code`, `error`, `closed_connections`; removes the key from the registry and closes every SSH connection it authenticated. An empty or unknown fingerprint fails with `code:"invalid_request"`.
 - `revoke_all_enrolled_keys` -> `revoke_all_enrolled_keys_result`: `success`, optional `code`, `error`, `revoked_count`, `closed_connections`; the emergency lever: empties the registry and closes every client connection
+
+#### Sign Request Review
+
+`review` on a `sign_request` is the request as data. The signer builds it
+first and prints `description` from it (`internal/txnreview`,
+`buildReview` in `internal/signerapp/signing/approval.go`), so the two cannot
+say different things: every banner, change line, note, claim, title and field
+of the review is a line of the description. A client that ignores `review`
+loses nothing but the structure.
+
+- `version`: `aplane.review.v1`.
+- `group`: set when the request has more than one transaction.
+- `banners`: lines that say how a group is made up (how many transactions
+  are signed here, passthrough, or foreign).
+- `changes`: what planning did. `heading` and `lines` are the text;
+  `frozen`, `dummies` and `fee_added` (microAlgos) say the same as numbers.
+- `items`: one per requested transaction, in order. Dummy transactions the
+  signer added are counted in `changes`, not listed.
+  - `position`: `sign`, `passthrough`, `held` (not signed in this request,
+    of an account or authorizer the signer holds an aplane key for) or
+    `foreign`.
+  - `label`: the heading's word for a transaction the request does not sign.
+  - `notes`: fields under the heading, such as the signing key or a
+    passthrough's authorizer.
+  - `claims`: the client's own words about an app call, not verified.
+  - `title`, `sender`, and `fields`: what the transaction does. A field has
+    an optional `label`, a `value`, the `party` address when the field names
+    one account (an app call's referenced accounts included), `alert` on a line the review warns of (the rekey target's
+    line only where its finding is critical or a warning, not a notice), and `depth` 1 for an
+    entry of the list the field above it opens. A field with no label is a
+    remark.
+  - `effects`: a short summary of the fields for a picture: `kind`
+    (`transfer`, `self_send`, `opt_in`, `close`, `clawback`, `freeze`,
+    `rekey`, `app_call`, `keyreg`, `asset_create`, `asset_config`,
+    `asset_destroy`), `from`, optional `to`, `authority` (a clawback's
+    sender), `app` or `new_app`, `text`, and `severity` (absent, `caution`
+    or `danger`). Severity is taken from the transaction's findings, never
+    decided apart from them; a notice leaves it absent. A client that meets a kind it does not know
+    shows the fields.
+  - `findings`: the transaction's warnings, in the shape of `violations`.
+    The message's `violations` carry the same findings for the whole
+    request.
+- `parties`: the accounts the request touches, in order of first appearance:
+  `address`, `held` (the signer holds an aplane key for it), `signs` (this
+  request signs a transaction it sends), `key_type` of the key that signs
+  for it, and `lookalike` when a finding of the review says another account
+  in the request looks like it.
+- `findings`: warnings about the request as a whole, in the shape of
+  `violations`: two different accounts in the request that look alike. The
+  message's `violations` carry them after the transactions' own.
+
+The fields are the review. Effects and parties only arrange them: a new
+field on a transaction type is one more entry in `fields` and needs no
+client change.
 
 #### Backup and Restore
 
@@ -1041,6 +1095,42 @@ Popup panels use a shared overflow viewport instead of truncating content.
 jump to its boundaries. The popup displays its visible line range whenever it
 overflows. Views with an existing purpose-built list, editor, or approval
 viewport retain that viewport so nested scroll handlers do not compete.
+
+The signing popup draws a request from its `review` (see "Sign Request
+Review"; `internal/signerapp/signertui/review_screen.go`) in the whole window
+between the admin header and the status bar, with no popup frame: the
+title and summary, a risk line when there are warnings, the list or picture,
+a rule, the pane, and one keys line with the two buttons. The validity window
+goes at the right of the summary or risk line where it fits, and on a line of
+its own otherwise; the rule counts the rows hidden below the list and says
+which lines of the pane show. A group shows a
+list, one row per transaction with how the request treats it and its title,
+the first selected, and under the list a pane with the selected transaction
+in full: every field, then its own warnings, naming the signing key only
+where it is not the sender. The pane ends with what is about the request as a
+whole: its warnings and notes, each account's whole address with what the
+signer holds, and what planning changed. A lone transaction has no list: one
+pane holds all of it, in the same order, under its lanes when it moves something between two
+parties (a payment, a close, a rekey, an app call) and with no picture when
+it touches one account alone. The list can also be drawn as a picture
+(`review_picture.go`), from the review's effects and parties: lanes, one
+column per account or app with an arrow for each movement (a filled dot where
+this request signs, a dashed line for a rekey, a double line for a close), or
+a table of movements. Left alone, the shape of the request picks: a table for
+one account paying three or more others, lanes when every lane fits the
+window, a table when they do not, and the plain list when nothing moves
+between two parties. `v` goes round the three. A column or table row of an
+account the review marks as a lookalike says so in words.
+The picture selects the same rows as the list, and the pane under it is the
+same. A selected row keeps its own colours over a tint, so a rekey's arrow
+stays red while it is selected. `up`/`down` select a row (or scroll a lone
+transaction's pane), `pgup`/`pgdown` scroll the pane, and `t` puts the
+request's `description`, the text apapprover prints, in the pane in place of
+the drawn review, and brings the drawn review back. The drawn review adds nothing to the text: it arranges the same
+fields. A two-cell colour mark beside each full address in the account list is
+worked out from the whole address, so two addresses that share their ends
+look different; it never stands in for the address. A request that carries no
+`review` is shown as its description.
 
 Signing and client-enrollment approval popups stay in front of every other
 screen until the operator answers, apsigner withdraws the request, or the

@@ -6,6 +6,8 @@ package apshellcli
 // Sweep command implementation for consolidating ALGO or ASA balances.
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -23,7 +25,7 @@ func (r *REPLState) runSweep(args []string) (command.Result, error) {
 		return nil, err
 	}
 
-	result, err := r.app().Sweep(r.commandContext(), apshellapp.SweepRequest{
+	req := apshellapp.SweepRequest{
 		AssetRef:    params.Asset.String(),
 		FromRaw:     params.FromRaw,
 		ToRaw:       params.ToRaw,
@@ -32,13 +34,27 @@ func (r *REPLState) runSweep(args []string) (command.Result, error) {
 		UseFlatFee:  params.UseFlatFee,
 		LsigArgs:    params.LsigArgs,
 		Wait:        params.Wait,
-	})
+	}
+	// As for send: asked at the prompt, warned of in the result without one.
+	if !r.AutoConfirm {
+		req.ConfirmLookalikes = r.confirmLookalikes
+	}
+	result, err := r.app().Sweep(r.commandContext(), req)
+	if errors.Is(err, apshellapp.ErrLookalikeDeclined) {
+		return newShellCommandResult(func(w io.Writer) error {
+			_, err := fmt.Fprintln(w, "Cancelled.")
+			return err
+		}, sweepProjection{Cancelled: true})
+	}
 	if err != nil && result == nil {
 		return nil, err
 	}
 	simulated := r.app().IsSimulateEnabled()
 	commandResult, resultErr := newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
+			if req.ConfirmLookalikes == nil {
+				r.renderWarnings(result.Warnings)
+			}
 			for _, line := range renderSweepLines(result.InfoLines, result, r) {
 				r.println(line)
 			}

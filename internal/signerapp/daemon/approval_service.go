@@ -12,18 +12,16 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-// newApprovalServiceWithAudit builds the approval service for one request;
-// describe renders its transactions in the prompts it raises.
-func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditLog signersigning.AuditRejectLogger, describe signersigning.GenerateTxnDescriptionFromTxnFunc) *signersigning.ApprovalService {
+// newApprovalServiceWithAudit builds the approval service for one request.
+func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditLog signersigning.AuditRejectLogger) *signersigning.ApprovalService {
 	userAutoApprove := ir.Config().UserAutoApprove()
 	return &signersigning.ApprovalService{
 		UserAutoApprove: &userAutoApprove,
 		ApprovalWait: func() time.Duration {
 			return ir.Config().ApprovalWait()
 		},
-		AuditLog:                      auditLog,
-		Console:                       signerConsole{},
-		GenerateTxnDescriptionFromTxn: describe,
+		AuditLog: auditLog,
+		Console:  signerConsole{},
 		KnownAddresses: func() map[string]bool {
 			return ir.KnownAddresses()
 		},
@@ -42,5 +40,6 @@ func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditL
 		RequestSigningApprovalResponseContext: func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			return ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 		},
+		RequestSigningApprovalPrompt: ir.RequestSigningApprovalPrompt,
 	}
 }

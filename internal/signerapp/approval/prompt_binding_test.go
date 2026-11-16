@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 // An operator's late answer to a canceled prompt must not approve a different
@@ -111,5 +113,28 @@ func TestCancelByClientRequestIDDismissesGeneratedPrompt(t *testing.T) {
 	}
 	if got := c.CancelSignRequest(prompt.ID, ""); got.State != SignRequestCancelStateNotFound {
 		t.Fatalf("cancel by prompt ID = %+v; a client never sees prompt IDs", got)
+	}
+}
+
+// A prompt's review reaches the admin client with the prompt.
+func TestPromptDeliversItsReview(t *testing.T) {
+	delivered := make(chan *SignRequest, 1)
+	var c *Coordinator
+	c = New(func() bool { return true }, func(r *SignRequest) bool {
+		delivered <- r
+		go c.HandleSignResponse(&SignResponse{ID: r.ID, Approved: true})
+		return true
+	}, func(*SignRequestCanceled) bool { return true })
+
+	review := &txnreview.Review{Group: true}
+	response, err := c.RequestSigningApprovalPrompt(context.Background(), Prompt{
+		RequestID: "req-1", Address: "key", TxnSender: "sender", Description: "text", FirstValid: 1, LastValid: 9, Review: review,
+	}, time.Second)
+	if err != nil || !response.Approved {
+		t.Fatalf("response = %+v, err = %v", response, err)
+	}
+	shown := <-delivered
+	if shown.Review != review || shown.Description != "text" || shown.Address != "key" || shown.TxnSender != "sender" || shown.FirstValid != 1 || shown.LastValid != 9 {
+		t.Fatalf("delivered request = %+v", shown)
 	}
 }

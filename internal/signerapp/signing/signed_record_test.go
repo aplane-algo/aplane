@@ -85,7 +85,7 @@ func TestRefusedSignRecordsNothingAsSigned(t *testing.T) {
 		Executor:                      &Executor{},
 		AuditLog:                      audit,
 		IsUnlocked:                    func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 			Rekeys: policy.RekeysRejectForeign,
 		}),

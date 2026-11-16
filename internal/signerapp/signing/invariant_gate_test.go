@@ -81,16 +81,15 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 	service := &Service{
 		AuditLog: audit,
 		Approval: &ApprovalService{
-			UserAutoApprove:               userAutoApproveDefault(true),
-			GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
-			HasClient:                     func() bool { return true },
+			UserAutoApprove: userAutoApproveDefault(true),
+			HasClient:       func() bool { return true },
 			RequestSigningApproval: func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			return nil, forbidden("reached execution")

@@ -111,7 +111,7 @@ type SnapshotFunc func() PlannerRuntimeSnapshot
 type Planner struct {
 	AuditLog               AuditLogger
 	Console                Console
-	GenerateTxnDescription GenerateTxnDescriptionFromTxnFunc
+	GenerateTxnDescription DescribeTxnFunc
 	VerifySignableKeys     VerifySignableKeysFunc
 	CalculateDummies       CalculateDummiesFunc
 	BuildFinalGroup        BuildFinalGroupFunc
@@ -368,9 +368,9 @@ func (p *Planner) logRequests(kind RequestKind, req signerapi.GroupSignRequest, 
 		if passthroughIndices[i] {
 			p.AuditLog.LogRequest(kind, "", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
 		} else if foreignIndices[i] {
-			p.AuditLog.LogRequest(kind, "", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txns[i]))
+			p.AuditLog.LogRequest(kind, "", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txns[i]).Text())
 		} else {
-			p.AuditLog.LogRequest(kind, txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txns[i]))
+			p.AuditLog.LogRequest(kind, txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txns[i]).Text())
 		}
 	}
 }

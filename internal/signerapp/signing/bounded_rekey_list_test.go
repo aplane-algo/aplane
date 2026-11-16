@@ -187,9 +187,8 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 	var got []signerapproval.Violation
 	var description string
 	svc := &ApprovalService{
-		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
-		KnownAddresses:                func() map[string]bool { return nil },
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
 		RequestSigningApproval: func(_, _, _, text string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 			got, description = violations, text
 			return true, nil
@@ -200,8 +199,8 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		Path: boundedPathListedRekey, Metadata: testBoundedMetadata(t, boundedmeta.RekeyRefused),
 		ListedRekeyTargets: map[string]bool{listTestTarget.String(): true},
 	}
-	if err := svc.requestSingleTxnApprovalWithContext(context.Background(), "", signerapi.SignRequest{AuthAddress: "ACCOUNT"},
-		[]types.Transaction{rekey}, []types.Transaction{rekey}, "", 0, 0, policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{item}}); err != nil {
+	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},
+		policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{item}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || !strings.Contains(got[0].Message, "rekey-to list") || !strings.Contains(got[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
@@ -213,8 +212,8 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		t.Fatalf("single prompt = %q, want the bounded rekey's authorization", description)
 	}
 	cosigned := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))}
-	if err := svc.requestSingleTxnApprovalWithContext(context.Background(), "", signerapi.SignRequest{AuthAddress: "ACCOUNT"},
-		[]types.Transaction{rekey}, []types.Transaction{rekey}, "", 0, 0, policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{cosigned}}); err != nil {
+	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},
+		policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{cosigned}}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(description, "Authorization: spending key and cosigner") {

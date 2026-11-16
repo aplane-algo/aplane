@@ -7,6 +7,8 @@ package apshellcli
 // Supports single, set-based, and atomic transaction groups.
 
 import (
+	"errors"
+	"fmt"
 	"io"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
@@ -20,7 +22,7 @@ func (r *REPLState) runSend(args []string) (command.Result, error) {
 		return nil, err
 	}
 
-	result, err := r.app().ExecuteSend(r.commandContext(), apshellapp.SendRequest{
+	req := apshellapp.SendRequest{
 		AmountText: params.Amount.String(),
 		AssetRef:   params.Asset.String(),
 		FromRaw:    params.FromRaw,
@@ -31,12 +33,43 @@ func (r *REPLState) runSend(args []string) (command.Result, error) {
 		Fee:        params.Fee,
 		UseFlatFee: params.UseFlatFee,
 		LsigArgs:   params.LsigArgs,
-	})
+	}
+	// A person at the prompt is asked about a lookalike recipient before
+	// anything is signed. Without one (MCP, scripts) the send goes on, and
+	// its result carries the warning.
+	if !r.AutoConfirm {
+		req.ConfirmLookalikes = r.confirmLookalikes
+	}
+	result, err := r.app().ExecuteSend(r.commandContext(), req)
+	if errors.Is(err, apshellapp.ErrLookalikeDeclined) {
+		return newShellCommandResult(func(w io.Writer) error {
+			_, err := fmt.Fprintln(w, "Cancelled.")
+			return err
+		}, sendProjection{Cancelled: true})
+	}
 	if err != nil {
 		return nil, err
 	}
 	simulated := r.app().IsSimulateEnabled()
 	return newShellCommandResult(func(w io.Writer) error {
-		return r.withOutputResult(w, func() error { return r.renderSendResult(result) })
+		return r.withOutputResult(w, func() error {
+			if req.ConfirmLookalikes == nil {
+				r.renderWarnings(result.Warnings)
+			}
+			return r.renderSendResult(result)
+		})
 	}, projectSendResult(result, simulated))
+}
+
+// confirmLookalikes shows each recipient that looks like a known account and
+// asks whether to send anyway. The answer defaults to no.
+func (r *REPLState) confirmLookalikes(lookalikes []apshellapp.RecipientLookalike) (bool, error) {
+	for _, lookalike := range lookalikes {
+		r.printf("⚠️  Warning: %s\n", lookalike.Message())
+	}
+	response, err := r.readPromptResponse("Send anyway? [y/N]: ")
+	if err != nil {
+		return false, err
+	}
+	return response == "y" || response == "yes", nil
 }

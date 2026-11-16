@@ -3,7 +3,10 @@
 
 package approval
 
-import "github.com/aplane-algo/aplane/internal/protocol"
+import (
+	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/txnreview"
+)
 
 // Cancellation reasons are wire values owned by internal/protocol; the
 // aliases keep this package's API stable for coordinator callers.
@@ -31,6 +34,10 @@ type ViolationSeverity string
 const (
 	ViolationSeverityWarning  ViolationSeverity = "warning"
 	ViolationSeverityCritical ViolationSeverity = "critical"
+	// ViolationSeverityNotice is a finding shown without alarm: a rekey to an
+	// account this signer holds a valid aplane key for. Anything that counts
+	// warnings counts it; only the display differs.
+	ViolationSeverityNotice ViolationSeverity = "notice"
 )
 
 // Violation describes a warning or critical condition shown during approval.
@@ -51,6 +58,21 @@ type SignRequest struct {
 	FirstValid  uint64
 	LastValid   uint64
 	Violations  []Violation
+	// Review is the request as data, or nil when the caller built only text.
+	Review *txnreview.Review
+}
+
+// Prompt is what a caller asks the operator to approve.
+type Prompt struct {
+	RequestID   string
+	Address     string
+	TxnSender   string
+	Description string
+	FirstValid  uint64
+	LastValid   uint64
+	Violations  []Violation
+	// Review is the request as data, or nil when the caller built only text.
+	Review *txnreview.Review
 }
 
 // SignRequestCanceled reports that a previously delivered signing request is no

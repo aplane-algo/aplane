@@ -43,6 +43,10 @@ func (m Model) viewFooterText() string {
 		}
 		return footer
 	case ViewSigningPopup:
+		if m.reviewAvailable() {
+			// The review fills the window and draws its own keys line.
+			return ""
+		}
 		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
 	case ViewClientEnrollmentPopup:
 		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r: Reject | esc: Defer"

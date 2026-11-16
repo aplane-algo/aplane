@@ -412,6 +412,17 @@ Warning analysis covers the fields below. The rules live in `internal/txnreview/
   findings,
 - unusually high fees above 1 ALGO.
 
+A finding is critical, a warning, or a notice. A rekey to an account this
+signer holds a valid aplane key for, the account's own address included, is a
+notice: it keeps control here, so every display shows it in the ordinary
+colour with no warning sign, and apadmin's risk line does not count it. A
+notice is still a finding wherever findings are counted: it forces review
+under `always_review_warnings` and on a passthrough or foreign leg as any
+warning does. Every other rekey is critical: to an address the signer holds
+no aplane key for, to one on the account's rekey-to list that it does not
+hold, or to a held aplane key that is not a valid rekey target. The signer's
+own protocol rekey, a rotating account's next stage, is no finding at all.
+
 `always_review_warnings` governs only the signer's own legs. A warning on a
 passthrough or foreign leg of a group this signer co-signs always forces
 review even with `always_review_warnings` off. That includes a payment of
@@ -420,6 +431,18 @@ non-zero amount to it asks for review whatever `always_review_warnings`
 says. User Auto-Approve satisfies that review without a prompt.
 Warnings on the signer's own legs are still displayed when
 `always_review_warnings:false`; they simply do not force review in that mode.
+
+One warning is about the request as a whole, not one transaction: two
+different accounts in it that look alike, sharing six or more characters
+counted from both ends of the address together (`internal/txnreview/lookalike.go`).
+Every address the request names is compared, the accounts an app call
+references (its `accounts` and the account entries of its `access` list)
+included, since an app may pay them. A shortened address keeps a few characters of each end, and address poisoning
+searches for an address that matches them. The warning names both addresses
+in full. It is shown wherever a prompt is shown, is in the review's
+`findings`, and is in apshell's review of a plugin-built group; it is not a
+policy input, so it forces no review on its own and
+`appolicy try` does not report it.
 
 ## Always Approve
 

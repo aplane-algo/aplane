@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 type signingAudit interface {
@@ -23,14 +24,14 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 	// against the NodePolicy captured here, whatever reloads land later, and
 	// its approval prompts show amounts from the context it was loaded in.
 	nodePolicy := ir.NodePolicy()
-	var describe signersigning.GenerateTxnDescriptionFromTxnFunc = fs.generateTransactionDescriptionFromTxn
+	var describe signersigning.DescribeTxnFunc = fs.generateTransactionDescriptionFromTxn
 	if nodePolicy != nil && nodePolicy.Context != nil {
 		ctx := nodePolicy.Context
-		describe = func(txn types.Transaction) string { return txdesc.DescribeTxnInContext(txn, ctx) }
+		describe = func(txn types.Transaction) txnreview.Details { return txdesc.DetailTxnInContext(txn, ctx) }
 	}
 	return &signersigning.Service{
 		Planner:                       fs.newPlannerWithAudit(auditLog),
-		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog, describe),
+		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),
 		Executor:                      fs.newExecutionServiceWithAudit(auditLog),
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},

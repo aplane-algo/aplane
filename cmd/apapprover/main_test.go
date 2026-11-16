@@ -99,6 +99,24 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 	}
 }
 
+// A notice is listed under its own heading after the warnings and is not
+// counted among them.
+func TestDisplaySignRequestListsNoticesApart(t *testing.T) {
+	req := &protocol.SignRequestMessage{
+		Address:     "ADDR",
+		Description: "test description",
+		Violations: []protocol.PolicyViolation{
+			{Field: "CloseRemainderTo", Value: "OTHER", Severity: protocol.ViolationSeverityCritical, Message: "closes the account"},
+			{Field: "RekeyTo", Value: "HELD", Severity: protocol.ViolationSeverityNotice, Message: "This signer holds the aplane key for the new address."},
+		},
+	}
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
+	warnings, notes := strings.Index(rendered, "Policy warnings (1):"), strings.Index(rendered, "Notes (1):")
+	if warnings < 0 || notes < warnings || !strings.Contains(rendered, "[NOTICE] This signer holds the aplane key") {
+		t.Fatalf("displaySignRequest() does not list the notice after the warnings:\n%s", rendered)
+	}
+}
+
 // captureStdout returns what fn prints.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
@@ -563,5 +581,22 @@ func TestApproverApprovalNamesTheRequestShown(t *testing.T) {
 	a.handleInput("n")
 	if len(sent) != 2 || sent[1].(protocol.SignResponseMessage).Approved {
 		t.Fatalf("rejection needed a code or became an approval: %#v", sent)
+	}
+}
+
+// A warning about a value names it; one about the request as a whole, such as
+// lookalike accounts, is its message alone, with no dangling "=".
+func TestViolationLineNamesOnlyAValue(t *testing.T) {
+	for _, tc := range []struct {
+		v    protocol.PolicyViolation
+		want string
+	}{
+		{protocol.PolicyViolation{Severity: "critical", Field: "RekeyTo", Value: "ADDR", Message: "control moves"}, "  - [CRITICAL] control moves (RekeyTo=ADDR)"},
+		{protocol.PolicyViolation{Severity: "warning", Field: "Lookalike accounts", Message: "two accounts look alike"}, "  - [WARNING] two accounts look alike"},
+		{protocol.PolicyViolation{Severity: "warning", Value: "9", Message: "odd"}, "  - [WARNING] odd (9)"},
+	} {
+		if got := violationLine(tc.v); got != tc.want {
+			t.Errorf("violationLine(%+v) = %q, want %q", tc.v, got, tc.want)
+		}
 	}
 }

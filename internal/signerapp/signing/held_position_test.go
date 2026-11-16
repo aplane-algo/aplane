@@ -4,7 +4,6 @@
 package signing
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -108,8 +107,8 @@ func TestHeldForeignPositionsComeFromTheSignersRecords(t *testing.T) {
 	if got == nil || !got.SenderHeld || !got.ListUnreadable || got.ListedRekeyTargets != nil {
 		t.Fatalf("an unreadable list: %+v", got)
 	}
-	if _, lines := heldPositionHeading(got); len(lines) != 1 || !strings.Contains(lines[0], "rekey-to list could not be read") {
-		t.Fatalf("the review doesn't say the list is unreadable: %q", lines)
+	if _, lines := heldPositionHeading(got); len(lines) != 1 || !strings.Contains(lines[0].Line(), "rekey-to list could not be read") {
+		t.Fatalf("the review doesn't say the list is unreadable: %+v", lines)
 	}
 }
 
@@ -138,20 +137,19 @@ func TestGroupReviewNamesAHeldPositionAndItsListedHandover(t *testing.T) {
 			HeldForeign: heldForeignPositions(snapshot, txns, foreign, nil),
 		}
 		req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{TxnBytesHex: "00"}, {AuthAddress: native.String()}}}
-		description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn\n" })
 		var got []signerapproval.Violation
 		svc := &ApprovalService{
-			HasClient:                     func() bool { return true },
-			GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
-			KnownAddresses:                func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
+			HasClient:      func() bool { return true },
+			KnownAddresses: func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
 			RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 				got = violations
 				return true, nil
 			},
 		}
-		if err := svc.RequestGroupApprovalWithContext(context.Background(), req, plan, description, 0, 0, txns); err != nil {
+		if err := promptGroup(svc, req, plan, txns, describeAs("txn\n")); err != nil {
 			t.Fatal(err)
 		}
+		description := approvalText(req, plan, txns, describeAs("txn\n"))
 		// Policy has no list for a position this request doesn't sign.
 		if listed := listedRekeyTargetsForPlan(plan); listed != nil {
 			t.Fatalf("policy was given a list for a position it doesn't judge: %v", listed)
@@ -278,7 +276,7 @@ func TestGroupReviewDoesNotVouchForANamedAuthorizer(t *testing.T) {
 		t.Fatalf("held = %+v", plan.HeldForeign[0])
 	}
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{TxnBytesHex: "00"}, {AuthAddress: native.String()}}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn\n" })
+	description := approvalText(req, plan, txns, describeAs("txn\n"))
 	for _, want := range []string{
 		"[MULTI-PARTY: 1 to sign, 1 foreign (not signing)]",
 		"--- Transaction 1 of 2 [NOT SIGNED IN THIS REQUEST - authorizer named by the request] ---",
@@ -293,15 +291,14 @@ func TestGroupReviewDoesNotVouchForANamedAuthorizer(t *testing.T) {
 	}
 	var got []signerapproval.Violation
 	svc := &ApprovalService{
-		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
-		KnownAddresses:                func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
 		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 			got = violations
 			return true, nil
 		},
 	}
-	if err := svc.RequestGroupApprovalWithContext(context.Background(), req, plan, description, 0, 0, txns); err != nil {
+	if err := promptGroup(svc, req, plan, txns, describeAs("txn\n")); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || !strings.Contains(got[0].Message, "LOSE CONTROL") || strings.Contains(got[0].Message, "rekey-to list") {
@@ -337,7 +334,7 @@ func TestGroupReviewCountsHeldAndForeignPositionsApart(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
 		{TxnBytesHex: "00"}, {TxnBytesHex: "00"}, {TxnBytesHex: "00"}, {TxnBytesHex: "00"}, {AuthAddress: native.String()},
 	}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn\n" })
+	description := approvalText(req, plan, txns, describeAs("txn\n"))
 	for _, want := range []string{
 		"[MULTI-PARTY: 1 to sign, 4 not signed in this request: 2 whose key this signer holds, 2 foreign]",
 		"--- Transaction 1 of 5 [THIS SIGNER HOLDS THIS ACCOUNT'S KEY - not signed in this request] ---\ntxn",

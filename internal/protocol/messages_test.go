@@ -236,8 +236,55 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					Severity: "critical",
 					Message:  "rekey detected",
 				}},
+				Review: &Review{
+					Version: ReviewVersion,
+					Group:   true,
+					Banners: []string{"[MIXED MODE: 1 to sign, 1 passthrough]"},
+					Changes: ReviewChanges{Heading: "[MODIFIED BY SERVER]", Lines: []string{"Group ID recomputed"}, Dummies: 1, FeeAdded: 2000},
+					Items: []ReviewItem{{
+						Position: ReviewPositionSign,
+						Notes:    []ReviewField{{Label: "Signing key", Value: "ADDR1"}},
+						Claims:   []string{"Mode: Raw"},
+						Title:    "Payment: 1.000000 ALGO",
+						Sender:   "ADDR2",
+						Fields:   []ReviewField{{Label: "REKEY TO", Value: "ADDR3", Party: "ADDR3", Alert: true}, {Label: "[0]", Value: "x", Depth: 1}},
+						Effects:  []ReviewEffect{{Kind: "rekey", From: "ADDR2", To: "ADDR3", Text: "REKEY: control moves", Severity: ReviewSeverityDanger}},
+						Findings: []PolicyViolation{{Field: "RekeyTo", Value: "ADDR3", Severity: "critical", Message: "rekey detected"}},
+					}},
+					Parties: []ReviewParty{{Address: "ADDR2", Held: true, Signs: true, KeyType: "falcon1024"}, {Address: "ADDR3", Lookalike: true}},
+				},
 			},
 			wantMap: map[string]any{
+				"review": map[string]any{
+					"version": "aplane.review.v1",
+					"group":   true,
+					"banners": []any{"[MIXED MODE: 1 to sign, 1 passthrough]"},
+					"changes": map[string]any{
+						"heading": "[MODIFIED BY SERVER]", "lines": []any{"Group ID recomputed"},
+						"dummies": float64(1), "fee_added": float64(2000),
+					},
+					"items": []any{map[string]any{
+						"position": "sign",
+						"notes":    []any{map[string]any{"label": "Signing key", "value": "ADDR1"}},
+						"claims":   []any{"Mode: Raw"},
+						"title":    "Payment: 1.000000 ALGO",
+						"sender":   "ADDR2",
+						"fields": []any{
+							map[string]any{"label": "REKEY TO", "value": "ADDR3", "party": "ADDR3", "alert": true},
+							map[string]any{"label": "[0]", "value": "x", "depth": float64(1)},
+						},
+						"effects": []any{map[string]any{
+							"kind": "rekey", "from": "ADDR2", "to": "ADDR3", "text": "REKEY: control moves", "severity": "danger",
+						}},
+						"findings": []any{map[string]any{
+							"field": "RekeyTo", "value": "ADDR3", "severity": "critical", "message": "rekey detected",
+						}},
+					}},
+					"parties": []any{
+						map[string]any{"address": "ADDR2", "held": true, "signs": true, "key_type": "falcon1024"},
+						map[string]any{"address": "ADDR3", "lookalike": true},
+					},
+				},
 				"type":        MsgTypeSignRequest,
 				"id":          "sign-1",
 				"address":     "ADDR1",

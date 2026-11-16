@@ -675,9 +675,12 @@ type SweepCommandResult struct {
 	SuccessCount          int
 	FailureCount          int
 	LastTxID              string
-	InfoLines             []string
-	HeaderLine            string
-	SummaryLines          []string
+	// Warnings are about the sweep as a whole: a destination that looks like
+	// a known account.
+	Warnings     []Warning
+	InfoLines    []string
+	HeaderLine   string
+	SummaryLines []string
 }
 
 // failedItemsError is a command's failure as a whole, a sweep in which every
@@ -959,4 +962,7 @@ type SendExecutionResult struct {
 	To        []string
 	NonAtomic *NonAtomicSendResult
 	Atomic    *AtomicSendResult
+	// Warnings are about the send as a whole: recipients that look like
+	// known accounts.
+	Warnings []Warning
 }

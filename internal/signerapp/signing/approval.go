@@ -15,6 +15,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
@@ -38,7 +39,8 @@ type AuditCosignerRejectLogger interface {
 	LogCosignerComponentRejected(witnessKeyID, txnSender, reason, policyRuleID string)
 }
 
-type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
+// DescribeTxnFunc describes a transaction for review, as data.
+type DescribeTxnFunc func(txn types.Transaction) txnreview.Details
 
 // KnownAddressesFunc returns every address the signer holds an aplane key
 // for, of any key type. The daemon supplies Runtime.KnownAddresses.
@@ -50,6 +52,10 @@ type RequestSigningApprovalResponseFunc func(requestID, address, txnSender, desc
 type RequestSigningApprovalContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
 type RequestSigningApprovalResponseContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
 
+// RequestSigningApprovalPromptFunc shows a whole prompt, its review included.
+// The daemon supplies it; the four forms above carry the text alone.
+type RequestSigningApprovalPromptFunc func(ctx context.Context, prompt signerapproval.Prompt, timeout time.Duration) (signerapproval.SignResponse, error)
+
 const defaultApprovalWait = 60 * time.Second
 
 type ApprovalService struct {
@@ -57,13 +63,13 @@ type ApprovalService struct {
 	ApprovalWait                          func() time.Duration
 	AuditLog                              AuditRejectLogger
 	Console                               Console
-	GenerateTxnDescriptionFromTxn         GenerateTxnDescriptionFromTxnFunc
 	KnownAddresses                        KnownAddressesFunc
 	HasClient                             HasClientFunc
 	RequestSigningApproval                RequestSigningApprovalFunc
 	RequestSigningApprovalResponse        RequestSigningApprovalResponseFunc
 	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
+	RequestSigningApprovalPrompt          RequestSigningApprovalPromptFunc
 }
 
 // planKnownAddresses is the address set the gates and the approval warnings
@@ -95,12 +101,21 @@ type approvalResponseRecorder interface {
 // Much of what it shows comes from the client or from the chain: an asset's
 // name, an ABI method label, an auth address. Every string is escaped here, so
 // none of it can drive the operator's terminal or reorder what they read.
-func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, review *txnreview.Review, timeout time.Duration) (bool, error) {
 	address, txnSender, description = termsafe.Line(address), termsafe.Line(txnSender), termsafe.Lines(description)
 	violations = operatorSafeViolations(violations)
+	if review != nil {
+		safe := review.Safe()
+		review = &safe
+	}
 	var response signerapproval.SignResponse
 	var err error
-	if s.RequestSigningApprovalResponseContext != nil {
+	if s.RequestSigningApprovalPrompt != nil {
+		response, err = s.RequestSigningApprovalPrompt(ctx, signerapproval.Prompt{
+			RequestID: requestID, Address: address, TxnSender: txnSender, Description: description,
+			FirstValid: firstValid, LastValid: lastValid, Violations: violations, Review: review,
+		}, timeout)
+	} else if s.RequestSigningApprovalResponseContext != nil {
 		response, err = s.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 	} else if s.RequestSigningApprovalContext != nil {
 		var approved bool
@@ -216,91 +231,152 @@ func groupApprovalAddress(req signerapi.GroupSignRequest) string {
 	return fmt.Sprintf("%d auth addresses (see details)", len(seen))
 }
 
-func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, generateTxnDescriptionFromTxn GenerateTxnDescriptionFromTxnFunc) (groupDesc string, firstValid, lastValid uint64) {
-	var b strings.Builder
-	isSingleTxn := len(req.Requests) == 1
-
-	if isSingleTxn {
-		b.WriteString("=== SINGLE TRANSACTION ===\n\n")
-		if changes := planChangeLines(plan, allTxns, false); changes != "" {
-			b.WriteString(changes + "\n")
-		}
-	} else {
-		totalTxns := len(req.Requests)
-		b.WriteString(fmt.Sprintf("=== TRANSACTION GROUP (%d transactions) ===\n", totalTxns))
-		if plan.HasPassthrough {
-			b.WriteString(fmt.Sprintf("[MIXED MODE: %d to sign, %d passthrough]\n", len(req.Requests)-len(plan.PassthroughIndices), len(plan.PassthroughIndices)))
-		}
-		if plan.HasForeign {
-			signCount := len(req.Requests) - len(plan.ForeignIndices)
-			if held := sendersHeld(plan.HeldForeign); held > 0 {
-				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d not signed in this request: %d whose key this signer holds, %d foreign]\n",
-					signCount, len(plan.ForeignIndices), held, len(plan.ForeignIndices)-held))
-			} else {
-				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]\n", signCount, len(plan.ForeignIndices)))
-			}
-		}
-		b.WriteString(planChangeLines(plan, allTxns, true))
-		b.WriteString("\n")
-	}
-
-	totalTxns := len(req.Requests)
-	for i, txn := range allTxns[:len(req.Requests)] {
-		if !isSingleTxn {
-			var under []string
-			switch held := plan.HeldForeign[i]; {
-			case plan.PassthroughIndices[i]:
-				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [PASSTHROUGH] ---\n", i+1, totalTxns))
-				under = []string{passthroughAuthorizationLine(plan.PassthroughSignedTxns[i])}
-			case held != nil:
-				var label string
-				label, under = heldPositionHeading(held)
-				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [%s] ---\n", i+1, totalTxns, label))
-			case plan.ForeignIndices[i]:
-				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [FOREIGN - not signing] ---\n", i+1, totalTxns))
-			default:
-				b.WriteString(fmt.Sprintf("--- Transaction %d of %d ---\n", i+1, totalTxns))
-				// The header names one key or a count of them; each
-				// position says which of this signer's keys signs it.
-				under = []string{"  Signing key: " + req.Requests[i].AuthAddress}
-			}
-			for _, line := range under {
-				b.WriteString(line + "\n")
-			}
-		}
-		txReq := req.Requests[i]
-		b.WriteString(describeTxnForApproval(txn, txReq, generateTxnDescriptionFromTxn))
-		b.WriteString(boundedRekeyApprovalLines(boundedItemAt(plan, i)))
-		if i == 0 && plan.Rotating != nil {
-			b.WriteString(plan.Rotating.describe())
-		}
-		b.WriteString("\n")
-	}
-
-	firstValid, lastValid = approvalWindow(allTxns)
-	// The daemon prints this to its console as well as prompting with it.
-	return termsafe.Lines(b.String()), firstValid, lastValid
+// review is the review a request's prompt is made from: buildReview, completed
+// with what the signer knows beyond the request. The prompt's text and its
+// warnings both come from it, so they cannot disagree with what the review
+// shows.
+func (s *ApprovalService) review(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, describe DescribeTxnFunc) txnreview.Review {
+	review := buildReview(req, plan, allTxns, describe)
+	s.completeReview(&review, plan, allTxns[:len(req.Requests)])
+	return review
 }
 
-// planChangeLines tells the operator what planning did to the request: the
+// buildReview is what the operator is shown of a request: how it is made up,
+// what planning did to it, and each requested transaction. The text of every
+// prompt is printed from it.
+func buildReview(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, describe DescribeTxnFunc) txnreview.Review {
+	total := len(req.Requests)
+	review := txnreview.Review{Group: total != 1}
+	review.Changes = planChanges(plan, allTxns, review.Group)
+	if review.Group {
+		if plan.HasPassthrough {
+			review.Banners = append(review.Banners, fmt.Sprintf("[MIXED MODE: %d to sign, %d passthrough]", total-len(plan.PassthroughIndices), len(plan.PassthroughIndices)))
+		}
+		if plan.HasForeign {
+			signCount := total - len(plan.ForeignIndices)
+			if held := sendersHeld(plan.HeldForeign); held > 0 {
+				review.Banners = append(review.Banners, fmt.Sprintf("[MULTI-PARTY: %d to sign, %d not signed in this request: %d whose key this signer holds, %d foreign]",
+					signCount, len(plan.ForeignIndices), held, len(plan.ForeignIndices)-held))
+			} else {
+				review.Banners = append(review.Banners, fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]", signCount, len(plan.ForeignIndices)))
+			}
+		}
+	}
+
+	for i, txn := range allTxns[:total] {
+		item := reviewItem(txn, req.Requests[i], describe, boundedItemAt(plan, i))
+		switch held := plan.HeldForeign[i]; {
+		case plan.PassthroughIndices[i]:
+			item.Position = txnreview.PositionPassthrough
+			item.Label = "PASSTHROUGH"
+			item.Notes = []txnreview.Field{passthroughAuthorization(plan.PassthroughSignedTxns[i])}
+		case held != nil:
+			item.Position = txnreview.PositionHeld
+			item.Label, item.Notes = heldPositionHeading(held)
+		case plan.ForeignIndices[i]:
+			item.Position = txnreview.PositionForeign
+			item.Label = "FOREIGN - not signing"
+		default:
+			item.Position = txnreview.PositionSign
+			// The header names one key or a count of them; each
+			// position says which of this signer's keys signs it.
+			item.Notes = []txnreview.Field{{Label: protocol.ReviewNoteSigningKey, Value: req.Requests[i].AuthAddress}}
+		}
+		if i == 0 && plan.Rotating != nil {
+			item.Details.Fields = append(item.Details.Fields, plan.Rotating.describe())
+		}
+		review.Items = append(review.Items, item)
+	}
+	return review
+}
+
+// completeReview adds to a review what the signer knows beyond the request:
+// each transaction's findings, judged as the prompt's warnings judge them,
+// the severity those findings give its effects, and which of the accounts
+// are this signer's own.
+func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanResult, txns []types.Transaction) {
+	known := s.planKnownAddresses(plan)
+	ctx := approvalpolicy.Context{
+		KnownAddresses: known, InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan),
+		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
+	}
+	listed := warningRekeyTargetsForPlan(plan)
+	for i := range review.Items {
+		if i >= len(txns) {
+			break
+		}
+		txnCtx := ctx
+		txnCtx.ListedRekeyTargets = listed[i]
+		findings := txnreview.Findings(txns[i], txnCtx)
+		review.Items[i].Findings = findings
+		review.Items[i].Details.Mark(findings)
+	}
+	review.SetParties(
+		func(address string) bool { return known[address] },
+		func(item int) string {
+			if plan == nil || item >= len(plan.AuthKeyTypes) {
+				return ""
+			}
+			return plan.AuthKeyTypes[item]
+		},
+	)
+	review.SetFindings()
+}
+
+// reviewViolations are a review's findings as the prompt's warnings: each
+// transaction's, then the request's as a whole. positioned prefixes each
+// transaction's field with its position, as the group prompt does.
+func reviewViolations(review *txnreview.Review, positioned bool) []signerapproval.Violation {
+	var violations []signerapproval.Violation
+	for i, item := range review.Items {
+		for _, finding := range item.Findings {
+			v := approvalpolicy.Violation(finding)
+			if positioned {
+				v.Field = fmt.Sprintf("Tx %d/%d: %s", i+1, len(review.Items), v.Field)
+			}
+			violations = append(violations, v)
+		}
+	}
+	for _, finding := range review.Findings {
+		violations = append(violations, approvalpolicy.Violation(finding))
+	}
+	return violations
+}
+
+// planChanges tells the operator what planning did to the request: the
 // dummies it added, the fee it raised and what for, and a recomputed group
 // ID. The single-transaction prompt and the group prompt both carry it. A
 // frozen request is changed by nothing here: it is shown as checked, with
 // what its fees already pay, the fee added when it was prepared included,
 // and a lone transaction is not called a group.
-// Every line ends in a newline; with nothing to say it is empty.
-func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) string {
-	var b strings.Builder
+func planChanges(plan *PlanResult, allTxns []types.Transaction, group bool) txnreview.Changes {
 	fees := plan.FeeInfo
+	changes := txnreview.Changes{Frozen: plan.Frozen, Dummies: plan.DummiesNeeded, FeeAdded: fees.TotalFees}
+	add := func(format string, args ...any) {
+		changes.Lines = append(changes.Lines, fmt.Sprintf(format, args...))
+	}
 	contributions := fees.ProgramFeeContribution > 0 || fees.NativePQFeeContribution > 0
+	// What authorization requires the fees to pay beyond the dummies. Each
+	// contribution is rounded up to a whole microAlgo on its own, while the
+	// fee adjustment rounds the group's total once, so the listed parts need
+	// not add up to it. The program contribution, the one that is usually a
+	// fraction of a microAlgo per byte, is given as approximate.
+	addContributions := func() {
+		if c := fees.ProgramFeeContribution; c > 0 {
+			add("Required LogicSig program contribution: about %d microAlgos (%d charged byte(s))", c, plan.LogicSigResourcePlan.ChargedProgramBytes)
+		}
+		if c := fees.NativePQFeeContribution; c > 0 {
+			add("Required native Falcon contribution: %d microAlgos", c)
+		}
+	}
 	if plan.Frozen {
 		if len(allTxns) > 1 {
-			b.WriteString("[FROZEN GROUP: checked as sent, not changed by this request]\n")
+			changes.Heading = "[FROZEN GROUP: checked as sent, not changed by this request]"
 		} else {
-			b.WriteString("[FROZEN TRANSACTION: checked as sent, not changed by this request]\n")
+			changes.Heading = "[FROZEN TRANSACTION: checked as sent, not changed by this request]"
 		}
 		if plan.DummiesNeeded > 0 {
-			fmt.Fprintf(&b, "  • %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
+			add("%d dummy transaction(s) for LogicSig arguments/opcode budget", plan.DummiesNeeded)
 		}
 		// Only a rotating spend reaches here with a raised fee: prepare
 		// added it, to the spend. A /sign/component group is never raised.
@@ -309,66 +385,47 @@ func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) 
 		// as a change this request made; and it names the spend, since the
 		// header may call the request a lone transaction.
 		if fees.TotalFees > 0 {
-			fmt.Fprintf(&b, "  • %d microAlgos of fee added when the spend was prepared\n", fees.TotalFees)
+			add("%d microAlgos of fee added when the spend was prepared", fees.TotalFees)
 		}
-		writeContributionLines(&b, plan)
+		addContributions()
 		if plan.DummiesNeeded > 0 || fees.TotalFees > 0 || contributions {
-			b.WriteString("  • The fees shown already include these; this request adds no dummies or fees\n")
+			add("The fees shown already include these; this request adds no dummies or fees")
 		}
-		return b.String()
+		return changes
 	}
 	if plan.DummiesNeeded > 0 || fees.TotalFees > 0 {
-		b.WriteString("[MODIFIED BY SERVER]\n")
+		changes.Heading = "[MODIFIED BY SERVER]"
 	} else if contributions {
-		b.WriteString("[FEE REQUIREMENT COVERED BY EXISTING FEES]\n")
+		changes.Heading = "[FEE REQUIREMENT COVERED BY EXISTING FEES]"
 	}
 	if plan.DummiesNeeded > 0 {
-		fmt.Fprintf(&b, "  • Added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded)
+		add("Added %d dummy transaction(s) for LogicSig arguments/opcode budget", plan.DummiesNeeded)
 	}
-	writeFeeAdjustmentLine(&b, fees, group)
-	writeContributionLines(&b, plan)
+	// The fee this request's planning added for the signer's authorization
+	// charge, and where, when it added one.
+	if fees.TotalFees > 0 {
+		if group {
+			add("Group fee adjustment: +%d microAlgos across transaction(s) %v", fees.TotalFees, approvalTransactionNumbers(fees.FeeIndices))
+		} else {
+			add("Group fee adjustment: +%d microAlgos", fees.TotalFees)
+		}
+	}
+	addContributions()
 	if (plan.DummiesNeeded > 0 || fees.TotalFees > 0) && len(allTxns) > 1 {
-		b.WriteString("  • Group ID recomputed\n")
+		add("Group ID recomputed")
 	}
-	return b.String()
+	return changes
 }
 
-// writeFeeAdjustmentLine states the fee this request's planning added for
-// the signer's authorization charge, and where, when it added one.
-func writeFeeAdjustmentLine(b *strings.Builder, fees DummyFeeInfo, group bool) {
-	if fees.TotalFees == 0 {
-		return
-	}
-	if group {
-		fmt.Fprintf(b, "  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", fees.TotalFees, approvalTransactionNumbers(fees.FeeIndices))
-	} else {
-		fmt.Fprintf(b, "  • Group fee adjustment: +%d microAlgos\n", fees.TotalFees)
-	}
-}
-
-// writeContributionLines lists what authorization requires the fees to pay
-// beyond the dummies. Each contribution is rounded up to a whole microAlgo on
-// its own, while the fee adjustment rounds the group's total once, so the
-// listed parts need not add up to it. The program contribution, the one that
-// is usually a fraction of a microAlgo per byte, is given as approximate.
-func writeContributionLines(b *strings.Builder, plan *PlanResult) {
-	if c := plan.FeeInfo.ProgramFeeContribution; c > 0 {
-		fmt.Fprintf(b, "  • Required LogicSig program contribution: about %d microAlgos (%d charged byte(s))\n", c, plan.LogicSigResourcePlan.ChargedProgramBytes)
-	}
-	if c := plan.FeeInfo.NativePQFeeContribution; c > 0 {
-		fmt.Fprintf(b, "  • Required native Falcon contribution: %d microAlgos\n", c)
-	}
-}
-
-// passthroughAuthorizationLine names who authorizes a passthrough position,
-// and with what kind of signature, from its signed bytes. This signer does
-// not check that signature; the network does.
-func passthroughAuthorizationLine(signed []byte) string {
+// passthroughAuthorization names who authorizes a passthrough position, and
+// with what kind of signature, from its signed bytes. This signer does not
+// check that signature; the network does.
+func passthroughAuthorization(signed []byte) txnreview.Field {
 	var stxn types.SignedTxn
 	if err := msgpack.Decode(signed, &stxn); err != nil {
-		return "  Authorized by: (the signed transaction could not be read)"
+		return txnreview.Field{Label: "Authorized by", Value: "(the signed transaction could not be read)"}
 	}
-	return "  Authorized by: " + txnreview.Authorization(stxn)
+	return txnreview.Field{Label: "Authorized by", Value: txnreview.Authorization(stxn)}
 }
 
 func approvalTransactionNumbers(indices []int) []int {
@@ -387,19 +444,21 @@ func boundedItemAt(plan *PlanResult, i int) *boundedPlanItem {
 	return plan.BoundedItems[i]
 }
 
-// boundedRekeyApprovalLines names a bounded rekey's authorization for the
-// operator: the group and the single-request prompts both carry it. It is
-// empty for anything but a bounded rekey.
-func boundedRekeyApprovalLines(item *boundedPlanItem) string {
+// boundedRekeyFields names a bounded rekey's authorization for the operator:
+// the group and the single-request prompts both carry it. It is empty for
+// anything but a bounded rekey.
+func boundedRekeyFields(item *boundedPlanItem) []txnreview.Field {
 	if item == nil || item.Path == boundedPathPureSpend {
-		return ""
+		return nil
 	}
-	lines := "\n  Bounded authorization operation: REKEY" +
-		"\n  Authorization: " + boundedAuthorizationLabel(item)
+	fields := []txnreview.Field{
+		{Label: "Bounded authorization operation", Value: "REKEY"},
+		{Label: "Authorization", Value: boundedAuthorizationLabel(item)},
+	}
 	if item.Metadata != nil && item.Metadata.MaxFee != nil {
-		lines += fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", *item.Metadata.MaxFee)
+		fields = append(fields, txnreview.Field{Label: "Profile maximum fee", Value: fmt.Sprintf("%d microAlgos", *item.Metadata.MaxFee)})
 	}
-	return lines
+	return fields
 }
 
 // boundedAuthorizationLabel names who authorizes a bounded rekey: on a cosigned
@@ -521,15 +580,10 @@ func requestIDPreview(requestID string) string {
 	return requestID[:20]
 }
 
-func (s *ApprovalService) RequestGroupApproval(req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
-	return s.RequestGroupApprovalWithContext(context.Background(), req, plan, groupDesc, firstValid, lastValid, txns)
-}
-
-func (s *ApprovalService) RequestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
-	return s.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, "")
-}
-
-func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string) *ServiceError {
+// requestGroupApprovalWithContext prompts for a group, or for a lone request
+// that only the group prompt can show. review is the request's completed
+// review (ApprovalService.review): the prompt's text and warnings are its own.
+func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
 	if s.userAutoApprove() {
 		if forceReviewRuleID != "" {
@@ -572,20 +626,17 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	displaySender := fmt.Sprintf("GROUP(%d txns)", len(txns))
 	groupAuthAddr := groupApprovalAddress(req)
 
-	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
-		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan),
-		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
-	}, warningRekeyTargetsForPlan(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
 
 		requestID,
 		groupAuthAddr,
 		displaySender,
-		"[GROUP APPROVAL]\n"+groupDesc,
+		"[GROUP APPROVAL]\n"+review.Text(),
 		firstValid,
 		lastValid,
-		violations,
+		reviewViolations(review, true),
+		review,
 		s.approvalWait(),
 	)
 	if err != nil {
@@ -614,28 +665,11 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	return nil
 }
 
-// RequestSingleTxnApproval prompts for one request. planChanges is what
-// planning did to it, as planChangeLines gives it, or empty.
-func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil)
-}
-
-func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil)
-}
-
-// requestSingleTxnApprovalWithContext prompts for one request. planChanges is
-// what planning did to it (planChangeLines), shown above the transaction as
-// the group prompt shows it. plan is the request's plan, or nil: the warning
-// judges rekey targets against its key snapshot, and its bounded item, when
-// it has one, lets a bounded rekey's prompt name who authorizes it and the
-// warning name a listed handover as one.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64, forceReviewRuleID string, plan *PlanResult) *ServiceError {
-	bounded := boundedItemAt(plan, 0)
-	var listed map[string]bool
-	if bounded != nil {
-		listed = bounded.ListedRekeyTargets
-	}
+// requestSingleTxnApprovalWithContext prompts for one request. review is the
+// request's completed review (ApprovalService.review): the prompt's text and
+// warnings are its own, what planning changed shown above the transaction as
+// the group prompt shows it.
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, firstValid, lastValid uint64, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
 	txnApproved := false
 	approvalReason := ""
@@ -669,22 +703,18 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return forbidden("transaction approval blocked: " + reason)
 	}
 
-	// RequestSingleTxnApproval and its context form supply no ID; the prompt
-	// is never held under an empty one.
+	// A direct caller may supply no ID; the prompt is never held under an
+	// empty one.
 	requestID = RequestID(requestID)
 	console.Printf("[IPC] TXN APPROVAL: Waiting for approval from apadmin TUI (request %s)...\n", requestIDPreview(requestID))
 	console.Sync()
 
 	txnDesc := "[TXN APPROVAL]\n"
-	if planChanges != "" {
-		txnDesc += planChanges + "\n"
+	if changes := review.Changes.Text(); changes != "" {
+		txnDesc += changes + "\n"
 	}
-	txnDesc += describeTxnForApproval(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn)
-	txnDesc += boundedRekeyApprovalLines(bounded)
-
-	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], approvalpolicy.Context{
-		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan), ListedRekeyTargets: listed,
-	})
+	txnDesc += review.Items[0].Text()
+	violations := reviewViolations(review, false)
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 
 	approved, err := s.requestSigningApproval(
@@ -697,6 +727,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		firstValid,
 		lastValid,
 		violations,
+		review,
 		s.approvalWait(),
 	)
 	if err != nil {
@@ -736,20 +767,29 @@ func (s *ApprovalService) logGroupApprovalTimeout(req signerapi.GroupSignRequest
 	}
 }
 
-func describeTxnForApproval(txn types.Transaction, txReq signerapi.SignRequest, generateTxnDescriptionFromTxn GenerateTxnDescriptionFromTxnFunc) string {
-	desc := generateTxnDescriptionFromTxn(txn)
+// reviewItem describes one requested transaction: what it does, the client's
+// claims about an app call, and a bounded rekey's authorization.
+func reviewItem(txn types.Transaction, txReq signerapi.SignRequest, describe DescribeTxnFunc, bounded *boundedPlanItem) txnreview.Item {
+	item := txnreview.Item{Details: describe(txn), Claims: appCallClaims(txn, txReq)}
+	item.Details.Fields = append(item.Details.Fields, boundedRekeyFields(bounded)...)
+	return item
+}
+
+// appCallClaims are the lines a review adds for what the client says of an
+// app call.
+func appCallClaims(txn types.Transaction, txReq signerapi.SignRequest) []string {
 	meta := txReq.AppCallInfo
 	if meta == nil || txn.Type != types.ApplicationCallTx {
-		return desc
+		return nil
 	}
 
 	if strings.EqualFold(strings.TrimSpace(meta.Mode), "raw") {
-		return insertAppCallMetadata(desc, []string{"Mode: Raw"})
+		return []string{"Mode: Raw"}
 	}
 
 	methodSig := strings.TrimSpace(meta.Method)
 	if methodSig == "" {
-		return desc
+		return nil
 	}
 	// An ABI call's first argument is the selector and nothing else. A longer
 	// argument that merely starts with the label's selector is not an ABI
@@ -758,18 +798,18 @@ func describeTxnForApproval(txn types.Transaction, txReq signerapi.SignRequest, 
 	// make is itself worth knowing.
 	wantSelector, err := appspec.SignatureSelector(methodSig)
 	if err != nil || len(txn.ApplicationArgs) == 0 || !bytes.Equal(wantSelector, txn.ApplicationArgs[0]) {
-		return insertAppCallMetadata(desc, []string{abiLabelMismatchLine})
+		return []string{abiLabelMismatchLine}
 	}
 
 	// The label is the client's. The signer holds no contract for the app, so
 	// the selector is all that ties the name to the call, and a different
 	// name with the same four bytes can be found by search. The review says
 	// so, and shows the selector, the part the app acts on.
-	return insertAppCallMetadata(desc, []string{
+	return []string{
 		abiModeLine,
 		abiMethodLabel + termsafe.Line(methodSig),
 		fmt.Sprintf("Selector: %x (all that ties the label to this call)", wantSelector),
-	})
+	}
 }
 
 func appendViolationHighlights(desc string, violations []signerapproval.Violation) string {
@@ -804,20 +844,3 @@ const (
 	abiMethodLabel       = "Method (the client's label, not verified): "
 	abiLabelMismatchLine = "Note: the client named an ABI method that does not match this call's first argument; the name is not shown"
 )
-
-func insertAppCallMetadata(desc string, extraLines []string) string {
-	lines := strings.Split(desc, "\n")
-	if len(lines) == 0 {
-		return desc
-	}
-	insertAt := len(lines)
-	for i := 1; i < len(lines); i++ {
-		if strings.HasPrefix(lines[i], "  ") {
-			insertAt = i
-			break
-		}
-	}
-	lines = append(lines[:insertAt], append(extraLines, lines[insertAt:]...)...)
-
-	return strings.Join(lines, "\n")
-}

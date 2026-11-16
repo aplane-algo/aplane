@@ -468,11 +468,19 @@ func rekeyFindingLines(t *testing.T, rendered string, target types.Address) []st
 	t.Helper()
 	all := strings.Split(rendered, "\n")
 	for i, line := range all {
-		if strings.TrimSpace(line) != "!! RekeyTo = "+target.String() {
+		// A rekey to a held key is a note, any other a "!!" finding; the
+		// lines under either are its message.
+		marker := ""
+		for _, m := range []string{"!! ", "Note: "} {
+			if strings.TrimSpace(line) == m+"RekeyTo = "+target.String() {
+				marker = m
+			}
+		}
+		if marker == "" {
 			continue
 		}
 		var lines []string
-		indent := line[:strings.Index(line, "!!")] + "   "
+		indent := line[:strings.Index(line, marker)] + "   "
 		for _, next := range all[i+1:] {
 			if !strings.HasPrefix(next, indent) {
 				break

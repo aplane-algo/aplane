@@ -1439,7 +1439,8 @@ or
   checked: which addresses the signer holds an aplane key for, of any key
   type, a generic LogicSig included, and which of those are not valid rekey
   targets. A rekey
-  to a held aplane key that is a valid rekey target keeps control. A rekey to
+  to a held aplane key that is a valid rekey target keeps control, and the
+  review shows it as a note, not a `!!` finding. A rekey to
   a held aplane key that is not a valid rekey target is refused before the
   review is shown (see
   [Rekeys to held aplane keys](#rekeys-to-held-aplane-keys)). An account the

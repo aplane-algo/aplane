@@ -117,6 +117,10 @@ type SweepRequest struct {
 	// LsigArgs, not both.
 	UntargetedLsigArgs map[string][]byte
 	Wait               bool
+	// ConfirmLookalikes, when set, is asked before anything is signed whether
+	// to sweep to a destination typed as an address that looks like a known
+	// account. Unset, the sweep goes on, and the result warns of it.
+	ConfirmLookalikes func([]RecipientLookalike) (bool, error)
 }
 
 // ValidateRequest captures parsed account validation inputs.
@@ -753,6 +757,16 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve destination address: %w", err)
 	}
+	lookalikes := a.recipientLookalikes([]string{req.ToRaw})
+	if len(lookalikes) > 0 && req.ConfirmLookalikes != nil {
+		sweep, err := req.ConfirmLookalikes(lookalikes)
+		if err != nil {
+			return nil, err
+		}
+		if !sweep {
+			return nil, ErrLookalikeDeclined
+		}
+	}
 	// A target is checked against every source asked for, including one the
 	// sweep then skips: its item says why nothing was sent from it.
 	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, fromAddresses)
@@ -812,6 +826,9 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		ReceiverOptedIn: receiverOptedIn,
 
 		LeavingMinimumBalance: leaveMinimumBalance,
+	}
+	for _, lookalike := range lookalikes {
+		result.Warnings = append(result.Warnings, lookalike.Warning())
 	}
 
 	var submissionFailures []*signing.SubmissionError

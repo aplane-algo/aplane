@@ -44,6 +44,9 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if handled {
 		return m, cmd
 	}
+	if m, handled := m.handleReviewKeys(msg); handled {
+		return m, nil
+	}
 
 	// Signing-specific: viewport scrolling
 	switch msg.String() {
@@ -144,9 +147,12 @@ func (m Model) buildSigningViewportContent() string {
 		sb.WriteString(strings.Repeat("=", 50))
 		sb.WriteString("\n")
 		for _, v := range m.signing.request.Violations {
-			if v.Severity == "critical" {
+			switch v.Severity {
+			case protocol.ViolationSeverityCritical:
 				sb.WriteString(fmt.Sprintf("⚠ CRITICAL: %s\n", v.Field))
-			} else {
+			case protocol.ViolationSeverityNotice:
+				sb.WriteString(fmt.Sprintf("Note: %s\n", v.Field))
+			default:
 				sb.WriteString(fmt.Sprintf("⚠ WARNING: %s\n", v.Field))
 			}
 			if v.Value != "" {
@@ -161,13 +167,25 @@ func (m Model) buildSigningViewportContent() string {
 
 // initSigningViewport initializes the viewport for the signing popup description
 func (m *Model) initSigningViewport(content string) {
+	if m.reviewAvailable() {
+		m.refreshReview()
+		return
+	}
 	vpHeight, vpWidth := m.signingViewportDimensions()
 	m.signing.viewport = viewport.New(vpWidth, vpHeight)
 	m.signing.viewport.SetContent(wrapText(content, vpWidth))
 }
 
-// resizeSigningViewport updates the viewport dimensions and reflows content after a terminal resize.
+// resizeSigningViewport updates the viewport dimensions and reflows content
+// after a terminal resize. A drawn review's detail pane keeps the operator's
+// place, as far down as the new height allows.
 func (m *Model) resizeSigningViewport() {
+	if m.reviewAvailable() {
+		offset := m.signing.viewport.YOffset
+		m.refreshReview()
+		m.signing.viewport.SetYOffset(offset)
+		return
+	}
 	vpHeight, vpWidth := m.signingViewportDimensions()
 	m.signing.viewport.Width = vpWidth
 	m.signing.viewport.Height = vpHeight

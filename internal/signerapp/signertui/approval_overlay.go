@@ -68,6 +68,12 @@ func (m Model) keepApprovalOnTop(preferred ViewState) Model {
 		// the popup was already visible.
 		m.signing.shownAt = signingNow()
 	}
+	if popup == ViewSigningPopup && m.viewState != popup {
+		// The screen under the popup has its own footer, and the popup's
+		// panes were sized while that one showed.
+		m.viewState = popup
+		m.resizeSigningViewport()
+	}
 	m.viewState = popup
 	return m
 }

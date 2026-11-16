@@ -5,7 +5,6 @@ package signing
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 		t.Fatalf("SignatureSelector() error = %v", err)
 	}
 
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -47,10 +46,9 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 				Method: "increment(uint64)void",
 			},
 		},
-		func(txn types.Transaction) string {
-			return "App Call: #123 (NoOp)\n  From: SOMEADDR"
-		},
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 
 	for _, want := range []string{
 		"App Call: #123 (NoOp)",
@@ -65,7 +63,7 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 }
 
 func TestDescribeTxnForApprovalIgnoresMismatchedAppCallMetadata(t *testing.T) {
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -84,10 +82,9 @@ func TestDescribeTxnForApprovalIgnoresMismatchedAppCallMetadata(t *testing.T) {
 				Method: "increment(uint64)void",
 			},
 		},
-		func(txn types.Transaction) string {
-			return "App Call: #123 (NoOp)\n  From: SOMEADDR"
-		},
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 
 	for _, unwanted := range []string{
 		"App Call [ABI]:",
@@ -102,7 +99,7 @@ func TestDescribeTxnForApprovalIgnoresMismatchedAppCallMetadata(t *testing.T) {
 }
 
 func TestDescribeTxnForApprovalMarksRawAppCalls(t *testing.T) {
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -117,10 +114,9 @@ func TestDescribeTxnForApprovalMarksRawAppCalls(t *testing.T) {
 				Mode: "raw",
 			},
 		},
-		func(txn types.Transaction) string {
-			return "App Call: #123 (NoOp)\n  From: SOMEADDR"
-		},
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 
 	if !strings.Contains(desc, "Mode: Raw") {
 		t.Fatalf("description missing raw mode marker:\n%s", desc)
@@ -252,7 +248,7 @@ func TestGroupApprovalAddress(t *testing.T) {
 	}
 }
 
-func TestBuildApprovalDescriptionTreatsSingleRequestedTxnWithDummiesAsSingle(t *testing.T) {
+func TestApprovalTextTreatsSingleRequestedTxnWithDummiesAsSingle(t *testing.T) {
 	req := signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: "AUTHADDR",
@@ -270,9 +266,8 @@ func TestBuildApprovalDescriptionTreatsSingleRequestedTxnWithDummiesAsSingle(t *
 		{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{2}, FirstValid: 100, LastValid: 200}},
 	}
 
-	desc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, func(txn types.Transaction) string {
-		return "txn"
-	})
+	desc := approvalText(req, plan, allTxns, describeAs("txn"))
+	firstValid, lastValid := approvalWindow(allTxns)
 
 	if !strings.HasPrefix(desc, "=== SINGLE TRANSACTION ===\n\n") {
 		t.Fatalf("description = %q, want single transaction header", desc)
@@ -291,7 +286,7 @@ func TestBuildApprovalDescriptionTreatsSingleRequestedTxnWithDummiesAsSingle(t *
 	}
 }
 
-func TestBuildApprovalDescriptionOmitsDummyEntriesFromGroupApproval(t *testing.T) {
+func TestApprovalTextOmitsDummyEntriesFromGroupApproval(t *testing.T) {
 	req := signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{
 			{AuthAddress: "AUTH1", TxnBytesHex: "deadbeef"},
@@ -310,9 +305,8 @@ func TestBuildApprovalDescriptionOmitsDummyEntriesFromGroupApproval(t *testing.T
 		{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{3}, FirstValid: 140, LastValid: 300}},
 	}
 
-	desc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, func(txn types.Transaction) string {
-		return "txn"
-	})
+	desc := approvalText(req, plan, allTxns, describeAs("txn"))
+	firstValid, lastValid := approvalWindow(allTxns)
 
 	if !strings.HasPrefix(desc, "=== TRANSACTION GROUP (2 transactions) ===\n") {
 		t.Fatalf("description = %q, want requested transaction count in group header", desc)
@@ -328,7 +322,7 @@ func TestBuildApprovalDescriptionOmitsDummyEntriesFromGroupApproval(t *testing.T
 	}
 }
 
-func TestBuildApprovalDescriptionDistinguishesCoveredAuthorizationFeeRequirement(t *testing.T) {
+func TestApprovalTextDistinguishesCoveredAuthorizationFeeRequirement(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
 	plan := &PlanResult{
 		FeeInfo:              DummyFeeInfo{ProgramFeeContribution: 300},
@@ -337,7 +331,7 @@ func TestBuildApprovalDescriptionDistinguishesCoveredAuthorizationFeeRequirement
 		ForeignIndices:       map[int]bool{},
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description := approvalText(req, plan, txns, describeAs("txn"))
 	if strings.Contains(description, "[MODIFIED BY SERVER]") {
 		t.Fatalf("description incorrectly reports a fee mutation:\n%s", description)
 	}
@@ -352,7 +346,7 @@ func TestBuildApprovalDescriptionDistinguishesCoveredAuthorizationFeeRequirement
 // prompt gives the contribution as approximate and the adjustment as exact.
 // The native Falcon contribution is a whole number of microAlgos and is given
 // as it is.
-func TestBuildApprovalDescriptionGivesTheProgramContributionAsApproximate(t *testing.T) {
+func TestApprovalTextGivesTheProgramContributionAsApproximate(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
 	plan := &PlanResult{
 		FeeInfo:              DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0}, ProgramFeeContribution: 1, NativePQFeeContribution: 2_000},
@@ -360,7 +354,7 @@ func TestBuildApprovalDescriptionGivesTheProgramContributionAsApproximate(t *tes
 		PassthroughIndices:   map[int]bool{},
 		ForeignIndices:       map[int]bool{},
 	}
-	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, func(types.Transaction) string { return "txn" })
+	description := approvalText(req, plan, []types.Transaction{{Type: types.PaymentTx}}, describeAs("txn"))
 	for _, want := range []string{
 		"Group fee adjustment: +2000 microAlgos\n",
 		"Required LogicSig program contribution: about 1 microAlgos (5 charged byte(s))",
@@ -379,7 +373,7 @@ func TestBuildApprovalDescriptionGivesTheProgramContributionAsApproximate(t *tes
 // prompt says it was checked as sent and what its fees already pay, never that
 // this request added dummies, raised fees or recomputed the group ID. The same
 // plan, not frozen, still reports the changes.
-func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
+func TestApprovalTextFrozenGroupClaimsNoChange(t *testing.T) {
 	for _, requests := range [][]signerapi.SignRequest{{{AuthAddress: "AUTH"}}, {{AuthAddress: "AUTH"}, {TxnBytesHex: "aa"}}} {
 		req := signerapi.GroupSignRequest{Requests: requests}
 		plan := &PlanResult{
@@ -394,7 +388,7 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 		for i := range txns {
 			txns[i] = types.Transaction{Type: types.PaymentTx}
 		}
-		description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+		description := approvalText(req, plan, txns, describeAs("txn"))
 		for _, want := range []string{
 			"[FROZEN GROUP: checked as sent, not changed by this request]",
 			"  • 1 dummy transaction(s) for LogicSig arguments/opcode budget",
@@ -412,7 +406,7 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 		}
 
 		plan.Frozen = false
-		description, _, _ = BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+		description = approvalText(req, plan, txns, describeAs("txn"))
 		if !strings.Contains(description, "[MODIFIED BY SERVER]") || strings.Contains(description, "FROZEN") {
 			t.Errorf("%d request(s): a planned group lost its change report:\n%s", len(requests), description)
 		}
@@ -421,7 +415,7 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 
 // A frozen request of one transaction, with no dummies, is not called a
 // group.
-func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) {
+func TestApprovalTextFrozenLoneTransactionIsNotAGroup(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
 	plan := &PlanResult{
 		FeeInfo:            DummyFeeInfo{NativePQFeeContribution: 2_000},
@@ -429,7 +423,7 @@ func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) 
 		ForeignIndices:     map[int]bool{},
 		Frozen:             true,
 	}
-	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, func(types.Transaction) string { return "txn" })
+	description := approvalText(req, plan, []types.Transaction{{Type: types.PaymentTx}}, describeAs("txn"))
 	for _, want := range []string{
 		"[FROZEN TRANSACTION: checked as sent, not changed by this request]",
 		"Required native Falcon contribution: 2000 microAlgos",
@@ -447,7 +441,7 @@ func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) 
 // A frozen prompt states the fee added when its group was prepared, worded as
 // done earlier: under the frozen header the planning prompt's "Group fee
 // adjustment" would read as a change this request made.
-func TestBuildApprovalDescriptionFrozenStatesTheFeeAddedAtPrepare(t *testing.T) {
+func TestApprovalTextFrozenStatesTheFeeAddedAtPrepare(t *testing.T) {
 	tests := []struct {
 		name     string
 		requests []signerapi.SignRequest
@@ -473,8 +467,8 @@ func TestBuildApprovalDescriptionFrozenStatesTheFeeAddedAtPrepare(t *testing.T) 
 			for i := range txns {
 				txns[i] = types.Transaction{Type: types.PaymentTx}
 			}
-			describe := func(types.Transaction) string { return "txn" }
-			frozen, _, _ := BuildApprovalDescription(req, plan, txns, describe)
+			describe := describeAs("txn")
+			frozen := approvalText(req, plan, txns, describe)
 			if strings.Contains(frozen, "Group fee adjustment") {
 				t.Fatalf("a frozen prompt words the fee as this request's adjustment:\n%s", frozen)
 			}
@@ -497,7 +491,7 @@ func TestBuildApprovalDescriptionFrozenStatesTheFeeAddedAtPrepare(t *testing.T) 
 // Each position this request signs names the key that signs it, so a group
 // whose header counts several keys says which signs where. A position the
 // request doesn't sign names none.
-func TestBuildApprovalDescriptionNamesEachPositionsSigningKey(t *testing.T) {
+func TestApprovalTextNamesEachPositionsSigningKey(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
 		{AuthAddress: "AUTH1"}, {AuthAddress: "AUTH2"}, {TxnBytesHex: "aa"},
 	}}
@@ -507,7 +501,7 @@ func TestBuildApprovalDescriptionNamesEachPositionsSigningKey(t *testing.T) {
 		HasForeign:         true,
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}, {Type: types.PaymentTx}, {Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description := approvalText(req, plan, txns, describeAs("txn"))
 	for _, want := range []string{
 		"--- Transaction 1 of 3 ---\n  Signing key: AUTH1\ntxn",
 		"--- Transaction 2 of 3 ---\n  Signing key: AUTH2\ntxn",
@@ -524,7 +518,7 @@ func TestBuildApprovalDescriptionNamesEachPositionsSigningKey(t *testing.T) {
 
 // A passthrough position says who authorizes it, and with what, from its
 // signed bytes, and that this signer does not check it.
-func TestBuildApprovalDescriptionNamesThePassthroughAuthorizer(t *testing.T) {
+func TestApprovalTextNamesThePassthroughAuthorizer(t *testing.T) {
 	sender := types.Address{7}
 	msig := types.MultisigSig{Version: 1, Threshold: 2, Subsigs: make([]types.MultisigSubsig, 3)}
 	account, err := crypto.MultisigAccountFromSig(msig)
@@ -548,7 +542,7 @@ func TestBuildApprovalDescriptionNamesThePassthroughAuthorizer(t *testing.T) {
 		HasPassthrough:        true,
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}, signed.Txn, {Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description := approvalText(req, plan, txns, describeAs("txn"))
 	want := "--- Transaction 2 of 3 [PASSTHROUGH] ---\n  Authorized by: " + rekeyed.String() +
 		" (multisig, 2 of 3, named as the sender's authorizer, not verified here)\ntxn"
 	if !strings.Contains(description, want) {
@@ -559,7 +553,7 @@ func TestBuildApprovalDescriptionNamesThePassthroughAuthorizer(t *testing.T) {
 	}
 }
 
-func TestBuildApprovalDescriptionUsesOneBasedFeeTransactionNumbers(t *testing.T) {
+func TestApprovalTextUsesOneBasedFeeTransactionNumbers(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{}, {}, {}}}
 	plan := &PlanResult{
 		FeeInfo:            DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0, 2}},
@@ -567,7 +561,7 @@ func TestBuildApprovalDescriptionUsesOneBasedFeeTransactionNumbers(t *testing.T)
 		ForeignIndices:     map[int]bool{},
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}, {Type: types.PaymentTx}, {Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description := approvalText(req, plan, txns, describeAs("txn"))
 	if !strings.Contains(description, "across transaction(s) [1 3]") {
 		t.Fatalf("description does not use one-based transaction numbers:\n%s", description)
 	}
@@ -583,15 +577,7 @@ func TestRequestSingleTxnApprovalBlocksNonReviewableTxn(t *testing.T) {
 		},
 	}
 
-	err := svc.RequestSingleTxnApproval(
-
-		signerapi.SignRequest{AuthAddress: "AUTH"},
-		[]types.Transaction{{Type: types.TxType("mystery")}},
-		[]types.Transaction{{Type: types.TxType("mystery")}},
-		"",
-		0,
-		0,
-	)
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{{Type: types.TxType("mystery")}}, "", nil)
 	if err == nil {
 		t.Fatal("RequestSingleTxnApproval() error = nil, want blocked non-reviewable txn")
 		return
@@ -625,7 +611,7 @@ func TestRequestGroupApprovalBlocksNonReviewableTxn(t *testing.T) {
 	}
 	txns := []types.Transaction{{Type: types.TxType("mystery")}}
 
-	err := svc.RequestGroupApproval(req, plan, "desc", 0, 0, txns)
+	err := promptGroup(svc, req, plan, txns, describeAs("txn"))
 	if err == nil {
 		t.Fatal("RequestGroupApproval() error = nil, want blocked non-reviewable group")
 		return
@@ -641,9 +627,8 @@ func TestRequestGroupApprovalBlocksNonReviewableTxn(t *testing.T) {
 func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing.T) {
 	var gotViolations []signerapproval.Violation
 	svc := &ApprovalService{
-		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-		KnownAddresses:                func() map[string]bool { return nil },
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
 		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotViolations = violations
 			return true, nil
@@ -658,15 +643,7 @@ func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing
 		},
 	}
 
-	err := svc.RequestSingleTxnApproval(
-
-		signerapi.SignRequest{AuthAddress: "AUTH"},
-		[]types.Transaction{txn},
-		[]types.Transaction{txn},
-		"",
-		0,
-		0,
-	)
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, "", nil)
 	if err != nil {
 		t.Fatalf("RequestSingleTxnApproval() error = %v, want nil", err)
 	}
@@ -682,11 +659,10 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 	audit := &testAuditLogger{}
 	var gotTimeout time.Duration
 	svc := &ApprovalService{
-		ApprovalWait:                  func() time.Duration { return 45 * time.Second },
-		AuditLog:                      audit,
-		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-		KnownAddresses:                func() map[string]bool { return nil },
+		ApprovalWait:   func() time.Duration { return 45 * time.Second },
+		AuditLog:       audit,
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
 		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			gotTimeout = timeout
 			return signerapproval.SignResponse{}, signerapproval.ErrApprovalTimeout
@@ -698,15 +674,7 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 		Header: types.Header{Sender: types.Address{1}},
 	}
 
-	err := svc.RequestSingleTxnApproval(
-
-		signerapi.SignRequest{AuthAddress: "AUTH"},
-		[]types.Transaction{txn},
-		[]types.Transaction{txn},
-		"",
-		0,
-		0,
-	)
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, "", nil)
 	if err == nil {
 		t.Fatal("RequestSingleTxnApproval() error = nil, want timeout")
 	}
@@ -724,10 +692,9 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 	audit := &testAuditLogger{}
 	svc := &ApprovalService{
-		AuditLog:                      audit,
-		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-		KnownAddresses:                func() map[string]bool { return nil },
+		AuditLog:       audit,
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
 		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			return signerapproval.SignResponse{ID: requestID, Approved: false}, nil
 		},
@@ -737,19 +704,7 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 		Type:   types.PaymentTx,
 		Header: types.Header{Sender: types.Address{1}},
 	}
-	err := svc.requestSingleTxnApprovalWithContext(
-		context.Background(),
-
-		"",
-		signerapi.SignRequest{AuthAddress: "AUTH"},
-		[]types.Transaction{txn},
-		[]types.Transaction{txn},
-		"",
-		0,
-		0,
-		policy.ReviewAlgoPaymentExceededRuleID,
-		nil,
-	)
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, policy.ReviewAlgoPaymentExceededRuleID, nil)
 	if err == nil {
 		t.Fatal("requestSingleTxnApprovalWithContext() error = nil, want operator rejection")
 	}
@@ -798,7 +753,7 @@ func TestRequestGroupApprovalPassesWarningViolationsAndCanApprove(t *testing.T) 
 		},
 	}
 
-	err := svc.RequestGroupApproval(req, plan, "desc", 0, 0, txns)
+	err := promptGroup(svc, req, plan, txns, describeAs("txn"))
 	if err != nil {
 		t.Fatalf("RequestGroupApproval() error = %v, want nil", err)
 	}
@@ -816,9 +771,8 @@ func TestRequestGroupApprovalPassesWarningViolationsAndCanApprove(t *testing.T) 
 func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 	var gotRequestID string
 	svc := &ApprovalService{
-		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-		KnownAddresses:                func() map[string]bool { return nil },
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
 		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotRequestID = requestID
 			return true, nil
@@ -830,19 +784,7 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 		Header: types.Header{Sender: types.Address{1}},
 	}
 
-	err := svc.requestSingleTxnApprovalWithContext(
-		context.Background(),
-
-		"cli-single-1",
-		signerapi.SignRequest{AuthAddress: "AUTH"},
-		[]types.Transaction{txn},
-		[]types.Transaction{txn},
-		"",
-		0,
-		0,
-		"",
-		nil,
-	)
+	err := promptSingle(svc, "cli-single-1", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, "", nil)
 	if err != nil {
 		t.Fatalf("requestSingleTxnApprovalWithContext() error = %v, want nil", err)
 	}
@@ -856,7 +798,7 @@ func TestApprovalHidesTheMethodLabelWhenTheFirstArgIsNotJustTheSelector(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -867,8 +809,9 @@ func TestApprovalHidesTheMethodLabelWhenTheFirstArgIsNotJustTheSelector(t *testi
 			},
 		},
 		signerapi.SignRequest{AppCallInfo: &signerapi.AppCallInfo{Mode: "abi", Method: "increment(uint64)void"}},
-		func(txn types.Transaction) string { return "App Call: #123 (NoOp)\n  From: SOMEADDR" },
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 	if strings.Contains(desc, "Method (") || strings.Contains(desc, "Mode: ABI") || strings.Contains(desc, "increment") {
 		t.Fatalf("a first argument longer than a selector is shown as an ABI call:\n%s", desc)
 	}

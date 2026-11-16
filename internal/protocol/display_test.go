@@ -58,3 +58,71 @@ func TestValidityWindowLine(t *testing.T) {
 		}
 	}
 }
+
+// fillStrings sets every string reachable from v to raw, giving each slice
+// one element.
+func fillStrings(v reflect.Value, raw string) {
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(raw)
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			fillStrings(v.Field(i), raw)
+		}
+	case reflect.Slice:
+		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+		fillStrings(v.Index(0), raw)
+	case reflect.Pointer:
+		v.Set(reflect.New(v.Type().Elem()))
+		fillStrings(v.Elem(), raw)
+	}
+}
+
+// eachString calls visit with every string reachable from v.
+func eachString(v reflect.Value, path string, visit func(path, s string)) {
+	switch v.Kind() {
+	case reflect.String:
+		visit(path, v.String())
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			eachString(v.Field(i), path+"."+v.Type().Field(i).Name, visit)
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			eachString(v.Index(i), path, visit)
+		}
+	case reflect.Pointer:
+		if !v.IsNil() {
+			eachString(v.Elem(), path, visit)
+		}
+	}
+}
+
+// Every string of a sign request is escaped, its review's included: a string
+// field added to the review later is covered here without being named.
+func TestSignRequestTerminalSafeEscapesEveryStringOfTheReview(t *testing.T) {
+	var in SignRequestMessage
+	fillStrings(reflect.ValueOf(&in.Review).Elem(), "raw\x1b[2J\u202e")
+	if in.Review == nil || len(in.Review.Items) != 1 || len(in.Review.Items[0].Effects) != 1 {
+		t.Fatalf("the review was not filled: %+v", in.Review)
+	}
+	got := in.TerminalSafe()
+	count := 0
+	eachString(reflect.ValueOf(got.Review), "Review", func(path, s string) {
+		count++
+		for _, r := range s {
+			if r == 0x1b || r == 0x202e {
+				t.Errorf("%s is not escaped: %q", path, s)
+			}
+		}
+	})
+	if count < 20 {
+		t.Fatalf("only %d strings were checked", count)
+	}
+	if in.Review.Items[0].Title != "raw\x1b[2J\u202e" {
+		t.Fatal("TerminalSafe() changed the caller's review")
+	}
+	if again := got.TerminalSafe(); !reflect.DeepEqual(again, got) {
+		t.Fatal("TerminalSafe() is not idempotent on a review")
+	}
+}

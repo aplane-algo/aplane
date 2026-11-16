@@ -62,13 +62,14 @@ func CheckDecodedTxnWarningsIn(txn types.Transaction, ctx Context) []signerappro
 	}
 	violations := make([]signerapproval.Violation, len(findings))
 	for i, finding := range findings {
-		severity := signerapproval.ViolationSeverityWarning
-		if finding.Critical {
-			severity = signerapproval.ViolationSeverityCritical
-		}
-		violations[i] = signerapproval.Violation{
-			Field: finding.Field, Value: finding.Value, Severity: severity, Message: finding.Message,
-		}
+		violations[i] = Violation(finding)
 	}
 	return violations
+}
+
+// Violation is a finding as a prompt's warning.
+func Violation(finding txnreview.Finding) signerapproval.Violation {
+	return signerapproval.Violation{
+		Field: finding.Field, Value: finding.Value, Severity: signerapproval.ViolationSeverity(finding.Level()), Message: finding.Message,
+	}
 }

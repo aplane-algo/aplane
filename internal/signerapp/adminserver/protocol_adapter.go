@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -1057,7 +1058,61 @@ func ProtocolSignRequestMessage(req signerapproval.SignRequest) protocol.SignReq
 		FirstValid:  req.FirstValid,
 		LastValid:   req.LastValid,
 		Violations:  protocolViolations(req.Violations),
+		Review:      protocolReview(req.Review),
 	}
+}
+
+// protocolReview is a review in its wire form.
+func protocolReview(review *txnreview.Review) *protocol.Review {
+	if review == nil {
+		return nil
+	}
+	fields := func(in []txnreview.Field) []protocol.ReviewField {
+		if len(in) == 0 {
+			return nil
+		}
+		out := make([]protocol.ReviewField, len(in))
+		for i, f := range in {
+			out[i] = protocol.ReviewField{Label: f.Label, Value: f.Value, Party: f.Party, Alert: f.Alert, Depth: f.Depth}
+		}
+		return out
+	}
+	findings := func(in []txnreview.Finding) []protocol.PolicyViolation {
+		var out []protocol.PolicyViolation
+		for _, f := range in {
+			out = append(out, protocol.PolicyViolation{Field: f.Field, Value: f.Value, Severity: f.Level(), Message: f.Message})
+		}
+		return out
+	}
+	out := &protocol.Review{
+		Version: protocol.ReviewVersion,
+		Group:   review.Group,
+		Banners: review.Banners,
+		Changes: protocol.ReviewChanges{
+			Heading: review.Changes.Heading, Lines: review.Changes.Lines,
+			Frozen: review.Changes.Frozen, Dummies: review.Changes.Dummies, FeeAdded: review.Changes.FeeAdded,
+		},
+		Items: make([]protocol.ReviewItem, len(review.Items)),
+	}
+	for i, item := range review.Items {
+		wire := protocol.ReviewItem{
+			Position: string(item.Position), Label: item.Label, Notes: fields(item.Notes), Claims: item.Claims,
+			Title: item.Details.Title, Sender: item.Details.Sender, Fields: fields(item.Details.Fields),
+		}
+		for _, e := range item.Details.Effects {
+			wire.Effects = append(wire.Effects, protocol.ReviewEffect{
+				Kind: string(e.Kind), From: e.From, To: e.To, Authority: e.Authority,
+				App: e.App, NewApp: e.NewApp, Text: e.Text, Severity: string(e.Severity),
+			})
+		}
+		wire.Findings = findings(item.Findings)
+		out.Items[i] = wire
+	}
+	for _, p := range review.Parties {
+		out.Parties = append(out.Parties, protocol.ReviewParty{Address: p.Address, Held: p.Held, Signs: p.Signs, KeyType: p.KeyType, Lookalike: p.Lookalike})
+	}
+	out.Findings = findings(review.Findings)
+	return out
 }
 
 func ProtocolSignRequestCanceledMessage(msg signerapproval.SignRequestCanceled) protocol.SignRequestCanceledMessage {

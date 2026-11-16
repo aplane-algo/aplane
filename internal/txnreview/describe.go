@@ -22,7 +22,126 @@ import (
 	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
-type transactionDescriber func(txn types.Transaction, view View) string
+type transactionDescriber func(txn types.Transaction, view View) Details
+
+// Details is what a review says of one transaction, as data: a title that
+// names what the transaction does, then one field per line of the review.
+// Describe prints it, so the text and the fields cannot say different things.
+type Details struct {
+	Title string
+	// Sender is the address of the account the transaction is sent from.
+	Sender string
+	Fields []Field
+	// Effects summarize the fields for a picture of the request. The text
+	// does not print them: everything they say is in the fields.
+	Effects []Effect
+}
+
+// Field is one line of a review.
+type Field struct {
+	// Label names the field. It is empty for a remark, a line that is only
+	// its Value.
+	Label string
+	Value string
+	// Party is the address of the one account the field names, when it names
+	// one. The review compares every party for lookalikes.
+	Party string
+	// Alert marks a line the review warns of.
+	Alert bool
+	// finding is the finding field whose urgency decides Alert, set for a
+	// field Mark may quieten; loud and quiet are its label with and without
+	// the alert.
+	finding, loud, quiet string
+	// Depth is 1 for an entry of the list the field above it opens.
+	Depth int
+	// wide pads the separator so a "To" lines up under a "From".
+	wide bool
+}
+
+// Text prints the details as the review shows them: the title, then each
+// field on its own indented line.
+func (d Details) Text() string {
+	var b strings.Builder
+	b.WriteString(d.Title)
+	for _, f := range d.Fields {
+		b.WriteString("\n" + f.Line())
+	}
+	return b.String()
+}
+
+// Line prints one field as the review shows it, indented.
+func (f Field) Line() string {
+	var b strings.Builder
+	b.WriteString("  ")
+	if f.Depth > 0 {
+		b.WriteString(strings.Repeat("  ", f.Depth))
+	}
+	if f.Alert {
+		b.WriteString("⚠️  ")
+	}
+	switch {
+	case f.Label == "":
+	case f.wide:
+		b.WriteString(f.Label + ":   ")
+	default:
+		b.WriteString(f.Label + ": ")
+	}
+	b.WriteString(f.Value)
+	return b.String()
+}
+
+func (d *Details) add(label, value string) {
+	d.Fields = append(d.Fields, Field{Label: label, Value: value})
+}
+
+func (d *Details) addf(label, format string, args ...any) {
+	d.add(label, fmt.Sprintf(format, args...))
+}
+
+// entry adds one entry of the list the field above it opens.
+func (d *Details) entry(index int, value string) {
+	d.Fields = append(d.Fields, Field{Label: fmt.Sprintf("[%d]", index), Value: value, Depth: 1})
+}
+
+func (d *Details) remark(text string) {
+	d.Fields = append(d.Fields, Field{Value: text})
+}
+
+func (d *Details) account(label string, addr types.Address) {
+	d.Fields = append(d.Fields, Field{Label: label, Value: addr.String(), Party: addr.String()})
+}
+
+// authority adds an asset role: an account, or the note that the role is off.
+func (d *Details) authority(label string, addr types.Address) {
+	if addr.IsZero() {
+		d.add(label, formatAuthorityAddress(addr))
+		return
+	}
+	d.account(label, addr)
+}
+
+// from and to add the two ends of a transfer, the "To" lined up under the
+// "From".
+func (d *Details) from(addr types.Address) { d.account("From", addr) }
+
+func (d *Details) to(addr types.Address) {
+	d.account("To", addr)
+	d.Fields[len(d.Fields)-1].wide = true
+}
+
+func (d *Details) alert(label string, addr types.Address) {
+	d.account(label, addr)
+	d.Fields[len(d.Fields)-1].Alert = true
+}
+
+// warned adds an account field the review warns of, under its loud label,
+// until Mark finds no finding of field urgent: then it is an ordinary field
+// under its quiet label.
+func (d *Details) warned(field, loud, quiet string, addr types.Address) {
+	d.alert(loud, addr)
+	f := &d.Fields[len(d.Fields)-1]
+	f.finding, f.loud, f.quiet = field, loud, quiet
+}
 
 // View is what a description knows beyond the transaction itself: the token
 // that names the transaction's network, and a table of assets that labels
@@ -52,50 +171,48 @@ func (v View) assetRef(genesis types.Digest, id uint64) string {
 	return fmt.Sprintf("asset #%d", id)
 }
 
-func describePaymentTx(txn types.Transaction, view View) string {
-	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("Payment: %s ALGO", asaset.FormatFixed(uint64(txn.Amount), 6)))
-	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
-	desc.WriteString(fmt.Sprintf("\n  To:   %s", txn.Receiver.String()))
+func describePaymentTx(txn types.Transaction, view View) Details {
+	d := Details{Title: fmt.Sprintf("Payment: %s ALGO", asaset.FormatFixed(uint64(txn.Amount), 6))}
+	d.from(txn.Sender)
+	d.to(txn.Receiver)
 
 	if txn.Sender.String() == txn.Receiver.String() && txn.Amount == 0 {
-		desc.WriteString("\n  [VALIDATION: 0 ALGO self-send]")
+		d.remark("[VALIDATION: 0 ALGO self-send]")
 	}
 
-	return desc.String()
+	return d
 }
 
-func describeAssetTransferTx(txn types.Transaction, view View) string {
-	var desc strings.Builder
+func describeAssetTransferTx(txn types.Transaction, view View) Details {
 	amount := fmt.Sprintf("%d base units", txn.AssetAmount)
 	asset, known := view.asset(txn.GenesisHash, uint64(txn.XferAsset))
 	if known {
 		amount = asset.Display(txn.AssetAmount)
 	}
-	desc.WriteString(fmt.Sprintf("ASA Transfer: %s, asset #%d", amount, txn.XferAsset))
+	d := Details{Title: fmt.Sprintf("ASA Transfer: %s, asset #%d", amount, txn.XferAsset)}
 	if view.Network != "" {
-		desc.WriteString(", " + termsafe.Line(view.Network))
+		d.Title += ", " + termsafe.Line(view.Network)
 	}
 	if !known && view.Assets != nil {
-		desc.WriteString("\n  Not in this node's ASA set")
+		d.remark("Not in this node's ASA set")
 	}
-	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
-	desc.WriteString(fmt.Sprintf("\n  To:   %s", txn.AssetReceiver.String()))
+	d.from(txn.Sender)
+	d.to(txn.AssetReceiver)
 
 	if isClawback(txn) {
-		desc.WriteString(fmt.Sprintf("\n  ⚠️  CLAWBACK FROM: %s", txn.AssetSender.String()))
+		d.alert("CLAWBACK FROM", txn.AssetSender)
 	} else if isSelfClawback(txn) {
 		// Still a clawback on chain: the sender must hold the asset's
 		// clawback role, and a freeze on its holding does not stop it. A
 		// plain line, not the clawback warning: it is no finding.
-		desc.WriteString("\n  Moves the sender's own holding by clawback authority, even if frozen")
+		d.remark("Moves the sender's own holding by clawback authority, even if frozen")
 	}
 
 	if !txn.AssetCloseTo.IsZero() {
-		desc.WriteString(fmt.Sprintf("\n  Close remainder to: %s", txn.AssetCloseTo.String()))
+		d.account("Close remainder to", txn.AssetCloseTo)
 	}
 
-	return desc.String()
+	return d
 }
 
 // isSelfClawback reports whether an asset transfer names its own sender as
@@ -106,99 +223,99 @@ func isSelfClawback(txn types.Transaction) bool {
 	return !txn.AssetSender.IsZero() && txn.AssetSender == txn.Sender
 }
 
-func describeAssetConfigTx(txn types.Transaction, view View) string {
-	var desc strings.Builder
+func describeAssetConfigTx(txn types.Transaction, view View) Details {
+	var d Details
+	roles := func() {
+		d.authority("Manager", txn.AssetParams.Manager)
+		d.authority("Reserve", txn.AssetParams.Reserve)
+		d.authority("Freeze", txn.AssetParams.Freeze)
+		d.authority("Clawback", txn.AssetParams.Clawback)
+	}
 	if txn.ConfigAsset == 0 {
-		desc.WriteString("Asset Creation")
-		desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
+		d.Title = "Asset Creation"
+		d.from(txn.Sender)
 		if txn.AssetParams.AssetName != "" {
-			desc.WriteString(fmt.Sprintf("\n  Name: %s", termsafe.Line(txn.AssetParams.AssetName)))
+			d.add("Name", termsafe.Line(txn.AssetParams.AssetName))
 		}
 		if txn.AssetParams.UnitName != "" {
-			desc.WriteString(fmt.Sprintf("\n  Unit: %s", termsafe.Line(txn.AssetParams.UnitName)))
+			d.add("Unit", termsafe.Line(txn.AssetParams.UnitName))
 		}
-		desc.WriteString(fmt.Sprintf("\n  Total: %d", txn.AssetParams.Total))
-		desc.WriteString(fmt.Sprintf("\n  Decimals: %d", txn.AssetParams.Decimals))
-		desc.WriteString(fmt.Sprintf("\n  Default Frozen: %t", txn.AssetParams.DefaultFrozen))
-		desc.WriteString(fmt.Sprintf("\n  Manager: %s", formatAuthorityAddress(txn.AssetParams.Manager)))
-		desc.WriteString(fmt.Sprintf("\n  Reserve: %s", formatAuthorityAddress(txn.AssetParams.Reserve)))
-		desc.WriteString(fmt.Sprintf("\n  Freeze: %s", formatAuthorityAddress(txn.AssetParams.Freeze)))
-		desc.WriteString(fmt.Sprintf("\n  Clawback: %s", formatAuthorityAddress(txn.AssetParams.Clawback)))
+		d.addf("Total", "%d", txn.AssetParams.Total)
+		d.addf("Decimals", "%d", txn.AssetParams.Decimals)
+		d.addf("Default Frozen", "%t", txn.AssetParams.DefaultFrozen)
+		roles()
 		if txn.AssetParams.URL != "" {
-			desc.WriteString(fmt.Sprintf("\n  URL: %s", termsafe.Line(txn.AssetParams.URL)))
+			d.add("URL", termsafe.Line(txn.AssetParams.URL))
 		}
 		if !isZeroMetadataHash(txn.AssetParams.MetadataHash) {
-			desc.WriteString(fmt.Sprintf("\n  Metadata Hash: %s", hex.EncodeToString(txn.AssetParams.MetadataHash[:])))
+			d.add("Metadata Hash", hex.EncodeToString(txn.AssetParams.MetadataHash[:]))
 		}
 	} else if txn.AssetParams.IsZero() {
-		desc.WriteString("Asset Destroy: " + view.assetRef(txn.GenesisHash, uint64(txn.ConfigAsset)))
-		desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
+		d.Title = "Asset Destroy: " + view.assetRef(txn.GenesisHash, uint64(txn.ConfigAsset))
+		d.from(txn.Sender)
 	} else {
-		desc.WriteString("Asset Reconfiguration: " + view.assetRef(txn.GenesisHash, uint64(txn.ConfigAsset)))
-		desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
-		desc.WriteString(fmt.Sprintf("\n  Manager: %s", formatAuthorityAddress(txn.AssetParams.Manager)))
-		desc.WriteString(fmt.Sprintf("\n  Reserve: %s", formatAuthorityAddress(txn.AssetParams.Reserve)))
-		desc.WriteString(fmt.Sprintf("\n  Freeze: %s", formatAuthorityAddress(txn.AssetParams.Freeze)))
-		desc.WriteString(fmt.Sprintf("\n  Clawback: %s", formatAuthorityAddress(txn.AssetParams.Clawback)))
+		d.Title = "Asset Reconfiguration: " + view.assetRef(txn.GenesisHash, uint64(txn.ConfigAsset))
+		d.from(txn.Sender)
+		roles()
 	}
-	return desc.String()
+	return d
 }
 
-func describeAssetFreezeTx(txn types.Transaction, view View) string {
-	var desc strings.Builder
-	desc.WriteString("Asset Freeze: " + view.assetRef(txn.GenesisHash, uint64(txn.FreezeAsset)))
-	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
-	desc.WriteString(fmt.Sprintf("\n  Account: %s", txn.FreezeAccount.String()))
+func describeAssetFreezeTx(txn types.Transaction, view View) Details {
+	d := Details{Title: "Asset Freeze: " + view.assetRef(txn.GenesisHash, uint64(txn.FreezeAsset))}
+	d.from(txn.Sender)
+	d.account("Account", txn.FreezeAccount)
 	if txn.AssetFrozen {
-		desc.WriteString("\n  Action: FREEZE")
+		d.add("Action", "FREEZE")
 	} else {
-		desc.WriteString("\n  Action: UNFREEZE")
+		d.add("Action", "UNFREEZE")
 	}
-	return desc.String()
+	return d
 }
 
-func describeApplicationCallTx(txn types.Transaction, view View) string {
-	var desc strings.Builder
+func describeApplicationCallTx(txn types.Transaction, view View) Details {
+	var d Details
 	if txn.ApplicationID == 0 {
-		desc.WriteString(fmt.Sprintf("App Create (%s)", OnCompletionLabel(txn.OnCompletion)))
+		d.Title = fmt.Sprintf("App Create (%s)", OnCompletionLabel(txn.OnCompletion))
 	} else {
-		desc.WriteString(fmt.Sprintf("App Call: #%d (%s)", txn.ApplicationID, OnCompletionLabel(txn.OnCompletion)))
+		d.Title = fmt.Sprintf("App Call: #%d (%s)", txn.ApplicationID, OnCompletionLabel(txn.OnCompletion))
 	}
-	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
-	appendAppProgramDetails(&desc, txn)
+	d.from(txn.Sender)
+	appendAppProgramDetails(&d, txn)
 
 	if len(txn.ApplicationArgs) > 0 {
-		desc.WriteString(fmt.Sprintf("\n  Args: %d argument(s)", len(txn.ApplicationArgs)))
+		d.addf("Args", "%d argument(s)", len(txn.ApplicationArgs))
 		for i, arg := range txn.ApplicationArgs {
-			desc.WriteString(fmt.Sprintf("\n    [%d]: %s", i, formatAppArg(i, arg)))
+			d.entry(i, formatAppArg(i, arg))
 		}
 	}
 
 	if len(txn.Accounts) > 0 {
-		desc.WriteString(fmt.Sprintf("\n  Accounts: %d", len(txn.Accounts)))
+		d.addf("Accounts", "%d", len(txn.Accounts))
 		for i, addr := range txn.Accounts {
-			desc.WriteString(fmt.Sprintf("\n    [%d]: %s", i, addr.String()))
+			d.entry(i, addr.String())
+			d.Fields[len(d.Fields)-1].Party = addr.String()
 		}
 	}
 
 	if len(txn.ForeignApps) > 0 {
-		desc.WriteString(fmt.Sprintf("\n  Foreign Apps: %d", len(txn.ForeignApps)))
+		d.addf("Foreign Apps", "%d", len(txn.ForeignApps))
 		for i, appID := range txn.ForeignApps {
-			desc.WriteString(fmt.Sprintf("\n    [%d]: %d", i, appID))
+			d.entry(i, fmt.Sprintf("%d", appID))
 		}
 	}
 
 	if len(txn.ForeignAssets) > 0 {
-		desc.WriteString(fmt.Sprintf("\n  Foreign Assets: %d", len(txn.ForeignAssets)))
+		d.addf("Foreign Assets", "%d", len(txn.ForeignAssets))
 		for i, assetID := range txn.ForeignAssets {
-			desc.WriteString(fmt.Sprintf("\n    [%d]: %d", i, assetID))
+			d.entry(i, fmt.Sprintf("%d", assetID))
 		}
 	}
 
 	if len(txn.BoxReferences) > 0 {
-		desc.WriteString(fmt.Sprintf("\n  Boxes: %d", len(txn.BoxReferences)))
+		d.addf("Boxes", "%d", len(txn.BoxReferences))
 		for i, ref := range txn.BoxReferences {
-			desc.WriteString(fmt.Sprintf("\n    [%d]: app %s / %s", i, resolveBoxAppRef(txn, ref), formatBoxName(ref.Name)))
+			d.entry(i, fmt.Sprintf("app %s / %s", resolveBoxAppRef(txn, ref), formatBoxName(ref.Name)))
 		}
 	}
 
@@ -206,19 +323,23 @@ func describeApplicationCallTx(txn types.Transaction, view View) string {
 	// uses it in place of the four lists above, so leaving it out would show
 	// a call that reaches accounts and assets as reaching nothing.
 	if len(txn.Access) > 0 {
-		desc.WriteString(fmt.Sprintf("\n  Access: %d", len(txn.Access)))
+		d.addf("Access", "%d", len(txn.Access))
 		for i, ref := range txn.Access {
-			desc.WriteString(fmt.Sprintf("\n    [%d]: %s", i, describeAccessRef(txn, ref)))
+			d.entry(i, describeAccessRef(txn, ref))
+			// An app may pay an account it names here, so the account is
+			// compared for lookalikes as the old Accounts list's are.
+			if ref.Address != (types.Address{}) {
+				d.Fields[len(d.Fields)-1].Party = ref.Address.String()
+			}
 		}
 	}
 
 	if txn.RejectVersion != 0 {
-		desc.WriteString(fmt.Sprintf(
-			"\n  Reject Version: %d (the call fails if the app's version is %d or higher)",
-			txn.RejectVersion, txn.RejectVersion))
+		d.addf("Reject Version", "%d (the call fails if the app's version is %d or higher)",
+			txn.RejectVersion, txn.RejectVersion)
 	}
 
-	return desc.String()
+	return d
 }
 
 // describeAccessRef renders one access-list entry. Holding, locals and box
@@ -358,83 +479,82 @@ func resolveBoxAppRef(txn types.Transaction, ref types.BoxReference) string {
 	return fmt.Sprintf("?idx=%d", ref.ForeignAppIdx)
 }
 
-func describeKeyRegistrationTx(txn types.Transaction, view View) string {
-	var desc strings.Builder
+func describeKeyRegistrationTx(txn types.Transaction, view View) Details {
+	var d Details
 
 	if IsOfflineKeyReg(txn) {
 		if txn.Nonparticipation {
-			desc.WriteString("Key Registration: Go NONPARTICIPATING")
+			d.Title = "Key Registration: Go NONPARTICIPATING"
 		} else {
-			desc.WriteString("Key Registration: Go OFFLINE")
+			d.Title = "Key Registration: Go OFFLINE"
 		}
 	} else {
-		desc.WriteString("Key Registration: Go ONLINE")
+		d.Title = "Key Registration: Go ONLINE"
 		// Whole keys, in base64: that is the form an operator has them in
 		// (`goal account partkeyinfo`, `keyreg votekey=`), so they can be
 		// compared. A prefix would let someone else's keys pass for one's own.
-		desc.WriteString("\n  VotePK: " + participationKey(txn.VotePK[:]))
-		desc.WriteString("\n  SelectionPK: " + participationKey(txn.SelectionPK[:]))
-		desc.WriteString(fmt.Sprintf("\n  VoteFirst: %d", txn.VoteFirst))
-		desc.WriteString(fmt.Sprintf("\n  VoteLast: %d", txn.VoteLast))
-		desc.WriteString(fmt.Sprintf("\n  VoteKeyDilution: %d", txn.VoteKeyDilution))
-		desc.WriteString("\n  StateProofPK: " + participationKey(txn.StateProofPK[:]))
+		d.add("VotePK", participationKey(txn.VotePK[:]))
+		d.add("SelectionPK", participationKey(txn.SelectionPK[:]))
+		d.addf("VoteFirst", "%d", txn.VoteFirst)
+		d.addf("VoteLast", "%d", txn.VoteLast)
+		d.addf("VoteKeyDilution", "%d", txn.VoteKeyDilution)
+		d.add("StateProofPK", participationKey(txn.StateProofPK[:]))
 		if txn.Nonparticipation {
-			desc.WriteString("\n  Nonparticipation: true")
+			d.add("Nonparticipation", "true")
 		}
 	}
-	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
+	d.from(txn.Sender)
 
-	return desc.String()
+	return d
 }
 
-func describeUnknownTx(txn types.Transaction, view View) string {
-	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("Transaction Type: %s", termsafe.Line(string(txn.Type))))
-	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
+func describeUnknownTx(txn types.Transaction, view View) Details {
+	d := Details{Title: fmt.Sprintf("Transaction Type: %s", termsafe.Line(string(txn.Type)))}
+	d.from(txn.Sender)
 	// Say so: a short description must not read as a complete one.
-	desc.WriteString("\n  [This type is not known here: the fields specific to it are NOT shown]")
-	return desc.String()
+	d.remark("[This type is not known here: the fields specific to it are NOT shown]")
+	return d
 }
 
 // appendCommonFields adds fee, network identity, note, close remainder, rekey, group, and round info.
-func appendCommonFields(desc *strings.Builder, txn types.Transaction, view View) {
-	fmt.Fprintf(desc, "\n  Fee: %s ALGO", asaset.FormatFixed(uint64(txn.Fee), 6))
+func appendCommonFields(d *Details, txn types.Transaction, view View) {
+	d.addf("Fee", "%s ALGO", asaset.FormatFixed(uint64(txn.Fee), 6))
 
 	if view.Network != "" {
-		fmt.Fprintf(desc, "\n  Network: %s", termsafe.Line(view.Network))
+		d.add("Network", termsafe.Line(view.Network))
 	}
 	if txn.GenesisID != "" {
-		fmt.Fprintf(desc, "\n  GenesisID: %s", termsafe.Line(txn.GenesisID))
+		d.add("GenesisID", termsafe.Line(txn.GenesisID))
 	}
 	// The genesis ID is free text the builder of the transaction chose. When
 	// no network name is known for the chain, the genesis hash is the only
 	// thing that says which chain this is.
 	if view.Network == "" && txn.GenesisHash != (types.Digest{}) {
-		fmt.Fprintf(desc, "\n  Genesis hash: %s (no network name known for it)", base64.StdEncoding.EncodeToString(txn.GenesisHash[:]))
+		d.addf("Genesis hash", "%s (no network name known for it)", base64.StdEncoding.EncodeToString(txn.GenesisHash[:]))
 	}
 
 	if len(txn.Note) > 0 {
-		fmt.Fprintf(desc, "\n  Note: %s", formatOpaqueBytes(txn.Note))
+		d.add("Note", formatOpaqueBytes(txn.Note))
 	}
 
 	if !txn.CloseRemainderTo.IsZero() {
-		fmt.Fprintf(desc, "\n  Close remainder to: %s", txn.CloseRemainderTo.String())
+		d.account("Close remainder to", txn.CloseRemainderTo)
 	}
 
 	if !txn.RekeyTo.IsZero() {
-		fmt.Fprintf(desc, "\n  ⚠️  REKEY TO: %s", txn.RekeyTo.String())
+		d.warned("RekeyTo", "REKEY TO", "Rekey to", txn.RekeyTo)
 	}
 
 	// A lease blocks any other transaction from this sender with the same
 	// lease until this one's last valid round.
 	if txn.Lease != ([32]byte{}) {
-		fmt.Fprintf(desc, "\n  Lease: %s", base64.StdEncoding.EncodeToString(txn.Lease[:]))
+		d.add("Lease", base64.StdEncoding.EncodeToString(txn.Lease[:]))
 	}
 
 	emptyGroup := types.Digest{}
 	if txn.Group != emptyGroup {
-		fmt.Fprintf(desc, "\n  Group: %s", hex.EncodeToString(txn.Group[:]))
-		desc.WriteString("\n  [Part of atomic transaction group]")
+		d.add("Group", hex.EncodeToString(txn.Group[:]))
+		d.remark("[Part of atomic transaction group]")
 	}
 }
 
@@ -453,16 +573,20 @@ var transactionDescribers = map[string]transactionDescriber{
 // text is built from the transaction passed in, so describe the transaction
 // that will be signed, after any fee or group changes.
 func Describe(txn types.Transaction, view View) string {
+	return Detail(txn, view).Text()
+}
+
+// Detail returns what Describe prints, as data.
+func Detail(txn types.Transaction, view View) Details {
 	describer, exists := transactionDescribers[string(txn.Type)]
 	if !exists {
 		describer = describeUnknownTx
 	}
-
-	var builder strings.Builder
-	builder.WriteString(describer(txn, view))
-	appendCommonFields(&builder, txn, view)
-
-	return builder.String()
+	d := describer(txn, view)
+	appendCommonFields(&d, txn, view)
+	d.Sender = txn.Sender.String()
+	d.Effects = effects(txn, view)
+	return d
 }
 
 func isPrintable(data []byte) bool {
@@ -495,28 +619,28 @@ func formatOpaqueBytes(data []byte) string {
 	return fmt.Sprintf("0x%s... (%d bytes, sha256=%s)", hex.EncodeToString(data[:32]), len(data), hex.EncodeToString(sum[:]))
 }
 
-func appendAppProgramDetails(desc *strings.Builder, txn types.Transaction) {
+func appendAppProgramDetails(d *Details, txn types.Transaction) {
 	if len(txn.ApprovalProgram) > 0 {
 		approvalHash := sha256.Sum256(txn.ApprovalProgram)
-		fmt.Fprintf(desc, "\n  Approval Program: %d bytes, sha256=%s",
+		d.addf("Approval Program", "%d bytes, sha256=%s",
 			len(txn.ApprovalProgram), hex.EncodeToString(approvalHash[:]))
 	}
 	if len(txn.ClearStateProgram) > 0 {
 		clearHash := sha256.Sum256(txn.ClearStateProgram)
-		fmt.Fprintf(desc, "\n  Clear Program: %d bytes, sha256=%s",
+		d.addf("Clear Program", "%d bytes, sha256=%s",
 			len(txn.ClearStateProgram), hex.EncodeToString(clearHash[:]))
 	}
 
 	if txn.GlobalStateSchema.NumUint > 0 || txn.GlobalStateSchema.NumByteSlice > 0 {
-		fmt.Fprintf(desc, "\n  Global Schema: %d uint, %d bytes",
+		d.addf("Global Schema", "%d uint, %d bytes",
 			txn.GlobalStateSchema.NumUint, txn.GlobalStateSchema.NumByteSlice)
 	}
 	if txn.LocalStateSchema.NumUint > 0 || txn.LocalStateSchema.NumByteSlice > 0 {
-		fmt.Fprintf(desc, "\n  Local Schema: %d uint, %d bytes",
+		d.addf("Local Schema", "%d uint, %d bytes",
 			txn.LocalStateSchema.NumUint, txn.LocalStateSchema.NumByteSlice)
 	}
 	if txn.ExtraProgramPages > 0 {
-		fmt.Fprintf(desc, "\n  Extra Program Pages: %d", txn.ExtraProgramPages)
+		d.addf("Extra Program Pages", "%d", txn.ExtraProgramPages)
 	}
 }
 

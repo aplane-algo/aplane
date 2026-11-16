@@ -632,18 +632,46 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	if line := protocol.ValidityWindowLine(req.FirstValid, req.LastValid); line != "" {
 		fmt.Printf("\n%s\n", line)
 	}
-	if len(req.Violations) > 0 {
-		fmt.Printf("\nPolicy warnings (%d):\n", len(req.Violations))
-		for _, v := range req.Violations {
-			line := fmt.Sprintf("  - [%s] %s", strings.ToUpper(v.Severity), v.Message)
-			if strings.TrimSpace(v.Field) != "" || strings.TrimSpace(v.Value) != "" {
-				line += fmt.Sprintf(" (%s=%s)", v.Field, v.Value)
-			}
-			fmt.Println(line)
+	// Notices are findings shown without alarm: listed apart, after the
+	// warnings, and not counted among them.
+	var warnings, notices []protocol.PolicyViolation
+	for _, v := range req.Violations {
+		if v.Severity == protocol.ViolationSeverityNotice {
+			notices = append(notices, v)
+		} else {
+			warnings = append(warnings, v)
+		}
+	}
+	for _, list := range []struct {
+		heading string
+		items   []protocol.PolicyViolation
+	}{{"Policy warnings", warnings}, {"Notes", notices}} {
+		if len(list.items) == 0 {
+			continue
+		}
+		fmt.Printf("\n%s (%d):\n", list.heading, len(list.items))
+		for _, v := range list.items {
+			fmt.Println(violationLine(v))
 		}
 	}
 
 	fmt.Println(strings.Repeat("=", 60))
+}
+
+// violationLine is one warning or note of a signing request: its severity,
+// its message, and the value it is about. A finding with no value, such as
+// one about the request as a whole, is its message alone: its field names
+// nothing the message doesn't.
+func violationLine(v protocol.PolicyViolation) string {
+	line := fmt.Sprintf("  - [%s] %s", strings.ToUpper(v.Severity), v.Message)
+	switch field, value := strings.TrimSpace(v.Field), strings.TrimSpace(v.Value); {
+	case value == "":
+	case field == "":
+		line += fmt.Sprintf(" (%s)", v.Value)
+	default:
+		line += fmt.Sprintf(" (%s=%s)", v.Field, v.Value)
+	}
+	return line
 }
 
 // displayClientEnrollmentRequest shows a client enrollment request to the user.

@@ -45,7 +45,7 @@ func TestGenerateTransactionDescriptionFromTxn_ShowsResolvedNetwork(t *testing.T
 		},
 	}
 
-	desc := DescribeTxn(txn)
+	desc := DetailTxn(txn).Text()
 	for _, want := range []string{
 		"Network: testnet",
 		"GenesisID: testnet-v1.0",
@@ -89,27 +89,27 @@ func TestDescribeInContextLabelsKnownAssets(t *testing.T) {
 		return types.Transaction{Type: types.AssetTransferTx, Header: types.Header{GenesisHash: genesis},
 			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: types.AssetIndex(id), AssetAmount: 150}}
 	}
-	known := DescribeTxnInContext(transfer(9), ctx)
+	known := DetailTxnInContext(transfer(9), ctx).Text()
 	if !strings.Contains(known, "ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev") || strings.Contains(known, "Not in this node's ASA set") {
 		t.Fatalf("known asset:\n%s", known)
 	}
-	unknown := DescribeTxnInContext(transfer(10), ctx)
+	unknown := DetailTxnInContext(transfer(10), ctx).Text()
 	if !strings.Contains(unknown, "ASA Transfer: 150 base units, asset #10, private-dev\n  Not in this node's ASA set") {
 		t.Fatalf("unknown asset:\n%s", unknown)
 	}
 	// The same ID on another chain is another asset.
 	elsewhere := transfer(9)
 	elsewhere.GenesisHash = types.Digest{7}
-	if other := DescribeTxnInContext(elsewhere, ctx); !strings.Contains(other, "ASA Transfer: 150 base units, asset #9\n  Not in this node's ASA set") {
+	if other := DetailTxnInContext(elsewhere, ctx).Text(); !strings.Contains(other, "ASA Transfer: 150 base units, asset #9\n  Not in this node's ASA set") {
 		t.Fatalf("asset 9 on another chain:\n%s", other)
 	}
 	freeze := types.Transaction{Type: types.AssetFreezeTx, Header: types.Header{GenesisHash: genesis},
 		AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAsset: 9}}
-	if got := DescribeTxnInContext(freeze, ctx); !strings.Contains(got, "Asset Freeze: asset #9 (XYZ)") {
+	if got := DetailTxnInContext(freeze, ctx).Text(); !strings.Contains(got, "Asset Freeze: asset #9 (XYZ)") {
 		t.Fatalf("freeze:\n%s", got)
 	}
 	// Without a context, the description says only what the bytes say.
-	if plain := DescribeTxnWithResolver(transfer(9), apconfig.DefaultGenesisHashNetworkResolver()); !strings.Contains(plain, "ASA Transfer: 150 base units, asset #9") || strings.Contains(plain, "ASA set") {
+	if plain := DetailTxnWithResolver(transfer(9), apconfig.DefaultGenesisHashNetworkResolver()).Text(); !strings.Contains(plain, "ASA Transfer: 150 base units, asset #9") || strings.Contains(plain, "ASA set") {
 		t.Fatalf("without a context:\n%s", plain)
 	}
 }

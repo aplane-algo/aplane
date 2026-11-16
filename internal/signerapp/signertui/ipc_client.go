@@ -534,6 +534,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 				FirstValid:  req.FirstValid,
 				LastValid:   req.LastValid,
 				Violations:  req.Violations,
+				Review:      req.Review,
 			},
 		}
 	}),
