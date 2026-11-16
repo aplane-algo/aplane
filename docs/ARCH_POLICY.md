@@ -435,7 +435,9 @@ Warnings on the signer's own legs are still displayed when
 One warning is about the request as a whole, not one transaction: two
 different accounts in it that look alike, sharing six or more characters
 counted from both ends of the address together (`internal/txnreview/lookalike.go`).
-A shortened address keeps a few characters of each end, and address poisoning
+Every address the request names is compared, the accounts an app call
+references (its `accounts` and the account entries of its `access` list)
+included, since an app may pay them. A shortened address keeps a few characters of each end, and address poisoning
 searches for an address that matches them. The warning names both addresses
 in full. It is shown wherever a prompt is shown, is in the review's
 `findings`, and is in apshell's review of a plugin-built group; it is not a

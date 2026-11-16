@@ -18,7 +18,8 @@ const LookalikeField = "Lookalike accounts"
 // together, two different addresses must share to be called lookalikes. An
 // address shown shortened keeps a few characters of each end, and address
 // poisoning searches for an address that matches them. Two unrelated
-// addresses share this many by chance about once in a billion pairs.
+// addresses share this many by chance about once in 44 million pairs: an
+// address's last character is one of only 8, its others one of 32.
 const lookalikeSharedCharacters = 6
 
 // sharedEnds counts the characters two addresses of equal length share at the
@@ -44,7 +45,8 @@ type lookalikePair struct {
 }
 
 // lookalikePairs finds the lookalikes among every address the transactions
-// name: each one's sender and every field that names an account.
+// name: each one's sender and every field that names an account, an app
+// call's referenced accounts included.
 func lookalikePairs(transactions []Details) []lookalikePair {
 	zero := types.Address{}.String()
 	seen := map[string]bool{}

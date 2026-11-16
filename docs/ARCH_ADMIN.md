@@ -478,8 +478,8 @@ loses nothing but the structure.
     passthrough's authorizer.
   - `claims`: the client's own words about an app call, not verified.
   - `title`, `sender`, and `fields`: what the transaction does. A field has
-    an optional `label`, a `value`, the `party` address when the value names
-    one account, `alert` on a line the review warns of (the rekey target's
+    an optional `label`, a `value`, the `party` address when the field names
+    one account (an app call's referenced accounts included), `alert` on a line the review warns of (the rekey target's
     line only where its finding is critical or a warning, not a notice), and `depth` 1 for an
     entry of the list the field above it opens. A field with no label is a
     remark.

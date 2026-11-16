@@ -89,3 +89,26 @@ func TestLookalikeFindingIgnoresTheZeroAddressAndRepeats(t *testing.T) {
 		t.Fatalf("the zero address is called a lookalike:\n%s", review.Findings[0].Message)
 	}
 }
+
+// An app may pay an account its call names, so an account in the old
+// Accounts list or the newer access list is a party the lookalike check
+// compares, like a receiver.
+func TestAnAppCallsAccountsAreCompared(t *testing.T) {
+	named := detailsAddr(9)
+	for name, call := range map[string]types.ApplicationCallTxnFields{
+		"accounts":    {ApplicationID: 5, Accounts: []types.Address{named}},
+		"access list": {ApplicationID: 5, Access: []types.ResourceRef{{Asset: 9}, {Address: named}, {Holding: types.HoldingRef{Asset: 1, Address: 2}}}},
+	} {
+		txn := types.Transaction{Type: types.ApplicationCallTx, Header: types.Header{Sender: detailsAddr(7)}}
+		txn.ApplicationCallTxnFields = call
+		var parties []string
+		for _, f := range Detail(txn, View{}).Fields {
+			if f.Party != "" {
+				parties = append(parties, f.Party)
+			}
+		}
+		if want := []string{detailsAddr(7).String(), named.String()}; strings.Join(parties, " ") != strings.Join(want, " ") {
+			t.Errorf("%s: parties = %q, want the sender and the named account", name, parties)
+		}
+	}
+}

@@ -43,7 +43,8 @@ type Field struct {
 	// its Value.
 	Label string
 	Value string
-	// Party is the address Value names, when Value is one account's address.
+	// Party is the address of the one account the field names, when it names
+	// one. The review compares every party for lookalikes.
 	Party string
 	// Alert marks a line the review warns of.
 	Alert bool
@@ -325,6 +326,11 @@ func describeApplicationCallTx(txn types.Transaction, view View) Details {
 		d.addf("Access", "%d", len(txn.Access))
 		for i, ref := range txn.Access {
 			d.entry(i, describeAccessRef(txn, ref))
+			// An app may pay an account it names here, so the account is
+			// compared for lookalikes as the old Accounts list's are.
+			if ref.Address != (types.Address{}) {
+				d.Fields[len(d.Fields)-1].Party = ref.Address.String()
+			}
 		}
 	}
 

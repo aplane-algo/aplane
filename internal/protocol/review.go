@@ -72,7 +72,8 @@ type ReviewField struct {
 	// Label is empty for a remark, a line that is only its Value.
 	Label string `json:"label,omitempty"`
 	Value string `json:"value"`
-	// Party is the address Value names, when it names one account.
+	// Party is the address of the one account the field names, when it names
+	// one.
 	Party string `json:"party,omitempty"`
 	// Alert marks a line the review warns of.
 	Alert bool `json:"alert,omitempty"`
