@@ -51,6 +51,10 @@ type RequestSigningApprovalResponseFunc func(requestID, address, txnSender, desc
 type RequestSigningApprovalContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
 type RequestSigningApprovalResponseContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
 
+// RequestSigningApprovalPromptFunc shows a whole prompt, its review included.
+// The daemon supplies it; the four forms above carry the text alone.
+type RequestSigningApprovalPromptFunc func(ctx context.Context, prompt signerapproval.Prompt, timeout time.Duration) (signerapproval.SignResponse, error)
+
 const defaultApprovalWait = 60 * time.Second
 
 type ApprovalService struct {
@@ -65,6 +69,7 @@ type ApprovalService struct {
 	RequestSigningApprovalResponse        RequestSigningApprovalResponseFunc
 	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
+	RequestSigningApprovalPrompt          RequestSigningApprovalPromptFunc
 }
 
 // planKnownAddresses is the address set the gates and the approval warnings
@@ -96,12 +101,21 @@ type approvalResponseRecorder interface {
 // Much of what it shows comes from the client or from the chain: an asset's
 // name, an ABI method label, an auth address. Every string is escaped here, so
 // none of it can drive the operator's terminal or reorder what they read.
-func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, review *txnreview.Review, timeout time.Duration) (bool, error) {
 	address, txnSender, description = termsafe.Line(address), termsafe.Line(txnSender), termsafe.Lines(description)
 	violations = operatorSafeViolations(violations)
+	if review != nil {
+		safe := review.Safe()
+		review = &safe
+	}
 	var response signerapproval.SignResponse
 	var err error
-	if s.RequestSigningApprovalResponseContext != nil {
+	if s.RequestSigningApprovalPrompt != nil {
+		response, err = s.RequestSigningApprovalPrompt(ctx, signerapproval.Prompt{
+			RequestID: requestID, Address: address, TxnSender: txnSender, Description: description,
+			FirstValid: firstValid, LastValid: lastValid, Violations: violations, Review: review,
+		}, timeout)
+	} else if s.RequestSigningApprovalResponseContext != nil {
 		response, err = s.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 	} else if s.RequestSigningApprovalContext != nil {
 		var approved bool
@@ -272,6 +286,38 @@ func buildReview(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []typ
 		review.Items = append(review.Items, item)
 	}
 	return review
+}
+
+// completeReview adds to a review what the signer knows beyond the request:
+// each transaction's findings, judged as the prompt's warnings judge them,
+// the severity those findings give its effects, and which of the accounts
+// are this signer's own.
+func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanResult, txns []types.Transaction) {
+	known := s.planKnownAddresses(plan)
+	ctx := approvalpolicy.Context{
+		KnownAddresses: known, InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan),
+		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
+	}
+	listed := warningRekeyTargetsForPlan(plan)
+	for i := range review.Items {
+		if i >= len(txns) {
+			break
+		}
+		txnCtx := ctx
+		txnCtx.ListedRekeyTargets = listed[i]
+		findings := txnreview.Findings(txns[i], txnCtx)
+		review.Items[i].Findings = findings
+		review.Items[i].Details.Mark(findings)
+	}
+	review.SetParties(
+		func(address string) bool { return known[address] },
+		func(item int) string {
+			if plan == nil || item >= len(plan.AuthKeyTypes) {
+				return ""
+			}
+			return plan.AuthKeyTypes[item]
+		},
+	)
 }
 
 // planChangeLines is the text of planChanges: every line ends in a newline,
@@ -522,10 +568,10 @@ func (s *ApprovalService) RequestGroupApproval(req signerapi.GroupSignRequest, p
 }
 
 func (s *ApprovalService) RequestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
-	return s.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, "")
+	return s.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, "", nil)
 }
 
-func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string) *ServiceError {
+func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
 	if s.userAutoApprove() {
 		if forceReviewRuleID != "" {
@@ -582,6 +628,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 		firstValid,
 		lastValid,
 		violations,
+		review,
 		s.approvalWait(),
 	)
 	if err != nil {
@@ -613,11 +660,11 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 // RequestSingleTxnApproval prompts for one request. planChanges is what
 // planning did to it, as planChangeLines gives it, or empty.
 func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil)
+	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil, nil)
 }
 
 func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil)
+	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil, nil)
 }
 
 // requestSingleTxnApprovalWithContext prompts for one request. planChanges is
@@ -626,7 +673,7 @@ func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Contex
 // judges rekey targets against its key snapshot, and its bounded item, when
 // it has one, lets a bounded rekey's prompt name who authorizes it and the
 // warning name a listed handover as one.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64, forceReviewRuleID string, plan *PlanResult) *ServiceError {
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64, forceReviewRuleID string, plan *PlanResult, review *txnreview.Review) *ServiceError {
 	bounded := boundedItemAt(plan, 0)
 	var listed map[string]bool
 	if bounded != nil {
@@ -692,6 +739,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		firstValid,
 		lastValid,
 		violations,
+		review,
 		s.approvalWait(),
 	)
 	if err != nil {

@@ -5,10 +5,13 @@ package adminserver
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -174,5 +177,53 @@ func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
 	}
 	if committed.Warning != "directory durability warning" {
 		t.Fatalf("committed backup warning = %q", committed.Warning)
+	}
+}
+
+// A sign request's review reaches the wire whole, and a request without one
+// carries none.
+func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
+	review := &txnreview.Review{
+		Group:   true,
+		Banners: []string{"banner"},
+		Changes: txnreview.Changes{Heading: "heading", Lines: []string{"line"}, Frozen: true, Dummies: 2, FeeAdded: 3},
+		Items: []txnreview.Item{{
+			Position: txnreview.PositionPassthrough,
+			Label:    "PASSTHROUGH",
+			Notes:    []txnreview.Field{{Label: "Authorized by", Value: "X"}},
+			Claims:   []string{"claim"},
+			Details: txnreview.Details{
+				Title: "title", Sender: "S",
+				Fields:  []txnreview.Field{{Label: "To", Value: "R", Party: "R", Alert: true, Depth: 1}},
+				Effects: []txnreview.Effect{{Kind: txnreview.EffectClawback, From: "A", To: "B", Authority: "S", App: 7, NewApp: true, Text: "text", Severity: txnreview.SeverityCaution}},
+			},
+			Findings: []txnreview.Finding{{Field: "F", Value: "V", Critical: true, Message: "M"}, {Field: "G"}},
+		}},
+		Parties: []txnreview.Party{{Address: "S", Held: true, Signs: true, KeyType: "ed25519"}},
+	}
+	got := ProtocolSignRequestMessage(signerapproval.SignRequest{ID: "apv-1", Review: review}).Review
+	want := &protocol.Review{
+		Version: protocol.ReviewVersion,
+		Group:   true,
+		Banners: []string{"banner"},
+		Changes: protocol.ReviewChanges{Heading: "heading", Lines: []string{"line"}, Frozen: true, Dummies: 2, FeeAdded: 3},
+		Items: []protocol.ReviewItem{{
+			Position: protocol.ReviewPositionPassthrough,
+			Label:    "PASSTHROUGH",
+			Notes:    []protocol.ReviewField{{Label: "Authorized by", Value: "X"}},
+			Claims:   []string{"claim"},
+			Title:    "title",
+			Sender:   "S",
+			Fields:   []protocol.ReviewField{{Label: "To", Value: "R", Party: "R", Alert: true, Depth: 1}},
+			Effects:  []protocol.ReviewEffect{{Kind: "clawback", From: "A", To: "B", Authority: "S", App: 7, NewApp: true, Text: "text", Severity: protocol.ReviewSeverityCaution}},
+			Findings: []protocol.PolicyViolation{{Field: "F", Value: "V", Severity: "critical", Message: "M"}, {Field: "G", Severity: "warning"}},
+		}},
+		Parties: []protocol.ReviewParty{{Address: "S", Held: true, Signs: true, KeyType: "ed25519"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("review on the wire:\n%+v\nwant:\n%+v", got, want)
+	}
+	if msg := ProtocolSignRequestMessage(signerapproval.SignRequest{ID: "apv-2"}); msg.Review != nil {
+		t.Fatalf("a request without a review carries one: %+v", msg.Review)
 	}
 }

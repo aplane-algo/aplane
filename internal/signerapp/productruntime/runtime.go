@@ -521,6 +521,16 @@ func (ir *Runtime) RequestSigningApprovalResponseContext(ctx context.Context, re
 	return c.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 }
 
+// RequestSigningApprovalPrompt shows prompt to the operator and waits for the
+// answer.
+func (ir *Runtime) RequestSigningApprovalPrompt(ctx context.Context, prompt signerapproval.Prompt, timeout time.Duration) (signerapproval.SignResponse, error) {
+	c := ir.approval.Load()
+	if c == nil {
+		return signerapproval.SignResponse{}, fmt.Errorf("approval coordinator not initialized")
+	}
+	return c.RequestSigningApprovalPrompt(ctx, prompt, timeout)
+}
+
 // FailAllPendingApprovals fails all pending approval requests with the given reason.
 func (ir *Runtime) FailAllPendingApprovals(reason string) {
 	if c := ir.approval.Load(); c != nil {

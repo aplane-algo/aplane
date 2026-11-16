@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -252,7 +253,11 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		return "", nil, lockedError()
 	}
 
-	groupDesc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
+	review := buildReview(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
+	s.Approval.completeReview(&review, plan, txns)
+	// The daemon prints this to its console as well as prompting with it.
+	groupDesc := termsafe.Lines(review.Text())
+	firstValid, lastValid := approvalWindow(allTxns)
 	isGroup := len(req.Requests) > 1
 	console := consoleOf(s.Console)
 
@@ -291,10 +296,10 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			// rotation description and judge warnings against the plan's own
 			// addresses, which only the group prompt does.
 			if isGroup || plan.Rotating != nil {
-				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
+				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID, &review)
 			}
 			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, planChangeLines(plan, allTxns, false), firstValid, lastValid, forceReviewRuleID,
-				plan)
+				plan, &review)
 		},
 	}, console)
 	if gateErr != nil {

@@ -28,7 +28,9 @@ type transactionDescriber func(txn types.Transaction, view View) Details
 // names what the transaction does, then one field per line of the review.
 // Describe prints it, so the text and the fields cannot say different things.
 type Details struct {
-	Title  string
+	Title string
+	// Sender is the address of the account the transaction is sent from.
+	Sender string
 	Fields []Field
 	// Effects summarize the fields for a picture of the request. The text
 	// does not print them: everything they say is in the fields.
@@ -563,6 +565,7 @@ func Detail(txn types.Transaction, view View) Details {
 	}
 	d := describer(txn, view)
 	appendCommonFields(&d, txn, view)
+	d.Sender = txn.Sender.String()
 	d.Effects = effects(txn, view)
 	return d
 }

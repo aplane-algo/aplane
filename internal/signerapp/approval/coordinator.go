@@ -322,6 +322,16 @@ func (c *Coordinator) RequestSigningApprovalContext(ctx context.Context, request
 }
 
 func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []Violation, timeout time.Duration) (SignResponse, error) {
+	return c.RequestSigningApprovalPrompt(ctx, Prompt{
+		RequestID: requestID, Address: address, TxnSender: txnSender, Description: description,
+		FirstValid: firstValid, LastValid: lastValid, Violations: violations,
+	}, timeout)
+}
+
+// RequestSigningApprovalPrompt shows prompt to the operator and waits for the
+// answer, the timeout, or the request's cancellation.
+func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt Prompt, timeout time.Duration) (SignResponse, error) {
+	requestID := prompt.RequestID
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -371,13 +381,14 @@ func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context,
 
 	request := &SignRequest{
 		ID:          promptID,
-		Address:     address,
-		TxnSender:   txnSender,
-		Description: description,
+		Address:     prompt.Address,
+		TxnSender:   prompt.TxnSender,
+		Description: prompt.Description,
 		Timestamp:   time.Now().Unix(),
-		FirstValid:  firstValid,
-		LastValid:   lastValid,
-		Violations:  violations,
+		FirstValid:  prompt.FirstValid,
+		LastValid:   prompt.LastValid,
+		Violations:  prompt.Violations,
+		Review:      prompt.Review,
 	}
 
 	if c.sendSignRequest == nil || !c.sendSignRequest(request) {

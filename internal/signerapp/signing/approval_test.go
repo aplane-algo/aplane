@@ -742,6 +742,7 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 		0,
 		policy.ReviewAlgoPaymentExceededRuleID,
 		nil,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("requestSingleTxnApprovalWithContext() error = nil, want operator rejection")
@@ -834,6 +835,7 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 		0,
 		0,
 		"",
+		nil,
 		nil,
 	)
 	if err != nil {

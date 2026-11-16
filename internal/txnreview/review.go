@@ -6,6 +6,8 @@ package txnreview
 import (
 	"fmt"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 // Review is what a reviewer is shown of one request to sign, as data: how the
@@ -20,6 +22,22 @@ type Review struct {
 	Banners []string
 	Changes Changes
 	Items   []Item
+	// Parties are the accounts the request's effects move value or control
+	// between, in order of first appearance. The text does not print them:
+	// they say which of the addresses in the fields are this signer's own.
+	Parties []Party
+}
+
+// Party is one account a request touches.
+type Party struct {
+	Address string
+	// Held is set when this signer holds an aplane key for the address.
+	Held bool
+	// Signs is set when this request signs a transaction the account sends.
+	Signs bool
+	// KeyType is the key type of the aplane key that signs for the account
+	// in this request. It is empty when none does.
+	KeyType string
 }
 
 // Position is how a request treats one of its transactions.
@@ -51,6 +69,9 @@ type Item struct {
 	// signer does not verify. They are shown under the title.
 	Claims  []string
 	Details Details
+	// Findings are what a reviewer must not miss in the transaction. The
+	// prompt lists them beside the text.
+	Findings []Finding
 }
 
 // Text prints the transaction: its title, the client's claims, then its
@@ -133,4 +154,95 @@ func (r Review) Text() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// SetParties lists the accounts the items' effects name, in order of first
+// appearance. held reports whether this signer holds an aplane key for an
+// address, and signer names the key type that signs for a sender this request
+// signs for, by item.
+func (r *Review) SetParties(held func(address string) bool, signerKeyType func(item int) string) {
+	r.Parties = nil
+	index := map[string]int{}
+	party := func(address string) *Party {
+		if i, ok := index[address]; ok {
+			return &r.Parties[i]
+		}
+		index[address] = len(r.Parties)
+		r.Parties = append(r.Parties, Party{Address: address, Held: held != nil && held(address)})
+		return &r.Parties[len(r.Parties)-1]
+	}
+	for i, item := range r.Items {
+		for _, effect := range item.Details.Effects {
+			for _, address := range []string{effect.From, effect.To, effect.Authority} {
+				if address != "" {
+					party(address)
+				}
+			}
+		}
+		if item.Details.Sender == "" {
+			continue
+		}
+		p := party(item.Details.Sender)
+		if item.Position != PositionSign {
+			continue
+		}
+		p.Signs = true
+		if signerKeyType != nil && p.KeyType == "" {
+			p.KeyType = signerKeyType(i)
+		}
+	}
+}
+
+// Safe is the review with every string escaped for a terminal. Much of a
+// review comes from the client or the chain: an asset's name, a method label,
+// an auth address.
+func (r Review) Safe() Review {
+	line := termsafe.Line
+	lines := func(in []string) []string {
+		if in == nil {
+			return nil
+		}
+		out := make([]string, len(in))
+		for i, s := range in {
+			out[i] = line(s)
+		}
+		return out
+	}
+	fields := func(in []Field) []Field {
+		if in == nil {
+			return nil
+		}
+		out := make([]Field, len(in))
+		for i, f := range in {
+			f.Label, f.Value, f.Party = line(f.Label), line(f.Value), line(f.Party)
+			out[i] = f
+		}
+		return out
+	}
+	safe := Review{Group: r.Group, Banners: lines(r.Banners), Changes: r.Changes}
+	safe.Changes.Heading, safe.Changes.Lines = line(r.Changes.Heading), lines(r.Changes.Lines)
+	for _, item := range r.Items {
+		item.Label, item.Notes, item.Claims = line(item.Label), fields(item.Notes), lines(item.Claims)
+		// A title may run over several lines only where a caller put them.
+		item.Details.Title, item.Details.Fields = termsafe.Lines(item.Details.Title), fields(item.Details.Fields)
+		item.Details.Sender = line(item.Details.Sender)
+		effects := make([]Effect, len(item.Details.Effects))
+		for i, e := range item.Details.Effects {
+			e.From, e.To, e.Authority, e.Text = line(e.From), line(e.To), line(e.Authority), line(e.Text)
+			effects[i] = e
+		}
+		item.Details.Effects = effects
+		findings := make([]Finding, len(item.Findings))
+		for i, f := range item.Findings {
+			f.Field, f.Value, f.Message = line(f.Field), line(f.Value), termsafe.Lines(f.Message)
+			findings[i] = f
+		}
+		item.Findings = findings
+		safe.Items = append(safe.Items, item)
+	}
+	for _, p := range r.Parties {
+		p.Address, p.KeyType = line(p.Address), line(p.KeyType)
+		safe.Parties = append(safe.Parties, p)
+	}
+	return safe
 }

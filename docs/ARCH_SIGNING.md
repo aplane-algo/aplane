@@ -1096,9 +1096,10 @@ with a bidirectional control. So:
   and shows a note, an app argument or a box name quoted or as hex;
 - `requestSigningApproval` (`internal/signerapp/signing/approval.go`), the
   one path by which a signing prompt reaches the operator, escapes the whole
-  prompt (description, addresses and policy warnings) with
-  `internal/termsafe`, keeping only newlines and tabs; the description the
-  daemon prints to its console is escaped the same way;
+  prompt (description, addresses, policy warnings and the review the
+  description is printed from) with `internal/termsafe`, keeping only
+  newlines and tabs; the description the daemon prints to its console is
+  escaped the same way;
 - apadmin and apapprover escape a request again where they decode it
   (`protocol.SignRequestMessage.TerminalSafe`), so a missed path on the
   signer still can't reach the terminal.

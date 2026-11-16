@@ -3,7 +3,10 @@
 
 package approval
 
-import "github.com/aplane-algo/aplane/internal/protocol"
+import (
+	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/txnreview"
+)
 
 // Cancellation reasons are wire values owned by internal/protocol; the
 // aliases keep this package's API stable for coordinator callers.
@@ -51,6 +54,21 @@ type SignRequest struct {
 	FirstValid  uint64
 	LastValid   uint64
 	Violations  []Violation
+	// Review is the request as data, or nil when the caller built only text.
+	Review *txnreview.Review
+}
+
+// Prompt is what a caller asks the operator to approve.
+type Prompt struct {
+	RequestID   string
+	Address     string
+	TxnSender   string
+	Description string
+	FirstValid  uint64
+	LastValid   uint64
+	Violations  []Violation
+	// Review is the request as data, or nil when the caller built only text.
+	Review *txnreview.Review
 }
 
 // SignRequestCanceled reports that a previously delivered signing request is no

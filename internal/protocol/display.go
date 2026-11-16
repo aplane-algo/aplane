@@ -35,15 +35,85 @@ func (m SignRequestMessage) TerminalSafe() SignRequestMessage {
 	m.TxnSender = termsafe.Line(m.TxnSender)
 	m.Description = termsafe.Lines(m.Description)
 	if len(m.Violations) > 0 {
-		violations := make([]PolicyViolation, len(m.Violations))
-		for i, v := range m.Violations {
-			v.Field = termsafe.Line(v.Field)
-			v.Value = termsafe.Line(v.Value)
-			v.Severity = termsafe.Line(v.Severity)
-			v.Message = termsafe.Lines(v.Message)
-			violations[i] = v
-		}
-		m.Violations = violations
+		m.Violations = safeViolations(m.Violations)
 	}
+	m.Review = m.Review.terminalSafe()
 	return m
+}
+
+func safeViolations(in []PolicyViolation) []PolicyViolation {
+	if in == nil {
+		return nil
+	}
+	out := make([]PolicyViolation, len(in))
+	for i, v := range in {
+		v.Field = termsafe.Line(v.Field)
+		v.Value = termsafe.Line(v.Value)
+		v.Severity = termsafe.Line(v.Severity)
+		v.Message = termsafe.Lines(v.Message)
+		out[i] = v
+	}
+	return out
+}
+
+func safeLines(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = termsafe.Line(s)
+	}
+	return out
+}
+
+func safeFields(in []ReviewField) []ReviewField {
+	if in == nil {
+		return nil
+	}
+	out := make([]ReviewField, len(in))
+	for i, f := range in {
+		f.Label, f.Value, f.Party = termsafe.Line(f.Label), termsafe.Line(f.Value), termsafe.Line(f.Party)
+		out[i] = f
+	}
+	return out
+}
+
+// terminalSafe is a copy of the review with every string escaped for a
+// terminal. A transaction's title keeps its newlines, as the description does.
+func (r *Review) terminalSafe() *Review {
+	if r == nil {
+		return nil
+	}
+	safe := *r
+	safe.Version = termsafe.Line(r.Version)
+	safe.Banners = safeLines(r.Banners)
+	safe.Changes.Heading, safe.Changes.Lines = termsafe.Line(r.Changes.Heading), safeLines(r.Changes.Lines)
+	if r.Items != nil {
+		safe.Items = make([]ReviewItem, len(r.Items))
+	}
+	for i, item := range r.Items {
+		item.Position, item.Label = termsafe.Line(item.Position), termsafe.Line(item.Label)
+		item.Notes, item.Claims = safeFields(item.Notes), safeLines(item.Claims)
+		item.Title, item.Sender = termsafe.Lines(item.Title), termsafe.Line(item.Sender)
+		item.Fields, item.Findings = safeFields(item.Fields), safeViolations(item.Findings)
+		if item.Effects != nil {
+			effects := make([]ReviewEffect, len(item.Effects))
+			for j, e := range item.Effects {
+				e.Kind, e.From, e.To = termsafe.Line(e.Kind), termsafe.Line(e.From), termsafe.Line(e.To)
+				e.Authority, e.Text, e.Severity = termsafe.Line(e.Authority), termsafe.Line(e.Text), termsafe.Line(e.Severity)
+				effects[j] = e
+			}
+			item.Effects = effects
+		}
+		safe.Items[i] = item
+	}
+	if r.Parties != nil {
+		safe.Parties = make([]ReviewParty, len(r.Parties))
+	}
+	for i, p := range r.Parties {
+		p.Address, p.KeyType = termsafe.Line(p.Address), termsafe.Line(p.KeyType)
+		safe.Parties[i] = p
+	}
+	return &safe
 }

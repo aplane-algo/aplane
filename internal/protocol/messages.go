@@ -552,6 +552,8 @@ type SignRequestMessage struct {
 	FirstValid  uint64            `json:"first_valid"`          // First valid round (0 if unknown)
 	LastValid   uint64            `json:"last_valid"`           // Last valid round (0 if unknown)
 	Violations  []PolicyViolation `json:"violations,omitempty"` // Policy violations detected
+	// Review is the request as data. The description is printed from it.
+	Review *Review `json:"review,omitempty"`
 }
 
 // SignRequestCanceledMessage is sent to apadmin when a pending signing request

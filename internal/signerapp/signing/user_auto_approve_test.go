@@ -88,9 +88,9 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 							approvalCalls++
 							switch path {
 							case "single":
-								return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{}, txns, txns, "", 0, 0, rule, nil)
+								return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{}, txns, txns, "", 0, 0, rule, nil, nil)
 							default:
-								return approval.requestGroupApprovalWithContext(ctx, signerapi.GroupSignRequest{}, &PlanResult{}, "", 0, 0, txns, rule)
+								return approval.requestGroupApprovalWithContext(ctx, signerapi.GroupSignRequest{}, &PlanResult{}, "", 0, 0, txns, rule, nil)
 							}
 						},
 					}, nil)
@@ -259,7 +259,7 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					LogRejection:        func(reason string, _ *ServiceError) { logged = reason },
 					RequestOperatorApproval: func(ctx context.Context, rule string) *ServiceError {
 						approvalCalls++
-						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: tc.sender.String()}, txns, txns, "", 0, 0, rule, plan)
+						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: tc.sender.String()}, txns, txns, "", 0, 0, rule, plan, nil)
 					},
 				}
 				if tc.listed {
