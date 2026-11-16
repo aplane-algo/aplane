@@ -258,7 +258,7 @@ Validation:
   search's derivation time. Operator recovery (`/admin/rotating/recover`)
   and request-time discovery are independent of both.
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
-  30 minutes. The default is `60s`. The product runtime configuration may
+  30 minutes. The default is `4m`. The product runtime configuration may
   override the process default.
 - initialized signer data roots must contain root `node.yaml` with role
   `signer` or `cosigner`. New initialization defaults to `signer` unless a

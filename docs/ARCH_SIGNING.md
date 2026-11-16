@@ -1140,7 +1140,7 @@ accounts each reviewed request touches.
 ### Approval Waits and Cancellation
 
 Signing approval timeout is the product-runtime `approval_wait` value,
-defaulting to 60 seconds.
+defaulting to 4 minutes.
 
 For HTTP `/sign`, request context cancellation cancels queued or pending manual
 approval waits when the cancellation reaches apsigner. Clients that need

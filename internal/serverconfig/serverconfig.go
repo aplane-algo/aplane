@@ -32,8 +32,8 @@ type ServerEndpointConfig struct {
 }
 
 const (
-	DefaultApprovalWaitString = "60s"
-	DefaultApprovalWait       = 60 * time.Second
+	DefaultApprovalWaitString = "4m"
+	DefaultApprovalWait       = 4 * time.Minute
 	MinApprovalWait           = 30 * time.Second
 	MaxApprovalWait           = 30 * time.Minute
 )
@@ -43,7 +43,7 @@ type ServerConfig struct {
 	SchemaVersion         int                  `yaml:"schema_version,omitempty" description:"Signer config schema version" default:"1"`
 	Endpoint              ServerEndpointConfig `yaml:"endpoint" description:"Signer endpoint exposure settings" default:"default endpoint settings"`
 	PassphraseTimeout     string               `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
-	ApprovalWait          string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
+	ApprovalWait          string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"4m"`
 	IPCPath               string               `yaml:"ipc_path" description:"Unix socket path for admin IPC; systemd custom paths must be outside signer data in a service-owned protected runtime directory" default:"systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock"`
 	LockOnDisconnect      *bool                `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
 	PassphraseCommandArgv []string             `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])" default:"[]"`
