@@ -174,5 +174,43 @@
     "expected_invariant_violation": "KU3_NoExportAfterWipe",
     "distinct_states": 479,
     "depth": 8
+  },
+  {
+    "spec": "setting_publish",
+    "distinct_states": 23,
+    "depth": 5
+  },
+  {
+    "spec": "setting_publish",
+    "cfg": "setting_publish_negative_permissive",
+    "expected_invariant_violation": "SP1_NeverMorePermissiveThanFile",
+    "distinct_states": 5,
+    "depth": 2
+  },
+  {
+    "spec": "setting_publish",
+    "cfg": "setting_publish_negative_restrictive",
+    "expected_invariant_violation": "SP3_RestrictiveInEffectDuringSave",
+    "distinct_states": 4,
+    "depth": 2
+  },
+  {
+    "spec": "signer_invariants",
+    "distinct_states": 33680,
+    "depth": 2
+  },
+  {
+    "spec": "signer_invariants",
+    "cfg": "signer_invariants_negative_order",
+    "expected_invariant_violation": "SI1_NoReleaseWithInvalidRekeyTarget",
+    "distinct_states": 16846,
+    "depth": 2
+  },
+  {
+    "spec": "signer_invariants",
+    "cfg": "signer_invariants_negative_positions",
+    "expected_invariant_violation": "SI1_NoReleaseWithInvalidRekeyTarget",
+    "distinct_states": 16854,
+    "depth": 2
   }
 ]

@@ -174,7 +174,7 @@ Source: [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md) (
 |---|---|---|---|---|---|
 | LF1 | implemented | A leaf-family stage never signs two different transactions on one leaf while an unused leaf remains, given a complete release history | `internal/signerapp/signing/rotating_flow.go::chooseLeaf`; `::SignRotatingWithContext`; `internal/signerapp/signing/rotating_release.go::ForLeafChoice` | `internal/signerapp/signing/rotating_flow_test.go::TestChooseLeaf`; `::TestChooseLeafOwnTreePerStage`; `internal/signerapp/signing/rotating_lifecycle_gate_test.go::TestRotatingLeafChoiceRefusesADelayedReset` | State chooses the leaf, never whether to sign: a lost history (failed audit write, rotated log, failed restore) can reuse a leaf, and that is outside the claim. Machine-checked as `LF1_NoReuseBeforeExhaustion`; the negative controls `rotating_leaf_release_negative_wait.cfg` `_negative_seq.cfg` and `_negative_lag.cfg` must violate it. |
 | LF2 | implemented | A retry of a released transaction signs on the leaf it already used | `internal/signerapp/signing/rotating_flow.go::chooseLeaf` (`LeafFor`) | `internal/signerapp/signing/rotating_flow_test.go::TestChooseLeaf` | Machine-checked as `LF2_RetryKeepsLeaf`. |
-| LF3 | implemented | When the signer can sign and nothing was lost, the release memory lists every release of the live stage | `internal/signerapp/signing/rotating_release.go::RebuildReleaseMemory`; `::ReleaseMemory.RecordAudited`; `::AwaitRestored`; `::ReleaseMemory.ServeSession`; `internal/signerapp/daemon/stage_table_worker.go::rebuildReleaseMemory` | `internal/signerapp/signing/rotating_release_gate_test.go::TestReleaseMemoryRestoreGate`; `internal/signerapp/signing/rotating_flow_test.go::TestRotatingLeafSignWaitsForTheReleaseRestore`; `::TestReleaseMemoryMergesAuditedHistory`; `internal/signerapp/signing/rotating_lifecycle_gate_test.go::TestRotatingSignWaitsForARestoreAndThenSigns`; `::TestInterruptedRestoreKeepsTheAccountHeld`; `::TestRestoreBoundToAnEarlierGenerationStaysHeld`; `::TestReleaseMemoryServesOnlyItsSession`; `internal/signerapp/daemon/stage_table_worker_test.go::TestRestoreEndedByALockStaysHeld`; `::TestRecoveryRoundTripHoldsTheMemoryForANewRestore` | Machine-checked as `LF3_MemoryCompleteWhenOpen`. The memory serves only the session it was restored for, and a recovery ends a session (`RecoveryEndsSession`; `_negative_recovery.cfg` is that removed). `TestRotatingSignWaitsForARestoreAndThenSigns` fails if the `AwaitRestored` call is removed from `SignRotatingWithContext` or moved under the account lock. `TestRotatingLeafSignWaitsForTheReleaseRestore` doesn't detect that removal, because the check at leaf choice refuses the sign without the wait. |
+| LF3 | implemented | When the signer can sign and nothing was lost, the release memory lists every release of the live stage | `internal/signerapp/signing/rotating_release.go::RebuildReleaseMemory`; `::ReleaseMemory.RecordAudited`; `::AwaitRestored`; `::ReleaseMemory.ServeSession`; `internal/signerapp/daemon/stage_table_worker.go::rebuildReleaseMemory`; `::stageTableWorkerService` (the memory is held before the worker starts) | `internal/signerapp/signing/rotating_release_gate_test.go::TestReleaseMemoryRestoreGate`; `internal/signerapp/signing/rotating_flow_test.go::TestRotatingLeafSignWaitsForTheReleaseRestore`; `::TestReleaseMemoryMergesAuditedHistory`; `internal/signerapp/signing/rotating_lifecycle_gate_test.go::TestRotatingSignWaitsForARestoreAndThenSigns`; `::TestInterruptedRestoreKeepsTheAccountHeld`; `::TestRestoreBoundToAnEarlierGenerationStaysHeld`; `::TestReleaseMemoryServesOnlyItsSession`; `internal/signerapp/daemon/stage_table_worker_test.go::TestRestoreEndedByALockStaysHeld`; `::TestRecoveryRoundTripHoldsTheMemoryForANewRestore`; `::TestStageTableWorkerServiceHoldsTheMemoryBeforeTheWorkerRuns` | Machine-checked as `LF3_MemoryCompleteWhenOpen`. The memory serves only the session it was restored for, and a recovery ends a session (`RecoveryEndsSession`; `_negative_recovery.cfg` is that removed). `TestRotatingSignWaitsForARestoreAndThenSigns` fails if the `AwaitRestored` call is removed from `SignRotatingWithContext` or moved under the account lock. `TestRotatingLeafSignWaitsForTheReleaseRestore` doesn't detect that removal, because the check at leaf choice refuses the sign without the wait. |
 | LF4 | implemented | A status observation never erases the history of a stage that may still be live: not a release recorded after its chain read, and not on a read that shows anything but the stage the release hands the account to (a node that is behind can show an earlier stage) | `internal/signerapp/signing/rotating_release.go::RotatingStatus` (`rec.NextAddr`); `::clearIfUnchanged`; `::ReleaseMemory.record` (an earlier stage never replaces a later one); `internal/signerapp/audit/rotating.go::readRotatingReleasesFrom` (the same rule when the log is read); `internal/signerapp/signing/rotating_tables.go` (`ObservedSeq`) | `internal/signerapp/signing/rotating_flow_test.go::TestStatusIgnoresObservationsOlderThanTheRelease`; `internal/signerapp/signing/rotating_lifecycle_gate_test.go::TestLaggingNodeObservationKeepsLiveLeaves`; `::TestStatusKeepsHistoryUnlessTheNextStageIsObserved`; `::TestEarlierStageReleaseKeepsALaterStagesHistory`; `internal/signerapp/audit/rotating_test.go::TestReadRotatingReleasesTracksLeaves` | Held by LF3 under the `SeqGuard` and `NextStageGuard` constants. `_negative_lag.cfg` is `NextStageGuard` removed with a lagging node; `_negative_seq.cfg` is both removed without one. `record`'s earlier-stage rule is outside the model, which has no sign on a lagging read. |
 
 ## Key-Use Window
@@ -195,7 +195,29 @@ Source: [ARCH_STORE.md](ARCH_STORE.md#generations) (reload binding and recovery 
 |---|---|---|---|---|---|
 | RB1 | implemented | Deleted-archive list and prune act only on the generation the authenticated root selects | `internal/signerapp/daemon/admin_services.go::authenticatedSelection`; `::ListDeletedArchive`; `::PruneDeletedArchive` | `internal/signerapp/daemon/archive_selection_test.go::TestDeletedArchiveMaintenanceFollowsTheStoreRoot` | Maintenance authenticates the root itself rather than trusting the cached binding. Machine-checked as `RB1_MaintenanceFollowsRoot`; the negative control `recovery_binding_negative.cfg` is the pre-`b0e51275` code and must violate it. |
 | RB2 | implemented | After a mutation releases the store lock, no signing request or key write runs from a key cache behind the root | `internal/signerapp/admin/policy.go::ApplyPolicy` (`SetRecovery` inside `WithStoreMutation`); `internal/signerapp/admin/asaset.go::mutateASASet` (same order for ASA set confirm/remove); `internal/signerapp/backupadmin/direct_restore.go`; `internal/signerapp/backupadmin/direct_rollback.go`; `internal/signerapp/runtime/runtime.go::SetRecovery` | `internal/signerapp/admin/policy_test.go::TestPolicyApplyEntersRecoveryBeforeReleasingTheLock` | Recovery is a distinct runtime state that refuses signing and key writes. Machine-checked as `RB2_NoStaleServiceAfterMutation` and `RB3_StaleCacheImpliesRecoveryOrMutation`. |
-| RB4 | implemented | A reload binds the authenticated root selection before any step that can fail, and clears it when the root no longer authenticates | `internal/signerapp/templates/reload.go` (`BindStoreRootSelection` first); `internal/keystore/file.go::Scan`; `::BindStoreRootSelection`; `internal/genstore/store_root.go::AuthenticateStoreRootSelection`; `::ValidateStoreRootSelection`; `internal/signerapp/admin/policy.go::commitAndReload` (reloads after an uncertain commit, as restore does) | `internal/keystore/scan_binding_test.go::TestScanFailureBindsTheAuthenticatedSelection`; `::TestScanClearsBindingWhenRootStopsAuthenticating`; `internal/signerapp/admin/policy_test.go::TestPolicyApplyUncertainCommitReloadsAndEntersRecovery`; `internal/signerapp/daemon/policy_apply_recovery_test.go::TestUncertainPolicyCommitBlocksExecutionBeforeReload` | Machine-checked as `RB4_BindingFollowsRoot`. |
+| RB4 | implemented | A reload binds the authenticated root selection before any step that can fail, and clears it when the root no longer authenticates | `internal/signerapp/templates/reload.go` (`BindStoreRootSelection` first); `internal/keystore/file.go::Scan`; `::BindStoreRootSelection`; `internal/genstore/store_root.go::AuthenticateStoreRootSelection`; `::ValidateStoreRootSelection`; `internal/signerapp/admin/policy.go::commitAndReload` (reloads after an uncertain commit, as restore does); `internal/signerapp/backupadmin/direct_rollback.go::RollbackRestore` (the same) | `internal/keystore/scan_binding_test.go::TestScanFailureBindsTheAuthenticatedSelection`; `::TestScanClearsBindingWhenRootStopsAuthenticating`; `internal/signerapp/admin/policy_test.go::TestPolicyApplyUncertainCommitReloadsAndEntersRecovery`; `internal/signerapp/daemon/policy_apply_recovery_test.go::TestUncertainPolicyCommitBlocksExecutionBeforeReload`; `internal/signerapp/backupadmin/direct_restore_test.go::TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery` | Machine-checked as `RB4_BindingFollowsRoot`. |
+
+## Setting Publish
+
+Source: [ARCH_ADMIN.md](ARCH_ADMIN.md#writable-settings) (when a setting change takes effect); machine-checked in [formal/setting_publish.tla](formal/setting_publish.tla).
+
+| ID | Status | Property | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| SP1 | implemented | The value in effect is never more permissive than the file's | `internal/signerapp/admin/service.go::updateAdminSettingLocked` (publishes a non-restrictive value only after the save); `::restricts` | `internal/signerapp/admin/service_test.go::TestSettingDirectionDecidesWhenAChangeTakesEffect`; `::TestUpdateAdminSettingFailureBeforeRename`; `internal/signerapp/daemon/settings_save_test.go::TestSigningSeesAutoApproveByTheChangesDirection` | Machine-checked as `SP1_NeverMorePermissiveThanFile`; negative control `PermissiveAfterSave = FALSE`. |
+| SP2 | implemented | A value in effect ahead of the file is reported unsaved, and only a restrictive value is | `internal/signerapp/admin/service.go::updateAdminSettingLocked`; `internal/signerapp/productruntime/config.go::SetUnsaved`; `::IsUnsaved` | `internal/signerapp/admin/service_test.go::TestUnsavedSettingIsReportedUntilASaveSucceeds`; `::TestUnchangedValueWhoseSaveFailsReportsNothingInEffect` | Machine-checked as `SP2_AheadOfFileIsReported`. |
+| SP3 | implemented | A restrictive request is in effect for as long as its save takes | `internal/signerapp/admin/service.go::updateAdminSettingLocked` (publish and unsaved mark before the save) | `internal/signerapp/admin/service_test.go::TestRestrictiveValueIsReportedUnsavedWhileItsSaveIsHeld`; `internal/signerapp/daemon/settings_save_test.go::TestSigningSeesAutoApproveByTheChangesDirection` | Machine-checked as `SP3_RestrictiveInEffectDuringSave`; negative control `RestrictiveFirst = FALSE`. |
+| SP4 | implemented | The answer matches the state it reports | `internal/signerapp/admin/service.go::updateAdminSettingLocked` (`ResultCodeAppliedNotSaved`, `SettingSaveError`) | `internal/signerapp/admin/service_test.go::TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning`; `internal/signerapp/daemon/settings_save_test.go::TestSettingSaveOutcomesReachTheAdminClientAndTheLogs` | Machine-checked as `SP4_AnswerMatchesState`. A directory flush that fails after the rename is a success. |
+
+## Signer Invariants
+
+Source: [ARCH_POLICY.md](ARCH_POLICY.md) (the signer invariants and the gate sequence); machine-checked in [formal/signer_invariants.tla](formal/signer_invariants.tla).
+
+| ID | Status | Property | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| SI1 | implemented | No signature is released for a group in which any position rekeys an account to a held aplane key that is not a valid rekey target | `internal/signerapp/signing/invariant_gate.go::rejectSignerInvariants`; `::rejectRekeyToInvalidTarget`; `internal/signerapp/signing/gate.go::runApprovalGates` | `internal/signerapp/signing/rekey_target_gate_test.go::TestRejectRekeyToInvalidTarget`; `::TestValidTargetInvariantJudgesEveryPositionOfASignRequest`; `::TestValidTargetInvariantJudgesAComponentRequestsContextualPositions`; `::TestValidTargetInvariantJudgesThePlansKeySet` | Machine-checked as `SI1_NoReleaseWithInvalidRekeyTarget`; negative controls `InvariantsBeforePolicy = FALSE` and `TargetJudgesEveryPosition = FALSE`. |
+| SI2 | implemented | No signature is released for a group in which a position this signer signs rekeys to a rotating account or is a nonparticipating keyreg | `internal/signerapp/signing/invariant_gate.go::rejectNonparticipation`; `::signerPositions`; `::componentTargetPositions`; `internal/signerapp/signing/rotating_gate.go::rejectRekeyToRotating` | `internal/signerapp/signing/invariant_gate_test.go::TestRejectNonparticipation`; `::TestSignerInvariantsFailClosedOnPositionOutsideGroup`; `internal/signerapp/signing/rotating_gate_test.go::TestRejectRekeyToRotatingAccount`; `::TestApprovalGatesSkipRotatingRekeyAtUnsignedPositions` | Machine-checked as `SI2_NoReleaseWithSignedBreach`. |
+| SI3 | implemented | A group an invariant refuses reaches neither the policy verdict nor the operator, on either node role | `internal/signerapp/signing/gate.go::runApprovalGates`; `internal/signerapp/signing/cosigner_policy.go::runCosignerGates` | `internal/signerapp/signing/invariant_gate_test.go::TestSignRefusesNonparticipationThatPolicyAllows`; `::TestCosignerRefusesNonparticipationBeforePolicy`; `internal/signerapp/signing/rotating_gate_test.go::TestApprovalGatesRefuseRekeyToRotatingBeforePolicy` | Machine-checked as `SI3_RefusalBeforePolicy`. |
+| SI4 | implemented | A valid-target refusal names the first position that breaks the invariant | `internal/signerapp/signing/invariant_gate.go::rejectRekeyToInvalidTarget` (`RefusedPosition`) | `internal/signerapp/signing/rekey_target_gate_test.go::TestRejectRekeyToInvalidTarget`; `::TestValidTargetRefusalIsAuditedAtThePositionItNames` | Machine-checked as `SI4_RefusalNamesFirstPosition`. |
 
 ## Open Cross-Cutting Gaps
 
@@ -484,6 +506,49 @@ Validated by mutation tests: `BindBeforeValidate = FALSE` alone violates
 RB4; `RecoveryBeforeRelease = FALSE` alone violates RB2 and RB3;
 `MaintenanceReadsRoot = FALSE` alone holds because the fixed binding is the
 root.
+
+### Setting publish module
+
+[formal/setting_publish.tla](formal/setting_publish.tla) (see
+[FORMAL_TLA_SETTING_PUBLISH_MODEL.md](FORMAL_TLA_SETTING_PUBLISH_MODEL.md))
+models when a change to a writable boolean setting takes effect relative to
+its save, under the two halves of the rule as constants (a restrictive
+change before the save, any other change after it). TLC checked over the
+full finite state space, 23 distinct states, depth 5, no counterexamples.
+[formal/setting_publish_negative_permissive.cfg](formal/setting_publish_negative_permissive.cfg)
+must violate `SP1_NeverMorePermissiveThanFile` after 5 distinct states at
+depth 2, and
+[formal/setting_publish_negative_restrictive.cfg](formal/setting_publish_negative_restrictive.cfg)
+`SP3_RestrictiveInEffectDuringSave` after 4 distinct states at depth 2.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| SP1 (never more permissive than the file) | `SP1_NeverMorePermissiveThanFile` |
+| SP2 (ahead of the file is reported) | `SP2_AheadOfFileIsReported` |
+| SP3 (restrictive in effect during the save) | `SP3_RestrictiveInEffectDuringSave` |
+| SP4 (the answer matches the state) | `SP4_AnswerMatchesState` |
+
+### Signer invariants module
+
+[formal/signer_invariants.tla](formal/signer_invariants.tla) (see
+[FORMAL_TLA_SIGNER_INVARIANTS_MODEL.md](FORMAL_TLA_SIGNER_INVARIANTS_MODEL.md))
+models the signer invariants ahead of the policy verdict and the positions
+each one judges, under two guards as constants (invariants before policy,
+the valid-target invariant over every position). TLC checked, 33,680
+distinct states, depth 2, no counterexamples; the deep run 673,680 at depth
+2.
+[formal/signer_invariants_negative_order.cfg](formal/signer_invariants_negative_order.cfg)
+and
+[formal/signer_invariants_negative_positions.cfg](formal/signer_invariants_negative_positions.cfg)
+must each violate `SI1_NoReleaseWithInvalidRekeyTarget`, after 16,846 and
+16,854 distinct states at depth 2.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| SI1 (no release with an invalid rekey target) | `SI1_NoReleaseWithInvalidRekeyTarget` |
+| SI2 (no release with a signed-position breach) | `SI2_NoReleaseWithSignedBreach` |
+| SI3 (refusal before policy) | `SI3_RefusalBeforePolicy` |
+| SI4 (the refusal names the first position) | `SI4_RefusalNamesFirstPosition` |
 
 ### Unmodeled invariants
 
