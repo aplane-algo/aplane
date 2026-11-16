@@ -521,3 +521,31 @@ func TestLoneTransactionIsDrawnAsLanes(t *testing.T) {
 		t.Fatalf("a transaction on one account alone is drawn as lanes:\n%s", view)
 	}
 }
+
+// A transaction's detail shows its fields before its warnings, each warning
+// starting on one line with its message, and names the signing key only
+// where it is not the sender.
+func TestReviewTransactionShowsFieldsBeforeWarnings(t *testing.T) {
+	m := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
+	m = reviewKey(t, reviewKey(t, m, "down"), "down")
+	detail := allDetail(t, m)
+	to := strings.Index(detail, "REKEY TO: "+reviewThird)
+	warning := strings.Index(detail, "⚠ CRITICAL: RekeyTo · This transaction will REKEY the account.")
+	if to < 0 || warning < 0 || to > warning {
+		t.Fatalf("the rekey field (at %d) does not come before its warning (at %d):\n%s", to, warning, detail)
+	}
+	if !strings.Contains(stripANSI(m.signing.viewport.View()), "To: "+reviewThird) {
+		t.Errorf("the first page of the detail lacks the receiver:\n%s", m.signing.viewport.View())
+	}
+	if strings.Contains(detail, protocol.ReviewNoteSigningKey) {
+		t.Errorf("the signing key is shown though it is the sender:\n%s", detail)
+	}
+
+	// A rekeyed account signs with another account's key: that stays.
+	rekeyed := groupReviewRequest()
+	rekeyed.Review.Items[0].Notes = []protocol.ReviewField{{Label: protocol.ReviewNoteSigningKey, Value: reviewThird}}
+	m = reviewKey(t, reviewModelForTest(t, rekeyed, true, MinWidth, MinHeight), "down")
+	if !strings.Contains(allDetail(t, m), protocol.ReviewNoteSigningKey+": "+reviewThird) {
+		t.Errorf("a signing key other than the sender is not shown:\n%s", allDetail(t, m))
+	}
+}

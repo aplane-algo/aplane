@@ -15,6 +15,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
@@ -278,7 +279,7 @@ func buildReview(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []typ
 			item.Position = txnreview.PositionSign
 			// The header names one key or a count of them; each
 			// position says which of this signer's keys signs it.
-			item.Notes = []txnreview.Field{{Label: "Signing key", Value: req.Requests[i].AuthAddress}}
+			item.Notes = []txnreview.Field{{Label: protocol.ReviewNoteSigningKey, Value: req.Requests[i].AuthAddress}}
 		}
 		if i == 0 && plan.Rotating != nil {
 			item.Details.Fields = append(item.Details.Fields, plan.Rotating.describe())

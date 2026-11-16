@@ -322,8 +322,9 @@ func firstLine(s string) string {
 }
 
 // reviewDetail is the detail pane for the selected row: the overview or one
-// transaction. A lone transaction has no rows: its pane holds the warnings
-// about the request, the transaction, then the rest of the overview.
+// transaction. A lone transaction has no rows: its pane holds the
+// transaction, then the warnings about the request and the rest of the
+// overview.
 func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 	join := func(sections ...[]reviewLine) []reviewLine {
 		var lines []reviewLine
@@ -339,7 +340,7 @@ func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 		return lines
 	}
 	if !review.Group {
-		return join(reviewWarnings(review.Findings), reviewTransaction(review, 0), reviewAccounts(review), reviewRequest(review))
+		return join(reviewTransaction(review, 0), reviewWarnings(review.Findings), reviewAccounts(review), reviewRequest(review))
 	}
 	if m.signing.review.row == 0 {
 		lines := join(reviewWarnings(m.signing.request.Violations), reviewAccounts(review), reviewRequest(review))
@@ -351,15 +352,20 @@ func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 	return reviewTransaction(review, m.signing.review.row-1)
 }
 
-// reviewWarning draws one warning: what it is about, then its message.
+// reviewWarning draws one warning: what it is about and the first line of
+// its message on one line, then the rest of the message.
 func reviewWarning(v protocol.PolicyViolation) []reviewLine {
 	style := reviewWarningStyle(v.Severity)
 	head := "⚠ WARNING: " + v.Field
 	if v.Severity == "critical" {
 		head = "⚠ CRITICAL: " + v.Field
 	}
+	parts := strings.Split(v.Message, "\n")
+	if first := strings.TrimSpace(parts[0]); first != "" {
+		head += " · " + first
+	}
 	lines := []reviewLine{{text: head, style: style}}
-	for _, part := range strings.Split(v.Message, "\n") {
+	for _, part := range parts[1:] {
 		lines = append(lines, reviewLine{text: "   " + strings.TrimLeft(part, " "), style: normalStyle})
 	}
 	return lines
@@ -437,7 +443,10 @@ func reviewFieldLine(f protocol.ReviewField) string {
 }
 
 // reviewTransaction is one transaction in full: how the request treats it,
-// its warnings, then every field.
+// every field, then its warnings. The fields come first because they say
+// where value goes; the risk line and the row marks already say there are
+// warnings. The signing key is left out when it is the sender, which From
+// already shows, and kept when it is not: a rekeyed account's key.
 func reviewTransaction(review *protocol.Review, index int) []reviewLine {
 	item := review.Items[index]
 	head := reviewPositionWords(item.Position)
@@ -451,10 +460,10 @@ func reviewTransaction(review *protocol.Review, index int) []reviewLine {
 		lines = append(lines, reviewLine{text: "  " + item.Label, style: helpStyle})
 	}
 	for _, note := range item.Notes {
+		if note.Label == protocol.ReviewNoteSigningKey && note.Value == item.Sender {
+			continue
+		}
 		lines = append(lines, reviewLine{text: reviewFieldLine(note), style: helpStyle})
-	}
-	for _, finding := range item.Findings {
-		lines = append(lines, reviewWarning(finding)...)
 	}
 	lines = append(lines, reviewLine{text: item.Title, style: normalStyle.Bold(true)})
 	for _, claim := range item.Claims {
@@ -466,6 +475,9 @@ func reviewTransaction(review *protocol.Review, index int) []reviewLine {
 			style = errorStyle
 		}
 		lines = append(lines, reviewLine{text: reviewFieldLine(field), style: style})
+	}
+	for _, finding := range item.Findings {
+		lines = append(lines, reviewWarning(finding)...)
 	}
 	return lines
 }

@@ -43,6 +43,11 @@ const (
 	ReviewPositionForeign     = "foreign"
 )
 
+// ReviewNoteSigningKey labels the note that names the key a transaction
+// signed here is signed with. A client may leave it out where it repeats the
+// sender.
+const ReviewNoteSigningKey = "Signing key"
+
 // ReviewItem is one requested transaction.
 type ReviewItem struct {
 	// Position is how the request treats the transaction: sign, passthrough,
