@@ -46,7 +46,7 @@ func (m Model) viewFooterText() string {
 		footer := "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
 		switch review := m.reviewOf(); {
 		case review != nil && review.Group:
-			footer += " | up/down: Select | pgup/pgdown: Scroll | t: Text"
+			footer += " | up/down: Select | pgup/pgdown: Scroll | v: List, lanes or table | t: Text"
 		case review != nil:
 			footer += " | up/down: Scroll | t: Text"
 		case m.reviewAvailable():

@@ -154,7 +154,13 @@ func TestReviewScreenFitsTheWindow(t *testing.T) {
 	for _, size := range [][2]int{{MinWidth, MinHeight}, {133, 39}} {
 		for _, standalone := range []bool{true, false} {
 			m := reviewModelForTest(t, groupReviewRequest(), standalone, size[0], size[1])
-			for row := 0; row < 4; row++ {
+			for row := 0; row < 12; row++ {
+				if row%4 == 0 && row > 0 {
+					m = reviewKey(t, m, "v")
+					for i := 0; i < 4; i++ {
+						m = reviewKey(t, m, "up")
+					}
+				}
 				view := requireFits(t, m, size[0], size[1])
 				for _, want := range []string{"Signing Request", "Group of 3 · 2 signed here · 1 not signed here", "⚠ 2 warnings · REKEY in 2", "APPROVE", "> REJECT"} {
 					if !strings.Contains(view, want) {
@@ -317,5 +323,148 @@ func TestAddressChipDiffersForLookalikes(t *testing.T) {
 	}
 	if sum(reviewOther) == sum(reviewThird) {
 		t.Fatalf("lookalike addresses got the same mark: %v", sum(reviewOther))
+	}
+}
+
+// payrollReviewRequest is one account paying n others.
+func payrollReviewRequest(n int) *PendingSignRequest {
+	request := groupReviewRequest()
+	review := request.Review
+	review.Items, review.Findings, review.Banners = nil, nil, nil
+	review.Parties = []protocol.ReviewParty{{Address: reviewOwn, Held: true, Signs: true}}
+	request.Violations = nil
+	for i := 0; i < n; i++ {
+		to := strings.Repeat(string(rune('B'+i)), 58)
+		review.Items = append(review.Items, reviewPayment(to))
+		review.Parties = append(review.Parties, protocol.ReviewParty{Address: to})
+	}
+	return request
+}
+
+func pictureOf(t *testing.T, m Model) reviewPicture {
+	t.Helper()
+	return m.pictureFor(m.reviewOf(), m.popupBodyWidth(78))
+}
+
+// Left to itself the upper pane draws lanes where every lane fits, a table
+// for one account paying several others or where the lanes do not fit, and a
+// plain list where nothing moves between two parties.
+func TestReviewPictureFollowsTheShapeOfTheRequest(t *testing.T) {
+	optIns := groupReviewRequest()
+	for i := range optIns.Review.Items {
+		optIns.Review.Items[i].Effects = []protocol.ReviewEffect{{Kind: "opt_in", From: reviewOwn, Text: "opt in to USDC"}}
+	}
+	wide := groupReviewRequest()
+	for i := 0; i < 8; i++ {
+		address := strings.Repeat(string(rune('C'+i)), 58)
+		wide.Review.Parties = append(wide.Review.Parties, protocol.ReviewParty{Address: address})
+	}
+	for _, tc := range []struct {
+		name    string
+		request *PendingSignRequest
+		width   int
+		want    reviewPicture
+	}{
+		{"a few parties", groupReviewRequest(), MinWidth, pictureLanes},
+		{"one account paying three", payrollReviewRequest(3), 133, pictureTable},
+		{"one account paying two", payrollReviewRequest(2), MinWidth, pictureLanes},
+		{"opt-ins only", optIns, MinWidth, pictureList},
+		{"more lanes than fit", wide, MinWidth, pictureTable},
+	} {
+		m := reviewModelForTest(t, tc.request, true, tc.width, MinHeight)
+		if got := pictureOf(t, m); got != tc.want {
+			t.Errorf("%s: picture = %d, want %d", tc.name, got, tc.want)
+		}
+		requireFits(t, m, tc.width, MinHeight)
+	}
+}
+
+// Lanes draw each account and app as a column and each effect as an arrow:
+// filled where this request signs, dashed for a rekey, with a lookalike's
+// column saying so.
+func TestReviewLanes(t *testing.T) {
+	m := reviewModelForTest(t, groupReviewRequest(), true, 133, 39)
+	if pictureOf(t, m) != pictureLanes {
+		t.Fatal("the group is not drawn as lanes")
+	}
+	view := requireFits(t, m, 133, 39)
+	for _, want := range []string{"M35J…EZ6A", "Q25W…3JAE", "app 1002", "signs", "lookalike", "5000.000000 ALGO", "REKEY: control moves", "call"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("lanes lack %q:\n%s", want, view)
+		}
+	}
+	var payment, rekey, call string
+	for _, line := range strings.Split(view, "\n") {
+		switch {
+		case strings.Contains(line, "REKEY: control moves"):
+			rekey = line
+		case strings.Contains(line, " call"):
+			call = line
+		case strings.Contains(line, " 1 ") && strings.Contains(line, "5000.000000 ALGO"):
+			payment = line
+		}
+	}
+	if !strings.Contains(payment, "●─") || !strings.Contains(payment, "─►") {
+		t.Errorf("a payment this request signs is not a solid arrow from a filled dot: %q", payment)
+	}
+	if !strings.Contains(rekey, "●╌") || !strings.Contains(rekey, "╌►") {
+		t.Errorf("a rekey is not a dashed arrow: %q", rekey)
+	}
+	if !strings.Contains(call, "○─") || strings.Contains(call, "●") {
+		t.Errorf("a transaction this request does not sign does not start from a hollow dot: %q", call)
+	}
+
+	// Selecting a transaction with two effects keeps both of its lines.
+	small := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
+	small = reviewKey(t, small, "down")
+	small = reviewKey(t, small, "down")
+	smallView := requireFits(t, small, MinWidth, MinHeight)
+	if !strings.Contains(smallView, "REKEY: control moves") || !strings.Contains(smallView, "Transaction 2 of 3 · signed here") {
+		t.Errorf("the selected transaction's second effect is out of view:\n%s", smallView)
+	}
+}
+
+// "v" goes round the three pictures, and a table names each movement with a
+// lookalike marked in words.
+func TestReviewPictureKeyAndTable(t *testing.T) {
+	m := reviewModelForTest(t, groupReviewRequest(), true, 133, 39)
+	var seen []reviewPicture
+	for i := 0; i < 3; i++ {
+		seen = append(seen, pictureOf(t, m))
+		m = reviewKey(t, m, "v")
+	}
+	if seen[0] != pictureLanes || seen[1] != pictureTable || seen[2] != pictureList || pictureOf(t, m) != pictureLanes {
+		t.Fatalf("pictures = %v, then %d", seen, pictureOf(t, m))
+	}
+	m = reviewKey(t, m, "v")
+	view := requireFits(t, m, 133, 39)
+	for _, want := range []string{"From", "What", "M35J…EZ6A    → Q25W…3JAE", "REKEY: control moves (looks alike)", "→ app 1002"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("table lacks %q:\n%s", want, view)
+		}
+	}
+}
+
+// Lanes asked for where they do not all fit show the lanes that do, count
+// the rest, and end an arrow that leaves them in "»".
+func TestReviewLanesThatDoNotFit(t *testing.T) {
+	m := reviewModelForTest(t, payrollReviewRequest(9), true, MinWidth, MinHeight)
+	if pictureOf(t, m) != pictureTable {
+		t.Fatal("a payroll is not drawn as a table")
+	}
+	m = reviewKey(t, m, "v") // list
+	m = reviewKey(t, m, "v") // lanes
+	if pictureOf(t, m) != pictureLanes {
+		t.Fatalf("picture = %d, want lanes", pictureOf(t, m))
+	}
+	for i := 0; i < 9; i++ {
+		m = reviewKey(t, m, "down")
+	}
+	view := requireFits(t, m, MinWidth, MinHeight)
+	if !strings.Contains(view, "»") || !strings.Contains(view, " +") {
+		t.Fatalf("lanes that do not fit are not marked:\n%s", view)
+	}
+	if !strings.Contains(view, "Transaction 9 of 9") {
+		t.Fatalf("the last transaction is not selected:\n%s", view)
 	}
 }

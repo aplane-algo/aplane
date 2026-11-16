@@ -27,8 +27,11 @@ type reviewState struct {
 	// row is the selected row of a group's list: 0 is the overview, and i is
 	// the group's transaction i.
 	row int
-	// top is the first list row shown.
+	// top is the first line of the upper pane's rows that is shown.
 	top int
+	// picture is how the upper pane draws a group; left alone, the shape of
+	// the request decides.
+	picture reviewPicture
 }
 
 // reviewLine is one line of the detail pane before it is wrapped.
@@ -63,9 +66,9 @@ func reviewRows(review *protocol.Review) int {
 	return len(review.Items) + 1
 }
 
-// reviewLayout is the width of the review and the heights of its list and
-// its detail pane.
-func (m Model) reviewLayout(review *protocol.Review) (width, listHeight, detailHeight int) {
+// reviewLayout is the width of the review and the heights of its upper pane
+// and its detail pane.
+func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailHeight int) {
 	width = m.popupBodyWidth(78)
 	inner := m.popupContentHeight()
 	if inner <= 0 {
@@ -80,15 +83,23 @@ func (m Model) reviewLayout(review *protocol.Review) (width, listHeight, detailH
 		fixed++
 	}
 	rest := inner - fixed
-	if rows := reviewRows(review); rows > 0 {
-		// One more line rules the list off from the detail pane.
-		listHeight = min(rows, max(3, rest/3))
-		rest -= listHeight + 1
+	if review.Group {
+		pane := m.reviewPaneFor(review, width)
+		// A list leaves most of the room to the detail pane; a picture
+		// takes what it needs and leaves the detail pane a few lines. One
+		// more line rules the two panes apart.
+		limit := max(3, rest/3)
+		if len(pane.header) > 0 {
+			limit = max(len(pane.header)+3, rest-5)
+		}
+		paneHeight = min(len(pane.header)+len(pane.lines), limit)
+		rest -= paneHeight + 1
 	}
-	return width, listHeight, max(3, rest)
+	return width, paneHeight, max(3, rest)
 }
 
-// refreshReview sizes the detail pane and fills it for the selected row.
+// refreshReview sizes the detail pane and fills it for the selected row, and
+// scrolls the upper pane to keep that row in view.
 func (m *Model) refreshReview() {
 	review := m.reviewOf()
 	if review == nil {
@@ -96,14 +107,28 @@ func (m *Model) refreshReview() {
 	}
 	rows := reviewRows(review)
 	m.signing.review.row = max(0, min(max(0, rows-1), m.signing.review.row))
-	width, listHeight, detailHeight := m.reviewLayout(review)
-	if m.signing.review.row < m.signing.review.top {
-		m.signing.review.top = m.signing.review.row
+	width, paneHeight, detailHeight := m.reviewLayout(review)
+	if review.Group {
+		pane := m.reviewPaneFor(review, width)
+		visible := max(1, paneHeight-len(pane.header))
+		first, last := -1, 0
+		for i, line := range pane.lines {
+			if line.row == m.signing.review.row {
+				if first < 0 {
+					first = i
+				}
+				last = i
+			}
+		}
+		top := m.signing.review.top
+		if last >= top+visible {
+			top = last - visible + 1
+		}
+		if first >= 0 && first < top {
+			top = first
+		}
+		m.signing.review.top = max(0, min(max(0, len(pane.lines)-visible), top))
 	}
-	if listHeight > 0 && m.signing.review.row >= m.signing.review.top+listHeight {
-		m.signing.review.top = m.signing.review.row - listHeight + 1
-	}
-	m.signing.review.top = max(0, min(max(0, rows-listHeight), m.signing.review.top))
 
 	var out []string
 	for _, line := range m.reviewDetail(review) {
@@ -143,6 +168,9 @@ func (m Model) handleReviewKeys(msg tea.KeyMsg) (Model, bool) {
 		m.signing.review.row--
 	case "down", "j":
 		m.signing.review.row++
+	case "v":
+		m.signing.review.picture = m.nextPicture(review, m.popupBodyWidth(78))
+		m.signing.review.top = 0
 	default:
 		return m, false
 	}
@@ -247,27 +275,26 @@ func reviewItemSeverity(item protocol.ReviewItem) string {
 	return severity
 }
 
-// reviewList draws the visible rows of a group's list.
-func (m Model) reviewList(review *protocol.Review, width, height int) []string {
-	var lines []string
-	for row := m.signing.review.top; row < m.signing.review.top+height && row < reviewRows(review); row++ {
-		text, style := "    Overview: warnings, accounts and what the signer changed", normalStyle
-		if row > 0 {
-			item := review.Items[row-1]
-			mark := " "
-			if severity := reviewItemSeverity(item); severity != "" {
-				mark, style = "⚠", reviewWarningStyle(severity)
-			} else if item.Position != protocol.ReviewPositionSign {
-				style = helpStyle
+// reviewPaneLines draws the visible part of the upper pane: its header, then
+// its rows from the first one shown, the selected row marked.
+func (m Model) reviewPaneLines(pane reviewPane, width, height int) []string {
+	lines := append([]string{}, pane.header...)
+	clip := lipgloss.NewStyle().MaxWidth(width)
+	for i := m.signing.review.top; i < len(pane.lines) && len(lines) < height; i++ {
+		line := pane.lines[i]
+		if line.row == m.signing.review.row {
+			// The mark is on the row's first line; its other lines are lit.
+			mark := "> "
+			if i > 0 && pane.lines[i-1].row == line.row {
+				mark = "  "
 			}
-			text = fmt.Sprintf("%2d %s %-15s  %s", row, mark, reviewPositionWords(item.Position), firstLine(item.Title))
-		}
-		text = fixedWidthFieldLine(text, width-2)
-		if row == m.signing.review.row {
-			lines = append(lines, selectedStyle.Render("> "+text))
+			lines = append(lines, selectedStyle.Render(mark+fixedWidthFieldLine(line.plain, width-2)))
 		} else {
-			lines = append(lines, style.Render("  "+text))
+			lines = append(lines, clip.Render("  "+line.styled))
 		}
+	}
+	for i, line := range lines {
+		lines[i] = clip.Render(line)
 	}
 	return lines
 }
@@ -445,7 +472,7 @@ func chipDigest(address string) [sha256.Size]byte { return sha256.Sum256([]byte(
 
 // renderReviewScreen draws the signing request from its review.
 func (m Model) renderReviewScreen(review *protocol.Review) string {
-	width, listHeight, _ := m.reviewLayout(review)
+	width, paneHeight, _ := m.reviewLayout(review)
 	var lines []string
 
 	title := titleStyle.UnsetMargins().Render("Signing Request")
@@ -460,11 +487,13 @@ func (m Model) renderReviewScreen(review *protocol.Review) string {
 		}
 		lines = append(lines, style.Render(fixedWidthFieldLine(risk, width)))
 	}
-	if listHeight > 0 {
-		lines = append(lines, m.reviewList(review, width, listHeight)...)
+	if review.Group {
+		pane := m.reviewPaneFor(review, width)
+		lines = append(lines, m.reviewPaneLines(pane, width, paneHeight)...)
 		rule := strings.Repeat("─", width)
-		if below := reviewRows(review) - m.signing.review.top - listHeight; below > 0 {
-			rule = fixedWidthFieldLine(fmt.Sprintf("── %d more below ", below)+rule, width)
+		if m.signing.review.top+paneHeight-len(pane.header) < len(pane.lines) {
+			label := "── more below "
+			rule = label + strings.Repeat("─", max(0, width-lipgloss.Width(label)))
 		}
 		lines = append(lines, helpStyle.Render(rule))
 	}
