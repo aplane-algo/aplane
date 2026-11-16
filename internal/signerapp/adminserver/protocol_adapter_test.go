@@ -199,7 +199,9 @@ func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
 			},
 			Findings: []txnreview.Finding{{Field: "F", Value: "V", Critical: true, Message: "M"}, {Field: "G"}},
 		}},
-		Parties: []txnreview.Party{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true}},
+		Parties: []txnreview.Party{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true,
+			Chain: &txnreview.PartyChain{MicroAlgos: 9, Authorizer: "Q", AuthorizerHeld: true, OtherSigner: "K"}}},
+		Chain: &txnreview.ChainRead{Round: 77, Unavailable: "why"},
 	}
 	got := ProtocolSignRequestMessage(signerapproval.SignRequest{ID: "apv-1", Review: review}).Review
 	want := &protocol.Review{
@@ -218,7 +220,9 @@ func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
 			Effects:  []protocol.ReviewEffect{{Kind: "clawback", From: "A", To: "B", Authority: "S", App: 7, NewApp: true, Text: "text", Severity: protocol.ReviewSeverityCaution}},
 			Findings: []protocol.PolicyViolation{{Field: "F", Value: "V", Severity: "critical", Message: "M"}, {Field: "G", Severity: "warning"}},
 		}},
-		Parties: []protocol.ReviewParty{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true}},
+		Parties: []protocol.ReviewParty{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true,
+			Chain: &protocol.ReviewPartyChain{MicroAlgos: 9, Authorizer: "Q", AuthorizerHeld: true, OtherSigner: "K"}}},
+		Chain: &protocol.ReviewChain{Round: 77, Unavailable: "why"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("review on the wire:\n%+v\nwant:\n%+v", got, want)

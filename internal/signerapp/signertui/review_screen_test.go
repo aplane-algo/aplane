@@ -799,3 +799,61 @@ func TestReviewDetailKeepsItsPlaceOnResize(t *testing.T) {
 		t.Fatalf("another transaction's detail starts at line %d, want 0", got)
 	}
 }
+
+// fittingDetail scrolls the detail pane to its end, each screen fitting the
+// window, and returns everything the pane showed.
+func fittingDetail(t *testing.T, m Model, width, height int) string {
+	t.Helper()
+	var seen []string
+	for i := 0; i < 200; i++ {
+		requireFits(t, m, width, height)
+		seen = append(seen, stripANSI(m.signing.viewport.View()))
+		if m.signing.viewport.AtBottom() {
+			break
+		}
+		m = reviewKey(t, m, "pgdown")
+	}
+	return strings.Join(seen, "\n")
+}
+
+// Once the signer has read the chain, each account says its balance and how
+// the signer stands to it, a rekeyed account names who signs for it now, and
+// a key the chain doesn't name for it is called out. Where nothing was read,
+// the list says why and keeps its words.
+func TestReviewAccountsShowWhatTheNodeSaid(t *testing.T) {
+	stage := strings.Repeat("S", 58)
+	read := groupReviewRequest()
+	read.Review.Chain = &protocol.ReviewChain{Round: 77}
+	read.Review.Parties[0].Chain = &protocol.ReviewPartyChain{MicroAlgos: 1_234_567_890, Authorizer: stage, AuthorizerHeld: true, OtherSigner: reviewOwn}
+	read.Review.Parties[1].Chain = &protocol.ReviewPartyChain{MicroAlgos: 100_000}
+
+	unread := groupReviewRequest()
+	unread.Review.Chain = &protocol.ReviewChain{Unavailable: "no algod is configured for network testnet"}
+
+	for _, size := range [][2]int{{MinWidth, MinHeight}, {133, 39}} {
+		detail := fittingDetail(t, reviewModelForTest(t, read, true, size[0], size[1]), size[0], size[1])
+		for _, want := range []string{
+			"Accounts · round 77",
+			"1234.567890 ALGO · signed here with its falcon1024 aplane key",
+			"rekeyed to an address this signer holds an aplane key for:",
+			stage,
+			"this request signs with a key the chain does not name for it",
+			"0.100000 ALGO",
+			"balance unavailable",
+		} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("%dx%d: the accounts lack %q:\n%s", size[0], size[1], want, detail)
+			}
+		}
+		if strings.Contains(detail, "this request signs for it with its") {
+			t.Errorf("%dx%d: the accounts keep the words a balance replaces:\n%s", size[0], size[1], detail)
+		}
+
+		detail = fittingDetail(t, reviewModelForTest(t, unread, true, size[0], size[1]), size[0], size[1])
+		for _, want := range []string{"Balances unavailable: no algod is configured for network testnet", "this request signs for it with its falcon1024 aplane key"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("%dx%d: the unread accounts lack %q:\n%s", size[0], size[1], want, detail)
+			}
+		}
+	}
+}

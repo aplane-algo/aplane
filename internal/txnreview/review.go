@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
@@ -23,12 +24,39 @@ type Review struct {
 	Changes Changes
 	Items   []Item
 	// Parties are the accounts the request's effects move value or control
-	// between, in order of first appearance. The text does not print them:
-	// they say which of the addresses in the fields are this signer's own.
+	// between, in order of first appearance. They say which of the
+	// addresses in the fields are this signer's own; the text prints them
+	// only once the chain is read, with what the node said of each.
 	Parties []Party
 	// Findings are what a reviewer must not miss about the request as a
 	// whole, beyond each transaction's own.
 	Findings []Finding
+	// Chain is when the signer read the parties from its node, or why it
+	// could not. It is nil until the request is put to an operator.
+	Chain *ChainRead
+}
+
+// ChainRead is when the signer read a review's parties from its node, or
+// why it could not. What the node says is shown and decides nothing.
+type ChainRead struct {
+	// Round is the earliest round the node reported the accounts at.
+	Round uint64
+	// Unavailable says why nothing was read.
+	Unavailable string
+}
+
+// PartyChain is what the signer's node said of one account.
+type PartyChain struct {
+	MicroAlgos uint64
+	// Authorizer is the address the chain says signs for the account, when
+	// that is not the account itself.
+	Authorizer string
+	// AuthorizerHeld is set when this signer holds an aplane key for the
+	// Authorizer.
+	AuthorizerHeld bool
+	// OtherSigner is the key this request signs for the account with, when
+	// the chain names another.
+	OtherSigner string
 }
 
 // Party is one account a request touches.
@@ -44,6 +72,9 @@ type Party struct {
 	// Lookalike is set when another account in the request looks like this
 	// one: the request has a finding that names both.
 	Lookalike bool
+	// Chain is what the signer's node said of the account. It is nil where
+	// the account was not read.
+	Chain *PartyChain
 }
 
 // Position is how a request treats one of its transactions.
@@ -128,8 +159,9 @@ func (c Changes) Text() string {
 	return b.String()
 }
 
-// Text prints the whole request: a heading, what planning changed, then each
-// transaction under its own heading.
+// Text prints the whole request: a heading, what planning changed, each
+// transaction under its own heading, then, once the chain is read, the
+// accounts.
 func (r Review) Text() string {
 	var b strings.Builder
 	if r.Group {
@@ -159,7 +191,71 @@ func (r Review) Text() string {
 		b.WriteString(item.Text())
 		b.WriteString("\n")
 	}
+	b.WriteString(r.AccountsText())
 	return b.String()
+}
+
+// AccountsText prints what the signer's node said of each account, every
+// line ending in a newline: its balance and how this signer stands to it,
+// who the chain says signs for it when that is another address, and the key
+// this request signs with when the chain names another. With nothing read it
+// says why. Before the chain is read it is empty.
+func (r Review) AccountsText() string {
+	if r.Chain == nil {
+		return ""
+	}
+	if r.Chain.Unavailable != "" {
+		return "Balances unavailable: " + r.Chain.Unavailable + "\n"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "--- Accounts at round %d ---\n", r.Chain.Round)
+	for _, p := range r.Parties {
+		b.WriteString(p.Address + "\n")
+		for _, line := range p.ChainLines() {
+			b.WriteString("  " + line + "\n")
+		}
+	}
+	return b.String()
+}
+
+// ChainLines are the lines under a party's address once the chain is read.
+func (p Party) ChainLines() []string {
+	balance := "balance unavailable"
+	if p.Chain != nil {
+		balance = asaset.FormatFixed(p.Chain.MicroAlgos, 6) + " ALGO"
+	}
+	if stand := p.Standing(); stand != "" {
+		balance += " · " + stand
+	}
+	lines := []string{balance}
+	if p.Chain == nil {
+		return lines
+	}
+	if p.Chain.Authorizer != "" {
+		line := "rekeyed to " + p.Chain.Authorizer
+		if p.Chain.AuthorizerHeld {
+			line += ", an address this signer holds an aplane key for"
+		}
+		lines = append(lines, line)
+	}
+	if p.Chain.OtherSigner != "" {
+		lines = append(lines, "this request signs with "+p.Chain.OtherSigner+", a key the chain does not name for it")
+	}
+	return lines
+}
+
+// Standing is how this signer stands to the account, in a few words, or
+// nothing when it holds no aplane key for it.
+func (p Party) Standing() string {
+	switch {
+	case p.Signs && p.KeyType != "":
+		return "signed here with its " + p.KeyType + " aplane key"
+	case p.Signs:
+		return "signed here"
+	case p.Held:
+		return "this signer holds its aplane key, not signed here"
+	}
+	return ""
 }
 
 // SetParties lists the accounts the items' effects name, in order of first
@@ -226,6 +322,11 @@ func (r Review) Safe() Review {
 		return out
 	}
 	safe := Review{Group: r.Group, Banners: lines(r.Banners), Changes: r.Changes}
+	if r.Chain != nil {
+		chain := *r.Chain
+		chain.Unavailable = line(chain.Unavailable)
+		safe.Chain = &chain
+	}
 	safe.Changes.Heading, safe.Changes.Lines = line(r.Changes.Heading), lines(r.Changes.Lines)
 	for _, item := range r.Items {
 		item.Label, item.Notes, item.Claims = line(item.Label), fields(item.Notes), lines(item.Claims)
@@ -248,6 +349,11 @@ func (r Review) Safe() Review {
 	}
 	for _, p := range r.Parties {
 		p.Address, p.KeyType = line(p.Address), line(p.KeyType)
+		if p.Chain != nil {
+			chain := *p.Chain
+			chain.Authorizer, chain.OtherSigner = line(chain.Authorizer), line(chain.OtherSigner)
+			p.Chain = &chain
+		}
 		safe.Parties = append(safe.Parties, p)
 	}
 	for _, f := range r.Findings {

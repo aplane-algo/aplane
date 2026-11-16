@@ -23,6 +23,31 @@ type Review struct {
 	// Findings are warnings about the request as a whole, such as two
 	// accounts that look alike. The message's violations carry them too.
 	Findings []PolicyViolation `json:"findings,omitempty"`
+	// Chain is when the signer read the parties from its node, or why it
+	// could not. What the node says is shown and decides nothing.
+	Chain *ReviewChain `json:"chain,omitempty"`
+}
+
+// ReviewChain is when the signer read a review's parties from its node.
+type ReviewChain struct {
+	// Round is the earliest round the node reported the accounts at.
+	Round uint64 `json:"round,omitempty"`
+	// Unavailable says why nothing was read.
+	Unavailable string `json:"unavailable,omitempty"`
+}
+
+// ReviewPartyChain is what the signer's node said of one account.
+type ReviewPartyChain struct {
+	MicroAlgos uint64 `json:"micro_algos"`
+	// Authorizer is the address the chain says signs for the account, when
+	// that is not the account itself.
+	Authorizer string `json:"authorizer,omitempty"`
+	// AuthorizerHeld is set when the signer holds an aplane key for the
+	// Authorizer.
+	AuthorizerHeld bool `json:"authorizer_held,omitempty"`
+	// OtherSigner is the key the request signs for the account with, when
+	// the chain names another.
+	OtherSigner string `json:"other_signer,omitempty"`
 }
 
 // ReviewChanges is what planning did to the request.
@@ -115,4 +140,7 @@ type ReviewParty struct {
 	// Lookalike is set when another account in the request looks like this
 	// one; the review's findings name both.
 	Lookalike bool `json:"lookalike,omitempty"`
+	// Chain is what the signer's node said of the account; nil where it was
+	// not read.
+	Chain *ReviewPartyChain `json:"chain,omitempty"`
 }

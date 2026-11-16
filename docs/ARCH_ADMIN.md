@@ -498,14 +498,25 @@ loses nothing but the structure.
   `address`, `held` (the signer holds an aplane key for it), `signs` (this
   request signs a transaction it sends), `key_type` of the key that signs
   for it, and `lookalike` when a finding of the review says another account
-  in the request looks like it.
+  in the request looks like it. Once the signer has read the account from
+  its node, `chain`: `micro_algos`, `authorizer` where the chain names
+  another address, `authorizer_held` where the signer holds an aplane key
+  for that one, and `other_signer`, the key this request signs a transaction
+  of the account with where that is not the account's authorizer when the
+  transaction runs.
 - `findings`: warnings about the request as a whole, in the shape of
   `violations`: two different accounts in the request that look alike. The
   message's `violations` carry them after the transactions' own.
+- `chain`: present once the signer has tried to read the parties from its
+  node, just before the prompt: `round`, the earliest round the node
+  reported them at, or `unavailable`, why nothing was read. What it says is
+  shown and decides nothing; see "Chain State in the Review" in
+  [ARCH_SIGNING.md](ARCH_SIGNING.md). The description ends with the same
+  accounts.
 
-The fields are the review. Effects and parties only arrange them: a new
-field on a transaction type is one more entry in `fields` and needs no
-client change.
+The fields are the review. Effects and parties only arrange them, and
+`chain` is the description's account list as data: a new field on a
+transaction type is one more entry in `fields` and needs no client change.
 
 #### Backup and Restore
 
@@ -1109,7 +1120,9 @@ the first selected, and under the list a pane with the selected transaction
 in full: every field, then its own warnings, naming the signing key only
 where it is not the sender. The pane ends with what is about the request as a
 whole: its warnings and notes, each account's whole address with what the
-signer holds, and what planning changed. A lone transaction has no list: one
+signer holds (and, once the signer has read its node, the round, each
+balance, who the chain says signs for a rekeyed account, and a key this
+request signs with that the chain does not name), and what planning changed. A lone transaction has no list: one
 pane holds all of it, in the same order, under its lanes when it moves something between two
 parties (a payment, a close, a rekey, an app call) and with no picture when
 it touches one account alone. The list can also be drawn as a picture

@@ -1108,6 +1108,36 @@ with a bidirectional control. So:
 An escaped character is shown as its Go escape (`\x1b`, `\r`, `\u202e`), so
 the operator sees that it was there.
 
+### Chain State in the Review
+
+Once a request is to be put to an operator, after every gate, the approval
+service reads the review's accounts from the signer's node (`addChainState`
+in `internal/signerapp/signing/review_chain.go`, through
+`chainread.Reader.ReadAccounts`). A request that `user_auto_approve` answers,
+policy rejects, or reviewability blocks reads nothing. For each account the
+review gets:
+
+- its ALGO balance;
+- the authorizer the chain names, where that is another address, and
+  whether the signer holds an aplane key for it;
+- the key this request signs one of its transactions with, where that is not
+  the account's authorizer when the transaction runs: the chain's, as the
+  request's earlier rekeys leave it. A rotating spend has none, since its
+  flow reads the authorizer itself and refuses to sign when it changed.
+
+The node is chosen from the genesis hash and checked as the rotating flow's
+is. The read has its own deadline (2s), apart from the operator's approval
+wait. A node that is not configured, fails, or does not answer in time
+leaves the review saying why, and the prompt is sent all the same.
+
+What the node says is shown and decides nothing: no gate, policy rule,
+finding or auto-approval reads it, so every decision stays a function of the
+request and the signer's own state, and `appolicy try`/`test` reproduce it.
+The description ends with the same accounts, so apapprover shows what
+apadmin draws. The daemon's console copy of the description is printed
+before the read and has no accounts. The node's operator learns which
+accounts each reviewed request touches.
+
 ### Approval Waits and Cancellation
 
 Signing approval timeout is the product-runtime `approval_wait` value,

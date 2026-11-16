@@ -85,7 +85,9 @@ grant access to keys held by `apsigner`.
 
 The signer is a separate custody boundary, not necessarily an offline machine.
 It can use configured algod endpoints for functions such as TEAL compilation,
-and rotating signing requires its own fresh chain reads. Network access and
+rotating signing requires its own fresh chain reads, and a request put to an
+operator shows each account's balance and authorizer from the signer's node,
+for display only. Network access and
 which host owns key material are separate deployment decisions.
 
 ### Following an ordinary transaction
@@ -758,7 +760,8 @@ algod is not configured or client creation fails; consensus-gated operations
 then fail with `ErrNoAlgodClient` before contacting a signer, plugin, or network.
 Apsigner applies the compiled authorization contract shared by v42 and v43
 rather than refreshing that contract from a node. This does not make the signer network-independent:
-rotating signing reads chain state, and TEAL compilation uses configured algod.
+rotating signing reads chain state, a review put to an operator shows it, and
+TEAL compilation uses configured algod.
 
 Engine code must not depend on UI parsing or formatting packages; this is
 enforced by `test/arch/client_layering_test.go` (see Architectural Invariants).

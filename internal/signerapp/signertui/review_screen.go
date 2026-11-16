@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -458,18 +459,78 @@ func reviewViolations(title string, violations []protocol.PolicyViolation, notic
 }
 
 // reviewAccounts lists the accounts the request touches, each address in
-// full, and says which of them are the signer's own.
+// full, and says which of them are the signer's own. Once the signer has
+// read them from its node, each says its balance and, where the chain names
+// another address, who signs for it.
 func reviewAccounts(review *protocol.Review) []reviewLine {
 	if len(review.Parties) == 0 {
 		return nil
 	}
-	lines := []reviewLine{reviewSection("Accounts")}
+	chain := review.Chain
+	if chain != nil && chain.Unavailable != "" {
+		lines := []reviewLine{reviewSection("Accounts"), {text: "  Balances unavailable: " + chain.Unavailable, style: helpStyle}}
+		return append(lines, partyLines(review.Parties)...)
+	}
+	if chain == nil {
+		return append([]reviewLine{reviewSection("Accounts")}, partyLines(review.Parties)...)
+	}
+	lines := []reviewLine{reviewSection(fmt.Sprintf("Accounts · round %d", chain.Round))}
 	for _, party := range review.Parties {
-		style := normalStyle
-		if party.Signs || party.Held {
-			style = statusConnectedStyle
+		lines = append(lines, partyAddressLine(party.Address, party.Signs || party.Held, "  "))
+		balance := "balance unavailable"
+		if party.Chain != nil {
+			balance = asaset.FormatFixed(party.Chain.MicroAlgos, 6) + " ALGO"
 		}
-		lines = append(lines, reviewLine{fixed: "  " + addressChip(party.Address) + " " + style.Render(party.Address)})
+		if stand := partyStanding(party); stand != "" {
+			balance += " · " + stand
+		}
+		lines = append(lines, reviewLine{text: "       " + balance, style: normalStyle})
+		if party.Chain == nil {
+			continue
+		}
+		if authorizer := party.Chain.Authorizer; authorizer != "" {
+			words := "rekeyed to:"
+			if party.Chain.AuthorizerHeld {
+				words = "rekeyed to an address this signer holds an aplane key for:"
+			}
+			lines = append(lines, reviewLine{text: "       " + words, style: helpStyle}, partyAddressLine(authorizer, party.Chain.AuthorizerHeld, "         "))
+		}
+		if party.Chain.OtherSigner != "" {
+			lines = append(lines, reviewLine{text: "       this request signs with a key the chain does not name for it", style: warningStyle})
+		}
+	}
+	return lines
+}
+
+// partyAddressLine is an address in full after its mark, in the colour of
+// the signer's own where it holds an aplane key for it.
+func partyAddressLine(address string, own bool, indent string) reviewLine {
+	style := normalStyle
+	if own {
+		style = statusConnectedStyle
+	}
+	return reviewLine{fixed: indent + addressChip(address) + " " + style.Render(address)}
+}
+
+// partyStanding is how the signer stands to an account, in a few words.
+func partyStanding(party protocol.ReviewParty) string {
+	switch {
+	case party.Signs && party.KeyType != "":
+		return "signed here with its " + party.KeyType + " aplane key"
+	case party.Signs:
+		return "signed here"
+	case party.Held:
+		return "this signer holds its aplane key, not signed here"
+	}
+	return ""
+}
+
+// partyLines are the accounts with no balances: each address, and how the
+// signer stands to it in words.
+func partyLines(parties []protocol.ReviewParty) []reviewLine {
+	var lines []reviewLine
+	for _, party := range parties {
+		lines = append(lines, partyAddressLine(party.Address, party.Signs || party.Held, "  "))
 		switch {
 		case party.Signs && party.KeyType != "":
 			lines = append(lines, reviewLine{text: "       this request signs for it with its " + party.KeyType + " aplane key", style: helpStyle})

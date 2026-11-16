@@ -70,6 +70,12 @@ type ApprovalService struct {
 	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
 	RequestSigningApprovalPrompt          RequestSigningApprovalPromptFunc
+	// Chain reads the review's accounts from the signer's node before an
+	// operator is asked. nil reads nothing.
+	Chain ReviewChain
+	// ReviewChainTimeout bounds that read. Zero means
+	// DefaultReviewChainTimeout.
+	ReviewChainTimeout time.Duration
 }
 
 // planKnownAddresses is the address set the gates and the approval warnings
@@ -617,6 +623,8 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 		}
 	}
 
+	s.addChainState(ctx, review, txns[0].GenesisHash[:], s.planKnownAddresses(plan), signersOf(req.Requests, txns, plan))
+
 	// A direct caller may supply no ID; the prompt is never held under an
 	// empty one.
 	requestID := RequestID(req.RequestID)
@@ -703,6 +711,8 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return forbidden("transaction approval blocked: " + reason)
 	}
 
+	s.addChainState(ctx, review, txns[0].GenesisHash[:], s.planKnownAddresses(nil), signersOf([]signerapi.SignRequest{txReq}, txns, nil))
+
 	// A direct caller may supply no ID; the prompt is never held under an
 	// empty one.
 	requestID = RequestID(requestID)
@@ -714,6 +724,9 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		txnDesc += changes + "\n"
 	}
 	txnDesc += review.Items[0].Text()
+	if accounts := review.AccountsText(); accounts != "" {
+		txnDesc += "\n" + strings.TrimSuffix(accounts, "\n")
+	}
 	violations := reviewViolations(review, false)
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 
