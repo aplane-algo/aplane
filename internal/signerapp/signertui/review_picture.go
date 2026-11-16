@@ -37,12 +37,32 @@ const (
 	maxEffectText   = 26
 )
 
-// paneLine is one line of the upper pane. plain is drawn when its row is
-// selected, styled otherwise.
+// paneLine is one line of the upper pane: its spans, and the same text with
+// no styles.
 type paneLine struct {
-	row    int
-	plain  string
-	styled string
+	row   int
+	plain string
+	spans []paneSpan
+}
+
+// paneSpan is a run of a pane line drawn in one style.
+type paneSpan struct {
+	text  string
+	style lipgloss.Style
+}
+
+// render draws the line in its own colours, over the selected-row tint when
+// selected.
+func (l paneLine) render(selected bool) string {
+	var b strings.Builder
+	for _, span := range l.spans {
+		style := span.style
+		if selected {
+			style = style.Background(selectedRowBackground)
+		}
+		b.WriteString(style.Render(span.text))
+	}
+	return b.String()
 }
 
 // reviewPane is the upper pane: lines that stay in place, then one or more
@@ -269,7 +289,7 @@ func (m Model) reviewPaneFor(review *protocol.Review, width int) reviewPane {
 
 func overviewLine() paneLine {
 	text := strings.Repeat(" ", reviewRowPrefix-1) + reviewOverviewText
-	return paneLine{row: 0, plain: text, styled: text}
+	return paneLine{row: 0, plain: text, spans: []paneSpan{{text, normalStyle}}}
 }
 
 // listPane is one line for each transaction: how the request treats it, and
@@ -284,7 +304,7 @@ func listPane(review *protocol.Review) reviewPane {
 			style = helpStyle
 		}
 		text := fmt.Sprintf("%s%-15s  %s", reviewRowLead(i+1, item, true), reviewPositionWords(item.Position), firstLine(item.Title))
-		pane.lines = append(pane.lines, paneLine{row: i + 1, plain: text, styled: style.Render(text)})
+		pane.lines = append(pane.lines, paneLine{row: i + 1, plain: text, spans: []paneSpan{{text, style}}})
 	}
 	return pane
 }
@@ -461,26 +481,25 @@ func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 			}
 			style := reviewEffectStyle(effect)
 
-			var styled strings.Builder
-			if reviewItemSeverity(item) != "" {
-				styled.WriteString(reviewWarningStyle(reviewItemSeverity(item)).Render(number))
-			} else {
-				styled.WriteString(number)
+			numberStyle := normalStyle
+			if severity := reviewItemSeverity(item); severity != "" {
+				numberStyle = reviewWarningStyle(severity)
 			}
+			spans := []paneSpan{{number, numberStyle}}
 			for x := 0; x < len(cells); {
 				y := x
 				for y < len(cells) && drawn[y] == drawn[x] {
 					y++
 				}
 				if drawn[x] {
-					styled.WriteString(style.Render(string(cells[x:y])))
+					spans = append(spans, paneSpan{string(cells[x:y]), style})
 				} else {
-					styled.WriteString(helpStyle.Render(string(cells[x:y])))
+					spans = append(spans, paneSpan{string(cells[x:y]), helpStyle})
 				}
 				x = y
 			}
-			styled.WriteString(style.Render(gap + " " + text))
-			pane.lines = append(pane.lines, paneLine{row: i + 1, plain: number + string(cells) + gap + " " + text, styled: styled.String()})
+			spans = append(spans, paneSpan{gap + " " + text, style})
+			pane.lines = append(pane.lines, paneLine{row: i + 1, plain: number + string(cells) + gap + " " + text, spans: spans})
 		}
 	}
 	return pane
@@ -529,14 +548,14 @@ func tablePane(review *protocol.Review, width int) reviewPane {
 				text += " (looks alike)"
 			}
 			style := reviewEffectStyle(effect)
-			lead := number
+			leadStyle := normalStyle
 			if severity := reviewItemSeverity(item); severity != "" {
-				lead = reviewWarningStyle(severity).Render(number)
+				leadStyle = reviewWarningStyle(severity)
 			}
 			pane.lines = append(pane.lines, paneLine{
-				row:    i + 1,
-				plain:  number + from + arrow + to + "  " + text,
-				styled: lead + fromStyle.Render(from) + style.Render(arrow) + toStyle.Render(to) + "  " + style.Render(text),
+				row:   i + 1,
+				plain: number + from + arrow + to + "  " + text,
+				spans: []paneSpan{{number, leadStyle}, {from, fromStyle}, {arrow, style}, {to, toStyle}, {"  ", normalStyle}, {text, style}},
 			})
 		}
 	}

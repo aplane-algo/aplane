@@ -298,14 +298,17 @@ func (m Model) reviewPaneLines(pane reviewPane, width, height int) []string {
 	for i := m.signing.review.top; i < len(pane.lines) && len(lines) < height; i++ {
 		line := pane.lines[i]
 		if line.row == m.signing.review.row {
-			// The mark is on the row's first line; its other lines are lit.
+			// The mark is on the row's first line; all its lines are tinted
+			// across the width, each in its own colours.
 			mark := "> "
 			if i > 0 && pane.lines[i-1].row == line.row {
 				mark = "  "
 			}
-			lines = append(lines, selectedStyle.Render(mark+fixedWidthFieldLine(line.plain, width-2)))
+			tint := lipgloss.NewStyle().Background(selectedRowBackground)
+			pad := strings.Repeat(" ", max(0, width-2-lipgloss.Width(line.plain)))
+			lines = append(lines, tint.Bold(true).Render(mark)+line.render(true)+tint.Render(pad))
 		} else {
-			lines = append(lines, clip.Render("  "+line.styled))
+			lines = append(lines, clip.Render("  "+line.render(false)))
 		}
 	}
 	for i, line := range lines {

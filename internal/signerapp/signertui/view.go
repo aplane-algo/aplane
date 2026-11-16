@@ -34,6 +34,7 @@ var (
 	warningStyle            lipgloss.Style
 	helpStyle               lipgloss.Style
 	selectedStyle           lipgloss.Style
+	selectedRowBackground   lipgloss.Color
 	normalStyle             lipgloss.Style
 	buttonStyle             lipgloss.Style
 	buttonActiveStyle       lipgloss.Style
@@ -100,6 +101,10 @@ func initStyles() {
 		Background(lipgloss.Color(p.Selected)).
 		Foreground(lipgloss.Color(p.SelectedFg)).
 		Bold(true)
+
+	// A selected row of a drawn review keeps its own colours, so a red
+	// arrow stays red while it is looked at; only this tint marks it.
+	selectedRowBackground = lipgloss.Color(p.SelectedRow)
 
 	normalStyle = lipgloss.NewStyle()
 

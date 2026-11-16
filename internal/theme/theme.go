@@ -37,6 +37,7 @@ type Palette struct {
 	Help               string // Help text
 	Selected           string // Selected item background
 	SelectedFg         string // Selected item foreground
+	SelectedRow        string // Tint behind a selected row that keeps its own colours
 	Button             string // Active button
 	ButtonInactive     string // Inactive button
 	Popup              string // Popup border
@@ -64,6 +65,7 @@ var Dark = Palette{
 	Help:               "241", // Gray
 	Selected:           "62",  // Blue/purple background
 	SelectedFg:         "255", // White
+	SelectedRow:        "236", // Near-black gray
 	Button:             "42",  // Green
 	ButtonInactive:     "241", // Gray
 	Popup:              "214", // Orange
@@ -91,6 +93,7 @@ var Light = Palette{
 	Help:               "243", // Medium gray
 	Selected:           "61",  // Dark purple background
 	SelectedFg:         "255", // White
+	SelectedRow:        "254", // Near-white gray
 	Button:             "28",  // Dark green
 	ButtonInactive:     "243", // Medium gray
 	Popup:              "130", // Dark orange

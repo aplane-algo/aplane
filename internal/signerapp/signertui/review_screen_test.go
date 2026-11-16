@@ -549,3 +549,35 @@ func TestReviewTransactionShowsFieldsBeforeWarnings(t *testing.T) {
 		t.Errorf("a signing key other than the sender is not shown:\n%s", allDetail(t, m))
 	}
 }
+
+// A selected row is drawn from its spans over a tint, not as plain text, so
+// a rekey's arrow keeps its danger colour while the operator looks at it.
+func TestReviewSelectedRowKeepsItsColours(t *testing.T) {
+	m := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
+	m = reviewKey(t, reviewKey(t, m, "down"), "down")
+	pane, ok := m.reviewUpperPane(m.reviewOf(), m.reviewWidth())
+	if !ok {
+		t.Fatal("the group has no upper pane")
+	}
+	var rekey *paneLine
+	for i, line := range pane.lines {
+		if line.row == m.signing.review.row && strings.Contains(line.plain, "REKEY") {
+			rekey = &pane.lines[i]
+		}
+	}
+	if rekey == nil {
+		t.Fatalf("the selected row has no rekey line: %+v", pane.lines)
+	}
+	danger := false
+	for _, span := range rekey.spans {
+		if strings.Contains(span.text, "╌") && span.style.GetForeground() == errorStyle.GetForeground() {
+			danger = true
+		}
+	}
+	if !danger {
+		t.Fatalf("the rekey arrow is not drawn in the danger style: %+v", rekey.spans)
+	}
+	if got := stripANSI(rekey.render(true)); got != rekey.plain {
+		t.Fatalf("the spans say %q, the plain text %q", got, rekey.plain)
+	}
+}
