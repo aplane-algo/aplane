@@ -1119,8 +1119,13 @@ this request signs, a dashed line for a rekey, a double line for a close), or
 a table of movements. Left alone, the shape of the request picks: a table for
 one account paying three or more others, lanes when every lane fits the
 window, a table when they do not, and the plain list when nothing moves
-between two parties. `v` goes round the three. A column or table row of an
-account the review marks as a lookalike says so in words.
+between two parties. `v` goes round the three. A picture names an account by
+its address cut to its ends, as many characters of each end as its column
+holds: ten where there is room, as the key list shows, and never fewer than
+four. Every lane is as wide as the others, so every name in one picture shows
+the same number of characters; the table keeps the room its What column needs
+first. A column or table row of an account the review marks as a lookalike
+says so in words.
 The picture selects the same rows as the list, and the pane under it is the
 same. A selected row keeps its own colours over a tint, so a rekey's arrow
 stays red while it is selected. `up`/`down` select a row (or scroll a lone

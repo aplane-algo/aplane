@@ -418,7 +418,7 @@ func TestReviewLanes(t *testing.T) {
 		t.Fatal("the group is not drawn as lanes")
 	}
 	view := requireFits(t, m, 133, 39)
-	for _, want := range []string{"M35J…EZ6A", "Q25W…3JAE", "app 1002", "signs", "lookalike", "5000.000000 ALGO", "REKEY: control moves", "call"} {
+	for _, want := range []string{addressEnds(reviewOwn, 10), addressEnds(reviewOther, 10), "app 1002", "signs", "lookalike", "5000.000000 ALGO", "REKEY: control moves", "call"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("lanes lack %q:\n%s", want, view)
 		}
@@ -467,9 +467,89 @@ func TestReviewPictureKeyAndTable(t *testing.T) {
 	}
 	m = reviewKey(t, m, "v")
 	view := requireFits(t, m, 133, 39)
-	for _, want := range []string{"From", "What", "M35J…EZ6A    → Q25W…3JAE", "REKEY: control moves (looks alike)", "→ app 1002"} {
+	for _, want := range []string{"From", "What", addressEnds(reviewOwn, 10) + " → " + addressEnds(reviewOther, 10), "REKEY: control moves (looks alike)", "→ app 1002"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("table lacks %q:\n%s", want, view)
+		}
+	}
+}
+
+// addressEnds is an address cut to n characters of each end.
+func addressEnds(address string, n int) string {
+	return address[:n] + "…" + address[len(address)-n:]
+}
+
+// shownEnds is how many characters of each end of address the view shows,
+// or 0 where it shows no short form of it.
+func shownEnds(view, address string) int {
+	for n := maxAddressEnds; n >= 1; n-- {
+		if strings.Contains(view, addressEnds(address, n)) {
+			return n
+		}
+	}
+	return 0
+}
+
+// An address cut to fit shows as many characters of each end as the width
+// holds, from four to ten.
+func TestShortAddressFillsItsWidth(t *testing.T) {
+	for _, tc := range []struct{ width, ends int }{{0, 4}, {9, 4}, {11, 5}, {13, 6}, {21, 10}, {58, 10}} {
+		if got, want := shortAddress(reviewOwn, tc.width), addressEnds(reviewOwn, tc.ends); got != want {
+			t.Errorf("width %d: %q, want %q", tc.width, got, want)
+		}
+	}
+	if got := shortAddress("ABCDEFGH", 9); got != "ABCDEFGH" {
+		t.Errorf("an address shorter than its short form was cut: %q", got)
+	}
+}
+
+// Each address in a picture shows as much of its ends as its column holds:
+// ten characters of each end where there is room, as the key list shows,
+// fewer where lanes are narrow, the same for every lane. Two lookalikes that
+// share their first and last four characters are told apart where five fit.
+// A table keeps the room its What column needs, a lookalike's words with it.
+func TestReviewAddressesShowWhatTheirColumnsHold(t *testing.T) {
+	accounts := []string{reviewOwn, reviewOther, reviewThird}
+	for _, width := range []int{MinWidth, 133} {
+		m := reviewModelForTest(t, groupReviewRequest(), true, width, MinHeight)
+		if pictureOf(t, m) != pictureLanes {
+			t.Fatalf("%d wide: the group is not drawn as lanes", width)
+		}
+		view := requireFits(t, m, width, MinHeight)
+		ends := shownEnds(view, reviewOwn)
+		for _, address := range accounts {
+			if got := shownEnds(view, address); got != ends || got < minAddressEnds {
+				t.Errorf("%d wide: %s shows %d characters of each end, %s shows %d:\n%s", width, address, got, reviewOwn, ends, view)
+			}
+		}
+		if width == 133 && ends != maxAddressEnds {
+			t.Errorf("133 wide: lanes show %d characters of each end, want %d", ends, maxAddressEnds)
+		}
+		if ends < 5 || addressEnds(reviewOther, ends) == addressEnds(reviewThird, ends) {
+			t.Errorf("%d wide: the lookalikes read the same, %q:\n%s", width, addressEnds(reviewOther, ends), view)
+		}
+
+		table := reviewKey(t, m, "v")
+		if pictureOf(t, table) != pictureTable {
+			t.Fatalf("%d wide: v did not draw the table", width)
+		}
+		view = requireFits(t, table, width, MinHeight)
+		if !strings.Contains(view, "REKEY: control moves (looks alike)") {
+			t.Errorf("%d wide: the table cut the lookalike's words:\n%s", width, view)
+		}
+		if got := shownEnds(view, reviewOwn); got < minAddressEnds {
+			t.Errorf("%d wide: the table shows %d characters of each end:\n%s", width, got, view)
+		}
+	}
+
+	m := reviewModelForTest(t, payrollReviewRequest(3), true, MinWidth, MinHeight)
+	if pictureOf(t, m) != pictureTable {
+		t.Fatal("a payroll is not drawn as a table")
+	}
+	view := requireFits(t, m, MinWidth, MinHeight)
+	for _, address := range []string{reviewOwn, strings.Repeat("B", 58), strings.Repeat("D", 58)} {
+		if got := shownEnds(view, address); got != maxAddressEnds {
+			t.Errorf("a payroll's table shows %d characters of each end of %s, want %d:\n%s", got, address[:4], maxAddressEnds, view)
 		}
 	}
 }
@@ -505,7 +585,7 @@ func TestLoneTransactionIsDrawnAsLanes(t *testing.T) {
 	for _, size := range [][2]int{{MinWidth, MinHeight}, {133, 39}} {
 		m := reviewModelForTest(t, singleReviewRequest(), true, size[0], size[1])
 		view := requireFits(t, m, size[0], size[1])
-		for _, want := range []string{"M35J…EZ6A", "Q25W…3JAE", "signs", "5000.000000 ALGO", "CLOSE: all remaining ALGO", "●─", "─►", "●═", "═►", "Transaction · signed here", "> REJECT"} {
+		for _, want := range []string{addressEnds(reviewOwn, 10), addressEnds(reviewOther, 10), "signs", "5000.000000 ALGO", "CLOSE: all remaining ALGO", "●─", "─►", "●═", "═►", "Transaction · signed here", "> REJECT"} {
 			if !strings.Contains(view, want) {
 				t.Fatalf("%dx%d: screen lacks %q:\n%s", size[0], size[1], want, view)
 			}
@@ -528,7 +608,7 @@ func TestLoneTransactionIsDrawnAsLanes(t *testing.T) {
 	optIn := singleReviewRequest()
 	optIn.Review.Items[0].Effects = []protocol.ReviewEffect{{Kind: "opt_in", From: reviewOwn, Text: "opt in to USDC"}}
 	m := reviewModelForTest(t, optIn, true, MinWidth, MinHeight)
-	if view := requireFits(t, m, MinWidth, MinHeight); strings.Contains(view, "M35J…EZ6A") || strings.Contains(view, "◎") {
+	if view := requireFits(t, m, MinWidth, MinHeight); shownEnds(view, reviewOwn) != 0 || strings.Contains(view, "◎") {
 		t.Fatalf("a transaction on one account alone is drawn as lanes:\n%s", view)
 	}
 }

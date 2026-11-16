@@ -31,10 +31,22 @@ const (
 const (
 	// reviewRowPrefix is the width of a row's number and warning mark.
 	reviewRowPrefix = 5
-	minLaneWidth    = 11
-	maxLaneWidth    = 16
-	maxEffectText   = 26
+	// An address in a picture shows as many characters of each end as its
+	// column has room for: four at least, and at most ten, as the key list
+	// shows.
+	minAddressEnds = 4
+	maxAddressEnds = 10
+	minLaneWidth   = 2*minAddressEnds + 3
+	// maxLaneWidth holds the longest short address and a space.
+	maxLaneWidth  = 2*maxAddressEnds + 2
+	maxEffectText = 26
+	// maxTableText is the widest What the table keeps room for: the widest
+	// effect the lanes show, and the words that mark a lookalike.
+	maxTableText = maxEffectText + len(lookalikeWords)
 )
+
+// lookalikeWords mark a table row that moves from or to a lookalike.
+const lookalikeWords = " (looks alike)"
 
 // paneLine is one line of the upper pane: its spans, and the same text with
 // no styles.
@@ -71,12 +83,14 @@ type reviewPane struct {
 	lines  []paneLine
 }
 
-// shortAddress is an address cut to its ends.
-func shortAddress(address string) string {
-	if len(address) < 10 {
+// shortAddress is an address cut to its ends to fit width: as many
+// characters of each end as fit, from minAddressEnds to maxAddressEnds.
+func shortAddress(address string, width int) string {
+	ends := min(maxAddressEnds, max(minAddressEnds, (width-1)/2))
+	if len(address) <= 2*ends+1 {
 		return address
 	}
-	return address[:4] + "…" + address[len(address)-4:]
+	return address[:ends] + "…" + address[len(address)-ends:]
 }
 
 // reviewLane is one column of the lanes picture: an account or an app.
@@ -88,14 +102,16 @@ type reviewLane struct {
 	role    string
 }
 
-func (l reviewLane) name() string {
+// name is the lane's name in a lane width wide, a space left between it and
+// the next lane's.
+func (l reviewLane) name(width int) string {
 	switch {
 	case l.newApp != 0:
 		return "new app"
 	case l.app != 0:
 		return fmt.Sprintf("app %d", l.app)
 	}
-	return shortAddress(l.address)
+	return shortAddress(l.address, width-1)
 }
 
 // reviewLookalikes are the addresses the signer says look like another
@@ -391,7 +407,7 @@ func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 		case lane.role == "app":
 			nameStyle = subtitleStyle.Bold(true)
 		}
-		names.WriteString(nameStyle.Render(centre(lane.name(), laneWidth)))
+		names.WriteString(nameStyle.Render(centre(lane.name(laneWidth), laneWidth)))
 		roles.WriteString(roleStyle.Render(centre(lane.role, laneWidth)))
 	}
 	if hidden := len(lanes) - shown; hidden > 0 {
@@ -501,16 +517,57 @@ func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 	return pane
 }
 
+// tableRow is one line of the table: an effect of a row, and what the
+// What column says of it.
+type tableRow struct {
+	item, effect int
+	movement     protocol.ReviewEffect
+	text         string
+}
+
+// tableRows are the table's lines, one for each effect, or for a transaction
+// with none, its title.
+func tableRows(review *protocol.Review) []tableRow {
+	lookalikes := reviewLookalikes(review)
+	var rows []tableRow
+	for i, item := range review.Items {
+		effects := item.Effects
+		if len(effects) == 0 {
+			effects = []protocol.ReviewEffect{{From: item.Sender, Text: firstLine(item.Title)}}
+		}
+		for j, effect := range effects {
+			text := effect.Text
+			if lookalikes[effect.To] || lookalikes[effect.From] {
+				text += lookalikeWords
+			}
+			rows = append(rows, tableRow{item: i, effect: j, movement: effect, text: text})
+		}
+	}
+	return rows
+}
+
+// tableNameWidth is the width of the From and To columns: what is left of the
+// width once the widest What fits, between a short address of four characters
+// at each end and one of ten.
+func tableNameWidth(rows []tableRow, width int) int {
+	text := 0
+	for _, row := range rows {
+		text = max(text, lipgloss.Width(row.text))
+	}
+	room := (width - 2 - reviewRowPrefix - 3 - 2 - min(text, maxTableText)) / 2
+	return min(2*maxAddressEnds+1, max(2*minAddressEnds+1, room))
+}
+
 // tablePane is one line for each effect: who it moves from, who to, and what.
 // It suits one account paying many, which lanes would draw as a fan of
 // arrows.
 func tablePane(review *protocol.Review, width int) reviewPane {
-	lookalikes := reviewLookalikes(review)
 	own := map[string]bool{}
 	for _, party := range review.Parties {
 		own[party.Address] = party.Signs || party.Held
 	}
-	const nameWidth = 12
+	rows := tableRows(review)
+	nameWidth := tableNameWidth(rows, width)
 	head := strings.Repeat(" ", 2+reviewRowPrefix) + fixedWidthFieldLine("From", nameWidth) + "   " + fixedWidthFieldLine("To", nameWidth) + "  What"
 	pane := reviewPane{header: []string{helpStyle.Render(head)}}
 
@@ -519,41 +576,32 @@ func tablePane(review *protocol.Review, width int) reviewPane {
 		if own[address] {
 			style = statusConnectedStyle
 		}
-		return fixedWidthFieldLine(shortAddress(address), nameWidth), style
+		return fixedWidthFieldLine(shortAddress(address, nameWidth), nameWidth), style
 	}
-	for i, item := range review.Items {
-		effects := item.Effects
-		if len(effects) == 0 {
-			effects = []protocol.ReviewEffect{{From: item.Sender, Text: firstLine(item.Title)}}
+	for _, row := range rows {
+		item, effect := review.Items[row.item], row.movement
+		number := reviewRowLead(row.item+1, item, row.effect == 0)
+		from, fromStyle := name(effect.From)
+		arrow, to, toStyle := "   ", strings.Repeat(" ", nameWidth), normalStyle
+		switch {
+		case effect.NewApp:
+			arrow, to, toStyle = " → ", fixedWidthFieldLine("new app", nameWidth), subtitleStyle
+		case effect.App != 0:
+			arrow, to, toStyle = " → ", fixedWidthFieldLine(fmt.Sprintf("app %d", effect.App), nameWidth), subtitleStyle
+		case effect.To != "" && effect.To != effect.From:
+			arrow = " → "
+			to, toStyle = name(effect.To)
 		}
-		for j, effect := range effects {
-			number := reviewRowLead(i+1, item, j == 0)
-			from, fromStyle := name(effect.From)
-			arrow, to, toStyle := "   ", strings.Repeat(" ", nameWidth), normalStyle
-			switch {
-			case effect.NewApp:
-				arrow, to, toStyle = " → ", fixedWidthFieldLine("new app", nameWidth), subtitleStyle
-			case effect.App != 0:
-				arrow, to, toStyle = " → ", fixedWidthFieldLine(fmt.Sprintf("app %d", effect.App), nameWidth), subtitleStyle
-			case effect.To != "" && effect.To != effect.From:
-				arrow = " → "
-				to, toStyle = name(effect.To)
-			}
-			text := effect.Text
-			if lookalikes[effect.To] || lookalikes[effect.From] {
-				text += " (looks alike)"
-			}
-			style := reviewEffectStyle(effect)
-			leadStyle := normalStyle
-			if severity := reviewItemSeverity(item); severity != "" {
-				leadStyle = reviewWarningStyle(severity)
-			}
-			pane.lines = append(pane.lines, paneLine{
-				row:   i,
-				plain: number + from + arrow + to + "  " + text,
-				spans: []paneSpan{{number, leadStyle}, {from, fromStyle}, {arrow, style}, {to, toStyle}, {"  ", normalStyle}, {text, style}},
-			})
+		style := reviewEffectStyle(effect)
+		leadStyle := normalStyle
+		if severity := reviewItemSeverity(item); severity != "" {
+			leadStyle = reviewWarningStyle(severity)
 		}
+		pane.lines = append(pane.lines, paneLine{
+			row:   row.item,
+			plain: number + from + arrow + to + "  " + row.text,
+			spans: []paneSpan{{number, leadStyle}, {from, fromStyle}, {arrow, style}, {to, toStyle}, {"  ", normalStyle}, {row.text, style}},
+		})
 	}
 	return pane
 }
