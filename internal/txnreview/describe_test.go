@@ -49,7 +49,7 @@ func TestDescribeApplicationCallTx(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn, View{})
+	desc := describeApplicationCallTx(txn, View{}).Text()
 
 	for _, want := range []string{
 		"App Call: #123 (NoOp)",
@@ -104,7 +104,7 @@ func TestDescribeApplicationCallTx_OnCompletionVariants(t *testing.T) {
 				},
 			}
 
-			desc := describeApplicationCallTx(txn, View{})
+			desc := describeApplicationCallTx(txn, View{}).Text()
 			if !strings.Contains(desc, tt.want) {
 				t.Fatalf("description missing %q:\n%s", tt.want, desc)
 			}
@@ -152,7 +152,7 @@ func TestDescribeApplicationCallTx_ShowsAllArgsAndReferences(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn, View{})
+	desc := describeApplicationCallTx(txn, View{}).Text()
 	for _, want := range []string{
 		`[2]: 0xdeadbeef`,
 		`[4]: "fifth-arg-visible"`,
@@ -197,7 +197,7 @@ func TestDescribeApplicationCallTx_ShowsProgramHashesAndSchema(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn, View{})
+	desc := describeApplicationCallTx(txn, View{}).Text()
 	for _, want := range []string{
 		"App Create (NoOp)",
 		"Approval Program: 5 bytes, sha256=" + hex.EncodeToString(approvalHash[:]),
@@ -250,7 +250,7 @@ func TestDescribeAssetConfigTx_ShowsAuthorities(t *testing.T) {
 		},
 	}
 
-	createDesc := describeAssetConfigTx(createTxn, View{})
+	createDesc := describeAssetConfigTx(createTxn, View{}).Text()
 	for _, want := range []string{
 		"Asset Creation",
 		"From: " + sender.String(),
@@ -280,7 +280,7 @@ func TestDescribeAssetConfigTx_ShowsAuthorities(t *testing.T) {
 		},
 	}
 
-	reconfigDesc := describeAssetConfigTx(reconfigTxn, View{})
+	reconfigDesc := describeAssetConfigTx(reconfigTxn, View{}).Text()
 	for _, want := range []string{
 		"Asset Reconfiguration: asset #42",
 		"From: " + sender.String(),
@@ -304,7 +304,7 @@ func TestDescribeAssetConfigTx_ShowsAuthorities(t *testing.T) {
 		},
 	}
 
-	destroyDesc := describeAssetConfigTx(destroyTxn, View{})
+	destroyDesc := describeAssetConfigTx(destroyTxn, View{}).Text()
 	if !strings.Contains(destroyDesc, "Asset Destroy: asset #42") {
 		t.Fatalf("asset destroy description missing destroy label:\n%s", destroyDesc)
 	}
@@ -333,7 +333,7 @@ func TestDescribeAssetFreezeTx_ShowsSender(t *testing.T) {
 		},
 	}
 
-	desc := describeAssetFreezeTx(txn, View{})
+	desc := describeAssetFreezeTx(txn, View{}).Text()
 	for _, want := range []string{
 		"Asset Freeze: asset #99",
 		"From: " + sender.String(),
@@ -371,7 +371,7 @@ func TestDescribeKeyRegistrationTx_ShowsParticipationDetails(t *testing.T) {
 		},
 	}
 
-	onlineDesc := describeKeyRegistrationTx(onlineTxn, View{})
+	onlineDesc := describeKeyRegistrationTx(onlineTxn, View{}).Text()
 	for _, want := range []string{
 		"Key Registration: Go ONLINE",
 		"From: " + sender.String(),
@@ -398,7 +398,7 @@ func TestDescribeKeyRegistrationTx_ShowsParticipationDetails(t *testing.T) {
 		},
 	}
 
-	nonpartDesc := describeKeyRegistrationTx(nonpartTxn, View{})
+	nonpartDesc := describeKeyRegistrationTx(nonpartTxn, View{}).Text()
 	if !strings.Contains(nonpartDesc, "Key Registration: Go NONPARTICIPATING") {
 		t.Fatalf("nonparticipation keyreg description missing nonparticipation state:\n%s", nonpartDesc)
 	}
@@ -432,7 +432,7 @@ func TestDescribeApplicationCallTx_LongOpaqueArgShowsDigest(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn, View{})
+	desc := describeApplicationCallTx(txn, View{}).Text()
 	want := "(80 bytes, sha256=" + hex.EncodeToString(sum[:]) + ")"
 	if !strings.Contains(desc, want) {
 		t.Fatalf("description missing opaque arg digest:\n%s", desc)
@@ -550,7 +550,7 @@ func TestDescribeApplicationCallTx_ShowsAccessListAndRejectVersion(t *testing.T)
 		},
 	}
 
-	desc := describeApplicationCallTx(txn, View{})
+	desc := describeApplicationCallTx(txn, View{}).Text()
 	for _, want := range []string{
 		"Access: 13",
 		"[12]: local state of ?[39] (no such entry) in app 456",
@@ -578,7 +578,7 @@ func TestDescribeApplicationCallTx_ShowsAccessListAndRejectVersion(t *testing.T)
 		ApplicationFields: types.ApplicationFields{
 			ApplicationCallTxnFields: types.ApplicationCallTxnFields{ApplicationID: 123},
 		},
-	}, View{})
+	}, View{}).Text()
 	if strings.Contains(plain, "Access") || strings.Contains(plain, "Reject Version") {
 		t.Errorf("a call with neither field mentions one:\n%s", plain)
 	}
@@ -593,7 +593,7 @@ func TestDescribeApplicationCallTx_NamesTheAppBeingCreated(t *testing.T) {
 				Access:        []types.ResourceRef{{Box: types.BoxReference{Name: []byte("vault")}}},
 			},
 		},
-	}, View{})
+	}, View{}).Text()
 	for _, want := range []string{
 		"[0]: app (the app being created) / ",
 		"[0]: box app (the app being created) / ",
