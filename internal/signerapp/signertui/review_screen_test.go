@@ -478,3 +478,38 @@ func TestReviewLanesThatDoNotFit(t *testing.T) {
 		t.Fatalf("the last transaction is not selected:\n%s", view)
 	}
 }
+
+// A lone transaction that moves something between two parties is drawn as
+// lanes too, above its fields, with nothing to select. One that touches a
+// single account has no picture, and the text view has none either.
+func TestLoneTransactionIsDrawnAsLanes(t *testing.T) {
+	for _, size := range [][2]int{{MinWidth, MinHeight}, {133, 39}} {
+		m := reviewModelForTest(t, singleReviewRequest(), true, size[0], size[1])
+		view := requireFits(t, m, size[0], size[1])
+		for _, want := range []string{"M35J…EZ6A", "Q25W…3JAE", "signs", "5000.000000 ALGO", "CLOSE: all remaining ALGO", "●─", "─►", "●═", "═►", "Transaction · signed here", "> REJECT"} {
+			if !strings.Contains(view, want) {
+				t.Fatalf("%dx%d: screen lacks %q:\n%s", size[0], size[1], want, view)
+			}
+		}
+		if strings.Contains(view, "Overview:") {
+			t.Fatalf("a lone transaction has rows to select:\n%s", view)
+		}
+		// Up and down still scroll the fields.
+		before := m.signing.viewport.YOffset
+		m = reviewKey(t, m, "down")
+		if size[1] == MinHeight && m.signing.viewport.YOffset == before {
+			t.Error("down did not scroll a lone transaction's fields")
+		}
+		m = reviewKey(t, m, "t")
+		if text := requireFits(t, m, size[0], size[1]); strings.Contains(text, "●") {
+			t.Fatalf("the text view draws the picture:\n%s", text)
+		}
+	}
+
+	optIn := singleReviewRequest()
+	optIn.Review.Items[0].Effects = []protocol.ReviewEffect{{Kind: "opt_in", From: reviewOwn, Text: "opt in to USDC"}}
+	m := reviewModelForTest(t, optIn, true, MinWidth, MinHeight)
+	if view := requireFits(t, m, MinWidth, MinHeight); strings.Contains(view, "M35J…EZ6A") || strings.Contains(view, "◎") {
+		t.Fatalf("a transaction on one account alone is drawn as lanes:\n%s", view)
+	}
+}

@@ -1102,7 +1102,9 @@ request treats it and its title, and under the list a pane with the selected
 row in full. The overview holds every warning, each account's whole address
 with what the signer holds, and what planning changed; a transaction's pane
 holds its own warnings and every field. A lone transaction has no list: one
-pane holds all of it. The list can also be drawn as a picture
+pane holds all of it, under its lanes when it moves something between two
+parties (a payment, a close, a rekey, an app call) and with no picture when
+it touches one account alone. The list can also be drawn as a picture
 (`review_picture.go`), from the review's effects and parties: lanes, one
 column per account or app with an arrow for each movement (a filled dot where
 this request signs, a dashed line for a rekey, a double line for a close), or

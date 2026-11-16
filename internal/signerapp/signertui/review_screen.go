@@ -84,8 +84,7 @@ func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailH
 		fixed++
 	}
 	rest := inner - fixed
-	if review.Group && !m.signing.review.text {
-		pane := m.reviewPaneFor(review, width)
+	if pane, ok := m.reviewUpperPane(review, width); ok {
 		// A list leaves most of the room to the detail pane; a picture
 		// takes what it needs and leaves the detail pane a few lines. One
 		// more line rules the two panes apart.
@@ -109,8 +108,7 @@ func (m *Model) refreshReview() {
 	rows := reviewRows(review)
 	m.signing.review.row = max(0, min(max(0, rows-1), m.signing.review.row))
 	width, paneHeight, detailHeight := m.reviewLayout(review)
-	if review.Group && !m.signing.review.text {
-		pane := m.reviewPaneFor(review, width)
+	if pane, ok := m.reviewUpperPane(review, width); ok && review.Group {
 		visible := max(1, paneHeight-len(pane.header))
 		first, last := -1, 0
 		for i, line := range pane.lines {
@@ -493,8 +491,7 @@ func (m Model) renderReviewScreen(review *protocol.Review) string {
 		}
 		lines = append(lines, style.Render(fixedWidthFieldLine(risk, width)))
 	}
-	if review.Group && !m.signing.review.text {
-		pane := m.reviewPaneFor(review, width)
+	if pane, ok := m.reviewUpperPane(review, width); ok {
 		lines = append(lines, m.reviewPaneLines(pane, width, paneHeight)...)
 		rule := strings.Repeat("─", width)
 		if m.signing.review.top+paneHeight-len(pane.header) < len(pane.lines) {

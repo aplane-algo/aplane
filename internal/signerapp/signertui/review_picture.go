@@ -243,7 +243,20 @@ func reviewRowLead(row int, item protocol.ReviewItem, first bool) string {
 	return fmt.Sprintf("%2d %s ", row, mark)
 }
 
-// reviewPaneFor draws the whole upper pane, every row of it.
+// reviewUpperPane is the pane above the detail pane: a group's rows, or a
+// lone transaction's picture. It reports false when there is none: the text
+// is showing, or a lone transaction touches one account alone.
+func (m Model) reviewUpperPane(review *protocol.Review, width int) (reviewPane, bool) {
+	switch {
+	case m.signing.review.text:
+		return reviewPane{}, false
+	case review.Group:
+		return m.reviewPaneFor(review, width), true
+	}
+	return singlePicture(review, width)
+}
+
+// reviewPaneFor draws the whole upper pane of a group, every row of it.
 func (m Model) reviewPaneFor(review *protocol.Review, width int) reviewPane {
 	switch m.pictureFor(review, width) {
 	case pictureLanes:
@@ -318,6 +331,30 @@ func laneMark(kind string) rune {
 // from a transaction this request signs, a hollow one from any other. When
 // not every lane fits, the arrows that leave the lanes shown end in "»".
 func lanesPane(review *protocol.Review, width int) reviewPane {
+	return drawLanes(review, width, true)
+}
+
+// singlePicture is the lanes of a lone transaction that moves something
+// between two parties: the same columns and arrows, with no rows to select.
+// A transaction that touches one account alone has no picture.
+func singlePicture(review *protocol.Review, width int) (reviewPane, bool) {
+	if review.Group || len(review.Items) != 1 {
+		return reviewPane{}, false
+	}
+	lanes := reviewLanes(review)
+	arrows := false
+	for _, effect := range review.Items[0].Effects {
+		arrows = arrows || effectTarget(lanes, 0, effect) >= 0
+	}
+	if shown, _ := lanesShown(review, lanes, width); !arrows || shown == 0 {
+		return reviewPane{}, false
+	}
+	return drawLanes(review, width, false), true
+}
+
+// drawLanes draws the lanes. rows is set for a group, whose lines are
+// numbered rows under an overview row; a lone transaction has neither.
+func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 	lanes := reviewLanes(review)
 	shown, laneWidth := lanesShown(review, lanes, width)
 	if shown == 0 {
@@ -345,7 +382,10 @@ func lanesPane(review *protocol.Review, width int) reviewPane {
 	if hidden := len(lanes) - shown; hidden > 0 {
 		names.WriteString(helpStyle.Render(fmt.Sprintf(" +%d", hidden)))
 	}
-	pane := reviewPane{header: []string{names.String(), roles.String()}, lines: []paneLine{overviewLine()}}
+	pane := reviewPane{header: []string{names.String(), roles.String()}}
+	if rows {
+		pane.lines = append(pane.lines, overviewLine())
+	}
 
 	centreOf := func(lane int) int { return lane*laneWidth + laneWidth/2 }
 	edge := shown*laneWidth - 1
@@ -416,6 +456,9 @@ func lanesPane(review *protocol.Review, width int) reviewPane {
 			}
 			text := fixedWidthFieldLine(effect.Text, effectWidth)
 			number := reviewRowLead(i+1, item, j == 0)
+			if !rows {
+				number = strings.Repeat(" ", reviewRowPrefix)
+			}
 			style := reviewEffectStyle(effect)
 
 			var styled strings.Builder
