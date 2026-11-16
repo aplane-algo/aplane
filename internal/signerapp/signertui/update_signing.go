@@ -44,6 +44,9 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if handled {
 		return m, cmd
 	}
+	if m, handled := m.handleReviewKeys(msg); handled {
+		return m, nil
+	}
 
 	// Signing-specific: viewport scrolling
 	switch msg.String() {
@@ -161,6 +164,10 @@ func (m Model) buildSigningViewportContent() string {
 
 // initSigningViewport initializes the viewport for the signing popup description
 func (m *Model) initSigningViewport(content string) {
+	if m.reviewOf() != nil {
+		m.refreshReview()
+		return
+	}
 	vpHeight, vpWidth := m.signingViewportDimensions()
 	m.signing.viewport = viewport.New(vpWidth, vpHeight)
 	m.signing.viewport.SetContent(wrapText(content, vpWidth))
@@ -168,6 +175,10 @@ func (m *Model) initSigningViewport(content string) {
 
 // resizeSigningViewport updates the viewport dimensions and reflows content after a terminal resize.
 func (m *Model) resizeSigningViewport() {
+	if m.reviewOf() != nil {
+		m.refreshReview()
+		return
+	}
 	vpHeight, vpWidth := m.signingViewportDimensions()
 	m.signing.viewport.Width = vpWidth
 	m.signing.viewport.Height = vpHeight

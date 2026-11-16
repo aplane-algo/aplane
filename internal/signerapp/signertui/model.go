@@ -144,7 +144,9 @@ type PendingSignRequest struct {
 	FirstValid  uint64
 	LastValid   uint64
 	Violations  []protocol.PolicyViolation
-	Mode        string // "dsa" (default) or "attach" for generic lsigs
+	// Review is the request as data, or nil when the signer sent only text.
+	Review *protocol.Review
+	Mode   string // "dsa" (default) or "attach" for generic lsigs
 }
 
 // PendingEnrollmentRequest holds a token provisioning request waiting for approval
@@ -191,7 +193,8 @@ type keyListState struct {
 type signingState struct {
 	request  *PendingSignRequest
 	focus    int            // 0 = approve, 1 = reject
-	viewport viewport.Model // scrollable transaction description
+	viewport viewport.Model // scrollable transaction description, or the review's detail pane
+	review   reviewState
 	// shownAt is when request became visible; approval waits
 	// approvalArmDelay after it (see handleSigningPopupKeys).
 	shownAt time.Time

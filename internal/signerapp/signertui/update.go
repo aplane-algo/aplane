@@ -243,6 +243,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.signing.request = &msg.Request
 		m.signing.shownAt = signingNow()
 		m.signing.focus = 1 // Default to reject button (safety-first)
+		m.signing.review = reviewState{}
 		// Initialize scrollable viewport with description + violations
 		m.initSigningViewport(m.buildSigningViewportContent())
 		// Continue listening for messages

@@ -1094,6 +1094,22 @@ jump to its boundaries. The popup displays its visible line range whenever it
 overflows. Views with an existing purpose-built list, editor, or approval
 viewport retain that viewport so nested scroll handlers do not compete.
 
+The signing popup draws a request from its `review` (see "Sign Request
+Review"; `internal/signerapp/signertui/review_screen.go`). A group shows a
+list, the overview row first and then one row per transaction with how the
+request treats it and its title, and under the list a pane with the selected
+row in full. The overview holds every warning, each account's whole address
+with what the signer holds, and what planning changed; a transaction's pane
+holds its own warnings and every field. A lone transaction has no list: one
+pane holds all of it. `up`/`down` select a row (or scroll a lone
+transaction's pane), `pgup`/`pgdown` scroll the pane, and `t` shows the
+request's `description`, the text apapprover prints, and brings the drawn
+review back. The drawn review adds nothing to the text: it arranges the same
+fields. A two-cell colour mark beside each full address in the overview is
+worked out from the whole address, so two addresses that share their ends
+look different; it never stands in for the address. A request that carries no
+`review` is shown as its description.
+
 Signing and client-enrollment approval popups stay in front of every other
 screen until the operator answers, apsigner withdraws the request, or the
 operator defers an enrollment popup with Esc.

@@ -43,7 +43,16 @@ func (m Model) viewFooterText() string {
 		}
 		return footer
 	case ViewSigningPopup:
-		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
+		footer := "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
+		switch review := m.reviewOf(); {
+		case review != nil && review.Group:
+			footer += " | up/down: Select | pgup/pgdown: Scroll | t: Text"
+		case review != nil:
+			footer += " | up/down: Scroll | t: Text"
+		case m.reviewAvailable():
+			footer += " | up/down: Scroll | t: Review"
+		}
+		return footer
 	case ViewClientEnrollmentPopup:
 		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r: Reject | esc: Defer"
 	case ViewBackupConfirm:
