@@ -16,6 +16,10 @@ type AliasLookup interface {
 type SignerLookup interface {
 	HasAddress(address string) bool
 	GetKeyType(address string) string
+	// IsRotating reports a rotating account the signer holds. Its current
+	// stage authorizes it, a program the signer derives and never lists, so
+	// it is signable whatever the chain shows as its auth address.
+	IsRotating(address string) bool
 }
 
 // AuthLookup provides cached authorization addresses for rekey-aware display.
@@ -27,11 +31,15 @@ type AuthLookup interface {
 func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, auth AuthLookup, authAddress string, colorFormatter ColorFormatter) string {
 	effectiveSigningAddress := address
 
-	if authAddress != "" && authAddress != address {
-		effectiveSigningAddress = authAddress
-	} else if auth != nil {
-		if cachedAuthAddr, exists := auth.GetAuthAddress(address); exists && cachedAuthAddr != "" {
-			effectiveSigningAddress = cachedAuthAddr
+	// A rotating account keeps its own key type: its stage address is in no
+	// cache.
+	if signer == nil || !signer.IsRotating(address) {
+		if authAddress != "" && authAddress != address {
+			effectiveSigningAddress = authAddress
+		} else if auth != nil {
+			if cachedAuthAddr, exists := auth.GetAuthAddress(address); exists && cachedAuthAddr != "" {
+				effectiveSigningAddress = cachedAuthAddr
+			}
 		}
 	}
 
@@ -57,9 +65,15 @@ func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, aut
 	return formatted
 }
 
+// isAccountSignable is cache.IsAccountSignable's rule over the lookups: a
+// rotating account the signer holds, or an account whose auth address (or,
+// when not rekeyed, whose own address) the signer holds.
 func isAccountSignable(address string, signer SignerLookup, auth AuthLookup) bool {
 	if signer == nil {
 		return false
+	}
+	if signer.IsRotating(address) {
+		return true
 	}
 
 	if auth != nil {

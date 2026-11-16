@@ -135,6 +135,14 @@ func (cache *SignerCache) SigningFlowForAddress(address string) string {
 	return cache.SigningFlows[address]
 }
 
+// IsRotating reports a rotating account the signer holds. A rotating account
+// is authorized by its current stage, a program the signer derives from the
+// account's own key and never lists. The signer holds the account, so it
+// signs for it at any stage, whatever the chain shows as the auth address.
+func (cache *SignerCache) IsRotating(address string) bool {
+	return cache.HasAddress(address) && cache.SigningFlowForAddress(address) == signerapi.SigningFlowRotating1
+}
+
 // SetSigningFlowForAddress stores or clears the signing choreography label
 // for an address.
 func (cache *SignerCache) SetSigningFlowForAddress(address, flow string) {
@@ -318,11 +326,7 @@ func IsAccountSignable(address string, signerCache *SignerCache, authCache *Auth
 		return false
 	}
 
-	// A rotating account is authorized by its current stage, a program the
-	// signer derives from the account's own key and never lists. The signer
-	// holds the account, so it signs for it at any stage, whatever the chain
-	// shows as the auth address.
-	if signerCache.HasAddress(address) && signerCache.SigningFlowForAddress(address) == signerapi.SigningFlowRotating1 {
+	if signerCache.IsRotating(address) {
 		return true
 	}
 

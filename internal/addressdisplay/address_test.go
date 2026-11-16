@@ -22,6 +22,16 @@ func (s testSigner) GetKeyType(address string) string {
 	return s[address]
 }
 
+func (s testSigner) IsRotating(string) bool { return false }
+
+// rotatingSigner holds the rotating accounts in rotating too.
+type rotatingSigner struct {
+	testSigner
+	rotating map[string]bool
+}
+
+func (s rotatingSigner) IsRotating(address string) bool { return s.rotating[address] }
+
 type testAuth map[string]string
 
 func (a testAuth) GetAuthAddress(address string) (string, bool) {
@@ -95,5 +105,36 @@ func TestFormatAddressNoMarkerForUnsignableAccount(t *testing.T) {
 	got := FormatAddress("ADDR1", nil, testSigner{}, nil, "", nil)
 	if got != "ADDR1" {
 		t.Fatalf("FormatAddress() = %q, want plain address without marker", got)
+	}
+}
+
+// A rotating account the signer holds is signable whatever the auth cache
+// shows: its current stage authorizes it, and the stage is in no cache. It is
+// coloured by its own key type, and marked where there is no colour.
+func TestFormatAddressMarksARotatingAccountAtAnyStage(t *testing.T) {
+	signer := rotatingSigner{testSigner{"ROT": "rotating"}, map[string]bool{"ROT": true}}
+	auth := testAuth{"ROT": "STAGE7"}
+
+	SetColorSupported(true)
+	got := FormatAddress("ROT", nil, signer, auth, "", func(keyType string) string {
+		if keyType != "rotating" {
+			t.Fatalf("color formatter key type = %q, want the account's own", keyType)
+		}
+		return "33"
+	})
+	ResetColorSupport()
+	if got != "\033[33mROT\033[0m" {
+		t.Fatalf("FormatAddress() = %q, want the account coloured", got)
+	}
+
+	SetColorSupported(false)
+	defer ResetColorSupport()
+	if got := FormatAddress("ROT", nil, signer, auth, "", nil); got != "ROT @" {
+		t.Fatalf("FormatAddress() = %q, want the signable marker", got)
+	}
+	// The same account held as an ordinary key, rekeyed to a stage it does
+	// not hold, is not signable.
+	if got := FormatAddress("ROT", nil, signer.testSigner, auth, "", nil); got != "ROT" {
+		t.Fatalf("FormatAddress() = %q, want no marker", got)
 	}
 }
