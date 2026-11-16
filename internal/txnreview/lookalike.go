@@ -37,6 +37,14 @@ func sharedEnds(a, b string) (prefix, suffix int) {
 	return prefix, suffix
 }
 
+// LookAlike reports whether two different addresses look alike: they share
+// lookalikeSharedCharacters or more characters at their two ends together.
+// apshell uses it on a recipient typed as an address.
+func LookAlike(a, b string) bool {
+	prefix, suffix := sharedEnds(a, b)
+	return a != b && prefix+suffix >= lookalikeSharedCharacters
+}
+
 // lookalikePair is two different addresses that look alike, and how many
 // characters they share at each end.
 type lookalikePair struct {

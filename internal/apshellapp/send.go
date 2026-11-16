@@ -26,6 +26,10 @@ type SendRequest struct {
 	Fee        uint64
 	UseFlatFee bool
 	LsigArgs   cmdspec.LsigArgs
+	// ConfirmLookalikes, when set, is asked before anything is signed whether
+	// to send to recipients typed as addresses that look like known accounts.
+	// Unset, the send goes on, and the result warns of them.
+	ConfirmLookalikes func([]RecipientLookalike) (bool, error)
 }
 
 // PrepareSend resolves addresses, amount metadata, and execution mode for a send command.
@@ -74,6 +78,7 @@ func (a *App) PrepareSend(_ context.Context, req SendRequest) (*SendPlan, error)
 		Mode:          mode,
 		FromAddresses: fromAddresses,
 		ToAddresses:   toAddresses,
+		Lookalikes:    a.recipientLookalikes(req.ToRaw),
 		Amount:        amount,
 		Note:          req.Note,
 		Wait:          req.Wait,
@@ -90,6 +95,15 @@ func (a *App) ExecuteSend(ctx context.Context, req SendRequest) (*SendExecutionR
 	if err != nil {
 		return nil, err
 	}
+	if len(plan.Lookalikes) > 0 && req.ConfirmLookalikes != nil {
+		send, err := req.ConfirmLookalikes(plan.Lookalikes)
+		if err != nil {
+			return nil, err
+		}
+		if !send {
+			return nil, ErrLookalikeDeclined
+		}
+	}
 
 	result := &SendExecutionResult{
 		Mode:   plan.Mode,
@@ -98,6 +112,9 @@ func (a *App) ExecuteSend(ctx context.Context, req SendRequest) (*SendExecutionR
 		Wait:   plan.Wait,
 		From:   append([]string(nil), plan.FromAddresses...),
 		To:     append([]string(nil), plan.ToAddresses...),
+	}
+	for _, lookalike := range plan.Lookalikes {
+		result.Warnings = append(result.Warnings, lookalike.Warning())
 	}
 
 	switch plan.Mode {

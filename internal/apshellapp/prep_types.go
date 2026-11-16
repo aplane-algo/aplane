@@ -203,6 +203,9 @@ type SendPlan struct {
 	UseFlatFee    bool
 	// LsigArgs is the command's arg: words resolved for its senders.
 	LsigArgs engine.LsigArgs
+	// Lookalikes are the recipients typed as addresses that look like known
+	// accounts.
+	Lookalikes []RecipientLookalike
 }
 
 // PreparedSendItem describes one prepared non-atomic send.

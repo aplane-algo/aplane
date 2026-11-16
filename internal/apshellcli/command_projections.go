@@ -327,6 +327,8 @@ type sendProjection struct {
 	SuccessCount int                  `json:"success_count,omitempty"`
 	FailureCount int                  `json:"failure_count,omitempty"`
 	Items        []sendItemProjection `json:"items,omitempty"`
+	Warnings     []string             `json:"warnings,omitempty"`
+	Cancelled    bool                 `json:"cancelled,omitempty"`
 }
 
 type sendItemProjection struct {
@@ -340,6 +342,9 @@ type sendItemProjection struct {
 
 func projectSendResult(result *apshellapp.SendExecutionResult, simulated bool) sendProjection {
 	projection := sendProjection{Mode: string(result.Mode), Amount: asa.DisplayString(result.Amount), Simulated: simulated}
+	for _, warning := range result.Warnings {
+		projection.Warnings = append(projection.Warnings, warning.Message)
+	}
 	if result.NonAtomic != nil {
 		projection.SuccessCount = result.NonAtomic.SuccessCount
 		projection.FailureCount = result.NonAtomic.FailureCount
@@ -370,6 +375,8 @@ type sweepProjection struct {
 	FailureCount int                   `json:"failure_count"`
 	LastTxID     string                `json:"last_tx_id,omitempty"`
 	Items        []sweepItemProjection `json:"items"`
+	Warnings     []string              `json:"warnings,omitempty"`
+	Cancelled    bool                  `json:"cancelled,omitempty"`
 }
 
 type sweepItemProjection struct {
@@ -386,6 +393,9 @@ func projectSweepResult(result *apshellapp.SweepCommandResult, simulated bool) s
 		Asset: result.Asset.UnitName, Destination: result.ToAddress, Simulated: simulated,
 		SuccessCount: result.SuccessCount, FailureCount: result.FailureCount,
 		LastTxID: result.LastTxID, Items: make([]sweepItemProjection, len(result.Items)),
+	}
+	for _, warning := range result.Warnings {
+		projection.Warnings = append(projection.Warnings, warning.Message)
 	}
 	for i, item := range result.Items {
 		projection.Items[i] = sweepItemProjection{

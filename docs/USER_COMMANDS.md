@@ -44,6 +44,15 @@ set that names an account more than once (an alias and its address, or a set
 and one of its members listed again) is refused, naming the account, before
 anything is sent.
 
+A receiver typed as an address apshell does not know, but that looks like one
+it does (an account the signer holds an aplane key for, or an address-book
+entry), sharing six or more characters at its two ends, is the mark of
+address poisoning: an address made to match the ends a shortened address
+shows. At the prompt apshell names both addresses in full and asks
+`Send anyway? [y/N]` before anything is signed. Without a prompt (MCP,
+scripts) the send goes on and its result carries the warning. A receiver
+named by alias or set is not checked: it names its account exactly.
+
 **Options:**
 | Option | Description |
 |--------|-------------|
@@ -83,6 +92,9 @@ For `algo`, each account sends its balance less the amount to leave, its
 transaction's fee, and the fee the signer adds for its authorization, so it is
 left with exactly that amount. The fee is the network's suggested fee, or
 `fee=`. An account with nothing left to send after those three is skipped.
+
+A destination typed as an address that looks like a known account is asked
+about, or warned of, as a [send](#send)'s receiver is.
 
 **Arguments:**
 | Argument | Description |
