@@ -583,3 +583,20 @@ func TestApproverApprovalNamesTheRequestShown(t *testing.T) {
 		t.Fatalf("rejection needed a code or became an approval: %#v", sent)
 	}
 }
+
+// A warning about a value names it; one about the request as a whole, such as
+// lookalike accounts, is its message alone, with no dangling "=".
+func TestViolationLineNamesOnlyAValue(t *testing.T) {
+	for _, tc := range []struct {
+		v    protocol.PolicyViolation
+		want string
+	}{
+		{protocol.PolicyViolation{Severity: "critical", Field: "RekeyTo", Value: "ADDR", Message: "control moves"}, "  - [CRITICAL] control moves (RekeyTo=ADDR)"},
+		{protocol.PolicyViolation{Severity: "warning", Field: "Lookalike accounts", Message: "two accounts look alike"}, "  - [WARNING] two accounts look alike"},
+		{protocol.PolicyViolation{Severity: "warning", Value: "9", Message: "odd"}, "  - [WARNING] odd (9)"},
+	} {
+		if got := violationLine(tc.v); got != tc.want {
+			t.Errorf("violationLine(%+v) = %q, want %q", tc.v, got, tc.want)
+		}
+	}
+}
