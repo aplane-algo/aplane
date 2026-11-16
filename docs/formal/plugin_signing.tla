@@ -47,7 +47,7 @@ violates PS3/PS7; removing either rekey target conjunct violates PS8).
 Validation outcomes are abstracted to booleans the standard way: the model
 checks the CHECKS and their gating, not msgpack or cryptography. Honest
 gaps (no local signature verification, fee exemption from preservation,
-self-consistent malicious groups, non-canonical encoding) are documented
+self-consistent malicious groups) are documented
 in FORMAL_PLUGIN_SIGNING_MODEL.md and deliberately not claimed here.
 
 See FORMAL_TLA_PLUGIN_SIGNING_MODEL.md for the prose companion.
@@ -128,7 +128,8 @@ Case == PregroupedCase \cup PresignCase
 ----------------------------------------------------------------------------
 (* The submission decision procedure — a transcription of the code. *)
 
-\* Pregrouped-signed (engine/plugin_pregrouped.go + apshellcli
+\* Pregrouped-signed (engine/plugin_pregrouped.go + apshellapp
+\* CheckPluginGroup, which refuses a non-interactive caller, + apshellcli
 \* reviewPregroupedSigned + apshellapp submitPregroupedSigned):
 \* decode/shape/digest validation, the rekey target refusal, then mandatory
 \* interactive review; RequiresApproval is ignored; non-interactive fails

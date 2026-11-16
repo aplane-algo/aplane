@@ -159,7 +159,7 @@ Go code implements the procedure (code-review responsibility, anchored by
 the PS traceability rows), and it does not claim anything about the honest
 gaps recorded in FORMAL_PLUGIN_SIGNING_MODEL.md (no local signature
 cryptography, the managed slots' fee exemption, self-consistent malicious
-groups, non-canonical encoding).
+groups). Canonical encoding is checked in the code and not modeled.
 
 ## Linking back
 

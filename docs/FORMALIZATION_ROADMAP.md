@@ -600,3 +600,85 @@ approval withholds the signature (a Go test pins it), and the rotating
 recovery memory's grants and allowances, keyed by the same generation, begin
 afresh after a recovery. `AGENTS.md` names `SetRecovery` in
 the `key_use_lock.tla` row.
+
+Drift review (2026-11-16, HEAD `e2377660`): range `b27b250e..e2377660` (386
+commits, 285 non-merge: the restrictions work, the transaction and Codex
+audit fixes, LogicSig argument targets, the rotating stage constant and
+Indexer lookup, and PRs #292-#294). `make formal-test` (29 runs) and `make
+formal-test-deep` (10 runs) match their recorded outcomes and metrics; all
+fifteen negative controls still fail on their named properties. The range did
+not touch the approval coordinator, session ownership, store-root commit or
+enrollment queue code (`productruntime/runtime.go` changed only outside the
+registry and queue publication; `ErrAppliedNotDurable` is still the queue's
+own, apart from the settings' `fsutil.ErrPublishedNotDurable`). `ApprovalWait`
+is still always set (60 seconds when unset, 30 seconds to 30 minutes when
+configured, not writable from apadmin). `bounded_cosigner.tla` holds: the base
+gate order, the cosigner asked only after the base components, assembly's
+receipt, base and cosigner requirements, the refused cosigner signature on a
+listed rekey, atomic output and the three A8 conjuncts are in place; the
+passthrough decode moved to `canonical.DecodeSignedTxn` with the checks in the
+same order, and `signedTxnHasSignature` now refuses a multisig with no signed
+subsignature. `plugin_signing.tla` changed in the range with its bookkeeping
+(PS8, the rekey target rule) and holds; the non-interactive refusal for a
+pregrouped-signed group moved from `reviewPregroupedSigned` into
+`CheckPluginGroup`, before rendering, and the plan check moved into
+`clientsign.ValidateOriginalPositions`. The sign boundary, policy precedence
+and composition specs are unchanged and hold: three request modes with unknown
+JSON fields now refused by the handler's decoder, the deny, review, approve,
+default order in `policyeval`, and reject before any approval in `gate.go`;
+the signer invariants (`rejectSignerInvariants`) run before policy as members
+of the always-deny class. `recovery_binding.tla` has no code movement in the
+range. `rotating_leaf_release.tla` and `key_use_lock.tla` hold against the
+code after #292 and #293, guard by guard; the Indexer lookup adds no source of
+an observed stage (its candidate is derived from the seed and accepted only
+when it equals the authorizer the worker read from algod, and the sign path
+never calls it); the `KeyUseContext` callers are the export and
+`RotatingDeps.keyUse`, the latter reached from the sign, the stage deriver and
+`treeFrontier`. Anchor sweep: every cited file, named function and named test
+in `FORMAL_TRACEABILITY.md` and the companions exists. Fixed here: row KU1
+named `lockGen` for `Lock` and `SetRecovery` (the session counter since #293,
+advanced by `TryRecovery` too); row KU2 and the key-use companion did not name
+`treeFrontier`, a registered key use; row I2 placed the mixed-mode refusal in
+`planner.go` (it is in `GroupSignRequest.Validate`); row RB2 did not name
+`direct_rollback.go`; `plugin_signing.tla` and its companion still listed
+non-canonical encoding as a gap (it is checked, and not modeled) and the spec
+comment placed the fail-closed refusal in `reviewPregroupedSigned`;
+`rotating_leaf_release.tla`'s comment on `RecoveryEndsSession` now names
+`TryRecovery`.
+
+Open, older than this range, reported and not changed here:
+
+- RB4 does not hold for one path. A restore rollback whose commit is
+  uncertain and whose root is visibly the new generation enters recovery
+  without reloading (`backupadmin/direct_rollback.go`), so the binding stays
+  on the old generation until a reconcile. Restore and policy apply reload
+  first. Signing is refused in recovery and maintenance authenticates the
+  root itself, so RB1 to RB3 are unaffected.
+- `rotating_leaf_release.tla` starts with the memory held. In the code a
+  zero-value `ReleaseMemory` is open until the stage table worker's goroutine
+  runs its first `Reset`, and a signer with a passphrase helper is unlocked
+  before that goroutine is started. The HTTP listeners start after it, so a
+  sign would have to arrive before the goroutine's first statement runs.
+- `ReconcileStore` enters recovery on a failed reconcile after the store
+  mutation lock is released; whether a stale cache can be served in that
+  interval was not established.
+- `key_use_lock.tla`'s `Unlock` needs `Wipe` done; nothing found in the lock
+  runtime stops an unlock that begins after `Lock` moved the state while
+  `performLockCleanup` is still running. Not established either way.
+
+New-surface candidates, none modeled here: the settings rule that a
+restrictive boolean is published before its save and reported unsaved
+(`admin/service.go::updateAdminSettingLocked`), a publish-then-save ordering
+no formal document mentions (new small model: the value in effect is never
+more permissive than the file's); the signer invariants before policy, of
+which the valid rekey target one judges every position, passthrough, foreign,
+contextual and dummy included (`policy_precedence.tla` or `sign_boundary.tla`:
+no group is released with a rekey to a held invalid target at any position).
+Recorded as out of model, each a single fail-closed check pinned by Go tests:
+a contextual position naming a held account is sized from the signer's
+records on `/sign/component` and stays foreign to that request
+(`ValidateFrozenComponentContext`); a transaction the network never accepts is
+refused before key lookup (`validateTransactionBounds`); the Indexer stage
+candidate, as above; the stage number is checked before any key signs
+(`stagesign.CheckStage`). The default plugin flow is still not enumerated in
+`plugin_signing.tla`, though it now shares `CheckPluginGroup` and PS8.

@@ -48,7 +48,8 @@ explicitly:
                    it.
 
   RecoveryEndsSession  a recovery ends the unlocked session (the lock
-                   generation moves in runtime.Runtime.SetRecovery), and the
+                   generation moves in runtime.Runtime.SetRecovery and
+                   TryRecovery), and the
                    memory serves only the session it was restored for
                    (ServeSession, ForLeafChoice), so the spends of the session
                    a reconcile opens wait for a restore of their own. A

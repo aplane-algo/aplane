@@ -24,7 +24,8 @@ use with `Runtime.KeyUseContext`. For a rotating seed that is every load in
 prepare and sign: the identity read (`rotatingAccount`) and each stage
 derivation (`requestDeriver`) in both, and the sign's signing window after
 approval; the stage table fill and the release restore use the same identity
-read and deriver. Every one of them opens its window through
+read and deriver, and the fill's build of the next tree (`treeFrontier`) is a
+key use of its own. Every one of them opens its window through
 `RotatingDeps.keyUse`, which refuses to open one without `KeyUse`, so none of
 them loads a seed unregistered. A lock cancels every registered key use and
 waits for each to release before it clears the session. Two holders release
