@@ -36,20 +36,6 @@ type ReviewChain struct {
 	Unavailable string `json:"unavailable,omitempty"`
 }
 
-// ReviewPartyChain is what the signer's node said of one account.
-type ReviewPartyChain struct {
-	MicroAlgos uint64 `json:"micro_algos"`
-	// Authorizer is the address the chain says signs for the account, when
-	// that is not the account itself.
-	Authorizer string `json:"authorizer,omitempty"`
-	// AuthorizerHeld is set when the signer holds an aplane key for the
-	// Authorizer.
-	AuthorizerHeld bool `json:"authorizer_held,omitempty"`
-	// OtherSigner is the key the request signs for the account with, when
-	// the chain names another.
-	OtherSigner string `json:"other_signer,omitempty"`
-}
-
 // ReviewChanges is what planning did to the request.
 type ReviewChanges struct {
 	Heading string   `json:"heading,omitempty"`
@@ -140,7 +126,12 @@ type ReviewParty struct {
 	// Lookalike is set when another account in the request looks like this
 	// one; the review's findings name both.
 	Lookalike bool `json:"lookalike,omitempty"`
-	// Chain is what the signer's node said of the account; nil where it was
-	// not read.
-	Chain *ReviewPartyChain `json:"chain,omitempty"`
+	// MicroAlgos is the balance the signer's node reported; absent where the
+	// account was not read.
+	MicroAlgos *uint64 `json:"micro_algos,omitempty"`
+	// Signable is set when the signer can sign for the account: a rotating
+	// account it holds, or one whose authorizer it holds an aplane key for
+	// (the chain's once read; until then, an account it holds or the request
+	// signs for).
+	Signable bool `json:"signable,omitempty"`
 }

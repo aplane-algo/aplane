@@ -21,9 +21,8 @@ import (
 // is still not signed and not judged by a policy here.
 //
 // The review says only what the signer knows. It knows which keys it holds. It
-// does not read the chain while it builds the review, so it doesn't know here
-// which key authorizes an account now; the account list says so once the
-// request is put to an operator (review_chain.go).
+// does not read the chain here, so it doesn't know which key authorizes an
+// account now.
 type heldPosition struct {
 	// SenderHeld is set when this signer holds the key of the position's sender.
 	SenderHeld bool

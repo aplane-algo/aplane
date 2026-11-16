@@ -9,16 +9,16 @@ import (
 )
 
 // The text prints the accounts only once the chain is read: each balance and
-// whether the account is local or foreign, a rekey, and a key the chain doesn't
-// name; and where nothing was read, why.
+// whether the signer can sign for the account; and where nothing was read,
+// why.
 func TestAccountsTextFollowsTheChainRead(t *testing.T) {
+	balance := func(v uint64) *uint64 { return &v }
 	review := Review{
 		Items: []Item{{Details: Details{Title: "Payment"}}},
 		Parties: []Party{
-			{Address: "OWN", Held: true, Signs: true, KeyType: "ed25519",
-				Chain: &PartyChain{MicroAlgos: 1_234_567_890, Authorizer: "STAGE", AuthorizerHeld: true, OtherSigner: "OWN"}},
-			{Address: "OTHER", Chain: &PartyChain{MicroAlgos: 100_000}},
-			{Address: "HELD", Held: true},
+			{Address: "OWN", Held: true, Signs: true, KeyType: "ed25519", MicroAlgos: balance(1_234_567_890), Signable: true},
+			{Address: "OTHER", MicroAlgos: balance(100_000)},
+			{Address: "HELD", Held: true, Signable: true},
 		},
 	}
 	if text := review.Text(); strings.Contains(text, "Accounts") || review.AccountsText() != "" {
@@ -28,13 +28,11 @@ func TestAccountsTextFollowsTheChainRead(t *testing.T) {
 	review.Chain = &ChainRead{Round: 77}
 	want := `--- Accounts at round 77 ---
 OWN
-  1234.567890 ALGO · local
-  rekeyed to STAGE, an address this signer holds an aplane key for
-  this request signs with OWN, a key the chain does not name for it
+  1234.567890 ALGO · signable
 OTHER
-  0.100000 ALGO · foreign
+  0.100000 ALGO · not signable
 HELD
-  balance unavailable · local
+  balance unavailable · signable
 `
 	if got := review.AccountsText(); got != want {
 		t.Fatalf("accounts:\n%s\nwant:\n%s", got, want)
@@ -49,21 +47,37 @@ HELD
 	}
 }
 
-// What the node said is escaped with the rest of the review: an error from it
-// and an address it names can't drive the operator's terminal.
+// Why the node was not read is escaped with the rest of the review, so an
+// error from it can't drive the operator's terminal, and the copy shares no
+// balance with the review it was made from.
 func TestSafeEscapesWhatTheNodeSaid(t *testing.T) {
 	hostile := "evil\x1b[2J"
-	review := Review{
-		Parties: []Party{{Address: "A", Chain: &PartyChain{Authorizer: hostile, OtherSigner: hostile}}},
-		Chain:   &ChainRead{Unavailable: hostile},
-	}
+	balance := uint64(5)
+	review := Review{Parties: []Party{{Address: "A", MicroAlgos: &balance}}, Chain: &ChainRead{Unavailable: hostile}}
 	safe := review.Safe()
-	for _, got := range []string{safe.Chain.Unavailable, safe.Parties[0].Chain.Authorizer, safe.Parties[0].Chain.OtherSigner} {
-		if strings.Contains(got, "\x1b") {
-			t.Errorf("not escaped: %q", got)
-		}
+	if strings.Contains(safe.Chain.Unavailable, "\x1b") {
+		t.Errorf("not escaped: %q", safe.Chain.Unavailable)
 	}
-	if review.Parties[0].Chain.Authorizer != hostile || review.Chain.Unavailable != hostile {
+	if review.Chain.Unavailable != hostile {
 		t.Error("Safe changed the review it was given")
+	}
+	if safe.Parties[0].MicroAlgos == review.Parties[0].MicroAlgos || *safe.Parties[0].MicroAlgos != 5 {
+		t.Errorf("safe balance = %v", safe.Parties[0].MicroAlgos)
+	}
+}
+
+// Until the chain is read, an account is signable where this signer holds an
+// aplane key for it or this request signs one of its transactions.
+func TestSetPartiesCallsAnAccountSignableByWhatTheSignerKnows(t *testing.T) {
+	review := Review{Items: []Item{
+		{Position: PositionSign, Details: Details{Sender: "REKEYED", Effects: []Effect{{Kind: EffectTransfer, From: "REKEYED", To: "PAYEE"}}}},
+		{Position: PositionForeign, Details: Details{Sender: "OTHER", Effects: []Effect{{Kind: EffectTransfer, From: "OTHER", To: "HELD"}}}},
+	}}
+	review.SetParties(func(address string) bool { return address == "HELD" }, nil)
+	want := map[string]bool{"REKEYED": true, "PAYEE": false, "OTHER": false, "HELD": true}
+	for _, p := range review.Parties {
+		if p.Signable != want[p.Address] {
+			t.Errorf("%s: signable = %t, want %t", p.Address, p.Signable, want[p.Address])
+		}
 	}
 }

@@ -297,7 +297,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			if isGroup || plan.Rotating != nil {
 				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, firstValid, lastValid, txns, forceReviewRuleID, &review)
 			}
-			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, firstValid, lastValid, forceReviewRuleID, &review)
+			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], plan, allTxns, txns, firstValid, lastValid, forceReviewRuleID, &review)
 		},
 	}, console)
 	if gateErr != nil {

@@ -45,20 +45,6 @@ type ChainRead struct {
 	Unavailable string
 }
 
-// PartyChain is what the signer's node said of one account.
-type PartyChain struct {
-	MicroAlgos uint64
-	// Authorizer is the address the chain says signs for the account, when
-	// that is not the account itself.
-	Authorizer string
-	// AuthorizerHeld is set when this signer holds an aplane key for the
-	// Authorizer.
-	AuthorizerHeld bool
-	// OtherSigner is the key this request signs for the account with, when
-	// the chain names another.
-	OtherSigner string
-}
-
 // Party is one account a request touches.
 type Party struct {
 	Address string
@@ -72,9 +58,16 @@ type Party struct {
 	// Lookalike is set when another account in the request looks like this
 	// one: the request has a finding that names both.
 	Lookalike bool
-	// Chain is what the signer's node said of the account. It is nil where
-	// the account was not read.
-	Chain *PartyChain
+	// MicroAlgos is the balance the signer's node reported for the account.
+	// It is nil where the account was not read.
+	MicroAlgos *uint64
+	// Signable is set when this signer can sign for the account, by the rule
+	// apshell's account list uses: a rotating account it holds, or an
+	// account whose authorizer it holds an aplane key for. Once the account
+	// is read that is the chain's authorizer, so an account the signer holds
+	// that was rekeyed to another key is not signable. Until then it is set
+	// for an account the signer holds or this request signs for.
+	Signable bool
 }
 
 // Position is how a request treats one of its transactions.
@@ -195,11 +188,10 @@ func (r Review) Text() string {
 	return b.String()
 }
 
-// AccountsText prints what the signer's node said of each account, every
-// line ending in a newline: its balance and whether it is local or foreign,
-// who the chain says signs for it when that is another address, and the key
-// this request signs with when the chain names another. With nothing read it
-// says why. Before the chain is read it is empty.
+// AccountsText prints each account's balance as the signer's node reported
+// it, and whether this signer can sign for the account, every line ending in a
+// newline. With nothing read it says why. Before the chain is read it is
+// empty.
 func (r Review) AccountsText() string {
 	if r.Chain == nil {
 		return ""
@@ -210,44 +202,21 @@ func (r Review) AccountsText() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "--- Accounts at round %d ---\n", r.Chain.Round)
 	for _, p := range r.Parties {
-		b.WriteString(p.Address + "\n")
-		for _, line := range p.ChainLines() {
-			b.WriteString("  " + line + "\n")
+		balance := "balance unavailable"
+		if p.MicroAlgos != nil {
+			balance = asaset.FormatFixed(*p.MicroAlgos, 6) + " ALGO"
 		}
+		b.WriteString(p.Address + "\n  " + balance + " · " + p.Standing() + "\n")
 	}
 	return b.String()
 }
 
-// ChainLines are the lines under a party's address once the chain is read.
-func (p Party) ChainLines() []string {
-	balance := "balance unavailable"
-	if p.Chain != nil {
-		balance = asaset.FormatFixed(p.Chain.MicroAlgos, 6) + " ALGO"
-	}
-	lines := []string{balance + " · " + p.Standing()}
-	if p.Chain == nil {
-		return lines
-	}
-	if p.Chain.Authorizer != "" {
-		line := "rekeyed to " + p.Chain.Authorizer
-		if p.Chain.AuthorizerHeld {
-			line += ", an address this signer holds an aplane key for"
-		}
-		lines = append(lines, line)
-	}
-	if p.Chain.OtherSigner != "" {
-		lines = append(lines, "this request signs with "+p.Chain.OtherSigner+", a key the chain does not name for it")
-	}
-	return lines
-}
-
-// Standing is local where this signer holds an aplane key for the account,
-// foreign where it holds none.
+// Standing says whether this signer can sign for the account.
 func (p Party) Standing() string {
-	if p.Held {
-		return "local"
+	if p.Signable {
+		return "signable"
 	}
-	return "foreign"
+	return "not signable"
 }
 
 // SetParties lists the accounts the items' effects name, in order of first
@@ -284,6 +253,9 @@ func (r *Review) SetParties(held func(address string) bool, signerKeyType func(i
 		if signerKeyType != nil && p.KeyType == "" {
 			p.KeyType = signerKeyType(i)
 		}
+	}
+	for i := range r.Parties {
+		r.Parties[i].Signable = r.Parties[i].Held || r.Parties[i].Signs
 	}
 }
 
@@ -341,10 +313,9 @@ func (r Review) Safe() Review {
 	}
 	for _, p := range r.Parties {
 		p.Address, p.KeyType = line(p.Address), line(p.KeyType)
-		if p.Chain != nil {
-			chain := *p.Chain
-			chain.Authorizer, chain.OtherSigner = line(chain.Authorizer), line(chain.OtherSigner)
-			p.Chain = &chain
+		if p.MicroAlgos != nil {
+			balance := *p.MicroAlgos
+			p.MicroAlgos = &balance
 		}
 		safe.Parties = append(safe.Parties, p)
 	}

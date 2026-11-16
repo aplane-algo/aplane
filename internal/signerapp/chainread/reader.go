@@ -4,8 +4,8 @@
 // Package chainread gives the signer its own view of chain state: an
 // account's on-chain authorizer, for the rotating signing flow; an asset's
 // parameters, for an operator confirming it into the node's ASA set; and the
-// balance and authorizer of each account a sign request touches, for the
-// review an operator is asked to approve. /plan never reads the chain. /sign
+// balance of each account a sign request touches, for the review an operator
+// is asked to approve. /plan never reads the chain. /sign
 // reads it for a rotating spend, and for a review only once the request is to
 // be put to an operator; what it reads there is shown and decides nothing.
 //

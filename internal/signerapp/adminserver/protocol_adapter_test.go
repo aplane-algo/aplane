@@ -183,6 +183,7 @@ func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
 // A sign request's review reaches the wire whole, and a request without one
 // carries none.
 func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
+	balance, wantBalance := uint64(9), uint64(9)
 	review := &txnreview.Review{
 		Group:   true,
 		Banners: []string{"banner"},
@@ -199,9 +200,8 @@ func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
 			},
 			Findings: []txnreview.Finding{{Field: "F", Value: "V", Critical: true, Message: "M"}, {Field: "G"}},
 		}},
-		Parties: []txnreview.Party{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true,
-			Chain: &txnreview.PartyChain{MicroAlgos: 9, Authorizer: "Q", AuthorizerHeld: true, OtherSigner: "K"}}},
-		Chain: &txnreview.ChainRead{Round: 77, Unavailable: "why"},
+		Parties: []txnreview.Party{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true, MicroAlgos: &balance, Signable: true}},
+		Chain:   &txnreview.ChainRead{Round: 77, Unavailable: "why"},
 	}
 	got := ProtocolSignRequestMessage(signerapproval.SignRequest{ID: "apv-1", Review: review}).Review
 	want := &protocol.Review{
@@ -220,9 +220,8 @@ func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
 			Effects:  []protocol.ReviewEffect{{Kind: "clawback", From: "A", To: "B", Authority: "S", App: 7, NewApp: true, Text: "text", Severity: protocol.ReviewSeverityCaution}},
 			Findings: []protocol.PolicyViolation{{Field: "F", Value: "V", Severity: "critical", Message: "M"}, {Field: "G", Severity: "warning"}},
 		}},
-		Parties: []protocol.ReviewParty{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true,
-			Chain: &protocol.ReviewPartyChain{MicroAlgos: 9, Authorizer: "Q", AuthorizerHeld: true, OtherSigner: "K"}}},
-		Chain: &protocol.ReviewChain{Round: 77, Unavailable: "why"},
+		Parties: []protocol.ReviewParty{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true, MicroAlgos: &wantBalance, Signable: true}},
+		Chain:   &protocol.ReviewChain{Round: 77, Unavailable: "why"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("review on the wire:\n%+v\nwant:\n%+v", got, want)

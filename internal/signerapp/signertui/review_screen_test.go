@@ -65,7 +65,7 @@ func groupReviewRequest() *PendingSignRequest {
 			Changes: protocol.ReviewChanges{Heading: "[MODIFIED BY SERVER]", Lines: []string{"Added 1 dummy transaction(s) for LogicSig arguments/opcode budget", "Group ID recomputed"}, Dummies: 1},
 			Items:   []protocol.ReviewItem{reviewPayment(reviewOther), second, foreign},
 			Parties: []protocol.ReviewParty{
-				{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024"},
+				{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024", Signable: true},
 				{Address: reviewOther, Lookalike: true}, {Address: reviewThird, Lookalike: true},
 			},
 			Findings: []protocol.PolicyViolation{lookalike},
@@ -87,7 +87,7 @@ func singleReviewRequest() *PendingSignRequest {
 		Review: &protocol.Review{
 			Version: protocol.ReviewVersion,
 			Items:   []protocol.ReviewItem{item},
-			Parties: []protocol.ReviewParty{{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024"}, {Address: reviewOther}},
+			Parties: []protocol.ReviewParty{{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024", Signable: true}, {Address: reviewOther}},
 		},
 	}
 }
@@ -203,7 +203,7 @@ func TestReviewDetailEndsWithTheRequest(t *testing.T) {
 	for _, want := range []string{
 		"⚠ WARNING: Lookalike accounts",
 		reviewOwn, reviewOther, reviewThird,
-		"\n       local", "\n       foreign",
+		"\n       signable", "\n       not signable",
 		"[MULTI-PARTY: 2 to sign, 1 foreign (not signing)]",
 		"[MODIFIED BY SERVER]",
 		"• Group ID recomputed",
@@ -738,8 +738,8 @@ func heldRekeyRequest() *PendingSignRequest {
 	request.Violations = []protocol.PolicyViolation{groupNotice}
 	request.Review.Findings = nil
 	request.Review.Parties = []protocol.ReviewParty{
-		{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024"},
-		{Address: reviewOther}, {Address: reviewThird, Held: true},
+		{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024", Signable: true},
+		{Address: reviewOther}, {Address: reviewThird, Held: true, Signable: true},
 	}
 	return request
 }
@@ -816,46 +816,72 @@ func fittingDetail(t *testing.T, m Model, width, height int) string {
 	return strings.Join(seen, "\n")
 }
 
-// Each account says whether it is local or foreign. Once the signer has read
-// the chain, each says its balance too, a rekeyed account names who signs for
-// it now, and a key the chain doesn't name for it is called out. Where
-// nothing was read, the list says why.
+// Each account says whether the signer can sign for it. Once the signer has read
+// the chain, each says its balance too. Where nothing was read, the list
+// says why.
 func TestReviewAccountsShowWhatTheNodeSaid(t *testing.T) {
-	stage := strings.Repeat("S", 58)
+	balance := func(v uint64) *uint64 { return &v }
 	read := groupReviewRequest()
 	read.Review.Chain = &protocol.ReviewChain{Round: 77}
-	read.Review.Parties[0].Chain = &protocol.ReviewPartyChain{MicroAlgos: 1_234_567_890, Authorizer: stage, AuthorizerHeld: true, OtherSigner: reviewOwn}
-	read.Review.Parties[1].Chain = &protocol.ReviewPartyChain{MicroAlgos: 100_000}
+	read.Review.Parties[0].MicroAlgos = balance(1_234_567_890)
+	read.Review.Parties[1].MicroAlgos = balance(100_000)
 
 	unread := groupReviewRequest()
 	unread.Review.Chain = &protocol.ReviewChain{Unavailable: "no algod is configured for network testnet"}
 
 	for _, size := range [][2]int{{MinWidth, MinHeight}, {133, 39}} {
 		detail := fittingDetail(t, reviewModelForTest(t, read, true, size[0], size[1]), size[0], size[1])
-		for _, want := range []string{
-			"Accounts · round 77",
-			"1234.567890 ALGO · local",
-			"rekeyed to an address this signer holds an aplane key for:",
-			stage,
-			"this request signs with a key the chain does not name for it",
-			"0.100000 ALGO · foreign",
-			"balance unavailable · foreign",
-		} {
+		for _, want := range []string{"Accounts · round 77", "1234.567890 ALGO · signable", "0.100000 ALGO · not signable", "balance unavailable · not signable"} {
 			if !strings.Contains(detail, want) {
 				t.Errorf("%dx%d: the accounts lack %q:\n%s", size[0], size[1], want, detail)
 			}
 		}
-		for _, gone := range []string{"signed here with its", "this request signs for it", "holds its aplane key"} {
+		for _, gone := range []string{"signed here with its", "this request signs for it", "holds its aplane key", "rekeyed to"} {
 			if strings.Contains(detail, gone) {
 				t.Errorf("%dx%d: the accounts still say %q:\n%s", size[0], size[1], gone, detail)
 			}
 		}
 
 		detail = fittingDetail(t, reviewModelForTest(t, unread, true, size[0], size[1]), size[0], size[1])
-		for _, want := range []string{"Balances unavailable: no algod is configured for network testnet", "\n       local", "\n       foreign"} {
+		for _, want := range []string{"Balances unavailable: no algod is configured for network testnet", "\n       signable", "\n       not signable"} {
 			if !strings.Contains(detail, want) {
 				t.Errorf("%dx%d: the unread accounts lack %q:\n%s", size[0], size[1], want, detail)
 			}
 		}
+	}
+}
+
+// A lane's role says whether the signer can sign for the account, as the
+// account list does: an account rekeyed to a key the signer holds is
+// signable, and one it holds that was rekeyed away is not. Signable accounts
+// come first, beside the one this request signs for.
+func TestReviewLanesSayWhichAccountsAreSignable(t *testing.T) {
+	request := groupReviewRequest()
+	request.Review.Parties = []protocol.ReviewParty{
+		{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024", Signable: true},
+		{Address: reviewThird, Held: true},
+		{Address: reviewOther, Signable: true},
+	}
+	m := reviewModelForTest(t, request, true, 133, 39)
+	if pictureOf(t, m) != pictureLanes {
+		t.Fatal("the group is not drawn as lanes")
+	}
+	view := requireFits(t, m, 133, 39)
+	var names, roles string
+	for i, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, addressEnds(reviewOwn, 10)) {
+			names, roles = line, strings.Split(view, "\n")[i+1]
+			break
+		}
+	}
+	if strings.Count(roles, "signable") != 1 || !strings.Contains(roles, "signs") || strings.Contains(roles, "yours") {
+		t.Fatalf("roles = %q", roles)
+	}
+	other, third := strings.Index(names, addressEnds(reviewOther, 10)), strings.Index(names, addressEnds(reviewThird, 10))
+	if other < 0 || third < 0 || other > third {
+		t.Fatalf("the signable account does not come before the one rekeyed away: %q", names)
+	}
+	if at := strings.Index(roles, "signable"); at < other-2 || at > third {
+		t.Fatalf("signable is not under the signable account: %q\n%q", names, roles)
 	}
 }

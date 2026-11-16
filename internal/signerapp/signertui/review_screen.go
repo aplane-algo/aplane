@@ -459,9 +459,8 @@ func reviewViolations(title string, violations []protocol.PolicyViolation, notic
 }
 
 // reviewAccounts lists the accounts the request touches, each address in
-// full, and says which are local, the signer holding an aplane key for them,
-// and which foreign. Once the signer has read them from its node, each says
-// its balance and, where the chain names another address, who signs for it.
+// full, and says which the signer can sign for. Once the signer has read them from its node, each says
+// its balance too.
 func reviewAccounts(review *protocol.Review) []reviewLine {
 	if len(review.Parties) == 0 {
 		return nil
@@ -477,50 +476,30 @@ func reviewAccounts(review *protocol.Review) []reviewLine {
 		lines = append(lines, reviewLine{text: "  Balances unavailable: " + chain.Unavailable, style: helpStyle})
 	}
 	for _, party := range review.Parties {
-		lines = append(lines, partyAddressLine(party.Address, party.Held, "  "))
+		style := normalStyle
+		if party.Signable {
+			style = statusConnectedStyle
+		}
+		lines = append(lines, reviewLine{fixed: "  " + addressChip(party.Address) + " " + style.Render(party.Address)})
 		if !read {
 			lines = append(lines, reviewLine{text: "       " + partyStanding(party), style: helpStyle})
 			continue
 		}
 		balance := "balance unavailable"
-		if party.Chain != nil {
-			balance = asaset.FormatFixed(party.Chain.MicroAlgos, 6) + " ALGO"
+		if party.MicroAlgos != nil {
+			balance = asaset.FormatFixed(*party.MicroAlgos, 6) + " ALGO"
 		}
 		lines = append(lines, reviewLine{text: "       " + balance + " · " + partyStanding(party), style: normalStyle})
-		if party.Chain == nil {
-			continue
-		}
-		if authorizer := party.Chain.Authorizer; authorizer != "" {
-			words := "rekeyed to:"
-			if party.Chain.AuthorizerHeld {
-				words = "rekeyed to an address this signer holds an aplane key for:"
-			}
-			lines = append(lines, reviewLine{text: "       " + words, style: helpStyle}, partyAddressLine(authorizer, party.Chain.AuthorizerHeld, "         "))
-		}
-		if party.Chain.OtherSigner != "" {
-			lines = append(lines, reviewLine{text: "       this request signs with a key the chain does not name for it", style: warningStyle})
-		}
 	}
 	return lines
 }
 
-// partyAddressLine is an address in full after its mark, in the colour of
-// the signer's own where it holds an aplane key for it.
-func partyAddressLine(address string, local bool, indent string) reviewLine {
-	style := normalStyle
-	if local {
-		style = statusConnectedStyle
-	}
-	return reviewLine{fixed: indent + addressChip(address) + " " + style.Render(address)}
-}
-
-// partyStanding is local where the signer holds an aplane key for the
-// account, foreign where it holds none.
+// partyStanding says whether the signer can sign for the account.
 func partyStanding(party protocol.ReviewParty) string {
-	if party.Held {
-		return "local"
+	if party.Signable {
+		return "signable"
 	}
-	return "foreign"
+	return "not signable"
 }
 
 // reviewRequest says how the request is made up and what planning did to it.

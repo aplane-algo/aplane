@@ -17,7 +17,6 @@ import (
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
-	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -105,20 +104,18 @@ func paymentReview(own, other types.Address, group bool) (signerapi.GroupSignReq
 	return req, plan
 }
 
-// The prompt says what the signer's node says of each account: its balance,
-// who the chain says signs for it where that is another address, whether the
-// signer holds that one, and where this request signs with a key the chain
-// does not name. The text says the same as the review.
-func TestPromptSaysWhatTheNodeSaysOfEachAccount(t *testing.T) {
-	own, other, stage := reviewTestAddr(1), reviewTestAddr(2), reviewTestAddr(4)
+// The prompt carries each account's balance as the signer's node reports it,
+// read once from the node the request's genesis hash names, and the text
+// says the same as the review.
+func TestPromptCarriesEachAccountsBalance(t *testing.T) {
+	own, other := reviewTestAddr(1), reviewTestAddr(2)
 	for _, group := range []bool{false, true} {
 		req, plan := paymentReview(own, other, group)
 		chain := &fakeReviewChain{view: chainread.AccountsView{Round: 77, Accounts: map[types.Address]chainread.AccountView{
-			own:   {Authorizer: stage, Round: 77, MicroAlgos: 1_234_567_890},
+			own:   {Authorizer: own, Round: 77, MicroAlgos: 1_234_567_890},
 			other: {Authorizer: other, Round: 78, MicroAlgos: 100_000},
 		}}}
-		prompt := chainReviewCase{req: req, plan: plan, chain: chain,
-			known: map[string]bool{own.String(): true, stage.String(): true}}.prompt(t)
+		prompt := chainReviewCase{req: req, plan: plan, chain: chain, known: map[string]bool{own.String(): true}}.prompt(t)
 		if prompt == nil || prompt.Review == nil {
 			t.Fatalf("group %t: no prompt", group)
 		}
@@ -129,22 +126,13 @@ func TestPromptSaysWhatTheNodeSaysOfEachAccount(t *testing.T) {
 		if review.Chain == nil || review.Chain.Round != 77 || review.Chain.Unavailable != "" {
 			t.Fatalf("group %t: chain = %+v", group, review.Chain)
 		}
-		want := map[string]txnreview.PartyChain{
-			own.String():   {MicroAlgos: 1_234_567_890, Authorizer: stage.String(), AuthorizerHeld: true, OtherSigner: own.String()},
-			other.String(): {MicroAlgos: 100_000},
-		}
+		want := map[string]uint64{own.String(): 1_234_567_890, other.String(): 100_000}
 		for _, party := range review.Parties {
-			if party.Chain == nil || *party.Chain != want[party.Address] {
-				t.Errorf("group %t: %s chain = %+v, want %+v", group, party.Address[:6], party.Chain, want[party.Address])
+			if party.MicroAlgos == nil || *party.MicroAlgos != want[party.Address] {
+				t.Errorf("group %t: %s balance = %v, want %d", group, party.Address[:6], party.MicroAlgos, want[party.Address])
 			}
 		}
-		for _, line := range []string{
-			"--- Accounts at round 77 ---",
-			"1234.567890 ALGO · local",
-			"rekeyed to " + stage.String() + ", an address this signer holds an aplane key for",
-			"this request signs with " + own.String() + ", a key the chain does not name for it",
-			"0.100000 ALGO · foreign",
-		} {
+		for _, line := range []string{"--- Accounts at round 77 ---", "1234.567890 ALGO · signable", "0.100000 ALGO · not signable"} {
 			if !strings.Contains(prompt.Description, line) {
 				t.Errorf("group %t: the text lacks %q:\n%s", group, line, prompt.Description)
 			}
@@ -201,81 +189,64 @@ func TestAFailedReadStillPrompts(t *testing.T) {
 			t.Errorf("%s: the text does not say why:\n%s", name, prompt.Description)
 		}
 		for _, party := range prompt.Review.Parties {
-			if party.Chain != nil {
+			if party.MicroAlgos != nil {
 				t.Errorf("%s: %s has a balance", name, party.Address[:6])
 			}
 		}
 	}
 }
 
-// Each transaction this request signs is held to its sender's authorizer
-// when it runs: the chain's, as the request's earlier rekeys leave it. A
-// transaction signed with the key an earlier one rekeyed the account to is
-// not called out; the rekeying transaction signed with that key already is.
-func TestEachSignedTransactionIsHeldToTheAuthorizerWhenItRuns(t *testing.T) {
-	own, other, next := reviewTestAddr(1), reviewTestAddr(2), reviewTestAddr(5)
-	allowRekeys := &policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysAllow}
-	for _, tc := range []struct {
-		name        string
-		firstSigner types.Address
-		want        string
-	}{
-		{"the rekey signed with the chain's key", own, ""},
-		{"the rekey signed with the new key", next, next.String()},
-	} {
-		req, plan := paymentReview(own, other, true)
-		plan.AllTxns[0].RekeyTo = next
-		req.Requests[0].AuthAddress = tc.firstSigner.String()
-		req.Requests[1].AuthAddress = next.String()
-		chain := &fakeReviewChain{view: chainread.AccountsView{Round: 5, Accounts: map[types.Address]chainread.AccountView{
-			own: {Authorizer: own, Round: 5},
+// Once the chain is read, an account is signable by apshell's rule: a
+// rotating account the signer holds at any stage, any other account only
+// where the signer holds an aplane key for the authorizer the chain names. A
+// sender or payee rekeyed to a held key is signable; an account the signer
+// holds that was rekeyed to another key is not. Until the chain is read, a
+// sender this request signs for is signable.
+func TestSignableFollowsApshellsRule(t *testing.T) {
+	rekeyed, payee, auth, stranger := reviewTestAddr(1), reviewTestAddr(2), reviewTestAddr(6), reviewTestAddr(7)
+	view := func(payeeAuthorizer types.Address) *fakeReviewChain {
+		return &fakeReviewChain{view: chainread.AccountsView{Round: 9, Accounts: map[types.Address]chainread.AccountView{
+			rekeyed: {Authorizer: auth, Round: 9, MicroAlgos: 1},
+			payee:   {Authorizer: payeeAuthorizer, Round: 9, MicroAlgos: 2},
 		}}}
-		prompt := chainReviewCase{req: req, plan: plan, chain: chain, cfg: allowRekeys,
-			known: map[string]bool{own.String(): true, next.String(): true}}.prompt(t)
+	}
+	for name, tc := range map[string]struct {
+		chain     *fakeReviewChain
+		payeeHeld bool
+		rotating  bool
+		want      bool // the payee's
+	}{
+		"payee rekeyed to a held key":        {chain: view(auth), want: true},
+		"payee held, rekeyed to another":     {chain: view(stranger), payeeHeld: true, want: false},
+		"payee held, not rekeyed":            {chain: view(payee), payeeHeld: true, want: true},
+		"payee rotating, at a later stage":   {chain: view(stranger), payeeHeld: true, rotating: true, want: true},
+		"unread, payee not held":             {chain: &fakeReviewChain{err: fmt.Errorf("%w: no algod is configured for network testnet", chainread.ErrUnavailable)}, want: false},
+		"unread, payee held, rekeyed or not": {chain: &fakeReviewChain{err: fmt.Errorf("%w: no algod is configured for network testnet", chainread.ErrUnavailable)}, payeeHeld: true, want: true},
+	} {
+		req, plan := paymentReview(rekeyed, payee, true)
+		for i := range req.Requests {
+			req.Requests[i].AuthAddress = auth.String()
+		}
+		known := map[string]bool{auth.String(): true}
+		if tc.payeeHeld {
+			known[payee.String()] = true
+		}
+		if tc.rotating {
+			plan.RotatingAddresses = map[string]bool{payee.String(): true}
+		}
+		plan.KnownAddresses = known
+		prompt := chainReviewCase{req: req, plan: plan, chain: tc.chain, known: known}.prompt(t)
 		if prompt == nil {
-			t.Fatalf("%s: no prompt", tc.name)
+			t.Fatalf("%s: no prompt", name)
 		}
 		for _, party := range prompt.Review.Parties {
-			if party.Address == own.String() && (party.Chain == nil || party.Chain.OtherSigner != tc.want) {
-				t.Errorf("%s: own chain = %+v, want other signer %q", tc.name, party.Chain, tc.want)
+			want := tc.want
+			if party.Address == rekeyed.String() {
+				want = true // rekeyed to a held key, and signed here
+			}
+			if party.Signable != want {
+				t.Errorf("%s: %s signable %t, want %t", name, party.Address[:6], party.Signable, want)
 			}
 		}
-	}
-}
-
-// Only a transaction the review says this request signs is held to its
-// sender's authorizer, and any transaction's rekey moves the authorizer on.
-func TestOtherSignersFollowTheReviewsPositions(t *testing.T) {
-	own, next := reviewTestAddr(1), reviewTestAddr(5)
-	rekey := txnreview.Effect{Kind: txnreview.EffectRekey, From: own.String(), To: next.String()}
-	view := chainread.AccountsView{Accounts: map[types.Address]chainread.AccountView{own: {Authorizer: own}}}
-	items := []txnreview.Item{
-		{Position: txnreview.PositionPassthrough, Details: txnreview.Details{Sender: own.String(), Effects: []txnreview.Effect{rekey}}},
-		{Position: txnreview.PositionSign, Details: txnreview.Details{Sender: own.String()}},
-	}
-	if got := otherSigners(items, view, []string{next.String(), next.String()}); len(got) != 0 {
-		t.Errorf("after a passthrough's rekey: %v", got)
-	}
-	items[0].Details.Effects = nil
-	if got := otherSigners(items, view, []string{next.String(), next.String()}); got[own.String()] != next.String() || len(got) != 1 {
-		t.Errorf("with no rekey: %v", got)
-	}
-}
-
-// The key a request signs each transaction with is its auth address, or the
-// sender; a transaction this request doesn't sign has none, and a rotating
-// spend none at all.
-func TestSignersOf(t *testing.T) {
-	a, b, c := reviewTestAddr(1), reviewTestAddr(2), reviewTestAddr(3)
-	txns := []types.Transaction{{}, {}, {}}
-	txns[0].Sender, txns[1].Sender, txns[2].Sender = a, b, c
-	requests := []signerapi.SignRequest{{AuthAddress: c.String()}, {}, {AuthAddress: a.String()}}
-	plan := &PlanResult{ForeignIndices: map[int]bool{2: true}, PassthroughIndices: map[int]bool{}}
-	if got := signersOf(requests, txns, plan); strings.Join(got, ",") != c.String()+","+b.String()+"," {
-		t.Errorf("signers = %v", got)
-	}
-	plan.Rotating = &rotatingPlanItem{}
-	if got := signersOf(requests, txns, plan); got != nil {
-		t.Errorf("a rotating spend's signers = %v", got)
 	}
 }

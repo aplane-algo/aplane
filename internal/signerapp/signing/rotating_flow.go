@@ -485,6 +485,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		NeedsRegroup:         len(allTxns) > 1,
 		AuthKeyTypes:         []string{snapshot.KeyTypes[req.Account]},
 		KnownAddresses:       known,
+		RotatingAddresses:    rotatingAddressesFromSnapshot(snapshot),
 		InvalidRekeyTargets:  invalidRekeyTargetsForGroup(snapshot, allTxns),
 		ProtocolRekeyTargets: protocolRekeys,
 		Rotating:             item,

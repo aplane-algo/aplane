@@ -113,10 +113,9 @@ func (r *Review) terminalSafe() *Review {
 	}
 	for i, p := range r.Parties {
 		p.Address, p.KeyType = termsafe.Line(p.Address), termsafe.Line(p.KeyType)
-		if p.Chain != nil {
-			chain := *p.Chain
-			chain.Authorizer, chain.OtherSigner = termsafe.Line(chain.Authorizer), termsafe.Line(chain.OtherSigner)
-			p.Chain = &chain
+		if p.MicroAlgos != nil {
+			balance := *p.MicroAlgos
+			p.MicroAlgos = &balance
 		}
 		safe.Parties[i] = p
 	}

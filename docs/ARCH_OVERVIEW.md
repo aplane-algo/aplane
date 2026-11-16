@@ -86,8 +86,8 @@ grant access to keys held by `apsigner`.
 The signer is a separate custody boundary, not necessarily an offline machine.
 It can use configured algod endpoints for functions such as TEAL compilation,
 rotating signing requires its own fresh chain reads, and a request put to an
-operator shows each account's balance and authorizer from the signer's node,
-for display only. Network access and
+operator shows each account's balance from the signer's node, for display
+only. Network access and
 which host owns key material are separate deployment decisions.
 
 ### Following an ordinary transaction

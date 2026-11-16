@@ -33,10 +33,9 @@ func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.Rotati
 
 // chainReader reads chain state from the node configured for each network:
 // rotating accounts' authorizers; assets an operator confirms into the ASA
-// set; the balances and authorizers a sign request's review shows its
-// operator; and, where an Indexer is configured, a rotating account's last
-// rekey, for the stage its search tries first. It is the one place the
-// signer reads the chain.
+// set; the balances a sign request's review shows its operator; and, where
+// an Indexer is configured, a rotating account's last rekey, for the stage
+// its search tries first. It is the one place the signer reads the chain.
 func (fs *Signer) chainReader() chainread.Reader {
 	makeClient := fs.makeAlgod
 	if makeClient == nil {

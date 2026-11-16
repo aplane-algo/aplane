@@ -498,12 +498,13 @@ loses nothing but the structure.
   `address`, `held` (the signer holds an aplane key for it), `signs` (this
   request signs a transaction it sends), `key_type` of the key that signs
   for it, and `lookalike` when a finding of the review says another account
-  in the request looks like it. Once the signer has read the account from
-  its node, `chain`: `micro_algos`, `authorizer` where the chain names
-  another address, `authorizer_held` where the signer holds an aplane key
-  for that one, and `other_signer`, the key this request signs a transaction
-  of the account with where that is not the account's authorizer when the
-  transaction runs.
+  in the request looks like it. `signable` is set when the signer can sign
+  for the account, by the rule apshell's account list uses: a rotating
+  account it holds, or an account whose authorizer it holds an aplane key
+  for. Once the signer has read the account that is the chain's authorizer;
+  until then it is set for an account the signer holds or the request signs
+  for. Once the signer has read the account from its node, `micro_algos`,
+  its balance.
 - `findings`: warnings about the request as a whole, in the shape of
   `violations`: two different accounts in the request that look alike. The
   message's `violations` carry them after the transactions' own.
@@ -1119,10 +1120,12 @@ list, one row per transaction with how the request treats it and its title,
 the first selected, and under the list a pane with the selected transaction
 in full: every field, then its own warnings, naming the signing key only
 where it is not the sender. The pane ends with what is about the request as a
-whole: its warnings and notes, each account's whole address, local (the
-signer holds an aplane key for it) or foreign (and, once the signer has read
-its node, the round, each balance, who the chain says signs for a rekeyed account, and a key this
-request signs with that the chain does not name), and what planning changed. A lone transaction has no list: one
+whole: its warnings and notes, each account's whole address, signable or not
+signable (and, once the signer has read its node, the round and each
+balance), and what planning changed. Signable is apshell's word and rule
+(`cache.IsAccountSignable`): an account rekeyed to a held key is signable,
+and one the signer holds that was rekeyed to another key is not. A lone
+transaction has no list: one
 pane holds all of it, in the same order, under its lanes when it moves something between two
 parties (a payment, a close, a rekey, an app call) and with no picture when
 it touches one account alone. The list can also be drawn as a picture

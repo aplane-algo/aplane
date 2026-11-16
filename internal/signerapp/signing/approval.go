@@ -92,6 +92,15 @@ func (s *ApprovalService) planKnownAddresses(plan *PlanResult) map[string]bool {
 	return s.KnownAddresses()
 }
 
+// planRotatingAddresses is the plan's rotating accounts, or none without a
+// plan.
+func planRotatingAddresses(plan *PlanResult) map[string]bool {
+	if plan == nil {
+		return nil
+	}
+	return plan.RotatingAddresses
+}
+
 func (s *ApprovalService) userAutoApprove() bool {
 	if s == nil || s.UserAutoApprove == nil {
 		return false
@@ -623,7 +632,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 		}
 	}
 
-	s.addChainState(ctx, review, txns[0].GenesisHash[:], s.planKnownAddresses(plan), signersOf(req.Requests, txns, plan))
+	s.addChainState(ctx, review, txns[0].GenesisHash[:], s.planKnownAddresses(plan), planRotatingAddresses(plan))
 
 	// A direct caller may supply no ID; the prompt is never held under an
 	// empty one.
@@ -677,7 +686,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 // request's completed review (ApprovalService.review): the prompt's text and
 // warnings are its own, what planning changed shown above the transaction as
 // the group prompt shows it.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, firstValid, lastValid uint64, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, plan *PlanResult, allTxns, txns []types.Transaction, firstValid, lastValid uint64, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
 	txnApproved := false
 	approvalReason := ""
@@ -711,7 +720,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return forbidden("transaction approval blocked: " + reason)
 	}
 
-	s.addChainState(ctx, review, txns[0].GenesisHash[:], s.planKnownAddresses(nil), signersOf([]signerapi.SignRequest{txReq}, txns, nil))
+	s.addChainState(ctx, review, txns[0].GenesisHash[:], s.planKnownAddresses(plan), planRotatingAddresses(plan))
 
 	// A direct caller may supply no ID; the prompt is never held under an
 	// empty one.

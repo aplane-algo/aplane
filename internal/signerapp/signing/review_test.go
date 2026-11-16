@@ -126,7 +126,7 @@ func promptSingle(svc *ApprovalService, requestID string, txReq signerapi.SignRe
 	}
 	req := signerapi.GroupSignRequest{RequestID: requestID, Requests: []signerapi.SignRequest{txReq}}
 	review := svc.review(req, plan, txns, describeAs("txn"))
-	return svc.requestSingleTxnApprovalWithContext(context.Background(), requestID, txReq, txns, txns, 0, 0, rule, &review)
+	return svc.requestSingleTxnApprovalWithContext(context.Background(), requestID, txReq, plan, txns, txns, 0, 0, rule, &review)
 }
 
 // promptGroup raises the group prompt for req as a sign request does, from
