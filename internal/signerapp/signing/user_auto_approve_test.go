@@ -88,9 +88,9 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 							approvalCalls++
 							switch path {
 							case "single":
-								return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{}, txns, txns, "", 0, 0, rule, nil, nil)
+								return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{}, txns, txns, 0, 0, rule, nil)
 							default:
-								return approval.requestGroupApprovalWithContext(ctx, signerapi.GroupSignRequest{}, &PlanResult{}, "", 0, 0, txns, rule, nil)
+								return approval.requestGroupApprovalWithContext(ctx, signerapi.GroupSignRequest{}, &PlanResult{}, 0, 0, txns, rule, nil)
 							}
 						},
 					}, nil)
@@ -233,10 +233,9 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 				var console strings.Builder
 				prompted, approvalCalls := false, 0
 				approval := &ApprovalService{
-					UserAutoApprove:               &auto,
-					GenerateTxnDescriptionFromTxn: describeAs("txn"),
-					KnownAddresses:                func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
-					HasClient:                     func() bool { return true },
+					UserAutoApprove: &auto,
+					KnownAddresses:  func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
+					HasClient:       func() bool { return true },
 					RequestSigningApprovalContext: func(_ context.Context, _, _, _, _ string, _, _ uint64, v []signerapproval.Violation, _ time.Duration) (bool, error) {
 						prompted = true
 						warnings = v
@@ -259,7 +258,9 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					LogRejection:        func(reason string, _ *ServiceError) { logged = reason },
 					RequestOperatorApproval: func(ctx context.Context, rule string) *ServiceError {
 						approvalCalls++
-						return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{AuthAddress: tc.sender.String()}, txns, txns, "", 0, 0, rule, plan, nil)
+						req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: tc.sender.String()}}}
+						review := approval.review(req, plan, txns, describeAs("txn"))
+						return approval.requestSingleTxnApprovalWithContext(ctx, "", req.Requests[0], txns, txns, 0, 0, rule, &review)
 					},
 				}
 				if tc.listed {

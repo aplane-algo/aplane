@@ -62,10 +62,9 @@ func approvingCoordinator(t *testing.T) (*ApprovalService, *[]string) {
 	}, nil)
 	var requestIDs []string
 	return &ApprovalService{
-		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: describeAs("txn"),
-		KnownAddresses:                func() map[string]bool { return nil },
-		ApprovalWait:                  func() time.Duration { return 10 * time.Second },
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
+		ApprovalWait:   func() time.Duration { return 10 * time.Second },
 		RequestSigningApprovalResponseContext: func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			requestIDs = append(requestIDs, requestID)
 			return coordinator.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
@@ -80,23 +79,17 @@ func TestADirectApprovalWithNoRequestIDIsPromptedUnderAMintedOne(t *testing.T) {
 	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
 	txns := []types.Transaction{txn}
 
-	if err := svc.RequestSingleTxnApproval(signerapi.SignRequest{AuthAddress: "AUTH"}, txns, txns, "", 0, 0); err != nil {
-		t.Fatalf("RequestSingleTxnApproval() error = %v", err)
-	}
-	if err := svc.RequestSingleTxnApprovalWithContext(context.Background(), signerapi.SignRequest{AuthAddress: "AUTH"}, txns, txns, "", 0, 0); err != nil {
-		t.Fatalf("RequestSingleTxnApprovalWithContext() error = %v", err)
+	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, txns, "", nil); err != nil {
+		t.Fatalf("single prompt error = %v", err)
 	}
 	group := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
 	plan := &PlanResult{ForeignIndices: map[int]bool{}}
-	if err := svc.RequestGroupApproval(group, plan, "desc", 0, 0, txns); err != nil {
-		t.Fatalf("RequestGroupApproval() error = %v", err)
-	}
-	if err := svc.RequestGroupApprovalWithContext(context.Background(), group, plan, "desc", 0, 0, txns); err != nil {
-		t.Fatalf("RequestGroupApprovalWithContext() error = %v", err)
+	if err := promptGroup(svc, group, plan, txns, describeAs("txn")); err != nil {
+		t.Fatalf("group prompt error = %v", err)
 	}
 
-	if len(*requestIDs) != 4 {
-		t.Fatalf("%d prompts, want 4", len(*requestIDs))
+	if len(*requestIDs) != 2 {
+		t.Fatalf("%d prompts, want 2", len(*requestIDs))
 	}
 	seen := make(map[string]bool)
 	for _, id := range *requestIDs {

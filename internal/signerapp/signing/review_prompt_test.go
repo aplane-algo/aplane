@@ -34,10 +34,9 @@ func promptForReviewTestWith(t *testing.T, req signerapi.GroupSignRequest, plan 
 	describe := DescribeTxnFunc(txdesc.DetailTxn)
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove:               userAutoApproveDefault(false),
-			GenerateTxnDescriptionFromTxn: describe,
-			HasClient:                     func() bool { return true },
-			KnownAddresses:                func() map[string]bool { return known },
+			UserAutoApprove: userAutoApproveDefault(false),
+			HasClient:       func() bool { return true },
+			KnownAddresses:  func() map[string]bool { return known },
 			RequestSigningApprovalPrompt: func(_ context.Context, prompt signerapproval.Prompt, _ time.Duration) (signerapproval.SignResponse, error) {
 				got = &prompt
 				return signerapproval.SignResponse{Approved: false}, nil

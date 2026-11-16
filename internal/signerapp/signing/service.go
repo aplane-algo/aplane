@@ -253,8 +253,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		return "", nil, lockedError()
 	}
 
-	review := buildReview(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
-	s.Approval.completeReview(&review, plan, txns)
+	review := s.Approval.review(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
 	// The daemon prints this to its console as well as prompting with it.
 	groupDesc := termsafe.Lines(review.Text())
 	firstValid, lastValid := approvalWindow(allTxns)
@@ -296,10 +295,9 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			// rotation description and judge warnings against the plan's own
 			// addresses, which only the group prompt does.
 			if isGroup || plan.Rotating != nil {
-				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID, &review)
+				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, firstValid, lastValid, txns, forceReviewRuleID, &review)
 			}
-			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, planChangeLines(plan, allTxns, false), firstValid, lastValid, forceReviewRuleID,
-				plan, &review)
+			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, firstValid, lastValid, forceReviewRuleID, &review)
 		},
 	}, console)
 	if gateErr != nil {

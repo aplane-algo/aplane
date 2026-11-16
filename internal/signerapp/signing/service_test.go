@@ -559,9 +559,8 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 	approvalCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove:               userAutoApproveDefault(true),
-			GenerateTxnDescriptionFromTxn: describeAs("txn"),
-			HasClient:                     func() bool { return true },
+			UserAutoApprove: userAutoApproveDefault(true),
+			HasClient:       func() bool { return true },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
@@ -781,9 +780,8 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 	var gotViolations []signerapproval.Violation
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove:               userAutoApproveDefault(false),
-			GenerateTxnDescriptionFromTxn: describeAs("txn"),
-			HasClient:                     func() bool { return true },
+			UserAutoApprove: userAutoApproveDefault(false),
+			HasClient:       func() bool { return true },
 			KnownAddresses: func() map[string]bool {
 				return nil
 			},
@@ -847,9 +845,8 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 	var service *Service
 	service = &Service{
 		Approval: &ApprovalService{
-			GenerateTxnDescriptionFromTxn: describeAs("txn"),
-			HasClient:                     func() bool { return true },
-			KnownAddresses:                func() map[string]bool { return nil },
+			HasClient:      func() bool { return true },
+			KnownAddresses: func() map[string]bool { return nil },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				service.PolicyFor = fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign})
@@ -925,10 +922,9 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 }`)
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove:               userAutoApproveDefault(false),
-			GenerateTxnDescriptionFromTxn: describeAs("txn"),
-			HasClient:                     func() bool { return true },
-			KnownAddresses:                func() map[string]bool { return nil },
+			UserAutoApprove: userAutoApproveDefault(false),
+			HasClient:       func() bool { return true },
+			KnownAddresses:  func() map[string]bool { return nil },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
@@ -1563,9 +1559,8 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient:                     func() bool { return true },
-			KnownAddresses:                func() map[string]bool { return nil },
-			GenerateTxnDescriptionFromTxn: describeAs("txn"),
+			HasClient:      func() bool { return true },
+			KnownAddresses: func() map[string]bool { return nil },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotDescription = description
 				gotFirstValid = firstValid
@@ -1645,9 +1640,8 @@ func TestSignGroupWithPlanSingleTxnPromptShowsTheSignersFeeRaise(t *testing.T) {
 			var gotDescription string
 			service := &Service{
 				Approval: &ApprovalService{
-					HasClient:                     func() bool { return true },
-					KnownAddresses:                func() map[string]bool { return nil },
-					GenerateTxnDescriptionFromTxn: describeAs("txn"),
+					HasClient:      func() bool { return true },
+					KnownAddresses: func() map[string]bool { return nil },
 					RequestSigningApproval: func(_, _, _, description string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 						gotDescription = description
 						return false, nil

@@ -63,7 +63,6 @@ type ApprovalService struct {
 	ApprovalWait                          func() time.Duration
 	AuditLog                              AuditRejectLogger
 	Console                               Console
-	GenerateTxnDescriptionFromTxn         DescribeTxnFunc
 	KnownAddresses                        KnownAddressesFunc
 	HasClient                             HasClientFunc
 	RequestSigningApproval                RequestSigningApprovalFunc
@@ -232,12 +231,14 @@ func groupApprovalAddress(req signerapi.GroupSignRequest) string {
 	return fmt.Sprintf("%d auth addresses (see details)", len(seen))
 }
 
-// BuildApprovalDescription is the text of the request's review, and the
-// rounds the request can be submitted in.
-func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, describe DescribeTxnFunc) (groupDesc string, firstValid, lastValid uint64) {
-	firstValid, lastValid = approvalWindow(allTxns)
-	// The daemon prints this to its console as well as prompting with it.
-	return termsafe.Lines(buildReview(req, plan, allTxns, describe).Text()), firstValid, lastValid
+// review is the review a request's prompt is made from: buildReview, completed
+// with what the signer knows beyond the request. The prompt's text and its
+// warnings both come from it, so they cannot disagree with what the review
+// shows.
+func (s *ApprovalService) review(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, describe DescribeTxnFunc) txnreview.Review {
+	review := buildReview(req, plan, allTxns, describe)
+	s.completeReview(&review, plan, allTxns[:len(req.Requests)])
+	return review
 }
 
 // buildReview is what the operator is shown of a request: how it is made up,
@@ -322,25 +323,24 @@ func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanRes
 	review.SetFindings()
 }
 
-// requestViolations are a review's findings about the request as a whole, as
-// the prompt's warnings.
-func requestViolations(review *txnreview.Review) []signerapproval.Violation {
-	if review == nil {
-		return nil
-	}
+// reviewViolations are a review's findings as the prompt's warnings: each
+// transaction's, then the request's as a whole. positioned prefixes each
+// transaction's field with its position, as the group prompt does.
+func reviewViolations(review *txnreview.Review, positioned bool) []signerapproval.Violation {
 	var violations []signerapproval.Violation
+	for i, item := range review.Items {
+		for _, finding := range item.Findings {
+			v := approvalpolicy.Violation(finding)
+			if positioned {
+				v.Field = fmt.Sprintf("Tx %d/%d: %s", i+1, len(review.Items), v.Field)
+			}
+			violations = append(violations, v)
+		}
+	}
 	for _, finding := range review.Findings {
-		violations = append(violations, signerapproval.Violation{
-			Field: finding.Field, Value: finding.Value, Severity: signerapproval.ViolationSeverity(finding.Level()), Message: finding.Message,
-		})
+		violations = append(violations, approvalpolicy.Violation(finding))
 	}
 	return violations
-}
-
-// planChangeLines is the text of planChanges: every line ends in a newline,
-// and with nothing to say it is empty.
-func planChangeLines(plan *PlanResult, allTxns []types.Transaction, group bool) string {
-	return planChanges(plan, allTxns, group).Text()
 }
 
 // planChanges tells the operator what planning did to the request: the
@@ -580,15 +580,10 @@ func requestIDPreview(requestID string) string {
 	return requestID[:20]
 }
 
-func (s *ApprovalService) RequestGroupApproval(req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
-	return s.RequestGroupApprovalWithContext(context.Background(), req, plan, groupDesc, firstValid, lastValid, txns)
-}
-
-func (s *ApprovalService) RequestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
-	return s.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, "", nil)
-}
-
-func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
+// requestGroupApprovalWithContext prompts for a group, or for a lone request
+// that only the group prompt can show. review is the request's completed
+// review (ApprovalService.review): the prompt's text and warnings are its own.
+func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
 	if s.userAutoApprove() {
 		if forceReviewRuleID != "" {
@@ -631,21 +626,16 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	displaySender := fmt.Sprintf("GROUP(%d txns)", len(txns))
 	groupAuthAddr := groupApprovalAddress(req)
 
-	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
-		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan),
-		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
-	}, warningRekeyTargetsForPlan(plan))
-	violations = append(violations, requestViolations(review)...)
 	approved, err := s.requestSigningApproval(
 		ctx,
 
 		requestID,
 		groupAuthAddr,
 		displaySender,
-		"[GROUP APPROVAL]\n"+groupDesc,
+		"[GROUP APPROVAL]\n"+review.Text(),
 		firstValid,
 		lastValid,
-		violations,
+		reviewViolations(review, true),
 		review,
 		s.approvalWait(),
 	)
@@ -675,28 +665,11 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	return nil
 }
 
-// RequestSingleTxnApproval prompts for one request. planChanges is what
-// planning did to it, as planChangeLines gives it, or empty.
-func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil, nil)
-}
-
-func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, planChanges, firstValid, lastValid, "", nil, nil)
-}
-
-// requestSingleTxnApprovalWithContext prompts for one request. planChanges is
-// what planning did to it (planChangeLines), shown above the transaction as
-// the group prompt shows it. plan is the request's plan, or nil: the warning
-// judges rekey targets against its key snapshot, and its bounded item, when
-// it has one, lets a bounded rekey's prompt name who authorizes it and the
-// warning name a listed handover as one.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, planChanges string, firstValid, lastValid uint64, forceReviewRuleID string, plan *PlanResult, review *txnreview.Review) *ServiceError {
-	bounded := boundedItemAt(plan, 0)
-	var listed map[string]bool
-	if bounded != nil {
-		listed = bounded.ListedRekeyTargets
-	}
+// requestSingleTxnApprovalWithContext prompts for one request. review is the
+// request's completed review (ApprovalService.review): the prompt's text and
+// warnings are its own, what planning changed shown above the transaction as
+// the group prompt shows it.
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, firstValid, lastValid uint64, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
 	txnApproved := false
 	approvalReason := ""
@@ -730,28 +703,19 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return forbidden("transaction approval blocked: " + reason)
 	}
 
-	// RequestSingleTxnApproval and its context form supply no ID; the prompt
-	// is never held under an empty one.
+	// A direct caller may supply no ID; the prompt is never held under an
+	// empty one.
 	requestID = RequestID(requestID)
 	console.Printf("[IPC] TXN APPROVAL: Waiting for approval from apadmin TUI (request %s)...\n", requestIDPreview(requestID))
 	console.Sync()
 
 	txnDesc := "[TXN APPROVAL]\n"
-	if planChanges != "" {
-		txnDesc += planChanges + "\n"
+	if changes := review.Changes.Text(); changes != "" {
+		txnDesc += changes + "\n"
 	}
-	warnCtx := approvalpolicy.Context{
-		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan), ListedRekeyTargets: listed,
-	}
-	// The text is marked by the same findings as the warnings, so its rekey
-	// field is loud exactly where the rekey's finding is not a notice.
-	item := reviewItem(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn, bounded)
-	item.Details.Mark(txnreview.Findings(allTxns[0], warnCtx))
-	txnDesc += item.Text()
-
-	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], warnCtx)
+	txnDesc += review.Items[0].Text()
+	violations := reviewViolations(review, false)
 	txnDesc = appendViolationHighlights(txnDesc, violations)
-	violations = append(violations, requestViolations(review)...)
 
 	approved, err := s.requestSigningApproval(
 		ctx,

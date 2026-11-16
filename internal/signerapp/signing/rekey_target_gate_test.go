@@ -263,16 +263,15 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 			plan.InvalidRekeyTargets = invalidRekeyTargetsFromSnapshot(snapshot)
 			var got []signerapproval.Violation
 			svc := &ApprovalService{
-				HasClient:                     func() bool { return true },
-				GenerateTxnDescriptionFromTxn: describeAs("txn"),
-				KnownAddresses:                func() map[string]bool { return nil },
+				HasClient:      func() bool { return true },
+				KnownAddresses: func() map[string]bool { return nil },
 				RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 					got = violations
 					return true, nil
 				},
 			}
 			req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: a["plain"].String()}, {TxnBytesHex: "00"}}}
-			if err := svc.RequestGroupApprovalWithContext(context.Background(), req, plan, "group", 0, 0, txns); err != nil {
+			if err := promptGroup(svc, req, plan, txns, describeAs("txn")); err != nil {
 				t.Fatal(err)
 			}
 			want := txnreview.RekeyTransfersText + "\n   " + txnreview.RekeyHeldNotValidText(txnreview.InvalidRekeyTarget{KeyType: "aplane.htlc.v1", GenericLogicSig: true}, false) +
@@ -327,10 +326,9 @@ const stoppedAfterApproval = "test: stopped after approval"
 func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.SignerRekeys, auto bool) {
 	t.Helper()
 	svc.Approval = &ApprovalService{
-		UserAutoApprove:               &auto,
-		Console:                       &stringConsole{&h.approval},
-		GenerateTxnDescriptionFromTxn: describeAs("txn"),
-		HasClient:                     func() bool { return true },
+		UserAutoApprove: &auto,
+		Console:         &stringConsole{&h.approval},
+		HasClient:       func() bool { return true },
 		RequestSigningApprovalContext: func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 			h.prompts++
 			return true, nil

@@ -74,10 +74,10 @@ func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
 	if planned.Frozen || !reconstructed.Frozen {
 		t.Fatalf("Frozen: planned %v, reconstructed %v; want false, true", planned.Frozen, reconstructed.Frozen)
 	}
-	if lines := planChangeLines(planned, planned.AllTxns, false); !strings.Contains(lines, "[MODIFIED BY SERVER]") {
+	if lines := planChanges(planned, planned.AllTxns, false).Text(); !strings.Contains(lines, "[MODIFIED BY SERVER]") {
 		t.Fatalf("planned prompt lines = %q, want the change report", lines)
 	}
-	lines := planChangeLines(reconstructed, reconstructed.AllTxns, false)
+	lines := planChanges(reconstructed, reconstructed.AllTxns, false).Text()
 	if !strings.Contains(lines, "[FROZEN GROUP: checked as sent, not changed by this request]") ||
 		!strings.Contains(lines, fmt.Sprintf("%d dummy transaction(s)", reconstructed.DummiesNeeded)) ||
 		strings.Contains(lines, "MODIFIED") || strings.Contains(lines, "recomputed") {

@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestBuildReviewCarriesPositionsAndChanges(t *testing.T) {
 		t.Errorf("banners = %q", review.Banners)
 	}
 
-	description, _, _ := BuildApprovalDescription(req, plan, txns, describeAs("txn\n  From: A"))
+	description := approvalText(req, plan, txns, describeAs("txn\n  From: A"))
 	if description != termsafe.Lines(review.Text()) {
 		t.Errorf("the description is not the review printed:\n%s\n---\n%s", description, review.Text())
 	}
@@ -108,4 +109,29 @@ func TestBuildReviewAddsBoundedAndRotationFields(t *testing.T) {
 	if got := strings.Join(labels, ","); got != ",Bounded authorization operation,Authorization,Rotation" {
 		t.Fatalf("field labels = %q", got)
 	}
+}
+
+// approvalText is a request's prompt text as a sign request builds it: its
+// completed review, printed.
+func approvalText(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, describe DescribeTxnFunc) string {
+	review := (&ApprovalService{}).review(req, plan, allTxns, describe)
+	return termsafe.Lines(review.Text())
+}
+
+// promptSingle raises the single-transaction prompt for txReq as a sign
+// request does, from the review built of it. A nil plan is an empty one.
+func promptSingle(svc *ApprovalService, requestID string, txReq signerapi.SignRequest, txns []types.Transaction, rule string, plan *PlanResult) *ServiceError {
+	if plan == nil {
+		plan = &PlanResult{}
+	}
+	req := signerapi.GroupSignRequest{RequestID: requestID, Requests: []signerapi.SignRequest{txReq}}
+	review := svc.review(req, plan, txns, describeAs("txn"))
+	return svc.requestSingleTxnApprovalWithContext(context.Background(), requestID, txReq, txns, txns, 0, 0, rule, &review)
+}
+
+// promptGroup raises the group prompt for req as a sign request does, from
+// the review built of it.
+func promptGroup(svc *ApprovalService, req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, describe DescribeTxnFunc) *ServiceError {
+	review := svc.review(req, plan, txns, describe)
+	return svc.requestGroupApprovalWithContext(context.Background(), req, plan, 0, 0, txns, "", &review)
 }

@@ -150,14 +150,14 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 
 // A cosigned account's declared rekey needs the cosigner as well, and its
 // listed rekey takes the spending key alone; the approval text says which.
-func TestBuildApprovalDescriptionNamesTheCosignerOnACosignedRekey(t *testing.T) {
+func TestApprovalTextNamesTheCosignerOnACosignedRekey(t *testing.T) {
 	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
 	txn := testBoundedRekey()
 	for path, want := range map[boundedPath]string{
 		boundedPathSpendingKeyRekey: "Authorization: spending key and cosigner",
 		boundedPathListedRekey:      "Authorization: spending key only, to an address on the account's rekey-to list",
 	} {
-		description, _, _ := BuildApprovalDescription(
+		description := approvalText(
 			signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
 			&PlanResult{
 				AllTxns: []types.Transaction{txn}, PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
@@ -172,10 +172,10 @@ func TestBuildApprovalDescriptionNamesTheCosignerOnACosignedRekey(t *testing.T) 
 	}
 }
 
-func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
+func TestApprovalTextNamesBoundedRekeyAuthority(t *testing.T) {
 	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	txn := testBoundedRekey()
-	description, _, _ := BuildApprovalDescription(
+	description := approvalText(
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
 		&PlanResult{
 			AllTxns:            []types.Transaction{txn},

@@ -31,7 +31,7 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 	}
 	return &signersigning.Service{
 		Planner:                       fs.newPlannerWithAudit(auditLog),
-		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog, describe),
+		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),
 		Executor:                      fs.newExecutionServiceWithAudit(auditLog),
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},

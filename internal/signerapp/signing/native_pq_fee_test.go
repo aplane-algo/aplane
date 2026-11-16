@@ -344,7 +344,7 @@ func TestPlanGroupBudgetsNativeFalconBeforeApproval(t *testing.T) {
 	if mutations == nil || mutations.TotalFeesDelta != 2_000 || mutations.Reason != "native_pq_fee" {
 		t.Fatalf("mutation report = %#v, want native PQ fee delta", mutations)
 	}
-	description, _, _ := BuildApprovalDescription(
+	description := approvalText(
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: authorizer}}},
 		plan, plan.AllTxns, describeAs("payment"),
 	)
