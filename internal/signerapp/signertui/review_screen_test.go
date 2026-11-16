@@ -581,3 +581,44 @@ func TestReviewSelectedRowKeepsItsColours(t *testing.T) {
 		t.Fatalf("the spans say %q, the plain text %q", got, rekey.plain)
 	}
 }
+
+// The validity window shares the first header line with room for it, keeps
+// saying when a window is empty, and the rule over the detail pane counts
+// the rows below the upper pane and says which detail lines show.
+func TestReviewHeaderAndRuleShareLines(t *testing.T) {
+	lineWith := func(view, text string) string {
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, text) {
+				return line
+			}
+		}
+		return ""
+	}
+
+	wide := requireFits(t, reviewModelForTest(t, groupReviewRequest(), true, 133, 39), 133, 39)
+	if line := lineWith(wide, "Valid Rounds: 100 - 1100"); !strings.Contains(line, "Group of 3") {
+		t.Errorf("at 133 columns the validity window is not on the summary line: %q", line)
+	}
+	narrow := requireFits(t, reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight), MinWidth, MinHeight)
+	if line := lineWith(narrow, "Valid Rounds: 100 - 1100"); !strings.Contains(line, "⚠ 2 warnings") {
+		t.Errorf("at 80 columns the validity window is not on the risk line: %q", line)
+	}
+	if strings.Contains(narrow, "pgup/pgdown: scroll") {
+		t.Errorf("the detail scroll hint still has a line of its own:\n%s", narrow)
+	}
+	if line := lineWith(narrow, "details: lines 1-"); !strings.HasPrefix(strings.TrimSpace(line), "──") {
+		t.Errorf("the rule does not say which detail lines show:\n%s", narrow)
+	}
+
+	empty := singleReviewRequest()
+	empty.FirstValid, empty.LastValid = 20, 10
+	view := requireFits(t, reviewModelForTest(t, empty, true, MinWidth, MinHeight), MinWidth, MinHeight)
+	if !strings.Contains(view, "Valid Rounds: 20 - 10 (empty: no round is valid)") {
+		t.Errorf("an empty validity window is not called empty:\n%s", view)
+	}
+
+	payroll := requireFits(t, reviewModelForTest(t, payrollReviewRequest(12), true, MinWidth, MinHeight), MinWidth, MinHeight)
+	if !regexp.MustCompile(`── ▼ \d+ more below ─`).MatchString(payroll) {
+		t.Errorf("the rule does not count the rows below:\n%s", payroll)
+	}
+}

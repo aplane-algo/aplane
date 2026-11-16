@@ -86,25 +86,18 @@ func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailH
 	if inner <= 0 {
 		inner = 30
 	}
-	// Title, the scroll hint and the keys line are always there.
-	fixed := 3
-	if m.reviewValidityLine() != "" {
-		fixed++
-	}
-	if m.reviewRiskLine(review) != "" {
-		fixed++
-	}
-	rest := inner - fixed
+	// The header lines, the rule over the detail pane and the keys line are
+	// always there.
+	rest := inner - len(m.reviewHeader(review, width)) - 2
 	if pane, ok := m.reviewUpperPane(review, width); ok {
 		// A list leaves most of the room to the detail pane; a picture
-		// takes what it needs and leaves the detail pane a few lines. One
-		// more line rules the two panes apart.
+		// takes what it needs and leaves the detail pane a few lines.
 		limit := max(3, rest/3)
 		if len(pane.header) > 0 {
 			limit = max(len(pane.header)+3, rest-5)
 		}
 		paneHeight = min(len(pane.header)+len(pane.lines), limit)
-		rest -= paneHeight + 1
+		rest -= paneHeight
 	}
 	return width, paneHeight, max(3, rest)
 }
@@ -193,11 +186,68 @@ func (m Model) handleReviewKeys(msg tea.KeyMsg) (Model, bool) {
 	return m, true
 }
 
-func (m Model) reviewValidityLine() string {
+// reviewValidity is the request's validity window: the line apapprover
+// prints, and the short form that shares a line, which leaves out the
+// window's length but never that a window is empty.
+func (m Model) reviewValidity() (full, short string) {
 	if m.signing.request == nil {
-		return ""
+		return "", ""
 	}
-	return protocol.ValidityWindowLine(m.signing.request.FirstValid, m.signing.request.LastValid)
+	first, last := m.signing.request.FirstValid, m.signing.request.LastValid
+	full = protocol.ValidityWindowLine(first, last)
+	short = full
+	if full != "" && last >= first {
+		short = fmt.Sprintf("Valid Rounds: %d - %d", first, last)
+	}
+	return full, short
+}
+
+// reviewHeader is the lines above the upper pane: the title and summary, and
+// the risk line when there are warnings. The validity window goes at the
+// right of the first of them with room for it, or on a line of its own.
+func (m Model) reviewHeader(review *protocol.Review, width int) []string {
+	title := titleStyle.UnsetMargins().Render("Signing Request")
+	summary := reviewSummary(review)
+	if room := width - lipgloss.Width(title) - 2; lipgloss.Width(summary) > room {
+		summary = fixedWidthFieldLine(summary, max(0, room))
+	}
+	lines := []string{title + "  " + summary}
+	if risk := m.reviewRiskLine(review); risk != "" {
+		style := warningStyle
+		if m.reviewHasCritical() {
+			style = errorStyle
+		}
+		lines = append(lines, style.Render(fixedWidthFieldLine(risk, min(width, lipgloss.Width(risk)))))
+	}
+	full, short := m.reviewValidity()
+	if full == "" {
+		return lines
+	}
+	for i, line := range lines {
+		if gap := width - lipgloss.Width(line) - lipgloss.Width(short); gap >= 2 {
+			lines[i] = line + strings.Repeat(" ", gap) + helpStyle.Render(short)
+			return lines
+		}
+	}
+	return append(lines[:1], append([]string{helpStyle.Render(fixedWidthFieldLine(full, width))}, lines[1:]...)...)
+}
+
+// reviewRule parts the detail pane from what is above it. It counts the rows
+// of the upper pane hidden below it, and says which lines of the detail pane
+// show when they do not all fit.
+func (m Model) reviewRule(width, hiddenRows int) string {
+	left := "──"
+	if hiddenRows > 0 {
+		left = fmt.Sprintf("── ▼ %d more below ", hiddenRows)
+	}
+	right := "──"
+	viewport := m.signing.viewport
+	if total := viewport.TotalLineCount(); total > viewport.Height {
+		last := min(total, viewport.YOffset+viewport.Height)
+		right = fmt.Sprintf(" details: lines %d-%d of %d ──", viewport.YOffset+1, last, total)
+	}
+	fill := max(0, width-lipgloss.Width(left)-lipgloss.Width(right))
+	return helpStyle.Render(left + strings.Repeat("─", fill) + right)
 }
 
 // reviewPositionWords says how the request treats a transaction.
@@ -503,37 +553,18 @@ func chipDigest(address string) [sha256.Size]byte { return sha256.Sum256([]byte(
 // renderReviewScreen draws the signing request from its review.
 func (m Model) renderReviewScreen(review *protocol.Review) string {
 	width, paneHeight, _ := m.reviewLayout(review)
-	var lines []string
-
-	title := titleStyle.UnsetMargins().Render("Signing Request")
-	lines = append(lines, title+"  "+fixedWidthFieldLine(reviewSummary(review), max(1, width-lipgloss.Width(title)-2)))
-	if validity := m.reviewValidityLine(); validity != "" {
-		lines = append(lines, helpStyle.Render(fixedWidthFieldLine(validity, width)))
-	}
-	if risk := m.reviewRiskLine(review); risk != "" {
-		style := warningStyle
-		if m.reviewHasCritical() {
-			style = errorStyle
-		}
-		lines = append(lines, style.Render(fixedWidthFieldLine(risk, width)))
-	}
+	lines := m.reviewHeader(review, width)
+	hidden := 0
 	if pane, ok := m.reviewUpperPane(review, width); ok {
 		lines = append(lines, m.reviewPaneLines(pane, width, paneHeight)...)
-		rule := strings.Repeat("─", width)
-		if m.signing.review.top+paneHeight-len(pane.header) < len(pane.lines) {
-			label := "── more below "
-			rule = label + strings.Repeat("─", max(0, width-lipgloss.Width(label)))
+		rows := map[int]bool{}
+		for _, line := range pane.lines[min(len(pane.lines), m.signing.review.top+paneHeight-len(pane.header)):] {
+			rows[line.row] = true
 		}
-		lines = append(lines, helpStyle.Render(rule))
+		hidden = len(rows)
 	}
+	lines = append(lines, m.reviewRule(width, hidden))
 	lines = append(lines, strings.Split(m.signing.viewport.View(), "\n")...)
-
-	hint := ""
-	if more := m.signing.viewport.TotalLineCount() - m.signing.viewport.Height; more > 0 {
-		hint = fmt.Sprintf("pgup/pgdown: scroll (%.0f%% of %d lines)", m.signing.viewport.ScrollPercent()*100, m.signing.viewport.TotalLineCount())
-	}
-	lines = append(lines, helpStyle.Render(hint))
-
 	lines = append(lines, m.reviewKeysLine(width))
 
 	clip := lipgloss.NewStyle().MaxWidth(width)
