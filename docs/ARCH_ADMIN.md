@@ -1119,9 +1119,9 @@ list, one row per transaction with how the request treats it and its title,
 the first selected, and under the list a pane with the selected transaction
 in full: every field, then its own warnings, naming the signing key only
 where it is not the sender. The pane ends with what is about the request as a
-whole: its warnings and notes, each account's whole address with what the
-signer holds (and, once the signer has read its node, the round, each
-balance, who the chain says signs for a rekeyed account, and a key this
+whole: its warnings and notes, each account's whole address, local (the
+signer holds an aplane key for it) or foreign (and, once the signer has read
+its node, the round, each balance, who the chain says signs for a rekeyed account, and a key this
 request signs with that the chain does not name), and what planning changed. A lone transaction has no list: one
 pane holds all of it, in the same order, under its lanes when it moves something between two
 parties (a payment, a close, a rekey, an app call) and with no picture when

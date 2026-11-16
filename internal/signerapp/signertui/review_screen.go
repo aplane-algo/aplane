@@ -459,32 +459,34 @@ func reviewViolations(title string, violations []protocol.PolicyViolation, notic
 }
 
 // reviewAccounts lists the accounts the request touches, each address in
-// full, and says which of them are the signer's own. Once the signer has
-// read them from its node, each says its balance and, where the chain names
-// another address, who signs for it.
+// full, and says which are local, the signer holding an aplane key for them,
+// and which foreign. Once the signer has read them from its node, each says
+// its balance and, where the chain names another address, who signs for it.
 func reviewAccounts(review *protocol.Review) []reviewLine {
 	if len(review.Parties) == 0 {
 		return nil
 	}
 	chain := review.Chain
+	read := chain != nil && chain.Unavailable == ""
+	heading := "Accounts"
+	if read {
+		heading = fmt.Sprintf("Accounts · round %d", chain.Round)
+	}
+	lines := []reviewLine{reviewSection(heading)}
 	if chain != nil && chain.Unavailable != "" {
-		lines := []reviewLine{reviewSection("Accounts"), {text: "  Balances unavailable: " + chain.Unavailable, style: helpStyle}}
-		return append(lines, partyLines(review.Parties)...)
+		lines = append(lines, reviewLine{text: "  Balances unavailable: " + chain.Unavailable, style: helpStyle})
 	}
-	if chain == nil {
-		return append([]reviewLine{reviewSection("Accounts")}, partyLines(review.Parties)...)
-	}
-	lines := []reviewLine{reviewSection(fmt.Sprintf("Accounts · round %d", chain.Round))}
 	for _, party := range review.Parties {
-		lines = append(lines, partyAddressLine(party.Address, party.Signs || party.Held, "  "))
+		lines = append(lines, partyAddressLine(party.Address, party.Held, "  "))
+		if !read {
+			lines = append(lines, reviewLine{text: "       " + partyStanding(party), style: helpStyle})
+			continue
+		}
 		balance := "balance unavailable"
 		if party.Chain != nil {
 			balance = asaset.FormatFixed(party.Chain.MicroAlgos, 6) + " ALGO"
 		}
-		if stand := partyStanding(party); stand != "" {
-			balance += " · " + stand
-		}
-		lines = append(lines, reviewLine{text: "       " + balance, style: normalStyle})
+		lines = append(lines, reviewLine{text: "       " + balance + " · " + partyStanding(party), style: normalStyle})
 		if party.Chain == nil {
 			continue
 		}
@@ -504,43 +506,21 @@ func reviewAccounts(review *protocol.Review) []reviewLine {
 
 // partyAddressLine is an address in full after its mark, in the colour of
 // the signer's own where it holds an aplane key for it.
-func partyAddressLine(address string, own bool, indent string) reviewLine {
+func partyAddressLine(address string, local bool, indent string) reviewLine {
 	style := normalStyle
-	if own {
+	if local {
 		style = statusConnectedStyle
 	}
 	return reviewLine{fixed: indent + addressChip(address) + " " + style.Render(address)}
 }
 
-// partyStanding is how the signer stands to an account, in a few words.
+// partyStanding is local where the signer holds an aplane key for the
+// account, foreign where it holds none.
 func partyStanding(party protocol.ReviewParty) string {
-	switch {
-	case party.Signs && party.KeyType != "":
-		return "signed here with its " + party.KeyType + " aplane key"
-	case party.Signs:
-		return "signed here"
-	case party.Held:
-		return "this signer holds its aplane key, not signed here"
+	if party.Held {
+		return "local"
 	}
-	return ""
-}
-
-// partyLines are the accounts with no balances: each address, and how the
-// signer stands to it in words.
-func partyLines(parties []protocol.ReviewParty) []reviewLine {
-	var lines []reviewLine
-	for _, party := range parties {
-		lines = append(lines, partyAddressLine(party.Address, party.Signs || party.Held, "  "))
-		switch {
-		case party.Signs && party.KeyType != "":
-			lines = append(lines, reviewLine{text: "       this request signs for it with its " + party.KeyType + " aplane key", style: helpStyle})
-		case party.Signs:
-			lines = append(lines, reviewLine{text: "       this request signs for it", style: helpStyle})
-		case party.Held:
-			lines = append(lines, reviewLine{text: "       this signer holds its aplane key; this request does not sign for it", style: helpStyle})
-		}
-	}
-	return lines
+	return "foreign"
 }
 
 // reviewRequest says how the request is made up and what planning did to it.

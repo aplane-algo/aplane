@@ -196,7 +196,7 @@ func (r Review) Text() string {
 }
 
 // AccountsText prints what the signer's node said of each account, every
-// line ending in a newline: its balance and how this signer stands to it,
+// line ending in a newline: its balance and whether it is local or foreign,
 // who the chain says signs for it when that is another address, and the key
 // this request signs with when the chain names another. With nothing read it
 // says why. Before the chain is read it is empty.
@@ -224,10 +224,7 @@ func (p Party) ChainLines() []string {
 	if p.Chain != nil {
 		balance = asaset.FormatFixed(p.Chain.MicroAlgos, 6) + " ALGO"
 	}
-	if stand := p.Standing(); stand != "" {
-		balance += " · " + stand
-	}
-	lines := []string{balance}
+	lines := []string{balance + " · " + p.Standing()}
 	if p.Chain == nil {
 		return lines
 	}
@@ -244,18 +241,13 @@ func (p Party) ChainLines() []string {
 	return lines
 }
 
-// Standing is how this signer stands to the account, in a few words, or
-// nothing when it holds no aplane key for it.
+// Standing is local where this signer holds an aplane key for the account,
+// foreign where it holds none.
 func (p Party) Standing() string {
-	switch {
-	case p.Signs && p.KeyType != "":
-		return "signed here with its " + p.KeyType + " aplane key"
-	case p.Signs:
-		return "signed here"
-	case p.Held:
-		return "this signer holds its aplane key, not signed here"
+	if p.Held {
+		return "local"
 	}
-	return ""
+	return "foreign"
 }
 
 // SetParties lists the accounts the items' effects name, in order of first

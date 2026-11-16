@@ -203,7 +203,7 @@ func TestReviewDetailEndsWithTheRequest(t *testing.T) {
 	for _, want := range []string{
 		"⚠ WARNING: Lookalike accounts",
 		reviewOwn, reviewOther, reviewThird,
-		"this request signs for it with its falcon1024 aplane key",
+		"\n       local", "\n       foreign",
 		"[MULTI-PARTY: 2 to sign, 1 foreign (not signing)]",
 		"[MODIFIED BY SERVER]",
 		"• Group ID recomputed",
@@ -816,10 +816,10 @@ func fittingDetail(t *testing.T, m Model, width, height int) string {
 	return strings.Join(seen, "\n")
 }
 
-// Once the signer has read the chain, each account says its balance and how
-// the signer stands to it, a rekeyed account names who signs for it now, and
-// a key the chain doesn't name for it is called out. Where nothing was read,
-// the list says why and keeps its words.
+// Each account says whether it is local or foreign. Once the signer has read
+// the chain, each says its balance too, a rekeyed account names who signs for
+// it now, and a key the chain doesn't name for it is called out. Where
+// nothing was read, the list says why.
 func TestReviewAccountsShowWhatTheNodeSaid(t *testing.T) {
 	stage := strings.Repeat("S", 58)
 	read := groupReviewRequest()
@@ -834,23 +834,25 @@ func TestReviewAccountsShowWhatTheNodeSaid(t *testing.T) {
 		detail := fittingDetail(t, reviewModelForTest(t, read, true, size[0], size[1]), size[0], size[1])
 		for _, want := range []string{
 			"Accounts · round 77",
-			"1234.567890 ALGO · signed here with its falcon1024 aplane key",
+			"1234.567890 ALGO · local",
 			"rekeyed to an address this signer holds an aplane key for:",
 			stage,
 			"this request signs with a key the chain does not name for it",
-			"0.100000 ALGO",
-			"balance unavailable",
+			"0.100000 ALGO · foreign",
+			"balance unavailable · foreign",
 		} {
 			if !strings.Contains(detail, want) {
 				t.Errorf("%dx%d: the accounts lack %q:\n%s", size[0], size[1], want, detail)
 			}
 		}
-		if strings.Contains(detail, "this request signs for it with its") {
-			t.Errorf("%dx%d: the accounts keep the words a balance replaces:\n%s", size[0], size[1], detail)
+		for _, gone := range []string{"signed here with its", "this request signs for it", "holds its aplane key"} {
+			if strings.Contains(detail, gone) {
+				t.Errorf("%dx%d: the accounts still say %q:\n%s", size[0], size[1], gone, detail)
+			}
 		}
 
 		detail = fittingDetail(t, reviewModelForTest(t, unread, true, size[0], size[1]), size[0], size[1])
-		for _, want := range []string{"Balances unavailable: no algod is configured for network testnet", "this request signs for it with its falcon1024 aplane key"} {
+		for _, want := range []string{"Balances unavailable: no algod is configured for network testnet", "\n       local", "\n       foreign"} {
 			if !strings.Contains(detail, want) {
 				t.Errorf("%dx%d: the unread accounts lack %q:\n%s", size[0], size[1], want, detail)
 			}

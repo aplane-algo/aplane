@@ -9,7 +9,7 @@ import (
 )
 
 // The text prints the accounts only once the chain is read: each balance and
-// how the signer stands to the account, a rekey, and a key the chain doesn't
+// whether the account is local or foreign, a rekey, and a key the chain doesn't
 // name; and where nothing was read, why.
 func TestAccountsTextFollowsTheChainRead(t *testing.T) {
 	review := Review{
@@ -28,13 +28,13 @@ func TestAccountsTextFollowsTheChainRead(t *testing.T) {
 	review.Chain = &ChainRead{Round: 77}
 	want := `--- Accounts at round 77 ---
 OWN
-  1234.567890 ALGO · signed here with its ed25519 aplane key
+  1234.567890 ALGO · local
   rekeyed to STAGE, an address this signer holds an aplane key for
   this request signs with OWN, a key the chain does not name for it
 OTHER
-  0.100000 ALGO
+  0.100000 ALGO · foreign
 HELD
-  balance unavailable · this signer holds its aplane key, not signed here
+  balance unavailable · local
 `
 	if got := review.AccountsText(); got != want {
 		t.Fatalf("accounts:\n%s\nwant:\n%s", got, want)

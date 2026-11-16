@@ -140,10 +140,10 @@ func TestPromptSaysWhatTheNodeSaysOfEachAccount(t *testing.T) {
 		}
 		for _, line := range []string{
 			"--- Accounts at round 77 ---",
-			"1234.567890 ALGO · signed here with its ed25519 aplane key",
+			"1234.567890 ALGO · local",
 			"rekeyed to " + stage.String() + ", an address this signer holds an aplane key for",
 			"this request signs with " + own.String() + ", a key the chain does not name for it",
-			"0.100000 ALGO",
+			"0.100000 ALGO · foreign",
 		} {
 			if !strings.Contains(prompt.Description, line) {
 				t.Errorf("group %t: the text lacks %q:\n%s", group, line, prompt.Description)
