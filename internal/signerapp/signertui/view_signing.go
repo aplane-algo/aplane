@@ -22,8 +22,8 @@ func (m Model) renderSigningPopup() string {
 	if m.signing.request == nil {
 		return m.renderKeyListView()
 	}
-	if review := m.reviewOf(); review != nil {
-		return m.renderReviewScreen(review)
+	if m.reviewAvailable() {
+		return m.renderReviewScreen(m.signing.request.Review)
 	}
 
 	var sb strings.Builder

@@ -65,7 +65,7 @@ func groupReviewRequest() *PendingSignRequest {
 			Items:   []protocol.ReviewItem{reviewPayment(reviewOther), second, foreign},
 			Parties: []protocol.ReviewParty{
 				{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024"},
-				{Address: reviewOther}, {Address: reviewThird},
+				{Address: reviewOther, Lookalike: true}, {Address: reviewThird, Lookalike: true},
 			},
 			Findings: []protocol.PolicyViolation{lookalike},
 		},
@@ -273,6 +273,16 @@ func TestReviewTextToggle(t *testing.T) {
 	view := requireFits(t, m, MinWidth, MinHeight)
 	if !strings.Contains(view, "=== TRANSACTION GROUP (3 transactions) ===") || !strings.Contains(view, "t: Review") {
 		t.Fatalf("text view:\n%s", view)
+	}
+	// The text keeps the frame: the warning count above it, the buttons
+	// under it, and the warnings in full after the description.
+	for _, want := range []string{"⚠ 2 warnings · REKEY in 2", "> REJECT", "APPROVE"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("text view lacks %q:\n%s", want, view)
+		}
+	}
+	if text := allDetail(t, m); !strings.Contains(text, "raw text of the request") || !strings.Contains(text, "⚠ CRITICAL: Tx 2/3: RekeyTo") {
+		t.Fatalf("text pane:\n%s", text)
 	}
 	m = reviewKey(t, m, "t")
 	view = requireFits(t, m, MinWidth, MinHeight)

@@ -1113,7 +1113,7 @@ func protocolReview(review *txnreview.Review) *protocol.Review {
 		out.Items[i] = wire
 	}
 	for _, p := range review.Parties {
-		out.Parties = append(out.Parties, protocol.ReviewParty{Address: p.Address, Held: p.Held, Signs: p.Signs, KeyType: p.KeyType})
+		out.Parties = append(out.Parties, protocol.ReviewParty{Address: p.Address, Held: p.Held, Signs: p.Signs, KeyType: p.KeyType, Lookalike: p.Lookalike})
 	}
 	out.Findings = findings(review.Findings)
 	return out

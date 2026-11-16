@@ -36,11 +36,16 @@ func sharedEnds(a, b string) (prefix, suffix int) {
 	return prefix, suffix
 }
 
-// LookalikeFindings is one finding for each pair of different addresses in
-// one request that look alike. It reads every address the transactions name:
-// each one's sender and every field that names an account. The signer's
-// prompt and apshell's review of a plugin-built group both use it.
-func LookalikeFindings(transactions []Details) []Finding {
+// lookalikePair is two different addresses that look alike, and how many
+// characters they share at each end.
+type lookalikePair struct {
+	a, b           string
+	prefix, suffix int
+}
+
+// lookalikePairs finds the lookalikes among every address the transactions
+// name: each one's sender and every field that names an account.
+func lookalikePairs(transactions []Details) []lookalikePair {
 	zero := types.Address{}.String()
 	seen := map[string]bool{}
 	var addresses []string
@@ -59,37 +64,55 @@ func LookalikeFindings(transactions []Details) []Finding {
 	}
 	sort.Strings(addresses)
 
-	var findings []Finding
+	var pairs []lookalikePair
 	for i, a := range addresses {
 		for _, b := range addresses[i+1:] {
-			prefix, suffix := sharedEnds(a, b)
-			if prefix+suffix < lookalikeSharedCharacters {
-				continue
+			if prefix, suffix := sharedEnds(a, b); prefix+suffix >= lookalikeSharedCharacters {
+				pairs = append(pairs, lookalikePair{a: a, b: b, prefix: prefix, suffix: suffix})
 			}
-			var shared string
-			switch {
-			case suffix == 0:
-				shared = fmt.Sprintf("start with %s", a[:prefix])
-			case prefix == 0:
-				shared = fmt.Sprintf("end with %s", a[len(a)-suffix:])
-			default:
-				shared = fmt.Sprintf("start with %s and end with %s", a[:prefix], a[len(a)-suffix:])
-			}
-			findings = append(findings, Finding{
-				Field: LookalikeField,
-				Message: fmt.Sprintf("Two different accounts in this request look alike: both %s. Compare the full addresses."+
-					"\n   %s\n   %s", shared, a, b),
-			})
 		}
+	}
+	return pairs
+}
+
+// LookalikeFindings is one finding for each pair of different addresses in
+// one request that look alike. The signer's prompt and apshell's review of a
+// plugin-built group both use it.
+func LookalikeFindings(transactions []Details) []Finding {
+	var findings []Finding
+	for _, pair := range lookalikePairs(transactions) {
+		a := pair.a
+		var shared string
+		switch {
+		case pair.suffix == 0:
+			shared = fmt.Sprintf("start with %s", a[:pair.prefix])
+		case pair.prefix == 0:
+			shared = fmt.Sprintf("end with %s", a[len(a)-pair.suffix:])
+		default:
+			shared = fmt.Sprintf("start with %s and end with %s", a[:pair.prefix], a[len(a)-pair.suffix:])
+		}
+		findings = append(findings, Finding{
+			Field: LookalikeField,
+			Message: fmt.Sprintf("Two different accounts in this request look alike: both %s. Compare the full addresses."+
+				"\n   %s\n   %s", shared, pair.a, pair.b),
+		})
 	}
 	return findings
 }
 
-// SetFindings sets the findings about the request as a whole.
+// SetFindings sets the findings about the request as a whole, and marks the
+// parties they speak of. Call it after SetParties.
 func (r *Review) SetFindings() {
 	transactions := make([]Details, len(r.Items))
 	for i, item := range r.Items {
 		transactions[i] = item.Details
 	}
 	r.Findings = LookalikeFindings(transactions)
+	lookalike := map[string]bool{}
+	for _, pair := range lookalikePairs(transactions) {
+		lookalike[pair.a], lookalike[pair.b] = true, true
+	}
+	for i := range r.Parties {
+		r.Parties[i].Lookalike = lookalike[r.Parties[i].Address]
+	}
 }

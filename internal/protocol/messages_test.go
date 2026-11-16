@@ -251,7 +251,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						Effects:  []ReviewEffect{{Kind: "rekey", From: "ADDR2", To: "ADDR3", Text: "REKEY: control moves", Severity: ReviewSeverityDanger}},
 						Findings: []PolicyViolation{{Field: "RekeyTo", Value: "ADDR3", Severity: "critical", Message: "rekey detected"}},
 					}},
-					Parties: []ReviewParty{{Address: "ADDR2", Held: true, Signs: true, KeyType: "falcon1024"}, {Address: "ADDR3"}},
+					Parties: []ReviewParty{{Address: "ADDR2", Held: true, Signs: true, KeyType: "falcon1024"}, {Address: "ADDR3", Lookalike: true}},
 				},
 			},
 			wantMap: map[string]any{
@@ -282,7 +282,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					}},
 					"parties": []any{
 						map[string]any{"address": "ADDR2", "held": true, "signs": true, "key_type": "falcon1024"},
-						map[string]any{"address": "ADDR3"},
+						map[string]any{"address": "ADDR3", "lookalike": true},
 					},
 				},
 				"type":        MsgTypeSignRequest,

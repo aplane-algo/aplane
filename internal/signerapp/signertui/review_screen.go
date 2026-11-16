@@ -4,9 +4,10 @@
 package tui
 
 // The signing review drawn from a sign request's review: a list of the
-// request's transactions, and under it the selected one in full. A request
-// without a review, and any request once the operator asks for the text, is
-// shown as its description instead (view_signing.go).
+// request's transactions, and under it the selected one in full. When the
+// operator asks for the text, the lower pane holds the request's description
+// instead. A request without a review is shown as its description alone
+// (view_signing.go).
 
 import (
 	"crypto/sha256"
@@ -83,7 +84,7 @@ func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailH
 		fixed++
 	}
 	rest := inner - fixed
-	if review.Group {
+	if review.Group && !m.signing.review.text {
 		pane := m.reviewPaneFor(review, width)
 		// A list leaves most of the room to the detail pane; a picture
 		// takes what it needs and leaves the detail pane a few lines. One
@@ -101,14 +102,14 @@ func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailH
 // refreshReview sizes the detail pane and fills it for the selected row, and
 // scrolls the upper pane to keep that row in view.
 func (m *Model) refreshReview() {
-	review := m.reviewOf()
-	if review == nil {
+	if !m.reviewAvailable() {
 		return
 	}
+	review := m.signing.request.Review
 	rows := reviewRows(review)
 	m.signing.review.row = max(0, min(max(0, rows-1), m.signing.review.row))
 	width, paneHeight, detailHeight := m.reviewLayout(review)
-	if review.Group {
+	if review.Group && !m.signing.review.text {
 		pane := m.reviewPaneFor(review, width)
 		visible := max(1, paneHeight-len(pane.header))
 		first, last := -1, 0
@@ -130,8 +131,17 @@ func (m *Model) refreshReview() {
 		m.signing.review.top = max(0, min(max(0, len(pane.lines)-visible), top))
 	}
 
+	detail := m.reviewDetail(review)
+	if m.signing.review.text {
+		// The request's description, as apapprover prints it, then its
+		// warnings.
+		detail = nil
+		for _, line := range strings.Split(m.buildSigningViewportContent(), "\n") {
+			detail = append(detail, reviewLine{text: line, style: normalStyle})
+		}
+	}
 	var out []string
-	for _, line := range m.reviewDetail(review) {
+	for _, line := range detail {
 		if line.fixed != "" {
 			out = append(out, line.fixed)
 			continue
@@ -152,11 +162,7 @@ func (m Model) handleReviewKeys(msg tea.KeyMsg) (Model, bool) {
 	}
 	if msg.String() == "t" {
 		m.signing.review.text = !m.signing.review.text
-		if m.signing.review.text {
-			m.initSigningViewport(m.buildSigningViewportContent())
-		} else {
-			m.refreshReview()
-		}
+		m.refreshReview()
 		return m, true
 	}
 	review := m.reviewOf()
@@ -487,7 +493,7 @@ func (m Model) renderReviewScreen(review *protocol.Review) string {
 		}
 		lines = append(lines, style.Render(fixedWidthFieldLine(risk, width)))
 	}
-	if review.Group {
+	if review.Group && !m.signing.review.text {
 		pane := m.reviewPaneFor(review, width)
 		lines = append(lines, m.reviewPaneLines(pane, width, paneHeight)...)
 		rule := strings.Repeat("─", width)

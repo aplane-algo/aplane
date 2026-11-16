@@ -212,6 +212,13 @@ func TestPromptWarnsOfLookalikeAccounts(t *testing.T) {
 		if got := len(prompt.Review.Findings); got != count {
 			t.Errorf("the review has %d findings about the request, the prompt %d lookalike warnings", got, count)
 		}
+		// The parties the warning names are marked, and no others.
+		for _, party := range prompt.Review.Parties {
+			want := count > 0 && (party.Address == real.String() || party.Address == fake.String())
+			if party.Lookalike != want {
+				t.Errorf("party %s: lookalike = %t, want %t", party.Address, party.Lookalike, want)
+			}
+		}
 		return count
 	}
 

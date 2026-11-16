@@ -79,20 +79,13 @@ func (l reviewLane) name() string {
 	return shortAddress(l.address)
 }
 
-// reviewLookalikes are the addresses whose shortened form another address of
-// the review shares. Shortened, they cannot be told apart.
+// reviewLookalikes are the addresses the signer says look like another
+// account in the request.
 func reviewLookalikes(review *protocol.Review) map[string]bool {
-	byShort := map[string][]string{}
-	for _, party := range review.Parties {
-		short := shortAddress(party.Address)
-		byShort[short] = append(byShort[short], party.Address)
-	}
 	out := map[string]bool{}
-	for _, addresses := range byShort {
-		if len(addresses) > 1 {
-			for _, address := range addresses {
-				out[address] = true
-			}
+	for _, party := range review.Parties {
+		if party.Lookalike {
+			out[party.Address] = true
 		}
 	}
 	return out

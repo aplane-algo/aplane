@@ -41,6 +41,9 @@ type Party struct {
 	// KeyType is the key type of the aplane key that signs for the account
 	// in this request. It is empty when none does.
 	KeyType string
+	// Lookalike is set when another account in the request looks like this
+	// one: the request has a finding that names both.
+	Lookalike bool
 }
 
 // Position is how a request treats one of its transactions.

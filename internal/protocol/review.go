@@ -106,4 +106,7 @@ type ReviewParty struct {
 	Signs bool `json:"signs,omitempty"`
 	// KeyType is the key type that signs for the account in this request.
 	KeyType string `json:"key_type,omitempty"`
+	// Lookalike is set when another account in the request looks like this
+	// one; the review's findings name both.
+	Lookalike bool `json:"lookalike,omitempty"`
 }

@@ -309,7 +309,6 @@ func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanRes
 		review.Items[i].Findings = findings
 		review.Items[i].Details.Mark(findings)
 	}
-	review.SetFindings()
 	review.SetParties(
 		func(address string) bool { return known[address] },
 		func(item int) string {
@@ -319,6 +318,7 @@ func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanRes
 			return plan.AuthKeyTypes[item]
 		},
 	)
+	review.SetFindings()
 }
 
 // requestViolations are a review's findings about the request as a whole, as

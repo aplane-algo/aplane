@@ -495,8 +495,9 @@ loses nothing but the structure.
     request.
 - `parties`: the accounts the request touches, in order of first appearance:
   `address`, `held` (the signer holds an aplane key for it), `signs` (this
-  request signs a transaction it sends) and `key_type` of the key that signs
-  for it.
+  request signs a transaction it sends), `key_type` of the key that signs
+  for it, and `lookalike` when a finding of the review says another account
+  in the request looks like it.
 - `findings`: warnings about the request as a whole, in the shape of
   `violations`: two different accounts in the request that look alike. The
   message's `violations` carry them after the transactions' own.
@@ -1108,13 +1109,13 @@ this request signs, a dashed line for a rekey, a double line for a close), or
 a table of movements. Left alone, the shape of the request picks: a table for
 one account paying three or more others, lanes when every lane fits the
 window, a table when they do not, and the plain list when nothing moves
-between two parties. `v` goes round the three. A column or table row whose
-shortened address another account in the request shares says so in words.
+between two parties. `v` goes round the three. A column or table row of an
+account the review marks as a lookalike says so in words.
 The picture selects the same rows as the list, and the pane under it is the
 same. `up`/`down` select a row (or scroll a lone
-transaction's pane), `pgup`/`pgdown` scroll the pane, and `t` shows the
-request's `description`, the text apapprover prints, and brings the drawn
-review back. The drawn review adds nothing to the text: it arranges the same
+transaction's pane), `pgup`/`pgdown` scroll the pane, and `t` puts the
+request's `description`, the text apapprover prints, in the pane in place of
+the drawn review, and brings the drawn review back. The drawn review adds nothing to the text: it arranges the same
 fields. A two-cell colour mark beside each full address in the overview is
 worked out from the whole address, so two addresses that share their ends
 look different; it never stands in for the address. A request that carries no

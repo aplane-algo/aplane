@@ -164,7 +164,7 @@ func (m Model) buildSigningViewportContent() string {
 
 // initSigningViewport initializes the viewport for the signing popup description
 func (m *Model) initSigningViewport(content string) {
-	if m.reviewOf() != nil {
+	if m.reviewAvailable() {
 		m.refreshReview()
 		return
 	}
@@ -175,7 +175,7 @@ func (m *Model) initSigningViewport(content string) {
 
 // resizeSigningViewport updates the viewport dimensions and reflows content after a terminal resize.
 func (m *Model) resizeSigningViewport() {
-	if m.reviewOf() != nil {
+	if m.reviewAvailable() {
 		m.refreshReview()
 		return
 	}
