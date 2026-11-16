@@ -25,8 +25,7 @@ import (
 type reviewState struct {
 	// text shows the request's description in place of the drawn review.
 	text bool
-	// row is the selected row of a group's list: 0 is the overview, and i is
-	// the group's transaction i.
+	// row is the selected transaction of a group's list, from 0.
 	row int
 	// top is the first line of the upper pane's rows that is shown.
 	top int
@@ -58,13 +57,13 @@ func (m Model) reviewAvailable() bool {
 	return request != nil && request.Review != nil && len(request.Review.Items) > 0
 }
 
-// reviewRows is the number of rows in a group's list: the overview and each
-// transaction. A lone transaction has no list.
+// reviewRows is the number of rows in a group's list, one per transaction. A
+// lone transaction has no list.
 func reviewRows(review *protocol.Review) int {
 	if !review.Group {
 		return 0
 	}
-	return len(review.Items) + 1
+	return len(review.Items)
 }
 
 // reviewWidth is the width the review is drawn in: the whole window, with no
@@ -383,10 +382,10 @@ func firstLine(s string) string {
 	return s
 }
 
-// reviewDetail is the detail pane for the selected row: the overview or one
-// transaction. A lone transaction has no rows: its pane holds the
-// transaction, then the warnings about the request and the rest of the
-// overview.
+// reviewDetail is the detail pane: the selected transaction (a lone
+// transaction's only one) in full, then what is about the request as a whole:
+// its warnings and notes, each account's whole address, and what the signer
+// changed.
 func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 	join := func(sections ...[]reviewLine) []reviewLine {
 		var lines []reviewLine
@@ -401,18 +400,11 @@ func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 		}
 		return lines
 	}
-	if !review.Group {
-		return join(reviewTransaction(review, 0), reviewWarnings(review.Findings), reviewNotes(review.Findings), reviewAccounts(review), reviewRequest(review))
+	row := 0
+	if review.Group {
+		row = m.signing.review.row
 	}
-	if m.signing.review.row == 0 {
-		violations := m.signing.request.Violations
-		lines := join(reviewWarnings(violations), reviewNotes(violations), reviewAccounts(review), reviewRequest(review))
-		if len(lines) == 0 {
-			lines = append(lines, reviewLine{text: "No warnings. The signer changed nothing.", style: helpStyle})
-		}
-		return lines
-	}
-	return reviewTransaction(review, m.signing.review.row-1)
+	return join(reviewTransaction(review, row), reviewWarnings(review.Findings), reviewNotes(review.Findings), reviewAccounts(review), reviewRequest(review))
 }
 
 // reviewWarning draws one warning: what it is about and the first line of

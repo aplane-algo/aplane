@@ -29,7 +29,6 @@ const (
 )
 
 const (
-	reviewOverviewText = "Overview: warnings, accounts and what the signer changed"
 	// reviewRowPrefix is the width of a row's number and warning mark.
 	reviewRowPrefix = 5
 	minLaneWidth    = 11
@@ -287,15 +286,10 @@ func (m Model) reviewPaneFor(review *protocol.Review, width int) reviewPane {
 	return listPane(review)
 }
 
-func overviewLine() paneLine {
-	text := strings.Repeat(" ", reviewRowPrefix-1) + reviewOverviewText
-	return paneLine{row: 0, plain: text, spans: []paneSpan{{text, normalStyle}}}
-}
-
 // listPane is one line for each transaction: how the request treats it, and
 // its title.
 func listPane(review *protocol.Review) reviewPane {
-	pane := reviewPane{lines: []paneLine{overviewLine()}}
+	var pane reviewPane
 	for i, item := range review.Items {
 		style := normalStyle
 		if severity := reviewItemSeverity(item); severity != "" {
@@ -304,7 +298,7 @@ func listPane(review *protocol.Review) reviewPane {
 			style = helpStyle
 		}
 		text := fmt.Sprintf("%s%-15s  %s", reviewRowLead(i+1, item, true), reviewPositionWords(item.Position), firstLine(item.Title))
-		pane.lines = append(pane.lines, paneLine{row: i + 1, plain: text, spans: []paneSpan{{text, style}}})
+		pane.lines = append(pane.lines, paneLine{row: i, plain: text, spans: []paneSpan{{text, style}}})
 	}
 	return pane
 }
@@ -373,7 +367,8 @@ func singlePicture(review *protocol.Review, width int) (reviewPane, bool) {
 }
 
 // drawLanes draws the lanes. rows is set for a group, whose lines are
-// numbered rows under an overview row; a lone transaction has neither.
+// numbered rows to select; a lone transaction's lines are neither numbered
+// nor selectable.
 func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 	lanes := reviewLanes(review)
 	shown, laneWidth := lanesShown(review, lanes, width)
@@ -403,9 +398,6 @@ func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 		names.WriteString(helpStyle.Render(fmt.Sprintf(" +%d", hidden)))
 	}
 	pane := reviewPane{header: []string{names.String(), roles.String()}}
-	if rows {
-		pane.lines = append(pane.lines, overviewLine())
-	}
 
 	centreOf := func(lane int) int { return lane*laneWidth + laneWidth/2 }
 	edge := shown*laneWidth - 1
@@ -499,7 +491,11 @@ func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 				x = y
 			}
 			spans = append(spans, paneSpan{gap + " " + text, style})
-			pane.lines = append(pane.lines, paneLine{row: i + 1, plain: number + string(cells) + gap + " " + text, spans: spans})
+			row := i
+			if !rows {
+				row = -1
+			}
+			pane.lines = append(pane.lines, paneLine{row: row, plain: number + string(cells) + gap + " " + text, spans: spans})
 		}
 	}
 	return pane
@@ -516,7 +512,7 @@ func tablePane(review *protocol.Review, width int) reviewPane {
 	}
 	const nameWidth = 12
 	head := strings.Repeat(" ", 2+reviewRowPrefix) + fixedWidthFieldLine("From", nameWidth) + "   " + fixedWidthFieldLine("To", nameWidth) + "  What"
-	pane := reviewPane{header: []string{helpStyle.Render(head)}, lines: []paneLine{overviewLine()}}
+	pane := reviewPane{header: []string{helpStyle.Render(head)}}
 
 	name := func(address string) (string, lipgloss.Style) {
 		style := normalStyle
@@ -553,7 +549,7 @@ func tablePane(review *protocol.Review, width int) reviewPane {
 				leadStyle = reviewWarningStyle(severity)
 			}
 			pane.lines = append(pane.lines, paneLine{
-				row:   i + 1,
+				row:   i,
 				plain: number + from + arrow + to + "  " + text,
 				spans: []paneSpan{{number, leadStyle}, {from, fromStyle}, {arrow, style}, {to, toStyle}, {"  ", normalStyle}, {text, style}},
 			})

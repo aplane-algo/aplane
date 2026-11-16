@@ -184,13 +184,23 @@ func TestReviewScreenFitsTheWindow(t *testing.T) {
 	}
 }
 
-// The overview holds every warning of the request, each account's whole
-// address with what the signer holds, and what planning changed.
-func TestReviewOverviewShowsWarningsAccountsAndChanges(t *testing.T) {
+// A group starts on its first transaction, with no overview row. Every
+// transaction's pane ends with what is about the request as a whole: its own
+// warnings, each account's whole address with what the signer holds, and
+// what planning changed; another transaction's warnings stay with it.
+func TestReviewDetailEndsWithTheRequest(t *testing.T) {
 	m := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
+	if view := requireFits(t, m, MinWidth, MinHeight); strings.Contains(view, "Overview") || m.signing.review.row != 0 {
+		t.Fatalf("the review does not start on the first transaction (row %d):\n%s", m.signing.review.row, view)
+	}
 	detail := allDetail(t, m)
+	if strings.Index(detail, "Transaction 1 of 3") > strings.Index(detail, "Accounts") {
+		t.Errorf("the transaction is not shown before the accounts:\n%s", detail)
+	}
+	if strings.Contains(detail, "RekeyTo") {
+		t.Errorf("the first transaction's pane shows the second's warning:\n%s", detail)
+	}
 	for _, want := range []string{
-		"⚠ CRITICAL: Tx 2/3: RekeyTo",
 		"⚠ WARNING: Lookalike accounts",
 		reviewOwn, reviewOther, reviewThird,
 		"this request signs for it, with a falcon1024 key",
@@ -199,7 +209,7 @@ func TestReviewOverviewShowsWarningsAccountsAndChanges(t *testing.T) {
 		"• Group ID recomputed",
 	} {
 		if !strings.Contains(detail, want) {
-			t.Errorf("overview lacks %q:\n%s", want, detail)
+			t.Errorf("the pane lacks %q:\n%s", want, detail)
 		}
 	}
 }
@@ -211,9 +221,11 @@ func TestReviewShowsTheSelectedTransactionInFull(t *testing.T) {
 	request := groupReviewRequest()
 	m := reviewModelForTest(t, request, true, MinWidth, MinHeight)
 	for index, item := range request.Review.Items {
-		m = reviewKey(t, m, "down")
-		if m.signing.review.row != index+1 {
-			t.Fatalf("row = %d after %d presses", m.signing.review.row, index+1)
+		if index > 0 {
+			m = reviewKey(t, m, "down")
+		}
+		if m.signing.review.row != index {
+			t.Fatalf("row = %d after %d presses", m.signing.review.row, index)
 		}
 		requireFits(t, m, MinWidth, MinHeight)
 		detail := allDetail(t, m)
@@ -235,14 +247,14 @@ func TestReviewShowsTheSelectedTransactionInFull(t *testing.T) {
 	}
 	// The selection stops at the ends of the list.
 	m = reviewKey(t, m, "down")
-	if m.signing.review.row != 3 {
+	if m.signing.review.row != 2 {
 		t.Fatalf("row = %d past the last transaction", m.signing.review.row)
 	}
 	for i := 0; i < 5; i++ {
 		m = reviewKey(t, m, "up")
 	}
 	if m.signing.review.row != 0 {
-		t.Fatalf("row = %d past the overview", m.signing.review.row)
+		t.Fatalf("row = %d past the first transaction", m.signing.review.row)
 	}
 }
 
@@ -294,7 +306,7 @@ func TestReviewTextToggle(t *testing.T) {
 	}
 	m = reviewKey(t, m, "t")
 	view = requireFits(t, m, MinWidth, MinHeight)
-	if !strings.Contains(view, "Transaction 1 of 3 · signed here") || !strings.Contains(view, "t: Text") {
+	if !strings.Contains(view, "Transaction 2 of 3 · signed here") || !strings.Contains(view, "t: Text") {
 		t.Fatalf("drawn review after the toggle:\n%s", view)
 	}
 
@@ -435,7 +447,6 @@ func TestReviewLanes(t *testing.T) {
 	// Selecting a transaction with two effects keeps both of its lines.
 	small := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
 	small = reviewKey(t, small, "down")
-	small = reviewKey(t, small, "down")
 	smallView := requireFits(t, small, MinWidth, MinHeight)
 	if !strings.Contains(smallView, "REKEY: control moves") || !strings.Contains(smallView, "Transaction 2 of 3 · signed here") {
 		t.Errorf("the selected transaction's second effect is out of view:\n%s", smallView)
@@ -499,8 +510,8 @@ func TestLoneTransactionIsDrawnAsLanes(t *testing.T) {
 				t.Fatalf("%dx%d: screen lacks %q:\n%s", size[0], size[1], want, view)
 			}
 		}
-		if strings.Contains(view, "Overview:") {
-			t.Fatalf("a lone transaction has rows to select:\n%s", view)
+		if strings.Contains(view, "\n> ") {
+			t.Fatalf("a lone transaction has a row selected:\n%s", view)
 		}
 		// Up and down still scroll the fields.
 		before := m.signing.viewport.YOffset
@@ -527,7 +538,7 @@ func TestLoneTransactionIsDrawnAsLanes(t *testing.T) {
 // where it is not the sender.
 func TestReviewTransactionShowsFieldsBeforeWarnings(t *testing.T) {
 	m := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
-	m = reviewKey(t, reviewKey(t, m, "down"), "down")
+	m = reviewKey(t, m, "down")
 	detail := allDetail(t, m)
 	to := strings.Index(detail, "REKEY TO: "+reviewThird)
 	warning := strings.Index(detail, "⚠ CRITICAL: RekeyTo · This transaction will REKEY the account.")
@@ -544,7 +555,7 @@ func TestReviewTransactionShowsFieldsBeforeWarnings(t *testing.T) {
 	// A rekeyed account signs with another account's key: that stays.
 	rekeyed := groupReviewRequest()
 	rekeyed.Review.Items[0].Notes = []protocol.ReviewField{{Label: protocol.ReviewNoteSigningKey, Value: reviewThird}}
-	m = reviewKey(t, reviewModelForTest(t, rekeyed, true, MinWidth, MinHeight), "down")
+	m = reviewModelForTest(t, rekeyed, true, MinWidth, MinHeight)
 	if !strings.Contains(allDetail(t, m), protocol.ReviewNoteSigningKey+": "+reviewThird) {
 		t.Errorf("a signing key other than the sender is not shown:\n%s", allDetail(t, m))
 	}
@@ -554,7 +565,7 @@ func TestReviewTransactionShowsFieldsBeforeWarnings(t *testing.T) {
 // a rekey's arrow keeps its danger colour while the operator looks at it.
 func TestReviewSelectedRowKeepsItsColours(t *testing.T) {
 	m := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
-	m = reviewKey(t, reviewKey(t, m, "down"), "down")
+	m = reviewKey(t, m, "down")
 	pane, ok := m.reviewUpperPane(m.reviewOf(), m.reviewWidth())
 	if !ok {
 		t.Fatal("the group has no upper pane")
@@ -617,7 +628,7 @@ func TestReviewHeaderAndRuleShareLines(t *testing.T) {
 		t.Errorf("an empty validity window is not called empty:\n%s", view)
 	}
 
-	payroll := requireFits(t, reviewModelForTest(t, payrollReviewRequest(12), true, MinWidth, MinHeight), MinWidth, MinHeight)
+	payroll := requireFits(t, reviewModelForTest(t, payrollReviewRequest(16), true, MinWidth, MinHeight), MinWidth, MinHeight)
 	if !regexp.MustCompile(`── ▼ \d+ more below ─`).MatchString(payroll) {
 		t.Errorf("the rule does not count the rows below:\n%s", payroll)
 	}
@@ -655,19 +666,15 @@ func heldRekeyRequest() *PendingSignRequest {
 
 // A rekey to an account this signer holds is a notice: no risk line, no
 // warning mark on its row, an arrow in the ordinary colour, and a note, not
-// a warning, in its detail and in the overview.
+// a warning, in its detail.
 func TestReviewShowsAHeldRekeyAsANotice(t *testing.T) {
 	m := reviewModelForTest(t, heldRekeyRequest(), true, MinWidth, MinHeight)
 	view := requireFits(t, m, MinWidth, MinHeight)
 	if strings.Contains(view, "⚠") || strings.Contains(view, "REKEY") {
 		t.Fatalf("a held rekey is shown with alarm:\n%s", view)
 	}
-	overview := allDetail(t, m)
-	if !strings.Contains(overview, "Notes") || !strings.Contains(overview, "Note: Tx 2/3: RekeyTo · This transaction will transfer signing authority") || strings.Contains(overview, "Warnings") {
-		t.Fatalf("the overview does not list the rekey as a note:\n%s", overview)
-	}
 
-	m = reviewKey(t, reviewKey(t, m, "down"), "down")
+	m = reviewKey(t, m, "down")
 	detail := allDetail(t, m)
 	if !strings.Contains(detail, "Rekey to: "+reviewThird) || !strings.Contains(detail, "Note: RekeyTo") || strings.Contains(detail, "CRITICAL") {
 		t.Fatalf("the transaction's detail does not show the rekey as a note:\n%s", detail)

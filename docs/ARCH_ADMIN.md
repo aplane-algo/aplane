@@ -1104,13 +1104,13 @@ a rule, the pane, and one keys line with the two buttons. The validity window
 goes at the right of the summary or risk line where it fits, and on a line of
 its own otherwise; the rule counts the rows hidden below the list and says
 which lines of the pane show. A group shows a
-list, the overview row first and then one row per transaction with how the
-request treats it and its title, and under the list a pane with the selected
-row in full. The overview holds every warning, each account's whole address
-with what the signer holds, and what planning changed; a transaction's pane
-holds every field, then its own warnings, and names the signing key only
-where it is not the sender. A lone transaction has no list: one
-pane holds all of it, under its lanes when it moves something between two
+list, one row per transaction with how the request treats it and its title,
+the first selected, and under the list a pane with the selected transaction
+in full: every field, then its own warnings, naming the signing key only
+where it is not the sender. The pane ends with what is about the request as a
+whole: its warnings and notes, each account's whole address with what the
+signer holds, and what planning changed. A lone transaction has no list: one
+pane holds all of it, in the same order, under its lanes when it moves something between two
 parties (a payment, a close, a rekey, an app call) and with no picture when
 it touches one account alone. The list can also be drawn as a picture
 (`review_picture.go`), from the review's effects and parties: lanes, one
@@ -1127,7 +1127,7 @@ stays red while it is selected. `up`/`down` select a row (or scroll a lone
 transaction's pane), `pgup`/`pgdown` scroll the pane, and `t` puts the
 request's `description`, the text apapprover prints, in the pane in place of
 the drawn review, and brings the drawn review back. The drawn review adds nothing to the text: it arranges the same
-fields. A two-cell colour mark beside each full address in the overview is
+fields. A two-cell colour mark beside each full address in the account list is
 worked out from the whole address, so two addresses that share their ends
 look different; it never stands in for the address. A request that carries no
 `review` is shown as its description.
