@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -162,7 +163,10 @@ func TestReviewScreenFitsTheWindow(t *testing.T) {
 					}
 				}
 				view := requireFits(t, m, size[0], size[1])
-				for _, want := range []string{"Signing Request", "Group of 3 · 2 signed here · 1 not signed here", "⚠ 2 warnings · REKEY in 2", "APPROVE", "> REJECT"} {
+				if strings.ContainsAny(view, "╔║╚") {
+					t.Fatalf("%dx%d: the review is drawn in a popup frame:\n%s", size[0], size[1], view)
+				}
+				for _, want := range []string{"Signing Request", "Group of 3 · 2 signed here · 1 not signed here", "⚠ 2 warnings · REKEY in 2", "APPROVE (y)", "> REJECT (n)"} {
 					if !strings.Contains(view, want) {
 						t.Fatalf("%dx%d row %d: screen lacks %q:\n%s", size[0], size[1], row, want, view)
 					}
@@ -248,10 +252,14 @@ func TestReviewOfALoneTransactionShowsEverythingInOnePane(t *testing.T) {
 	request := singleReviewRequest()
 	m := reviewModelForTest(t, request, true, MinWidth, MinHeight)
 	detail := allDetail(t, m)
-	for _, want := range []string{"⚠ CRITICAL: CloseRemainderTo", "Close remainder to:", "\n    " + reviewOther, "Fee: 0.001000 ALGO", "Accounts", reviewOwn} {
+	for _, want := range []string{"⚠ CRITICAL: CloseRemainderTo", "Close remainder to:", "Fee: 0.001000 ALGO", "Accounts", reviewOwn} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("pane lacks %q:\n%s", want, detail)
 		}
+	}
+	// Whether or not the field wraps, its address is never split.
+	if !regexp.MustCompile(`Close remainder to:\s+` + reviewOther).MatchString(detail) {
+		t.Errorf("the close-to address is not whole after its label:\n%s", detail)
 	}
 	if strings.Index(detail, "Payment: 5000.000000 ALGO") > strings.Index(detail, "Accounts") {
 		t.Errorf("the transaction is not shown before the accounts:\n%s", detail)
@@ -353,7 +361,7 @@ func payrollReviewRequest(n int) *PendingSignRequest {
 
 func pictureOf(t *testing.T, m Model) reviewPicture {
 	t.Helper()
-	return m.pictureFor(m.reviewOf(), m.popupBodyWidth(78))
+	return m.pictureFor(m.reviewOf(), m.reviewWidth())
 }
 
 // Left to itself the upper pane draws lanes where every lane fits, a table

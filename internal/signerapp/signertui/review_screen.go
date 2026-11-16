@@ -67,15 +67,26 @@ func reviewRows(review *protocol.Review) int {
 	return len(review.Items) + 1
 }
 
+// reviewWidth is the width the review is drawn in: the whole window, with no
+// popup frame, so the lanes and the fields have every column there is.
+func (m Model) reviewWidth() int {
+	if m.width <= 0 {
+		return 78
+	}
+	return m.width
+}
+
 // reviewLayout is the width of the review and the heights of its upper pane
-// and its detail pane.
+// and its detail pane. The review fills the window between the admin header
+// and the status bar; it draws its own keys line, so the window has no
+// footer under it.
 func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailHeight int) {
-	width = m.popupBodyWidth(78)
-	inner := m.popupContentHeight()
+	width = m.reviewWidth()
+	inner := m.windowBodyHeight()
 	if inner <= 0 {
 		inner = 30
 	}
-	// Title, the scroll hint and the buttons are always there.
+	// Title, the scroll hint and the keys line are always there.
 	fixed := 3
 	if m.reviewValidityLine() != "" {
 		fixed++
@@ -173,7 +184,7 @@ func (m Model) handleReviewKeys(msg tea.KeyMsg) (Model, bool) {
 	case "down", "j":
 		m.signing.review.row++
 	case "v":
-		m.signing.review.picture = m.nextPicture(review, m.popupBodyWidth(78))
+		m.signing.review.picture = m.nextPicture(review, m.reviewWidth())
 		m.signing.review.top = 0
 	default:
 		return m, false
@@ -508,13 +519,40 @@ func (m Model) renderReviewScreen(review *protocol.Review) string {
 	}
 	lines = append(lines, helpStyle.Render(hint))
 
-	approve, reject := "  APPROVE  ", "  REJECT  "
-	if m.signing.focus == 0 {
-		approve, reject = selectedStyle.Render("> APPROVE  "), helpStyle.Render(reject)
-	} else {
-		approve, reject = helpStyle.Render(approve), selectedStyle.Render("> REJECT  ")
-	}
-	lines = append(lines, approve+"  "+reject)
+	lines = append(lines, m.reviewKeysLine(width))
 
-	return m.renderPopup(78, strings.Join(lines, "\n"))
+	clip := lipgloss.NewStyle().MaxWidth(width)
+	for i, line := range lines {
+		lines[i] = clip.Render(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// reviewKeysLine is the review's last line: the two buttons, the focused one
+// marked, then the keys the review adds to them.
+func (m Model) reviewKeysLine(width int) string {
+	approve, reject := "  APPROVE (y)", "  REJECT (n)"
+	if m.signing.focus == 0 {
+		approve, reject = selectedStyle.Render("> APPROVE (y)"), helpStyle.Render(reject)
+	} else {
+		approve, reject = helpStyle.Render(approve), selectedStyle.Render("> REJECT (n)")
+	}
+	buttons := approve + "  " + reject
+
+	var keys string
+	switch review := m.reviewOf(); {
+	case review == nil:
+		keys = "↑↓: Scroll | t: Review"
+	case review.Group:
+		keys = "↑↓: Select | PgUp/PgDn: Scroll | v: View | t: Text"
+	default:
+		keys = "↑↓: Scroll | t: Text"
+	}
+	room := width - lipgloss.Width(buttons) - 2
+	if room <= 0 {
+		return buttons
+	}
+	keys = strings.TrimRight(fixedWidthFieldLine(keys, min(room, lipgloss.Width(keys))), " ")
+	gap := width - lipgloss.Width(buttons) - lipgloss.Width(keys)
+	return buttons + strings.Repeat(" ", gap) + helpStyle.Render(keys)
 }
