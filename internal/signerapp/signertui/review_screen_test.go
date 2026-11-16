@@ -693,3 +693,29 @@ func TestReviewShowsAHeldRekeyAsANotice(t *testing.T) {
 		t.Fatalf("the text view shows the notice as a warning:\n%s", text)
 	}
 }
+
+// Resizing the window keeps the detail pane where the operator scrolled it,
+// as far as the new height allows; choosing another transaction starts its
+// detail at the top.
+func TestReviewDetailKeepsItsPlaceOnResize(t *testing.T) {
+	m := reviewModelForTest(t, groupReviewRequest(), true, MinWidth, MinHeight)
+	m = reviewKey(t, m, "pgdown")
+	offset := m.signing.viewport.YOffset
+	if offset == 0 {
+		t.Fatal("the detail pane did not scroll")
+	}
+	m, _ = updateForTest(t, m, tea.WindowSizeMsg{Width: MinWidth + 10, Height: MinHeight})
+	if got := m.signing.viewport.YOffset; got != offset {
+		t.Fatalf("after a resize the detail is at line %d, want %d", got, offset)
+	}
+	m, _ = updateForTest(t, m, tea.WindowSizeMsg{Width: 133, Height: 200})
+	if got := m.signing.viewport.YOffset; got != 0 || !m.signing.viewport.AtBottom() {
+		t.Fatalf("a window tall enough for all of it is at line %d, want 0", got)
+	}
+	m, _ = updateForTest(t, m, tea.WindowSizeMsg{Width: MinWidth, Height: MinHeight})
+	m = reviewKey(t, m, "pgdown")
+	m = reviewKey(t, m, "down")
+	if got := m.signing.viewport.YOffset; got != 0 {
+		t.Fatalf("another transaction's detail starts at line %d, want 0", got)
+	}
+}

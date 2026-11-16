@@ -176,10 +176,14 @@ func (m *Model) initSigningViewport(content string) {
 	m.signing.viewport.SetContent(wrapText(content, vpWidth))
 }
 
-// resizeSigningViewport updates the viewport dimensions and reflows content after a terminal resize.
+// resizeSigningViewport updates the viewport dimensions and reflows content
+// after a terminal resize. A drawn review's detail pane keeps the operator's
+// place, as far down as the new height allows.
 func (m *Model) resizeSigningViewport() {
 	if m.reviewAvailable() {
+		offset := m.signing.viewport.YOffset
 		m.refreshReview()
+		m.signing.viewport.SetYOffset(offset)
 		return
 	}
 	vpHeight, vpWidth := m.signingViewportDimensions()
