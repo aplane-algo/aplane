@@ -26,6 +26,9 @@ type Review struct {
 	// between, in order of first appearance. The text does not print them:
 	// they say which of the addresses in the fields are this signer's own.
 	Parties []Party
+	// Findings are what a reviewer must not miss about the request as a
+	// whole, beyond each transaction's own.
+	Findings []Finding
 }
 
 // Party is one account a request touches.
@@ -243,6 +246,10 @@ func (r Review) Safe() Review {
 	for _, p := range r.Parties {
 		p.Address, p.KeyType = line(p.Address), line(p.KeyType)
 		safe.Parties = append(safe.Parties, p)
+	}
+	for _, f := range r.Findings {
+		f.Field, f.Value, f.Message = line(f.Field), line(f.Value), termsafe.Lines(f.Message)
+		safe.Findings = append(safe.Findings, f)
 	}
 	return safe
 }

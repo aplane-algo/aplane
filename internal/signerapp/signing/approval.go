@@ -309,6 +309,7 @@ func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanRes
 		review.Items[i].Findings = findings
 		review.Items[i].Details.Mark(findings)
 	}
+	review.SetFindings()
 	review.SetParties(
 		func(address string) bool { return known[address] },
 		func(item int) string {
@@ -318,6 +319,25 @@ func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanRes
 			return plan.AuthKeyTypes[item]
 		},
 	)
+}
+
+// requestViolations are a review's findings about the request as a whole, as
+// the prompt's warnings.
+func requestViolations(review *txnreview.Review) []signerapproval.Violation {
+	if review == nil {
+		return nil
+	}
+	var violations []signerapproval.Violation
+	for _, finding := range review.Findings {
+		severity := signerapproval.ViolationSeverityWarning
+		if finding.Critical {
+			severity = signerapproval.ViolationSeverityCritical
+		}
+		violations = append(violations, signerapproval.Violation{
+			Field: finding.Field, Value: finding.Value, Severity: severity, Message: finding.Message,
+		})
+	}
+	return violations
 }
 
 // planChangeLines is the text of planChanges: every line ends in a newline,
@@ -618,6 +638,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 	}, warningRekeyTargetsForPlan(plan))
+	violations = append(violations, requestViolations(review)...)
 	approved, err := s.requestSigningApproval(
 		ctx,
 
@@ -728,6 +749,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan), ListedRekeyTargets: listed,
 	})
 	txnDesc = appendViolationHighlights(txnDesc, violations)
+	violations = append(violations, requestViolations(review)...)
 
 	approved, err := s.requestSigningApproval(
 		ctx,

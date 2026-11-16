@@ -181,3 +181,69 @@ func TestPromptReviewIsEscaped(t *testing.T) {
 		t.Fatalf("signing key note = %q", note)
 	}
 }
+
+// Two accounts in one request that look alike are a warning beside the text,
+// in a group's prompt and a lone transaction's, and in the review.
+func TestPromptWarnsOfLookalikeAccounts(t *testing.T) {
+	own, real := reviewTestAddr(1), reviewTestAddr(2)
+	fake := real
+	for i := 4; i < 28; i++ {
+		fake[i] ^= 0xff
+	}
+	if real.String()[:6] != fake.String()[:6] {
+		t.Fatalf("the test addresses do not look alike: %s %s", real, fake)
+	}
+	payTo := func(to types.Address) types.Transaction {
+		txn := types.Transaction{Type: types.PaymentTx}
+		txn.Sender, txn.Receiver, txn.Amount, txn.Fee = own, to, 1_000_000, 1000
+		return txn
+	}
+	lookalikes := func(prompt signerapproval.Prompt) int {
+		count := 0
+		for _, v := range prompt.Violations {
+			if v.Field == txnreview.LookalikeField {
+				count++
+				if v.Severity != signerapproval.ViolationSeverityWarning ||
+					!strings.Contains(v.Message, real.String()) || !strings.Contains(v.Message, fake.String()) {
+					t.Errorf("warning = %+v", v)
+				}
+			}
+		}
+		if got := len(prompt.Review.Findings); got != count {
+			t.Errorf("the review has %d findings about the request, the prompt %d lookalike warnings", got, count)
+		}
+		return count
+	}
+
+	group := promptForReviewTest(t,
+		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: own.String()}, {AuthAddress: own.String()}}},
+		&PlanResult{
+			AllTxns:            []types.Transaction{payTo(real), payTo(fake)},
+			PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
+		}, nil)
+	if got := lookalikes(group); got != 1 {
+		t.Fatalf("group prompt has %d lookalike warnings, want 1: %+v", got, group.Violations)
+	}
+
+	closing := payTo(real)
+	closing.CloseRemainderTo = fake
+	single := promptForReviewTest(t,
+		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: own.String()}}},
+		&PlanResult{
+			AllTxns:            []types.Transaction{closing},
+			PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
+		}, nil)
+	if got := lookalikes(single); got != 1 {
+		t.Fatalf("single prompt has %d lookalike warnings, want 1: %+v", got, single.Violations)
+	}
+
+	plain := promptForReviewTest(t,
+		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: own.String()}, {AuthAddress: own.String()}}},
+		&PlanResult{
+			AllTxns:            []types.Transaction{payTo(real), payTo(reviewTestAddr(9))},
+			PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
+		}, nil)
+	if got := lookalikes(plain); got != 0 {
+		t.Fatalf("unrelated accounts are called lookalikes: %+v", plain.Violations)
+	}
+}

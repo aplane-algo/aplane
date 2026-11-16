@@ -1061,7 +1061,8 @@ is built, then uses:
 - warning analysis for operator-visible risk surfacing: rekey, close-out,
   asset close, clawback, application delete, clear-state, or update, asset
   reconfigure or destroy, asset freeze or unfreeze, a payment of ALGO to the
-  zero address, and unusually high fees;
+  zero address, and unusually high fees; and, for the request as a whole,
+  two different accounts in it that look alike (shown, never a policy input);
   under `always_review_warnings` these force review on the signer's own legs,
   and a warning on a passthrough or foreign leg forces review regardless; a
   rotating account's rekey to the next stage the signer derived itself is a

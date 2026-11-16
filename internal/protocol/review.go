@@ -20,6 +20,9 @@ type Review struct {
 	// Parties are the accounts the request touches, in order of first
 	// appearance.
 	Parties []ReviewParty `json:"parties,omitempty"`
+	// Findings are warnings about the request as a whole, such as two
+	// accounts that look alike. The message's violations carry them too.
+	Findings []PolicyViolation `json:"findings,omitempty"`
 }
 
 // ReviewChanges is what planning did to the request.

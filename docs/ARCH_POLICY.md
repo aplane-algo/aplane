@@ -421,6 +421,15 @@ says. User Auto-Approve satisfies that review without a prompt.
 Warnings on the signer's own legs are still displayed when
 `always_review_warnings:false`; they simply do not force review in that mode.
 
+One warning is about the request as a whole, not one transaction: two
+different accounts in it that look alike, sharing six or more characters
+counted from both ends of the address together (`internal/txnreview/lookalike.go`).
+A shortened address keeps a few characters of each end, and address poisoning
+searches for an address that matches them. The warning names both addresses
+in full. It is shown wherever a prompt is shown and is in the review's
+`findings`; it is not a policy input, so it forces no review on its own and
+`appolicy try` does not report it.
+
 ## Always Approve
 
 Always Approve rules are explicit low-risk rules stored in policy. They are

@@ -1077,6 +1077,17 @@ func protocolReview(review *txnreview.Review) *protocol.Review {
 		}
 		return out
 	}
+	findings := func(in []txnreview.Finding) []protocol.PolicyViolation {
+		var out []protocol.PolicyViolation
+		for _, f := range in {
+			severity := signerapproval.ViolationSeverityWarning
+			if f.Critical {
+				severity = signerapproval.ViolationSeverityCritical
+			}
+			out = append(out, protocol.PolicyViolation{Field: f.Field, Value: f.Value, Severity: string(severity), Message: f.Message})
+		}
+		return out
+	}
 	out := &protocol.Review{
 		Version: protocol.ReviewVersion,
 		Group:   review.Group,
@@ -1098,20 +1109,13 @@ func protocolReview(review *txnreview.Review) *protocol.Review {
 				App: e.App, NewApp: e.NewApp, Text: e.Text, Severity: string(e.Severity),
 			})
 		}
-		for _, f := range item.Findings {
-			severity := signerapproval.ViolationSeverityWarning
-			if f.Critical {
-				severity = signerapproval.ViolationSeverityCritical
-			}
-			wire.Findings = append(wire.Findings, protocol.PolicyViolation{
-				Field: f.Field, Value: f.Value, Severity: string(severity), Message: f.Message,
-			})
-		}
+		wire.Findings = findings(item.Findings)
 		out.Items[i] = wire
 	}
 	for _, p := range review.Parties {
 		out.Parties = append(out.Parties, protocol.ReviewParty{Address: p.Address, Held: p.Held, Signs: p.Signs, KeyType: p.KeyType})
 	}
+	out.Findings = findings(review.Findings)
 	return out
 }
 

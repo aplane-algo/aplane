@@ -115,5 +115,6 @@ func (r *Review) terminalSafe() *Review {
 		p.Address, p.KeyType = termsafe.Line(p.Address), termsafe.Line(p.KeyType)
 		safe.Parties[i] = p
 	}
+	safe.Findings = safeViolations(r.Findings)
 	return &safe
 }

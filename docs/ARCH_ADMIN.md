@@ -497,6 +497,9 @@ loses nothing but the structure.
   `address`, `held` (the signer holds an aplane key for it), `signs` (this
   request signs a transaction it sends) and `key_type` of the key that signs
   for it.
+- `findings`: warnings about the request as a whole, in the shape of
+  `violations`: two different accounts in the request that look alike. The
+  message's `violations` carry them after the transactions' own.
 
 The fields are the review. Effects and parties only arrange them: a new
 field on a transaction type is one more entry in `fields` and needs no
