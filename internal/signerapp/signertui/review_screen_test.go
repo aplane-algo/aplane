@@ -203,7 +203,7 @@ func TestReviewDetailEndsWithTheRequest(t *testing.T) {
 	for _, want := range []string{
 		"⚠ WARNING: Lookalike accounts",
 		reviewOwn, reviewOther, reviewThird,
-		"this request signs for it, with a falcon1024 key",
+		"this request signs for it with its falcon1024 aplane key",
 		"[MULTI-PARTY: 2 to sign, 1 foreign (not signing)]",
 		"[MODIFIED BY SERVER]",
 		"• Group ID recomputed",

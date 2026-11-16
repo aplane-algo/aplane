@@ -472,11 +472,11 @@ func reviewAccounts(review *protocol.Review) []reviewLine {
 		lines = append(lines, reviewLine{fixed: "  " + addressChip(party.Address) + " " + style.Render(party.Address)})
 		switch {
 		case party.Signs && party.KeyType != "":
-			lines = append(lines, reviewLine{text: "       this request signs for it, with a " + party.KeyType + " key", style: helpStyle})
+			lines = append(lines, reviewLine{text: "       this request signs for it with its " + party.KeyType + " aplane key", style: helpStyle})
 		case party.Signs:
 			lines = append(lines, reviewLine{text: "       this request signs for it", style: helpStyle})
 		case party.Held:
-			lines = append(lines, reviewLine{text: "       this signer holds its key; this request does not sign for it", style: helpStyle})
+			lines = append(lines, reviewLine{text: "       this signer holds its aplane key; this request does not sign for it", style: helpStyle})
 		}
 	}
 	return lines
