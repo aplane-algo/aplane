@@ -286,7 +286,7 @@ func reviewSummary(review *protocol.Review) string {
 // reviewHasCritical reports whether any warning of the request is critical.
 func (m Model) reviewHasCritical() bool {
 	for _, v := range m.signing.request.Violations {
-		if v.Severity == "critical" {
+		if v.Severity == protocol.ViolationSeverityCritical {
 			return true
 		}
 	}
@@ -294,9 +294,15 @@ func (m Model) reviewHasCritical() bool {
 }
 
 // reviewRiskLine counts the request's warnings and names the effects among
-// them that hand over control or funds. It is empty when there are none.
+// them that hand over control or funds. It is empty when there are none;
+// notices are not warnings here.
 func (m Model) reviewRiskLine(review *protocol.Review) string {
-	count := len(m.signing.request.Violations)
+	count := 0
+	for _, v := range m.signing.request.Violations {
+		if v.Severity != protocol.ViolationSeverityNotice {
+			count++
+		}
+	}
 	if count == 0 {
 		return ""
 	}
@@ -321,21 +327,24 @@ func (m Model) reviewRiskLine(review *protocol.Review) string {
 
 // reviewWarningStyle is the style of a warning of the given severity.
 func reviewWarningStyle(severity string) lipgloss.Style {
-	if severity == "critical" {
+	if severity == protocol.ViolationSeverityCritical {
 		return errorStyle
 	}
 	return warningStyle
 }
 
 // reviewItemSeverity is the gravest severity among a transaction's findings,
-// or empty when it has none.
+// or empty when it has none but notices.
 func reviewItemSeverity(item protocol.ReviewItem) string {
 	severity := ""
 	for _, finding := range item.Findings {
-		if finding.Severity == "critical" {
-			return "critical"
+		switch finding.Severity {
+		case protocol.ViolationSeverityCritical:
+			return finding.Severity
+		case protocol.ViolationSeverityNotice:
+		default:
+			severity = finding.Severity
 		}
-		severity = finding.Severity
 	}
 	return severity
 }
@@ -393,10 +402,11 @@ func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 		return lines
 	}
 	if !review.Group {
-		return join(reviewTransaction(review, 0), reviewWarnings(review.Findings), reviewAccounts(review), reviewRequest(review))
+		return join(reviewTransaction(review, 0), reviewWarnings(review.Findings), reviewNotes(review.Findings), reviewAccounts(review), reviewRequest(review))
 	}
 	if m.signing.review.row == 0 {
-		lines := join(reviewWarnings(m.signing.request.Violations), reviewAccounts(review), reviewRequest(review))
+		violations := m.signing.request.Violations
+		lines := join(reviewWarnings(violations), reviewNotes(violations), reviewAccounts(review), reviewRequest(review))
 		if len(lines) == 0 {
 			lines = append(lines, reviewLine{text: "No warnings. The signer changed nothing.", style: helpStyle})
 		}
@@ -406,12 +416,16 @@ func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 }
 
 // reviewWarning draws one warning: what it is about and the first line of
-// its message on one line, then the rest of the message.
+// its message on one line, then the rest of the message. A notice is drawn
+// as a note, in the ordinary colour and with no warning sign.
 func reviewWarning(v protocol.PolicyViolation) []reviewLine {
 	style := reviewWarningStyle(v.Severity)
 	head := "⚠ WARNING: " + v.Field
-	if v.Severity == "critical" {
+	switch v.Severity {
+	case protocol.ViolationSeverityCritical:
 		head = "⚠ CRITICAL: " + v.Field
+	case protocol.ViolationSeverityNotice:
+		head, style = "Note: "+v.Field, normalStyle
 	}
 	parts := strings.Split(v.Message, "\n")
 	if first := strings.TrimSpace(parts[0]); first != "" {
@@ -428,16 +442,27 @@ func reviewSection(title string) reviewLine {
 	return reviewLine{text: title, style: subtitleStyle.Bold(true)}
 }
 
-// reviewWarnings lists warnings in full.
-func reviewWarnings(warnings []protocol.PolicyViolation) []reviewLine {
-	if len(warnings) == 0 {
+// reviewWarnings lists the warnings in full, and reviewNotes the notices,
+// each under its own heading.
+func reviewWarnings(violations []protocol.PolicyViolation) []reviewLine {
+	return reviewViolations("Warnings", violations, false)
+}
+
+func reviewNotes(violations []protocol.PolicyViolation) []reviewLine {
+	return reviewViolations("Notes", violations, true)
+}
+
+func reviewViolations(title string, violations []protocol.PolicyViolation, notices bool) []reviewLine {
+	var lines []reviewLine
+	for _, v := range violations {
+		if (v.Severity == protocol.ViolationSeverityNotice) == notices {
+			lines = append(lines, reviewWarning(v)...)
+		}
+	}
+	if len(lines) == 0 {
 		return nil
 	}
-	lines := []reviewLine{reviewSection("Warnings")}
-	for _, v := range warnings {
-		lines = append(lines, reviewWarning(v)...)
-	}
-	return lines
+	return append([]reviewLine{reviewSection(title)}, lines...)
 }
 
 // reviewAccounts lists the accounts the request touches, each address in

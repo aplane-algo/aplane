@@ -227,3 +227,24 @@ func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
 		t.Fatalf("a request without a review carries one: %+v", msg.Review)
 	}
 }
+
+// The finding levels the signer names are the violation severities its
+// clients read, so a notice reaches apadmin and apapprover as a notice.
+func TestFindingLevelsAreProtocolSeverities(t *testing.T) {
+	for level, severity := range map[string]string{
+		txnreview.LevelCritical: protocol.ViolationSeverityCritical,
+		txnreview.LevelWarning:  protocol.ViolationSeverityWarning,
+		txnreview.LevelNotice:   protocol.ViolationSeverityNotice,
+	} {
+		if level != severity {
+			t.Errorf("finding level %q is sent as severity %q", level, severity)
+		}
+	}
+	for _, f := range []txnreview.Finding{{Critical: true}, {}, {Notice: true}} {
+		switch f.Level() {
+		case protocol.ViolationSeverityCritical, protocol.ViolationSeverityWarning, protocol.ViolationSeverityNotice:
+		default:
+			t.Errorf("finding %+v has level %q, which no client reads", f, f.Level())
+		}
+	}
+}

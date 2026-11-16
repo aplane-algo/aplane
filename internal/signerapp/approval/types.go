@@ -34,6 +34,10 @@ type ViolationSeverity string
 const (
 	ViolationSeverityWarning  ViolationSeverity = "warning"
 	ViolationSeverityCritical ViolationSeverity = "critical"
+	// ViolationSeverityNotice is a finding shown without alarm: a rekey to an
+	// account this signer holds a valid aplane key for. Anything that counts
+	// warnings counts it; only the display differs.
+	ViolationSeverityNotice ViolationSeverity = "notice"
 )
 
 // Violation describes a warning or critical condition shown during approval.

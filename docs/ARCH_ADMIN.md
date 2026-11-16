@@ -440,7 +440,7 @@ without overlays and bounds; neither takes mnemonic import.
 
 #### Signing Approval and Client Enrollment
 
-- `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations`. The message `id` is a fresh, single-use prompt ID that apsigner generates for each prompt; it is never the HTTP client's `request_id`, so a `sign_response` can approve only the prompt the operator was shown. `first_valid` and `last_valid` are the rounds the request can be submitted in (for a group, the rounds every member is valid), or 0 when unknown; apadmin and apapprover both show them beside the description. Optional `review` (`aplane.review.v1`) is the same request as data, for a client that draws it; see "Sign Request Review" below.
+- `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations` (each a `field`, `value`, `message` and `severity`: `critical`, `warning`, or `notice`, a finding shown without alarm and not counted among the warnings, such as a rekey to an account the signer holds a valid aplane key for). The message `id` is a fresh, single-use prompt ID that apsigner generates for each prompt; it is never the HTTP client's `request_id`, so a `sign_response` can approve only the prompt the operator was shown. `first_valid` and `last_valid` are the rounds the request can be submitted in (for a group, the rounds every member is valid), or 0 when unknown; apadmin and apapprover both show them beside the description. Optional `review` (`aplane.review.v1`) is the same request as data, for a client that draws it; see "Sign Request Review" below.
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
 - `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`enroll` username, `enroll [<label>]` command) to have its key enrolled, and the request now waits in the signer's queue. Its ID is `enroll-<fingerprint>`. It is sent when a new request is queued and, for every request still waiting, when an admin session authenticates, so a client may see the same request announced more than once. The label is the client's requested display text, bounded and printable, and carries no authority. The admin client answers with `approve_enrollment` or `reject_enrollment` by fingerprint; there is no response to this notification itself, and the SSH client is not waiting on it.
@@ -479,7 +479,8 @@ loses nothing but the structure.
   - `claims`: the client's own words about an app call, not verified.
   - `title`, `sender`, and `fields`: what the transaction does. A field has
     an optional `label`, a `value`, the `party` address when the value names
-    one account, `alert` on a line the review warns of, and `depth` 1 for an
+    one account, `alert` on a line the review warns of (the rekey target's
+    line only where its finding is critical or a warning, not a notice), and `depth` 1 for an
     entry of the list the field above it opens. A field with no label is a
     remark.
   - `effects`: a short summary of the fields for a picture: `kind`
@@ -488,7 +489,7 @@ loses nothing but the structure.
     `asset_destroy`), `from`, optional `to`, `authority` (a clawback's
     sender), `app` or `new_app`, `text`, and `severity` (absent, `caution`
     or `danger`). Severity is taken from the transaction's findings, never
-    decided apart from them. A client that meets a kind it does not know
+    decided apart from them; a notice leaves it absent. A client that meets a kind it does not know
     shows the fields.
   - `findings`: the transaction's warnings, in the shape of `violations`.
     The message's `violations` carry the same findings for the whole

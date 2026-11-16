@@ -146,7 +146,7 @@ func effects(txn types.Transaction, view View) []Effect {
 		if txn.RekeyTo == txn.Sender {
 			out = append(out, Effect{Kind: EffectRekey, From: sender, To: sender, Text: "rekey to its own address", field: "RekeyTo"})
 		} else {
-			arrow(EffectRekey, txn.RekeyTo, "REKEY: control moves", "RekeyTo")
+			arrow(EffectRekey, txn.RekeyTo, rekeyUrgentText, "RekeyTo")
 		}
 	}
 	return out
@@ -195,25 +195,57 @@ func (v View) assetAmount(genesis types.Digest, id, raw uint64) string {
 	return fmt.Sprintf("%d base units of asset #%d", raw, id)
 }
 
+// The rekey effect's text: in capitals where the rekey is urgent, which is
+// also how it reads before Mark has judged it.
+const (
+	rekeyUrgentText = "REKEY: control moves"
+	rekeyText       = "rekey: control moves"
+)
+
 // Mark sets each effect's severity from findings, the findings of the same
 // transaction: danger where a critical finding speaks of the effect, caution
-// where any other does, and normal where none does.
+// where any other warning does, and normal where none does or only a notice
+// does. A field Mark may quieten (the rekey target) keeps its alert where the
+// effect it belongs to is not normal, and loses it otherwise.
 func (d *Details) Mark(findings []Finding) {
 	for i := range d.Effects {
 		effect := &d.Effects[i]
-		effect.Severity = SeverityNormal
-		if effect.field == "" {
-			continue
-		}
-		for _, finding := range findings {
-			if finding.Field != effect.field {
-				continue
+		effect.Severity = findingSeverity(effect.field, findings)
+		if effect.Kind == EffectRekey && effect.To != effect.From {
+			effect.Text = rekeyText
+			if effect.Severity == SeverityDanger {
+				effect.Text = rekeyUrgentText
 			}
-			if finding.Critical {
-				effect.Severity = SeverityDanger
-				break
-			}
-			effect.Severity = SeverityCaution
 		}
 	}
+	for i := range d.Fields {
+		f := &d.Fields[i]
+		if f.finding == "" {
+			continue
+		}
+		f.Alert = findingSeverity(f.finding, findings) != SeverityNormal
+		f.Label = f.quiet
+		if f.Alert {
+			f.Label = f.loud
+		}
+	}
+}
+
+// findingSeverity is how urgently findings speak of field: danger for a
+// critical finding, caution for a warning, normal for a notice or none.
+func findingSeverity(field string, findings []Finding) Severity {
+	severity := SeverityNormal
+	if field == "" {
+		return severity
+	}
+	for _, finding := range findings {
+		if finding.Field != field || finding.Notice {
+			continue
+		}
+		if finding.Critical {
+			return SeverityDanger
+		}
+		severity = SeverityCaution
+	}
+	return severity
 }

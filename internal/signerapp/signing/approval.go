@@ -330,12 +330,8 @@ func requestViolations(review *txnreview.Review) []signerapproval.Violation {
 	}
 	var violations []signerapproval.Violation
 	for _, finding := range review.Findings {
-		severity := signerapproval.ViolationSeverityWarning
-		if finding.Critical {
-			severity = signerapproval.ViolationSeverityCritical
-		}
 		violations = append(violations, signerapproval.Violation{
-			Field: finding.Field, Value: finding.Value, Severity: severity, Message: finding.Message,
+			Field: finding.Field, Value: finding.Value, Severity: signerapproval.ViolationSeverity(finding.Level()), Message: finding.Message,
 		})
 	}
 	return violations
@@ -744,11 +740,16 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	if planChanges != "" {
 		txnDesc += planChanges + "\n"
 	}
-	txnDesc += reviewItem(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn, bounded).Text()
-
-	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], approvalpolicy.Context{
+	warnCtx := approvalpolicy.Context{
 		KnownAddresses: s.planKnownAddresses(plan), InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan), ListedRekeyTargets: listed,
-	})
+	}
+	// The text is marked by the same findings as the warnings, so its rekey
+	// field is loud exactly where the rekey's finding is not a notice.
+	item := reviewItem(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn, bounded)
+	item.Details.Mark(txnreview.Findings(allTxns[0], warnCtx))
+	txnDesc += item.Text()
+
+	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], warnCtx)
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 	violations = append(violations, requestViolations(review)...)
 

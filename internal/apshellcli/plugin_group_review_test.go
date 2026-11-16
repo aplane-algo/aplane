@@ -243,3 +243,25 @@ func TestPluginReviewWarnsOfLookalikeAccounts(t *testing.T) {
 		t.Fatalf("unrelated accounts are called lookalikes:\n%s", plain)
 	}
 }
+
+// A plugin's rekey to an address the client's signer holds is a note: its
+// field is an ordinary line and its finding is not marked "!!". A rekey to
+// any other address stays loud.
+func TestPluginReviewNotesARekeyToAHeldKey(t *testing.T) {
+	sender, held, other := reviewTestAddress(1), reviewTestAddress(2), reviewTestAddress(3)
+	ctx := txnreview.FindingContext{KnownAddresses: map[string]bool{held.String(): true}}
+	review := func(target types.Address) string {
+		return strings.Join(pluginReviewLines(types.Transaction{
+			Type: types.PaymentTx, Header: types.Header{Sender: sender, RekeyTo: target},
+		}, ctx), "\n")
+	}
+	quiet := review(held)
+	if !strings.Contains(quiet, "Rekey to: "+held.String()) || !strings.Contains(quiet, "Note: RekeyTo") ||
+		strings.Contains(quiet, "!!") || strings.Contains(quiet, "⚠") {
+		t.Fatalf("a rekey to a held key is not a note:\n%s", quiet)
+	}
+	loud := review(other)
+	if !strings.Contains(loud, "REKEY TO: "+other.String()) || !strings.Contains(loud, "!! RekeyTo") {
+		t.Fatalf("a rekey to an address no key is held for is not loud:\n%s", loud)
+	}
+}

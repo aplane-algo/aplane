@@ -412,6 +412,17 @@ Warning analysis covers the fields below. The rules live in `internal/txnreview/
   findings,
 - unusually high fees above 1 ALGO.
 
+A finding is critical, a warning, or a notice. A rekey to an account this
+signer holds a valid aplane key for, the account's own address included, is a
+notice: it keeps control here, so every display shows it in the ordinary
+colour with no warning sign, and apadmin's risk line does not count it. A
+notice is still a finding wherever findings are counted: it forces review
+under `always_review_warnings` and on a passthrough or foreign leg as any
+warning does. Every other rekey is critical: to an address the signer holds
+no aplane key for, to one on the account's rekey-to list that it does not
+hold, or to a held aplane key that is not a valid rekey target. The signer's
+own protocol rekey, a rotating account's next stage, is no finding at all.
+
 `always_review_warnings` governs only the signer's own legs. A warning on a
 passthrough or foreign leg of a group this signer co-signs always forces
 review even with `always_review_warnings` off. That includes a payment of

@@ -147,9 +147,12 @@ func (m Model) buildSigningViewportContent() string {
 		sb.WriteString(strings.Repeat("=", 50))
 		sb.WriteString("\n")
 		for _, v := range m.signing.request.Violations {
-			if v.Severity == "critical" {
+			switch v.Severity {
+			case protocol.ViolationSeverityCritical:
 				sb.WriteString(fmt.Sprintf("⚠ CRITICAL: %s\n", v.Field))
-			} else {
+			case protocol.ViolationSeverityNotice:
+				sb.WriteString(fmt.Sprintf("Note: %s\n", v.Field))
+			default:
 				sb.WriteString(fmt.Sprintf("⚠ WARNING: %s\n", v.Field))
 			}
 			if v.Value != "" {

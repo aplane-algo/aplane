@@ -632,9 +632,25 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	if line := protocol.ValidityWindowLine(req.FirstValid, req.LastValid); line != "" {
 		fmt.Printf("\n%s\n", line)
 	}
-	if len(req.Violations) > 0 {
-		fmt.Printf("\nPolicy warnings (%d):\n", len(req.Violations))
-		for _, v := range req.Violations {
+	// Notices are findings shown without alarm: listed apart, after the
+	// warnings, and not counted among them.
+	var warnings, notices []protocol.PolicyViolation
+	for _, v := range req.Violations {
+		if v.Severity == protocol.ViolationSeverityNotice {
+			notices = append(notices, v)
+		} else {
+			warnings = append(warnings, v)
+		}
+	}
+	for _, list := range []struct {
+		heading string
+		items   []protocol.PolicyViolation
+	}{{"Policy warnings", warnings}, {"Notes", notices}} {
+		if len(list.items) == 0 {
+			continue
+		}
+		fmt.Printf("\n%s (%d):\n", list.heading, len(list.items))
+		for _, v := range list.items {
 			line := fmt.Sprintf("  - [%s] %s", strings.ToUpper(v.Severity), v.Message)
 			if strings.TrimSpace(v.Field) != "" || strings.TrimSpace(v.Value) != "" {
 				line += fmt.Sprintf(" (%s=%s)", v.Field, v.Value)

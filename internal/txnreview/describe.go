@@ -47,6 +47,10 @@ type Field struct {
 	Party string
 	// Alert marks a line the review warns of.
 	Alert bool
+	// finding is the finding field whose urgency decides Alert, set for a
+	// field Mark may quieten; loud and quiet are its label with and without
+	// the alert.
+	finding, loud, quiet string
 	// Depth is 1 for an entry of the list the field above it opens.
 	Depth int
 	// wide pads the separator so a "To" lines up under a "From".
@@ -127,6 +131,15 @@ func (d *Details) to(addr types.Address) {
 func (d *Details) alert(label string, addr types.Address) {
 	d.account(label, addr)
 	d.Fields[len(d.Fields)-1].Alert = true
+}
+
+// warned adds an account field the review warns of, under its loud label,
+// until Mark finds no finding of field urgent: then it is an ordinary field
+// under its quiet label.
+func (d *Details) warned(field, loud, quiet string, addr types.Address) {
+	d.alert(loud, addr)
+	f := &d.Fields[len(d.Fields)-1]
+	f.finding, f.loud, f.quiet = field, loud, quiet
 }
 
 // View is what a description knows beyond the transaction itself: the token
@@ -523,7 +536,7 @@ func appendCommonFields(d *Details, txn types.Transaction, view View) {
 	}
 
 	if !txn.RekeyTo.IsZero() {
-		d.alert("REKEY TO", txn.RekeyTo)
+		d.warned("RekeyTo", "REKEY TO", "Rekey to", txn.RekeyTo)
 	}
 
 	// A lease blocks any other transaction from this sender with the same

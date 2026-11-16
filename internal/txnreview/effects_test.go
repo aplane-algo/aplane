@@ -4,6 +4,7 @@
 package txnreview
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -189,4 +190,49 @@ func TestEveryFieldFindingMarksAnEffect(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The rekey target's field and arrow are loud only where the rekey's finding
+// is urgent. Unjudged, they are loud; a notice or the signer's own protocol
+// rekey leaves them ordinary, and a critical finding makes them loud again.
+func TestRekeyIsLoudOnlyWhereUrgent(t *testing.T) {
+	target := detailsAddr(2)
+	txn := effectTxn(types.PaymentTx, func(x *types.Transaction) {
+		x.Receiver, x.RekeyTo = x.Sender, target
+	})
+	rekeyField := func(d Details) Field {
+		for _, f := range d.Fields {
+			if f.Party == target.String() {
+				return f
+			}
+		}
+		t.Fatalf("no field names the rekey target: %+v", d.Fields)
+		return Field{}
+	}
+	check := func(name string, d Details, loud, judged bool) {
+		t.Helper()
+		f, effect := rekeyField(d), d.Effects[0]
+		wantLabel, wantText, wantSeverity := "Rekey to", "rekey: control moves", SeverityNormal
+		if loud {
+			wantLabel, wantText, wantSeverity = "REKEY TO", "REKEY: control moves", SeverityDanger
+		}
+		if f.Alert != loud || f.Label != wantLabel {
+			t.Errorf("%s: field = %q alert %v, want %q alert %v", name, f.Label, f.Alert, wantLabel, loud)
+		}
+		if effect.Kind != EffectRekey || effect.Text != wantText || (judged && effect.Severity != wantSeverity) {
+			t.Errorf("%s: effect = %+v, want %q %q", name, effect, wantText, wantSeverity)
+		}
+		if line := f.Line(); strings.Contains(line, "⚠") != loud {
+			t.Errorf("%s: text line %q", name, line)
+		}
+	}
+
+	d := Detail(txn, View{})
+	check("unjudged", d, true, false)
+	d.Mark(Findings(txn, FindingContext{KnownAddresses: map[string]bool{target.String(): true}}))
+	check("held", d, false, true)
+	d.Mark(Findings(txn, FindingContext{}))
+	check("not held", d, true, true)
+	d.Mark(Findings(txn, FindingContext{ProtocolRekeyTargets: map[string]bool{target.String(): true}}))
+	check("protocol rekey", d, false, true)
 }

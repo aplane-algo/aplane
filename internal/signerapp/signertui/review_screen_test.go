@@ -622,3 +622,67 @@ func TestReviewHeaderAndRuleShareLines(t *testing.T) {
 		t.Errorf("the rule does not count the rows below:\n%s", payroll)
 	}
 }
+
+// heldRekeyRequest is the group with its rekey made to an account this
+// signer holds: the finding is a notice, the field and arrow ordinary, and
+// no lookalike.
+func heldRekeyRequest() *PendingSignRequest {
+	request := groupReviewRequest()
+	notice := protocol.PolicyViolation{Field: "RekeyTo", Value: reviewThird, Severity: protocol.ViolationSeverityNotice,
+		Message: "This transaction will transfer signing authority to another address.\n   This signer holds the aplane key for the new address."}
+	item := &request.Review.Items[1]
+	item.Findings = []protocol.PolicyViolation{notice}
+	for i := range item.Fields {
+		if item.Fields[i].Party == reviewThird && item.Fields[i].Alert {
+			item.Fields[i].Label, item.Fields[i].Alert = "Rekey to", false
+		}
+	}
+	for i := range item.Effects {
+		if item.Effects[i].Kind == "rekey" {
+			item.Effects[i].Text, item.Effects[i].Severity = "rekey: control moves", ""
+		}
+	}
+	groupNotice := notice
+	groupNotice.Field = "Tx 2/3: RekeyTo"
+	request.Violations = []protocol.PolicyViolation{groupNotice}
+	request.Review.Findings = nil
+	request.Review.Parties = []protocol.ReviewParty{
+		{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024"},
+		{Address: reviewOther}, {Address: reviewThird, Held: true},
+	}
+	return request
+}
+
+// A rekey to an account this signer holds is a notice: no risk line, no
+// warning mark on its row, an arrow in the ordinary colour, and a note, not
+// a warning, in its detail and in the overview.
+func TestReviewShowsAHeldRekeyAsANotice(t *testing.T) {
+	m := reviewModelForTest(t, heldRekeyRequest(), true, MinWidth, MinHeight)
+	view := requireFits(t, m, MinWidth, MinHeight)
+	if strings.Contains(view, "⚠") || strings.Contains(view, "REKEY") {
+		t.Fatalf("a held rekey is shown with alarm:\n%s", view)
+	}
+	overview := allDetail(t, m)
+	if !strings.Contains(overview, "Notes") || !strings.Contains(overview, "Note: Tx 2/3: RekeyTo · This transaction will transfer signing authority") || strings.Contains(overview, "Warnings") {
+		t.Fatalf("the overview does not list the rekey as a note:\n%s", overview)
+	}
+
+	m = reviewKey(t, reviewKey(t, m, "down"), "down")
+	detail := allDetail(t, m)
+	if !strings.Contains(detail, "Rekey to: "+reviewThird) || !strings.Contains(detail, "Note: RekeyTo") || strings.Contains(detail, "CRITICAL") {
+		t.Fatalf("the transaction's detail does not show the rekey as a note:\n%s", detail)
+	}
+	pane, _ := m.reviewUpperPane(m.reviewOf(), m.reviewWidth())
+	for _, line := range pane.lines {
+		for _, span := range line.spans {
+			if strings.Contains(span.text, "╌") && span.style.GetForeground() == errorStyle.GetForeground() {
+				t.Fatalf("the held rekey's arrow is drawn in the danger style: %q", line.plain)
+			}
+		}
+	}
+
+	m = reviewKey(t, m, "t")
+	if text := allDetail(t, m); !strings.Contains(text, "Note: Tx 2/3: RekeyTo") || strings.Contains(text, "⚠") {
+		t.Fatalf("the text view shows the notice as a warning:\n%s", text)
+	}
+}

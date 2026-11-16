@@ -194,9 +194,12 @@ func managedFeesLine(slots []pluginReviewSlot) string {
 // The network is named from the transaction's genesis hash, not from its
 // genesis ID, which is text the plugin chose.
 func pluginReviewLines(txn types.Transaction, ctx txnreview.FindingContext) []string {
-	lines := strings.Split(pluginSlotDetails(txn).Text(), "\n")
+	findings := txnreview.Findings(txn, ctx)
+	details := pluginSlotDetails(txn)
+	details.Mark(findings)
+	lines := strings.Split(details.Text(), "\n")
 	lines = append(lines, validRoundsLine(txn))
-	for _, finding := range txnreview.Findings(txn, ctx) {
+	for _, finding := range findings {
 		lines = append(lines, findingLines(finding)...)
 	}
 	return lines
@@ -211,9 +214,12 @@ func pluginSlotDetails(txn types.Transaction) txnreview.Details {
 }
 
 // findingLines is a finding as the review shows it: marked `!!`, then its
-// message.
+// message. A notice, a finding shown without alarm, is marked "Note:".
 func findingLines(finding txnreview.Finding) []string {
 	head := "!! " + finding.Field
+	if finding.Notice {
+		head = "Note: " + finding.Field
+	}
 	if finding.Value != "" {
 		head += " = " + finding.Value
 	}

@@ -120,3 +120,50 @@ func TestRekeyTargetNotValidText(t *testing.T) {
 		t.Errorf("an empty key type is not read as unknown: %q", got)
 	}
 }
+
+// A rekey keeps control here when this signer holds a valid aplane key for
+// its target, the account's own address included: that finding is a notice.
+// Every other rekey is critical: to an address the signer does not hold,
+// listed or not, or to a held key that is not a valid rekey target.
+func TestRekeyFindingLevel(t *testing.T) {
+	sender, held, listed, unheld, htlc := types.Address{1}, types.Address{2}, types.Address{5}, types.Address{6}, types.Address{8}
+	known := map[string]bool{sender.String(): true, held.String(): true, htlc.String(): true}
+	invalid := map[string]InvalidRekeyTarget{htlc.String(): {KeyType: "aplane.htlc.v1"}}
+	rekey := func(from, to types.Address) types.Transaction {
+		return types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: from, RekeyTo: to}}
+	}
+	for _, tc := range []struct {
+		name string
+		txn  types.Transaction
+		ctx  FindingContext
+		want string
+	}{
+		{"held", rekey(sender, held), FindingContext{KnownAddresses: known}, LevelNotice},
+		{"own address, held", rekey(sender, sender), FindingContext{KnownAddresses: known}, LevelNotice},
+		{"listed, held", rekey(sender, held), FindingContext{KnownAddresses: known, ListedRekeyTargets: map[string]bool{held.String(): true}}, LevelNotice},
+		{"not held", rekey(sender, unheld), FindingContext{KnownAddresses: known}, LevelCritical},
+		{"own address, not held", rekey(unheld, unheld), FindingContext{KnownAddresses: known}, LevelCritical},
+		{"listed, not held", rekey(sender, listed), FindingContext{KnownAddresses: known, ListedRekeyTargets: map[string]bool{listed.String(): true}}, LevelCritical},
+		{"held, not a valid target", rekey(sender, htlc), FindingContext{KnownAddresses: known, InvalidRekeyTargets: invalid}, LevelCritical},
+		{"own address, not a valid target", rekey(htlc, htlc), FindingContext{KnownAddresses: known, InvalidRekeyTargets: invalid}, LevelCritical},
+		{"no context", rekey(sender, held), FindingContext{}, LevelCritical},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var rekeys []Finding
+			for _, finding := range Findings(tc.txn, tc.ctx) {
+				if finding.Field == "RekeyTo" {
+					rekeys = append(rekeys, finding)
+				}
+			}
+			if len(rekeys) != 1 {
+				t.Fatalf("rekey findings = %+v, want one", rekeys)
+			}
+			if got := rekeys[0].Level(); got != tc.want {
+				t.Fatalf("level = %q, want %q", got, tc.want)
+			}
+			if rekeys[0].Notice && rekeys[0].Critical {
+				t.Fatal("a finding is both a notice and critical")
+			}
+		})
+	}
+}

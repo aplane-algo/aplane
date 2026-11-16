@@ -24,6 +24,12 @@ import (
 // the prompt the operator was sent.
 func promptForReviewTest(t *testing.T, req signerapi.GroupSignRequest, plan *PlanResult, known map[string]bool) signerapproval.Prompt {
 	t.Helper()
+	return promptForReviewTestWith(t, req, plan, known, &policy.Config{TransactionTypes: policytest.AllowAllTypes()})
+}
+
+// promptForReviewTestWith is promptForReviewTest under the given policy.
+func promptForReviewTestWith(t *testing.T, req signerapi.GroupSignRequest, plan *PlanResult, known map[string]bool, cfg *policy.Config) signerapproval.Prompt {
+	t.Helper()
 	var got *signerapproval.Prompt
 	describe := DescribeTxnFunc(txdesc.DetailTxn)
 	service := &Service{
@@ -40,7 +46,7 @@ func promptForReviewTest(t *testing.T, req signerapi.GroupSignRequest, plan *Pla
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describe,
 		IsUnlocked:                    func() bool { return true },
-		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes()}),
+		PolicyFor:                     fixedPolicy(cfg),
 	}
 	if _, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); err == nil {
 		t.Fatal("signGroupWithPlanContext() error = nil, want the operator's rejection")
@@ -252,5 +258,68 @@ func TestPromptWarnsOfLookalikeAccounts(t *testing.T) {
 		}, nil)
 	if got := lookalikes(plain); got != 0 {
 		t.Fatalf("unrelated accounts are called lookalikes: %+v", plain.Violations)
+	}
+}
+
+// A rekey to an account this signer holds is a notice in the prompt, alone
+// or in a group: its warning has notice severity and its text and review show
+// an ordinary "Rekey to" line. A rekey to an address it holds no key for is
+// still critical and loud.
+func TestPromptShowsARekeyToAHeldKeyAsANotice(t *testing.T) {
+	own, held, foreign := reviewTestAddr(1), reviewTestAddr(2), reviewTestAddr(3)
+	known := map[string]bool{own.String(): true, held.String(): true}
+	rekey := func(target types.Address) types.Transaction {
+		txn := types.Transaction{Type: types.PaymentTx}
+		txn.Sender, txn.Receiver, txn.RekeyTo, txn.Fee = own, own, target, 1000
+		return txn
+	}
+	prompt := func(txns ...types.Transaction) signerapproval.Prompt {
+		req := signerapi.GroupSignRequest{}
+		for range txns {
+			req.Requests = append(req.Requests, signerapi.SignRequest{AuthAddress: own.String()})
+		}
+		plan := &PlanResult{AllTxns: txns, PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{}}
+		return promptForReviewTestWith(t, req, plan, known, &policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysAllow})
+	}
+	rekeyWarning := func(p signerapproval.Prompt) signerapproval.Violation {
+		t.Helper()
+		var found []signerapproval.Violation
+		for _, v := range p.Violations {
+			if strings.HasSuffix(v.Field, "RekeyTo") {
+				found = append(found, v)
+			}
+		}
+		if len(found) != 1 {
+			t.Fatalf("rekey warnings = %+v, want one", found)
+		}
+		return found[0]
+	}
+	pay := types.Transaction{Type: types.PaymentTx}
+	pay.Sender, pay.Receiver, pay.Amount, pay.Fee = own, held, 1_000_000, 1000
+
+	for name, p := range map[string]signerapproval.Prompt{
+		"alone":    prompt(rekey(held)),
+		"in group": prompt(pay, rekey(held)),
+	} {
+		if v := rekeyWarning(p); v.Severity != signerapproval.ViolationSeverityNotice {
+			t.Errorf("%s: rekey to a held key has severity %q, want notice", name, v.Severity)
+		}
+		if !strings.Contains(p.Description, "Rekey to: "+held.String()) || strings.Contains(p.Description, "REKEY TO") {
+			t.Errorf("%s: the text shows the rekey loud:\n%s", name, p.Description)
+		}
+		item := p.Review.Items[len(p.Review.Items)-1]
+		for _, effect := range item.Details.Effects {
+			if effect.Kind == txnreview.EffectRekey && effect.Severity != txnreview.SeverityNormal {
+				t.Errorf("%s: the rekey effect is %+v", name, effect)
+			}
+		}
+	}
+
+	loud := prompt(rekey(foreign))
+	if v := rekeyWarning(loud); v.Severity != signerapproval.ViolationSeverityCritical {
+		t.Errorf("rekey to a foreign address has severity %q, want critical", v.Severity)
+	}
+	if !strings.Contains(loud.Description, "REKEY TO: "+foreign.String()) {
+		t.Errorf("the text does not show a foreign rekey loud:\n%s", loud.Description)
 	}
 }

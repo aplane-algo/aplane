@@ -1080,11 +1080,7 @@ func protocolReview(review *txnreview.Review) *protocol.Review {
 	findings := func(in []txnreview.Finding) []protocol.PolicyViolation {
 		var out []protocol.PolicyViolation
 		for _, f := range in {
-			severity := signerapproval.ViolationSeverityWarning
-			if f.Critical {
-				severity = signerapproval.ViolationSeverityCritical
-			}
-			out = append(out, protocol.PolicyViolation{Field: f.Field, Value: f.Value, Severity: string(severity), Message: f.Message})
+			out = append(out, protocol.PolicyViolation{Field: f.Field, Value: f.Value, Severity: f.Level(), Message: f.Message})
 		}
 		return out
 	}

@@ -66,9 +66,16 @@ func (m Model) renderSigningPopup() string {
 		sb.WriteString(line + "\n\n")
 	}
 
-	// Display policy violations prominently (outside viewport so they're always visible)
-	if len(m.signing.request.Violations) > 0 {
-		sb.WriteString(warningStyle.Render(fmt.Sprintf("⚠ %d WARNING(S) - scroll down in details to review", len(m.signing.request.Violations))))
+	// Display policy violations prominently (outside viewport so they're
+	// always visible). Notices are in the details but are not warnings.
+	warnings := 0
+	for _, v := range m.signing.request.Violations {
+		if v.Severity != protocol.ViolationSeverityNotice {
+			warnings++
+		}
+	}
+	if warnings > 0 {
+		sb.WriteString(warningStyle.Render(fmt.Sprintf("⚠ %d WARNING(S) - scroll down in details to review", warnings)))
 		sb.WriteString("\n\n")
 	}
 

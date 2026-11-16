@@ -99,6 +99,24 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 	}
 }
 
+// A notice is listed under its own heading after the warnings and is not
+// counted among them.
+func TestDisplaySignRequestListsNoticesApart(t *testing.T) {
+	req := &protocol.SignRequestMessage{
+		Address:     "ADDR",
+		Description: "test description",
+		Violations: []protocol.PolicyViolation{
+			{Field: "CloseRemainderTo", Value: "OTHER", Severity: protocol.ViolationSeverityCritical, Message: "closes the account"},
+			{Field: "RekeyTo", Value: "HELD", Severity: protocol.ViolationSeverityNotice, Message: "This signer holds the aplane key for the new address."},
+		},
+	}
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
+	warnings, notes := strings.Index(rendered, "Policy warnings (1):"), strings.Index(rendered, "Notes (1):")
+	if warnings < 0 || notes < warnings || !strings.Contains(rendered, "[NOTICE] This signer holds the aplane key") {
+		t.Fatalf("displaySignRequest() does not list the notice after the warnings:\n%s", rendered)
+	}
+}
+
 // captureStdout returns what fn prints.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()

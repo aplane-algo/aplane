@@ -19,11 +19,35 @@ const DefaultMaxFeeMicroAlgos = 1_000_000
 // Finding is one thing a reviewer must not miss in a transaction: a field
 // that hands over control or funds beyond the stated amount, uses an
 // authority over someone else's holding, or sends ALGO where it is lost.
+//
+// A notice is a finding the reviewer is told of without alarm: a rekey to an
+// account this signer holds a valid aplane key for. It is still a finding, so
+// whatever counts findings counts it too (always_review_warnings); only how
+// it is shown differs. A notice is never Critical.
 type Finding struct {
 	Field    string
 	Value    string
 	Critical bool
+	Notice   bool
 	Message  string
+}
+
+// Finding levels, as a prompt's violations name them.
+const (
+	LevelNotice   = "notice"
+	LevelWarning  = "warning"
+	LevelCritical = "critical"
+)
+
+// Level names how urgent the finding is: notice, warning or critical.
+func (f Finding) Level() string {
+	switch {
+	case f.Critical:
+		return LevelCritical
+	case f.Notice:
+		return LevelNotice
+	}
+	return LevelWarning
 }
 
 // FindingContext is what a check knows about the reviewer's own position.
@@ -107,6 +131,9 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 		case ctx.ListedRekeyTargets[rekeyTarget]:
 			msg = RekeyToListedTargetText
 		}
+		// A rekey to an account this signer holds a valid aplane key for
+		// keeps control here: a notice. Every other rekey is critical.
+		held := ctx.KnownAddresses[rekeyTarget] && !hasInvalidRekeyTarget(ctx, rekeyTarget)
 		switch {
 		case hasInvalidRekeyTarget(ctx, rekeyTarget):
 			invalid := ctx.InvalidRekeyTargets[rekeyTarget]
@@ -128,7 +155,8 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 		violations = append(violations, Finding{
 			Field:    "RekeyTo",
 			Value:    rekeyTarget,
-			Critical: true,
+			Critical: !held,
+			Notice:   held,
 			Message:  msg,
 		})
 	}
