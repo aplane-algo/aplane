@@ -30,6 +30,9 @@ type transactionDescriber func(txn types.Transaction, view View) Details
 type Details struct {
 	Title  string
 	Fields []Field
+	// Effects summarize the fields for a picture of the request. The text
+	// does not print them: everything they say is in the fields.
+	Effects []Effect
 }
 
 // Field is one line of a review.
@@ -560,6 +563,7 @@ func Detail(txn types.Transaction, view View) Details {
 	}
 	d := describer(txn, view)
 	appendCommonFields(&d, txn, view)
+	d.Effects = effects(txn, view)
 	return d
 }
 
