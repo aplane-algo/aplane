@@ -36,10 +36,11 @@ func sharedEnds(a, b string) (prefix, suffix int) {
 	return prefix, suffix
 }
 
-// lookalikes is one finding for each pair of different addresses in the
-// review that look alike. It reads every address the review names: each
-// transaction's sender and every field that names an account.
-func (r Review) lookalikes() []Finding {
+// LookalikeFindings is one finding for each pair of different addresses in
+// one request that look alike. It reads every address the transactions name:
+// each one's sender and every field that names an account. The signer's
+// prompt and apshell's review of a plugin-built group both use it.
+func LookalikeFindings(transactions []Details) []Finding {
 	zero := types.Address{}.String()
 	seen := map[string]bool{}
 	var addresses []string
@@ -50,9 +51,9 @@ func (r Review) lookalikes() []Finding {
 		seen[address] = true
 		addresses = append(addresses, address)
 	}
-	for _, item := range r.Items {
-		add(item.Details.Sender)
-		for _, f := range item.Details.Fields {
+	for _, details := range transactions {
+		add(details.Sender)
+		for _, f := range details.Fields {
 			add(f.Party)
 		}
 	}
@@ -86,5 +87,9 @@ func (r Review) lookalikes() []Finding {
 
 // SetFindings sets the findings about the request as a whole.
 func (r *Review) SetFindings() {
-	r.Findings = r.lookalikes()
+	transactions := make([]Details, len(r.Items))
+	for i, item := range r.Items {
+		transactions[i] = item.Details
+	}
+	r.Findings = LookalikeFindings(transactions)
 }

@@ -209,3 +209,37 @@ func TestPluginReviewFeeLineNeverWrapsOrVanishes(t *testing.T) {
 		}
 	}
 }
+
+// A plugin group that names two accounts which look alike is warned of, once
+// for the group, with both addresses in full: the warning the signer's prompt
+// gives, from the same rule.
+func TestPluginReviewWarnsOfLookalikeAccounts(t *testing.T) {
+	sender, real := reviewTestAddress(1), reviewTestAddress(2)
+	fake := real
+	for i := 4; i < 28; i++ {
+		fake[i] ^= 0xff
+	}
+	payTo := func(to types.Address) pluginReviewSlot {
+		txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: sender}}
+		txn.Receiver, txn.Amount = to, 1
+		return pluginReviewSlot{txn: txn, role: slotRoleManaged}
+	}
+	render := func(slots ...pluginReviewSlot) string {
+		var out strings.Builder
+		renderPluginGroupReview(&REPLState{Out: &out}, "REVIEW", slots, pluginReviewFacts{})
+		return out.String()
+	}
+
+	got := render(payTo(real), payTo(fake))
+	if strings.Count(got, "!! "+txnreview.LookalikeField) != 1 {
+		t.Fatalf("want one lookalike warning:\n%s", got)
+	}
+	for _, want := range []string{"Two different accounts in this request look alike", real.String(), fake.String()} {
+		if !strings.Contains(got, want) {
+			t.Errorf("review lacks %q:\n%s", want, got)
+		}
+	}
+	if plain := render(payTo(real), payTo(reviewTestAddress(9))); strings.Contains(plain, txnreview.LookalikeField) {
+		t.Fatalf("unrelated accounts are called lookalikes:\n%s", plain)
+	}
+}

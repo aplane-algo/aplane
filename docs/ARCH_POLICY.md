@@ -426,8 +426,9 @@ different accounts in it that look alike, sharing six or more characters
 counted from both ends of the address together (`internal/txnreview/lookalike.go`).
 A shortened address keeps a few characters of each end, and address poisoning
 searches for an address that matches them. The warning names both addresses
-in full. It is shown wherever a prompt is shown and is in the review's
-`findings`; it is not a policy input, so it forces no review on its own and
+in full. It is shown wherever a prompt is shown, is in the review's
+`findings`, and is in apshell's review of a plugin-built group; it is not a
+policy input, so it forces no review on its own and
 `appolicy try` does not report it.
 
 ## Always Approve

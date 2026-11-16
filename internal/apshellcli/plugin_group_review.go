@@ -92,14 +92,23 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	}
 	r.printf("%d transaction(s):\n", len(slots))
 
+	details := make([]txnreview.Details, len(slots))
 	for i, s := range slots {
 		txn := s.txn
+		details[i] = pluginSlotDetails(txn)
 		// The type is the plugin's text: escaped, so it can't draw over the
 		// lines that follow.
 		// The sender and fee are in the description that follows.
 		r.printf("  [%d] %-13s %s\n", i+1, s.role, termsafe.Line(txnTypeLabel(txn.Type)))
 		for _, line := range append(pluginSlotLines(s, facts.held), pluginReviewLines(txn, facts.rekeyTargets)...) {
 			r.printf("        %s\n", line)
+		}
+	}
+	// What the signer's prompt warns of for a request as a whole: two
+	// accounts in the group that look alike.
+	for _, finding := range txnreview.LookalikeFindings(details) {
+		for _, line := range findingLines(finding) {
+			r.printf("  %s\n", line)
 		}
 	}
 	if line := managedFeesLine(slots); line != "" {
@@ -185,14 +194,32 @@ func managedFeesLine(slots []pluginReviewSlot) string {
 // The network is named from the transaction's genesis hash, not from its
 // genesis ID, which is text the plugin chose.
 func pluginReviewLines(txn types.Transaction, ctx txnreview.FindingContext) []string {
-	network, _ := apconfig.DefaultGenesisHashNetworkResolver().NetworkForGenesisHashBytes(txn.GenesisHash[:])
-	lines := strings.Split(txnreview.Describe(txn, txnreview.View{Network: network}), "\n")
+	lines := strings.Split(pluginSlotDetails(txn).Text(), "\n")
 	lines = append(lines, validRoundsLine(txn))
 	for _, finding := range txnreview.Findings(txn, ctx) {
-		lines = append(lines, fmt.Sprintf("!! %s = %s", finding.Field, finding.Value))
-		for _, line := range strings.Split(finding.Message, "\n") {
-			lines = append(lines, "   "+strings.TrimSpace(line))
-		}
+		lines = append(lines, findingLines(finding)...)
+	}
+	return lines
+}
+
+// pluginSlotDetails describes txn as the signer's prompt does, as data: the
+// text of a slot is printed from it, and the group's lookalike check reads
+// the accounts it names.
+func pluginSlotDetails(txn types.Transaction) txnreview.Details {
+	network, _ := apconfig.DefaultGenesisHashNetworkResolver().NetworkForGenesisHashBytes(txn.GenesisHash[:])
+	return txnreview.Detail(txn, txnreview.View{Network: network})
+}
+
+// findingLines is a finding as the review shows it: marked `!!`, then its
+// message.
+func findingLines(finding txnreview.Finding) []string {
+	head := "!! " + finding.Field
+	if finding.Value != "" {
+		head += " = " + finding.Value
+	}
+	lines := []string{head}
+	for _, line := range strings.Split(finding.Message, "\n") {
+		lines = append(lines, "   "+strings.TrimSpace(line))
 	}
 	return lines
 }
