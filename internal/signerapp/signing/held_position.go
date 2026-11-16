@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 // heldPosition is a position a request doesn't sign that this signer's own
@@ -90,21 +92,22 @@ func heldForeignPositions(snapshot PlannerRuntimeSnapshot, txns []types.Transact
 
 // heldPositionHeading is the review's heading for a held position, and the
 // lines under it.
-func heldPositionHeading(position *heldPosition) (label string, lines []string) {
+func heldPositionHeading(position *heldPosition) (label string, notes []txnreview.Field) {
 	if position.NamedAuthorizer != "" {
 		// The request's word, not the signer's: it holds the named key and
 		// can't tell here that the sender was rekeyed to it.
-		lines = append(lines, fmt.Sprintf("  Named authorizer: %s (this signer holds it; not checked against the chain)", position.NamedAuthorizer))
+		notes = append(notes, txnreview.Field{Label: "Named authorizer",
+			Value: fmt.Sprintf("%s (this signer holds it; not checked against the chain)", position.NamedAuthorizer)})
 	}
 	if position.ListUnreadable {
-		lines = append(lines, "  This account's stored rekey-to list could not be read")
+		notes = append(notes, txnreview.Field{Value: "This account's stored rekey-to list could not be read"})
 	}
 	if position.SenderHeld {
 		// Calling it foreign would contradict the request that signs it, which
 		// shows the same group.
-		return "THIS SIGNER HOLDS THIS ACCOUNT'S KEY - not signed in this request", lines
+		return "THIS SIGNER HOLDS THIS ACCOUNT'S KEY - not signed in this request", notes
 	}
-	return "NOT SIGNED IN THIS REQUEST - authorizer named by the request", lines
+	return "NOT SIGNED IN THIS REQUEST - authorizer named by the request", notes
 }
 
 // sendersHeld counts the positions whose sender's key this signer holds.

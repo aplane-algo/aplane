@@ -94,7 +94,7 @@ func newSigningFixtureFor(t testing.TB, kind rotatingTestType) (*rotatingFixture
 	audit := &recordingReleaseAudit{}
 	approve := true
 	f.svc.Approval = &ApprovalService{UserAutoApprove: &approve}
-	f.svc.GenerateTxnDescriptionFromTxn = func(types.Transaction) string { return "txn" }
+	f.svc.GenerateTxnDescriptionFromTxn = describeAs("txn")
 	f.svc.PolicyFor = fixedPolicy(policy.DefaultConfig())
 	f.svc.AuditLog = audit
 	f.svc.Rotating.Releases = &ReleaseMemory{}
@@ -944,7 +944,7 @@ func TestRebuildReleaseMemoryDerivesVerifiedAddresses(t *testing.T) {
 
 func TestRotatingApprovalDescriptionNamesTheRotation(t *testing.T) {
 	item := &rotatingPlanItem{Stage: 4, Target: 5, TargetAddress: types.Address{1}}
-	desc := item.describe()
+	desc := item.describe().Line()
 	if !strings.Contains(desc, "stage 4 signs") || !strings.Contains(desc, "stage 5") || !strings.Contains(desc, "held by this signer") {
 		t.Fatalf("description = %q", desc)
 	}

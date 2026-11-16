@@ -16,27 +16,29 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
-// DescribeTxn creates a human-readable transaction description
-// from a decoded transaction object. Use this when you have a modified transaction
-// (e.g., after fee adjustments) to show the actual values that will be signed.
-func DescribeTxn(txn types.Transaction) string {
-	return DescribeTxnWithResolver(txn, apconfig.DefaultGenesisHashNetworkResolver())
+// DetailTxn describes a decoded transaction as data, naming its network from
+// the built-in table. Use this when you have a modified transaction (e.g.,
+// after fee adjustments) to show the actual values that will be signed.
+func DetailTxn(txn types.Transaction) txnreview.Details {
+	return DetailTxnWithResolver(txn, apconfig.DefaultGenesisHashNetworkResolver())
 }
 
-func DescribeTxnWithResolver(txn types.Transaction, resolver apconfig.GenesisHashNetworkResolver) string {
+// DetailTxnWithResolver describes txn as data, naming its network through
+// resolver.
+func DetailTxnWithResolver(txn types.Transaction, resolver apconfig.GenesisHashNetworkResolver) txnreview.Details {
 	network, _ := resolver.NetworkForGenesisHashBytes(txn.GenesisHash[:])
-	return txnreview.Describe(txn, txnreview.View{Network: network})
+	return txnreview.Detail(txn, txnreview.View{Network: network})
 }
 
-// DescribeTxnInContext describes txn in a node's policy context: the network
+// DetailTxnInContext describes txn in a node's policy context: the network
 // is the one the context maps the transaction's chain to, and an asset the
 // context's ASA set knows is shown in its display units beside its base
 // units. An approval prompt is built from the context its signing request
 // captured, so a reload while it waits does not change what it says.
-func DescribeTxnInContext(txn types.Transaction, ctx *policycontext.Context) string {
+func DetailTxnInContext(txn types.Transaction, ctx *policycontext.Context) txnreview.Details {
 	if ctx == nil {
-		return DescribeTxn(txn)
+		return DetailTxn(txn)
 	}
 	network, _ := ctx.Network(asaset.GenesisHash(txn.GenesisHash))
-	return txnreview.Describe(txn, txnreview.View{Network: network, Assets: ctx.Assets()})
+	return txnreview.Detail(txn, txnreview.View{Network: network, Assets: ctx.Assets()})
 }

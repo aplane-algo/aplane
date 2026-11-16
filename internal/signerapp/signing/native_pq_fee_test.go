@@ -346,7 +346,7 @@ func TestPlanGroupBudgetsNativeFalconBeforeApproval(t *testing.T) {
 	}
 	description, _, _ := BuildApprovalDescription(
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: authorizer}}},
-		plan, plan.AllTxns, func(types.Transaction) string { return "payment" },
+		plan, plan.AllTxns, describeAs("payment"),
 	)
 	if !strings.Contains(description, "Required native Falcon contribution: 2000 microAlgos") || !strings.Contains(description, "Group fee adjustment: +2000 microAlgos") {
 		t.Fatalf("approval description did not disclose native PQ fee mutation:\n%s", description)

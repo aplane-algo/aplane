@@ -305,7 +305,7 @@ func TestValidateFrozenComponentContextAuditsEveryOriginalPosition(t *testing.T)
 	}
 	audit := &captureAuditLog{}
 	service.Planner.AuditLog = audit
-	service.Planner.GenerateTxnDescription = func(types.Transaction) string { return "frozen bounded transaction" }
+	service.Planner.GenerateTxnDescription = describeAs("frozen bounded transaction")
 	request := signerapi.ComponentRequest{
 		Targets: []signerapi.ComponentTarget{{
 			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,

@@ -451,7 +451,7 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 		IsUnlocked: func() bool {
 			return true
 		},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 			Rekeys: policy.RekeysRejectForeign,
 		}),
@@ -560,7 +560,7 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(true),
-			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+			GenerateTxnDescriptionFromTxn: describeAs("txn"),
 			HasClient:                     func() bool { return true },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
@@ -568,7 +568,7 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign}),
 	}
@@ -665,7 +665,7 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 					},
 				},
 				Executor:                      &Executor{},
-				GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+				GenerateTxnDescriptionFromTxn: describeAs("txn"),
 				IsUnlocked:                    func() bool { return true },
 				BeforeExecute: func() (func(), *ServiceError) {
 					beforeExecuteCalled = true
@@ -728,7 +728,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -782,7 +782,7 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(false),
-			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+			GenerateTxnDescriptionFromTxn: describeAs("txn"),
 			HasClient:                     func() bool { return true },
 			KnownAddresses: func() map[string]bool {
 				return nil
@@ -794,7 +794,7 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -847,7 +847,7 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 	var service *Service
 	service = &Service{
 		Approval: &ApprovalService{
-			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+			GenerateTxnDescriptionFromTxn: describeAs("txn"),
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
@@ -857,7 +857,7 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -926,7 +926,7 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(false),
-			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+			GenerateTxnDescriptionFromTxn: describeAs("txn"),
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
@@ -936,7 +936,7 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -1008,7 +1008,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -1121,7 +1121,7 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -1181,7 +1181,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *test
 			HasClient: func() bool { return false },
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -1247,7 +1247,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackWhenPredicateFails(t *test
 			HasClient: func() bool { return false },
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
@@ -1328,7 +1328,7 @@ func TestSignGroupWithPlanRejectsNetworkScopedAlgoLimit(t *testing.T) {
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 			MaxAlgoPayments:     map[string]uint64{"testnet": 1_000_000},
@@ -1382,12 +1382,10 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 		Approval: &ApprovalService{
 			UserAutoApprove: userAutoApproveDefault(true),
 		},
-		Executor: &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string {
-			return "txn"
-		},
-		IsUnlocked: func() bool { return true },
-		PolicyFor:  fixedPolicy(policy.DefaultConfig()),
+		Executor:                      &Executor{},
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
+		IsUnlocked:                    func() bool { return true },
+		PolicyFor:                     fixedPolicy(policy.DefaultConfig()),
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
 			return nil, forbidden("final execution refused")
@@ -1432,11 +1430,9 @@ func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) 
 		Approval: &ApprovalService{
 			UserAutoApprove: userAutoApproveDefault(true),
 		},
-		Executor: &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string {
-			return "txn"
-		},
-		IsUnlocked: func() bool { return true },
+		Executor:                      &Executor{},
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
+		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
 			return func() {
@@ -1569,7 +1565,7 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 		Approval: &ApprovalService{
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
-			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+			GenerateTxnDescriptionFromTxn: describeAs("txn"),
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotDescription = description
 				gotFirstValid = firstValid
@@ -1577,12 +1573,10 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 				return false, nil
 			},
 		},
-		Executor: &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string {
-			return "txn"
-		},
-		IsUnlocked: func() bool { return true },
-		PolicyFor:  fixedPolicy(policy.DefaultConfig()),
+		Executor:                      &Executor{},
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
+		IsUnlocked:                    func() bool { return true },
+		PolicyFor:                     fixedPolicy(policy.DefaultConfig()),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1653,14 +1647,14 @@ func TestSignGroupWithPlanSingleTxnPromptShowsTheSignersFeeRaise(t *testing.T) {
 				Approval: &ApprovalService{
 					HasClient:                     func() bool { return true },
 					KnownAddresses:                func() map[string]bool { return nil },
-					GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+					GenerateTxnDescriptionFromTxn: describeAs("txn"),
 					RequestSigningApproval: func(_, _, _, description string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 						gotDescription = description
 						return false, nil
 					},
 				},
 				Executor:                      &Executor{},
-				GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+				GenerateTxnDescriptionFromTxn: describeAs("txn"),
 				IsUnlocked:                    func() bool { return true },
 				PolicyFor:                     fixedPolicy(policy.DefaultConfig()),
 			}
@@ -1710,12 +1704,10 @@ func TestSignGroupWithPlanUsesIntersectedValidityWindowForGroups(t *testing.T) {
 				return false, nil
 			},
 		},
-		Executor: &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string {
-			return "txn"
-		},
-		IsUnlocked: func() bool { return true },
-		PolicyFor:  fixedPolicy(policy.DefaultConfig()),
+		Executor:                      &Executor{},
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
+		IsUnlocked:                    func() bool { return true },
+		PolicyFor:                     fixedPolicy(policy.DefaultConfig()),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1803,7 +1795,7 @@ func TestSignGroupWithPlanRoutesSelfNoOpTransfers(t *testing.T) {
 					},
 				},
 				Executor:                      &Executor{},
-				GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+				GenerateTxnDescriptionFromTxn: describeAs("txn"),
 				IsUnlocked:                    func() bool { return true },
 				BeforeExecute: func() (func(), *ServiceError) {
 					executed = true

@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/stagetable"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -59,8 +60,9 @@ type rotatingPlanItem struct {
 	TargetAddress types.Address
 }
 
-func (r *rotatingPlanItem) describe() string {
-	return fmt.Sprintf("\n  Rotation: stage %d signs and hands the account to stage %d (%s), held by this signer", r.Stage, r.Target, r.TargetAddress)
+func (r *rotatingPlanItem) describe() txnreview.Field {
+	return txnreview.Field{Label: "Rotation",
+		Value: fmt.Sprintf("stage %d signs and hands the account to stage %d (%s), held by this signer", r.Stage, r.Target, r.TargetAddress)}
 }
 
 func rotatingStageUnproven(scanned uint64) *ServiceError {

@@ -82,7 +82,7 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 		AuditLog: audit,
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(true),
-			GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+			GenerateTxnDescriptionFromTxn: describeAs("txn"),
 			HasClient:                     func() bool { return true },
 			RequestSigningApproval: func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 				approvalCalled = true
@@ -90,7 +90,7 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 			},
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			return nil, forbidden("reached execution")

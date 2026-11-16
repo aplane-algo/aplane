@@ -7,8 +7,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
-func (fs *Signer) generateTransactionDescriptionFromTxn(txn types.Transaction) string {
-	return txdesc.DescribeTxnWithResolver(txn, fs.genesisHashResolver())
+func (fs *Signer) generateTransactionDescriptionFromTxn(txn types.Transaction) txnreview.Details {
+	return txdesc.DetailTxnWithResolver(txn, fs.genesisHashResolver())
 }

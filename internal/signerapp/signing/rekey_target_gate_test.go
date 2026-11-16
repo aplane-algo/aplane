@@ -213,7 +213,7 @@ func TestValidTargetInvariantJudgesThePlansKeySet(t *testing.T) {
 		// By the time the gates run, the runtime holds no keys at all.
 		Planner:                       &Planner{Snapshot: func() PlannerRuntimeSnapshot { return PlannerRuntimeSnapshot{} }},
 		Approval:                      &ApprovalService{},
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 	}
 	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a["plain"], Fee: 1_000, RekeyTo: a["htlc"]}}
@@ -264,7 +264,7 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 			var got []signerapproval.Violation
 			svc := &ApprovalService{
 				HasClient:                     func() bool { return true },
-				GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+				GenerateTxnDescriptionFromTxn: describeAs("txn"),
 				KnownAddresses:                func() map[string]bool { return nil },
 				RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 					got = violations
@@ -329,7 +329,7 @@ func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.S
 	svc.Approval = &ApprovalService{
 		UserAutoApprove:               &auto,
 		Console:                       &stringConsole{&h.approval},
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		HasClient:                     func() bool { return true },
 		RequestSigningApprovalContext: func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 			h.prompts++
@@ -337,7 +337,7 @@ func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.S
 		},
 	}
 	svc.Executor = &Executor{}
-	svc.GenerateTxnDescriptionFromTxn = func(types.Transaction) string { return "txn" }
+	svc.GenerateTxnDescriptionFromTxn = describeAs("txn")
 	svc.IsUnlocked = func() bool { return true }
 	svc.PolicyFor = fixedPolicy(shippedSignerPolicyWithRekeys(t, rekeys))
 	svc.BeforeExecute = func() (func(), *ServiceError) {

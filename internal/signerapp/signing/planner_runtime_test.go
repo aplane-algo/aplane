@@ -627,11 +627,9 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 		keyTypes: map[string]string{authAddr: "ed25519"},
 	}
 	planner := NewPlanner(deps, PlannerOptions{
-		AuditLog:            audit,
-		GenesisHashResolver: resolver,
-		GenerateTxnDescription: func(types.Transaction) string {
-			return "decoded transaction"
-		},
+		AuditLog:               audit,
+		GenesisHashResolver:    resolver,
+		GenerateTxnDescription: describeAs("decoded transaction"),
 	})
 
 	_, planErr := planner.PlanGroup(signerapi.GroupSignRequest{
@@ -862,7 +860,7 @@ func lsigDummyPlanner(t *testing.T, audit AuditLogger) (*Planner, string, types.
 	}, PlannerOptions{
 		AuditLog:               audit,
 		GenesisHashResolver:    feeTestResolver(t, genesisHash),
-		GenerateTxnDescription: func(types.Transaction) string { return "payment" },
+		GenerateTxnDescription: describeAs("payment"),
 	})
 	txn := types.Transaction{
 		Type:             types.PaymentTx,

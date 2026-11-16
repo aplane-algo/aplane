@@ -43,7 +43,7 @@ type Service struct {
 	Executor                      *Executor
 	AuditLog                      AuditApproveLogger
 	Console                       Console
-	GenerateTxnDescriptionFromTxn GenerateTxnDescriptionFromTxnFunc
+	GenerateTxnDescriptionFromTxn DescribeTxnFunc
 	IsUnlocked                    IsUnlockedFunc
 	BeforeExecute                 BeforeExecuteFunc
 	// PolicyFor resolves the policy that governs a key selector: the key's

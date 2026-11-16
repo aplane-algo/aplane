@@ -14,7 +14,7 @@ import (
 
 // newApprovalServiceWithAudit builds the approval service for one request;
 // describe renders its transactions in the prompts it raises.
-func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditLog signersigning.AuditRejectLogger, describe signersigning.GenerateTxnDescriptionFromTxnFunc) *signersigning.ApprovalService {
+func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditLog signersigning.AuditRejectLogger, describe signersigning.DescribeTxnFunc) *signersigning.ApprovalService {
 	userAutoApprove := ir.Config().UserAutoApprove()
 	return &signersigning.ApprovalService{
 		UserAutoApprove: &userAutoApprove,

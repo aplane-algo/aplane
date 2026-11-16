@@ -188,7 +188,7 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 	var description string
 	svc := &ApprovalService{
 		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		KnownAddresses:                func() map[string]bool { return nil },
 		RequestSigningApproval: func(_, _, _, text string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 			got, description = violations, text

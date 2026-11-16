@@ -109,11 +109,11 @@ func TestSigningServiceShowsAmountsFromTheCapturedContext(t *testing.T) {
 		AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 9, AssetAmount: 150}}
 	// Group prompts are built by the service, single-transaction prompts by
 	// its approval service; both show the captured context.
-	for name, describe := range map[string]signersigning.GenerateTxnDescriptionFromTxnFunc{
+	for name, describe := range map[string]signersigning.DescribeTxnFunc{
 		"group":              svc.GenerateTxnDescriptionFromTxn,
 		"single transaction": svc.Approval.GenerateTxnDescriptionFromTxn,
 	} {
-		if got := describe(txn); !strings.Contains(got, "ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev") {
+		if got := describe(txn).Text(); !strings.Contains(got, "ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev") {
 			t.Fatalf("the %s prompt after an ASA set change:\n%s", name, got)
 		}
 	}

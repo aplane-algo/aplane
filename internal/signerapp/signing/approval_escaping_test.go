@@ -58,7 +58,7 @@ func requireTerminalSafe(t *testing.T, what, text string) {
 func signForEscapingTest(t *testing.T, req signerapi.GroupSignRequest, plan *PlanResult) escapingTestCapture {
 	t.Helper()
 	got := escapingTestCapture{console: &printedConsole{}}
-	describe := func(txn types.Transaction) string { return txdesc.DescribeTxn(txn) }
+	describe := DescribeTxnFunc(txdesc.DetailTxn)
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(false),

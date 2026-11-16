@@ -234,7 +234,7 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 				prompted, approvalCalls := false, 0
 				approval := &ApprovalService{
 					UserAutoApprove:               &auto,
-					GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+					GenerateTxnDescriptionFromTxn: describeAs("txn"),
 					KnownAddresses:                func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
 					HasClient:                     func() bool { return true },
 					RequestSigningApprovalContext: func(_ context.Context, _, _, _, _ string, _, _ uint64, v []signerapproval.Violation, _ time.Duration) (bool, error) {

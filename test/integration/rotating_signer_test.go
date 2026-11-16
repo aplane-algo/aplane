@@ -25,6 +25,7 @@ import (
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingwotscsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
@@ -165,7 +166,7 @@ func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
 			}
 		}},
 		Approval:                      &signersigning.ApprovalService{UserAutoApprove: &approve},
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "rotating spend" },
+		GenerateTxnDescriptionFromTxn: func(types.Transaction) txnreview.Details { return txnreview.Details{Title: "rotating spend"} },
 		IsUnlocked:                    func() bool { return true },
 		PolicyFor:                     func(string) *policy.Config { return policy.DefaultConfig() },
 		Rotating: &signersigning.RotatingDeps{

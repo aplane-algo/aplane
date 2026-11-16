@@ -28,7 +28,7 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 		t.Fatalf("SignatureSelector() error = %v", err)
 	}
 
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -47,10 +47,9 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 				Method: "increment(uint64)void",
 			},
 		},
-		func(txn types.Transaction) string {
-			return "App Call: #123 (NoOp)\n  From: SOMEADDR"
-		},
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 
 	for _, want := range []string{
 		"App Call: #123 (NoOp)",
@@ -65,7 +64,7 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 }
 
 func TestDescribeTxnForApprovalIgnoresMismatchedAppCallMetadata(t *testing.T) {
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -84,10 +83,9 @@ func TestDescribeTxnForApprovalIgnoresMismatchedAppCallMetadata(t *testing.T) {
 				Method: "increment(uint64)void",
 			},
 		},
-		func(txn types.Transaction) string {
-			return "App Call: #123 (NoOp)\n  From: SOMEADDR"
-		},
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 
 	for _, unwanted := range []string{
 		"App Call [ABI]:",
@@ -102,7 +100,7 @@ func TestDescribeTxnForApprovalIgnoresMismatchedAppCallMetadata(t *testing.T) {
 }
 
 func TestDescribeTxnForApprovalMarksRawAppCalls(t *testing.T) {
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -117,10 +115,9 @@ func TestDescribeTxnForApprovalMarksRawAppCalls(t *testing.T) {
 				Mode: "raw",
 			},
 		},
-		func(txn types.Transaction) string {
-			return "App Call: #123 (NoOp)\n  From: SOMEADDR"
-		},
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 
 	if !strings.Contains(desc, "Mode: Raw") {
 		t.Fatalf("description missing raw mode marker:\n%s", desc)
@@ -270,9 +267,7 @@ func TestBuildApprovalDescriptionTreatsSingleRequestedTxnWithDummiesAsSingle(t *
 		{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{2}, FirstValid: 100, LastValid: 200}},
 	}
 
-	desc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, func(txn types.Transaction) string {
-		return "txn"
-	})
+	desc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, describeAs("txn"))
 
 	if !strings.HasPrefix(desc, "=== SINGLE TRANSACTION ===\n\n") {
 		t.Fatalf("description = %q, want single transaction header", desc)
@@ -310,9 +305,7 @@ func TestBuildApprovalDescriptionOmitsDummyEntriesFromGroupApproval(t *testing.T
 		{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{3}, FirstValid: 140, LastValid: 300}},
 	}
 
-	desc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, func(txn types.Transaction) string {
-		return "txn"
-	})
+	desc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, describeAs("txn"))
 
 	if !strings.HasPrefix(desc, "=== TRANSACTION GROUP (2 transactions) ===\n") {
 		t.Fatalf("description = %q, want requested transaction count in group header", desc)
@@ -337,7 +330,7 @@ func TestBuildApprovalDescriptionDistinguishesCoveredAuthorizationFeeRequirement
 		ForeignIndices:       map[int]bool{},
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description, _, _ := BuildApprovalDescription(req, plan, txns, describeAs("txn"))
 	if strings.Contains(description, "[MODIFIED BY SERVER]") {
 		t.Fatalf("description incorrectly reports a fee mutation:\n%s", description)
 	}
@@ -360,7 +353,7 @@ func TestBuildApprovalDescriptionGivesTheProgramContributionAsApproximate(t *tes
 		PassthroughIndices:   map[int]bool{},
 		ForeignIndices:       map[int]bool{},
 	}
-	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, func(types.Transaction) string { return "txn" })
+	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, describeAs("txn"))
 	for _, want := range []string{
 		"Group fee adjustment: +2000 microAlgos\n",
 		"Required LogicSig program contribution: about 1 microAlgos (5 charged byte(s))",
@@ -394,7 +387,7 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 		for i := range txns {
 			txns[i] = types.Transaction{Type: types.PaymentTx}
 		}
-		description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+		description, _, _ := BuildApprovalDescription(req, plan, txns, describeAs("txn"))
 		for _, want := range []string{
 			"[FROZEN GROUP: checked as sent, not changed by this request]",
 			"  • 1 dummy transaction(s) for LogicSig arguments/opcode budget",
@@ -412,7 +405,7 @@ func TestBuildApprovalDescriptionFrozenGroupClaimsNoChange(t *testing.T) {
 		}
 
 		plan.Frozen = false
-		description, _, _ = BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+		description, _, _ = BuildApprovalDescription(req, plan, txns, describeAs("txn"))
 		if !strings.Contains(description, "[MODIFIED BY SERVER]") || strings.Contains(description, "FROZEN") {
 			t.Errorf("%d request(s): a planned group lost its change report:\n%s", len(requests), description)
 		}
@@ -429,7 +422,7 @@ func TestBuildApprovalDescriptionFrozenLoneTransactionIsNotAGroup(t *testing.T) 
 		ForeignIndices:     map[int]bool{},
 		Frozen:             true,
 	}
-	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, func(types.Transaction) string { return "txn" })
+	description, _, _ := BuildApprovalDescription(req, plan, []types.Transaction{{Type: types.PaymentTx}}, describeAs("txn"))
 	for _, want := range []string{
 		"[FROZEN TRANSACTION: checked as sent, not changed by this request]",
 		"Required native Falcon contribution: 2000 microAlgos",
@@ -473,7 +466,7 @@ func TestBuildApprovalDescriptionFrozenStatesTheFeeAddedAtPrepare(t *testing.T) 
 			for i := range txns {
 				txns[i] = types.Transaction{Type: types.PaymentTx}
 			}
-			describe := func(types.Transaction) string { return "txn" }
+			describe := describeAs("txn")
 			frozen, _, _ := BuildApprovalDescription(req, plan, txns, describe)
 			if strings.Contains(frozen, "Group fee adjustment") {
 				t.Fatalf("a frozen prompt words the fee as this request's adjustment:\n%s", frozen)
@@ -507,7 +500,7 @@ func TestBuildApprovalDescriptionNamesEachPositionsSigningKey(t *testing.T) {
 		HasForeign:         true,
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}, {Type: types.PaymentTx}, {Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description, _, _ := BuildApprovalDescription(req, plan, txns, describeAs("txn"))
 	for _, want := range []string{
 		"--- Transaction 1 of 3 ---\n  Signing key: AUTH1\ntxn",
 		"--- Transaction 2 of 3 ---\n  Signing key: AUTH2\ntxn",
@@ -548,7 +541,7 @@ func TestBuildApprovalDescriptionNamesThePassthroughAuthorizer(t *testing.T) {
 		HasPassthrough:        true,
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}, signed.Txn, {Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description, _, _ := BuildApprovalDescription(req, plan, txns, describeAs("txn"))
 	want := "--- Transaction 2 of 3 [PASSTHROUGH] ---\n  Authorized by: " + rekeyed.String() +
 		" (multisig, 2 of 3, named as the sender's authorizer, not verified here)\ntxn"
 	if !strings.Contains(description, want) {
@@ -567,7 +560,7 @@ func TestBuildApprovalDescriptionUsesOneBasedFeeTransactionNumbers(t *testing.T)
 		ForeignIndices:     map[int]bool{},
 	}
 	txns := []types.Transaction{{Type: types.PaymentTx}, {Type: types.PaymentTx}, {Type: types.PaymentTx}}
-	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	description, _, _ := BuildApprovalDescription(req, plan, txns, describeAs("txn"))
 	if !strings.Contains(description, "across transaction(s) [1 3]") {
 		t.Fatalf("description does not use one-based transaction numbers:\n%s", description)
 	}
@@ -642,7 +635,7 @@ func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing
 	var gotViolations []signerapproval.Violation
 	svc := &ApprovalService{
 		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		KnownAddresses:                func() map[string]bool { return nil },
 		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotViolations = violations
@@ -685,7 +678,7 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 		ApprovalWait:                  func() time.Duration { return 45 * time.Second },
 		AuditLog:                      audit,
 		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		KnownAddresses:                func() map[string]bool { return nil },
 		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			gotTimeout = timeout
@@ -726,7 +719,7 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 	svc := &ApprovalService{
 		AuditLog:                      audit,
 		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		KnownAddresses:                func() map[string]bool { return nil },
 		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			return signerapproval.SignResponse{ID: requestID, Approved: false}, nil
@@ -817,7 +810,7 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 	var gotRequestID string
 	svc := &ApprovalService{
 		HasClient:                     func() bool { return true },
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		KnownAddresses:                func() map[string]bool { return nil },
 		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotRequestID = requestID
@@ -856,7 +849,7 @@ func TestApprovalHidesTheMethodLabelWhenTheFirstArgIsNotJustTheSelector(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	desc := describeTxnForApproval(
+	desc := reviewItem(
 		types.Transaction{
 			Type: types.ApplicationCallTx,
 			ApplicationFields: types.ApplicationFields{
@@ -867,8 +860,9 @@ func TestApprovalHidesTheMethodLabelWhenTheFirstArgIsNotJustTheSelector(t *testi
 			},
 		},
 		signerapi.SignRequest{AppCallInfo: &signerapi.AppCallInfo{Mode: "abi", Method: "increment(uint64)void"}},
-		func(txn types.Transaction) string { return "App Call: #123 (NoOp)\n  From: SOMEADDR" },
-	)
+		describeAs("App Call: #123 (NoOp)\n  From: SOMEADDR"),
+		nil,
+	).Text()
 	if strings.Contains(desc, "Method (") || strings.Contains(desc, "Mode: ABI") || strings.Contains(desc, "increment") {
 		t.Fatalf("a first argument longer than a selector is shown as an ABI call:\n%s", desc)
 	}

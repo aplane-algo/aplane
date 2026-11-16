@@ -54,22 +54,29 @@ func (d Details) Text() string {
 	var b strings.Builder
 	b.WriteString(d.Title)
 	for _, f := range d.Fields {
-		b.WriteString("\n  ")
-		if f.Depth > 0 {
-			b.WriteString(strings.Repeat("  ", f.Depth))
-		}
-		if f.Alert {
-			b.WriteString("⚠️  ")
-		}
-		switch {
-		case f.Label == "":
-		case f.wide:
-			b.WriteString(f.Label + ":   ")
-		default:
-			b.WriteString(f.Label + ": ")
-		}
-		b.WriteString(f.Value)
+		b.WriteString("\n" + f.Line())
 	}
+	return b.String()
+}
+
+// Line prints one field as the review shows it, indented.
+func (f Field) Line() string {
+	var b strings.Builder
+	b.WriteString("  ")
+	if f.Depth > 0 {
+		b.WriteString(strings.Repeat("  ", f.Depth))
+	}
+	if f.Alert {
+		b.WriteString("⚠️  ")
+	}
+	switch {
+	case f.Label == "":
+	case f.wide:
+		b.WriteString(f.Label + ":   ")
+	default:
+		b.WriteString(f.Label + ": ")
+	}
+	b.WriteString(f.Value)
 	return b.String()
 }
 

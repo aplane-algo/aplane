@@ -245,7 +245,7 @@ func (r *verdictRecorder) approvalService(known map[string]bool) *ApprovalServic
 	return &ApprovalService{
 		UserAutoApprove:               &off,
 		Console:                       r,
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		KnownAddresses:                func() map[string]bool { return known },
 		HasClient:                     func() bool { return true },
 		RequestSigningApprovalContext: func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
@@ -290,7 +290,7 @@ func (c *verdictCase) runSign(t *testing.T, group []types.Transaction) verdictWa
 	svc := &Service{
 		Approval:                      rec.approvalService(known),
 		Console:                       rec,
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		BeforeExecute:                 func() (func(), *ServiceError) { return func() {}, nil },
 		PolicyFor:                     c.policyResolver(t, noderole.RoleSigner),
@@ -408,7 +408,7 @@ func (c *verdictCase) runCosignerComponent(t *testing.T, group []types.Transacti
 	svc := &Service{
 		Approval:                      rec.approvalService(known),
 		Console:                       rec,
-		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		PolicyFor:                     c.policyResolver(t, nodeRole),
 		HoldsCosignerKey:              holdsAllCosignerKeys,
 	}

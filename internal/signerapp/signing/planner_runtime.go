@@ -56,7 +56,7 @@ type PlannerDeps interface {
 type PlannerOptions struct {
 	AuditLog               AuditLogger
 	Console                Console
-	GenerateTxnDescription GenerateTxnDescriptionFromTxnFunc
+	GenerateTxnDescription DescribeTxnFunc
 	GenesisHashResolver    apconfig.GenesisHashNetworkResolver
 }
 

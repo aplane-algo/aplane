@@ -164,7 +164,7 @@ func TestBuildApprovalDescriptionNamesTheCosignerOnACosignedRekey(t *testing.T) 
 				BoundedItems: []*boundedPlanItem{{Path: path, Metadata: metadata}},
 			},
 			[]types.Transaction{txn},
-			func(types.Transaction) string { return "transaction" },
+			describeAs("transaction"),
 		)
 		if !strings.Contains(description, want) {
 			t.Fatalf("%s approval description = %q, want containing %q", path, description, want)
@@ -187,7 +187,7 @@ func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
 			}},
 		},
 		[]types.Transaction{txn},
-		func(types.Transaction) string { return "transaction" },
+		describeAs("transaction"),
 	)
 	for _, want := range []string{
 		"Bounded authorization operation: REKEY",
