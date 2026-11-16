@@ -53,6 +53,17 @@ shows. At the prompt apshell names both addresses in full and asks
 scripts) the send goes on and its result carries the warning. A receiver
 named by alias or set is not checked: it names its account exactly.
 
+The check is advice for a person at the prompt, not a control. It compares
+only against held accounts and the address book, so a fake of anyone else
+passes; an address added to the address book is known and not checked; and
+the JavaScript API's transaction builders do not check at all. To limit
+where an automated sender (an MCP agent, a script, an SDK program) can send,
+use the signer's [transfer routing](USER_TRANSFER_ROUTING.md), which holds
+whatever built the transaction: a payment to an address no route's
+`destinations` list is held for review or refused, as `on_no_route` says,
+and one to a [blocked destination](USER_TRANSFER_ROUTING.md#blocked-destinations)
+is refused.
+
 **Options:**
 | Option | Description |
 |--------|-------------|
