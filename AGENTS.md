@@ -274,8 +274,8 @@ so a PR that changes modeled code keeps the correspondence itself.
 | `internal/signerapp/signing/bounded_cosigner.go`, `component_assemble.go` (passthrough), `internal/engine/cosigned/submit.go` | `bounded_cosigner.tla` |
 | `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go`, `internal/engine/accounts.go` (`CurrentKeys`, `RekeyTargetsFromKeys`) | `plugin_signing.tla` |
 | `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
-| `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go` | `rotating_leaf_release.tla` |
-| `internal/signerapp/productruntime/runtime.go` (`KeyUseContext`, `drainKeyUsers`, `performLockCleanup`), `internal/signerapp/runtime/runtime.go` (`Lock`, `BeginMaintenance`, `SetRecovery`), `internal/signerapp/signing/rotating_flow.go` (key use, `releaseRefused`), `rotating_session.go`, `internal/signerapp/keyadmin/export.go` | `key_use_lock.tla` |
+| `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go`, `internal/signerapp/daemon/stage_table_worker.go`, `internal/signerapp/audit/rotating.go` | `rotating_leaf_release.tla` |
+| `internal/signerapp/productruntime/runtime.go` (`KeyUseContext`, `drainKeyUsers`, `performLockCleanup`), `internal/signerapp/runtime/runtime.go` (`Lock`, `BeginMaintenance`, `SetRecovery`, `TryRecovery`), `internal/signerapp/signing/rotating_flow.go` (key use, `releaseRefused`), `rotating_session.go`, `internal/signerapp/keyadmin/export.go` | `key_use_lock.tla` |
 
 When a PR touches these paths:
 - Renaming, moving, or deleting a function or test: grep

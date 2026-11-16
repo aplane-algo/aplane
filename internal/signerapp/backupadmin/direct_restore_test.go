@@ -232,10 +232,14 @@ func TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery(t *testi
 		return nil
 	}
 	defer func() { fsutil.TestHook = nil }()
+	reloadsBefore := reloads.Load()
 	result := service.RollbackRestore(adminproto.RollbackRestoreRequest{
 		OperationID: "rollback-uncertain",
 	})
 	fsutil.TestHook = nil
+	if got := reloads.Load() - reloadsBefore; got != 1 {
+		t.Fatalf("durability-unknown rollback reloaded %d times, want 1", got)
+	}
 
 	if result.Success || result.Code != protocol.ResultCodeRestoreRollbackFailed || result.GenerationID == "" {
 		t.Fatalf("RollbackRestore(durability unknown) = %+v", result)
