@@ -179,6 +179,7 @@ func (m Model) renderGenerateForm() string {
 	// the selected type's name in a box under the list, as the bounds preset
 	// screen boxes its descriptions.
 	keyTypes := getGenerateKeyTypeOptions()
+	ids := generateKeyTypeIDs()
 	rows := make([]string, len(keyTypes))
 	descriptions := make([]string, len(keyTypes))
 	for i, kt := range keyTypes {
@@ -187,7 +188,9 @@ func (m Model) renderGenerateForm() string {
 		} else {
 			rows[i] = normalStyle.Render("  " + kt)
 		}
-		descriptions[i] = getKeyTypeSelectionLabel(getKeyTypeByIndex(i))
+		if i < len(ids) {
+			descriptions[i] = getKeyTypeSelectionLabel(ids[i])
+		}
 	}
 
 	var errorLine string

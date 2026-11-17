@@ -107,9 +107,8 @@ func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.forms.boundaryPresetIndex++
 		}
 	case fileBrowserKey:
-		// From any row, as a form's path field takes it from any field: the
-		// boundary file row is selected and the browser opens.
-		m.forms.boundaryPresetIndex = len(boundaryPresetChoices())
+		// From any row, as a form's path field takes it from any field. A
+		// chosen file selects the boundary file row; Esc leaves the row as it was.
 		return m.openFileBrowser(browseBoundaryFile, m.forms.boundaryFile, ""), nil
 	case "enter", " ":
 		m.forms.generateError = ""

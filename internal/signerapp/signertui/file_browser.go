@@ -511,6 +511,7 @@ func (m Model) chooseFileBrowserPath(path string) Model {
 		m.backups.imp.err = ""
 	case browseBoundaryFile:
 		m.forms.boundaryFile = path
+		m.forms.boundaryPresetIndex = len(boundaryPresetChoices())
 		m.forms.generateError = ""
 	}
 	return m

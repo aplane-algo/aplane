@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -331,13 +332,11 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 				})
 			}
 		} else {
-			switch {
-			case keyType == "falcon1024":
+			switch keyType {
+			case nativefalcon.KeyType:
 				info.DisplayName = "Native Falcon-1024"
-			case keyType == "ed25519":
+			case keys.CategoryEd25519:
 				info.DisplayName = "Native Ed25519"
-			case info.AuthorizationKind == string(algorithm.AuthorizationNativePQ):
-				info.DisplayName = keyType
 			default:
 				info.DisplayName = strings.ToUpper(keyType[:1]) + keyType[1:]
 			}
