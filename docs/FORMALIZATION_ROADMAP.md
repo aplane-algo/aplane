@@ -708,7 +708,7 @@ configuration). They are separate modules because `sign_boundary.tla` and
 `composition.tla` copies their operators. `make formal-test` now has 35 runs
 and `make formal-test-deep` 11; nineteen negative controls.
 
-Open, established by this follow-up and not changed: `key_use_lock.tla`'s
+Established by this follow-up and fixed on 2026-11-17 (below): `key_use_lock.tla`'s
 `Unlock` is enabled only once `Wipe` is done, and the code does not enforce
 that. `runtime.Lock` advances `lockGen` and releases the state mutex before
 its cleanup runs, and `TryUnlock` reads `lockGen` when it starts, so an unlock
@@ -725,3 +725,15 @@ lock and unlock. Options: make `TryUnlock` and `TryRecovery` wait for a
 cleanup in progress before they read `lockGen`, or refuse while one runs;
 then add the mutation to the spec (`Unlock` from `draining`) as a negative
 control.
+
+Fixed 2026-11-17: `TryUnlock`, `TryRecovery` and `FinishMaintenance` now wait
+for every on-lock cleanup already decided to return before they read
+`lockGen` (`awaitCleanups`), so an unlock can no longer begin between a
+lock's state change and its session clear. A cleanup is counted in the same
+critical section that moves `lockGen`, including the one an unlock runs when
+it loses to a racing lock. `key_use_lock.tla` gained the guard
+`UnlockWaitsForCleanup`, the property KU4 (the session is never cleared while
+the signer is unlocked) and the negative control
+`key_use_lock_negative_unlock.cfg` (111 states at depth 5); its positive runs
+are unchanged at 587 and 886 states. `make formal-test` now has 36 runs,
+twenty of them negative controls.

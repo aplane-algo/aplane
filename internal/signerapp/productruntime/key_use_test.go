@@ -119,6 +119,56 @@ func TestLockWaitsForAKeyUseAndRefusesNewOnesWhileDraining(t *testing.T) {
 	holderRelease() // Release is idempotent; a second call must not underflow the drain.
 }
 
+// An unlock that arrives while a lock is still draining waits for the lock's
+// cleanup (UnlockWaitsForCleanup in key_use_lock.tla, KU4). Before it did, the
+// signer read unlocked during the drain, a key use registered there got a live
+// context, and the cleanup then cleared the session under the new unlock.
+func TestUnlockDuringTheDrainWaitsForTheCleanup(t *testing.T) {
+	ir := New(Config{})
+	ir.SetUnlocked()
+
+	holderCtx, holderRelease := ir.KeyUseContext(context.Background())
+	revBefore := ir.KeysetRevision()
+	lockDone := lockAsync(ir)
+	waitClosed(t, holderCtx.Done(), "the lock to cancel the registered key use")
+
+	var revAtUnlock atomic.Uint64
+	unlockDone := make(chan struct{})
+	var ok bool
+	go func() {
+		defer close(unlockDone)
+		ok, _, _ = ir.lockRuntime.TryUnlock(func() (int, error) {
+			revAtUnlock.Store(ir.KeysetRevision())
+			return 0, nil
+		}, nil)
+	}()
+
+	select {
+	case <-unlockDone:
+		t.Fatal("unlock returned while the lock was still draining")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if ir.IsUnlocked() {
+		t.Fatal("signer reads unlocked while the lock is still draining")
+	}
+	lateCtx, lateRelease := ir.KeyUseContext(context.Background())
+	requireCancelled(t, lateCtx, "key use registered during the drain, with an unlock waiting")
+	lateRelease()
+
+	holderRelease()
+	waitClosed(t, lockDone, "Lock to return after the key use released")
+	waitClosed(t, unlockDone, "the unlock to finish after the cleanup")
+	if !ok || !ir.IsUnlocked() {
+		t.Fatalf("unlock after the cleanup: ok=%v unlocked=%v, want both true", ok, ir.IsUnlocked())
+	}
+	if got := revAtUnlock.Load(); got != revBefore+1 {
+		t.Fatalf("KeysetRevision when the unlock ran = %d, want %d (after the cleanup)", got, revBefore+1)
+	}
+	if got := ir.KeysetRevision(); got != revBefore+1 {
+		t.Fatalf("KeysetRevision after the unlock = %d, want %d: the session was cleared again", got, revBefore+1)
+	}
+}
+
 func TestKeyUseAfterAnotherUnlockIsLiveAndEndsAtTheNextLock(t *testing.T) {
 	ir := New(Config{})
 	ir.SetUnlocked()

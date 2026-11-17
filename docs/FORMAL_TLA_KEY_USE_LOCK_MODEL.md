@@ -4,7 +4,7 @@
 > and one mnemonic export, each repeating, at most two lock or recovery
 > transitions); the recorded positive run generated 587 distinct states at
 > depth 13 with no counterexamples, and the deep configuration (three
-> transitions) 886 distinct states at depth 15. Six expected-failure
+> transitions) 886 distinct states at depth 15. Seven expected-failure
 > negative controls must keep producing their exact counterexamples:
 > `key_use_lock_negative_recheck.cfg` (`FinalRecheck = FALSE`, violates
 > `KU1_NoSignatureAfterLock`, 165 distinct states at depth 7),
@@ -15,9 +15,11 @@
 > `key_use_lock_negative_drain.cfg` (`DrainWaits = FALSE`, violates
 > `KU2_NoKeyMaterialAtWipe`, 105 distinct states at depth 6),
 > `key_use_lock_negative_register.cfg` (`RegisterChecksLock = FALSE`, violates
-> `KU2_NoKeyMaterialAtWipe`, 137 distinct states at depth 6) and
+> `KU2_NoKeyMaterialAtWipe`, 137 distinct states at depth 6),
 > `key_use_lock_negative_register_export.cfg` (`RegisterChecksLock = FALSE`,
-> violates `KU3_NoExportAfterWipe`, 479 distinct states at depth 8).
+> violates `KU3_NoExportAfterWipe`, 479 distinct states at depth 8) and
+> `key_use_lock_negative_unlock.cfg` (`UnlockWaitsForCleanup = FALSE`,
+> violates `KU4_NoWipeWhileUnlocked`, 111 distinct states at depth 5).
 
 Code that holds loaded key material outside an admin session registers a key
 use with `Runtime.KeyUseContext`. For a rotating seed that is every load in
@@ -42,6 +44,7 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 | KU1 | A rotating signature is never returned once a lock or a recovery began after its sign started and before its final check | `KU1_NoSignatureAfterLock` |
 | KU2 | The session is never cleared while a key use is registered | `KU2_NoKeyMaterialAtWipe` |
 | KU3 | An export never delivers a phrase after the session was cleared | `KU3_NoExportAfterWipe` |
+| KU4 | The session is never cleared while the signer is unlocked | `KU4_NoWipeWhileUnlocked` |
 
 KU1 is not "nothing leaves after a lock starts". Both holders check and then
 release, and those two steps are not atomic in the code, so a lock landing
@@ -90,6 +93,7 @@ The guards are constants:
 | `FinalRecheck` | TRUE: `releaseRefused(requestCtx, ...)` after the audit write | Without it a lock during the audit write still lets the signature out |
 | `GenerationCheck` | TRUE: `releaseRefused` compares `LockGeneration()` with the value captured at the start | Without it a lock and an unlock between the release and the return go unnoticed |
 | `RecoveryEndsSession` | TRUE: `SetRecovery` and `TryRecovery` advance the session generation when they leave the unlocked state, and the key uses handed out are cancelled | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
+| `UnlockWaitsForCleanup` | TRUE: `TryUnlock`, `TryRecovery` and `FinishMaintenance` wait (`awaitCleanups`) until every on-lock cleanup already decided has returned, and only then read the lock generation | Without it an unlock that begins between a lock's state change and its session clear passes the unlock fence, and the cleanup clears the session it published |
 
 The negative controls:
 
@@ -101,6 +105,7 @@ The negative controls:
 | `DrainWaits = FALSE` | KU2 fails: the lock clears the session while the sign still holds its seed |
 | `RegisterChecksLock = FALSE` | KU2 fails: a sign starts, the lock begins and starts draining, and the sign registers afterwards with a context nobody cancels; it holds its seed when the session is cleared |
 | `RegisterChecksLock = FALSE` | KU3 fails: an export registers the same way, reads the credential, and delivers the phrase after the session was cleared |
+| `UnlockWaitsForCleanup = FALSE` | KU4 fails: the signer locks, an unlock lands before the lock's cleanup has cleared the session, and the cleanup then clears the session of the unlocked signer |
 
 The harness (`scripts/run-formal-tests.py`) requires exactly that violation
 for each.
