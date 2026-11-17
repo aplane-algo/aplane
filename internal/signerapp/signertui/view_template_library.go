@@ -298,7 +298,7 @@ func (m Model) renderTemplateInstallConfirm() string {
 func (m Model) renderTemplateInstalling() string {
 	var sb strings.Builder
 	title := "Enabling Template Key Type"
-	if m.library.pendingTemplate != nil {
+	if m.library.pendingTemplate != nil { //nolint:nestif // unslop phase 3
 		if isCompiledProviderLibraryEntry(*m.library.pendingTemplate) {
 			if m.library.pendingTemplate.Installed {
 				title = "Disabling Key Type"

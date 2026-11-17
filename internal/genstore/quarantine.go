@@ -221,7 +221,7 @@ func PruneQuarantined(
 			paths.QuarantineDir(), storepaths.GenerationStagingPrefix+"prune-"+generationID,
 		)
 		info, err := os.Lstat(path)
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) { //nolint:nestif // unslop phase 3
 			if tombstoneInfo, tombstoneErr := os.Lstat(tombstone); tombstoneErr == nil {
 				if tombstoneInfo.Mode()&os.ModeSymlink != 0 || !tombstoneInfo.IsDir() {
 					return results, fmt.Errorf("quarantine prune tombstone is not a regular directory: %s", tombstone)

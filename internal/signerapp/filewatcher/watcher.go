@@ -26,7 +26,7 @@ type Options struct {
 
 // Start watches dirs for managed credentials and .template changes and calls
 // reloadFn after a short debounce window.
-func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Options) error {
+func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Options) error { //nolint:gocognit // unslop phase 3
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("failed to create file watcher: %w", err)

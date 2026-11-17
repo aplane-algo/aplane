@@ -212,7 +212,7 @@ func validateSocketAliasChain(socketPath string, tempRoots map[string]struct{}) 
 		if err != nil {
 			return fmt.Errorf("failed to inspect IPC socket alias component %s: %w", path, err)
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
+		if info.Mode()&os.ModeSymlink != 0 { //nolint:nestif // unslop phase 3
 			owner, err := filesystemObjectOwner(path, info)
 			if err != nil {
 				return err

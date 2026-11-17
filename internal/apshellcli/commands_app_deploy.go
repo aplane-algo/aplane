@@ -82,7 +82,7 @@ func (a *appDeployArgs) toAppRequest() apshellapp.AppDeployRequest {
 	}
 }
 
-func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
+func parseAppDeployArgs(args []string) (*appDeployArgs, error) { //nolint:gocognit // unslop phase 3
 	params := &appDeployArgs{Wait: true}
 	if len(args) < 2 || args[0] != "from" || args[1] == "" {
 		return nil, fmt.Errorf("usage: app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]")

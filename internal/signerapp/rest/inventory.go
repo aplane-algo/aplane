@@ -277,7 +277,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			info.Family = keyType
 		}
 
-		if provider := lsigprovider.Get(keyType); provider != nil {
+		if provider := lsigprovider.Get(keyType); provider != nil { //nolint:nestif // unslop phase 3
 			info.DisplayName = provider.DisplayName()
 			info.Description = provider.Description()
 			if boundedProvider, ok := provider.(boundedInventoryProvider); ok {

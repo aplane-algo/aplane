@@ -30,7 +30,7 @@ func (r *REPLState) cmdJS(args []string, ctxRaw interface{}) (command.Result, er
 	return newTerminalCommandResult(nil), r.runJS(args, ctxRaw)
 }
 
-func (r *REPLState) runJS(args []string, ctxRaw interface{}) error {
+func (r *REPLState) runJS(args []string, ctxRaw interface{}) error { //nolint:gocognit // unslop phase 3
 	var code string
 
 	// Get raw args from context (preserves quotes that ParseCommand strips)
@@ -45,7 +45,7 @@ func (r *REPLState) runJS(args []string, ctxRaw interface{}) error {
 		return nil
 	}
 
-	if len(args) == 0 {
+	if len(args) == 0 { //nolint:nestif // unslop phase 3
 		// Multi-line mode: read lines until blank line
 		r.println("Enter JavaScript code (blank line to execute, Ctrl+C to cancel):")
 

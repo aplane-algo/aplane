@@ -341,7 +341,7 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	seen := cmdspec.SeenOptions{}
 	for i := 2; i < len(args); i++ {
 		arg := args[i]
-		if arg == "nowait" {
+		if arg == "nowait" { //nolint:nestif // unslop phase 3
 			params.Wait = false
 		} else if strings.HasPrefix(arg, "arg:") {
 			if err := cmdspec.AddLsigArg(&params.LsigArgs, arg); err != nil {

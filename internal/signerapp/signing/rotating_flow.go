@@ -366,7 +366,7 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 // SignRotatingWithContext signs a prepared rotating group. It is the
 // complete validation boundary: everything is re-established from the
 // presented bytes and a fresh chain read; nothing from prepare is remembered.
-func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.RotatingSignRequest, session *keystore.KeySession) (*signerapi.RotatingSignResponse, *ServiceError) {
+func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.RotatingSignRequest, session *keystore.KeySession) (*signerapi.RotatingSignResponse, *ServiceError) { //nolint:gocognit // unslop phase 3
 	if ctx == nil {
 		ctx = context.Background()
 	}

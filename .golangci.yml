@@ -1,5 +1,9 @@
 # The default linter set, plus linters that catch unused parameters,
-# conversions, and copied code. The departures are below.
+# conversions, copied code, and complex functions. The departures are below.
+#
+# gocognit and nestif hold the line on complexity. A site marked
+# "unslop phase 3" is backlog waiting for a refactor; nolintlint fails the
+# marker once the function drops under the threshold. New code gets no marker.
 version: "2"
 
 linters:
@@ -8,7 +12,13 @@ linters:
     - unconvert
     - dupl
     - nolintlint # every nolint names its linter and gives a reason; unused nolints fail
+    - gocognit
+    - nestif
   settings:
+    gocognit:
+      min-complexity: 60
+    nestif:
+      min-complexity: 8
     dupl:
       threshold: 150
     nolintlint:
@@ -39,6 +49,8 @@ linters:
         linters:
           - unparam
           - dupl
+          - gocognit
+          - nestif
       # Stat_t.Nlink's type depends on the platform.
       - path: internal/storeperm/linkcount_unix\.go
         linters:

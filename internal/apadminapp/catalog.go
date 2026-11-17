@@ -83,7 +83,7 @@ func (c Catalog) normalized() Catalog {
 // CatalogAuthMode returns the lock-state behavior required by a catalog
 // command. It validates enough grammar to reject unknown verbs before a
 // connection or passphrase prompt.
-func CatalogAuthMode(command string, args []string) (AuthMode, error) {
+func CatalogAuthMode(command string, args []string) (AuthMode, error) { //nolint:gocognit // unslop phase 3
 	switch command {
 	case "template":
 		if len(args) == 0 {

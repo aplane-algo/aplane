@@ -95,7 +95,7 @@ func (s *State) AddAliasWithContext(ctx context.Context, name, address string) (
 			return err
 		}
 
-		if s.AlgodClient != nil {
+		if s.AlgodClient != nil { //nolint:nestif // unslop phase 3
 			acctInfo, err := s.AlgodClient.AccountInformation(address).Do(ctx)
 			if err == nil {
 				if s.DataDir != "" {

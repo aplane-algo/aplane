@@ -34,7 +34,7 @@ import (
 // APSIGNER_DATA) and blocks until shutdown. The caller is responsible for
 // provider registration before calling Run. The return value is the process
 // exit code.
-func Run(dataDir string) int {
+func Run(dataDir string) int { //nolint:gocognit // unslop phase 3
 	if err := ensureProviders(); err != nil {
 		logErrorf("%v", err)
 		return 1
@@ -232,7 +232,7 @@ func Run(dataDir string) int {
 	// Configure algod client on all DSA providers that need it (for TEAL compilation)
 	configureAlgodOnDSAs(&config)
 
-	if startLocked {
+	if startLocked { //nolint:nestif // unslop phase 3
 		logInfof("signer runtime initialized (waiting for apadmin connection)")
 	} else {
 		// Authenticate the sole store root and reconcile residue before
