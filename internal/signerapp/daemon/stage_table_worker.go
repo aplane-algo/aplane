@@ -52,9 +52,6 @@ const (
 func (fs *Signer) runStageTableWorker(ctx context.Context) {
 	ticker := time.NewTicker(stageTableTick)
 	defer ticker.Stop()
-	// Hold leaf-family spends until the first restore from the audit log
-	// has run; Reset re-arms the hold at every lock.
-	fs.rotatingReleases.Reset()
 	var lastRun time.Time
 	wait := time.Duration(0)
 	wasUnlocked := false
@@ -344,6 +341,11 @@ func stageTableWorkerService(fs *Signer) signerstartup.LifecycleService {
 		Start: func(ctx context.Context, _ chan<- error) error {
 			var workerCtx context.Context
 			workerCtx, cancel = context.WithCancel(ctx)
+			// Hold leaf-family spends until the first restore from the audit
+			// log has run; Reset re-arms the hold at every lock. Done here,
+			// before the worker is started, so no sign can find the memory
+			// open ahead of the worker's first step.
+			fs.rotatingReleases.Reset()
 			go func() {
 				defer close(done)
 				fs.runStageTableWorker(workerCtx)

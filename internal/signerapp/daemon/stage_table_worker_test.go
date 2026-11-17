@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -906,8 +907,8 @@ func TestWorkerRestoresAfterALockItNeverSaw(t *testing.T) {
 	defer cleanup()
 	ir := server.productRuntime()
 	const account = "ACCOUNT"
-	// Held from the start, so the wait below can only end with the worker's own
-	// restore, after its startup Reset.
+	// Held from the start, as the worker's service leaves it, so the wait below
+	// can only end with the worker's own restore.
 	server.rotatingReleases.Reset()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1182,5 +1183,29 @@ func TestShutdownStopsTheWorkerFirst(t *testing.T) {
 	}
 	if !cancelledFirst {
 		t.Fatal("the worker's chain read was still running while the HTTP server stopped")
+	}
+}
+
+// The memory has to be held by the time the worker's service has started, not
+// from the worker's first step: a signer with a passphrase helper is already
+// unlocked, and a sign arriving before the worker runs would find a memory
+// nobody had restored open.
+func TestStageTableWorkerServiceHoldsTheMemoryBeforeTheWorkerRuns(t *testing.T) {
+	// One processor, and nothing below yields before the check, so the worker
+	// started by Start has not run when the memory is read.
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	server := &Signer{}
+	worker := stageTableWorkerService(server)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := worker.Start(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, restored := server.rotatingReleases.ForLeafChoice("ACCOUNT", 0)
+	if err := worker.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if restored {
+		t.Fatal("the release memory was open after the worker's service started")
 	}
 }

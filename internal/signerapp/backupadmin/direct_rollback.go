@@ -133,6 +133,10 @@ func (s Service) RollbackRestore(
 			}
 			if errors.Is(err, genstore.ErrStoreRootCommitDurabilityUnknown) || mutated {
 				ir.SetRecovery()
+				// The root may name the new generation: reload so the keystore
+				// follows it, as restore and policy apply do. Signing stays
+				// blocked either way.
+				_, _ = ir.Reload()
 			}
 			return err
 		}

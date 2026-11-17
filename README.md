@@ -238,6 +238,8 @@ All documentation is in the [`docs/`](docs/) directory.
 - [FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md](docs/FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md) - Machine-checked client enrollment queue model
 - [FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md](docs/FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md) - Machine-checked atomic store-root commit model
 - [FORMAL_TLA_RECOVERY_BINDING_MODEL.md](docs/FORMAL_TLA_RECOVERY_BINDING_MODEL.md) - Machine-checked recovery binding model
+- [FORMAL_TLA_SETTING_PUBLISH_MODEL.md](docs/FORMAL_TLA_SETTING_PUBLISH_MODEL.md) - Machine-checked model of when a setting change takes effect relative to its save
+- [FORMAL_TLA_SIGNER_INVARIANTS_MODEL.md](docs/FORMAL_TLA_SIGNER_INVARIANTS_MODEL.md) - Machine-checked model of the signer invariants ahead of policy
 
 ### User Guides
 - [USER_INSTALL.md](docs/USER_INSTALL.md) - Installation guide

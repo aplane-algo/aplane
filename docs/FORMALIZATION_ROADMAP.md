@@ -20,6 +20,8 @@ contracts; these models cover narrower security-critical transitions.
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
 | `rotating_leaf_release.tla` | one-time leaf choice for a rotating leaf-family stage: release memory, audit restore after unlock, and the status-pass clear |
 | `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a rotating sign or mnemonic export may still release |
+| `setting_publish.tla` | when a writable setting's change takes effect relative to its save: restrictive before, anything else after |
+| `signer_invariants.tla` | the signer invariants ahead of the policy verdict, and the positions each one judges |
 
 The single-product runtime has no decommission state or operation lease, so the
 formal inventory contains no lifecycle model for those concepts. Runtime
@@ -682,3 +684,44 @@ refused before key lookup (`validateTransactionBounds`); the Indexer stage
 candidate, as above; the stage number is checked before any key signs
 (`stagesign.CheckStage`). The default plugin flow is still not enumerated in
 `plugin_signing.tla`, though it now shares `CheckPluginGroup` and PS8.
+
+Follow-up to the 2026-11-16 review, decided the same day. Fixed in the code:
+a restore rollback whose commit is uncertain now reloads after entering
+recovery, as restore and policy apply do, so RB4 holds on that path
+(`TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery` counts
+the reload); the stage table worker's service holds the release memory in
+its `Start`, before the worker goroutine exists, so the memory is never open
+ahead of the worker's first step
+(`TestStageTableWorkerServiceHoldsTheMemoryBeforeTheWorkerRuns`), and `Run`
+holds it when it creates the signer, so the hold does not depend on the order
+the services start in. Settled
+without a change: a failed `ReconcileStore` on an unlocked signer serves
+nothing stale in the interval before it enters recovery, because a reconcile
+never moves the root (it quarantines non-authoritative generations and
+discards staging residue), every failure path of the reload either leaves the
+cache of the still-selected generation or publishes an empty one, and the
+late `SetRecovery` only adds a refusal. Both candidates are now models:
+`setting_publish.tla` (SP1 to SP4, two negative controls) and
+`signer_invariants.tla` (SI1 to SI4, two negative controls, with a deep
+configuration). They are separate modules because `sign_boundary.tla` and
+`policy_precedence.tla` each say to add one rather than grow, and
+`composition.tla` copies their operators. `make formal-test` now has 35 runs
+and `make formal-test-deep` 11; nineteen negative controls.
+
+Open, established by this follow-up and not changed: `key_use_lock.tla`'s
+`Unlock` is enabled only once `Wipe` is done, and the code does not enforce
+that. `runtime.Lock` advances `lockGen` and releases the state mutex before
+its cleanup runs, and `TryUnlock` reads `lockGen` when it starts, so an unlock
+that begins during the cleanup's drain passes the fence and publishes the
+unlocked state. `KeyUseContext` refuses only by that state, so a key use then
+registers during the drain with a context the lock never cancels, the lock
+waits for it as well, and the cleanup then clears the session and the
+keystore of a signer that reports unlocked (KU2's register guard does not
+hold on this path). The entry is a lock on disconnect with a new admin
+session authenticating before the drain ends. No key material outlives a
+session it was not loaded in, since the late key use belongs to an
+authenticated unlock, but the signer is left unlocked with no keys until a
+lock and unlock. Options: make `TryUnlock` and `TryRecovery` wait for a
+cleanup in progress before they read `lockGen`, or refuse while one runs;
+then add the mutation to the spec (`Unlock` from `draining`) as a negative
+control.
