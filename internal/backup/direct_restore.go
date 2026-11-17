@@ -240,11 +240,6 @@ func inspectCredentialBackupEntry(
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return CredentialEntry{}, fmt.Errorf("parse backup envelope: %w", err)
 	}
-	if envelope.EnvelopeVersion == 1 {
-		return CredentialEntry{}, fmt.Errorf(
-			"backup uses legacy format (envelope_version 1); create a new credential backup with this release",
-		)
-	}
 	if envelope.EnvelopeVersion != 2 {
 		return CredentialEntry{}, fmt.Errorf(
 			"unsupported envelope_version: %d; create a new credential backup with this release",

@@ -36,8 +36,7 @@ type Plugin struct {
 
 // Discoverer finds and validates external plugins
 type Discoverer struct {
-	searchPaths []string
-	dataDir     string
+	dataDir string
 }
 
 type activationConfig struct {
@@ -51,15 +50,7 @@ func New() *Discoverer {
 
 // NewWithDataDir creates a plugin discoverer for a specific apshell data dir.
 func NewWithDataDir(dataDir string) *Discoverer {
-	if dataDir == "" {
-		return &Discoverer{}
-	}
-
-	availablePath := filepath.Join(dataDir, AvailableDirName)
-	return &Discoverer{
-		searchPaths: []string{availablePath},
-		dataDir:     dataDir,
-	}
+	return &Discoverer{dataDir: dataDir}
 }
 
 func loadEnabledPluginNames(dataDir string) ([]string, error) {
@@ -106,53 +97,33 @@ func validateEnabledPluginName(name string) error {
 	return nil
 }
 
-// Discover finds all valid plugins in the search paths
+// Discover loads the plugins plugins.yaml enables from the plugins.available
+// catalog. An enabled plugin that fails to load is skipped with a warning; when
+// two share a manifest name, the first enabled wins.
 func (d *Discoverer) Discover() ([]*Plugin, error) {
-	var enabledByPath map[string][]string
-	if d.dataDir != "" {
-		enabled, err := loadEnabledPluginNames(d.dataDir)
-		if err != nil {
-			return nil, err
-		}
-		enabledByPath = map[string][]string{
-			filepath.Join(d.dataDir, AvailableDirName): enabled,
-		}
+	if d.dataDir == "" {
+		return nil, nil
+	}
+	enabled, err := loadEnabledPluginNames(d.dataDir)
+	if err != nil {
+		return nil, err
 	}
 
+	catalog := filepath.Join(d.dataDir, AvailableDirName)
 	var plugins []*Plugin
-	seen := make(map[string]bool) // Track seen plugins by name to avoid duplicates
-
-	for _, searchPath := range d.searchPaths {
-		enabled, configuredPath := enabledByPath[searchPath]
-
-		// Skip missing legacy scan paths. Configured catalog paths are still
-		// checked per enabled plugin so missing enabled entries produce warnings.
-		if _, err := os.Stat(searchPath); os.IsNotExist(err) && !configuredPath {
+	seen := make(map[string]bool, len(enabled))
+	for _, name := range enabled {
+		plugin, err := d.loadPluginDir(filepath.Join(catalog, name))
+		if err != nil {
+			logger().Warn("enabled plugin skipped", "name", name, "error", err)
 			continue
 		}
-
-		// Find plugins in this search path.
-		var found []*Plugin
-		if configuredPath {
-			found = d.discoverEnabledInPath(searchPath, enabled)
-		} else {
-			var err error
-			if found, err = d.discoverInPath(searchPath); err != nil {
-				// Log error but continue with other paths
-				logger().Warn("error searching for plugins", "path", searchPath, "error", err)
-				continue
-			}
+		if seen[plugin.Manifest.Name] {
+			continue
 		}
-
-		// Add plugins, avoiding duplicates (first found wins)
-		for _, plugin := range found {
-			if !seen[plugin.Manifest.Name] {
-				plugins = append(plugins, plugin)
-				seen[plugin.Manifest.Name] = true
-			}
-		}
+		seen[plugin.Manifest.Name] = true
+		plugins = append(plugins, plugin)
 	}
-
 	return plugins, nil
 }
 
@@ -161,45 +132,6 @@ func (d *Discoverer) Discover() ([]*Plugin, error) {
 // component "plugin" is reserved for what plugins themselves print.
 func logger() *slog.Logger {
 	return slog.With("component", "plugins")
-}
-
-func (d *Discoverer) discoverEnabledInPath(searchPath string, enabled []string) []*Plugin {
-	var plugins []*Plugin
-
-	for _, name := range enabled {
-		pluginDir := filepath.Join(searchPath, name)
-		plugin, err := d.loadPluginDir(pluginDir)
-		if err != nil {
-			logger().Warn("enabled plugin skipped", "name", name, "error", err)
-			continue
-		}
-		plugins = append(plugins, plugin)
-	}
-
-	return plugins
-}
-
-// discoverInPath finds plugins in a specific directory
-func (d *Discoverer) discoverInPath(searchPath string) ([]*Plugin, error) {
-	var plugins []*Plugin
-
-	entries, err := os.ReadDir(searchPath)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, entry := range entries {
-		pluginDir := filepath.Join(searchPath, entry.Name())
-
-		plugin, err := d.loadPluginDir(pluginDir)
-		if err != nil {
-			// Not a valid plugin, skip silently
-			continue
-		}
-		plugins = append(plugins, plugin)
-	}
-
-	return plugins, nil
 }
 
 func (d *Discoverer) loadPluginDir(pluginDir string) (*Plugin, error) {

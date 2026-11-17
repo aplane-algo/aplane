@@ -486,8 +486,8 @@ func (f *FileKeyStore) GetKeyType(ctx context.Context, address string) (string, 
 	return info.KeyType, nil
 }
 
-// GetCache returns a copy of the address -> filepath cache
-// This is useful for compatibility with existing code that expects this format
+// GetCache returns a copy of the address -> key file path map. The template
+// reload builds the runtime snapshot from it.
 func (f *FileKeyStore) GetCache() map[string]string {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()

@@ -16,24 +16,25 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/integrity"
 )
 
-func TestDiscoverInPathSkipsSymlinkEntries(t *testing.T) {
-	root := t.TempDir()
-	target := filepath.Join(root, "target")
-	if err := os.Mkdir(target, 0755); err != nil {
-		t.Fatalf("Mkdir(target) error = %v", err)
+func TestDiscoverSkipsSymlinkedPlugin(t *testing.T) {
+	dataDir := t.TempDir()
+	availableDir := filepath.Join(dataDir, AvailableDirName)
+	if err := os.MkdirAll(availableDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", availableDir, err)
 	}
-	link := filepath.Join(root, "linked-plugin")
-	if err := os.Symlink(target, link); err != nil {
+	elsewhere := t.TempDir()
+	createDiscoveryPlugin(t, elsewhere, "target", "swap", "target")
+	if err := os.Symlink(filepath.Join(elsewhere, "target"), filepath.Join(availableDir, "linked-plugin")); err != nil {
 		t.Fatalf("Symlink() error = %v", err)
 	}
+	writeActivationConfig(t, dataDir, "linked-plugin")
 
-	d := New()
-	plugins, err := d.discoverInPath(root)
+	plugins, err := NewWithDataDir(dataDir).Discover()
 	if err != nil {
-		t.Fatalf("discoverInPath() error = %v", err)
+		t.Fatalf("Discover() error = %v", err)
 	}
 	if len(plugins) != 0 {
-		t.Fatalf("discoverInPath() = %#v, want symlink skipped", plugins)
+		t.Fatalf("Discover() = %#v, want symlink skipped", plugins)
 	}
 }
 
@@ -91,46 +92,40 @@ func TestDiscoverRejectsInvalidActivationPluginName(t *testing.T) {
 	}
 }
 
-func TestDiscoverMixedPathsDeterministicallyFiltersInvalidAndDuplicatePlugins(t *testing.T) {
-	root := t.TempDir()
-	pathA := filepath.Join(root, "path-a")
-	pathB := filepath.Join(root, "path-b")
-	for _, dir := range []string{pathA, pathB} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", dir, err)
+func TestDiscoverDeterministicallyFiltersInvalidPlugins(t *testing.T) {
+	dataDir := t.TempDir()
+	availableDir := filepath.Join(dataDir, AvailableDirName)
+	if err := os.MkdirAll(availableDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", availableDir, err)
+	}
+	createDiscoveryPlugin(t, availableDir, "alpha", "swap", "alpha")
+	createMalformedDiscoveryPlugin(t, availableDir, "broken-json")
+	createChecksumMismatchDiscoveryPlugin(t, availableDir, "bad-checksum", "broken")
+	createDiscoveryPlugin(t, availableDir, "beta", "lend", "beta")
+	writeActivationConfig(t, dataDir, "alpha", "broken-json", "bad-checksum", "beta")
+
+	d := NewWithDataDir(dataDir)
+	want := []string{"alpha:swap", "beta:lend"}
+	for _, run := range []string{"first", "second"} {
+		plugins, err := d.Discover()
+		if err != nil {
+			t.Fatalf("%s Discover() error = %v", run, err)
+		}
+		if got := discoveredPluginSummaries(plugins); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s Discover() = %#v, want %#v", run, got, want)
 		}
 	}
+}
 
-	createDiscoveryPlugin(t, pathA, "alpha", "swap", "alpha-a")
-	createMalformedDiscoveryPlugin(t, pathA, "broken-json")
-	createChecksumMismatchDiscoveryPlugin(t, pathA, "bad-checksum", "broken")
-
-	createDiscoveryPlugin(t, pathB, "alpha", "ignored-duplicate", "alpha-b")
-	createDiscoveryPlugin(t, pathB, "beta", "lend", "beta")
-
-	d := &Discoverer{searchPaths: []string{pathA, pathB}}
-
-	first, err := d.Discover()
-	if err != nil {
-		t.Fatalf("Discover() first error = %v", err)
+func writeActivationConfig(t *testing.T, dataDir string, names ...string) {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString("enabled_plugins:\n")
+	for _, name := range names {
+		b.WriteString("  - " + name + "\n")
 	}
-	second, err := d.Discover()
-	if err != nil {
-		t.Fatalf("Discover() second error = %v", err)
-	}
-
-	gotFirst := discoveredPluginSummaries(first)
-	gotSecond := discoveredPluginSummaries(second)
-	want := []string{
-		"alpha:swap",
-		"beta:lend",
-	}
-
-	if !reflect.DeepEqual(gotFirst, want) {
-		t.Fatalf("first Discover() = %#v, want %#v", gotFirst, want)
-	}
-	if !reflect.DeepEqual(gotSecond, want) {
-		t.Fatalf("second Discover() = %#v, want %#v", gotSecond, want)
+	if err := os.WriteFile(filepath.Join(dataDir, ActivationConfigName), []byte(b.String()), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", ActivationConfigName, err)
 	}
 }
 
@@ -235,9 +230,10 @@ func TestSkippedPluginIsLoggedAsAWarning(t *testing.T) {
 	var out bytes.Buffer
 	slog.SetDefault(slog.New(slog.NewTextHandler(&out, nil)))
 
-	d := New()
-	if found := d.discoverEnabledInPath(t.TempDir(), []string{"missing-plugin"}); len(found) != 0 {
-		t.Fatalf("discoverEnabledInPath() = %d plugins, want none", len(found))
+	dataDir := t.TempDir()
+	writeActivationConfig(t, dataDir, "missing-plugin")
+	if found, err := NewWithDataDir(dataDir).Discover(); err != nil || len(found) != 0 {
+		t.Fatalf("Discover() = %d plugins, %v; want none", len(found), err)
 	}
 
 	got := out.String()

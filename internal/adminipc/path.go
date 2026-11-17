@@ -36,14 +36,14 @@ var loadServerConfigStrict = serverconfig.LoadServerConfigStrict
 // instance unless config carries a genuinely custom path. Same-UID instances
 // retain the data-root socket.
 func ResolveDaemonPath(dataDir, configured string, systemdManaged bool) string {
-	legacyDefault := filepath.Join(dataDir, "aplane.sock")
+	storeDefault := filepath.Join(dataDir, "aplane.sock")
 	if configured == "" {
-		configured = legacyDefault
+		configured = storeDefault
 	} else if !filepath.IsAbs(configured) {
 		configured = filepath.Join(dataDir, configured)
 	}
 	configured = filepath.Clean(configured)
-	if systemdManaged && filepath.Clean(configured) == filepath.Clean(legacyDefault) {
+	if systemdManaged && filepath.Clean(configured) == filepath.Clean(storeDefault) {
 		return SystemSocketPath
 	}
 	return configured
@@ -64,11 +64,11 @@ func ResolveDaemonPathForDataDir(dataDir, configured string) (string, bool, erro
 	return resolved, managed, nil
 }
 
-// ResolveLegacyStoreSocketPath returns the one exact in-store socket that a
+// ResolveInStoreSocketPath returns the one exact in-store socket that a
 // stopped migration may remove. A configured in-store path supports upgrades
 // from releases that allowed it; an external custom path leaves only the
 // historical default eligible for cleanup.
-func ResolveLegacyStoreSocketPath(dataDir, configured string) (string, error) {
+func ResolveInStoreSocketPath(dataDir, configured string) (string, error) {
 	configured = ResolveDaemonPath(dataDir, configured, false)
 	inside, err := pathWithin(dataDir, configured)
 	if err != nil {
