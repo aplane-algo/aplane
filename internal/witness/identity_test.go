@@ -61,6 +61,18 @@ func TestEd25519WitnessKeyType(t *testing.T) {
 	if _, err := ID(Ed25519V1, make([]byte, Falcon1024PublicKeySize)); err == nil {
 		t.Fatal("ID() accepted a Falcon-sized key for an Ed25519 witness")
 	}
+	// The vectors the SDKs pin for their own derivation.
+	zeros := make([]byte, Ed25519PublicKeySize)
+	if got, _ := ID(Ed25519V1, zeros); got != "MMN7TOWCUUIJP2VKT5JJW7RC5J6S5LZEHPDNAKEW4G4KYV6XCJJQ" {
+		t.Fatalf("ID(zeros) = %s", got)
+	}
+	counting := make([]byte, Ed25519PublicKeySize)
+	for i := range counting {
+		counting[i] = byte(i % 251)
+	}
+	if got, _ := ID(Ed25519V1, counting); got != "G6RCBPAWGJ7FHBXANDLJ2JYG2THQUKREIUCIRKAVDWEKAOBOJTVQ" {
+		t.Fatalf("ID(i mod 251) = %s", got)
+	}
 }
 
 func TestIDRejectsUnsupportedTypeAndLength(t *testing.T) {
