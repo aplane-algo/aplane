@@ -451,3 +451,172 @@ func TestUnlockOverlappingRecoveryDoesNotRunTheLockCleanup(t *testing.T) {
 		t.Fatalf("an unlock overlapping recovery was treated as losing to a lock: ok %v, %q, %d cleanup(s)", ok, msg, lockCalls.Load())
 	}
 }
+
+// blockFirstCleanup installs an on-lock callback whose first call blocks until
+// release is closed. entered is closed when that call begins, and returned
+// counts the calls that have finished.
+func blockFirstCleanup(rt *Runtime) (entered, release chan struct{}, returned *atomic.Int32) {
+	entered = make(chan struct{})
+	release = make(chan struct{})
+	returned = &atomic.Int32{}
+	var calls atomic.Int32
+	rt.SetOnLock(func() {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		returned.Add(1)
+	})
+	return entered, release, returned
+}
+
+func expectBlocked(t *testing.T, done <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-done:
+		t.Fatalf("%s did not wait for the lock's cleanup", what)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func expectDone(t *testing.T, done <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s did not finish after the lock's cleanup returned", what)
+	}
+}
+
+// A Lock moves the lock generation and then runs its cleanup outside the state
+// mutex. An unlock that began in between used to read the new generation, pass
+// the fence, and publish a session the cleanup was still about to destroy.
+func TestTryUnlockWaitsForALockCleanupInProgress(t *testing.T) {
+	rt := New()
+	entered, release, returned := blockFirstCleanup(rt)
+	rt.SetUnlocked()
+	go rt.Lock()
+	<-entered
+
+	var cleanupsAtUnlock atomic.Int32
+	cleanupsAtUnlock.Store(-1)
+	var ok bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ok, _, _ = rt.TryUnlock(func() (int, error) {
+			cleanupsAtUnlock.Store(returned.Load())
+			return 1, nil
+		}, nil)
+	}()
+
+	expectBlocked(t, done, "TryUnlock")
+	if rt.IsUnlocked() {
+		t.Fatal("signer reports unlocked while the lock's cleanup is running")
+	}
+	close(release)
+	expectDone(t, done, "TryUnlock")
+	if !ok || !rt.IsUnlocked() {
+		t.Fatalf("unlock after the cleanup: ok=%v unlocked=%v, want both true", ok, rt.IsUnlocked())
+	}
+	if got := cleanupsAtUnlock.Load(); got != 1 {
+		t.Fatalf("cleanups finished when the unlock function ran = %d, want 1", got)
+	}
+}
+
+func TestTryRecoveryWaitsForALockCleanupInProgress(t *testing.T) {
+	rt := New()
+	entered, release, returned := blockFirstCleanup(rt)
+	rt.SetUnlocked()
+	go rt.Lock()
+	<-entered
+
+	var cleanupsAtUnlock atomic.Int32
+	cleanupsAtUnlock.Store(-1)
+	var ok bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ok, _ = rt.TryRecovery(func() error {
+			cleanupsAtUnlock.Store(returned.Load())
+			return nil
+		})
+	}()
+
+	expectBlocked(t, done, "TryRecovery")
+	if rt.IsRecovery() {
+		t.Fatal("signer reports recovery while the lock's cleanup is running")
+	}
+	close(release)
+	expectDone(t, done, "TryRecovery")
+	if !ok || !rt.IsRecovery() {
+		t.Fatalf("recovery after the cleanup: ok=%v recovery=%v, want both true", ok, rt.IsRecovery())
+	}
+	if got := cleanupsAtUnlock.Load(); got != 1 {
+		t.Fatalf("cleanups finished when the unlock function ran = %d, want 1", got)
+	}
+}
+
+// A maintenance that begins while an earlier Lock's cleanup is still running
+// must not republish the signer as unlocked under that cleanup.
+func TestFinishMaintenanceWaitsForAnEarlierLockCleanup(t *testing.T) {
+	rt := New()
+	entered, release, returned := blockFirstCleanup(rt)
+	rt.SetUnlocked()
+	go rt.Lock()
+	<-entered
+
+	token := rt.BeginMaintenance()
+	var republished bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		republished = rt.FinishMaintenance(token, true)
+	}()
+
+	expectBlocked(t, done, "FinishMaintenance")
+	if rt.IsUnlocked() {
+		t.Fatal("signer reports unlocked while the lock's cleanup is running")
+	}
+	close(release)
+	expectDone(t, done, "FinishMaintenance")
+	if !republished || !rt.IsUnlocked() {
+		t.Fatalf("after the cleanup: republished=%v unlocked=%v, want both true", republished, rt.IsUnlocked())
+	}
+	if got := returned.Load(); got != 2 {
+		t.Fatalf("cleanups finished = %d, want 2", got)
+	}
+}
+
+// An unlock that loses to a racing lock runs the cleanup itself. The next
+// unlock waits for that one too.
+func TestTryUnlockWaitsForALosingUnlocksCleanup(t *testing.T) {
+	rt := New()
+	rt.SetUnlocked()
+	rt.Lock()
+	entered, release, _ := blockFirstCleanup(rt)
+
+	loser := make(chan struct{})
+	go func() {
+		defer close(loser)
+		rt.TryUnlock(func() (int, error) {
+			rt.Lock() // already locked: moves the generation, runs no cleanup
+			return 1, nil
+		}, nil)
+	}()
+	<-entered
+
+	var ok bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ok, _, _ = rt.TryUnlock(func() (int, error) { return 1, nil }, nil)
+	}()
+	expectBlocked(t, done, "TryUnlock")
+	close(release)
+	expectDone(t, done, "TryUnlock")
+	<-loser
+	if !ok || !rt.IsUnlocked() {
+		t.Fatalf("unlock after the cleanup: ok=%v unlocked=%v, want both true", ok, rt.IsUnlocked())
+	}
+}

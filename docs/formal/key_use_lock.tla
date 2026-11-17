@@ -33,7 +33,12 @@ unlocked session all the same, and cancels the key uses that session handed
 out: signing is blocked while it lasts, and the
 store the session signed under may have changed by the time it ends.
 
-Five guards are switchable:
+An unlock waits for a lock's cleanup. The state mutex is released between
+LockState and Wipe, so an unlock could otherwise read the generation the lock
+had already moved, pass the unlock fence, and publish a session that the
+cleanup still running would then clear.
+
+Six guards are switchable:
 
   RegisterChecksLock  registration refuses once the state is locked. Without
                       it, a holder registering after DrainBegin gets a fresh,
@@ -49,13 +54,20 @@ Five guards are switchable:
                       session generation (runtime.Runtime.SetRecovery and
                       TryRecovery) and cancels the registered key uses, so a
                       recovery and a reconcile in between refuse as well.
+  UnlockWaitsForCleanup
+                      an unlock starts only once the lock's cleanup has
+                      returned (runtime.Runtime.TryUnlock, TryRecovery and
+                      FinishMaintenance wait for it). Without it, an unlock
+                      may land between LockState and Wipe, and the rest of
+                      that cleanup runs against the new session.
 
 Properties:
 
   KU1  a rotating signature is never returned once a lock or a recovery has
        begun after its sign started and before its final check;
   KU2  the session is never cleared while a key use is registered;
-  KU3  an export never delivers after the session was cleared.
+  KU3  an export never delivers after the session was cleared;
+  KU4  the session is never cleared while the signer is unlocked.
 
 The final check and the return are separate in the code; a lock landing
 between them is indistinguishable from one landing just after the return, so
@@ -87,6 +99,9 @@ Code anchors:
     productruntime's cancelKeyUses on the way in; DrainBegin and Wipe transcribe
     internal/signerapp/productruntime/runtime.go drainKeyUsers and
     performLockCleanup; registration transcribes KeyUseContext.
+  - Unlock's guard transcribes awaitCleanups in
+    internal/signerapp/runtime/runtime.go, which TryUnlock, TryRecovery and
+    FinishMaintenance call before they read the lock generation.
 
 See FORMAL_TLA_KEY_USE_LOCK_MODEL.md for the prose companion.
 ***************************************************************************)
@@ -97,6 +112,7 @@ CONSTANTS
     FinalRecheck,        \* BOOLEAN: the sign rechecks before returning
     GenerationCheck,     \* BOOLEAN: the recheck compares lock generations
     RecoveryEndsSession, \* BOOLEAN: entering recovery moves the lock generation
+    UnlockWaitsForCleanup, \* BOOLEAN: an unlock waits for the lock's cleanup
     MaxLocks             \* bound on lock transitions (keeps the space finite)
 
 Holders == {"sign", "export"}
@@ -111,9 +127,13 @@ VARIABLES
     waited,     \* the drain will wait for the holder's key use
     leaked,     \* ghost: a signature was returned although stale
     wipedHeld,  \* ghost: the session was cleared while a key use was registered
-    lateExport  \* ghost: an export delivered after the session was cleared
+    lateExport, \* ghost: an export delivered after the session was cleared
+    late,       \* the step of a cleanup an early unlock overtook: "none" |
+                \* "locking" | "draining"
+    wipedLive   \* ghost: the session was cleared while the signer was unlocked
 
-vars == <<life, locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld, lateExport>>
+vars == <<life, locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld,
+          lateExport, late, wipedLive>>
 
 \* Steps at which a holder has a registered key use.
 SignHolds == {"held", "made"}
@@ -133,6 +153,8 @@ Init ==
     /\ leaked = FALSE
     /\ wipedHeld = FALSE
     /\ lateExport = FALSE
+    /\ late = "none"
+    /\ wipedLive = FALSE
 
 ----------------------------------------------------------------------------
 (* Registration (KeyUseContext), shared by both holders *)
@@ -294,17 +316,44 @@ Wipe ==
     /\ wipedHeld' = (wipedHeld \/ \E h \in Holders : Holding(h))
     /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, lateExport>>
 
+\* TryUnlock. It waits for the cleanup, so it starts from the locked state.
+\* Without the wait it may also start between LockState and Wipe; the cleanup
+\* it overtook carries on as `late`.
 Unlock ==
-    /\ life = "locked"
+    /\ IF UnlockWaitsForCleanup
+       THEN life = "locked"
+       ELSE life \in {"locking", "draining", "locked"}
+    /\ life # "locked" => late = "none"
+    /\ late' = IF life = "locked" THEN late ELSE life
     /\ life' = "unlocked"
-    /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld, lateExport>>
+    /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld,
+                   lateExport, wipedLive>>
+
+\* The overtaken cleanup's drainKeyUsers.
+LateDrainBegin ==
+    /\ late = "locking"
+    /\ late' = "draining"
+    /\ cancelled' = [h \in Holders |-> cancelled[h] \/ (Holding(h) /\ waited[h])]
+    /\ UNCHANGED <<life, locks, pc, stale, ended, waited, leaked, wipedHeld,
+                   lateExport, wipedLive>>
+
+\* The overtaken cleanup clears the session, whatever state the signer is in.
+LateWipe ==
+    /\ late = "draining"
+    /\ DrainWaits => \A h \in Holders : ~(Holding(h) /\ waited[h])
+    /\ late' = "none"
+    /\ wipedHeld' = (wipedHeld \/ \E h \in Holders : Holding(h))
+    /\ wipedLive' = (wipedLive \/ life = "unlocked")
+    /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked, lateExport>>
 
 ----------------------------------------------------------------------------
 Next ==
-    \/ SStart \/ SRegister \/ SMake \/ SRelease \/ SReturn
-    \/ EStart \/ ERegister \/ ERead \/ EDeliver \/ ERelease
-    \/ LockState \/ DrainBegin \/ Wipe \/ Unlock
-    \/ EnterRecovery \/ LeaveRecovery
+    \/ /\ \/ SStart \/ SRegister \/ SMake \/ SRelease \/ SReturn
+          \/ EStart \/ ERegister \/ ERead \/ EDeliver \/ ERelease
+          \/ LockState \/ DrainBegin \/ Wipe
+          \/ EnterRecovery \/ LeaveRecovery
+       /\ UNCHANGED <<late, wipedLive>>
+    \/ Unlock \/ LateDrainBegin \/ LateWipe
 
 Spec == Init /\ [][Next]_vars
 
@@ -319,6 +368,8 @@ TypeOK ==
     /\ \A h \in Holders : stale[h] \in BOOLEAN /\ ended[h] \in BOOLEAN
     /\ \A h \in Holders : cancelled[h] \in BOOLEAN /\ waited[h] \in BOOLEAN
     /\ leaked \in BOOLEAN /\ wipedHeld \in BOOLEAN /\ lateExport \in BOOLEAN
+    /\ late \in {"none", "locking", "draining"}
+    /\ wipedLive \in BOOLEAN
 
 \* KU1: no rotating signature is returned after a lock or a recovery began
 \* during its sign.
@@ -330,10 +381,14 @@ KU2_NoKeyMaterialAtWipe == ~wipedHeld
 \* KU3: an export never delivers after the session was cleared.
 KU3_NoExportAfterWipe == ~lateExport
 
+\* KU4: the session is never cleared while the signer is unlocked.
+KU4_NoWipeWhileUnlocked == ~wipedLive
+
 Safety ==
     /\ TypeOK
     /\ KU1_NoSignatureAfterLock
     /\ KU2_NoKeyMaterialAtWipe
     /\ KU3_NoExportAfterWipe
+    /\ KU4_NoWipeWhileUnlocked
 
 =============================================================================

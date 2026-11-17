@@ -176,6 +176,13 @@
     "depth": 8
   },
   {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_unlock",
+    "expected_invariant_violation": "KU4_NoWipeWhileUnlocked",
+    "distinct_states": 111,
+    "depth": 5
+  },
+  {
     "spec": "setting_publish",
     "distinct_states": 23,
     "depth": 5
