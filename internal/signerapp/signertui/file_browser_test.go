@@ -114,6 +114,57 @@ func TestFileBrowserListsOnlyTheMatchingRoleReference(t *testing.T) {
 	}
 }
 
+// Every screen that takes a file name says ctrl+o browses, beside or under its
+// path field, and in its footer.
+func TestEveryPathFieldOffersTheFileBrowser(t *testing.T) {
+	for name, m := range map[string]Model{
+		"import client key": {viewState: ViewImportClientKey},
+		"cosigner import":   {viewState: ViewCosignerImportForm},
+		"cosigner export":   {viewState: ViewCosignerExportPath, cosigner: cosignerState{exportWitnessID: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
+		"policy apply":      policyApplyFormModel(""),
+		"policy export":     {viewState: ViewPolicyExportForm},
+		"backup export":     {viewState: ViewBackupExport},
+		"backup import":     {viewState: ViewBackupImport},
+	} {
+		m.width, m.height = 80, 24
+		if view := stripANSI(m.renderViewContent()); !strings.Contains(view, "ctrl+o browses") {
+			t.Errorf("%s: the path field does not say ctrl+o browses:\n%s", name, view)
+		}
+		if footer := m.viewFooterText(); !strings.Contains(footer, "ctrl+o") {
+			t.Errorf("%s: footer %q does not offer ctrl+o", name, footer)
+		}
+	}
+}
+
+// On the bounds preset screen ctrl+o works from any row, as a form's path
+// field takes it from any field. Esc leaves the selected row as it was, and a
+// chosen file selects the boundary file row.
+func TestBoundaryPresetBrowsesFromAnyRow(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "rules.yaml"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := Model{viewState: ViewBoundaryPreset, forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPresetIndex: 1}}
+	if footer := m.viewFooterText(); !strings.Contains(footer, "ctrl+o") {
+		t.Fatalf("footer %q does not offer ctrl+o on a preset row", footer)
+	}
+	m = press(t, m, "ctrl+o")
+	if !m.fileBrowserOpen() {
+		t.Fatal("ctrl+o on a preset row did not open the browser")
+	}
+	m = press(t, m, "esc")
+	if m.fileBrowserOpen() || m.forms.boundaryPresetIndex != 1 {
+		t.Fatalf("esc: browser open %v, row %d, want the browser closed on row 1", m.fileBrowserOpen(), m.forms.boundaryPresetIndex)
+	}
+
+	m.forms.boundaryFile = filepath.Join(root, "rules.yaml")
+	m = press(t, selectBrowserEntry(t, press(t, m, "ctrl+o"), "rules.yaml"), "enter")
+	if m.fileBrowserOpen() || !m.boundaryFileRowSelected() || m.forms.boundaryFile != filepath.Join(root, "rules.yaml") {
+		t.Fatalf("choosing a file: browser open %v, file row selected %v, file %q",
+			m.fileBrowserOpen(), m.boundaryFileRowSelected(), m.forms.boundaryFile)
+	}
+}
+
 func TestFileBrowserChoosesPolicyFile(t *testing.T) {
 	root := browserTree(t)
 	m := press(t, policyApplyFormModel(filepath.Join(root, "typed.json")), "ctrl+o")

@@ -175,32 +175,42 @@ func (m Model) renderGenerateForm() string {
 	// The title's own margin leaves one blank line above the list.
 	header := titleStyle.Render("Generate New Key") + "\n"
 
-	// Key type selection (dynamically built from registered algorithms)
+	// Key type selection (dynamically built from registered algorithms), with
+	// the selected type's name in a box under the list, as the bounds preset
+	// screen boxes its descriptions.
 	keyTypes := getGenerateKeyTypeOptions()
+	ids := generateKeyTypeIDs()
 	rows := make([]string, len(keyTypes))
+	descriptions := make([]string, len(keyTypes))
 	for i, kt := range keyTypes {
 		if i == m.forms.generateKeyType {
 			rows[i] = selectedStyle.Render("> " + kt)
 		} else {
-			rows[i] = subtitleStyle.Render("  " + kt)
+			rows[i] = normalStyle.Render("  " + kt)
+		}
+		if i < len(ids) {
+			descriptions[i] = getKeyTypeSelectionLabel(ids[i])
 		}
 	}
 
-	var footer strings.Builder
-	footer.WriteString("\n")
-	// Selected key type label.
-	selectedKeyType := getKeyTypeByIndex(m.forms.generateKeyType)
-	footer.WriteString(subtitleStyle.Render(getKeyTypeSelectionLabel(selectedKeyType)))
-	footer.WriteString("\n\n")
-
-	// Error message
+	var errorLine string
 	if m.forms.generateError != "" {
-		footer.WriteString(errorStyle.Render(m.forms.generateError))
-		footer.WriteString("\n")
+		errorLine = errorStyle.Render(m.forms.generateError) + "\n"
+	}
+	selectedIndex := min(max(m.forms.generateKeyType, 0), max(len(descriptions)-1, 0))
+	footer := "\n\n" + errorLine
+	if len(descriptions) > 0 {
+		// The box needs two more lines than the plain name; a window that
+		// can't spare them for one row of the list gets the plain name.
+		footer = "\n" + subtitleStyle.Render(descriptions[selectedIndex]) + "\n\n" + errorLine
+		boxed := "\n" + selectionDescriptionBox(descriptions, selectedIndex, m.popupBodyWidth(70)) + "\n\n" + errorLine
+		if available := m.popupContentHeight(); available <= 0 || wrappedHeight(header+"x\n"+boxed, m.popupBodyWidth(70)) <= available {
+			footer = boxed
+		}
 	}
 
 	rows, selected := separateKeyTypeClusters(rows, nativeKeyTypeCount(generateKeyTypeIDs()), m.forms.generateKeyType)
-	return m.renderPopup(70, m.fitSelectionList(header, rows, selected, footer.String(), 70))
+	return m.renderPopup(70, m.fitSelectionList(header, rows, selected, footer, 70))
 }
 
 // renderParameterModal renders the shared parameter input modal for both generate and import.

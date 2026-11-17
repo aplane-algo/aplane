@@ -116,7 +116,7 @@ func newFalconV1Composed() *ComposedFalcon {
 		KeyType:       "aplane.falcon1024.v1",
 		FamilyName:    family.Name,
 		Version:       1,
-		DisplayName:   "Falcon-1024",
+		DisplayName:   "LogicSig Falcon-1024",
 		Description:   "Falcon-1024 signature scheme",
 		Base:          family.FalconBase,
 		SaltStyle:     lsigsalt.StyleAlgodAutoSalt,
@@ -145,7 +145,7 @@ func (f *Falcon1024V1) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
 
 // DisplayName returns the human-readable name.
 func (f *Falcon1024V1) DisplayName() string {
-	return "Falcon-1024"
+	return "LogicSig Falcon-1024"
 }
 
 // Description returns a short description for UI display.

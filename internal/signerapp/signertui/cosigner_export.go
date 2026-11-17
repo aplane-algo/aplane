@@ -197,6 +197,7 @@ func (m Model) renderCosignerExportPath() string {
 		pathStyle = inputActiveStyle
 	}
 	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(m.cosigner.exportPath)))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses"))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("EXPORT KEY FILE")
 	if m.cosigner.exportFocus == m.cosignerExportButtonFocus() {

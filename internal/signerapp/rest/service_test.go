@@ -571,10 +571,13 @@ func TestServiceKeyTypesIncludesNativeAndFalconCosigner(t *testing.T) {
 			if keyType.AuthorizationKind != "ed25519" {
 				t.Fatalf("Ed25519 authorization kind = %q", keyType.AuthorizationKind)
 			}
+			if keyType.DisplayName != "Native Ed25519" {
+				t.Fatalf("Ed25519 display name = %q", keyType.DisplayName)
+			}
 		}
 		if keyType.KeyType == nativefalcon.KeyType {
 			foundNativeFalcon = true
-			if keyType.DisplayName != nativefalcon.KeyType ||
+			if keyType.DisplayName != "Native Falcon-1024" ||
 				keyType.AuthorizationKind != "native_pq" || keyType.RequiresLogicSig ||
 				keyType.MnemonicWordCount != nativefalcon.MnemonicWordCount {
 				t.Fatalf("native Falcon key type info = %#v", keyType)

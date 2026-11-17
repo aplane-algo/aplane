@@ -40,8 +40,8 @@ func TestFalcon1024V1Registration(t *testing.T) {
 		t.Errorf("Category = %q, want %q", p.Category(), lsigprovider.CategoryDSALsig)
 	}
 
-	if p.DisplayName() != "Falcon-1024" {
-		t.Errorf("DisplayName = %q, want %q", p.DisplayName(), "Falcon-1024")
+	if p.DisplayName() != "LogicSig Falcon-1024" {
+		t.Errorf("DisplayName = %q, want %q", p.DisplayName(), "LogicSig Falcon-1024")
 	}
 }
 

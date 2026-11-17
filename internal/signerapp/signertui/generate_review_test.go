@@ -691,7 +691,7 @@ func TestRekeySummaryNamesRefusedAndUnknownAuthorities(t *testing.T) {
 func TestBoundaryPresetScreenFitsAt80x24(t *testing.T) {
 	var descriptions []string // the start of each row's description
 	for _, preset := range boundaryPresetChoices() {
-		descriptions = append(descriptions, preset.Description[:20])
+		descriptions = append(descriptions, preset.Description[:min(20, len(preset.Description))])
 	}
 	descriptions = append(descriptions, "Rules from a boundary file")
 	height, fileRow := -1, -1
@@ -713,7 +713,7 @@ func TestBoundaryPresetScreenFitsAt80x24(t *testing.T) {
 		}
 		// Only the selected row's description is shown, in the box under
 		// the list, and nothing moves as the selection does.
-		if index == 0 && (!strings.Contains(view, "no fee limit") || strings.Contains(view, "Pays only listed")) {
+		if index == 0 && (!strings.Contains(view, "Standard unbounded") || strings.Contains(view, "Pays only listed")) {
 			t.Errorf("row 0 shows the wrong description:\n%s", view)
 		}
 		lines := strings.Split(view, "\n")

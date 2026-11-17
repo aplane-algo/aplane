@@ -653,6 +653,7 @@ func (m Model) renderCosignerImportForm() string {
 	} else {
 		body.WriteString("Cosigner key file exported by the cosigner node:\n")
 		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(m.cosigner.importPath)))
+		body.WriteString("\n" + helpStyle.Render("ctrl+o browses"))
 	}
 	body.WriteString("\n\nReference name:\n")
 	body.WriteString(nameStyle.Width(m.constrainParameterFieldWidth(40)).Render(m.cosigner.importName))

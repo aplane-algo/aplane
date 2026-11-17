@@ -171,7 +171,7 @@ func (m Model) renderImportClientKey() string {
 	body.WriteString(titleStyle.Render("Import Client Key"))
 	body.WriteString("\n")
 	body.WriteString(subtitleStyle.Render(wrapPlainText("Enrolls a client's SSH public key directly; verify its fingerprint first.", m.popupBodyWidth(90))))
-	body.WriteString("\n\nPublic key file (one OpenSSH public-key line, e.g. id_ed25519.pub):\n")
+	body.WriteString("\n\nPublic key file (one OpenSSH line, e.g. id_ed25519.pub):  " + helpStyle.Render("ctrl+o browses") + "\n")
 	pathStyle := inputInactiveStyle
 	if m.clients.importFocus == importClientKeyFocusPath {
 		pathStyle = inputActiveStyle
