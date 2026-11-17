@@ -692,7 +692,9 @@ recovery, as restore and policy apply do, so RB4 holds on that path
 the reload); the stage table worker's service holds the release memory in
 its `Start`, before the worker goroutine exists, so the memory is never open
 ahead of the worker's first step
-(`TestStageTableWorkerServiceHoldsTheMemoryBeforeTheWorkerRuns`). Settled
+(`TestStageTableWorkerServiceHoldsTheMemoryBeforeTheWorkerRuns`), and `Run`
+holds it when it creates the signer, so the hold does not depend on the order
+the services start in. Settled
 without a change: a failed `ReconcileStore` on an unlocked signer serves
 nothing stale in the interval before it enters recovery, because a reconcile
 never moves the root (it quarantines non-authoritative generations and

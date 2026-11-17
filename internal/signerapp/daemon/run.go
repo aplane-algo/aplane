@@ -201,6 +201,10 @@ func Run(dataDir string) int {
 		keyPaths:      startupOpts.Paths,
 		dataDir:       resolvedDataDir,
 	}
+	// Hold leaf-family spends from the start: a new release memory reads as
+	// restored, and no listener may find it that way, whatever order the
+	// services start in.
+	server.rotatingReleases.Reset()
 
 	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
 		DataDir:               resolvedDataDir,

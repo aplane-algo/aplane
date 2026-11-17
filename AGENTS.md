@@ -276,6 +276,8 @@ so a PR that changes modeled code keeps the correspondence itself.
 | `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
 | `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go`, `internal/signerapp/daemon/stage_table_worker.go`, `internal/signerapp/audit/rotating.go` | `rotating_leaf_release.tla` |
 | `internal/signerapp/productruntime/runtime.go` (`KeyUseContext`, `drainKeyUsers`, `performLockCleanup`), `internal/signerapp/runtime/runtime.go` (`Lock`, `BeginMaintenance`, `SetRecovery`, `TryRecovery`), `internal/signerapp/signing/rotating_flow.go` (key use, `releaseRefused`), `rotating_session.go`, `internal/signerapp/keyadmin/export.go` | `key_use_lock.tla` |
+| `internal/signerapp/admin/service.go` (`updateAdminSettingLocked`, `restricts`), `internal/signerapp/productruntime/config.go` (`SetUnsaved`, `IsUnsaved`) | `setting_publish.tla` |
+| `internal/signerapp/signing/invariant_gate.go`, `rotating_gate.go`, `cosigner_policy.go` (`runCosignerGates`), `gate.go` (`runApprovalGates`) | `signer_invariants.tla` |
 
 When a PR touches these paths:
 - Renaming, moving, or deleting a function or test: grep
