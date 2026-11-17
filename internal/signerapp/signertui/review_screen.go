@@ -202,10 +202,16 @@ func (m Model) reviewValidity() (full, short string) {
 	return full, short
 }
 
-// reviewHeader is the lines above the upper pane: the title and summary, and
-// the risk line when there are warnings. The validity window goes at the
-// right of the first of them with room for it, or on a line of its own.
+// reviewHeader is the lines above the upper pane: a blank line under the
+// admin header, then the title lines.
 func (m Model) reviewHeader(review *protocol.Review, width int) []string {
+	return append([]string{""}, m.reviewTitleLines(review, width)...)
+}
+
+// reviewTitleLines are the title and summary, and the risk line when there
+// are warnings. The validity window goes at the right of the first of them
+// with room for it, or on a line of its own.
+func (m Model) reviewTitleLines(review *protocol.Review, width int) []string {
 	title := titleStyle.UnsetMargins().Render("Signing Request")
 	summary := reviewSummary(review)
 	if room := width - lipgloss.Width(title) - 2; lipgloss.Width(summary) > room {

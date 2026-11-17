@@ -5,6 +5,7 @@ package tui
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -883,5 +884,21 @@ func TestReviewLanesSayWhichAccountsAreSignable(t *testing.T) {
 	}
 	if at := strings.Index(roles, "signable"); at < other-2 || at > third {
 		t.Fatalf("signable is not under the signable account: %q\n%q", names, roles)
+	}
+}
+
+// A blank line parts the request's title from the admin header above it:
+// apadmin's own header line, or apconsole's pane border when embedded.
+func TestReviewTitleSitsUnderABlankLine(t *testing.T) {
+	for _, standalone := range []bool{true, false} {
+		m := reviewModelForTest(t, singleReviewRequest(), standalone, 80, 24)
+		lines := strings.Split(requireFits(t, m, 80, 24), "\n")
+		title := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "Signing Request") })
+		if title < 1 || strings.TrimSpace(lines[title-1]) != "" {
+			t.Fatalf("standalone %v: no blank line above the title:\n%s", standalone, strings.Join(lines, "\n"))
+		}
+		if standalone && (title < 2 || !strings.Contains(lines[title-2], "Signer Admin")) {
+			t.Fatalf("the blank line is not right under the admin header:\n%s", strings.Join(lines, "\n"))
+		}
 	}
 }
