@@ -243,7 +243,8 @@ func ValidateRuntimeArgSpecs(args []RuntimeArgSpec) error {
 
 // ValidateRuntimeArgLimits refuses runtime arguments the network would refuse on
 // any transaction: more than one LogicSig carries, or one larger than a LogicSig
-// argument may be. No group shape lifts either. A caller that adds arguments of
+// argument may be. Every argument declares its size, fixed or a
+// ceiling, so the signer can size the LogicSig before it sees a value. No group shape lifts either. A caller that adds arguments of
 // its own, such as signatures, checks the total.
 //
 // It is an admission check, for a template being installed. It is not part of
@@ -254,6 +255,9 @@ func ValidateRuntimeArgLimits(args []RuntimeArgSpec) error {
 		return fmt.Errorf("%d runtime_args: a LogicSig carries at most %d arguments", len(args), lsigresource.MaxLogicSigArgs)
 	}
 	for _, a := range args {
+		if a.ByteLength <= 0 && a.MaxSize <= 0 {
+			return fmt.Errorf("runtime_arg %s must set byte_length or max_size: the signer sizes the LogicSig from it", a.Name)
+		}
 		if size := max(a.ByteLength, a.MaxSize); size > lsigresource.MaxLogicSigArgBytes {
 			return fmt.Errorf("runtime_arg %s is %d bytes: a LogicSig argument is at most %d", a.Name, size, lsigresource.MaxLogicSigArgBytes)
 		}

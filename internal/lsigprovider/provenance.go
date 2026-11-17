@@ -44,7 +44,7 @@ func compareFingerprints(storedFingerprint, liveFingerprint string) (status, not
 	match, comparable := FingerprintsMatch(storedFingerprint, liveFingerprint)
 	if !comparable {
 		// Different fingerprint formats (a future formula version, or an
-		// unparseable/legacy value) are not a behavior conflict — provenance
+		// unparseable value) are not a behavior conflict — provenance
 		// simply cannot be established across formats.
 		return TemplateProvenanceStatusUnavailable, "stored template fingerprint uses an incompatible format and cannot be compared to the currently registered definition"
 	}

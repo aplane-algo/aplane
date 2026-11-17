@@ -1844,7 +1844,7 @@ func TestValidateRuntimeArgLimits(t *testing.T) {
 	args := func(count int) []RuntimeArgSpec {
 		out := make([]RuntimeArgSpec, count)
 		for i := range out {
-			out[i] = RuntimeArgSpec{Name: fmt.Sprintf("arg%d", i), Type: "bytes"}
+			out[i] = RuntimeArgSpec{Name: fmt.Sprintf("arg%d", i), Type: "bytes", MaxSize: 1}
 		}
 		return out
 	}
@@ -1855,6 +1855,7 @@ func TestValidateRuntimeArgLimits(t *testing.T) {
 	}{
 		{name: "255 arguments", args: args(255)},
 		{name: "256 arguments", args: args(256), want: "256 runtime_args: a LogicSig carries at most 255 arguments"},
+		{name: "unsized", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes"}}, want: "runtime_arg blob must set byte_length or max_size"},
 		{name: "max_size 4096", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes", MaxSize: 4096}}},
 		{name: "max_size 4097", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes", MaxSize: 4097}}, want: "runtime_arg blob is 4097 bytes: a LogicSig argument is at most 4096"},
 		{name: "byte_length 4096", args: []RuntimeArgSpec{{Name: "blob", Type: "bytes", ByteLength: 4096}}},
@@ -1907,7 +1908,7 @@ runtime_args:
 	counted := func(count int) string {
 		var b strings.Builder
 		for i := range count {
-			fmt.Fprintf(&b, "  - name: arg%d\n    type: bytes\n", i)
+			fmt.Fprintf(&b, "  - name: arg%d\n    type: bytes\n    max_size: 1\n", i)
 		}
 		return b.String()
 	}

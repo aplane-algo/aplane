@@ -31,7 +31,7 @@ type ParsedFingerprint struct {
 // ParseCompatibilityFingerprint splits a versioned fingerprint string into its
 // version and hash. A well-formed "<n>:<hash>" (n a positive integer) returns
 // {n, hash}, true. Any string without a valid positive-integer version prefix
-// (unprefixed legacy/garbage) parses as version 0 with the whole string as the
+// (unprefixed or malformed) parses as version 0 with the whole string as the
 // hash and ok=false; version 0 is never comparable. A valid version prefix whose
 // hash is not 64-char sha256 hex also returns ok=false (malformed → not
 // comparable).
@@ -73,7 +73,7 @@ func isSHA256Hex(s string) bool {
 // even comparable.
 //
 //   - empty stored                     -> (false, false)  no provenance to compare
-//   - either side fails to parse        -> (false, false)  unparseable / legacy
+//   - either side fails to parse        -> (false, false)  unparseable
 //   - recognized but differing versions -> (false, false)  incompatible format
 //   - same version                      -> (stored.hash == live.hash, true)
 //

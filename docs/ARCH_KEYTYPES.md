@@ -1505,6 +1505,7 @@ runtime_args:
   - name: preimage
     type: bytes
     label: "Secret Preimage"
+    max_size: 64
 teal: |
   txn RekeyTo
   global ZeroAddress
