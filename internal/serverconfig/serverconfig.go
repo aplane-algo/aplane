@@ -312,13 +312,13 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 	var err error
-	if config.Algod, err = mergeServerNetworkAlgodConfig(nil, config.Networks); err != nil {
+	if config.Algod, err = mergeServerNetworkAlgodConfig(config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)
 	}
 	if config.Indexer, err = mergeServerNetworkIndexerConfig(config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid indexer in networks config: %w", err)
 	}
-	if config.GenesisHashNetworks, err = mergeServerNetworkGenesisHashConfig(nil, config.Networks); err != nil {
+	if config.GenesisHashNetworks, err = mergeServerNetworkGenesisHashConfig(config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid genesis_hash in networks config: %w", err)
 	}
 
