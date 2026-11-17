@@ -30,6 +30,38 @@ before it was renamed `enroll`.
   in the SDKs and in apadmin's key type info; `/keys` still names each
   account's one type.
 
+## apadmin draws each signing request
+
+- **The signer sends a typed review with every signing request.**
+  `sign_request` carries `review` (`aplane.review.v1`) beside the text
+  description, and the text is printed from the review, so the two cannot
+  disagree. apapprover stays text-only.
+- **apadmin draws the review in the whole window.** A group is a list, lanes
+  (a column per account or app, an arrow per movement) or a table, chosen by
+  the request's shape; `v` cycles them and `t` shows the text. The detail pane
+  shows the selected transaction's fields and warnings, then the request's
+  warnings, the accounts (each full address with a colour mark) and what the
+  signer changed.
+- **Balances and signability.** Right before the prompt, after every gate,
+  the signer reads each account in the review from its own algod for the
+  request's network. The review shows the round, each ALGO balance, and
+  whether the signer can sign for the account. The read is display only; when
+  it fails the review says why and the prompt goes out.
+- **Lookalike accounts.** The review warns when two different addresses in one
+  request share six or more characters at both ends. apshell's `send` and
+  `sweep` warn when a recipient looks like a held account or an address-book
+  entry, and ask before anything is signed.
+- **A rekey to a key the signer holds is a notice,** shown without alarm. It
+  still forces review under `always_review_warnings`. A rekey anywhere else
+  stays critical.
+- **Operators get four minutes to answer.** `approval_wait` defaults to 4m
+  instead of 60s.
+- **Key types are named by how they sign:** "Native Ed25519", "Native
+  Falcon-1024", "LogicSig Falcon-1024" and "LogicSig Ed25519", in apadmin and
+  in `/keytypes` `display_name`. The Generate list and the bounds preset screen
+  show the selected choice in a box under the list, and every file name field
+  offers ctrl+o.
+
 ## The signer reads a rotating account's stage from its last spend
 
 - **An optional Indexer per network finds a rotating account's stage.**
