@@ -30,7 +30,7 @@ func newComposed() *composeddsa.ComposedDSA {
 		BaseKeyType:   family.KeyTypeV1,
 		FamilyName:    family.Name,
 		Version:       1,
-		DisplayName:   "Ed25519 LogicSig",
+		DisplayName:   "LogicSig Ed25519",
 		Description:   "Ed25519 signature scheme verified inside a LogicSig",
 		Ops:           NewOps(),
 		SaltStyle:     lsigsalt.StyleAlgodAutoSalt,
@@ -56,7 +56,7 @@ func (p *Ed25519LsigV1) BaseKeyType() string {
 func (p *Ed25519LsigV1) RoutingFamily() string { return family.Name }
 func (p *Ed25519LsigV1) Version() int          { return 1 }
 func (p *Ed25519LsigV1) Category() string      { return lsigprovider.CategoryDSALsig }
-func (p *Ed25519LsigV1) DisplayName() string   { return "Ed25519 LogicSig" }
+func (p *Ed25519LsigV1) DisplayName() string   { return "LogicSig Ed25519" }
 func (p *Ed25519LsigV1) Description() string {
 	return "Ed25519 signature scheme verified inside a LogicSig"
 }

@@ -366,7 +366,7 @@ func TestTemplateLibraryViewKeySynthesizesCompiledProviderDetails(t *testing.T) 
 	tmpl := protocol.LibraryTemplateInfo{
 		KeyType:      "aplane.ed25519.v1",
 		TemplateType: libraryTypeCompiledProvider,
-		DisplayName:  "Ed25519 LogicSig",
+		DisplayName:  "LogicSig Ed25519",
 		Description:  "Ed25519 DSA provider",
 		Parameters: []protocol.TemplateParamInfo{
 			{Name: "threshold", Label: "Threshold", Type: "uint64", Required: true, Description: "Signing threshold"},
@@ -388,7 +388,7 @@ func TestTemplateLibraryViewKeySynthesizesCompiledProviderDetails(t *testing.T) 
 	if cmd != nil {
 		t.Fatalf("t on compiled provider returned cmd = %v, want nil (no IPC roundtrip)", cmd)
 	}
-	for _, want := range []string{"Source: built-in key type", "Publisher: aplane", "Ed25519 LogicSig", "Threshold", "Signing threshold"} {
+	for _, want := range []string{"Source: built-in key type", "Publisher: aplane", "LogicSig Ed25519", "Threshold", "Signing threshold"} {
 		if !strings.Contains(got.library.detailsContent, want) {
 			t.Fatalf("compiled provider details missing %q:\n%s", want, got.library.detailsContent)
 		}
@@ -448,7 +448,7 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 	tmpl := protocol.LibraryTemplateInfo{
 		KeyType:      "aplane.ed25519.v1",
 		TemplateType: libraryTypeCompiledProvider,
-		DisplayName:  "Ed25519 LogicSig",
+		DisplayName:  "LogicSig Ed25519",
 		Description:  "Ed25519 DSA provider",
 	}
 	m := Model{
