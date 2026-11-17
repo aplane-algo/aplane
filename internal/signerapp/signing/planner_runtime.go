@@ -84,9 +84,9 @@ func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummi
 	if dummiesNeeded > 0 {
 		firstTxn := txns[0]
 		sp := types.SuggestedParams{
-			Fee:             types.MicroAlgos(firstTxn.Fee),
-			FirstRoundValid: types.Round(firstTxn.FirstValid),
-			LastRoundValid:  types.Round(firstTxn.LastValid),
+			Fee:             firstTxn.Fee,
+			FirstRoundValid: firstTxn.FirstValid,
+			LastRoundValid:  firstTxn.LastValid,
 			GenesisID:       firstTxn.GenesisID,
 			GenesisHash:     firstTxn.GenesisHash[:],
 			FlatFee:         true,
@@ -130,11 +130,7 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		}
 
 		if foreignIndices[i] {
-			usage, present, usageErr := foreignLogicSigUsage(request)
-			if usageErr != nil {
-				return lsigresource.Plan{}, nil, usageErr
-			}
-			if present {
+			if usage, present := foreignLogicSigUsage(request); present {
 				usages = append(usages, usage)
 			}
 			continue
@@ -280,15 +276,15 @@ func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath
 	}
 }
 
-func foreignLogicSigUsage(request signerapi.SignRequest) (lsigresource.Usage, bool, *ServiceError) {
+func foreignLogicSigUsage(request signerapi.SignRequest) (lsigresource.Usage, bool) {
 	if request.LsigResources != nil {
 		return lsigresource.Usage{
 			ProgramBytes:  request.LsigResources.ProgramBytes,
 			ArgumentBytes: request.LsigResources.ArgumentBytes,
 			MaxOpcodeCost: request.LsigResources.MaxOpcodeCost,
-		}, true, nil
+		}, true
 	}
-	return lsigresource.Usage{}, false, nil
+	return lsigresource.Usage{}, false
 }
 
 func passthroughLogicSigUsage(encoded []byte, declared *signerapi.LogicSigResourceUsage, txnIndex int) (lsigresource.Usage, bool, *ServiceError) {

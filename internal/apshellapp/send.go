@@ -568,7 +568,7 @@ func atomicGroupFees(plan *AtomicSendPlan) (uint64, bool) {
 		}
 		return total, true
 	}
-	perTxnFee := uint64(signing.DefaultMinFee)
+	perTxnFee := signing.DefaultMinFee
 	if plan.GroupParams.UseFlatFee {
 		perTxnFee = plan.GroupParams.Fee
 	}

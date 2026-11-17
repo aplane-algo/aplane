@@ -65,8 +65,6 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if len(req.Addresses) == 0 {
 		var err error
 		checksums, err = ExportAllKeys(
-			req.Paths,
-
 			activeKeysDir,
 			stageDir,
 			req.Keyring,
@@ -88,8 +86,6 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 				continue
 			}
 			checksum, _, err := ExportKey(
-				req.Paths,
-
 				activeKeysDir,
 				keysDestDir,
 				address,

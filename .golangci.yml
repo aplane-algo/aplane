@@ -1,8 +1,19 @@
-# Keeps the default linter set. These are the only two departures from it.
+# The default linter set, plus linters that catch unused parameters,
+# conversions, and copied code. The departures are below.
 version: "2"
 
 linters:
+  enable:
+    - unparam
+    - unconvert
+    - dupl
+    - nolintlint # every nolint names its linter and gives a reason; unused nolints fail
   settings:
+    dupl:
+      threshold: 150
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     staticcheck:
       # golangci-lint's default set, plus -QF1012. WriteString(fmt.Sprintf(...))
       # is a style quick fix, not a defect.
@@ -22,3 +33,13 @@ linters:
       - linters:
           - errcheck
         source: '^\s*(case\s+|defer func\(\) \{ _ = \S+; )?<-[\w.]+(:| \}\(\))?\s*(//.*)?$'
+      # Test helpers that always get the same argument read better with it
+      # named, and long or repeated table tests are normal.
+      - path: _test\.go
+        linters:
+          - unparam
+          - dupl
+      # Stat_t.Nlink's type depends on the platform.
+      - path: internal/storeperm/linkcount_unix\.go
+        linters:
+          - unconvert

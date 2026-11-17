@@ -1397,8 +1397,7 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	// The reload callback either reloads (if unlocked) or marks dirty (if locked)
 	reloadOrDirty := func() error {
 		if ir.IsUnlocked() {
-			_, err := ir.reloadFromWatcher()
-			return err
+			return ir.reloadFromWatcher()
 		}
 		ir.MarkDirty()
 		return nil
@@ -1430,27 +1429,25 @@ func (ir *Runtime) MarkDirty() {
 }
 
 func (ir *Runtime) reconcileDirty() {
-	if _, err := ir.reloadFromWatcher(); err != nil {
+	if err := ir.reloadFromWatcher(); err != nil {
 		fmt.Printf("⚠️  Dirty-state reconciliation failed for product store: %v\n", err)
 	} else {
 		fmt.Println("✓ Reconciled pending filesystem changes for product store")
 	}
 }
 
-func (ir *Runtime) reloadFromWatcher() (*signertemplates.ReloadReport, error) {
+func (ir *Runtime) reloadFromWatcher() error {
 	ir.watcherMu.Lock()
 	lockFn := ir.reloadLock
 	ir.watcherMu.Unlock()
-	if lockFn == nil {
-		return ir.Reload()
+	if lockFn != nil {
+		if lock := lockFn(); lock != nil {
+			lock.Lock()
+			defer lock.Unlock()
+		}
 	}
-	lock := lockFn()
-	if lock == nil {
-		return ir.Reload()
-	}
-	lock.Lock()
-	defer lock.Unlock()
-	return ir.Reload()
+	_, err := ir.Reload()
+	return err
 }
 
 // StopKeyWatcher stops the file watcher if running.

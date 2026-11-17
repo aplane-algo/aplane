@@ -61,8 +61,6 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 				defer close(done)
 				ipcServer.acceptAdminSession(
 					adminproto.NewUnixAdminConn(serverConn),
-					adminserver.TransportIPC,
-					"ipc-passphrase",
 				)
 			}()
 
@@ -130,8 +128,6 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(serverConn),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 
@@ -212,8 +208,6 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(serverConn),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 

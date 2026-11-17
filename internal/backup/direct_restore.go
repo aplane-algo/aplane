@@ -369,9 +369,7 @@ func ClassifyRestoreSet(
 	var result RestoreClassification
 	for i := range set.Entries {
 		entry := set.Entries[i]
-		if err := classifyRestorePolicy(active, role, entry, kr, &result); err != nil {
-			return RestoreClassification{}, err
-		}
+		classifyRestorePolicy(active, role, entry, kr, &result)
 		destPath, exists, err := keys.ManagedCredentialDestinationActive(
 			active,
 			entry.Selector,
@@ -429,9 +427,9 @@ func ClassifyRestoreSet(
 // installed. A destination without a policy takes the archived one; a
 // different destination policy is a conflict that replace_existing resolves;
 // a destination policy is kept when the archive carries none.
-func classifyRestorePolicy(active storepaths.ActivePaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring, result *RestoreClassification) error {
+func classifyRestorePolicy(active storepaths.ActivePaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring, result *RestoreClassification) {
 	if entry.Policy == nil {
-		return nil
+		return
 	}
 	current, err := destinationPolicy(active, role, entry.Selector, kr)
 	switch {
@@ -442,7 +440,7 @@ func classifyRestorePolicy(active storepaths.ActivePaths, role noderole.Role, en
 		})
 	case current == nil:
 	case bytes.Equal(current, entry.Policy):
-		return nil
+		return
 	default:
 		result.Conflicts = append(result.Conflicts, RestoreConflict{
 			Selector: entry.Selector, Category: entry.Category, KeyType: entry.KeyType,
@@ -451,7 +449,6 @@ func classifyRestorePolicy(active storepaths.ActivePaths, role noderole.Role, en
 		})
 	}
 	result.Policies = append(result.Policies, entry)
-	return nil
 }
 
 func openCanonicalDestination(path string, entry CredentialEntry, kr *crypto.Keyring) ([]byte, error) {

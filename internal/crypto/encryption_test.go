@@ -233,18 +233,18 @@ func TestIsEncryptedVersion2(t *testing.T) {
 	}
 }
 
-// TestDecryptWithTermKeyRejectsVersion2 verifies term decryption rejects the
+// TestKeyringOpenRejectsVersion2 verifies term decryption rejects the
 // standalone export format.
-func TestDecryptWithTermKeyRejectsVersion2(t *testing.T) {
+func TestKeyringOpenRejectsVersion2(t *testing.T) {
 	encrypted, err := EncryptStandalone([]byte("data"), []byte("pass"))
 	if err != nil {
 		t.Fatalf("EncryptStandalone failed: %v", err)
 	}
 
 	fakeKey := make([]byte, 32)
-	_, err = decryptWithTermKey(encrypted, fakeKey, FirstTerm, envelopeTestContext)
+	_, err = termKeyring(t, fakeKey).Open(encrypted, envelopeTestContext)
 	if err == nil {
-		t.Fatal("decryptWithTermKey should reject envelope_version 2")
+		t.Fatal("Keyring.Open should reject envelope_version 2")
 	}
 	if !strings.Contains(err.Error(), "is not a term envelope") {
 		t.Errorf("Expected version mismatch error, got: %v", err)
@@ -264,7 +264,7 @@ func TestDecryptStandaloneRejectsVersion1(t *testing.T) {
 	}
 }
 
-func TestDecryptWithTermKeyRejectsInvalidNonceLength(t *testing.T) {
+func TestKeyringOpenRejectsInvalidNonceLength(t *testing.T) {
 	payload := encryptedDataTerm{
 		EnvelopeVersion: TermEnvelopeVersion,
 		Term:            FirstTerm,
@@ -276,12 +276,12 @@ func TestDecryptWithTermKeyRejectsInvalidNonceLength(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	_, err = decryptWithTermKey(data, bytes.Repeat([]byte{1}, 32), FirstTerm, envelopeTestContext)
+	_, err = termKeyring(t, bytes.Repeat([]byte{1}, 32)).Open(data, envelopeTestContext)
 	if err == nil {
-		t.Fatal("decryptWithTermKey() error = nil, want invalid nonce length")
+		t.Fatal("Keyring.Open() error = nil, want invalid nonce length")
 	}
 	if !strings.Contains(err.Error(), "invalid nonce length") {
-		t.Fatalf("decryptWithTermKey() error = %v, want invalid nonce length", err)
+		t.Fatalf("Keyring.Open() error = %v, want invalid nonce length", err)
 	}
 }
 

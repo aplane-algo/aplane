@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strings"
 	"syscall"
 	"time"
 
@@ -134,7 +133,7 @@ func (s *IPCServer) acceptLoop() {
 		}
 
 		logInfof("apadmin client connected via IPC")
-		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn), "ipc", "ipc-passphrase")
+		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn))
 	}
 }
 
@@ -174,11 +173,11 @@ func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newCon
 	return confirmed
 }
 
-func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport, authMethod string) {
+func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 	setPreAuthReadDeadline(adminConn, time.Now().Add(s.loginTimeout()))
 	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps())
-	session.SetAuthMethod(authMethod)
-	session.SetTransportInfo(transport, adminConn.RemoteAddr())
+	session.SetAuthMethod("ipc-passphrase")
+	session.SetTransportInfo(adminserver.TransportIPC, adminConn.RemoteAddr())
 
 	var active *adminserver.Session
 	var displacementConfirmedFor *adminserver.Session
@@ -201,10 +200,10 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 		}
 		displacementConfirmedFor = active
 	}
-	s.handleRegisteredClient(session, transport, displacementConfirmedFor)
+	s.handleRegisteredClient(session, displacementConfirmedFor)
 }
 
-func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transport string, displacementConfirmedFor *adminserver.Session) {
+func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displacementConfirmedFor *adminserver.Session) {
 	// If auth unlocks an identity for this session, either the session becomes
 	// the active owner or cleanup must leave the identity locked (when
 	// lock_on_disconnect is set) with no pending approvals stranded.
@@ -248,13 +247,13 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	case adminserver.AuthOutcomeBootstrapHandled:
 		return
 	case adminserver.AuthOutcomeTimedOut:
-		logWarnf("%s client did not log in within %s; connection closed", strings.ToUpper(transport), s.loginTimeout())
+		logWarnf("IPC client did not log in within %s; connection closed", s.loginTimeout())
 		return
 	default:
-		logWarnf("%s client authentication failed", strings.ToUpper(transport))
+		logWarnf("IPC client authentication failed")
 		return
 	}
-	logInfof("%s client authenticated", strings.ToUpper(transport))
+	logInfof("IPC client authenticated")
 
 	// Now register as the active client (after auth succeeds)
 	// This ensures NotifyKeysChanged won't send messages during auth
@@ -272,7 +271,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	}
 	active, ok := s.sessionManager().BindPreAuthPending(session)
 	if !ok {
-		logWarnf("%s client could not bind the pending product session", strings.ToUpper(transport))
+		logWarnf("IPC client could not bind the pending product session")
 		return
 	}
 	if active != nil && active != session && active != displacementConfirmedFor {
@@ -283,7 +282,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	}
 	replaced, ok := s.sessionManager().PromoteToActive(session)
 	if !ok {
-		logWarnf("%s client could not promote the product session", strings.ToUpper(transport))
+		logWarnf("IPC client could not promote the product session")
 		return
 	}
 	if replaced != nil && replaced != session {

@@ -88,7 +88,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get algod status: %v", err)
 	}
-	baseRound := uint64(status.LastRound)
+	baseRound := status.LastRound
 	if baseRound < 10 {
 		baseRound = 10
 	}

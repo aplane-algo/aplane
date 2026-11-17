@@ -2217,10 +2217,10 @@ func TestCreationWarningsRefuseWhatTheProviderRefuses(t *testing.T) {
 // aside, up to the largest whole number every client reads exactly.
 func TestParseMaxFee(t *testing.T) {
 	if boundedmeta.MaxFeeLimit != 9007199254740991 {
-		t.Fatalf("MaxFeeLimit = %d", uint64(boundedmeta.MaxFeeLimit))
+		t.Fatalf("MaxFeeLimit = %d", boundedmeta.MaxFeeLimit)
 	}
 	if boundary.DefaultMaxFeeText != "10000" || boundary.DefaultMaxFee != 10_000 {
-		t.Fatalf("default = %q, %d", boundary.DefaultMaxFeeText, uint64(boundary.DefaultMaxFee))
+		t.Fatalf("default = %q, %d", boundary.DefaultMaxFeeText, boundary.DefaultMaxFee)
 	}
 	for _, test := range []struct {
 		text string

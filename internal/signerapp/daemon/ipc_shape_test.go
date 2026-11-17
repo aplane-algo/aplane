@@ -377,7 +377,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 		t.Fatal("RegisterPreAuthPending() = false, want true")
 	}
 
-	ipcServer.handleRegisteredClient(session, "ipc", nil)
+	ipcServer.handleRegisteredClient(session, nil)
 
 	msgs := parseJSONLines(t, conn.writes.Bytes())
 	if len(msgs) < 4 {

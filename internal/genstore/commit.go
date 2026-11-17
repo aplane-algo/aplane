@@ -237,7 +237,7 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	}
 
 	// GenPaths bound to the staging directory: same shape, unpublished root.
-	staged := stagedGenPaths(paths, req.GenerationID, stagingDir)
+	staged := storepaths.StagedGenerationPaths(req.GenerationID, stagingDir)
 
 	// Independent copies of the parent's live content — never hardlinks: a
 	// later in-place write must be unable to reach an inode a prior
@@ -399,13 +399,6 @@ func verifyFirstMintPreconditions(paths storepaths.Paths) error {
 		return fmt.Errorf("first mint: %q exists in the generations directory; this store has generational history and requires recovery, not a new lineage", entry.Name())
 	}
 	return nil
-}
-
-// stagedGenPaths builds a GenPaths whose root is the staging directory. It
-// reuses the public constructor's shape by construction: staging and final
-// directories have identical internal layout.
-func stagedGenPaths(paths storepaths.Paths, generationID, stagingDir string) storepaths.GenPaths {
-	return storepaths.StagedGenerationPaths(generationID, stagingDir)
 }
 
 func copyNamespaces(from, to storepaths.GenPaths) error {

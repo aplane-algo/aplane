@@ -254,7 +254,7 @@ func (o *outliner) build() {
 		Fields: o.transactionTypes(root.Member("transaction_types"), cosigner), Adds: typeAdds})
 
 	known["limits"] = true
-	o.add(Section{ID: "limits", Title: "Limits", Pointer: "/limits", Fields: o.limits(root.Member("limits"), "/limits", cosigner),
+	o.add(Section{ID: "limits", Title: "Limits", Pointer: "/limits", Fields: o.limits(root.Member("limits"), cosigner),
 		Adds: []AddAction{limitAdd("Add a limit", "/limits", cosigner)}})
 
 	known["address_sets"] = true
@@ -401,9 +401,9 @@ func (o *outliner) typeAdd(cosigner bool) AddAction {
 	}}
 }
 
-// limits lays out network -> asset -> thresholds, one field per threshold, at
-// base ("/limits", or a route's limits).
-func (o *outliner) limits(limits policy.DraftNode, base string, cosigner bool) []Field {
+// limits lays out network -> asset -> thresholds, one field per threshold, for
+// the top-level limits or a route's.
+func (o *outliner) limits(limits policy.DraftNode, cosigner bool) []Field {
 	if !limits.Exists() {
 		return nil
 	}
@@ -746,7 +746,7 @@ func (o *outliner) route(i int, r policy.DraftNode, cosigner bool) {
 		known[spec.name] = true
 	}
 	s.Fields = o.fields(r, r.Pointer(), routeSpecs)
-	for _, f := range o.limits(r.Member("limits"), r.Pointer()+"/limits", cosigner) {
+	for _, f := range o.limits(r.Member("limits"), cosigner) {
 		f.Label = "limit " + f.Label
 		s.Fields = append(s.Fields, f)
 	}

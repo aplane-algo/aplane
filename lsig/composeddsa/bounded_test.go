@@ -428,7 +428,7 @@ func TestBoundedAcceptsAnyFeeCeiling(t *testing.T) {
 // refused when the profile is validated, as generating the program does.
 func TestBoundedRefusesAFeeCeilingAboveTheWireLimit(t *testing.T) {
 	if boundedmeta.MaxFeeLimit != 9007199254740991 {
-		t.Fatalf("MaxFeeLimit = %d", uint64(boundedmeta.MaxFeeLimit))
+		t.Fatalf("MaxFeeLimit = %d", boundedmeta.MaxFeeLimit)
 	}
 	for _, ceiling := range []uint64{boundedmeta.MaxFeeLimit + 1, 1 << 63, math.MaxUint64} {
 		t.Run(strconv.FormatUint(ceiling, 10), func(t *testing.T) {

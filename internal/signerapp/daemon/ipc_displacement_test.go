@@ -132,8 +132,6 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(serverConn),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 
@@ -226,8 +224,6 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(newServer),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 

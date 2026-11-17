@@ -100,7 +100,7 @@ func (m Model) handleMnemonicExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(e.passphrase) > 0 {
 			_, n := utf8.DecodeLastRune(e.passphrase)
 			end := len(e.passphrase) - n
-			protocol.SensitiveBytes(e.passphrase[end:]).Zero()
+			e.passphrase[end:].Zero()
 			e.passphrase = e.passphrase[:end]
 		}
 	case tea.KeyRunes:

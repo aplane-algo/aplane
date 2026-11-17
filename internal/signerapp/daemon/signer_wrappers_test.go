@@ -59,5 +59,5 @@ func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
 
 // handleClient handles a single IPC client connection.
 func (s *IPCServer) handleClient(conn net.Conn) {
-	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn), "ipc", "ipc-passphrase")
+	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn))
 }
