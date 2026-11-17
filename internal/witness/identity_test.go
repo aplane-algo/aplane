@@ -32,6 +32,37 @@ func TestIDKnownVector(t *testing.T) {
 	}
 }
 
+// An Ed25519 witness key has its own sizes, and its Witness Key ID binds the
+// type: the same 32 bytes under another type give another ID.
+func TestEd25519WitnessKeyType(t *testing.T) {
+	if !IsKeyType(Ed25519V1) {
+		t.Fatalf("IsKeyType(%s) = false", Ed25519V1)
+	}
+	if size, ok := PublicKeySize(Ed25519V1); !ok || size != 32 {
+		t.Fatalf("PublicKeySize() = %d, %v; want 32", size, ok)
+	}
+	if size, ok := PrivateKeySize(Ed25519V1); !ok || size != 64 {
+		t.Fatalf("PrivateKeySize() = %d, %v; want 64", size, ok)
+	}
+	publicKey := make([]byte, Ed25519PublicKeySize)
+	for i := range publicKey {
+		publicKey[i] = byte(i)
+	}
+	got, err := ID(Ed25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+	if got != DeriveID(Ed25519V1, publicKey) || got == DeriveID(Falcon1024V1, publicKey) {
+		t.Fatalf("ID() = %q does not bind the key type", got)
+	}
+	if len(got) != IDLength || !IsID(got) {
+		t.Fatalf("ID() = %q is not a canonical Witness Key ID", got)
+	}
+	if _, err := ID(Ed25519V1, make([]byte, Falcon1024PublicKeySize)); err == nil {
+		t.Fatal("ID() accepted a Falcon-sized key for an Ed25519 witness")
+	}
+}
+
 func TestIDRejectsUnsupportedTypeAndLength(t *testing.T) {
 	if _, err := ID("aplane.unknown.v1", make([]byte, Falcon1024PublicKeySize)); err == nil {
 		t.Fatal("ID() accepted unsupported key type")

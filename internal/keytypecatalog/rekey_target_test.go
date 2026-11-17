@@ -30,6 +30,7 @@ var declaredValidRekeyTarget = map[string]bool{
 	"aplane.rotating-triple-wotsc.v1":  false,
 	// A witness key is a cosigner's component key, not an account.
 	"aplane.witness-falcon1024.v1": false,
+	"aplane.witness-ed25519.v1":    false,
 }
 
 // Every catalog entry, whatever its availability (default-enabled, library,

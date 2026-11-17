@@ -214,6 +214,7 @@ var (
 	}
 	witnessConstructions = map[string]Construction{
 		witness.Falcon1024V1: falcon1024Construction,
+		witness.Ed25519V1:    ed25519Construction,
 	}
 )
 

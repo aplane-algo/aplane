@@ -211,13 +211,14 @@ Go-defined key types:
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
 | `aplane.falcon1024.v1` | Plain host: the plain Falcon program, `plain1` with overlays, or one of 147 `bounded2` shapes with bounds, selected per key | Go-defined | default-enabled on signer nodes | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost`, `internal/boundary` |
 | `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
+| `aplane.witness-ed25519.v1` | Ed25519 witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/ed25519lsig/keygen/witness.go` |
 | `aplane.ed25519.v1` | Plain host on Ed25519, with the same grammar | Go-defined | library-visible | `lsig/ed25519lsig`, `lsig/plainhost`, `internal/boundary` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: only the protocol-native `ed25519` and `falcon1024`
-and the Falcon plain host `aplane.falcon1024.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
-(cosigner nodes) are default-enabled. The plain `aplane.falcon1024.v1` and
+and the Falcon plain host `aplane.falcon1024.v1` (signer nodes) and the witness key types `aplane.witness-falcon1024.v1` and
+`aplane.witness-ed25519.v1` (cosigner nodes) are default-enabled. The plain `aplane.falcon1024.v1` and
 `aplane.ed25519.v1` providers are plain hosts, and `aplane.ed25519.v1` is
 library-visible and enabled per node. With no parameters they are the
 composition base and the plain program, with overlay parameters only they render

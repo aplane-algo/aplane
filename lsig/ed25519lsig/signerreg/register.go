@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signing"
 	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
+	"github.com/aplane-algo/aplane/lsig/ed25519lsig/keygen"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig/signerops"
 )
 
@@ -33,6 +34,9 @@ func RegisterSigner() {
 				},
 				Mnemonic: mnemonic.NewEd25519Handler(ed25519lsig.FamilyName),
 			}},
+			Extra: []func(){
+				keygen.RegisterWitnessKeygen,
+			},
 		})
 	})
 }
