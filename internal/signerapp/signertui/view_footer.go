@@ -73,7 +73,7 @@ func (m Model) viewFooterText() string {
 		if m.boundaryFileRowSelected() {
 			return "Enter: Load | ctrl+o: Browse | Esc: Back"
 		}
-		return "Up/Down: Choose | Enter: Select | Esc: Back"
+		return "Up/Down: Choose | Enter: Select | ctrl+o: Boundary file | Esc: Back"
 	case ViewGenerateReview:
 		return "Tab: Focus | d: Details | Enter: Select | Esc: Back"
 	case ViewGenerateReviewDetails:

@@ -98,6 +98,31 @@ func TestImportFormKeepsButtonVisible(t *testing.T) {
 	}
 }
 
+// In a window with room for it, the selected key type's name sits in a box
+// under the list, as the bounds preset screen boxes its descriptions; the box
+// follows the selection.
+func TestGenerateFormBoxesTheSelectedName(t *testing.T) {
+	setServerKeyTypes([]protocol.KeyTypeInfo{
+		{KeyType: "ed25519", DisplayName: "Ed25519"},
+		{KeyType: "aplane.falcon1024.v1", DisplayName: "Falcon-1024"},
+	})
+	t.Cleanup(func() { setServerKeyTypes(nil) })
+	for selected, name := range []string{"Ed25519", "Falcon-1024"} {
+		m := Model{viewState: ViewGenerateForm, width: 80, height: 24}
+		m.forms.generateKeyType = selected
+		view := stripANSI(m.renderGenerateForm())
+		boxed := false
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "│ "+name+" ") {
+				boxed = true
+			}
+		}
+		if !boxed || !strings.Contains(view, "╭") {
+			t.Fatalf("selection %d: %q is not in a box:\n%s", selected, name, view)
+		}
+	}
+}
+
 // With room for the title, one row, and the selection's description, a long
 // list scrolls instead of pushing the description out of the box: the
 // description stays below the selected row, and the box never falls back to

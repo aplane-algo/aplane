@@ -72,7 +72,7 @@ var (
 	noBoundsPreset = boundary.Preset{
 		Name:        "no-bounds",
 		Title:       "No bounds",
-		Description: "The spending key and the overlays you choose: no fee limit and no transfer list.",
+		Description: "Standard unbounded",
 	}
 	customBoundsPreset = boundary.Preset{
 		Name:        "custom-bounds",
@@ -107,9 +107,10 @@ func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.forms.boundaryPresetIndex++
 		}
 	case fileBrowserKey:
-		if m.boundaryFileRowSelected() {
-			return m.openFileBrowser(browseBoundaryFile, m.forms.boundaryFile, ""), nil
-		}
+		// From any row, as a form's path field takes it from any field: the
+		// boundary file row is selected and the browser opens.
+		m.forms.boundaryPresetIndex = len(boundaryPresetChoices())
+		return m.openFileBrowser(browseBoundaryFile, m.forms.boundaryFile, ""), nil
 	case "enter", " ":
 		m.forms.generateError = ""
 		if m.boundaryFileRowSelected() {
@@ -171,7 +172,7 @@ func (m Model) renderBoundaryPreset() string {
 	}
 	row("Load boundary file", file)
 	sb.WriteString("\n")
-	sb.WriteString(presetDescriptionBox(descriptions, m.forms.boundaryPresetIndex, m.popupBodyWidth(72)))
+	sb.WriteString(selectionDescriptionBox(descriptions, m.forms.boundaryPresetIndex, m.popupBodyWidth(72)))
 	sb.WriteString("\n")
 	if m.forms.generateError != "" {
 		sb.WriteString("\n")
@@ -181,10 +182,10 @@ func (m Model) renderBoundaryPreset() string {
 	return m.renderPopup(72, sb.String())
 }
 
-// presetDescriptionBox draws the selected choice's description in a box width
-// columns wide under the list. It is as tall as the longest description, so
-// neither the list nor the box moves as the selection does.
-func presetDescriptionBox(descriptions []string, selected, width int) string {
+// selectionDescriptionBox draws the selected choice's description in a box
+// width columns wide under a selection list. It is as tall as the longest
+// description, so neither the list nor the box moves as the selection does.
+func selectionDescriptionBox(descriptions []string, selected, width int) string {
 	box := inputInactiveStyle.
 		Foreground(subtitleStyle.GetForeground()).
 		Width(width - inputInactiveStyle.GetHorizontalBorderSize())

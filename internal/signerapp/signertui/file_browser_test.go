@@ -114,6 +114,39 @@ func TestFileBrowserListsOnlyTheMatchingRoleReference(t *testing.T) {
 	}
 }
 
+// Every screen that takes a file name says ctrl+o browses, beside or under its
+// path field, and in its footer.
+func TestEveryPathFieldOffersTheFileBrowser(t *testing.T) {
+	for name, m := range map[string]Model{
+		"import client key": {viewState: ViewImportClientKey},
+		"cosigner import":   {viewState: ViewCosignerImportForm},
+		"cosigner export":   {viewState: ViewCosignerExportPath, cosigner: cosignerState{exportWitnessID: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
+		"policy apply":      policyApplyFormModel(""),
+	} {
+		m.width, m.height = 80, 24
+		if view := stripANSI(m.renderViewContent()); !strings.Contains(view, "ctrl+o browses") {
+			t.Errorf("%s: the path field does not say ctrl+o browses:\n%s", name, view)
+		}
+		if footer := m.viewFooterText(); !strings.Contains(footer, "ctrl+o") {
+			t.Errorf("%s: footer %q does not offer ctrl+o", name, footer)
+		}
+	}
+}
+
+// On the bounds preset screen ctrl+o works from any row, as a form's path
+// field takes it from any field: it selects the boundary file row and opens
+// the browser.
+func TestBoundaryPresetBrowsesFromAnyRow(t *testing.T) {
+	m := Model{viewState: ViewBoundaryPreset, forms: formsState{boundaryKeyType: boundedHostKeyType}}
+	if footer := m.viewFooterText(); !strings.Contains(footer, "ctrl+o") {
+		t.Fatalf("footer %q does not offer ctrl+o on a preset row", footer)
+	}
+	m = press(t, m, "ctrl+o")
+	if !m.fileBrowserOpen() || !m.boundaryFileRowSelected() {
+		t.Fatalf("ctrl+o on a preset row: browser open %v, file row selected %v", m.fileBrowserOpen(), m.boundaryFileRowSelected())
+	}
+}
+
 func TestFileBrowserChoosesPolicyFile(t *testing.T) {
 	root := browserTree(t)
 	m := press(t, policyApplyFormModel(filepath.Join(root, "typed.json")), "ctrl+o")
