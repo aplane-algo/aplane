@@ -88,7 +88,7 @@ func newCommonAppCallOptions() commonAppCallOptions {
 	}
 }
 
-func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAppCallOptions) (int, bool, error) {
+func parseCommonAppCallOption(args []string, i int, opts *commonAppCallOptions) (int, bool, error) {
 	arg := args[i]
 
 	setProgram := func(kind, value string, compiled bool) error {
@@ -250,7 +250,7 @@ func parseRawAppCallArgs(args []string) (*rawAppCallArgs, error) {
 			}
 			params.AppArgs = append(params.AppArgs, value)
 		default:
-			nextIdx, handled, err := parseCommonAppCallOption(args, i, params.AppID, &common)
+			nextIdx, handled, err := parseCommonAppCallOption(args, i, &common)
 			if err != nil {
 				return nil, err
 			}
@@ -368,7 +368,7 @@ func parseMethodAppCallArgs(args []string) (*methodAppCallArgs, error) {
 		case strings.HasPrefix(arg, "arg="):
 			params.ArgValues = append(params.ArgValues, strings.TrimPrefix(arg, "arg="))
 		default:
-			nextIdx, handled, err := parseCommonAppCallOption(args, i, params.AppID, &common)
+			nextIdx, handled, err := parseCommonAppCallOption(args, i, &common)
 			if err != nil {
 				return nil, err
 			}

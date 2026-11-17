@@ -50,7 +50,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ViewConfirmPassphrase:
 			return m.handleConfirmKeys(msg)
 		case ViewResult:
-			return m.handleResultKeys(msg)
+			return m.handleResultKeys()
 		}
 	}
 
@@ -194,7 +194,7 @@ func (m Model) handleConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleResultKeys handles key input on the result screen — any key returns to home.
-func (m Model) handleResultKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleResultKeys() (tea.Model, tea.Cmd) {
 	m.viewState = ViewHome
 	m.resultMessage = ""
 	m.resultError = ""

@@ -226,7 +226,10 @@ func executeClear(dataDir string) (string, error) {
 
 func currentAutoUnlockMethod(dataDir string) (string, error) {
 	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
-	if err == nil && unlockCfg.HasPassphraseCommand() {
+	if err != nil {
+		return "", err
+	}
+	if unlockCfg.HasPassphraseCommand() {
 		return detectMethod(unlockCfg.PassphraseCommandArgv), nil
 	}
 	return "none", nil

@@ -239,7 +239,7 @@ func TestShellDisabledSplitLayoutUsesFullWidthSignerAboveDaemon(t *testing.T) {
 
 func TestPendingShellRoleFailsClosedAndEnablesOnlyForSigner(t *testing.T) {
 	newPending := func() model {
-		m := newModelWithShell(testConnector{}, t.TempDir(), &fakeShellExecutor{}, nil, newDaemonModel(daemonInfo{}, nil), false, "")
+		m := newModelWithShell(testConnector{}, &fakeShellExecutor{}, nil, newDaemonModel(daemonInfo{}, nil), false, "")
 		m.signer = stubTeaModel{}
 		return m
 	}
@@ -267,7 +267,7 @@ func TestPendingShellRoleFailsClosedAndEnablesOnlyForSigner(t *testing.T) {
 
 func TestUnavailableShellDoesNotBecomeRolePendingThroughTypedNil(t *testing.T) {
 	m := newModelWithShell(
-		testConnector{}, t.TempDir(), shellExecutorForSession(nil),
+		testConnector{}, shellExecutorForSession(nil),
 		[]string{"Shell disabled: missing client config"}, newDaemonModel(daemonInfo{}, nil), false, "",
 	)
 	m.signer = stubTeaModel{}
@@ -307,7 +307,7 @@ func TestRenderPaneWithMetaKeepsHeaderWithinPanelWidth(t *testing.T) {
 }
 
 func TestNewModelStartsWithSignerFocused(t *testing.T) {
-	m := newModel(testConnector{}, "/tmp/apsigner", nil, nil, newDaemonModel(daemonInfo{Status: daemonStatusAttached}, nil))
+	m := newModelWithShell(testConnector{}, nil, nil, newDaemonModel(daemonInfo{Status: daemonStatusAttached}, nil), true, "")
 	if m.focus != paneSigner {
 		t.Fatalf("focus = %v, want signer", m.focus)
 	}

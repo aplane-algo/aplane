@@ -176,7 +176,7 @@ func connectApprover(dataDir, ipcPathFlag string) (*transport.IPCClient, bool) {
 	logInfof("================================================")
 
 	fmt.Print("Enter passphrase: ")
-	passphraseBytes, err := term.ReadPassword(int(syscall.Stdin))
+	passphraseBytes, err := term.ReadPassword(syscall.Stdin)
 	if err != nil {
 		logErrorf("error reading passphrase: %v", err)
 		return nil, false
@@ -401,21 +401,22 @@ func (a *approver) handleNotification(notification transport.Notification) {
 	case decoded.errMsg != nil:
 		logErrorf("%s", decoded.errMsg.Error)
 	case decoded.canceled != nil:
-		a.handleCanceled(approvalKindSign, "Signing request", decoded.canceled.ID, decoded.canceled.Reason)
+		a.handleCanceled(decoded.canceled.ID, decoded.canceled.Reason)
 	case decoded.request != nil:
 		a.enqueue(*decoded.request)
 	}
 }
 
-// handleCanceled removes a request the server withdrew. If it was the one
-// being answered, the next request is shown.
-func (a *approver) handleCanceled(kind approvalKind, label, id, reason string) {
+// handleCanceled removes a signing request the server withdrew. If it was the
+// one being answered, the next request is shown. Enrollment requests are
+// never withdrawn.
+func (a *approver) handleCanceled(id, reason string) {
 	var removed, active bool
-	a.queue, removed, active = removeCanceledRequest(a.queue, kind, id)
+	a.queue, removed, active = removeCanceledRequest(a.queue, id)
 	if !removed {
 		return
 	}
-	fmt.Printf("\n⚠ %s %s canceled (%s)\n", label, id, approvalCancelReason(reason))
+	fmt.Printf("\n⚠ Signing request %s canceled (%s)\n", id, approvalCancelReason(reason))
 	if active {
 		a.showHeadOrWait()
 	} else if len(a.queue) > 0 {
@@ -490,11 +491,11 @@ func decodeNotification(notification transport.Notification) (decodedNotificatio
 	}
 }
 
-// removeCanceledRequest drops a withdrawn request of the given kind. It
-// reports whether the request was found and whether it was the active one.
-func removeCanceledRequest(queue []approvalRequest, kind approvalKind, requestID string) ([]approvalRequest, bool, bool) {
+// removeCanceledRequest drops a withdrawn signing request. It reports whether
+// the request was found and whether it was the active one.
+func removeCanceledRequest(queue []approvalRequest, requestID string) ([]approvalRequest, bool, bool) {
 	for i, req := range queue {
-		if req.kind != kind || req.id() != requestID {
+		if req.kind != approvalKindSign || req.id() != requestID {
 			continue
 		}
 		out := append(queue[:i:i], queue[i+1:]...)

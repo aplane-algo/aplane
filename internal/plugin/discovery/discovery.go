@@ -133,16 +133,15 @@ func (d *Discoverer) Discover() ([]*Plugin, error) {
 
 		// Find plugins in this search path.
 		var found []*Plugin
-		var err error
 		if configuredPath {
-			found, err = d.discoverEnabledInPath(searchPath, enabled)
+			found = d.discoverEnabledInPath(searchPath, enabled)
 		} else {
-			found, err = d.discoverInPath(searchPath)
-		}
-		if err != nil {
-			// Log error but continue with other paths
-			logger().Warn("error searching for plugins", "path", searchPath, "error", err)
-			continue
+			var err error
+			if found, err = d.discoverInPath(searchPath); err != nil {
+				// Log error but continue with other paths
+				logger().Warn("error searching for plugins", "path", searchPath, "error", err)
+				continue
+			}
 		}
 
 		// Add plugins, avoiding duplicates (first found wins)
@@ -164,7 +163,7 @@ func logger() *slog.Logger {
 	return slog.With("component", "plugins")
 }
 
-func (d *Discoverer) discoverEnabledInPath(searchPath string, enabled []string) ([]*Plugin, error) {
+func (d *Discoverer) discoverEnabledInPath(searchPath string, enabled []string) []*Plugin {
 	var plugins []*Plugin
 
 	for _, name := range enabled {
@@ -177,7 +176,7 @@ func (d *Discoverer) discoverEnabledInPath(searchPath string, enabled []string) 
 		plugins = append(plugins, plugin)
 	}
 
-	return plugins, nil
+	return plugins
 }
 
 // discoverInPath finds plugins in a specific directory

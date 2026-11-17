@@ -110,6 +110,24 @@ func stubSignerStopped(t *testing.T) {
 	})
 }
 
+func TestCurrentAutoUnlockMethodReportsUnreadableConfig(t *testing.T) {
+	dataDir := t.TempDir()
+	if method, err := currentAutoUnlockMethod(dataDir); err != nil || method != "none" {
+		t.Fatalf("missing unlock config = (%q, %v), want (none, nil)", method, err)
+	}
+
+	path := unlockconfig.UnlockConfigPath(dataDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("passphrase_command_argv: [unterminated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if method, err := currentAutoUnlockMethod(dataDir); err == nil {
+		t.Fatalf("malformed unlock config = %q, want an error", method)
+	}
+}
+
 // setupDataDir creates a minimal data directory with a product-store unlock.yaml pointing to passfile.
 func setupDataDir(t *testing.T) string {
 	t.Helper()

@@ -236,8 +236,8 @@ func TestSkippedPluginIsLoggedAsAWarning(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&out, nil)))
 
 	d := New()
-	if _, err := d.discoverEnabledInPath(t.TempDir(), []string{"missing-plugin"}); err != nil {
-		t.Fatalf("discoverEnabledInPath() error = %v", err)
+	if found := d.discoverEnabledInPath(t.TempDir(), []string{"missing-plugin"}); len(found) != 0 {
+		t.Fatalf("discoverEnabledInPath() = %d plugins, want none", len(found))
 	}
 
 	got := out.String()

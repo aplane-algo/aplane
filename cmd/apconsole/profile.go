@@ -146,7 +146,6 @@ func applyConsoleMode(cfg *consoleStartupConfig, mode consoleMode, source consol
 	if err := applyConsoleValue((*string)(&cfg.Mode), &cfg.modeSource, string(mode), source, "mode", &cfg.Notices); err != nil {
 		return err
 	}
-	cfg.Mode = consoleMode(cfg.Mode)
 	return nil
 }
 

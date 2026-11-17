@@ -241,11 +241,10 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 			Updated: result.Updated, DefaultChanged: result.DefaultChanged,
 		})
 	case "discover-cosigners":
-		req, err := parseEndpointDiscoverCosignersArgs(args[1:])
-		if err != nil {
-			return nil, err
+		if len(args) != 1 {
+			return nil, errors.New("usage: endpoints discover-cosigners")
 		}
-		result, err := r.app().EndpointDiscoverCosigners(r.commandContext(), req)
+		result, err := r.app().EndpointDiscoverCosigners(r.commandContext(), apshellapp.EndpointDiscoverCosignersRequest{})
 		if err != nil {
 			return nil, err
 		}
@@ -392,14 +391,6 @@ func setEndpointFlag(flag *bool, usage string) error {
 	}
 	*flag = true
 	return nil
-}
-
-func parseEndpointDiscoverCosignersArgs(args []string) (apshellapp.EndpointDiscoverCosignersRequest, error) {
-	var req apshellapp.EndpointDiscoverCosignersRequest
-	if len(args) != 0 {
-		return req, errors.New("usage: endpoints discover-cosigners")
-	}
-	return req, nil
 }
 
 func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) {

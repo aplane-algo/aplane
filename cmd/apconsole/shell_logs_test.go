@@ -136,7 +136,7 @@ func TestShellWithoutLogQueueStillWorks(t *testing.T) {
 
 func TestDisabledShellLeavesLogsForTheExitFallback(t *testing.T) {
 	logs := queuedLogs(t, "[transport] warning: dropped")
-	m := newModelWithShell(testConnector{}, "", &fakeShellExecutor{}, nil, daemonModel{}, false, "")
+	m := newModelWithShell(testConnector{}, &fakeShellExecutor{}, nil, daemonModel{}, false, "")
 	m.shell.logs = logs
 
 	if cmd := m.Init(); cmd == nil {
@@ -153,7 +153,7 @@ func TestDisabledShellLeavesLogsForTheExitFallback(t *testing.T) {
 
 func TestLogBatchReachesTheShellThroughTheConsoleModel(t *testing.T) {
 	logs := queuedLogs(t, "[ssh] warning: connection lost")
-	m := newModelWithShell(testConnector{}, "", &fakeShellExecutor{}, nil, daemonModel{}, true, "")
+	m := newModelWithShell(testConnector{}, &fakeShellExecutor{}, nil, daemonModel{}, true, "")
 	m.shell.logs = logs
 
 	updated, _ := m.Update(pullShellLogs(logs)())

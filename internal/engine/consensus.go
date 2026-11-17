@@ -42,15 +42,14 @@ func algodNetworkOf(params types.SuggestedParams) algodNetwork {
 	}
 }
 
-func resolveSupportedConsensus(version string) (lsigresource.ConsensusProfile, error) {
-	profile, err := lsigresource.ResolveConsensus(version)
-	if err != nil {
-		return lsigresource.ConsensusProfile{}, fmt.Errorf(
+func checkSupportedConsensus(version string) error {
+	if _, err := lsigresource.ResolveConsensus(version); err != nil {
+		return fmt.Errorf(
 			"network consensus %q is unsupported by this APlane release; supported contracts: v42 and v43: %w",
 			version, err,
 		)
 	}
-	return profile, nil
+	return nil
 }
 
 // ValidateAlgodConsensus verifies that algod is running a reviewed consensus
@@ -72,7 +71,7 @@ func querySupportedAlgodConsensus(ctx context.Context, client *algod.Client) (ty
 	if err != nil {
 		return types.SuggestedParams{}, fmt.Errorf("query algod consensus: %w", err)
 	}
-	if _, err := resolveSupportedConsensus(params.ConsensusVersion); err != nil {
+	if err := checkSupportedConsensus(params.ConsensusVersion); err != nil {
 		return types.SuggestedParams{}, err
 	}
 	return params, nil
@@ -115,7 +114,7 @@ func (e *Core) activeAlgodNetwork(ctx context.Context) (algodNetwork, error) {
 
 func (e *Core) rememberAlgodConsensus(client *algod.Client, params types.SuggestedParams) error {
 	version := params.ConsensusVersion
-	if _, err := resolveSupportedConsensus(version); err != nil {
+	if err := checkSupportedConsensus(version); err != nil {
 		if e != nil {
 			e.consensusValidation.mu.Lock()
 			if e.consensusValidation.client == client {
