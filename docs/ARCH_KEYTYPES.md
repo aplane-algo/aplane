@@ -599,9 +599,11 @@ Examples of the composed ontology:
 
 The witness keys `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1`
 are not accounts; their catalog entries declare `valid_rekey_target: false`.
-That declaration does not stop a rekey to an Ed25519 witness key's address,
-which is also a valid Algorand address: the signer that holds the account
-holds no witness key, so it treats the address as foreign.
+An Ed25519 witness key's public key is also a valid Algorand address. The
+cosigner node that holds the key refuses to cosign a rekey to that address
+(`rekey_target_not_valid`), as a signer refuses one to its own keys. The
+signer that holds the account holds no witness key, so to it the address is
+foreign, governed by its rekeys setting.
 
 ## Valid rekey target
 

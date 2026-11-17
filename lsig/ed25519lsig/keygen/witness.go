@@ -91,8 +91,7 @@ func RegisterWitnessKeygen() {
 			Family:       "cosigner-ed25519",
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 			// A witness key is a cosigner's component key, not an account.
-			// The declaration does not stop a rekey to the key's address:
-			// the signer that holds the account holds no witness key.
+			// Its cosigner refuses to cosign a rekey to the key's address.
 			ValidRekeyTarget: false,
 		})
 		internalkeygen.Register(&WitnessEd25519Generator{})

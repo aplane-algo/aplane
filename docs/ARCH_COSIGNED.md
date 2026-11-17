@@ -104,8 +104,11 @@ Cosigner uses a witness key as its auxiliary signing authority.
 
 Cosigner keys are raw witness keys held by cosigner nodes. They are not
 Algorand accounts and cannot spend funds directly. An Ed25519 cosigner key's
-public key is also a valid Algorand address, but the cosigner signs only its
-domain-tagged component message with it, never a transaction.
+public key is also a valid Algorand address, but the cosigner never signs a
+transaction with it: only its domain-tagged component message, and the fixed
+probe that checks the key pair when it loads. It also refuses to cosign a
+rekey to that address (`rekey_target_not_valid`), since an account rekeyed to
+it could never spend again.
 
 Their canonical private record is
 the selected generation's `keys/<WitnessKeyID>.cos`. The `.cos` container uses the

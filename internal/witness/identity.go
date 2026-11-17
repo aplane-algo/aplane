@@ -12,6 +12,7 @@ import (
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/falconparams"
@@ -41,9 +42,13 @@ const (
 
 var idEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
+// KeyTypes lists the supported witness-key types in the order a picker offers
+// them: the post-quantum one first.
+var KeyTypes = []string{Falcon1024V1, Ed25519V1}
+
 // IsKeyType reports whether keyType is a supported witness-key type.
 func IsKeyType(keyType string) bool {
-	return keyType == Falcon1024V1 || keyType == Ed25519V1
+	return slices.Contains(KeyTypes, keyType)
 }
 
 // PublicKeySize returns the public-key size for a supported witness-key type.

@@ -470,6 +470,69 @@ func TestSignComponentCosignerRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	}
 }
 
+// A cosigner refuses to cosign a rekey to the address of an Ed25519 witness
+// key it holds, at any position, even when its policy allows the rekey: that
+// key signs only component messages, so the account could never spend again.
+// A rekey to any other address is the policy's question.
+func TestSignComponentCosignerRefusesARekeyToItsOwnEd25519Key(t *testing.T) {
+	edPrivate := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x46}, ed25519.SeedSize))
+	edPublic := edPrivate.Public().(ed25519.PublicKey)
+	edID, err := witness.ID(witness.Ed25519V1, edPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var edAddress types.Address
+	copy(edAddress[:], edPublic)
+	falconKey := testFalconComponentSelector(t, 0xab)
+	snapshot := PlannerRuntimeSnapshot{
+		KeyFiles: map[string]string{falconKey: "falcon.cos", edID: "ed25519.cos"},
+		KeyTypes: map[string]string{falconKey: witness.Falcon1024V1, edID: witness.Ed25519V1},
+		KeyMetadata: map[string]PlannerKeyMetadata{
+			edID: {Category: keys.CategoryWitness, PublicKeyHex: hex.EncodeToString(edPublic)},
+		},
+	}
+	source := types.Address{68}
+	other := types.Address{69}
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "transfer_policy": {"routes": []},
+  "rekey_policy": {
+    "allowed": [
+      {"sender": %q, "targets": [%q, %q]}
+    ]
+  }
+}`, source.String(), edAddress.String(), other.String()))
+	for name, tc := range map[string]struct {
+		target  types.Address
+		refused bool
+	}{
+		"its own Ed25519 key": {edAddress, true},
+		"another address":     {other, false},
+	} {
+		txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
+		txn.RekeyTo = tc.target
+		store := &componentKeyStore{}
+		_, signErr := (&Service{
+			Planner:          &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }},
+			PolicyFor:        fixedPolicy(cfg),
+			HoldsCosignerKey: holdsAllCosignerKeys,
+			AuditLog:         &testAuditLogger{},
+		}).signComponentWithContext(context.Background(), componentPlanRequest{
+			RequestID:     "cmp-cosigner-own-key",
+			Role:          ComponentSignRoleCosigner,
+			ComponentKey:  falconKey,
+			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+			TargetIndices: []int{0},
+		}, newComponentKeySession(store))
+		refused := signErr != nil && signErr.Kind == ErrorRekeyTargetNotValid
+		if refused != tc.refused {
+			t.Fatalf("%s: error = %#v, want refused %t", name, signErr, tc.refused)
+		}
+		if tc.refused && store.calls != 0 {
+			t.Fatalf("%s: the key was loaded before the refusal", name)
+		}
+	}
+}
+
 func TestSignComponentCosignerAllowsExplicitRekeyPolicy(t *testing.T) {
 	publicKey, privateKey := testFalconComponentKeypair(t, 0x62)
 	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)

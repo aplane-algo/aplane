@@ -4,11 +4,13 @@
 package signing
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -42,11 +44,16 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if err := validateTransactionBounds(group); err != nil {
 		return err
 	}
-	// A cosigner holds only witness keys, whose 52-character IDs never equal a
-	// 58-character RekeyTo address, so no rekey target is held, or invalid:
-	// the valid-target invariant, which judges every position of the group,
-	// has nothing to refuse here and gets no set to build.
-	if err := s.rejectSignerInvariants(group, targets, nil); err != nil {
+	// A cosigner holds only witness keys. Their 52-character IDs never equal
+	// a 58-character RekeyTo address, but an Ed25519 witness key's public key
+	// is an address, and the key records that it is not a valid rekey target:
+	// the valid-target invariant refuses a rekey to it, at any position, as a
+	// signer refuses one to its own keys.
+	var invalidTargets map[string]txnreview.InvalidRekeyTarget
+	if s.Planner != nil && s.Planner.Snapshot != nil && groupRekeys(group) {
+		invalidTargets = cosignerKeyAddresses(s.Planner.Snapshot())
+	}
+	if err := s.rejectSignerInvariants(group, targets, invalidTargets); err != nil {
 		s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
 		return err
 	}
@@ -161,4 +168,37 @@ func componentPlanTxns(plan *ComponentSignPlan) []types.Transaction {
 		txns[i] = entry.Txn
 	}
 	return txns
+}
+
+// groupRekeys reports whether any transaction in the group sets RekeyTo.
+func groupRekeys(group []types.Transaction) bool {
+	for _, txn := range group {
+		if !txn.RekeyTo.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+// cosignerKeyAddresses is the address of each Ed25519 witness key this
+// cosigner holds, with its key type. Those keys sign only their component
+// message, so an account rekeyed to one could never be spent again.
+func cosignerKeyAddresses(snapshot PlannerRuntimeSnapshot) map[string]txnreview.InvalidRekeyTarget {
+	var addresses map[string]txnreview.InvalidRekeyTarget
+	for id, keyType := range snapshot.KeyTypes {
+		if keyType != witness.Ed25519V1 {
+			continue
+		}
+		publicKey, err := hex.DecodeString(snapshot.KeyMetadata[id].PublicKeyHex)
+		if err != nil || len(publicKey) != witness.Ed25519PublicKeySize {
+			continue
+		}
+		var address types.Address
+		copy(address[:], publicKey)
+		if addresses == nil {
+			addresses = make(map[string]txnreview.InvalidRekeyTarget)
+		}
+		addresses[address.String()] = txnreview.InvalidRekeyTarget{KeyType: keyType}
+	}
+	return addresses
 }
