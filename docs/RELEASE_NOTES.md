@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## An unlock waits for a lock to finish
+
+- **An unlock that arrives during a lock waits for the lock's cleanup.** A
+  lock wipes the keys once the key users in flight let go: a rotating sign, a
+  mnemonic export, the stage table worker. An unlock that arrived before then
+  reported the signer unlocked, and the wipe then took its keys, so every
+  sign failed until the next lock and unlock. The unlock now waits for the
+  cleanup to finish, which takes as long as the slowest of those key users,
+  a rotating sign waiting for its approval included. Store maintenance that
+  ends during a lock waits the same way.
+
 ## Cosigners can hold Ed25519 keys
 
 - **A new cosigner key type, `aplane.witness-ed25519.v1`.** A cosigner node
