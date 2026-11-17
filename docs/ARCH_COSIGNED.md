@@ -108,7 +108,9 @@ public key is also a valid Algorand address, but the cosigner never signs a
 transaction with it: only its domain-tagged component message, and the fixed
 probe that checks the key pair when it loads. It also refuses to cosign a
 rekey to that address (`rekey_target_not_valid`), since an account rekeyed to
-it could never spend again.
+it could never spend again. A listed rekey never reaches the cosigner, so
+generation warns when an account's rekey-to list names its own Ed25519
+cosigner's address; it doesn't refuse.
 
 Their canonical private record is
 the selected generation's `keys/<WitnessKeyID>.cos`. The `.cos` container uses the
@@ -945,7 +947,7 @@ The dimensions are independent:
 | Base signing primitive | `aplane.falcon1024.v1`, the key type itself |
 | Authorization contract | `bounded2` |
 | Layer-3 policy | framework-owned `merkle_allowlist` |
-| Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend, never asked for a listed rekey |
+| Spend auxiliary authority | `cosigner1`, a Falcon-1024 or Ed25519 witness, required on spend, never asked for a listed rekey |
 | Rekey setting | `refused` plus a rekey-to list (*only these*) |
 | Advertised signing flow | `cosigned1` |
 

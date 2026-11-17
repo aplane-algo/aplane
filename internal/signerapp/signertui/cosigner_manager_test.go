@@ -181,8 +181,7 @@ func TestGenerateAccountFromReferencePreselectsCosigner(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{
 		{
-			KeyType:                   "ordinary.v1",
-			CosignerComponentKeyTypes: []string{""},
+			KeyType: "ordinary.v1",
 		},
 		{
 			KeyType:                   "cosigned.v1",

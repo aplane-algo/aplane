@@ -5,6 +5,7 @@ package keyadmin
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -400,8 +401,36 @@ func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Er
 		if warning := cosignerHeldWarning(s.Runtime, creation.params[boundedmeta.CosignerPublicKeyParameter]); warning != "" {
 			warnings = append(warnings, warning)
 		}
+		if warning := cosignerListedWarning(bounded.Cosigner, creation.params[boundedmeta.CosignerPublicKeyParameter], creation.params[boundedmeta.RekeyListEntriesParameter]); warning != "" {
+			warnings = append(warnings, warning)
+		}
 	}
 	return warnings, nil
+}
+
+// cosignerListedWarning says when the rekey-to list names the cosigner's own
+// address, which only an Ed25519 cosigner key has. A listed rekey takes the
+// spending key alone, and the cosigner never sees it, so the account could be
+// handed to a key that signs only cosigner messages. That is the reviewer's
+// choice, not a refusal.
+//
+// The first sentence stands alone: a review with no room shows only it.
+func cosignerListedWarning(cosigner *boundedmeta.CosignerAuthorization, cosignerPublicKeyHex, entries string) string {
+	if cosigner == nil || cosigner.ComponentKeyType != witness.Ed25519V1 || strings.TrimSpace(entries) == "" {
+		return ""
+	}
+	publicKey, err := hex.DecodeString(cosignerPublicKeyHex)
+	if err != nil || len(publicKey) != witness.Ed25519PublicKeySize {
+		return ""
+	}
+	var address types.Address
+	copy(address[:], publicKey)
+	targets, err := rekeylist.ParseEntries(entries)
+	if err != nil || !slices.Contains(targets, address) {
+		return ""
+	}
+	return "The rekey-to list names the cosigner's own address. " +
+		"A rekey there would make the cosigner's key the account's authority, and a cosigner signs only cosigner messages, so the account could not spend again."
 }
 
 // cosignerHeldWarning says when an account's cosigner key is also a key this

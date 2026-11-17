@@ -23,7 +23,8 @@ before it was renamed `enroll`.
   templates stay Falcon-cosigned.
 - **A cosigner refuses to cosign a rekey to its own Ed25519 key's address.**
   That key signs only component messages, so the account could never spend
-  again.
+  again. A listed rekey never reaches the cosigner, so generation warns, without
+  refusing, when a rekey-to list names the account's own Ed25519 cosigner.
 - **`/keytypes` lists the cosigner types a key type takes.**
   `cosigner_component_key_types` replaces `cosigner_component_key_type` there,
   in the SDKs and in apadmin's key type info; `/keys` still names each
