@@ -250,7 +250,8 @@ func ResolveCreationParamsForComponents(paths storepaths.Paths, keyType string, 
 	if !slices.Contains(componentKeyTypes, rec.KeyType) {
 		return nil, fmt.Errorf("cosigner reference %q uses %s, but %s takes %s", rec.Name, rec.KeyType, keyType, strings.Join(componentKeyTypes, " or "))
 	}
-	if given, ok := params[boundedmeta.CosignerKeyTypeParameter]; ok && given != rec.KeyType {
+	// An empty value is the provider's to refuse, with its own message.
+	if given := strings.TrimSpace(params[boundedmeta.CosignerKeyTypeParameter]); given != "" && given != rec.KeyType {
 		return nil, fmt.Errorf("%s %s contradicts cosigner reference %q, which uses %s", boundedmeta.CosignerKeyTypeParameter, given, rec.Name, rec.KeyType)
 	}
 

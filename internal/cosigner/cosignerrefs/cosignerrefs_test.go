@@ -286,6 +286,13 @@ func TestResolveCreationParamsTakesAnyListedCosignerType(t *testing.T) {
 			t.Errorf("%s: error = %v, want %q", tc.name, err, tc.want)
 		}
 	}
+	// An empty type isn't a contradiction: the provider refuses it as empty.
+	// One with stray spaces is compared as the type it names.
+	for _, given := range []string{"", " " + witness.Ed25519V1 + " "} {
+		if _, err := ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", both, map[string]string{ParamCosignerName: "ed", boundedmeta.CosignerKeyTypeParameter: given}); err != nil {
+			t.Errorf("type %q: error = %v, want the reference to resolve", given, err)
+		}
+	}
 }
 
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {

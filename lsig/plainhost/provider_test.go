@@ -309,7 +309,7 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 				{"a Falcon key named Ed25519", func(p map[string]string) {
 					p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerFor(falconCosigner)
 				}, "a aplane.witness-ed25519.v1 key is 32"},
-				{"an Ed25519 key with no type", func(p map[string]string) { delete(p, boundedmeta.CosignerKeyTypeParameter) }, "a aplane.witness-falcon1024.v1 key is 1793"},
+				{"an Ed25519 key with no type", func(p map[string]string) { delete(p, boundedmeta.CosignerKeyTypeParameter) }, "for a aplane.witness-ed25519.v1 key, set cosigner_key_type=aplane.witness-ed25519.v1"},
 			} {
 				params := maps.Clone(ed)
 				tc.edit(params)

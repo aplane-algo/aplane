@@ -61,6 +61,16 @@ func TestEd25519WitnessKeyType(t *testing.T) {
 	if _, err := ID(Ed25519V1, make([]byte, Falcon1024PublicKeySize)); err == nil {
 		t.Fatal("ID() accepted a Falcon-sized key for an Ed25519 witness")
 	}
+	// Only an Ed25519 key's public key is also an address.
+	if address, hasAddress, err := AccountAddress(Ed25519V1, publicKey); !hasAddress || err != nil || string(address[:]) != string(publicKey) {
+		t.Fatalf("AccountAddress(Ed25519) = %x, %t, %v", address, hasAddress, err)
+	}
+	if _, hasAddress, err := AccountAddress(Falcon1024V1, make([]byte, Falcon1024PublicKeySize)); hasAddress || err != nil {
+		t.Fatalf("AccountAddress(Falcon) = %t, %v; want no address", hasAddress, err)
+	}
+	if _, hasAddress, err := AccountAddress(Ed25519V1, publicKey[:31]); !hasAddress || err == nil {
+		t.Fatalf("AccountAddress(short Ed25519) = %t, %v; want an error", hasAddress, err)
+	}
 	// The vectors the SDKs pin for their own derivation.
 	zeros := make([]byte, Ed25519PublicKeySize)
 	if got, _ := ID(Ed25519V1, zeros); got != "MMN7TOWCUUIJP2VKT5JJW7RC5J6S5LZEHPDNAKEW4G4KYV6XCJJQ" {

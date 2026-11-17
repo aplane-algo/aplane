@@ -416,17 +416,19 @@ func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Er
 //
 // The first sentence stands alone: a review with no room shows only it.
 func cosignerListedWarning(cosigner *boundedmeta.CosignerAuthorization, cosignerPublicKeyHex, entries string) string {
-	if cosigner == nil || cosigner.ComponentKeyType != witness.Ed25519V1 || strings.TrimSpace(entries) == "" {
+	if cosigner == nil || strings.TrimSpace(entries) == "" {
 		return ""
 	}
 	publicKey, err := hex.DecodeString(cosignerPublicKeyHex)
-	if err != nil || len(publicKey) != witness.Ed25519PublicKeySize {
+	if err != nil {
 		return ""
 	}
-	var address types.Address
-	copy(address[:], publicKey)
+	address, hasAddress, err := witness.AccountAddress(cosigner.ComponentKeyType, publicKey)
+	if err != nil || !hasAddress {
+		return ""
+	}
 	targets, err := rekeylist.ParseEntries(entries)
-	if err != nil || !slices.Contains(targets, address) {
+	if err != nil || !slices.Contains(targets, types.Address(address)) {
 		return ""
 	}
 	return "The rekey-to list names the cosigner's own address. " +

@@ -87,6 +87,20 @@ func AlgorithmName(keyType string) (string, bool) {
 	}
 }
 
+// AccountAddress is the Algorand address a witness key's public key also is.
+// Only an Ed25519 key's is one: hasAddress is false for any other type, and an
+// Ed25519 key of the wrong length is an error.
+func AccountAddress(keyType string, publicKey []byte) (address [32]byte, hasAddress bool, err error) {
+	if keyType != Ed25519V1 {
+		return address, false, nil
+	}
+	if len(publicKey) != Ed25519PublicKeySize {
+		return address, true, fmt.Errorf("witness public key length %d invalid (expected %d bytes)", len(publicKey), Ed25519PublicKeySize)
+	}
+	copy(address[:], publicKey)
+	return address, true, nil
+}
+
 // PostQuantum reports whether a supported witness-key type's signatures are
 // meant to resist a quantum computer: Falcon-1024's are, Ed25519's are not.
 func PostQuantum(keyType string) bool {

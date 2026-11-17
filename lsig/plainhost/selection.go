@@ -156,7 +156,13 @@ func resolveCosignerType(cosigner, cosignerType string) (string, error) {
 		return "", fmt.Errorf("invalid %s hex: %w", composeddsa.BoundedCosignerPublicKeyParameter, err)
 	}
 	if len(publicKey) != publicKeySize {
-		return "", fmt.Errorf("%s is %d bytes; a %s key is %d", composeddsa.BoundedCosignerPublicKeyParameter, len(publicKey), cosignerType, publicKeySize)
+		err := fmt.Errorf("%s is %d bytes; a %s key is %d", composeddsa.BoundedCosignerPublicKeyParameter, len(publicKey), cosignerType, publicKeySize)
+		for _, other := range CosignerKeyTypes {
+			if size, _, _ := boundedmeta.CosignerSizes(other); size == len(publicKey) && other != cosignerType {
+				err = fmt.Errorf("%w: for a %s key, set %s=%s", err, other, boundedmeta.CosignerKeyTypeParameter, other)
+			}
+		}
+		return "", err
 	}
 	return cosignerType, nil
 }

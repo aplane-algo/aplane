@@ -379,7 +379,7 @@ func TestCosignerGatesRefuseATransactionTheNetworkNeverAccepts(t *testing.T) {
 	gates := func(t *testing.T, holds func(string) bool, txns []types.Transaction) (*ServiceError, *limitedCosignerAuditLogger) {
 		t.Helper()
 		audit := &limitedCosignerAuditLogger{}
-		svc := &Service{PolicyFor: fixedPolicy(wildcardCosignerPolicy(t)), HoldsCosignerKey: holds, AuditLog: audit}
+		svc := &Service{Planner: cosignerTestPlanner, PolicyFor: fixedPolicy(wildcardCosignerPolicy(t)), HoldsCosignerKey: holds, AuditLog: audit}
 		plan, planErr := prepareComponentSigning(componentPlanRequest{
 			RequestID:     "cmp-cosigner-bounds",
 			Role:          ComponentSignRoleCosigner,
