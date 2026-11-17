@@ -64,10 +64,14 @@ mutation:
   rotating aplane key records that it is not a valid rekey target, so the
   valid-target invariant refuses a rekey to one first, at any position; the
   rotating check is a second line that reads the key type.
-- A cosigner holds no account aplane keys, so the valid-target invariant
-  finds nothing there; its signed-position invariants run before its policy
-  as on a signer. The cosigner's key lookup and transaction bounds
-  validation run before the invariants and are not modeled.
+- A cosigner holds no account aplane keys, but an Ed25519 cosigner key has an
+  address, so on a cosigner the valid-target invariant reads the addresses of
+  the Ed25519 cosigner keys the node holds (`cosignerKeyAddresses`) and
+  refuses a rekey to one at any position. Its signed-position invariants run
+  before its policy as on a signer. The cosigner's key lookup, transaction
+  bounds validation and the building of that address set run before the
+  invariants and are not modeled; a set that cannot be built refuses the
+  request.
 - A position outside the group fails closed in the code
   (`positionOutsideGroup`); the model's positions are the group's by
   construction.

@@ -1634,7 +1634,9 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)). A foreign target,
   one the signer holds no aplane key for, is left to the `rekeys` setting,
   which still judges only the positions this signer signs. The cosigner role
-  holds no account aplane keys, so it has nothing to refuse here.
+  holds no account aplane keys; there the invariant refuses a rekey, at any
+  position, to the address of an Ed25519 cosigner key the node holds, and a
+  request whose rekey targets it cannot check is refused.
 - A signed position that rekeys any other account to a rotating account this
   signer holds is rejected with `403` and `code:"forbidden"` by the rotating
   check, which reads the key type rather than the key record. It is a second

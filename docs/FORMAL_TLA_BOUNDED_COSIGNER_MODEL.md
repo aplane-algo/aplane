@@ -85,7 +85,7 @@ from the one the approval covered. It is one more fail-closed conjunct inside
 
 Validation outcomes are intentionally abstract booleans. The model checks that
 the implementation consumes each outcome at the correct gate; it does not
-prove Falcon cryptography, msgpack canonicalization, Merkle proof construction,
+prove Falcon or Ed25519 cryptography, msgpack canonicalization, Merkle proof construction,
 or generated TEAL.
 
 ## Mutation expectations

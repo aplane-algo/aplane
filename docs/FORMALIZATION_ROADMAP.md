@@ -737,3 +737,74 @@ the signer is unlocked) and the negative control
 `key_use_lock_negative_unlock.cfg` (111 states at depth 5); its positive runs
 are unchanged at 587 and 886 states. `make formal-test` now has 36 runs,
 twenty of them negative controls.
+
+Drift review (2026-11-17, HEAD `6265bbf5`): range `e2377660..6265bbf5` (53
+non-merge commits: the signing request review, the Ed25519 cosigner key type,
+and the three follow-ups above). `make formal-test` (36 runs) and `make
+formal-test-deep` (11 runs) match their recorded metrics. The anchor sweep is
+clean, and `metrics.json` agrees with the module table and the status
+headers.
+
+Hold against the range: `approval_coordinator.tla` and
+`approval_composition.tla` (the prompt gained a typed review as data; the
+rechecks, the turn release and the three fail-all callers are unchanged, and
+the approval wait still cannot be zero through `ParseApprovalWait`,
+`NewRuntimeConfig` and `approvalWait`); `sign_boundary.tla`,
+`policy_precedence.tla` and `composition.tla` (`gate.go`, `execution.go` and
+`policyeval/` have no change; the notice severity is display only, since
+policy counts findings and never reads severity); `bounded_cosigner.tla` (an
+Ed25519 cosigner takes the same component, gate and assembly path, and the
+receipt binds the cosigner key type); `plugin_signing.tla` (the lookalike
+lines are printed, not decided on); `rotating_leaf_release.tla` (the order in
+`SignRotatingWithContext` is intact and the memory is held from the signer's
+creation); `recovery_binding.tla`; `signer_invariants.tla`;
+`setting_publish.tla`. `session_ownership.tla`, `store_root_commit.tla` and
+`enrollment_queue.tla` had no code movement.
+
+Fixed here: the signer invariants companion and `ARCH_SIGNING.md` said a
+cosigner has nothing for the valid-target invariant to refuse. Since
+`b5c1d834` and `7a80e62a` it reads the addresses of the node's own Ed25519
+cosigner keys and refuses a request whose set it cannot build; both passages
+now say so, and SI1's row names `runCosignerGates`, `cosignerKeyAddresses`
+and the cosigner test. The spec is unchanged: it takes the invalid-target
+flag as given.
+
+Divergence, open: KU4 does not hold on two paths `fcd3f2b7` left, and the
+note above overstates that fix. Both were reproduced against the lock
+runtime alone; neither releases a signature, and both end with the signer
+reporting unlocked over a cleared session, as before the fix.
+
+- A losing unlock's cleanup. `TryUnlock` and `TryRecovery`, on finding that
+  `lockGen` moved, run the on-lock cleanup without moving `lockGen`
+  themselves. A `Lock` on an already locked signer moves `lockGen` with no
+  cleanup, so a second unlock that starts after it finds no cleanup to wait
+  for, reads the same `lockGen` the first unlock is about to lose to, and
+  publishes unlocked; the first unlock's cleanup then clears that session, or
+  already has. `awaitCleanups`' comment, that a cleanup beginning after it
+  returns moves `lockGen` first, is false for this cleanup. The spec has no
+  action for it. Options: make the losing unlock a full lock (state, `lockGen`
+  and session move in the critical section that decides its cleanup), which
+  the spec's `LockState` already describes; or downgrade KU4 to the path the
+  spec models and say so.
+- Recovery during a cleanup. `SetRecovery` moves a locked signer to recovery,
+  a cleanup in progress included, and `PromoteRecoveryToUnlocked` then
+  publishes unlocked without waiting. The spec's `EnterRecovery` is enabled
+  only from the unlocked state. Whether an admin session can reach a
+  store-commit failure and then a reconcile while a lock drains is not
+  established. Options: `SetRecovery` acts only on an unlocked or recovering
+  signer, with `EnterRecovery`'s guard as its transcription; or the promotion
+  waits for cleanups and the spec gains `EnterRecovery` from the locking
+  states with a negative control.
+
+New surface, none needing a model: the review an operator sees and the
+approval digest are computed from one plan in one function
+(`approveGroupWithPlanContext`) and each signer rechecks the binding before
+it signs, a Go-level contract no spec states; lookalike findings are shown
+and never force a review; the review's chain read runs after every gate and
+decides nothing; the Ed25519 cosigner's other rules run at generation or key
+decode. Out of model by design: a listed rekey to the account's own Ed25519
+cosigner address is warned about at generation and never reaches the
+cosigner. Not established: whether every cosigner key's public key reaches
+the planner snapshot; if one does not, a cosigned rekey is refused, not
+passed. Stale and harmless: `signing/approval.go`'s fallback
+`defaultApprovalWait` is still 60 seconds.
