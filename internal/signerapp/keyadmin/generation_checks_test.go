@@ -4,13 +4,18 @@
 package keyadmin
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -64,6 +69,38 @@ func prepareThenGenerate(t *testing.T, service Service, params map[string]string
 		t.Fatalf("GenerateKey() error = %#v", err)
 	}
 	return review.Warnings, generated.Warnings, direct.Warnings
+}
+
+// A rekey-to list that names the cosigner's own address is the user's choice
+// too: the account is generated, and each result says what a rekey there would
+// do. Only an Ed25519 cosigner has an address; a list without it says nothing.
+func TestARekeyToListNamingTheCosignerWarns(t *testing.T) {
+	_, service, _ := setupPlainHost(t)
+	cosignerKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x47}, ed25519.SeedSize)).Public().(ed25519.PublicKey)
+	var cosignerAddress types.Address
+	copy(cosignerAddress[:], cosignerKey)
+	want := "The rekey-to list names the cosigner's own address. " +
+		"A rekey there would make the cosigner's key the account's authority, and a cosigner signs only cosigner messages, so the account could not spend again."
+	for name, tc := range map[string]struct {
+		rekeyTo string
+		warns   bool
+	}{
+		"the cosigner's address listed": {listedTarget.String() + "," + cosignerAddress.String(), true},
+		"another address listed":        {listedTarget.String(), false},
+	} {
+		params := map[string]string{
+			plainhost.ParameterRekeyAuthority:      plainhost.RekeyPlusCosigned,
+			plainhost.ParameterRekeyTo:             tc.rekeyTo,
+			boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+			boundedmeta.CosignerKeyTypeParameter:   witness.Ed25519V1,
+		}
+		prepared, reviewed, unreviewed := prepareThenGenerate(t, service, params)
+		for step, got := range map[string][]string{"prepare": prepared, "reviewed generation": reviewed, "unreviewed generation": unreviewed} {
+			if slices.Contains(got, want) != tc.warns {
+				t.Errorf("%s: %s Warnings = %q, want the cosigner-address warning %t", name, step, got, tc.warns)
+			}
+		}
+	}
 }
 
 // A cosigner key that is also a key this signer holds is the user's choice. The
@@ -171,7 +208,7 @@ func generateHeldFalconKey(t *testing.T, ir *productruntime.Runtime, service Ser
 		t.Fatalf("GenerateKey(falcon1024) error = %#v", err)
 	}
 	publicKeyHex = ir.KeyStore().GetPublicKeyHexMap()[held.Address]
-	if len(publicKeyHex) != 2*boundedmeta.CosignerPublicKeySizeV1 {
+	if len(publicKeyHex) != 2*boundedmeta.DefaultCosignerPublicKeySize {
 		t.Fatalf("the held key's public key is %d hex characters", len(publicKeyHex))
 	}
 	return held.Address, publicKeyHex

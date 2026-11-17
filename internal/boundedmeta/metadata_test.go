@@ -172,8 +172,8 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 }
 
 func TestMetadataValidateCosignerAuthorization(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x6b}, CosignerPublicKeySizeV1)
-	componentKeyID, err := witness.ID(CosignerComponentKeyTypeV1, publicKey)
+	publicKey := bytes.Repeat([]byte{0x6b}, DefaultCosignerPublicKeySize)
+	componentKeyID, err := witness.ID(DefaultCosignerComponentKeyType, publicKey)
 	if err != nil {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
@@ -185,19 +185,19 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 		Rekey:                  RekeyRefused,
 		Layer3Policy:           Layer3PolicyCustom,
 		Cosigner: &CosignerAuthorization{
-			Contract: CosignerContractV1, ComponentKeyType: CosignerComponentKeyTypeV1,
+			Contract: CosignerContractV1, ComponentKeyType: DefaultCosignerComponentKeyType,
 			PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: []string{PathSpend},
+			SignatureMaxSize: DefaultCosignerSignatureMaxSize, RequiredOn: []string{PathSpend},
 		},
 		ArgumentLayout: []ArgumentSlot{
 			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, ListedRekey: ArgRequired}},
-			{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
+			{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: DefaultCosignerSignatureMaxSize, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if got, want := metadata.ArgumentBytesForPath(PathSpend), 1280+CosignerSignatureMaxSizeV1; got != want {
+	if got, want := metadata.ArgumentBytesForPath(PathSpend), 1280+DefaultCosignerSignatureMaxSize; got != want {
 		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 	if got, want := metadata.ArgumentBytesForPath(PathSpendingRekey), 1280; got != want {
@@ -238,7 +238,7 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 	if err := spendingRekey.Validate(); err != nil {
 		t.Fatalf("cosigned spending-key rekey: Validate() error = %v", err)
 	}
-	if got, want := spendingRekey.ArgumentBytesForPath(PathSpendingRekey), 1280+CosignerSignatureMaxSizeV1; got != want {
+	if got, want := spendingRekey.ArgumentBytesForPath(PathSpendingRekey), 1280+DefaultCosignerSignatureMaxSize; got != want {
 		t.Fatalf("cosigned spending-rekey argument bytes = %d, want %d", got, want)
 	}
 }
@@ -371,20 +371,20 @@ func TestMetadataValidateRekeyList(t *testing.T) {
 // setting: only these (refused) or plus cosigned (spending key).
 func cosignedListMetadata(t *testing.T, rekey RekeySetting) *Metadata {
 	t.Helper()
-	publicKey := bytes.Repeat([]byte{0x6b}, CosignerPublicKeySizeV1)
-	componentKeyID, err := witness.ID(CosignerComponentKeyTypeV1, publicKey)
+	publicKey := bytes.Repeat([]byte{0x6b}, DefaultCosignerPublicKeySize)
+	componentKeyID, err := witness.ID(DefaultCosignerComponentKeyType, publicKey)
 	if err != nil {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
 	metadata := listMetadata()
 	metadata.Rekey = rekey
 	metadata.Cosigner = &CosignerAuthorization{
-		Contract: CosignerContractV1, ComponentKeyType: CosignerComponentKeyTypeV1,
+		Contract: CosignerContractV1, ComponentKeyType: DefaultCosignerComponentKeyType,
 		PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: componentKeyID,
-		SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: CosignerRequiredOn(rekey),
+		SignatureMaxSize: DefaultCosignerSignatureMaxSize, RequiredOn: CosignerRequiredOn(rekey),
 	}
 	metadata.ArgumentLayout = append(metadata.ArgumentLayout, ArgumentSlot{
-		Index: 2, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1,
+		Index: 2, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: DefaultCosignerSignatureMaxSize,
 		Paths: CosignerSlotPaths(metadata.Cosigner),
 	})
 	return metadata
@@ -430,8 +430,8 @@ func TestMetadataValidateCosignedRekeyLists(t *testing.T) {
 // A plain host states no host rule: no fee ceiling, no spend effects, Layer 3
 // none. Its overlays are optional.
 func TestMetadataValidatePlainHost(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x6b}, CosignerPublicKeySizeV1)
-	componentKeyID, err := witness.ID(CosignerComponentKeyTypeV1, publicKey)
+	publicKey := bytes.Repeat([]byte{0x6b}, DefaultCosignerPublicKeySize)
+	componentKeyID, err := witness.ID(DefaultCosignerComponentKeyType, publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,13 +442,13 @@ func TestMetadataValidatePlainHost(t *testing.T) {
 			Rekey:                  RekeyRefused,
 			Layer3Policy:           Layer3PolicyNone,
 			Cosigner: &CosignerAuthorization{
-				Contract: CosignerContractV1, ComponentKeyType: CosignerComponentKeyTypeV1,
+				Contract: CosignerContractV1, ComponentKeyType: DefaultCosignerComponentKeyType,
 				PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: componentKeyID,
-				SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: []string{PathSpend},
+				SignatureMaxSize: DefaultCosignerSignatureMaxSize, RequiredOn: []string{PathSpend},
 			},
 			ArgumentLayout: []ArgumentSlot{
 				{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, ListedRekey: ArgRequired}},
-				{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
+				{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: DefaultCosignerSignatureMaxSize, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
 			},
 		}
 	}

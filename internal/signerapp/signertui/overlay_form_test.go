@@ -38,11 +38,11 @@ func overlayInventory(t *testing.T) []protocol.KeyTypeInfo {
 			t.Fatalf("%s is not registered", keyType)
 		}
 		info := protocol.KeyTypeInfo{
-			KeyType:                  keyType,
-			DisplayName:              provider.DisplayName(),
-			CosignerComponentKeyType: witness.Falcon1024V1,
-			PerKeyContract:           true,
-			BoundarySchema:           boundary.SchemaV1,
+			KeyType:                   keyType,
+			DisplayName:               provider.DisplayName(),
+			CosignerComponentKeyTypes: []string{witness.Falcon1024V1},
+			PerKeyContract:            true,
+			BoundarySchema:            boundary.SchemaV1,
 		}
 		for _, def := range provider.CreationParams() {
 			info.CreationParams = append(info.CreationParams, protocol.TemplateParamInfo{

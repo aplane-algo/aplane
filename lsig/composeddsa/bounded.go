@@ -301,20 +301,47 @@ func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {
 }
 
 // BoundedCosignerParameterDef returns the definition of the cosigner key the
-// composer injects, for a provider that presents it itself.
-func BoundedCosignerParameterDef() lsigprovider.ParameterDef {
-	return boundedCosignerPublicKeyParameterDef()
+// composer injects for a cosigner of componentKeyType, for a provider that
+// presents it itself.
+func BoundedCosignerParameterDef(componentKeyType string) lsigprovider.ParameterDef {
+	return boundedCosignerPublicKeyParameterDef(componentKeyType)
 }
 
-func boundedCosignerPublicKeyParameterDef() lsigprovider.ParameterDef {
-	return lsigprovider.ParameterDef{
+// boundedCosignerPublicKeyParameterDef is the cosigner key's definition for a
+// cosigner of componentKeyType. The default type's is the definition every
+// existing account's composer has, so it must not change: its length is part
+// of the composed fingerprint.
+func boundedCosignerPublicKeyParameterDef(componentKeyType string) lsigprovider.ParameterDef {
+	def := lsigprovider.ParameterDef{
 		Name:        BoundedCosignerPublicKeyParameter,
 		Label:       "Cosigner Public Key",
 		Description: "Falcon-1024 public key for bounded spend authorization",
 		Type:        "bytes",
 		Required:    true,
-		MaxLength:   boundedmeta.CosignerPublicKeySizeV1 * 2,
+		MaxLength:   boundedmeta.DefaultCosignerPublicKeySize * 2,
 	}
+	if componentKeyType == boundedmeta.DefaultCosignerComponentKeyType {
+		return def
+	}
+	if publicKeySize, _, ok := boundedmeta.CosignerSizes(componentKeyType); ok {
+		def.MaxLength = publicKeySize * 2
+	}
+	if name, ok := witness.AlgorithmName(componentKeyType); ok {
+		def.Description = name + " public key for bounded spend authorization"
+	}
+	return def
+}
+
+// cosignerPublicKeySize is the size of this composer's cosigner public key.
+func (c *ComposedDSA) cosignerPublicKeySize() (int, error) {
+	if c.bounded == nil || c.bounded.Cosigner == nil {
+		return 0, fmt.Errorf("composer declares no bounded cosigner")
+	}
+	publicKeySize, _, ok := boundedmeta.CosignerSizes(c.bounded.Cosigner.ComponentKeyType)
+	if !ok {
+		return 0, fmt.Errorf("unsupported bounded cosigner component key type %q", c.bounded.Cosigner.ComponentKeyType)
+	}
+	return publicKeySize, nil
 }
 
 func hasParameter(params []lsigprovider.ParameterDef, name string) bool {
@@ -366,7 +393,11 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 	}
 	profile := c.bounded
 	if profile.Cosigner != nil {
-		cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, boundedmeta.CosignerPublicKeySizeV1)
+		publicKeySize, err := c.cosignerPublicKeySize()
+		if err != nil {
+			return nil, err
+		}
+		cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, publicKeySize)
 		if err != nil {
 			return nil, err
 		}
@@ -426,12 +457,13 @@ func (c *ComposedDSA) refuseSharedSpendingKey(role string, spendingPublicKey []b
 }
 
 func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
-	cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, boundedmeta.CosignerPublicKeySizeV1)
+	publicKeySize, err := c.cosignerPublicKeySize()
 	if err != nil {
 		return nil, err
 	}
-	if c.bounded == nil || c.bounded.Cosigner == nil {
-		return nil, fmt.Errorf("composer declares no bounded cosigner")
+	cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, publicKeySize)
+	if err != nil {
+		return nil, err
 	}
 	if err := c.refuseSharedSpendingKey("cosigner", spendingPublicKey, c.bounded.Cosigner.ComponentKeyType, cosignerPublicKey); err != nil {
 		return nil, err
@@ -588,7 +620,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			if param.Name != BoundedCosignerPublicKeyParameter || profile.Cosigner == nil {
 				return fmt.Errorf("parameter name %q uses reserved cosigner namespace", param.Name)
 			}
-			want := boundedCosignerPublicKeyParameterDef()
+			want := boundedCosignerPublicKeyParameterDef(profile.Cosigner.ComponentKeyType)
 			if param.Type != want.Type || !param.Required || param.MaxLength != want.MaxLength {
 				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
 			}

@@ -77,8 +77,8 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 		{plainEd25519LsigKeyType, "aplane.ed25519", ed25519v1.NewOps(), ed25519.PublicKeySize},
 	}
 	cosigner := &boundedmeta.CosignerAuthorization{
-		Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-		SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+		SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 	}
 	profiles := []struct {
 		name      string
@@ -119,7 +119,7 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 				// A profile takes only the keys its authorities declare.
 				params := map[string]string{}
 				if profile.cosigner != nil {
-					params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x44}, boundedmeta.CosignerPublicKeySizeV1))
+					params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x44}, boundedmeta.DefaultCosignerPublicKeySize))
 				}
 				spendingKey := bytes.Repeat([]byte{0x22}, base.publicKeySize)
 				_, err := composer.GenerateTEAL(spendingKey, params)

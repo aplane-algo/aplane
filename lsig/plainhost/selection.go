@@ -4,6 +4,7 @@
 package plainhost
 
 import (
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -100,7 +102,8 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 }
 
 // overlays is a request's overlay choices, resolved the same way for a bounds
-// request and an overlays-only one.
+// request and an overlays-only one. The arrangement's Cosigner is the
+// cosigner's key type, and cosigner its public key.
 type overlays struct {
 	arrangement Arrangement
 	cosigner    string
@@ -111,11 +114,15 @@ type overlays struct {
 // Plus cosigned needs a cosigner: without one the spending key would rekey
 // anywhere, so the list would add nothing, and that is spending_key.
 func resolveOverlays(params, normalized map[string]string) (overlays, error) {
+	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
+	cosignerType, err := resolveCosignerType(cosigner, normalized[boundedmeta.CosignerKeyTypeParameter])
+	if err != nil {
+		return overlays{}, err
+	}
 	rekey := normalized[ParameterRekeyAuthority]
 	if !slices.Contains(RekeyAuthorities, rekey) {
 		return overlays{}, fmt.Errorf("%s must be %s", ParameterRekeyAuthority, strings.Join(RekeyAuthorities, ", "))
 	}
-	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
 	if rekey == RekeyPlusCosigned && cosigner == "" {
 		return overlays{}, fmt.Errorf("%s=%s needs a cosigner; without one it is %s=%s",
 			ParameterRekeyAuthority, RekeyPlusCosigned, ParameterRekeyAuthority, RekeySpendingKey)
@@ -124,7 +131,40 @@ func resolveOverlays(params, normalized map[string]string) (overlays, error) {
 	if err != nil {
 		return overlays{}, err
 	}
-	return overlays{arrangement: Arrangement{Rekey: rekey, Cosigner: cosigner != ""}, cosigner: cosigner, rekeyTo: rekeyTo}, nil
+	return overlays{arrangement: Arrangement{Rekey: rekey, Cosigner: cosignerType}, cosigner: cosigner, rekeyTo: rekeyTo}, nil
+}
+
+// resolveCosignerType is the key type of a request's cosigner, empty for none.
+// The type defaults when the request names none, and must be one a plain host
+// takes; it means nothing without a cosigner, and the key must be its size.
+func resolveCosignerType(cosigner, cosignerType string) (string, error) {
+	if cosigner == "" {
+		if cosignerType != "" {
+			return "", fmt.Errorf("%s needs a cosigner", boundedmeta.CosignerKeyTypeParameter)
+		}
+		return "", nil
+	}
+	if cosignerType == "" {
+		cosignerType = boundedmeta.DefaultCosignerComponentKeyType
+	}
+	if !slices.Contains(CosignerKeyTypes, cosignerType) {
+		return "", fmt.Errorf("%s must be %s", boundedmeta.CosignerKeyTypeParameter, strings.Join(CosignerKeyTypes, " or "))
+	}
+	publicKeySize, _, _ := boundedmeta.CosignerSizes(cosignerType)
+	publicKey, err := hex.DecodeString(strings.TrimPrefix(cosigner, "0x"))
+	if err != nil {
+		return "", fmt.Errorf("invalid %s hex: %w", composeddsa.BoundedCosignerPublicKeyParameter, err)
+	}
+	if len(publicKey) != publicKeySize {
+		err := fmt.Errorf("%s is %d bytes; a %s key is %d", composeddsa.BoundedCosignerPublicKeyParameter, len(publicKey), cosignerType, publicKeySize)
+		for _, other := range CosignerKeyTypes {
+			if size, _, _ := boundedmeta.CosignerSizes(other); size == len(publicKey) && other != cosignerType {
+				err = fmt.Errorf("%w: for a %s key, set %s=%s", err, other, boundedmeta.CosignerKeyTypeParameter, other)
+			}
+		}
+		return "", err
+	}
+	return cosignerType, nil
 }
 
 // addTo writes the overlays' canonical values.
@@ -132,6 +172,11 @@ func (o overlays) addTo(values map[string]string) {
 	values[ParameterRekeyAuthority] = o.arrangement.Rekey
 	if o.cosigner != "" {
 		values[composeddsa.BoundedCosignerPublicKeyParameter] = o.cosigner
+	}
+	// Recorded only when it is not the default, so a default-cosigned
+	// account keeps the parameters it has always had.
+	if o.arrangement.Cosigner != "" && o.arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
+		values[boundedmeta.CosignerKeyTypeParameter] = o.arrangement.Cosigner
 	}
 	if o.rekeyTo != "" {
 		values[ParameterRekeyTo] = o.rekeyTo

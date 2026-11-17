@@ -348,7 +348,7 @@ type cosignerState struct {
 	// reuseAliases names the references that already hold the previewed key
 	// when account creation chose a setup file whose key is already imported.
 	reuseAliases     []string
-	requiredKeyType  string
+	requiredKeyTypes []string
 	pendingKeyType   string
 	pendingWitnessID string
 

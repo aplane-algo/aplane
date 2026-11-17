@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
@@ -103,8 +104,11 @@ func shapeRequest(shape plainhost.Shape, recipients string) map[string]string {
 	if shape.AnyRecipient {
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
-	if shape.Cosigner {
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosigner
+	if shape.Cosigner != "" {
+		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerFor(shape.Cosigner)
+		if shape.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
+			params[boundedmeta.CosignerKeyTypeParameter] = shape.Cosigner
+		}
 	}
 	return params
 }
@@ -154,17 +158,19 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		composeddsa.Layer3PolicyFixedAllowlist: plainhost.EncodingInline, composeddsa.Layer3PolicyMerkleAllowlist: plainhost.EncodingMerkle,
 	}
 	arrangements := []plainhost.Arrangement{
-		{Rekey: plainhost.RekeyRefused}, {Rekey: plainhost.RekeyRefused, Cosigner: true},
-		{Rekey: plainhost.RekeySpendingKey}, {Rekey: plainhost.RekeySpendingKey, Cosigner: true},
-		{Rekey: plainhost.RekeyOnlyThese}, {Rekey: plainhost.RekeyOnlyThese, Cosigner: true},
-		{Rekey: plainhost.RekeyPlusCosigned, Cosigner: true},
+		{Rekey: plainhost.RekeyRefused}, {Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner},
+		{Rekey: plainhost.RekeySpendingKey}, {Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner},
+		{Rekey: plainhost.RekeyOnlyThese}, {Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner},
+		{Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
+		{Rekey: plainhost.RekeyRefused, Cosigner: witness.Ed25519V1}, {Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Ed25519V1},
+		{Rekey: plainhost.RekeyOnlyThese, Cosigner: witness.Ed25519V1}, {Rekey: plainhost.RekeyPlusCosigned, Cosigner: witness.Ed25519V1},
 	}
 	if !slices.Equal(plainhost.Arrangements(), arrangements) {
 		t.Fatalf("Arrangements() = %v, want %v", plainhost.Arrangements(), arrangements)
 	}
 	subsets := []string{"pay", "axfer", "pay,axfer", "asset_opt_in", "pay,asset_opt_in", "axfer,asset_opt_in", "pay,axfer,asset_opt_in"}
 	shapes := plainhost.Shapes()
-	if want := len(policies) * len(arrangements) * len(subsets); len(shapes) != want || want != 147 {
+	if want := len(policies) * len(arrangements) * len(subsets); len(shapes) != want || want != 231 {
 		t.Fatalf("Shapes() = %d, want %d", len(shapes), want)
 	}
 	perPolicy := len(arrangements) * len(subsets)
@@ -202,7 +208,7 @@ func TestShapeDescriptorFormat(t *testing.T) {
 	}{
 		{plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey},
 			"spend=pay,axfer,asset_opt_in;policy=fixed_allowlist;rekey=spending_key;cosigner=none"},
-		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: true},
+		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner},
 			"spend=pay;policy=merkle_allowlist;rekey=refused;cosigner=required"},
 		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused},
 			"spend=pay;policy=fixed_allowlist;rekey=refused;cosigner=none"},
@@ -210,7 +216,7 @@ func TestShapeDescriptorFormat(t *testing.T) {
 			"spend=pay;policy=none;rekey=spending_key;cosigner=none"},
 		{plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, Rekey: plainhost.RekeyOnlyThese, AnyRecipient: true},
 			"spend=axfer;policy=none;rekey=only_these;cosigner=none"},
-		{plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true, AnyRecipient: true},
+		{plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner, AnyRecipient: true},
 			"spend=pay;policy=none;rekey=plus_cosigned;cosigner=required"},
 	} {
 		if got := test.shape.Descriptor(); got != test.want {
@@ -252,7 +258,7 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if bounded.Rekey != wantRekeySetting(shape.Rekey) {
 						t.Fatalf("rekey setting %s", bounded.Rekey)
 					}
-					if (bounded.Cosigner != nil) != shape.Cosigner {
+					if (bounded.Cosigner != nil) != (shape.Cosigner != "") {
 						t.Fatalf("cosigner metadata = %v", bounded.Cosigner)
 					}
 					if (bounded.RekeyList != nil) != shape.HasRekeyList() {
@@ -291,9 +297,12 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if err != nil || stored != instance.Fingerprint {
 						t.Fatalf("stored fingerprint %s, %v; instance %s", stored, err, instance.Fingerprint)
 					}
-					if component, ok := b.provider.CosignerComponentKeyType(instance.Values); ok != shape.Cosigner ||
-						(ok && component != boundedmeta.CosignerComponentKeyTypeV1) {
-						t.Fatalf("cosigner component %q, %v", component, ok)
+					if components, ok := b.provider.CosignerComponentKeyTypes(instance.Values); ok != (shape.Cosigner != "") ||
+						(ok && !slices.Equal(components, plainhost.CosignerKeyTypes)) {
+						t.Fatalf("cosigner components %v, %v", components, ok)
+					}
+					if bounded.Cosigner != nil && bounded.Cosigner.ComponentKeyType != shape.Cosigner {
+						t.Fatalf("cosigner type %s, want %s", bounded.Cosigner.ComponentKeyType, shape.Cosigner)
 					}
 					prepared := withRoot(t, b.provider, instance.Values)
 					teal, err := b.provider.GenerateTEAL(b.spendingKey, prepared)
@@ -301,8 +310,12 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 						t.Fatal(err)
 					}
 					// The spending key is checked by the base's own signature check; the
-					// other base's appears only as a cosigner's, which is a Falcon witness.
-					if !strings.Contains(teal, spendingCheck(b)) || (strings.Contains(teal, other) && (!shape.Cosigner || other != verifyOp["falcon"])) {
+					// other base's appears only as a cosigner's of that algorithm.
+					cosignerOp := map[string]string{
+						boundedmeta.DefaultCosignerComponentKeyType: verifyOp["falcon"],
+						witness.Ed25519V1: verifyOp["ed25519"],
+					}[shape.Cosigner]
+					if !strings.Contains(teal, spendingCheck(b)) || (strings.Contains(teal, other) && other != cosignerOp) {
 						t.Fatalf("program does not verify on its base:\n%s", teal)
 					}
 					if !strings.Contains(teal, "txn Fee\npushint 10000\n<=\nassert\n") {
@@ -336,9 +349,9 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 			contained bool
 		}{
 			{"refused without a cosigner", plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}, true},
-			{"refused with a cosigner", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: true}, true},
+			{"refused with a cosigner", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner}, true},
 			{"limits only, refused", plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyRefused, AnyRecipient: true}, false},
-			{"allowlist, cosigned spending key", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey, Cosigner: true}, false},
+			{"allowlist, cosigned spending key", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner}, false},
 		} {
 			t.Run(b.name+"/"+test.name, func(t *testing.T) {
 				params := shapeRequest(test.shape, testRecipients(2))
@@ -351,7 +364,7 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 				}
 				bounded := instance.Bounded
 				if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy != test.shape.Policy() || bounded.Rekey != wantRekeySetting(test.shape.Rekey) ||
-					(bounded.Cosigner != nil) != test.shape.Cosigner || (bounded.RekeyList != nil) != test.shape.HasRekeyList() {
+					(bounded.Cosigner != nil) != (test.shape.Cosigner != "") || (bounded.RekeyList != nil) != test.shape.HasRekeyList() {
 					t.Fatalf("metadata = %+v", bounded)
 				}
 				if bounded.RefusesRekeys() != (test.shape.Rekey == plainhost.RekeyRefused || test.shape.Rekey == plainhost.RekeyOnlyThese) || bounded.Contained() != test.contained {
@@ -381,8 +394,8 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 func TestInvalidRequestsFailClosed(t *testing.T) {
 	spendingKey := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeySpendingKey}
 	onlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese}
-	cosignedOnlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
-	plusCosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true}
+	cosignedOnlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
+	plusCosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner}
 	refused := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyRefused}
 	zero := types.Address{}.String()
 	targets := func(count int) string {
@@ -497,7 +510,7 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 // out to leave it unset.
 func TestEmptyValuesAreRefused(t *testing.T) {
 	provider := falconHost(t)
-	cosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
+	cosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
 	for _, name := range []string{
 		plainhost.ParameterSpendEffects, plainhost.ParameterRecipients, plainhost.ParameterRecipientScope,
 		plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority, plainhost.ParameterMaxFee,
@@ -667,8 +680,12 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 		if _, ok := values[plainhost.ParameterRekeyTo]; ok != shape.HasRekeyList() {
 			t.Fatalf("%s: rekey_to reached the composer = %v", shape.Descriptor(), ok)
 		}
-		if _, ok := values[composeddsa.BoundedCosignerPublicKeyParameter]; ok != shape.Cosigner {
+		if _, ok := values[composeddsa.BoundedCosignerPublicKeyParameter]; ok != (shape.Cosigner != "") {
 			t.Fatalf("%s: the cosigner key reached the composer = %v", shape.Descriptor(), ok)
+		}
+		// The cosigner's type selects the composer; it isn't one of its parameters.
+		if _, ok := values[boundedmeta.CosignerKeyTypeParameter]; ok {
+			t.Fatalf("%s: %s reached the composer", shape.Descriptor(), boundedmeta.CosignerKeyTypeParameter)
 		}
 		if _, ok := values[plainhost.ParameterRecipients]; ok != (shape.Encoding != "") {
 			t.Fatalf("%s: recipients reached the composer = %v", shape.Descriptor(), ok)
@@ -681,13 +698,13 @@ func TestProviderHasNoRuntimeArguments(t *testing.T) {
 		if len(b.provider.RuntimeArgs()) != 0 {
 			t.Fatalf("%s: this grammar has no runtime arguments", b.name)
 		}
-		if _, ok := b.provider.CosignerComponentKeyType(map[string]string{}); ok {
+		if _, ok := b.provider.CosignerComponentKeyTypes(map[string]string{}); ok {
 			t.Fatalf("%s: discovery added a cosigner to a request that named none", b.name)
 		}
 		// A bounds request names a cosigner the same way an overlays one does.
 		request := map[string]string{plainhost.ParameterCosigner: "ops", plainhost.ParameterSpendEffects: "pay"}
-		if component, ok := b.provider.CosignerComponentKeyType(request); !ok || component != boundedmeta.CosignerComponentKeyTypeV1 {
-			t.Fatalf("%s: named cosigner reports %q, %v", b.name, component, ok)
+		if components, ok := b.provider.CosignerComponentKeyTypes(request); !ok || !slices.Equal(components, plainhost.CosignerKeyTypes) {
+			t.Fatalf("%s: named cosigner reports %v, %v", b.name, components, ok)
 		}
 	}
 }
@@ -695,7 +712,7 @@ func TestProviderHasNoRuntimeArguments(t *testing.T) {
 func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 	hosts := bases(t)
 	provider := hosts[0].provider
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
 	digest := func(t *testing.T, mutate func(map[string]string)) string {
 		t.Helper()
 		params := shapeRequest(shape, testRecipients(3))
@@ -709,7 +726,7 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 	base := digest(t, func(map[string]string) {})
 	for name, mutate := range map[string]func(map[string]string){
 		"cosigner key": func(p map[string]string) {
-			p[composeddsa.BoundedCosignerPublicKeyParameter] = strings.Repeat("45", boundedmeta.CosignerPublicKeySizeV1)
+			p[composeddsa.BoundedCosignerPublicKeyParameter] = strings.Repeat("45", boundedmeta.DefaultCosignerPublicKeySize)
 		},
 		"recipients": func(p map[string]string) { p[plainhost.ParameterRecipients] = testRecipients(4) },
 		"spend":      func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "pay" },
@@ -879,7 +896,7 @@ func TestStoredFingerprintRefusesWhatTheGrammarCannotProduce(t *testing.T) {
 // as a known one.
 func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 	provider := falconHost(t)
-	cosignedLimits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, Cosigner: true, AnyRecipient: true}, "")
+	cosignedLimits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner, AnyRecipient: true}, "")
 	if cosignedLimits.Bounded.Rekey != boundedmeta.RekeyRefused || !cosignedLimits.Bounded.RefusesRekeys() || cosignedLimits.Bounded.RekeyList == nil {
 		t.Fatalf("a cosigned only_these limits-only account stored rekey %q, list %v", cosignedLimits.Bounded.Rekey, cosignedLimits.Bounded.RekeyList)
 	}
@@ -891,11 +908,11 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 		want   plainhost.Shape
 	}{
 		"plus cosigned": {func(m *boundedmeta.Metadata) { m.Rekey = boundedmeta.RekeySpendingKey },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true, AnyRecipient: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner, AnyRecipient: true}},
 		"cosigned spending key": {func(m *boundedmeta.Metadata) { m.Rekey, m.RekeyList = boundedmeta.RekeySpendingKey, nil },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Cosigner: true, AnyRecipient: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner, AnyRecipient: true}},
 		"refusing with no list": {func(m *boundedmeta.Metadata) { m.RekeyList = nil },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: true, AnyRecipient: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner, AnyRecipient: true}},
 	} {
 		stored := boundedmeta.Clone(cosignedLimits.Bounded)
 		test.mutate(stored)
@@ -1606,10 +1623,10 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 var feeCeilingShapes = []plainhost.Shape{
 	{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey},
 	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese},
-	{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: true},
-	{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true},
+	{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner},
+	{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
 	{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, AnyRecipient: true},
-	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn}, Rekey: plainhost.RekeySpendingKey, Cosigner: true, AnyRecipient: true},
+	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn}, Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner, AnyRecipient: true},
 }
 
 // feeCheck is the fee ceiling as a program states it.
@@ -1807,7 +1824,7 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 // A provider that first meets an account through its stored metadata, as a
 // restarted signer does, reports the fingerprint the generating provider gave.
 func TestStoredFingerprintBuildsACustomCeilingOnDemand(t *testing.T) {
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
 	generating, restarted := bases(t), bases(t)
 	for i, b := range generating {
 		params := shapeRequest(shape, testRecipients(2))
@@ -1918,7 +1935,7 @@ func TestCustomFeeCeilingsResolveConcurrently(t *testing.T) {
 	for _, b := range bases(t) {
 		shapes := []plainhost.Shape{
 			{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: plainhost.RekeyRefused, AnyRecipient: true},
-			{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true},
+			{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
 		}
 		requestFor := func(shape plainhost.Shape, ceiling int) map[string]string {
 			params := shapeRequest(shape, testRecipients(2))
@@ -2060,7 +2077,7 @@ func TestFeeCeilingWarning(t *testing.T) {
 // two transactions; an Ed25519 one needs a second only beside a cosigner's.
 func TestFeeCeilingWarningThreshold(t *testing.T) {
 	uncosigned := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, AnyRecipient: true}
-	cosigned := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: true, AnyRecipient: true}
+	cosigned := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner, AnyRecipient: true}
 	hosts := bases(t)
 	for _, test := range []struct {
 		base      base
@@ -2104,21 +2121,23 @@ func TestFeeCeilingWarningCountsAnInlineList(t *testing.T) {
 	hosts := bases(t)
 	for _, test := range []struct {
 		base                  base
-		cosigner              bool
+		cosigner              string
 		inlineOne, inlineFull uint64
 		merkle                uint64
 	}{
-		{hosts[0], false, 2_000, 2_076, 2_000},
-		{hosts[0], true, 3_063, 3_156, 4_000},
-		{hosts[1], false, 1_000, 1_000, 1_000},
-		{hosts[1], true, 2_000, 2_080, 2_000},
+		{hosts[0], "", 2_000, 2_076, 2_000},
+		{hosts[0], falconCosigner, 3_063, 3_156, 4_000},
+		{hosts[0], witness.Ed25519V1, 2_000, 2_080, 2_000},
+		{hosts[1], "", 1_000, 1_000, 1_000},
+		{hosts[1], falconCosigner, 2_000, 2_080, 2_000},
+		{hosts[1], witness.Ed25519V1, 1_000, 1_003, 1_000},
 	} {
 		// threshold is the lowest ceiling a request does not warn at. It checks
 		// the warning just below it names that cost for the spend.
 		threshold := func(encoding string, recipients int, want uint64) {
 			t.Helper()
 			shape := plainhost.Shape{Spend: everyTransfer, Encoding: encoding, Rekey: plainhost.RekeyRefused, Cosigner: test.cosigner}
-			name := fmt.Sprintf("%s cosigner=%v %s, %d recipients", test.base.name, test.cosigner, encoding, recipients)
+			name := fmt.Sprintf("%s cosigner=%q %s, %d recipients", test.base.name, test.cosigner, encoding, recipients)
 			params := shapeRequest(shape, testRecipients(recipients))
 			params[plainhost.ParameterMaxFee] = strconv.FormatUint(want, 10)
 			if warnings := creationWarnings(t, test.base.provider, params); len(warnings) != 0 {
@@ -2287,6 +2306,7 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 	type goldens struct {
 		firstShape, fullShape, boundaryDigest string
 		allowlists, spendingKeyShapes, limits string
+		edAllowlists, edLimits                string
 	}
 	want := map[string]goldens{
 		"falcon": {
@@ -2294,6 +2314,8 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			fullShape:         "1:b4efb8a343077eb838ca3646354fc98e02a6bc2cc6e455048afc484ed0b9b263",
 			boundaryDigest:    "fc7c7b20998e33024636c11e56653a24320c16028330fab2b2c6e7dc8e95ff38",
 			allowlists:        "c9f373cfd2e4c8ce88f7d54b43cd41f8499b9767ff8e6b27594fc597f0fab878",
+			edAllowlists:      "b5ce590549dedb1f8ed0d51b4f6d5f1c26def9166723e9fba3a21254ec04cd5f",
+			edLimits:          "9a6d8922766eeb589b59aedf2895f9e8a8cd522473a3605ee814d6502aea7de8",
 			spendingKeyShapes: "04b005aad4c708001aa709a4445d329d68c9cdf385b0c0ff101b2525afdf1fcb",
 			limits:            "ed48000cae1be962081a58fcc294d9c4fbf0847ced6b34d0e66e55403793cabb",
 		},
@@ -2302,14 +2324,13 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			fullShape:         "1:15c970558356419748a4e56f1f0e9b29fda4940320c2e63466901d20fc1d7d87",
 			boundaryDigest:    "42d94bb4bdaceec99f8a55c499448002a4aff488c4ab15dd39ae70e23d08e1cf",
 			allowlists:        "3ac0b4b28e9d132f37ccbd8157aa7fda8be40dd51d92a9d5419d64e751eae53f",
+			edAllowlists:      "9bf31577d66514565570d77129b7f9cb0fcf0c07bc0ca308aa856a080bf2025d",
+			edLimits:          "4de874862435914234dc570ec8b7b2ac97814988f741d380bfda9b86565ef00d",
 			spendingKeyShapes: "5096e3e3cbc549e54f153df445d884b6cbb156de09f00f1ecf8741fad176ac32",
 			limits:            "48e3e3c545e6c39d008a5dcffecb0160b76e1ee7ad66a16e59db4c0ab8899bfe",
 		},
 	}
 	shapes := plainhost.Shapes()
-	// The families' places in the grammar, which TestShapesEnumerateTheGrammar
-	// freezes: 98 allowlist shapes, then 49 limits-only.
-	const limitsStart = 98
 	for _, b := range bases(t) {
 		t.Run(b.name, func(t *testing.T) {
 			allowlists := sha256.New()
@@ -2318,10 +2339,20 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			spendingKey := sha256.New()
 			// Limits-only shapes, with fingerprints and digests.
 			limits := sha256.New()
-			for index, shape := range shapes {
+			// The Ed25519-cosigned shapes, apart: the hashes above cover the
+			// shapes without a cosigner or with the default one, in grammar
+			// order, exactly as they did before there were other types.
+			edAllowlists, edLimits := sha256.New(), sha256.New()
+			for _, shape := range shapes {
+				edCosigned := shape.Cosigner == witness.Ed25519V1
 				rendered := allowlists
-				if index >= limitsStart {
+				switch {
+				case shape.AnyRecipient && edCosigned:
+					rendered = edLimits
+				case shape.AnyRecipient:
 					rendered = limits
+				case edCosigned:
+					rendered = edAllowlists
 				}
 				params := shapeRequest(shape, testAddress(1)+","+testAddress(2))
 				// A list shape renders with the root key generation computes; its
@@ -2336,8 +2367,8 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 				pinned := spendingKey
 				switch {
 				case shape.AnyRecipient:
-					pinned = limits
-				case shape.Rekey != plainhost.RekeySpendingKey || shape.Cosigner:
+					pinned = rendered
+				case shape.Rekey != plainhost.RekeySpendingKey || shape.Cosigner != "":
 					continue
 				}
 				resolved, err := b.provider.ResolveInstance(params)
@@ -2348,7 +2379,7 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			full := resolveShape(t, b.provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyPlusCosigned, Cosigner: true},
+			full := resolveShape(t, b.provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
 				testAddress(1)+","+testAddress(2))
 			golden := want[b.name]
 			for _, check := range []struct{ name, got, want string }{
@@ -2358,6 +2389,8 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 				{"allowlist programs", hex.EncodeToString(allowlists.Sum(nil)), golden.allowlists},
 				{"spending-key shapes", hex.EncodeToString(spendingKey.Sum(nil)), golden.spendingKeyShapes},
 				{"limits-only shapes", hex.EncodeToString(limits.Sum(nil)), golden.limits},
+				{"Ed25519-cosigned allowlist programs", hex.EncodeToString(edAllowlists.Sum(nil)), golden.edAllowlists},
+				{"Ed25519-cosigned limits-only shapes", hex.EncodeToString(edLimits.Sum(nil)), golden.edLimits},
 			} {
 				if check.got != check.want {
 					t.Errorf("%s = %s, want %s", check.name, check.got, check.want)

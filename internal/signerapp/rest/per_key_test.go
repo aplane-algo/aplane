@@ -60,8 +60,8 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 	if !info.PerKeyContract || info.SigningFlow != "" || info.BoundedAuthorization != nil {
 		t.Fatalf("per-key type reports a fixed contract: %+v", info)
 	}
-	if info.CosignerComponentKeyType != witness.Falcon1024V1 {
-		t.Fatalf("cosigner component = %q", info.CosignerComponentKeyType)
+	if !slices.Equal(info.CosignerComponentKeyTypes, []string{witness.Falcon1024V1, witness.Ed25519V1}) {
+		t.Fatalf("cosigner components = %v", info.CosignerComponentKeyTypes)
 	}
 	for _, param := range info.CreationParams {
 		if param.Name == cosignerrefs.ParamCosignerName && (param.Required || param.Default != "" || len(param.Options) > 0) {
@@ -79,7 +79,7 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 // none, such as a plain host, takes its parameters directly and is checked apart.
 func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
-	cosignerKey := strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
+	cosignerKey := strings.Repeat("41", boundedmeta.DefaultCosignerPublicKeySize)
 	recipient := types.Address{1}.String()
 	field := map[string][2]string{
 		boundary.ParameterRecipients: {boundary.ParameterRecipients, recipient},

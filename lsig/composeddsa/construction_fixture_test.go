@@ -276,7 +276,7 @@ func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
-	falconKey := bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1)
+	falconKey := bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize)
 	for name, test := range map[string]struct {
 		extra     string
 		parameter string
@@ -356,7 +356,7 @@ func TestProductionRefusesFixtureIdentities(t *testing.T) {
 func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
-	params := map[string]string{composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))}
+	params := map[string]string{composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))}
 
 	// A fixture's template rules and generation policy come from the same support,
 	// so a composer without cosigner support is refused when it is built.

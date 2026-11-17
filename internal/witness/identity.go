@@ -75,6 +75,51 @@ func PrivateKeySize(keyType string) (int, bool) {
 	}
 }
 
+// AlgorithmName names a witness-key type's signature algorithm for display.
+func AlgorithmName(keyType string) (string, bool) {
+	switch keyType {
+	case Falcon1024V1:
+		return "Falcon-1024", true
+	case Ed25519V1:
+		return "Ed25519", true
+	default:
+		return "", false
+	}
+}
+
+// AccountAddress is the Algorand address a witness key's public key also is.
+// Only an Ed25519 key's is one: hasAddress is false for any other type, and an
+// Ed25519 key of the wrong length is an error.
+func AccountAddress(keyType string, publicKey []byte) (address [32]byte, hasAddress bool, err error) {
+	if keyType != Ed25519V1 {
+		return address, false, nil
+	}
+	if len(publicKey) != Ed25519PublicKeySize {
+		return address, true, fmt.Errorf("witness public key length %d invalid (expected %d bytes)", len(publicKey), Ed25519PublicKeySize)
+	}
+	copy(address[:], publicKey)
+	return address, true, nil
+}
+
+// PostQuantum reports whether a supported witness-key type's signatures are
+// meant to resist a quantum computer: Falcon-1024's are, Ed25519's are not.
+func PostQuantum(keyType string) bool {
+	return keyType == Falcon1024V1
+}
+
+// SignatureMaxSize returns the largest signature a supported witness-key type
+// makes: Falcon-1024's compressed maximum, or Ed25519's fixed size.
+func SignatureMaxSize(keyType string) (int, bool) {
+	switch keyType {
+	case Falcon1024V1:
+		return Falcon1024SignatureSize, true
+	case Ed25519V1:
+		return Ed25519SignatureSize, true
+	default:
+		return 0, false
+	}
+}
+
 // ID returns the canonical Witness Key ID for a supported key type and public
 // key.
 func ID(keyType string, publicKey []byte) (string, error) {

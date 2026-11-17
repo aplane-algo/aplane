@@ -466,7 +466,7 @@ teal: |
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	params := provider.CreationParams()
-	if len(params) != 1 || params[0].Name != BoundedCosignerPublicKeyParameter || params[0].MaxLength != boundedmeta.CosignerPublicKeySizeV1*2 {
+	if len(params) != 1 || params[0].Name != BoundedCosignerPublicKeyParameter || params[0].MaxLength != boundedmeta.DefaultCosignerPublicKeySize*2 {
 		t.Fatalf("CreationParams() = %#v, want injected cosigner public key", params)
 	}
 	metadata := provider.BoundedAuthorizationMetadata()
@@ -1210,9 +1210,9 @@ bounded:
 `, tt.cosigner, runtimeArgsYAMLForTest("    ", tt.runtimeArgs, tt.maxSize, true))), tt.want)
 			params := map[string]string{}
 			if tt.cosigner != "" {
-				params[BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1))
+				params[BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize))
 			}
-			_, err := provider.BuildBoundedAuthorizationMetadata(bytes.Repeat([]byte{0x31}, boundedmeta.CosignerPublicKeySizeV1), params, []byte{1, 2, 3})
+			_, err := provider.BuildBoundedAuthorizationMetadata(bytes.Repeat([]byte{0x31}, boundedmeta.DefaultCosignerPublicKeySize), params, []byte{1, 2, 3})
 			if tt.wantKeygen == "" {
 				if err != nil {
 					t.Fatalf("key metadata: %v", err)

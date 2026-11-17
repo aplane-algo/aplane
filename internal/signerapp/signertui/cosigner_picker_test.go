@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,7 +31,7 @@ func TestCompatibleCosignerChoicesGroupsAliasesAndFiltersKeyType(t *testing.T) {
 		{Name: "other", ComponentKey: testWitnessID2, KeyType: "witness.v2"},
 	}}}
 
-	choices := m.compatibleCosignerChoices("witness.v1")
+	choices := m.compatibleCosignerChoices([]string{"witness.v1"})
 	if len(choices) != 1 {
 		t.Fatalf("choices = %#v, want one grouped authority", choices)
 	}
@@ -39,6 +40,24 @@ func TestCompatibleCosignerChoicesGroupsAliasesAndFiltersKeyType(t *testing.T) {
 	}
 	if got := strings.Join(choices[0].Aliases, ","); got != "Alpha,z-backup" {
 		t.Fatalf("aliases = %q, want deterministic lexical order", got)
+	}
+}
+
+// An account type that takes more than one cosigner type offers a cosigner of
+// each, and none of any other.
+func TestCompatibleCosignerChoicesTakeEveryListedType(t *testing.T) {
+	m := Model{cosigner: cosignerState{references: []CosignerReferenceInfo{
+		{Name: "falcon", ComponentKey: testWitnessID1, KeyType: witness.Falcon1024V1},
+		{Name: "ed", ComponentKey: testWitnessID2, KeyType: witness.Ed25519V1},
+		{Name: "other", ComponentKey: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", KeyType: "witness.v2"},
+	}}}
+	choices := m.compatibleCosignerChoices([]string{witness.Falcon1024V1, witness.Ed25519V1})
+	var names []string
+	for _, choice := range choices {
+		names = append(names, choice.PrimaryAlias)
+	}
+	if !slices.Equal(names, []string{"ed", "falcon"}) {
+		t.Fatalf("choices = %v, want the Ed25519 and the Falcon-1024 cosigner", names)
 	}
 }
 
@@ -64,9 +83,9 @@ func TestCosignerParamHasNoSilentDefaultWithMultipleAuthorities(t *testing.T) {
 func TestEmptyCosignerSelectionUsesFriendlyValidationMessage(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "cosigned.v1",
-		DisplayName:              "Cosigned",
-		CosignerComponentKeyType: "witness.v1",
+		KeyType:                   "cosigned.v1",
+		DisplayName:               "Cosigned",
+		CosignerComponentKeyTypes: []string{"witness.v1"},
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner", Label: "Cosigner", Type: "select", Required: true,
 			Options: []string{testWitnessID1, testWitnessID2},
@@ -99,9 +118,9 @@ func TestEmptyCosignerSelectionUsesFriendlyValidationMessage(t *testing.T) {
 func TestGenerateCosignerParamOpensFriendlyPickerAndSubmitsWitnessID(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "cosigned.v1",
-		DisplayName:              "Cosigned",
-		CosignerComponentKeyType: "witness.v1",
+		KeyType:                   "cosigned.v1",
+		DisplayName:               "Cosigned",
+		CosignerComponentKeyTypes: []string{"witness.v1"},
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner", Type: "select", Required: true,
 			Options: []string{testWitnessID1, testWitnessID2}, Default: testWitnessID1,
@@ -145,9 +164,9 @@ func TestGenerateCosignerParamOpensFriendlyPickerAndSubmitsWitnessID(t *testing.
 func TestRawCosignerPublicKeyInputStartsEnrollmentWhenNoReferenceExists(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "cosigned.v1",
-		DisplayName:              "Cosigned",
-		CosignerComponentKeyType: "witness.v1",
+		KeyType:                   "cosigned.v1",
+		DisplayName:               "Cosigned",
+		CosignerComponentKeyTypes: []string{"witness.v1"},
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner_public_key", Type: "bytes", Required: true, MaxLength: 64,
 		}},
@@ -178,8 +197,8 @@ func TestRawCosignerPublicKeyInputStartsEnrollmentWhenNoReferenceExists(t *testi
 func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "cosigned.v1",
-		CosignerComponentKeyType: "witness.v1",
+		KeyType:                   "cosigned.v1",
+		CosignerComponentKeyTypes: []string{"witness.v1"},
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner_public_key", Type: "bytes", Required: true, MaxLength: 64,
 		}},
@@ -205,8 +224,8 @@ func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testi
 		t.Fatal("public envelope remained in transient state after import")
 	}
 	next, _ = m.Update(KeyTypesMsg{KeyTypes: []protocol.KeyTypeInfo{{
-		KeyType:                  "cosigned.v1",
-		CosignerComponentKeyType: "witness.v1",
+		KeyType:                   "cosigned.v1",
+		CosignerComponentKeyTypes: []string{"witness.v1"},
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner_public_key", Type: "bytes", Required: true, MaxLength: 64,
 		}},
@@ -217,8 +236,8 @@ func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testi
 	}
 
 	next, _ = m.Update(KeyTypesMsg{KeyTypes: []protocol.KeyTypeInfo{{
-		KeyType:                  "cosigned.v1",
-		CosignerComponentKeyType: "witness.v1",
+		KeyType:                   "cosigned.v1",
+		CosignerComponentKeyTypes: []string{"witness.v1"},
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner", Type: "select", Required: true,
 			Options: []string{testWitnessID1}, Default: testWitnessID1,
@@ -259,9 +278,9 @@ func TestPrepareCosignerImportReviewVerifiesEnvelopeAndShowsFullID(t *testing.T)
 		width:  48,
 		height: 30,
 		cosigner: cosignerState{
-			importPath:      path,
-			importName:      "lab",
-			requiredKeyType: witness.Falcon1024V1,
+			importPath:       path,
+			importName:       "lab",
+			requiredKeyTypes: []string{witness.Falcon1024V1},
 		},
 	}
 	m = m.prepareCosignerImportReview()
@@ -281,6 +300,44 @@ func TestPrepareCosignerImportReviewVerifiesEnvelopeAndShowsFullID(t *testing.T)
 
 // The key file is the public key and nothing else; one that carries an
 // endpoint block is not a key file and is refused before review.
+// Account creation imports a cosigner file of any type the account type
+// takes, and refuses one of another.
+func TestPrepareCosignerImportReviewChecksTheTypesTheAccountTakes(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x5e}, witness.Ed25519PublicKeySize)
+	keyID, err := witness.ID(witness.Ed25519V1, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := witness.NewPublicReference(witness.Ed25519V1, keyID, hex.EncodeToString(publicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "cosigner.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		takes    []string
+		accepted bool
+	}{
+		{[]string{witness.Falcon1024V1, witness.Ed25519V1}, true},
+		{[]string{witness.Falcon1024V1}, false},
+	} {
+		m := Model{width: 80, height: 30, cosigner: cosignerState{importPath: path, importName: "lab", requiredKeyTypes: tc.takes}}
+		m = m.prepareCosignerImportReview()
+		if accepted := m.viewState == ViewCosignerImportReview && m.cosigner.previewWitnessID == keyID; accepted != tc.accepted {
+			t.Fatalf("takes %v: accepted %t, want %t (error %q)", tc.takes, accepted, tc.accepted, m.cosigner.importError)
+		}
+		if !tc.accepted && !strings.Contains(m.cosigner.importError, "this account takes aplane.witness-falcon1024.v1") {
+			t.Fatalf("takes %v: error %q", tc.takes, m.cosigner.importError)
+		}
+	}
+}
+
 func TestPrepareCosignerImportReviewRejectsFileWithEndpoint(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
 	data, err := witness.MarshalPublicReference(reference)
@@ -355,9 +412,9 @@ func newCosignedGenerationModel(references ...CosignerReferenceInfo) Model {
 func setCosignedGenerationKeyType(t *testing.T) {
 	t.Helper()
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "cosigned.v1",
-		DisplayName:              "Cosigned",
-		CosignerComponentKeyType: witness.Falcon1024V1,
+		KeyType:                   "cosigned.v1",
+		DisplayName:               "Cosigned",
+		CosignerComponentKeyTypes: []string{witness.Falcon1024V1},
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "cosigner", Type: "select", Required: true},
 			{Name: "note", Type: "string"},
@@ -401,7 +458,7 @@ func TestCosignerPickerOffersSetupFileAndPasteAlongsideReferences(t *testing.T) 
 	file, _ = file.(Model).handleCosignerPickerKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	fileModel := file.(Model)
 	if fileModel.viewState != ViewCosignerImportForm || fileModel.cosigner.importPaste ||
-		fileModel.cosigner.paramName != "cosigner" || fileModel.cosigner.requiredKeyType != witness.Falcon1024V1 ||
+		fileModel.cosigner.paramName != "cosigner" || !slices.Equal(fileModel.cosigner.requiredKeyTypes, []string{witness.Falcon1024V1}) ||
 		fileModel.cosigner.returnView != ViewGenerateParams {
 		t.Fatalf("file import state = %#v, want the in-flow file form bound to the account's cosigner field", fileModel.cosigner)
 	}
@@ -525,10 +582,10 @@ func TestCosignerExportResultPointsAtSetupFlow(t *testing.T) {
 func TestPlainHostCosignerIsAnOptionalReference(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "aplane.falcon1024.v1",
-		DisplayName:              "Falcon-1024",
-		CosignerComponentKeyType: "witness.v1",
-		PerKeyContract:           true,
+		KeyType:                   "aplane.falcon1024.v1",
+		DisplayName:               "Falcon-1024",
+		CosignerComponentKeyTypes: []string{"witness.v1"},
+		PerKeyContract:            true,
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "rekey_authority", Label: "Rekey Authority", Type: "string", Options: []string{"refused", "spending_key", "only_these", "plus_cosigned"}},
 			{Name: "rekey_to", Label: "Rekey-To Addresses", Type: "address[]"},

@@ -84,7 +84,8 @@ type Shape struct {
 	// Encoding is empty when the shape has no recipient list.
 	Encoding string
 	Rekey    string
-	Cosigner bool
+	// Cosigner is the cosigner's key type, empty for none.
+	Cosigner string
 	// AnyRecipient is the limits-only shape: no recipient list, so the
 	// envelope's fee ceiling and transfer kinds are the whole rule. It is
 	// an explicit field, not an empty Encoding, so no zero value selects it.
@@ -129,9 +130,14 @@ func (s Shape) Descriptor() string {
 	for i, effect := range s.Spend {
 		spend[i] = string(effect)
 	}
+	// The default type's label predates other types and is frozen with it.
 	cosigner := "none"
-	if s.Cosigner {
+	switch s.Cosigner {
+	case "":
+	case boundedmeta.DefaultCosignerComponentKeyType:
 		cosigner = "required"
+	default:
+		cosigner = s.Cosigner
 	}
 	return fmt.Sprintf("spend=%s;policy=%s;rekey=%s;cosigner=%s",
 		strings.Join(spend, ","), s.Policy(), s.Rekey, cosigner)
@@ -189,12 +195,13 @@ func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSp
 		Layer3:       &generictemplate.TransactionLayer3Spec{Policy: shape.Policy()},
 		Rekey:        shape.Rekey,
 	}
-	if shape.Cosigner {
+	if shape.Cosigner != "" {
 		// The cosigner signs every spend, and every rekey the spending key
 		// declares; a listed rekey never asks it.
 		bounded.Cosigner = &generictemplate.BoundedCosignerSpec{
-			Contract:   boundedmeta.CosignerContractV1,
-			RequiredOn: boundedmeta.CosignerRequiredOn(shape.rekeySetting()),
+			Contract:         boundedmeta.CosignerContractV1,
+			RequiredOn:       boundedmeta.CosignerRequiredOn(shape.rekeySetting()),
+			ComponentKeyType: shape.Cosigner,
 		}
 	}
 	var parameters []generictemplate.ParameterSpec
@@ -256,7 +263,7 @@ func newShapeComposer(plain Plain, base Base, shape Shape, maxFee uint64) (*comp
 		return nil, err
 	}
 	metadata := composer.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Contract != boundedmeta.Contract || (metadata.Cosigner != nil) != shape.Cosigner {
+	if metadata == nil || metadata.Contract != boundedmeta.Contract || storedCosigner(metadata) != shape.Cosigner {
 		return nil, fmt.Errorf("the bounded program has no valid contract")
 	}
 	return composer, nil

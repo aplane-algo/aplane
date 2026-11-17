@@ -5,6 +5,7 @@ package keyadmin
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -142,8 +143,8 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 		params = s.resolveRotatingNetwork(params)
 	}
 	if provider := lsigprovider.Get(keyType); provider != nil {
-		if component, ok := lsigprovider.CosignerComponentKeyType(provider, params); ok {
-			resolved, err := cosignerrefs.ResolveCreationParamsForComponent(ir.KeyPaths(), keyType, component, params)
+		if components, ok := lsigprovider.CosignerComponentKeyTypes(provider, params); ok {
+			resolved, err := cosignerrefs.ResolveCreationParamsForComponents(ir.KeyPaths(), keyType, components, params)
 			if err != nil {
 				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
@@ -400,8 +401,38 @@ func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Er
 		if warning := cosignerHeldWarning(s.Runtime, creation.params[boundedmeta.CosignerPublicKeyParameter]); warning != "" {
 			warnings = append(warnings, warning)
 		}
+		if warning := cosignerListedWarning(bounded.Cosigner, creation.params[boundedmeta.CosignerPublicKeyParameter], creation.params[boundedmeta.RekeyListEntriesParameter]); warning != "" {
+			warnings = append(warnings, warning)
+		}
 	}
 	return warnings, nil
+}
+
+// cosignerListedWarning says when the rekey-to list names the cosigner's own
+// address, which only an Ed25519 cosigner key has. A listed rekey takes the
+// spending key alone, and the cosigner never sees it, so the account could be
+// handed to a key that signs only cosigner messages. That is the reviewer's
+// choice, not a refusal.
+//
+// The first sentence stands alone: a review with no room shows only it.
+func cosignerListedWarning(cosigner *boundedmeta.CosignerAuthorization, cosignerPublicKeyHex, entries string) string {
+	if cosigner == nil || strings.TrimSpace(entries) == "" {
+		return ""
+	}
+	publicKey, err := hex.DecodeString(cosignerPublicKeyHex)
+	if err != nil {
+		return ""
+	}
+	address, hasAddress, err := witness.AccountAddress(cosigner.ComponentKeyType, publicKey)
+	if err != nil || !hasAddress {
+		return ""
+	}
+	targets, err := rekeylist.ParseEntries(entries)
+	if err != nil || !slices.Contains(targets, types.Address(address)) {
+		return ""
+	}
+	return "The rekey-to list names the cosigner's own address. " +
+		"A rekey there would make the cosigner's key the account's authority, and a cosigner signs only cosigner messages, so the account could not spend again."
 }
 
 // cosignerHeldWarning says when an account's cosigner key is also a key this

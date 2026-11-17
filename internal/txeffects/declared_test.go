@@ -59,9 +59,7 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 		if shape.HasRekeyList() {
 			params[plainhost.ParameterRekeyTo] = types.Address{3}.String()
 		}
-		if shape.Cosigner {
-			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
-		}
+		addTestCosigner(params, shape.Cosigner)
 		instance, err := provider.ResolveInstance(params)
 		if err != nil {
 			t.Fatalf("%s: %v", shape.Descriptor(), err)
@@ -88,9 +86,7 @@ func plainDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 	declarations := make(map[string]boundedmeta.PathDeclaration)
 	for _, arrangement := range plainhost.Arrangements() {
 		params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
-		if arrangement.Cosigner {
-			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
-		}
+		addTestCosigner(params, arrangement.Cosigner)
 		if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
 			params[plainhost.ParameterRekeyTo] = types.Address{3}.String()
 		}
@@ -260,7 +256,7 @@ func TestClassifyForRefusesAnInvalidDeclaration(t *testing.T) {
 // A plain host's spend may carry a close or clawback, but a rekey still passes
 // only as a pure rekey.
 func TestClassifyForPlainHost(t *testing.T) {
-	declaration := plainDeclarations(t)["plain plus_cosigned cosigner=true"]
+	declaration := plainDeclarations(t)["plain plus_cosigned cosigner="+boundedmeta.DefaultCosignerComponentKeyType]
 	var sender, other types.Address
 	sender[0], other[0] = 1, 2
 	closing := types.Transaction{Type: types.PaymentTx}
@@ -310,5 +306,18 @@ func TestClassifyForChecksTheFeeCeilingFirst(t *testing.T) {
 	declaration.MaxFee = nil
 	if decision, err := txeffects.ClassifyFor(txn, declaration); err != nil || decision.Path != txeffects.PathSpend {
 		t.Fatalf("no ceiling: decision = %+v, %v", decision, err)
+	}
+}
+
+// addTestCosigner adds a cosigner of componentKeyType, of its size, and its
+// type when it is not the default.
+func addTestCosigner(params map[string]string, componentKeyType string) {
+	if componentKeyType == "" {
+		return
+	}
+	size, _, _ := boundedmeta.CosignerSizes(componentKeyType)
+	params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", size)
+	if componentKeyType != boundedmeta.DefaultCosignerComponentKeyType {
+		params[boundedmeta.CosignerKeyTypeParameter] = componentKeyType
 	}
 }

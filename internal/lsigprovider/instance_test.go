@@ -5,6 +5,7 @@ package lsigprovider_test
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,11 +38,11 @@ type perKeyProvider struct {
 	nothing bool
 }
 
-func (p perKeyProvider) CosignerComponentKeyType(params map[string]string) (string, bool) {
+func (p perKeyProvider) CosignerComponentKeyTypes(params map[string]string) ([]string, bool) {
 	if params["cosigner"] == "" {
-		return "", false
+		return nil, false
 	}
-	return "test.component.v1", true
+	return []string{"test.component.v1", "test.component.v2"}, true
 }
 
 func (p perKeyProvider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
@@ -81,9 +82,9 @@ func TestFixedProviderInstanceMatchesItsDefinition(t *testing.T) {
 		metadata:                metadata,
 	}
 
-	component, ok := lsigprovider.CosignerComponentKeyType(provider, nil)
-	if !ok || component != "test.component.v1" {
-		t.Fatalf("CosignerComponentKeyType() = (%q, %v)", component, ok)
+	components, ok := lsigprovider.CosignerComponentKeyTypes(provider, nil)
+	if !ok || !slices.Equal(components, []string{"test.component.v1"}) {
+		t.Fatalf("CosignerComponentKeyTypes() = (%v, %v)", components, ok)
 	}
 	instance, err := lsigprovider.ResolveInstance(provider, map[string]string{"recipients": "B, A"})
 	if err != nil {
@@ -99,8 +100,8 @@ func TestFixedProviderInstanceMatchesItsDefinition(t *testing.T) {
 
 func TestFixedProviderWithoutBoundedContract(t *testing.T) {
 	provider := fingerprintTestProvider{keyType: "instance-plain-v1", fingerprint: instanceFingerprintA}
-	if component, ok := lsigprovider.CosignerComponentKeyType(provider, nil); ok {
-		t.Fatalf("CosignerComponentKeyType() = %q, want none", component)
+	if components, ok := lsigprovider.CosignerComponentKeyTypes(provider, nil); ok {
+		t.Fatalf("CosignerComponentKeyTypes() = %v, want none", components)
 	}
 	instance, err := lsigprovider.ResolveInstance(provider, nil)
 	if err != nil {
@@ -116,11 +117,12 @@ func TestPerKeyProviderSelectsItsInstance(t *testing.T) {
 		fingerprintTestProvider: fingerprintTestProvider{keyType: "instance-per-key-v1", fingerprint: instanceFingerprintC},
 		shapes:                  map[string]string{"list": instanceFingerprintA},
 	}
-	if component, ok := lsigprovider.CosignerComponentKeyType(provider, map[string]string{"cosigner": "ops"}); !ok || component == "" {
-		t.Fatalf("CosignerComponentKeyType(cosigner) = (%q, %v)", component, ok)
+	// A per-key provider reports every type its cosigner may have.
+	if components, ok := lsigprovider.CosignerComponentKeyTypes(provider, map[string]string{"cosigner": "ops"}); !ok || len(components) != 2 {
+		t.Fatalf("CosignerComponentKeyTypes(cosigner) = (%v, %v)", components, ok)
 	}
-	if component, ok := lsigprovider.CosignerComponentKeyType(provider, nil); ok {
-		t.Fatalf("CosignerComponentKeyType(none) = %q, want none", component)
+	if components, ok := lsigprovider.CosignerComponentKeyTypes(provider, nil); ok {
+		t.Fatalf("CosignerComponentKeyTypes(none) = %v, want none", components)
 	}
 	if _, err := lsigprovider.ResolveInstance(provider, map[string]string{"shape": "other"}); err == nil {
 		t.Fatal("ResolveInstance(unknown shape) succeeded")

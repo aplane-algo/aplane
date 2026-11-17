@@ -92,8 +92,8 @@ func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	metadata := &boundedmeta.Metadata{
@@ -102,7 +102,7 @@ func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 		Layer3Policy: boundedmeta.Layer3PolicyCustom, Cosigner: profile.Cosigner,
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
 			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	encoded, err := CanonicalBoundedProfile(profile, metadata)
@@ -120,14 +120,14 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	provider := newBoundedTestProvider(profile)
 	teal, err := provider.GenerateTEAL(
 		[]byte{0x01},
-		map[string]string{BoundedCosignerPublicKeyParameter: strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)},
+		map[string]string{BoundedCosignerPublicKeyParameter: strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)},
 	)
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
@@ -135,7 +135,7 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 	assertOrderedMarkers(t, teal,
 		boundedCosignerLabel+":",
 		"pushbytes 0x41504c414e455f434f5349474e45525f5631\npushbytes 0x02\nconcat\ntxn TxID\nconcat\nsha512_256",
-		"arg 1\npushbytes 0x"+strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)+"\nfalcon_verify\nassert",
+		"arg 1\npushbytes 0x"+strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)+"\nfalcon_verify\nassert",
 		"retsub",
 		boundedSpendLabel+":",
 		"callsub "+boundedCosignerLabel,
@@ -149,8 +149,8 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err == nil || !strings.Contains(err.Error(), boundedmeta.CosignerSignatureSlot) {
 		t.Fatalf("BuildArgs() error = %v, want required cosigner-slot rejection", err)
 	}
-	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.CosignerPublicKeySizeV1)
-	cosignerPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1)
+	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.DefaultCosignerPublicKeySize)
+	cosignerPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize)
 	metadata, err := provider.BuildBoundedAuthorizationMetadata(
 		spendingPublicKey,
 		map[string]string{BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
@@ -159,14 +159,14 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
 	}
-	wantID, err := witness.ID(boundedmeta.CosignerComponentKeyTypeV1, cosignerPublicKey)
+	wantID, err := witness.ID(boundedmeta.DefaultCosignerComponentKeyType, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if metadata.Cosigner == nil || metadata.Cosigner.ComponentKeyID != wantID || metadata.Cosigner.PublicKeyHex != hex.EncodeToString(cosignerPublicKey) {
 		t.Fatalf("Cosigner = %#v", metadata.Cosigner)
 	}
-	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 4+boundedmeta.CosignerSignatureMaxSizeV1; got != want {
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 4+boundedmeta.DefaultCosignerSignatureMaxSize; got != want {
 		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 	if _, err := provider.BuildBoundedAuthorizationMetadata(
@@ -267,13 +267,13 @@ func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
 // calls the same cosigner check the spend path does: the cosigner's key compiles
 // once.
 func TestBoundedCosignedRekeyCallsTheCosignerCheck(t *testing.T) {
-	cosignerKey := strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)
+	cosignerKey := strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)
 	profile := &BoundedAuthorizationProfile{
 		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeySpendingKey,
 		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	params := map[string]string{BoundedCosignerPublicKeyParameter: cosignerKey}

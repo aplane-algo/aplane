@@ -18,6 +18,7 @@ import (
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -25,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -97,6 +99,21 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 				}
 			},
 			activateOnSource: true,
+		},
+		{
+			// An Ed25519 cosigner records its type beside its key, and both
+			// survive the round trip. Signing needs a live cosigner, so the case
+			// stops at the restored inventory entry.
+			name: "plain host with an Ed25519 cosigner",
+			prepareSource: func(t *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
+				cosignerPublicKey, cosignerPrivateKey := newTestCosignerKey(t, witness.Ed25519V1)
+				apcrypto.ZeroBytes(cosignerPrivateKey)
+				return plainFalconKeyType, map[string]string{
+					keytypes.ParameterCosignerPublicKey:  hex.EncodeToString(cosignerPublicKey),
+					boundedmeta.CosignerKeyTypeParameter: witness.Ed25519V1,
+					"rekey_authority":                    "spending_key",
+				}
+			},
 		},
 		{
 			name: "user-loaded HTLC template",

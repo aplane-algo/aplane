@@ -108,7 +108,9 @@ public key is also a valid Algorand address, but the cosigner never signs a
 transaction with it: only its domain-tagged component message, and the fixed
 probe that checks the key pair when it loads. It also refuses to cosign a
 rekey to that address (`rekey_target_not_valid`), since an account rekeyed to
-it could never spend again.
+it could never spend again. A listed rekey never reaches the cosigner, so
+generation warns when an account's rekey-to list names its own Ed25519
+cosigner's address; it doesn't refuse.
 
 Their canonical private record is
 the selected generation's `keys/<WitnessKeyID>.cos`. The `.cos` container uses the
@@ -118,8 +120,16 @@ canonical `category: witness` payload.
 Current cosigner key types:
 
 - `aplane.witness-falcon1024.v1`
-- `aplane.witness-ed25519.v1`: a cosigner node generates and signs with one,
-  but no account type takes an Ed25519 cosigner yet.
+- `aplane.witness-ed25519.v1`
+
+A plain host account (`aplane.falcon1024.v1`, `aplane.ed25519.v1`), with or
+without bounds, takes a cosigner of either type; a composed template's cosigner
+is Falcon-1024. On a Falcon account an Ed25519 cosigner adds a second algorithm:
+a forger must defeat both. It is classical, so it adds nothing against a quantum
+computer, and the generation review says so. The cosigner's type decides how
+the program checks its signature (`falcon_verify` or `ed25519verify_bare`), the
+signature slot's size (1,423 or 64 bytes) and the key's (1,793 or 32 bytes);
+the message is the same for both.
 
 They are selected by a 52-character uppercase **Witness Key ID** derived from
 the length-prefixed domain, key type, and cosigner public key. Cosigner wire
@@ -544,10 +554,13 @@ or a cosigner-enabled template), callers may provide
 `cosigner=<witness-key-id>` instead of `cosigner_public_key=<hex>`.
 `cosigner=<name>` is also accepted as a compatibility input. The signer resolves the
 Witness Key ID or name to `public_key_hex`, verifies that the reference key type
-matches the definition's required cosigner key type,
-rejects requests that provide both forms, and persists the resolved
-`cosigner_public_key` plus the template's other creation parameters in the key
-file. A Corridor account, for example, persists its public recipient list and
+is one the definition takes (a plain host takes either; a template, Falcon-1024),
+rejects requests that provide both forms or a `cosigner_key_type` the reference
+contradicts, and persists the resolved `cosigner_public_key`, with
+`cosigner_key_type` when the type is not the default, plus the template's other
+creation parameters in the key file. The stored parameters and the bounded
+metadata must agree on the cosigner's type, an absent parameter meaning
+Falcon-1024. A Corridor account, for example, persists its public recipient list and
 complete bounded metadata; later signing reads those, not the shape definition.
 
 Product `/keytypes` metadata may expose imported references as a
@@ -558,7 +571,7 @@ optional, is not given the selector. This is UI metadata for generation clients 
 the durable key file still stores the resolved `cosigner_public_key`; other
 provider-specific creation parameters remain exposed normally.
 
-The `apadmin` TUI also receives the optional `cosigner_component_key_type` in
+The `apadmin` TUI also receives the optional `cosigner_component_key_types` in
 its internal admin key-type projection and joins it with
 `list_cosigner_references`. Cosigned generation displays aliases but submits the
 canonical Witness Key ID. A sole compatible authority may be preselected;
@@ -934,7 +947,7 @@ The dimensions are independent:
 | Base signing primitive | `aplane.falcon1024.v1`, the key type itself |
 | Authorization contract | `bounded2` |
 | Layer-3 policy | framework-owned `merkle_allowlist` |
-| Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend, never asked for a listed rekey |
+| Spend auxiliary authority | `cosigner1`, a Falcon-1024 or Ed25519 witness, required on spend, never asked for a listed rekey |
 | Rekey setting | `refused` plus a rekey-to list (*only these*) |
 | Advertised signing flow | `cosigned1` |
 

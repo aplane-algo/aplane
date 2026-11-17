@@ -181,13 +181,12 @@ func TestGenerateAccountFromReferencePreselectsCosigner(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{
 		{
-			KeyType:                  "ordinary.v1",
-			CosignerComponentKeyType: "",
+			KeyType: "ordinary.v1",
 		},
 		{
-			KeyType:                  "cosigned.v1",
-			DisplayName:              "Cosigned",
-			CosignerComponentKeyType: "witness.v1",
+			KeyType:                   "cosigned.v1",
+			DisplayName:               "Cosigned",
+			CosignerComponentKeyTypes: []string{"witness.v1"},
 			CreationParams: []protocol.TemplateParamInfo{
 				{Name: "cosigner", Label: "Cosigner", Type: "select", Required: true},
 				{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
@@ -227,15 +226,15 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{
 		{
-			KeyType:                  "cosigned-one.v1",
-			CosignerComponentKeyType: "witness.v1",
-			CreationParams:           []protocol.TemplateParamInfo{{Name: "cosigner", Type: "select"}},
+			KeyType:                   "cosigned-one.v1",
+			CosignerComponentKeyTypes: []string{"witness.v1"},
+			CreationParams:            []protocol.TemplateParamInfo{{Name: "cosigner", Type: "select"}},
 		},
-		{KeyType: "wrong.v1", CosignerComponentKeyType: "witness.v2"},
+		{KeyType: "wrong.v1", CosignerComponentKeyTypes: []string{"witness.v2"}},
 		{
-			KeyType:                  "cosigned-two.v1",
-			CosignerComponentKeyType: "witness.v1",
-			CreationParams:           []protocol.TemplateParamInfo{{Name: "cosigner", Type: "select"}},
+			KeyType:                   "cosigned-two.v1",
+			CosignerComponentKeyTypes: []string{"witness.v1"},
+			CreationParams:            []protocol.TemplateParamInfo{{Name: "cosigner", Type: "select"}},
 		},
 	})
 	m := Model{

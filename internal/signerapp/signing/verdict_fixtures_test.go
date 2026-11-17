@@ -409,6 +409,7 @@ func (c *verdictCase) runCosignerComponent(t *testing.T, group []types.Transacti
 		Console:                       rec,
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		PolicyFor:                     c.policyResolver(t, nodeRole),
+		Planner:                       cosignerTestPlanner,
 		HoldsCosignerKey:              holdsAllCosignerKeys,
 	}
 	signErr := svc.runCosignerGates(plan)

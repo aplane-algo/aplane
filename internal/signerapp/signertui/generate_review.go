@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/witness"
+
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -242,8 +244,18 @@ func (m Model) renderGenerateReview() string {
 	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, profile.CosignerRequired, recipientList(review.Parameters))
 	// An account on a classical base, such as Ed25519, has a classical spending
 	// key, with or without bounds; say so where it is chosen.
-	if postQuantum, known := reviewSpendingKeyPostQuantum(*review); known && !postQuantum {
+	// So is an Ed25519 cosigner: a second algorithm beside the spending key's,
+	// but no defense against a quantum computer.
+	postQuantum, known := reviewSpendingKeyPostQuantum(*review)
+	classicalKey := known && !postQuantum
+	classicalCosigner := profile.CosignerRequired && witness.IsKeyType(profile.CosignerKeyType) && !witness.PostQuantum(profile.CosignerKeyType)
+	switch {
+	case classicalKey && classicalCosigner:
+		note = strings.TrimSpace(note + " Both keys are classical.")
+	case classicalKey:
 		note = strings.TrimSpace(note + " The spending key is classical.")
+	case classicalCosigner:
+		note = strings.TrimSpace(note + " The cosigner is classical.")
 	}
 	sb.WriteString(row)
 	rekey, consequence := reviewRekey(*review)

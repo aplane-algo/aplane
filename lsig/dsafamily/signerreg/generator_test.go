@@ -355,8 +355,8 @@ func (d *perKeyGeneratorDSA) KeyType() string { return perKeyGeneratorKeyType }
 func (d *perKeyGeneratorDSA) CompatibilityFingerprint() string {
 	return "1:" + strings.Repeat("c", 64)
 }
-func (d *perKeyGeneratorDSA) CosignerComponentKeyType(map[string]string) (string, bool) {
-	return "", false
+func (d *perKeyGeneratorDSA) CosignerComponentKeyTypes(map[string]string) ([]string, bool) {
+	return nil, false
 }
 func (d *perKeyGeneratorDSA) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
 	return &lsigprovider.Instance{Values: params, Fingerprint: perKeyGeneratorFingerprint}, nil

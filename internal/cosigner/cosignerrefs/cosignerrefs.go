@@ -15,10 +15,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -224,10 +226,13 @@ func Delete(paths storepaths.Paths, name string) (bool, error) {
 	return true, nil
 }
 
-// ResolveCreationParamsForComponent resolves the signer-facing cosigner selector
-// for any provider that declares a cosigner component type. This keeps generic
+// ResolveCreationParamsForComponents resolves the signer-facing cosigner
+// selector for any provider that declares the cosigner component types it
+// takes. The reference must be one of them. Its public key replaces the
+// selector, and its type, when it is not the default, is recorded beside it; a
+// type the request already gives must agree. This keeps generic
 // bounded-cosigner templates out of hard-coded cosigned-account key-type tables.
-func ResolveCreationParamsForComponent(paths storepaths.Paths, keyType, componentKeyType string, params map[string]string) (map[string]string, error) {
+func ResolveCreationParamsForComponents(paths storepaths.Paths, keyType string, componentKeyTypes []string, params map[string]string) (map[string]string, error) {
 	selector, hasSelector := params[ParamCosignerName]
 	if !hasSelector || strings.TrimSpace(selector) == "" {
 		return params, nil
@@ -242,8 +247,12 @@ func ResolveCreationParamsForComponent(paths storepaths.Paths, keyType, componen
 	if !ok {
 		return nil, fmt.Errorf("cosigner reference or Witness Key ID %q not found", strings.TrimSpace(selector))
 	}
-	if rec.KeyType != componentKeyType {
-		return nil, fmt.Errorf("cosigner reference %q uses %s, but %s requires %s", rec.Name, rec.KeyType, keyType, componentKeyType)
+	if !slices.Contains(componentKeyTypes, rec.KeyType) {
+		return nil, fmt.Errorf("cosigner reference %q uses %s, but %s takes %s", rec.Name, rec.KeyType, keyType, strings.Join(componentKeyTypes, " or "))
+	}
+	// An empty value is the provider's to refuse, with its own message.
+	if given := strings.TrimSpace(params[boundedmeta.CosignerKeyTypeParameter]); given != "" && given != rec.KeyType {
+		return nil, fmt.Errorf("%s %s contradicts cosigner reference %q, which uses %s", boundedmeta.CosignerKeyTypeParameter, given, rec.Name, rec.KeyType)
 	}
 
 	resolved := make(map[string]string, len(params))
@@ -254,6 +263,9 @@ func ResolveCreationParamsForComponent(paths storepaths.Paths, keyType, componen
 		resolved[k] = v
 	}
 	resolved[keytypes.ParameterCosignerPublicKey] = rec.PublicKeyHex
+	if rec.KeyType != boundedmeta.DefaultCosignerComponentKeyType {
+		resolved[boundedmeta.CosignerKeyTypeParameter] = rec.KeyType
+	}
 	return resolved, nil
 }
 

@@ -34,6 +34,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
@@ -57,12 +58,17 @@ const (
 // RekeyAuthorities is every rekey setting a plain host takes, in order.
 var RekeyAuthorities = []string{RekeyRefused, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned}
 
+// CosignerKeyTypes is every cosigner key type a plain host account can take,
+// the default first.
+var CosignerKeyTypes = []string{boundedmeta.DefaultCosignerComponentKeyType, witness.Ed25519V1}
+
 // Arrangement is one overlay arrangement: a rekey setting, with or without a
-// cosigner. Plus cosigned always has one: without it the spending key alone
-// rekeys anywhere, which is spending_key.
+// cosigner, named by its key type (empty for none). Plus cosigned always has
+// one: without it the spending key alone rekeys anywhere, which is
+// spending_key.
 type Arrangement struct {
 	Rekey    string
-	Cosigner bool
+	Cosigner string
 }
 
 // HasRekeyList reports whether the arrangement takes a rekey-to list.
@@ -71,16 +77,46 @@ func (a Arrangement) HasRekeyList() bool {
 }
 
 // Arrangements is the plain host's grammar, in order: each rekey setting
-// without and then with a cosigner.
+// without and then with a default cosigner, then each rekey setting with each
+// other cosigner type. The default arrangements keep the order they had before
+// there were other types.
 func Arrangements() []Arrangement {
 	var arrangements []Arrangement
 	for _, rekey := range RekeyAuthorities {
 		if rekey != RekeyPlusCosigned {
 			arrangements = append(arrangements, Arrangement{Rekey: rekey})
 		}
-		arrangements = append(arrangements, Arrangement{Rekey: rekey, Cosigner: true})
+		arrangements = append(arrangements, Arrangement{Rekey: rekey, Cosigner: boundedmeta.DefaultCosignerComponentKeyType})
+	}
+	for _, cosigner := range CosignerKeyTypes[1:] {
+		for _, rekey := range RekeyAuthorities {
+			arrangements = append(arrangements, Arrangement{Rekey: rekey, Cosigner: cosigner})
+		}
 	}
 	return arrangements
+}
+
+// storedCosigner is a stored account's cosigner key type, empty for none.
+func storedCosigner(metadata *boundedmeta.Metadata) string {
+	if metadata.Cosigner == nil {
+		return ""
+	}
+	return metadata.Cosigner.ComponentKeyType
+}
+
+// cosignerAuthorization is the cosigner contract for a cosigner of
+// componentKeyType on a rekey setting.
+func cosignerAuthorization(componentKeyType string, setting boundedmeta.RekeySetting) (*boundedmeta.CosignerAuthorization, error) {
+	_, signatureMaxSize, ok := boundedmeta.CosignerSizes(componentKeyType)
+	if !ok {
+		return nil, fmt.Errorf("unsupported cosigner key type %q", componentKeyType)
+	}
+	return &boundedmeta.CosignerAuthorization{
+		Contract:         boundedmeta.CosignerContractV1,
+		ComponentKeyType: componentKeyType,
+		SignatureMaxSize: signatureMaxSize,
+		RequiredOn:       boundedmeta.CosignerRequiredOn(setting),
+	}, nil
 }
 
 // Plain is the plain provider a host wraps. Its methods answer for the plain
@@ -116,11 +152,10 @@ type program struct {
 // composers.
 type Provider struct {
 	Plain
-	base              Base
-	params            []lsigprovider.ParameterDef
-	byArrangement     map[Arrangement]*program
-	arrangements      []*program
-	cosignerComponent string
+	base          Base
+	params        []lsigprovider.ParameterDef
+	byArrangement map[Arrangement]*program
+	arrangements  []*program
 
 	// The bounded shapes, and the grammar fingerprint that covers them, are
 	// built once, on first use: there are hundreds, and a process that never
@@ -172,9 +207,6 @@ func Wrap(plain Plain, base Base) (*Provider, error) {
 		built := &program{descriptor: descriptor(selected), composer: composer, fingerprint: arrangementFingerprint(selected, composer)}
 		provider.byArrangement[selected] = built
 		provider.arrangements = append(provider.arrangements, built)
-		if selected.Cosigner {
-			provider.cosignerComponent = composer.BoundedAuthorizationMetadata().Cosigner.ComponentKeyType
-		}
 	}
 	return provider, nil
 }
@@ -224,13 +256,12 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 		Contract: composeddsa.PlainContract,
 		Rekey:    setting,
 	}
-	if selected.Cosigner {
-		profile.Cosigner = &boundedmeta.CosignerAuthorization{
-			Contract:         boundedmeta.CosignerContractV1,
-			ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1,
-			RequiredOn:       boundedmeta.CosignerRequiredOn(setting),
+	if selected.Cosigner != "" {
+		cosigner, err := cosignerAuthorization(selected.Cosigner, setting)
+		if err != nil {
+			return nil, err
 		}
+		profile.Cosigner = cosigner
 	}
 	if rekey == RekeyOnlyThese || rekey == RekeyPlusCosigned {
 		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
@@ -249,7 +280,7 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 		Layer3:        &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyNone},
 	})
 	metadata := composer.BoundedAuthorizationMetadata()
-	if metadata == nil || (metadata.Cosigner != nil) != selected.Cosigner {
+	if metadata == nil || storedCosigner(metadata) != selected.Cosigner {
 		return nil, fmt.Errorf("the overlay program has no valid contract")
 	}
 	return composer, nil
@@ -260,8 +291,9 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 // request with overlays or bounds must give a rekey authority, and one with
 // bounds the transfer kinds, which resolve checks.
 func creationParameters() []lsigprovider.ParameterDef {
-	cosigner := composeddsa.BoundedCosignerParameterDef()
+	cosigner := composeddsa.BoundedCosignerParameterDef(boundedmeta.DefaultCosignerComponentKeyType)
 	cosigner.Required = false
+	cosigner.Description = "The cosigner's public key, which the signer fills from a cosigner reference: a Falcon-1024 key, or an Ed25519 one with " + boundedmeta.CosignerKeyTypeParameter + "."
 	return []lsigprovider.ParameterDef{
 		{
 			Name:        ParameterSpendEffects,
@@ -305,6 +337,13 @@ func creationParameters() []lsigprovider.ParameterDef {
 			Type:        "string",
 		},
 		{
+			Name:        boundedmeta.CosignerKeyTypeParameter,
+			Label:       "Cosigner Key Type",
+			Description: "The cosigner's key type, which the signer fills from a cosigner reference. Absent means " + boundedmeta.DefaultCosignerComponentKeyType + ".",
+			Type:        "string",
+			Options:     slices.Clone(CosignerKeyTypes),
+		},
+		{
 			Name:        ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
 			Description: "How the account can be rekeyed: never (refused); by the spending key, with the cosigner too on a cosigned account (spending_key); by the spending key alone, only to an address on its rekey-to list (only_these); or by the spending key alone to a listed address and with the cosigner to any other (plus_cosigned).",
@@ -343,7 +382,7 @@ func present(params map[string]string) (map[string]string, error) {
 // value does.
 func hasContract(params map[string]string) bool {
 	for _, name := range []string{ParameterCosigner, ParameterRekeyAuthority, ParameterRekeyTo,
-		composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.RekeyListRootParameter} {
+		composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.CosignerKeyTypeParameter, boundedmeta.RekeyListRootParameter} {
 		if _, ok := params[name]; ok {
 			return true
 		}
@@ -526,16 +565,17 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	return selected.composer.ValidateCreationParams(composerValues(selected, values))
 }
 
-// CosignerComponentKeyType names the cosigner a request asks for, so a cosigner
-// reference is resolved before an instance is selected. A cosigner is optional,
-// so a request naming none returns false.
-func (p *Provider) CosignerComponentKeyType(params map[string]string) (string, bool) {
+// CosignerComponentKeyTypes names the cosigner key types a request may take, so
+// a cosigner reference is resolved before an instance is selected: the
+// reference picks one of them, and its type then selects the program. A
+// cosigner is optional, so a request naming none returns false.
+func (p *Provider) CosignerComponentKeyTypes(params map[string]string) ([]string, bool) {
 	_, hasName := params[ParameterCosigner]
 	_, hasKey := params[composeddsa.BoundedCosignerPublicKeyParameter]
 	if !hasName && !hasKey {
-		return "", false
+		return nil, false
 	}
-	return p.cosignerComponent, true
+	return slices.Clone(CosignerKeyTypes), true
 }
 
 // ResolveInstance selects the program for resolved parameters. No parameters
@@ -586,7 +626,7 @@ func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.
 	}
 	switch metadata.Contract {
 	case boundedmeta.PlainContract:
-		stored := Arrangement{Rekey: storedRekey(metadata), Cosigner: metadata.Cosigner != nil}
+		stored := Arrangement{Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}
 		selected, ok := p.byArrangement[stored]
 		if !ok {
 			return "", fmt.Errorf("unsupported plain host arrangement %s", descriptor(stored))
@@ -634,7 +674,7 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	if err := boundedmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
 		return Shape{}, fmt.Errorf("stored account: %w", err)
 	}
-	shape := Shape{Spend: spend, Rekey: storedRekey(metadata), Cosigner: metadata.Cosigner != nil}
+	shape := Shape{Spend: spend, Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
 		shape.Encoding = EncodingInline
@@ -856,7 +896,11 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 	}
 	programBytes := p.base.Ops.PublicKeySize()
 	if metadata.Cosigner != nil {
-		programBytes += boundedmeta.CosignerPublicKeySizeV1
+		publicKeySize, _, ok := boundedmeta.CosignerSizes(metadata.Cosigner.ComponentKeyType)
+		if !ok {
+			return nil, fmt.Errorf("unsupported cosigner key type %q", metadata.Cosigner.ComponentKeyType)
+		}
+		programBytes += publicKeySize
 	}
 	if values[ParameterListEncoding] == EncodingInline {
 		programBytes += addressBytes * (strings.Count(values[ParameterRecipients], ",") + 1)

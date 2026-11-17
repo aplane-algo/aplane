@@ -761,7 +761,7 @@ func (m Model) resumeCosignerImport() Model {
 	}
 	m.cosigner.pendingKeyType = ""
 	m.cosigner.pendingWitnessID = ""
-	m.cosigner.requiredKeyType = ""
+	m.cosigner.requiredKeyTypes = nil
 	return m
 }
 

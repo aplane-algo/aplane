@@ -173,10 +173,10 @@ from the presence of a witness key alone.
 | `ed25519` | Native | none | Ed25519, self-owned | none | empty flow; `/sign` |
 | `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; supported consensus v42 or v43; top-level `PQsig` |
 | `aplane.falcon1024.v1`, no parameters | DSA LogicSig | plain DSA program | Falcon-1024, self-owned | none | empty flow; `/sign` |
-| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, with a cosigner | DSA LogicSig | plain host `plain1`; any rekey setting | the type itself | signer-custodied Falcon cosigner on every spend and cosigned rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
+| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, with a cosigner | DSA LogicSig | plain host `plain1`; any rekey setting | the type itself | signer-custodied cosigner (Falcon-1024 or Ed25519) on every spend and cosigned rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.falcon1024.v1` or `aplane.ed25519.v1`, overlays without a cosigner | DSA LogicSig | plain host `plain1`; rekey refused, spending key or only these | the type itself | none | `bounded1`; `/sign` |
 | `aplane.falcon1024.v1` or `aplane.ed25519.v1`, Allowlist preset | DSA LogicSig | plain host `bounded2`; framework recipient allowlist; spending-key rekey | the type itself | none | `bounded1`; spend and rekey through `/sign` |
-| `aplane.falcon1024.v1`, Corridor preset | DSA LogicSig | plain host `bounded2`; framework Merkle recipient allowlist; rekey only to a listed address (*only these*) | the type itself | signer-custodied Falcon cosigner on spend, never on a listed rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
+| `aplane.falcon1024.v1`, Corridor preset | DSA LogicSig | plain host `bounded2`; framework Merkle recipient allowlist; rekey only to a listed address (*only these*) | the type itself | signer-custodied cosigner (Falcon-1024 or Ed25519) on spend, never on a listed rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`; the signer also chooses the stage's one-time leaf |
 | `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519 per-stage keys derived from one seed | none | `rotating1`; stateless hash signing, no leaf allocation |
 | `aplane.rotating-triple-wotsc.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, Ed25519 and a tree of 64 WOTS+C keys per stage, derived from one seed | none | `rotating1`, as XMSS; the signer chooses the stage's one-time leaf |
@@ -223,9 +223,12 @@ Library, then created like any other key type.
   `spending_key`, `only_these` or `plus_cosigned`, and optionally `cosigner=`
   and, for a list option, `rekey_to=`), it renders the `plain1` contract: the
   spending key and the overlays, no fee ceiling, no transaction-type list.
-  There are seven arrangements: each rekey setting with or without a cosigner,
-  except `plus_cosigned`, which needs one (without it the spending key alone
-  rekeys anywhere, which is `spending_key`).
+  There are eleven arrangements: each rekey setting without a cosigner or with
+  one of either cosigner key type, Falcon-1024 or Ed25519, except
+  `plus_cosigned`, which needs one (without it the spending key alone rekeys
+  anywhere, which is `spending_key`). The cosigner reference decides the type,
+  which the account records as `cosigner_key_type` when it is not the default,
+  Falcon-1024.
 - **With any bounds parameter** (`spend_effects`, `recipients`,
   `recipient_scope`, `list_encoding`, `max_fee`), it renders a `bounded2`
   shape: the bounds beside the same overlays, described in
@@ -578,7 +581,7 @@ Examples of the composed ontology:
 | `aplane.falcon1024.v1`, no parameters | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024.v1` or `aplane.ed25519.v1`, cosigned | DSA LogicSig | Plain host (`plain1`) | signer-custodied Falcon witness enrolled as cosigner |
 | `aplane.falcon1024.v1` or `aplane.ed25519.v1`, Allowlist preset | DSA LogicSig | Bounded DSA (`bounded2`) with framework allowlist policy; spending-key rekey | none |
-| `aplane.falcon1024.v1`, Corridor preset | DSA LogicSig | Bounded DSA (`bounded2`) with framework Merkle policy; rekey only to a listed address | signer-custodied Falcon cosigner on spend |
+| `aplane.falcon1024.v1`, Corridor preset | DSA LogicSig | Bounded DSA (`bounded2`) with framework Merkle policy; rekey only to a listed address | signer-custodied cosigner (Falcon-1024 or Ed25519) on spend |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519, all required), a new program per spend; one XMSS tree per 1,024 stages, 64 leaves per stage | none; the signer reads the chain for the live stage (`rotating1` flow) |
 | `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519, all required), a new program per spend | none; `rotating1`, no one-time leaf state |
@@ -590,7 +593,7 @@ Examples of the composed ontology:
 |----------|--------|----------|----------|-------------|
 | `ed25519` | n/a | `ed25519` | true | Native Algorand Ed25519 account; not a LogicSig |
 | `falcon1024` | n/a | `native_pq` | true | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | true | Default-enabled plain host on signer nodes: the plain Falcon program, one of 7 `plain1` arrangements (a rekey setting, an optional cosigner and an optional rekey-to list), or one of 147 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | true | Default-enabled plain host on signer nodes: the plain Falcon program, one of 11 `plain1` arrangements (a rekey setting, an optional cosigner of either type and an optional rekey-to list), or one of 231 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | true | Library-visible plain host on Ed25519 (classical), with the same grammar as `aplane.falcon1024.v1`; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | false | Optional template library: hash time-locked ALGO payment |
 | `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
@@ -1046,7 +1049,8 @@ internal derivation. No LogicSig provider declares user mnemonic import: it is
 native-only.
 
 A provider whose contract varies by key also implements `InstanceResolver`:
-`CosignerComponentKeyType` runs before references are resolved, `ResolveInstance` selects
+`CosignerComponentKeyTypes` runs before references are resolved and names the cosigner
+key types the request may take (the reference then picks one), `ResolveInstance` selects
 the contract for a set of resolved parameters, and `StoredFingerprint` identifies a
 stored account's definition from its stored values alone. The plain hosts
 implement it. Callers use the package functions of the same names, which adapt
@@ -1575,7 +1579,7 @@ authorization: generation repeats every check.
 | Step | Work | Owner |
 |---|---|---|
 | 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
-| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for a key type that takes a cosigner | `lsigprovider.CosignerComponentKeyType`, `cosignerrefs` |
+| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key`, with `cosigner_key_type` when its type is not the default, for a key type that takes a cosigner of the reference's type | `lsigprovider.CosignerComponentKeyTypes`, `cosignerrefs` |
 | 3 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values | `lsigprovider.ResolveInstance` |
 | 4 | Collect the provider's warnings | `lsigprovider.CreationAdvisor` |
 | 5 | Take the mutation lock and refuse a locked signer. Check the key type is enabled, then the signer's generation settings. Then check the request against the keys this signer holds: refuse a rekey-to list that names a rotating account held here, and add a warning for a cosigner key held here | `lockUnlockedMutation`, `keytypestate.CanGenerate`, `checkGenerationRequirements`, `checkAgainstHeldKeys` |
@@ -1693,8 +1697,8 @@ subsets are the seven non-empty subsets of `pay`, `axfer` and `asset_opt_in`. Th
 recipient rule is one of three policies: an inline allowlist, a Merkle allowlist, or
 limits-only (`layer3_policy: none`, selected by `recipient_scope=any`), which has no
 list, so the envelope's fee ceiling and transfer kinds are the whole
-spending rule. The arrangements are the seven `plain1` ones, chosen with
-`rekey_authority` and the optional cosigner: `refused` without or with a cosigner (no
+spending rule. The arrangements are the eleven `plain1` ones, chosen with
+`rekey_authority` and the optional cosigner, of either type: `refused` without or with a cosigner (no
 rekey path at all); `spending_key` without a cosigner (the spending key can rekey to any
 address) or with one (a cosigned rekey: the spending key and the cosigner, whose
 `rekey_policy` picks the targets); `only_these` without or with a cosigner (the spending
@@ -1703,8 +1707,8 @@ every other rekey is refused, and the cosigner is not asked); and `plus_cosigned
 needs a cosigner (a listed target takes the spending key alone, any other the spending
 key and the cosigner).
 
-The grammar is every combination the contracts allow: 3 policies x 7 arrangements x 7
-subsets, 147 `bounded2` shapes per base, beside the seven `plain1` arrangements. That
+The grammar is every combination the contracts allow: 3 policies x 11 arrangements x 7
+subsets, 231 `bounded2` shapes per base, beside the eleven `plain1` arrangements. That
 includes a refused rekey and a refused account whose transfer kinds cannot send what
 it holds. Which one suits an account is the user's choice; the review says what it
 means.
@@ -1716,7 +1720,7 @@ The fee ceiling is a value, not part of the shape:
   2^53 - 1, the largest value every client reads exactly as a JSON number. It is
   written in plain decimal: a sign or a leading zero is refused, by
   `boundary.ParseMaxFee`, which the boundary file parser and the provider share.
-- The 147 shapes, and the grammar fingerprint that covers them, are at the default
+- The 231 shapes, and the grammar fingerprint that covers them, are at the default
   ceiling.
 - Another ceiling is the same shape compiled with that value: the same shape
   descriptor, its own shape fingerprint and its own boundary digest. The provider

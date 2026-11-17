@@ -54,7 +54,7 @@ teal: |
 		t.Fatal(err)
 	}
 	spendingKey := bytes.Repeat([]byte{0x11}, falconfamily.PublicKeySize)
-	cosignerKey := bytes.Repeat([]byte{0x22}, boundedmeta.CosignerPublicKeySizeV1)
+	cosignerKey := bytes.Repeat([]byte{0x22}, boundedmeta.DefaultCosignerPublicKeySize)
 	params := map[string]string{
 		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
 	}

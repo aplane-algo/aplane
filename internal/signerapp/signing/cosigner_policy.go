@@ -48,10 +48,17 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	// a 58-character RekeyTo address, but an Ed25519 witness key's public key
 	// is an address, and the key records that it is not a valid rekey target:
 	// the valid-target invariant refuses a rekey to it, at any position, as a
-	// signer refuses one to its own keys.
+	// signer refuses one to its own keys. A set it can't build refuses the
+	// request rather than passing it.
 	var invalidTargets map[string]txnreview.InvalidRekeyTarget
-	if s.Planner != nil && s.Planner.Snapshot != nil && groupRekeys(group) {
-		invalidTargets = cosignerKeyAddresses(s.Planner.Snapshot())
+	if groupRekeys(group) {
+		if s.Planner == nil || s.Planner.Snapshot == nil {
+			return internal("planner not configured")
+		}
+		var addressErr error
+		if invalidTargets, addressErr = cosignerKeyAddresses(s.Planner.Snapshot()); addressErr != nil {
+			return internal(addressErr.Error())
+		}
 	}
 	if err := s.rejectSignerInvariants(group, targets, invalidTargets); err != nil {
 		s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
@@ -170,35 +177,31 @@ func componentPlanTxns(plan *ComponentSignPlan) []types.Transaction {
 	return txns
 }
 
-// groupRekeys reports whether any transaction in the group sets RekeyTo.
-func groupRekeys(group []types.Transaction) bool {
-	for _, txn := range group {
-		if !txn.RekeyTo.IsZero() {
-			return true
-		}
-	}
-	return false
-}
-
-// cosignerKeyAddresses is the address of each Ed25519 witness key this
-// cosigner holds, with its key type. Those keys sign only their component
-// message, so an account rekeyed to one could never be spent again.
-func cosignerKeyAddresses(snapshot PlannerRuntimeSnapshot) map[string]txnreview.InvalidRekeyTarget {
+// cosignerKeyAddresses is the address of each witness key this cosigner holds
+// whose public key is also one (an Ed25519 key's), with its key type. Those
+// keys sign only their component message, so an account rekeyed to one could
+// never be spent again. A key whose public key can't be read is an error.
+func cosignerKeyAddresses(snapshot PlannerRuntimeSnapshot) (map[string]txnreview.InvalidRekeyTarget, error) {
 	var addresses map[string]txnreview.InvalidRekeyTarget
 	for id, keyType := range snapshot.KeyTypes {
-		if keyType != witness.Ed25519V1 {
+		if !witness.IsKeyType(keyType) {
 			continue
 		}
 		publicKey, err := hex.DecodeString(snapshot.KeyMetadata[id].PublicKeyHex)
-		if err != nil || len(publicKey) != witness.Ed25519PublicKeySize {
+		if err != nil {
+			return nil, fmt.Errorf("cosigner key %s: unreadable public key: %w", id, err)
+		}
+		address, hasAddress, err := witness.AccountAddress(keyType, publicKey)
+		if err != nil {
+			return nil, fmt.Errorf("cosigner key %s: %w", id, err)
+		}
+		if !hasAddress {
 			continue
 		}
-		var address types.Address
-		copy(address[:], publicKey)
 		if addresses == nil {
 			addresses = make(map[string]txnreview.InvalidRekeyTarget)
 		}
-		addresses[address.String()] = txnreview.InvalidRekeyTarget{KeyType: keyType}
+		addresses[types.Address(address).String()] = txnreview.InvalidRekeyTarget{KeyType: keyType}
 	}
-	return addresses
+	return addresses, nil
 }

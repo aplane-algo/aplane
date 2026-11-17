@@ -308,7 +308,7 @@ func TestGenerationRequirementsGovernPlainHosts(t *testing.T) {
 // Key details name a cosigned account's cosigner by its Witness Key ID, never
 // the raw public key; an account without a cosigner keeps its parameters.
 func TestKeyDetailsNameTheCosignerByWitnessKeyID(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x61}, boundedmeta.CosignerPublicKeySizeV1)
+	publicKey := bytes.Repeat([]byte{0x61}, boundedmeta.DefaultCosignerPublicKeySize)
 	id, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatal(err)

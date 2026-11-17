@@ -4,6 +4,7 @@
 package integration_test
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -24,8 +25,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -48,8 +49,11 @@ func boundsRequest(shape plainhost.Shape, recipients []string, cosignerKey []byt
 	if shape.AnyRecipient {
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
-	if shape.Cosigner {
+	if shape.Cosigner != "" {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
+		if shape.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
+			params[boundedmeta.CosignerKeyTypeParameter] = shape.Cosigner
+		}
 	}
 	if shape.HasRekeyList() {
 		params[plainhost.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
@@ -59,15 +63,14 @@ func boundsRequest(shape plainhost.Shape, recipients []string, cosignerKey []byt
 
 // newBoundsAccount generates a bounded2 account on the plain host's base as the
 // signer does, with a Falcon-1024 or Ed25519 spending key to match and a
-// Falcon-1024 cosigner. A shape with a rekey-to list (only these, plus cosigned)
-// lists rekeyTo; key generation commits to the list's root.
+// cosigner of the shape's type, Falcon-1024 when it names none. A shape with a
+// rekey-to list (only these, plus cosigned) lists rekeyTo; key generation
+// commits to the list's root.
 func newBoundsAccount(t *testing.T, provider *plainhost.Provider, shape plainhost.Shape, recipients []string, rekeyTo []string) corridorExecutionAccount {
 	t.Helper()
 	spendingPublic, spendingPrivate, edKey := newSpendingKey(t, provider.KeyType())
-	cosignerPublic, cosignerPrivate, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("generate cosigner key: %v", err)
-	}
+	cosignerKeyType := cmp.Or(shape.Cosigner, witness.Falcon1024V1)
+	cosignerPublic, cosignerPrivate := newTestCosignerKey(t, cosignerKeyType)
 	params := boundsRequest(shape, recipients, cosignerPublic, rekeyTo)
 	instance, err := provider.ResolveInstance(params)
 	if err != nil {
@@ -95,6 +98,7 @@ func newBoundsAccount(t *testing.T, provider *plainhost.Provider, shape plainhos
 		userPrivateKey:     spendingPrivate,
 		edKey:              edKey,
 		cosignerPrivateKey: cosignerPrivate,
+		cosignerKeyType:    cosignerKeyType,
 		metadata:           metadata,
 	}
 	if shape.HasRekeyList() != (metadata.RekeyList != nil) {
@@ -203,6 +207,11 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 	var cases []shapeCase
 	falconProvider := plainHostProvider(t, network, plainFalconKeyType)
 	for _, shape := range plainhost.Shapes() {
+		// An Ed25519 cosigner's check is the same whatever the transfer kinds,
+		// so each of its rekey settings runs once per policy, with them all.
+		if shape.Cosigner == witness.Ed25519V1 && len(shape.Spend) != 3 {
+			continue
+		}
 		cases = append(cases, shapeCase{falconProvider, shape})
 	}
 	edProvider := plainHostProvider(t, network, plainEd25519KeyType)
@@ -330,7 +339,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 			if merkle {
 				t.Run("listed recipient without a proof", func(t *testing.T) { expect(false, payment(allowed.String(), "g"), nil, nil) })
 			}
-			if shape.Cosigner {
+			if shape.Cosigner != "" {
 				t.Run("no cosigner signature", func(t *testing.T) {
 					slot := account.argumentIndex(t, boundedmeta.ArgSourceCosigner)
 					expect(false, payment(account.address, "h"), nil, func(_ types.Digest, args [][]byte) [][]byte {
@@ -405,7 +414,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 					if more != nil {
 						args = more(txid, args)
 					}
-					if shape.Cosigner {
+					if shape.Cosigner != "" {
 						args = withArg(args, account.argumentIndex(t, boundedmeta.ArgSourceCosigner), nil)
 					}
 					return args
@@ -464,7 +473,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 					}
 				})
 			case plainhost.RekeySpendingKey:
-				if shape.Cosigner {
+				if shape.Cosigner != "" {
 					t.Run("rekey without the cosigner", func(t *testing.T) { expect(false, rekey("l10"), nil, withoutCosigner(nil)) })
 				}
 			}
@@ -478,7 +487,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 				wantAuth = ""
 			case shape.HasRekeyList():
 				t.Run("listed rekey with the spending key alone", func(t *testing.T) { expect(true, rekey("m"), nil, withoutCosigner(nil)) })
-			case shape.Cosigner:
+			case shape.Cosigner != "":
 				t.Run("rekey with the spending key and the cosigner", func(t *testing.T) { expect(true, rekey("m"), nil, nil) })
 			default:
 				t.Run("rekey with the spending key", func(t *testing.T) { expect(true, rekey("m"), nil, nil) })

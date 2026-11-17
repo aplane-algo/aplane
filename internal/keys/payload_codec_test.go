@@ -265,8 +265,8 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 
 func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 	bytecode := canonicalOffCurveBytecode(t)
-	cosignerPublicKey := bytes.Repeat([]byte{0x6d}, boundedmeta.CosignerPublicKeySizeV1)
-	componentKeyID, err := witness.ID(boundedmeta.CosignerComponentKeyTypeV1, cosignerPublicKey)
+	cosignerPublicKey := bytes.Repeat([]byte{0x6d}, boundedmeta.DefaultCosignerPublicKeySize)
+	componentKeyID, err := witness.ID(boundedmeta.DefaultCosignerComponentKeyType, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,13 +282,13 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 		Contract: boundedmeta.Contract, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
 		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
 			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
@@ -308,9 +308,101 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 		t.Fatalf("cosigner metadata = %#v", parsed.BoundedAuthorization.Cosigner)
 	}
 
-	payload.Parameters[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("00", boundedmeta.CosignerPublicKeySizeV1)
+	payload.Parameters[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("00", boundedmeta.DefaultCosignerPublicKeySize)
 	if _, err := MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "does not match parameters.cosigner_public_key") {
 		t.Fatalf("MarshalPayload() mismatch error = %v", err)
+	}
+}
+
+// cosignedTestPayload is a bounded payload whose cosigner has componentKeyType,
+// with parameters recording recordedType (none when empty).
+func cosignedTestPayload(t *testing.T, componentKeyType, recordedType string) *Payload {
+	t.Helper()
+	publicKeySize, signatureMaxSize, ok := boundedmeta.CosignerSizes(componentKeyType)
+	if !ok {
+		t.Fatalf("no sizes for %s", componentKeyType)
+	}
+	cosignerPublicKey := bytes.Repeat([]byte{0x6d}, publicKeySize)
+	componentKeyID, err := witness.ID(componentKeyType, cosignerPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := map[string]string{boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)}
+	if recordedType != "" {
+		params[boundedmeta.CosignerKeyTypeParameter] = recordedType
+	}
+	payload := NewDSALSigPayload("test.bounded-cosigner.v1", "test.base.v1", []byte{0x01}, []byte{0x02},
+		params, canonicalOffCurveBytecode(t), 0, "", nil, "1:bounded-cosigner")
+	payload.CreatedAt = canonicalTestTime
+	payloadWithOpcodeProfile(t, payload, true)
+	metadata := &boundedmeta.Metadata{
+		Contract: boundedmeta.Contract, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
+		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: componentKeyType,
+			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
+			SignatureMaxSize: signatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+		ArgumentLayout: []boundedmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: signatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+		},
+	}
+	if err := payload.SetBoundedAuthorization(metadata); err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
+
+// A stored account's parameters name its cosigner's type only when it isn't
+// the default, and must agree with the type its metadata records.
+func TestCosignedPayloadParametersAgreeOnTheCosignerType(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		metadata, recorded string
+		want               string
+	}{
+		{"default, unrecorded", witness.Falcon1024V1, "", ""},
+		{"default, recorded", witness.Falcon1024V1, witness.Falcon1024V1, ""},
+		{"Ed25519, recorded", witness.Ed25519V1, witness.Ed25519V1, ""},
+		{"Ed25519, unrecorded", witness.Ed25519V1, "", "does not match parameters.cosigner_key_type"},
+		{"default, recorded as Ed25519", witness.Falcon1024V1, witness.Ed25519V1, "does not match parameters.cosigner_key_type"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := cosignedTestPayload(t, tc.metadata, tc.recorded)
+			defer payload.ZeroSecrets()
+			encoded, err := MarshalPayload(payload)
+			if tc.want != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("MarshalPayload() error = %v, want %q", err, tc.want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer zeroTestBytes(encoded)
+			parsed, err := ParsePayload(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer parsed.ZeroSecrets()
+			if parsed.BoundedAuthorization.Cosigner.ComponentKeyType != tc.metadata {
+				t.Fatalf("cosigner type = %s", parsed.BoundedAuthorization.Cosigner.ComponentKeyType)
+			}
+		})
+	}
+	// A recorded type without a cosigner names nothing.
+	payload := cosignedTestPayload(t, witness.Falcon1024V1, "")
+	defer payload.ZeroSecrets()
+	payload.Parameters[boundedmeta.CosignerKeyTypeParameter] = witness.Ed25519V1
+	delete(payload.Parameters, boundedmeta.CosignerPublicKeyParameter)
+	metadata := *payload.BoundedAuthorization
+	metadata.Cosigner = nil
+	metadata.ArgumentLayout = metadata.ArgumentLayout[:1]
+	payload.BoundedAuthorization = &metadata
+	if _, err := MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "without a cosigner") {
+		t.Fatalf("MarshalPayload() error = %v, want a type without a cosigner refused", err)
 	}
 }
 

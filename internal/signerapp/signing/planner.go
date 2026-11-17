@@ -439,12 +439,20 @@ func invalidRekeyTargetsFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string
 // only a rekey reads the set, in the gate or in a warning, so most requests
 // never build it.
 func invalidRekeyTargetsForGroup(snapshot PlannerRuntimeSnapshot, group []types.Transaction) map[string]txnreview.InvalidRekeyTarget {
-	for _, txn := range group {
-		if !txn.RekeyTo.IsZero() {
-			return invalidRekeyTargetsFromSnapshot(snapshot)
-		}
+	if groupRekeys(group) {
+		return invalidRekeyTargetsFromSnapshot(snapshot)
 	}
 	return nil
+}
+
+// groupRekeys reports whether any transaction in the group sets RekeyTo.
+func groupRekeys(group []types.Transaction) bool {
+	for _, txn := range group {
+		if !txn.RekeyTo.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 // invalidRekeyTargetsForPlan is plan's held addresses that are not valid

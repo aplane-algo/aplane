@@ -6,6 +6,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -24,7 +25,7 @@ import (
 // the picker's Witness Key ID is not a public key.
 func (m Model) isCosignerSelectorParam(keyType string, param lsigprovider.ParameterDef) bool {
 	info, ok := findServerKeyType(keyType)
-	if !ok || info.CosignerComponentKeyType == "" {
+	if !ok || len(info.CosignerComponentKeyTypes) == 0 {
 		return false
 	}
 	if param.Name == cosignerrefs.ParamCosignerName {
@@ -41,10 +42,10 @@ func (m Model) isCosignerSelectorParam(keyType string, param lsigprovider.Parame
 	return true
 }
 
-func (m Model) compatibleCosignerChoices(componentKeyType string) []cosignerChoice {
+func (m Model) compatibleCosignerChoices(componentKeyTypes []string) []cosignerChoice {
 	grouped := make(map[string]*cosignerChoice)
 	for _, reference := range m.cosigner.references {
-		if reference.KeyType != componentKeyType || reference.ComponentKey == "" || reference.Name == "" {
+		if !slices.Contains(componentKeyTypes, reference.KeyType) || reference.ComponentKey == "" || reference.Name == "" {
 			continue
 		}
 		choice := grouped[reference.ComponentKey]
@@ -84,16 +85,16 @@ func (m Model) compatibleCosignerChoices(componentKeyType string) []cosignerChoi
 
 func (m Model) openCosignerPicker(keyType, paramName string) (Model, string) {
 	info, ok := findServerKeyType(keyType)
-	if !ok || info.CosignerComponentKeyType == "" {
+	if !ok || len(info.CosignerComponentKeyTypes) == 0 {
 		return m, "Selected key type does not advertise a cosigner component key type"
 	}
 	if !m.cosigner.loaded {
 		return m, "Cosigner references are still loading; try again"
 	}
-	choices := m.compatibleCosignerChoices(info.CosignerComponentKeyType)
+	choices := m.compatibleCosignerChoices(info.CosignerComponentKeyTypes)
 	m.cosigner.paramName = paramName
 	m.cosigner.returnView = m.viewState
-	m.cosigner.requiredKeyType = info.CosignerComponentKeyType
+	m.cosigner.requiredKeyTypes = slices.Clone(info.CosignerComponentKeyTypes)
 	if len(choices) == 0 {
 		// Nothing to choose from yet, so go straight to the setup file.
 		return m.beginGenerationCosignerImport(false), ""
@@ -125,9 +126,9 @@ const (
 // The parameter, return view, and required key type chosen by the picker are
 // kept so a successful import fills the account's cosigner field.
 func (m Model) beginGenerationCosignerImport(paste bool) Model {
-	requiredKeyType := m.cosigner.requiredKeyType
+	requiredKeyTypes := m.cosigner.requiredKeyTypes
 	m.clearCosignerImportTransient()
-	m.cosigner.requiredKeyType = requiredKeyType
+	m.cosigner.requiredKeyTypes = requiredKeyTypes
 	m.cosigner.importPaste = paste
 	m.cosigner.importFocus = 0
 	m.cosigner.choices = nil
@@ -169,7 +170,7 @@ func (m *Model) clearCosignerImportTransient() {
 	m.cosigner.importName = ""
 	m.cosigner.importNameDefault = ""
 	m.cosigner.importError = ""
-	m.cosigner.requiredKeyType = ""
+	m.cosigner.requiredKeyTypes = nil
 }
 
 func (m *Model) clearCosignerWorkflowState() {
@@ -248,11 +249,11 @@ func (m Model) prepareCosignerImportReview() Model {
 		return m
 	}
 	m.cosigner.importName = name
-	if m.cosigner.requiredKeyType != "" && reference.KeyType != m.cosigner.requiredKeyType {
+	if len(m.cosigner.requiredKeyTypes) > 0 && !slices.Contains(m.cosigner.requiredKeyTypes, reference.KeyType) {
 		m.cosigner.importError = fmt.Sprintf(
-			"public witness key type %s is incompatible; this account requires %s",
+			"public witness key type %s is incompatible; this account takes %s",
 			reference.KeyType,
-			m.cosigner.requiredKeyType,
+			strings.Join(m.cosigner.requiredKeyTypes, " or "),
 		)
 		return m
 	}
@@ -513,7 +514,7 @@ func (m Model) handleCosignerPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = m.cosigner.returnView
 		m.cosigner.choices = nil
 		m.cosigner.paramName = ""
-		m.cosigner.requiredKeyType = ""
+		m.cosigner.requiredKeyTypes = nil
 		return m, nil
 	case "up", "k":
 		if m.cosigner.selected > 0 {
@@ -541,7 +542,7 @@ func (m Model) handleCosignerPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = m.cosigner.returnView
 		m.cosigner.choices = nil
 		m.cosigner.paramName = ""
-		m.cosigner.requiredKeyType = ""
+		m.cosigner.requiredKeyTypes = nil
 		m.forms.generateError = ""
 		return m, nil
 	}
@@ -568,7 +569,7 @@ func (m Model) choicesForAllReferences() []cosignerChoice {
 			continue
 		}
 		seenTypes[reference.KeyType] = true
-		choices = append(choices, m.compatibleCosignerChoices(reference.KeyType)...)
+		choices = append(choices, m.compatibleCosignerChoices([]string{reference.KeyType})...)
 	}
 	return choices
 }

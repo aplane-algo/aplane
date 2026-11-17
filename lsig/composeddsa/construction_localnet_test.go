@@ -196,7 +196,7 @@ func (a *compositeAccount) signedGroup(t *testing.T, network *harness.TestnetCon
 		maximum += size
 	}
 	if a.cosigner != nil {
-		maximum += boundedmeta.CosignerSignatureMaxSizeV1
+		maximum += boundedmeta.DefaultCosignerSignatureMaxSize
 	}
 	size, fee := groupPlan(t, len(a.bytecode), maximum)
 	txn.Fee = types.MicroAlgos(fee)

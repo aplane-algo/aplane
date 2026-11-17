@@ -47,11 +47,16 @@ const (
 	boundaryDigestDomainV1 = "APLANE_HOST_BOUNDARY_V1"
 )
 
-// descriptor names an arrangement in fingerprints.
+// descriptor names an arrangement in fingerprints. The default cosigner's
+// label predates other types and is frozen with it; another type is named.
 func descriptor(selected Arrangement) string {
 	name := ParameterRekeyAuthority + "=" + selected.Rekey
-	if selected.Cosigner {
+	switch selected.Cosigner {
+	case "":
+	case boundedmeta.DefaultCosignerComponentKeyType:
 		name = "cosigner/" + name
+	default:
+		name = "cosigner=" + selected.Cosigner + "/" + name
 	}
 	return name
 }

@@ -453,18 +453,20 @@ type BoundedAuthorizationInfo struct {
 
 // KeyTypeInfo describes an available key type from the /keytypes endpoint.
 type KeyTypeInfo struct {
-	KeyType                  string                    `json:"key_type"`
-	Family                   string                    `json:"family"`
-	DisplayName              string                    `json:"display_name"`
-	Description              string                    `json:"description"`
-	AuthorizationKind        string                    `json:"authorization_kind,omitempty"`
-	RequiresLogicSig         bool                      `json:"requires_logicsig"`
-	MnemonicWordCount        int                       `json:"mnemonic_word_count"`
-	MnemonicImport           bool                      `json:"mnemonic_import"`
-	MnemonicScheme           string                    `json:"mnemonic_scheme"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
-	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
-	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
+	KeyType           string `json:"key_type"`
+	Family            string `json:"family"`
+	DisplayName       string `json:"display_name"`
+	Description       string `json:"description"`
+	AuthorizationKind string `json:"authorization_kind,omitempty"`
+	RequiresLogicSig  bool   `json:"requires_logicsig"`
+	MnemonicWordCount int    `json:"mnemonic_word_count"`
+	MnemonicImport    bool   `json:"mnemonic_import"`
+	MnemonicScheme    string `json:"mnemonic_scheme"`
+	SigningFlow       string `json:"signing_flow,omitempty"` // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
+	// CosignerComponentKeyTypes are the cosigner component key types an
+	// account of this type can take, in order, the default first.
+	CosignerComponentKeyTypes []string                  `json:"cosigner_component_key_types,omitempty"`
+	BoundedAuthorization      *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	// PerKeyContract means each account selects its own contract at generation,
 	// so this type has no fixed signing flow or bounded profile. Route by /keys.
 	PerKeyContract bool `json:"per_key_contract,omitempty"`

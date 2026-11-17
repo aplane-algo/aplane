@@ -105,7 +105,7 @@ func overlayRekeyLabel(value string, cosigned bool) string {
 // needs; the operator can still change every overlay choice.
 func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Preset) *paramSpec {
 	info, ok := findServerKeyType(keyType)
-	if !ok || !info.PerKeyContract || info.CosignerComponentKeyType == "" {
+	if !ok || !info.PerKeyContract || len(info.CosignerComponentKeyTypes) == 0 {
 		return nil
 	}
 	rekeyDef, hasRekey := paramNamed(spec.Params, overlayRekey)

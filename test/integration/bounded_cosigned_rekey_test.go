@@ -5,7 +5,6 @@ package integration_test
 
 import (
 	"context"
-	cryptorand "crypto/rand"
 	"encoding/hex"
 	"net/http"
 	"os"
@@ -27,7 +26,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -45,11 +43,16 @@ type cosignedNode struct {
 	client        *signerclient.Client
 	eng           *engine.Engine
 	cosignerCalls *atomic.Int32
+	// cosignerKeyType is the type of the one cosigner key the node knows.
+	cosignerKeyType string
 }
 
 const cosignedReferenceName = "integration-cosigned"
 
-func newCosignedNode(t *testing.T) *cosignedNode {
+// newCosignedNode starts a signer with one cosigner reference, of
+// cosignerKeyType, and a client whose endpoint registry routes to a mock
+// cosigner holding that key.
+func newCosignedNode(t *testing.T, cosignerKeyType string) *cosignedNode {
 	t.Helper()
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set, skipping funding-backed test")
@@ -75,17 +78,10 @@ func newCosignedNode(t *testing.T) *cosignedNode {
 	}
 	t.Cleanup(apadmin.StopUnlockBackground)
 
-	seed := make([]byte, 64)
-	if _, err := cryptorand.Read(seed); err != nil {
-		t.Fatalf("cosigner seed: %v", err)
-	}
-	cosignerPublic, cosignerPrivate, err := signerops.New(nil).GenerateKeypair(seed)
-	if err != nil {
-		t.Fatalf("generate cosigner key: %v", err)
-	}
+	cosignerPublic, cosignerPrivate := newTestCosignerKey(t, cosignerKeyType)
 	clientDataDir := t.TempDir()
 	var discoveryCalls, componentCalls atomic.Int32
-	mock := mockCosignerEndpoint(t, cosignerPublic, cosignerPrivate, &discoveryCalls)
+	mock := mockCosignerEndpoint(t, cosignerKeyType, cosignerPublic, cosignerPrivate, &discoveryCalls)
 	counting := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/sign/component" {
 			componentCalls.Add(1)
@@ -94,11 +90,11 @@ func newCosignedNode(t *testing.T) *cosignedNode {
 	})
 	cosigner := sshtest.ServeWithOptions(t, counting, sshtest.Options{Dir: filepath.Join(clientDataDir, ".ssh")})
 
-	cosignerID, err := witness.ID(witness.Falcon1024V1, cosignerPublic)
+	cosignerID, err := witness.ID(cosignerKeyType, cosignerPublic)
 	if err != nil {
 		t.Fatalf("Witness Key ID: %v", err)
 	}
-	reference, err := witness.NewPublicReference(witness.Falcon1024V1, cosignerID, hex.EncodeToString(cosignerPublic))
+	reference, err := witness.NewPublicReference(cosignerKeyType, cosignerID, hex.EncodeToString(cosignerPublic))
 	if err != nil {
 		t.Fatalf("cosigner reference: %v", err)
 	}
@@ -138,6 +134,7 @@ func newCosignedNode(t *testing.T) *cosignedNode {
 	return &cosignedNode{
 		network: network, funder: funder, signerd: signerd,
 		client: signerclient.NewSignerClient(signerd.GetURL()), eng: eng, cosignerCalls: &componentCalls,
+		cosignerKeyType: cosignerKeyType,
 	}
 }
 
@@ -172,6 +169,10 @@ func (n *cosignedNode) account(t *testing.T, keyType, rekey string, rekeyTo ...s
 		}
 		if key.BoundedAuthorization == nil || key.BoundedAuthorization.Contract != signerapi.BoundedContractBounded2 {
 			t.Fatalf("%s contract = %+v, want %s", address, key.BoundedAuthorization, signerapi.BoundedContractBounded2)
+		}
+		// The signer recorded the reference's type, and reports it.
+		if key.CosignerComponentKeyType != n.cosignerKeyType {
+			t.Fatalf("%s cosigner type = %q, want %s", address, key.CosignerComponentKeyType, n.cosignerKeyType)
 		}
 	}
 	if err := n.eng.EnsureSignerCache(context.Background()); err != nil {
@@ -254,78 +255,85 @@ func (n *cosignedNode) rekey(t *testing.T, account string, target algocrypto.Acc
 // rekey at all. Both bases host the bounds with a cosigner, Ed25519 as well as
 // Falcon-1024, so each case runs on both.
 func TestCosignedRekeysThroughSigner(t *testing.T) {
-	n := newCosignedNode(t)
-	activatePlainHosts(t, n)
-	bases := []string{plainFalconKeyType, plainEd25519KeyType}
+	// Each cosigner key type, end to end: the signer resolves the imported
+	// reference to its key and type, the client finds the cosigner by both, and
+	// the program checks the signature in that type's scheme.
+	for _, cosignerKeyType := range witness.KeyTypes {
+		t.Run(cosignerKeyType, func(t *testing.T) {
+			n := newCosignedNode(t, cosignerKeyType)
+			activatePlainHosts(t, n)
+			bases := []string{plainFalconKeyType, plainEd25519KeyType}
 
-	for _, keyType := range bases {
-		t.Run(keyType+"/Corridor: a cosigner plus only these", func(t *testing.T) {
-			listed := algocrypto.GenerateAccount()
-			account := n.account(t, keyType, plainhost.RekeyOnlyThese, listed.Address.String())
-			n.spend(t, account, 10_000)
-			before := n.cosignerCalls.Load()
-			unlisted := algocrypto.GenerateAccount().Address.String()
-			if err := n.submit(t, n.rekeyTxn(t, account, unlisted)); err == nil || !strings.Contains(err.Error(), "is not on this account's rekey-to list") {
-				t.Fatalf("an unlisted rekey: error = %v, want the signer's not-listed refusal", err)
+			for _, keyType := range bases {
+				t.Run(keyType+"/Corridor: a cosigner plus only these", func(t *testing.T) {
+					listed := algocrypto.GenerateAccount()
+					account := n.account(t, keyType, plainhost.RekeyOnlyThese, listed.Address.String())
+					n.spend(t, account, 10_000)
+					before := n.cosignerCalls.Load()
+					unlisted := algocrypto.GenerateAccount().Address.String()
+					if err := n.submit(t, n.rekeyTxn(t, account, unlisted)); err == nil || !strings.Contains(err.Error(), "is not on this account's rekey-to list") {
+						t.Fatalf("an unlisted rekey: error = %v, want the signer's not-listed refusal", err)
+					}
+					if n.cosignerCalls.Load() != before {
+						t.Fatal("the cosigner was asked about a rekey the signer refuses")
+					}
+					if got := authAddress(t, n.network, account); got != "" {
+						t.Fatalf("%s was rekeyed to %s", account, got)
+					}
+					// Under the default reject_foreign_rekey, a listed target counts as
+					// declared even though this signer doesn't hold it (O8).
+					n.rekey(t, account, listed, 0)
+				})
+				// A refused account's only way to move funds is a spend: the signer refuses
+				// every rekey before the cosigner sees it, and the spend that returns the
+				// funds leaves only the minimum balance behind.
+				t.Run(keyType+"/refused: the signer refuses every rekey", func(t *testing.T) {
+					account := n.account(t, keyType, plainhost.RekeyRefused)
+					n.spend(t, account, 10_000)
+					before := n.cosignerCalls.Load()
+					err := n.submit(t, n.rekeyTxn(t, account, algocrypto.GenerateAccount().Address.String()))
+					if err == nil || !strings.Contains(err.Error(), "permanently disables rekey") {
+						t.Fatalf("a refused account's rekey: error = %v, want the signer's refusal", err)
+					}
+					if n.cosignerCalls.Load() != before {
+						t.Fatal("the cosigner was asked about a rekey the signer refuses")
+					}
+					if got := authAddress(t, n.network, account); got != "" {
+						t.Fatalf("%s was rekeyed to %s", account, got)
+					}
+					info, err := n.network.Client.AccountInformation(account).Do(context.Background())
+					if err != nil {
+						t.Fatalf("read %s: %v", account, err)
+					}
+					// The signer refuses a fee above the account's ceiling, so this leaves at
+					// least the minimum balance.
+					if reserve := info.MinBalance + plainhost.DefaultMaxFee; info.Amount > reserve {
+						n.spend(t, account, info.Amount-reserve)
+					}
+				})
 			}
-			if n.cosignerCalls.Load() != before {
-				t.Fatal("the cosigner was asked about a rekey the signer refuses")
-			}
-			if got := authAddress(t, n.network, account); got != "" {
-				t.Fatalf("%s was rekeyed to %s", account, got)
-			}
-			// Under the default reject_foreign_rekey, a listed target counts as
-			// declared even though this signer doesn't hold it (O8).
-			n.rekey(t, account, listed, 0)
-		})
-		// A refused account's only way to move funds is a spend: the signer refuses
-		// every rekey before the cosigner sees it, and the spend that returns the
-		// funds leaves only the minimum balance behind.
-		t.Run(keyType+"/refused: the signer refuses every rekey", func(t *testing.T) {
-			account := n.account(t, keyType, plainhost.RekeyRefused)
-			n.spend(t, account, 10_000)
-			before := n.cosignerCalls.Load()
-			err := n.submit(t, n.rekeyTxn(t, account, algocrypto.GenerateAccount().Address.String()))
-			if err == nil || !strings.Contains(err.Error(), "permanently disables rekey") {
-				t.Fatalf("a refused account's rekey: error = %v, want the signer's refusal", err)
-			}
-			if n.cosignerCalls.Load() != before {
-				t.Fatal("the cosigner was asked about a rekey the signer refuses")
-			}
-			if got := authAddress(t, n.network, account); got != "" {
-				t.Fatalf("%s was rekeyed to %s", account, got)
-			}
-			info, err := n.network.Client.AccountInformation(account).Do(context.Background())
-			if err != nil {
-				t.Fatalf("read %s: %v", account, err)
-			}
-			// The signer refuses a fee above the account's ceiling, so this leaves at
-			// least the minimum balance.
-			if reserve := info.MinBalance + plainhost.DefaultMaxFee; info.Amount > reserve {
-				n.spend(t, account, info.Amount-reserve)
-			}
-		})
-	}
 
-	// Cosigned rekeys go to addresses this signer doesn't hold, which only
-	// allow_rekeys lets through; the cosigner's own policy would decide next.
-	ipc := mustConnectIPCClient(t, n.signerd.GetWorkDir())
-	mustReplaceIPCPolicySetting(t, ipc, "rekeys", string(policy.RekeysAllow))
-	ipc.Close()
+			// Cosigned rekeys go to addresses this signer doesn't hold, which only
+			// allow_rekeys lets through; the cosigner's own policy would decide next.
+			ipc := mustConnectIPCClient(t, n.signerd.GetWorkDir())
+			mustReplaceIPCPolicySetting(t, ipc, "rekeys", string(policy.RekeysAllow))
+			ipc.Close()
 
-	for _, keyType := range bases {
-		t.Run(keyType+"/plus cosigned: an unlisted rekey asks the cosigner", func(t *testing.T) {
-			account := n.account(t, keyType, plainhost.RekeyPlusCosigned, algocrypto.GenerateAccount().Address.String())
-			n.rekey(t, account, algocrypto.GenerateAccount(), 1)
-		})
-		t.Run(keyType+"/plus cosigned: a listed rekey needs no cosigner", func(t *testing.T) {
-			listed := algocrypto.GenerateAccount()
-			account := n.account(t, keyType, plainhost.RekeyPlusCosigned, listed.Address.String())
-			n.rekey(t, account, listed, 0)
-		})
-		t.Run(keyType+"/spending key and cosigner", func(t *testing.T) {
-			account := n.account(t, keyType, plainhost.RekeySpendingKey)
-			n.rekey(t, account, algocrypto.GenerateAccount(), 1)
+			for _, keyType := range bases {
+				t.Run(keyType+"/plus cosigned: an unlisted rekey asks the cosigner", func(t *testing.T) {
+					account := n.account(t, keyType, plainhost.RekeyPlusCosigned, algocrypto.GenerateAccount().Address.String())
+					n.rekey(t, account, algocrypto.GenerateAccount(), 1)
+				})
+				t.Run(keyType+"/plus cosigned: a listed rekey needs no cosigner", func(t *testing.T) {
+					listed := algocrypto.GenerateAccount()
+					account := n.account(t, keyType, plainhost.RekeyPlusCosigned, listed.Address.String())
+					n.rekey(t, account, listed, 0)
+				})
+				t.Run(keyType+"/spending key and cosigner", func(t *testing.T) {
+					account := n.account(t, keyType, plainhost.RekeySpendingKey)
+					n.rekey(t, account, algocrypto.GenerateAccount(), 1)
+				})
+			}
 		})
 	}
 }

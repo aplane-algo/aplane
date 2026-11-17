@@ -693,6 +693,7 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 			RekeyList:        profile.RekeyList,
 			Layer3Policy:     profile.Layer3Policy,
 			CosignerRequired: profile.CosignerRequired,
+			CosignerKeyType:  profile.CosignerKeyType,
 		}
 	}
 	return message
@@ -963,20 +964,20 @@ func protocolKeyTypes(items []signerapi.KeyTypeInfo) []protocol.KeyTypeInfo {
 	out := make([]protocol.KeyTypeInfo, len(items))
 	for i, item := range items {
 		out[i] = protocol.KeyTypeInfo{
-			KeyType:                  item.KeyType,
-			Family:                   item.Family,
-			DisplayName:              item.DisplayName,
-			Description:              item.Description,
-			AuthorizationKind:        item.AuthorizationKind,
-			RequiresLogicSig:         item.RequiresLogicSig,
-			MnemonicWordCount:        item.MnemonicWordCount,
-			MnemonicImport:           item.MnemonicImport,
-			MnemonicScheme:           item.MnemonicScheme,
-			CosignerComponentKeyType: item.CosignerComponentKeyType,
-			PerKeyContract:           item.PerKeyContract,
-			BoundarySchema:           item.BoundarySchema,
-			CreationParams:           protocolCreationParams(item.CreationParams),
-			RuntimeArgs:              protocolRuntimeArgs(item.RuntimeArgs),
+			KeyType:                   item.KeyType,
+			Family:                    item.Family,
+			DisplayName:               item.DisplayName,
+			Description:               item.Description,
+			AuthorizationKind:         item.AuthorizationKind,
+			RequiresLogicSig:          item.RequiresLogicSig,
+			MnemonicWordCount:         item.MnemonicWordCount,
+			MnemonicImport:            item.MnemonicImport,
+			MnemonicScheme:            item.MnemonicScheme,
+			CosignerComponentKeyTypes: append([]string(nil), item.CosignerComponentKeyTypes...),
+			PerKeyContract:            item.PerKeyContract,
+			BoundarySchema:            item.BoundarySchema,
+			CreationParams:            protocolCreationParams(item.CreationParams),
+			RuntimeArgs:               protocolRuntimeArgs(item.RuntimeArgs),
 		}
 	}
 	return out

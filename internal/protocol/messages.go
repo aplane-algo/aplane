@@ -783,6 +783,8 @@ type PreparedBoundedProfile struct {
 	RekeyList        bool   `json:"rekey_list,omitempty"`
 	Layer3Policy     string `json:"layer3_policy"`
 	CosignerRequired bool   `json:"cosigner_required,omitempty"`
+	// CosignerKeyType is the cosigner's key type, when the account has one.
+	CosignerKeyType string `json:"cosigner_key_type,omitempty"`
 }
 
 // PrepareGenerateResultMessage describes the account a request would create. It
@@ -1109,20 +1111,20 @@ type DeactivateKeyTypeResultMessage struct {
 }
 
 type KeyTypeInfo struct {
-	KeyType                  string              `json:"key_type"`
-	Family                   string              `json:"family"`
-	DisplayName              string              `json:"display_name"`
-	Description              string              `json:"description"`
-	AuthorizationKind        string              `json:"authorization_kind,omitempty"`
-	RequiresLogicSig         bool                `json:"requires_logicsig"`
-	MnemonicWordCount        int                 `json:"mnemonic_word_count"`
-	MnemonicImport           bool                `json:"mnemonic_import"`
-	MnemonicScheme           string              `json:"mnemonic_scheme"`
-	CosignerComponentKeyType string              `json:"cosigner_component_key_type,omitempty"`
-	PerKeyContract           bool                `json:"per_key_contract,omitempty"`
-	BoundarySchema           string              `json:"boundary_schema,omitempty"`
-	CreationParams           []TemplateParamInfo `json:"creation_params"`
-	RuntimeArgs              []TemplateArgInfo   `json:"runtime_args"`
+	KeyType                   string              `json:"key_type"`
+	Family                    string              `json:"family"`
+	DisplayName               string              `json:"display_name"`
+	Description               string              `json:"description"`
+	AuthorizationKind         string              `json:"authorization_kind,omitempty"`
+	RequiresLogicSig          bool                `json:"requires_logicsig"`
+	MnemonicWordCount         int                 `json:"mnemonic_word_count"`
+	MnemonicImport            bool                `json:"mnemonic_import"`
+	MnemonicScheme            string              `json:"mnemonic_scheme"`
+	CosignerComponentKeyTypes []string            `json:"cosigner_component_key_types,omitempty"`
+	PerKeyContract            bool                `json:"per_key_contract,omitempty"`
+	BoundarySchema            string              `json:"boundary_schema,omitempty"`
+	CreationParams            []TemplateParamInfo `json:"creation_params"`
+	RuntimeArgs               []TemplateArgInfo   `json:"runtime_args"`
 }
 
 type ListKeyTypesMessage struct {

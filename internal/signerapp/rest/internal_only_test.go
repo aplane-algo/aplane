@@ -4,8 +4,11 @@
 package rest
 
 import (
-	"github.com/aplane-algo/aplane/internal/boundary"
+	"slices"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/boundary"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -30,7 +33,7 @@ func TestKeyTypesListsAPlainHostOnceEnabled(t *testing.T) {
 	// The Falcon plain host is default-enabled; the Ed25519 one is opt-in.
 	plainHost := func(keyType string, info signerapi.KeyTypeInfo, ok bool) {
 		t.Helper()
-		if !ok || !info.PerKeyContract || info.BoundarySchema != boundary.SchemaV1 || info.CosignerComponentKeyType == "" || info.MnemonicImport {
+		if !ok || !info.PerKeyContract || info.BoundarySchema != boundary.SchemaV1 || !slices.Equal(info.CosignerComponentKeyTypes, []string{witness.Falcon1024V1, witness.Ed25519V1}) || info.MnemonicImport {
 			t.Fatalf("%s = %+v, %v", keyType, info, ok)
 		}
 	}
