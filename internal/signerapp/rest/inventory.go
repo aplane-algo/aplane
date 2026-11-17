@@ -269,7 +269,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		if err == nil {
 			info.Family = meta.RoutingFamily()
 			info.AuthorizationKind = string(meta.AuthorizationKind())
-			info.RequiresLogicSig = meta.RequiresLogicSig()
+			info.RequiresLogicSig = algorithm.RequiresLogicSig(meta)
 			info.MnemonicWordCount = meta.MnemonicWordCount()
 			info.MnemonicImport = keymgmt.SupportsMnemonicImport(keyType)
 			info.MnemonicScheme = meta.MnemonicScheme()

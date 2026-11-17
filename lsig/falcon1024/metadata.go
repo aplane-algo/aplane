@@ -20,7 +20,6 @@ func (m *FalconMetadata) MnemonicScheme() string       { return family.MnemonicS
 func (m *FalconMetadata) AuthorizationKind() algorithm.AuthorizationKind {
 	return algorithm.AuthorizationLogicSig
 }
-func (m *FalconMetadata) RequiresLogicSig() bool       { return true }
 func (m *FalconMetadata) CurrentLsigVersion() int      { return derivation.CurrentVersion }
 func (m *FalconMetadata) SupportedLsigVersions() []int { return derivation.SupportedVersions() }
 func (m *FalconMetadata) DefaultDerivation() string    { return "bip39-standard" }

@@ -59,7 +59,7 @@ func TestRegisterClientExposesNativePQMetadata(t *testing.T) {
 	if meta.AuthorizationKind() != algorithm.AuthorizationNativePQ {
 		t.Fatalf("authorization kind = %q, want %q", meta.AuthorizationKind(), algorithm.AuthorizationNativePQ)
 	}
-	if meta.RequiresLogicSig() {
+	if algorithm.RequiresLogicSig(meta) {
 		t.Fatal("native Falcon metadata requires LogicSig")
 	}
 	if got := algorithm.DisplayLabel(meta); got != "native post-quantum" {

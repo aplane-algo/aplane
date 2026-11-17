@@ -44,7 +44,7 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 	// For these types, family name == key type (no versioning)
 	for _, family := range algorithm.GetRegisteredFamilies() {
 		meta, err := algorithm.GetMetadata(family)
-		if err == nil && !meta.RequiresLogicSig() && keyTypeEnabledForGeneration(family, activatedSet) {
+		if err == nil && !algorithm.RequiresLogicSig(meta) && keyTypeEnabledForGeneration(family, activatedSet) {
 			types = appendKeyType(types, seen, family)
 		}
 	}
@@ -142,7 +142,7 @@ func SupportsMnemonicImport(keyType string) bool {
 	if err != nil || meta == nil {
 		return false
 	}
-	return !meta.RequiresLogicSig() && meta.SupportsMnemonicImport()
+	return !algorithm.RequiresLogicSig(meta) && meta.SupportsMnemonicImport()
 }
 
 func GetMnemonicImportKeyTypesWithActivated(activated []string) []string {

@@ -25,7 +25,7 @@ func ProtocolStatusMessage(state string, keyCount int, warnings []string) protoc
 
 func ProtocolErrorMessage(requestID, code, errMsg string) protocol.ErrorMessage {
 	if code == "" {
-		code = protocol.IPCErrorCode(errMsg)
+		code = protocol.ErrCodeInternal
 	}
 	return protocol.ErrorMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -175,7 +175,7 @@ func ProtocolUpdateAdminSettingResultMessage(id string, request adminproto.Updat
 
 func ProtocolUnlockResultMessage(id string, success bool, keyCount int, errMsg string, code string) protocol.UnlockResultMessage {
 	if code == "" && errMsg != "" {
-		code = protocol.IPCErrorCode(errMsg)
+		code = protocol.ErrCodeInternal
 	}
 	return protocol.UnlockResultMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -700,9 +700,6 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 }
 
 func ProtocolGenerateResultMessage(id string, result adminproto.GenerateKeyResult) protocol.GenerateResultMessage {
-	// Mnemonic and WordCount remain in the wire schema for client
-	// compatibility but are never populated: recovery material does not cross
-	// the admin-protocol boundary.
 	return protocol.GenerateResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeGenerateResult,

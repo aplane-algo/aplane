@@ -13,7 +13,6 @@ func TestGetMetadataPrefixFallbackIsLogicSigOnly(t *testing.T) {
 	logicSig := &basicMetadata{
 		family:            "reviewlogic",
 		authorizationKind: AuthorizationLogicSig,
-		requiresLogicSig:  true,
 	}
 	RegisterMetadata(native)
 	RegisterMetadata(logicSig)

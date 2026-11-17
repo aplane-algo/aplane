@@ -1418,47 +1418,6 @@ func TestParseAdminBaseMessageRejectsMissingKind(t *testing.T) {
 	}
 }
 
-func TestIPCErrorCodeMapsStableConditions(t *testing.T) {
-	tests := []struct {
-		errMsg string
-		want   string
-	}{
-		{errMsg: "invalid message format", want: ErrCodeInvalidMessageFormat},
-		{errMsg: "expected auth message", want: ErrCodeExpectedAuthMessage},
-		{errMsg: "invalid auth message format", want: ErrCodeInvalidAuthMessage},
-		{errMsg: "authentication failed", want: ErrCodeAuthenticationFailed},
-		{errMsg: "invalid passphrase", want: ErrCodeInvalidPassphrase},
-		{errMsg: "invalid export key message", want: ErrCodeInvalidRequest},
-		{errMsg: "invalid whale song", want: ErrCodeInternal},
-		{errMsg: "no product runtime bound to session", want: ErrCodeNoRuntimeBound},
-		{errMsg: "authorization denied", want: ErrCodeAuthorizationDenied},
-		{errMsg: "Signer is locked", want: ErrCodeSignerLocked},
-		{errMsg: "some internal error", want: ErrCodeInternal},
-	}
-
-	for _, tt := range tests {
-		if got := IPCErrorCode(tt.errMsg); got != tt.want {
-			t.Fatalf("IPCErrorCode(%q) = %q, want %q", tt.errMsg, got, tt.want)
-		}
-	}
-}
-
-func TestIPCErrorCodeDoesNotClassifyDynamicProse(t *testing.T) {
-	tests := []string{
-		"auth ok but unlock failed: signer is locked",
-		"failed to load keys: policy integrity mismatch",
-		"unknown message type: wat",
-		"unknown or read-only setting: admin.foo",
-		"Key not found: ADDR",
-	}
-
-	for _, errMsg := range tests {
-		if got := IPCErrorCode(errMsg); got != ErrCodeInternal {
-			t.Fatalf("IPCErrorCode(%q) = %q, want %q", errMsg, got, ErrCodeInternal)
-		}
-	}
-}
-
 func TestCodeForErrorPrefersAttachedCode(t *testing.T) {
 	err := WithCode(ErrCodeKeyNotFound, fmt.Errorf("reworded operator-facing message"))
 	if got := CodeForError(err); got != ErrCodeKeyNotFound {

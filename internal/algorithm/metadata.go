@@ -42,12 +42,8 @@ type SignatureMetadata interface {
 	MnemonicScheme() string
 
 	// AuthorizationKind returns the consensus authorization shape produced by
-	// this key family. It is authoritative for display and fee/signing logic;
-	// RequiresLogicSig remains for compatibility with older projections.
+	// this key family. It is authoritative for display and fee/signing logic.
 	AuthorizationKind() AuthorizationKind
-
-	// RequiresLogicSig returns true if this key type requires LogicSig derivation
-	RequiresLogicSig() bool
 
 	// CurrentLsigVersion returns the current LogicSig derivation version for new keys.
 	// Returns 0 if this key type doesn't require LogicSig (e.g., ed25519).
@@ -84,7 +80,6 @@ type basicMetadata struct {
 	supportsMnemonicImport bool
 	mnemonicScheme         string
 	authorizationKind      AuthorizationKind
-	requiresLogicSig       bool
 	currentLsigVersion     int
 	supportedLsigVersions  []int
 	defaultDerivation      string
@@ -97,11 +92,16 @@ func (m *basicMetadata) MnemonicWordCount() int               { return m.mnemoni
 func (m *basicMetadata) SupportsMnemonicImport() bool         { return m.supportsMnemonicImport }
 func (m *basicMetadata) MnemonicScheme() string               { return m.mnemonicScheme }
 func (m *basicMetadata) AuthorizationKind() AuthorizationKind { return m.authorizationKind }
-func (m *basicMetadata) RequiresLogicSig() bool               { return m.requiresLogicSig }
 func (m *basicMetadata) CurrentLsigVersion() int              { return m.currentLsigVersion }
 func (m *basicMetadata) SupportedLsigVersions() []int         { return m.supportedLsigVersions }
 func (m *basicMetadata) DefaultDerivation() string            { return m.defaultDerivation }
 func (m *basicMetadata) DisplayColor() string                 { return m.displayColor }
+
+// RequiresLogicSig reports whether accounts of this key type authorize with a
+// LogicSig. The wire fields named requires_logicsig are this projection.
+func RequiresLogicSig(meta SignatureMetadata) bool {
+	return meta.AuthorizationKind() == AuthorizationLogicSig
+}
 
 // Global registry instance
 var metadataRegistry = xregistry.NewStringRegistry[SignatureMetadata]()
@@ -202,7 +202,6 @@ func RegisterEd25519Metadata() {
 			supportsMnemonicImport: true,
 			mnemonicScheme:         "algorand",
 			authorizationKind:      AuthorizationEd25519,
-			requiresLogicSig:       false,
 			currentLsigVersion:     0,   // No LSig needed
 			supportedLsigVersions:  nil, // No LSig needed
 			defaultDerivation:      "algorand-standard",

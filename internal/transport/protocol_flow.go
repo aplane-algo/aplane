@@ -71,9 +71,6 @@ func authenticateWithMode(conn adminProtocolConn, passphrase string, timeout tim
 				return fmt.Errorf("server rejected auth handshake")
 			}
 			code := errMsg.Code
-			if code == "" {
-				code = protocol.IPCErrorCode(errMsg.Error)
-			}
 			if errMsg.Error != "" {
 				return protocol.WithCode(code, fmt.Errorf("server rejected auth handshake: %s", errMsg.Error))
 			}
@@ -116,11 +113,7 @@ func authenticateWithMode(conn adminProtocolConn, passphrase string, timeout tim
 		return fmt.Errorf("failed to parse auth_result: %w", err)
 	}
 	if !authResult.Success {
-		code := authResult.Code
-		if code == "" {
-			code = protocol.IPCErrorCode(authResult.Error)
-		}
-		return protocol.WithCode(code, fmt.Errorf("authentication failed: %s", authResult.Error))
+		return protocol.WithCode(authResult.Code, fmt.Errorf("authentication failed: %s", authResult.Error))
 	}
 
 	return nil

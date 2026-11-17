@@ -89,9 +89,6 @@ func TestSessionOmitsGeneratedMnemonicOnEveryAdminTransport(t *testing.T) {
 			if !msg.Success || msg.Address != "ADDR" || msg.KeyType != "ed25519" {
 				t.Fatalf("generate response = %+v, want success with address and key type", msg)
 			}
-			if msg.Mnemonic != "" || msg.WordCount != 0 {
-				t.Fatalf("generate response leaked mnemonic fields: %+v", msg)
-			}
 		})
 	}
 }
@@ -145,9 +142,6 @@ func TestSessionAllowsGenerateAndImportOverIPC(t *testing.T) {
 	}
 	if !generateMsg.Success || generateMsg.Address != "ADDR" || generateMsg.KeyType != "ed25519" {
 		t.Fatalf("generate response = %+v, want success with address and key type", generateMsg)
-	}
-	if generateMsg.Mnemonic != "" || generateMsg.WordCount != 0 {
-		t.Fatalf("generate response leaked mnemonic fields: %+v", generateMsg)
 	}
 	var importMsg protocol.ImportResultMessage
 	if err := json.Unmarshal(conn.writes[1], &importMsg); err != nil {

@@ -830,9 +830,7 @@ type GenerateResultMessage struct {
 	BaseMessage
 	Success    bool              `json:"success"`
 	Address    string            `json:"address,omitempty"`
-	KeyType    string            `json:"key_type,omitempty"` // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
-	Mnemonic   string            `json:"mnemonic,omitempty"` // Legacy compatibility field; current responses omit it.
-	WordCount  int               `json:"word_count,omitempty"`
+	KeyType    string            `json:"key_type,omitempty"`   // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
 	Parameters map[string]string `json:"parameters,omitempty"` // Creation parameters needed for address re-derivation
 	// Warnings are the signer's notes about the account it created. They are
 	// the review's unless the signer's keys changed in between.
