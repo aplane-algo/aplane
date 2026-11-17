@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -17,8 +16,8 @@ import (
 // Generate shows the bounds a preset screen choice asks for as one block, then
 // three controls over its cosigner, rekey_to and rekey_authority parameters:
 //
-//   - Require a cosigner: the cosigner picker, labelled with the cosigner's
-//     algorithm. Left empty, the account has none.
+//   - Optional cosigner: the cosigner picker; "Cosigner (required)" on a
+//     preset that needs one. Left empty, the account has none.
 //   - Add rekey-to addresses: the list. With addresses, the rekey control is its
 //     option: only these addresses, or these plus others with the cosigner.
 //   - Allow rekeys: without a list, refused or by the spending key (with the
@@ -101,15 +100,6 @@ func overlayRekeyLabel(value string, cosigned bool) string {
 	return value
 }
 
-// cosignerAlgorithmLabel is the cosigner control's label, naming the algorithm
-// of the cosigner key the type takes.
-func cosignerAlgorithmLabel(componentKeyType string) string {
-	if name, ok := witness.AlgorithmName(componentKeyType); ok {
-		return "Require a cosigner (" + name + ")"
-	}
-	return "Require a cosigner"
-}
-
 // overlaySpec is the Generate form of a type that takes the overlays, or nil for
 // any other type. preset, when set, chooses the bounds and which overlays it
 // needs; the operator can still change every overlay choice.
@@ -159,9 +149,15 @@ func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Pre
 	// A preset that needs a list shows the list's options from the start.
 	listed := strings.TrimSpace(values[overlayList]) != "" || needs[overlayList]
 
+	// A preset that needs a cosigner marks it "(required)", so its label
+	// drops "Optional".
+	cosignerLabel := "Optional cosigner"
+	if needs[overlayCosigner] {
+		cosignerLabel = "Cosigner"
+	}
 	cosigner := lsigprovider.ParameterDef{
 		Name:        overlayCosigner,
-		Label:       cosignerAlgorithmLabel(info.CosignerComponentKeyType),
+		Label:       cosignerLabel,
 		Description: "An enrolled cosigner that must approve every spend. Leave it empty for none.",
 		Type:        "select",
 		Required:    needs[overlayCosigner],

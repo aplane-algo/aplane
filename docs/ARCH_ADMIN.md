@@ -1008,9 +1008,10 @@ On a per-key type that offers a cosigner (`cosigner_component_key_type`) and dec
 `rekey_authority` (with options) and `rekey_to`, the parameter form is the overlay form
 (`overlay_form.go`): the bounds as one group first (a preset's fields, every bounds
 field under Custom bounds, none under No bounds), then three controls over `cosigner`,
-`rekey_to` and `rekey_authority`: Require a cosigner, Add rekey-to addresses, and Allow
-rekeys (Rekey-to option once the list has addresses). The form the Cosigners manager
-opens, with no preset, has no bounds. An optional bounds choice (the recipient scope
+`rekey_to` and `rekey_authority`: Optional cosigner (Cosigner, marked required, under a
+preset that needs one), Add rekey-to addresses, and Allow rekeys (Rekey-to option once
+the list has addresses). The form the Cosigners manager opens, with no preset, has no
+bounds. An optional bounds choice (the recipient scope
 and the list encoding under Custom bounds) starts as "Not set" and is left out of the
 request until the operator picks one. Custom bounds also has a Fee Limit field
 (`max_fee`); left empty, it is left out of the request and the signer applies 10,000

@@ -912,8 +912,8 @@ cosigner's address:
    plain host, `aplane.falcon1024.v1` (enabled by default, with the Corridor
    preset) or `aplane.ed25519.v1` (enable it first). In apadmin, **Generate
    account**, select that type and a preset (or **No bounds**), open
-   **Require a cosigner (Falcon-1024)**, and
-   choose **Use key file...** (or **Paste public
+   **Optional cosigner** (**Cosigner** under a preset that requires one,
+   such as Corridor), and choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then
    import. The account form returns with the cosigner filled in and the other
    parameters kept. A key that is already imported is offered under its
@@ -1214,10 +1214,11 @@ The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
 compatible cosigned or bounded-cosigner account without exposing a raw Falcon
-public-key input. The account-generation **Require a cosigner** field also offers **Use
-key file...** and **Paste public JSON...**, which import a key in place and
-return to the form with it selected; a key that is already imported is offered
-under its existing name.
+public-key input. The account-generation cosigner field (**Optional cosigner**,
+or **Cosigner** where a preset requires one) also offers **Use key file...** and
+**Paste public JSON...**, which import a key in place and return to the form
+with it selected; a key that is already imported is offered under its existing
+name.
 
 On a cosigner node, open a witness key and choose `e: Export cosigner key`,
 then select **SHOW JSON** for full JSON in the terminal: the console
