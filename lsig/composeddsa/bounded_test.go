@@ -483,13 +483,14 @@ func TestBoundedBuildArgsEnforcesStaticLayout(t *testing.T) {
 
 func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
 	provider := NewComposedDSA(Config{
-		KeyType:     "aplane.test-bounded-args.v1",
-		BaseKeyType: "aplane.falcon1024.v1",
-		FamilyName:  "aplane.test",
-		Version:     1,
-		Ops:         boundedTestOps{},
-		SaltStyle:   lsigsalt.StyleNone,
-		TEALSuffix:  "int 1\nassert",
+		KeyType:      "aplane.test-bounded-args.v1",
+		BaseKeyType:  "aplane.falcon1024.v1",
+		FamilyName:   "aplane.test",
+		Version:      1,
+		Ops:          boundedTestOps{},
+		SaltStyle:    lsigsalt.StyleNone,
+		TemplateMode: "generated",
+		TEALSuffix:   "int 1\nassert",
 		Params: []lsigprovider.ParameterDef{{
 			Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 30,
 		}},
@@ -520,13 +521,14 @@ func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
 
 func TestBoundedDefaultsHaveOneProgramAndBehaviorEncoding(t *testing.T) {
 	provider := NewComposedDSA(Config{
-		KeyType:     "aplane.test-bounded-default.v1",
-		BaseKeyType: "aplane.falcon1024.v1",
-		FamilyName:  "aplane.test",
-		Version:     1,
-		Ops:         boundedTestOps{},
-		SaltStyle:   lsigsalt.StyleNone,
-		TEALSuffix:  "txn Fee\nint @limit\n<=\nassert",
+		KeyType:      "aplane.test-bounded-default.v1",
+		BaseKeyType:  "aplane.falcon1024.v1",
+		FamilyName:   "aplane.test",
+		Version:      1,
+		Ops:          boundedTestOps{},
+		SaltStyle:    lsigsalt.StyleNone,
+		TemplateMode: "generated",
+		TEALSuffix:   "txn Fee\nint @limit\n<=\nassert",
 		Params: []lsigprovider.ParameterDef{{
 			Name: "limit", Type: "uint64", Default: "100",
 		}},
@@ -573,7 +575,8 @@ func TestBoundedDefaultsHaveOneProgramAndBehaviorEncoding(t *testing.T) {
 func TestNilBoundedPreservesLegacyTEAL(t *testing.T) {
 	provider := NewComposedDSA(Config{
 		KeyType: "legacy.v1", Ops: boundedTestOps{}, SaltStyle: lsigsalt.StyleNone,
-		TEALSuffix: "// LEGACY_POLICY\nint 1\nassert",
+		TemplateMode: "generated",
+		TEALSuffix:   "// LEGACY_POLICY\nint 1\nassert",
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
 	if err != nil {
@@ -587,14 +590,15 @@ func TestNilBoundedPreservesLegacyTEAL(t *testing.T) {
 
 func newBoundedTestProvider(profile *BoundedAuthorizationProfile) *ComposedDSA {
 	return NewComposedDSA(Config{
-		KeyType:     "aplane.test-bounded.v1",
-		BaseKeyType: "aplane.falcon1024.v1",
-		FamilyName:  "aplane.test",
-		Version:     1,
-		Ops:         boundedTestOps{},
-		SaltStyle:   lsigsalt.StyleNone,
-		TEALSuffix:  "// LAYER3_TEST_POLICY\nint 1\nassert",
-		Bounded:     profile,
+		KeyType:      "aplane.test-bounded.v1",
+		BaseKeyType:  "aplane.falcon1024.v1",
+		FamilyName:   "aplane.test",
+		Version:      1,
+		Ops:          boundedTestOps{},
+		SaltStyle:    lsigsalt.StyleNone,
+		TemplateMode: "generated",
+		TEALSuffix:   "// LAYER3_TEST_POLICY\nint 1\nassert",
+		Bounded:      profile,
 	})
 }
 

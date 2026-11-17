@@ -332,7 +332,8 @@ func TestYAMLTemplateAddressListCanonicalizesTEALByDefault(t *testing.T) {
 			MinItems: 1,
 			MaxItems: 3,
 		}},
-		TEAL: "{{range @recipients}}addr {{.}}\n{{end}}return",
+		TemplateMode: "generated",
+		TEAL:         "{{range @recipients}}addr {{.}}\n{{end}}return",
 	}
 	tmpl := NewYAMLTemplate(spec)
 
@@ -356,6 +357,7 @@ func TestYAMLTemplateAddressListCanonicalizesTEALByDefault(t *testing.T) {
 func TestYAMLTemplateCompileUsesCallerContext(t *testing.T) {
 	tmpl := NewYAMLTemplate(&TemplateSpec{
 		BaseTemplateSpec: testBase(),
+		TemplateMode:     "generated",
 		TEAL:             "int 1",
 	})
 	client, err := algod.MakeClient("http://127.0.0.1:1", "")
@@ -433,7 +435,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "addr", Type: "address"},
 				},
-				TEAL: "addr @addr\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "addr @addr\nreturn",
 			},
 			wantErr: false,
 		},
@@ -444,7 +447,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 30},
 				},
-				TEAL: "{{range @recipients}}\naddr {{.}}\n{{end}}\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "{{range @recipients}}\naddr {{.}}\n{{end}}\nreturn",
 			},
 			wantErr: false,
 		},
@@ -459,7 +463,8 @@ func TestValidateSpec(t *testing.T) {
 					Version:      1,
 					DisplayName:  "Test",
 				},
-				TEAL: "return",
+				TemplateMode: "generated",
+				TEAL:         "return",
 			},
 			wantErr: true,
 			errMsg:  "base_key_type must not be set for generic templates",
@@ -472,7 +477,8 @@ func TestValidateSpec(t *testing.T) {
 					Version:     1,
 					DisplayName: "Test",
 				},
-				TEAL: "return",
+				TemplateMode: "generated",
+				TEAL:         "return",
 			},
 			wantErr: true,
 			errMsg:  "family is required",
@@ -485,7 +491,8 @@ func TestValidateSpec(t *testing.T) {
 					Family:      "test",
 					DisplayName: "Test",
 				},
-				TEAL: "return",
+				TemplateMode: "generated",
+				TEAL:         "return",
 			},
 			wantErr: true,
 			errMsg:  "version must be >= 1",
@@ -497,7 +504,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "foo", Type: "string"},
 				},
-				TEAL: "return",
+				TemplateMode: "generated",
+				TEAL:         "return",
 			},
 			wantErr: true,
 			errMsg:  "invalid type",
@@ -517,7 +525,8 @@ func TestValidateSpec(t *testing.T) {
 						},
 					},
 				},
-				TEAL: "return",
+				TemplateMode: "generated",
+				TEAL:         "return",
 			},
 			wantErr: true,
 			errMsg:  "unsupported transform",
@@ -527,6 +536,7 @@ func TestValidateSpec(t *testing.T) {
 			spec: &TemplateSpec{
 				BaseTemplateSpec: testBase(),
 				Parameters:       []ParameterSpec{},
+				TemplateMode:     "generated",
 				TEAL:             "int @undefined_var\nreturn",
 			},
 			wantErr: true,
@@ -540,7 +550,8 @@ func TestValidateSpec(t *testing.T) {
 					{Name: "addr", Type: "address"},
 					{Name: "addr", Type: "uint64"},
 				},
-				TEAL: "addr @addr\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "addr @addr\nreturn",
 			},
 			wantErr: true,
 			errMsg:  "duplicate parameter name",
@@ -556,7 +567,8 @@ func TestValidateSpec(t *testing.T) {
 					DisplayName:   "Test",
 					MaxOpcodeCost: ptrUint64(20_000),
 				},
-				TEAL: "return",
+				TemplateMode: "generated",
+				TEAL:         "return",
 			},
 			wantErr: true,
 			errMsg:  "newer than supported",
@@ -568,7 +580,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "addr", Type: "address", Min: ptrUint64(1)},
 				},
-				TEAL: "addr @addr\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "addr @addr\nreturn",
 			},
 			wantErr: true,
 			errMsg:  "min/max constraints only valid for uint64",
@@ -580,7 +593,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "val", Type: "uint64", Min: ptrUint64(100), Max: ptrUint64(50)},
 				},
-				TEAL: "int @val\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "int @val\nreturn",
 			},
 			wantErr: true,
 			errMsg:  "min (100) cannot be greater than max (50)",
@@ -592,7 +606,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "val", Type: "uint64", Min: ptrUint64(1), Max: ptrUint64(100)},
 				},
-				TEAL: "int @val\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "int @val\nreturn",
 			},
 			wantErr: false,
 		},
@@ -682,7 +697,7 @@ func TestValidateSpec(t *testing.T) {
 				TEAL: "int @unlock_round",
 			},
 			wantErr: true,
-			errMsg:  "legacy scalar substitution",
+			errMsg:  "@variable substitution",
 		},
 		{
 			name: "schema v1 strict validates variable parameter mapping",
@@ -738,7 +753,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "val", Type: "uint64", Default: "notanumber"},
 				},
-				TEAL: "int @val\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "int @val\nreturn",
 			},
 			wantErr: true,
 			errMsg:  "invalid default",
@@ -750,7 +766,8 @@ func TestValidateSpec(t *testing.T) {
 				Parameters: []ParameterSpec{
 					{Name: "val", Type: "uint64", Min: ptrUint64(10), Default: "5"},
 				},
-				TEAL: "int @val\nreturn",
+				TemplateMode: "generated",
+				TEAL:         "int @val\nreturn",
 			},
 			wantErr: true,
 			errMsg:  "invalid default",
@@ -803,7 +820,8 @@ func TestYAMLTemplateInterface(t *testing.T) {
 				Required:    true,
 			},
 		},
-		TEAL: "addr @recipient\nint @amount\nreturn",
+		TemplateMode: "generated",
+		TEAL:         "addr @recipient\nint @amount\nreturn",
 	}
 
 	tmpl := NewYAMLTemplate(spec)
@@ -849,7 +867,8 @@ func TestYAMLTemplateGenerateTEAL(t *testing.T) {
 			{Name: "recipient", Type: "address", Required: true},
 			{Name: "unlock_round", Type: "uint64", Required: true},
 		},
-		TEAL: "addr @recipient\nint @unlock_round\nreturn",
+		TemplateMode: "generated",
+		TEAL:         "addr @recipient\nint @unlock_round\nreturn",
 	}
 
 	tmpl := NewYAMLTemplate(spec)
@@ -885,7 +904,8 @@ func TestYAMLTemplateGenerateTEALOmittedDerivationIsUnsalted(t *testing.T) {
 			{Name: "recipient", Type: "address", Required: true},
 			{Name: "unlock_round", Type: "uint64", Required: true},
 		},
-		TEAL: "addr @recipient\nint @unlock_round\nreturn",
+		TemplateMode: "generated",
+		TEAL:         "addr @recipient\nint @unlock_round\nreturn",
 	}
 
 	tmpl := NewYAMLTemplate(spec)
@@ -912,6 +932,7 @@ func TestYAMLTemplateRejectsRetiredDerivationVersions(t *testing.T) {
 	} {
 		spec := &TemplateSpec{
 			BaseTemplateSpec: testBaseWithDerivationVersion(version),
+			TemplateMode:     "generated",
 			TEAL:             "int 1\nreturn",
 		}
 		if err := ValidateSpec(spec); err == nil {
@@ -999,6 +1020,7 @@ assert`
 func TestYAMLTemplateCompileWithSaltOmittedDerivationUsesUnmodifiedBytecode(t *testing.T) {
 	tmpl := NewYAMLTemplate(&TemplateSpec{
 		BaseTemplateSpec: testBaseWithoutDerivationVersion(),
+		TemplateMode:     "generated",
 		TEAL: `#pragma version 10
 int 1
 return`,
@@ -1025,6 +1047,7 @@ return`,
 func TestYAMLTemplateCompileWithAlgodV13AutoSalt(t *testing.T) {
 	tmpl := NewYAMLTemplate(&TemplateSpec{
 		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionAlgodAutoSalt),
+		TemplateMode:     "generated",
 		TEAL: `#pragma version 13
 int 1
 return`,
@@ -1063,7 +1086,8 @@ func TestYAMLTemplateGenerateTEALWithAddressList(t *testing.T) {
 		Parameters: []ParameterSpec{
 			{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 3},
 		},
-		TEAL: "{{range @recipients}}\naddr {{.}}\n{{end}}\nreturn",
+		TemplateMode: "generated",
+		TEAL:         "{{range @recipients}}\naddr {{.}}\n{{end}}\nreturn",
 	}
 
 	tmpl := NewYAMLTemplate(spec)
@@ -1093,6 +1117,7 @@ version: 1
 display_name: Good Template
 valid_rekey_target: false
 max_opcode_cost: 20000
+template_mode: generated
 teal: "return"
 parameters: []
 `
@@ -1369,6 +1394,7 @@ func unsaltedOffCurveBytecodeForVersion(t *testing.T, version byte) []byte {
 func TestDefaultDisplayColor(t *testing.T) {
 	spec := &TemplateSpec{
 		BaseTemplateSpec: testBase(),
+		TemplateMode:     "generated",
 		TEAL:             "return",
 		// DisplayColor not set in testBase()
 	}
@@ -1415,6 +1441,7 @@ func TestValidateSpecRejectsNonRelocatableTEAL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			spec := &TemplateSpec{
 				BaseTemplateSpec: testBase(),
+				TemplateMode:     "generated",
 				TEAL:             tc.teal,
 			}
 			err := ValidateSpec(spec)
@@ -1434,6 +1461,7 @@ func TestValidateSpecRelocatableTEALAllowsCommentsAndSymbolicVariables(t *testin
 		Parameters: []ParameterSpec{
 			{Name: "hash", Type: "bytes", Required: true, MaxLength: 32},
 		},
+		TemplateMode: "generated",
 		TEAL: `// bytecblock 0xabcd is ignored in comments
 arg 0 // bytec 0 in an inline comment is ignored
 sha256
@@ -1496,7 +1524,8 @@ func TestParametersWithConstraints(t *testing.T) {
 				Default:     "100",
 			},
 		},
-		TEAL: "int @amount\nreturn",
+		TemplateMode: "generated",
+		TEAL:         "int @amount\nreturn",
 	}
 
 	tmpl := NewYAMLTemplate(spec)
@@ -1560,6 +1589,7 @@ func ptrUint64(v uint64) *uint64 {
 func TestRuntimeArgs(t *testing.T) {
 	spec := &TemplateSpec{
 		BaseTemplateSpec: testBase(),
+		TemplateMode:     "generated",
 		TEAL:             "return",
 		RuntimeArgs: []RuntimeArgSpec{
 			{
@@ -1601,6 +1631,7 @@ func TestRuntimeArgs(t *testing.T) {
 func TestBuildArgsValidation(t *testing.T) {
 	spec := &TemplateSpec{
 		BaseTemplateSpec: testBase(),
+		TemplateMode:     "generated",
 		TEAL:             "return",
 		RuntimeArgs: []RuntimeArgSpec{
 			{Name: "preimage", Type: "bytes", Required: true, ByteLength: 4},
@@ -1659,6 +1690,7 @@ func TestRuntimeArgsValidation(t *testing.T) {
 			name: "valid runtime arg",
 			spec: &TemplateSpec{
 				BaseTemplateSpec: testBase(),
+				TemplateMode:     "generated",
 				TEAL:             "return",
 				RuntimeArgs: []RuntimeArgSpec{
 					{Name: "preimage", Type: "bytes"},
@@ -1670,6 +1702,7 @@ func TestRuntimeArgsValidation(t *testing.T) {
 			name: "empty runtime arg name",
 			spec: &TemplateSpec{
 				BaseTemplateSpec: testBase(),
+				TemplateMode:     "generated",
 				TEAL:             "return",
 				RuntimeArgs: []RuntimeArgSpec{
 					{Name: "", Type: "bytes"},
@@ -1682,6 +1715,7 @@ func TestRuntimeArgsValidation(t *testing.T) {
 			name: "duplicate runtime arg name",
 			spec: &TemplateSpec{
 				BaseTemplateSpec: testBase(),
+				TemplateMode:     "generated",
 				TEAL:             "return",
 				RuntimeArgs: []RuntimeArgSpec{
 					{Name: "preimage", Type: "bytes"},
@@ -1695,6 +1729,7 @@ func TestRuntimeArgsValidation(t *testing.T) {
 			name: "invalid runtime arg type",
 			spec: &TemplateSpec{
 				BaseTemplateSpec: testBase(),
+				TemplateMode:     "generated",
 				TEAL:             "return",
 				RuntimeArgs: []RuntimeArgSpec{
 					{Name: "arg", Type: "invalid"},
@@ -1707,6 +1742,7 @@ func TestRuntimeArgsValidation(t *testing.T) {
 			name: "string type is valid",
 			spec: &TemplateSpec{
 				BaseTemplateSpec: testBase(),
+				TemplateMode:     "generated",
 				TEAL:             "return",
 				RuntimeArgs: []RuntimeArgSpec{
 					{Name: "password", Type: "string"},
@@ -1718,6 +1754,7 @@ func TestRuntimeArgsValidation(t *testing.T) {
 			name: "uint64 type is valid",
 			spec: &TemplateSpec{
 				BaseTemplateSpec: testBase(),
+				TemplateMode:     "generated",
 				TEAL:             "return",
 				RuntimeArgs: []RuntimeArgSpec{
 					{Name: "nonce", Type: "uint64"},

@@ -908,7 +908,7 @@ schema_version: 2
 derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
-template_mode: generated     # strict | generated; legacy is not allowed
+template_mode: generated     # strict | generated
 # ...publisher, family, version, display_name, max_opcode_cost, valid_rekey_target as above
 
 bounded:

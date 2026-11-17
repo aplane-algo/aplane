@@ -26,15 +26,16 @@ func plainTestProfile(rekey boundedmeta.RekeySetting) *BoundedAuthorizationProfi
 
 func newPlainTestProvider(profile *BoundedAuthorizationProfile, suffix string, layer3 *Layer3Policy) *ComposedDSA {
 	return NewComposedDSA(Config{
-		KeyType:     "aplane.falcon1024.v1",
-		BaseKeyType: "aplane.falcon1024.v1",
-		FamilyName:  "aplane.falcon1024",
-		Version:     1,
-		Ops:         boundedTestOps{},
-		SaltStyle:   lsigsalt.StyleNone,
-		TEALSuffix:  suffix,
-		Bounded:     profile,
-		Layer3:      layer3,
+		KeyType:      "aplane.falcon1024.v1",
+		BaseKeyType:  "aplane.falcon1024.v1",
+		FamilyName:   "aplane.falcon1024",
+		Version:      1,
+		Ops:          boundedTestOps{},
+		SaltStyle:    lsigsalt.StyleNone,
+		TemplateMode: "generated",
+		TEALSuffix:   suffix,
+		Bounded:      profile,
+		Layer3:       layer3,
 	})
 }
 

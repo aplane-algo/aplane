@@ -70,6 +70,7 @@ func newTestFalconHashlockProvider() *ComposedFalcon {
 			Type:     "bytes",
 			Required: true,
 		}},
+		TemplateMode: "generated",
 		TEALSuffix: `arg 1
 sha256
 byte @hash

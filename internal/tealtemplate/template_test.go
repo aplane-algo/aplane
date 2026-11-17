@@ -122,10 +122,10 @@ func TestRenderStrictFragmentSeparatesBlocksFromBody(t *testing.T) {
 	}
 }
 
-func TestRenderStrictRejectsLegacyScalarSubstitution(t *testing.T) {
+func TestRenderStrictRejectsAtVariableSubstitution(t *testing.T) {
 	_, err := RenderStrict("txn Receiver\n@recipient\n==", map[string]string{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "legacy scalar substitution") {
-		t.Fatalf("expected legacy scalar substitution error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "@variable substitution") {
+		t.Fatalf("expected @variable substitution error, got %v", err)
 	}
 }
 

@@ -185,7 +185,7 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Ops:                base.Ops,
 		TEALSuffix:         strings.TrimSpace(spec.TEAL),
 		SaltStyle:          saltStyle,
-		TemplateMode:       generictemplate.EffectiveTemplateMode(spec),
+		TemplateMode:       spec.TemplateMode,
 		TemplateVars:       spec.TemplateVariables,
 		Params:             generictemplate.ParameterSpecToParameterDefs(spec.Parameters),
 		RuntimeArgs:        append(generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs), runtimeDefs...),

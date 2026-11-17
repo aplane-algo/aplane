@@ -90,7 +90,7 @@ type Config struct {
 	Ops          DSAOps
 	TEALSuffix   string // Raw TEAL with @variable refs
 	SaltStyle    lsigsalt.Style
-	TemplateMode string // legacy, generated, or strict; empty means legacy
+	TemplateMode string // generated or strict; required with a TEAL suffix
 	TemplateVars []tealtemplate.TemplateVariable
 	Params       []lsigprovider.ParameterDef  // Creation-time parameters
 	RuntimeArgs  []lsigprovider.RuntimeArgDef // Signing-time arguments
@@ -460,7 +460,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		OpcodeProfile:    c.opcodeProfile,
 		TEALSuffix:       strings.TrimSpace(c.tealSuffix),
 		SaltStyle:        c.fingerprintSaltStyle(),
-		TemplateMode:     c.effectiveTemplateMode(),
+		TemplateMode:     c.templateMode,
 		TemplateVars:     c.templateVars,
 		Parameters:       params,
 		RuntimeArgs:      runtimeArgs,
@@ -521,7 +521,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("#pragma version %d\n\n", version))
 
-	mode := c.effectiveTemplateMode()
+	mode := c.templateMode
 	hasSuffix := c.hasSuffix()
 	style, err := c.resolvedSaltStyle()
 	if err != nil {
@@ -543,7 +543,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 				b.WriteString(strictSuffix.ConstantBlocks)
 				b.WriteString("\n\n")
 			}
-		case generictemplate.TemplateModeLegacy, generictemplate.TemplateModeGenerated:
+		case generictemplate.TemplateModeGenerated:
 		default:
 			return "", fmt.Errorf("unsupported template_mode %q", c.templateMode)
 		}
@@ -599,7 +599,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		case generictemplate.TemplateModeStrict:
 			b.WriteString(strictSuffix.TEAL)
 			b.WriteString("\n\n")
-		case generictemplate.TemplateModeLegacy, generictemplate.TemplateModeGenerated:
+		case generictemplate.TemplateModeGenerated:
 			// Optional user-supplied suffix with @variable substitution.
 			paramDefs := make([]tealtemplate.ParamDef, len(authorDefs))
 			for i, p := range authorDefs {
@@ -707,13 +707,6 @@ func (c *ComposedDSA) fingerprintSaltStyle() string {
 		return string(c.saltStyle)
 	}
 	return string(style)
-}
-
-func (c *ComposedDSA) effectiveTemplateMode() string {
-	if c.templateMode != "" {
-		return c.templateMode
-	}
-	return generictemplate.TemplateModeLegacy
 }
 
 func validateSuffixControlFlow(teal string) error {

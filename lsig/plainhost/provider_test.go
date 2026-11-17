@@ -391,8 +391,8 @@ func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
 // one changed, as TestArrangementGoldens and TestBoundsFingerprintGoldens show.
 func TestPlainHostGrammarGoldens(t *testing.T) {
 	want := map[string]string{
-		"falcon":  "1:a9b67bca1c1432de249ec04c84275d28b1f7a7b8e84b75f2129ab023cfcef6d2",
-		"ed25519": "1:692c4726da53ea27092e3c8dc0205e268201ecc418c24076ec237d95911689f2",
+		"falcon":  "1:ba9ece48628a5c2288280c46a20fb5e27efa86edbdad4fa7dc016e48baee9a15",
+		"ed25519": "1:97e3e35be312bd01dec3ef122d7836c180befb4510e4582125aa1ba177cc6cc1",
 	}
 	for _, b := range bases(t) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {
@@ -416,21 +416,21 @@ func TestArrangementGoldens(t *testing.T) {
 		"falcon": {
 			"": {
 				programs:     "644ffc120e9210f5b20eef7c0e0d2cac450027eb4c7e9025be5cffeba16a1c82",
-				fingerprints: "808c62e885ed2b74ac925f679114e2d4dcff18b2fe7a628177dd1ece776aa10b",
+				fingerprints: "ad4f02137c8810182d545a18894a94ed3cae2c8ac91cff155b007553db771a03",
 			},
 			witness.Ed25519V1: {
 				programs:     "3f96db42c2a6ce3389ec653d74b7188dd12297d4f1a63e371d8e5e5338f4ca5e",
-				fingerprints: "faa2fde48d2fe21eee16f58d29d53b39ad0a83a75885bdaaf8a859cc025071c1",
+				fingerprints: "b99583f66e0ae23af5cc3f90bc30ff7a09c90132974739302ff2f1b9fed9e0bc",
 			},
 		},
 		"ed25519": {
 			"": {
 				programs:     "8a7dd8014f1e120630d9c2988b7fbdd7caff757b1bda9c4da414073bbc5d15b4",
-				fingerprints: "543167f1c324a353b89f9d0d666a8bf0e987889ccab7afb2ae01d3064590f52e",
+				fingerprints: "639c4c3b124117e326b9e4ca336e5eef74ec47fe4eb27d31a7ce4d70ca2bf6ad",
 			},
 			witness.Ed25519V1: {
 				programs:     "d0a89a199b81fd0614c498713fe2eea1a7bebde66fbdc6dea0254c8790344b74",
-				fingerprints: "ccf0ff44eef5dc71bb34e8fd600fe43c62d0cc2062d12f3985e5d73a3591a7f3",
+				fingerprints: "a901515e486589e7432c6f4c083f4b9b3c5f971a025911748c137d3c3c72528c",
 			},
 		},
 	}

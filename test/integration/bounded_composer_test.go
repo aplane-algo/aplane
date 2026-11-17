@@ -484,7 +484,8 @@ func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProf
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
 		Ops: falconv1.NewFalconOps(nil), SaltStyle: lsigsalt.StylePushbytes,
-		TEALSuffix: "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
+		TemplateMode: "generated",
+		TEALSuffix:   "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
 	})
 }
 

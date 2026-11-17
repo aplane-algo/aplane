@@ -97,6 +97,8 @@ func TestSaveAndLoadTemplate(t *testing.T) {
 
 	yamlData := []byte(`
 schema_version: 1
+
+template_mode: generated
 family: test-template
 version: 1
 display_name: "Test Template"
@@ -151,6 +153,8 @@ func TestSaveAndLoadComposedTemplate(t *testing.T) {
 
 	yamlData := []byte(`
 schema_version: 1
+
+template_mode: generated
 family: falcon1024-test
 version: 1
 display_name: "Falcon Test"

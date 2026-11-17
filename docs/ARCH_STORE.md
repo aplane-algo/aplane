@@ -1070,7 +1070,7 @@ contains:
 - `display_name`
 - `description`
 - `display_color`
-- `template_mode` (`legacy`, `strict`, or `generated`) — carried on
+- `template_mode` (`strict` or `generated`, required) — carried on
   `TemplateSpec`, not on the embedded `BaseTemplateSpec`
 
 Template capability notes:
