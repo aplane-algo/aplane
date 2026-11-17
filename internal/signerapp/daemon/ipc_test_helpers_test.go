@@ -37,11 +37,6 @@ func registerPendingSession(manager *adminserver.SessionManager, session *admins
 
 func newBoundTestSession(server *IPCServer, conn net.Conn, ir *productruntime.Runtime) *adminserver.Session {
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn), server.signer.adminSessionDeps())
-	remoteAddr := "test-ipc"
-	if addr := conn.RemoteAddr(); addr != nil {
-		remoteAddr = addr.String()
-	}
-	session.SetTransportInfo(adminserver.TransportIPC, remoteAddr)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	return session
 }

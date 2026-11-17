@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	TransportUnknown = "unknown"
-	TransportIPC     = "ipc"
-	TransportSSH     = "ssh"
+	// TransportIPC is the only admin transport; audit entries from an admin
+	// session record it.
+	TransportIPC = "ipc"
 )
 
 var sessionIDCounter atomic.Uint64
@@ -33,7 +33,6 @@ type SessionContext struct {
 	SessionID          string
 	AdminPrincipal     SessionPrincipal
 	AuthMethod         string
-	Transport          string
 	RemoteAddr         string
 	RequesterPrincipal SessionPrincipal
 	ApproverPrincipal  SessionPrincipal
@@ -43,7 +42,6 @@ func newSessionContext(method string, conn adminproto.AdminConn) SessionContext 
 	return SessionContext{
 		SessionID:  newSessionID(),
 		AuthMethod: method,
-		Transport:  TransportUnknown,
 		RemoteAddr: connRemoteAddr(conn),
 	}
 }

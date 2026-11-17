@@ -1032,9 +1032,6 @@ func (s *Session) HandlePrepareGenerateKey(msg *protocol.PrepareGenerateKeyMessa
 	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
 		return
 	}
-	if !s.requireLocalTransport(msg.ID, auth.ActionKeysGenerate, resource, "generation preparation is only available on local AP Admin") {
-		return
-	}
 	result := s.keyServices.PrepareGenerateKey(adminproto.PrepareGenerateKeyRequest{
 		KeyType:    msg.KeyType,
 		Parameters: msg.Parameters,
@@ -1080,12 +1077,6 @@ func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysExport, resource) {
 		return
 	}
-	if s.Transport() != TransportIPC {
-		const reason = "key export is only available on local AP Admin"
-		s.logAuthorizationDenied(s.Identity(), auth.ActionKeysExport, resource, reason)
-		_ = s.SendError(msg.ID, protocol.ErrCodeAuthorizationDenied, reason)
-		return
-	}
 	// The service delivers a successful phrase itself, while it still holds
 	// the key for use, so its audit outcome reflects what reached the client.
 	deliver := func(result adminproto.ExportKeyResult) error {
@@ -1113,22 +1104,10 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}
-	if !s.requireLocalTransport(msg.ID, auth.ActionKeysImport, resource, "key import is only available on local AP Admin") {
-		return
-	}
 	imp := s.keyServices.ImportKey(s.auditContext(), adminproto.ImportKeyRequest{
 		KeyType:    msg.KeyType,
 		Mnemonic:   msg.Mnemonic,
 		Parameters: msg.Parameters,
 	})
 	_ = s.WriteJSON(ProtocolImportResultMessage(msg.ID, imp))
-}
-
-func (s *Session) requireLocalTransport(requestID string, action auth.Action, resource auth.Resource, reason string) bool {
-	if s.Transport() == TransportIPC {
-		return true
-	}
-	s.logAuthorizationDenied(s.Identity(), action, resource, reason)
-	_ = s.SendError(requestID, protocol.ErrCodeAuthorizationDenied, reason)
-	return false
 }

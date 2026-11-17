@@ -292,13 +292,6 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 		}))
 		return AuthOutcomeBootstrapHandled
 	}
-	if s.Transport() != "ipc" {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeAuthorizationDenied,
-			Error: "initialize_store is only available over local IPC",
-		}))
-		return AuthOutcomeBootstrapHandled
-	}
 	if s.productServices == nil {
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInternal,
@@ -394,12 +387,6 @@ func (s *Session) SessionID() string {
 	return s.context.SessionID
 }
 
-func (s *Session) Transport() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.context.Transport
-}
-
 func (s *Session) State() SessionState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -426,17 +413,6 @@ func (s *Session) SetAuthMethod(method string) {
 	if method != "" {
 		s.method = method
 		s.context.AuthMethod = method
-	}
-}
-
-func (s *Session) SetTransportInfo(transport, remoteAddr string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if transport != "" {
-		s.context.Transport = transport
-	}
-	if remoteAddr != "" {
-		s.context.RemoteAddr = remoteAddr
 	}
 }
 

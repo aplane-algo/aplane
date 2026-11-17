@@ -178,7 +178,6 @@ func TestAuditSessionContextAttribution(t *testing.T) {
 
 	ctx := adminserver.SessionContext{
 		SessionID:  "admin-42",
-		Transport:  adminserver.TransportSSH,
 		RemoteAddr: "10.0.0.1:2222",
 		AdminPrincipal: adminserver.SessionPrincipal{
 			ID:     "alice-admin",
@@ -199,7 +198,7 @@ func TestAuditSessionContextAttribution(t *testing.T) {
 		if entry.Principal != "alice-admin" || entry.RequesterPrincipal != "requester" || entry.ApproverPrincipal != "approver" {
 			t.Fatalf("session principal attribution = %#v", entry)
 		}
-		if entry.AdminSessionID != "admin-42" || entry.Transport != adminserver.TransportSSH || entry.RemoteAddr != "10.0.0.1:2222" {
+		if entry.AdminSessionID != "admin-42" || entry.Transport != adminserver.TransportIPC || entry.RemoteAddr != "10.0.0.1:2222" {
 			t.Fatalf("session transport attribution = %#v", entry)
 		}
 	}
@@ -218,7 +217,6 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 
 	ctx := adminserver.SessionContext{
 		SessionID:      "admin-42",
-		Transport:      adminserver.TransportSSH,
 		RemoteAddr:     "10.0.0.1:2222",
 		AdminPrincipal: adminserver.SessionPrincipal{ID: "alice-admin"},
 	}
@@ -238,7 +236,7 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 	if entry.Principal != "alice-admin" || entry.RequesterPrincipal != "alice-admin" {
 		t.Fatalf("entry principal fields = %#v, want alice-admin", entry)
 	}
-	if entry.AdminSessionID != "admin-42" || entry.Transport != adminserver.TransportSSH || entry.RemoteAddr != "10.0.0.1:2222" {
+	if entry.AdminSessionID != "admin-42" || entry.Transport != adminserver.TransportIPC || entry.RemoteAddr != "10.0.0.1:2222" {
 		t.Fatalf("entry session fields = %#v", entry)
 	}
 	for _, want := range []string{"action=keys.delete", "resource_type=key", "resource_id=ADDR", "reason=forbidden"} {
@@ -531,7 +529,6 @@ func TestAuditKeyMutationAttributionFromContext(t *testing.T) {
 	session := adminserver.SessionContext{
 		SessionID:      "sess-1",
 		AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
-		Transport:      adminserver.TransportIPC,
 	}
 	logger.LogKeyGenerated(context.Background(), "ADDR1", "ed25519")
 	logger.LogKeyGenerated(signeraudit.WithAttribution(context.Background(), auditAttribution{

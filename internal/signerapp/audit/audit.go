@@ -556,7 +556,7 @@ func sessionAuditFields(ctx adminserver.SessionContext) AuditEntry {
 		RequesterPrincipal: requester,
 		ApproverPrincipal:  approver,
 		AdminSessionID:     ctx.SessionID,
-		Transport:          ctx.Transport,
+		Transport:          adminserver.TransportIPC,
 		RemoteAddr:         ctx.RemoteAddr,
 	}
 }

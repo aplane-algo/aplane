@@ -177,7 +177,6 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 	setPreAuthReadDeadline(adminConn, time.Now().Add(s.loginTimeout()))
 	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps())
 	session.SetAuthMethod("ipc-passphrase")
-	session.SetTransportInfo(adminserver.TransportIPC, adminConn.RemoteAddr())
 
 	var active *adminserver.Session
 	var displacementConfirmedFor *adminserver.Session

@@ -110,7 +110,7 @@ func TestSettingSaveErrorAuditNamesTheSettingValueAndWhetherInEffect(t *testing.
 			t.Fatal(err)
 		}
 		a.LogSettingSaveErrorContext(adminserver.SessionContext{
-			SessionID: "admin-7", Transport: "ipc", AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
+			SessionID: "admin-7", AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
 		}, "user_auto_approve", "false", inEffect, "disk full")
 		if err := a.Close(); err != nil {
 			t.Fatal(err)
