@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -450,8 +451,8 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	}
 	for _, keyType := range []string{"ed25519", witness.Falcon1024V1} {
 		info := byType[keyType]
-		if info.SigningFlow != "" || info.CosignerComponentKeyType != "" {
-			t.Fatalf("%s signing flow metadata = %q/%q, want empty", keyType, info.SigningFlow, info.CosignerComponentKeyType)
+		if info.SigningFlow != "" || len(info.CosignerComponentKeyTypes) != 0 {
+			t.Fatalf("%s signing flow metadata = %q/%v, want empty", keyType, info.SigningFlow, info.CosignerComponentKeyTypes)
 		}
 	}
 }
@@ -494,8 +495,8 @@ func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 		Contract: composeddsa.BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000)),
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: profile})
@@ -504,7 +505,7 @@ func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
 	}
 	info := infos[0]
-	if info.SigningFlow != signerapi.SigningFlowCosigned1 || info.CosignerComponentKeyType != witness.Falcon1024V1 {
+	if info.SigningFlow != signerapi.SigningFlowCosigned1 || !slices.Equal(info.CosignerComponentKeyTypes, []string{witness.Falcon1024V1}) {
 		t.Fatalf("bounded cosigner routing = %#v", info)
 	}
 	if info.BoundedAuthorization == nil || info.BoundedAuthorization.Cosigner == nil {
@@ -525,9 +526,9 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 		Rekey:                  boundedmeta.RekeyRefused,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
 			PublicKeyHex: strings.Repeat("ab", 32), ComponentKeyID: "COSIGNER",
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	info := boundedInfo(metadata)
@@ -668,7 +669,7 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}})
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
@@ -733,7 +734,7 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}})
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
@@ -1063,7 +1064,7 @@ func (p restTestDSAProvider) CreationParams() []lsigprovider.ParameterDef {
 	if p.bounded != nil && p.bounded.Cosigner != nil {
 		return []lsigprovider.ParameterDef{{
 			Name: boundedmeta.CosignerPublicKeyParameter, Type: "bytes", Required: true,
-			MaxLength: boundedmeta.CosignerPublicKeySizeV1 * 2,
+			MaxLength: boundedmeta.DefaultCosignerPublicKeySize * 2,
 		}}
 	}
 	return nil
@@ -1108,7 +1109,7 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 		metadata.Cosigner = &cosigner
 		metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
 			Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
-			MaxSize: boundedmeta.CosignerSignatureMaxSizeV1,
+			MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize,
 			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
 		})
 	}

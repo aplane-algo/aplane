@@ -32,7 +32,7 @@ import (
 // The cosigned flow carries a cosigned account's spends, its cosigned rekeys and
 // its listed rekeys; no other path and no uncosigned account.
 func TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths(t *testing.T) {
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))
 	request := signerapi.ComponentRequest{
 		GroupBytesHex: []string{"TX00"},
 		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ACCOUNT"}},
@@ -99,7 +99,7 @@ func TestUnifiedAssemblyRejectsCanceledContext(t *testing.T) {
 }
 
 func TestBoundedAssemblyReceiptBindsRuntimeAndMetadata(t *testing.T) {
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1))
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize))
 	txID := bytes.Repeat([]byte{0x43}, 32)
 	first, err := boundedAssemblyReceiptMessage("ACCOUNT", txID, metadata, map[string][]byte{"preimage": {1}})
 	if err != nil {
@@ -317,18 +317,18 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 	}
 	metadata := &boundedmeta.Metadata{
 		Contract:               boundedmeta.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.CosignerSignatureMaxSizeV1}},
+		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.DefaultCosignerSignatureMaxSize}},
 		SpendEffects:           []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)),
 		Rekey:        boundedmeta.RekeyRefused,
 		Layer3Policy: boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
@@ -528,7 +528,7 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 // bounded host's, before signing anything; an account without a cosigner is
 // signed there.
 func TestPlainSignRefusesACosignedAccount(t *testing.T) {
-	cosignerKey := bytes.Repeat([]byte{0x47}, boundedmeta.CosignerPublicKeySizeV1)
+	cosignerKey := bytes.Repeat([]byte{0x47}, boundedmeta.DefaultCosignerPublicKeySize)
 	bounded := boundedCosignerTestMetadata(t, cosignerKey)
 	plain := boundedmeta.Clone(bounded)
 	plain.Contract, plain.SpendEffects, plain.MaxFee, plain.Layer3Policy = boundedmeta.PlainContract, nil, nil, boundedmeta.Layer3PolicyNone

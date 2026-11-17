@@ -342,7 +342,7 @@ func TestRekeyListTakesAnyAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownCosigner := bytes.Repeat([]byte{0x62}, boundedmeta.CosignerPublicKeySizeV1)
+	ownCosigner := bytes.Repeat([]byte{0x62}, boundedmeta.DefaultCosignerPublicKeySize)
 	_, ownCosignerAddress, err := nativefalcon.CanonicalAddress(ownCosigner)
 	if err != nil {
 		t.Fatal(err)

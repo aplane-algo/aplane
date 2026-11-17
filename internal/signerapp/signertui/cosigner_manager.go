@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -59,7 +60,7 @@ func (m Model) beginManagerCosignerImport() Model {
 	m.cosigner.importError = ""
 	m.cosigner.paramName = ""
 	m.cosigner.returnView = ViewCosignerReferences
-	m.cosigner.requiredKeyType = ""
+	m.cosigner.requiredKeyTypes = nil
 	m.clearCosignerImportEnvelope()
 	m.viewState = ViewCosignerImportForm
 	return m
@@ -154,7 +155,7 @@ func (m Model) handleCosignerReferenceDetailsKeys(msg tea.KeyMsg) (tea.Model, te
 func (m Model) compatibleCosignerGenerateTypeIndices(componentKeyType string) []int {
 	var indices []int
 	for index, info := range getServerKeyTypes() {
-		if info.CosignerComponentKeyType == componentKeyType {
+		if slices.Contains(info.CosignerComponentKeyTypes, componentKeyType) {
 			indices = append(indices, index)
 		}
 	}
@@ -192,7 +193,7 @@ func (m Model) beginGenerateWithCosignerReference(keyTypeIndex int, reference Co
 		return m, nil
 	}
 	info, ok := findServerKeyType(keyType)
-	if !ok || info.CosignerComponentKeyType != reference.KeyType {
+	if !ok || !slices.Contains(info.CosignerComponentKeyTypes, reference.KeyType) {
 		m.cosigner.importError = "Compatible account key type is no longer available"
 		m.viewState = ViewCosignerReferenceDetails
 		return m, nil

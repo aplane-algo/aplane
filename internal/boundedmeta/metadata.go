@@ -38,10 +38,17 @@ const (
 	SpendEffectAssetOptIn             = "asset_opt_in"
 	CosignerContractV1                = "cosigner1"
 	CosignerPublicKeyParameter        = "cosigner_public_key"
-	CosignerSignatureSlot             = "cosigner_signature"
-	CosignerComponentKeyTypeV1        = witness.Falcon1024V1
-	CosignerPublicKeySizeV1           = witness.Falcon1024PublicKeySize
-	CosignerSignatureMaxSizeV1        = witness.Falcon1024SignatureSize
+	// CosignerKeyTypeParameter records a plain host account's cosigner key
+	// type when it is not DefaultCosignerComponentKeyType. The signer fills it
+	// from the cosigner reference; an account without it has the default.
+	CosignerKeyTypeParameter = "cosigner_key_type"
+	CosignerSignatureSlot    = "cosigner_signature"
+	// DefaultCosignerComponentKeyType is the cosigner key type of an account
+	// that records none: every account made before accounts could take
+	// another, and every composed template's. Its sizes follow.
+	DefaultCosignerComponentKeyType = witness.Falcon1024V1
+	DefaultCosignerPublicKeySize    = witness.Falcon1024PublicKeySize
+	DefaultCosignerSignatureMaxSize = witness.Falcon1024SignatureSize
 	// MaxFeeLimit is the largest fee ceiling an account may record. It is not a
 	// budget: it is the largest whole number every client reads exactly, since
 	// the ceiling travels as a JSON number.
@@ -405,11 +412,12 @@ func ValidateCosignerAuthorizationProfile(cosigner *CosignerAuthorization, rekey
 	if cosigner.Contract != CosignerContractV1 {
 		return fmt.Errorf("unsupported bounded cosigner contract %q", cosigner.Contract)
 	}
-	if cosigner.ComponentKeyType != CosignerComponentKeyTypeV1 {
+	_, signatureMaxSize, ok := CosignerSizes(cosigner.ComponentKeyType)
+	if !ok {
 		return fmt.Errorf("unsupported bounded cosigner component key type %q", cosigner.ComponentKeyType)
 	}
-	if cosigner.SignatureMaxSize != CosignerSignatureMaxSizeV1 {
-		return fmt.Errorf("bounded cosigner signature_max_size %d invalid (expected %d)", cosigner.SignatureMaxSize, CosignerSignatureMaxSizeV1)
+	if cosigner.SignatureMaxSize != signatureMaxSize {
+		return fmt.Errorf("bounded cosigner signature_max_size %d invalid (expected %d)", cosigner.SignatureMaxSize, signatureMaxSize)
 	}
 	if want := CosignerRequiredOn(rekey); !slices.Equal(cosigner.RequiredOn, want) {
 		return fmt.Errorf("bounded cosigner required_on must be exactly [%s] with rekey %s", strings.Join(want, ", "), rekey)
@@ -427,11 +435,26 @@ func CosignerRequiredOn(rekey RekeySetting) []string {
 	return []string{PathSpend}
 }
 
+// CosignerSizes is a cosigner key type's public key size and largest
+// signature, for each type an account can take as its cosigner.
+func CosignerSizes(componentKeyType string) (publicKeySize, signatureMaxSize int, ok bool) {
+	publicKeySize, publicOK := witness.PublicKeySize(componentKeyType)
+	signatureMaxSize, signatureOK := witness.SignatureMaxSize(componentKeyType)
+	if !publicOK || !signatureOK {
+		return 0, 0, false
+	}
+	return publicKeySize, signatureMaxSize, true
+}
+
 func validateCosignerMetadata(cosigner *CosignerAuthorization) error {
 	if cosigner == nil {
 		return nil
 	}
-	publicKey, err := DecodeCanonicalHex("cosigner public_key", cosigner.PublicKeyHex, CosignerPublicKeySizeV1, CosignerPublicKeySizeV1)
+	publicKeySize, _, ok := CosignerSizes(cosigner.ComponentKeyType)
+	if !ok {
+		return fmt.Errorf("unsupported bounded cosigner component key type %q", cosigner.ComponentKeyType)
+	}
+	publicKey, err := DecodeCanonicalHex("cosigner public_key", cosigner.PublicKeyHex, publicKeySize, publicKeySize)
 	if err != nil {
 		return err
 	}

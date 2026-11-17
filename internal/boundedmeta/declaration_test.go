@@ -15,7 +15,7 @@ func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 		MaxFee:       new(uint64(5_000)),
 		Rekey:        RekeyRefused,
 		Layer3Policy: Layer3PolicyFixedAllowlist,
-		Cosigner:     &CosignerAuthorization{ComponentKeyType: CosignerComponentKeyTypeV1, RequiredOn: []string{PathSpend}},
+		Cosigner:     &CosignerAuthorization{ComponentKeyType: DefaultCosignerComponentKeyType, RequiredOn: []string{PathSpend}},
 	}
 	refused, err := metadata.Declaration()
 	if err != nil {
@@ -24,7 +24,7 @@ func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 	if refused.Rekey != RekeyRefused || refused.MaxFee == nil || *refused.MaxFee != 5_000 || refused.Layer3Policy != Layer3PolicyFixedAllowlist {
 		t.Fatalf("refused declaration = %+v", refused)
 	}
-	if refused.Cosigner == nil || refused.Cosigner.ComponentKeyType != CosignerComponentKeyTypeV1 || !refused.AllowsSpendEffect(SpendEffectAxfer) || refused.AllowsSpendEffect(SpendEffectAssetOptIn) {
+	if refused.Cosigner == nil || refused.Cosigner.ComponentKeyType != DefaultCosignerComponentKeyType || !refused.AllowsSpendEffect(SpendEffectAxfer) || refused.AllowsSpendEffect(SpendEffectAssetOptIn) {
 		t.Fatalf("refused declaration = %+v", refused)
 	}
 	// The declaration is a copy: changing it must not reach the stored contract.

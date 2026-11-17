@@ -151,7 +151,7 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 // A cosigned account's declared rekey needs the cosigner as well, and its
 // listed rekey takes the spending key alone; the approval text says which.
 func TestApprovalTextNamesTheCosignerOnACosignedRekey(t *testing.T) {
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))
 	txn := testBoundedRekey()
 	for path, want := range map[boundedPath]string{
 		boundedPathSpendingKeyRekey: "Authorization: spending key and cosigner",

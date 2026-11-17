@@ -43,10 +43,11 @@ type CreationAdvisor interface {
 // Providers that do not implement it have one fixed contract, and the package
 // functions below adapt them.
 type InstanceResolver interface {
-	// CosignerComponentKeyType reports the component key type of a cosigner the
-	// parameters ask for. It runs before references are resolved, so it must not
-	// need a resolved cosigner public key.
-	CosignerComponentKeyType(params map[string]string) (string, bool)
+	// CosignerComponentKeyTypes reports the component key types a cosigner the
+	// parameters ask for may have. It runs before references are resolved, so
+	// it must not need a resolved cosigner public key; the resolved reference's
+	// type is then one of these.
+	CosignerComponentKeyTypes(params map[string]string) ([]string, bool)
 	// ResolveInstance selects and validates the instance for resolved parameters.
 	ResolveInstance(params map[string]string) (*Instance, error)
 	// StoredFingerprint returns the current fingerprint of a stored account's
@@ -66,17 +67,18 @@ func fixedBoundedMetadata(provider LSigProvider) *boundedmeta.Metadata {
 	return nil
 }
 
-// CosignerComponentKeyType reports the component key type of a cosigner that
-// params ask for, before any reference is resolved.
-func CosignerComponentKeyType(provider LSigProvider, params map[string]string) (string, bool) {
+// CosignerComponentKeyTypes reports the component key types a cosigner that
+// params ask for may have, before any reference is resolved. A fixed provider
+// takes the one its definition names.
+func CosignerComponentKeyTypes(provider LSigProvider, params map[string]string) ([]string, bool) {
 	if resolver, ok := provider.(InstanceResolver); ok {
-		return resolver.CosignerComponentKeyType(params)
+		return resolver.CosignerComponentKeyTypes(params)
 	}
 	metadata := fixedBoundedMetadata(provider)
 	if metadata == nil || metadata.Cosigner == nil {
-		return "", false
+		return nil, false
 	}
-	return metadata.Cosigner.ComponentKeyType, true
+	return []string{metadata.Cosigner.ComponentKeyType}, true
 }
 
 // ResolveInstance returns the instance params select from provider.

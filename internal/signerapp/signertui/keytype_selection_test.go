@@ -215,7 +215,7 @@ func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
 	const cosigned = "cosigned.v1"
 	inventory := []protocol.KeyTypeInfo{
 		{KeyType: boundedHostKeyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
-		{KeyType: cosigned, CosignerComponentKeyType: "witness.v1", CreationParams: []protocol.TemplateParamInfo{
+		{KeyType: cosigned, CosignerComponentKeyTypes: []string{"witness.v1"}, CreationParams: []protocol.TemplateParamInfo{
 			{Name: "cosigner", Label: "Cosigner", Type: "select", Required: true},
 		}},
 	}

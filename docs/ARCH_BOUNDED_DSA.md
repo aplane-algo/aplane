@@ -463,7 +463,7 @@ canonical_bounded_profile =
     if present: field("rekey_list1") || u32(4) ||
   u32(cosigner_present) ||
     if present: field("cosigner1") ||
-      field("aplane.witness-falcon1024.v1") || u32(1423) ||
+      field(component_key_type) || u32(signature_max_size) ||
       u32(count(required_on)) || field(path_0) || ... ||
   field(layer3_policy) ||
   u32(base_signature_arg_count) || u32(base_arg_0_max) || ... ||
@@ -495,8 +495,11 @@ take a listed rekey. `rekey_list_present` and `cosigner_present` are each exactl
 zero or one. The list record carries the contract and depth, never the root: the
 root depends on the spending key and is an instance value, so the review digest
 binds the list's entries instead, which are behavior parameters. The optional
-cosigner contract carries its ordered `required_on` list: `[spend]`, or
-`[spend, spending_rekey]` beside `rekey: spending_key`.
+cosigner contract carries its key type and largest signature,
+`aplane.witness-falcon1024.v1` and 1423 or `aplane.witness-ed25519.v1` and 64,
+and its ordered `required_on` list: `[spend]`, or `[spend, spending_rekey]`
+beside `rekey: spending_key`. A composed template's cosigner is always the
+Falcon-1024 type; a plain host's is the one its cosigner reference names.
 
 ### Canonical behavior parameters
 

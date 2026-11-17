@@ -209,7 +209,7 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024.v1` | Plain host: the plain Falcon program, `plain1` with overlays, or one of 147 `bounded2` shapes with bounds, selected per key | Go-defined | default-enabled on signer nodes | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost`, `internal/boundary` |
+| `aplane.falcon1024.v1` | Plain host: the plain Falcon program, `plain1` with overlays, or one of 231 `bounded2` shapes with bounds, selected per key | Go-defined | default-enabled on signer nodes | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost`, `internal/boundary` |
 | `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.witness-ed25519.v1` | Ed25519 witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/ed25519lsig/keygen/witness.go` |
 | `aplane.ed25519.v1` | Plain host on Ed25519, with the same grammar | Go-defined | library-visible | `lsig/ed25519lsig`, `lsig/plainhost`, `internal/boundary` |
@@ -694,7 +694,7 @@ Before a construction is real, tests can compose it without touching production:
 
 ### Adding a plain host
 
-`plainhost.Wrap(plain, base)` makes a family's plain provider a host. It builds the seven
+`plainhost.Wrap(plain, base)` makes a family's plain provider a host. It builds the eleven
 `plain1` arrangements and every `bounded2` shape `Shapes()` lists over the base's signature
 operations and salt style (`plainhost.Base`), under the plain key type's identity, and
 fails if one can't be built, so the grammar never offers a program that errors on first

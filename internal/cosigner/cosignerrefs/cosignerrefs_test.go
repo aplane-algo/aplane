@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
+
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -190,11 +192,11 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 
-	resolved, err := ResolveCreationParamsForComponent(paths, "aplane.falcon1024.v1", witness.Falcon1024V1, map[string]string{
+	resolved, err := ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", []string{witness.Falcon1024V1}, map[string]string{
 		ParamCosignerName: "lab-cosigner",
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParamsForComponent() error = %v", err)
+		t.Fatalf("ResolveCreationParamsForComponents() error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterCosignerPublicKey]; got != strings.Repeat("ab", falconfamily.PublicKeySize) {
 		t.Fatalf("cosigner_public_key = %q, want imported public key", got)
@@ -203,11 +205,11 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("resolved params still contain %s: %#v", ParamCosignerName, resolved)
 	}
 
-	resolved, err = ResolveCreationParamsForComponent(paths, "aplane.falcon1024.v1", witness.Falcon1024V1, map[string]string{
+	resolved, err = ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", []string{witness.Falcon1024V1}, map[string]string{
 		ParamCosignerName: componentKey,
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParamsForComponent(Witness Key ID) error = %v", err)
+		t.Fatalf("ResolveCreationParamsForComponents(Witness Key ID) error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterCosignerPublicKey]; got != strings.Repeat("ab", falconfamily.PublicKeySize) {
 		t.Fatalf("Witness Key ID cosigner_public_key = %q, want imported public key", got)
@@ -220,15 +222,15 @@ func TestResolveCreationParamsForBoundedProvider(t *testing.T) {
 	if _, err := Import(paths, "bounded-cosigner", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveCreationParamsForComponent(
+	resolved, err := ResolveCreationParamsForComponents(
 		paths,
 
 		"aplane.custom-bounded-cosigner.v1",
-		witness.Falcon1024V1,
+		[]string{witness.Falcon1024V1},
 		map[string]string{ParamCosignerName: "bounded-cosigner", "limit": "10"},
 	)
 	if err != nil {
-		t.Fatalf("ResolveCreationParamsForComponent() error = %v", err)
+		t.Fatalf("ResolveCreationParamsForComponents() error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterCosignerPublicKey]; got != strings.Repeat("7c", falconfamily.PublicKeySize) {
 		t.Fatalf("cosigner_public_key = %q, want imported public key", got)
@@ -238,16 +240,64 @@ func TestResolveCreationParamsForBoundedProvider(t *testing.T) {
 	}
 }
 
+// A reference resolves when the account type takes its type. A type other
+// than the default is recorded beside the key; the default never is. A type
+// the request already gives must be the reference's.
+func TestResolveCreationParamsTakesAnyListedCosignerType(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	falconPub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	edPub := bytesOfLen(witness.Ed25519PublicKeySize, 0xcd)
+	for name, pub := range map[string][]byte{"falcon": falconPub, "ed": edPub} {
+		keyType := witness.Falcon1024V1
+		if name == "ed" {
+			keyType = witness.Ed25519V1
+		}
+		if _, err := Import(paths, name, testExportJSON(t, keyType, pub)); err != nil {
+			t.Fatalf("Import(%s) error = %v", name, err)
+		}
+	}
+	both := []string{witness.Falcon1024V1, witness.Ed25519V1}
+
+	resolved, err := ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", both, map[string]string{ParamCosignerName: "ed"})
+	if err != nil {
+		t.Fatalf("Ed25519 reference: %v", err)
+	}
+	if resolved[keytypes.ParameterCosignerPublicKey] != hex.EncodeToString(edPub) || resolved[boundedmeta.CosignerKeyTypeParameter] != witness.Ed25519V1 {
+		t.Fatalf("Ed25519 reference resolved to %v", resolved)
+	}
+	resolved, err = ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", both, map[string]string{ParamCosignerName: "falcon"})
+	if err != nil {
+		t.Fatalf("Falcon reference: %v", err)
+	}
+	if _, recorded := resolved[boundedmeta.CosignerKeyTypeParameter]; recorded {
+		t.Fatalf("the default type was recorded: %v", resolved)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		types  []string
+		params map[string]string
+		want   string
+	}{
+		{"a type the account type doesn't take", []string{witness.Falcon1024V1}, map[string]string{ParamCosignerName: "ed"}, "takes aplane.witness-falcon1024.v1"},
+		{"a type that contradicts the reference", both, map[string]string{ParamCosignerName: "ed", boundedmeta.CosignerKeyTypeParameter: witness.Falcon1024V1}, "contradicts"},
+	} {
+		if _, err := ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", tc.types, tc.params); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want %q", tc.name, err, tc.want)
+		}
+	}
+}
+
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
-	_, err := ResolveCreationParamsForComponent(storepaths.NewPaths(t.TempDir()), "aplane.falcon1024.v1", witness.Falcon1024V1, map[string]string{
+	_, err := ResolveCreationParamsForComponents(storepaths.NewPaths(t.TempDir()), "aplane.falcon1024.v1", []string{witness.Falcon1024V1}, map[string]string{
 		ParamCosignerName:                   "lab-cosigner",
 		keytypes.ParameterCosignerPublicKey: strings.Repeat("ab", falconfamily.PublicKeySize),
 	})
 	if err == nil {
-		t.Fatal("ResolveCreationParamsForComponent() error = nil, want conflicting input rejection")
+		t.Fatal("ResolveCreationParamsForComponents() error = nil, want conflicting input rejection")
 	}
 	if !strings.Contains(err.Error(), "not both") {
-		t.Fatalf("ResolveCreationParamsForComponent() error = %v, want not both", err)
+		t.Fatalf("ResolveCreationParamsForComponents() error = %v, want not both", err)
 	}
 }
 

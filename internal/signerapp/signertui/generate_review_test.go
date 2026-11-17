@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/witness"
+
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
@@ -997,6 +999,35 @@ func TestBoundedReviewNamesTheClassicalKey(t *testing.T) {
 	view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
 	if !strings.Contains(view, "spending key is classical") || !strings.Contains(view, "GENERATE") {
 		t.Errorf("review lacks the classical-key note or scrolls:\n%s", view)
+	}
+}
+
+// An Ed25519 cosigner is classical, and the review says so, on a Falcon
+// account and beside a classical spending key alike; a Falcon-1024 cosigner
+// gets no note. Each review still fits the window.
+func TestReviewNamesAClassicalCosigner(t *testing.T) {
+	for _, tc := range []struct {
+		keyType, cosigner string
+		classical         bool
+	}{
+		{"aplane.falcon1024.v1", witness.Ed25519V1, true},
+		{"aplane.ed25519.v1", witness.Ed25519V1, true},
+		{"aplane.falcon1024.v1", witness.Falcon1024V1, false},
+	} {
+		review := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 1)
+		review.KeyType = tc.keyType
+		review.Bounded.Contract = boundedmeta.Contract
+		review.Bounded.CosignerKeyType = tc.cosigner
+		m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &review}}
+		view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
+		want := "The cosigner is classical."
+		if tc.keyType == "aplane.ed25519.v1" {
+			want = "Both keys are classical."
+		}
+		if strings.Contains(view, want) != tc.classical || !strings.Contains(view, "GENERATE") {
+			t.Errorf("%s with a %s cosigner: note %q %t, want %t, or the review scrolls:\n%s",
+				tc.keyType, tc.cosigner, want, strings.Contains(view, want), tc.classical, view)
+		}
 	}
 }
 

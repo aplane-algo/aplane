@@ -283,7 +283,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 				if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
 					info.SigningFlow = boundedSigningFlow(metadata)
 					if metadata.Cosigner != nil {
-						info.CosignerComponentKeyType = metadata.Cosigner.ComponentKeyType
+						info.CosignerComponentKeyTypes = []string{metadata.Cosigner.ComponentKeyType}
 					}
 					info.BoundedAuthorization = boundedInfo(metadata)
 				}
@@ -293,7 +293,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			// optional, so this names the capability without asking for one.
 			if resolver, ok := provider.(lsigprovider.InstanceResolver); ok {
 				info.PerKeyContract = true
-				info.CosignerComponentKeyType, _ = resolver.CosignerComponentKeyType(map[string]string{cosignerrefs.ParamCosignerName: ""})
+				info.CosignerComponentKeyTypes, _ = resolver.CosignerComponentKeyTypes(map[string]string{cosignerrefs.ParamCosignerName: ""})
 				if grammar, ok := provider.(boundaryGrammarProvider); ok {
 					info.BoundarySchema = grammar.BoundarySchema()
 				}
@@ -505,13 +505,13 @@ func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.
 	}
 
 	for i := range infos {
-		componentType := infos[i].CosignerComponentKeyType
 		// Replacing the field with a required selector would add a cosigner to
-		// every account of a type where one is optional.
-		if componentType == "" || infos[i].PerKeyContract {
+		// every account of a type where one is optional. A fixed type takes
+		// one cosigner type.
+		if len(infos[i].CosignerComponentKeyTypes) != 1 || infos[i].PerKeyContract {
 			continue
 		}
-		componentIDs := componentIDsByType[componentType]
+		componentIDs := componentIDsByType[infos[i].CosignerComponentKeyTypes[0]]
 		if len(componentIDs) == 0 {
 			continue
 		}

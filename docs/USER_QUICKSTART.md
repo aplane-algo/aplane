@@ -175,7 +175,8 @@ admin pane, press `s` for settings, then press `k` for key types. The KeyType
 Library lets you enable compiled providers and templates for the product store.
 
 To try a cosigned account, first set up a separate cosigner node and generate its
-`aplane.witness-falcon1024.v1` key. Choose **Export Cosigner Key**; the file
+cosigner key: `aplane.witness-falcon1024.v1`, or `aplane.witness-ed25519.v1`
+for a second algorithm beside a Falcon account's. Choose **Export Cosigner Key**; the file
 holds the public key only, and the result screen shows the address to give
 clients. On the primary signer, start **Generate account**, select the
 default-enabled plain host `aplane.falcon1024.v1`, choose **No bounds**, open

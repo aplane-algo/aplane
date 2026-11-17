@@ -7,6 +7,28 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Cosigners can hold Ed25519 keys
+
+- **A new cosigner key type, `aplane.witness-ed25519.v1`.** A cosigner node
+  generates one beside `aplane.witness-falcon1024.v1`, which its Generate list
+  still offers first, and exports, backs up and restores it the same way.
+- **Plain host accounts take either cosigner type.** `aplane.falcon1024.v1`
+  and `aplane.ed25519.v1`, with or without bounds and in every preset, take
+  the type the cosigner's exported file names; the account form needs no
+  choice. On a Falcon account an Ed25519 cosigner is a second algorithm beside
+  the spending key's, a hedge against a weakness in Falcon, though not against
+  a quantum computer; the generation review says the cosigner is classical.
+  The account records the type as `cosigner_key_type` when it is not
+  Falcon-1024, so every existing account and program is unchanged. Composed
+  templates stay Falcon-cosigned.
+- **A cosigner refuses to cosign a rekey to its own Ed25519 key's address.**
+  That key signs only component messages, so the account could never spend
+  again.
+- **`/keytypes` lists the cosigner types a key type takes.**
+  `cosigner_component_key_types` replaces `cosigner_component_key_type` there,
+  in the SDKs and in apadmin's key type info; `/keys` still names each
+  account's one type.
+
 ## The signer reads a rotating account's stage from its last spend
 
 - **An optional Indexer per network finds a rotating account's stage.**

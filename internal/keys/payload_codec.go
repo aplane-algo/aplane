@@ -842,22 +842,40 @@ func validateLogicSigFields(p *Payload) error {
 		if err := p.BoundedAuthorization.Validate(); err != nil {
 			return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
 		}
-		if p.BoundedAuthorization.Cosigner != nil {
+		if cosigner := p.BoundedAuthorization.Cosigner; cosigner != nil {
+			// The parameters name the cosigner's type only when it is not the
+			// default; the metadata always does. They must agree.
+			recorded := p.Parameters[boundedmeta.CosignerKeyTypeParameter]
+			if recorded == "" {
+				recorded = boundedmeta.DefaultCosignerComponentKeyType
+			}
+			if recorded != cosigner.ComponentKeyType {
+				return incompatibleKeyFormat("bounded_authorization cosigner key type %q does not match parameters.%s %q", cosigner.ComponentKeyType, boundedmeta.CosignerKeyTypeParameter, recorded)
+			}
+			publicKeySize, _, ok := boundedmeta.CosignerSizes(cosigner.ComponentKeyType)
+			if !ok {
+				return incompatibleKeyFormat("invalid bounded_authorization: unsupported cosigner key type %q", cosigner.ComponentKeyType)
+			}
 			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.CosignerPublicKeyParameter, p.Parameters[boundedmeta.CosignerPublicKeyParameter])
 			if err != nil {
 				return err
 			}
 			metadataPublicKey, err := boundedmeta.DecodeCanonicalHex(
 				"bounded cosigner public key",
-				p.BoundedAuthorization.Cosigner.PublicKeyHex,
-				boundedmeta.CosignerPublicKeySizeV1,
-				boundedmeta.CosignerPublicKeySizeV1,
+				cosigner.PublicKeyHex,
+				publicKeySize,
+				publicKeySize,
 			)
 			if err != nil {
 				return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
 			}
 			if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
 				return incompatibleKeyFormat("bounded_authorization cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
+			}
+		}
+		if p.BoundedAuthorization.Cosigner == nil {
+			if _, ok := p.Parameters[boundedmeta.CosignerKeyTypeParameter]; ok {
+				return incompatibleKeyFormat("parameters.%s without a cosigner", boundedmeta.CosignerKeyTypeParameter)
 			}
 		}
 		// The program compiled the parameters' root, and every listed rekey

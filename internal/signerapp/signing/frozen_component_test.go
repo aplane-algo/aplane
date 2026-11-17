@@ -102,14 +102,14 @@ func frozenBoundedTestServiceWith(t *testing.T, programBytes uint64, extraKeyTyp
 		t.Fatal(err)
 	}
 	authorizer := types.Address{1}.String()
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x51}, boundedmeta.CosignerPublicKeySizeV1))
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x51}, boundedmeta.DefaultCosignerPublicKeySize))
 	profile := &lsigresource.Profile{
 		ProgramBytes: programBytes,
 		Spend: &lsigresource.PathProfile{
-			ArgumentBytes: uint64(2 * boundedmeta.CosignerSignatureMaxSizeV1),
+			ArgumentBytes: uint64(2 * boundedmeta.DefaultCosignerSignatureMaxSize),
 			MaxOpcodeCost: 1,
 		},
-		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.CosignerSignatureMaxSizeV1), MaxOpcodeCost: 1},
+		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.DefaultCosignerSignatureMaxSize), MaxOpcodeCost: 1},
 	}
 	keyTypes := map[string]string{authorizer: "aplane.test-bounded-cosigner.v1"}
 	for address, keyType := range extraKeyTypes {

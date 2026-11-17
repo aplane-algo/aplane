@@ -292,7 +292,7 @@ func TestPlusCosignedProgramTakesTheListOrTheCosigner(t *testing.T) {
 	yaml := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n",
 		"  rekey: plus_cosigned\n  cosigner:\n    contract: cosigner1\n    required_on: [spend, spending_rekey]\n", 1)
 	provider := authorAllowlistProvider(t, yaml)
-	cosignerKey := bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1)
+	cosignerKey := bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize)
 	request := map[string]string{
 		composeddsa.BoundedRekeyToParameter:           rekeyListEntriesParam,
 		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),

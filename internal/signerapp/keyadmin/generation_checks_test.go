@@ -171,7 +171,7 @@ func generateHeldFalconKey(t *testing.T, ir *productruntime.Runtime, service Ser
 		t.Fatalf("GenerateKey(falcon1024) error = %#v", err)
 	}
 	publicKeyHex = ir.KeyStore().GetPublicKeyHexMap()[held.Address]
-	if len(publicKeyHex) != 2*boundedmeta.CosignerPublicKeySizeV1 {
+	if len(publicKeyHex) != 2*boundedmeta.DefaultCosignerPublicKeySize {
 		t.Fatalf("the held key's public key is %d hex characters", len(publicKeyHex))
 	}
 	return held.Address, publicKeyHex

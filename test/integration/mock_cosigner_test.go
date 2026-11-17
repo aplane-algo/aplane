@@ -4,6 +4,7 @@
 package integration_test
 
 import (
+	stded25519 "crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -17,18 +18,20 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-// mockCosignerEndpoint behaves like a cosigner node for one cosigner key: it
+// mockCosignerEndpoint behaves like a cosigner node for one cosigner key of
+// keyType: it
 // advertises the Witness Key ID on /keys (so the client's
 // endpoint-advertisement check passes) and produces real cosigner-role
 // component signatures on /sign/component using the test-held private key.
 // The handler is served behind an in-process SSH node, as a real cosigner is.
 func mockCosignerEndpoint(
 	t *testing.T,
+	keyType string,
 	publicKey, privateKey []byte,
 	discoveryCalls *atomic.Int32,
 ) http.Handler {
 	t.Helper()
-	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
+	componentSelector, err := witness.ID(keyType, publicKey)
 	if err != nil {
 		t.Fatalf("Failed to derive Witness Key ID: %v", err)
 	}
@@ -42,7 +45,7 @@ func mockCosignerEndpoint(
 			Keys: []signerapi.KeyInfo{{
 				Address:      componentSelector,
 				PublicKeyHex: publicKeyHex,
-				KeyType:      witness.Falcon1024V1,
+				KeyType:      keyType,
 				IsWitnessKey: true,
 			}},
 		})
@@ -73,15 +76,17 @@ func mockCosignerEndpoint(
 				return
 			}
 			msg := message.ComponentMessage(message.RoleCosigner, group.Entries[index].TxID)
-			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
-			if err != nil {
+			var signature []byte
+			if keyType == witness.Ed25519V1 {
+				signature = stded25519.Sign(stded25519.PrivateKey(privateKey), msg[:])
+			} else if signature, err = signerops.New(nil).Sign(privateKey, msg[:]); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			resp.Components = append(resp.Components, signerapi.Component{
 				TargetIndex:     index,
 				Kind:            signerapi.ComponentTargetKindCosigner,
-				SignatureScheme: witness.Falcon1024V1,
+				SignatureScheme: keyType,
 				Signature:       hex.EncodeToString(signature),
 			})
 		}

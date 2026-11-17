@@ -39,8 +39,8 @@ func (p perKeyRESTProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, erro
 func (p perKeyRESTProvider) CompatibilityFingerprint() string {
 	return "1:" + strings.Repeat("c", 64)
 }
-func (p perKeyRESTProvider) CosignerComponentKeyType(map[string]string) (string, bool) {
-	return "", false
+func (p perKeyRESTProvider) CosignerComponentKeyTypes(map[string]string) ([]string, bool) {
+	return nil, false
 }
 func (p perKeyRESTProvider) ResolveInstance(map[string]string) (*lsigprovider.Instance, error) {
 	return nil, errors.New("not used by inventory")

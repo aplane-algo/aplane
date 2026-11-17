@@ -4,6 +4,7 @@
 package integration_test
 
 import (
+	"cmp"
 	"context"
 	stded25519 "crypto/ed25519"
 	cryptorand "crypto/rand"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
@@ -46,40 +49,45 @@ func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
 	}
 	funderAddress := mustDecodeAddress(t, funder.GetAddress())
 	provider := plainHostProvider(t, network, plainFalconKeyType)
-	listed := algocrypto.GenerateAccount()
-	account := newCorridorExecutionAccount(t, provider, []types.Address{listed.Address}, funderAddress)
-	proof := account.proofFor(t, funderAddress)
-	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
-		t.Fatalf("fund Corridor opcode-validation account: %v", err)
-	}
-	t.Cleanup(func() {
-		handOver(t, network, account, listed.Address, "corridor-opcode-cleanup")
-		bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), listed.PrivateKey)
-	})
+	// Each cosigner type's program is its own, and is checked at its maximum.
+	for _, cosignerKeyType := range witness.KeyTypes {
+		t.Run(cosignerKeyType, func(t *testing.T) {
+			listed := algocrypto.GenerateAccount()
+			account := newCorridorAccountFor(t, provider, cosignerKeyType, []types.Address{listed.Address}, funderAddress)
+			proof := account.proofFor(t, funderAddress)
+			if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
+				t.Fatalf("fund Corridor opcode-validation account: %v", err)
+			}
+			t.Cleanup(func() {
+				handOver(t, network, account, listed.Address, "corridor-opcode-cleanup")
+				bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), listed.PrivateKey)
+			})
 
-	sp := mustSuggestedParams(t, network)
-	spendTxn := corridorPaymentTxn(t, sp, account.address, funder.GetAddress(), 0, "corridor-opcode-spend")
-	spendGroup, _ := account.signedGroup(t, spendTxn, proof, nil)
-	rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "corridor-opcode-listed-rekey")
-	rekeyTxn.RekeyTo = listed.Address
-	rekeyGroup, _ := account.signedGroup(t, rekeyTxn, nil, nil)
+			sp := mustSuggestedParams(t, network)
+			spendTxn := corridorPaymentTxn(t, sp, account.address, funder.GetAddress(), 0, "corridor-opcode-spend")
+			spendGroup, _ := account.signedGroup(t, spendTxn, proof, nil)
+			rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "corridor-opcode-listed-rekey")
+			rekeyTxn.RekeyTo = listed.Address
+			rekeyGroup, _ := account.signedGroup(t, rekeyTxn, nil, nil)
 
-	report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
-		Name:          "Corridor " + corridorShape().Descriptor(),
-		FinalProgram:  account.bytecode,
-		Profile:       provider.BoundedLogicSigOpcodeProfile(),
-		Bounded:       true,
-		RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend, lsigresource.PathListedRekey},
-		Vectors: []harness.OpcodeCeilingVector{
-			{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spendGroup, LSigIndex: 0},
-			{Name: "maximum-listed-rekey", Path: lsigresource.PathListedRekey, SignedTxns: rekeyGroup, LSigIndex: 0},
-		},
-	})
-	if err != nil {
-		t.Fatalf("validate Corridor opcode ceilings: %v", err)
-	}
-	for path, observed := range report.Paths {
-		t.Logf("Corridor path %d opcode cost: %d observed / %d declared", path, observed.MaximumObserved, observed.DeclaredCeiling)
+			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
+				Name:          "Corridor " + corridorShapeFor(cosignerKeyType).Descriptor(),
+				FinalProgram:  account.bytecode,
+				Profile:       provider.BoundedLogicSigOpcodeProfile(),
+				Bounded:       true,
+				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend, lsigresource.PathListedRekey},
+				Vectors: []harness.OpcodeCeilingVector{
+					{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spendGroup, LSigIndex: 0},
+					{Name: "maximum-listed-rekey", Path: lsigresource.PathListedRekey, SignedTxns: rekeyGroup, LSigIndex: 0},
+				},
+			})
+			if err != nil {
+				t.Fatalf("validate Corridor opcode ceilings: %v", err)
+			}
+			for path, observed := range report.Paths {
+				t.Logf("Corridor path %d opcode cost: %d observed / %d declared", path, observed.MaximumObserved, observed.DeclaredCeiling)
+			}
+		})
 	}
 }
 
@@ -278,25 +286,67 @@ type corridorExecutionAccount struct {
 	userPrivateKey     []byte
 	edKey              stded25519.PrivateKey
 	cosignerPrivateKey []byte
-	metadata           *boundedmeta.Metadata
+	// cosignerKeyType is the cosigner's key type, which its signature follows.
+	cosignerKeyType string
+	metadata        *boundedmeta.Metadata
 	// rekeyList is an only-these account's rekey-to list, rebuilt from its
 	// spending key as the signer does.
 	rekeyList *rekeylist.List
 }
 
-// corridorShape is the plain host's Corridor preset (internal/boundary/preset.go):
-// every transfer kind, a Merkle list, a cosigner on every spend, and a rekey only
-// to a listed address, with the spending key alone.
-func corridorShape() plainhost.Shape {
+// corridorShapeFor is the plain host's Corridor preset
+// (internal/boundary/preset.go): every transfer kind, a Merkle list, a cosigner
+// of cosignerKeyType on every spend, and a rekey only to a listed address, with
+// the spending key alone.
+func corridorShapeFor(cosignerKeyType string) plainhost.Shape {
 	return plainhost.Shape{
 		Spend:    []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
 		Encoding: plainhost.EncodingMerkle,
 		Rekey:    plainhost.RekeyOnlyThese,
-		Cosigner: true,
+		Cosigner: cosignerKeyType,
 	}
 }
 
+// newTestCosignerKey generates a cosigner key of keyType, as a cosigner node
+// would hold it.
+func newTestCosignerKey(t *testing.T, keyType string) (publicKey, privateKey []byte) {
+	t.Helper()
+	if keyType == witness.Ed25519V1 {
+		public, private, err := stded25519.GenerateKey(cryptorand.Reader)
+		if err != nil {
+			t.Fatalf("generate Ed25519 cosigner key: %v", err)
+		}
+		return public, private
+	}
+	public, private, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	if err != nil {
+		t.Fatalf("generate Falcon cosigner key: %v", err)
+	}
+	return public, private
+}
+
+// signCosignerMessage signs a component message with a cosigner key of
+// keyType.
+func signCosignerMessage(t *testing.T, keyType string, role message.Role, txid types.Digest, privateKey []byte) []byte {
+	t.Helper()
+	msg := message.ComponentMessage(role, txid)
+	if keyType == witness.Ed25519V1 {
+		return stded25519.Sign(stded25519.PrivateKey(privateKey), msg[:])
+	}
+	signature, err := signerops.New(nil).Sign(privateKey, msg[:])
+	if err != nil {
+		t.Fatalf("failed to sign %s component message: %v", role, err)
+	}
+	return signature
+}
+
 func newCorridorExecutionAccount(t *testing.T, provider *plainhost.Provider, rekeyTo []types.Address, recipients ...types.Address) corridorExecutionAccount {
+	t.Helper()
+	return newCorridorAccountFor(t, provider, witness.Falcon1024V1, rekeyTo, recipients...)
+}
+
+// newCorridorAccountFor is a Corridor account with a cosigner of cosignerKeyType.
+func newCorridorAccountFor(t *testing.T, provider *plainhost.Provider, cosignerKeyType string, rekeyTo []types.Address, recipients ...types.Address) corridorExecutionAccount {
 	t.Helper()
 	if len(recipients) == 0 || len(rekeyTo) == 0 {
 		t.Fatal("corridor execution account requires a recipient and a rekey-to address")
@@ -309,7 +359,7 @@ func newCorridorExecutionAccount(t *testing.T, provider *plainhost.Provider, rek
 	for i, target := range rekeyTo {
 		rekeyToStrings[i] = target.String()
 	}
-	account := newBoundsAccount(t, provider, corridorShape(), recipientStrings, rekeyToStrings)
+	account := newBoundsAccount(t, provider, corridorShapeFor(cosignerKeyType), recipientStrings, rekeyToStrings)
 	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
 		account.metadata.Rekey != boundedmeta.RekeyRefused || account.metadata.RekeyList == nil {
 		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q list=%v",
@@ -525,14 +575,10 @@ func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, 
 	return args
 }
 
+// signComponent signs as the account's cosigner, in its key type's scheme.
 func (a corridorExecutionAccount) signComponent(t *testing.T, role message.Role, txid types.Digest, privateKey []byte) []byte {
 	t.Helper()
-	msg := message.ComponentMessage(role, txid)
-	signature, err := signerops.New(nil).Sign(privateKey, msg[:])
-	if err != nil {
-		t.Fatalf("failed to sign corridor %s component message: %v", role, err)
-	}
-	return signature
+	return signCosignerMessage(t, cmp.Or(a.cosignerKeyType, witness.Falcon1024V1), role, txid, privateKey)
 }
 
 func corridorPaymentTxn(t *testing.T, sp types.SuggestedParams, from, to string, amount uint64, note string) types.Transaction {
@@ -680,6 +726,110 @@ func isCorridorTestAsset(asset models.Asset) bool {
 		asset.Params.UnitName == corridorTestAssetUnit &&
 		asset.Params.Total == corridorTestAssetTotal &&
 		asset.Params.Decimals == 0
+}
+
+// An Ed25519-cosigned Corridor on chain: the program takes the cosigner's
+// Ed25519 signature over its component message and nothing else in that slot,
+// and a listed rekey still takes the spending key alone.
+func TestCorridorEd25519CosignerLocalnet(t *testing.T) {
+	if harness.IntegrationNetwork() != harness.IntegrationNetworkLocalnet {
+		t.Skip("corridor LogicSig execution requires localnet")
+	}
+	testnet, err := harness.NewTestnetConfig()
+	if err != nil {
+		t.Fatalf("failed to connect to localnet: %v", err)
+	}
+	funder, err := harness.NewFundTestAccount(testnet.Client)
+	if err != nil {
+		t.Fatalf("failed to load funding account: %v", err)
+	}
+	funderAddress := mustDecodeAddress(t, funder.GetAddress())
+	provider := plainHostProvider(t, testnet, plainFalconKeyType)
+
+	exit := algocrypto.GenerateAccount()
+	account := newCorridorAccountFor(t, provider, witness.Ed25519V1, []types.Address{exit.Address}, funderAddress)
+	if account.metadata.Cosigner == nil || account.metadata.Cosigner.ComponentKeyType != witness.Ed25519V1 {
+		t.Fatalf("cosigner = %+v, want an Ed25519 one", account.metadata.Cosigner)
+	}
+	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
+		t.Fatalf("fund Corridor account: %v", err)
+	}
+	t.Cleanup(func() {
+		handOver(t, testnet, account, exit.Address, "corridor-ed25519-cleanup")
+		bestEffortCloseRekeyedAccount(t, testnet, account.address, funder.GetAddress(), exit.PrivateKey)
+	})
+	cosignerSlot := account.argumentIndex(t, boundedmeta.ArgSourceCosigner)
+	selfPayment := func(note string) types.Transaction {
+		return corridorPaymentTxn(t, mustSuggestedParams(t, testnet), account.address, account.address, 0, note)
+	}
+	withCosigner := func(sign func(txid types.Digest) []byte) func(types.Digest, [][]byte) [][]byte {
+		return func(txid types.Digest, args [][]byte) [][]byte {
+			args[cosignerSlot] = sign(txid)
+			return args
+		}
+	}
+
+	t.Run("a spend with the Ed25519 cosigner succeeds", func(t *testing.T) {
+		rawGroup, txid := account.signGroup(t, selfPayment("corridor-ed25519-allow"), nil, nil)
+		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
+	})
+	_, otherEd25519 := newTestCosignerKey(t, witness.Ed25519V1)
+	_, falconKey := newTestCosignerKey(t, witness.Falcon1024V1)
+	for _, tc := range []struct {
+		name string
+		sign func(txid types.Digest) []byte
+	}{
+		{"an empty cosigner slot", func(types.Digest) []byte { return []byte{} }},
+		{"another Ed25519 key's signature", func(txid types.Digest) []byte {
+			return signCosignerMessage(t, witness.Ed25519V1, message.RoleCosigner, txid, otherEd25519)
+		}},
+		{"a signature under another role byte", func(txid types.Digest) []byte {
+			return account.signComponent(t, message.Role(0x01), txid, account.cosignerPrivateKey)
+		}},
+		{"a signature over another transaction ID", func(txid types.Digest) []byte {
+			txid[0] ^= 0xff
+			return account.signComponent(t, message.RoleCosigner, txid, account.cosignerPrivateKey)
+		}},
+		{"a Falcon-1024 signature", func(txid types.Digest) []byte {
+			return signCosignerMessage(t, witness.Falcon1024V1, message.RoleCosigner, txid, falconKey)
+		}},
+		{"a signature one byte short", func(txid types.Digest) []byte {
+			return account.signComponent(t, message.RoleCosigner, txid, account.cosignerPrivateKey)[:witness.Ed25519SignatureSize-1]
+		}},
+		{"a signature one byte long", func(txid types.Digest) []byte {
+			return append(account.signComponent(t, message.RoleCosigner, txid, account.cosignerPrivateKey), 0)
+		}},
+	} {
+		t.Run(tc.name+" fails", func(t *testing.T) {
+			rawGroup, _ := account.signGroup(t, selfPayment("corridor-ed25519-deny"), nil, withCosigner(tc.sign))
+			submitCorridorGroupExpectFailure(t, testnet, rawGroup)
+		})
+	}
+
+	rekeyTarget := algocrypto.GenerateAccount()
+	rekeyAccount := newCorridorAccountFor(t, provider, witness.Ed25519V1, []types.Address{rekeyTarget.Address}, funderAddress)
+	if err := funder.FundMicroAlgosAndWait(rekeyAccount.address, 200_000); err != nil {
+		t.Fatalf("fund Corridor rekey account: %v", err)
+	}
+	t.Cleanup(func() {
+		bestEffortCloseRekeyedAccount(t, testnet, rekeyAccount.address, funder.GetAddress(), rekeyTarget.PrivateKey)
+	})
+	listedRekey := func(note string) types.Transaction {
+		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, note)
+		txn.RekeyTo = rekeyTarget.Address
+		return txn
+	}
+	// A listed rekey never asks the cosigner: its program path doesn't read the
+	// cosigner's slot, and the signer leaves it out.
+	t.Run("a listed rekey without the cosigner succeeds", func(t *testing.T) {
+		rawGroup, txid := rekeyAccount.signGroup(t, listedRekey("corridor-ed25519-allow-listed-rekey"), nil, func(_ types.Digest, args [][]byte) [][]byte {
+			return withArg(args, rekeyAccount.argumentIndex(t, boundedmeta.ArgSourceCosigner), nil)
+		})
+		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
+		if got := authAddress(t, testnet, rekeyAccount.address); got != rekeyTarget.Address.String() {
+			t.Fatalf("Corridor authorizer = %q, want %s", got, rekeyTarget.Address)
+		}
+	})
 }
 
 func TestSelectReusableCorridorTestAsset(t *testing.T) {

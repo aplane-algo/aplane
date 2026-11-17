@@ -28,6 +28,7 @@ package signing
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -40,6 +41,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -92,7 +95,9 @@ var (
 	// agSpendingPrivateKey is the private half the rekey-to list's seed derives
 	// from. The harness fakes signatures, so any fixed bytes serve.
 	agSpendingPrivateKey = bytes.Repeat([]byte{0x31}, falconfamily.PrivateKeySize)
-	agCosignerKey        = bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1)
+	agCosignerKey        = bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize)
+	// agEd25519CosignerKey is the Ed25519-cosigned shapes' cosigner.
+	agEd25519CosignerKey = bytes.Repeat([]byte{0x42}, witness.Ed25519PublicKeySize)
 	agSender             = agAddress(0xA0)
 	agListedA            = agAddress(0xA1)
 	agListedB            = agAddress(0xA2)
@@ -117,6 +122,42 @@ var (
 	agGarbageProof = bytes.Repeat([]byte{0x5A}, rekeylist.ProofSize)
 )
 
+// agCosignerKeyFor is the harness's cosigner key of a cosigner key type.
+func agCosignerKeyFor(componentKeyType string) []byte {
+	if componentKeyType == witness.Ed25519V1 {
+		return agEd25519CosignerKey
+	}
+	return agCosignerKey
+}
+
+// agAddCosigner adds a cosigner of componentKeyType to a request, as the
+// signer does once it resolves a reference: the key, and its type when it is
+// not the default.
+func agAddCosigner(params map[string]string, componentKeyType string) {
+	if componentKeyType == "" {
+		return
+	}
+	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKeyFor(componentKeyType))
+	if componentKeyType != boundedmeta.DefaultCosignerComponentKeyType {
+		params[boundedmeta.CosignerKeyTypeParameter] = componentKeyType
+	}
+}
+
+// agCosignerVerifyOp is the opcode that verifies a cosigner of
+// componentKeyType.
+func agCosignerVerifyOp(componentKeyType string) string {
+	if componentKeyType == witness.Ed25519V1 {
+		return "ed25519verify_bare"
+	}
+	return "falcon_verify"
+}
+
+// agCosignerVerify is the verification a cosigner of componentKeyType's check
+// ends with.
+func agCosignerVerify(componentKeyType string) string {
+	return agCosignerVerifyOp(componentKeyType) + "\nassert\n"
+}
+
 func agAddress(b byte) types.Address {
 	var a types.Address
 	for i := range a {
@@ -135,6 +176,8 @@ func agTag(key, data []byte) []byte {
 		id = []byte("spending")
 	case bytes.Equal(key, agCosignerKey):
 		id = []byte("cosigner")
+	case bytes.Equal(key, agEd25519CosignerKey):
+		id = []byte("ed25519-cosigner")
 	default:
 		sum := sha256.Sum256(key)
 		id = sum[:]
@@ -473,9 +516,7 @@ func agParams(shape plainhost.Shape) map[string]string {
 	if shape.AnyRecipient {
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
-	if shape.Cosigner {
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKey)
-	}
+	agAddCosigner(params, shape.Cosigner)
 	if shape.HasRekeyList() {
 		params[plainhost.ParameterRekeyTo] = agRekeyTo
 	}
@@ -558,15 +599,13 @@ func agShapeSpec(base string, spendingKey []byte, shape plainhost.Shape) agSpec 
 // and no spend effects, and the rekey-to list is the harness's.
 func agPlainSpec(base string, spendingKey []byte, arrangement plainhost.Arrangement) agSpec {
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
-	if arrangement.Cosigner {
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKey)
-	}
+	agAddCosigner(params, arrangement.Cosigner)
 	if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
 		params[plainhost.ParameterRekeyTo] = agRekeyTo
 	}
 	return agSpec{
 		shape:       plainhost.Shape{Rekey: arrangement.Rekey, Cosigner: arrangement.Cosigner},
-		name:        fmt.Sprintf("plain %s rekey=%s cosigner=%v", base, arrangement.Rekey, arrangement.Cosigner),
+		name:        fmt.Sprintf("plain %s rekey=%s cosigner=%s", base, arrangement.Rekey, cmp.Or(arrangement.Cosigner, "none")),
 		params:      params,
 		plain:       true,
 		spendingKey: spendingKey,
@@ -629,7 +668,7 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 		if a.cosignerKey, err = hex.DecodeString(metadata.Cosigner.PublicKeyHex); err != nil {
 			return nil, err
 		}
-		if !bytes.Equal(a.cosignerKey, agCosignerKey) {
+		if !bytes.Equal(a.cosignerKey, agCosignerKeyFor(metadata.Cosigner.ComponentKeyType)) {
 			return nil, fmt.Errorf("%s: stored cosigner key differs from the requested one", name)
 		}
 	}
@@ -1194,7 +1233,7 @@ func TestBoundedPlannerAgreesWithProgram(t *testing.T) {
 					case a.shape.Rekey == plainhost.RekeyPlusCosigned && r.states[a.listProofIndex] != agValid &&
 						(r.states[a.listProofIndex] != agAbsent || r.states[cosignerIndex] != agValid):
 						why = "plus cosigned accepts a rekey with neither the target's proof nor the cosigner"
-					case a.shape.Rekey == plainhost.RekeySpendingKey && a.shape.Cosigner && r.states[cosignerIndex] != agValid:
+					case a.shape.Rekey == plainhost.RekeySpendingKey && a.shape.Cosigner != "" && r.states[cosignerIndex] != agValid:
 						why = "a cosigned spending-key rekey is accepted without the cosigner"
 					}
 					if why != "" {
@@ -1479,7 +1518,8 @@ func agCheckCosignerSubroutine(a *agAccount, lines []agLine) error {
 		case l.op == "txn" && len(l.args) == 1 && l.args[0] == "TxID":
 		case l.op == "pushbytes" && len(l.args) == 1:
 			verifies = verifies || l.args[0] == key
-		case l.op == "falcon_verify" || l.op == "len" || l.op == "pushint" || l.op == ">" || l.op == "<=" ||
+		// The verification is its own cosigner type's, and no other.
+		case l.op == agCosignerVerifyOp(a.shape.Cosigner) || l.op == "len" || l.op == "pushint" || l.op == ">" || l.op == "<=" ||
 			l.op == "assert" || l.op == "concat" || l.op == "sha512_256":
 		default:
 			return fmt.Errorf("the cosigner check runs %q, which reads more than the cosigner's signature", l)
@@ -1536,8 +1576,12 @@ func TestBoundedProgramChecksRekeyFirst(t *testing.T) {
 func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 	_, accounts := agLoad(t)
 	find := func(rekey string, cosigner bool) *agAccount {
+		want := ""
+		if cosigner {
+			want = boundedmeta.DefaultCosignerComponentKeyType
+		}
 		for _, a := range accounts {
-			if a.shape.Rekey == rekey && a.shape.Cosigner == cosigner && a.shape.Encoding == plainhost.EncodingMerkle {
+			if a.shape.Rekey == rekey && a.shape.Cosigner == want && a.shape.Encoding == plainhost.EncodingMerkle {
 				return a
 			}
 		}
@@ -1553,8 +1597,8 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 		t.Fatalf("no plain host %s", name)
 		return nil
 	}
-	plain := findPlain("plain falcon1024 rekey=spending_key cosigner=true")
-	plainEd25519 := findPlain("plain ed25519 rekey=only_these cosigner=false")
+	plain := findPlain("plain falcon1024 rekey=spending_key cosigner=" + boundedmeta.DefaultCosignerComponentKeyType)
+	plainEd25519 := findPlain("plain ed25519 rekey=only_these cosigner=none")
 	spending, cosignedListed := find(plainhost.RekeySpendingKey, false), find(plainhost.RekeyOnlyThese, true)
 	listed := find(plainhost.RekeyOnlyThese, false)
 	cosigned, plus := find(plainhost.RekeySpendingKey, true), find(plainhost.RekeyPlusCosigned, true)
@@ -1815,7 +1859,7 @@ func agRekeyNormalFormMutant(field, assertion string) agMutant {
 var agMutants = []agMutant{
 	{
 		name:    "the cosigned rekey skips the cosigner",
-		applies: func(a *agAccount) bool { return a.shape.Rekey == plainhost.RekeySpendingKey && a.shape.Cosigner },
+		applies: func(a *agAccount) bool { return a.shape.Rekey == plainhost.RekeySpendingKey && a.shape.Cosigner != "" },
 		mutate: func(t *testing.T, a *agAccount) string {
 			return agReplace(t, a.teal, agRekeyLabel, "callsub "+agCosignerLabel+"\n", "")
 		},
@@ -1841,7 +1885,7 @@ var agMutants = []agMutant{
 		// The list is outside cosigner policy: a listed rekey that also needs the
 		// cosigner refuses what the owner listed.
 		name:    "the listed rekey asks for the cosigner",
-		applies: func(a *agAccount) bool { return a.shape.HasRekeyList() && a.shape.Cosigner },
+		applies: func(a *agAccount) bool { return a.shape.HasRekeyList() && a.shape.Cosigner != "" },
 		rejects: true,
 		mutate: func(t *testing.T, a *agAccount) string {
 			return agListBody(t, a, fmt.Sprintf("arg %d\nlen\npushint 160\n==\nassert\n", a.listProofIndex)+
@@ -1873,7 +1917,7 @@ var agMutants = []agMutant{
 	{
 		// The spend path, on a bounded host and a plain one, needs the cosigner.
 		name:    "a cosigned spend skips the cosigner",
-		applies: func(a *agAccount) bool { return a.shape.Cosigner },
+		applies: func(a *agAccount) bool { return a.shape.Cosigner != "" },
 		mutate: func(t *testing.T, a *agAccount) string {
 			return agReplace(t, a.teal, agSpendLabel, "callsub "+agCosignerLabel+"\n", "")
 		},
@@ -1892,9 +1936,9 @@ var agMutants = []agMutant{
 	},
 	{
 		name:    "the cosigner verification always passes",
-		applies: func(a *agAccount) bool { return a.shape.Cosigner },
+		applies: func(a *agAccount) bool { return a.shape.Cosigner != "" },
 		mutate: func(t *testing.T, a *agAccount) string {
-			return agReplace(t, a.teal, agCosignerLabel, "falcon_verify\nassert\n", "pop\npop\npop\n")
+			return agReplace(t, a.teal, agCosignerLabel, agCosignerVerify(a.shape.Cosigner), "pop\npop\npop\n")
 		},
 	},
 	{

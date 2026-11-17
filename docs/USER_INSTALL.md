@@ -243,7 +243,8 @@ Witness trust, endpoint routing, and transport credentials are deliberately
 separate: the cosigner's key file goes to the signer, and each client is given
 the cosigner's address. Complete them in this order:
 
-1. On the cosigner node, generate an `aplane.witness-falcon1024.v1` key and choose
+1. On the cosigner node, generate a cosigner key, `aplane.witness-falcon1024.v1`
+   (offered first) or `aplane.witness-ed25519.v1`, and choose
    **Export Cosigner Key** from its success or key-details screen. The file
    is the public key only. The result screen shows the address clients should
    use, from the configured `endpoint.advertise_url`.

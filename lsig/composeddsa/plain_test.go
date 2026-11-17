@@ -18,8 +18,8 @@ func plainTestProfile(rekey boundedmeta.RekeySetting) *BoundedAuthorizationProfi
 		Contract: PlainContract,
 		Rekey:    rekey,
 		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: boundedmeta.CosignerRequiredOn(rekey),
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: boundedmeta.CosignerRequiredOn(rekey),
 		},
 	}
 }
@@ -42,7 +42,7 @@ func newPlainTestProvider(profile *BoundedAuthorizationProfile, suffix string, l
 // cosigner: no fee gate, no zero-address envelope and no transaction-type list.
 func TestPlainHostRendersNoEnvelope(t *testing.T) {
 	provider := newPlainTestProvider(plainTestProfile(boundedmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
-	cosignerKey := strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)
+	cosignerKey := strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)
 	teal, err := provider.GenerateTEAL([]byte{0x01}, map[string]string{BoundedCosignerPublicKeyParameter: cosignerKey})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
@@ -106,7 +106,7 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 			provider := newPlainTestProvider(profile, tc.suffix, tc.layer3)
 			params := map[string]string{}
 			if profile.Cosigner != nil {
-				params[BoundedCosignerPublicKeyParameter] = strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)
+				params[BoundedCosignerPublicKeyParameter] = strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)
 			}
 			_, err := provider.GenerateTEAL([]byte{0x01}, params)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {

@@ -19,15 +19,16 @@ import (
 )
 
 // limitsShapesStart is where the limits-only shapes begin; they are the last
-// family, every arrangement with every transfer subset.
-const limitsShapesStart = 98
+// family, every arrangement with every transfer subset: 2 families of 11
+// arrangements by 7 subsets before them.
+const limitsShapesStart = 154
 
 // limitsOnlyShapes are the last family. Index order is frozen by the goldens.
 func limitsOnlyShapes(t *testing.T) []plainhost.Shape {
 	t.Helper()
 	shapes := plainhost.Shapes()[limitsShapesStart:]
-	if len(shapes) != 49 {
-		t.Fatalf("%d limits-only shapes, want 49", len(shapes))
+	if len(shapes) != 77 {
+		t.Fatalf("%d limits-only shapes, want 77", len(shapes))
 	}
 	for _, shape := range shapes {
 		if !shape.AnyRecipient {
@@ -243,7 +244,7 @@ func TestLimitsOnlyProgramIsTheEnvelopeAlone(t *testing.T) {
 				if !strings.HasSuffix(teal, tail) {
 					t.Fatalf("program does not accept straight after the envelope:\n%s", teal[len(teal)-300:])
 				}
-				if !shape.Cosigner && !strings.Contains(teal, "__aplane_bounded1_spend:\n"+tail) {
+				if shape.Cosigner == "" && !strings.Contains(teal, "__aplane_bounded1_spend:\n"+tail) {
 					t.Fatal("spend boundary is not followed by the accept block")
 				}
 				// bounded2 embeds no profile digest in the program, so every twin pair,

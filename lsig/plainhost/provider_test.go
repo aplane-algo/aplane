@@ -8,6 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	ed25519v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -45,8 +49,11 @@ func bases(t *testing.T) []base {
 	}
 }
 
+// falconCosigner is the default cosigner key type, Falcon-1024.
+const falconCosigner = boundedmeta.DefaultCosignerComponentKeyType
+
 var (
-	testCosigner = strings.Repeat("44", boundedmeta.CosignerPublicKeySizeV1)
+	testCosigner = strings.Repeat("44", boundedmeta.DefaultCosignerPublicKeySize)
 	testListKey  = bytes.Repeat([]byte{0x77}, 64)
 )
 
@@ -57,13 +64,31 @@ func testRekeyTo() string {
 }
 
 func request(rekey string) map[string]string {
-	return requestFor(plainhost.Arrangement{Rekey: rekey, Cosigner: true})
+	return requestFor(plainhost.Arrangement{Rekey: rekey, Cosigner: falconCosigner})
+}
+
+// testCosignerFor is a test cosigner key of componentKeyType's size.
+func testCosignerFor(componentKeyType string) string {
+	size, _, ok := boundedmeta.CosignerSizes(componentKeyType)
+	if !ok {
+		panic("no test cosigner for " + componentKeyType)
+	}
+	return strings.Repeat("44", size)
+}
+
+// legacyArrangement prints an arrangement as the goldens printed it when the
+// cosigner was a flag, so a default-cosigner arrangement hashes as it did.
+func legacyArrangement(a plainhost.Arrangement) string {
+	return fmt.Sprintf("{Rekey:%s Cosigner:%t}", a.Rekey, a.Cosigner != "")
 }
 
 func requestFor(arrangement plainhost.Arrangement) map[string]string {
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
-	if arrangement.Cosigner {
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosigner
+	if arrangement.Cosigner != "" {
+		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerFor(arrangement.Cosigner)
+		if arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
+			params[boundedmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
+		}
 	}
 	if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
 		params[plainhost.ParameterRekeyTo] = testRekeyTo()
@@ -98,7 +123,7 @@ func TestNoParametersIsThePlainProgram(t *testing.T) {
 			if err != nil || metadata != nil {
 				t.Fatalf("plain program metadata = %+v, %v", metadata, err)
 			}
-			if _, ok := b.provider.CosignerComponentKeyType(nil); ok {
+			if _, ok := b.provider.CosignerComponentKeyTypes(nil); ok {
 				t.Fatal("the plain program asks for a cosigner")
 			}
 			if err := b.provider.ValidateCreationParams(nil); err != nil {
@@ -111,8 +136,8 @@ func TestNoParametersIsThePlainProgram(t *testing.T) {
 // Every arrangement, with or without a cosigner, renders plain1 with no envelope
 // and records a fingerprint its stored metadata leads back to.
 func TestEveryArrangementResolvesToPlain1(t *testing.T) {
-	if got := len(plainhost.Arrangements()); got != 7 {
-		t.Fatalf("%d arrangements, want 7: four rekey settings with a cosigner, three without", got)
+	if got := len(plainhost.Arrangements()); got != 11 {
+		t.Fatalf("%d arrangements, want 11: four rekey settings with each of two cosigner types, three without", got)
 	}
 	for _, b := range bases(t) {
 		t.Run(b.name, func(t *testing.T) {
@@ -126,7 +151,7 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 				}
 				metadata := instance.Bounded
 				if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.MaxFee != nil ||
-					(metadata.Cosigner != nil) != arrangement.Cosigner || metadata.Layer3Policy != boundedmeta.Layer3PolicyNone {
+					(metadata.Cosigner != nil) != (arrangement.Cosigner != "") || metadata.Layer3Policy != boundedmeta.Layer3PolicyNone {
 					t.Fatalf("%s: instance = %+v", rekey, instance)
 				}
 				wantList := arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned
@@ -138,8 +163,11 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 					t.Fatalf("%s: fingerprints %+v", rekey, instance)
 				}
 				seen[instance.Fingerprint] = true
-				if component, ok := b.provider.CosignerComponentKeyType(params); ok != arrangement.Cosigner || (ok && component != boundedmeta.CosignerComponentKeyTypeV1) {
-					t.Fatalf("%s: cosigner component %q, %v", rekey, component, ok)
+				if metadata.Cosigner != nil && metadata.Cosigner.ComponentKeyType != arrangement.Cosigner {
+					t.Fatalf("%s: cosigner type %s", rekey, metadata.Cosigner.ComponentKeyType)
+				}
+				if components, ok := b.provider.CosignerComponentKeyTypes(params); ok != (arrangement.Cosigner != "") || (ok && !slices.Equal(components, plainhost.CosignerKeyTypes)) {
+					t.Fatalf("%s: cosigner components %v, %v", rekey, components, ok)
 				}
 
 				prepared, err := b.provider.PrepareRekeyList(testListKey, params)
@@ -207,6 +235,95 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 	}
 }
 
+// The cosigner's key type rules: the default type is never recorded, another
+// is, and a type is refused when it means nothing, is not one a plain host
+// takes, or doesn't fit the key. Each holds for a bounds request too.
+func TestCosignerKeyTypeRules(t *testing.T) {
+	for _, b := range bases(t) {
+		for _, bounded := range []bool{false, true} {
+			withBounds := func(params map[string]string) map[string]string {
+				if bounded {
+					params[plainhost.ParameterSpendEffects] = "pay"
+					params[plainhost.ParameterRecipients] = testAddress(1)
+				}
+				return params
+			}
+			name := fmt.Sprintf("%s bounded=%t", b.name, bounded)
+			falcon := withBounds(request(plainhost.RekeySpendingKey))
+			explicit := withBounds(request(plainhost.RekeySpendingKey))
+			explicit[boundedmeta.CosignerKeyTypeParameter] = falconCosigner
+			implicit, err := b.provider.ResolveInstance(falcon)
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			named, err := b.provider.ResolveInstance(explicit)
+			if err != nil {
+				t.Fatalf("%s: explicit default: %v", name, err)
+			}
+			if _, recorded := named.Values[boundedmeta.CosignerKeyTypeParameter]; recorded || named.Fingerprint != implicit.Fingerprint {
+				t.Fatalf("%s: an explicit default type is recorded or selects another program: %v", name, named.Values)
+			}
+
+			ed := withBounds(requestFor(plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Ed25519V1}))
+			instance, err := b.provider.ResolveInstance(ed)
+			if err != nil {
+				t.Fatalf("%s: Ed25519 cosigner: %v", name, err)
+			}
+			if instance.Values[boundedmeta.CosignerKeyTypeParameter] != witness.Ed25519V1 || instance.Bounded.Cosigner.ComponentKeyType != witness.Ed25519V1 ||
+				instance.Bounded.Cosigner.SignatureMaxSize != witness.Ed25519SignatureSize || instance.Fingerprint == implicit.Fingerprint {
+				t.Fatalf("%s: Ed25519 cosigner = %v, %+v", name, instance.Values, instance.Bounded.Cosigner)
+			}
+
+			// A stored account is looked up by its recorded type, at its own
+			// fee ceiling too: never as the default-cosigned program.
+			if bounded {
+				custom := maps.Clone(ed)
+				custom[plainhost.ParameterMaxFee] = "20000"
+				customFalcon := maps.Clone(falcon)
+				customFalcon[plainhost.ParameterMaxFee] = "20000"
+				edInstance, err := b.provider.ResolveInstance(custom)
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				falconInstance, err := b.provider.ResolveInstance(customFalcon)
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				stored, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, edInstance.Values, make([]byte, 3_000))
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				fingerprint, err := b.provider.StoredFingerprint(edInstance.Values, stored)
+				if err != nil || fingerprint != edInstance.Fingerprint || fingerprint == falconInstance.Fingerprint {
+					t.Fatalf("%s: stored fingerprint %s, %v; want %s, not the Falcon-cosigned %s", name, fingerprint, err, edInstance.Fingerprint, falconInstance.Fingerprint)
+				}
+			}
+
+			for _, tc := range []struct {
+				name string
+				edit func(map[string]string)
+				want string
+			}{
+				{"a type without a cosigner", func(p map[string]string) { delete(p, composeddsa.BoundedCosignerPublicKeyParameter) }, "needs a cosigner"},
+				{"an unknown type", func(p map[string]string) { p[boundedmeta.CosignerKeyTypeParameter] = "aplane.witness-rsa.v1" }, "cosigner_key_type"},
+				{"a Falcon key named Ed25519", func(p map[string]string) {
+					p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerFor(falconCosigner)
+				}, "a aplane.witness-ed25519.v1 key is 32"},
+				{"an Ed25519 key with no type", func(p map[string]string) { delete(p, boundedmeta.CosignerKeyTypeParameter) }, "a aplane.witness-falcon1024.v1 key is 1793"},
+			} {
+				params := maps.Clone(ed)
+				tc.edit(params)
+				if _, err := b.provider.ResolveInstance(params); err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("%s: %s: error = %v, want %q", name, tc.name, err, tc.want)
+				}
+				if err := b.provider.ValidateCreationParams(params); err == nil {
+					t.Errorf("%s: %s: ValidateCreationParams() accepted it", name, tc.name)
+				}
+			}
+		}
+	}
+}
+
 // The boundary digest binds the cosigner and the rekey-to list, the two external
 // authorities a review compares.
 func TestBoundaryDigestBindsTheOverlays(t *testing.T) {
@@ -221,7 +338,7 @@ func TestBoundaryDigestBindsTheOverlays(t *testing.T) {
 	}
 	base := request(plainhost.RekeyPlusCosigned)
 	otherCosigner := request(plainhost.RekeyPlusCosigned)
-	otherCosigner[composeddsa.BoundedCosignerPublicKeyParameter] = strings.Repeat("45", boundedmeta.CosignerPublicKeySizeV1)
+	otherCosigner[composeddsa.BoundedCosignerPublicKeyParameter] = strings.Repeat("45", boundedmeta.DefaultCosignerPublicKeySize)
 	var c types.Address
 	c[0] = 0x33
 	otherList := request(plainhost.RekeyPlusCosigned)
@@ -269,11 +386,13 @@ func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
 // declared by a revision; these goldens make that review unavoidable. They moved
 // when the framework timelock left the grammar: the fingerprint is over every
 // program in order, and 147 timelock shapes are no longer among them. No
-// remaining program changed.
+// remaining program changed. They moved again when plain hosts took Ed25519
+// cosigners: 88 programs joined (4 arrangements, 84 shapes), and no existing
+// one changed, as TestArrangementGoldens and TestBoundsFingerprintGoldens show.
 func TestPlainHostGrammarGoldens(t *testing.T) {
 	want := map[string]string{
-		"falcon":  "1:cb01dfa0fa03dcb1e45cc3a579a21fc7e058bf63651a02b6f0707472d77f2792",
-		"ed25519": "1:e5fedd47ba426dfe40f774b1f17f8858960aab0abb4570a0f602cdebc9286b30",
+		"falcon":  "1:a9b67bca1c1432de249ec04c84275d28b1f7a7b8e84b75f2129ab023cfcef6d2",
+		"ed25519": "1:692c4726da53ea27092e3c8dc0205e268201ecc418c24076ec237d95911689f2",
 	}
 	for _, b := range bases(t) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {
@@ -289,19 +408,42 @@ func TestPlainHostGrammarGoldens(t *testing.T) {
 // raised for the arrangements it touches; a changed fingerprint with no intended
 // behavior change would give existing accounts a provenance conflict.
 func TestArrangementGoldens(t *testing.T) {
-	want := map[string]struct{ programs, fingerprints string }{
+	// The default cosigner's arrangements, and those without one, hash as they
+	// did before accounts could take another cosigner type: their programs and
+	// fingerprints must not have moved. Each other type has its own values.
+	type golden struct{ programs, fingerprints string }
+	want := map[string]map[string]golden{
 		"falcon": {
-			programs:     "644ffc120e9210f5b20eef7c0e0d2cac450027eb4c7e9025be5cffeba16a1c82",
-			fingerprints: "808c62e885ed2b74ac925f679114e2d4dcff18b2fe7a628177dd1ece776aa10b",
+			"": {
+				programs:     "644ffc120e9210f5b20eef7c0e0d2cac450027eb4c7e9025be5cffeba16a1c82",
+				fingerprints: "808c62e885ed2b74ac925f679114e2d4dcff18b2fe7a628177dd1ece776aa10b",
+			},
+			witness.Ed25519V1: {
+				programs:     "3f96db42c2a6ce3389ec653d74b7188dd12297d4f1a63e371d8e5e5338f4ca5e",
+				fingerprints: "faa2fde48d2fe21eee16f58d29d53b39ad0a83a75885bdaaf8a859cc025071c1",
+			},
 		},
 		"ed25519": {
-			programs:     "8a7dd8014f1e120630d9c2988b7fbdd7caff757b1bda9c4da414073bbc5d15b4",
-			fingerprints: "543167f1c324a353b89f9d0d666a8bf0e987889ccab7afb2ae01d3064590f52e",
+			"": {
+				programs:     "8a7dd8014f1e120630d9c2988b7fbdd7caff757b1bda9c4da414073bbc5d15b4",
+				fingerprints: "543167f1c324a353b89f9d0d666a8bf0e987889ccab7afb2ae01d3064590f52e",
+			},
+			witness.Ed25519V1: {
+				programs:     "d0a89a199b81fd0614c498713fe2eea1a7bebde66fbdc6dea0254c8790344b74",
+				fingerprints: "ccf0ff44eef5dc71bb34e8fd600fe43c62d0cc2062d12f3985e5d73a3591a7f3",
+			},
 		},
 	}
 	for _, b := range bases(t) {
-		programs, fingerprints := sha256.New(), sha256.New()
+		programs, fingerprints := map[string]hash.Hash{}, map[string]hash.Hash{}
 		for _, arrangement := range plainhost.Arrangements() {
+			set, label := "", legacyArrangement(arrangement)
+			if arrangement.Cosigner != "" && arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
+				set, label = arrangement.Cosigner, fmt.Sprintf("%+v", arrangement)
+			}
+			if programs[set] == nil {
+				programs[set], fingerprints[set] = sha256.New(), sha256.New()
+			}
 			params := requestFor(arrangement)
 			teal, err := b.provider.GenerateTEAL(b.spendingKey, withRoot(t, b.provider, params))
 			if err != nil {
@@ -311,16 +453,22 @@ func TestArrangementGoldens(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s %+v: %v", b.name, arrangement, err)
 			}
-			if _, err := fmt.Fprintf(programs, "%+v\n%d\n%s\n", arrangement, len(teal), teal); err != nil {
+			if _, err := fmt.Fprintf(programs[set], "%s\n%d\n%s\n", label, len(teal), teal); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := fmt.Fprintf(fingerprints, "%+v\n%s\n%s\n", arrangement, resolved.Fingerprint, resolved.BoundaryDigest); err != nil {
+			if _, err := fmt.Fprintf(fingerprints[set], "%s\n%s\n%s\n", label, resolved.Fingerprint, resolved.BoundaryDigest); err != nil {
 				t.Fatal(err)
 			}
 		}
-		got := struct{ programs, fingerprints string }{hex.EncodeToString(programs.Sum(nil)), hex.EncodeToString(fingerprints.Sum(nil))}
-		if got != want[b.name] {
-			t.Errorf("%s arrangements: programs %s, fingerprints %s; want %+v", b.name, got.programs, got.fingerprints, want[b.name])
+		for set, wantSet := range want[b.name] {
+			if programs[set] == nil {
+				t.Errorf("%s: no arrangements for cosigner set %q", b.name, set)
+				continue
+			}
+			got := golden{hex.EncodeToString(programs[set].Sum(nil)), hex.EncodeToString(fingerprints[set].Sum(nil))}
+			if got != wantSet {
+				t.Errorf("%s arrangements (cosigner set %q): programs %s, fingerprints %s; want %+v", b.name, set, got.programs, got.fingerprints, wantSet)
+			}
 		}
 	}
 }

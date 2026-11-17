@@ -965,11 +965,11 @@ type keyadminInstanceProvider struct {
 	keyadminFingerprintProvider
 }
 
-func (p keyadminInstanceProvider) CosignerComponentKeyType(params map[string]string) (string, bool) {
+func (p keyadminInstanceProvider) CosignerComponentKeyTypes(params map[string]string) ([]string, bool) {
 	if params["cosigner"] == "" {
-		return "", false
+		return nil, false
 	}
-	return "aplane.witness-falcon1024.v1", true
+	return []string{"aplane.witness-falcon1024.v1"}, true
 }
 
 func (p keyadminInstanceProvider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
@@ -1065,7 +1065,7 @@ func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) 
 	const want = "key type aplane.ed25519.v1 is not enabled on this node"
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, boundedmeta.CosignerPublicKeyParameter: strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)}
+	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, boundedmeta.CosignerPublicKeyParameter: strings.Repeat("41", boundedmeta.DefaultCosignerPublicKeySize)}
 	if _, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", cosigned, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("GenerateKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}

@@ -33,7 +33,10 @@ cosigner authority under the bounded contract; it is not a dedicated policy.
 | **Cosigner witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a cosigned account's transaction. |
 
 A cosigner witness key has type `aplane.witness-falcon1024.v1` or
-`aplane.witness-ed25519.v1`. No account type takes an Ed25519 cosigner yet.
+`aplane.witness-ed25519.v1`. A plain host account takes either; the file the
+cosigner exports says which, so the account form needs no choice. On a Falcon
+account an Ed25519 cosigner is a second algorithm beside the spending key's:
+it hedges against a weakness in Falcon, though not against a quantum computer.
 Its `.cos` record uses durable category `witness` and can sign only the cosigner component
 domain.
 

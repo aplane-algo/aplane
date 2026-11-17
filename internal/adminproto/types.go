@@ -651,6 +651,8 @@ type PreparedBoundedProfile struct {
 	RekeyList        bool
 	Layer3Policy     string
 	CosignerRequired bool
+	// CosignerKeyType is the cosigner's key type, when the account has one.
+	CosignerKeyType string
 }
 
 // PrepareGenerateKeyResult describes the account a request would create. It has

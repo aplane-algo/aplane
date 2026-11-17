@@ -92,6 +92,9 @@ type BoundedAuthorizationSpec struct {
 type BoundedCosignerSpec struct {
 	Contract   string   `yaml:"contract"`
 	RequiredOn []string `yaml:"required_on"`
+	// ComponentKeyType is the cosigner's key type, empty for the default.
+	// A YAML template can't set it: only a plain host's bounds choose it.
+	ComponentKeyType string `yaml:"-"`
 }
 
 // BoundedRuntimeArgSpec declares caller-supplied data and every path on which

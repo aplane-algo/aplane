@@ -28,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -92,13 +93,14 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 	spendingPublic, spendingPrivate, edKey := newSpendingKey(t, keyType)
 	account.edKey = edKey
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
-	if arrangement.Cosigner {
-		cosignerPublic, cosignerPrivate, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
-		if err != nil {
-			t.Fatalf("generate cosigner key: %v", err)
-		}
+	if arrangement.Cosigner != "" {
+		cosignerPublic, cosignerPrivate := newTestCosignerKey(t, arrangement.Cosigner)
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerPublic)
+		if arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
+			params[boundedmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
+		}
 		account.cosignerPrivateKey = cosignerPrivate
+		account.cosignerKeyType = arrangement.Cosigner
 	}
 	if listedArrangement(arrangement) {
 		params[plainhost.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
@@ -119,7 +121,7 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
-	if metadata.Contract != boundedmeta.PlainContract || (metadata.Cosigner != nil) != arrangement.Cosigner {
+	if metadata.Contract != boundedmeta.PlainContract || (metadata.Cosigner != nil) != (arrangement.Cosigner != "") {
 		t.Fatalf("metadata = %+v", metadata)
 	}
 	account.address = derived.Address.String()
@@ -242,11 +244,14 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 	var cases []plainCase
 	for _, arrangement := range plainhost.Arrangements() {
 		cases = append(cases, plainCase{plainFalconKeyType, arrangement,
-			arrangement == plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: true}})
+			arrangement == plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Falcon1024V1}})
 	}
 	cases = append(cases,
-		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: true}, true},
+		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Falcon1024V1}, true},
 		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeyOnlyThese}, false},
+		// Two classical keys: an Ed25519 spending key with an Ed25519 cosigner.
+		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Ed25519V1}, false},
+		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeyPlusCosigned, Cosigner: witness.Ed25519V1}, false},
 	)
 
 	for _, tc := range cases {
@@ -264,7 +269,7 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 			if err := funder.FundMicroAlgosAndWait(account.address, funding); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
-			cosigned := tc.arrangement.Cosigner
+			cosigned := tc.arrangement.Cosigner != ""
 			t.Cleanup(func() {
 				info, err := network.Client.AccountInformation(account.address).Do(context.Background())
 				if err != nil || info.Amount == 0 {
@@ -521,7 +526,7 @@ func generatePlainHost(t *testing.T, n *cosignedNode, keyType string, params map
 // the cosigner for the plain host's position only, signs the other position
 // through /sign over the frozen bytes, assembles, and the group confirms.
 func TestPlainHostMixedGroupThroughSigner(t *testing.T) {
-	n := newCosignedNode(t)
+	n := newCosignedNode(t, witness.Falcon1024V1)
 	activatePlainHosts(t, n)
 	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
 		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
@@ -574,7 +579,7 @@ func TestCosignedGroupChargesTheNativeFalconPosition(t *testing.T) {
 	// apshell registers the native Falcon client metadata at startup
 	// (internal/apshellcli/providers.go); this engine is built without it.
 	nativefalcon.RegisterClient()
-	n := newCosignedNode(t)
+	n := newCosignedNode(t, witness.Falcon1024V1)
 	activatePlainHosts(t, n)
 	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
 		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
@@ -631,7 +636,7 @@ func TestCosignedGroupChargesTheNativeFalconPosition(t *testing.T) {
 // cosigner and confirms. This is what lets a cosigner policy allow any type
 // (restrictions C1).
 func TestCosignedPlainHostSignsANonTransferType(t *testing.T) {
-	n := newCosignedNode(t)
+	n := newCosignedNode(t, witness.Falcon1024V1)
 	activatePlainHosts(t, n)
 	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
 		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
@@ -669,7 +674,7 @@ func TestCosignedPlainHostSignsANonTransferType(t *testing.T) {
 // without a cosigner and the plain program sign through /sign and never ask it.
 // Each pays and then closes out.
 func TestPlainHostThroughSigner(t *testing.T) {
-	n := newCosignedNode(t)
+	n := newCosignedNode(t, witness.Falcon1024V1)
 	// The Falcon host is enabled by default; it is not a library key type, so it
 	// can't be activated as one.
 	t.Run("the Falcon host is enabled by default", func(t *testing.T) {

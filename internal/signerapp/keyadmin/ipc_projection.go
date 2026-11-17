@@ -58,6 +58,9 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 			Layer3Policy:     metadata.Layer3Policy,
 			CosignerRequired: metadata.Cosigner != nil,
 		}
+		if metadata.Cosigner != nil {
+			profile.CosignerKeyType = metadata.Cosigner.ComponentKeyType
+		}
 		result.Bounded = profile
 	}
 	return result

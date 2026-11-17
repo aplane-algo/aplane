@@ -386,10 +386,20 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 		MaxFee:   new(*spec.MaxFee),
 	}
 	if spec.Cosigner != nil {
+		// A template's cosigner is the default type; only a plain host's
+		// bounds choose another, through the spec's unexported field.
+		componentKeyType := spec.Cosigner.ComponentKeyType
+		if componentKeyType == "" {
+			componentKeyType = boundedmeta.DefaultCosignerComponentKeyType
+		}
+		_, signatureMaxSize, ok := boundedmeta.CosignerSizes(componentKeyType)
+		if !ok {
+			return nil, fmt.Errorf("unsupported bounded cosigner component key type %q", componentKeyType)
+		}
 		profile.Cosigner = &boundedmeta.CosignerAuthorization{
 			Contract:         spec.Cosigner.Contract,
-			ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1,
+			ComponentKeyType: componentKeyType,
+			SignatureMaxSize: signatureMaxSize,
 			RequiredOn:       append([]string(nil), spec.Cosigner.RequiredOn...),
 		}
 	}

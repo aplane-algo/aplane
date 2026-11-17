@@ -211,7 +211,7 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		!strings.Contains(description, "Authorization: spending key only, to an address on the account's rekey-to list") {
 		t.Fatalf("single prompt = %q, want the bounded rekey's authorization", description)
 	}
-	cosigned := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))}
+	cosigned := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))}
 	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},
 		policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{cosigned}}); err != nil {
 		t.Fatal(err)

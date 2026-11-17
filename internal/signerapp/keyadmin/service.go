@@ -142,8 +142,8 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 		params = s.resolveRotatingNetwork(params)
 	}
 	if provider := lsigprovider.Get(keyType); provider != nil {
-		if component, ok := lsigprovider.CosignerComponentKeyType(provider, params); ok {
-			resolved, err := cosignerrefs.ResolveCreationParamsForComponent(ir.KeyPaths(), keyType, component, params)
+		if components, ok := lsigprovider.CosignerComponentKeyTypes(provider, params); ok {
+			resolved, err := cosignerrefs.ResolveCreationParamsForComponents(ir.KeyPaths(), keyType, components, params)
 			if err != nil {
 				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
