@@ -331,11 +331,19 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 				})
 			}
 		} else {
-			if info.AuthorizationKind == string(algorithm.AuthorizationNativePQ) {
+			switch {
+			case keyType == "falcon1024":
+				info.DisplayName = "Native Falcon-1024"
+			case keyType == "ed25519":
+				info.DisplayName = "Native Ed25519"
+			case info.AuthorizationKind == string(algorithm.AuthorizationNativePQ):
 				info.DisplayName = keyType
+			default:
+				info.DisplayName = strings.ToUpper(keyType[:1]) + keyType[1:]
+			}
+			if info.AuthorizationKind == string(algorithm.AuthorizationNativePQ) {
 				info.Description = "Native Algorand Falcon-1024 signing key"
 			} else {
-				info.DisplayName = strings.ToUpper(keyType[:1]) + keyType[1:]
 				info.Description = "Native Algorand signing key"
 			}
 		}
