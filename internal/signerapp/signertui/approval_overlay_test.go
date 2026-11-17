@@ -342,6 +342,9 @@ func TestSigningPopupRefusesApprovalUntilArmed(t *testing.T) {
 	if m.signing.request == nil || m.viewState != ViewSigningPopup {
 		t.Fatalf("approval within the arming delay was accepted: view %v", m.viewState)
 	}
+	if m.lastNotice != "One moment..." || m.lastWarning != "" {
+		t.Errorf("a refused approval says notice %q, warning %q; want only %q", m.lastNotice, m.lastWarning, "One moment...")
+	}
 	m.signing.focus = 0
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.signing.request == nil {
