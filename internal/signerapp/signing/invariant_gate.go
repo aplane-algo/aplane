@@ -45,7 +45,8 @@ func rekeyTargetNotValid(target, keyType string) *ServiceError {
 // invalidRekeyTargets is the request's held addresses that are not valid
 // rekey targets, from the key snapshot the request was planned with. On a
 // cosigner, which holds no rotating accounts and no account aplane keys, the
-// rekey target and rotating checks find nothing to refuse.
+// rotating check finds nothing to refuse, and the rekey target check only the
+// addresses of its own Ed25519 witness keys (cosignerKeyAddresses).
 func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int, invalidRekeyTargets map[string]txnreview.InvalidRekeyTarget) *ServiceError {
 	if err := rejectRekeyToInvalidTarget(txns, invalidRekeyTargets); err != nil {
 		return err

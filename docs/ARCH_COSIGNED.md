@@ -103,7 +103,12 @@ Cosigner uses a witness key as its auxiliary signing authority.
 ### Cosigner Keys And Witness Key IDs
 
 Cosigner keys are raw witness keys held by cosigner nodes. They are not
-Algorand accounts and cannot spend funds directly.
+Algorand accounts and cannot spend funds directly. An Ed25519 cosigner key's
+public key is also a valid Algorand address, but the cosigner never signs a
+transaction with it: only its domain-tagged component message, and the fixed
+probe that checks the key pair when it loads. It also refuses to cosign a
+rekey to that address (`rekey_target_not_valid`), since an account rekeyed to
+it could never spend again.
 
 Their canonical private record is
 the selected generation's `keys/<WitnessKeyID>.cos`. The `.cos` container uses the
@@ -113,6 +118,8 @@ canonical `category: witness` payload.
 Current cosigner key types:
 
 - `aplane.witness-falcon1024.v1`
+- `aplane.witness-ed25519.v1`: a cosigner node generates and signs with one,
+  but no account type takes an Ed25519 cosigner yet.
 
 They are selected by a 52-character uppercase **Witness Key ID** derived from
 the length-prefixed domain, key type, and cosigner public key. Cosigner wire
@@ -299,11 +306,14 @@ signer holds, and only warns about it.
 
 Which keys could be shared at all:
 
-- A cosigner key is Falcon-1024 only (`aplane.witness-falcon1024.v1`). So only
-  a Falcon-1024 account key could share a keypair with one: a native
-  `falcon1024` account, or the spending key of a Falcon LogicSig account.
-- An Ed25519 key can't. Neither can a rotating stage key: stage keys are
-  derived per stage from the rotating secret, and are never imported keys.
+- A Falcon-1024 cosigner key (`aplane.witness-falcon1024.v1`) could share a
+  keypair with a Falcon-1024 account key: a native `falcon1024` account, or
+  the spending key of a Falcon LogicSig account.
+- An Ed25519 cosigner key (`aplane.witness-ed25519.v1`) could share one with
+  an Ed25519 account key: a native `ed25519` account, or the spending key of
+  an Ed25519 LogicSig account.
+- A rotating stage key can't: stage keys are derived per stage from the
+  rotating secret, and are never imported keys.
 
 What a cosigner key signs:
 

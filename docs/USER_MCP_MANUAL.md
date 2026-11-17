@@ -195,6 +195,7 @@ role.
 | `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-wotsc.v1` | rotating LogicSig | library-visible |
 | `aplane.witness-falcon1024.v1` | witness key | default-enabled on cosigner nodes (`.cos`) |
+| `aplane.witness-ed25519.v1` | Ed25519 witness key | default-enabled on cosigner nodes (`.cos`) |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is product-scoped. Visibility states: `default_enabled` (for the applicable node role), `library` (compiled in but needs an enabled state record in the product

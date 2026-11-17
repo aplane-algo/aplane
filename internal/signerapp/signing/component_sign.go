@@ -5,6 +5,7 @@ package signing
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -142,6 +143,11 @@ func signCosignerComponentMessage(keyType string, privateKey, msg []byte) ([]byt
 			return nil, internal(fmt.Sprintf("failed to sign Falcon cosigner component message: %v", err))
 		}
 		return signature, nil
+	case witness.Ed25519V1:
+		if len(privateKey) != witness.Ed25519PrivateKeySize {
+			return nil, internal(fmt.Sprintf("Ed25519 cosigner private key length %d invalid", len(privateKey)))
+		}
+		return ed25519.Sign(ed25519.PrivateKey(privateKey), msg), nil
 	default:
 		return nil, badRequest(fmt.Sprintf("key type %q is not a cosigner key", keyType))
 	}

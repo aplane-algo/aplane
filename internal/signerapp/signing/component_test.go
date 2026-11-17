@@ -6,6 +6,7 @@ package signing
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/base32"
 	"encoding/hex"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
+	edkeygen "github.com/aplane-algo/aplane/lsig/ed25519lsig/keygen"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -465,6 +467,69 @@ func TestSignComponentCosignerRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	}
 	if got := audit.rejected[0].policyRule; got != policy.CosignerRekeyRuleID {
 		t.Fatalf("audit policyRule = %q, want %q", got, policy.CosignerRekeyRuleID)
+	}
+}
+
+// A cosigner refuses to cosign a rekey to the address of an Ed25519 witness
+// key it holds, at any position, even when its policy allows the rekey: that
+// key signs only component messages, so the account could never spend again.
+// A rekey to any other address is the policy's question.
+func TestSignComponentCosignerRefusesARekeyToItsOwnEd25519Key(t *testing.T) {
+	edPrivate := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x46}, ed25519.SeedSize))
+	edPublic := edPrivate.Public().(ed25519.PublicKey)
+	edID, err := witness.ID(witness.Ed25519V1, edPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var edAddress types.Address
+	copy(edAddress[:], edPublic)
+	falconKey := testFalconComponentSelector(t, 0xab)
+	snapshot := PlannerRuntimeSnapshot{
+		KeyFiles: map[string]string{falconKey: "falcon.cos", edID: "ed25519.cos"},
+		KeyTypes: map[string]string{falconKey: witness.Falcon1024V1, edID: witness.Ed25519V1},
+		KeyMetadata: map[string]PlannerKeyMetadata{
+			edID: {Category: keys.CategoryWitness, PublicKeyHex: hex.EncodeToString(edPublic)},
+		},
+	}
+	source := types.Address{68}
+	other := types.Address{69}
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "transfer_policy": {"routes": []},
+  "rekey_policy": {
+    "allowed": [
+      {"sender": %q, "targets": [%q, %q]}
+    ]
+  }
+}`, source.String(), edAddress.String(), other.String()))
+	for name, tc := range map[string]struct {
+		target  types.Address
+		refused bool
+	}{
+		"its own Ed25519 key": {edAddress, true},
+		"another address":     {other, false},
+	} {
+		txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
+		txn.RekeyTo = tc.target
+		store := &componentKeyStore{}
+		_, signErr := (&Service{
+			Planner:          &Planner{Snapshot: func() PlannerRuntimeSnapshot { return snapshot }},
+			PolicyFor:        fixedPolicy(cfg),
+			HoldsCosignerKey: holdsAllCosignerKeys,
+			AuditLog:         &testAuditLogger{},
+		}).signComponentWithContext(context.Background(), componentPlanRequest{
+			RequestID:     "cmp-cosigner-own-key",
+			Role:          ComponentSignRoleCosigner,
+			ComponentKey:  falconKey,
+			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+			TargetIndices: []int{0},
+		}, newComponentKeySession(store))
+		refused := signErr != nil && signErr.Kind == ErrorRekeyTargetNotValid
+		if refused != tc.refused {
+			t.Fatalf("%s: error = %#v, want refused %t", name, signErr, tc.refused)
+		}
+		if tc.refused && store.calls != 0 {
+			t.Fatalf("%s: the key was loaded before the refusal", name)
+		}
 	}
 }
 
@@ -944,6 +1009,55 @@ func TestSignPreparedCosignerComponentsSignsFalconMessages(t *testing.T) {
 			t.Fatalf("DecodeString(signature) error = %v", err)
 		}
 		if err := sigverify.Verify(sigconstruction.Falcon1024(), publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
+			t.Fatalf("signature %d does not verify over prepared component message", i)
+		}
+	}
+	if keyMaterial.Type != "" || keyMaterial.Value != nil {
+		t.Fatalf("key material was not zeroed after signing: %#v", keyMaterial)
+	}
+}
+
+// An Ed25519 cosigner key signs each target's prepared message, the same
+// message a Falcon-1024 one signs, and reports its key type as the scheme.
+func TestSignPreparedCosignerComponentsSignsEd25519Messages(t *testing.T) {
+	edkeygen.RegisterWitnessKeygen()
+	privateKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x44}, ed25519.SeedSize))
+	publicKey := []byte(privateKey.Public().(ed25519.PublicKey))
+	componentKey, err := witness.ID(witness.Ed25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("witness.ID() error = %v", err)
+	}
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:     witness.Ed25519V1,
+		Category: keys.CategoryWitness,
+		Value: &coresigning.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
+			PublicKey:    append([]byte(nil), publicKey...),
+			PrivateKey:   append([]byte(nil), privateKey...),
+		},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
+	plan := preparedCosignerComponentPlan(t, componentKey)
+
+	result, signErr := signPreparedCosignerComponents(context.Background(), plan, session)
+	if signErr != nil {
+		t.Fatalf("signPreparedCosignerComponents() error = %v", signErr)
+	}
+	if len(result.Signatures) != len(plan.Targets) {
+		t.Fatalf("Signatures len = %d, want %d", len(result.Signatures), len(plan.Targets))
+	}
+	for i, sig := range result.Signatures {
+		if sig.SignatureScheme != witness.Ed25519V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, witness.Ed25519V1)
+		}
+		sigBytes, err := hex.DecodeString(sig.Signature)
+		if err != nil {
+			t.Fatalf("DecodeString(signature) error = %v", err)
+		}
+		if len(sigBytes) != witness.Ed25519SignatureSize {
+			t.Fatalf("signature %d is %d bytes, want %d", i, len(sigBytes), witness.Ed25519SignatureSize)
+		}
+		if err := sigverify.Verify(sigconstruction.Ed25519(), publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
 			t.Fatalf("signature %d does not verify over prepared component message", i)
 		}
 	}

@@ -443,8 +443,8 @@ visibility metadata, not the assembled list.
 
 Default-enabled compiled providers are the protocol-native signer account
 providers (`ed25519` and `falcon1024`), the Falcon plain host
-(`aplane.falcon1024.v1`) on signer nodes, and the witness provider
-(`aplane.witness-falcon1024.v1`). The Ed25519 plain host (`aplane.ed25519.v1`)
+(`aplane.falcon1024.v1`) on signer nodes, and the witness providers
+(`aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1`). The Ed25519 plain host (`aplane.ed25519.v1`)
 and the other selectable compiled LogicSig providers are library-visible. Node role gates determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
 after product-store enablement or installation.

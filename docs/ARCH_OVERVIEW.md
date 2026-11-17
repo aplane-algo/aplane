@@ -1969,6 +1969,7 @@ Witness key types are raw auxiliary signing keys, not spending
 accounts and not LogicSig providers:
 
 - `aplane.witness-falcon1024.v1`
+- `aplane.witness-ed25519.v1`
 
 They are selected by 52-character uppercase, no-padding base32 Witness Key IDs
 derived as:

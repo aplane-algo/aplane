@@ -5,8 +5,11 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -137,6 +140,12 @@ func TestKeyTypeSelectionOrderClustersNativeFirst(t *testing.T) {
 	}
 	if n := nativeKeyTypeCount(got); n != 2 {
 		t.Fatalf("native count = %d, want 2", n)
+	}
+	// A cosigner node lists only cosigner key types: the post-quantum one
+	// first, so it is what Generate starts on.
+	cosigner := sortKeyTypesForSelection([]string{witness.Ed25519V1, witness.Falcon1024V1})
+	if !slices.Equal(cosigner, []string{witness.Falcon1024V1, witness.Ed25519V1}) {
+		t.Fatalf("cosigner order = %v", cosigner)
 	}
 }
 

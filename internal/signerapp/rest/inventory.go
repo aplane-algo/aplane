@@ -549,6 +549,8 @@ func cosignerComponentKeyTypeMetadata(keyType string) (family, displayName, desc
 	switch keyType {
 	case witness.Falcon1024V1:
 		return "cosigner-falcon1024", "Cosigner Falcon-1024 key", "Raw Falcon-1024 cosigner signing key for cosigner-role component signatures"
+	case witness.Ed25519V1:
+		return "cosigner-ed25519", "Cosigner Ed25519 key", "Raw Ed25519 cosigner signing key for cosigner-role component signatures"
 	default:
 		return keyType, keyType, "Raw cosigner signing key for cosigner-role component signatures"
 	}

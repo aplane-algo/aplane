@@ -7,10 +7,12 @@
 package witness
 
 import (
+	"crypto/ed25519"
 	"crypto/sha512"
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/falconparams"
@@ -25,15 +27,28 @@ const (
 	Falcon1024PrivateKeySize = falconparams.PrivateKeySize
 	Falcon1024SignatureSize  = falconparams.CompressedSignatureMaxSize
 
+	// Ed25519V1 is a non-spending Ed25519 witness key, held by a cosigner.
+	// Its public key is also a valid Algorand address, but it signs only a
+	// witness's domain-tagged message, never a transaction.
+	Ed25519V1 = "aplane.witness-ed25519.v1"
+
+	Ed25519PublicKeySize  = ed25519.PublicKeySize
+	Ed25519PrivateKeySize = ed25519.PrivateKeySize
+	Ed25519SignatureSize  = ed25519.SignatureSize
+
 	IDLength = 52
 	idDomain = "APLANE_WITNESS_KEY_ID_V1"
 )
 
 var idEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
+// KeyTypes lists the supported witness-key types in the order a picker offers
+// them: the post-quantum one first.
+var KeyTypes = []string{Falcon1024V1, Ed25519V1}
+
 // IsKeyType reports whether keyType is a supported witness-key type.
 func IsKeyType(keyType string) bool {
-	return keyType == Falcon1024V1
+	return slices.Contains(KeyTypes, keyType)
 }
 
 // PublicKeySize returns the public-key size for a supported witness-key type.
@@ -41,6 +56,8 @@ func PublicKeySize(keyType string) (int, bool) {
 	switch keyType {
 	case Falcon1024V1:
 		return Falcon1024PublicKeySize, true
+	case Ed25519V1:
+		return Ed25519PublicKeySize, true
 	default:
 		return 0, false
 	}
@@ -51,6 +68,8 @@ func PrivateKeySize(keyType string) (int, bool) {
 	switch keyType {
 	case Falcon1024V1:
 		return Falcon1024PrivateKeySize, true
+	case Ed25519V1:
+		return Ed25519PrivateKeySize, true
 	default:
 		return 0, false
 	}

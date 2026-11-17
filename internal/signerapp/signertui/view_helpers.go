@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -42,17 +43,32 @@ func isNativeKeyType(keyType string) bool {
 	return !strings.Contains(keyType, ".")
 }
 
-// compareKeyTypesForSelection orders key type pickers in two clusters: the
+// compareKeyTypesForSelection orders key type pickers in clusters: the
 // protocol-native key types first, then every published key type, each
-// cluster alphabetical.
+// alphabetical, then the cosigner key types in their own order, the
+// post-quantum one first. Only a cosigner node lists cosigner key types, and
+// they are all it lists, so its generate list starts with Falcon-1024.
 func compareKeyTypesForSelection(a, b string) int {
-	if aNative, bNative := isNativeKeyType(a), isNativeKeyType(b); aNative != bNative {
-		if aNative {
-			return -1
-		}
-		return 1
+	if rankA, rankB := keyTypeCluster(a), keyTypeCluster(b); rankA != rankB {
+		return rankA - rankB
+	}
+	if witness.IsKeyType(a) {
+		return slices.Index(witness.KeyTypes, a) - slices.Index(witness.KeyTypes, b)
 	}
 	return strings.Compare(a, b)
+}
+
+// keyTypeCluster is a key type's cluster in a picker: native, published, or
+// cosigner.
+func keyTypeCluster(keyType string) int {
+	switch {
+	case isNativeKeyType(keyType):
+		return 0
+	case witness.IsKeyType(keyType):
+		return 2
+	default:
+		return 1
+	}
 }
 
 func sortKeyTypesForSelection(keyTypes []string) []string {

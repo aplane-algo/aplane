@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
+	ed25519witnesskeygen "github.com/aplane-algo/aplane/lsig/ed25519lsig/keygen"
 	ed25519lsigsignerreg "github.com/aplane-algo/aplane/lsig/ed25519lsig/signerreg"
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
 	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
@@ -26,6 +27,10 @@ func RegisterSigner() {
 		// The same catalog entries lsig/clientreg registers.
 		registerCompiledSigner(clientreg.FalconPlainHostEntry(), falconsignerreg.RegisterSigner)
 		registerCompiledSigner(clientreg.Ed25519PlainHostEntry(), ed25519lsigsignerreg.RegisterSigner)
+		// A cosigner key is no account type's: its cosigner node needs it
+		// registered whatever the Ed25519 plain host's availability, or its
+		// .cos files would no longer load.
+		ed25519witnesskeygen.RegisterWitnessKeygen()
 		// Rotating key files are readable in every signer-side binary so
 		// scans, backups and offline tools agree on them. Signing for them is
 		// only available through the rotating flow.

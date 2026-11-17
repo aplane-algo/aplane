@@ -467,7 +467,8 @@ Canonical forms:
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.ed25519.v1`, and `aplane.htlc.v1`
 - witness keys use the same canonical key-type identifier contract,
-  currently `aplane.witness-falcon1024.v1`; signer-custodied instances serve
+  currently `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1`;
+  signer-custodied instances serve
   as cosigner component-signing keys selected by 52-character txid-shaped
   Witness Key IDs, not spending accounts. The
   compatibility wire/storage field name for that selector remains
@@ -560,7 +561,7 @@ They participate in a specific account or operation contract:
 
 | Type | Custody and use | Signer key type? |
 |---|---|---|
-| **Witness key** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a cosigned account's LogicSig, on a plain or bounded host. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
+| **Witness key** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a cosigned account's LogicSig, on a plain or bounded host. | Yes. `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
 
 The current authority overlays are therefore **uncosigned** and **cosigner
 cosigned**.
@@ -596,8 +597,13 @@ Examples of the composed ontology:
 | `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + two-layer SLH-DSA-SHA2-128 + Ed25519; `rotating1`, signer-side codec and cryptography |
 | `aplane.rotating-triple-wotsc.v1` | `aplane.rotating-triple-wotsc` | `rotating_lsig` | false | Library-visible rotating account: Falcon-1024 + WOTS+C + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
 
-`aplane.witness-falcon1024.v1` is not an account; its catalog entry declares
-`valid_rekey_target: false`.
+The witness keys `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1`
+are not accounts; their catalog entries declare `valid_rekey_target: false`.
+An Ed25519 witness key's public key is also a valid Algorand address. The
+cosigner node that holds the key refuses to cosign a rekey to that address
+(`rekey_target_not_valid`), as a signer refuses one to its own keys. The
+signer that holds the account holds no witness key, so to it the address is
+foreign, governed by its rekeys setting.
 
 ## Valid rekey target
 
@@ -915,7 +921,7 @@ signer template reload coordinator.
 **Scoping invariant:** compiled providers are shared product capabilities, while
 runtime-added `.template` files belong to the one durable `default` activation set. In practice:
 
-- default-enabled built-in key types are available wherever their providers are registered; only the protocol-native `ed25519` and `falcon1024` and the Falcon plain host `aplane.falcon1024.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1` (cosigner nodes) are default-enabled
+- default-enabled built-in key types are available wherever their providers are registered; only the protocol-native `ed25519` and `falcon1024` and the Falcon plain host `aplane.falcon1024.v1` (signer nodes) and the witness key types `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1` (cosigner nodes) are default-enabled
 - library-visible built-in key types require an enabled product-store state record before generation surfaces expose them
 - runtime-added `.template` files live in the selected generation's `keytypes/` with adjacent state records and affect the product runtime when enabled; disabled installed templates remain stored but are skipped during reload
 
