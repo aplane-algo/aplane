@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -686,6 +687,12 @@ func TestRekeySummaryNamesRefusedAndUnknownAuthorities(t *testing.T) {
 }
 
 func TestBoundaryPresetScreenFitsAt80x24(t *testing.T) {
+	var descriptions []string // the start of each row's description
+	for _, preset := range boundaryPresetChoices() {
+		descriptions = append(descriptions, preset.Description[:20])
+	}
+	descriptions = append(descriptions, "Rules from a boundary file")
+	height, fileRow := -1, -1
 	for index := 0; index < boundaryPresetRows(); index++ {
 		m := Model{viewState: ViewBoundaryPreset, width: 80, height: 24, standalone: true, connectionState: ConnectionConnected,
 			forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPresetIndex: index}}
@@ -702,9 +709,21 @@ func TestBoundaryPresetScreenFitsAt80x24(t *testing.T) {
 		if strings.Contains(view, "Panel lines") {
 			t.Errorf("row %d: preset screen scrolls at 80x24:\n%s", index, view)
 		}
-		// Only the selected row's description is shown.
+		// Only the selected row's description is shown, in the box under
+		// the list, and nothing moves as the selection does.
 		if index == 0 && (!strings.Contains(view, "no fee limit") || strings.Contains(view, "Pays only listed")) {
 			t.Errorf("row 0 shows the wrong description:\n%s", view)
+		}
+		lines := strings.Split(view, "\n")
+		loadRow := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "Load boundary file") })
+		described := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, descriptions[index]) })
+		if described <= loadRow+1 {
+			t.Errorf("row %d: its description is not in a box under the list:\n%s", index, view)
+		}
+		if height < 0 {
+			height, fileRow = len(lines), loadRow
+		} else if len(lines) != height || loadRow != fileRow {
+			t.Errorf("row %d: the screen moved: %d lines, list ends on line %d; row 0 had %d and %d:\n%s", index, len(lines), loadRow, height, fileRow, view)
 		}
 	}
 }

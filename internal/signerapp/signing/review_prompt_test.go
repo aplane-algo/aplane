@@ -117,7 +117,7 @@ func TestGroupPromptCarriesTheReviewItsTextWasPrintedFrom(t *testing.T) {
 	}
 
 	want := []txnreview.Party{
-		{Address: own.String(), Held: true, Signs: true, KeyType: "falcon1024"},
+		{Address: own.String(), Held: true, Signs: true, KeyType: "falcon1024", Signable: true},
 		{Address: other.String()},
 		{Address: third.String()},
 	}

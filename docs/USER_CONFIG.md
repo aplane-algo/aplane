@@ -390,6 +390,13 @@ derivation time. The signer reads a rotating account's live stage from the
 network's `networks.<network>.algod` node, which must therefore be
 configured for that network.
 
+The same node gives a sign request's review each account's ALGO balance,
+read when the request is put to an operator, so apadmin and apapprover can
+show it beside each address. Without a node for the
+request's network the review says the balances are unavailable; the request
+is unaffected, since nothing read there decides anything. The node sees which
+accounts each reviewed request touches.
+
 `networks.<network>.indexer` is optional. With it, a search for a rotating
 account's stage first tries the stage the account's last confirmed spend
 reads, so after a restore or on a new machine the account usually resolves

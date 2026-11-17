@@ -1109,9 +1109,17 @@ func protocolReview(review *txnreview.Review) *protocol.Review {
 		out.Items[i] = wire
 	}
 	for _, p := range review.Parties {
-		out.Parties = append(out.Parties, protocol.ReviewParty{Address: p.Address, Held: p.Held, Signs: p.Signs, KeyType: p.KeyType, Lookalike: p.Lookalike})
+		party := protocol.ReviewParty{Address: p.Address, Held: p.Held, Signs: p.Signs, KeyType: p.KeyType, Lookalike: p.Lookalike, Signable: p.Signable}
+		if p.MicroAlgos != nil {
+			balance := *p.MicroAlgos
+			party.MicroAlgos = &balance
+		}
+		out.Parties = append(out.Parties, party)
 	}
 	out.Findings = findings(review.Findings)
+	if c := review.Chain; c != nil {
+		out.Chain = &protocol.ReviewChain{Round: c.Round, Unavailable: c.Unavailable}
+	}
 	return out
 }
 

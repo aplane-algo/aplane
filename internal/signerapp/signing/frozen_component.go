@@ -130,7 +130,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		LsigIndices: lsigIndices, DummiesNeeded: expectedDummies,
 		LogicSigResourcePlan: resourcePlan, FeeInfo: feeInfo,
 		NeedsRegroup: false, IsPreGrouped: isPreGrouped, HasPassthrough: false,
-		AuthKeyTypes: authKeyTypes, KnownAddresses: knownAddressesFromSnapshot(snapshot),
+		AuthKeyTypes: authKeyTypes, KnownAddresses: knownAddressesFromSnapshot(snapshot), RotatingAddresses: rotatingAddressesFromSnapshot(snapshot),
 		InvalidRekeyTargets: invalidRekeyTargetsForGroup(snapshot, allTxns), BoundedItems: boundedItems, Frozen: true,
 		presented: group,
 	}, req, nil

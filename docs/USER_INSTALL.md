@@ -251,8 +251,9 @@ the cosigner's address. Complete them in this order:
    plain host `aplane.falcon1024.v1`, which is enabled by default and whose
    Corridor preset is cosigned, or `aplane.ed25519.v1`, enabled first through
    the KeyType Library. Start **Generate account** in `apadmin`, select that
-   type and a preset (or **No bounds**), open **Require a cosigner
-   (Falcon-1024)**, and choose **Use key file...**. Compare
+   type and a preset (or **No bounds**), open **Optional cosigner**
+   (**Cosigner** under a preset that requires one, such as Corridor), and
+   choose **Use key file...**. Compare
    the complete Witness Key ID with the value shown on the cosigner, import,
    and finish generating the account. A key that is
    already imported is offered under its existing name.

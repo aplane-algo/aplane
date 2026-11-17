@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -76,6 +77,9 @@ type PlanResult struct {
 	// key snapshot used for planning: every address the signer holds an aplane
 	// key for, of any key type. A rekey target outside it is foreign.
 	KnownAddresses map[string]bool
+	// RotatingAddresses are the addresses in KnownAddresses whose aplane key
+	// is a rotating account's, from the same snapshot.
+	RotatingAddresses map[string]bool
 	// InvalidRekeyTargets are the addresses in KnownAddresses whose aplane key
 	// records that it is not a valid rekey target, with the key type the
 	// refusal names, from the same snapshot. The valid-target invariant and
@@ -243,6 +247,7 @@ func (p *Planner) planGroup(req signerapi.GroupSignRequest, kind RequestKind) (*
 		HasPassthrough:        hasPassthrough,
 		AuthKeyTypes:          authKeyTypes,
 		KnownAddresses:        knownAddresses,
+		RotatingAddresses:     rotatingAddressesFromSnapshot(snapshot),
 		InvalidRekeyTargets:   invalidRekeyTargetsForGroup(snapshot, final.AllTxns),
 		BoundedItems:          final.BoundedItems,
 	}, nil
@@ -389,6 +394,22 @@ func knownAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool
 		known[address] = true
 	}
 	return known
+}
+
+// rotatingAddressesFromSnapshot is the held addresses whose aplane key is a
+// rotating account's. The signer signs for one at any stage, whatever the
+// chain names as its authorizer.
+func rotatingAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool {
+	var out map[string]bool
+	for address, keyType := range snapshot.KeyTypes {
+		if rotatingkey.IsRotatingKeyType(keyType) {
+			if out == nil {
+				out = map[string]bool{}
+			}
+			out[address] = true
+		}
+	}
+	return out
 }
 
 // invalidRekeyTargetsFromSnapshot is the held addresses whose aplane key

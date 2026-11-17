@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // paramSpecFor is the parameter form for keyType: the overlay choices for a type
@@ -151,32 +152,45 @@ func (m Model) renderBoundaryPreset() string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("New " + displayKeyType(m.forms.boundaryKeyType) + " Account"))
 	sb.WriteString("\n\n")
-	// Titles only, with the selected row's description under it, so every
-	// choice fits 80x24.
-	row := func(index int, title, description string) {
-		if index != m.forms.boundaryPresetIndex {
+	var descriptions []string
+	row := func(title, description string) {
+		if len(descriptions) == m.forms.boundaryPresetIndex {
+			sb.WriteString(selectedStyle.Render("> " + title))
+		} else {
 			sb.WriteString(normalStyle.Render("  " + title))
-			sb.WriteString("\n")
-			return
 		}
-		sb.WriteString(selectedStyle.Render("> " + title))
 		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render(indentLines(wrapText(description, 62), "    ")))
-		sb.WriteString("\n")
+		descriptions = append(descriptions, description)
 	}
-	choices := boundaryPresetChoices()
-	for i, preset := range choices {
-		row(i, preset.Title, preset.Description)
+	for _, preset := range boundaryPresetChoices() {
+		row(preset.Title, preset.Description)
 	}
 	file := "Rules from a boundary file, with or without bounds."
 	if m.forms.boundaryFile != "" {
 		file = middleEllipsize(m.forms.boundaryFile, 60)
 	}
-	row(len(choices), "Load boundary file", file)
+	row("Load boundary file", file)
+	sb.WriteString("\n")
+	sb.WriteString(presetDescriptionBox(descriptions, m.forms.boundaryPresetIndex, m.popupBodyWidth(72)))
+	sb.WriteString("\n")
 	if m.forms.generateError != "" {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render(wrapText(m.forms.generateError, 64)))
 		sb.WriteString("\n")
 	}
 	return m.renderPopup(72, sb.String())
+}
+
+// presetDescriptionBox draws the selected choice's description in a box width
+// columns wide under the list. It is as tall as the longest description, so
+// neither the list nor the box moves as the selection does.
+func presetDescriptionBox(descriptions []string, selected, width int) string {
+	box := inputInactiveStyle.
+		Foreground(subtitleStyle.GetForeground()).
+		Width(width - inputInactiveStyle.GetHorizontalBorderSize())
+	lines := 1
+	for _, description := range descriptions {
+		lines = max(lines, lipgloss.Height(box.Render(description))-box.GetVerticalFrameSize())
+	}
+	return box.Height(lines).Render(descriptions[selected])
 }

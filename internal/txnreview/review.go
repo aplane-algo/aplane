@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
@@ -23,12 +24,25 @@ type Review struct {
 	Changes Changes
 	Items   []Item
 	// Parties are the accounts the request's effects move value or control
-	// between, in order of first appearance. The text does not print them:
-	// they say which of the addresses in the fields are this signer's own.
+	// between, in order of first appearance. They say which of the
+	// addresses in the fields are this signer's own; the text prints them
+	// only once the chain is read, with what the node said of each.
 	Parties []Party
 	// Findings are what a reviewer must not miss about the request as a
 	// whole, beyond each transaction's own.
 	Findings []Finding
+	// Chain is when the signer read the parties from its node, or why it
+	// could not. It is nil until the request is put to an operator.
+	Chain *ChainRead
+}
+
+// ChainRead is when the signer read a review's parties from its node, or
+// why it could not. What the node says is shown and decides nothing.
+type ChainRead struct {
+	// Round is the earliest round the node reported the accounts at.
+	Round uint64
+	// Unavailable says why nothing was read.
+	Unavailable string
 }
 
 // Party is one account a request touches.
@@ -44,6 +58,16 @@ type Party struct {
 	// Lookalike is set when another account in the request looks like this
 	// one: the request has a finding that names both.
 	Lookalike bool
+	// MicroAlgos is the balance the signer's node reported for the account.
+	// It is nil where the account was not read.
+	MicroAlgos *uint64
+	// Signable is set when this signer can sign for the account, by the rule
+	// apshell's account list uses: a rotating account it holds, or an
+	// account whose authorizer it holds an aplane key for. Once the account
+	// is read that is the chain's authorizer, so an account the signer holds
+	// that was rekeyed to another key is not signable. Until then it is set
+	// for an account the signer holds or this request signs for.
+	Signable bool
 }
 
 // Position is how a request treats one of its transactions.
@@ -128,8 +152,9 @@ func (c Changes) Text() string {
 	return b.String()
 }
 
-// Text prints the whole request: a heading, what planning changed, then each
-// transaction under its own heading.
+// Text prints the whole request: a heading, what planning changed, each
+// transaction under its own heading, then, once the chain is read, the
+// accounts.
 func (r Review) Text() string {
 	var b strings.Builder
 	if r.Group {
@@ -159,7 +184,39 @@ func (r Review) Text() string {
 		b.WriteString(item.Text())
 		b.WriteString("\n")
 	}
+	b.WriteString(r.AccountsText())
 	return b.String()
+}
+
+// AccountsText prints each account's balance as the signer's node reported
+// it, and whether this signer can sign for the account, every line ending in a
+// newline. With nothing read it says why. Before the chain is read it is
+// empty.
+func (r Review) AccountsText() string {
+	if r.Chain == nil {
+		return ""
+	}
+	if r.Chain.Unavailable != "" {
+		return "Balances unavailable: " + r.Chain.Unavailable + "\n"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "--- Accounts at round %d ---\n", r.Chain.Round)
+	for _, p := range r.Parties {
+		balance := "balance unavailable"
+		if p.MicroAlgos != nil {
+			balance = asaset.FormatFixed(*p.MicroAlgos, 6) + " ALGO"
+		}
+		b.WriteString(p.Address + "\n  " + balance + " · " + p.Standing() + "\n")
+	}
+	return b.String()
+}
+
+// Standing says whether this signer can sign for the account.
+func (p Party) Standing() string {
+	if p.Signable {
+		return "signable"
+	}
+	return "not signable"
 }
 
 // SetParties lists the accounts the items' effects name, in order of first
@@ -197,6 +254,9 @@ func (r *Review) SetParties(held func(address string) bool, signerKeyType func(i
 			p.KeyType = signerKeyType(i)
 		}
 	}
+	for i := range r.Parties {
+		r.Parties[i].Signable = r.Parties[i].Held || r.Parties[i].Signs
+	}
 }
 
 // Safe is the review with every string escaped for a terminal. Much of a
@@ -226,6 +286,11 @@ func (r Review) Safe() Review {
 		return out
 	}
 	safe := Review{Group: r.Group, Banners: lines(r.Banners), Changes: r.Changes}
+	if r.Chain != nil {
+		chain := *r.Chain
+		chain.Unavailable = line(chain.Unavailable)
+		safe.Chain = &chain
+	}
 	safe.Changes.Heading, safe.Changes.Lines = line(r.Changes.Heading), lines(r.Changes.Lines)
 	for _, item := range r.Items {
 		item.Label, item.Notes, item.Claims = line(item.Label), fields(item.Notes), lines(item.Claims)
@@ -248,6 +313,10 @@ func (r Review) Safe() Review {
 	}
 	for _, p := range r.Parties {
 		p.Address, p.KeyType = line(p.Address), line(p.KeyType)
+		if p.MicroAlgos != nil {
+			balance := *p.MicroAlgos
+			p.MicroAlgos = &balance
+		}
 		safe.Parties = append(safe.Parties, p)
 	}
 	for _, f := range r.Findings {

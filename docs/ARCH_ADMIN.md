@@ -498,14 +498,26 @@ loses nothing but the structure.
   `address`, `held` (the signer holds an aplane key for it), `signs` (this
   request signs a transaction it sends), `key_type` of the key that signs
   for it, and `lookalike` when a finding of the review says another account
-  in the request looks like it.
+  in the request looks like it. `signable` is set when the signer can sign
+  for the account, by the rule apshell's account list uses: a rotating
+  account it holds, or an account whose authorizer it holds an aplane key
+  for. Once the signer has read the account that is the chain's authorizer;
+  until then it is set for an account the signer holds or the request signs
+  for. Once the signer has read the account from its node, `micro_algos`,
+  its balance.
 - `findings`: warnings about the request as a whole, in the shape of
   `violations`: two different accounts in the request that look alike. The
   message's `violations` carry them after the transactions' own.
+- `chain`: present once the signer has tried to read the parties from its
+  node, just before the prompt: `round`, the earliest round the node
+  reported them at, or `unavailable`, why nothing was read. What it says is
+  shown and decides nothing; see "Chain State in the Review" in
+  [ARCH_SIGNING.md](ARCH_SIGNING.md). The description ends with the same
+  accounts.
 
-The fields are the review. Effects and parties only arrange them: a new
-field on a transaction type is one more entry in `fields` and needs no
-client change.
+The fields are the review. Effects and parties only arrange them, and
+`chain` is the description's account list as data: a new field on a
+transaction type is one more entry in `fields` and needs no client change.
 
 #### Backup and Restore
 
@@ -996,9 +1008,10 @@ On a per-key type that offers a cosigner (`cosigner_component_key_type`) and dec
 `rekey_authority` (with options) and `rekey_to`, the parameter form is the overlay form
 (`overlay_form.go`): the bounds as one group first (a preset's fields, every bounds
 field under Custom bounds, none under No bounds), then three controls over `cosigner`,
-`rekey_to` and `rekey_authority`: Require a cosigner, Add rekey-to addresses, and Allow
-rekeys (Rekey-to option once the list has addresses). The form the Cosigners manager
-opens, with no preset, has no bounds. An optional bounds choice (the recipient scope
+`rekey_to` and `rekey_authority`: Optional cosigner (Cosigner, marked required, under a
+preset that needs one), Add rekey-to addresses, and Allow rekeys (Rekey-to option once
+the list has addresses). The form the Cosigners manager opens, with no preset, has no
+bounds. An optional bounds choice (the recipient scope
 and the list encoding under Custom bounds) starts as "Not set" and is left out of the
 request until the operator picks one. Custom bounds also has a Fee Limit field
 (`max_fee`); left empty, it is left out of the request and the signer applies 10,000
@@ -1108,8 +1121,12 @@ list, one row per transaction with how the request treats it and its title,
 the first selected, and under the list a pane with the selected transaction
 in full: every field, then its own warnings, naming the signing key only
 where it is not the sender. The pane ends with what is about the request as a
-whole: its warnings and notes, each account's whole address with what the
-signer holds, and what planning changed. A lone transaction has no list: one
+whole: its warnings and notes, each account's whole address, signable or not
+signable (and, once the signer has read its node, the round and each
+balance), and what planning changed. Signable is apshell's word and rule
+(`cache.IsAccountSignable`): an account rekeyed to a held key is signable,
+and one the signer holds that was rekeyed to another key is not. A lone
+transaction has no list: one
 pane holds all of it, in the same order, under its lanes when it moves something between two
 parties (a payment, a close, a rekey, an app call) and with no picture when
 it touches one account alone. The list can also be drawn as a picture

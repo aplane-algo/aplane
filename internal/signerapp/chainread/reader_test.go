@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -40,6 +41,11 @@ type fakeNode struct {
 	// asset is served at /v2/assets/<assetIndex>; assetIndex 0 serves none.
 	assetIndex uint64
 	asset      map[string]any
+	// amounts are balances by address; failFor fails those accounts' reads.
+	amounts map[string]uint64
+	failFor map[string]bool
+	// versionCalls counts the genesis checks.
+	versionCalls int32
 }
 
 func (f *fakeNode) serve(t *testing.T) *httptest.Server {
@@ -48,6 +54,7 @@ func (f *fakeNode) serve(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/versions":
+			atomic.AddInt32(&f.versionCalls, 1)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"genesis_hash_b64": base64.StdEncoding.EncodeToString(f.genesis),
 				"genesis_id":       "test",
@@ -55,14 +62,15 @@ func (f *fakeNode) serve(t *testing.T) *httptest.Server {
 				"build":            map[string]any{},
 			})
 		case strings.HasPrefix(r.URL.Path, "/v2/accounts/"):
-			if f.failAcct {
+			address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
+			if f.failAcct || f.failFor[address] {
 				http.Error(w, `{"message":"boom"}`, http.StatusInternalServerError)
 				return
 			}
 			if r.URL.Query().Get("exclude") != "all" {
 				t.Errorf("account read did not exclude holdings: %s", r.URL.RawQuery)
 			}
-			body := map[string]any{"address": strings.TrimPrefix(r.URL.Path, "/v2/accounts/"), "round": f.round}
+			body := map[string]any{"address": address, "round": f.round, "amount": f.amounts[address]}
 			if f.authAddr != "" {
 				body["auth-addr"] = f.authAddr
 			}
@@ -104,6 +112,43 @@ func TestReadAccountWithoutAuthAddressIsSelfAuthorized(t *testing.T) {
 	}
 	if view.Authorizer != account || view.Round != 1234 {
 		t.Fatalf("view = %+v", view)
+	}
+}
+
+// ReadAccounts checks the node once, reads each account once, and keeps the
+// accounts it could read when another's read fails.
+func TestReadAccountsReadsEachAccountFromOneCheckedNode(t *testing.T) {
+	funded, empty, broken := types.Address{1}, types.Address{2}, types.Address{3}
+	node := &fakeNode{genesis: testnetGenesis, round: 77,
+		amounts: map[string]uint64{funded.String(): 1_234_567_890},
+		failFor: map[string]bool{broken.String(): true}}
+	view, err := readerFor(node.serve(t)).ReadAccounts(context.Background(), testnetGenesis, []types.Address{funded, empty, broken, funded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&node.versionCalls); got != 1 {
+		t.Errorf("the node's genesis was checked %d times, want once", got)
+	}
+	if got := view.Accounts[funded]; got.MicroAlgos != 1_234_567_890 || got.Authorizer != funded || got.Round != 77 {
+		t.Errorf("funded = %+v", got)
+	}
+	if got, ok := view.Accounts[empty]; !ok || got.MicroAlgos != 0 {
+		t.Errorf("empty = %+v, read %v", got, ok)
+	}
+	if _, ok := view.Accounts[broken]; ok || !errors.Is(view.Failed[broken], ErrUnavailable) {
+		t.Errorf("broken: read %v, failure %v", ok, view.Failed[broken])
+	}
+	if len(view.Accounts) != 2 || len(view.Failed) != 1 || view.Round != 77 {
+		t.Errorf("view = %+v", view)
+	}
+}
+
+// ReadAccounts fails as a whole only where the node can't be used: the same
+// checks ReadAccount makes before any account is read.
+func TestReadAccountsFailsClosedOnTheNode(t *testing.T) {
+	node := &fakeNode{genesis: make([]byte, 32), round: 5}
+	if _, err := readerFor(node.serve(t)).ReadAccounts(context.Background(), testnetGenesis, []types.Address{account}); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
 }
 

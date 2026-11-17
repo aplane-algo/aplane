@@ -5,11 +5,13 @@ package daemon
 
 import (
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/version"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/version"
 )
 
 func TestReadEndpointJSONShapes(t *testing.T) {
@@ -54,7 +56,7 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 				"ready_for_signing":     true,
 				"key_count":             float64(0),
 				"keyset_revision":       float64(server.runtime.KeysetRevision()),
-				"approval_wait_seconds": float64(60),
+				"approval_wait_seconds": serverconfig.DefaultApprovalWait.Seconds(),
 			},
 		},
 		{

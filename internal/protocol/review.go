@@ -23,6 +23,17 @@ type Review struct {
 	// Findings are warnings about the request as a whole, such as two
 	// accounts that look alike. The message's violations carry them too.
 	Findings []PolicyViolation `json:"findings,omitempty"`
+	// Chain is when the signer read the parties from its node, or why it
+	// could not. What the node says is shown and decides nothing.
+	Chain *ReviewChain `json:"chain,omitempty"`
+}
+
+// ReviewChain is when the signer read a review's parties from its node.
+type ReviewChain struct {
+	// Round is the earliest round the node reported the accounts at.
+	Round uint64 `json:"round,omitempty"`
+	// Unavailable says why nothing was read.
+	Unavailable string `json:"unavailable,omitempty"`
 }
 
 // ReviewChanges is what planning did to the request.
@@ -115,4 +126,12 @@ type ReviewParty struct {
 	// Lookalike is set when another account in the request looks like this
 	// one; the review's findings name both.
 	Lookalike bool `json:"lookalike,omitempty"`
+	// MicroAlgos is the balance the signer's node reported; absent where the
+	// account was not read.
+	MicroAlgos *uint64 `json:"micro_algos,omitempty"`
+	// Signable is set when the signer can sign for the account: a rotating
+	// account it holds, or one whose authorizer it holds an aplane key for
+	// (the chain's once read; until then, an account it holds or the request
+	// signs for).
+	Signable bool `json:"signable,omitempty"`
 }

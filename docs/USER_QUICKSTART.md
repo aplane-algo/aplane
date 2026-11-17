@@ -179,7 +179,7 @@ To try a cosigned account, first set up a separate cosigner node and generate it
 holds the public key only, and the result screen shows the address to give
 clients. On the primary signer, start **Generate account**, select the
 default-enabled plain host `aplane.falcon1024.v1`, choose **No bounds**, open
-**Require a cosigner (Falcon-1024)**, and choose **Use key file...** (or **Paste
+**Optional cosigner**, and choose **Use key file...** (or **Paste
 public JSON...**). Compare the full Witness Key ID before importing, choose
 whether to allow rekeys or add rekey-to addresses, then review and generate
 the account. The type's Corridor preset is a cosigned account too, with

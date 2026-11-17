@@ -98,7 +98,7 @@ type reviewLane struct {
 	address string // an account
 	app     uint64 // a called app
 	newApp  int    // 1 + the index of the transaction that creates the app
-	own     bool   // the signer holds a key for the account, or signs for it
+	own     bool   // this request signs for the account, or the signer can
 	role    string
 }
 
@@ -126,20 +126,21 @@ func reviewLookalikes(review *protocol.Review) map[string]bool {
 	return out
 }
 
-// reviewLanes lists the lanes of a review: the signer's own accounts first,
-// then the other accounts, then the apps, each in order of first appearance.
+// reviewLanes lists the lanes of a review: the accounts this request signs
+// for or the signer can sign for first, then the other accounts, then the
+// apps, each in order of first appearance.
 func reviewLanes(review *protocol.Review) []reviewLane {
 	lookalikes := reviewLookalikes(review)
 	var own, other, apps []reviewLane
 	for _, party := range review.Parties {
-		lane := reviewLane{address: party.Address, own: party.Signs || party.Held}
+		lane := reviewLane{address: party.Address, own: party.Signs || party.Signable}
 		switch {
 		case lookalikes[party.Address]:
 			lane.role = "lookalike"
 		case party.Signs:
 			lane.role = "signs"
-		case party.Held:
-			lane.role = "yours"
+		case party.Signable:
+			lane.role = "signable"
 		}
 		if lane.own {
 			own = append(own, lane)
@@ -564,7 +565,7 @@ func tableNameWidth(rows []tableRow, width int) int {
 func tablePane(review *protocol.Review, width int) reviewPane {
 	own := map[string]bool{}
 	for _, party := range review.Parties {
-		own[party.Address] = party.Signs || party.Held
+		own[party.Address] = party.Signs || party.Signable
 	}
 	rows := tableRows(review)
 	nameWidth := tableNameWidth(rows, width)

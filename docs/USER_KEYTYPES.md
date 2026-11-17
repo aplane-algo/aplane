@@ -321,7 +321,7 @@ In apadmin, **Generate account** on a plain host opens its preset screen (see
 [Choosing rules in apadmin](#choosing-rules-in-apadmin)). **No bounds** opens
 three choices:
 
-- **Require a cosigner (Falcon-1024)**: Enter opens the cosigner picker;
+- **Optional cosigner**: Enter opens the cosigner picker;
   Backspace removes the choice. Left as **None**, the account has no cosigner.
 - **Add rekey-to addresses**: full addresses, one per line or comma-separated.
 - **Allow rekeys** (without a list): **No, never** or **Yes**, by the spending

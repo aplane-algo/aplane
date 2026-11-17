@@ -41,5 +41,6 @@ func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditL
 			return ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 		},
 		RequestSigningApprovalPrompt: ir.RequestSigningApprovalPrompt,
+		Chain:                        fs.chainReader(),
 	}
 }

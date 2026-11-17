@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -458,28 +459,47 @@ func reviewViolations(title string, violations []protocol.PolicyViolation, notic
 }
 
 // reviewAccounts lists the accounts the request touches, each address in
-// full, and says which of them are the signer's own.
+// full, and says which the signer can sign for. Once the signer has read them from its node, each says
+// its balance too.
 func reviewAccounts(review *protocol.Review) []reviewLine {
 	if len(review.Parties) == 0 {
 		return nil
 	}
-	lines := []reviewLine{reviewSection("Accounts")}
+	chain := review.Chain
+	read := chain != nil && chain.Unavailable == ""
+	heading := "Accounts"
+	if read {
+		heading = fmt.Sprintf("Accounts · round %d", chain.Round)
+	}
+	lines := []reviewLine{reviewSection(heading)}
+	if chain != nil && chain.Unavailable != "" {
+		lines = append(lines, reviewLine{text: "  Balances unavailable: " + chain.Unavailable, style: helpStyle})
+	}
 	for _, party := range review.Parties {
 		style := normalStyle
-		if party.Signs || party.Held {
+		if party.Signable {
 			style = statusConnectedStyle
 		}
 		lines = append(lines, reviewLine{fixed: "  " + addressChip(party.Address) + " " + style.Render(party.Address)})
-		switch {
-		case party.Signs && party.KeyType != "":
-			lines = append(lines, reviewLine{text: "       this request signs for it with its " + party.KeyType + " aplane key", style: helpStyle})
-		case party.Signs:
-			lines = append(lines, reviewLine{text: "       this request signs for it", style: helpStyle})
-		case party.Held:
-			lines = append(lines, reviewLine{text: "       this signer holds its aplane key; this request does not sign for it", style: helpStyle})
+		if !read {
+			lines = append(lines, reviewLine{text: "       " + partyStanding(party), style: helpStyle})
+			continue
 		}
+		balance := "balance unavailable"
+		if party.MicroAlgos != nil {
+			balance = asaset.FormatFixed(*party.MicroAlgos, 6) + " ALGO"
+		}
+		lines = append(lines, reviewLine{text: "       " + balance + " · " + partyStanding(party), style: normalStyle})
 	}
 	return lines
+}
+
+// partyStanding says whether the signer can sign for the account.
+func partyStanding(party protocol.ReviewParty) string {
+	if party.Signable {
+		return "signable"
+	}
+	return "not signable"
 }
 
 // reviewRequest says how the request is made up and what planning did to it.

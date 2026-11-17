@@ -2,9 +2,12 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package chainread gives the signer its own view of chain state: an
-// account's on-chain authorizer, for the rotating signing flow, and an
-// asset's parameters, for an operator confirming it into the node's ASA set.
-// The ordinary /plan and /sign paths never read the chain.
+// account's on-chain authorizer, for the rotating signing flow; an asset's
+// parameters, for an operator confirming it into the node's ASA set; and the
+// balance of each account a sign request touches, for the review an operator
+// is asked to approve. /plan never reads the chain. /sign
+// reads it for a rotating spend, and for a review only once the request is to
+// be put to an operator; what it reads there is shown and decides nothing.
 //
 // The node is chosen from the genesis hash through the signer's
 // genesis-hash mapping and networks.<net>.algod, and its own genesis hash
@@ -24,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -44,7 +48,25 @@ type AccountView struct {
 
 	// Round is the round the node reported the account at.
 	Round uint64
+
+	// MicroAlgos is the account's balance.
+	MicroAlgos uint64
 }
+
+// AccountsView is one read of several accounts from one node.
+type AccountsView struct {
+	// Accounts are the accounts read, by address.
+	Accounts map[types.Address]AccountView
+
+	// Failed says why each account that was not read was not.
+	Failed map[types.Address]error
+
+	// Round is the earliest round among the reads.
+	Round uint64
+}
+
+// maxParallelReads is how many account reads ReadAccounts has open at once.
+const maxParallelReads = 8
 
 // Reader reads account state from the node configured for a network.
 type Reader struct {
@@ -87,11 +109,57 @@ func (r Reader) ReadAccount(ctx context.Context, genesisHash []byte, account typ
 	if err != nil {
 		return AccountView{}, err
 	}
+	return readAccount(ctx, client, account)
+}
+
+// ReadAccounts reads each of accounts from the node serving genesisHash,
+// checking that node once. It fails only when the node can't be used at
+// all: an account whose own read fails is in Failed, and the rest are read.
+func (r Reader) ReadAccounts(ctx context.Context, genesisHash []byte, accounts []types.Address) (AccountsView, error) {
+	client, err := r.client(ctx, genesisHash)
+	if err != nil {
+		return AccountsView{}, err
+	}
+	view := AccountsView{Accounts: map[types.Address]AccountView{}, Failed: map[types.Address]error{}}
+	var (
+		mu    sync.Mutex
+		wg    sync.WaitGroup
+		slots = make(chan struct{}, maxParallelReads)
+		seen  = map[types.Address]bool{}
+	)
+	for _, account := range accounts {
+		if seen[account] {
+			continue
+		}
+		seen[account] = true
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			read, err := readAccount(ctx, client, account)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				view.Failed[account] = err
+				return
+			}
+			view.Accounts[account] = read
+			if view.Round == 0 || read.Round < view.Round {
+				view.Round = read.Round
+			}
+		}()
+	}
+	wg.Wait()
+	return view, nil
+}
+
+func readAccount(ctx context.Context, client *algod.Client, account types.Address) (AccountView, error) {
 	info, err := client.AccountInformation(account.String()).Exclude([]string{"all"}).Do(ctx)
 	if err != nil {
 		return AccountView{}, fmt.Errorf("%w: read account: %w", ErrUnavailable, err)
 	}
-	view := AccountView{Authorizer: account, Round: info.Round}
+	view := AccountView{Authorizer: account, Round: info.Round, MicroAlgos: info.Amount}
 	if info.AuthAddr != "" {
 		authorizer, err := types.DecodeAddress(info.AuthAddr)
 		if err != nil {

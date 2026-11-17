@@ -286,8 +286,9 @@ func (m Model) renderParamField(sb *strings.Builder, spec *paramSpec, keyType st
 	isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
 	labelText, modeHint := m.paramFieldLabel(paramDef, focused, isCosignerSelector)
 	if spec != nil && spec.Overlay && isOverlayParameter(paramDef.Name) {
-		// The overlay controls are choices, so "Require a cosigner" needs no
-		// "(optional)"; one a preset needs says so instead.
+		// The overlay controls are choices whose labels say whether they
+		// are optional, so they get no "(optional)"; one a preset needs
+		// says "(required)" instead.
 		labelText = paramDef.Label
 		if paramDef.Required && paramDef.Name != overlayRekey {
 			labelText += " (required)"

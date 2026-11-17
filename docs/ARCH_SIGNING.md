@@ -1108,10 +1108,39 @@ with a bidirectional control. So:
 An escaped character is shown as its Go escape (`\x1b`, `\r`, `\u202e`), so
 the operator sees that it was there.
 
+### Chain State in the Review
+
+Once a request is to be put to an operator, after every gate, the approval
+service reads each of the review's accounts from the signer's node
+(`addChainState` in `internal/signerapp/signing/review_chain.go`, through
+`chainread.Reader.ReadAccounts`) and adds its ALGO balance to the review. A
+request that `user_auto_approve` answers, policy rejects, or reviewability
+blocks reads nothing.
+
+The same read gives each account's authorizer. It is not shown; it only
+settles whether the review calls the account signable, by the rule apshell's
+account list uses (`cache.IsAccountSignable`): a rotating account the signer
+holds is signable at any stage, and any other account only when the signer
+holds an aplane key for its authorizer. Until the chain is read, or where it
+can't be, an account the signer holds or the request signs for is signable.
+
+The node is chosen from the genesis hash and checked as the rotating flow's
+is. The read has its own deadline (2s), apart from the operator's approval
+wait. A node that is not configured, fails, or does not answer in time
+leaves the review saying why, and the prompt is sent all the same.
+
+What the node says is shown and decides nothing: no gate, policy rule,
+finding or auto-approval reads it, so every decision stays a function of the
+request and the signer's own state, and `appolicy try`/`test` reproduce it.
+The description ends with the same accounts, so apapprover shows what
+apadmin draws. The daemon's console copy of the description is printed
+before the read and has no accounts. The node's operator learns which
+accounts each reviewed request touches.
+
 ### Approval Waits and Cancellation
 
 Signing approval timeout is the product-runtime `approval_wait` value,
-defaulting to 60 seconds.
+defaulting to 4 minutes.
 
 For HTTP `/sign`, request context cancellation cancels queued or pending manual
 approval waits when the cancellation reaches apsigner. Clients that need

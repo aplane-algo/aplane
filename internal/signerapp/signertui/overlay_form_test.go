@@ -393,7 +393,7 @@ func TestOverlayFormFitsAt80x24(t *testing.T) {
 				if strings.Contains(view, "Panel lines") {
 					t.Fatalf("%s preset %d %+v focus %d: falls back to the panel scroller:\n%s", form.keyType, form.preset, a, focus, view)
 				}
-				for _, phrase := range []string{"Require a cosigner (Falcon-1024)", "Add rekey-to addresses", "Allow rekeys",
+				for _, phrase := range []string{"Optional cosigner", "Cosigner (required)", "Add rekey-to addresses", "Allow rekeys",
 					"Rekey-to option", "No, never", "Yes, spending key alone", "Yes, spending key and cosigner",
 					"Only these addresses", "These, plus others with the cosigner", "None (Enter to choose one)",
 					"── Bounds ──", "── Cosigner and rekeys ──"} {
@@ -404,7 +404,7 @@ func TestOverlayFormFitsAt80x24(t *testing.T) {
 			}
 		}
 	}
-	for _, phrase := range []string{"Require a cosigner (Falcon-1024)", "Add rekey-to addresses", "Allow rekeys",
+	for _, phrase := range []string{"Optional cosigner", "Cosigner (required)", "Add rekey-to addresses", "Allow rekeys",
 		"Rekey-to option", "No, never", "Yes, spending key alone", "Yes, spending key and cosigner",
 		"Only these addresses", "These, plus others with the cosigner", "None (Enter to choose one)",
 		"── Bounds ──", "── Cosigner and rekeys ──"} {
@@ -539,7 +539,7 @@ func TestImportedCosignerIsFocusedInView(t *testing.T) {
 		if offset := m.forms.generateParamScrollOffset; m.forms.generateFocus < offset || m.forms.generateFocus >= offset+m.getMaxVisibleParams() {
 			t.Fatalf("preset %d: focus %d is outside the visible rows from %d", preset, m.forms.generateFocus, offset)
 		}
-		if view := stripANSI(assertFitsWindow(t, m)); !strings.Contains(view, "Require a cosigner (Falcon-1024)") {
+		if view := stripANSI(assertFitsWindow(t, m)); !strings.Contains(view, "Optional cosigner") && !strings.Contains(view, "Cosigner (required)") {
 			t.Fatalf("preset %d: the focused cosigner control is not on screen:\n%s", preset, view)
 		}
 	}

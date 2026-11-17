@@ -34,7 +34,7 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// place; a key pressed for the first must not approve the
 			// second. Rejecting is always immediate.
 			if approved && signingNow().Sub(m.signing.shownAt) < approvalArmDelay {
-				return m, m.setTransientWarning("This request appeared a moment ago and may have replaced the one you meant. Review it, then approve again.")
+				return m, m.setTransientNotice("One moment...")
 			}
 			m.signing.request = nil
 			m.viewState = m.screenUnderApproval()
