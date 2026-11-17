@@ -21,6 +21,11 @@
 # cosigner is gone it can't spend but its listed key still takes it over. A plus
 # cosigned account's other rekeys go to the real cosigner node, whose policy
 # refuses them until it allows the rekey edge.
+# A second cosigner key, an Ed25519 one (aplane.witness-ed25519.v1), is generated
+# on the same cosigner node and imported as its own reference. A Falcon plain
+# host with that cosigner then signs through apshell and all three SDKs and
+# closes out, so the real cosigner node signs in Ed25519 and the program checks
+# it on chain. A release that predates the key type skips this part.
 # Local mode uses the local aplanesdk checkout for all three SDKs: Python
 # installed from source, TypeScript built and packed on the host, and a Go
 # program built statically on the host. Release mode uses PyPI, npm and the
@@ -61,6 +66,9 @@ ED25519_ADDRESS=""
 PLUS_COSIGNED_ADDRESS=""
 COSIGNER_COMPONENT_KEY=""
 COSIGNER_REFERENCE_NAME="docker-cosigner"
+ED25519_COSIGNER_KEY=""
+ED25519_COSIGNER_REFERENCE_NAME="docker-cosigner-ed25519"
+ED25519_PLAIN_HOST_ADDRESS=""
 PLAIN_HOST_ADDRESS=""
 CLOSE_DESTINATION_ADDRESS=""
 CORRIDOR_ADDRESS=""
@@ -1743,8 +1751,11 @@ run_go_sdk_plain_host_validate() {
         '$GO_SDK_CONTAINER_BIN'"
 }
 
+# generate_cosigner_component_key generates a cosigner key of the given type,
+# Falcon-1024 by default, on the cosigner node, and sets COSIGNER_COMPONENT_KEY.
 generate_cosigner_component_key() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-cosigner\ngenerate aplane.witness-falcon1024.v1\n' > /tmp/generate-cosigner.script"
+    local key_type="${1:-aplane.witness-falcon1024.v1}"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-cosigner\ngenerate %s\n' '$key_type' > /tmp/generate-cosigner.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-cosigner.script 2>&1")"; then
@@ -1779,6 +1790,124 @@ enroll_cosigner_reference_to_signer() {
     printf '%s\n' "$out"
     grep -Fq "$COSIGNER_COMPONENT_KEY" <<<"$out" \
         || die "persisted cosigner reference does not contain the expected Witness Key ID"
+}
+
+# with_ed25519_cosigner runs a step against the Ed25519 cosigner: its key,
+# its reference and its plain host stand in for the Falcon cosigner's while
+# the step runs, and what the step sets is kept for the next one.
+with_ed25519_cosigner() {
+    local key="$COSIGNER_COMPONENT_KEY" name="$COSIGNER_REFERENCE_NAME" plain_host="$PLAIN_HOST_ADDRESS"
+    COSIGNER_COMPONENT_KEY="$ED25519_COSIGNER_KEY"
+    COSIGNER_REFERENCE_NAME="$ED25519_COSIGNER_REFERENCE_NAME"
+    PLAIN_HOST_ADDRESS="$ED25519_PLAIN_HOST_ADDRESS"
+    "$@"
+    ED25519_COSIGNER_KEY="$COSIGNER_COMPONENT_KEY"
+    ED25519_PLAIN_HOST_ADDRESS="$PLAIN_HOST_ADDRESS"
+    COSIGNER_COMPONENT_KEY="$key"
+    COSIGNER_REFERENCE_NAME="$name"
+    PLAIN_HOST_ADDRESS="$plain_host"
+}
+
+# cosigner_offers_key_type reports whether the cosigner node lists a key type
+# it can generate.
+cosigner_offers_key_type() {
+    local key_type="$1" out
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-cosigner\nkeytypes\n' > /tmp/cosigner-keytypes.script"
+    out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/cosigner-keytypes.script 2>&1")" || return 1
+    grep -Fq "$key_type" <<<"$out"
+}
+
+# verify_cosigner_reference_type checks the signer recorded the imported
+# reference with the given key type.
+verify_cosigner_reference_type() {
+    local key_type="$1" out
+    out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner show '$COSIGNER_REFERENCE_NAME' 2>&1")" \
+        || die "could not read cosigner reference $COSIGNER_REFERENCE_NAME"
+    grep -Fq "\"$key_type\"" <<<"$out" \
+        || die "cosigner reference $COSIGNER_REFERENCE_NAME is not a $key_type key: $out"
+}
+
+# apply_cosigner_key_policy gives the current cosigner key the open transfer
+# document configure_cosigner_policy gives the first one, without repeating
+# its checks of the policy verbs.
+apply_cosigner_key_policy() {
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$CLOSE_DESTINATION_ADDRESS" ] || die "close destination is not set"
+    local policy_file
+    policy_file="$(mktemp)"
+    cat > "$policy_file" <<JSON
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "$COSIGNER_COMPONENT_KEY",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": true,
+  "max_fee_microalgos": "0",
+  "transaction_types": {"*": "reject", "pay": "allow", "axfer": "allow"},
+  "transfer_policy": {
+    "routes": [
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]},
+      {"id": "docker_smoke_close", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["$CLOSE_DESTINATION_ADDRESS"], "allow_close": true}
+    ]
+  }
+}
+JSON
+    docker cp "$policy_file" "$COSIGNER_CONTAINER:/tmp/cosigner-key-policy.json"
+    rm -f "$policy_file"
+    docker_exec "$COSIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-key-policy.json
+    local out
+    if ! out="$(docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin -d /home/$TEST_USER/aplane/apsigner policy apply --yes /tmp/cosigner-key-policy.json 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "applying the cosigner key's policy failed"
+    fi
+    grep -q '^policy applied as generation ' <<<"$out" || die "cosigner key policy was not applied: $out"
+}
+
+# validate_ed25519_cosigner runs a Falcon plain host with an Ed25519 cosigner
+# through apshell and the SDKs, from a new cosigner key to the account's close.
+validate_ed25519_cosigner() {
+    log "Generating an Ed25519 cosigner key through client/cosigner flow"
+    with_ed25519_cosigner generate_cosigner_component_key aplane.witness-ed25519.v1
+
+    log "Importing the Ed25519 cosigner's public reference through local IPC"
+    with_ed25519_cosigner enroll_cosigner_reference_to_signer
+    with_ed25519_cosigner verify_cosigner_reference_type aplane.witness-ed25519.v1
+
+    log "Applying the Ed25519 cosigner key's policy on the cosigner node"
+    with_ed25519_cosigner apply_cosigner_key_policy
+
+    # The local IPC export, import, and policy apply displaced both approval
+    # sessions.
+    log "Re-establishing signer and cosigner approval sessions"
+    start_signer_apapprover
+    start_cosigner_apapprover
+
+    log "Generating a plain host (aplane.falcon1024.v1) with the Ed25519 cosigner"
+    with_ed25519_cosigner generate_plain_host_key
+    with_ed25519_cosigner fund_plain_host_key
+    with_ed25519_cosigner verify_plain_host_funded
+
+    log "Validating the Ed25519-cosigned plain host with a 0 ALGO self-send through apshell"
+    with_ed25519_cosigner validate_plain_host_self_send
+
+    log "Validating the Ed25519-cosigned plain host through the Python SDK, with and without cosigner discovery"
+    with_ed25519_cosigner run_python_sdk_plain_host_validate
+
+    log "Validating the Ed25519-cosigned plain host through the TypeScript SDK, with and without cosigner discovery"
+    with_ed25519_cosigner run_typescript_sdk_plain_host_validate
+
+    if [ -n "$GO_SDK_BIN" ]; then
+        log "Validating the Ed25519-cosigned plain host through the Go SDK, with and without cosigner discovery"
+        with_ed25519_cosigner run_go_sdk_plain_host_validate
+    fi
+
+    log "Closing the Ed25519-cosigned plain host out through apshell"
+    with_ed25519_cosigner close_plain_host
 }
 
 verify_guided_cosigner_setup() {
@@ -2470,6 +2599,14 @@ main() {
 
     log "Closing the plain host out through apshell"
     close_plain_host
+
+    if cosigner_offers_key_type aplane.witness-ed25519.v1; then
+        validate_ed25519_cosigner
+    elif [ "$RELEASE_INSTALL" = "1" ]; then
+        log "Skipping the Ed25519 cosigner: this release's cosigner node has no aplane.witness-ed25519.v1"
+    else
+        die "the locally built cosigner node does not offer aplane.witness-ed25519.v1"
+    fi
 
     log "Generating Falcon key through client/signer flow"
     generate_falcon_key

@@ -2551,8 +2551,8 @@ guards:
   Docker network. It verifies local install layout, shared LocalNet
   reachability, SSH client enrollment, local IPC `apadmin` cosigner
   public-reference export and authorized import, client signer
-  reachability, cosigned signing, and corridor allowlist enforcement across the
-  Docker network.
+  reachability, cosigned signing with a Falcon-1024 and an Ed25519 cosigner key,
+  and corridor allowlist enforcement across the Docker network.
 - `make docker-local-release-test` runs the same topology and assertions using
   published GitHub APlane release assets plus the PyPI and npm SDK packages.
 

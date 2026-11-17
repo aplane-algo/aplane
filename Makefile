@@ -517,7 +517,8 @@ docker-systemd-test:
 # verifies SSH client enrollment, shared LocalNet reachability, the complete
 # local-IPC apadmin ID-first cosigner enrollment ceremony, cosigned signing, corridor
 # allowlist enforcement, and local SDK cosigned signing across the Docker
-# network (Python, TypeScript and Go), with and without SDK cosigner discovery.
+# network (Python, TypeScript and Go), with and without SDK cosigner discovery,
+# for a Falcon-1024 and an Ed25519 cosigner key.
 # Requires docker and a local aplanesdk checkout. Pass extra flags via ARGS.
 docker-local-test:
 	@./scripts/docker-local-four-node-smoke.sh $(ARGS)

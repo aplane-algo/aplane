@@ -870,6 +870,15 @@ environment has no cosigner node. The Python check also proves that a data
 directory with no cosigner endpoint is refused before the signer is asked for
 anything.
 
+The cosigner node then generates a second cosigner key, an Ed25519 one
+(`aplane.witness-ed25519.v1`), which the signer imports as its own reference.
+A Falcon plain host with that cosigner signs through `apshell` and the three
+SDKs, with and without cosigner discovery, and closes out. This is the only
+live test of a cosigner node signing in Ed25519; LocalNet integration covers
+Ed25519-cosigned programs only against a mock cosigner. A release whose
+cosigner node doesn't offer the key type skips this part, and a local build
+that doesn't offer it fails.
+
 The test image is Ubuntu 24.04 with Node.js 22 copied from the official Node.js
 image, since the TypeScript SDK and `algosdk` require Node.js 22 and Ubuntu
 24.04 packages 18. The script stops if the image's Node.js is older.
