@@ -46,7 +46,12 @@ func tryUnlock(r *Runtime) func(func() error) (bool, string) {
 func TestLosingUnlockLocksASessionANewerUnlockPublished(t *testing.T) {
 	r := New()
 	var keysLoaded atomic.Bool
-	r.SetOnLock(func() { keysLoaded.Store(false) })
+	var unlockedDuringCleanup atomic.Bool
+	r.SetOnLock(func() {
+		// The loser locks before its cleanup clears anything.
+		unlockedDuringCleanup.Store(unlockedDuringCleanup.Load() || r.IsUnlocked())
+		keysLoaded.Store(false)
+	})
 
 	release, done, first := raceUnlock(tryUnlock(r))
 	r.Lock() // a lock lands while the first unlock is still deriving
@@ -59,8 +64,9 @@ func TestLosingUnlockLocksASessionANewerUnlockPublished(t *testing.T) {
 	if first.ok || first.msg != LockedDuringUnlockMessage {
 		t.Fatalf("first unlock = (%v, %q), want it to lose", first.ok, first.msg)
 	}
-	if r.IsUnlocked() || keysLoaded.Load() {
-		t.Fatalf("unlocked=%v keys=%v; want the runtime locked and its keys cleared", r.IsUnlocked(), keysLoaded.Load())
+	if r.IsUnlocked() || keysLoaded.Load() || unlockedDuringCleanup.Load() {
+		t.Fatalf("unlocked=%v keys=%v unlocked during a cleanup=%v; want the runtime locked before its keys are cleared",
+			r.IsUnlocked(), keysLoaded.Load(), unlockedDuringCleanup.Load())
 	}
 }
 
@@ -130,5 +136,36 @@ func TestLosingRecoveryLocksASessionANewerUnlockPublished(t *testing.T) {
 	if r.IsUnlocked() || r.IsRecovery() || keysLoaded.Load() {
 		t.Fatalf("unlocked=%v recovery=%v keys=%v; want the runtime locked and its keys cleared",
 			r.IsUnlocked(), r.IsRecovery(), keysLoaded.Load())
+	}
+}
+
+// A maintenance that cannot republish clears the keys it reloaded: the
+// runtime is already locked, so no later Lock would.
+func TestRefusedMaintenanceClearsWhatItReloaded(t *testing.T) {
+	r := New()
+	var keysLoaded atomic.Bool
+	r.SetOnLock(func() { keysLoaded.Store(false) })
+	r.SetUnlocked()
+
+	token := r.BeginMaintenance()
+	keysLoaded.Store(true) // the maintenance reloads under the new passphrase
+	r.Lock()               // a lock lands before it finishes
+	if r.FinishMaintenance(token, true) {
+		t.Fatal("maintenance republished over a lock")
+	}
+	if r.IsUnlocked() || keysLoaded.Load() {
+		t.Fatalf("unlocked=%v keys=%v; want the runtime locked and the reload cleared", r.IsUnlocked(), keysLoaded.Load())
+	}
+}
+
+// A maintenance that began on a runtime already locked never publishes
+// unlocked state: a lock that landed after its caller checked the state
+// stays in force.
+func TestMaintenanceBegunLockedStaysLocked(t *testing.T) {
+	r := New()
+	r.SetUnlocked()
+	r.Lock() // after the caller's check, before BeginMaintenance
+	if r.FinishMaintenance(r.BeginMaintenance(), true) || r.IsUnlocked() {
+		t.Fatal("a maintenance begun on a locked runtime published unlocked state")
 	}
 }

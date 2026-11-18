@@ -72,7 +72,7 @@ Seven guards are switchable:
                       that cleanup runs against the new session.
   LoserLocks          an unlock that lost to a lock locks the signer, moving
                       the generation, before its cleanup clears what it
-                      loaded (runtime.Runtime loseUnlockLocked). Without it,
+                      loaded (runtime.Runtime lockForCleanupLocked). Without it,
                       the cleanup runs in whatever state the signer is in, and
                       clears a session another unlock published.
 
@@ -115,10 +115,11 @@ Code anchors:
     internal/signerapp/productruntime/runtime.go drainKeyUsers and
     performLockCleanup; registration transcribes KeyUseContext.
   - UnlockStart's guard transcribes awaitCleanups in
-    internal/signerapp/runtime/runtime.go, which TryUnlock, TryRecovery and
-    FinishMaintenance call before they read the lock generation;
+    internal/signerapp/runtime/runtime.go, which TryUnlock and TryRecovery
+    call before they read the lock generation (FinishMaintenance calls it
+    too, before it compares the generation its token recorded);
     UnlockFinish transcribes the fence after the unlock function and, when
-    the generation moved, loseUnlockLocked and the cleanup it decides.
+    the generation moved, lockForCleanupLocked and the cleanup it decides.
     LockInactive transcribes Lock on a signer that is already locked or
     locking: the generation moves and no cleanup runs.
 
@@ -299,9 +300,11 @@ ERelease ==
 GenerationMoves == [u \in Unlockers |-> ulStale[u] \/ ul[u] = "deriving"]
 
 \* The state locks and the generation moves for every holder in flight. A
-\* signer in recovery locks the same way.
+\* signer in recovery locks the same way. From the locked state this is
+\* BeginMaintenance, which runs a cleanup there too, and a maintenance that
+\* ends without republishing, which clears what it reloaded.
 LockState ==
-    /\ life \in {"unlocked", "recovery"}
+    /\ life \in {"unlocked", "recovery", "locked"}
     /\ locks < MaxLocks
     /\ life' = "locking"
     /\ locks' = locks + 1
@@ -357,13 +360,14 @@ Wipe ==
     /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, lateExport>>
 
 \* TryUnlock reads the lock generation, then runs its unlock function. It
-\* waits for every cleanup in progress first, so it starts from the locked
-\* state; without the wait it may also start between LockState and Wipe.
+\* waits for every cleanup in progress first, so it never starts while one
+\* runs; it may start on a signer already unlocked or in recovery. Without
+\* the wait it may also start between LockState and Wipe.
 UnlockStart(u) ==
     /\ ul[u] = "idle"
     /\ IF UnlockWaitsForCleanup
-       THEN life = "locked" /\ late = "none"
-       ELSE life \in {"locking", "draining", "locked"}
+       THEN life \in {"locked", "unlocked", "recovery"} /\ late = "none"
+       ELSE TRUE
     /\ ul' = [ul EXCEPT ![u] = "deriving"]
     /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
     /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,

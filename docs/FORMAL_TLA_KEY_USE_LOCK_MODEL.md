@@ -3,26 +3,26 @@
 > Status: TLC checked over the bounded finite state space (one rotating sign
 > and one mnemonic export, each repeating, two unlock attempts that may
 > overlap, at most two lock or recovery transitions); the recorded positive
-> run generated 2047 distinct states at depth 18 with no counterexamples, and
-> the deep configuration (three transitions) 3374 distinct states at depth 19.
+> run generated 3616 distinct states at depth 18 with no counterexamples, and
+> the deep configuration (three transitions) 5588 distinct states at depth 19.
 > Eight expected-failure negative controls must keep producing their exact
 > counterexamples:
 > `key_use_lock_negative_recheck.cfg` (`FinalRecheck = FALSE`, violates
-> `KU1_NoSignatureAfterLock`, 176 distinct states at depth 7),
+> `KU1_NoSignatureAfterLock`, 392 distinct states at depth 7),
 > `key_use_lock_negative_generation.cfg` (`GenerationCheck = FALSE`, violates
-> `KU1_NoSignatureAfterLock`, 300 distinct states at depth 8),
+> `KU1_NoSignatureAfterLock`, 715 distinct states at depth 8),
 > `key_use_lock_negative_recovery.cfg` (`RecoveryEndsSession = FALSE`,
-> violates `KU1_NoSignatureAfterLock`, 292 distinct states at depth 8),
+> violates `KU1_NoSignatureAfterLock`, 701 distinct states at depth 8),
 > `key_use_lock_negative_drain.cfg` (`DrainWaits = FALSE`, violates
-> `KU2_NoKeyMaterialAtWipe`, 110 distinct states at depth 6),
+> `KU2_NoKeyMaterialAtWipe`, 226 distinct states at depth 6),
 > `key_use_lock_negative_register.cfg` (`RegisterChecksLock = FALSE`, violates
-> `KU2_NoKeyMaterialAtWipe`, 147 distinct states at depth 6),
+> `KU2_NoKeyMaterialAtWipe`, 302 distinct states at depth 6),
 > `key_use_lock_negative_register_export.cfg` (`RegisterChecksLock = FALSE`,
-> violates `KU3_NoExportAfterWipe`, 574 distinct states at depth 8),
+> violates `KU3_NoExportAfterWipe`, 1379 distinct states at depth 8),
 > `key_use_lock_negative_unlock.cfg` (`UnlockWaitsForCleanup = FALSE`,
-> violates `KU4_NoWipeWhileUnlocked`, 336 distinct states at depth 6) and
+> violates `KU4_NoWipeWhileUnlocked`, 544 distinct states at depth 6) and
 > `key_use_lock_negative_loser.cfg` (`LoserLocks = FALSE`, violates
-> `KU4_NoWipeWhileUnlocked`, 1216 distinct states at depth 11).
+> `KU4_NoWipeWhileUnlocked`, 2700 distinct states at depth 10).
 
 Code that holds loaded key material outside an admin session registers a key
 use with `Runtime.KeyUseContext`. For a rotating seed that is every load in
@@ -87,14 +87,24 @@ waits for it; KU2 and KU3 cover that case.
   read of `lockGen` before the unlock function, and the fence after it. An
   attempt that finds `lockGen` moved has lost to a lock; its unlock function
   may have loaded keys after that lock's cleanup ran, so it clears them. It
-  first locks as `Lock` does (`loseUnlockLocked`: the state locks and
+  first locks as `Lock` does (`lockForCleanupLocked`: the state locks and
   `lockGen` and the session move, in the critical section that decides the
   cleanup), because another attempt may have published a session those keys
   now serve, or may publish one before the clear runs; moving `lockGen` makes
-  that attempt lose too. A losing attempt during maintenance also stops the
-  maintenance from republishing (`FinishMaintenance` compares `lockGen`).
+  that attempt lose too.
   Both attempts are modeled as `TryUnlock`; a `TryRecovery` that wins enters
   recovery instead, which clears nothing.
+- `LockState` from the locked state is `BeginMaintenance`, which runs a
+  cleanup there too, and a maintenance that ends without republishing:
+  `FinishMaintenance` then locks with `lockForCleanupLocked` and clears what
+  the maintenance reloaded, since no later `Lock` of a locked signer would.
+  Republication itself is not modeled. It is a Go-level contract:
+  `FinishMaintenance` publishes unlocked only if the signer was unlocked when
+  the maintenance began and `lockGen` has not moved since, so a lock that
+  landed before the maintenance began, or a losing attempt during it, keeps
+  the signer locked (`TestMaintenanceBegunLockedStaysLocked`,
+  `TestInFlightUnlockLosesToRacingMaintenance`,
+  `TestRefusedMaintenanceClearsWhatItReloaded`).
 - `LockInactive` transcribes `Lock` on a signer already locked or locking:
   `lockGen` moves and no cleanup runs. This is how an attempt can lose with
   no cleanup left for the next attempt to wait for.
@@ -113,7 +123,7 @@ The guards are constants:
 | `GenerationCheck` | TRUE: `releaseRefused` compares `LockGeneration()` with the value captured at the start | Without it a lock and an unlock between the release and the return go unnoticed |
 | `RecoveryEndsSession` | TRUE: `SetRecovery` and `TryRecovery` advance the session generation when they leave the unlocked state, and the key uses handed out are cancelled | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
 | `UnlockWaitsForCleanup` | TRUE: `TryUnlock`, `TryRecovery` and `FinishMaintenance` wait (`awaitCleanups`) until every on-lock cleanup already decided has returned, and only then read the lock generation | Without it an unlock that begins between a lock's state change and its session clear passes the unlock fence, and the cleanup clears the session it published |
-| `LoserLocks` | TRUE: a losing `TryUnlock` or `TryRecovery` locks the runtime and moves `lockGen` and the session (`loseUnlockLocked`) before its cleanup runs | Without it the losing attempt's cleanup runs in whatever state the signer is in, and clears a session another attempt published |
+| `LoserLocks` | TRUE: a losing `TryUnlock` or `TryRecovery` locks the runtime and moves `lockGen` and the session (`lockForCleanupLocked`) before its cleanup runs | Without it the losing attempt's cleanup runs in whatever state the signer is in, and clears a session another attempt published |
 
 The negative controls:
 
