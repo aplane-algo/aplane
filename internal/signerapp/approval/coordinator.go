@@ -165,8 +165,9 @@ func (c *Coordinator) BeginSignRequest(ctx context.Context, requestID string) (c
 	}
 }
 
-// CancelSignRequest cancels a queued or pending signing request and notifies
-// connected admin clients so visible approval prompts can be dismissed.
+// CancelSignRequest cancels a queued or pending signing request. A prompt
+// already shown is dismissed in the admin client by its own request when it
+// reads the withdrawal, after the prompt itself was sent.
 func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCancelResult {
 	if requestID == "" {
 		return SignRequestCancelResult{State: SignRequestCancelStateNotFound}
@@ -336,6 +337,11 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, sessionEnd
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
+		select {
+		case <-sessionEnded:
+			return errSessionEndedWait
+		default:
+		}
 		return err
 	}
 
@@ -524,30 +530,54 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 
 	select {
 	case response := <-responseChan:
-		if response.withdrawn {
-			c.notifySignRequestCanceled(promptID, response.Reason)
-		}
-		// A session end overrides an approval or a withdrawal answered in
-		// the meantime (no request from the ended session can sign), but an
-		// operator's rejection stays a rejection.
-		if (response.Approved || response.withdrawn) && c.sessionEndedSince(epoch) {
-			return SignResponse{}, sessionEndedError()
-		}
-		if isCancellationResponse(response) {
-			return SignResponse{}, cancellationError(response.Reason, nil)
-		}
-		return response, nil
+		return c.answer(promptID, epoch, response)
 	case <-timer.C:
-		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
-		return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
+		return c.answerWaiting(promptID, epoch, responseChan, func() (SignResponse, error) {
+			c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
+			return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
+		})
 	case <-ctx.Done():
-		if c.sessionEndedSince(epoch) {
-			c.notifySignRequestCanceled(promptID, SignRequestCancelReasonSessionEnded)
-			return SignResponse{}, sessionEndedError()
-		}
-		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonClientCanceled)
-		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, ctx.Err())
+		return c.answerWaiting(promptID, epoch, responseChan, func() (SignResponse, error) {
+			if c.sessionEndedSince(epoch) {
+				c.notifySignRequestCanceled(promptID, SignRequestCancelReasonSessionEnded)
+				return SignResponse{}, sessionEndedError()
+			}
+			c.notifySignRequestCanceled(promptID, SignRequestCancelReasonClientCanceled)
+			return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, ctx.Err())
+		})
 	}
+}
+
+// answer is the outcome of a prompt the operator or the coordinator
+// answered. A session end overrides an approval or a withdrawal answered in
+// the meantime (no request from the ended session can sign), but an
+// operator's rejection stays a rejection.
+func (c *Coordinator) answer(promptID string, epoch uint64, response SignResponse) (SignResponse, error) {
+	if response.withdrawn {
+		c.notifySignRequestCanceled(promptID, response.Reason)
+	}
+	if (response.Approved || response.withdrawn) && c.sessionEndedSince(epoch) {
+		return SignResponse{}, sessionEndedError()
+	}
+	if isCancellationResponse(response) {
+		return SignResponse{}, cancellationError(response.Reason, nil)
+	}
+	return response, nil
+}
+
+// answerWaiting resolves a prompt whose wait ended by timeout or by its
+// request's cancellation: an answer already waiting is handled as answer
+// handles it, so an operator's rejection is not lost to a cancellation or a
+// timeout that came at the same moment; otherwise ended decides.
+func (c *Coordinator) answerWaiting(promptID string, epoch uint64, responseChan chan SignResponse, ended func() (SignResponse, error)) (SignResponse, error) {
+	select {
+	case response, ok := <-responseChan:
+		if ok {
+			return c.answer(promptID, epoch, response)
+		}
+	default:
+	}
+	return ended()
 }
 
 // newPromptID returns an unguessable, single-use ID for one approval prompt.

@@ -240,3 +240,42 @@ func TestASessionEndThenAClientCancelAnswersSessionEnded(t *testing.T) {
 		finishHolder()
 	}
 }
+
+// When a prompt's wait ends by its request's cancellation or by timeout
+// while the operator's answer is already waiting, the answer is what counts:
+// a rejection is recorded as the operator's, not lost to the cancellation.
+func TestAnAnswerWaitingWinsOverACancellation(t *testing.T) {
+	c := New(func() bool { return true }, nil, func(*SignRequestCanceled) bool { return true })
+	responseChan := make(chan SignResponse, 1)
+	trySendSignResponse(responseChan, SignResponse{ID: "prompt", Approved: false, Reason: "rejected by user"})
+	c.EndSessionSignRequests() // the session ended too
+	response, err := c.answerWaiting("prompt", 0, responseChan, func() (SignResponse, error) {
+		return SignResponse{}, sessionEndedError()
+	})
+	if err != nil || response.Approved || response.Reason != "rejected by user" {
+		t.Fatalf("answerWaiting() = %+v, %v; want the operator's rejection", response, err)
+	}
+
+	empty := make(chan SignResponse, 1)
+	if _, err := c.answerWaiting("prompt", 0, empty, func() (SignResponse, error) {
+		return SignResponse{}, sessionEndedError()
+	}); !errors.Is(err, ErrSessionEnded) {
+		t.Fatalf("answerWaiting() with no answer = %v, want the fallback", err)
+	}
+}
+
+// A wait for the delivery turn whose context has already ended prefers a
+// session end that has also happened.
+func TestAnEndedTurnWaitPrefersTheSessionEnd(t *testing.T) {
+	c := New(func() bool { return true }, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ended := make(chan struct{})
+	close(ended)
+	if err := c.acquireDeliveryTurnContext(ctx, ended); !errors.Is(err, errSessionEndedWait) {
+		t.Fatalf("acquireDeliveryTurnContext() = %v, want the session end", err)
+	}
+	if err := c.acquireDeliveryTurnContext(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("acquireDeliveryTurnContext() without a session end = %v, want canceled", err)
+	}
+}
