@@ -77,159 +77,189 @@ func WriteOfflineTemplate(command Command, streams Streams) error {
 }
 
 // run executes one verb against a backend.
-func run(ctx context.Context, command Command, streams Streams, backend Backend) error { //nolint:gocognit // complexity backlog
+func run(ctx context.Context, command Command, streams Streams, backend Backend) error {
 	switch command.Verb {
 	case VerbStatus:
-		view, err := getPolicy(ctx, backend)
-		if err != nil {
-			return err
-		}
-		printStatus(streams.Stdout, view)
-		return nil
+		return runStatus(ctx, streams, backend)
 	case VerbExport:
-		if command.ExportDir != "" {
-			return exportAll(ctx, backend, streams, command.ExportDir)
-		}
-		doc, err := backend.Document(ctx, command.documentKey(), "")
-		if err != nil {
-			return err
-		}
-		if !doc.Success {
-			return resultError(doc.Code, doc.Error)
-		}
-		_, err = io.WriteString(streams.Stdout, doc.Document)
-		return err
+		return runExport(ctx, command, streams, backend)
 	case VerbTemplate:
-		view, err := getPolicy(ctx, backend)
-		if err != nil {
-			return err
-		}
-		role, err := noderole.ParseRole(view.NodeRole)
-		if err != nil {
-			return err
-		}
-		def, err := backend.Document(ctx, policy.DefaultKey, "")
-		if err != nil {
-			return err
-		}
-		if !def.Success {
-			return resultError(def.Code, def.Error)
-		}
-		text, err := policytext.Template(role, command.documentKey(), []byte(def.Document))
-		if err != nil {
-			return err
-		}
-		_, err = io.WriteString(streams.Stdout, text)
-		return err
+		return runTemplate(ctx, command, streams, backend)
 	case VerbCheck:
-		selected, err := selectExport(command, streams)
-		if err != nil {
-			return err
-		}
-		if selected != nil {
-			_, pctx, err := getReviewState(ctx, backend)
-			if err != nil {
-				return err
-			}
-			if err := compareExport(selected, pctx); err != nil {
-				return err
-			}
-		}
-		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
-		if err != nil {
-			return err
-		}
-		return checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: docs}, names)
+		return runCheck(ctx, command, streams, backend)
 	case VerbDiff:
-		selected, err := selectExport(command, streams)
-		if err != nil {
-			return err
-		}
-		view, pctx, err := getReviewState(ctx, backend)
-		if err != nil {
-			return err
-		}
-		if err := compareExport(selected, pctx); err != nil {
-			return err
-		}
-		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
-		if err != nil {
-			return err
-		}
-		diffs, err := diffChange(ctx, backend, view, pctx, docs, nil, names)
-		if err != nil {
-			return err
-		}
-		policyreview.PrintDiffs(streams.Stdout, diffs)
-		return nil
+		return runDiff(ctx, command, streams, backend)
 	case VerbApply, VerbRemove:
-		var selected *policyexport.Selected
-		if command.Verb == VerbApply {
-			var err error
-			if selected, err = selectExport(command, streams); err != nil {
-				return err
-			}
-		}
-		view, pctx, err := getReviewState(ctx, backend)
-		if err != nil {
-			return err
-		}
-		if err := compareExport(selected, pctx); err != nil {
-			return err
-		}
-		snapshot := pctx.SnapshotSHA256
-		var req adminproto.ApplyPolicyRequest
-		names := map[string]string{}
-		if command.Verb == VerbApply {
-			if req.Documents, names, err = policyreview.ReadDocuments(command.Args, streams.Stdin); err != nil {
-				return err
-			}
-		} else {
-			req.Remove = command.Args
-		}
-		if err := checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: req.Documents, Remove: req.Remove}, names); err != nil {
-			return err
-		}
-		diffs, err := diffChange(ctx, backend, view, pctx, req.Documents, req.Remove, names)
-		if err != nil {
-			return err
-		}
-		if policyreview.Unchanged(diffs) {
-			_, _ = fmt.Fprintln(streams.Stdout, "policy unchanged")
-			return nil
-		}
-		policyreview.PrintDiffs(streams.Stdout, diffs)
-		if !command.Yes {
-			confirmed, err := ConfirmApply()
-			if err != nil {
-				return err
-			}
-			if !confirmed {
-				return ErrApplyNotConfirmed
-			}
-		}
-		// The commit is refused if anything the review saw moved: the
-		// documents, the ASA set or the network mapping.
-		req.ExpectedPolicySetSHA256 = view.PolicySetSHA256
-		req.ExpectedSnapshotSHA256 = snapshot
-		result, err := backend.Apply(ctx, req)
-		if err != nil {
-			return err
-		}
-		if !result.Success {
-			policyreview.PrintProblems(streams.Stderr, "error", result.Errors, names)
-			return resultError(result.Code, result.Error)
-		}
-		if result.Policy == nil || result.Policy.GenerationID == "" {
-			_, _ = fmt.Fprintln(streams.Stdout, "policy unchanged")
-			return nil
-		}
-		_, _ = fmt.Fprintf(streams.Stdout, "policy applied as generation %s\npolicy_set_sha256 %s\n",
-			result.Policy.GenerationID, result.Policy.PolicySetSHA256)
-		return nil
+		return runApplyOrRemove(ctx, command, streams, backend)
 	default:
 		return fmt.Errorf("unsupported policy command %q", command.Verb)
 	}
+}
+
+// runStatus prints the node's policy summary.
+func runStatus(ctx context.Context, streams Streams, backend Backend) error {
+	view, err := getPolicy(ctx, backend)
+	if err != nil {
+		return err
+	}
+	printStatus(streams.Stdout, view)
+	return nil
+}
+
+// runExport writes one document, or with --dir every document and the node context.
+func runExport(ctx context.Context, command Command, streams Streams, backend Backend) error {
+	if command.ExportDir != "" {
+		return exportAll(ctx, backend, streams, command.ExportDir)
+	}
+	doc, err := backend.Document(ctx, command.documentKey(), "")
+	if err != nil {
+		return err
+	}
+	if !doc.Success {
+		return resultError(doc.Code, doc.Error)
+	}
+	_, err = io.WriteString(streams.Stdout, doc.Document)
+	return err
+}
+
+// runTemplate prints a starting document for the node's role.
+func runTemplate(ctx context.Context, command Command, streams Streams, backend Backend) error {
+	view, err := getPolicy(ctx, backend)
+	if err != nil {
+		return err
+	}
+	role, err := noderole.ParseRole(view.NodeRole)
+	if err != nil {
+		return err
+	}
+	def, err := backend.Document(ctx, policy.DefaultKey, "")
+	if err != nil {
+		return err
+	}
+	if !def.Success {
+		return resultError(def.Code, def.Error)
+	}
+	text, err := policytext.Template(role, command.documentKey(), []byte(def.Document))
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(streams.Stdout, text)
+	return err
+}
+
+// runCheck checks documents against the node, after comparing their export baseline.
+func runCheck(ctx context.Context, command Command, streams Streams, backend Backend) error {
+	selected, err := selectExport(command, streams)
+	if err != nil {
+		return err
+	}
+	if selected != nil {
+		_, pctx, err := getReviewState(ctx, backend)
+		if err != nil {
+			return err
+		}
+		if err := compareExport(selected, pctx); err != nil {
+			return err
+		}
+	}
+	docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
+	if err != nil {
+		return err
+	}
+	return checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: docs}, names)
+}
+
+// runDiff prints what applying the documents would change.
+func runDiff(ctx context.Context, command Command, streams Streams, backend Backend) error {
+	selected, err := selectExport(command, streams)
+	if err != nil {
+		return err
+	}
+	view, pctx, err := getReviewState(ctx, backend)
+	if err != nil {
+		return err
+	}
+	if err := compareExport(selected, pctx); err != nil {
+		return err
+	}
+	docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
+	if err != nil {
+		return err
+	}
+	diffs, err := diffChange(ctx, backend, view, pctx, docs, nil, names)
+	if err != nil {
+		return err
+	}
+	policyreview.PrintDiffs(streams.Stdout, diffs)
+	return nil
+}
+
+// runApplyOrRemove checks, diffs, confirms and commits a change against the snapshot it reviewed.
+func runApplyOrRemove(ctx context.Context, command Command, streams Streams, backend Backend) error {
+	var selected *policyexport.Selected
+	if command.Verb == VerbApply {
+		var err error
+		if selected, err = selectExport(command, streams); err != nil {
+			return err
+		}
+	}
+	view, pctx, err := getReviewState(ctx, backend)
+	if err != nil {
+		return err
+	}
+	if err := compareExport(selected, pctx); err != nil {
+		return err
+	}
+	snapshot := pctx.SnapshotSHA256
+	var req adminproto.ApplyPolicyRequest
+	names := map[string]string{}
+	if command.Verb == VerbApply {
+		if req.Documents, names, err = policyreview.ReadDocuments(command.Args, streams.Stdin); err != nil {
+			return err
+		}
+	} else {
+		req.Remove = command.Args
+	}
+	if err := checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: req.Documents, Remove: req.Remove}, names); err != nil {
+		return err
+	}
+	diffs, err := diffChange(ctx, backend, view, pctx, req.Documents, req.Remove, names)
+	if err != nil {
+		return err
+	}
+	if policyreview.Unchanged(diffs) {
+		_, _ = fmt.Fprintln(streams.Stdout, "policy unchanged")
+		return nil
+	}
+	policyreview.PrintDiffs(streams.Stdout, diffs)
+	if !command.Yes {
+		confirmed, err := ConfirmApply()
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return ErrApplyNotConfirmed
+		}
+	}
+	// The commit is refused if anything the review saw moved: the
+	// documents, the ASA set or the network mapping.
+	req.ExpectedPolicySetSHA256 = view.PolicySetSHA256
+	req.ExpectedSnapshotSHA256 = snapshot
+	result, err := backend.Apply(ctx, req)
+	if err != nil {
+		return err
+	}
+	if !result.Success {
+		policyreview.PrintProblems(streams.Stderr, "error", result.Errors, names)
+		return resultError(result.Code, result.Error)
+	}
+	if result.Policy == nil || result.Policy.GenerationID == "" {
+		_, _ = fmt.Fprintln(streams.Stdout, "policy unchanged")
+		return nil
+	}
+	_, _ = fmt.Fprintf(streams.Stdout, "policy applied as generation %s\npolicy_set_sha256 %s\n",
+		result.Policy.GenerationID, result.Policy.PolicySetSHA256)
+	return nil
 }
 
 // getReviewState reads the policy summary and the node's context, and
