@@ -828,70 +828,12 @@ func validateLogicSigFields(p *Payload) error {
 	default:
 		return incompatibleKeyFormat("unsupported lsig_derivation %q", p.LogicSigDerivation)
 	}
-	if p.BoundedAuthorization == nil { //nolint:nestif // complexity backlog
+	if p.BoundedAuthorization == nil {
 		if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
 			return incompatibleKeyFormat("%s without bounded_authorization requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
 		}
-	} else {
-		if p.SigningMetadataVersion != BoundedSigningMetadataVersion {
-			return incompatibleKeyFormat("%s with bounded_authorization requires signing_metadata_version %d", p.Category, BoundedSigningMetadataVersion)
-		}
-		if p.Category != CategoryDSALsig {
-			return incompatibleKeyFormat("bounded_authorization requires dsa_lsig category")
-		}
-		if err := p.BoundedAuthorization.Validate(); err != nil {
-			return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
-		}
-		if cosigner := p.BoundedAuthorization.Cosigner; cosigner != nil {
-			// The parameters name the cosigner's type only when it is not the
-			// default; the metadata always does. They must agree.
-			recorded := p.Parameters[boundedmeta.CosignerKeyTypeParameter]
-			if recorded == "" {
-				recorded = boundedmeta.DefaultCosignerComponentKeyType
-			}
-			if recorded != cosigner.ComponentKeyType {
-				return incompatibleKeyFormat("bounded_authorization cosigner key type %q does not match parameters.%s %q", cosigner.ComponentKeyType, boundedmeta.CosignerKeyTypeParameter, recorded)
-			}
-			publicKeySize, _, ok := boundedmeta.CosignerSizes(cosigner.ComponentKeyType)
-			if !ok {
-				return incompatibleKeyFormat("invalid bounded_authorization: unsupported cosigner key type %q", cosigner.ComponentKeyType)
-			}
-			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.CosignerPublicKeyParameter, p.Parameters[boundedmeta.CosignerPublicKeyParameter])
-			if err != nil {
-				return err
-			}
-			metadataPublicKey, err := boundedmeta.DecodeCanonicalHex(
-				"bounded cosigner public key",
-				cosigner.PublicKeyHex,
-				publicKeySize,
-				publicKeySize,
-			)
-			if err != nil {
-				return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
-			}
-			if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
-				return incompatibleKeyFormat("bounded_authorization cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
-			}
-		}
-		if p.BoundedAuthorization.Cosigner == nil {
-			if _, ok := p.Parameters[boundedmeta.CosignerKeyTypeParameter]; ok {
-				return incompatibleKeyFormat("parameters.%s without a cosigner", boundedmeta.CosignerKeyTypeParameter)
-			}
-		}
-		// The program compiled the parameters' root, and every listed rekey
-		// rebuilds the list from the stored entries, so both must agree with the
-		// metadata now rather than fail after an operator approves a rekey.
-		if list := p.BoundedAuthorization.RekeyList; list != nil {
-			if p.Parameters[boundedmeta.RekeyListRootParameter] != list.RootHex {
-				return incompatibleKeyFormat("bounded_authorization rekey-to list root does not match parameters.%s", boundedmeta.RekeyListRootParameter)
-			}
-			if _, err := rekeylist.ParseEntries(p.Parameters[boundedmeta.RekeyListEntriesParameter]); err != nil {
-				return incompatibleKeyFormat("invalid parameters.%s: %v", boundedmeta.RekeyListEntriesParameter, err)
-			}
-		}
-		if len(p.SigningArgs) != 0 {
-			return incompatibleKeyFormat("a bounded account forbids caller-supplied signing_args")
-		}
+	} else if err := validateBoundedSigningMetadata(p); err != nil {
+		return err
 	}
 	address, err := logicSigAddressBytes(p.LogicSigBytecode)
 	if err != nil {
@@ -899,6 +841,72 @@ func validateLogicSigFields(p *Payload) error {
 	}
 	if lsigsalt.IsOnCurve(address) {
 		return incompatibleKeyFormatErr(ErrLogicSigAddressOnCurve)
+	}
+	return nil
+}
+
+// validateBoundedSigningMetadata checks the signing metadata of a key with
+// bounded_authorization: its version and category, the metadata itself, and
+// that the cosigner and the rekey-to list it names agree with the parameters.
+func validateBoundedSigningMetadata(p *Payload) error {
+	if p.SigningMetadataVersion != BoundedSigningMetadataVersion {
+		return incompatibleKeyFormat("%s with bounded_authorization requires signing_metadata_version %d", p.Category, BoundedSigningMetadataVersion)
+	}
+	if p.Category != CategoryDSALsig {
+		return incompatibleKeyFormat("bounded_authorization requires dsa_lsig category")
+	}
+	if err := p.BoundedAuthorization.Validate(); err != nil {
+		return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+	}
+	if cosigner := p.BoundedAuthorization.Cosigner; cosigner != nil {
+		// The parameters name the cosigner's type only when it is not the
+		// default; the metadata always does. They must agree.
+		recorded := p.Parameters[boundedmeta.CosignerKeyTypeParameter]
+		if recorded == "" {
+			recorded = boundedmeta.DefaultCosignerComponentKeyType
+		}
+		if recorded != cosigner.ComponentKeyType {
+			return incompatibleKeyFormat("bounded_authorization cosigner key type %q does not match parameters.%s %q", cosigner.ComponentKeyType, boundedmeta.CosignerKeyTypeParameter, recorded)
+		}
+		publicKeySize, _, ok := boundedmeta.CosignerSizes(cosigner.ComponentKeyType)
+		if !ok {
+			return incompatibleKeyFormat("invalid bounded_authorization: unsupported cosigner key type %q", cosigner.ComponentKeyType)
+		}
+		parameterPublicKey, err := decodeCanonicalHex(boundedmeta.CosignerPublicKeyParameter, p.Parameters[boundedmeta.CosignerPublicKeyParameter])
+		if err != nil {
+			return err
+		}
+		metadataPublicKey, err := boundedmeta.DecodeCanonicalHex(
+			"bounded cosigner public key",
+			cosigner.PublicKeyHex,
+			publicKeySize,
+			publicKeySize,
+		)
+		if err != nil {
+			return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+		}
+		if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
+			return incompatibleKeyFormat("bounded_authorization cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
+		}
+	}
+	if p.BoundedAuthorization.Cosigner == nil {
+		if _, ok := p.Parameters[boundedmeta.CosignerKeyTypeParameter]; ok {
+			return incompatibleKeyFormat("parameters.%s without a cosigner", boundedmeta.CosignerKeyTypeParameter)
+		}
+	}
+	// The program compiled the parameters' root, and every listed rekey
+	// rebuilds the list from the stored entries, so both must agree with the
+	// metadata now rather than fail after an operator approves a rekey.
+	if list := p.BoundedAuthorization.RekeyList; list != nil {
+		if p.Parameters[boundedmeta.RekeyListRootParameter] != list.RootHex {
+			return incompatibleKeyFormat("bounded_authorization rekey-to list root does not match parameters.%s", boundedmeta.RekeyListRootParameter)
+		}
+		if _, err := rekeylist.ParseEntries(p.Parameters[boundedmeta.RekeyListEntriesParameter]); err != nil {
+			return incompatibleKeyFormat("invalid parameters.%s: %v", boundedmeta.RekeyListEntriesParameter, err)
+		}
+	}
+	if len(p.SigningArgs) != 0 {
+		return incompatibleKeyFormat("a bounded account forbids caller-supplied signing_args")
 	}
 	return nil
 }
