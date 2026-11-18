@@ -1385,7 +1385,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `bad_request` | malformed or invalid request input | `400` |
 | `unauthorized` | missing or invalid authentication | `401` |
 | `forbidden` | authenticated request the signer refuses (policy or role) | `403` |
-| `locked` | signer keystore is locked, or the session the request began in has ended (a lock, or a recovery and a reconcile, since it began); send it again | `403` |
+| `locked` | signer keystore is locked, or the session the request began in has ended (a lock, store maintenance such as a passphrase change, or a recovery and a reconcile, since it began); send it again | `403` |
 | `not_found` | unknown key or resource | `404` |
 | `invalid_passphrase` | passphrase verification failure | `403` |
 | `unavailable` | temporary inability to serve the request | `503` |

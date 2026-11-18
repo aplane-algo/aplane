@@ -26,9 +26,12 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 	// is refused rather than signed on a plan from before them. It is read
 	// before the policy snapshot below, and the caller builds the service
 	// before it takes the request's key session, so both belong to this
-	// session or the request is refused.
-	generation := ir.LockGeneration()
-	inSession := func() bool { return ir.IsUnlockedIn(generation) }
+	// session or the request is refused. A request that begins while the
+	// signer is not unlocked has no session: the one a recovery opens is
+	// unlocked again by its reconcile, after a policy snapshot taken now may
+	// have been replaced, so such a request is refused for good.
+	generation, unlocked := ir.UnlockedGeneration()
+	inSession := func() bool { return unlocked && ir.IsUnlockedIn(generation) }
 
 	// One request, one policy snapshot: every slot of this request resolves
 	// against the NodePolicy captured here, whatever reloads land later, and

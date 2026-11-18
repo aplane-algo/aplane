@@ -169,3 +169,25 @@ func TestSigningServiceRefusesAfterTheSessionItBeganInEnds(t *testing.T) {
 		})
 	}
 }
+
+// A request that begins while the signer is in recovery has no session to
+// sign in, though the reconcile leaves the signer unlocked again: the policy
+// snapshot it took may since have been replaced.
+func TestSigningServiceBegunInRecoveryIsRefused(t *testing.T) {
+	signer := &Signer{config: &serverconfig.ServerConfig{}}
+	ir := productruntime.New(productruntime.Config{})
+	ir.SetPolicy(policy.DefaultConfig())
+	ir.SetUnlocked()
+	ir.SetRecovery()
+
+	svc := signer.newSigningServiceWithAudit(ir, nil)
+	if !ir.PromoteRecoveryToUnlocked() {
+		t.Fatal("reconcile did not promote the signer")
+	}
+	if svc.IsUnlocked() {
+		t.Fatal("a request begun in recovery reads as signable after the reconcile")
+	}
+	if !signer.newSigningServiceWithAudit(ir, nil).IsUnlocked() {
+		t.Fatal("a request begun after the reconcile cannot sign")
+	}
+}
