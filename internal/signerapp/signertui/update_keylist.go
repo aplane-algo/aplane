@@ -223,9 +223,11 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "up", "k":
-		// Scroll up
-		if m.details.scrollOffset > 0 {
-			m.details.scrollOffset--
+		// Scroll up from the row shown, which a resize may have moved.
+		if offset := m.detailsScrollOffset(); offset > 0 {
+			m.details.scrollOffset = offset - 1
+		} else {
+			m.details.scrollOffset = 0
 		}
 		return m, nil
 

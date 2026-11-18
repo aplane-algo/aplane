@@ -398,6 +398,13 @@ func (m Model) keyDetailsTrailer() string {
 	return sb.String()
 }
 
+// detailsScrollOffset is the first parameter row Key Details shows: the
+// stored offset, held within the rows there are. The rows depend on the
+// width, so an offset scrolled at another width may be past the end.
+func (m Model) detailsScrollOffset() int {
+	return max(0, min(m.details.scrollOffset, len(m.detailsParameterRows())-m.detailsVisibleLines()))
+}
+
 // renderKeyDetails renders the key details modal.
 func (m Model) renderKeyDetails() string {
 	var sb strings.Builder
@@ -414,12 +421,12 @@ func (m Model) renderKeyDetails() string {
 		totalParams := len(paramLines)
 		needsScroll := totalParams > maxVisibleLines
 
-		if needsScroll && m.details.scrollOffset > 0 {
+		startIdx := m.detailsScrollOffset()
+		if needsScroll && startIdx > 0 {
 			sb.WriteString(helpStyle.Render("  ▲ more above"))
 			sb.WriteString("\n")
 		}
 
-		startIdx := m.details.scrollOffset
 		endIdx := startIdx + maxVisibleLines
 		if endIdx > totalParams {
 			endIdx = totalParams

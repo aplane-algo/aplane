@@ -104,6 +104,33 @@ func TestPagersReachTheirLastLine(t *testing.T) {
 	}
 }
 
+// Key Details' rows depend on the terminal width, so an offset scrolled to
+// the end at one width can be past the end at a wider one. The pager still
+// shows its last rows there, and the first press of up scrolls.
+func TestKeyDetailsScrolledThenWidenedStillShowsParameters(t *testing.T) {
+	m := Model{width: MinWidth, height: MinHeight, connectionState: ConnectionConnected}
+	m.viewState = ViewKeyDetails
+	m.details.address = strings.Repeat("A", 58)
+	m.details.keyType = "publisher.family.v1"
+	m.details.parameters = map[string]string{}
+	for i := 1; i <= 30; i++ {
+		m.details.parameters[fmt.Sprintf("parameter-line-%03d", i)] = strings.Repeat("R", 55) + fmt.Sprintf("%03d", i)
+	}
+	for i := 0; i < 200; i++ {
+		m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 160, Height: MinHeight})
+	last := strings.Repeat("R", 55) + "030"
+	if screen := stripANSI(m.View()); !strings.Contains(screen, last) {
+		t.Fatalf("widened after scrolling, the screen does not show the last parameter:\n%s", screen)
+	}
+	before := stripANSI(m.View())
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyUp})
+	if stripANSI(m.View()) == before {
+		t.Fatal("the first press of up after widening did not scroll")
+	}
+}
+
 type refusingConnector struct{ attempts atomic.Int32 }
 
 func (c *refusingConnector) Connect() (io.ReadWriteCloser, error) {
