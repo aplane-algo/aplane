@@ -1166,21 +1166,22 @@ response shapes and the `canceled`/`not_found` states are in
 
 When the signer's session ends (a lock, an entry into recovery from unlocked,
 the start of store maintenance, or an unlock that lost to a lock), the product
-runtime withdraws every signing request in flight
-(`Coordinator.EndSessionSignRequests`): it cancels each registered request's
-context with the session end as the cause. A lock does so first, before it
-waits for key users. The prompt on screen is dismissed with reason
-`session_ended`, and requests queued behind it are never shown. No request
-from the ended session could sign afterwards, so none is left looking
-approvable. A request withdrawn while it waited for approval answers `locked`
-("the signer's session ended while the request waited for approval; send it
-again") and is audited as `approval_withdrawn_session_ended`, not as an
-operator rejection. A request withdrawn, or refused because the signer is no
-longer unlocked in its session, after its gates and approval passed but
-before it signs, answers `locked` and is audited as
-`session_ended_after_approval`. The withdrawal belongs to the requests in
-flight, not to their IDs: a request sent again under the same ID is handled
-as new. Only the signer withdraws a request; an operator's rejection stays a
+runtime ends every approval wait in flight
+(`Coordinator.EndSessionSignRequests`), a lock first of all, before it waits
+for key users. The coordinator counts session ends: the prompt on screen is
+answered as withdrawn and dismissed with reason `session_ended`, requests
+queued behind it stop waiting and are never shown, and a request registered
+in the ended session (`BeginSignRequest`) that asks for approval later is
+refused. No request from the ended session could sign afterwards, so none is
+left looking approvable. Such a request answers `locked` ("the signer's
+session ended while the request waited for approval; send it again") and is
+audited as `approval_withdrawn_session_ended`, not as an operator rejection.
+A session end cancels no request's context: a request that is planning or
+signing meets the session check or the lock's cut of its key use, which
+answer `locked` as before. One refused at the check after its gates and
+approval passed is audited as `session_ended_after_approval`. A request sent
+again under the same ID belongs to the new session and is handled as new.
+Only the signer withdraws a request; an operator's rejection stays a
 rejection whatever reason text it carries.
 
 ---

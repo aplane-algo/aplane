@@ -38,9 +38,7 @@ func TestEndSessionSignRequestsWithdrawsTheShownAndTheQueued(t *testing.T) {
 	queued, finishQueued := ask("sign-queued")
 	defer finishQueued()
 
-	if n := c.EndSessionSignRequests(); n != 2 {
-		t.Fatalf("EndSessionSignRequests() canceled %d request(s), want 2", n)
-	}
+	c.EndSessionSignRequests()
 	for name, result := range map[string]<-chan error{"shown": shown, "queued": queued} {
 		select {
 		case err := <-result:
@@ -122,5 +120,34 @@ func TestAnOperatorRejectionIsNotTakenForAWithdrawal(t *testing.T) {
 	got := <-result
 	if got.err != nil || got.response.Approved {
 		t.Fatalf("operator rejection = %+v, %v; want a plain rejection", got.response, got.err)
+	}
+}
+
+// A session end ends approval waits, not requests: the context of a request
+// in flight is not canceled, so work it is doing meets the session check or
+// a lock's key-use cut (answering locked) rather than looking canceled by
+// its client. A request from the ended session that asks for approval
+// afterwards is refused.
+func TestASessionEndRefusesLaterApprovalsWithoutCancelingTheRequest(t *testing.T) {
+	sent := make(chan string, 1)
+	c := New(
+		func() bool { return true },
+		func(req *SignRequest) bool { sent <- req.ID; return true },
+		func(*SignRequestCanceled) bool { return true },
+	)
+	ctx, finish := c.BeginSignRequest(context.Background(), "sign-1")
+	defer finish()
+	c.EndSessionSignRequests()
+	if ctx.Err() != nil {
+		t.Fatalf("the session end canceled the request's context: %v", ctx.Err())
+	}
+	_, err := c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "d"}, time.Minute)
+	if !errors.Is(err, ErrSessionEnded) {
+		t.Fatalf("approval after the session ended = %v, want refused as session-ended", err)
+	}
+	select {
+	case id := <-sent:
+		t.Fatalf("a prompt (%s) was shown for a request whose session had ended", id)
+	default:
 	}
 }
