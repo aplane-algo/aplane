@@ -386,15 +386,47 @@ func singlePicture(review *protocol.Review, width int) (reviewPane, bool) {
 // drawLanes draws the lanes. rows is set for a group, whose lines are
 // numbered rows to select; a lone transaction's lines are neither numbered
 // nor selectable.
-func drawLanes(review *protocol.Review, width int, rows bool) reviewPane { //nolint:gocognit // complexity backlog
+func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 	lanes := reviewLanes(review)
 	shown, laneWidth := lanesShown(review, lanes, width)
 	if shown == 0 {
 		return listPane(review)
 	}
 	effectWidth := reviewEffectWidth(review)
-	lead := strings.Repeat(" ", 2+reviewRowPrefix)
+	pane := reviewPane{header: lanesHeader(lanes, shown, laneWidth)}
+	for i, item := range review.Items {
+		effects := item.Effects
+		if len(effects) == 0 {
+			effects = []protocol.ReviewEffect{{Text: firstLine(item.Title)}}
+		}
+		numberStyle := normalStyle
+		if severity := reviewItemSeverity(item); severity != "" {
+			numberStyle = reviewWarningStyle(severity)
+		}
+		for j, effect := range effects {
+			track := newLaneTrack(shown, laneWidth)
+			gap := " "
+			if leaves := track.drawEffect(lanes, i, item, effect); leaves {
+				gap = "»"
+			}
+			text := gap + " " + fixedWidthFieldLine(effect.Text, effectWidth)
+			number, row := strings.Repeat(" ", reviewRowPrefix), -1
+			if rows {
+				number, row = reviewRowLead(i+1, item, j == 0), i
+			}
+			style := reviewEffectStyle(effect)
+			spans := append([]paneSpan{{number, numberStyle}}, track.spans(style)...)
+			spans = append(spans, paneSpan{text, style})
+			pane.lines = append(pane.lines, paneLine{row: row, plain: number + string(track.cells) + text, spans: spans})
+		}
+	}
+	return pane
+}
 
+// lanesHeader is the two lines above the lanes: the name of each lane shown
+// and its role, and a count of the lanes that do not fit.
+func lanesHeader(lanes []reviewLane, shown, laneWidth int) []string {
+	lead := strings.Repeat(" ", 2+reviewRowPrefix)
 	var names, roles strings.Builder
 	names.WriteString(lead)
 	roles.WriteString(lead)
@@ -414,108 +446,104 @@ func drawLanes(review *protocol.Review, width int, rows bool) reviewPane { //nol
 	if hidden := len(lanes) - shown; hidden > 0 {
 		names.WriteString(helpStyle.Render(fmt.Sprintf(" +%d", hidden)))
 	}
-	pane := reviewPane{header: []string{names.String(), roles.String()}}
+	return []string{names.String(), roles.String()}
+}
 
-	centreOf := func(lane int) int { return lane*laneWidth + laneWidth/2 }
-	edge := shown*laneWidth - 1
-	for i, item := range review.Items {
-		effects := item.Effects
-		if len(effects) == 0 {
-			effects = []protocol.ReviewEffect{{Text: firstLine(item.Title)}}
+// laneTrack is one line of the lanes: a rule down the middle of each lane
+// shown, and what one effect draws over them.
+type laneTrack struct {
+	cells     []rune
+	drawn     []bool // the cells the effect drew, the rest being rules and space
+	shown     int
+	laneWidth int
+}
+
+func newLaneTrack(shown, laneWidth int) *laneTrack {
+	t := &laneTrack{cells: []rune(strings.Repeat(" ", shown*laneWidth)), shown: shown, laneWidth: laneWidth}
+	t.drawn = make([]bool, len(t.cells))
+	for lane := 0; lane < shown; lane++ {
+		t.cells[t.centreOf(lane)] = '│'
+	}
+	return t
+}
+
+func (t *laneTrack) centreOf(lane int) int { return lane*t.laneWidth + t.laneWidth/2 }
+
+func (t *laneTrack) put(x int, r rune) {
+	if x >= 0 && x < len(t.cells) {
+		t.cells[x], t.drawn[x] = r, true
+	}
+}
+
+// column is where an effect meets a lane: the lane's rule, or the right edge
+// when the lane is one that does not fit, which off reports.
+func (t *laneTrack) column(lane int) (x int, off bool) {
+	if lane >= t.shown {
+		return t.shown*t.laneWidth - 1, true
+	}
+	return t.centreOf(lane), false
+}
+
+// drawEffect draws an effect: an arrow between two lanes, a mark on the one
+// lane it stays on, or nothing when it starts from no lane. It reports
+// whether the effect touches a lane that does not fit.
+func (t *laneTrack) drawEffect(lanes []reviewLane, index int, item protocol.ReviewItem, effect protocol.ReviewEffect) (leaves bool) {
+	from, to := laneOf(lanes, effect.From), effectTarget(lanes, index, effect)
+	switch {
+	case from < 0:
+		// A transaction with nothing to draw: its title stands alone.
+		return false
+	case to < 0:
+		x, off := t.column(from)
+		if !off {
+			t.put(x, laneMark(effect.Kind))
 		}
-		for j, effect := range effects {
-			cells := []rune(strings.Repeat(" ", shown*laneWidth))
-			drawn := make([]bool, len(cells))
-			for lane := 0; lane < shown; lane++ {
-				cells[centreOf(lane)] = '│'
-			}
-			put := func(x int, r rune) {
-				if x >= 0 && x < len(cells) {
-					cells[x], drawn[x] = r, true
-				}
-			}
-			column := func(lane int) (int, bool) {
-				if lane >= shown {
-					return edge, true
-				}
-				return centreOf(lane), false
-			}
-			leaves := false
-			from, to := laneOf(lanes, effect.From), effectTarget(lanes, i, effect)
-			switch {
-			case from < 0:
-				// A transaction with nothing to draw: its title stands alone.
-			case to < 0:
-				x, off := column(from)
-				leaves = off
-				if !off {
-					put(x, laneMark(effect.Kind))
-				}
-			default:
-				a, offA := column(from)
-				b, offB := column(to)
-				leaves = offA || offB
-				origin := '○'
-				if item.Position == protocol.ReviewPositionSign && effect.From == item.Sender {
-					origin = '●'
-				}
-				step, head := 1, '►'
-				if b < a {
-					step, head = -1, '◄'
-				}
-				for x := a; x != b; x += step {
-					put(x, laneStroke(effect.Kind))
-				}
-				if !offA {
-					put(a, origin)
-				}
-				if !offB {
-					put(b, head)
-				}
-				if authority := laneOf(lanes, effect.Authority); authority >= 0 && authority < shown {
-					if x := centreOf(authority); x != a && x != b {
-						put(x, '◆')
-					}
-				}
-			}
-
-			gap := " "
-			if leaves {
-				gap = "»"
-			}
-			text := fixedWidthFieldLine(effect.Text, effectWidth)
-			number := reviewRowLead(i+1, item, j == 0)
-			if !rows {
-				number = strings.Repeat(" ", reviewRowPrefix)
-			}
-			style := reviewEffectStyle(effect)
-
-			numberStyle := normalStyle
-			if severity := reviewItemSeverity(item); severity != "" {
-				numberStyle = reviewWarningStyle(severity)
-			}
-			spans := []paneSpan{{number, numberStyle}}
-			for x := 0; x < len(cells); {
-				y := x
-				for y < len(cells) && drawn[y] == drawn[x] {
-					y++
-				}
-				if drawn[x] {
-					spans = append(spans, paneSpan{string(cells[x:y]), style})
-				} else {
-					spans = append(spans, paneSpan{string(cells[x:y]), helpStyle})
-				}
-				x = y
-			}
-			spans = append(spans, paneSpan{gap + " " + text, style})
-			row := i
-			if !rows {
-				row = -1
-			}
-			pane.lines = append(pane.lines, paneLine{row: row, plain: number + string(cells) + gap + " " + text, spans: spans})
+		return off
+	}
+	a, offA := t.column(from)
+	b, offB := t.column(to)
+	origin := '○'
+	if item.Position == protocol.ReviewPositionSign && effect.From == item.Sender {
+		origin = '●'
+	}
+	step, head := 1, '►'
+	if b < a {
+		step, head = -1, '◄'
+	}
+	for x := a; x != b; x += step {
+		t.put(x, laneStroke(effect.Kind))
+	}
+	if !offA {
+		t.put(a, origin)
+	}
+	if !offB {
+		t.put(b, head)
+	}
+	if authority := laneOf(lanes, effect.Authority); authority >= 0 && authority < t.shown {
+		if x := t.centreOf(authority); x != a && x != b {
+			t.put(x, '◆')
 		}
 	}
-	return pane
+	return offA || offB
+}
+
+// spans cuts the track into runs: what the effect drew in the effect's
+// style, the rules and space between in the quiet one.
+func (t *laneTrack) spans(style lipgloss.Style) []paneSpan {
+	var spans []paneSpan
+	for x := 0; x < len(t.cells); {
+		y := x
+		for y < len(t.cells) && t.drawn[y] == t.drawn[x] {
+			y++
+		}
+		runStyle := helpStyle
+		if t.drawn[x] {
+			runStyle = style
+		}
+		spans = append(spans, paneSpan{string(t.cells[x:y]), runStyle})
+		x = y
+	}
+	return spans
 }
 
 // tableRow is one line of the table: an effect of a row, and what the
