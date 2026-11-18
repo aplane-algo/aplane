@@ -182,19 +182,3 @@ func shellQuoteArg(s string) string {
 	}
 	return s
 }
-
-// detectMethod inspects PassphraseCommandArgv to determine the current auto-unlock method.
-func detectMethod(argv []string) string {
-	if len(argv) == 0 {
-		return "none"
-	}
-	bin := argv[0]
-	switch {
-	case strings.HasSuffix(bin, "/appass-file") || bin == "appass-file":
-		return "passfile"
-	case strings.HasSuffix(bin, "/appass-systemd-creds") || bin == "appass-systemd-creds":
-		return "systemd-creds"
-	default:
-		return "custom"
-	}
-}

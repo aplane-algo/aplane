@@ -33,9 +33,6 @@ const (
 // client's known_hosts after probing the listener for it. refusedWait is how
 // long a refused connection is retried; zero fails at once.
 func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.ServerConfig, refusedWait time.Duration) (string, error) {
-	if err := config.ValidateClientEndpointConfig(clientDataDir); err != nil {
-		return "", err
-	}
 	clientCfg, err := config.LoadConfig(clientDataDir)
 	if err != nil {
 		return "", fmt.Errorf("load client config: %w", err)

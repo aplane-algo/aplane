@@ -34,13 +34,6 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 	return registry, true, nil
 }
 
-// ValidateClientEndpointConfig fails when endpoints.yaml is unreadable or
-// invalid. LoadConfig does not read it.
-func ValidateClientEndpointConfig(dataDir string) error {
-	_, _, err := LoadStoredClientEndpointRegistry(dataDir)
-	return err
-}
-
 func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointRegistry) error {
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return err

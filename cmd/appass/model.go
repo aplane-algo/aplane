@@ -114,6 +114,9 @@ func loadStatusCmd(dataDir string, svc *serviceInfo, isLocal bool) tea.Cmd {
 		var methodErr string
 		if err != nil {
 			methodErr = err.Error()
+			if method == "" {
+				method = "unreadable"
+			}
 		}
 
 		return StatusLoadedMsg{

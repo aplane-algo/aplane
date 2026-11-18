@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,7 +29,10 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 		return "", err
 	}
 
-	currentMethod, _ := currentAutoUnlockMethod(dataDir)
+	currentMethod, err := currentAutoUnlockMethod(dataDir)
+	if err != nil && currentMethod != "unreadable" {
+		return "", err
+	}
 
 	// In systemd mode, require root.
 	if !isLocal && os.Getuid() != 0 {
@@ -36,7 +40,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 	}
 
 	// Guard unexpected service state. A managed systemd-creds -> passfile migration is allowed.
-	if !isLocal && svc.HasLoadCred && currentMethod != "systemd-creds" {
+	if !isLocal && svc.HasLoadCred && currentMethod != "systemd-creds" && currentMethod != "unreadable" {
 		return "", fmt.Errorf("service has LoadCredentialEncrypted but config is not in systemd-creds mode; clear the service state before switching to passfile")
 	}
 
@@ -66,7 +70,6 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passFileBin, passphrasePath},
 	}
-	var err error
 	if !isLocal {
 		err = unlockconfig.SaveUnlockConfigForService(dataDir, unlockCfg, serviceUID, serviceGID)
 	} else {
@@ -77,7 +80,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 	}
 
 	var warning string
-	if currentMethod == "systemd-creds" {
+	if currentMethod == "systemd-creds" || currentMethod == "unreadable" {
 		if err := cleanupSystemdCreds(dataDir, isProdMode()); err != nil {
 			warning = fmt.Sprintf("switched to passfile, but failed to remove old systemd-creds state: %v", err)
 		}
@@ -93,7 +96,10 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 		return "", err
 	}
 
-	currentMethod, _ := currentAutoUnlockMethod(dataDir)
+	currentMethod, err := currentAutoUnlockMethod(dataDir)
+	if err != nil && currentMethod != "unreadable" {
+		return "", err
+	}
 
 	// Check systemd-creds is available
 	if _, err := exec.LookPath("systemd-creds"); err != nil {
@@ -159,7 +165,7 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 	}
 
 	var warning string
-	if currentMethod == "passfile" {
+	if currentMethod == "passfile" || currentMethod == "unreadable" {
 		passFile := filepath.Join(identityDir, "passphrase")
 		if _, err := os.Stat(passFile); err == nil {
 			if err := os.Remove(passFile); err != nil {
@@ -184,7 +190,10 @@ func executeClear(dataDir string) (string, error) {
 		return "", fmt.Errorf("systemd mode: must be run as root (use sudo)")
 	}
 
-	method, _ := currentAutoUnlockMethod(dataDir)
+	method, err := currentAutoUnlockMethod(dataDir)
+	if err != nil && method != "unreadable" {
+		return "", err
+	}
 
 	if method == "none" {
 		return "", nil // nothing to clear
@@ -198,16 +207,17 @@ func executeClear(dataDir string) (string, error) {
 	// Method-specific cleanup
 	identityDir := storepaths.NewPaths(dataDir).ProductDir()
 	var warning string
-	switch method {
-	case "passfile":
+	cleanPassfile := method == "passfile" || method == "unreadable"
+	cleanSystemdCreds := method == "systemd-creds" || method == "unreadable"
+	if cleanPassfile {
 		passFile := filepath.Join(identityDir, "passphrase")
 		if _, err := os.Stat(passFile); err == nil {
 			if err := os.Remove(passFile); err != nil {
 				warning = fmt.Sprintf("switched to prompt mode, but failed to remove old passphrase file: %v", err)
 			}
 		}
-
-	case "systemd-creds":
+	}
+	if cleanSystemdCreds {
 		if err := cleanupSystemdCreds(dataDir, prodMode); err != nil {
 			warning = fmt.Sprintf("switched to prompt mode, but failed to remove old systemd-creds state: %v", err)
 		}
@@ -217,15 +227,19 @@ func executeClear(dataDir string) (string, error) {
 }
 
 // currentAutoUnlockMethod reports the configured auto-unlock method. An
-// unlock.yaml that cannot be read is "unreadable", with the reason; the actions
-// still replace or clear it, so appass can repair it.
+// unlock.yaml that does not parse is "unreadable", with the reason: the actions
+// still replace or clear it, cleaning up after either method, so appass can
+// repair it. Any other read failure is an error and the actions stop.
 func currentAutoUnlockMethod(dataDir string) (string, error) {
 	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
-	if err != nil {
+	if errors.Is(err, unlockconfig.ErrMalformed) {
 		return "unreadable", err
 	}
+	if err != nil {
+		return "", err
+	}
 	if unlockCfg.HasPassphraseCommand() {
-		return detectMethod(unlockCfg.PassphraseCommandArgv), nil
+		return unlockCfg.Method(), nil
 	}
 	return "none", nil
 }

@@ -129,7 +129,7 @@ func TestCurrentAutoUnlockMethodReportsUnreadableConfig(t *testing.T) {
 }
 
 // A malformed unlock.yaml must not lock appass out of repairing it: Clear
-// removes it.
+// removes it and whatever either method left behind.
 func TestExecuteClearRemovesUnreadableConfig(t *testing.T) {
 	stubSignerStopped(t)
 
@@ -141,11 +141,20 @@ func TestExecuteClearRemovesUnreadableConfig(t *testing.T) {
 	if err := os.WriteFile(path, []byte("passphrase_command_argv: [unterminated"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A passfile setup left its plaintext passphrase behind; clearing must
+	// remove it even though unlock.yaml no longer says which method it was.
+	passFile := filepath.Join(filepath.Dir(path), "passphrase")
+	if err := os.WriteFile(passFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := executeClear(dataDir); err != nil {
 		t.Fatalf("executeClear() error = %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("unlock.yaml after clear: stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(passFile); !os.IsNotExist(err) {
+		t.Fatalf("passphrase file after clear: stat error = %v, want not exist", err)
 	}
 }
 

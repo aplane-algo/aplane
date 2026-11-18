@@ -5,14 +5,19 @@
 package unlockconfig
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"gopkg.in/yaml.v3"
 )
+
+// ErrMalformed reports an unlock.yaml that was read but does not parse.
+var ErrMalformed = errors.New("malformed unlock config")
 
 // UnlockConfig holds product-store passphrase helper configuration.
 // Stored at identities/default/unlock.yaml.
@@ -40,7 +45,7 @@ func LoadUnlockConfig(dataRoot string) (*UnlockConfig, error) {
 
 	var cfg UnlockConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse unlock config: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
 	}
 	return &cfg, nil
 }
@@ -94,4 +99,21 @@ func ClearUnlockConfig(dataRoot string) error {
 // HasPassphraseCommand returns true if this unlock config has a passphrase command configured.
 func (c *UnlockConfig) HasPassphraseCommand() bool {
 	return len(c.PassphraseCommandArgv) > 0
+}
+
+// Method names the auto-unlock method a helper argv selects: "none" without a
+// helper, "passfile" or "systemd-creds" for the bundled helpers, else "custom".
+func (c *UnlockConfig) Method() string {
+	if c == nil || len(c.PassphraseCommandArgv) == 0 {
+		return "none"
+	}
+	bin := c.PassphraseCommandArgv[0]
+	switch {
+	case strings.HasSuffix(bin, "/appass-file") || bin == "appass-file":
+		return "passfile"
+	case strings.HasSuffix(bin, "/appass-systemd-creds") || bin == "appass-systemd-creds":
+		return "systemd-creds"
+	default:
+		return "custom"
+	}
 }

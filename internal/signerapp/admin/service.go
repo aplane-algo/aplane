@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -58,15 +57,15 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 	cfg := s.Deps.Config()
 	sshInfo := s.Deps.SSHInfo()
 	icfg := ir.Config()
-	passphraseMethod := s.detectPassphraseMethod()
+	passphraseMethod := ir.UnlockMethod()
 
 	timeoutStr := "0"
 	if identityTimeout := icfg.SessionTimeout(); identityTimeout > 0 {
 		timeoutStr = identityTimeout.String()
 	}
-	// The runtime config already holds what a helper forces at startup (no
-	// timeout, no lock on disconnect), so report it rather than re-deriving
-	// it from unlock.yaml, which may have changed since.
+	// The runtime holds what startup decided: the unlock method, and the
+	// timeout and lock-on-disconnect a helper forces. unlock.yaml may have
+	// changed since and takes effect at the next start.
 	lockOnDisconnect := icfg.LockOnDisconnect()
 
 	requireContained, requireCosigner := icfg.GenerationRequirements()
@@ -208,7 +207,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if err != nil {
 			return err
 		}
-		if passphraseMethod := s.detectPassphraseMethod(); passphraseMethod != "none" && v {
+		if passphraseMethod := s.Runtime.UnlockMethod(); passphraseMethod != "none" && v {
 			return fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		}
 		saveValue, publish = v, func() { icfg.SetLockOnDisconnect(v) }
@@ -220,7 +219,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if err != nil {
 			return err
 		}
-		if passphraseMethod := s.detectPassphraseMethod(); passphraseMethod != "none" && duration > 0 {
+		if passphraseMethod := s.Runtime.UnlockMethod(); passphraseMethod != "none" && duration > 0 {
 			return fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
 		}
 		saveValue, publish = req.Value, func() { icfg.SetSessionTimeout(duration) }
@@ -294,32 +293,4 @@ func parseBoolSetting(req adminproto.UpdateAdminSettingRequest) (bool, error) {
 	}
 	return false, protocol.WithCode(protocol.ErrCodeInvalidRequest,
 		fmt.Errorf("invalid %s value %q (must be true or false)", req.Key, req.Value))
-}
-
-func (s Service) detectPassphraseMethod() string {
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir())
-	if err != nil {
-		// An unreadable unlock.yaml blocks the settings a helper forbids, as
-		// a configured one would.
-		return "unknown"
-	}
-	if unlockCfg != nil {
-		return DetectPassphraseMethod(unlockCfg.PassphraseCommandArgv)
-	}
-	return "none"
-}
-
-func DetectPassphraseMethod(argv []string) string {
-	if len(argv) == 0 {
-		return "none"
-	}
-	bin := argv[0]
-	switch {
-	case strings.HasSuffix(bin, "/appass-file") || bin == "appass-file":
-		return "passfile"
-	case strings.HasSuffix(bin, "/appass-systemd-creds") || bin == "appass-systemd-creds":
-		return "systemd-creds"
-	default:
-		return "custom"
-	}
 }

@@ -36,9 +36,6 @@ type Prereqs struct {
 // enrolled is known only to the node; an unenrolled key fails SSH
 // authentication at connect time.
 func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
-	if err := config.ValidateClientEndpointConfig(dataDir); err != nil {
-		return nil, err
-	}
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("invalid client configuration for %s: %w", opts.Product, err)

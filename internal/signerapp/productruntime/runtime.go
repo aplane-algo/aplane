@@ -81,6 +81,10 @@ type Runtime struct {
 	keyPaths    storepaths.Paths
 	lockRuntime *signerruntime.Runtime
 
+	// unlockMethod is fixed at construction: a helper written later takes
+	// effect at the next start.
+	unlockMethod string
+
 	// stageTables is the process's single owner of rotating accounts' stage
 	// address tables (identities/default/stages), a derivable cache.
 	stageTables *stagetable.Store
@@ -196,7 +200,10 @@ type Config struct {
 	UserAutoApprove  *bool
 	LockOnDisconnect bool
 	NodeRole         noderole.Role
-	OnLocked         func() // Called after lock transition completes.
+	// UnlockMethod is the auto-unlock method the runtime started with (see
+	// unlockconfig.UnlockConfig.Method); empty means "none".
+	UnlockMethod string
+	OnLocked     func() // Called after lock transition completes.
 }
 
 // New creates a product Runtime in the locked state.
@@ -211,20 +218,25 @@ func New(cfg Config) *Runtime {
 	if nodeRole == "" {
 		nodeRole = noderole.DefaultRole()
 	}
+	unlockMethod := cfg.UnlockMethod
+	if unlockMethod == "" {
+		unlockMethod = "none"
+	}
 
 	ir := &Runtime{
-		keyStore:    cfg.KeyStore,
-		keyPaths:    cfg.KeyPaths,
-		stageTables: stagetable.NewStore(cfg.KeyPaths),
-		stageWork:   make(chan struct{}, 1),
-		lockRuntime: rt,
-		keySession:  session,
-		runtimeCfg:  NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
-		nodeRole:    nodeRole,
-		keys:        make(map[string]string),
-		keyTypes:    make(map[string]string),
-		keyMetadata: make(map[string]KeyPublicMetadata),
-		onLocked:    cfg.OnLocked,
+		keyStore:     cfg.KeyStore,
+		keyPaths:     cfg.KeyPaths,
+		stageTables:  stagetable.NewStore(cfg.KeyPaths),
+		stageWork:    make(chan struct{}, 1),
+		lockRuntime:  rt,
+		keySession:   session,
+		runtimeCfg:   NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
+		nodeRole:     nodeRole,
+		unlockMethod: unlockMethod,
+		keys:         make(map[string]string),
+		keyTypes:     make(map[string]string),
+		keyMetadata:  make(map[string]KeyPublicMetadata),
+		onLocked:     cfg.OnLocked,
 	}
 	ir.keysetRev.Store(initialKeysetRevision())
 
@@ -272,6 +284,12 @@ func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 // NodeRole returns the immutable role declared by the signer data root.
 func (ir *Runtime) NodeRole() noderole.Role {
 	return ir.nodeRole
+}
+
+// UnlockMethod is the auto-unlock method this runtime started with; anything
+// but "none" means it is headless.
+func (ir *Runtime) UnlockMethod() string {
+	return ir.unlockMethod
 }
 
 // NodePolicy returns the node's active verified policy, or nil before policy

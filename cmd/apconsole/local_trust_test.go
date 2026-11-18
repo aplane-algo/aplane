@@ -267,6 +267,32 @@ func refusedProbeError() error {
 		&net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)})
 }
 
+// An invalid client config must stop the trust step before anything is
+// written to known_hosts.
+func TestTrustLocalSignerHostKeyRefusesInvalidClientConfigBeforeWriting(t *testing.T) {
+	clientDir := t.TempDir()
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
+network: testnet
+signer_port: 11270
+ssh:
+  host: 127.0.0.1
+  port: 56870
+`), 0o600); err != nil {
+		t.Fatalf("write client config: %v", err)
+	}
+
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("trustLocalSignerHostKey error = %v, want an unknown field rejection", err)
+	}
+	if notice != "" {
+		t.Fatalf("notice = %q, want empty", notice)
+	}
+	if _, statErr := os.Stat(filepath.Join(clientDir, ".ssh", "known_hosts")); !os.IsNotExist(statErr) {
+		t.Fatalf("known_hosts stat error = %v, want not exist", statErr)
+	}
+}
 func TestTrustLocalSignerHostKeyRetriesRefusedProbeWhileDaemonStarts(t *testing.T) {
 	clientDir := writeLoopbackClientConfig(t)
 	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())

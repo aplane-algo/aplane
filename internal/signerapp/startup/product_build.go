@@ -104,6 +104,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 		UserAutoApprove:  &userAutoApprove,
 		LockOnDisconnect: lockOnDisconnect,
 		NodeRole:         nodeDoc.Role,
+		UnlockMethod:     unlockCfg.Method(),
 		OnLocked: func() {
 			if hooks.NotifyLocked != nil {
 				hooks.NotifyLocked()
