@@ -242,23 +242,10 @@ func (m shellModel) Update(msg tea.Msg) (shellModel, tea.Cmd) {
 	}
 }
 
-func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) { //nolint:gocognit // complexity backlog
+func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
+	// A question the running command is waiting on takes the key first.
 	if m.pendingHostKey != nil {
-		ch := m.pendingHostKey.response
-		m.pendingHostKey = nil
-		if msg.Type == tea.KeyCtrlC && m.executor != nil && m.executor.Cancel() {
-			m.cancelRequested = true
-			m.appendLines("cancel requested")
-			return m, nil
-		}
-		approved := msg.String() == "y" || msg.String() == "Y"
-		if approved {
-			m.appendLines("y")
-		} else {
-			m.appendLines("N")
-		}
-		ch <- approved
-		return m, nil
+		return m.answerHostKey(msg), nil
 	}
 	if m.pendingLinePrompt != nil {
 		return m.updateLinePromptKey(msg)
@@ -271,114 +258,144 @@ func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) { //nolint:g
 		return m, nil
 	}
 	if m.exited {
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && (msg.Runes[0] == 'r' || msg.Runes[0] == 'R') {
-			m.exited = false
-			m.input = ""
-			m.inputCursor = 0
-			m.clearCompletions()
-			m.appendLines("apshell session restarted")
-			if m.executor != nil {
-				m.startupRunning = true
-				return m, tea.Batch(startupConnectShell(m.executor, m.logs), shellSpinnerTick())
-			}
-		}
-		return m, nil
+		return m.updateExitedKey(msg)
 	}
 	if m.startupRunning {
 		return m, nil
 	}
 
+	if msg.Type == tea.KeyEnter {
+		if line := strings.TrimSpace(m.input); line != "" {
+			return m.submitLine(line)
+		}
+	} else {
+		m = m.editKey(msg)
+	}
+	m.trim()
+	return m, nil
+}
+
+// answerHostKey takes a key as the answer to a host key question: y trusts
+// the host and anything else does not. Ctrl+C cancels the command instead,
+// when the executor takes the cancel.
+func (m shellModel) answerHostKey(msg tea.KeyMsg) shellModel {
+	ch := m.pendingHostKey.response
+	m.pendingHostKey = nil
+	if msg.Type == tea.KeyCtrlC && m.executor != nil && m.executor.Cancel() {
+		m.cancelRequested = true
+		m.appendLines("cancel requested")
+		return m
+	}
+	approved := msg.String() == "y" || msg.String() == "Y"
+	if approved {
+		m.appendLines("y")
+	} else {
+		m.appendLines("N")
+	}
+	ch <- approved
+	return m
+}
+
+// updateExitedKey restarts an exited session on r and ignores any other key.
+func (m shellModel) updateExitedKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && (msg.Runes[0] == 'r' || msg.Runes[0] == 'R') {
+		m.exited = false
+		m.input = ""
+		m.inputCursor = 0
+		m.clearCompletions()
+		m.appendLines("apshell session restarted")
+		if m.executor != nil {
+			m.startupRunning = true
+			return m, tea.Batch(startupConnectShell(m.executor, m.logs), shellSpinnerTick())
+		}
+	}
+	return m, nil
+}
+
+// editKey applies a key that scrolls the transcript or edits the command
+// line. While a command runs, only scrolling works.
+func (m shellModel) editKey(msg tea.KeyMsg) shellModel {
 	switch msg.Type {
 	case tea.KeyPgUp:
 		m.scrollPage(1, shellTranscriptHeight(10))
+		return m
 	case tea.KeyPgDown:
 		m.scrollPage(-1, shellTranscriptHeight(10))
+		return m
+	}
+	if m.running {
+		return m
+	}
+
+	switch msg.Type {
 	case tea.KeyUp, tea.KeyCtrlP:
-		if !m.running {
-			m.clearCompletions()
-			m.previousHistory()
-		}
+		m.clearCompletions()
+		m.previousHistory()
 	case tea.KeyDown, tea.KeyCtrlN:
-		if !m.running {
-			m.clearCompletions()
-			m.nextHistory()
-		}
+		m.clearCompletions()
+		m.nextHistory()
 	case tea.KeyRunes:
-		if !m.running {
-			m.clearCompletions()
-			text := string(msg.Runes)
-			if msg.Paste {
-				// A paste at the command prompt becomes one command line; it is
-				// never split into several commands that would each run.
-				text = strings.Join(splitPastedLines(text), " ")
-			}
-			m.input, m.inputCursor = insertAtCursor(m.input, m.inputCursor, text)
+		m.clearCompletions()
+		text := string(msg.Runes)
+		if msg.Paste {
+			// A paste at the command prompt becomes one command line; it is
+			// never split into several commands that would each run.
+			text = strings.Join(splitPastedLines(text), " ")
 		}
+		m.input, m.inputCursor = insertAtCursor(m.input, m.inputCursor, text)
 	case tea.KeySpace:
-		if !m.running {
-			m.clearCompletions()
-			m.input, m.inputCursor = insertAtCursor(m.input, m.inputCursor, " ")
-		}
+		m.clearCompletions()
+		m.input, m.inputCursor = insertAtCursor(m.input, m.inputCursor, " ")
 	case tea.KeyBackspace, tea.KeyCtrlH:
-		if !m.running && m.inputCursor > 0 {
+		if m.inputCursor > 0 {
 			m.clearCompletions()
 			m.input, m.inputCursor = deleteBeforeCursor(m.input, m.inputCursor)
 		}
 	case tea.KeyDelete:
-		if !m.running && m.inputCursor < len(m.input) {
+		if m.inputCursor < len(m.input) {
 			m.clearCompletions()
 			m.input = deleteAtCursor(m.input, m.inputCursor)
 		}
 	case tea.KeyCtrlU, tea.KeyEsc:
-		if !m.running {
-			m.clearCompletions()
-			m.input = ""
-			m.inputCursor = 0
-		}
+		m.clearCompletions()
+		m.input = ""
+		m.inputCursor = 0
 	case tea.KeyLeft:
-		if !m.running {
-			m.inputCursor = previousCursor(m.input, m.inputCursor)
-		}
+		m.inputCursor = previousCursor(m.input, m.inputCursor)
 	case tea.KeyRight:
-		if !m.running {
-			m.inputCursor = nextCursor(m.input, m.inputCursor)
-		}
+		m.inputCursor = nextCursor(m.input, m.inputCursor)
 	case tea.KeyHome:
-		if !m.running {
-			m.inputCursor = 0
-		}
+		m.inputCursor = 0
 	case tea.KeyEnd:
-		if !m.running {
-			m.inputCursor = len(m.input)
-		}
+		m.inputCursor = len(m.input)
 	case tea.KeyTab:
-		if !m.running && m.executor != nil {
+		if m.executor != nil {
 			m = m.completeInput()
 		}
-	case tea.KeyEnter:
-		line := strings.TrimSpace(m.input)
-		if line != "" {
-			m.clearCompletions()
-			m.input = ""
-			m.inputCursor = 0
-			m.recordHistory(line)
-			if isPaneClearCommand(line) {
-				m.lines = nil
-				m.scrollOffset = 0
-				return m, nil
-			}
-			m.appendLines("> " + line)
-			if m.executor == nil {
-				m.appendLines("shell session unavailable")
-				return m, nil
-			}
-			m.running = true
-			m.cancelRequested = false
-			return m, tea.Batch(executeShellLine(m.executor, m.logs, line), shellSpinnerTick())
-		}
 	}
-	m.trim()
-	return m, nil
+	return m
+}
+
+// submitLine runs a non-empty command line. clear and cls empty the pane
+// without reaching the shell.
+func (m shellModel) submitLine(line string) (shellModel, tea.Cmd) {
+	m.clearCompletions()
+	m.input = ""
+	m.inputCursor = 0
+	m.recordHistory(line)
+	if isPaneClearCommand(line) {
+		m.lines = nil
+		m.scrollOffset = 0
+		return m, nil
+	}
+	m.appendLines("> " + line)
+	if m.executor == nil {
+		m.appendLines("shell session unavailable")
+		return m, nil
+	}
+	m.running = true
+	m.cancelRequested = false
+	return m, tea.Batch(executeShellLine(m.executor, m.logs, line), shellSpinnerTick())
 }
 
 func (m shellModel) updateLinePromptKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
