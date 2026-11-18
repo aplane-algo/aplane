@@ -83,9 +83,13 @@ type argsFixture struct {
 	genesis     []byte
 	mu          sync.Mutex
 	signs       [][]signerapi.SignRequest
+	batches     []*signerapi.SignBatch
 	plans       [][]signerapi.SignRequest
 	signerPosts atomic.Int32
 	perByteFee  atomic.Uint64
+	// unfunded is an account the node reports with no balance, so a send
+	// from it fails its preflight check.
+	unfunded string
 }
 
 func newArgsFixture(t *testing.T) *argsFixture {
@@ -112,6 +116,7 @@ func newArgsFixture(t *testing.T) *argsFixture {
 				f.mu.Lock()
 				if r.URL.Path == "/sign" {
 					f.signs = append(f.signs, req.Requests)
+					f.batches = append(f.batches, req.Batch)
 				} else {
 					f.plans = append(f.plans, req.Requests)
 				}
@@ -132,6 +137,11 @@ func newArgsFixture(t *testing.T) *argsFixture {
 		case strings.HasPrefix(r.URL.Path, "/v2/accounts/") && !strings.Contains(strings.TrimPrefix(r.URL.Path, "/v2/accounts/"), "/"):
 			address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
 			account := models.Account{Address: address, Amount: 5_000_000, MinBalance: 100_000, Status: "Offline"}
+			f.mu.Lock()
+			if address == f.unfunded {
+				account.Amount = 0
+			}
+			f.mu.Unlock()
 			switch address {
 			case argsRekeyed:
 				account.AuthAddr = argsFalcon
@@ -368,6 +378,49 @@ func TestSendFromASetGivesEachSubmissionItsOwnArguments(t *testing.T) {
 		[]map[string]string{sentArgs("preimage", "b")},
 		[]map[string]string{nil},
 	)
+}
+
+// A send from a set asks for each transaction on its own, and each request
+// reaches the signer labeled with its place among the ones sent. A sender
+// that fails its preflight check is never sent and takes no place, and a send
+// of one carries no label.
+func TestSendFromASetLabelsEachRequestForTheSigner(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		from     []string
+		args     cmdspec.LsigArgs
+		unfunded string
+		want     []*signerapi.SignBatch
+	}{
+		{"three", []string{"hl", "hl2", "nat"}, words(t, "arg:hl:preimage=a", "arg:hl2:preimage=b"), "",
+			[]*signerapi.SignBatch{{Position: 1, Count: 3}, {Position: 2, Count: 3}, {Position: 3, Count: 3}}},
+		{"the second unfunded", []string{"hl", "hl2", "nat"}, words(t, "arg:hl:preimage=a", "arg:hl2:preimage=b"), argsHTLC2,
+			[]*signerapi.SignBatch{{Position: 1, Count: 2}, {Position: 2, Count: 2}}},
+		{"one", []string{"nat"}, nil, "", []*signerapi.SignBatch{nil}},
+	} {
+		f := newArgsFixture(t)
+		f.mu.Lock()
+		f.unfunded = tc.unfunded
+		f.mu.Unlock()
+		result, err := f.app.ExecuteSend(context.Background(), SendRequest{
+			AmountText: "0", AssetRef: "algo", FromRaw: tc.from, ToRaw: []string{"dest"}, Wait: true,
+			LsigArgs: tc.args,
+		})
+		if err != nil {
+			t.Fatalf("%s: ExecuteSend() error = %v", tc.name, err)
+		}
+		if tc.unfunded != "" {
+			if item := result.NonAtomic.Items[1]; !strings.Contains(item.Error, "insufficient balance") {
+				t.Fatalf("%s: the unfunded sender's result = %+v, want a preflight refusal", tc.name, item)
+			}
+		}
+		f.mu.Lock()
+		sent := append([]*signerapi.SignBatch(nil), f.batches...)
+		f.mu.Unlock()
+		if !reflect.DeepEqual(sent, tc.want) {
+			t.Errorf("%s: batches at /sign = %s, want %s", tc.name, batchesString(sent), batchesString(tc.want))
+		}
+	}
 }
 
 // An atomic send from a set gives each position its own account's words:
