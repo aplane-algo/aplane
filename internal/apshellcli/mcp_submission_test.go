@@ -73,6 +73,8 @@ type submitFixture struct {
 	mode    string
 	mu      sync.Mutex
 	signed  [][]string
+	// submits and simulations count the node's submit and simulate calls.
+	submits, simulations int
 }
 
 func newSubmitFixture(t *testing.T, mode string) *submitFixture {
@@ -199,8 +201,18 @@ func (f *submitFixture) serveNode(t *testing.T) func(http.ResponseWriter, *http.
 				ConsensusVersion: string(protocol.ConsensusV43), MinFee: 1000, LastRound: 1000,
 				GenesisId: "testnet-v1.0", GenesisHash: f.genesis,
 			})
+		case path == "/v2/transactions/simulate" && r.Method == http.MethodPost:
+			_, _ = io.Copy(io.Discard, r.Body)
+			f.mu.Lock()
+			f.simulations++
+			f.mu.Unlock()
+			group := models.SimulateTransactionGroupResult{TxnResults: make([]models.SimulateTransactionResult, 1)}
+			_ = json.NewEncoder(w).Encode(models.SimulateResponse{LastRound: 1000, TxnGroups: []models.SimulateTransactionGroupResult{group}})
 		case path == "/v2/transactions" && r.Method == http.MethodPost:
 			_, _ = io.Copy(io.Discard, r.Body)
+			f.mu.Lock()
+			f.submits++
+			f.mu.Unlock()
 			switch f.mode {
 			case nodeDropsSubmit:
 				if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {

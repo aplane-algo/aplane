@@ -1008,7 +1008,9 @@ Machine projections in `command_projections.go` are explicit security
 allowlists. Plugin projection filters the reserved `localSigners` field.
 One-shot `simulate <transaction-command>` invokes the same result-bearing
 executor while simulation is temporarily forced and restores the prior mode
-with deferred cleanup.
+with deferred cleanup. The result is drawn after that, so a command reads
+the mode when it runs and passes it to its rendering; a renderer never asks
+for the mode itself.
 
 ### Command Dispatch
 
@@ -1818,9 +1820,11 @@ The text names transaction IDs only, never transaction contents or argument
 values. Nothing retries.
 
 Commands that report items record each item's outcome as `submission` on the
-item of their successful result: non-atomic `send`, `validate`, and a `sweep`
-in which some items succeeded. A `sweep` in which every item failed returns
-its result with an error whose text is `all N transaction(s) failed`. That
+item of their successful result: `validate`, and a non-atomic `send` or a
+`sweep` in which some items succeeded. A non-atomic `send` or a `sweep` in
+which every item failed, one item included, returns its result with an error
+whose text is `all N transaction(s) failed`, so the command fails: the REPL
+draws each item and then returns the error, which stops a script. That
 error wraps none of the items' errors, so no item's sentinel matches it and
 the REPL renders each item's submission output once, in the result; it
 reports the items' `SubmissionError`s as an `appresult.SubmissionFailures`,

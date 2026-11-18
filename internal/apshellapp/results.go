@@ -683,8 +683,8 @@ type SweepCommandResult struct {
 	SummaryLines []string
 }
 
-// failedItemsError is a command's failure as a whole, a sweep in which every
-// item failed. Its text is msg alone. It reports its items' submission
+// failedItemsError is a command's failure as a whole, a non-atomic send or a
+// sweep in which every item failed. Its text is msg alone. It reports its items' submission
 // failures for appresult.SubmissionsFromError and wraps nothing: an item's
 // sentinel does not describe the whole, and the command's result already
 // shows each item's output.
@@ -935,6 +935,9 @@ type NonAtomicSendResult struct {
 	LastError    string
 	FromCount    int
 	ToCount      int
+	// submissionFailures are the items' failed submissions, which an error
+	// for the send as a whole reports.
+	submissionFailures []*signing.SubmissionError
 }
 
 // AtomicSendResult describes the outcome of an atomic send flow.

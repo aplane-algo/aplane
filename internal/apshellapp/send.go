@@ -5,6 +5,7 @@ package apshellapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
@@ -142,6 +143,12 @@ func (a *App) ExecuteSend(ctx context.Context, req SendRequest) (*SendExecutionR
 		nonAtomicResult.FromCount = len(plan.FromAddresses)
 		nonAtomicResult.ToCount = len(plan.ToAddresses)
 		result.NonAtomic = nonAtomicResult
+		if nonAtomicResult.FailureCount > 0 && nonAtomicResult.SuccessCount == 0 {
+			return result, &failedItemsError{
+				msg:      fmt.Sprintf("all %d transaction(s) failed", nonAtomicResult.FailureCount),
+				failures: nonAtomicResult.submissionFailures,
+			}
+		}
 		return result, nil
 	default:
 		return nil, fmt.Errorf("unsupported send mode: %s", plan.Mode)
@@ -365,6 +372,10 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 			}
 			itemResult.Error = fmt.Sprintf("transaction failed: %v", err)
 			itemResult.Submission = appresult.SubmissionFromError(err)
+			var failure *signing.SubmissionError
+			if errors.As(err, &failure) {
+				result.submissionFailures = append(result.submissionFailures, failure)
+			}
 			result.LastError = itemResult.Error
 			result.FailureCount++
 		} else {
