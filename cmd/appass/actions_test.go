@@ -123,8 +123,29 @@ func TestCurrentAutoUnlockMethodReportsUnreadableConfig(t *testing.T) {
 	if err := os.WriteFile(path, []byte("passphrase_command_argv: [unterminated"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if method, err := currentAutoUnlockMethod(dataDir); err == nil {
-		t.Fatalf("malformed unlock config = %q, want an error", method)
+	if method, err := currentAutoUnlockMethod(dataDir); err == nil || method != "unreadable" {
+		t.Fatalf("malformed unlock config = (%q, %v), want (unreadable, an error)", method, err)
+	}
+}
+
+// A malformed unlock.yaml must not lock appass out of repairing it: Clear
+// removes it.
+func TestExecuteClearRemovesUnreadableConfig(t *testing.T) {
+	stubSignerStopped(t)
+
+	dataDir := t.TempDir()
+	path := unlockconfig.UnlockConfigPath(dataDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("passphrase_command_argv: [unterminated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeClear(dataDir); err != nil {
+		t.Fatalf("executeClear() error = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("unlock.yaml after clear: stat error = %v, want not exist", err)
 	}
 }
 

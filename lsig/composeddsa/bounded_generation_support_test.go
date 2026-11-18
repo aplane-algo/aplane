@@ -93,7 +93,7 @@ func TestGenerationRefusesCosignerOnUnsupportedBase(t *testing.T) {
 	profile.Cosigner = &boundedmeta.CosignerAuthorization{}
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-unsupported-cosigner.v1", BaseKeyType: "aplane.ed25519.v1", FamilyName: "aplane.ed25519",
-		Version: 1, Ops: ed25519v1.NewOps(), TEALSuffix: "int 1\nassert", Bounded: &profile,
+		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Bounded: &profile,
 	})
 	composeddsa.NarrowCosignerSupport(direct)
 	spendingKey := bytes.Repeat([]byte{0x22}, 32)
@@ -123,7 +123,7 @@ func TestGenerationRefusesUnknownBoundedBase(t *testing.T) {
 	profile := ed25519BoundedProvider(t).BoundedAuthorizationProfile()
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-unknown-base.v1", BaseKeyType: "test.unknown-base.v1", FamilyName: "unknown",
-		Version: 1, Ops: ed25519v1.NewOps(), TEALSuffix: "int 1\nassert", Bounded: profile,
+		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Bounded: profile,
 	})
 	_, err := direct.GenerateTEAL(bytes.Repeat([]byte{0x22}, 32), nil)
 	if err == nil || !strings.Contains(err.Error(), "cannot be generated on base key type") {
@@ -139,7 +139,7 @@ func TestGenerationRefusesOpsThatDisagreeWithTheBaseName(t *testing.T) {
 	profile.Rekey = boundedmeta.RekeyRefused
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-mismatched-ops.v1", BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.falcon1024",
-		Version: 1, Ops: ed25519v1.NewOps(), TEALSuffix: "int 1\nassert", Bounded: &profile,
+		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Bounded: &profile,
 	})
 	_, err := direct.GenerateTEAL(bytes.Repeat([]byte{0x22}, 32), nil)
 	if err == nil || !strings.Contains(err.Error(), `names construction "falcon1024", but its ops render "ed25519"`) {

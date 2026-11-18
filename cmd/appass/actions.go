@@ -28,10 +28,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 		return "", err
 	}
 
-	currentMethod, err := currentAutoUnlockMethod(dataDir)
-	if err != nil {
-		return "", err
-	}
+	currentMethod, _ := currentAutoUnlockMethod(dataDir)
 
 	// In systemd mode, require root.
 	if !isLocal && os.Getuid() != 0 {
@@ -69,6 +66,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passFileBin, passphrasePath},
 	}
+	var err error
 	if !isLocal {
 		err = unlockconfig.SaveUnlockConfigForService(dataDir, unlockCfg, serviceUID, serviceGID)
 	} else {
@@ -95,10 +93,7 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 		return "", err
 	}
 
-	currentMethod, err := currentAutoUnlockMethod(dataDir)
-	if err != nil {
-		return "", err
-	}
+	currentMethod, _ := currentAutoUnlockMethod(dataDir)
 
 	// Check systemd-creds is available
 	if _, err := exec.LookPath("systemd-creds"); err != nil {
@@ -189,10 +184,7 @@ func executeClear(dataDir string) (string, error) {
 		return "", fmt.Errorf("systemd mode: must be run as root (use sudo)")
 	}
 
-	method, err := currentAutoUnlockMethod(dataDir)
-	if err != nil {
-		return "", err
-	}
+	method, _ := currentAutoUnlockMethod(dataDir)
 
 	if method == "none" {
 		return "", nil // nothing to clear
@@ -224,10 +216,13 @@ func executeClear(dataDir string) (string, error) {
 	return warning, nil
 }
 
+// currentAutoUnlockMethod reports the configured auto-unlock method. An
+// unlock.yaml that cannot be read is "unreadable", with the reason; the actions
+// still replace or clear it, so appass can repair it.
 func currentAutoUnlockMethod(dataDir string) (string, error) {
 	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
 	if err != nil {
-		return "", err
+		return "unreadable", err
 	}
 	if unlockCfg.HasPassphraseCommand() {
 		return detectMethod(unlockCfg.PassphraseCommandArgv), nil

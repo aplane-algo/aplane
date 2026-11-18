@@ -324,7 +324,7 @@ func TestWritePassphrase(t *testing.T) {
 	})
 }
 
-func TestValidatePassphraseCommandConfig(t *testing.T) {
+func TestValidateAndResolveArgv(t *testing.T) {
 	// Create a non-executable file
 	dir := t.TempDir()
 	nonExec := filepath.Join(dir, "noexec")
@@ -387,7 +387,7 @@ func TestValidatePassphraseCommandConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidatePassphraseCommandConfig(tt.cfg)
+			_, err := validateAndResolveArgv(tt.cfg.Argv)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.wantErr)

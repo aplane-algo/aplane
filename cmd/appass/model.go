@@ -41,10 +41,11 @@ type Model struct {
 	quitting  bool
 
 	// Status info (loaded on init and after actions)
-	method  string       // "none", "passfile", "systemd-creds", "custom"
-	isLocal bool         // true when no systemd service file exists
-	isRoot  bool         // true when running as root
-	svcInfo *serviceInfo // resolved service info
+	method    string       // "none", "passfile", "systemd-creds", "custom", "unreadable"
+	methodErr string       // why unlock.yaml is unreadable
+	isLocal   bool         // true when no systemd service file exists
+	isRoot    bool         // true when running as root
+	svcInfo   *serviceInfo // resolved service info
 
 	// Menu
 	menuItems    []menuItem
@@ -66,9 +67,10 @@ type Model struct {
 
 // StatusLoadedMsg is sent when initial status loading completes.
 type StatusLoadedMsg struct {
-	method  string
-	isLocal bool
-	svcInfo *serviceInfo
+	method    string
+	methodErr string
+	isLocal   bool
+	svcInfo   *serviceInfo
 }
 
 // ActionDoneMsg is sent when an action completes (direct, no sudo).
@@ -108,17 +110,17 @@ func loadStatusCmd(dataDir string, svc *serviceInfo, isLocal bool) tea.Cmd {
 				}
 			}
 		}
-		method := "none"
-
-		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
-		if err == nil && unlockCfg.HasPassphraseCommand() {
-			method = detectMethod(unlockCfg.PassphraseCommandArgv)
+		method, err := currentAutoUnlockMethod(dataDir)
+		var methodErr string
+		if err != nil {
+			methodErr = err.Error()
 		}
 
 		return StatusLoadedMsg{
-			method:  method,
-			isLocal: isLocal,
-			svcInfo: svc,
+			method:    method,
+			methodErr: methodErr,
+			isLocal:   isLocal,
+			svcInfo:   svc,
 		}
 	}
 }

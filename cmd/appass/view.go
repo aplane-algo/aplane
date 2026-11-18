@@ -110,6 +110,8 @@ func (m Model) renderHomeView() string {
 		methodDisplay = statusStyle.Render("systemd-creds")
 	case "custom":
 		methodDisplay = subtitleStyle.Render("custom")
+	case "unreadable":
+		methodDisplay = errorStyle.Render("unlock.yaml unreadable: " + m.methodErr)
 	}
 	sb.WriteString(labelStyle.Render("Auto-unlock:") + "     " + methodDisplay + "\n")
 

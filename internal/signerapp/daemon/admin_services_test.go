@@ -136,7 +136,7 @@ func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 	}
 }
 
-func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
+func TestBuildAdminSettingsReportsTheRuntimeNotUnlockYAML(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -168,13 +168,14 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
-	// With passfile: headless overrides must apply
+	// A helper written while the signer runs takes effect at the next start.
+	// Until then the runtime still times out and locks, and the settings say so.
 	settings = svc.adminApp().BuildAdminSettings()
-	if settings.PassphraseTimeout != "0" {
-		t.Errorf("headless mode: got PassphraseTimeout %q, want %q", settings.PassphraseTimeout, "0")
+	if settings.PassphraseTimeout != "15m0s" {
+		t.Errorf("after unlock.yaml: got PassphraseTimeout %q, want the runtime's 15m0s", settings.PassphraseTimeout)
 	}
-	if settings.LockOnDisconnect {
-		t.Errorf("headless mode: got LockOnDisconnect true, want false")
+	if !settings.LockOnDisconnect {
+		t.Errorf("after unlock.yaml: got LockOnDisconnect false, want the runtime's true")
 	}
 	if settings.PassphraseMethod != "passfile" {
 		t.Errorf("headless mode: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "passfile")

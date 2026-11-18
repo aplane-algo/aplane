@@ -17,6 +17,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StatusLoadedMsg:
 		m.method = msg.method
+		m.methodErr = msg.methodErr
 		m.isLocal = msg.isLocal
 		m.svcInfo = msg.svcInfo
 		m.menuItems = m.buildMenu()

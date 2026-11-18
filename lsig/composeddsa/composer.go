@@ -149,10 +149,13 @@ type ComposedDSA struct {
 }
 
 // NewComposedDSA creates a generic composed DSA provider.
-// Panics if cfg.Ops is nil.
+// Panics if cfg.Ops is nil, or if cfg.TEALSuffix is set without a TemplateMode.
 func NewComposedDSA(cfg Config) *ComposedDSA {
 	if cfg.Ops == nil {
 		panic("composeddsa: Config.Ops is required")
+	}
+	if strings.TrimSpace(cfg.TEALSuffix) != "" && cfg.TemplateMode == "" {
+		panic("composeddsa: Config.TemplateMode is required with a TEALSuffix")
 	}
 	params := append([]lsigprovider.ParameterDef(nil), cfg.Params...)
 	bounded := cloneBoundedProfile(cfg.Bounded)
@@ -599,7 +602,9 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		case generictemplate.TemplateModeStrict:
 			b.WriteString(strictSuffix.TEAL)
 			b.WriteString("\n\n")
-		case generictemplate.TemplateModeGenerated:
+		case generictemplate.TemplateModeGenerated, "":
+			// An empty mode means no author TEAL (NewComposedDSA refuses a suffix
+			// without one), which renders as the empty generated suffix.
 			// Optional user-supplied suffix with @variable substitution.
 			paramDefs := make([]tealtemplate.ParamDef, len(authorDefs))
 			for i, p := range authorDefs {

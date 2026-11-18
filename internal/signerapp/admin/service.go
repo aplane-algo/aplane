@@ -64,11 +64,10 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 	if identityTimeout := icfg.SessionTimeout(); identityTimeout > 0 {
 		timeoutStr = identityTimeout.String()
 	}
+	// The runtime config already holds what a helper forces at startup (no
+	// timeout, no lock on disconnect), so report it rather than re-deriving
+	// it from unlock.yaml, which may have changed since.
 	lockOnDisconnect := icfg.LockOnDisconnect()
-	if passphraseMethod != "none" {
-		timeoutStr = "0"
-		lockOnDisconnect = false
-	}
 
 	requireContained, requireCosigner := icfg.GenerationRequirements()
 	return adminproto.AdminSettings{
