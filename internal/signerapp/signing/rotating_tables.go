@@ -266,7 +266,7 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen ui
 // fillStageTableOnce fills one account's table. cut reports that the lock
 // refused or cut one of its key uses, at the identity read or a derivation,
 // while the pass was live.
-func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (report StageTableReport, cut bool) { //nolint:gocognit // complexity backlog
+func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (report StageTableReport, cut bool) {
 	report = StageTableReport{Account: account}
 	opts.persistBatches = true
 
@@ -305,30 +305,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	if errors.Is(tableErr, stagetable.ErrDiscarded) {
 		report.Discarded = tableErr
 	}
-	defer func() {
-		if err := table.Flush(); err != nil {
-			if report.Err == nil {
-				report.Err = err
-			}
-			if errors.Is(err, stagetable.ErrClosed) {
-				report.Resolved = false
-				report.Observed = false
-				report.Class = ""
-				report.Pending = ctx.Err() == nil
-			}
-		}
-		report.Scanned = table.Len()
-		report.Preparation = "unresolved"
-		if report.Pending {
-			report.Preparation = "locating"
-		}
-		if report.Resolved {
-			report.Preparation = "preparing_successor"
-			if a, ok := table.Address(report.Stage + 1); ok && table.Verified(report.Stage+1, a) {
-				report.Preparation = "ready"
-			}
-		}
-	}()
+	defer func() { finishStageReport(ctx, table, &report) }()
 	report.Scanned = table.Len()
 
 	report.ObservedSeq = deps.Releases.Seq()
@@ -413,10 +390,53 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	report.Resolved, report.Stage = true, proven
 	s.rememberStage(table, proven, view.Authorizer, view.Round)
 
-	// Lookahead: cover stages through proven + Horizon, within what is left
-	// of this pass's budget. A family whose stages share trees stops at the
-	// last tree that is built, building the next one from the midpoint of
-	// the live one.
+	s.fillLookahead(ctx, table, derive, account, session, proven, budget, opts, &report)
+	return report, cut
+}
+
+// finishStageReport flushes the table and settles what the pass reports of
+// it: how much is scanned and how far preparation of the successor has got.
+func finishStageReport(ctx context.Context, table *stagetable.Table, report *StageTableReport) {
+	if err := table.Flush(); err != nil {
+		if report.Err == nil {
+			report.Err = err
+		}
+		if errors.Is(err, stagetable.ErrClosed) {
+			report.Resolved = false
+			report.Observed = false
+			report.Class = ""
+			report.Pending = ctx.Err() == nil
+		}
+	}
+	report.Scanned = table.Len()
+	report.Preparation = "unresolved"
+	if report.Pending {
+		report.Preparation = "locating"
+	}
+	if report.Resolved {
+		report.Preparation = "preparing_successor"
+		if a, ok := table.Address(report.Stage + 1); ok && table.Verified(report.Stage+1, a) {
+			report.Preparation = "ready"
+		}
+	}
+}
+
+// fillLookahead covers stages through proven + Horizon, within what is left
+// of this pass's budget. A family whose stages share trees stops at the
+// last tree that is built, building the next one from the midpoint of
+// the live one. It records what it derives in the table and its outcome in
+// report.
+func (s *Service) fillLookahead(
+	ctx context.Context,
+	table *stagetable.Table,
+	derive stageDeriver,
+	account string,
+	session *keystore.KeySession,
+	proven uint64,
+	budget int,
+	opts StageFillOptions,
+	report *StageTableReport,
+) {
 	target := proven + min(max(uint64(1), opts.Horizon), math.MaxUint64-proven-1) + 1
 	if budget > 0 && ctx.Err() == nil {
 		next := proven + 1
@@ -426,11 +446,11 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 			budget -= len(addrs)
 			if _, e := table.RecordDerived(next, addrs); e != nil {
 				report.Err = e
-				return report, cut
+				return
 			}
 			if err != nil {
 				report.Err = err
-				return report, cut
+				return
 			}
 		}
 	}
@@ -456,13 +476,12 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		}
 		if err := publishStageBatch(table, opts.maxDerivations()-budget-len(addrs), opts.maxDerivations()-budget, opts); err != nil {
 			report.Err = err
-			return report, cut
+			return
 		}
 		from = table.FirstMissing(from)
 	}
 	report.Scanned = table.Len()
 	report.Pending = report.Err == nil && ctx.Err() == nil && from < target
-	return report, cut
 }
 
 // stageDeriver returns the deriver for one account. Every call loads the
@@ -537,7 +556,7 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 // authorizer. Whatever the lookup gives other than a match leaves the search
 // as it would be without it: a miss stays in the table like any miss and is
 // never the table's hint, and every other outcome derives nothing.
-func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions, cut *bool, lookupStage func(context.Context) (chainread.StageLookup, error)) (found, pending bool, spent int, lookup *StageLookupRecord, err error) { //nolint:gocognit // complexity backlog
+func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions, cut *bool, lookupStage func(context.Context) (chainread.StageLookup, error)) (found, pending bool, spent int, lookup *StageLookupRecord, err error) {
 	unpaced := opts
 	unpaced.Pace = nil
 	base := s.backgroundDeriver(account, session, unpaced, cut)
@@ -571,32 +590,11 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 	// confirms or repairs it. A probe that fails, in its derivation or its
 	// table write, is a probe not tried: the error is kept for the log, and
 	// the search runs as it would have.
-	if g.Hint == nil && budget > 0 && ctx.Err() == nil && rec.beginLookup(g) { //nolint:nestif // complexity backlog
+	if g.Hint == nil && budget > 0 && ctx.Err() == nil && rec.beginLookup(g) {
 		lookup = runStageLookup(ctx, lookupStage)
 		if lookup != nil && lookup.Outcome == chainread.LookupCandidate {
-			n := lookup.Stage
-			if a, ok := table.Address(n); ok && a != authorizer && table.Verified(n, a) {
-				lookup.Probe = ProbeAlreadyCached
-			} else {
-				addrs, probeErr := derive(ctx, n, n+1)
-				// No address and no error is a cut (a lock, a cancel, the
-				// grant's end): the probe did not run, and the search below
-				// stops too.
-				if probeErr == nil && len(addrs) == 1 {
-					budget--
-					if _, probeErr = table.RecordDerived(n, addrs); probeErr == nil {
-						probeErr = publishStageBatch(table, spent-1, spent, opts)
-					}
-					if probeErr == nil {
-						lookup.Probe = ProbeMissed
-						if addrs[0] == authorizer {
-							lookup.Probe = ProbeMatched
-						}
-					}
-				}
-				if probeErr != nil {
-					lookup.ProbeError = probeErr.Error()
-				}
+			if probeLookupCandidate(ctx, table, derive, lookup, authorizer, &spent, opts) {
+				budget--
 			}
 		}
 		if lookup != nil {
@@ -610,33 +608,9 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 	}
 
 	if g.Hint != nil && g.Found == nil {
-		for budget > 0 && ctx.Err() == nil {
-			probes := rec.nextProbes(g, 1)
-			if len(probes) == 0 {
-				rec.finish(g, StopHintNotFound, nil)
-				return false, false, spent, lookup, nil
-			}
-			stage := probes[0]
-			addrs, err := derive(ctx, stage, stage+1)
-			if err != nil {
-				return false, false, spent, lookup, err
-			}
-			if len(addrs) == 0 {
-				break
-			}
-			budget--
-			if _, err := table.RecordDerived(stage, addrs); err != nil {
-				return false, false, spent, lookup, err
-			}
-			if err := publishStageBatch(table, spent-len(addrs), spent, opts); err != nil {
-				return false, false, spent, lookup, err
-			}
-			if addrs[0] == authorizer {
-				rec.setFound(g, stage)
-				s := stage
-				g.Found = &s
-				break
-			}
+		exhausted, err := probeHintedStages(ctx, rec, g, table, derive, authorizer, budget, &spent, opts)
+		if err != nil || exhausted {
+			return false, false, spent, lookup, err
 		}
 	}
 	switch {
@@ -674,6 +648,94 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 		return false, false, spent, lookup, nil
 	}
 	return false, true, spent, lookup, nil
+}
+
+// probeLookupCandidate tries the stage a chain lookup proposed. Only a
+// verified other address at the stage rules it out without a derivation.
+// Otherwise the stage is derived, recorded and published, and the probe
+// matched or missed; a probe that fails is a probe not tried, its error kept
+// on the record. It reports whether a derivation came out of the pass's
+// budget. spent is the pass's running count, which derive advances.
+func probeLookupCandidate(
+	ctx context.Context,
+	table *stagetable.Table,
+	derive stageDeriver,
+	lookup *StageLookupRecord,
+	authorizer types.Address,
+	spent *int,
+	opts StageFillOptions,
+) (charged bool) {
+	n := lookup.Stage
+	if a, ok := table.Address(n); ok && a != authorizer && table.Verified(n, a) {
+		lookup.Probe = ProbeAlreadyCached
+		return false
+	}
+	addrs, probeErr := derive(ctx, n, n+1)
+	// No address and no error is a cut (a lock, a cancel, the
+	// grant's end): the probe did not run, and the search below
+	// stops too.
+	if probeErr == nil && len(addrs) == 1 {
+		charged = true
+		if _, probeErr = table.RecordDerived(n, addrs); probeErr == nil {
+			probeErr = publishStageBatch(table, *spent-1, *spent, opts)
+		}
+		if probeErr == nil {
+			lookup.Probe = ProbeMissed
+			if addrs[0] == authorizer {
+				lookup.Probe = ProbeMatched
+			}
+		}
+	}
+	if probeErr != nil {
+		lookup.ProbeError = probeErr.Error()
+	}
+	return charged
+}
+
+// probeHintedStages derives the stages an operator's hint points at, one at
+// a time, until one is the authorizer, the pass's budget or context ends, or
+// a derivation is cut. exhausted reports that the hint has no stage left to
+// try, which finishes the grant as not found.
+func probeHintedStages(
+	ctx context.Context,
+	rec *RotatingRecovery,
+	g *RecoveryGrant,
+	table *stagetable.Table,
+	derive stageDeriver,
+	authorizer types.Address,
+	budget int,
+	spent *int,
+	opts StageFillOptions,
+) (exhausted bool, err error) {
+	for budget > 0 && ctx.Err() == nil {
+		probes := rec.nextProbes(g, 1)
+		if len(probes) == 0 {
+			rec.finish(g, StopHintNotFound, nil)
+			return true, nil
+		}
+		stage := probes[0]
+		addrs, err := derive(ctx, stage, stage+1)
+		if err != nil {
+			return false, err
+		}
+		if len(addrs) == 0 {
+			break
+		}
+		budget--
+		if _, err := table.RecordDerived(stage, addrs); err != nil {
+			return false, err
+		}
+		if err := publishStageBatch(table, *spent-len(addrs), *spent, opts); err != nil {
+			return false, err
+		}
+		if addrs[0] == authorizer {
+			rec.setFound(g, stage)
+			s := stage
+			g.Found = &s
+			break
+		}
+	}
+	return false, nil
 }
 
 // runStageLookup runs a grant's chain lookup and keeps what it found. No
