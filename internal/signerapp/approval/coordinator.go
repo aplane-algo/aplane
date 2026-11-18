@@ -17,8 +17,8 @@ var (
 	ErrApprovalTimeout  = errors.New("approval timeout")
 	ErrApprovalCanceled = errors.New("approval canceled")
 	// ErrSessionEnded accompanies ErrApprovalCanceled when the request was
-	// withdrawn because the signer's session ended (CancelAllSignRequests
-	// with SignRequestCancelReasonSessionEnded).
+	// withdrawn because the signer's session ended: it is the cause
+	// EndSessionSignRequests cancels each request's context with.
 	ErrSessionEnded = errors.New("the signer's session ended")
 )
 
@@ -29,7 +29,9 @@ type SendSignRequestFunc func(*SignRequest) bool
 type SendSignRequestCanceledFunc func(*SignRequestCanceled) bool
 
 type activeSignRequest struct {
-	cancel context.CancelFunc
+	// cancel ends the request's context; ErrSessionEnded as its cause marks
+	// a withdrawal because the signer's session ended.
+	cancel context.CancelCauseFunc
 }
 
 type deliveryWaiter struct {
@@ -117,7 +119,7 @@ func (c *Coordinator) BeginSignRequest(ctx context.Context, requestID string) (c
 	if requestID == "" {
 		return ctx, func() {}
 	}
-	requestCtx, cancel := context.WithCancel(ctx)
+	requestCtx, cancel := context.WithCancelCause(ctx)
 	active := &activeSignRequest{cancel: cancel}
 
 	c.pendingRequestsLock.Lock()
@@ -137,7 +139,7 @@ func (c *Coordinator) BeginSignRequest(ctx context.Context, requestID string) (c
 			}
 		}
 		c.pendingRequestsLock.Unlock()
-		cancel()
+		cancel(nil)
 	}
 }
 
@@ -151,7 +153,7 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 		reason = SignRequestCancelReasonClientCanceled
 	}
 
-	var activeCancels []context.CancelFunc
+	var activeCancels []context.CancelCauseFunc
 	c.pendingRequestsLock.Lock()
 	promptID := c.promptIDs[requestID]
 	ch, exists := c.pendingRequests[promptID]
@@ -160,7 +162,7 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 		delete(c.promptIDs, requestID)
 	}
 	if activeSet := c.activeRequests[requestID]; len(activeSet) > 0 {
-		activeCancels = make([]context.CancelFunc, 0, len(activeSet))
+		activeCancels = make([]context.CancelCauseFunc, 0, len(activeSet))
 		for active := range activeSet {
 			activeCancels = append(activeCancels, active.cancel)
 		}
@@ -172,40 +174,37 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 	c.pendingRequestsLock.Unlock()
 
 	for _, cancelActive := range activeCancels {
-		cancelActive()
+		cancelActive(nil)
 	}
 	if exists {
 		if ch != nil {
 			c.notifySignRequestCanceled(promptID, reason)
-			trySendSignResponse(ch, SignResponse{ID: promptID, Approved: false, Reason: reason})
+			trySendSignResponse(ch, SignResponse{ID: promptID, Approved: false, Reason: reason, withdrawn: true})
 		}
 		return SignRequestCancelResult{State: SignRequestCancelStateCanceled}
 	}
 	return SignRequestCancelResult{State: SignRequestCancelStateNotFound}
 }
 
-// CancelAllSignRequests cancels every signing request in flight, queued or
-// delivered, with reason, and reports how many there were. It cancels each
-// request's context and records the reason, as CancelSignRequest does; a
-// delivered prompt is dismissed, with that reason, by its own request when
-// it sees the cancellation, so the caller never writes to the operator's
-// connection. The daemon calls it when the signer's session ends, since no
-// request from that session can sign afterwards.
-func (c *Coordinator) CancelAllSignRequests(reason string) int {
-	var cancels []context.CancelFunc
+// EndSessionSignRequests withdraws every signing request in flight, queued
+// or delivered, because the signer's session ended, and reports how many
+// there were. It cancels each registered request's own context with
+// ErrSessionEnded as the cause, so the withdrawal belongs to those
+// registrations and not to their request IDs: a later request under the
+// same ID is not touched. A delivered prompt is dismissed, with reason
+// session_ended, by its own request when it sees the cancellation, so the
+// caller never writes to the operator's connection.
+func (c *Coordinator) EndSessionSignRequests() int {
+	var cancels []context.CancelCauseFunc
 	c.pendingRequestsLock.Lock()
-	for requestID, activeSet := range c.activeRequests {
-		if len(activeSet) == 0 {
-			continue
-		}
-		c.rememberCanceledSignRequestLocked(requestID, reason)
+	for _, activeSet := range c.activeRequests {
 		for active := range activeSet {
 			cancels = append(cancels, active.cancel)
 		}
 	}
 	c.pendingRequestsLock.Unlock()
 	for _, cancel := range cancels {
-		cancel()
+		cancel(ErrSessionEnded)
 	}
 	return len(cancels)
 }
@@ -218,10 +217,26 @@ func (c *Coordinator) canceledReason(requestID string) string {
 	return c.canceledRequests[requestID]
 }
 
-// canceledError is the error for a request whose context ended: the reason
-// it was canceled with, when one is recorded, or the context's error.
-func (c *Coordinator) canceledError(requestID string, ctxErr error) error {
+// canceledError is the error for a request whose context ended: a session
+// end when that is the context's cause, otherwise the reason it was
+// canceled with, when one is recorded, or the context's error.
+func (c *Coordinator) canceledError(ctx context.Context, requestID string, ctxErr error) error {
+	if errors.Is(context.Cause(ctx), ErrSessionEnded) {
+		return cancellationError(SignRequestCancelReasonSessionEnded, ctxErr)
+	}
 	return cancellationError(c.canceledReason(requestID), ctxErr)
+}
+
+// dismissReason is the reason a delivered prompt is dismissed with when its
+// request's context ends.
+func (c *Coordinator) dismissReason(ctx context.Context, requestID string) string {
+	if errors.Is(context.Cause(ctx), ErrSessionEnded) {
+		return SignRequestCancelReasonSessionEnded
+	}
+	if reason := c.canceledReason(requestID); reason != "" {
+		return reason
+	}
+	return SignRequestCancelReasonClientCanceled
 }
 
 // cancellationError is ErrApprovalCanceled with reason, or with ctxErr when
@@ -285,13 +300,12 @@ func (c *Coordinator) consumeCanceledSignRequest(requestID string) (string, bool
 	return reason, exists
 }
 
+// isCancellationResponse reports whether response withdrew the request
+// rather than answering it: only the coordinator sends such a response
+// (CancelSignRequest). An operator's rejection is never one, whatever its
+// free-text reason says.
 func isCancellationResponse(response SignResponse) bool {
-	if response.Approved {
-		return false
-	}
-	return response.Reason == SignRequestCancelReasonClientCanceled ||
-		response.Reason == SignRequestCancelReasonTimeout ||
-		response.Reason == SignRequestCancelReasonSessionEnded
+	return !response.Approved && response.withdrawn
 }
 
 func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
@@ -407,11 +421,11 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 	}
 
 	if err := c.acquireDeliveryTurnContext(ctx); err != nil {
-		return SignResponse{}, c.canceledError(requestID, err)
+		return SignResponse{}, c.canceledError(ctx, requestID, err)
 	}
 	defer c.releaseDeliveryTurn()
 	if err := ctx.Err(); err != nil {
-		return SignResponse{}, c.canceledError(requestID, err)
+		return SignResponse{}, c.canceledError(ctx, requestID, err)
 	}
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
 		return SignResponse{}, cancellationError(reason, nil)
@@ -469,12 +483,8 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
 		return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
 	case <-ctx.Done():
-		reason := c.canceledReason(requestID)
-		if reason == "" {
-			reason = SignRequestCancelReasonClientCanceled
-		}
-		c.notifySignRequestCanceled(promptID, reason)
-		return SignResponse{}, c.canceledError(requestID, ctx.Err())
+		c.notifySignRequestCanceled(promptID, c.dismissReason(ctx, requestID))
+		return SignResponse{}, c.canceledError(ctx, requestID, ctx.Err())
 	}
 }
 

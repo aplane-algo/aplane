@@ -5,12 +5,14 @@ package signing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -304,13 +306,19 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		return "", nil, gateErr
 	}
 
+	// The request passed its gates, an operator approval among them. If
+	// the signer's session ended since, the end withdrew it (canceling its
+	// context) or the signer is no longer unlocked in that session: it is
+	// refused as such and recorded, not dropped as a client cancellation.
 	if err := ctx.Err(); err != nil {
+		if errors.Is(context.Cause(ctx), signerapproval.ErrSessionEnded) {
+			s.logSignRejections(req, plan, txns, "session_ended_after_approval", nil)
+			return "", nil, sessionEndedError()
+		}
 		return "", nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))
 	}
 	release, err := s.beforeExecute()
 	if err != nil {
-		// The request passed its gates, an operator approval among them,
-		// but the signer locked or its session ended before it could sign.
 		s.logSignRejections(req, plan, txns, "session_ended_after_approval", err)
 		return "", nil, err
 	}

@@ -26,9 +26,10 @@ New seam invariants:
     (Rejected, TimedOut, Canceled, Failed) yields a rejected policy outcome
     -- the refinement that makes policy_precedence's coarser four-valued
     oracle sound.
-  - FailAllProducesNoSignedOutput : a fail-all outcome (disconnect,
-    displacement, or lock in production) yields no signed output
-    end to end.
+  - FailAllProducesNoSignedOutput : a fail-all outcome (disconnect or
+    displacement in production) yields no signed output end to end. A
+    session end (a lock, recovery, store maintenance) withdraws a request
+    as a Canceled outcome, which yields none either.
   - HardDenyDominatesCoordinator : an AlwaysDeny match yields no output,
     regardless of the coordinator outcome (I9 with the coordinator in the
     loop).

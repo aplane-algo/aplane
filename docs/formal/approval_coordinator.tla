@@ -39,8 +39,7 @@ The module intentionally omits FIFO fairness of the delivery queue (the
 turn is a single token; Progress only asserts eventual termination, not
 queue order), real timer durations (timeout is a nondeterministic event),
 SSH client enrollment (queued on disk and answered at once; it never takes
-the delivery turn), explicit signer lock, and the policy verdict that
-decides whether the
+the delivery turn), and the policy verdict that decides whether the
 operator is consulted at all (FORMAL_POLICY_MODEL.md).
 Composing the derived approval outcome with policy_precedence.tla is the
 further Track B3 step.
@@ -124,7 +123,7 @@ Timeout(r) ==
 
 \* Cancel models /sign/cancel, daemon shutdown's context cancellation, and
 \* the cancellation of every request when the signer's session ends
-\* (CancelAllSignRequests). It terminates a request in any non-terminal
+\* (EndSessionSignRequests). It terminates a request in any non-terminal
 \* state -- queued, delivered, or not yet waiting (New) -- and releases the
 \* turn only if the request was the delivered one.
 Cancel(r) ==

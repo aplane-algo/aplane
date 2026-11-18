@@ -403,12 +403,14 @@ func (ir *Runtime) SetRecovery() {
 }
 
 // endSignRequests withdraws every signing request in flight when the
-// session ends (a lock, an entry into recovery, store maintenance, an unlock
-// that lost to a lock): none of them can sign afterwards, so none is left
-// waiting for, or showing, an approval. Each answers that the session ended.
+// session ends: none of them can sign afterwards, so none is left waiting
+// for, or showing, an approval, and each answers that the session ended.
+// The lock cleanup calls it first, before it waits for key users, so a lock,
+// the start of store maintenance and an unlock that lost to a lock withdraw
+// at once; entering recovery, which runs no cleanup, calls it directly.
 func (ir *Runtime) endSignRequests() {
 	if c := ir.approval.Load(); c != nil {
-		c.CancelAllSignRequests(signerapproval.SignRequestCancelReasonSessionEnded)
+		c.EndSessionSignRequests()
 	}
 }
 
@@ -433,9 +435,7 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 
 // Lock transitions this identity to the locked state.
 func (ir *Runtime) Lock() {
-	locked := ir.lockRuntime.Lock()
-	ir.endSignRequests()
-	if locked {
+	if ir.lockRuntime.Lock() {
 		ir.notifyLocked()
 	}
 }
@@ -444,9 +444,7 @@ func (ir *Runtime) Lock() {
 // without broadcasting a user-visible lock transition. The caller must pair
 // it with FinishStoreMaintenance.
 func (ir *Runtime) BeginStoreMaintenance() StoreMaintenanceToken {
-	token := StoreMaintenanceToken{runtime: ir.lockRuntime.BeginMaintenance()}
-	ir.endSignRequests()
-	return token
+	return StoreMaintenanceToken{runtime: ir.lockRuntime.BeginMaintenance()}
 }
 
 // FinishStoreMaintenance republishes the identity only after the caller has
@@ -472,7 +470,6 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 		ir.WakeStageWork()
 	}
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
-		ir.endSignRequests()
 		ir.notifyLocked()
 	}
 	return ok, keyCount, errMsg
@@ -1568,6 +1565,10 @@ func (ir *Runtime) Destroy() {
 func (ir *Runtime) performLockCleanup() {
 	// Watcher stays running — it will mark dirty instead of reloading while locked.
 	// StopKeyWatcher is only called on shutdown, by EndKeyUses and Destroy.
+
+	// The session is over: withdraw every signing request in flight before
+	// waiting for anything, so no approval stays up through the drain.
+	ir.endSignRequests()
 
 	// Holders of key material go first, so clearing the session
 	// below really is the end of every copy of a seed.

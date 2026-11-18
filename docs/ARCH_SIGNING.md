@@ -1158,23 +1158,30 @@ client, apsigner sends a best-effort `sign_request_canceled` notification with
 reason `client_canceled` so the client can dismiss the prompt. Approval timeout
 also removes the request and sends `sign_request_canceled` with reason
 `timeout`. Both are distinct from operator rejection; the current HTTP mapping
-is service unavailable.
-
-When the signer's session ends (a lock, an entry into recovery from unlocked,
-the start of store maintenance, or an unlock that lost to a lock), the product
-runtime cancels every signing request in flight
-(`Coordinator.CancelAllSignRequests` with reason `session_ended`): the prompt
-on screen is dismissed with that reason, and requests queued behind it are
-never shown. No request from the ended session could sign afterwards, so none
-is left looking approvable. Such a request answers `locked` ("the signer's
-session ended while the request waited for approval; send it again") and is
-audited as `approval_withdrawn_session_ended`, not as an operator rejection. A
-request whose session ends after its approval but before it signs is refused
-`locked` and audited as `session_ended_after_approval`. An unknown or no-longer-live `request_id` returns
+is service unavailable. An unknown or no-longer-live `request_id` returns
 `not_found`. Request IDs are not scoped per principal: the lookup is global
 across authenticated clients. `/sign/cancel` request and
 response shapes and the `canceled`/`not_found` states are in
 [Sign Cancellation Semantics](#sign-cancellation-semantics).
+
+When the signer's session ends (a lock, an entry into recovery from unlocked,
+the start of store maintenance, or an unlock that lost to a lock), the product
+runtime withdraws every signing request in flight
+(`Coordinator.EndSessionSignRequests`): it cancels each registered request's
+context with the session end as the cause. A lock does so first, before it
+waits for key users. The prompt on screen is dismissed with reason
+`session_ended`, and requests queued behind it are never shown. No request
+from the ended session could sign afterwards, so none is left looking
+approvable. A request withdrawn while it waited for approval answers `locked`
+("the signer's session ended while the request waited for approval; send it
+again") and is audited as `approval_withdrawn_session_ended`, not as an
+operator rejection. A request withdrawn, or refused because the signer is no
+longer unlocked in its session, after its gates and approval passed but
+before it signs, answers `locked` and is audited as
+`session_ended_after_approval`. The withdrawal belongs to the requests in
+flight, not to their IDs: a request sent again under the same ID is handled
+as new. Only the signer withdraws a request; an operator's rejection stays a
+rejection whatever reason text it carries.
 
 ---
 

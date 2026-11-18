@@ -157,9 +157,11 @@ for each.
   it. An export in flight has its key use cancelled and stops at its next
   check; recovery clears nothing, so KU3 has nothing to say about it.
 - The sign reads its session before the plan, the policy verdict and the
-  approval (`SStart` is that read). A lock fails a pending approval itself;
-  recovery does not, and the session read is what withholds a signature
-  approved across a recovery.
+  approval (`SStart` is that read). A session end, a lock or an entry into
+  recovery alike, withdraws a pending approval (`endSignRequests`), but a
+  reconcile can have the signer unlocked again before a withdrawn request
+  returns, so the session read is what withholds a signature approved
+  across a recovery.
 - `MaxLocks` bounds the number of lock and recovery transitions together, so
   the claim is over executions with at most that many.
 

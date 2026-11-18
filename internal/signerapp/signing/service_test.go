@@ -1886,3 +1886,44 @@ func TestRequestRefusedAfterApprovalIsAudited(t *testing.T) {
 		t.Fatalf("audit = %+v, want one session_ended_after_approval rejection", audit.rejected)
 	}
 }
+
+// A request whose session ended after its gates passed, withdrawing it by
+// canceling its context, is refused as session-ended and recorded, not
+// reported as a client cancellation.
+func TestRequestWithdrawnAfterItsGatesIsAuditedAsSessionEnded(t *testing.T) {
+	audit := &testAuditLogger{}
+	sender := types.Address{7}
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender: sender, Fee: types.MicroAlgos(policy.SelfNoOpTransferMaxFeeMicroAlgos),
+			FirstValid: 1, LastValid: 10, GenesisHash: testDigest(t, apconfig.AlgorandTestnetGenesisHash),
+		},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
+	}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cfg := &policy.Config{TransactionTypes: policytest.AllowAllTypes(),
+		MaxFeeMicroAlgos:            policy.SelfNoOpTransferMaxFeeMicroAlgos,
+		AutoApproveSelfNoOpTransfer: true,
+	}
+	service := &Service{
+		Approval:                      &ApprovalService{HasClient: func() bool { return false }},
+		Executor:                      &Executor{},
+		AuditLog:                      audit,
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
+		IsUnlocked:                    func() bool { return true },
+		// The session ends while the gates read the policy.
+		PolicyFor: func(string) *policy.Config { cancel(signerapproval.ErrSessionEnded); return cfg },
+	}
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}}}
+	plan := &PlanResult{
+		AllTxns: []types.Transaction{txn}, PassthroughIndices: map[int]bool{}, PassthroughSignedTxns: map[int][]byte{},
+		ForeignIndices: map[int]bool{}, AuthKeyTypes: []string{"ed25519"},
+	}
+	if _, err := service.signGroupWithPlanContext(ctx, req, nil, plan); err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("error = %+v, want locked", err)
+	}
+	if len(audit.rejected) != 1 || audit.rejected[0].reason != "session_ended_after_approval" {
+		t.Fatalf("audit = %+v, want one session_ended_after_approval rejection", audit.rejected)
+	}
+}

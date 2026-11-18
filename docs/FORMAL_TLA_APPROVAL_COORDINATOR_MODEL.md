@@ -38,8 +38,9 @@ either: it cancels every HTTP request context (`daemon/http_runtime.go::stopHTTP
 `TestStopHTTPServerCancelsParkedRequests`), so each parked request ends through
 the model's `Cancel` action. A session end is not a fail-all either: a lock,
 an entry into recovery, the start of store maintenance and a losing unlock
-call `CancelAllSignRequests` (`productruntime.Runtime.endSignRequests`), which
-cancels every registered request, queued or delivered, as `/sign/cancel`
+call `EndSessionSignRequests` (`productruntime.Runtime.endSignRequests`, from
+the lock cleanup before its drain, or directly on recovery), which cancels
+every registered request's context, queued or delivered, as `/sign/cancel`
 would; each ends through `Cancel`. An explicit lock no longer calls
 `FailAllPendingRequests`, so the fail-all callers are disconnect and
 displacement.

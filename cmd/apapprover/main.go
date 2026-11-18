@@ -512,6 +512,8 @@ func approvalCancelReason(reason string) string {
 		return "requester canceled"
 	case "timeout":
 		return "timed out"
+	case "session_ended":
+		return "withdrawn: the signer locked or its session ended"
 	default:
 		return reason
 	}
