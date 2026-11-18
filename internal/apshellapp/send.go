@@ -349,7 +349,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 
 		itemResult.Warnings = sendWarnings(item, plan.Amount)
 		prep := item.Prep.enginePrep
-		if batches[i] != nil && prep != nil {
+		if batches[i] != nil {
 			// The label goes on a copy, so the plan stays as prepared.
 			labeled := *prep
 			labeled.Batch = batches[i]

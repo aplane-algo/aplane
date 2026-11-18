@@ -83,6 +83,7 @@ type argsFixture struct {
 	genesis     []byte
 	mu          sync.Mutex
 	signs       [][]signerapi.SignRequest
+	batches     []*signerapi.SignBatch
 	plans       [][]signerapi.SignRequest
 	signerPosts atomic.Int32
 	perByteFee  atomic.Uint64
@@ -112,6 +113,7 @@ func newArgsFixture(t *testing.T) *argsFixture {
 				f.mu.Lock()
 				if r.URL.Path == "/sign" {
 					f.signs = append(f.signs, req.Requests)
+					f.batches = append(f.batches, req.Batch)
 				} else {
 					f.plans = append(f.plans, req.Requests)
 				}
@@ -368,6 +370,35 @@ func TestSendFromASetGivesEachSubmissionItsOwnArguments(t *testing.T) {
 		[]map[string]string{sentArgs("preimage", "b")},
 		[]map[string]string{nil},
 	)
+}
+
+// A send from a set asks for each transaction on its own, and each request
+// reaches the signer labeled with its place among them. A send of one carries
+// no label.
+func TestSendFromASetLabelsEachRequestForTheSigner(t *testing.T) {
+	f := newArgsFixture(t)
+	if _, err := f.app.ExecuteSend(context.Background(), SendRequest{
+		AmountText: "0", AssetRef: "algo", FromRaw: []string{"hl", "hl2", "nat"}, ToRaw: []string{"dest"}, Wait: true,
+		LsigArgs: words(t, "arg:hl:preimage=a", "arg:hl2:preimage=b"),
+	}); err != nil {
+		t.Fatalf("ExecuteSend() error = %v", err)
+	}
+	if _, err := f.app.ExecuteSend(context.Background(), SendRequest{
+		AmountText: "0", AssetRef: "algo", FromRaw: []string{"nat"}, ToRaw: []string{"dest"}, Wait: true,
+	}); err != nil {
+		t.Fatalf("ExecuteSend() error = %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	want := []*signerapi.SignBatch{{Position: 1, Count: 3}, {Position: 2, Count: 3}, {Position: 3, Count: 3}, nil}
+	if len(f.batches) != len(want) {
+		t.Fatalf("/sign was called %d times, want %d", len(f.batches), len(want))
+	}
+	for i, got := range f.batches {
+		if (got == nil) != (want[i] == nil) || (got != nil && *got != *want[i]) {
+			t.Errorf("/sign request %d: batch = %+v, want %+v", i+1, got, want[i])
+		}
+	}
 }
 
 // An atomic send from a set gives each position its own account's words:
