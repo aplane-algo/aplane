@@ -82,7 +82,7 @@ func (a *appDeployArgs) toAppRequest() apshellapp.AppDeployRequest {
 	}
 }
 
-func parseAppDeployArgs(args []string) (*appDeployArgs, error) { //nolint:gocognit // complexity backlog
+func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 	params := &appDeployArgs{Wait: true}
 	if len(args) < 2 || args[0] != "from" || args[1] == "" {
 		return nil, fmt.Errorf("usage: app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]")
@@ -91,123 +91,9 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) { //nolint:gocogn
 
 	// Every option app deploy takes, but arg:, is single-valued.
 	seen := cmdspec.SeenOptions{}
-	setProgram := func(kind, value string, compiled bool) error {
-		if value == "" {
-			return fmt.Errorf("missing value for %s", kind)
-		}
-		if err := seen.Once(kind); err != nil {
-			return err
-		}
-		switch kind {
-		case "approval":
-			params.ApprovalPath = value
-			params.ApprovalCompiled = compiled
-		case "clear":
-			params.ClearPath = value
-			params.ClearCompiled = compiled
-		default:
-			return fmt.Errorf("unknown program kind: %s", kind)
-		}
-		return nil
-	}
-
-	for i := 2; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "nowait":
-			params.Wait = false
-		case strings.HasPrefix(arg, "approval-teal="):
-			if err := setProgram("approval", strings.TrimPrefix(arg, "approval-teal="), false); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(arg, "approval-bin="):
-			if err := setProgram("approval", strings.TrimPrefix(arg, "approval-bin="), true); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(arg, "approval="):
-			src := appinput.DetectProgramSource(strings.TrimPrefix(arg, "approval="))
-			if err := setProgram("approval", src.Path, src.Compiled); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(arg, "clear-teal="):
-			if err := setProgram("clear", strings.TrimPrefix(arg, "clear-teal="), false); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(arg, "clear-bin="):
-			if err := setProgram("clear", strings.TrimPrefix(arg, "clear-bin="), true); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(arg, "clear="):
-			src := appinput.DetectProgramSource(strings.TrimPrefix(arg, "clear="))
-			if err := setProgram("clear", src.Path, src.Compiled); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(arg, "global-uint="):
-			if err := seen.Once("global-uint"); err != nil {
-				return nil, err
-			}
-			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "global-uint="), 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid global-uint value: %s", strings.TrimPrefix(arg, "global-uint="))
-			}
-			params.GlobalUint = v
-		case strings.HasPrefix(arg, "global-bytes="):
-			if err := seen.Once("global-bytes"); err != nil {
-				return nil, err
-			}
-			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "global-bytes="), 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid global-bytes value: %s", strings.TrimPrefix(arg, "global-bytes="))
-			}
-			params.GlobalBytes = v
-		case strings.HasPrefix(arg, "local-uint="):
-			if err := seen.Once("local-uint"); err != nil {
-				return nil, err
-			}
-			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "local-uint="), 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid local-uint value: %s", strings.TrimPrefix(arg, "local-uint="))
-			}
-			params.LocalUint = v
-		case strings.HasPrefix(arg, "local-bytes="):
-			if err := seen.Once("local-bytes"); err != nil {
-				return nil, err
-			}
-			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "local-bytes="), 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid local-bytes value: %s", strings.TrimPrefix(arg, "local-bytes="))
-			}
-			params.LocalBytes = v
-		case strings.HasPrefix(arg, "extra-pages="):
-			if err := seen.Once("extra-pages"); err != nil {
-				return nil, err
-			}
-			v, err := strconv.ParseUint(strings.TrimPrefix(arg, "extra-pages="), 10, 32)
-			if err != nil {
-				return nil, fmt.Errorf("invalid extra-pages value: %s", strings.TrimPrefix(arg, "extra-pages="))
-			}
-			params.ExtraPages = uint32(v)
-		case strings.HasPrefix(arg, "note="):
-			if err := seen.Once("note"); err != nil {
-				return nil, err
-			}
-			params.Note = strings.TrimPrefix(arg, "note=")
-		case strings.HasPrefix(arg, "fee="):
-			if err := seen.Once("fee"); err != nil {
-				return nil, err
-			}
-			feeVal, err := strconv.ParseUint(strings.TrimPrefix(arg, "fee="), 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid fee value: %s", strings.TrimPrefix(arg, "fee="))
-			}
-			params.Fee = feeVal
-			params.UseFlatFee = true
-		case strings.HasPrefix(arg, "arg:"):
-			if err := cmdspec.AddLsigArg(&params.LsigArgs, arg); err != nil {
-				return nil, err
-			}
-		default:
-			return nil, fmt.Errorf("unknown app deploy argument: %s", arg)
+	for _, arg := range args[2:] {
+		if err := params.applyOption(seen, arg); err != nil {
+			return nil, err
 		}
 	}
 
@@ -218,4 +104,114 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) { //nolint:gocogn
 		return nil, fmt.Errorf("missing clear program")
 	}
 	return params, nil
+}
+
+// appDeployProgramOption is one spelling of a program option: which program
+// it sets, and how its value says whether the file is compiled.
+type appDeployProgramOption struct {
+	kind   string
+	source func(value string) appinput.ProgramSource
+}
+
+func programAs(compiled bool) func(string) appinput.ProgramSource {
+	return func(value string) appinput.ProgramSource {
+		return appinput.ProgramSource{Path: value, Compiled: compiled}
+	}
+}
+
+var appDeployProgramOptions = map[string]appDeployProgramOption{
+	"approval":      {"approval", appinput.DetectProgramSource},
+	"approval-teal": {"approval", programAs(false)},
+	"approval-bin":  {"approval", programAs(true)},
+	"clear":         {"clear", appinput.DetectProgramSource},
+	"clear-teal":    {"clear", programAs(false)},
+	"clear-bin":     {"clear", programAs(true)},
+}
+
+// appDeployUintOption is a numeric option: its width and where it is stored.
+type appDeployUintOption struct {
+	bits int
+	set  func(params *appDeployArgs, value uint64)
+}
+
+var appDeployUintOptions = map[string]appDeployUintOption{
+	"global-uint":  {64, func(p *appDeployArgs, v uint64) { p.GlobalUint = v }},
+	"global-bytes": {64, func(p *appDeployArgs, v uint64) { p.GlobalBytes = v }},
+	"local-uint":   {64, func(p *appDeployArgs, v uint64) { p.LocalUint = v }},
+	"local-bytes":  {64, func(p *appDeployArgs, v uint64) { p.LocalBytes = v }},
+	"extra-pages":  {32, func(p *appDeployArgs, v uint64) { p.ExtraPages = uint32(v) }},
+	"fee": {64, func(p *appDeployArgs, v uint64) {
+		p.Fee = v
+		p.UseFlatFee = true
+	}},
+}
+
+// applyOption applies one argument after the account.
+func (a *appDeployArgs) applyOption(seen cmdspec.SeenOptions, arg string) error {
+	if arg == "nowait" {
+		a.Wait = false
+		return nil
+	}
+	if name, value, ok := strings.Cut(arg, "="); ok {
+		if handled, err := a.applyNamedOption(seen, name, value); handled {
+			return err
+		}
+	}
+	if strings.HasPrefix(arg, "arg:") {
+		return cmdspec.AddLsigArg(&a.LsigArgs, arg)
+	}
+	return fmt.Errorf("unknown app deploy argument: %s", arg)
+}
+
+// applyNamedOption applies name=value when name is an option, and reports
+// whether it was one.
+func (a *appDeployArgs) applyNamedOption(seen cmdspec.SeenOptions, name, value string) (bool, error) {
+	if option, known := appDeployProgramOptions[name]; known {
+		return true, a.setProgram(seen, option.kind, option.source(value))
+	}
+	if option, known := appDeployUintOptions[name]; known {
+		return true, a.setUint(seen, name, value, option)
+	}
+	if name == "note" {
+		if err := seen.Once("note"); err != nil {
+			return true, err
+		}
+		a.Note = value
+		return true, nil
+	}
+	return false, nil
+}
+
+// setUint parses and stores a numeric option, once.
+func (a *appDeployArgs) setUint(seen cmdspec.SeenOptions, name, value string, option appDeployUintOption) error {
+	if err := seen.Once(name); err != nil {
+		return err
+	}
+	parsed, err := strconv.ParseUint(value, 10, option.bits)
+	if err != nil {
+		return fmt.Errorf("invalid %s value: %s", name, value)
+	}
+	option.set(a, parsed)
+	return nil
+}
+
+// setProgram records the approval or clear program, once.
+func (a *appDeployArgs) setProgram(seen cmdspec.SeenOptions, kind string, source appinput.ProgramSource) error {
+	if source.Path == "" {
+		return fmt.Errorf("missing value for %s", kind)
+	}
+	if err := seen.Once(kind); err != nil {
+		return err
+	}
+	switch kind {
+	case "approval":
+		a.ApprovalPath = source.Path
+		a.ApprovalCompiled = source.Compiled
+	case "clear":
+		a.ClearPath = source.Path
+		a.ClearCompiled = source.Compiled
+	default:
+		return fmt.Errorf("unknown program kind: %s", kind)
+	}
+	return nil
 }
