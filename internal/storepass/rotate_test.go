@@ -315,3 +315,37 @@ func TestRotateHelperFailureIsPostCommitWarning(t *testing.T) {
 		t.Fatalf("Rotate() result = %+v", result)
 	}
 }
+
+// A passphrase change whose new root lands but cannot be read back says the
+// new passphrase may be in effect, rather than reporting a plain failure the
+// operator would answer with the old passphrase.
+func TestRotateWithAnUnreadableRootSaysTheNewPassphraseMayBeInEffect(t *testing.T) {
+	fixture := newRotateFixture(t)
+	newPassphrase := []byte("new-store-passphrase")
+	root, aside := fixture.paths.StoreRootPath(), fixture.paths.StoreRootPath()+".aside"
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op != fsutil.OpDirSync || path != fixture.paths.ProductDir() {
+			return nil
+		}
+		fsutil.TestHook = nil
+		if err := os.Rename(root, aside); err != nil {
+			t.Error(err)
+		}
+		return errors.New("simulated identity-directory sync failure")
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{})
+	fsutil.TestHook = nil
+	if err := os.Rename(aside, root); err != nil {
+		t.Fatal(err)
+	}
+	if err == nil || result.RootCommitted || !errors.Is(err, genstore.ErrStoreRootCommitStateUnknown) ||
+		!strings.Contains(err.Error(), "the new passphrase may be in effect") {
+		t.Fatalf("Rotate() = %+v, %v; want the may-be-in-effect error", result, err)
+	}
+	if _, kr, err := genstore.ResolveStoreRoot(fixture.paths, newPassphrase); err != nil {
+		t.Fatalf("the new passphrase does not open the root that landed: %v", err)
+	} else {
+		kr.Zero()
+	}
+}

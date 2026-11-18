@@ -424,11 +424,11 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 	})
 	if mintErr != nil {
 		visible, visibleErr := genstore.ResolveStoreRootWithKeyring(env.KeyPaths, env.Keyring)
-		if errors.Is(mintErr, genstore.ErrStoreRootCommitDurabilityUnknown) ||
+		if genstore.RootCommitUncertain(mintErr) ||
 			(visibleErr == nil && visible.GenerationID() == generationID) {
 			evidence.GenerationID, evidence.Uncertain = generationID, true
 			return evidence, Error{"policy_commit_uncertain", fmt.Sprintf(
-				"policy committed as generation %s but durability is unconfirmed; signing is blocked pending reconciliation: %v",
+				"policy may have committed as generation %s; signing is blocked pending reconciliation: %v",
 				generationID, mintErr)}
 		}
 		return Outcome{BasePolicySetSHA256: evidence.BasePolicySetSHA256}, Error{"policy_save_failed", fmt.Sprintf("policy apply failed before commit: %v", mintErr)}

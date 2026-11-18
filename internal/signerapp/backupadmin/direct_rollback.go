@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -121,17 +122,11 @@ func (s Service) RollbackRestore(
 			return nil
 		})
 		if err != nil {
-			if generationID != "" {
-				_ = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-					visible, visibleErr := genstore.ResolveStoreRootWithKeyring(paths, masterKey)
-					if visibleErr == nil && visible.GenerationID() == generationID {
-						mutated = true
-						result.GenerationID = generationID
-					}
-					return nil
-				})
+			if rollbackMayHaveCommitted(ir, paths, generationID, err) {
+				mutated = true
+				result.GenerationID = generationID
 			}
-			if errors.Is(err, genstore.ErrStoreRootCommitDurabilityUnknown) || mutated {
+			if mutated {
 				ir.SetRecovery()
 				// The root may name the new generation: reload so the keystore
 				// follows it, as restore and policy apply do. Signing stays
@@ -169,4 +164,25 @@ func (s Service) RollbackRestore(
 		result.GenerationID,
 	)
 	return result
+}
+
+// rollbackMayHaveCommitted reports whether a rollback that failed after it
+// chose generationID may have left the root selecting that generation: the
+// root reads back as it, or the commit's outcome could not be confirmed
+// (genstore.RootCommitUncertain), which includes a root that cannot be read
+// back at all.
+func rollbackMayHaveCommitted(ir *productruntime.Runtime, paths storepaths.Paths, generationID string, err error) bool {
+	if generationID == "" {
+		return false
+	}
+	if genstore.RootCommitUncertain(err) {
+		return true
+	}
+	landed := false
+	_ = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+		visible, visibleErr := genstore.ResolveStoreRootWithKeyring(paths, masterKey)
+		landed = visibleErr == nil && visible.GenerationID() == generationID
+		return nil
+	})
+	return landed
 }
