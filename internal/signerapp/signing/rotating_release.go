@@ -176,24 +176,8 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 		incoming = []LeafRelease{r.latestLeaf()}
 	}
 	var leaves []LeafRelease
-	if prev, ok := m.byAccount[r.Account]; ok { //nolint:nestif // complexity backlog
-		if prev.Stage == r.Stage {
-			r.Reused = r.Reused || prev.Reused
-			if audited {
-				leaves = mergeLeaves(prev.Leaves, incoming)
-				if leaves[len(leaves)-1].TxID != r.TxID {
-					// Memory holds a release the log was read before:
-					// it is the newer side and its latest stays latest.
-					r.TxID, r.LastValid = prev.TxID, prev.LastValid
-				}
-			} else {
-				// A live release: one scan of the history, no copy.
-				leaves = prev.Leaves
-				if !listsTxID(leaves, incoming[0].TxID) {
-					leaves = append(leaves, incoming[0])
-				}
-			}
-		}
+	if prev, ok := m.byAccount[r.Account]; ok && prev.Stage == r.Stage {
+		leaves = sameStageLeaves(&r, prev, incoming, audited)
 	}
 	if leaves == nil {
 		leaves = mergeLeaves(nil, incoming)
@@ -203,6 +187,29 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	m.seq++
 	r.Seq = m.seq
 	m.byAccount[r.Account] = r
+}
+
+// sameStageLeaves is the leaf history of a release at the stage the memory
+// already holds: the memory's leaves and the incoming ones. A release that
+// reused a leaf stays reused. For an audited release whose latest leaf is
+// not the memory's, r keeps the memory's latest transaction.
+func sameStageLeaves(r *ReleaseRecord, prev ReleaseRecord, incoming []LeafRelease, audited bool) []LeafRelease {
+	r.Reused = r.Reused || prev.Reused
+	if audited {
+		leaves := mergeLeaves(prev.Leaves, incoming)
+		if leaves[len(leaves)-1].TxID != r.TxID {
+			// Memory holds a release the log was read before:
+			// it is the newer side and its latest stays latest.
+			r.TxID, r.LastValid = prev.TxID, prev.LastValid
+		}
+		return leaves
+	}
+	// A live release: one scan of the history, no copy.
+	leaves := prev.Leaves
+	if !listsTxID(leaves, incoming[0].TxID) {
+		leaves = append(leaves, incoming[0])
+	}
+	return leaves
 }
 
 // mergeLeaves merges the remembered leaves with the audited list in linear
