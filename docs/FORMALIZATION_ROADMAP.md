@@ -808,3 +808,13 @@ cosigner. Not established: whether every cosigner key's public key reaches
 the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
+
+Changed 2026-11-18: `enrollment_queue.tla`'s `Reject` now requires the
+registry synced, as `RejectEnrollment` re-publishes a registry left unsynced
+before its already-enrolled check (`ensureRegistryDurableLocked`). The check
+read the runtime's registry, which after a failed publish whose file could
+not be read back was an empty placeholder, so the request of an enrolled key
+could be dropped (EQ6). That unreadable state stays outside the model; the
+companion describes how the code now handles it. The positive runs drop to
+2216 states at depth 11 and, deep, 11581 at depth 15; the negative control
+is unchanged.

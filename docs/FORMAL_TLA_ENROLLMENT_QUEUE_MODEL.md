@@ -1,9 +1,9 @@
 # Client Enrollment Queue Machine-Checkable Model
 
 > Status: TLC checked with `Keys = {k1, k2, k3}` and `MaxPending = 2` under
-> key symmetry; the recorded positive run generated 2,340 distinct reachable
+> key symmetry; the recorded positive run generated 2,216 distinct reachable
 > states at depth 11 with no counterexamples, and the deep run
-> (`enrollment_queue_deep.cfg`, four keys, `MaxPending = 3`) 12,168 distinct
+> (`enrollment_queue_deep.cfg`, four keys, `MaxPending = 3`) 11,581 distinct
 > states at depth 15. The expected-failure negative control
 > (`enrollment_queue_negative.cfg`, `RequireDurableAck = FALSE`) violates
 > `EQ2_PendingAckSurvivesCrash` after 167 distinct states at depth 3 and must
@@ -55,7 +55,8 @@ and the packages around it:
   publishes the registry before the queue; a key that reached the live
   registry is audited whether or not the write was durable, and only an early
   registry failure leaves the request untouched. Rejection refuses a request
-  whose key is enrolled (`ErrAlreadyEnrolled`). Import follows the same
+  whose key is enrolled (`ErrAlreadyEnrolled`), after re-publishing a registry
+  left unsynced, since that check reads it. Import follows the same
   registry-before-queue rule as approval. Each operation first
   re-publishes a file left unsynced by an earlier failure
   (`ensureRegistryDurableLocked`, `ensureQueueDurableLocked`), modeled as the
@@ -89,10 +90,17 @@ cannot silently stop being load-bearing.
   reloading the file and installing whatever it holds, is pinned by
   `TestRevokeAuthorizedKeyFailedPublishDoesNotRetainStaleAuthority` and
   `TestRejectEnrollmentFailedPublishResyncsQueue`.
-- A file that is unreadable after a failed publish (the runtime then serves
-  an empty registry or queue until it is repaired) is not modeled: the
+- A file that is unreadable after a failed publish is not modeled: the
   rename-based write leaves the file holding the old or the new document,
-  never a torn one.
+  never a torn one, so the model needs no third state for it. In the code
+  the runtime then cannot tell which of the two the file holds, so it
+  commits to the new one: the change is reported as applied, though not
+  durable, and audited; meanwhile it serves an empty registry, which refuses
+  every key, or an empty queue, which it never publishes
+  (`clientsIntended`, `pendingIntended`); and the next operation, once the
+  file reads again, publishes the document the failed write intended.
+  `TestUnreadableRegistryIsNeverWrittenBackEmpty`
+  and its neighbours in `unreadable_after_failed_write_test.go` pin it.
 - `Lapse` removes an entry from the live and durable contents together,
   since every reader (`Parse`, `Pruned`) drops lapsed entries; the on-disk
   bytes are rewritten at the next publish.
