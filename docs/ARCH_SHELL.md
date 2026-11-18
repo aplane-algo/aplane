@@ -1794,11 +1794,13 @@ Each outcome's `message` says what happened:
 | `not_sent` | `Not sent: the context had ended before the submit call for transaction(s) <ids> was made, so nothing was sent.` |
 
 `execute` and `js` turn an error into an MCP error result through
-`mcpErrorResult`. An error with no outcome is its text alone, as before,
-even when the command returned a structured result with it. Otherwise the
-first text content is the error text, then one sentence for each outcome.
-The second text content is JSON with `error` and `submissions`; the
-command's structured result is not attached, so each outcome is reported
+`mcpErrorResult`. An error with no outcome and no unsubmitted item is its
+text alone, even when the command returned a structured result with it.
+Otherwise the first text content is the error text, then one sentence for
+each outcome and one `<from> -> <to>: <reason>` line for each item that
+failed before reaching algod. The second text content is JSON with `error`,
+`submissions` and, when there are such items, `unsubmitted`; the command's
+structured result is not attached, so each outcome is reported
 once:
 
 ```json
@@ -1816,8 +1818,10 @@ once:
 }
 ```
 
-The text names transaction IDs only, never transaction contents or argument
-values. Nothing retries.
+An outcome's sentence names transaction IDs only, never transaction contents
+or argument values. An unsubmitted item's reason is the item's own error text,
+as a partly successful send already reports it in `items[].error`: a balance
+check's amounts, or the signer's refusal. Nothing retries.
 
 Commands that report items record each item's outcome as `submission` on the
 item of their successful result: `validate`, and a non-atomic `send` or a
