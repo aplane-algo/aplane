@@ -34,7 +34,7 @@ import (
 // APSIGNER_DATA) and blocks until shutdown. The caller is responsible for
 // provider registration before calling Run. The return value is the process
 // exit code.
-func Run(dataDir string) int { //nolint:gocognit // complexity backlog
+func Run(dataDir string) int {
 	if err := ensureProviders(); err != nil {
 		logErrorf("%v", err)
 		return 1
@@ -229,59 +229,10 @@ func Run(dataDir string) int { //nolint:gocognit // complexity backlog
 	// Configure algod client on all DSA providers that need it (for TEAL compilation)
 	configureAlgodOnDSAs(&config)
 
-	if startLocked { //nolint:nestif // complexity backlog
+	if startLocked {
 		logInfof("signer runtime initialized (waiting for apadmin connection)")
-	} else {
-		// Authenticate the sole store root and reconcile residue before
-		// publishing any signing state. Selected-generation damage enters
-		// recovery with the root keyring available.
-		adminServices := server.adminServices()
-		generationErr := adminServices.reconcileGenerations(ir, startPassphrase)
-		if generationErr != nil {
-			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
-			crypto.ZeroBytes(startPassphrase)
-			if !success {
-				logErrorf("error unlocking recovery-blocked store: %s", errMsg)
-				return 1
-			}
-			logWarnf("identity is recovery-blocked: %v", generationErr)
-			startPassphrase = nil
-		}
-		if generationErr == nil && startPassphrase != nil {
-			// Headless mode: load keys using passphrase, then zero it immediately.
-			logInfof("scanning keys directory for private keys")
-			_, err := ir.ReloadWithPassphrase(startPassphrase)
-			if err != nil && signerstartuptemplates.IsGenerationValidationErr(err) {
-				// Content defects in the selected generation are a recovery
-				// condition, not a startup failure: keep the daemon up with
-				// signing blocked so the admin surface exists to repair the
-				// store, exactly as interactive unlock does.
-				success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
-				crypto.ZeroBytes(startPassphrase)
-				if !success {
-					logErrorf("error unlocking recovery-blocked store: %s", errMsg)
-					return 1
-				}
-				logWarnf("identity is recovery-blocked: %v", err)
-			} else if err != nil {
-				crypto.ZeroBytes(startPassphrase)
-				logErrorf("error loading keys: %v", err)
-				return 1
-			} else {
-				crypto.ZeroBytes(startPassphrase)
-				ir.SetUnlocked()
-			}
-		}
-
-		keyCount := ir.KeyCount()
-		if keyCount == 0 && !ir.IsRecovery() {
-			logWarnf("no private keys found in keys directory")
-			logWarnf("keys must be generated using the apadmin tool:")
-			logWarnf("  1. run apadmin on this machine (local access required)")
-			logWarnf("  2. use 'generate' command to create new keys")
-			logWarnf("  3. use 'import' command to restore from mnemonic")
-			logWarnf("server will start and keys will auto-load when created")
-		}
+	} else if !server.unlockAtStartup(ir, startPassphrase) {
+		return 1
 	}
 
 	if err := startIPCServer(server, config.IPCPath); err != nil {
@@ -392,6 +343,63 @@ func Run(dataDir string) int { //nolint:gocognit // complexity backlog
 		return 1
 	}
 	return 0
+}
+
+// unlockAtStartup unlocks the store with the passphrase a helper or the test
+// environment supplied, and zeroes the passphrase. It reports false, having
+// logged why, when the daemon cannot start.
+func (s *Signer) unlockAtStartup(ir *productruntime.Runtime, passphrase []byte) bool {
+	// Authenticate the sole store root and reconcile residue before
+	// publishing any signing state. Selected-generation damage enters
+	// recovery with the root keyring available.
+	adminServices := s.adminServices()
+	generationErr := adminServices.reconcileGenerations(ir, passphrase)
+	if generationErr != nil {
+		success, errMsg := ir.TryRecoveryUnlock(passphrase)
+		crypto.ZeroBytes(passphrase)
+		if !success {
+			logErrorf("error unlocking recovery-blocked store: %s", errMsg)
+			return false
+		}
+		logWarnf("identity is recovery-blocked: %v", generationErr)
+		passphrase = nil
+	}
+	if generationErr == nil && passphrase != nil {
+		// Headless mode: load keys using passphrase, then zero it immediately.
+		logInfof("scanning keys directory for private keys")
+		_, err := ir.ReloadWithPassphrase(passphrase)
+		if err != nil && signerstartuptemplates.IsGenerationValidationErr(err) {
+			// Content defects in the selected generation are a recovery
+			// condition, not a startup failure: keep the daemon up with
+			// signing blocked so the admin surface exists to repair the
+			// store, exactly as interactive unlock does.
+			success, errMsg := ir.TryRecoveryUnlock(passphrase)
+			crypto.ZeroBytes(passphrase)
+			if !success {
+				logErrorf("error unlocking recovery-blocked store: %s", errMsg)
+				return false
+			}
+			logWarnf("identity is recovery-blocked: %v", err)
+		} else if err != nil {
+			crypto.ZeroBytes(passphrase)
+			logErrorf("error loading keys: %v", err)
+			return false
+		} else {
+			crypto.ZeroBytes(passphrase)
+			ir.SetUnlocked()
+		}
+	}
+
+	keyCount := ir.KeyCount()
+	if keyCount == 0 && !ir.IsRecovery() {
+		logWarnf("no private keys found in keys directory")
+		logWarnf("keys must be generated using the apadmin tool:")
+		logWarnf("  1. run apadmin on this machine (local access required)")
+		logWarnf("  2. use 'generate' command to create new keys")
+		logWarnf("  3. use 'import' command to restore from mnemonic")
+		logWarnf("server will start and keys will auto-load when created")
+	}
+	return true
 }
 
 // ensureProviders validates that required providers are registered.
