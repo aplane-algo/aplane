@@ -146,6 +146,10 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 				// its node role file: keep it, and do not report a store
 				// that may be initialized as one that is not.
 				rootCommitted = true
+				// Normalize its ownership as for a store that initialized.
+				if chownErr := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); chownErr != nil {
+					return result, fmt.Errorf("initialization may have committed, and normalizing its ownership failed (%v): %w", chownErr, err)
+				}
 				return result, fmt.Errorf("initialization may have committed; unlock the signer to check before running initialize again: %w", err)
 			}
 			return result, fmt.Errorf("failed to mint initial generation: %w", err)

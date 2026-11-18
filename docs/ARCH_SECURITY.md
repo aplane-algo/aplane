@@ -1460,7 +1460,9 @@ Backup-audit semantics:
   recovery-blocked until reconciliation confirms the root and reloads the
   visible generation.
 - `CREDENTIAL_RESTORE_ROLLBACK` records explicit rollback success or failure.
-  Failed attempts use `outcome:"failed"` and `reason`.
+  Failed attempts use `outcome:"failed"` and `reason`, with `generation_id`
+  when the rollback committed one; a rollback whose root commit could not be
+  confirmed uses `outcome:"commit_uncertain"`.
 
 Store-management audit semantics:
 

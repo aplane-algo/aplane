@@ -91,7 +91,7 @@ func TestDirectRollbackWithAnUnreadableRootEntersRecovery(t *testing.T) {
 	result := service.RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback-state-unknown"})
 	restoreRoot()
 
-	if result.Success || result.Code != protocol.ResultCodeRestoreRollbackFailed {
+	if result.Success || result.Code != protocol.ResultCodeRestoreRollbackFailed || !result.CommitUncertain {
 		t.Fatalf("RollbackRestore(root state unknown) = %+v", result)
 	}
 	if !ir.IsRecovery() {
