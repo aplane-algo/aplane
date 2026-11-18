@@ -691,9 +691,24 @@ type SweepCommandResult struct {
 type failedItemsError struct {
 	msg      string
 	failures []*signing.SubmissionError
+	// unsubmitted says why each item that never reached algod failed, as
+	// "<from> -> <to>: <error>"; failures covers the others.
+	unsubmitted []string
 }
 
-var _ appresult.SubmissionFailures = (*failedItemsError)(nil)
+var (
+	_ appresult.SubmissionFailures  = (*failedItemsError)(nil)
+	_ appresult.UnsubmittedFailures = (*failedItemsError)(nil)
+)
+
+func (e *failedItemsError) UnsubmittedFailures() []string {
+	return e.unsubmitted
+}
+
+// unsubmittedFailure is one such item's reason as failedItemsError reports it.
+func unsubmittedFailure(from, to, reason string) string {
+	return from + " -> " + to + ": " + reason
+}
 
 func (e *failedItemsError) Error() string {
 	return e.msg

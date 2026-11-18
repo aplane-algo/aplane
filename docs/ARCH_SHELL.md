@@ -1828,7 +1828,12 @@ draws each item and then returns the error, which stops a script. That
 error wraps none of the items' errors, so no item's sentinel matches it and
 the REPL renders each item's submission output once, in the result; it
 reports the items' `SubmissionError`s as an `appresult.SubmissionFailures`,
-so its MCP error result lists each item's outcome in `submissions`. A plugin
+so its MCP error result lists each item's outcome in `submissions`. An item
+that failed before reaching algod (a balance check, the signer refusing or
+unreachable, a signing error) has no outcome; the error reports its reason
+as an `appresult.UnsubmittedFailures`, and the MCP error result appends one
+`<from> -> <to>: <reason>` line per such item to its text and lists them in
+`unsubmitted`, so the client can tell what to fix. A plugin
 step whose submission failed is still a plugin result (see
 [success:false Handling](#successfalse-handling)), with its outcome in
 `submissions`.

@@ -144,9 +144,16 @@ func (a *App) ExecuteSend(ctx context.Context, req SendRequest) (*SendExecutionR
 		nonAtomicResult.ToCount = len(plan.ToAddresses)
 		result.NonAtomic = nonAtomicResult
 		if nonAtomicResult.FailureCount > 0 && nonAtomicResult.SuccessCount == 0 {
+			var unsubmitted []string
+			for _, item := range nonAtomicResult.Items {
+				if item.Error != "" && item.Submission == nil {
+					unsubmitted = append(unsubmitted, unsubmittedFailure(item.From, item.To, item.Error))
+				}
+			}
 			return result, &failedItemsError{
-				msg:      fmt.Sprintf("all %d transaction(s) failed", nonAtomicResult.FailureCount),
-				failures: nonAtomicResult.submissionFailures,
+				msg:         fmt.Sprintf("all %d transaction(s) failed", nonAtomicResult.FailureCount),
+				failures:    nonAtomicResult.submissionFailures,
+				unsubmitted: unsubmitted,
 			}
 		}
 		return result, nil

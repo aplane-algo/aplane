@@ -517,8 +517,8 @@ func TestMCPSweepWhoseItemsAllFailed(t *testing.T) {
 // The error of a sweep in which every item failed is the sweep's own: no
 // item's error is reachable through it, so no item's sentinel matches it,
 // while the outcomes of the items whose submission failed are still read
-// from it. One whose items carry no outcome is the error text alone, as
-// before, though the sweep returned its result with it.
+// from it. One whose items never reached algod says why each failed, though
+// the sweep returned its result with it.
 func TestSweepWhoseItemsAllFailedMatchesNoItemError(t *testing.T) {
 	sweep := func(t *testing.T, f *submitFixture) Command {
 		t.Helper()
@@ -535,9 +535,10 @@ func TestSweepWhoseItemsAllFailedMatchesNoItemError(t *testing.T) {
 		if result == nil || err == nil || err.Error() != "all 2 transaction(s) failed" || errors.Is(err, engine.ErrNotConnected) {
 			t.Fatalf("result returned %v, error %v: want the sweep's result and its own error, matching no item's", result != nil, err)
 		}
-		if mcpResult := mcpExecuteCommand(f.state, sweep(t, f)); !mcpResult.IsError || len(mcpResult.Content) != 1 ||
-			mcpResultText(t, mcpResult) != "all 2 transaction(s) failed" {
-			t.Fatalf("MCP result = %+v, want the error text alone", mcpResult)
+		text, structured := mcpErrorParts(t, mcpExecuteCommand(f.state, sweep(t, f)))
+		if structured.Error != "all 2 transaction(s) failed" || len(structured.Unsubmitted) != 2 ||
+			strings.Count(text, "not connected to Signer") != 2 {
+			t.Fatalf("MCP error %+v, text %q: want the error and each item's reason", structured, text)
 		}
 	})
 	t.Run("lost submissions", func(t *testing.T) {

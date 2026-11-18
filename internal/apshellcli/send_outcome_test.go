@@ -94,3 +94,22 @@ func TestOneShotSimulateSendSaysItWasSimulated(t *testing.T) {
 		t.Fatalf("a simulated send was drawn as submitted:\n%s", out.String())
 	}
 }
+
+// A send whose items failed before reaching algod (here, with no signer
+// connected) still tells an MCP client why each one failed, as the REPL's
+// drawing of the items does.
+func TestSendRefusedBeforeSubmitSaysWhyOverMCP(t *testing.T) {
+	f := newSubmitFixture(t, nodeRefusesSubmit)
+	f.eng.Connection.SignerClient = nil
+	cmd, err := parseShellCommand(fmt.Sprintf("send 0.001 algo from %s to [%s %s]", f.a.Address, f.b.Address, f.c.Address))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, structured := mcpErrorParts(t, mcpExecuteCommand(f.state, cmd))
+	if structured.Error != "all 2 transaction(s) failed" || len(structured.Submissions) != 0 || len(structured.Unsubmitted) != 2 {
+		t.Fatalf("MCP error = %+v, want the send's error and two unsubmitted reasons", structured)
+	}
+	if strings.Count(text, "not connected to Signer") != 2 {
+		t.Fatalf("MCP text %q does not give each item's reason", text)
+	}
+}
