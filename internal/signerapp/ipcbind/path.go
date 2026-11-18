@@ -212,41 +212,54 @@ func validateSocketAliasChain(socketPath string, tempRoots map[string]struct{}) 
 		if err != nil {
 			return fmt.Errorf("failed to inspect IPC socket alias component %s: %w", path, err)
 		}
-		if info.Mode()&os.ModeSymlink != 0 { //nolint:nestif // complexity backlog
-			owner, err := filesystemObjectOwner(path, info)
-			if err != nil {
-				return err
-			}
-			if owner != currentUID && owner != rootUID {
-				return fmt.Errorf("refusing IPC socket symlink owned by unrelated uid %d: %s", owner, path)
-			}
-		} else {
-			owner, err := realDirectoryOwner(path, info)
-			if err != nil {
-				return err
-			}
-			if path == parent {
-				if owner != currentUID {
-					return fmt.Errorf("refusing IPC socket directory owned by uid %d, expected %d: %s", owner, currentUID, path)
-				}
-				if info.Mode().Perm()&0o022 != 0 {
-					return fmt.Errorf("refusing IPC socket in group/other-writable directory: %s", path)
-				}
-			} else if isTrustedStickyTempRoot(path, info, owner, rootUID, tempRoots) {
-				// The sticky directory protects its current/root-owned alias.
-			} else {
-				if owner != currentUID && owner != rootUID {
-					return fmt.Errorf("refusing IPC socket beneath directory owned by unrelated uid %d: %s", owner, path)
-				}
-				if info.Mode().Perm()&0o022 != 0 {
-					return fmt.Errorf("refusing IPC socket beneath group/other-writable directory: %s", path)
-				}
-			}
+		if err := checkAliasComponent(path, parent, info, currentUID, rootUID, tempRoots); err != nil {
+			return err
 		}
 
 		if path == string(filepath.Separator) {
 			break
 		}
+	}
+	return nil
+}
+
+// checkAliasComponent checks one component of the socket's alias chain. A
+// symlink must belong to this user or root. A real directory must too, and
+// be writable by no one else, except that the socket's own directory must
+// belong to this user and a trusted sticky temp root is taken as it is.
+func checkAliasComponent(path, parent string, info os.FileInfo, currentUID, rootUID int, tempRoots map[string]struct{}) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		owner, err := filesystemObjectOwner(path, info)
+		if err != nil {
+			return err
+		}
+		if owner != currentUID && owner != rootUID {
+			return fmt.Errorf("refusing IPC socket symlink owned by unrelated uid %d: %s", owner, path)
+		}
+		return nil
+	}
+	owner, err := realDirectoryOwner(path, info)
+	if err != nil {
+		return err
+	}
+	if path == parent {
+		if owner != currentUID {
+			return fmt.Errorf("refusing IPC socket directory owned by uid %d, expected %d: %s", owner, currentUID, path)
+		}
+		if info.Mode().Perm()&0o022 != 0 {
+			return fmt.Errorf("refusing IPC socket in group/other-writable directory: %s", path)
+		}
+		return nil
+	}
+	if isTrustedStickyTempRoot(path, info, owner, rootUID, tempRoots) {
+		// The sticky directory protects its current/root-owned alias.
+		return nil
+	}
+	if owner != currentUID && owner != rootUID {
+		return fmt.Errorf("refusing IPC socket beneath directory owned by unrelated uid %d: %s", owner, path)
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("refusing IPC socket beneath group/other-writable directory: %s", path)
 	}
 	return nil
 }

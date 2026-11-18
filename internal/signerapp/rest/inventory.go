@@ -277,60 +277,8 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			info.Family = keyType
 		}
 
-		if provider := lsigprovider.Get(keyType); provider != nil { //nolint:nestif // complexity backlog
-			info.DisplayName = provider.DisplayName()
-			info.Description = provider.Description()
-			if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
-				if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
-					info.SigningFlow = boundedSigningFlow(metadata)
-					if metadata.Cosigner != nil {
-						info.CosignerComponentKeyTypes = []string{metadata.Cosigner.ComponentKeyType}
-					}
-					info.BoundedAuthorization = boundedInfo(metadata)
-				}
-			}
-
-			// A per-key type has no fixed contract to report. Its cosigner is
-			// optional, so this names the capability without asking for one.
-			if resolver, ok := provider.(lsigprovider.InstanceResolver); ok {
-				info.PerKeyContract = true
-				info.CosignerComponentKeyTypes, _ = resolver.CosignerComponentKeyTypes(map[string]string{cosignerrefs.ParamCosignerName: ""})
-				if grammar, ok := provider.(boundaryGrammarProvider); ok {
-					info.BoundarySchema = grammar.BoundarySchema()
-				}
-			}
-
-			for _, p := range provider.CreationParams() {
-				info.CreationParams = append(info.CreationParams, signerapi.CreationParamInfo{
-					Name:        p.Name,
-					Label:       p.Label,
-					Description: p.Description,
-					Type:        p.Type,
-					Required:    p.Required,
-					MaxLength:   p.MaxLength,
-					InputModes:  restInputModeInfos(p.InputModes),
-					Options:     append([]string(nil), p.Options...),
-					MinItems:    p.MinItems,
-					MaxItems:    p.MaxItems,
-					Example:     p.Example,
-					Placeholder: p.Placeholder,
-					Min:         p.Min,
-					Max:         p.Max,
-					Default:     p.Default,
-				})
-			}
-
-			for _, a := range provider.RuntimeArgs() {
-				info.RuntimeArgs = append(info.RuntimeArgs, signerapi.RuntimeArgInfo{
-					Name:        a.Name,
-					Label:       a.Label,
-					Description: a.Description,
-					Type:        a.Type,
-					Required:    a.Required,
-					ByteLength:  a.ByteLength,
-					MaxSize:     a.MaxSize,
-				})
-			}
+		if provider := lsigprovider.Get(keyType); provider != nil {
+			describeProvider(&info, provider)
 		} else {
 			switch keyType {
 			case nativefalcon.KeyType:
@@ -407,6 +355,65 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	}
 
 	return keyTypes
+}
+
+// describeProvider fills in what a LogicSig provider says of its key type:
+// its names, its bounded authorization or per-key contract, and the
+// parameters and arguments it takes.
+func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigProvider) {
+	info.DisplayName = provider.DisplayName()
+	info.Description = provider.Description()
+	if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
+		if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
+			info.SigningFlow = boundedSigningFlow(metadata)
+			if metadata.Cosigner != nil {
+				info.CosignerComponentKeyTypes = []string{metadata.Cosigner.ComponentKeyType}
+			}
+			info.BoundedAuthorization = boundedInfo(metadata)
+		}
+	}
+
+	// A per-key type has no fixed contract to report. Its cosigner is
+	// optional, so this names the capability without asking for one.
+	if resolver, ok := provider.(lsigprovider.InstanceResolver); ok {
+		info.PerKeyContract = true
+		info.CosignerComponentKeyTypes, _ = resolver.CosignerComponentKeyTypes(map[string]string{cosignerrefs.ParamCosignerName: ""})
+		if grammar, ok := provider.(boundaryGrammarProvider); ok {
+			info.BoundarySchema = grammar.BoundarySchema()
+		}
+	}
+
+	for _, p := range provider.CreationParams() {
+		info.CreationParams = append(info.CreationParams, signerapi.CreationParamInfo{
+			Name:        p.Name,
+			Label:       p.Label,
+			Description: p.Description,
+			Type:        p.Type,
+			Required:    p.Required,
+			MaxLength:   p.MaxLength,
+			InputModes:  restInputModeInfos(p.InputModes),
+			Options:     append([]string(nil), p.Options...),
+			MinItems:    p.MinItems,
+			MaxItems:    p.MaxItems,
+			Example:     p.Example,
+			Placeholder: p.Placeholder,
+			Min:         p.Min,
+			Max:         p.Max,
+			Default:     p.Default,
+		})
+	}
+
+	for _, a := range provider.RuntimeArgs() {
+		info.RuntimeArgs = append(info.RuntimeArgs, signerapi.RuntimeArgInfo{
+			Name:        a.Name,
+			Label:       a.Label,
+			Description: a.Description,
+			Type:        a.Type,
+			Required:    a.Required,
+			ByteLength:  a.ByteLength,
+			MaxSize:     a.MaxSize,
+		})
+	}
 }
 
 // boundaryGrammarProvider is a per-key type whose requests a boundary file
