@@ -232,8 +232,9 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		// Scroll down - calculate max offset based on content
 		maxVisibleLines := m.detailsVisibleLines()
-		// Parameters: count rendered lines so multi-line address lists scroll correctly.
-		itemCount := len(buildDetailsParameterLines(m.details.keyType, m.details.parameters))
+		// Parameters: count the rows drawn, so address lists and wrapped
+		// lines scroll correctly.
+		itemCount := len(m.detailsParameterRows())
 		visibleItems := maxVisibleLines
 
 		maxOffset := itemCount - visibleItems

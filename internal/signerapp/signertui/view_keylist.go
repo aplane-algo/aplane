@@ -339,9 +339,20 @@ func wrapShortcutHint(hint string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderKeyDetails renders the key details modal
 // keyDetailsPopupWidth is Key Details' popup width.
 const keyDetailsPopupWidth = 62
+
+// detailsParameterRows is the parameter lines as Key Details draws them: a
+// line wider than the popup is wrapped into several rows, so the pager and
+// its scroll keys count the rows on screen, not the lines.
+func (m Model) detailsParameterRows() []string {
+	width := m.popupBodyWidth(keyDetailsPopupWidth)
+	var rows []string
+	for _, line := range buildDetailsParameterLines(m.details.keyType, m.details.parameters) {
+		rows = append(rows, strings.Split(strings.TrimSuffix(wrapText(line, width), "\n"), "\n")...)
+	}
+	return rows
+}
 
 // keyDetailsHeader is what Key Details draws above the parameters.
 func (m Model) keyDetailsHeader() string {
@@ -387,6 +398,7 @@ func (m Model) keyDetailsTrailer() string {
 	return sb.String()
 }
 
+// renderKeyDetails renders the key details modal.
 func (m Model) renderKeyDetails() string {
 	var sb strings.Builder
 	sb.WriteString(m.keyDetailsHeader())
@@ -398,7 +410,7 @@ func (m Model) renderKeyDetails() string {
 		sb.WriteString(keyTypeStyle.Render(strings.TrimSuffix(keyDetailsParametersHeading, "\n\n")))
 		sb.WriteString("\n\n")
 
-		paramLines := buildDetailsParameterLines(m.details.keyType, m.details.parameters)
+		paramLines := m.detailsParameterRows()
 		totalParams := len(paramLines)
 		needsScroll := totalParams > maxVisibleLines
 

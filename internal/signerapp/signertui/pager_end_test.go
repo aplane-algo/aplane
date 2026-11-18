@@ -31,6 +31,10 @@ func TestPagersReachTheirLastLine(t *testing.T) {
 		name  string
 		setup func(m *Model, lines []string)
 		last  string
+		// popup: the pager is a popup, whose bottom border must be drawn;
+		// a popup too tall for the screen is cut from the bottom, its
+		// border first.
+		popup bool
 	}{
 		{"library YAML", func(m *Model, lines []string) {
 			m.viewState = ViewLibraryTemplateDetails
@@ -39,12 +43,12 @@ func TestPagersReachTheirLastLine(t *testing.T) {
 			m.library.detailsSourceModTime = 1_700_000_000
 			m.library.detailsSourceSHA256 = strings.Repeat("ab", 32)
 			m.library.detailsContent = strings.Join(lines, "\n")
-		}, "line-080"},
+		}, "line-080", false},
 		{"TEAL source", func(m *Model, lines []string) {
 			m.viewState = ViewTEALFullDisplay
 			m.details.address = strings.Repeat("A", 58)
 			m.details.teal = strings.Join(lines, "\n")
-		}, "line-080"},
+		}, "line-080", false},
 		{"key details", func(m *Model, lines []string) {
 			m.viewState = ViewKeyDetails
 			m.details.address = strings.Repeat("A", 58)
@@ -58,7 +62,18 @@ func TestPagersReachTheirLastLine(t *testing.T) {
 			for _, line := range lines[:30] {
 				m.details.parameters["p"+line] = "value"
 			}
-		}, "pline-030: value"},
+		}, "pline-030: value", true},
+		{"key details with wrapped values", func(m *Model, lines []string) {
+			m.viewState = ViewKeyDetails
+			m.details.address = strings.Repeat("A", 58)
+			m.details.keyType = "publisher.family.v1"
+			m.details.parameters = map[string]string{}
+			// "parameter-line-NNN: <58 characters>" is wider than the popup
+			// at 80 columns, so each one takes two rows.
+			for i, line := range lines[:30] {
+				m.details.parameters["parameter-"+line] = strings.Repeat("R", 55) + fmt.Sprintf("%03d", i+1)
+			}
+		}, strings.Repeat("R", 55) + "030", true},
 	}
 	for _, p := range pagers {
 		for _, size := range []struct {
@@ -80,6 +95,9 @@ func TestPagersReachTheirLastLine(t *testing.T) {
 				}
 				if !strings.Contains(screen, p.last) {
 					t.Fatalf("scrolled to the end, the screen does not show %q:\n%s", p.last, screen)
+				}
+				if p.popup && !strings.Contains(screen, "╚") {
+					t.Fatalf("the popup is cut off at the bottom:\n%s", screen)
 				}
 			})
 		}

@@ -568,9 +568,10 @@ func wrappedRows(s string, width int) int {
 // keyDetailsParametersHeading heads the parameters on Key Details.
 const keyDetailsParametersHeading = "═══ Parameters ═══\n\n"
 
-// detailsVisibleLines is how many parameter lines Key Details shows: 5, 8 or
-// 12 by terminal height, and never more than the popup has room for under
-// the rows drawn above and below them and the two scroll markers.
+// detailsVisibleLines is how many parameter rows (detailsParameterRows) Key
+// Details shows: 5, 8 or 12 by terminal height, and never more than the
+// popup has room for under the rows drawn above and below them and the two
+// scroll markers.
 func (m Model) detailsVisibleLines() int {
 	lines := 8
 	switch {
