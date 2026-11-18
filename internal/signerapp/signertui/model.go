@@ -221,6 +221,9 @@ type backupState struct {
 	confirmError      string
 	confirmFocus      int // 0 = export passphrase, 1 = confirm passphrase
 	archivePath       string
+	// archiveWarning reports an archive published without a durable
+	// directory entry.
+	archiveWarning string
 }
 
 // restoreState is the backup browse/preview/restore flow.
@@ -775,6 +778,7 @@ type RevokeAllEnrolledKeysResultMsg struct {
 type BackupResultMsg struct {
 	Success     bool
 	ArchivePath string
+	Warning     string
 	Error       string
 }
 

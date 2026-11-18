@@ -577,6 +577,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		return BackupResultMsg{
 			Success:     backupResult.Success,
 			ArchivePath: backupResult.ArchivePath,
+			Warning:     backupResult.Warning,
 			Error:       backupResult.Error,
 		}
 	}),

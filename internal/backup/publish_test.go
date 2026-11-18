@@ -93,30 +93,65 @@ func TestBackupIsPublishedDurablyAndWhole(t *testing.T) {
 	if err != nil || len(listed) != 1 || listed[0].Path != archivePath {
 		t.Fatalf("ListManagedBackups() = %+v, %v", listed, err)
 	}
+	if listed[0].Checksum != result.ArchiveChecksum || listed[0].Size != result.ArchiveSize || result.Warning != "" {
+		t.Fatalf("result %+v does not describe the published archive %+v", result, listed[0])
+	}
 }
 
-// A backup that fails after its archive is written leaves no archive behind:
-// the listing shows no backup, and no partial file remains.
+// A backup that fails after its archive is written and verified, before it
+// is given its managed name, leaves nothing behind: no backup is listed, and
+// neither the partial archive nor the verification directory remains.
 func TestFailedBackupLeavesNothingListed(t *testing.T) {
 	paths := storeWithOneKeyForBackupTest(t)
 	archivePath := BuildManagedArchivePath(paths, "20260428-010203")
-	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
-		if op == fsutil.OpDirSync && path == paths.ProductBackupsDir() {
-			return errors.New("simulated backup directory sync failure")
-		}
-		return nil
+	var sawPartial bool
+	beforeArchivePublish = func(partial string) error {
+		_, err := os.Lstat(partial)
+		sawPartial = err == nil
+		return errors.New("simulated failure before publication")
 	}
-	t.Cleanup(func() { fsutil.TestHook = nil })
+	t.Cleanup(func() { beforeArchivePublish = nil })
 
 	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archivePath, nil, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey))); err == nil {
-		t.Fatal("CreateKeysArchive() succeeded though its archive could not be made durable")
+		t.Fatal("CreateKeysArchive() succeeded though publication failed")
 	}
-	fsutil.TestHook = nil
+	if !sawPartial {
+		t.Fatal("the archive was not written under its partial name before publication")
+	}
 	if names := backupDirNames(t, paths); len(names) != 0 {
 		t.Fatalf("a failed backup left %v in the backup directory", names)
 	}
 	if listed, err := ListManagedBackups(paths); err != nil || len(listed) != 0 {
 		t.Fatalf("ListManagedBackups() after a failed backup = %+v, %v", listed, err)
+	}
+}
+
+// A directory sync that fails once the archive has its name leaves the
+// complete, verified archive published, and says so, as an import does.
+func TestBackupWhoseDirectoryCannotBeSyncedIsPublishedWithAWarning(t *testing.T) {
+	paths := storeWithOneKeyForBackupTest(t)
+	archivePath := BuildManagedArchivePath(paths, "20260428-010203")
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == paths.ProductBackupsDir() {
+			if _, err := os.Lstat(archivePath); err == nil {
+				return errors.New("simulated backup directory sync failure")
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	result, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archivePath, nil, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey)))
+	fsutil.TestHook = nil
+	if err != nil {
+		t.Fatalf("CreateKeysArchive() error = %v", err)
+	}
+	if !strings.Contains(result.Warning, "durability could not be confirmed") {
+		t.Fatalf("warning = %q, want the durability warning", result.Warning)
+	}
+	listed, err := ListManagedBackups(paths)
+	if err != nil || len(listed) != 1 || listed[0].Checksum != result.ArchiveChecksum || listed[0].Size != result.ArchiveSize {
+		t.Fatalf("ListManagedBackups() = %+v, %v; want the archive the result describes", listed, err)
 	}
 }
 
