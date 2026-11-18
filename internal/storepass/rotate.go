@@ -4,7 +4,6 @@
 package storepass
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -181,10 +180,11 @@ func Rotate(
 			updatePassphraseHelper(&result, opts)
 			return result, fmt.Errorf("new passphrase and generation committed but root durability requires recovery confirmation: %w", mintErr)
 		}
-		if errors.Is(mintErr, genstore.ErrStoreRootCommitStateUnknown) {
-			// The new root may have landed though it could not be read
-			// back; the signer stays locked either way.
-			return result, fmt.Errorf("the new passphrase may be in effect: if unlocking with the current passphrase is refused, use the new one: %w", mintErr)
+		if genstore.RootCommitUncertain(mintErr) {
+			// The new root may have landed though it could not be opened;
+			// the signer stays locked either way. The unlock helper still
+			// holds the current passphrase.
+			return result, fmt.Errorf("the new passphrase may be in effect: if unlocking with the current passphrase is refused, use the new one, and update any passphrase helper: %w", mintErr)
 		}
 		return result, mintErr
 	}

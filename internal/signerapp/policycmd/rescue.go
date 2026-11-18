@@ -148,6 +148,12 @@ func (b *offlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequ
 func (b *offlineBackend) Apply(_ context.Context, req adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error) {
 	outcome, err := policyapply.Commit(b.env, req)
 	if err != nil {
+		if outcome.Uncertain {
+			// The root may name the new generation: normalize its
+			// ownership as for a commit, or a service-user daemon could
+			// not read what a root-run rescue may have published.
+			b.committed = true
+		}
 		return adminproto.ApplyPolicyResult{
 			Code: policyapply.Code(err, "policy_apply_failed"), Error: err.Error(),
 			Errors: outcome.Problems, CommitUncertain: outcome.Uncertain,

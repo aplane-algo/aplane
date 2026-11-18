@@ -84,10 +84,10 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - Validation and scan failures are one nondeterministic outcome. Which
   generation content is invalid, and the exact error, are
   `internal/genstore` and `internal/keystore` concerns.
-- `CommitRoot` stands for policy apply, restore, and rollback, and also for
-  a commit whose outcome is uncertain: the candidate is visible but not
-  confirmed durable, or the root cannot be read back or matches neither the
-  old record nor the candidate (`genstore.RootCommitUncertain`). The caller
+- `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
+  and also for a commit whose outcome is uncertain: the candidate is visible
+  but not confirmed durable, or the root cannot be read back or matches
+  neither the old record nor the candidate (`genstore.RootCommitUncertain`). The caller
   cannot tell whether the root moved, so it takes the path of a commit that
   did, and its reload or recovery follows. Policy apply is
   refused while the runtime is in recovery (`admin/policy.go::commitAndReload`),

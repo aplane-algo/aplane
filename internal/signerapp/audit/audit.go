@@ -1155,8 +1155,13 @@ func (a *AuditLogger) LogCredentialRestoreRollbackContext(
 	entry.Outcome = "rolled_back"
 	entry.OperationID = result.OperationID
 	entry.KeyCount = result.KeyCount
+	entry.GenerationID = result.GenerationID
 	if !result.Success {
 		entry.Outcome = "failed"
+		if result.GenerationID != "" {
+			// The rollback may have committed as this generation.
+			entry.Outcome = "commit_uncertain"
+		}
 		entry.Reason = result.Error
 	}
 	a.Log(entry)

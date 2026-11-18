@@ -166,6 +166,9 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, kr, exportPassphrase, staged)
 		},
 	}); err != nil {
+		if genstore.RootCommitUncertain(err) {
+			return fmt.Errorf("rebuild may have committed; unlock the signer to check: %w", err)
+		}
 		return fmt.Errorf("rebuild failed; nothing was committed: %w", err)
 	}
 	if hints, err := backup.LoadRebuildHints(sourceRoot, addresses, exportPassphrase); err != nil {

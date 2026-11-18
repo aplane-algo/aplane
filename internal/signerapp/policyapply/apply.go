@@ -336,8 +336,9 @@ type Outcome struct {
 	// GenerationID is the committed generation, empty when the change left
 	// the policy unchanged.
 	GenerationID string
-	// Uncertain means the commit may be visible but its durability is
-	// unconfirmed; the caller must block signing pending reconciliation.
+	// Uncertain means the commit may have landed but could not be confirmed
+	// (genstore.RootCommitUncertain); the caller must block signing pending
+	// reconciliation.
 	Uncertain bool
 	Problems  []adminproto.PolicyProblem
 	// BasePolicySetSHA256 is the verified active policy set the change was

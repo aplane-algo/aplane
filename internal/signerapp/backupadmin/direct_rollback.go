@@ -156,6 +156,9 @@ func (s Service) RollbackRestore(
 			result.Code = protocol.ResultCodeRestoreRollbackRefused
 		}
 		result.Error = err.Error()
+		if mutated {
+			result.Error = fmt.Sprintf("rollback may have committed as generation %s; signing is blocked pending reconciliation: %v", result.GenerationID, err)
+		}
 		return result
 	}
 	result.Success = true
