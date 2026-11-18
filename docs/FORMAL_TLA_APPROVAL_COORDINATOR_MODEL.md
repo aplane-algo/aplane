@@ -41,7 +41,10 @@ an entry into recovery, the start of store maintenance and a losing unlock
 call `EndSessionSignRequests` (`productruntime.Runtime.endSignRequests`, from
 the lock cleanup before its drain, or directly on recovery), which ends every
 approval wait in flight, queued or delivered, by a session epoch; each ends
-through `Cancel`. An explicit lock no longer calls
+through `Cancel`. The model's `Approve` and `Reject` are the request reading
+the operator's answer, not `HandleSignResponse` delivering it: a session end
+in between turns a delivered approval into `Cancel`, and leaves a rejection
+as `Reject`. An explicit lock no longer calls
 `FailAllPendingRequests`, so the fail-all callers are disconnect and
 displacement.
 

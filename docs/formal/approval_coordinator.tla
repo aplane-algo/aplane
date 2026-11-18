@@ -122,8 +122,9 @@ Timeout(r) ==
     /\ UNCHANGED <<badPendingAfterFailAll, orphanedDelivery>>
 
 \* Cancel models /sign/cancel, daemon shutdown's context cancellation, and
-\* the cancellation of every request when the signer's session ends
-\* (EndSessionSignRequests). It terminates a request in any non-terminal
+\* the end of every approval wait when the signer's session ends
+\* (EndSessionSignRequests, by session epoch). It terminates a request in
+\* any non-terminal
 \* state -- queued, delivered, or not yet waiting (New) -- and releases the
 \* turn only if the request was the delivered one.
 Cancel(r) ==

@@ -16,9 +16,9 @@ import (
 var (
 	ErrApprovalTimeout  = errors.New("approval timeout")
 	ErrApprovalCanceled = errors.New("approval canceled")
-	// ErrSessionEnded accompanies ErrApprovalCanceled when the request was
-	// withdrawn because the signer's session ended: it is the cause
-	// EndSessionSignRequests cancels each request's context with.
+	// ErrSessionEnded accompanies ErrApprovalCanceled when an approval wait
+	// ended because the signer's session ended (EndSessionSignRequests):
+	// the request began in an earlier session epoch.
 	ErrSessionEnded = errors.New("the signer's session ended")
 )
 
@@ -133,7 +133,12 @@ func (c *Coordinator) BeginSignRequest(ctx context.Context, requestID string) (c
 		ctx = context.Background()
 	}
 	if requestID == "" {
-		return ctx, func() {}
+		// Nothing to cancel by ID, but its approval still belongs to the
+		// session it began in.
+		c.pendingRequestsLock.Lock()
+		epoch := c.sessionEpoch
+		c.pendingRequestsLock.Unlock()
+		return context.WithValue(ctx, sessionEpochKey{}, epoch), func() {}
 	}
 	requestCtx, cancel := context.WithCancel(ctx)
 	active := &activeSignRequest{cancel: cancel}
@@ -195,7 +200,9 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 	}
 	if exists {
 		if ch != nil {
-			c.notifySignRequestCanceled(promptID, reason)
+			// The waiter dismisses the prompt when it reads this, after its
+			// own sendSignRequest, so the dismissal never overtakes the
+			// prompt it dismisses.
 			trySendSignResponse(ch, SignResponse{ID: promptID, Approved: false, Reason: reason, withdrawn: true})
 		}
 		return SignRequestCancelResult{State: SignRequestCancelStateCanceled}
@@ -349,6 +356,11 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, sessionEnd
 		if c.cancelDeliveryWaiter(waiter) {
 			c.releaseDeliveryTurn()
 		}
+		select {
+		case <-sessionEnded:
+			return errSessionEndedWait
+		default:
+		}
 		return ctx.Err()
 	case <-sessionEnded:
 		if c.cancelDeliveryWaiter(waiter) {
@@ -452,11 +464,11 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
 	}
 	defer c.releaseDeliveryTurn()
-	if err := ctx.Err(); err != nil {
-		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
-	}
 	if c.sessionEndedSince(epoch) {
 		return SignResponse{}, sessionEndedError()
+	}
+	if err := ctx.Err(); err != nil {
+		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
 	}
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
 		return SignResponse{}, cancellationError(reason, nil)
@@ -512,12 +524,13 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 
 	select {
 	case response := <-responseChan:
-		if response.withdrawn && response.Reason == SignRequestCancelReasonSessionEnded {
-			c.notifySignRequestCanceled(promptID, SignRequestCancelReasonSessionEnded)
+		if response.withdrawn {
+			c.notifySignRequestCanceled(promptID, response.Reason)
 		}
-		// A session end decides, whatever else answered the prompt in the
-		// meantime: no request from the ended session can sign.
-		if c.sessionEndedSince(epoch) {
+		// A session end overrides an approval or a withdrawal answered in
+		// the meantime (no request from the ended session can sign), but an
+		// operator's rejection stays a rejection.
+		if (response.Approved || response.withdrawn) && c.sessionEndedSince(epoch) {
 			return SignResponse{}, sessionEndedError()
 		}
 		if isCancellationResponse(response) {
@@ -528,6 +541,10 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
 		return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
 	case <-ctx.Done():
+		if c.sessionEndedSince(epoch) {
+			c.notifySignRequestCanceled(promptID, SignRequestCancelReasonSessionEnded)
+			return SignResponse{}, sessionEndedError()
+		}
 		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonClientCanceled)
 		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, ctx.Err())
 	}

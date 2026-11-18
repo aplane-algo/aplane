@@ -402,9 +402,11 @@ func (ir *Runtime) SetRecovery() {
 	ir.endSignRequests()
 }
 
-// endSignRequests withdraws every signing request in flight when the
-// session ends: none of them can sign afterwards, so none is left waiting
-// for, or showing, an approval, and each answers that the session ended.
+// endSignRequests ends every approval wait in flight when the session ends,
+// so no request from it is left waiting for, or showing, an approval; those
+// answer that the session ended. Requests that are planning or signing are
+// not interrupted here: the session check or the lock's cut of their key use
+// refuses them, as locked.
 // The lock cleanup calls it first, before it waits for key users, so a lock,
 // the start of store maintenance and an unlock that lost to a lock withdraw
 // at once; entering recovery, which runs no cleanup, calls it directly.

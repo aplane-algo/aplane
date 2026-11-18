@@ -1172,13 +1172,16 @@ for key users. The coordinator counts session ends: the prompt on screen is
 answered as withdrawn and dismissed with reason `session_ended`, requests
 queued behind it stop waiting and are never shown, and a request registered
 in the ended session (`BeginSignRequest`) that asks for approval later is
-refused. No request from the ended session could sign afterwards, so none is
-left looking approvable. Such a request answers `locked` ("the signer's
+refused, and so is one sent without a `request_id`. A request from the ended
+session cannot sign afterwards (past its approval, the session check refuses
+it), so none is left looking approvable. Such a request answers `locked` ("the signer's
 session ended while the request waited for approval; send it again") and is
 audited as `approval_withdrawn_session_ended`, not as an operator rejection.
 A session end cancels no request's context: a request that is planning or
 signing meets the session check or the lock's cut of its key use, which
-answer `locked` as before. One refused at the check after its gates and
+answer `locked` as before. A session end that comes after an operator
+answered overrides an approval, which could no longer sign, but not a
+rejection, which is recorded as the operator's. One refused at the check after its gates and
 approval passed is audited as `session_ended_after_approval`. A request sent
 again under the same ID belongs to the new session and is handled as new.
 Only the signer withdraws a request; an operator's rejection stays a

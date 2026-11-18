@@ -151,3 +151,92 @@ func TestASessionEndRefusesLaterApprovalsWithoutCancelingTheRequest(t *testing.T
 	default:
 	}
 }
+
+// A request sent without a request ID still belongs to the session it began
+// in: after the session ends its approval is refused, not shown.
+func TestASessionEndRefusesALaterApprovalOfARequestWithoutAnID(t *testing.T) {
+	sent := make(chan string, 1)
+	c := New(
+		func() bool { return true },
+		func(req *SignRequest) bool { sent <- req.ID; return true },
+		func(*SignRequestCanceled) bool { return true },
+	)
+	ctx, finish := c.BeginSignRequest(context.Background(), "")
+	defer finish()
+	c.EndSessionSignRequests()
+	if _, err := c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "req-generated", Address: "A", TxnSender: "A", Description: "d"}, time.Minute); !errors.Is(err, ErrSessionEnded) {
+		t.Fatalf("approval after the session ended = %v, want refused as session-ended", err)
+	}
+	select {
+	case id := <-sent:
+		t.Fatalf("a prompt (%s) was shown for a request whose session had ended", id)
+	default:
+	}
+}
+
+// An operator's rejection stays a rejection even when the session ends
+// before the request reads it; only an approval or a withdrawal answered in
+// the meantime gives way to the session end.
+func TestARejectionStaysARejectionWhenTheSessionEndsAfterIt(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		sent := make(chan string, 1)
+		c := New(
+			func() bool { return true },
+			func(req *SignRequest) bool { sent <- req.ID; return true },
+			func(*SignRequestCanceled) bool { return true },
+		)
+		ctx, finish := c.BeginSignRequest(context.Background(), "sign-1")
+		type outcome struct {
+			response SignResponse
+			err      error
+		}
+		result := make(chan outcome, 1)
+		go func() {
+			response, err := c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "d"}, time.Minute)
+			result <- outcome{response, err}
+		}()
+		promptID := <-sent
+		c.HandleSignResponse(&SignResponse{ID: promptID, Approved: false, Reason: "rejected by user"})
+		c.EndSessionSignRequests()
+		got := <-result
+		finish()
+		if got.err != nil || got.response.Approved {
+			t.Fatalf("iteration %d: rejection then session end = %+v, %v; want the rejection", i, got.response, got.err)
+		}
+	}
+}
+
+// When the session ends and the requester then cancels before a queued
+// request wakes, it answers that the session ended, whichever of the two it
+// sees first.
+func TestASessionEndThenAClientCancelAnswersSessionEnded(t *testing.T) {
+	for i := 0; i < 300; i++ {
+		sent := make(chan string, 2)
+		c := New(
+			func() bool { return true },
+			func(req *SignRequest) bool { sent <- req.ID; return true },
+			func(*SignRequestCanceled) bool { return true },
+		)
+		holderCtx, finishHolder := c.BeginSignRequest(context.Background(), "holder")
+		go func() {
+			_, _ = c.RequestSigningApprovalPrompt(holderCtx, Prompt{RequestID: "holder", Address: "A", TxnSender: "A", Description: "d"}, time.Minute)
+		}()
+		<-sent // the holder has the delivery turn
+		ctx, finish := c.BeginSignRequest(context.Background(), "queued")
+		result := make(chan error, 1)
+		queued := make(chan struct{})
+		go func() {
+			close(queued)
+			_, err := c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "queued", Address: "A", TxnSender: "A", Description: "d"}, time.Minute)
+			result <- err
+		}()
+		<-queued
+		time.Sleep(time.Millisecond) // let it reach the delivery queue
+		c.EndSessionSignRequests()
+		finish() // the requester goes away
+		if err := <-result; !errors.Is(err, ErrSessionEnded) {
+			t.Fatalf("iteration %d: session end then cancel = %v, want session-ended", i, err)
+		}
+		finishHolder()
+	}
+}
