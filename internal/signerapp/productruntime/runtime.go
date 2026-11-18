@@ -1528,8 +1528,9 @@ func (ir *Runtime) refuseKeyUses() {
 //
 // Clearing them under a key user still registered (one EndKeyUses gave up on,
 // or any when Destroy runs alone) is safe: the user decrypted its own copy
-// (FileKeyStore.Get, WithKeyring) under the read lock that ClearKeys and the
-// session's Destroy wait for, so it keeps working on that copy, and any load
+// under the keystore's read lock (FileKeyStore.Get) or a counted reference
+// (WithKeyring), both of which ClearKeys and the session's Destroy wait for,
+// so it keeps working on that copy, and any load
 // it starts afterward fails as locked. Its copy is zeroed when it releases,
 // or reclaimed by the operating system at the process exit that follows.
 func (ir *Runtime) Destroy() {

@@ -21,6 +21,34 @@ func storeWithKeyring(t *testing.T) *FileKeyStore {
 	return fs
 }
 
+// within runs fn and fails the test if it has not returned after d: the
+// regression these tests guard against is a hang, which must fail rather
+// than stall the package.
+func within(t *testing.T, d time.Duration, what string, fn func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		fn()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(d):
+		t.Fatalf("%s did not finish within %v", what, d)
+	}
+}
+
+// waitForLockToTakeTheKeyring waits until ClearKeys has taken the keyring
+// off the store.
+func waitForLockToTakeTheKeyring(t *testing.T, fs *FileKeyStore) {
+	t.Helper()
+	within(t, 2*time.Second, "taking the keyring off the store", func() {
+		for fs.keyringIsLoaded() {
+			time.Sleep(time.Millisecond)
+		}
+	})
+}
+
 func keyringWorks(kr *crypto.Keyring) bool {
 	_, err := kr.Seal([]byte("probe"), crypto.AccountKeyContext("PROBE"))
 	return err == nil
@@ -52,13 +80,7 @@ func TestWithKeyringCallbackReadsTheStoreWhileALockWaits(t *testing.T) {
 		close(cleared)
 	}()
 	// Let ClearKeys take the store before the callback reads it.
-	deadline := time.Now().Add(2 * time.Second)
-	for fs.keyringIsLoaded() && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if fs.keyringIsLoaded() {
-		t.Fatal("ClearKeys did not take the keyring off the store while a callback ran")
-	}
+	waitForLockToTakeTheKeyring(t, fs)
 	select {
 	case <-cleared:
 		t.Fatal("ClearKeys returned while a callback was still using the keyring")
@@ -117,15 +139,35 @@ func TestWithKeyringDuringALockIsRefusedAndMayNest(t *testing.T) {
 		fs.ClearKeys()
 		close(cleared)
 	}()
-	for fs.keyringIsLoaded() {
-		time.Sleep(time.Millisecond)
-	}
+	waitForLockToTakeTheKeyring(t, fs)
 	if err := fs.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, ErrStoreLocked) {
 		t.Fatalf("WithKeyring() while a lock waits = %v, want ErrStoreLocked", err)
 	}
 	close(proceed)
-	<-finished
-	<-cleared
+	within(t, 2*time.Second, "the callback and the lock", func() {
+		<-finished
+		<-cleared
+	})
+}
+
+// Installing the keyring already installed changes nothing and zeroes
+// nothing.
+func TestReinstallingTheSameKeyringKeepsItUsable(t *testing.T) {
+	kr, err := crypto.NewKeyringFromKey(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs := &FileKeyStore{cache: map[string]keys.KeyScanInfo{}}
+	fs.setKeyringDirectlyForTest(kr)
+	fs.setKeyringDirectlyForTest(kr)
+	if err := fs.WithKeyring(func(got *crypto.Keyring) error {
+		if got != kr || !keyringWorks(got) {
+			return errors.New("the keyring was replaced or zeroed")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // A keyring replaced by another (an unlock of a store already unlocked) is
@@ -170,7 +212,7 @@ func TestReplacedKeyringIsZeroedAfterItsCallbacks(t *testing.T) {
 	if !<-done {
 		t.Fatal("the old keyring was zeroed while its callback was using it")
 	}
-	<-replaced
+	within(t, 2*time.Second, "replacing the keyring", func() { <-replaced })
 	if keyringWorks(old) {
 		t.Fatal("the replaced keyring was not zeroed after its callback returned")
 	}

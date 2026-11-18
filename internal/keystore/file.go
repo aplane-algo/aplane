@@ -167,7 +167,9 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 // store again (an admin service's key paths are the store's active paths);
 // a second read lock taken while a lock's ClearKeys waits for the first
 // would deadlock the store. The keyring is held instead by a count that
-// ClearKeys and Unlock wait for.
+// ClearKeys and Unlock wait for. fn may read the store and call WithKeyring;
+// it must not, on its own goroutine, call ClearKeys, Unlock, or anything
+// that does (a lock, a reload with a passphrase): they wait for fn.
 func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	f.cacheLock.RLock()
 	kr, users := f.keyring, f.keyringUsers
@@ -194,6 +196,11 @@ type detachedKeyring struct {
 // use the keyring under the lock (Get, Scan, BindStoreRootSelection) are
 // done with it by then; the lock excluded them.
 func (f *FileKeyStore) replaceKeyringLocked(kr *crypto.Keyring) detachedKeyring {
+	if kr != nil && kr == f.keyring {
+		// Installing the keyring already installed changes nothing, and
+		// returning it would zero the live keyring.
+		return detachedKeyring{}
+	}
 	previous := detachedKeyring{keyring: f.keyring, users: f.keyringUsers}
 	f.keyring, f.keyringUsers = kr, nil
 	if kr != nil {

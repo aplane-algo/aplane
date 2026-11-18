@@ -4,11 +4,13 @@
 package backupadmin
 
 import (
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -34,12 +36,16 @@ func TestALockDuringAnAdminOperationUnderTheKeyringCompletes(t *testing.T) {
 				ir.Lock()
 				close(locked)
 			}()
+			// Wait until the lock has taken the keyring off the store, which
+			// it does only once it reaches ClearKeys: from then a new
+			// WithKeyring is refused as locked.
 			deadline := time.Now().Add(2 * time.Second)
-			for ir.IsUnlocked() && time.Now().Before(deadline) {
+			for time.Now().Before(deadline) {
+				if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); errors.Is(err, keystore.ErrStoreLocked) {
+					break
+				}
 				time.Sleep(time.Millisecond)
 			}
-			// Give the lock time to reach ClearKeys.
-			time.Sleep(50 * time.Millisecond)
 			_, _ = ir.ActiveKeyPaths()
 			return nil
 		})
@@ -60,5 +66,12 @@ func TestALockDuringAnAdminOperationUnderTheKeyringCompletes(t *testing.T) {
 	}
 	if _, err := ir.ActiveKeyPaths(); err == nil {
 		t.Fatal("the store still has active paths after the lock")
+	}
+	// The operation's failure path enters recovery to block signing from a
+	// cache behind the root. The lock already did: the signer stays locked,
+	// not in a recovery with no keyring.
+	ir.SetRecovery()
+	if ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("after a lock overtook an admin operation the state is %v, want locked", ir.GetState())
 	}
 }

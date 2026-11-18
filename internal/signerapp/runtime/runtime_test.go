@@ -362,14 +362,17 @@ func TestRecoveryEndsTheUnlockedSession(t *testing.T) {
 	var lockCalls atomic.Int32
 	rt.SetOnLock(func() { lockCalls.Add(1) })
 
-	// Locked to recovery is not the end of an unlocked session.
+	// A locked signer stays locked: recovery needs the keyring a lock
+	// cleared, and the generation does not move.
 	before := rt.LockGeneration()
 	rt.SetRecovery()
-	if rt.LockGeneration() != before || !rt.IsRecovery() {
-		t.Fatalf("locked to recovery: generation %d -> %d, state %v", before, rt.LockGeneration(), rt.GetState())
+	if rt.LockGeneration() != before || rt.GetState() != SignerStateLocked {
+		t.Fatalf("SetRecovery on a locked signer: generation %d -> %d, state %v", before, rt.LockGeneration(), rt.GetState())
 	}
-	if !rt.PromoteRecoveryToUnlocked() || rt.LockGeneration() != before {
-		t.Fatal("leaving recovery moved the generation or failed")
+	rt.SetUnlocked()
+	rt.SetRecovery()
+	if !rt.PromoteRecoveryToUnlocked() {
+		t.Fatal("leaving recovery failed")
 	}
 
 	session := rt.LockGeneration()

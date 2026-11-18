@@ -1790,7 +1790,12 @@ locks, `ClearKeys()` takes the `WLock` (waiting only for the short `RLock`
 holders), detaches the keyring so the store reads as locked, releases the
 lock, waits for every `WithKeyring` callback still using that keyring, and
 then zeroes it. A new `WithKeyring` meanwhile is refused with
-`ErrStoreLocked` rather than queued. `Unlock` of a store already unlocked
+`ErrStoreLocked` rather than queued. A callback may read the store or call
+`WithKeyring` again, but must not, on its own goroutine, call `ClearKeys`,
+`Unlock`, or anything that reaches them (a lock, a reload with a
+passphrase): they wait for the callback. A store mutation that a lock
+overtakes leaves the signer locked: `SetRecovery` does nothing on a locked
+signer, whose next unlock reconciles the store. `Unlock` of a store already unlocked
 publishes the new keyring at once and zeroes the old one the same way. This
 prevents term-key use after zeroing. Decrypted request-owned `KeyMaterial`
 can continue beyond key retrieval and is separately zeroed by the signing
@@ -1871,9 +1876,9 @@ All service stops share one 5 s shutdown deadline.
    holds shutdown, after its stop record.
 
 A key user that still holds key material at the drain deadline decrypted its
-own copy under the read locks that `keySession.Destroy()` and `ClearKeys()`
-wait for, so the session and keyring are cleared under it without disturbing
-it, and any load it starts afterward fails as locked. Its copy is zeroed when
+own copy under the keystore's read lock (`Get`) or a counted reference
+(`WithKeyring`), both of which `keySession.Destroy()` and `ClearKeys()` wait
+for, so the session and keyring are cleared under it without disturbing it, and any load it starts afterward fails as locked. Its copy is zeroed when
 it releases or is reclaimed by the operating system at the exit that follows.
 `EndKeyUses` reports it, and lifecycle writes `SERVER_STOP_INCOMPLETE` instead of
 `SERVER_STOP` and leaves the audit log open for that user's final record (a
