@@ -2,8 +2,8 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package dsafamily holds the client-safe registration descriptor a LogicSig
-// DSA family needs: LogicSig derivation, address derivation, and display
-// metadata. A family declares one ClientRegistration (and, in
+// DSA family needs: LogicSig derivation (which yields each account's
+// address) and display metadata. A family declares one ClientRegistration (and, in
 // lsig/dsafamily/signerreg, one SignerRegistration) instead of hand-writing
 // per-registry calls, so partial registration is not representable. This
 // package must not reference signer-side machinery (key generation, signing

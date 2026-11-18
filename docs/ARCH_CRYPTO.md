@@ -55,8 +55,8 @@ key types exist and how their LogicSig metadata is assembled:
 `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`,
 `internal/algorithm`, and `internal/keytypecatalog`.
 Those registries do not own private-key execution. Signer-side registries own
-private-key behavior: `internal/signing`, `internal/keygen`,
-`internal/mnemonic`, and key processors under provider-owned packages.
+private-key behavior: `internal/signing`, `internal/keygen`, and
+`internal/mnemonic`.
 
 This split is a hard dependency boundary, not only a startup preference:
 
@@ -432,7 +432,6 @@ Relevant registries:
 - signer-side signing providers: `internal/signing/registry.go`
 - signer-side mnemonic handlers: `internal/mnemonic`
 - signer-side key generators: `internal/keygen`
-- signer-side key processors
 
 ## Key-Type Source Model
 

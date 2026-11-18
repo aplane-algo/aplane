@@ -4,8 +4,8 @@
 // Package falcon provides Falcon-1024 post-quantum signature support.
 //
 // This package provides a convenient single import for client-safe Falcon-1024
-// DSA metadata, LogicSig derivation, address derivation, and algorithm metadata.
-// Signer-side key generation, mnemonic handling, signing, and key processors
+// DSA metadata, LogicSig derivation, and algorithm metadata.
+// Signer-side key generation, mnemonic handling, and signing
 // are registered by lsig/falcon1024/signerreg.
 //
 // Usage:
@@ -42,7 +42,6 @@ var (
 // Registration includes:
 // - LogicSigDSA metadata and derivation
 // - Algorithm metadata for display
-// - Pure address derivation
 func RegisterClient() {
 	registerClientOnce.Do(func() {
 		dsafamily.RegisterClient(dsafamily.ClientRegistration{
