@@ -13,6 +13,7 @@ import (
 const (
 	SignRequestCancelReasonClientCanceled = protocol.SignRequestCancelReasonClientCanceled
 	SignRequestCancelReasonTimeout        = protocol.SignRequestCancelReasonTimeout
+	SignRequestCancelReasonSessionEnded   = protocol.SignRequestCancelReasonSessionEnded
 )
 
 // SignRequestCancelState describes the result of a sign-request cancellation.

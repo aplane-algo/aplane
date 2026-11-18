@@ -4,7 +4,9 @@
 package adminserver
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -80,7 +82,9 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 	}
 }
 
-func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
+// A lock withdraws the approval waiting on the operator's screen as having
+// outlived its session, not as an operator rejection.
+func TestHandleLockIdentityWithdrawsPendingApprovals(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
@@ -94,15 +98,15 @@ func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 		nil,
 	))
 
+	// Every production sign request registers itself (BeginSigningRequest)
+	// before it asks for approval.
+	ctx, finish := ir.BeginSigningRequest(context.Background(), "lock-pending")
+	defer finish()
 	result := make(chan error, 1)
 	go func() {
-		response, err := ir.RequestSigningApprovalResponse("lock-pending", "A", "A", "desc", 0, 0, nil, time.Minute)
-		if err != nil {
-			result <- err
-			return
-		}
-		if response.Approved || response.Reason != "identity locked" {
-			result <- fmt.Errorf("response = %+v, want rejected identity locked response", response)
+		_, err := ir.RequestSigningApprovalPrompt(ctx, signerapproval.Prompt{RequestID: "lock-pending", Address: "A", TxnSender: "A", Description: "desc"}, time.Minute)
+		if !errors.Is(err, signerapproval.ErrSessionEnded) {
+			result <- fmt.Errorf("approval error = %v, want the session-ended withdrawal", err)
 			return
 		}
 		result <- nil

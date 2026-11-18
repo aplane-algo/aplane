@@ -122,7 +122,9 @@ Timeout(r) ==
     /\ turnHeld' = FALSE
     /\ UNCHANGED <<badPendingAfterFailAll, orphanedDelivery>>
 
-\* Cancel models /sign/cancel. It terminates a request in any non-terminal
+\* Cancel models /sign/cancel, daemon shutdown's context cancellation, and
+\* the cancellation of every request when the signer's session ends
+\* (CancelAllSignRequests). It terminates a request in any non-terminal
 \* state -- queued, delivered, or not yet waiting (New) -- and releases the
 \* turn only if the request was the delivered one.
 Cancel(r) ==

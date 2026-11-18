@@ -61,3 +61,10 @@ const lockedMessage = "signer is locked"
 func lockedError() *ServiceError {
 	return &ServiceError{Kind: ErrorLocked, Message: lockedMessage}
 }
+
+// sessionEndedError answers a request whose approval was withdrawn because
+// the signer's session ended while it waited (a lock, recovery, or store
+// maintenance). It is a locked error: the request can be sent again.
+func sessionEndedError() *ServiceError {
+	return &ServiceError{Kind: ErrorLocked, Message: "the signer's session ended while the request waited for approval; send it again"}
+}

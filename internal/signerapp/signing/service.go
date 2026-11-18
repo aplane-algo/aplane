@@ -309,6 +309,9 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 	}
 	release, err := s.beforeExecute()
 	if err != nil {
+		// The request passed its gates, an operator approval among them,
+		// but the signer locked or its session ended before it could sign.
+		s.logSignRejections(req, plan, txns, "session_ended_after_approval", err)
 		return "", nil, err
 	}
 	plan.bindApproval(approvedDigest)

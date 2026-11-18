@@ -1847,3 +1847,42 @@ func shippedDefaultWithSelfNoOpAutoApproval(t *testing.T) *policy.Config {
 	}
 	return cfg
 }
+
+// A request that passed its gates, an approval among them, but whose
+// session ended before it could sign is refused and audited as such, not
+// dropped without a record.
+func TestRequestRefusedAfterApprovalIsAudited(t *testing.T) {
+	audit := &testAuditLogger{}
+	sender := types.Address{7}
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender: sender, Fee: types.MicroAlgos(policy.SelfNoOpTransferMaxFeeMicroAlgos),
+			FirstValid: 1, LastValid: 10, GenesisHash: testDigest(t, apconfig.AlgorandTestnetGenesisHash),
+		},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
+	}
+	service := &Service{
+		Approval:                      &ApprovalService{HasClient: func() bool { return false }},
+		Executor:                      &Executor{},
+		AuditLog:                      audit,
+		GenerateTxnDescriptionFromTxn: describeAs("txn"),
+		IsUnlocked:                    func() bool { return true },
+		BeforeExecute:                 func() (func(), *ServiceError) { return nil, lockedError() },
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
+			MaxFeeMicroAlgos:            policy.SelfNoOpTransferMaxFeeMicroAlgos,
+			AutoApproveSelfNoOpTransfer: true,
+		}),
+	}
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}}}
+	plan := &PlanResult{
+		AllTxns: []types.Transaction{txn}, PassthroughIndices: map[int]bool{}, PassthroughSignedTxns: map[int][]byte{},
+		ForeignIndices: map[int]bool{}, AuthKeyTypes: []string{"ed25519"},
+	}
+	if _, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("error = %+v, want locked", err)
+	}
+	if len(audit.rejected) != 1 || audit.rejected[0].reason != "session_ended_after_approval" {
+		t.Fatalf("audit = %+v, want one session_ended_after_approval rejection", audit.rejected)
+	}
+}

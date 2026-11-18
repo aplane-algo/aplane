@@ -399,6 +399,17 @@ func (ir *Runtime) SetUnlocked() {
 func (ir *Runtime) SetRecovery() {
 	ir.lockRuntime.SetRecovery()
 	ir.cancelKeyUses()
+	ir.endSignRequests()
+}
+
+// endSignRequests withdraws every signing request in flight when the
+// session ends (a lock, an entry into recovery, store maintenance, an unlock
+// that lost to a lock): none of them can sign afterwards, so none is left
+// waiting for, or showing, an approval. Each answers that the session ended.
+func (ir *Runtime) endSignRequests() {
+	if c := ir.approval.Load(); c != nil {
+		c.CancelAllSignRequests(signerapproval.SignRequestCancelReasonSessionEnded)
+	}
 }
 
 // TryRecoveryUnlock opens the keyring without scanning or publishing
@@ -415,13 +426,16 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 	if ok {
 		// As SetRecovery: a session that was unlocked until now is over.
 		ir.cancelKeyUses()
+		ir.endSignRequests()
 	}
 	return ok, msg
 }
 
 // Lock transitions this identity to the locked state.
 func (ir *Runtime) Lock() {
-	if ir.lockRuntime.Lock() {
+	locked := ir.lockRuntime.Lock()
+	ir.endSignRequests()
+	if locked {
 		ir.notifyLocked()
 	}
 }
@@ -430,7 +444,9 @@ func (ir *Runtime) Lock() {
 // without broadcasting a user-visible lock transition. The caller must pair
 // it with FinishStoreMaintenance.
 func (ir *Runtime) BeginStoreMaintenance() StoreMaintenanceToken {
-	return StoreMaintenanceToken{runtime: ir.lockRuntime.BeginMaintenance()}
+	token := StoreMaintenanceToken{runtime: ir.lockRuntime.BeginMaintenance()}
+	ir.endSignRequests()
+	return token
 }
 
 // FinishStoreMaintenance republishes the identity only after the caller has
@@ -456,6 +472,7 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 		ir.WakeStageWork()
 	}
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
+		ir.endSignRequests()
 		ir.notifyLocked()
 	}
 	return ok, keyCount, errMsg

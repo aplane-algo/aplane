@@ -508,7 +508,8 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 		return
 	}
 
-	ir.FailAllPendingApprovals("identity locked")
+	// The lock withdraws every signing request in flight, the one on screen
+	// and those queued behind it, as having outlived its session.
 	ir.Lock()
 	if audit, ok := s.audit.(interface {
 		LogIdentityLockedContext(SessionContext, string)

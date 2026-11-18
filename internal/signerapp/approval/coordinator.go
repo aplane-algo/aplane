@@ -16,6 +16,10 @@ import (
 var (
 	ErrApprovalTimeout  = errors.New("approval timeout")
 	ErrApprovalCanceled = errors.New("approval canceled")
+	// ErrSessionEnded accompanies ErrApprovalCanceled when the request was
+	// withdrawn because the signer's session ended (CancelAllSignRequests
+	// with SignRequestCancelReasonSessionEnded).
+	ErrSessionEnded = errors.New("the signer's session ended")
 )
 
 const maxRememberedCanceledSignRequests = 1024
@@ -180,6 +184,62 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 	return SignRequestCancelResult{State: SignRequestCancelStateNotFound}
 }
 
+// CancelAllSignRequests cancels every signing request in flight, queued or
+// delivered, with reason, and reports how many there were. It cancels each
+// request's context and records the reason, as CancelSignRequest does; a
+// delivered prompt is dismissed, with that reason, by its own request when
+// it sees the cancellation, so the caller never writes to the operator's
+// connection. The daemon calls it when the signer's session ends, since no
+// request from that session can sign afterwards.
+func (c *Coordinator) CancelAllSignRequests(reason string) int {
+	var cancels []context.CancelFunc
+	c.pendingRequestsLock.Lock()
+	for requestID, activeSet := range c.activeRequests {
+		if len(activeSet) == 0 {
+			continue
+		}
+		c.rememberCanceledSignRequestLocked(requestID, reason)
+		for active := range activeSet {
+			cancels = append(cancels, active.cancel)
+		}
+	}
+	c.pendingRequestsLock.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	return len(cancels)
+}
+
+// canceledReason is the reason a request was canceled with, without
+// consuming it, or "" when none is recorded.
+func (c *Coordinator) canceledReason(requestID string) string {
+	c.pendingRequestsLock.Lock()
+	defer c.pendingRequestsLock.Unlock()
+	return c.canceledRequests[requestID]
+}
+
+// canceledError is the error for a request whose context ended: the reason
+// it was canceled with, when one is recorded, or the context's error.
+func (c *Coordinator) canceledError(requestID string, ctxErr error) error {
+	return cancellationError(c.canceledReason(requestID), ctxErr)
+}
+
+// cancellationError is ErrApprovalCanceled with reason, or with ctxErr when
+// there is no reason. A session end also wraps ErrSessionEnded.
+func cancellationError(reason string, ctxErr error) error {
+	switch reason {
+	case SignRequestCancelReasonSessionEnded:
+		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ErrSessionEnded)
+	case "":
+		if ctxErr == nil {
+			return ErrApprovalCanceled
+		}
+		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ctxErr)
+	default:
+		return fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
+	}
+}
+
 func (c *Coordinator) rememberCanceledSignRequestLocked(requestID, reason string) {
 	if _, exists := c.canceledRequests[requestID]; !exists {
 		c.canceledRequestOrder = append(c.canceledRequestOrder, requestID)
@@ -230,7 +290,8 @@ func isCancellationResponse(response SignResponse) bool {
 		return false
 	}
 	return response.Reason == SignRequestCancelReasonClientCanceled ||
-		response.Reason == SignRequestCancelReasonTimeout
+		response.Reason == SignRequestCancelReasonTimeout ||
+		response.Reason == SignRequestCancelReasonSessionEnded
 }
 
 func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
@@ -339,21 +400,21 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 		return SignResponse{}, fmt.Errorf("request ID is required")
 	}
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
-		return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
+		return SignResponse{}, cancellationError(reason, nil)
 	}
 	if c.hasClient == nil || !c.hasClient() {
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
 	}
 
 	if err := c.acquireDeliveryTurnContext(ctx); err != nil {
-		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
+		return SignResponse{}, c.canceledError(requestID, err)
 	}
 	defer c.releaseDeliveryTurn()
 	if err := ctx.Err(); err != nil {
-		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
+		return SignResponse{}, c.canceledError(requestID, err)
 	}
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
-		return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
+		return SignResponse{}, cancellationError(reason, nil)
 	}
 	if c.hasClient == nil || !c.hasClient() {
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
@@ -401,15 +462,19 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 	select {
 	case response := <-responseChan:
 		if isCancellationResponse(response) {
-			return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, response.Reason)
+			return SignResponse{}, cancellationError(response.Reason, nil)
 		}
 		return response, nil
 	case <-timer.C:
 		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
 		return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
 	case <-ctx.Done():
-		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonClientCanceled)
-		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, ctx.Err())
+		reason := c.canceledReason(requestID)
+		if reason == "" {
+			reason = SignRequestCancelReasonClientCanceled
+		}
+		c.notifySignRequestCanceled(promptID, reason)
+		return SignResponse{}, c.canceledError(requestID, ctx.Err())
 	}
 }
 

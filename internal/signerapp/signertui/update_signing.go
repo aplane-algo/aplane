@@ -69,6 +69,8 @@ func signRequestCanceledWarning(reason string) string {
 		return "Signing request canceled by requester"
 	case protocol.SignRequestCancelReasonTimeout:
 		return "Signing request timed out"
+	case protocol.SignRequestCancelReasonSessionEnded:
+		return "Signing request withdrawn: the signer locked or its session ended"
 	case "":
 		return "Signing request canceled"
 	default:

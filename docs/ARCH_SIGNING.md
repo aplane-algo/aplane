@@ -1158,7 +1158,19 @@ client, apsigner sends a best-effort `sign_request_canceled` notification with
 reason `client_canceled` so the client can dismiss the prompt. Approval timeout
 also removes the request and sends `sign_request_canceled` with reason
 `timeout`. Both are distinct from operator rejection; the current HTTP mapping
-is service unavailable. An unknown or no-longer-live `request_id` returns
+is service unavailable.
+
+When the signer's session ends (a lock, an entry into recovery from unlocked,
+the start of store maintenance, or an unlock that lost to a lock), the product
+runtime cancels every signing request in flight
+(`Coordinator.CancelAllSignRequests` with reason `session_ended`): the prompt
+on screen is dismissed with that reason, and requests queued behind it are
+never shown. No request from the ended session could sign afterwards, so none
+is left looking approvable. Such a request answers `locked` ("the signer's
+session ended while the request waited for approval; send it again") and is
+audited as `approval_withdrawn_session_ended`, not as an operator rejection. A
+request whose session ends after its approval but before it signs is refused
+`locked` and audited as `session_ended_after_approval`. An unknown or no-longer-live `request_id` returns
 `not_found`. Request IDs are not scoped per principal: the lookup is global
 across authenticated clients. `/sign/cancel` request and
 response shapes and the `canceled`/`not_found` states are in
