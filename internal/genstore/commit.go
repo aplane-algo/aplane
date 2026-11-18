@@ -59,8 +59,8 @@ type MintRequest struct {
 	// which must still be the outgoing store-root selection.
 	RollbackSourceGenerationID string
 	CreatedAt                  time.Time
-	// Integrity authenticates the outgoing generation seal. It is required
-	// whenever Parent is non-empty and unused for a first generation.
+	// Integrity authenticates the store root and the outgoing generation's
+	// seal. Every mint requires it, a first generation included.
 	Integrity *crypto.Keyring
 	// OutgoingSealAlreadyWritten declares that a maintenance transaction
 	// froze and sealed Parent before staging. Mint validates that exact seal
@@ -113,48 +113,11 @@ type MintRequest struct {
 // Commit order (docs/ARCH_STORE.md, "Ordinary generation commit"):
 // stage → copy parent → apply → validate → manifest → fsync all →
 // publish rename → fsync generations/ → seal outgoing → replace store root.
-func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) { //nolint:gocognit // complexity backlog
-	if err := storepaths.ValidateGenerationID(req.GenerationID); err != nil {
+func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) {
+	if err := req.validate(); err != nil {
 		return storepaths.GenPaths{}, err
 	}
-	if req.Operation == "" || req.OperationID == "" {
-		return storepaths.GenPaths{}, fmt.Errorf("mint requires a durable operation identity")
-	}
-	if req.ValidateCandidate == nil && !req.SkipCandidateValidation {
-		return storepaths.GenPaths{}, fmt.Errorf("mint requires candidate validation")
-	}
-	if req.StartEmpty {
-		if req.Parent == "" || req.Apply == nil {
-			return storepaths.GenPaths{}, fmt.Errorf(
-				"empty reconstruction requires a parent and apply function",
-			)
-		}
-	}
-	if req.RollbackSourceGenerationID != "" && (req.Parent == "" || req.Apply == nil) {
-		return storepaths.GenPaths{}, fmt.Errorf("rollback source requires a parent and apply function")
-	}
-	if req.RollbackSourceGenerationID == req.Parent &&
-		req.RollbackSourceGenerationID != "" {
-		return storepaths.GenPaths{}, fmt.Errorf(
-			"rollback source must differ from the outgoing parent",
-		)
-	}
-	if req.Parent != "" && req.Integrity == nil {
-		return storepaths.GenPaths{}, fmt.Errorf("mint with a parent requires an integrity keyring")
-	}
-	if req.Integrity == nil {
-		return storepaths.GenPaths{}, fmt.Errorf("store-root mint requires an integrity keyring")
-	}
-	if req.FirstGeneration && len(req.InitialPassphrase) == 0 {
-		return storepaths.GenPaths{}, fmt.Errorf("store-root first mint requires an initial passphrase")
-	}
-	if req.OutgoingSealAlreadyWritten && req.Parent == "" {
-		return storepaths.GenPaths{}, fmt.Errorf("pre-sealed outgoing generation requires a parent")
-	}
-	replacingRoot := req.ReplacementKeyring != nil || len(req.ReplacementPassphrase) != 0
-	if replacingRoot && (req.FirstGeneration || !req.OutgoingSealAlreadyWritten || req.ReplacementKeyring == nil || len(req.ReplacementPassphrase) == 0) {
-		return storepaths.GenPaths{}, fmt.Errorf("replacement root requires a successor, a pre-sealed outgoing generation, a successor keyring, and a passphrase")
-	}
+	replacingRoot := req.replacesRoot()
 	// The parent must be exactly the generation store-root.enc names: Mint seals
 	// req.Parent as "the outgoing generation", so a stale parent — or an
 	// empty parent on a store that already has a root — would seal the
@@ -165,40 +128,12 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	// self-parent and parent-must-exist checks: the store root's generation
 	// directory is verified by the authenticated selection, and a self-parent request
 	// would collide with the existing current directory below.
-	if req.FirstGeneration { //nolint:nestif // complexity backlog
-		if req.Parent != "" {
-			return storepaths.GenPaths{}, fmt.Errorf("atomic store-root first mint must be parentless")
-		}
-		if _, err := os.Lstat(paths.StoreRootPath()); err == nil {
-			return storepaths.GenPaths{}, fmt.Errorf("mint: store root already exists")
-		} else if !os.IsNotExist(err) {
+	if req.FirstGeneration {
+		if err := verifyFirstMint(paths, req); err != nil {
 			return storepaths.GenPaths{}, err
 		}
-		if err := verifyFirstMintPreconditions(paths); err != nil {
-			return storepaths.GenPaths{}, err
-		}
-	} else {
-		if req.Parent == "" {
-			return storepaths.GenPaths{}, fmt.Errorf("atomic store-root successor mint requires a parent")
-		}
-		exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
-		if err != nil {
-			return storepaths.GenPaths{}, fmt.Errorf("mint: %w", err)
-		}
-		selection, err := crypto.AuthenticateStoreRoot(exact, req.Integrity)
-		if err != nil {
-			return storepaths.GenPaths{}, fmt.Errorf("mint: authenticate store root: %w", err)
-		}
-		if selection.CurrentGenerationID != req.Parent {
-			return storepaths.GenPaths{}, fmt.Errorf(
-				"mint parent %q is not the store-root current generation %s",
-				req.Parent,
-				selection.CurrentGenerationID,
-			)
-		}
-		if err := requireMintableGenerationStore(paths, req.Integrity); err != nil {
-			return storepaths.GenPaths{}, fmt.Errorf("mint preflight: %w", err)
-		}
+	} else if err := verifySuccessorMint(paths, req); err != nil {
+		return storepaths.GenPaths{}, err
 	}
 
 	generationsDir := paths.GenerationsDir()
@@ -356,6 +291,104 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		}
 	}
 	return paths.GenerationPaths(req.GenerationID), nil
+}
+
+// replacesRoot reports whether the mint replaces the store root's keyring,
+// which a request asks for by giving a successor keyring or passphrase.
+func (req MintRequest) replacesRoot() bool {
+	return req.ReplacementKeyring != nil || len(req.ReplacementPassphrase) != 0
+}
+
+// validate refuses a request whose fields do not fit together, before Mint
+// reads or writes anything.
+func (req MintRequest) validate() error {
+	if err := storepaths.ValidateGenerationID(req.GenerationID); err != nil {
+		return err
+	}
+	if req.Operation == "" || req.OperationID == "" {
+		return fmt.Errorf("mint requires a durable operation identity")
+	}
+	if req.ValidateCandidate == nil && !req.SkipCandidateValidation {
+		return fmt.Errorf("mint requires candidate validation")
+	}
+	if req.StartEmpty {
+		if req.Parent == "" || req.Apply == nil {
+			return fmt.Errorf(
+				"empty reconstruction requires a parent and apply function",
+			)
+		}
+	}
+	if req.RollbackSourceGenerationID != "" && (req.Parent == "" || req.Apply == nil) {
+		return fmt.Errorf("rollback source requires a parent and apply function")
+	}
+	if req.RollbackSourceGenerationID == req.Parent &&
+		req.RollbackSourceGenerationID != "" {
+		return fmt.Errorf(
+			"rollback source must differ from the outgoing parent",
+		)
+	}
+	if req.Parent != "" && req.Integrity == nil {
+		return fmt.Errorf("mint with a parent requires an integrity keyring")
+	}
+	if req.Integrity == nil {
+		return fmt.Errorf("store-root mint requires an integrity keyring")
+	}
+	if req.FirstGeneration && len(req.InitialPassphrase) == 0 {
+		return fmt.Errorf("store-root first mint requires an initial passphrase")
+	}
+	if req.OutgoingSealAlreadyWritten && req.Parent == "" {
+		return fmt.Errorf("pre-sealed outgoing generation requires a parent")
+	}
+	replacingRoot := req.replacesRoot()
+	if replacingRoot && (req.FirstGeneration || !req.OutgoingSealAlreadyWritten || req.ReplacementKeyring == nil || len(req.ReplacementPassphrase) == 0) {
+		return fmt.Errorf("replacement root requires a successor, a pre-sealed outgoing generation, a successor keyring, and a passphrase")
+	}
+	return nil
+}
+
+// verifyFirstMint checks that a first mint is parentless and starts from a
+// store with no root and no generation on disk: a missing root alone proves
+// nothing, which is what verifyFirstMintPreconditions is for.
+func verifyFirstMint(paths storepaths.Paths, req MintRequest) error {
+	if req.Parent != "" {
+		return fmt.Errorf("atomic store-root first mint must be parentless")
+	}
+	if _, err := os.Lstat(paths.StoreRootPath()); err == nil {
+		return fmt.Errorf("mint: store root already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := verifyFirstMintPreconditions(paths); err != nil {
+		return err
+	}
+	return nil
+}
+
+// verifySuccessorMint checks that the parent is the generation the
+// authenticated store root names, and that the store can be minted from.
+func verifySuccessorMint(paths storepaths.Paths, req MintRequest) error {
+	if req.Parent == "" {
+		return fmt.Errorf("atomic store-root successor mint requires a parent")
+	}
+	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	if err != nil {
+		return fmt.Errorf("mint: %w", err)
+	}
+	selection, err := crypto.AuthenticateStoreRoot(exact, req.Integrity)
+	if err != nil {
+		return fmt.Errorf("mint: authenticate store root: %w", err)
+	}
+	if selection.CurrentGenerationID != req.Parent {
+		return fmt.Errorf(
+			"mint parent %q is not the store-root current generation %s",
+			req.Parent,
+			selection.CurrentGenerationID,
+		)
+	}
+	if err := requireMintableGenerationStore(paths, req.Integrity); err != nil {
+		return fmt.Errorf("mint preflight: %w", err)
+	}
+	return nil
 }
 
 func bindRollbackCapability(seed *RollbackCapability, inventory []InventoryEntry) (*RollbackCapability, error) {
