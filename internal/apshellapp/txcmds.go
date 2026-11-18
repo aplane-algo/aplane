@@ -734,87 +734,104 @@ func decorateCloseResult(result *CloseCommandResult) {
 }
 
 // Sweep resolves and executes a sweep flow across one or more source accounts.
-func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult, error) { //nolint:gocognit // complexity backlog
+func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult, error) {
+	plan, result, err := a.planSweep(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var submissionFailures []*signing.SubmissionError
+	for _, fromAddress := range result.FromAddresses {
+		item, outcome, failure := a.sweepFrom(ctx, plan, fromAddress)
+		switch outcome {
+		case sweepFailed:
+			result.FailureCount++
+		case sweepSent:
+			result.LastTxID = item.TxID
+			result.SuccessCount++
+		}
+		if failure != nil {
+			submissionFailures = append(submissionFailures, failure)
+		}
+		result.Items = append(result.Items, item)
+	}
+
+	decorateSweepResult(result)
+
+	if result.FailureCount > 0 && result.SuccessCount == 0 {
+		return result, &failedItemsError{
+			msg:      fmt.Sprintf("all %d transaction(s) failed", result.FailureCount),
+			failures: submissionFailures,
+		}
+	}
+	return result, nil
+}
+
+// sweepPlan is what a sweep settled before looking at any source.
+type sweepPlan struct {
+	toAddress           string
+	asset               asa.Metadata
+	leaving             asa.Amount
+	leaveMinimumBalance bool
+	lsigArgs            engine.LsigArgs
+	// The request's fee, and whether to wait for confirmation.
+	fee        uint64
+	useFlatFee bool
+	wait       bool
+}
+
+// planSweep resolves the request: its sources and destination, a lookalike
+// destination the user must confirm, the LogicSig arguments, the asset and
+// that the receiver can hold it, and what each account is to be left. It
+// returns the plan and the result's header.
+func (a *App) planSweep(ctx context.Context, req SweepRequest) (sweepPlan, *SweepCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
 
-	var fromAddresses []string
-	usedAllSignable := false
-	if req.FromRaw == nil {
-		fromAddresses = a.eng.GetSignableAddresses()
-		usedAllSignable = true
-		if len(fromAddresses) == 0 {
-			return nil, fmt.Errorf("no signable accounts available. Connect to Signer first or specify accounts with: sweep <asset> from [account1 account2] to <dest>")
-		}
-	} else {
-		var err error
-		fromAddresses, err = cmdspec.ResolveAddressList(req.FromRaw, resolver)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve source addresses: %w", err)
-		}
+	fromAddresses, usedAllSignable, err := a.sweepSources(req, resolver)
+	if err != nil {
+		return sweepPlan{}, nil, err
 	}
 
 	toAddress, err := cmdspec.ResolveSingleAddress(req.ToRaw, resolver)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve destination address: %w", err)
+		return sweepPlan{}, nil, fmt.Errorf("failed to resolve destination address: %w", err)
 	}
 	lookalikes := a.recipientLookalikes([]string{req.ToRaw})
 	if len(lookalikes) > 0 && req.ConfirmLookalikes != nil {
 		sweep, err := req.ConfirmLookalikes(lookalikes)
 		if err != nil {
-			return nil, err
+			return sweepPlan{}, nil, err
 		}
 		if !sweep {
-			return nil, ErrLookalikeDeclined
+			return sweepPlan{}, nil, ErrLookalikeDeclined
 		}
 	}
 	// A target is checked against every source asked for, including one the
 	// sweep then skips: its item says why nothing was sent from it.
 	lsigArgs, err := a.resolveLsigArgs(req.LsigArgs, fromAddresses)
 	if err != nil {
-		return nil, err
+		return sweepPlan{}, nil, err
 	}
 	if len(req.UntargetedLsigArgs) > 0 {
 		if len(req.LsigArgs) > 0 {
-			return nil, fmt.Errorf("internal error: sweep was given LogicSig arguments both as arg: words and as untargeted arguments")
+			return sweepPlan{}, nil, fmt.Errorf("internal error: sweep was given LogicSig arguments both as arg: words and as untargeted arguments")
 		}
 		lsigArgs = engine.UntargetedLsigArgs(req.UntargetedLsigArgs)
 	}
 
 	assetMeta, err := cmdspec.ResolveAssetMetadata(a.Network(), req.AssetRef, a.eng.ASAResolver())
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
+		return sweepPlan{}, nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
 	}
 
-	receiverOptedIn := false
-	if assetMeta.AssetID != 0 {
-		receiverEngineBalance, err := a.eng.GetAccountBalanceRaw(ctx, toAddress)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get receiver account info: %w", err)
-		}
-		receiverBalance := balanceDetailsFromEngine(receiverEngineBalance)
-		for _, asset := range receiverBalance.Assets {
-			if asset.AssetID == assetMeta.AssetID {
-				receiverOptedIn = true
-				break
-			}
-		}
-		if !receiverOptedIn {
-			return nil, fmt.Errorf("receiver %s is not opted into ASA %d (%s)", toAddress, assetMeta.AssetID, asa.DisplayRef(assetMeta))
-		}
+	receiverOptedIn, err := a.sweepReceiverOptedIn(ctx, toAddress, assetMeta)
+	if err != nil {
+		return sweepPlan{}, nil, err
 	}
 
-	var leavingAmount asa.Amount
-	leaveMinimumBalance := false
-	if req.LeavingRaw != nil {
-		leavingAmount = asa.AmountFromRaw(*req.LeavingRaw, assetMeta)
-	} else if req.LeavingText == "" {
-		leavingAmount = asa.AmountFromRaw(0, assetMeta)
-		leaveMinimumBalance = assetMeta.AssetID == 0
-	} else {
-		leavingAmount, err = cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert leaving amount: %w", err)
-		}
+	leavingAmount, leaveMinimumBalance, err := a.sweepLeaving(req, assetMeta)
+	if err != nil {
+		return sweepPlan{}, nil, err
 	}
 
 	result := &SweepCommandResult{
@@ -830,137 +847,184 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	for _, lookalike := range lookalikes {
 		result.Warnings = append(result.Warnings, lookalike.Warning())
 	}
-
-	var submissionFailures []*signing.SubmissionError
-	for _, fromAddress := range fromAddresses {
-		item := SweepItemResult{From: fromAddress, To: toAddress}
-		if fromAddress == toAddress {
-			item.SkippedReason = "source and destination are the same account"
-			result.Items = append(result.Items, item)
-			continue
-		}
-
-		balanceEngineResult, err := a.eng.GetAccountBalanceRaw(ctx, fromAddress)
-		if err != nil {
-			item.Error = fmt.Sprintf("failed to get account info: %v", err)
-			result.FailureCount++
-			result.Items = append(result.Items, item)
-			continue
-		}
-		balanceResult := balanceDetailsFromEngine(balanceEngineResult)
-
-		var balance uint64
-		leaving := leavingAmount.Raw
-		if assetMeta.AssetID == 0 {
-			balance = balanceResult.AlgoBalance
-			if leaveMinimumBalance {
-				leaving = balanceResult.MinBalance
-			}
-		} else {
-			found := false
-			for _, asset := range balanceResult.Assets {
-				if asset.AssetID == assetMeta.AssetID {
-					balance = asset.Amount
-					found = true
-					break
-				}
-			}
-			if !found {
-				item.SkippedReason = fmt.Sprintf("account not opted into %s", asa.DisplayRef(assetMeta))
-				result.Items = append(result.Items, item)
-				continue
-			}
-		}
-
-		amounts, err := a.settleSweepAmounts(ctx, assetMeta.AssetID, fromAddress, toAddress, balance, leaving, req.Fee, req.UseFlatFee)
-		if err != nil {
-			item.Error = err.Error()
-			result.FailureCount++
-			result.Items = append(result.Items, item)
-			continue
-		}
-		if !amounts.ok {
-			what := "leaving amount"
-			if leaveMinimumBalance {
-				what = "minimum balance"
-			}
-			item.SkippedReason = amounts.skipReason(balance, leaving, what)
-			result.Items = append(result.Items, item)
-			continue
-		}
-
-		item.Amount = asa.AmountFromRaw(amounts.send, assetMeta)
-		var prep *PreparedTxn
-		if assetMeta.AssetID == 0 {
-			prepResult, _, prepErr := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
-				From:       fromAddress,
-				To:         toAddress,
-				Amount:     item.Amount.Raw,
-				Fee:        amounts.txnFee,
-				UseFlatFee: true,
-			})
-			prep = preparedTxnFromEngine(prepResult)
-			err = prepErr
-		} else {
-			prepResult, _, prepErr := a.eng.PrepareASATransfer(ctx, engine.SendASAParams{
-				From:       fromAddress,
-				To:         toAddress,
-				AssetID:    assetMeta.AssetID,
-				Amount:     item.Amount.Raw,
-				Fee:        req.Fee,
-				UseFlatFee: req.UseFlatFee,
-			})
-			prep = preparedTxnFromEngine(prepResult)
-			err = prepErr
-		}
-		if err != nil {
-			item.Error = fmt.Sprintf("failed to prepare transaction: %v", err)
-			result.FailureCount++
-			result.Items = append(result.Items, item)
-			continue
-		}
-
-		submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
-		if err != nil {
-			if submit != nil {
-				item.TxID = submit.TxID
-				item.Confirmed = submit.Confirmed
-				item.Output = submit.Output
-				item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
-			}
-			if errors.Is(err, engine.ErrSimulationFailed) {
-				item.SimulationFailure = err.Error()
-			} else {
-				item.Error = fmt.Sprintf("transaction failed: %v", err)
-			}
-			item.Submission = appresult.SubmissionFromError(err)
-			var failure *signing.SubmissionError
-			if errors.As(err, &failure) {
-				submissionFailures = append(submissionFailures, failure)
-			}
-			result.FailureCount++
-			result.Items = append(result.Items, item)
-			continue
-		}
-
-		item.TxID = submit.TxID
-		item.Confirmed = submit.Confirmed
-		item.Output = submit.Output
-		item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
-		result.LastTxID = submit.TxID
-		result.SuccessCount++
-		result.Items = append(result.Items, item)
+	plan := sweepPlan{
+		toAddress: toAddress, asset: assetMeta, leaving: leavingAmount,
+		leaveMinimumBalance: leaveMinimumBalance, lsigArgs: lsigArgs,
+		fee: req.Fee, useFlatFee: req.UseFlatFee, wait: req.Wait,
 	}
+	return plan, result, nil
+}
 
-	decorateSweepResult(result)
+// sweepSources is the accounts to sweep: the ones asked for, or with none
+// asked for, every account the signer can sign for.
+func (a *App) sweepSources(req SweepRequest, resolver cmdspec.AddressListResolver) (addresses []string, usedAllSignable bool, err error) {
+	if req.FromRaw == nil {
+		addresses = a.eng.GetSignableAddresses()
+		if len(addresses) == 0 {
+			return nil, false, fmt.Errorf("no signable accounts available. Connect to Signer first or specify accounts with: sweep <asset> from [account1 account2] to <dest>")
+		}
+		return addresses, true, nil
+	}
+	addresses, err = cmdspec.ResolveAddressList(req.FromRaw, resolver)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to resolve source addresses: %w", err)
+	}
+	return addresses, false, nil
+}
 
-	if result.FailureCount > 0 && result.SuccessCount == 0 {
-		return result, &failedItemsError{
-			msg:      fmt.Sprintf("all %d transaction(s) failed", result.FailureCount),
-			failures: submissionFailures,
+// sweepReceiverOptedIn requires the receiver of an asset sweep to be opted
+// into the asset. An ALGO sweep needs no opt-in and reports false.
+func (a *App) sweepReceiverOptedIn(ctx context.Context, toAddress string, assetMeta asa.Metadata) (bool, error) {
+	if assetMeta.AssetID == 0 {
+		return false, nil
+	}
+	receiverEngineBalance, err := a.eng.GetAccountBalanceRaw(ctx, toAddress)
+	if err != nil {
+		return false, fmt.Errorf("failed to get receiver account info: %w", err)
+	}
+	receiverBalance := balanceDetailsFromEngine(receiverEngineBalance)
+	for _, asset := range receiverBalance.Assets {
+		if asset.AssetID == assetMeta.AssetID {
+			return true, nil
 		}
 	}
-	return result, nil
+	return false, fmt.Errorf("receiver %s is not opted into ASA %d (%s)", toAddress, assetMeta.AssetID, asa.DisplayRef(assetMeta))
+}
+
+// sweepLeaving is what each account is to be left. With no amount given, an
+// ALGO sweep leaves each account its own minimum balance and an asset sweep
+// leaves nothing.
+func (a *App) sweepLeaving(req SweepRequest, assetMeta asa.Metadata) (leaving asa.Amount, leaveMinimumBalance bool, err error) {
+	switch {
+	case req.LeavingRaw != nil:
+		return asa.AmountFromRaw(*req.LeavingRaw, assetMeta), false, nil
+	case req.LeavingText == "":
+		return asa.AmountFromRaw(0, assetMeta), assetMeta.AssetID == 0, nil
+	}
+	leaving, err = cmdspec.ResolveAssetAmount(a.Network(), req.AssetRef, req.LeavingText, a.eng.ASAResolver())
+	if err != nil {
+		return asa.Amount{}, false, fmt.Errorf("failed to convert leaving amount: %w", err)
+	}
+	return leaving, false, nil
+}
+
+// sweepOutcome is how one source's sweep ended.
+type sweepOutcome int
+
+const (
+	sweepSkipped sweepOutcome = iota // nothing to send; not a failure
+	sweepFailed
+	sweepSent
+)
+
+// sweepFrom sweeps one source and returns its item. failure is the
+// submission error behind a failed item, when there is one.
+func (a *App) sweepFrom(ctx context.Context, plan sweepPlan, fromAddress string) (item SweepItemResult, outcome sweepOutcome, failure *signing.SubmissionError) {
+	item = SweepItemResult{From: fromAddress, To: plan.toAddress}
+	if fromAddress == plan.toAddress {
+		item.SkippedReason = "source and destination are the same account"
+		return item, sweepSkipped, nil
+	}
+
+	balanceEngineResult, err := a.eng.GetAccountBalanceRaw(ctx, fromAddress)
+	if err != nil {
+		item.Error = fmt.Sprintf("failed to get account info: %v", err)
+		return item, sweepFailed, nil
+	}
+	balance, leaving, optedIn := plan.balanceAndLeaving(balanceDetailsFromEngine(balanceEngineResult))
+	if !optedIn {
+		item.SkippedReason = fmt.Sprintf("account not opted into %s", asa.DisplayRef(plan.asset))
+		return item, sweepSkipped, nil
+	}
+
+	amounts, err := a.settleSweepAmounts(ctx, plan.asset.AssetID, fromAddress, plan.toAddress, balance, leaving, plan.fee, plan.useFlatFee)
+	if err != nil {
+		item.Error = err.Error()
+		return item, sweepFailed, nil
+	}
+	if !amounts.ok {
+		what := "leaving amount"
+		if plan.leaveMinimumBalance {
+			what = "minimum balance"
+		}
+		item.SkippedReason = amounts.skipReason(balance, leaving, what)
+		return item, sweepSkipped, nil
+	}
+
+	item.Amount = asa.AmountFromRaw(amounts.send, plan.asset)
+	prep, err := a.prepareSweep(ctx, plan, fromAddress, item.Amount.Raw, amounts.txnFee)
+	if err != nil {
+		item.Error = fmt.Sprintf("failed to prepare transaction: %v", err)
+		return item, sweepFailed, nil
+	}
+
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, plan.lsigArgs, plan.wait)
+	if err != nil {
+		if submit != nil {
+			item.TxID = submit.TxID
+			item.Confirmed = submit.Confirmed
+			item.Output = submit.Output
+			item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+		}
+		if errors.Is(err, engine.ErrSimulationFailed) {
+			item.SimulationFailure = err.Error()
+		} else {
+			item.Error = fmt.Sprintf("transaction failed: %v", err)
+		}
+		item.Submission = appresult.SubmissionFromError(err)
+		// errors.As leaves failure nil when err is not a submission error.
+		errors.As(err, &failure)
+		return item, sweepFailed, failure
+	}
+
+	item.TxID = submit.TxID
+	item.Confirmed = submit.Confirmed
+	item.Output = submit.Output
+	item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+	return item, sweepSent, nil
+}
+
+// balanceAndLeaving is a source's balance of the swept asset and what the
+// sweep leaves it. optedIn is false for a source that does not hold the
+// asset.
+func (p sweepPlan) balanceAndLeaving(source *BalanceDetails) (balance, leaving uint64, optedIn bool) {
+	leaving = p.leaving.Raw
+	if p.asset.AssetID == 0 {
+		if p.leaveMinimumBalance {
+			leaving = source.MinBalance
+		}
+		return source.AlgoBalance, leaving, true
+	}
+	for _, asset := range source.Assets {
+		if asset.AssetID == p.asset.AssetID {
+			return asset.Amount, leaving, true
+		}
+	}
+	return 0, leaving, false
+}
+
+// prepareSweep builds the payment or asset transfer that sends amount. An
+// ALGO payment carries the fee its amount was settled with.
+func (a *App) prepareSweep(ctx context.Context, plan sweepPlan, fromAddress string, amount, txnFee uint64) (*PreparedTxn, error) {
+	if plan.asset.AssetID == 0 {
+		prepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
+			From:       fromAddress,
+			To:         plan.toAddress,
+			Amount:     amount,
+			Fee:        txnFee,
+			UseFlatFee: true,
+		})
+		return preparedTxnFromEngine(prepResult), err
+	}
+	prepResult, _, err := a.eng.PrepareASATransfer(ctx, engine.SendASAParams{
+		From:       fromAddress,
+		To:         plan.toAddress,
+		AssetID:    plan.asset.AssetID,
+		Amount:     amount,
+		Fee:        plan.fee,
+		UseFlatFee: plan.useFlatFee,
+	})
+	return preparedTxnFromEngine(prepResult), err
 }
 
 // sweepAmounts is what one account's sweep sends and the fees it reserves.
