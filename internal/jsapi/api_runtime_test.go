@@ -283,6 +283,20 @@ func TestAccountAliasSetAndSignerHelpers(t *testing.T) {
 		t.Fatalf("set() len = %d, want 2", len(setValues))
 	}
 
+	// Adding no addresses is refused, as the shell's sets add refuses it,
+	// rather than creating an empty set (checked by sets() below).
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("addToSet() with no addresses succeeded")
+			}
+		}()
+		api.jsAddToSet(goja.FunctionCall{Arguments: []goja.Value{
+			api.runtime.ToValue("empty"),
+			api.runtime.ToValue([]string{}),
+		}})
+	}()
+
 	api.jsRemoveFromSet(goja.FunctionCall{Arguments: []goja.Value{
 		api.runtime.ToValue("crew"),
 		api.runtime.ToValue([]string{addr2}),
