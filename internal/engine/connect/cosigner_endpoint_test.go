@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type cosignerSSHDialerFunc func(context.Context) (net.Conn, error)
@@ -41,6 +42,11 @@ func TestCosignerSSHHTTPTransportDoesNotDependOnDefaultTransportType(t *testing.
 	defer transport.CloseIdleConnections()
 	if transport.Proxy != nil {
 		t.Fatal("cosigner SSH HTTP transport inherited a proxy")
+	}
+	// The node's HTTP server closes idle connections after 120 seconds; the
+	// client must close them first.
+	if transport.IdleConnTimeout <= 0 || transport.IdleConnTimeout >= 120*time.Second {
+		t.Fatalf("IdleConnTimeout = %v, want a positive timeout under 120s", transport.IdleConnTimeout)
 	}
 }
 

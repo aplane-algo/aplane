@@ -686,8 +686,10 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 - SSH provides transport encryption and client authentication
 - Host key verification prevents MITM (TOFU via known_hosts)
 - No port is opened on the client machine: the signer client opens a
-  channel for each HTTP connection from inside apshell, so another process on
-  that machine cannot send requests under the client's identity
+  channel for each HTTP connection from inside apshell, so no other process
+  can use apshell's connection. A process that can read the identity file or
+  use the SSH agent can still open a connection of its own with that key;
+  the identity file's permissions and the agent guard that
 - Authorization is evaluated per HTTP request against the client role
 
 **Configuration:**

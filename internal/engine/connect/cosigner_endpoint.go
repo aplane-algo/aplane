@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -93,11 +94,18 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	}, nil
 }
 
+// sshHTTPIdleTimeout closes an idle connection before the node's HTTP server
+// does (its IdleTimeout is 120 seconds), as http.DefaultTransport's 90 seconds
+// did. A request sent on a connection the server is closing fails, and a POST
+// is not retried.
+const sshHTTPIdleTimeout = 90 * time.Second
+
 // newSSHHTTPTransport carries every HTTP connection to authority over an SSH
 // channel to the node's REST API, and refuses to dial anything else.
 func newSSHHTTPTransport(dialer sshAPIDialer, authority string) *http.Transport {
 	return &http.Transport{
 		ForceAttemptHTTP2: false,
+		IdleConnTimeout:   sshHTTPIdleTimeout,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			if network != "tcp" || addr != authority {
 				return nil, fmt.Errorf("unexpected node HTTP dial target %s %s", network, addr)

@@ -5,10 +5,12 @@ package sshtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 // APIDialer opens a channel to a node's REST API over an SSH connection, as
@@ -32,11 +34,24 @@ func ForwardAPI(dialer APIDialer) (string, func(), error) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var backoff time.Duration
 		for {
 			local, err := listener.Accept()
 			if err != nil {
-				return
+				if errors.Is(err, net.ErrClosed) || ctx.Err() != nil {
+					return
+				}
+				// A transient error, such as running out of descriptors:
+				// keep serving rather than leave connections in the backlog.
+				backoff = min(max(2*backoff, 5*time.Millisecond), time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+				continue
 			}
+			backoff = 0
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
