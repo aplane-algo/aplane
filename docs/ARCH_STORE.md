@@ -125,7 +125,12 @@ Layout notes:
   `<data_dir>/backups/default/`; the archive contains `README.md`,
   `apb/*.apb` encrypted canonical credential payloads, `policies/*.apb`
   encrypted per-key policy documents, and `manifest.sealed` (see
-  [Backup and restore](#backup-and-restore))
+  [Backup and restore](#backup-and-restore)). A new archive is written and
+  synced as `<name>.tar.gz.partial`, which the listing ignores, verified by
+  extracting it and opening every payload and the manifest with the export
+  passphrase, then hard-linked to its managed name (never replacing a file
+  there) and its directory synced; any failure removes it, so a backup that
+  failed is never listed
 - imported backup archives are validated by the operator client, streamed to
   the daemon in bounded admin-protocol chunks, and atomically published under
   `<data_dir>/backups/default/`; exports stream bounded chunks in the other

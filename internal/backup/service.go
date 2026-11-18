@@ -132,18 +132,8 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err := requireExtractableArchive(stageDir); err != nil {
 		return nil, err
 	}
-	if err := CreateTarGzArchive(stageDir, req.ArchivePath); err != nil {
+	if err := publishVerifiedArchive(stageDir, req.ArchivePath, req.ExportPassphrase); err != nil {
 		return nil, err
-	}
-	if err := os.Chmod(req.ArchivePath, fsutil.StoreFilePerm); err != nil {
-		return nil, fmt.Errorf("failed to set backup archive permissions: %w", err)
-	}
-	verifyReport, err := DeepVerifyBackupBytes(stageDir, req.ExportPassphrase)
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify backup archive: %w", err)
-	}
-	if verifyReport.FailedFiles > 0 {
-		return nil, fmt.Errorf("failed to verify backup archive: %d file(s) failed verification", verifyReport.FailedFiles)
 	}
 	archiveChecksum, archiveSize, err := FileSHA256(req.ArchivePath)
 	if err != nil {
@@ -159,6 +149,61 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		Addresses:       exported,
 		Verified:        true,
 	}, nil
+}
+
+// partialArchiveSuffix marks an archive still being written or verified.
+// The managed listing takes only .tar.gz and .tgz names, so a partial archive
+// is never listed as a backup, even one a crash left behind.
+const partialArchiveSuffix = ".partial"
+
+// publishVerifiedArchive packages stageDir as the archive at archivePath. It
+// writes and syncs the archive under a partial name beside it, verifies the
+// archive by extracting it and opening every credential and the sealed
+// manifest with the export passphrase, and only then gives it its managed
+// name, which it never takes from an existing file, and syncs the directory.
+// On any failure nothing is left under either name.
+func publishVerifiedArchive(stageDir, archivePath string, passphrase []byte) (err error) {
+	partial := archivePath + partialArchiveSuffix
+	// Only this function writes partial names, under the store mutation
+	// lock, so one already there is an earlier attempt's leftover.
+	_ = os.Remove(partial)
+	defer func() { _ = os.Remove(partial) }()
+	if err := CreateTarGzArchive(stageDir, partial); err != nil {
+		return err
+	}
+	if err := os.Chmod(partial, fsutil.StoreFilePerm); err != nil {
+		return fmt.Errorf("failed to set backup archive permissions: %w", err)
+	}
+
+	verifyDir, err := os.MkdirTemp("", "aplane-backup-verify-*")
+	if err != nil {
+		return fmt.Errorf("failed to create backup verification directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(verifyDir) }()
+	if err := ExtractTarGzArchive(partial, verifyDir); err != nil {
+		return fmt.Errorf("failed to verify backup archive: %w", err)
+	}
+	verifyReport, err := DeepVerifyBackupBytes(verifyDir, passphrase)
+	if err != nil {
+		return fmt.Errorf("failed to verify backup archive: %w", err)
+	}
+	if verifyReport.FailedFiles > 0 {
+		return fmt.Errorf("failed to verify backup archive: %d file(s) failed verification", verifyReport.FailedFiles)
+	}
+
+	// A hard link publishes the synced, verified file under its managed name
+	// and fails rather than replace one that exists.
+	if err := os.Link(partial, archivePath); err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("archive already exists: %s", archivePath)
+		}
+		return fmt.Errorf("failed to publish backup archive: %w", err)
+	}
+	if err := fsutil.SyncDir(filepath.Dir(archivePath)); err != nil {
+		_ = os.Remove(archivePath)
+		return fmt.Errorf("failed to make backup archive durable: %w", err)
+	}
+	return nil
 }
 
 // FileSHA256 returns the SHA-256 checksum and size of path.
