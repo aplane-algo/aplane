@@ -38,6 +38,10 @@ type FileKeyStore struct {
 
 	// The store's keyring, opened once at unlock and zeroed on lock.
 	keyring *crypto.Keyring
+	// keyringUsers counts the WithKeyring callbacks running with keyring.
+	// They hold no lock, so whoever detaches the keyring waits for them
+	// before zeroing it. Both fields change together, under cacheLock.
+	keyringUsers *sync.WaitGroup
 }
 
 // SigningSummary is the non-sensitive key-file signing metadata cached at scan time.
@@ -75,12 +79,10 @@ func (f *FileKeyStore) Unlock(passphrase []byte) error {
 		return fmt.Errorf("failed to unlock keystore: %w", err)
 	}
 	f.cacheLock.Lock()
-	if f.keyring != nil {
-		f.keyring.Zero()
-	}
-	f.keyring = kr
+	previous := f.replaceKeyringLocked(kr)
 	f.active = &resolved
 	f.cacheLock.Unlock()
+	previous.zeroWhenUnused()
 	return nil
 }
 
@@ -157,28 +159,69 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 	return nil
 }
 
-// WithKeyring executes fn with the store's keyring while holding the cache
-// read lock, so no term can be zeroed mid-use. This is the API callers
-// should use: it hands out operations, not key material.
+// WithKeyring executes fn with the store's keyring, which is not zeroed
+// until fn returns. This is the API callers should use: it hands out
+// operations, not key material.
+//
+// fn runs without the cache lock. It is the callers' code, and it reads the
+// store again (an admin service's key paths are the store's active paths);
+// a second read lock taken while a lock's ClearKeys waits for the first
+// would deadlock the store. The keyring is held instead by a count that
+// ClearKeys and Unlock wait for.
 func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	f.cacheLock.RLock()
-	defer f.cacheLock.RUnlock()
-	if f.keyring == nil {
+	kr, users := f.keyring, f.keyringUsers
+	if kr == nil {
+		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore not unlocked (keyring not available): %w", ErrStoreLocked)
 	}
-	return fn(f.keyring)
+	users.Add(1)
+	f.cacheLock.RUnlock()
+	defer users.Done()
+	return fn(kr)
+}
+
+// detachedKeyring is a keyring taken off the store, with the WithKeyring
+// callbacks still using it.
+type detachedKeyring struct {
+	keyring *crypto.Keyring
+	users   *sync.WaitGroup
+}
+
+// replaceKeyringLocked installs kr, which may be nil, and returns the keyring
+// it replaces. The caller holds cacheLock for writing and, once it has
+// released it, zeroes what was returned with zeroWhenUnused. Readers that
+// use the keyring under the lock (Get, Scan, BindStoreRootSelection) are
+// done with it by then; the lock excluded them.
+func (f *FileKeyStore) replaceKeyringLocked(kr *crypto.Keyring) detachedKeyring {
+	previous := detachedKeyring{keyring: f.keyring, users: f.keyringUsers}
+	f.keyring, f.keyringUsers = kr, nil
+	if kr != nil {
+		f.keyringUsers = &sync.WaitGroup{}
+	}
+	return previous
+}
+
+// zeroWhenUnused waits for the callbacks still using the keyring, then
+// zeroes it. It is called without the cache lock, which they may need.
+func (d detachedKeyring) zeroWhenUnused() {
+	if d.keyring == nil {
+		return
+	}
+	d.users.Wait()
+	d.keyring.Zero()
 }
 
 // ClearKeys securely zeros every term key and drops the keyring. Called when
-// the signer locks so no key material remains resident.
+// the signer locks so no key material remains resident. It returns once the
+// keyring is zeroed, after any WithKeyring callback still using it returns;
+// meanwhile the store reads as locked.
 func (f *FileKeyStore) ClearKeys() {
 	f.cacheLock.Lock()
-	if f.keyring != nil {
-		f.keyring.Zero()
-		f.keyring = nil
-	}
+	previous := f.replaceKeyringLocked(nil)
 	f.active = nil
 	f.cacheLock.Unlock()
+	previous.zeroWhenUnused()
 }
 
 // BindStoreRootSelection binds the keystore to the generation store-root.enc
