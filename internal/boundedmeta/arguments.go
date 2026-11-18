@@ -125,138 +125,219 @@ func (metadata *Metadata) ValidateNetworkLimits() error {
 	return nil
 }
 
-func validateArgumentLayout(metadata *Metadata) error { //nolint:gocognit // complexity backlog
+func validateArgumentLayout(metadata *Metadata) error {
 	if len(metadata.ArgumentLayout) == 0 {
 		return fmt.Errorf("bounded argument_layout must not be empty")
 	}
-	sourceOrder := map[string]int{
-		ArgSourceBaseSignature: 0,
-		ArgSourceDerived:       1,
-		ArgSourceRuntime:       2,
-		ArgSourceCosigner:      3,
+	derivedKinds, err := validateDerivedArgDeclarations(metadata.DerivedArgs)
+	if err != nil {
+		return err
 	}
-	lastSource := -1
-	baseCount := 0
-	derivedNames := make(map[string]struct{}, len(metadata.DerivedArgs))
-	derivedKinds := make(map[string]string, len(metadata.DerivedArgs))
-	for _, arg := range metadata.DerivedArgs {
+	runtimeNames, err := validateRuntimeArgDeclarations(metadata.RuntimeArgs)
+	if err != nil {
+		return err
+	}
+	check := argumentLayoutCheck{
+		metadata:     metadata,
+		derivedKinds: derivedKinds,
+		runtimeNames: runtimeNames,
+		lastSource:   -1,
+		seenNames:    make(map[string]struct{}, len(metadata.ArgumentLayout)),
+		seenDerived:  make(map[string]struct{}, len(derivedKinds)),
+		seenRuntime:  make(map[string]struct{}, len(runtimeNames)),
+	}
+	for i, slot := range metadata.ArgumentLayout {
+		if err := check.slot(i, slot); err != nil {
+			return err
+		}
+	}
+	return check.complete()
+}
+
+// argumentSourceOrder is the order slot sources must appear in.
+var argumentSourceOrder = map[string]int{
+	ArgSourceBaseSignature: 0,
+	ArgSourceDerived:       1,
+	ArgSourceRuntime:       2,
+	ArgSourceCosigner:      3,
+}
+
+// validateDerivedArgDeclarations checks each derived arg against its kind's
+// exact size and returns each name's kind.
+func validateDerivedArgDeclarations(args []DerivedArg) (map[string]string, error) {
+	kinds := make(map[string]string, len(args))
+	for _, arg := range args {
 		size, known := derivedArgSizes[arg.Kind]
 		if arg.Name == "" || !known || arg.Parameter == "" || arg.MaxSize != size {
-			return fmt.Errorf("invalid derived arg %q of kind %q", arg.Name, arg.Kind)
+			return nil, fmt.Errorf("invalid derived arg %q of kind %q", arg.Name, arg.Kind)
 		}
-		derivedKinds[arg.Name] = arg.Kind
-		if _, duplicate := derivedNames[arg.Name]; duplicate {
-			return fmt.Errorf("duplicate derived arg %q", arg.Name)
+		if _, duplicate := kinds[arg.Name]; duplicate {
+			return nil, fmt.Errorf("duplicate derived arg %q", arg.Name)
 		}
-		derivedNames[arg.Name] = struct{}{}
+		kinds[arg.Name] = arg.Kind
 	}
-	runtimeNames := make(map[string]struct{}, len(metadata.RuntimeArgs))
-	for _, arg := range metadata.RuntimeArgs {
+	return kinds, nil
+}
+
+// validateRuntimeArgDeclarations checks each runtime arg's size and type and
+// returns the declared names.
+func validateRuntimeArgDeclarations(args []RuntimeArg) (map[string]struct{}, error) {
+	names := make(map[string]struct{}, len(args))
+	for _, arg := range args {
 		if arg.Name == "" || arg.MaxSize <= 0 || arg.ByteLength < 0 || arg.ByteLength > arg.MaxSize {
-			return fmt.Errorf("invalid runtime arg %q maximum size %d", arg.Name, arg.MaxSize)
+			return nil, fmt.Errorf("invalid runtime arg %q maximum size %d", arg.Name, arg.MaxSize)
 		}
 		if arg.Type != "bytes" && arg.Type != "string" && arg.Type != "uint64" {
-			return fmt.Errorf("invalid runtime arg %q type %q", arg.Name, arg.Type)
+			return nil, fmt.Errorf("invalid runtime arg %q type %q", arg.Name, arg.Type)
 		}
-		if _, duplicate := runtimeNames[arg.Name]; duplicate {
-			return fmt.Errorf("duplicate runtime arg %q", arg.Name)
+		if _, duplicate := names[arg.Name]; duplicate {
+			return nil, fmt.Errorf("duplicate runtime arg %q", arg.Name)
 		}
-		runtimeNames[arg.Name] = struct{}{}
+		names[arg.Name] = struct{}{}
 	}
-	seenNames := make(map[string]struct{}, len(metadata.ArgumentLayout))
-	seenDerived := make(map[string]struct{}, len(derivedNames))
-	seenRuntime := make(map[string]struct{}, len(runtimeNames))
-	cosignerSlots := 0
-	for i, slot := range metadata.ArgumentLayout {
-		if slot.Index != i {
-			return fmt.Errorf("argument slot %d has non-canonical index %d", i, slot.Index)
-		}
-		if slot.Name == "" || slot.MaxSize <= 0 {
-			return fmt.Errorf("argument slot %d has invalid name or maximum size", i)
-		}
-		if _, duplicate := seenNames[slot.Name]; duplicate {
-			return fmt.Errorf("duplicate argument slot name %q", slot.Name)
-		}
-		seenNames[slot.Name] = struct{}{}
-		order, ok := sourceOrder[slot.Source]
-		if !ok || order < lastSource {
-			return fmt.Errorf("argument slot %d source %q is invalid or out of order", i, slot.Source)
-		}
-		lastSource = order
-		for _, pathRule := range []struct {
-			path string
-			rule string
-		}{
-			{path: PathSpend, rule: slot.Paths.Spend},
-			{path: PathSpendingRekey, rule: slot.Paths.SpendingRekey},
-			{path: PathListedRekey, rule: slot.Paths.ListedRekey},
-		} {
-			path, rule := pathRule.path, pathRule.rule
-			if rule != ArgRequired && rule != ArgOptional && rule != ArgForbidden {
-				return fmt.Errorf("argument slot %d has invalid %s path rule %q", i, path, rule)
-			}
-		}
-		switch slot.Source {
-		case ArgSourceBaseSignature:
-			if slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgRequired || slot.Paths.ListedRekey != ArgRequired {
-				return fmt.Errorf("base signature slot %d must be required on every path", i)
-			}
-			if baseCount >= len(metadata.BaseSignatureArgLayout.MaxSizes) || slot.MaxSize != metadata.BaseSignatureArgLayout.MaxSizes[baseCount] {
-				return fmt.Errorf("base signature slot %d does not match base_signature_arg_layout", i)
-			}
-			baseCount++
-		case ArgSourceDerived:
-			if _, ok := derivedNames[slot.Name]; !ok {
-				return fmt.Errorf("argument slot %d references undeclared derived arg %q", i, slot.Name)
-			}
-			for _, arg := range metadata.DerivedArgs {
-				if arg.Name == slot.Name && arg.MaxSize != slot.MaxSize {
-					return fmt.Errorf("derived argument slot %d maximum size does not match declaration", i)
-				}
-			}
-			// A rekey never reaches Layer 3, so a recipient proof is spend-only, and a
-			// list proof serves the listed rekey alone.
-			want := ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}
-			if derivedKinds[slot.Name] == DerivedArgRekeyListProof {
-				want = ArgumentPathMask{Spend: ArgForbidden, SpendingRekey: ArgForbidden, ListedRekey: ArgRequired}
-			}
-			if slot.Paths != want {
-				return fmt.Errorf("derived argument slot %d has path rules %+v, want %+v", i, slot.Paths, want)
-			}
-			seenDerived[slot.Name] = struct{}{}
-		case ArgSourceRuntime:
-			if _, ok := runtimeNames[slot.Name]; !ok {
-				return fmt.Errorf("argument slot %d references undeclared runtime arg %q", i, slot.Name)
-			}
-			for _, arg := range metadata.RuntimeArgs {
-				if arg.Name == slot.Name && arg.MaxSize != slot.MaxSize {
-					return fmt.Errorf("runtime argument slot %d maximum size does not match declaration", i)
-				}
-			}
-			if slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.ListedRekey != ArgForbidden {
-				return fmt.Errorf("runtime argument slot %d must be forbidden on every rekey path", i)
-			}
-			seenRuntime[slot.Name] = struct{}{}
-		case ArgSourceCosigner:
-			cosignerSlots++
-			if slot.Name != CosignerSignatureSlot || metadata.Cosigner == nil || slot.MaxSize != metadata.Cosigner.SignatureMaxSize ||
-				slot.Paths != CosignerSlotPaths(metadata.Cosigner) {
-				return fmt.Errorf("bounded cosigner signature slot must be required on exactly the cosigner's required_on paths and match cosigner metadata")
-			}
+	return names, nil
+}
+
+// argumentLayoutCheck walks the argument layout once, slot by slot, and then
+// checks that the layout covered every declaration.
+type argumentLayoutCheck struct {
+	metadata     *Metadata
+	derivedKinds map[string]string
+	runtimeNames map[string]struct{}
+
+	lastSource    int
+	baseCount     int
+	cosignerSlots int
+	seenNames     map[string]struct{}
+	seenDerived   map[string]struct{}
+	seenRuntime   map[string]struct{}
+}
+
+func (c *argumentLayoutCheck) slot(i int, slot ArgumentSlot) error {
+	if slot.Index != i {
+		return fmt.Errorf("argument slot %d has non-canonical index %d", i, slot.Index)
+	}
+	if slot.Name == "" || slot.MaxSize <= 0 {
+		return fmt.Errorf("argument slot %d has invalid name or maximum size", i)
+	}
+	if _, duplicate := c.seenNames[slot.Name]; duplicate {
+		return fmt.Errorf("duplicate argument slot name %q", slot.Name)
+	}
+	c.seenNames[slot.Name] = struct{}{}
+	order, ok := argumentSourceOrder[slot.Source]
+	if !ok || order < c.lastSource {
+		return fmt.Errorf("argument slot %d source %q is invalid or out of order", i, slot.Source)
+	}
+	c.lastSource = order
+	if err := validateSlotPathRules(i, slot.Paths); err != nil {
+		return err
+	}
+	switch slot.Source {
+	case ArgSourceBaseSignature:
+		return c.baseSlot(i, slot)
+	case ArgSourceDerived:
+		return c.derivedSlot(i, slot)
+	case ArgSourceRuntime:
+		return c.runtimeSlot(i, slot)
+	case ArgSourceCosigner:
+		return c.cosignerSlot(slot)
+	}
+	return nil
+}
+
+func validateSlotPathRules(i int, paths ArgumentPathMask) error {
+	for _, pathRule := range []struct {
+		path string
+		rule string
+	}{
+		{path: PathSpend, rule: paths.Spend},
+		{path: PathSpendingRekey, rule: paths.SpendingRekey},
+		{path: PathListedRekey, rule: paths.ListedRekey},
+	} {
+		if rule := pathRule.rule; rule != ArgRequired && rule != ArgOptional && rule != ArgForbidden {
+			return fmt.Errorf("argument slot %d has invalid %s path rule %q", i, pathRule.path, rule)
 		}
 	}
-	if baseCount != metadata.BaseSignatureArgLayout.Count {
-		return fmt.Errorf("argument layout has %d base slots, want %d", baseCount, metadata.BaseSignatureArgLayout.Count)
+	return nil
+}
+
+func (c *argumentLayoutCheck) baseSlot(i int, slot ArgumentSlot) error {
+	if slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgRequired || slot.Paths.ListedRekey != ArgRequired {
+		return fmt.Errorf("base signature slot %d must be required on every path", i)
 	}
-	if len(seenDerived) != len(derivedNames) || len(seenRuntime) != len(runtimeNames) {
+	sizes := c.metadata.BaseSignatureArgLayout.MaxSizes
+	if c.baseCount >= len(sizes) || slot.MaxSize != sizes[c.baseCount] {
+		return fmt.Errorf("base signature slot %d does not match base_signature_arg_layout", i)
+	}
+	c.baseCount++
+	return nil
+}
+
+func (c *argumentLayoutCheck) derivedSlot(i int, slot ArgumentSlot) error {
+	kind, ok := c.derivedKinds[slot.Name]
+	if !ok {
+		return fmt.Errorf("argument slot %d references undeclared derived arg %q", i, slot.Name)
+	}
+	for _, arg := range c.metadata.DerivedArgs {
+		if arg.Name == slot.Name && arg.MaxSize != slot.MaxSize {
+			return fmt.Errorf("derived argument slot %d maximum size does not match declaration", i)
+		}
+	}
+	// A rekey never reaches Layer 3, so a recipient proof is spend-only, and a
+	// list proof serves the listed rekey alone.
+	want := ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}
+	if kind == DerivedArgRekeyListProof {
+		want = ArgumentPathMask{Spend: ArgForbidden, SpendingRekey: ArgForbidden, ListedRekey: ArgRequired}
+	}
+	if slot.Paths != want {
+		return fmt.Errorf("derived argument slot %d has path rules %+v, want %+v", i, slot.Paths, want)
+	}
+	c.seenDerived[slot.Name] = struct{}{}
+	return nil
+}
+
+func (c *argumentLayoutCheck) runtimeSlot(i int, slot ArgumentSlot) error {
+	if _, ok := c.runtimeNames[slot.Name]; !ok {
+		return fmt.Errorf("argument slot %d references undeclared runtime arg %q", i, slot.Name)
+	}
+	for _, arg := range c.metadata.RuntimeArgs {
+		if arg.Name == slot.Name && arg.MaxSize != slot.MaxSize {
+			return fmt.Errorf("runtime argument slot %d maximum size does not match declaration", i)
+		}
+	}
+	if slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.ListedRekey != ArgForbidden {
+		return fmt.Errorf("runtime argument slot %d must be forbidden on every rekey path", i)
+	}
+	c.seenRuntime[slot.Name] = struct{}{}
+	return nil
+}
+
+func (c *argumentLayoutCheck) cosignerSlot(slot ArgumentSlot) error {
+	c.cosignerSlots++
+	cosigner := c.metadata.Cosigner
+	if slot.Name != CosignerSignatureSlot || cosigner == nil || slot.MaxSize != cosigner.SignatureMaxSize ||
+		slot.Paths != CosignerSlotPaths(cosigner) {
+		return fmt.Errorf("bounded cosigner signature slot must be required on exactly the cosigner's required_on paths and match cosigner metadata")
+	}
+	return nil
+}
+
+// complete checks that the layout has the base slot count, a slot for every
+// declared Layer-3 argument, and the cosigner slot exactly when there is a
+// cosigner.
+func (c *argumentLayoutCheck) complete() error {
+	if c.baseCount != c.metadata.BaseSignatureArgLayout.Count {
+		return fmt.Errorf("argument layout has %d base slots, want %d", c.baseCount, c.metadata.BaseSignatureArgLayout.Count)
+	}
+	if len(c.seenDerived) != len(c.derivedKinds) || len(c.seenRuntime) != len(c.runtimeNames) {
 		return fmt.Errorf("argument layout does not cover every declared Layer-3 argument")
 	}
 	wantCosignerSlots := 0
-	if metadata.Cosigner != nil {
+	if c.metadata.Cosigner != nil {
 		wantCosignerSlots = 1
 	}
-	if cosignerSlots != wantCosignerSlots {
-		return fmt.Errorf("argument layout has %d cosigner slots, want %d", cosignerSlots, wantCosignerSlots)
+	if c.cosignerSlots != wantCosignerSlots {
+		return fmt.Errorf("argument layout has %d cosigner slots, want %d", c.cosignerSlots, wantCosignerSlots)
 	}
 	return nil
 }
