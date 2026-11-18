@@ -76,6 +76,10 @@ func TestCatalogAuthModeGrammar(t *testing.T) {
 		{"endpoint export --host=signer.example --out=endpoint.json", AuthReadOnly, ""},
 		{"endpoint export -h", AuthReadOnly, endpointExportUsage},
 		{"endpoint export --out", AuthReadOnly, endpointExportUsage},
+		// The retired port flags are refused here, before a connection, as
+		// the command itself refuses them.
+		{"endpoint export --signer-port 11270", AuthReadOnly, endpointExportUsage},
+		{"endpoint export --local-port 18080", AuthReadOnly, endpointExportUsage},
 		{"endpoint", AuthUnlock, unknown("endpoint")},
 		{"endpoint list", AuthUnlock, unknown("endpoint list")},
 

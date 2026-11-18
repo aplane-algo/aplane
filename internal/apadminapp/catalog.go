@@ -193,8 +193,6 @@ func endpointCommandAuth(args []string) (AuthMode, bool, error) {
 	fs.SetOutput(io.Discard)
 	_ = fs.String("host", "", "")
 	_ = fs.String("url", "", "")
-	_ = fs.Int("signer-port", 0, "")
-	_ = fs.Int("local-port", 0, "")
 	_ = fs.String("out", "", "")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
 		return AuthReadOnly, true, errors.New(endpointExportUsage)
