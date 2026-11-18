@@ -368,7 +368,7 @@ func (m model) View() string {
 		sb.WriteString(errorStyle.Render(wrap(m.err, contentWidth(m.width))))
 		sb.WriteString("\n")
 	}
-	if m.result != nil { //nolint:nestif // unslop phase 3
+	if m.result != nil { //nolint:nestif // complexity backlog
 		sb.WriteString("\n")
 		if m.result.SignerConfigPath != "" {
 			sb.WriteString(kv("Signer config", changedText(m.result.SignerConfigChanged)+" - "+m.result.SignerConfigPath))

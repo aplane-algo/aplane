@@ -77,7 +77,7 @@ func WriteOfflineTemplate(command Command, streams Streams) error {
 }
 
 // run executes one verb against a backend.
-func run(ctx context.Context, command Command, streams Streams, backend Backend) error { //nolint:gocognit // unslop phase 3
+func run(ctx context.Context, command Command, streams Streams, backend Backend) error { //nolint:gocognit // complexity backlog
 	switch command.Verb {
 	case VerbStatus:
 		view, err := getPolicy(ctx, backend)

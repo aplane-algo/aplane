@@ -269,7 +269,7 @@ func (a *API) jsSigners(call goja.FunctionCall) goja.Value {
 // holders(addresses, "usdc") - returns subset of addresses that hold USDC (filter mode)
 func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 	// Check if first argument is an array (filter mode)
-	if len(call.Arguments) >= 1 { //nolint:nestif // unslop phase 3
+	if len(call.Arguments) >= 1 { //nolint:nestif // complexity backlog
 		if arr, ok := call.Arguments[0].Export().([]interface{}); ok {
 			// Filter mode: holders(addresses, asset)
 			assetRef := "algo"

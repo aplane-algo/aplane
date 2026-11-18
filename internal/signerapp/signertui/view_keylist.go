@@ -230,7 +230,7 @@ func (m Model) renderKeyListView() string {
 	tabKeys := filterKeysForTab(m.keylist.keys, m.effectiveKeyListTab())
 	displayKeys := m.filteredKeys()
 
-	if len(m.keylist.keys) == 0 { //nolint:nestif // unslop phase 3
+	if len(m.keylist.keys) == 0 { //nolint:nestif // complexity backlog
 		if m.keyCount > 0 {
 			sb.WriteString(fmt.Sprintf("✓ %d keys loaded in signer\n", m.keyCount))
 			sb.WriteString(subtitleStyle.Render("Press 'r' to load key details"))

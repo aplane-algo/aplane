@@ -202,7 +202,7 @@ func ValidateDocumentKey(role noderole.Role, key string) error {
 // DecodePolicyV1 decodes and validates one policy document for role. key is
 // the document's file name (DefaultKey or a key selector); the signed "key"
 // field must equal it, and the signed "role" field must equal role.
-func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, error) { //nolint:gocognit // unslop phase 3
+func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, error) { //nolint:gocognit // complexity backlog
 	if role != noderole.RoleSigner && role != noderole.RoleCosigner {
 		return nil, fmt.Errorf("unsupported node role %q", role)
 	}

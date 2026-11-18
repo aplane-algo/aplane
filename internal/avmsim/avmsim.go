@@ -383,7 +383,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) { //nol
 			}
 		case "==", "!=":
 			var a, b Value
-			if b, err = pop(); err == nil { //nolint:nestif // unslop phase 3
+			if b, err = pop(); err == nil { //nolint:nestif // complexity backlog
 				if a, err = pop(); err == nil {
 					if a.isBytes != b.isBytes {
 						err = errors.New("comparing bytes with uint64")
@@ -531,7 +531,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) { //nol
 			}
 		case "ed25519verify_bare", "falcon_verify":
 			var data, sig, key []byte
-			if key, err = popBytes(); err == nil { //nolint:nestif // unslop phase 3
+			if key, err = popBytes(); err == nil { //nolint:nestif // complexity backlog
 				if sig, err = popBytes(); err == nil {
 					if data, err = popBytes(); err == nil {
 						verify := hooks.Ed25519

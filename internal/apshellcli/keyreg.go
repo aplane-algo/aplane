@@ -25,7 +25,7 @@ func (r *REPLState) keyRegPasteMode() error {
 	var lines []string
 	emptyLineCount := 0
 
-	if r.hasInteractiveLineReader() { //nolint:nestif // unslop phase 3
+	if r.hasInteractiveLineReader() { //nolint:nestif // complexity backlog
 		// Use readline-based input (handles Ctrl+C gracefully)
 		r.clearInputPrompt()
 		for {

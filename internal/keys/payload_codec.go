@@ -828,7 +828,7 @@ func validateLogicSigFields(p *Payload) error {
 	default:
 		return incompatibleKeyFormat("unsupported lsig_derivation %q", p.LogicSigDerivation)
 	}
-	if p.BoundedAuthorization == nil { //nolint:nestif // unslop phase 3
+	if p.BoundedAuthorization == nil { //nolint:nestif // complexity backlog
 		if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
 			return incompatibleKeyFormat("%s without bounded_authorization requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
 		}

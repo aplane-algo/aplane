@@ -209,7 +209,7 @@ func checkFile(path string) []finding {
 			hasZero = false
 		}
 
-		if inFunc { //nolint:nestif // unslop phase 3
+		if inFunc { //nolint:nestif // complexity backlog
 			braceCount += strings.Count(code, "{") - strings.Count(code, "}")
 
 			// Check for key material references

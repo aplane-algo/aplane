@@ -145,7 +145,7 @@ func parseEnrollArgs(args []string) (alias, label string, err error) {
 	return alias, label, nil
 }
 
-func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) { //nolint:gocognit // unslop phase 3
+func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) { //nolint:gocognit // complexity backlog
 	if len(args) == 0 {
 		return nil, fmt.Errorf("usage: %s", endpointsUsage)
 	}

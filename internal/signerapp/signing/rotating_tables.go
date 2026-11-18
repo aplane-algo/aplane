@@ -266,7 +266,7 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen ui
 // fillStageTableOnce fills one account's table. cut reports that the lock
 // refused or cut one of its key uses, at the identity read or a derivation,
 // while the pass was live.
-func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (report StageTableReport, cut bool) { //nolint:gocognit // unslop phase 3
+func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (report StageTableReport, cut bool) { //nolint:gocognit // complexity backlog
 	report = StageTableReport{Account: account}
 	opts.persistBatches = true
 
@@ -537,7 +537,7 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 // authorizer. Whatever the lookup gives other than a match leaves the search
 // as it would be without it: a miss stays in the table like any miss and is
 // never the table's hint, and every other outcome derives nothing.
-func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions, cut *bool, lookupStage func(context.Context) (chainread.StageLookup, error)) (found, pending bool, spent int, lookup *StageLookupRecord, err error) { //nolint:gocognit // unslop phase 3
+func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions, cut *bool, lookupStage func(context.Context) (chainread.StageLookup, error)) (found, pending bool, spent int, lookup *StageLookupRecord, err error) { //nolint:gocognit // complexity backlog
 	unpaced := opts
 	unpaced.Pace = nil
 	base := s.backgroundDeriver(account, session, unpaced, cut)
@@ -571,7 +571,7 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 	// confirms or repairs it. A probe that fails, in its derivation or its
 	// table write, is a probe not tried: the error is kept for the log, and
 	// the search runs as it would have.
-	if g.Hint == nil && budget > 0 && ctx.Err() == nil && rec.beginLookup(g) { //nolint:nestif // unslop phase 3
+	if g.Hint == nil && budget > 0 && ctx.Err() == nil && rec.beginLookup(g) { //nolint:nestif // complexity backlog
 		lookup = runStageLookup(ctx, lookupStage)
 		if lookup != nil && lookup.Outcome == chainread.LookupCandidate {
 			n := lookup.Stage

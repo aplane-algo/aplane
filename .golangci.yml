@@ -2,7 +2,7 @@
 # conversions, copied code, and complex functions. The departures are below.
 #
 # gocognit and nestif hold the line on complexity. A site marked
-# "unslop phase 3" is backlog waiting for a refactor; nolintlint fails the
+# "complexity backlog" is a function waiting for a refactor; nolintlint fails the
 # marker once the function drops under the threshold. New code gets no marker.
 version: "2"
 

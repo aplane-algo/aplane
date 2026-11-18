@@ -734,7 +734,7 @@ func decorateCloseResult(result *CloseCommandResult) {
 }
 
 // Sweep resolves and executes a sweep flow across one or more source accounts.
-func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult, error) { //nolint:gocognit // unslop phase 3
+func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult, error) { //nolint:gocognit // complexity backlog
 	resolver := a.eng.NewAddressResolver()
 
 	var fromAddresses []string
