@@ -145,153 +145,193 @@ func parseEnrollArgs(args []string) (alias, label string, err error) {
 	return alias, label, nil
 }
 
-func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) { //nolint:gocognit // complexity backlog
+func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("usage: %s", endpointsUsage)
 	}
 	switch args[0] {
 	case "list":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("usage: endpoints list")
-		}
-		result, err := r.app().EndpointsList(r.commandContext())
-		if err != nil {
-			return nil, err
-		}
-		projection := make([]endpointProjection, len(result.Endpoints))
-		for i, endpoint := range result.Endpoints {
-			projection[i] = projectEndpointEntry(endpoint)
-		}
-		return newShellCommandResult(func(w io.Writer) error {
-			return r.withOutput(w, func() { r.renderEndpointsList(result) })
-		}, projection)
+		return r.endpointsList(args)
 	case "show":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("usage: endpoints show <alias>")
-		}
-		result, err := r.app().EndpointShow(r.commandContext(), args[1])
-		if err != nil {
-			return nil, err
-		}
-		return newShellCommandResult(func(w io.Writer) error {
-			return r.withOutput(w, func() { r.renderEndpointShow(result) })
-		}, projectEndpointEntry(result.Endpoint))
+		return r.endpointsShow(args)
 	case "public-key":
-		if len(args) > 2 {
-			return nil, fmt.Errorf("usage: endpoints public-key [<alias>]")
-		}
-		alias := ""
-		if len(args) == 2 {
-			alias = args[1]
-		}
-		result, err := r.app().EndpointPublicKey(r.commandContext(), alias)
-		if err != nil {
-			return nil, err
-		}
-		return newShellCommandResult(func(w io.Writer) error {
-			return r.withOutput(w, func() { r.renderEndpointPublicKey(result) })
-		}, endpointPublicKeyProjection{
-			Alias: result.Alias, PublicKey: result.PublicKey, Fingerprint: result.Fingerprint,
-		})
+		return r.endpointsPublicKey(args)
 	case "add":
 		return r.runEndpointsAdd(args[1:])
 	case "create":
-		req, err := parseEndpointCreateCosignerArgs(args[1:])
-		if err != nil {
-			return nil, err
-		}
-		result, err := r.app().EndpointCreateCosigner(r.commandContext(), req)
-		if err != nil {
-			return nil, err
-		}
-		return newShellCommandResult(func(w io.Writer) error {
-			return r.withOutput(w, func() {
-				for _, line := range result.RenderLines {
-					r.println(line)
-				}
-				if !result.DryRun {
-					r.printf("Run 'enroll --endpoint %s' before using this endpoint.\n", result.Alias)
-				}
-			})
-		}, endpointMutationProjection{
-			Mode: "create", Alias: result.Alias, Role: result.Role, URL: result.URL,
-			DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
-		})
+		return r.endpointsCreate(args)
 	case "import":
-		req, err := parseEndpointImportArgs(args[1:])
-		if err != nil {
-			return nil, err
-		}
-		result, err := r.app().EndpointImport(r.commandContext(), req)
-		if err != nil {
-			return nil, err
-		}
-		return newShellCommandResult(func(w io.Writer) error {
-			return r.withOutput(w, func() {
-				for _, line := range result.RenderLines {
-					r.println(line)
-				}
-				if !result.DryRun {
-					r.printf("Run 'enroll --endpoint %s' before using this endpoint.\n", result.Alias)
-				}
-			})
-		}, endpointMutationProjection{
-			Mode: "import", Alias: result.Alias, Role: result.Role, URL: result.URL,
-			DryRun: result.DryRun, Created: result.Created,
-			Updated: result.Updated, DefaultChanged: result.DefaultChanged,
-		})
+		return r.endpointsImport(args)
 	case "discover-cosigners":
-		if len(args) != 1 {
-			return nil, errors.New("usage: endpoints discover-cosigners")
-		}
-		result, err := r.app().EndpointDiscoverCosigners(r.commandContext(), apshellapp.EndpointDiscoverCosignersRequest{})
-		if err != nil {
-			return nil, err
-		}
-		projection := endpointDiscoveryProjection{CosignerKeyCount: result.CosignerKeyCount}
-		projection.Endpoints = make([]endpointDiscoveryEntry, len(result.Endpoints))
-		for i, endpoint := range result.Endpoints {
-			entry := endpointDiscoveryEntry{Alias: endpoint.Alias, Skipped: endpoint.Skipped, Error: endpoint.Error}
-			entry.Keys = make([]endpointDiscoveryKey, len(endpoint.Keys))
-			for j, key := range endpoint.Keys {
-				entry.Keys[j] = endpointDiscoveryKey{
-					PublicKey: key.PublicKey, ComponentKey: key.ComponentKey, KeyType: key.KeyType,
-				}
-			}
-			projection.Endpoints[i] = entry
-		}
-		return newShellCommandResult(func(w io.Writer) error {
-			return r.withOutput(w, func() {
-				for _, line := range result.RenderLines {
-					r.println(line)
-				}
-			})
-		}, projection)
+		return r.endpointsDiscoverCosigners(args)
 	case "default":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("usage: endpoints default <alias>")
-		}
-		result, err := r.app().EndpointDefault(r.commandContext(), args[1])
-		if err != nil {
-			return nil, err
-		}
-		return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
-			Mode: "default", Alias: result.Alias, PreviousDefault: result.PreviousAlias, DefaultChanged: true,
-		})
+		return r.endpointsDefault(args)
 	case "delete":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("usage: endpoints delete <alias>")
-		}
-		result, err := r.app().EndpointDelete(r.commandContext(), args[1])
-		if err != nil {
-			return nil, err
-		}
-		return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
-			Mode: "delete", Alias: result.Alias, Deleted: true,
-		})
+		return r.endpointsDelete(args)
 	default:
 		return nil, fmt.Errorf("unknown endpoints subcommand %q", args[0])
 	}
+}
+
+// endpointsList lists the endpoints.
+func (r *REPLState) endpointsList(args []string) (command.Result, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("usage: endpoints list")
+	}
+	result, err := r.app().EndpointsList(r.commandContext())
+	if err != nil {
+		return nil, err
+	}
+	projection := make([]endpointProjection, len(result.Endpoints))
+	for i, endpoint := range result.Endpoints {
+		projection[i] = projectEndpointEntry(endpoint)
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() { r.renderEndpointsList(result) })
+	}, projection)
+}
+
+// endpointsShow shows one endpoint.
+func (r *REPLState) endpointsShow(args []string) (command.Result, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("usage: endpoints show <alias>")
+	}
+	result, err := r.app().EndpointShow(r.commandContext(), args[1])
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() { r.renderEndpointShow(result) })
+	}, projectEndpointEntry(result.Endpoint))
+}
+
+// endpointsPublicKey prints the client's public key for an endpoint.
+func (r *REPLState) endpointsPublicKey(args []string) (command.Result, error) {
+	if len(args) > 2 {
+		return nil, fmt.Errorf("usage: endpoints public-key [<alias>]")
+	}
+	alias := ""
+	if len(args) == 2 {
+		alias = args[1]
+	}
+	result, err := r.app().EndpointPublicKey(r.commandContext(), alias)
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() { r.renderEndpointPublicKey(result) })
+	}, endpointPublicKeyProjection{
+		Alias: result.Alias, PublicKey: result.PublicKey, Fingerprint: result.Fingerprint,
+	})
+}
+
+// endpointsCreate creates a cosigner endpoint.
+func (r *REPLState) endpointsCreate(args []string) (command.Result, error) {
+	req, err := parseEndpointCreateCosignerArgs(args[1:])
+	if err != nil {
+		return nil, err
+	}
+	result, err := r.app().EndpointCreateCosigner(r.commandContext(), req)
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range result.RenderLines {
+				r.println(line)
+			}
+			if !result.DryRun {
+				r.printf("Run 'enroll --endpoint %s' before using this endpoint.\n", result.Alias)
+			}
+		})
+	}, endpointMutationProjection{
+		Mode: "create", Alias: result.Alias, Role: result.Role, URL: result.URL,
+		DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
+	})
+}
+
+// endpointsImport imports an endpoint from an envelope.
+func (r *REPLState) endpointsImport(args []string) (command.Result, error) {
+	req, err := parseEndpointImportArgs(args[1:])
+	if err != nil {
+		return nil, err
+	}
+	result, err := r.app().EndpointImport(r.commandContext(), req)
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range result.RenderLines {
+				r.println(line)
+			}
+			if !result.DryRun {
+				r.printf("Run 'enroll --endpoint %s' before using this endpoint.\n", result.Alias)
+			}
+		})
+	}, endpointMutationProjection{
+		Mode: "import", Alias: result.Alias, Role: result.Role, URL: result.URL,
+		DryRun: result.DryRun, Created: result.Created,
+		Updated: result.Updated, DefaultChanged: result.DefaultChanged,
+	})
+}
+
+// endpointsDiscoverCosigners asks each cosigner endpoint for its keys.
+func (r *REPLState) endpointsDiscoverCosigners(args []string) (command.Result, error) {
+	if len(args) != 1 {
+		return nil, errors.New("usage: endpoints discover-cosigners")
+	}
+	result, err := r.app().EndpointDiscoverCosigners(r.commandContext(), apshellapp.EndpointDiscoverCosignersRequest{})
+	if err != nil {
+		return nil, err
+	}
+	projection := endpointDiscoveryProjection{CosignerKeyCount: result.CosignerKeyCount}
+	projection.Endpoints = make([]endpointDiscoveryEntry, len(result.Endpoints))
+	for i, endpoint := range result.Endpoints {
+		entry := endpointDiscoveryEntry{Alias: endpoint.Alias, Skipped: endpoint.Skipped, Error: endpoint.Error}
+		entry.Keys = make([]endpointDiscoveryKey, len(endpoint.Keys))
+		for j, key := range endpoint.Keys {
+			entry.Keys[j] = endpointDiscoveryKey{
+				PublicKey: key.PublicKey, ComponentKey: key.ComponentKey, KeyType: key.KeyType,
+			}
+		}
+		projection.Endpoints[i] = entry
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range result.RenderLines {
+				r.println(line)
+			}
+		})
+	}, projection)
+}
+
+// endpointsDefault sets the default endpoint.
+func (r *REPLState) endpointsDefault(args []string) (command.Result, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("usage: endpoints default <alias>")
+	}
+	result, err := r.app().EndpointDefault(r.commandContext(), args[1])
+	if err != nil {
+		return nil, err
+	}
+	return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
+		Mode: "default", Alias: result.Alias, PreviousDefault: result.PreviousAlias, DefaultChanged: true,
+	})
+}
+
+// endpointsDelete deletes an endpoint.
+func (r *REPLState) endpointsDelete(args []string) (command.Result, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("usage: endpoints delete <alias>")
+	}
+	result, err := r.app().EndpointDelete(r.commandContext(), args[1])
+	if err != nil {
+		return nil, err
+	}
+	return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
+		Mode: "delete", Alias: result.Alias, Deleted: true,
+	})
 }
 
 func endpointRenderLinesResult(r *REPLState, lines []string, projection interface{}) (command.Result, error) {
