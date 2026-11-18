@@ -243,32 +243,31 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 }
 
 func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, error) {
-	if c.identityFile != "" { //nolint:nestif // complexity backlog
-		identityPath := expandUserPath(c.identityFile)
-		keyData, err := os.ReadFile(identityPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				// Auto-generate key if it doesn't exist
-				signer, genErr := c.generateIdentityKey(identityPath)
-				if genErr != nil {
-					// Fall back to SSH agent if key generation fails
-					return c.agentAuthMethod(onSigned)
-				}
-				return ssh.PublicKeys(observeAuthSigner(signer, onSigned)), nil, nil
-			}
-			return nil, nil, fmt.Errorf("failed to read SSH identity file %s: %w", identityPath, err)
-		}
-		signer, err := ssh.ParsePrivateKey(keyData)
-		if err != nil {
-			if _, ok := err.(*ssh.PassphraseMissingError); ok {
-				return nil, nil, fmt.Errorf("SSH identity file %s is encrypted; use ssh-agent or an unencrypted key", identityPath)
-			}
-			return nil, nil, fmt.Errorf("failed to parse SSH identity file %s: %w", identityPath, err)
-		}
-		return ssh.PublicKeys(observeAuthSigner(signer, onSigned)), nil, nil
+	if c.identityFile == "" {
+		return c.agentAuthMethod(onSigned)
 	}
-
-	return c.agentAuthMethod(onSigned)
+	identityPath := expandUserPath(c.identityFile)
+	keyData, err := os.ReadFile(identityPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Auto-generate key if it doesn't exist
+			signer, genErr := c.generateIdentityKey(identityPath)
+			if genErr != nil {
+				// Fall back to SSH agent if key generation fails
+				return c.agentAuthMethod(onSigned)
+			}
+			return ssh.PublicKeys(observeAuthSigner(signer, onSigned)), nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed to read SSH identity file %s: %w", identityPath, err)
+	}
+	signer, err := ssh.ParsePrivateKey(keyData)
+	if err != nil {
+		if _, ok := err.(*ssh.PassphraseMissingError); ok {
+			return nil, nil, fmt.Errorf("SSH identity file %s is encrypted; use ssh-agent or an unencrypted key", identityPath)
+		}
+		return nil, nil, fmt.Errorf("failed to parse SSH identity file %s: %w", identityPath, err)
+	}
+	return ssh.PublicKeys(observeAuthSigner(signer, onSigned)), nil, nil
 }
 
 // generateIdentityKey creates a new Ed25519 key pair and saves it to the specified path.

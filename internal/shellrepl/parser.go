@@ -341,62 +341,15 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	seen := cmdspec.SeenOptions{}
 	for i := 2; i < len(args); i++ {
 		arg := args[i]
-		if arg == "nowait" { //nolint:nestif // complexity backlog
+		if arg == "nowait" {
 			params.Wait = false
 		} else if strings.HasPrefix(arg, "arg:") {
 			if err := cmdspec.AddLsigArg(&params.LsigArgs, arg); err != nil {
 				return params, err
 			}
 		} else if strings.Contains(arg, "=") {
-			parts := strings.SplitN(arg, "=", 2)
-			if len(parts) != 2 {
-				return params, fmt.Errorf("invalid argument format: %s", arg)
-			}
-			key := parts[0]
-			value := parts[1]
-
-			// Every key=value keyreg takes is single-valued.
-			if err := seen.Once(key); err != nil {
+			if err := setKeyRegOption(&params, seen, arg); err != nil {
 				return params, err
-			}
-			switch key {
-			case "votekey":
-				params.VoteKey = value
-			case "selkey":
-				params.SelKey = value
-			case "sproofkey":
-				params.SProofKey = value
-			case "votefirst":
-				val, err := parseUint64(value)
-				if err != nil {
-					return params, fmt.Errorf("invalid votefirst value: %s", value)
-				}
-				params.VoteFirst = val
-			case "votelast":
-				val, err := parseUint64(value)
-				if err != nil {
-					return params, fmt.Errorf("invalid votelast value: %s", value)
-				}
-				params.VoteLast = val
-			case "keydilution":
-				val, err := parseUint64(value)
-				if err != nil {
-					return params, fmt.Errorf("invalid keydilution value: %s", value)
-				}
-				params.KeyDilution = val
-			case "eligible":
-				// Anything but these two is a mistake, and reading it as
-				// false would register without what was asked for.
-				switch value {
-				case "true":
-					params.IncentiveEligible = true
-				case "false":
-					params.IncentiveEligible = false
-				default:
-					return params, fmt.Errorf("invalid eligible value %q: use eligible=true or eligible=false", value)
-				}
-			default:
-				return params, fmt.Errorf("unknown argument: %s", key)
 			}
 		} else {
 			return params, unexpectedArgument("keyreg", arg)
@@ -409,6 +362,62 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	}
 
 	return params, nil
+}
+
+// setKeyRegOption applies one key=value argument of keyreg to params. Every
+// key is single-valued; seen refuses a repeat.
+func setKeyRegOption(params *KeyRegParams, seen cmdspec.SeenOptions, arg string) error {
+	parts := strings.SplitN(arg, "=", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid argument format: %s", arg)
+	}
+	key := parts[0]
+	value := parts[1]
+
+	// Every key=value keyreg takes is single-valued.
+	if err := seen.Once(key); err != nil {
+		return err
+	}
+	switch key {
+	case "votekey":
+		params.VoteKey = value
+	case "selkey":
+		params.SelKey = value
+	case "sproofkey":
+		params.SProofKey = value
+	case "votefirst":
+		val, err := parseUint64(value)
+		if err != nil {
+			return fmt.Errorf("invalid votefirst value: %s", value)
+		}
+		params.VoteFirst = val
+	case "votelast":
+		val, err := parseUint64(value)
+		if err != nil {
+			return fmt.Errorf("invalid votelast value: %s", value)
+		}
+		params.VoteLast = val
+	case "keydilution":
+		val, err := parseUint64(value)
+		if err != nil {
+			return fmt.Errorf("invalid keydilution value: %s", value)
+		}
+		params.KeyDilution = val
+	case "eligible":
+		// Anything but these two is a mistake, and reading it as
+		// false would register without what was asked for.
+		switch value {
+		case "true":
+			params.IncentiveEligible = true
+		case "false":
+			params.IncentiveEligible = false
+		default:
+			return fmt.Errorf("invalid eligible value %q: use eligible=true or eligible=false", value)
+		}
+	default:
+		return fmt.Errorf("unknown argument: %s", key)
+	}
+	return nil
 }
 
 func parseUint64(s string) (uint64, error) {

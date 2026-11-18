@@ -95,27 +95,28 @@ func (s *State) AddAliasWithContext(ctx context.Context, name, address string) (
 			return err
 		}
 
-		if s.AlgodClient != nil { //nolint:nestif // complexity backlog
-			acctInfo, err := s.AlgodClient.AccountInformation(address).Do(ctx)
-			if err == nil {
-				if s.DataDir != "" {
-					s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
-				}
-				if err := s.AuthCache.UpdateAuthAddress(address, acctInfo.AuthAddr, s.Network); err != nil {
-					if rollbackErr := restoreAlias(); rollbackErr != nil {
-						return fmt.Errorf("failed to update auth cache: %w (alias rollback also failed: %v)", err, rollbackErr)
-					}
-					return fmt.Errorf("failed to update auth cache: %w", err)
-				}
-				if err := s.AuthCache.PruneToOwnedAddresses(s.ownedAuthAddresses(), s.Network); err != nil {
-					if rollbackErr := restoreAlias(); rollbackErr != nil {
-						return fmt.Errorf("failed to prune auth cache: %w (alias rollback also failed: %v)", err, rollbackErr)
-					}
-					return fmt.Errorf("failed to prune auth cache: %w", err)
-				}
-			}
+		if s.AlgodClient == nil {
+			return nil
 		}
-
+		acctInfo, err := s.AlgodClient.AccountInformation(address).Do(ctx)
+		if err != nil {
+			return nil
+		}
+		if s.DataDir != "" {
+			s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
+		}
+		if err := s.AuthCache.UpdateAuthAddress(address, acctInfo.AuthAddr, s.Network); err != nil {
+			if rollbackErr := restoreAlias(); rollbackErr != nil {
+				return fmt.Errorf("failed to update auth cache: %w (alias rollback also failed: %v)", err, rollbackErr)
+			}
+			return fmt.Errorf("failed to update auth cache: %w", err)
+		}
+		if err := s.AuthCache.PruneToOwnedAddresses(s.ownedAuthAddresses(), s.Network); err != nil {
+			if rollbackErr := restoreAlias(); rollbackErr != nil {
+				return fmt.Errorf("failed to prune auth cache: %w (alias rollback also failed: %v)", err, rollbackErr)
+			}
+			return fmt.Errorf("failed to prune auth cache: %w", err)
+		}
 		return nil
 	})
 	if err != nil {

@@ -269,37 +269,9 @@ func (a *API) jsSigners(call goja.FunctionCall) goja.Value {
 // holders(addresses, "usdc") - returns subset of addresses that hold USDC (filter mode)
 func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 	// Check if first argument is an array (filter mode)
-	if len(call.Arguments) >= 1 { //nolint:nestif // complexity backlog
+	if len(call.Arguments) >= 1 {
 		if arr, ok := call.Arguments[0].Export().([]interface{}); ok {
-			// Filter mode: holders(addresses, asset)
-			assetRef := "algo"
-			if len(call.Arguments) >= 2 {
-				assetRef = a.stringArg(call, 1)
-			}
-
-			holdersResult, err := a.engine.GetHolders(a.Context(), assetRef)
-			if err != nil {
-				panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", err)))
-			}
-
-			// Build lookup set
-			holderSet := make(map[string]bool, len(holdersResult.Addresses))
-			for _, addr := range holdersResult.Addresses {
-				holderSet[addr] = true
-			}
-
-			// Filter input addresses
-			result := make([]interface{}, 0)
-			addresses, err := stringArray(arr)
-			if err != nil {
-				panic(a.runtime.ToValue(fmt.Sprintf("holders() addresses: %v", err)))
-			}
-			for _, addr := range addresses {
-				if holderSet[addr] {
-					result = append(result, addr)
-				}
-			}
-			return a.runtime.ToValue(result)
+			return a.jsHoldersAmong(call, arr)
 		}
 	}
 
@@ -318,6 +290,40 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 	result := make([]interface{}, len(holders))
 	for i, addr := range holders {
 		result[i] = addr
+	}
+	return a.runtime.ToValue(result)
+}
+
+// jsHoldersAmong is the filter mode of holders(): the addresses of arr that
+// hold the asset.
+func (a *API) jsHoldersAmong(call goja.FunctionCall, arr []interface{}) goja.Value {
+	// Filter mode: holders(addresses, asset)
+	assetRef := "algo"
+	if len(call.Arguments) >= 2 {
+		assetRef = a.stringArg(call, 1)
+	}
+
+	holdersResult, err := a.engine.GetHolders(a.Context(), assetRef)
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", err)))
+	}
+
+	// Build lookup set
+	holderSet := make(map[string]bool, len(holdersResult.Addresses))
+	for _, addr := range holdersResult.Addresses {
+		holderSet[addr] = true
+	}
+
+	// Filter input addresses
+	result := make([]interface{}, 0)
+	addresses, err := stringArray(arr)
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("holders() addresses: %v", err)))
+	}
+	for _, addr := range addresses {
+		if holderSet[addr] {
+			result = append(result, addr)
+		}
 	}
 	return a.runtime.ToValue(result)
 }

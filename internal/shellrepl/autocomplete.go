@@ -250,54 +250,8 @@ func (c *ContextCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	lineStr := string(line[:pos])
 
 	// Check for plugin ArgSpec-based completion
-	parsed := parseCompletableCommandLine(lineStr)
-	parts := parsed.parts
-	if len(parts) >= 1 { //nolint:nestif // complexity backlog
-		cmdName := strings.ToLower(parts[0])
-		for _, plugin := range c.plugins {
-			if strings.ToLower(plugin.Name) == cmdName && len(plugin.ArgSpecs) > 0 {
-				// Get args typed so far (excluding command name)
-				args := []string{}
-				if len(parts) > 1 {
-					args = parts[1:]
-				}
-
-				// Determine which argument position we're completing
-				// argIndex is relative to args (not parts), 0-based
-				argIndex := len(args) - 1 // Index of current argument we're completing
-				if argIndex < 0 {
-					argIndex = 0
-				}
-
-				// If line ends with space, we're starting a new argument
-				if parsed.trailingSpace {
-					argIndex = len(args) // Next argument position
-				}
-
-				// Resolve the ArgSpec for this position (handles branches)
-				spec := resolveArgSpec(plugin.ArgSpecs, args, argIndex)
-				if spec != nil {
-					suggestions := c.getSuggestionsForArgSpec(*spec)
-
-					if len(suggestions) > 0 {
-						// If we're mid-typing (no trailing space), filter and return remaining part
-						if !parsed.trailingSpace && len(parts) > 1 {
-							partial := parts[len(parts)-1]
-							partialLen := len(partial)
-							candidates := filterByPrefix(suggestions, partial)
-							if len(candidates) > 0 {
-								// readline appends without deleting, so return only the
-								// remaining part after what's been typed. Addresses get
-								// uppercased later anyway, so mixed case is fine.
-								return stringsToRuneSuggestionsPartial(candidates, partialLen), partialLen
-							}
-						} else {
-							return stringsToRuneSuggestions(suggestions), 0
-						}
-					}
-				}
-			}
-		}
+	if suggestions, offset, ok := c.completePluginArg(parseCompletableCommandLine(lineStr)); ok {
+		return suggestions, offset
 	}
 
 	allAddresses := getAllAddresses(c.signerCache, c.aliasCache, c.ensureSignerCache)
@@ -318,6 +272,63 @@ func (c *ContextCompleter) Do(line []rune, pos int) ([][]rune, int) {
 
 	// Fall back to prefix completer
 	return c.prefix.Do(line, pos)
+}
+
+// completePluginArg completes the argument being typed for a plugin's command
+// from the plugin's ArgSpecs. It reports false when the line is not a
+// plugin's command or the ArgSpecs offer nothing for it.
+func (c *ContextCompleter) completePluginArg(parsed commandLineParse) ([][]rune, int, bool) {
+	parts := parsed.parts
+	if len(parts) < 1 {
+		return nil, 0, false
+	}
+	cmdName := strings.ToLower(parts[0])
+	for _, plugin := range c.plugins {
+		if strings.ToLower(plugin.Name) != cmdName || len(plugin.ArgSpecs) == 0 {
+			continue
+		}
+		// Get args typed so far (excluding command name)
+		args := []string{}
+		if len(parts) > 1 {
+			args = parts[1:]
+		}
+
+		// Determine which argument position we're completing
+		// argIndex is relative to args (not parts), 0-based
+		argIndex := len(args) - 1 // Index of current argument we're completing
+		if argIndex < 0 {
+			argIndex = 0
+		}
+
+		// If line ends with space, we're starting a new argument
+		if parsed.trailingSpace {
+			argIndex = len(args) // Next argument position
+		}
+
+		// Resolve the ArgSpec for this position (handles branches)
+		spec := resolveArgSpec(plugin.ArgSpecs, args, argIndex)
+		if spec == nil {
+			continue
+		}
+		suggestions := c.getSuggestionsForArgSpec(*spec)
+		if len(suggestions) == 0 {
+			continue
+		}
+		if parsed.trailingSpace || len(parts) <= 1 {
+			return stringsToRuneSuggestions(suggestions), 0, true
+		}
+		// Mid-typing (no trailing space): filter and return the remaining part.
+		partial := parts[len(parts)-1]
+		partialLen := len(partial)
+		candidates := filterByPrefix(suggestions, partial)
+		if len(candidates) > 0 {
+			// readline appends without deleting, so return only the
+			// remaining part after what's been typed. Addresses get
+			// uppercased later anyway, so mixed case is fine.
+			return stringsToRuneSuggestionsPartial(candidates, partialLen), partialLen, true
+		}
+	}
+	return nil, 0, false
 }
 
 func (c *ContextCompleter) completeAddressFromCommand(lineStr string, allAddresses []string) ([][]rune, int, bool) {

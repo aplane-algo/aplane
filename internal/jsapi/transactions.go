@@ -310,50 +310,8 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 		Mode:    mode,
 	}
 
-	// For online mode, parse participation keys from options
-	if mode == "online" { //nolint:nestif // complexity backlog
-		if len(call.Arguments) < 3 {
-			panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
-		}
-		opts := a.objectArg(call, 2, "keyreg()")
-		if opts == nil {
-			panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
-		}
-		a.refuseUnknownKeys(opts, "keyreg() option", "votekey", "selkey", "sproofkey", "votefirst", "votelast", "keydilution", "eligible")
-
-		if v, ok := a.optionString(opts, "votekey", "keyreg()"); ok {
-			params.VoteKey = v
-		}
-		if v, ok := a.optionString(opts, "selkey", "keyreg()"); ok {
-			params.SelectionKey = v
-		}
-		if v, ok := a.optionString(opts, "sproofkey", "keyreg()"); ok {
-			params.StateProofKey = v
-		}
-		if v, ok := opts["votefirst"]; ok {
-			val, err := toUint64Interface(v)
-			if err != nil {
-				panic(a.runtime.ToValue(fmt.Sprintf("keyreg() invalid votefirst: %v", err)))
-			}
-			params.VoteFirst = val
-		}
-		if v, ok := opts["votelast"]; ok {
-			val, err := toUint64Interface(v)
-			if err != nil {
-				panic(a.runtime.ToValue(fmt.Sprintf("keyreg() invalid votelast: %v", err)))
-			}
-			params.VoteLast = val
-		}
-		if v, ok := opts["keydilution"]; ok {
-			val, err := toUint64Interface(v)
-			if err != nil {
-				panic(a.runtime.ToValue(fmt.Sprintf("keyreg() invalid keydilution: %v", err)))
-			}
-			params.KeyDilution = val
-		}
-		if v, ok := a.optionBool(opts, "eligible", "keyreg()"); ok {
-			params.IncentiveEligible = v
-		}
+	if mode == "online" {
+		a.keyRegOnlineOptions(call, &params)
 	}
 
 	prep, err := a.engine.PrepareKeyReg(a.Context(), params)
@@ -370,6 +328,53 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 		"txid":      result.TxID,
 		"confirmed": result.Confirmed,
 	})
+}
+
+// keyRegOnlineOptions reads the participation keys of an online keyreg()
+// from its options into params.
+func (a *API) keyRegOnlineOptions(call goja.FunctionCall, params *engine.KeyRegParams) {
+	if len(call.Arguments) < 3 {
+		panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
+	}
+	opts := a.objectArg(call, 2, "keyreg()")
+	if opts == nil {
+		panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
+	}
+	a.refuseUnknownKeys(opts, "keyreg() option", "votekey", "selkey", "sproofkey", "votefirst", "votelast", "keydilution", "eligible")
+
+	if v, ok := a.optionString(opts, "votekey", "keyreg()"); ok {
+		params.VoteKey = v
+	}
+	if v, ok := a.optionString(opts, "selkey", "keyreg()"); ok {
+		params.SelectionKey = v
+	}
+	if v, ok := a.optionString(opts, "sproofkey", "keyreg()"); ok {
+		params.StateProofKey = v
+	}
+	if v, ok := opts["votefirst"]; ok {
+		val, err := toUint64Interface(v)
+		if err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("keyreg() invalid votefirst: %v", err)))
+		}
+		params.VoteFirst = val
+	}
+	if v, ok := opts["votelast"]; ok {
+		val, err := toUint64Interface(v)
+		if err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("keyreg() invalid votelast: %v", err)))
+		}
+		params.VoteLast = val
+	}
+	if v, ok := opts["keydilution"]; ok {
+		val, err := toUint64Interface(v)
+		if err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("keyreg() invalid keydilution: %v", err)))
+		}
+		params.KeyDilution = val
+	}
+	if v, ok := a.optionBool(opts, "eligible", "keyreg()"); ok {
+		params.IncentiveEligible = v
+	}
 }
 
 // jsParticipation returns participation status for an account.
