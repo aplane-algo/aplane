@@ -1143,41 +1143,11 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 		}
 
 		// Check if this parameter has input modes and the selected mode requires a transform.
-		if len(paramDef.InputModes) > 0 { //nolint:nestif // complexity backlog
-			modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
-			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
-				mode := paramDef.InputModes[modeIdx]
-
-				// Apply transform based on mode
-				switch mode.Transform {
-				case "sha256", "sha512_256":
-					if value == "" {
-						result[paramDef.Name] = ""
-						continue
-					}
-
-					var inputBytes []byte
-					if mode.InputType == "string" {
-						// String input: use raw bytes directly
-						inputBytes = []byte(value)
-					} else {
-						// Hex input: decode first
-						var err error
-						inputBytes, err = hex.DecodeString(value)
-						if err != nil {
-							return nil, fmt.Errorf("%s: invalid hex input for %s mode", paramDef.Name, mode.Name)
-						}
-					}
-
-					switch mode.Transform {
-					case "sha256":
-						hash := sha256.Sum256(inputBytes)
-						value = hex.EncodeToString(hash[:])
-					case "sha512_256":
-						hash := sha512.Sum512_256(inputBytes)
-						value = hex.EncodeToString(hash[:])
-					}
-				}
+		if modeIdx := m.forms.genericLSigParamModes[paramDef.Name]; modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
+			var err error
+			value, err = transformInput(paramDef.Name, paramDef.InputModes[modeIdx], value)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -1185,6 +1155,32 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 	}
 
 	return lsigprovider.NormalizeCreationParams(result, params)
+}
+
+// transformInput is what is sent for a value typed in an input mode: its
+// SHA-256 or SHA-512/256 hash in hex where the mode asks for one, taken over
+// the text or over the bytes its hex names, and otherwise the value itself.
+// An empty value is not hashed.
+func transformInput(param string, mode lsigprovider.InputMode, value string) (string, error) {
+	if (mode.Transform != "sha256" && mode.Transform != "sha512_256") || value == "" {
+		return value, nil
+	}
+	// String input: use raw bytes directly
+	inputBytes := []byte(value)
+	if mode.InputType != "string" {
+		// Hex input: decode first
+		decoded, err := hex.DecodeString(value)
+		if err != nil {
+			return "", fmt.Errorf("%s: invalid hex input for %s mode", param, mode.Name)
+		}
+		inputBytes = decoded
+	}
+	if mode.Transform == "sha256" {
+		hash := sha256.Sum256(inputBytes)
+		return hex.EncodeToString(hash[:]), nil
+	}
+	hash := sha512.Sum512_256(inputBytes)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 // selectKeyByAddress sets the selected key index to the key matching the given address.

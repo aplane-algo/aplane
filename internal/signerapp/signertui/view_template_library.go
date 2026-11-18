@@ -297,23 +297,7 @@ func (m Model) renderTemplateInstallConfirm() string {
 
 func (m Model) renderTemplateInstalling() string {
 	var sb strings.Builder
-	title := "Enabling Template Key Type"
-	if m.library.pendingTemplate != nil { //nolint:nestif // complexity backlog
-		if isCompiledProviderLibraryEntry(*m.library.pendingTemplate) {
-			if m.library.pendingTemplate.Installed {
-				title = "Disabling Key Type"
-			} else {
-				title = "Enabling Key Type"
-			}
-		} else if m.library.pendingTemplate.Installed {
-			if m.library.pendingTemplate.Enabled {
-				title = "Disabling Template Key Type"
-			} else {
-				title = "Enabling Template Key Type"
-			}
-		}
-	}
-	sb.WriteString(titleStyle.Render(title))
+	sb.WriteString(titleStyle.Render(templateInstallingTitle(m.library.pendingTemplate)))
 	sb.WriteString("\n\n")
 	if m.library.pendingTemplate != nil {
 		sb.WriteString(templateDetailField("Key Type", displayKeyType(m.library.pendingTemplate.KeyType)))
@@ -325,6 +309,22 @@ func (m Model) renderTemplateInstalling() string {
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
 	sb.WriteString("\n")
 	return m.renderPopup(50, sb.String())
+}
+
+// templateInstallingTitle says whether the pending entry is being enabled or
+// disabled: the opposite of what it is now.
+func templateInstallingTitle(pending *LibraryTemplateInfo) string {
+	switch {
+	case pending == nil:
+		return "Enabling Template Key Type"
+	case isCompiledProviderLibraryEntry(*pending) && pending.Installed:
+		return "Disabling Key Type"
+	case isCompiledProviderLibraryEntry(*pending):
+		return "Enabling Key Type"
+	case pending.Installed && pending.Enabled:
+		return "Disabling Template Key Type"
+	}
+	return "Enabling Template Key Type"
 }
 
 func templateDetailField(label, value string) string {
