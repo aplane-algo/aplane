@@ -194,7 +194,7 @@ func unlockFailureCode(errMsg string) string {
 	switch errMsg {
 	case "":
 		return ""
-	case "invalid passphrase":
+	case productruntime.InvalidPassphraseMessage:
 		return protocol.ErrCodeInvalidPassphrase
 	default:
 		return protocol.ErrCodeUnlockFailed

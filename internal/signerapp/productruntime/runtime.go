@@ -30,6 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -220,7 +221,7 @@ func New(cfg Config) *Runtime {
 	}
 	unlockMethod := cfg.UnlockMethod
 	if unlockMethod == "" {
-		unlockMethod = "none"
+		unlockMethod = unlockconfig.MethodNone
 	}
 
 	ir := &Runtime{
@@ -287,7 +288,7 @@ func (ir *Runtime) NodeRole() noderole.Role {
 }
 
 // UnlockMethod is the auto-unlock method this runtime started with; anything
-// but "none" means it is headless.
+// but unlockconfig.MethodNone means it is headless.
 func (ir *Runtime) UnlockMethod() string {
 	return ir.unlockMethod
 }
@@ -407,7 +408,7 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
 		if err := ir.keyStore.Unlock(passphrase); err != nil {
-			return fmt.Errorf("invalid passphrase")
+			return errors.New(InvalidPassphraseMessage)
 		}
 		return nil
 	})
@@ -1481,6 +1482,11 @@ func (ir *Runtime) StopKeyWatcher() {
 
 // --- Shutdown ---
 
+// InvalidPassphraseMessage is the unlock failure for a wrong passphrase. The lock
+// runtime passes unlock failures on as text, so admin services match this
+// constant to attach invalid_passphrase; see signerruntime.LockedDuringUnlockMessage.
+const InvalidPassphraseMessage = "invalid passphrase"
+
 // ErrKeyUseInFlight reports a key user that still held its own copy of key
 // material when EndKeyUses stopped waiting for it.
 var ErrKeyUseInFlight = errors.New("a key use still held key material at the shutdown deadline")
@@ -1590,7 +1596,7 @@ func (ir *Runtime) LockGeneration() uint64 {
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 	return func() (int, error) {
 		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, ir.keyPaths.KeystoreMetadataDir()); err != nil {
-			return 0, fmt.Errorf("invalid passphrase")
+			return 0, errors.New(InvalidPassphraseMessage)
 		}
 
 		if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {

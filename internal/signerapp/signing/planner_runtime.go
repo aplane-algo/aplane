@@ -155,6 +155,13 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		if usageErr != nil {
 			return lsigresource.Plan{}, nil, internal(fmt.Sprintf("transaction %d: invalid stored LogicSig resource profile: %v", i+1, usageErr))
 		}
+		// A plan, or a cosigner's release for a held position, must not accept a
+		// request that /sign will refuse for a missing required argument.
+		if metadata.BoundedAuthorization == nil {
+			if name, missing := missingRequiredRuntimeArg(metadata.SigningArgs, request.LsigArgs); missing {
+				return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: missing required arg: %s", i+1, name))
+			}
+		}
 		usages = append(usages, usage)
 		lsigIndices = append(lsigIndices, i)
 	}
@@ -339,4 +346,18 @@ func isNativeKeyType(keyType string) bool {
 	}
 	kind := meta.AuthorizationKind()
 	return kind == algorithm.AuthorizationEd25519 || kind == algorithm.AuthorizationNativePQ
+}
+
+// missingRequiredRuntimeArg names the first required runtime argument that
+// lsigArgs leaves out.
+func missingRequiredRuntimeArg(defs []lsigprovider.RuntimeArgDef, lsigArgs map[string]string) (string, bool) {
+	for _, def := range defs {
+		if !def.Required {
+			continue
+		}
+		if _, ok := lsigArgs[def.Name]; !ok {
+			return def.Name, true
+		}
+	}
+	return "", false
 }

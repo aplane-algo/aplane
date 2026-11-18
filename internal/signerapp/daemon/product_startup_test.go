@@ -191,6 +191,7 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *test
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
 		DefaultSessionTimeout: 15 * time.Minute,
+		UnlockMethod:          unlockCfg.Method(),
 	}, signerstartup.ProductBuildHooks{})
 	if err != nil {
 		t.Fatal(err)

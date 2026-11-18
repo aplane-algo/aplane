@@ -242,3 +242,14 @@ func TestExecuteClear_RemovesProductStoreSystemdCredsFile(t *testing.T) {
 		t.Fatalf("Stat(passphrase.cred) error = %v, want not exists", err)
 	}
 }
+
+// An unlock.yaml that cannot be read (as opposed to one that does not parse)
+// stops every action, so the menu offers none.
+func TestMenuOffersNoActionForUnreadableUnlockConfig(t *testing.T) {
+	m := Model{method: methodReadError, isLocal: true}
+	for _, item := range m.buildMenu() {
+		if item.action != "quit" && !item.disabled {
+			t.Fatalf("menu item %q enabled with an unreadable unlock.yaml", item.label)
+		}
+	}
+}

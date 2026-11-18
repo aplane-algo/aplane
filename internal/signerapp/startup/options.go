@@ -52,6 +52,9 @@ type UnlockPlan struct {
 	StartLocked bool
 	Passphrase  []byte
 	Source      UnlockSource
+	// Method is the auto-unlock method that unlocked the store
+	// (unlockconfig.MethodNone unless Source is the passphrase command).
+	Method string
 }
 
 // ValidateAndBuildUnlockPlan validates every startup precondition, including
@@ -138,5 +141,6 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		StartLocked: false,
 		Passphrase:  passphrase,
 		Source:      UnlockSourcePassphraseCommand,
+		Method:      unlockCfg.Method(),
 	}, nil
 }

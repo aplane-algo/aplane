@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/aplane-algo/aplane/internal/theme"
@@ -102,16 +103,18 @@ func (m Model) renderHomeView() string {
 
 	methodDisplay := m.method
 	switch m.method {
-	case "none":
+	case unlockconfig.MethodNone:
 		methodDisplay = warningStyle.Render("none (starts locked)")
-	case "passfile":
-		methodDisplay = statusStyle.Render("passfile")
-	case "systemd-creds":
-		methodDisplay = statusStyle.Render("systemd-creds")
-	case "custom":
-		methodDisplay = subtitleStyle.Render("custom")
-	case "unreadable":
-		methodDisplay = errorStyle.Render("unlock.yaml unreadable: " + m.methodErr)
+	case unlockconfig.MethodPassfile:
+		methodDisplay = statusStyle.Render(m.method)
+	case unlockconfig.MethodSystemdCreds:
+		methodDisplay = statusStyle.Render(m.method)
+	case unlockconfig.MethodCustom:
+		methodDisplay = subtitleStyle.Render(m.method)
+	case methodUnreadable:
+		methodDisplay = errorStyle.Render("unlock.yaml does not parse: " + m.methodErr)
+	case methodReadError:
+		methodDisplay = errorStyle.Render("unlock.yaml could not be read: " + m.methodErr)
 	}
 	sb.WriteString(labelStyle.Render("Auto-unlock:") + "     " + methodDisplay + "\n")
 
@@ -125,7 +128,7 @@ func (m Model) renderHomeView() string {
 	}
 
 	// Helper/file info when configured
-	if m.method != "none" {
+	if m.method != unlockconfig.MethodNone {
 		helperPath, helperStatus, filePath, fileLabel, fileStatus := m.statusHelperInfo()
 		if helperPath != "" {
 			statusStr := statusStyle.Render(helperStatus)

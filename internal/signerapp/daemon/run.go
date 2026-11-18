@@ -207,6 +207,7 @@ func Run(dataDir string) int { //nolint:gocognit // unslop phase 3
 		KeyPaths:              startupOpts.Paths,
 		Config:                &config,
 		DefaultSessionTimeout: passphraseTimeout,
+		UnlockMethod:          unlockPlan.Method,
 	}, server.productBuildHooks())
 	if err != nil {
 		logErrorf("%v", err)

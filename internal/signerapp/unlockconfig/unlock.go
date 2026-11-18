@@ -16,6 +16,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Auto-unlock methods, as Method reports them.
+const (
+	MethodNone         = "none"
+	MethodPassfile     = "passfile"
+	MethodSystemdCreds = "systemd-creds"
+	MethodCustom       = "custom"
+)
+
 // ErrMalformed reports an unlock.yaml that was read but does not parse.
 var ErrMalformed = errors.New("malformed unlock config")
 
@@ -105,15 +113,15 @@ func (c *UnlockConfig) HasPassphraseCommand() bool {
 // helper, "passfile" or "systemd-creds" for the bundled helpers, else "custom".
 func (c *UnlockConfig) Method() string {
 	if c == nil || len(c.PassphraseCommandArgv) == 0 {
-		return "none"
+		return MethodNone
 	}
 	bin := c.PassphraseCommandArgv[0]
 	switch {
 	case strings.HasSuffix(bin, "/appass-file") || bin == "appass-file":
-		return "passfile"
+		return MethodPassfile
 	case strings.HasSuffix(bin, "/appass-systemd-creds") || bin == "appass-systemd-creds":
-		return "systemd-creds"
+		return MethodSystemdCreds
 	default:
-		return "custom"
+		return MethodCustom
 	}
 }

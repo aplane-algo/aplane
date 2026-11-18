@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -207,7 +208,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if err != nil {
 			return err
 		}
-		if passphraseMethod := s.Runtime.UnlockMethod(); passphraseMethod != "none" && v {
+		if passphraseMethod := s.Runtime.UnlockMethod(); passphraseMethod != unlockconfig.MethodNone && v {
 			return fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		}
 		saveValue, publish = v, func() { icfg.SetLockOnDisconnect(v) }
@@ -219,7 +220,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if err != nil {
 			return err
 		}
-		if passphraseMethod := s.Runtime.UnlockMethod(); passphraseMethod != "none" && duration > 0 {
+		if passphraseMethod := s.Runtime.UnlockMethod(); passphraseMethod != unlockconfig.MethodNone && duration > 0 {
 			return fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
 		}
 		saveValue, publish = req.Value, func() { icfg.SetSessionTimeout(duration) }
