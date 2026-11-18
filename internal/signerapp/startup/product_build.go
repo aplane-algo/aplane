@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -34,6 +35,10 @@ type ProductBuildOptions struct {
 	KeyPaths              storepaths.Paths
 	Config                *serverconfig.ServerConfig
 	DefaultSessionTimeout time.Duration
+	// UnlockMethod is the unlock plan's method. Anything but
+	// unlockconfig.MethodNone makes the runtime headless: no idle timeout and no
+	// lock on disconnect.
+	UnlockMethod string
 }
 
 // ProductBuildHooks provides the non-owning process callbacks needed by
@@ -87,11 +92,11 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 	sessionTimeout := effectiveCfg.SessionTimeout
 	approvalWait := effectiveCfg.ApprovalWait
 
-	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, opts.Config)
-	if unlockErr != nil {
-		return nil, fmt.Errorf("failed to load product unlock config: %w", unlockErr)
+	unlockMethod := opts.UnlockMethod
+	if unlockMethod == "" {
+		unlockMethod = unlockconfig.MethodNone
 	}
-	if unlockCfg != nil {
+	if unlockMethod != unlockconfig.MethodNone {
 		lockOnDisconnect = false
 		sessionTimeout = 0
 	}
@@ -104,6 +109,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 		UserAutoApprove:  &userAutoApprove,
 		LockOnDisconnect: lockOnDisconnect,
 		NodeRole:         nodeDoc.Role,
+		UnlockMethod:     unlockMethod,
 		OnLocked: func() {
 			if hooks.NotifyLocked != nil {
 				hooks.NotifyLocked()

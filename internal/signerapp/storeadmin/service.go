@@ -61,8 +61,7 @@ func (s Service) InitializeStore(req adminproto.InitializeStoreRequest) adminpro
 		}
 	}
 
-	configSnapshot := *s.Deps.Config()
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir())
 	if err != nil {
 		s.logStoreInitializeFailed(err.Error())
 		return adminproto.InitializeStoreResult{
@@ -141,8 +140,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 		}
 	}
 
-	configSnapshot := *s.Deps.Config()
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir())
 	if err != nil {
 		s.logPassphraseChangeFailed(ctx, err.Error())
 		return adminproto.ChangeStorePassphraseResult{

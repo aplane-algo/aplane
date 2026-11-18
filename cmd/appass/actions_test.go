@@ -110,6 +110,54 @@ func stubSignerStopped(t *testing.T) {
 	})
 }
 
+func TestCurrentAutoUnlockMethodReportsUnreadableConfig(t *testing.T) {
+	dataDir := t.TempDir()
+	if method, err := currentAutoUnlockMethod(dataDir); err != nil || method != "none" {
+		t.Fatalf("missing unlock config = (%q, %v), want (none, nil)", method, err)
+	}
+
+	path := unlockconfig.UnlockConfigPath(dataDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("passphrase_command_argv: [unterminated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if method, err := currentAutoUnlockMethod(dataDir); err == nil || method != "unreadable" {
+		t.Fatalf("malformed unlock config = (%q, %v), want (unreadable, an error)", method, err)
+	}
+}
+
+// A malformed unlock.yaml must not lock appass out of repairing it: Clear
+// removes it and whatever either method left behind.
+func TestExecuteClearRemovesUnreadableConfig(t *testing.T) {
+	stubSignerStopped(t)
+
+	dataDir := t.TempDir()
+	path := unlockconfig.UnlockConfigPath(dataDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("passphrase_command_argv: [unterminated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A passfile setup left its plaintext passphrase behind; clearing must
+	// remove it even though unlock.yaml no longer says which method it was.
+	passFile := filepath.Join(filepath.Dir(path), "passphrase")
+	if err := os.WriteFile(passFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeClear(dataDir); err != nil {
+		t.Fatalf("executeClear() error = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("unlock.yaml after clear: stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(passFile); !os.IsNotExist(err) {
+		t.Fatalf("passphrase file after clear: stat error = %v, want not exist", err)
+	}
+}
+
 // setupDataDir creates a minimal data directory with a product-store unlock.yaml pointing to passfile.
 func setupDataDir(t *testing.T) string {
 	t.Helper()
@@ -192,5 +240,16 @@ func TestExecuteClear_RemovesProductStoreSystemdCredsFile(t *testing.T) {
 
 	if _, err := os.Stat(credPath); !os.IsNotExist(err) {
 		t.Fatalf("Stat(passphrase.cred) error = %v, want not exists", err)
+	}
+}
+
+// An unlock.yaml that cannot be read (as opposed to one that does not parse)
+// stops every action, so the menu offers none.
+func TestMenuOffersNoActionForUnreadableUnlockConfig(t *testing.T) {
+	m := Model{method: methodReadError, isLocal: true}
+	for _, item := range m.buildMenu() {
+		if item.action != "quit" && !item.disabled {
+			t.Fatalf("menu item %q enabled with an unreadable unlock.yaml", item.label)
+		}
 	}
 }

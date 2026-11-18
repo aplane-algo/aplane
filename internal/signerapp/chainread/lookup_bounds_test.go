@@ -225,8 +225,8 @@ func TestLookupFieldNamesAreTheIndexers(t *testing.T) {
 	if err != nil || m == nil {
 		t.Fatalf("decodeNewest = %+v, %v", m, err)
 	}
-	if string(m.ID) != spendTxID || string(m.Sender) != lookupAccount.String() || string(m.RekeyTo) != lookupAuthorizer.String() ||
-		string(m.AuthAddr) != programAddress(stageProgram(4, "four")).String() || m.ConfirmedRound != 4321 ||
+	if m.ID != spendTxID || m.Sender != lookupAccount.String() || m.RekeyTo != lookupAuthorizer.String() ||
+		m.AuthAddr != programAddress(stageProgram(4, "four")).String() || m.ConfirmedRound != 4321 ||
 		!bytes.Equal(m.GenesisHash, testnetGenesis) || !bytes.Equal(m.Signature.Logicsig.Logic, stageProgram(4, "four")) {
 		t.Fatalf("decoded %s", fmt.Sprintf("%+v", *m))
 	}

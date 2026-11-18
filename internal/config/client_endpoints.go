@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -302,18 +300,9 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	return nil
 }
 
-// retiredClientEndpointFields are endpoint fields earlier builds wrote and
-// nothing reads: the node's SSH server forwards every channel to its own REST
-// listener, so a client never chose the remote port, the local tunnel port is
-// picked at connect time, and the client's enrolled SSH key is its only
-// credential, so there is no token file. They are dropped on load and are gone from
-// the file after its next write.
-var retiredClientEndpointFields = []string{"signer_port", "local_port", "token_file"}
-
 // decodeClientEndpointRegistry reads endpoints.yaml, which must carry the
 // current schema_version.
 func decodeClientEndpointRegistry(data []byte) (ClientEndpointRegistry, error) {
-	data = stripRetiredClientEndpointFields(data)
 	var registry ClientEndpointRegistry
 	if err := UnmarshalKnownFields(data, &registry); err != nil {
 		return ClientEndpointRegistry{}, err
@@ -322,64 +311,4 @@ func decodeClientEndpointRegistry(data []byte) (ClientEndpointRegistry, error) {
 		return ClientEndpointRegistry{}, fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
 	}
 	return registry, nil
-}
-
-// stripRetiredClientEndpointFields removes retiredClientEndpointFields from
-// every endpoint entry. It works on the YAML node tree, so every other value
-// is re-emitted exactly as written: a plain scalar that looks like a date or
-// a number keeps its text, and an unquoted numeric alias stays a valid key.
-// Anything it cannot parse is returned unchanged for the strict decoder to
-// report, and so is a document with nothing to remove.
-func stripRetiredClientEndpointFields(data []byte) []byte {
-	var document yaml.Node
-	if err := yaml.Unmarshal(data, &document); err != nil || len(document.Content) == 0 {
-		return data
-	}
-	root := document.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return data
-	}
-	var endpoints *yaml.Node
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "endpoints" {
-			endpoints = root.Content[i+1]
-		}
-	}
-	if endpoints == nil || endpoints.Kind != yaml.MappingNode {
-		return data
-	}
-	changed := false
-	for i := 1; i < len(endpoints.Content); i += 2 {
-		entry := endpoints.Content[i]
-		if entry.Kind != yaml.MappingNode {
-			continue
-		}
-		kept := entry.Content[:0]
-		for j := 0; j+1 < len(entry.Content); j += 2 {
-			key, value := entry.Content[j], entry.Content[j+1]
-			if key.Kind == yaml.ScalarNode && isRetiredClientEndpointField(key.Value) {
-				changed = true
-				continue
-			}
-			kept = append(kept, key, value)
-		}
-		entry.Content = kept
-	}
-	if !changed {
-		return data
-	}
-	stripped, err := yaml.Marshal(&document)
-	if err != nil {
-		return data
-	}
-	return stripped
-}
-
-func isRetiredClientEndpointField(name string) bool {
-	for _, field := range retiredClientEndpointFields {
-		if name == field {
-			return true
-		}
-	}
-	return false
 }

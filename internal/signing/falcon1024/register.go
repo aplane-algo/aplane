@@ -20,7 +20,6 @@ func (metadata) MnemonicScheme() string       { return "algorand" }
 func (metadata) AuthorizationKind() algorithm.AuthorizationKind {
 	return algorithm.AuthorizationNativePQ
 }
-func (metadata) RequiresLogicSig() bool       { return false }
 func (metadata) CurrentLsigVersion() int      { return 0 }
 func (metadata) SupportedLsigVersions() []int { return nil }
 func (metadata) DefaultDerivation() string    { return "algorand-pq-f1" }

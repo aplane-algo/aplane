@@ -71,7 +71,19 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 
 // setupTestNode is setupTestSigner for a node of either role, with
 // defaultPolicy as its store's default policy.
+// setupHeadlessTestSigner is setupTestSigner with a runtime that started with
+// the given auto-unlock method, as one built over an unlock.yaml helper does.
+func setupHeadlessTestSigner(t *testing.T, unlockMethod string) (*Signer, func()) {
+	t.Helper()
+	return setupTestNodeWithUnlockMethod(t, noderole.RoleSigner, testSignerPolicy, unlockMethod)
+}
+
 func setupTestNode(t *testing.T, role noderole.Role, defaultPolicy string) (*Signer, func()) {
+	t.Helper()
+	return setupTestNodeWithUnlockMethod(t, role, defaultPolicy, "")
+}
+
+func setupTestNodeWithUnlockMethod(t *testing.T, role noderole.Role, defaultPolicy, unlockMethod string) (*Signer, func()) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -134,9 +146,10 @@ func setupTestNode(t *testing.T, role noderole.Role, defaultPolicy string) (*Sig
 	}
 
 	ir := productruntime.New(productruntime.Config{
-		KeyStore: ks,
-		KeyPaths: keyPaths,
-		NodeRole: role,
+		KeyStore:     ks,
+		KeyPaths:     keyPaths,
+		NodeRole:     role,
+		UnlockMethod: unlockMethod,
 	})
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)

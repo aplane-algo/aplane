@@ -40,14 +40,12 @@ const (
 
 // ServerConfig represents the Signer configuration file
 type ServerConfig struct {
-	SchemaVersion         int                  `yaml:"schema_version,omitempty" description:"Signer config schema version" default:"1"`
-	Endpoint              ServerEndpointConfig `yaml:"endpoint" description:"Signer endpoint exposure settings" default:"default endpoint settings"`
-	PassphraseTimeout     string               `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
-	ApprovalWait          string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"4m"`
-	IPCPath               string               `yaml:"ipc_path" description:"Unix socket path for admin IPC; systemd custom paths must be outside signer data in a service-owned protected runtime directory" default:"systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock"`
-	LockOnDisconnect      *bool                `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
-	PassphraseCommandArgv []string             `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])" default:"[]"`
-	PassphraseCommandEnv  map[string]string    `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough" default:"{}"`
+	SchemaVersion     int                  `yaml:"schema_version,omitempty" description:"Signer config schema version" default:"1"`
+	Endpoint          ServerEndpointConfig `yaml:"endpoint" description:"Signer endpoint exposure settings" default:"default endpoint settings"`
+	PassphraseTimeout string               `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
+	ApprovalWait      string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"4m"`
+	IPCPath           string               `yaml:"ipc_path" description:"Unix socket path for admin IPC; systemd custom paths must be outside signer data in a service-owned protected runtime directory" default:"systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock"`
+	LockOnDisconnect  *bool                `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
 	// Network settings per context token (used for TEAL compilation, policy enforcement, etc.).
 	// This is the canonical on-disk network config.
 	Networks           ServerNetworkConfigs `yaml:"networks" description:"Grouped settings per network context token"`
@@ -108,15 +106,6 @@ func (c ServerConfig) Clone() ServerConfig {
 	if c.LockOnDisconnect != nil {
 		v := *c.LockOnDisconnect
 		out.LockOnDisconnect = &v
-	}
-	if c.PassphraseCommandArgv != nil {
-		out.PassphraseCommandArgv = append([]string(nil), c.PassphraseCommandArgv...)
-	}
-	if c.PassphraseCommandEnv != nil {
-		out.PassphraseCommandEnv = make(map[string]string, len(c.PassphraseCommandEnv))
-		for k, v := range c.PassphraseCommandEnv {
-			out.PassphraseCommandEnv[k] = v
-		}
 	}
 	if c.Algod != nil {
 		out.Algod = make(apconfig.AlgodConfig, len(c.Algod))
@@ -312,13 +301,13 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 	var err error
-	if config.Algod, err = mergeServerNetworkAlgodConfig(nil, config.Networks); err != nil {
+	if config.Algod, err = mergeServerNetworkAlgodConfig(config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)
 	}
 	if config.Indexer, err = mergeServerNetworkIndexerConfig(config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid indexer in networks config: %w", err)
 	}
-	if config.GenesisHashNetworks, err = mergeServerNetworkGenesisHashConfig(nil, config.Networks); err != nil {
+	if config.GenesisHashNetworks, err = mergeServerNetworkGenesisHashConfig(config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid genesis_hash in networks config: %w", err)
 	}
 
@@ -380,12 +369,6 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 	// Resolve relative SSH paths to absolute paths.
 	config.Endpoint.SSH.HostKeyPath = apconfig.ResolvePath(config.Endpoint.SSH.HostKeyPath, dataDir)
 
-	// Resolve relative paths in passphrase_command_argv against the data directory.
-	// All elements (binary and arguments) use the same resolution logic.
-	for i := range config.PassphraseCommandArgv {
-		config.PassphraseCommandArgv[i] = apconfig.ResolvePath(config.PassphraseCommandArgv[i], dataDir)
-	}
-
 	return config, nil
 }
 
@@ -412,13 +395,9 @@ func (c *ServerConfig) GetTEALCompileAlgod() (*apconfig.AlgodNetworkConfig, erro
 }
 
 // ShouldLockOnDisconnect returns whether the signer should lock when apadmin disconnects.
-// Defaults to true if not explicitly set.
-// Note: In headless mode (passphrase_command_argv set), this is always false.
+// Defaults to true if not explicitly set. A product unlock.yaml helper turns
+// it off for that runtime.
 func (c *ServerConfig) ShouldLockOnDisconnect() bool {
-	// Headless mode never locks on disconnect
-	if len(c.PassphraseCommandArgv) > 0 {
-		return false
-	}
 	if c.LockOnDisconnect == nil {
 		return true // Default: lock on disconnect for security
 	}
@@ -438,14 +417,6 @@ func ValidateHeadlessPolicy(config *ServerConfig) []string {
 	}
 
 	return warnings
-}
-
-// PassphraseCommandCfg builds a PassphraseCommandConfig from the ServerConfig fields.
-func (c *ServerConfig) PassphraseCommandCfg() *PassphraseCommandConfig {
-	return &PassphraseCommandConfig{
-		Argv: c.PassphraseCommandArgv,
-		Env:  c.PassphraseCommandEnv,
-	}
 }
 
 // SaveSetting writes a single setting to config.yaml, preserving all other

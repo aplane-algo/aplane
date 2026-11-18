@@ -12,11 +12,25 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 )
 
+// Origin is where an admin session's connection comes from. The server that
+// accepts the connection states it when it creates the session. The zero value
+// is not local, so a server that never says is treated as remote.
+type Origin int
+
 const (
-	TransportUnknown = "unknown"
-	TransportIPC     = "ipc"
-	TransportSSH     = "ssh"
+	// OriginLocal is the local IPC socket.
+	OriginLocal Origin = iota + 1
+	// OriginRemote is any network transport.
+	OriginRemote
 )
+
+// AuditTransport is what audit entries record as the session's transport.
+func (o Origin) AuditTransport() string {
+	if o == OriginLocal {
+		return "ipc"
+	}
+	return "remote"
+}
 
 var sessionIDCounter atomic.Uint64
 
@@ -33,17 +47,17 @@ type SessionContext struct {
 	SessionID          string
 	AdminPrincipal     SessionPrincipal
 	AuthMethod         string
-	Transport          string
+	Origin             Origin
 	RemoteAddr         string
 	RequesterPrincipal SessionPrincipal
 	ApproverPrincipal  SessionPrincipal
 }
 
-func newSessionContext(method string, conn adminproto.AdminConn) SessionContext {
+func newSessionContext(method string, conn adminproto.AdminConn, origin Origin) SessionContext {
 	return SessionContext{
 		SessionID:  newSessionID(),
 		AuthMethod: method,
-		Transport:  TransportUnknown,
+		Origin:     origin,
 		RemoteAddr: connRemoteAddr(conn),
 	}
 }

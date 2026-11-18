@@ -786,7 +786,9 @@ over 4,096 bytes. Both are node constants (`lsigresource.MaxLogicSigArgs` and
 `MaxLogicSigArgBytes` restate them), and no group shape lifts them: dummy transactions
 pool program size and opcode budget only. A template that declares past either can't
 be installed. A `byte_length` or `max_size` above 4,096 is refused, and so is a count
-above 255, which for a composed template includes the base's signature arguments. A
+above 255, which for a composed template includes the base's signature arguments. Every
+runtime argument sets exactly one of `byte_length` or `max_size`, so the signer can
+size the LogicSig before it sees a value; one with neither is refused at install. A
 signature larger than 4,096 bytes has to be split across arguments by its provider.
 
 The limits are checked at three points. Install runs template admission
@@ -857,7 +859,7 @@ runtime_args:               # optional
     description: "<text>"
     type: <type>            # bytes | string | uint64
     required: true
-    byte_length: <n>        # 0 = variable length; at most 4096
+    byte_length: <n>        # fixed length; set this or max_size; at most 4096
     max_size: <n>           # ceiling for a variable-length arg; sizes its budget; at most 4096
 
 teal: |
@@ -906,7 +908,7 @@ schema_version: 2
 derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
-template_mode: generated     # strict | generated; legacy is not allowed
+template_mode: generated     # strict | generated
 # ...publisher, family, version, display_name, max_opcode_cost, valid_rekey_target as above
 
 bounded:
@@ -1241,7 +1243,7 @@ runtime_args:
     description: "The secret whose SHA256 hash matches approval_hash"
     type: bytes
     required: false
-    byte_length: 0
+    max_size: 64
 
 teal: |
   #pragma version 13

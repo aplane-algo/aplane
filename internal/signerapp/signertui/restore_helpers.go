@@ -23,14 +23,12 @@ func (m *Model) clearRestorePassphrase() {
 	m.restore.passphrase = nil
 }
 
-func (m *Model) resetRestoreFlow(clearBackups bool) {
+func (m *Model) resetRestoreFlow() {
 	m.clearRestorePassphrase()
-	if clearBackups {
-		m.restore.backups = nil
-		m.restore.backupsLoaded = false
-		m.restore.selectedBackup = 0
-		m.restore.backupScrollOffset = 0
-	}
+	m.restore.backups = nil
+	m.restore.backupsLoaded = false
+	m.restore.selectedBackup = 0
+	m.restore.backupScrollOffset = 0
 	m.restore.archivePath = ""
 	m.restore.passphraseError = ""
 	m.restore.previewing = false

@@ -26,7 +26,7 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 		previewRestoreResult: adminproto.RestorePreviewResult{},
 	}
 	conn := &queueConn{}
-	session := NewSession(conn, svc.backupDeps())
+	session := NewSession(conn, svc.backupDeps(), OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	dispatchAdminMessage(t, session, protocol.BackupMessage{
 		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeBackup, ID: "backup-1"},
@@ -53,7 +53,7 @@ func TestRestoreBackupRequiresDurableIntentBeforeService(t *testing.T) {
 	deps := svc.backupDeps()
 	deps.Audit = audit
 	conn := &queueConn{}
-	session := NewSession(conn, deps)
+	session := NewSession(conn, deps, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	msg := protocol.RestoreBackupMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-1"},
@@ -87,7 +87,7 @@ func TestRestoreBackupAbortsWhenDurableIntentFails(t *testing.T) {
 			deps := svc.backupDeps()
 			deps.Audit = tt.audit
 			conn := &queueConn{}
-			session := NewSession(conn, deps)
+			session := NewSession(conn, deps, OriginLocal)
 			session.Bind(auth.NewProductIdentity("test"), ir)
 			dispatchAdminMessage(t, session, protocol.RestoreBackupMessage{
 				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-fail"},
@@ -117,7 +117,7 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	audit := &recordingCredentialRestoreAudit{}
 	deps := svc.backupDeps()
 	deps.Audit = audit
-	session := NewSession(&queueConn{}, deps)
+	session := NewSession(&queueConn{}, deps, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	session.HandleListBackups("list")
 	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
@@ -151,7 +151,7 @@ func TestCommitBackupImportClonesAndZerosWirePassphrase(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	svc := &stubServices{}
-	session := NewSession(&queueConn{}, svc.backupDeps())
+	session := NewSession(&queueConn{}, svc.backupDeps(), OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	msg := &protocol.CommitBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{ID: "import-commit"},
@@ -178,7 +178,7 @@ func TestBackupTransferAuditsImportFailureAndExportStart(t *testing.T) {
 	audit := &recordingBackupTransferAudit{}
 	deps := svc.backupDeps()
 	deps.Audit = audit
-	session := NewSession(&queueConn{}, deps)
+	session := NewSession(&queueConn{}, deps, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
@@ -209,7 +209,7 @@ func TestBackupExportAuditStartsAgainAfterEOF(t *testing.T) {
 	audit := &recordingBackupTransferAudit{}
 	deps := svc.backupDeps()
 	deps.Audit = audit
-	session := NewSession(&queueConn{}, deps)
+	session := NewSession(&queueConn{}, deps, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
@@ -240,7 +240,7 @@ func TestBackupTransferSuccessAuditsDoNotRequireFailureCapability(t *testing.T) 
 	audit := &backupSuccessOnlyAudit{}
 	deps := svc.backupDeps()
 	deps.Audit = audit
-	session := NewSession(&queueConn{}, deps)
+	session := NewSession(&queueConn{}, deps, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
@@ -266,7 +266,7 @@ func TestBackupTransferFailureAuditDoesNotRequireSuccessCapabilities(t *testing.
 	audit := &backupFailureOnlyAudit{}
 	deps := svc.backupDeps()
 	deps.Audit = audit
-	session := NewSession(&queueConn{}, deps)
+	session := NewSession(&queueConn{}, deps, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
@@ -286,7 +286,7 @@ func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	svc := &stubServices{}
 	conn := &queueConn{}
-	session := NewSession(conn, svc.backupDeps())
+	session := NewSession(conn, svc.backupDeps(), OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	session.HandleListBackups("list-locked")
 	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
@@ -317,7 +317,7 @@ func TestBackupTransferHandlersRejectUnavailableService(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
+	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "begin"}, FileName: "backup.tar.gz"})
@@ -341,7 +341,7 @@ func TestLockedStatePermitsAbortingUnpublishedBackupUpload(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	svc := &stubServices{}
 	conn := &queueConn{}
-	session := NewSession(conn, svc.backupDeps())
+	session := NewSession(conn, svc.backupDeps(), OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	session.HandleAbortBackupImport(&protocol.AbortBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{ID: "abort-locked"}, UploadID: ".import-test.part",

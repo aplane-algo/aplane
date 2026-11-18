@@ -17,9 +17,9 @@ func (stubConn) Close() error                 { return nil }
 
 func TestSessionManagerPreAuthBindsToScalarPending(t *testing.T) {
 	manager := NewSessionManager()
-	active := NewSession(stubConn{}, SessionDeps{})
+	active := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
 	manager.active = active
-	pending := NewSession(stubConn{}, SessionDeps{})
+	pending := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
 	if !manager.RegisterPreAuthPending(pending) {
 		t.Fatal("RegisterPreAuthPending() = false, want true")
 	}
@@ -48,8 +48,8 @@ func bindPending(t *testing.T, manager *SessionManager, s *Session) bool {
 
 func TestSessionManagerHasOnePendingSlot(t *testing.T) {
 	manager := NewSessionManager()
-	first := NewSession(stubConn{}, SessionDeps{})
-	second := NewSession(stubConn{}, SessionDeps{})
+	first := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
+	second := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
 	if !bindPending(t, manager, first) || bindPending(t, manager, second) {
 		t.Fatal("manager did not enforce one authenticated pending slot")
 	}
@@ -61,8 +61,8 @@ func TestSessionManagerHasOnePendingSlot(t *testing.T) {
 
 func TestSessionManagerPromoteReplaceAndClear(t *testing.T) {
 	manager := NewSessionManager()
-	first := NewSession(stubConn{}, SessionDeps{})
-	second := NewSession(stubConn{}, SessionDeps{})
+	first := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
+	second := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
 	if !bindPending(t, manager, first) {
 		t.Fatal("bindPending(first) = false")
 	}
@@ -84,8 +84,8 @@ func TestSessionManagerPromoteReplaceAndClear(t *testing.T) {
 
 func TestSessionManagerRejectsSecondPreAuthPending(t *testing.T) {
 	manager := NewSessionManager()
-	first := NewSession(stubConn{}, SessionDeps{})
-	second := NewSession(stubConn{}, SessionDeps{})
+	first := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
+	second := NewSession(stubConn{}, SessionDeps{}, OriginLocal)
 	if !manager.RegisterPreAuthPending(first) || manager.RegisterPreAuthPending(second) {
 		t.Fatal("manager did not enforce one pre-auth pending slot")
 	}
@@ -96,7 +96,7 @@ func TestSessionManagerConcurrentOwnershipTransitions(t *testing.T) {
 	const contenders = 64
 	sessions := make([]*Session, contenders)
 	for i := range sessions {
-		sessions[i] = NewSession(stubConn{}, SessionDeps{})
+		sessions[i] = NewSession(stubConn{}, SessionDeps{}, OriginLocal)
 	}
 
 	start := make(chan struct{})

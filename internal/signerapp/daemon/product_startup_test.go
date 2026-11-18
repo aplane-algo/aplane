@@ -167,7 +167,6 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *test
 	}
 	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
-	// Process-global config has NO passphrase_command_argv, so
 	// cfg.ShouldLockOnDisconnect() returns true (the default).
 
 	// Write product-store unlock.yaml (simulates selecting Passfile in appass)
@@ -192,6 +191,7 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *test
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
 		DefaultSessionTimeout: 15 * time.Minute,
+		UnlockMethod:          unlockCfg.Method(),
 	}, signerstartup.ProductBuildHooks{})
 	if err != nil {
 		t.Fatal(err)
@@ -199,43 +199,6 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *test
 
 	if ir.Config().LockOnDisconnect() {
 		t.Fatal("lock_on_disconnect must be false when identity has passfile configured")
-	}
-	if ir.Config().SessionTimeout() != 0 {
-		t.Fatalf("admin idle timeout = %s, want 0 (headless mode disables timeout)", ir.Config().SessionTimeout())
-	}
-}
-
-func TestBuildProductRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T) {
-	root := t.TempDir()
-	server := &Signer{
-		keyPaths: utilkeys.NewPaths(root),
-		dataDir:  root,
-	}
-	cfg := serverconfig.DefaultServerConfig()
-	writeTestNodeRole(t, root, noderole.RoleSigner)
-	// Process-global passphrase command — ShouldLockOnDisconnect() returns false.
-	// But also write a stored override to prove the headless path catches it.
-	cfg.PassphraseCommandArgv = []string{"/usr/local/bin/appass-file", "/tmp/secret"}
-
-	if err := productruntime.SaveStoredSetting(root, "lock_on_disconnect", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := productruntime.SaveStoredSetting(root, "passphrase_timeout", "10m"); err != nil {
-		t.Fatal(err)
-	}
-
-	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
-		DataDir:               root,
-		KeyPaths:              server.keyPaths,
-		Config:                &cfg,
-		DefaultSessionTimeout: 15 * time.Minute,
-	}, signerstartup.ProductBuildHooks{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if ir.Config().LockOnDisconnect() {
-		t.Fatal("lock_on_disconnect must be false when global passfile is configured")
 	}
 	if ir.Config().SessionTimeout() != 0 {
 		t.Fatalf("admin idle timeout = %s, want 0 (headless mode disables timeout)", ir.Config().SessionTimeout())

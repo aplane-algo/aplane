@@ -123,11 +123,11 @@ func Generate() *ProviderManifest {
 			MnemonicWordCount: meta.MnemonicWordCount(),
 			MnemonicScheme:    meta.MnemonicScheme(),
 			AuthorizationKind: string(meta.AuthorizationKind()),
-			RequiresLogicSig:  meta.RequiresLogicSig(),
+			RequiresLogicSig:  algorithm.RequiresLogicSig(meta),
 			DefaultDerivation: meta.DefaultDerivation(),
 			DisplayColor:      meta.DisplayColor(),
 		}
-		if meta.RequiresLogicSig() {
+		if algorithm.RequiresLogicSig(meta) {
 			info.CurrentLsigVersion = meta.CurrentLsigVersion()
 			info.SupportedLsigVersions = meta.SupportedLsigVersions()
 		}

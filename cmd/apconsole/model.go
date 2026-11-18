@@ -112,11 +112,7 @@ type layout struct {
 	daemon        rect
 }
 
-func newModel(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel) model {
-	return newModelWithShell(connector, dataDir, shell, shellStartup, daemon, true, "")
-}
-
-func newModelWithShell(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel, shellEnabled bool, initialNodeRole string) model {
+func newModelWithShell(connector tui.AdminConnector, shell shellExecutor, shellStartup []string, daemon daemonModel, shellEnabled bool, initialNodeRole string) model {
 	signer := tui.NewModel(connector, "").WithInitialNodeRole(initialNodeRole)
 	return model{
 		focus:            paneSigner,

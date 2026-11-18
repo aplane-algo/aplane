@@ -1253,7 +1253,8 @@ func registerRestGenericTemplate(t *testing.T) {
 			Version:     1,
 			DisplayName: "Generic Rest Error",
 		},
-		TEAL: "#pragma version 8\nint 1\nreturn",
+		TemplateMode: "generated",
+		TEAL:         "#pragma version 8\nint 1\nreturn",
 	}
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec(rest generic template) error = %v", err)

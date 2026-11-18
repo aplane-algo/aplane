@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 
@@ -192,13 +191,11 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 }
 
 func unlockFailureCode(errMsg string) string {
-	switch {
-	case errMsg == "":
+	switch errMsg {
+	case "":
 		return ""
-	case errMsg == "invalid passphrase":
+	case productruntime.InvalidPassphraseMessage:
 		return protocol.ErrCodeInvalidPassphrase
-	case strings.HasPrefix(errMsg, "failed to load keys:"):
-		return protocol.ErrCodeUnlockFailed
 	default:
 		return protocol.ErrCodeUnlockFailed
 	}

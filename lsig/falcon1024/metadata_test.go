@@ -6,6 +6,7 @@ package falcon
 import (
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
@@ -40,7 +41,7 @@ func TestFalconMetadata(t *testing.T) {
 	})
 
 	t.Run("RequiresLogicSig", func(t *testing.T) {
-		if !m.RequiresLogicSig() {
+		if !algorithm.RequiresLogicSig(m) {
 			t.Error("RequiresLogicSig() should be true for Falcon")
 		}
 	})

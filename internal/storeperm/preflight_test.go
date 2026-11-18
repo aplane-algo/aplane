@@ -35,12 +35,12 @@ func TestPreflightLegacyAcceptsClosedLegacyTreeWithoutMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := PreflightLegacy(root)
+	result, err := PreflightShared(root)
 	if err != nil {
-		t.Fatalf("PreflightLegacy() error = %v", err)
+		t.Fatalf("PreflightShared() error = %v", err)
 	}
 	if result.Inspected != 4 {
-		t.Fatalf("PreflightLegacy() result = %+v, want 4 inspected objects", result)
+		t.Fatalf("PreflightShared() result = %+v, want 4 inspected objects", result)
 	}
 	after, err := os.Lstat(path)
 	if err != nil {
@@ -74,12 +74,12 @@ func TestPreflightLegacyAllowsSocketForLaterMigrationClassification(t *testing.T
 		t.Fatal(err)
 	}
 
-	result, err := PreflightLegacy(root)
+	result, err := PreflightShared(root)
 	if err != nil {
-		t.Fatalf("PreflightLegacy() error = %v", err)
+		t.Fatalf("PreflightShared() error = %v", err)
 	}
 	if result.Inspected != 2 {
-		t.Fatalf("PreflightLegacy() result = %+v, want root and socket", result)
+		t.Fatalf("PreflightShared() result = %+v, want root and socket", result)
 	}
 	info, err := os.Lstat(socketPath)
 	if err != nil || info.Mode()&os.ModeSocket == 0 {
@@ -119,9 +119,9 @@ func TestPreflightLegacyRejectsSymlinkWithoutTouchingReferent(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err = PreflightLegacy(root)
+			_, err = PreflightShared(root)
 			if err == nil || !strings.Contains(err.Error(), "refusing symlink") {
-				t.Fatalf("PreflightLegacy() error = %v, want symlink rejection", err)
+				t.Fatalf("PreflightShared() error = %v, want symlink rejection", err)
 			}
 			after, statErr := os.Lstat(outside)
 			if statErr != nil {
@@ -154,9 +154,9 @@ func TestPreflightLegacyRejectsHardlinkedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := PreflightLegacy(root)
+	_, err := PreflightShared(root)
 	if err == nil || !strings.Contains(err.Error(), "refusing hardlinked file") {
-		t.Fatalf("PreflightLegacy() error = %v, want hardlink rejection", err)
+		t.Fatalf("PreflightShared() error = %v, want hardlink rejection", err)
 	}
 }
 
@@ -165,8 +165,8 @@ func TestPreflightLegacyRequiresClosedRealRoot(t *testing.T) {
 	if err := os.Chmod(root, 0o770); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PreflightLegacy(root); err == nil || !strings.Contains(err.Error(), "closed to group and other") {
-		t.Fatalf("PreflightLegacy(group-accessible root) error = %v", err)
+	if _, err := PreflightShared(root); err == nil || !strings.Contains(err.Error(), "closed to group and other") {
+		t.Fatalf("PreflightShared(group-accessible root) error = %v", err)
 	}
 
 	parent := workspaceTempDir(t)
@@ -174,7 +174,7 @@ func TestPreflightLegacyRequiresClosedRealRoot(t *testing.T) {
 	if err := os.Symlink(root, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PreflightLegacy(link); err == nil || !strings.Contains(err.Error(), "not a real directory") {
-		t.Fatalf("PreflightLegacy(symlink root) error = %v", err)
+	if _, err := PreflightShared(link); err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("PreflightShared(symlink root) error = %v", err)
 	}
 }

@@ -19,9 +19,9 @@ type ServerNetworkConfig struct {
 // ServerNetworkConfigs is a map of network context token → grouped apsigner settings.
 type ServerNetworkConfigs map[string]*ServerNetworkConfig
 
-func mergeServerNetworkAlgodConfig(legacy apconfig.AlgodConfig, networks ServerNetworkConfigs) (apconfig.AlgodConfig, error) {
-	out := legacy
-	if out == nil && len(networks) > 0 {
+func mergeServerNetworkAlgodConfig(networks ServerNetworkConfigs) (apconfig.AlgodConfig, error) {
+	var out apconfig.AlgodConfig
+	if len(networks) > 0 {
 		out = make(apconfig.AlgodConfig, len(networks))
 	}
 
@@ -62,9 +62,9 @@ func mergeServerNetworkIndexerConfig(networks ServerNetworkConfigs) (map[string]
 	return out, nil
 }
 
-func mergeServerNetworkGenesisHashConfig(legacy map[string]string, networks ServerNetworkConfigs) (map[string]string, error) {
-	out := legacy
-	if out == nil && len(networks) > 0 {
+func mergeServerNetworkGenesisHashConfig(networks ServerNetworkConfigs) (map[string]string, error) {
+	var out map[string]string
+	if len(networks) > 0 {
 		out = make(map[string]string)
 	}
 

@@ -5,7 +5,6 @@ package protocol
 
 import (
 	"errors"
-	"strings"
 )
 
 // CodedError carries a stable IPC error code attached at the error origin.
@@ -38,8 +37,8 @@ func WithCode(code string, err error) error {
 	return &CodedError{Code: code, Err: err}
 }
 
-// CodeForError returns the code attached at the error origin when present,
-// falling back to exact legacy message strings for old codeless peers.
+// CodeForError returns the code attached at the error origin, or
+// ErrCodeInternal for an error that carries none.
 func CodeForError(err error) string {
 	if err == nil {
 		return ""
@@ -48,7 +47,7 @@ func CodeForError(err error) string {
 	if errors.As(err, &coded) && coded.Code != "" {
 		return coded.Code
 	}
-	return IPCErrorCode(err.Error())
+	return ErrCodeInternal
 }
 
 // Stable machine-readable IPC/admin error codes.
@@ -131,44 +130,3 @@ const (
 	ResultCodeKeyTypeInUse         = "key_type_in_use"
 	ResultCodeDeactivationFailed   = "deactivation_failed"
 )
-
-// IPCErrorCode maps the small set of legacy codeless protocol/admin messages
-// whose exact text shipped before the wire carried explicit codes. New code
-// must attach codes at the source with WithCode instead of adding message-text
-// patterns here.
-func IPCErrorCode(errMsg string) string {
-	errMsg = strings.TrimSpace(errMsg)
-	if errMsg == "" {
-		return ""
-	}
-
-	lower := strings.ToLower(errMsg)
-	switch lower {
-	case "invalid message format":
-		return ErrCodeInvalidMessageFormat
-	case "expected auth message":
-		return ErrCodeExpectedAuthMessage
-	case "invalid auth message format":
-		return ErrCodeInvalidAuthMessage
-	case "authentication failed":
-		return ErrCodeAuthenticationFailed
-	case "invalid passphrase", "incorrect passphrase":
-		return ErrCodeInvalidPassphrase
-	case "invalid generate key message",
-		"invalid import key message",
-		"invalid export key message",
-		"invalid delete key message",
-		"invalid list keys message",
-		"invalid unlock message",
-		"invalid key details message":
-		return ErrCodeInvalidRequest
-	case "no product runtime bound to session":
-		return ErrCodeNoRuntimeBound
-	case "authorization denied":
-		return ErrCodeAuthorizationDenied
-	case "signer is locked":
-		return ErrCodeSignerLocked
-	default:
-		return ErrCodeInternal
-	}
-}

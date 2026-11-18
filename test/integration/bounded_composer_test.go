@@ -484,7 +484,8 @@ func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProf
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
 		Ops: falconv1.NewFalconOps(nil), SaltStyle: lsigsalt.StylePushbytes,
-		TEALSuffix: "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
+		TemplateMode: "generated",
+		TEALSuffix:   "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
 	})
 }
 
@@ -500,7 +501,7 @@ func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizat
 func boundedIntegrationProfile(allowed []txeffects.SpendEffect, rekey boundedmeta.RekeySetting) *composeddsa.BoundedAuthorizationProfile {
 	return &composeddsa.BoundedAuthorizationProfile{
 		Contract: composeddsa.BoundedContract, SpendEffects: allowed,
-		MaxFee: new(uint64(boundedIntegrationMaxFee)), Rekey: rekey,
+		MaxFee: new(boundedIntegrationMaxFee), Rekey: rekey,
 	}
 }
 

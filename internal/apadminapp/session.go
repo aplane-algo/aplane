@@ -141,11 +141,7 @@ func (c *Client) RequestWithTimeout(message, result any, timeout time.Duration) 
 		if err := json.Unmarshal(raw, &response); err != nil {
 			return fmt.Errorf("decode admin error response: %w", err)
 		}
-		code := response.Code
-		if code == "" {
-			code = protocol.IPCErrorCode(response.Error)
-		}
-		return protocol.WithCode(code, fmt.Errorf("%s", response.Error))
+		return protocol.WithCode(response.Code, fmt.Errorf("%s", response.Error))
 	}
 	if err := json.Unmarshal(raw, result); err != nil {
 		return fmt.Errorf("decode admin response: %w", err)

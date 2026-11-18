@@ -1113,8 +1113,8 @@ Primary packages and files:
 - `internal/engine/cosigned`: cosigned (`cosigned1`) transaction
   orchestration and cosigner endpoint resolution; `internal/engine` composes
   that owner into the client runtime.
-- `internal/config`: endpoint registry parsing (`schema_version` 2 only; retired
-  `signer_port`/`local_port`/`token_file` fields are dropped on load).
+- `internal/config`: endpoint registry parsing (`schema_version` 2 only, unknown
+  fields rejected).
 - `internal/apshellapp`: endpoint commands and read-only cosigner discovery.
 - `lsig/plainhost`: the plain host, the plain key types with optional overlays
   and bounds, Corridor's shape among them.

@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
@@ -30,21 +32,14 @@ func (r *REPLState) executeAppCallRaw(args []string) (command.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return newShellCommandResult(func(w io.Writer) error {
-		return r.withOutput(w, func() {
-			for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
-				r.println(line)
-			}
-			r.renderSubmissionOutput(result.Output)
-			r.renderWarnings(result.Warnings)
-			if params.Wait && result.Structured.Confirmed {
-				for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
-					r.println(line)
-				}
-			}
-		})
-	}, result.Structured)
+	return r.appCallResult(params.Wait, appCallOutput{
+		from:       result.FromAddress,
+		preSubmit:  result.PreSubmitLines,
+		output:     result.Output,
+		warnings:   result.Warnings,
+		confirmed:  result.ConfirmedLines,
+		structured: result.Structured,
+	})
 }
 
 func (r *REPLState) executeAppCallMethod(args []string) (command.Result, error) {
@@ -56,21 +51,41 @@ func (r *REPLState) executeAppCallMethod(args []string) (command.Result, error) 
 	if err != nil {
 		return nil, err
 	}
+	return r.appCallResult(params.Wait, appCallOutput{
+		from:       result.FromAddress,
+		preSubmit:  result.PreSubmitLines,
+		output:     result.Output,
+		warnings:   result.Warnings,
+		confirmed:  result.ConfirmedLines,
+		structured: result.Structured,
+	})
+}
 
+// appCallOutput is what both forms of app call print.
+type appCallOutput struct {
+	from       string
+	preSubmit  []string
+	output     string
+	warnings   []apshellapp.Warning
+	confirmed  []string
+	structured appresult.AppCall
+}
+
+func (r *REPLState) appCallResult(wait bool, out appCallOutput) (command.Result, error) {
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
-			for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
+			for _, line := range renderAppCallLines(out.preSubmit, out.from, r) {
 				r.println(line)
 			}
-			r.renderSubmissionOutput(result.Output)
-			r.renderWarnings(result.Warnings)
-			if params.Wait && result.Structured.Confirmed {
-				for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
+			r.renderSubmissionOutput(out.output)
+			r.renderWarnings(out.warnings)
+			if wait && out.structured.Confirmed {
+				for _, line := range renderAppCallLines(out.confirmed, out.from, r) {
 					r.println(line)
 				}
 			}
 		})
-	}, result.Structured)
+	}, out.structured)
 }
 
 func renderAppCallLines(lines []string, fromAddress string, r *REPLState) []string {

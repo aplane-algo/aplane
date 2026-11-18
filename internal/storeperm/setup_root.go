@@ -16,7 +16,7 @@ import (
 )
 
 // PrepareManagedRootResult summarizes safe creation and closure of a managed
-// signer-store root before legacy-tree preflight.
+// signer-store root before shared-group tree preflight.
 type PrepareManagedRootResult struct {
 	Path    string
 	Created bool

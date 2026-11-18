@@ -317,7 +317,7 @@ func (m Model) renderParamField(sb *strings.Builder, spec *paramSpec, keyType st
 	fieldWidth := m.constrainParameterFieldWidth(m.paramFieldWidth(spec, paramDef, isCosignerSelector))
 	fieldHeight := m.constrainParameterFieldHeight(getFieldHeightForType(paramDef.Type), sb.String(), reserve)
 
-	lines := m.paramFieldLines(spec, paramDef, focused, fieldWidth, isCosignerSelector)
+	lines := m.paramFieldLines(spec, paramDef, focused, isCosignerSelector)
 	aboveCount, belowCount := 0, 0
 	if isMultilineParamType(paramDef.Type) {
 		lines, aboveCount, belowCount = m.scrollParamFieldLines(paramDef.Name, lines, fieldHeight)
@@ -395,7 +395,7 @@ func (m Model) paramFieldWidth(spec *paramSpec, paramDef lsigprovider.ParameterD
 
 // paramFieldLines is the field's content as lines: its value or placeholder,
 // or, while focused, its value with a cursor.
-func (m Model) paramFieldLines(spec *paramSpec, paramDef lsigprovider.ParameterDef, focused bool, fieldWidth int, isCosignerSelector bool) []string {
+func (m Model) paramFieldLines(spec *paramSpec, paramDef lsigprovider.ParameterDef, focused, isCosignerSelector bool) []string {
 	if focused && m.forms.genericLSigParams != nil {
 		currentValue := m.forms.genericLSigParams[paramDef.Name]
 		if len(paramDef.Options) > 0 {

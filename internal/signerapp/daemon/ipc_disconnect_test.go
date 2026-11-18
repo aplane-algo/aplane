@@ -61,8 +61,6 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 				defer close(done)
 				ipcServer.acceptAdminSession(
 					adminproto.NewUnixAdminConn(serverConn),
-					adminserver.TransportIPC,
-					"ipc-passphrase",
 				)
 			}()
 
@@ -115,7 +113,7 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 	}
 	signer.ipcServer = ipcServer
 
-	owner := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps())
+	owner := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps(), adminserver.OriginLocal)
 	owner.Bind(auth.NewProductIdentity("test-owner"), ir)
 	if !registerPendingSession(ipcServer.manager, owner) {
 		t.Fatal("registerPendingSession(owner) = false, want true")
@@ -130,8 +128,6 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(serverConn),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 
@@ -199,7 +195,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	}
 	signer.ipcServer = ipcServer
 
-	blocker := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps())
+	blocker := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps(), adminserver.OriginLocal)
 	if !registerPendingSession(ipcServer.manager, blocker) {
 		t.Fatal("registerPendingSession(blocker) = false, want true")
 	}
@@ -212,8 +208,6 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(serverConn),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 

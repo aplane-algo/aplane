@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 )
 
-// PreflightResult summarizes a read-only legacy-store structural inspection.
+// PreflightResult summarizes a read-only shared-group store structural inspection.
 type PreflightResult struct {
 	Inspected int
 }
 
-// PreflightLegacy validates the filesystem shape of a stopped legacy signer
+// PreflightShared validates the filesystem shape of a stopped shared-group signer
 // store before a privileged installer writes any store-relative path. The
 // caller must first close group/other access at the store root so the
 // inventory cannot be raced by a former group member.
@@ -22,7 +22,7 @@ type PreflightResult struct {
 // Unix sockets are inert during this inspection and are left for the later
 // configured-socket migration policy to classify. No file is opened for
 // content and this function never mutates the store.
-func PreflightLegacy(rootPath string) (PreflightResult, error) {
+func PreflightShared(rootPath string) (PreflightResult, error) {
 	if rootPath == "" {
 		return PreflightResult{}, fmt.Errorf("store root is required")
 	}

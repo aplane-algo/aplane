@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
-// MigrationResult summarizes a completed legacy-to-private store migration.
+// MigrationResult summarizes a completed shared-to-private store migration.
 type MigrationResult struct {
 	Inspected int
 	Changed   int
@@ -24,13 +24,13 @@ type migrationEntry struct {
 	info os.FileInfo
 }
 
-// MigratePrivate validates the complete legacy tree before changing it,
+// MigratePrivate validates the complete shared-group tree before changing it,
 // removes group access at the root first, and then repairs every recognized
 // object through an opened descriptor. Structural findings are fatal; owner
 // and mode findings are precisely what this operation repairs.
 func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	opts := migration.policy
-	opts.profile = legacySharedProfile
+	opts.profile = sharedProfile
 	if err := rejectStoreLocalBinaries(opts.root); err != nil {
 		return MigrationResult{}, err
 	}
@@ -56,11 +56,11 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	if err != nil {
 		return MigrationResult{}, fmt.Errorf("resolve store root: %w", err)
 	}
-	legacySocket, err := recognizedLegacySocket(root, opts.socketPath)
+	storeSocket, err := recognizedStoreSocket(root, opts.socketPath)
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	entries, err := migrationInventory(root, legacySocket)
+	entries, err := migrationInventory(root, storeSocket)
 	if err != nil {
 		return MigrationResult{}, err
 	}
@@ -78,7 +78,7 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	}
 	for _, entry := range entries {
 		if entry.info.Mode()&os.ModeSocket != 0 {
-			if err := removeInventoriedLegacySocket(entry, legacySocket); err != nil {
+			if err := removeInventoriedStoreSocket(entry, storeSocket); err != nil {
 				return result, err
 			}
 			result.Changed++
@@ -137,41 +137,41 @@ func rejectStoreLocalBinaries(root string) error {
 	return nil
 }
 
-func recognizedLegacySocket(root, socketPath string) (string, error) {
+func recognizedStoreSocket(root, socketPath string) (string, error) {
 	if socketPath == "" {
 		return "", nil
 	}
 	socket, err := filepath.Abs(filepath.Clean(socketPath))
 	if err != nil {
-		return "", fmt.Errorf("resolve legacy signer socket: %w", err)
+		return "", fmt.Errorf("resolve in-store signer socket: %w", err)
 	}
 	rel, err := filepath.Rel(root, socket)
 	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("legacy signer socket is outside store root: %s", socket)
+		return "", fmt.Errorf("in-store signer socket is outside store root: %s", socket)
 	}
 	return socket, nil
 }
 
-func removeInventoriedLegacySocket(entry migrationEntry, socketPath string) error {
+func removeInventoriedStoreSocket(entry migrationEntry, socketPath string) error {
 	if socketPath == "" || !sameCleanPath(entry.path, socketPath) {
 		return fmt.Errorf("refusing unexpected socket during signer-store migration: %s", entry.path)
 	}
 	info, err := os.Lstat(entry.path)
 	if err != nil {
-		return fmt.Errorf("inspect legacy signer socket: %w", err)
+		return fmt.Errorf("inspect in-store signer socket: %w", err)
 	}
 	if info.Mode()&os.ModeSocket == 0 || !os.SameFile(entry.info, info) {
-		return fmt.Errorf("legacy signer socket changed during migration: %s", entry.path)
+		return fmt.Errorf("in-store signer socket changed during migration: %s", entry.path)
 	}
 	if err := os.Remove(entry.path); err != nil {
-		return fmt.Errorf("remove stale legacy signer socket: %w", err)
+		return fmt.Errorf("remove stale in-store signer socket: %w", err)
 	}
 	return nil
 }
 
-func migrationInventory(root, legacySocket string) ([]migrationEntry, error) {
+func migrationInventory(root, storeSocket string) ([]migrationEntry, error) {
 	return structuralInventory(root, "migration", func(path string, info os.FileInfo) bool {
-		return info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, legacySocket)
+		return info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, storeSocket)
 	})
 }
 

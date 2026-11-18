@@ -38,7 +38,7 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 	session := NewSession(conn, SessionDeps{
 		Authorizer: authorizer,
 		Audit:      audit,
-	})
+	}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleLockIdentity(&protocol.LockIdentityMessage{
@@ -115,7 +115,7 @@ func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 	}
 
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
+	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 	session.HandleLockIdentity(&protocol.LockIdentityMessage{
 		BaseMessage: protocol.BaseMessage{ID: "lock-1"},
@@ -142,7 +142,7 @@ func TestHandleLockIdentityRejectsUnauthorizedRequest(t *testing.T) {
 	session := NewSession(conn, SessionDeps{
 		Authorizer: authorizer,
 		Audit:      audit,
-	})
+	}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleLockIdentity(&protocol.LockIdentityMessage{

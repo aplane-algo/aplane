@@ -30,6 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -80,6 +81,10 @@ type Runtime struct {
 	keyStore    *keystore.FileKeyStore
 	keyPaths    storepaths.Paths
 	lockRuntime *signerruntime.Runtime
+
+	// unlockMethod is fixed at construction: a helper written later takes
+	// effect at the next start.
+	unlockMethod string
 
 	// stageTables is the process's single owner of rotating accounts' stage
 	// address tables (identities/default/stages), a derivable cache.
@@ -196,7 +201,10 @@ type Config struct {
 	UserAutoApprove  *bool
 	LockOnDisconnect bool
 	NodeRole         noderole.Role
-	OnLocked         func() // Called after lock transition completes.
+	// UnlockMethod is the auto-unlock method the runtime started with (see
+	// unlockconfig.UnlockConfig.Method); empty means "none".
+	UnlockMethod string
+	OnLocked     func() // Called after lock transition completes.
 }
 
 // New creates a product Runtime in the locked state.
@@ -211,20 +219,25 @@ func New(cfg Config) *Runtime {
 	if nodeRole == "" {
 		nodeRole = noderole.DefaultRole()
 	}
+	unlockMethod := cfg.UnlockMethod
+	if unlockMethod == "" {
+		unlockMethod = unlockconfig.MethodNone
+	}
 
 	ir := &Runtime{
-		keyStore:    cfg.KeyStore,
-		keyPaths:    cfg.KeyPaths,
-		stageTables: stagetable.NewStore(cfg.KeyPaths),
-		stageWork:   make(chan struct{}, 1),
-		lockRuntime: rt,
-		keySession:  session,
-		runtimeCfg:  NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
-		nodeRole:    nodeRole,
-		keys:        make(map[string]string),
-		keyTypes:    make(map[string]string),
-		keyMetadata: make(map[string]KeyPublicMetadata),
-		onLocked:    cfg.OnLocked,
+		keyStore:     cfg.KeyStore,
+		keyPaths:     cfg.KeyPaths,
+		stageTables:  stagetable.NewStore(cfg.KeyPaths),
+		stageWork:    make(chan struct{}, 1),
+		lockRuntime:  rt,
+		keySession:   session,
+		runtimeCfg:   NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
+		nodeRole:     nodeRole,
+		unlockMethod: unlockMethod,
+		keys:         make(map[string]string),
+		keyTypes:     make(map[string]string),
+		keyMetadata:  make(map[string]KeyPublicMetadata),
+		onLocked:     cfg.OnLocked,
 	}
 	ir.keysetRev.Store(initialKeysetRevision())
 
@@ -272,6 +285,12 @@ func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 // NodeRole returns the immutable role declared by the signer data root.
 func (ir *Runtime) NodeRole() noderole.Role {
 	return ir.nodeRole
+}
+
+// UnlockMethod is the auto-unlock method this runtime started with; anything
+// but unlockconfig.MethodNone means it is headless.
+func (ir *Runtime) UnlockMethod() string {
+	return ir.unlockMethod
 }
 
 // NodePolicy returns the node's active verified policy, or nil before policy
@@ -389,7 +408,7 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
 		if err := ir.keyStore.Unlock(passphrase); err != nil {
-			return fmt.Errorf("invalid passphrase")
+			return errors.New(InvalidPassphraseMessage)
 		}
 		return nil
 	})
@@ -1397,8 +1416,7 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	// The reload callback either reloads (if unlocked) or marks dirty (if locked)
 	reloadOrDirty := func() error {
 		if ir.IsUnlocked() {
-			_, err := ir.reloadFromWatcher()
-			return err
+			return ir.reloadFromWatcher()
 		}
 		ir.MarkDirty()
 		return nil
@@ -1430,27 +1448,25 @@ func (ir *Runtime) MarkDirty() {
 }
 
 func (ir *Runtime) reconcileDirty() {
-	if _, err := ir.reloadFromWatcher(); err != nil {
+	if err := ir.reloadFromWatcher(); err != nil {
 		fmt.Printf("⚠️  Dirty-state reconciliation failed for product store: %v\n", err)
 	} else {
 		fmt.Println("✓ Reconciled pending filesystem changes for product store")
 	}
 }
 
-func (ir *Runtime) reloadFromWatcher() (*signertemplates.ReloadReport, error) {
+func (ir *Runtime) reloadFromWatcher() error {
 	ir.watcherMu.Lock()
 	lockFn := ir.reloadLock
 	ir.watcherMu.Unlock()
-	if lockFn == nil {
-		return ir.Reload()
+	if lockFn != nil {
+		if lock := lockFn(); lock != nil {
+			lock.Lock()
+			defer lock.Unlock()
+		}
 	}
-	lock := lockFn()
-	if lock == nil {
-		return ir.Reload()
-	}
-	lock.Lock()
-	defer lock.Unlock()
-	return ir.Reload()
+	_, err := ir.Reload()
+	return err
 }
 
 // StopKeyWatcher stops the file watcher if running.
@@ -1465,6 +1481,11 @@ func (ir *Runtime) StopKeyWatcher() {
 }
 
 // --- Shutdown ---
+
+// InvalidPassphraseMessage is the unlock failure for a wrong passphrase. The lock
+// runtime passes unlock failures on as text, so admin services match this
+// constant to attach invalid_passphrase; see signerruntime.LockedDuringUnlockMessage.
+const InvalidPassphraseMessage = "invalid passphrase"
 
 // ErrKeyUseInFlight reports a key user that still held its own copy of key
 // material when EndKeyUses stopped waiting for it.
@@ -1575,7 +1596,7 @@ func (ir *Runtime) LockGeneration() uint64 {
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 	return func() (int, error) {
 		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, ir.keyPaths.KeystoreMetadataDir()); err != nil {
-			return 0, fmt.Errorf("invalid passphrase")
+			return 0, errors.New(InvalidPassphraseMessage)
 		}
 
 		if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {

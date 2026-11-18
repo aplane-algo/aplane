@@ -19,7 +19,7 @@ import (
 var currentEUID = os.Geteuid
 
 var migrateManagedStore = func(dataDir string, uid, gid int, socketPath string) error {
-	opts := storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath)
+	opts := storeperm.SharedMigrationOptions(dataDir, uid, gid, socketPath)
 	_, err := storeperm.MigratePrivate(opts)
 	return err
 }

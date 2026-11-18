@@ -204,7 +204,7 @@ func TestAllCategoriesHaveCommands(t *testing.T) {
 
 	categories := make(map[string]int)
 	for _, cmd := range registry.All() {
-		categories[string(cmd.Category)]++
+		categories[cmd.Category]++
 	}
 
 	// Expected categories that should have commands

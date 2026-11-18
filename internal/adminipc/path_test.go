@@ -83,30 +83,30 @@ func TestResolveDaemonPathForDataDirAllowsManagedProtectedCustomPath(t *testing.
 	}
 }
 
-func TestResolveLegacyStoreSocketPathUsesExactConfiguredInStorePath(t *testing.T) {
+func TestResolveInStoreSocketPathUsesExactConfiguredInStorePath(t *testing.T) {
 	dataDir := t.TempDir()
 	custom := filepath.Join(dataDir, "run", "custom.sock")
 
-	got, err := ResolveLegacyStoreSocketPath(dataDir, custom)
+	got, err := ResolveInStoreSocketPath(dataDir, custom)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != custom {
-		t.Fatalf("ResolveLegacyStoreSocketPath() = %q, want %q", got, custom)
+		t.Fatalf("ResolveInStoreSocketPath() = %q, want %q", got, custom)
 	}
 }
 
-func TestResolveLegacyStoreSocketPathUsesDefaultForExternalCustomPath(t *testing.T) {
+func TestResolveInStoreSocketPathUsesDefaultForExternalCustomPath(t *testing.T) {
 	dataDir := t.TempDir()
 	external := filepath.Join(filepath.Dir(dataDir), "runtime", "custom.sock")
 	want := filepath.Join(dataDir, "aplane.sock")
 
-	got, err := ResolveLegacyStoreSocketPath(dataDir, external)
+	got, err := ResolveInStoreSocketPath(dataDir, external)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != want {
-		t.Fatalf("ResolveLegacyStoreSocketPath() = %q, want %q", got, want)
+		t.Fatalf("ResolveInStoreSocketPath() = %q, want %q", got, want)
 	}
 }
 

@@ -311,7 +311,7 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 	}
 
 	// For online mode, parse participation keys from options
-	if mode == "online" {
+	if mode == "online" { //nolint:nestif // unslop phase 3
 		if len(call.Arguments) < 3 {
 			panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
 		}

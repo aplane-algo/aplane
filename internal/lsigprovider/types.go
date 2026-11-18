@@ -196,7 +196,7 @@ type RuntimeArgDef struct {
 	Type        string // "bytes" (hex-encoded), "string", "uint64"
 	Required    bool   // If true, transaction will fail without this arg
 	ByteLength  int    // Expected byte length (0 = variable)
-	MaxSize     int    // Maximum encoded byte length (0 = legacy/unbounded contract)
+	MaxSize     int    // Maximum encoded byte length (0 when ByteLength fixes it)
 }
 
 // ValidateAndOrderArgs validates runtime args against their definitions and returns

@@ -232,12 +232,6 @@ func zeroBuffer(buf *bytes.Buffer) {
 	buf.Reset()
 }
 
-// ValidatePassphraseCommandConfig validates the full passphrase command configuration.
-func ValidatePassphraseCommandConfig(cfg *PassphraseCommandConfig) error {
-	_, err := validateAndResolveArgv(cfg.Argv)
-	return err
-}
-
 // validateAndResolveArgv checks that argv is well-formed and returns the resolved binary path.
 // argv[0] must be an absolute path (config loader resolves relative paths against the data directory).
 func validateAndResolveArgv(argv []string) (string, error) {

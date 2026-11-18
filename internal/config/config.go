@@ -115,7 +115,7 @@ func LoadConfigFromPath(path string) (Config, error) {
 	if err := ValidateConfigSchemaVersion("client config", config.SchemaVersion); err != nil {
 		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
 	}
-	if config.Algod, err = mergeClientNetworkAlgodConfig(nil, config.Networks); err != nil {
+	if config.Algod, err = mergeClientNetworkAlgodConfig(config.Networks); err != nil {
 		return Config{}, fmt.Errorf("invalid network in networks config: %w", err)
 	}
 

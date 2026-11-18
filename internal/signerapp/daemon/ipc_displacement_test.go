@@ -23,7 +23,7 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 	server := &IPCServer{
 		manager: adminserver.NewSessionManager(),
 	}
-	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer), adminserver.SessionDeps{})
+	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer), adminserver.SessionDeps{}, adminserver.OriginLocal)
 	_ = registerPendingSession(server.manager, oldSession)
 	_, _ = server.manager.PromoteToActive(oldSession)
 
@@ -69,7 +69,7 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 		t.Fatal("active session changed before replacement promotion")
 	}
 
-	newSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), adminserver.SessionDeps{})
+	newSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), adminserver.SessionDeps{}, adminserver.OriginLocal)
 	if !registerPendingSession(server.manager, newSession) {
 		t.Fatal("registerPendingSession(newSession) = false, want true")
 	}
@@ -116,7 +116,7 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 		signer:  signer,
 		manager: adminserver.NewSessionManager(),
 	}
-	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps())
+	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps(), adminserver.OriginLocal)
 	if !registerPendingSession(ipcServer.manager, oldSession) {
 		t.Fatal("registerPendingSession(oldSession) = false, want true")
 	}
@@ -132,8 +132,6 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(serverConn),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 
@@ -192,7 +190,7 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 
 	oldServer, oldClient := net.Pipe()
 	defer func() { _ = oldClient.Close() }()
-	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer), signer.adminSessionDeps())
+	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer), signer.adminSessionDeps(), adminserver.OriginLocal)
 	oldSession.Bind(auth.NewProductIdentity("test"), ir)
 	if !registerPendingSession(ipcServer.manager, oldSession) {
 		t.Fatal("registerPendingSession(oldSession) = false, want true")
@@ -226,8 +224,6 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 		defer close(done)
 		ipcServer.acceptAdminSession(
 			adminproto.NewUnixAdminConn(newServer),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 

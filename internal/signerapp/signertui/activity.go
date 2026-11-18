@@ -204,7 +204,7 @@ func (m Model) isLocallyIdle(now time.Time) bool {
 	return !now.Before(m.activity.lastInputAt.Add(m.activity.sessionTimeout))
 }
 
-func (m *Model) handleManualLockFailed(errText string) tea.Cmd {
+func (m *Model) handleManualLockFailed(errText string) {
 	m.manualLock.pending = false
 	if errText == "" {
 		errText = "request failed"
@@ -213,7 +213,6 @@ func (m *Model) handleManualLockFailed(errText string) tea.Cmd {
 	if m.viewState == ViewLockConfirm {
 		m.viewState = m.lockConfirmReturnView()
 	}
-	return nil
 }
 
 func (m Model) lockConfirmReturnView() ViewState {

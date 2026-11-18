@@ -90,12 +90,6 @@ func IsEncrypted(data []byte) bool {
 	return json.Unmarshal(data, &encrypted) == nil && encrypted.EnvelopeVersion > 0
 }
 
-// ============================================================================
-// Term encryption (envelope_version 3)
-// ============================================================================
-// These functions seal and open under a keyring term's key. Callers reach them
-// through Keyring.Seal and Keyring.Open; the key never leaves this package.
-
 const (
 	keystoreMetaFile = ".keystore"
 	masterSaltLen    = 32
@@ -104,45 +98,6 @@ const (
 // deriveMasterKeyParams derives a key using explicit Argon2id parameters.
 func deriveMasterKeyParams(passphrase, salt []byte, time, memory uint32, threads uint8) []byte {
 	return argon2.IDKey(passphrase, salt, time, memory, threads, argon2KeyLen)
-}
-
-// encryptWithTermKey seals plaintext under one keyring term's key, binding
-// the term and the object's logical identity into the AEAD's authenticated
-// data. Returns envelope_version 3.
-//
-// Unexported since phase 2: every caller goes through Keyring.Seal, so no
-// code outside this package can hold a raw term key to encrypt with. The
-// context is required rather than optional, which is what stops a file from
-// being opened as a different object.
-func encryptWithTermKey(plaintext, termKey []byte, term int64, ctx ObjectContext) ([]byte, error) {
-	if err := ctx.validate(); err != nil {
-		return nil, err
-	}
-	if term <= 0 {
-		return nil, fmt.Errorf("sealing %s requires a term", ctx)
-	}
-	return sealUnderTerm(plaintext, termKey, term, ctx)
-}
-
-// decryptWithTermKey opens a term envelope that must name term and hold the
-// object ctx identifies. A wrong key, an edited term header, and an envelope
-// belonging to a different object all fail the same way.
-//
-// Unexported since phase 2: callers go through Keyring.Open.
-func decryptWithTermKey(encryptedJSON, termKey []byte, term int64, ctx ObjectContext) ([]byte, error) {
-	if err := ctx.validate(); err != nil {
-		return nil, err
-	}
-	onDisk, err := envelopeTerm(encryptedJSON)
-	if err != nil {
-		return nil, err
-	}
-	if onDisk != term {
-		return nil, fmt.Errorf(
-			"envelope for %s names term %d, not term %d", ctx, onDisk, term,
-		)
-	}
-	return openUnderTerm(encryptedJSON, termKey, term, ctx)
 }
 
 // ============================================================================

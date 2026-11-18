@@ -91,26 +91,6 @@ endpoints:
 	}
 }
 
-func TestLoadEnrolledClientRefusesUnsupportedClientEndpointConfig(t *testing.T) {
-	dir := t.TempDir()
-	writeRemoteConfig(t, dir, `
-network: testnet
-ssh:
-  host: signer.local
-`)
-
-	got, err := LoadEnrolledClient(dir, testOptions())
-	if err == nil {
-		t.Fatal("err = nil, want unsupported endpoint config error")
-	}
-	if got != nil {
-		t.Fatalf("got = %#v, want nil", got)
-	}
-	if !strings.Contains(err.Error(), "unsupported apclient endpoint config") {
-		t.Fatalf("err = %v, want unsupported endpoint config message", err)
-	}
-}
-
 func TestLoadEnrolledClientBuildsPrereqs(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `

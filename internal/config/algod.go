@@ -63,9 +63,9 @@ func (a AlgodConfig) GetNetwork(network string) (*AlgodNetworkConfig, error) {
 	return cfg, nil
 }
 
-func mergeClientNetworkAlgodConfig(legacy AlgodConfig, networks ClientNetworkConfigs) (AlgodConfig, error) {
-	out := legacy
-	if out == nil && len(networks) > 0 {
+func mergeClientNetworkAlgodConfig(networks ClientNetworkConfigs) (AlgodConfig, error) {
+	var out AlgodConfig
+	if len(networks) > 0 {
 		out = make(AlgodConfig, len(networks))
 	}
 

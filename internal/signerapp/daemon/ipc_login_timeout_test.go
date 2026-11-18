@@ -43,8 +43,6 @@ func startAdminConn(t *testing.T, server *IPCServer) (net.Conn, *bufio.Reader, <
 		defer close(done)
 		server.acceptAdminSession(
 			adminproto.NewUnixAdminConn(serverConn),
-			adminserver.TransportIPC,
-			"ipc-passphrase",
 		)
 	}()
 	return clientConn, bufio.NewReader(clientConn), done

@@ -176,7 +176,7 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 		incoming = []LeafRelease{r.latestLeaf()}
 	}
 	var leaves []LeafRelease
-	if prev, ok := m.byAccount[r.Account]; ok {
+	if prev, ok := m.byAccount[r.Account]; ok { //nolint:nestif // unslop phase 3
 		if prev.Stage == r.Stage {
 			r.Reused = r.Reused || prev.Reused
 			if audited {

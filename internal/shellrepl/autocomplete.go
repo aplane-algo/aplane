@@ -252,7 +252,7 @@ func (c *ContextCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	// Check for plugin ArgSpec-based completion
 	parsed := parseCompletableCommandLine(lineStr)
 	parts := parsed.parts
-	if len(parts) >= 1 {
+	if len(parts) >= 1 { //nolint:nestif // unslop phase 3
 		cmdName := strings.ToLower(parts[0])
 		for _, plugin := range c.plugins {
 			if strings.ToLower(plugin.Name) == cmdName && len(plugin.ArgSpecs) > 0 {

@@ -39,7 +39,7 @@ func TestExportKeyUsesCosignerCredentialSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
-	if _, _, err := ExportKey(paths, active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
+	if _, _, err := ExportKey(active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("ExportKey() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destination, selector+".apb")); err != nil {
@@ -64,7 +64,7 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, _, err = ExportKey(paths, active.KeysDir(), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, _, err = ExportKey(active.KeysDir(), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous managed credential") {
 		t.Fatalf("ExportKey() error = %v, want ambiguity rejection", err)
 	}

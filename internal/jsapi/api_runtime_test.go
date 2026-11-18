@@ -928,7 +928,7 @@ func TestAtomicAndAppHelpers(t *testing.T) {
 			"note":         "memo",
 		}),
 	}}
-	opts := api.parseAppCallOptions(callOpts, 3, "appCallRaw()", 7)
+	opts := api.parseAppCallOptions(callOpts, 3, "appCallRaw()")
 	if opts.PayAmount != 9 || opts.Wait || opts.Note != "memo" {
 		t.Fatalf("parseAppCallOptions() = %#v, want pay/wait/note parsed", opts)
 	}
@@ -945,7 +945,7 @@ func TestAtomicAndAppHelpers(t *testing.T) {
 		api.runtime.ToValue("from"),
 		api.runtime.ToValue([]interface{}{"arg"}),
 		api.runtime.ToValue(map[string]interface{}{"apps": []interface{}{int64(9), int64(7), "9", int64(4)}}),
-	}}, 3, "appCallRaw()", 7)
+	}}, 3, "appCallRaw()")
 	if want := []uint64{9, 7, 9, 4}; !slices.Equal(listed.ForeignApps, want) {
 		t.Fatalf("apps = %v, want them as listed %v", listed.ForeignApps, want)
 	}

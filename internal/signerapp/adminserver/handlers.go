@@ -1032,7 +1032,7 @@ func (s *Session) HandlePrepareGenerateKey(msg *protocol.PrepareGenerateKeyMessa
 	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
 		return
 	}
-	if !s.requireLocalTransport(msg.ID, auth.ActionKeysGenerate, resource, "generation preparation is only available on local AP Admin") {
+	if !s.requireLocal(msg.ID, auth.ActionKeysGenerate, resource, "generation preparation is only available on local AP Admin") {
 		return
 	}
 	result := s.keyServices.PrepareGenerateKey(adminproto.PrepareGenerateKeyRequest{
@@ -1080,10 +1080,7 @@ func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysExport, resource) {
 		return
 	}
-	if s.Transport() != TransportIPC {
-		const reason = "key export is only available on local AP Admin"
-		s.logAuthorizationDenied(s.Identity(), auth.ActionKeysExport, resource, reason)
-		_ = s.SendError(msg.ID, protocol.ErrCodeAuthorizationDenied, reason)
+	if !s.requireLocal(msg.ID, auth.ActionKeysExport, resource, "key export is only available on local AP Admin") {
 		return
 	}
 	// The service delivers a successful phrase itself, while it still holds
@@ -1113,7 +1110,7 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}
-	if !s.requireLocalTransport(msg.ID, auth.ActionKeysImport, resource, "key import is only available on local AP Admin") {
+	if !s.requireLocal(msg.ID, auth.ActionKeysImport, resource, "key import is only available on local AP Admin") {
 		return
 	}
 	imp := s.keyServices.ImportKey(s.auditContext(), adminproto.ImportKeyRequest{
@@ -1124,8 +1121,11 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	_ = s.WriteJSON(ProtocolImportResultMessage(msg.ID, imp))
 }
 
-func (s *Session) requireLocalTransport(requestID string, action auth.Action, resource auth.Resource, reason string) bool {
-	if s.Transport() == TransportIPC {
+// requireLocal refuses an operation that moves recovery material or bootstraps
+// a store unless the session is on the local IPC socket. Allowing one remotely
+// must be a deliberate change here, not a default of a new transport.
+func (s *Session) requireLocal(requestID string, action auth.Action, resource auth.Resource, reason string) bool {
+	if s.isLocal() {
 		return true
 	}
 	s.logAuthorizationDenied(s.Identity(), action, resource, reason)

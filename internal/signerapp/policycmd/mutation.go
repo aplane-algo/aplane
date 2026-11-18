@@ -15,14 +15,14 @@ import (
 )
 
 var (
-	EffectiveUID        = os.Geteuid
-	IsManagedStore      = signerbootstrap.IsProductionManagedDataDir
-	ManagedStoreOwner   = storeperm.ManagedServiceOwner
-	LoadServerConfig    = serverconfig.LoadServerConfig
-	ResolveLegacySocket = adminipc.ResolveLegacyStoreSocketPath
-	AcquireStoreLock    = storelock.AcquireExclusive
-	NormalizeStore      = func(dataDir string, uid, gid int, socketPath string) error {
-		_, err := storeperm.MigratePrivate(storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath))
+	EffectiveUID         = os.Geteuid
+	IsManagedStore       = signerbootstrap.IsProductionManagedDataDir
+	ManagedStoreOwner    = storeperm.ManagedServiceOwner
+	LoadServerConfig     = serverconfig.LoadServerConfig
+	ResolveInStoreSocket = adminipc.ResolveInStoreSocketPath
+	AcquireStoreLock     = storelock.AcquireExclusive
+	NormalizeStore       = func(dataDir string, uid, gid int, socketPath string) error {
+		_, err := storeperm.MigratePrivate(storeperm.SharedMigrationOptions(dataDir, uid, gid, socketPath))
 		return err
 	}
 )
@@ -66,10 +66,10 @@ func AcquireOfflineMutation(dataDir string) (*OfflineMutation, error) {
 		guard.Close()
 		return nil, fmt.Errorf("load signer config: %w", err)
 	}
-	socketPath, err := ResolveLegacySocket(dataDir, cfg.IPCPath)
+	socketPath, err := ResolveInStoreSocket(dataDir, cfg.IPCPath)
 	if err != nil {
 		guard.Close()
-		return nil, fmt.Errorf("resolve legacy signer socket: %w", err)
+		return nil, fmt.Errorf("resolve in-store signer socket: %w", err)
 	}
 	guard.uid, guard.gid, guard.socketPath = uid, gid, socketPath
 	return guard, nil

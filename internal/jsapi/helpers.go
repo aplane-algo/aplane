@@ -293,6 +293,8 @@ func (a *API) refuseUnknownKeys(m map[string]interface{}, what string, allowed .
 // boolArg reads a function argument that must be true or false. JavaScript
 // would coerce anything else: undefined to false, and the text 'false' to
 // true.
+//
+//nolint:unparam // index matches the other argument helpers.
 func (a *API) boolArg(call goja.FunctionCall, index int, funcName string) bool {
 	value, ok := call.Arguments[index].Export().(bool)
 	if !ok {

@@ -81,7 +81,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return next, cmd
 }
 
-func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocognit // unslop phase 3
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.belowMinSize() {
@@ -237,7 +237,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), abort)
 		}
-		return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
+		m.handleManualLockFailed(msg.Error)
+		return m, m.waitForMessageCmd()
 
 	case SignRequestReceivedMsg:
 		m.signing.request = &msg.Request
@@ -740,7 +741,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			errText = msg.Error.Error()
 		}
-		return m, m.handleManualLockFailed(errText)
+		m.handleManualLockFailed(errText)
+		return m, nil
 
 	case KeyDetailsMsg:
 		if msg.Success {

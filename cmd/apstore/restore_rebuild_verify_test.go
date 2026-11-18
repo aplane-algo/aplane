@@ -231,34 +231,6 @@ func TestCmdRebuildRejectsInvalidRoleBeforePrompt(t *testing.T) {
 	}
 }
 
-func TestRestoreKeyRejectsLegacyEnvelopeVersion1Backup(t *testing.T) {
-	RegisterProviders()
-
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths())
-	backupDir := t.TempDir()
-	address, _ := testEd25519KeyJSON(t)
-
-	// Written as a literal: envelope_version 1 is the retired master-key
-	// format that this release can no longer produce, and rejecting it is
-	// what this test is about.
-	legacy := []byte(`{"envelope_version":1,"nonce":"","ciphertext":""}`)
-	if err := os.WriteFile(filepath.Join(backupDir, address+".apb"), legacy, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	keyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, bytes32(0x33)), []byte("unused"))
-	if err == nil {
-		t.Fatal("restoreKey() error = nil, want legacy envelope rejection")
-	}
-	if keyType != "" {
-		t.Fatalf("restoreKey() keyType = %q, want empty on failure", keyType)
-	}
-	if !strings.Contains(err.Error(), "legacy format") {
-		t.Fatalf("restoreKey() error = %v, want legacy format rejection", err)
-	}
-}
-
 func TestRestoreKeyRejectsUnsupportedEnvelopeVersion(t *testing.T) {
 	RegisterProviders()
 

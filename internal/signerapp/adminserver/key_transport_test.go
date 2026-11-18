@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,88 +15,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
-func TestSessionRejectsImportOutsideIPC(t *testing.T) {
-	for _, transport := range []string{TransportSSH, TransportUnknown} {
-		t.Run(transport, func(t *testing.T) {
-			session, conn, svc := newKeyTransportTestSession(transport)
-
-			session.HandleImportKey(&protocol.ImportKeyMessage{
-				BaseMessage: protocol.BaseMessage{ID: "import-remote", Type: protocol.MsgTypeImportKey},
-				KeyType:     "ed25519",
-				Mnemonic:    "mnemonic words",
-			})
-
-			if svc.importKeyCalls != 0 {
-				t.Fatalf("import calls = %d, want 0", svc.importKeyCalls)
-			}
-			msg := decodeProtocolError(t, conn)
-			if msg.Code != protocol.ErrCodeAuthorizationDenied {
-				t.Fatalf("error code = %q, want %q", msg.Code, protocol.ErrCodeAuthorizationDenied)
-			}
-			if !strings.Contains(msg.Error, "local AP Admin") {
-				t.Fatalf("error = %q, want local AP Admin guidance", msg.Error)
-			}
-		})
-	}
-}
-
-func TestSessionRejectsExportOutsideIPC(t *testing.T) {
-	for _, transport := range []string{TransportSSH, TransportUnknown} {
-		t.Run(transport, func(t *testing.T) {
-			session, conn, svc := newKeyTransportTestSession(transport)
-
-			session.HandleExportKey(&protocol.ExportKeyMessage{
-				BaseMessage: protocol.BaseMessage{ID: "export", Type: protocol.MsgTypeExportKey},
-				Address:     "ADDR",
-				Passphrase:  protocol.NewSensitiveBytes("passphrase"),
-			})
-
-			if svc.exportCalls != 0 {
-				t.Fatal("remote export called service")
-			}
-			msg := decodeProtocolError(t, conn)
-			if msg.Code != protocol.ErrCodeAuthorizationDenied {
-				t.Fatalf("error code = %q, want %q", msg.Code, protocol.ErrCodeAuthorizationDenied)
-			}
-			if !strings.Contains(msg.Error, "local AP Admin") {
-				t.Fatalf("error = %q, want local IPC guidance", msg.Error)
-			}
-		})
-	}
-}
-
-func TestSessionOmitsGeneratedMnemonicOnEveryAdminTransport(t *testing.T) {
-	for _, transport := range []string{TransportIPC, TransportSSH, TransportUnknown} {
-		t.Run(transport, func(t *testing.T) {
-			session, conn, svc := newKeyTransportTestSession(transport)
-			svc.generateKeyResult = adminproto.GenerateKeyResult{
-				Success: true,
-				Address: "ADDR",
-				KeyType: "ed25519",
-			}
-
-			session.HandleGenerateKey(&protocol.GenerateKeyMessage{
-				BaseMessage: protocol.BaseMessage{ID: "generate-remote", Type: protocol.MsgTypeGenerateKey},
-				KeyType:     "ed25519",
-			})
-
-			if svc.generateKeyCalls != 1 {
-				t.Fatalf("generate calls = %d, want 1", svc.generateKeyCalls)
-			}
-			var msg protocol.GenerateResultMessage
-			decodeOnlyMessage(t, conn, &msg)
-			if !msg.Success || msg.Address != "ADDR" || msg.KeyType != "ed25519" {
-				t.Fatalf("generate response = %+v, want success with address and key type", msg)
-			}
-			if msg.Mnemonic != "" || msg.WordCount != 0 {
-				t.Fatalf("generate response leaked mnemonic fields: %+v", msg)
-			}
-		})
-	}
-}
-
-func TestSessionAllowsGenerateAndImportOverIPC(t *testing.T) {
-	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+func TestSessionGeneratesAndImports(t *testing.T) {
+	session, conn, svc := newKeyTransportTestSession()
 	svc.generateKeyResult = adminproto.GenerateKeyResult{
 		Success: true,
 		Address: "ADDR",
@@ -146,9 +65,6 @@ func TestSessionAllowsGenerateAndImportOverIPC(t *testing.T) {
 	if !generateMsg.Success || generateMsg.Address != "ADDR" || generateMsg.KeyType != "ed25519" {
 		t.Fatalf("generate response = %+v, want success with address and key type", generateMsg)
 	}
-	if generateMsg.Mnemonic != "" || generateMsg.WordCount != 0 {
-		t.Fatalf("generate response leaked mnemonic fields: %+v", generateMsg)
-	}
 	var importMsg protocol.ImportResultMessage
 	if err := json.Unmarshal(conn.writes[1], &importMsg); err != nil {
 		t.Fatalf("decode import response: %v", err)
@@ -166,13 +82,16 @@ func TestSessionAllowsGenerateAndImportOverIPC(t *testing.T) {
 	}
 }
 
-func newKeyTransportTestSession(transport string) (*Session, *queueConn, *stubServices) {
+func newKeyTransportTestSession() (*Session, *queueConn, *stubServices) {
+	return newKeyTransportTestSessionAt(OriginLocal)
+}
+
+func newKeyTransportTestSessionAt(origin Origin) (*Session, *queueConn, *stubServices) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	conn := &queueConn{}
 	svc := &stubServices{}
-	session := NewSession(conn, SessionDeps{Keys: svc})
-	session.SetTransportInfo(transport, "remote")
+	session := NewSession(conn, SessionDeps{Keys: svc}, origin)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	return session, conn, svc
 }
@@ -197,8 +116,8 @@ func decodeOnlyMessage(t *testing.T, conn *queueConn, out any) {
 	}
 }
 
-func TestSessionExportsOnlyOverIPCAndClearsBuffers(t *testing.T) {
-	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+func TestSessionExportClearsBuffers(t *testing.T) {
+	session, conn, svc := newKeyTransportTestSession()
 	words := protocol.NewSensitiveBytes("test recovery material")
 	pass := protocol.NewSensitiveBytes("passphrase")
 	svc.exportResult = adminproto.ExportKeyResult{Success: true, Address: "ADDR", KeyType: "ed25519", Mnemonic: words, WordCount: 25}
@@ -215,7 +134,7 @@ func TestSessionExportsOnlyOverIPCAndClearsBuffers(t *testing.T) {
 }
 
 func TestSessionExportSendsUndeliveredFailure(t *testing.T) {
-	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+	session, conn, svc := newKeyTransportTestSession()
 	svc.exportResult = adminproto.ExportKeyResult{Address: "ADDR", Code: "invalid_passphrase", Error: "incorrect passphrase"}
 	session.HandleExportKey(&protocol.ExportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "export"}, Address: "ADDR", Passphrase: protocol.NewSensitiveBytes("wrong")})
 	var reply protocol.ExportResultMessage
@@ -225,27 +144,8 @@ func TestSessionExportSendsUndeliveredFailure(t *testing.T) {
 	}
 }
 
-func TestPrepareGenerateKeyIsLocalOnly(t *testing.T) {
-	for _, transport := range []string{TransportSSH, TransportUnknown} {
-		t.Run(transport, func(t *testing.T) {
-			session, conn, svc := newKeyTransportTestSession(transport)
-			session.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{
-				BaseMessage: protocol.BaseMessage{ID: "prepare-remote", Type: protocol.MsgTypePrepareGenerateKey},
-				KeyType:     "ed25519",
-			})
-			if svc.prepareGenerateCalls != 0 {
-				t.Fatalf("prepare calls = %d, want 0", svc.prepareGenerateCalls)
-			}
-			msg := decodeProtocolError(t, conn)
-			if msg.Code != protocol.ErrCodeAuthorizationDenied || !strings.Contains(msg.Error, "local AP Admin") {
-				t.Fatalf("error = %+v, want local IPC guidance", msg)
-			}
-		})
-	}
-}
-
 func TestPrepareGenerateKeyOverIPC(t *testing.T) {
-	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+	session, conn, svc := newKeyTransportTestSession()
 	svc.prepareGenerateResult = adminproto.PrepareGenerateKeyResult{
 		Success: true, KeyType: "test.bounded.v1", Fingerprint: "1:abc", CosignerKeyID: "COSIGNER",
 		Bounded: &adminproto.PreparedBoundedProfile{
@@ -272,7 +172,7 @@ func TestPrepareGenerateKeyOverIPC(t *testing.T) {
 }
 
 func TestGenerateKeyPassesTheExpectedFingerprint(t *testing.T) {
-	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+	session, conn, svc := newKeyTransportTestSession()
 	svc.generateKeyResult = adminproto.GenerateKeyResult{Success: true, Address: "ADDR", KeyType: "ed25519"}
 	session.HandleGenerateKey(&protocol.GenerateKeyMessage{
 		BaseMessage:         protocol.BaseMessage{ID: "generate-reviewed", Type: protocol.MsgTypeGenerateKey},
@@ -284,4 +184,39 @@ func TestGenerateKeyPassesTheExpectedFingerprint(t *testing.T) {
 	}
 	var msg protocol.GenerateResultMessage
 	decodeOnlyMessage(t, conn, &msg)
+}
+
+// Operations that move recovery material or prepare a key run only on the
+// local socket. A remote session, or one whose server never stated an origin,
+// is refused before the service is called.
+func TestNonLocalSessionRefusesRecoveryMaterialOperations(t *testing.T) {
+	for _, origin := range []Origin{OriginRemote, Origin(0)} {
+		t.Run(origin.AuditTransport(), func(t *testing.T) {
+			ops := []struct {
+				name  string
+				run   func(*Session)
+				calls func(*stubServices) int
+			}{
+				{"import", func(s *Session) {
+					s.HandleImportKey(&protocol.ImportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "import"}, KeyType: "ed25519", Mnemonic: "mnemonic words"})
+				}, func(s *stubServices) int { return s.importKeyCalls }},
+				{"export", func(s *Session) {
+					s.HandleExportKey(&protocol.ExportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "export"}, Address: "ADDR", Passphrase: protocol.NewSensitiveBytes("passphrase")})
+				}, func(s *stubServices) int { return s.exportCalls }},
+				{"prepare_generate", func(s *Session) {
+					s.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{BaseMessage: protocol.BaseMessage{ID: "prepare"}, KeyType: "ed25519"})
+				}, func(s *stubServices) int { return s.prepareGenerateCalls }},
+			}
+			for _, op := range ops {
+				session, conn, svc := newKeyTransportTestSessionAt(origin)
+				op.run(session)
+				if n := op.calls(svc); n != 0 {
+					t.Fatalf("%s: service calls = %d, want 0", op.name, n)
+				}
+				if msg := decodeProtocolError(t, conn); msg.Code != protocol.ErrCodeAuthorizationDenied {
+					t.Fatalf("%s: error code = %q, want %q", op.name, msg.Code, protocol.ErrCodeAuthorizationDenied)
+				}
+			}
+		})
+	}
 }

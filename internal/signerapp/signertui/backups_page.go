@@ -80,10 +80,10 @@ func (m Model) handleBackupsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		m.setBackupsStatus("", false)
 		if m.restore.returnToRecovery || m.backupsRecovery() {
-			m.resetRestoreFlow(true)
+			m.resetRestoreFlow()
 			return m.openStoreRecovery()
 		}
-		m.resetRestoreFlow(true)
+		m.resetRestoreFlow()
 		m.viewState = ViewKeyList
 		return m, nil
 	case "up", "k":

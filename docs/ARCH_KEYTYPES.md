@@ -979,7 +979,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/lsigsalt` | Off-curve verification and legacy derivation compatibility |
 | `internal/lsigresource` | Structured program/argument/opcode profiles and consensus group solver |
 | `internal/tealtemplate` | Strict `$variable` constant-block template renderer |
-| `internal/tealtemplate/legacy.go` | Generated-mode restricted list expansion and scalar substitution utilities |
+| `internal/tealtemplate/substitute.go` | Generated-mode restricted list expansion and scalar substitution utilities |
 | `internal/keytypecatalog` | Compiled key type visibility catalog |
 | `internal/keytypestate` | Product-store state record format and persistence primitives for library-visible compiled providers and installed templates |
 | `internal/templatelibrary` | Library parsing and sole feature-level template/key-type mutation coordinator |
@@ -1505,6 +1505,7 @@ runtime_args:
   - name: preimage
     type: bytes
     label: "Secret Preimage"
+    max_size: 64
 teal: |
   txn RekeyTo
   global ZeroAddress

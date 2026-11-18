@@ -291,7 +291,7 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 		},
 	}
 
-	next, removed, active := removeCanceledRequest(queue, approvalKindSign, "sign-2")
+	next, removed, active := removeCanceledRequest(queue, "sign-2")
 	if !removed {
 		t.Fatal("removed = false, want true")
 	}
@@ -305,7 +305,7 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 		t.Fatalf("queue after removal = %#v", next)
 	}
 
-	next, removed, active = removeCanceledRequest(next, approvalKindSign, "sign-1")
+	next, removed, active = removeCanceledRequest(next, "sign-1")
 	if !removed || !active {
 		t.Fatalf("removed, active = %v, %v; want true, true", removed, active)
 	}
@@ -313,7 +313,7 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 		t.Fatalf("queue after active removal = %#v", next)
 	}
 
-	unchanged, removed, active := removeCanceledRequest(next, approvalKindSign, "missing")
+	unchanged, removed, active := removeCanceledRequest(next, "missing")
 	if removed || active {
 		t.Fatalf("removed, active = %v, %v; want false, false", removed, active)
 	}
@@ -462,11 +462,11 @@ func TestApproverWithdrawnRequestLeavesQueue(t *testing.T) {
 		t.Fatalf("queue after a repeated announcement = %d, want 2", len(a.queue))
 	}
 
-	a.handleCanceled(approvalKindSign, "Signing request", "enroll-1", "")
+	a.handleCanceled("enroll-1", "")
 	if len(a.queue) != 2 {
 		t.Fatalf("queue after a cancellation of another kind = %d, want 2", len(a.queue))
 	}
-	a.handleCanceled(approvalKindSign, "Signing request", "sign-1", "")
+	a.handleCanceled("sign-1", "")
 	if len(a.queue) != 1 || a.queue[0].id() != "enroll-1" {
 		t.Fatalf("queue after withdrawal = %+v, want only enroll-1", a.queue)
 	}
@@ -555,7 +555,7 @@ func TestApproverApprovalNamesTheRequestShown(t *testing.T) {
 
 	// The operator types the approval for A; before Enter, the requester
 	// withdraws A and sends B.
-	a.handleCanceled(approvalKindSign, "Signing request", "prompt-a", "client_canceled")
+	a.handleCanceled("prompt-a", "client_canceled")
 	a.enqueue(signApproval("prompt-b"))
 	if a.headCode == codeA {
 		t.Fatalf("replacement reused code %s", codeA)

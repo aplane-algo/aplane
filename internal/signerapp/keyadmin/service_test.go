@@ -718,7 +718,8 @@ func registerServiceGenericTemplate(t *testing.T) {
 			Type:     "address",
 			Required: true,
 		}},
-		TEAL: "#pragma version 8\nint 1\nreturn",
+		TemplateMode: "generated",
+		TEAL:         "#pragma version 8\nint 1\nreturn",
 	}
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec(service generic template) error = %v", err)

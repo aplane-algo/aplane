@@ -144,7 +144,7 @@ func TestMigratePrivateRejectsStoreLocalBinariesWithoutMutation(t *testing.T) {
 	}
 	uid, gid := ownerIDs(t, root)
 
-	_, err := MigratePrivate(LegacyMigrationOptions(root, uid, gid, ""))
+	_, err := MigratePrivate(SharedMigrationOptions(root, uid, gid, ""))
 	if err == nil || !strings.Contains(err.Error(), "store-local bin directory") {
 		t.Fatalf("MigratePrivate() error = %v, want local binary rejection", err)
 	}
@@ -261,7 +261,7 @@ func TestAuditLegacyProfileAcceptsSetgidSharedLayout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("x"), 0o660); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	findings, err := Audit(ownerOptions(t, root, legacySharedProfile))
+	findings, err := Audit(ownerOptions(t, root, sharedProfile))
 	if err != nil {
 		t.Fatalf("Audit() error = %v", err)
 	}
@@ -341,7 +341,7 @@ func TestMigratePrivateExplainsUnsafeAncestorIsNotRepairable(t *testing.T) {
 	uid, gid := ownerIDs(t, root)
 	opts := MigrationOptions{policy: options{
 		root: root, expectedUID: uid, expectedGID: gid,
-		profile: legacySharedProfile, ancestorBoundary: boundary,
+		profile: sharedProfile, ancestorBoundary: boundary,
 	}}
 
 	_, err := MigratePrivate(opts)
@@ -421,8 +421,8 @@ func TestMigratePrivateRemovesRecognizedLegacySocket(t *testing.T) {
 
 func TestRecognizedLegacySocketRejectsStoreRoot(t *testing.T) {
 	root := workspaceTempDir(t)
-	if _, err := recognizedLegacySocket(root, root); err == nil {
-		t.Fatal("recognizedLegacySocket(root) error = nil, want confinement rejection")
+	if _, err := recognizedStoreSocket(root, root); err == nil {
+		t.Fatal("recognizedStoreSocket(root) error = nil, want confinement rejection")
 	}
 }
 
@@ -508,7 +508,7 @@ func ownerMigrationOptions(t *testing.T, root, socketPath string) MigrationOptio
 	uid, gid := ownerIDs(t, root)
 	return MigrationOptions{policy: options{
 		root: root, expectedUID: uid, expectedGID: gid,
-		profile: legacySharedProfile, socketPath: socketPath,
+		profile: sharedProfile, socketPath: socketPath,
 		ancestorBoundary: filepath.Dir(root),
 	}}
 }

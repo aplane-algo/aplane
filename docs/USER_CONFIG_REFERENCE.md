@@ -53,8 +53,6 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `approval_wait` | string | `4m` | Maximum time to wait for operator approval of a signing request |
 | `ipc_path` | string | `systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC; systemd custom paths must be outside signer data in a service-owned protected runtime directory |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when admin disconnects |
-| `passphrase_command_argv` | []string | `[]` | Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1]) |
-| `passphrase_command_env` | map | (none) | Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough |
 | `networks` | map | (none) | Grouped settings per network context token |
 | `networks.<network>.algod` | object | (none) | Algod settings for this network context token |
 | `networks.<network>.algod.server` | string | `(none)` | Algod server URL |
@@ -115,5 +113,5 @@ Both apshell and apsigner require a data directory to be specified.
 
 For apsigner passphrase sources:
 1. `TEST_PASSPHRASE` environment variable (highest priority)
-2. product-local `identities/default/unlock.yaml` passphrase command, falling back to process-global `passphrase_command_argv` in config.yaml (headless mode)
+2. product-local `identities/default/unlock.yaml` passphrase command (headless mode)
 3. Interactive prompt via apadmin IPC (default)

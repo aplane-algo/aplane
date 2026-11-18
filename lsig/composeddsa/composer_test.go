@@ -270,12 +270,13 @@ func TestComposedDSANoSuffixRejectsShiftedBytecblockSaltPreamble(t *testing.T) {
 
 func TestComposedDSADeriveLsigWithSuffixUsesSourceSaltPreamble(t *testing.T) {
 	dsa := NewComposedDSA(Config{
-		KeyType:     "test-suffix-v1",
-		FamilyName:  "test",
-		Version:     1,
-		DisplayName: "Test Suffix",
-		Ops:         testOps{},
-		TEALSuffix:  "int 1\nassert",
+		KeyType:      "test-suffix-v1",
+		FamilyName:   "test",
+		Version:      1,
+		DisplayName:  "Test Suffix",
+		Ops:          testOps{},
+		TemplateMode: "generated",
+		TEALSuffix:   "int 1\nassert",
 	})
 	compiled := compiledPushbytesSaltBytecode(0)
 	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
@@ -346,12 +347,13 @@ func TestComposedDSAExplicitPushbytesSaltStyleWithoutSuffix(t *testing.T) {
 
 func TestComposedDSAPushbytesSaltDerivationGolden(t *testing.T) {
 	dsa := NewComposedDSA(Config{
-		KeyType:     "test-pushbytes-golden-v1",
-		FamilyName:  "test",
-		Version:     1,
-		DisplayName: "Test Pushbytes Golden",
-		Ops:         testOps{},
-		TEALSuffix:  "int 1\nassert",
+		KeyType:      "test-pushbytes-golden-v1",
+		FamilyName:   "test",
+		Version:      1,
+		DisplayName:  "Test Pushbytes Golden",
+		Ops:          testOps{},
+		TemplateMode: "generated",
+		TEALSuffix:   "int 1\nassert",
 	})
 	compiled := compiledPushbytesSaltBytecode(0)
 	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
@@ -383,13 +385,14 @@ func TestComposedDSAPushbytesSaltDerivationGolden(t *testing.T) {
 
 func TestComposedDSATrailingBytecblockSaltStyleWithSuffix(t *testing.T) {
 	dsa := NewComposedDSA(Config{
-		KeyType:     "test-trailing-bytecblock-v1",
-		FamilyName:  "test",
-		Version:     1,
-		DisplayName: "Test Trailing Bytecblock",
-		Ops:         testOps{},
-		TEALSuffix:  "int 1\nassert",
-		SaltStyle:   lsigsalt.StyleTrailingBytecblock,
+		KeyType:      "test-trailing-bytecblock-v1",
+		FamilyName:   "test",
+		Version:      1,
+		DisplayName:  "Test Trailing Bytecblock",
+		Ops:          testOps{},
+		TemplateMode: "generated",
+		TEALSuffix:   "int 1\nassert",
+		SaltStyle:    lsigsalt.StyleTrailingBytecblock,
 	})
 	compiled := compiledTrailingBytecblockSaltBytecode(0)
 	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
@@ -424,13 +427,14 @@ func TestComposedDSATrailingBytecblockSaltStyleWithSuffix(t *testing.T) {
 
 func TestComposedDSAExplicitNoSaltStyleUsesUnmodifiedBytecode(t *testing.T) {
 	dsa := NewComposedDSA(Config{
-		KeyType:     "test-unsalted-v1",
-		FamilyName:  "test-unsalted",
-		Version:     1,
-		DisplayName: "Test Unsalted",
-		Ops:         suffixTestOps{},
-		TEALSuffix:  "int 1\nassert",
-		SaltStyle:   lsigsalt.StyleNone,
+		KeyType:      "test-unsalted-v1",
+		FamilyName:   "test-unsalted",
+		Version:      1,
+		DisplayName:  "Test Unsalted",
+		Ops:          suffixTestOps{},
+		TemplateMode: "generated",
+		TEALSuffix:   "int 1\nassert",
+		SaltStyle:    lsigsalt.StyleNone,
 	})
 	compiled := unsaltedOffCurveBytecodeForTest(t)
 	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
@@ -502,13 +506,14 @@ func assertGolden(t *testing.T, label, got, want string) {
 
 func TestComposedDSARejectsBytecblockSaltStyleWithSuffix(t *testing.T) {
 	dsa := NewComposedDSA(Config{
-		KeyType:     "bad-salt-style-v1",
-		FamilyName:  "bad-salt-style",
-		Version:     1,
-		DisplayName: "Bad Salt Style",
-		Ops:         testOps{},
-		TEALSuffix:  "int 1\nassert",
-		SaltStyle:   lsigsalt.StyleBytecblock,
+		KeyType:      "bad-salt-style-v1",
+		FamilyName:   "bad-salt-style",
+		Version:      1,
+		DisplayName:  "Bad Salt Style",
+		Ops:          testOps{},
+		TemplateMode: "generated",
+		TEALSuffix:   "int 1\nassert",
+		SaltStyle:    lsigsalt.StyleBytecblock,
 	})
 
 	_, err := dsa.GenerateTEAL([]byte{1}, nil)

@@ -33,7 +33,6 @@ func (metadata) MnemonicScheme() string       { return family.MnemonicScheme }
 func (metadata) AuthorizationKind() algorithm.AuthorizationKind {
 	return algorithm.AuthorizationLogicSig
 }
-func (metadata) RequiresLogicSig() bool       { return true }
 func (metadata) CurrentLsigVersion() int      { return 1 }
 func (metadata) SupportedLsigVersions() []int { return []int{1} }
 func (metadata) DefaultDerivation() string    { return "algorand-standard" }

@@ -82,7 +82,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 		},
 	}
 	conn := &queueConn{}
-	session := NewSession(conn, svc.templateDeps())
+	session := NewSession(conn, svc.templateDeps(), OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	dispatchAdminMessage(t, session, protocol.ListLibraryTemplatesMessage{
@@ -228,7 +228,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 
 	svc := &stubServices{}
 	conn := &queueConn{}
-	session := NewSession(conn, svc.templateDeps())
+	session := NewSession(conn, svc.templateDeps(), OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	dispatchAdminMessage(t, session, protocol.ListLibraryTemplatesMessage{
@@ -309,7 +309,7 @@ func TestListKeyTypesOnlyRequiresBoundRuntime(t *testing.T) {
 		},
 	}
 	conn := &queueConn{}
-	session := NewSession(conn, svc.templateDeps())
+	session := NewSession(conn, svc.templateDeps(), OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	dispatchAdminMessage(t, session, protocol.ListKeyTypesMessage{

@@ -24,7 +24,7 @@ func TestLogCredentialRestoreIntentDurableWritesEntry(t *testing.T) {
 
 	ctx := adminserver.SessionContext{
 		SessionID: "admin-session",
-		Transport: "ipc",
+		Origin:    adminserver.OriginLocal,
 	}
 	if err := a.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", "backup.tar.gz", true); err != nil {
 		t.Fatalf("LogCredentialRestoreIntentDurableContext: %v", err)

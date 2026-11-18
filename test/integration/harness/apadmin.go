@@ -289,7 +289,7 @@ func (v *ApAdminHarness) GenerateKeyWithTypeAndParams(keyType string, params map
 		},
 		KeyType:    keyType,
 		Parameters: params,
-	}, 30*time.Second)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -359,7 +359,7 @@ func (v *ApAdminHarness) ImportKeyWithTypeAndParams(keyType, mnemonic string, pa
 		KeyType:    keyType,
 		Mnemonic:   mnemonic,
 		Parameters: params,
-	}, 30*time.Second)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -387,7 +387,7 @@ func (v *ApAdminHarness) ActivateKeyType(keyType string) error {
 			ID:   fmt.Sprintf("activate-%d", time.Now().UnixNano()),
 		},
 		KeyType: keyType,
-	}, 30*time.Second)
+	})
 	if err != nil {
 		return err
 	}
@@ -410,7 +410,7 @@ func (v *ApAdminHarness) DeactivateKeyType(keyType string) (*protocol.Deactivate
 			ID:   fmt.Sprintf("deactivate-%d", time.Now().UnixNano()),
 		},
 		KeyType: keyType,
-	}, 30*time.Second)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +435,7 @@ func (v *ApAdminHarness) CreateBackup(exportPassphrase string) (*BackupResult, e
 			ID:   fmt.Sprintf("backup-%d", time.Now().UnixNano()),
 		},
 		ExportPassphrase: protocol.NewSensitiveBytes(exportPassphrase),
-	}, 30*time.Second)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +453,10 @@ func (v *ApAdminHarness) CreateBackup(exportPassphrase string) (*BackupResult, e
 	return &BackupResult{ArchivePath: result.ArchivePath}, nil
 }
 
-func (v *ApAdminHarness) ipcRequest(msg interface{}, timeout time.Duration) ([]byte, error) {
+// ipcRequestTimeout bounds the unlock and the request in ipcRequest.
+const ipcRequestTimeout = 30 * time.Second
+
+func (v *ApAdminHarness) ipcRequest(msg interface{}) ([]byte, error) {
 	passphrase, err := v.testPassphrase()
 	if err != nil {
 		return nil, err
@@ -477,7 +480,7 @@ func (v *ApAdminHarness) ipcRequest(msg interface{}, timeout time.Duration) ([]b
 		return nil, fmt.Errorf("failed to receive signer status over IPC: %w", err)
 	}
 	if status.State == "locked" {
-		result, err := ipcClient.Unlock(passphrase, timeout)
+		result, err := ipcClient.Unlock(passphrase, ipcRequestTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unlock signer over IPC: %w", err)
 		}
@@ -486,7 +489,7 @@ func (v *ApAdminHarness) ipcRequest(msg interface{}, timeout time.Duration) ([]b
 		}
 	}
 
-	return ipcClient.SendAndReceive(msg, timeout)
+	return ipcClient.SendAndReceive(msg, ipcRequestTimeout)
 }
 
 func (v *ApAdminHarness) ipcPath() (string, error) {
@@ -548,7 +551,7 @@ func (v *ApAdminHarness) ExportKeyWithPassphrase(address, passphrase string) (*p
 		},
 		Address:    address,
 		Passphrase: protocol.NewSensitiveBytes(passphrase),
-	}, 30*time.Second)
+	})
 	defer protocol.SensitiveBytes(response).Zero()
 	if err != nil {
 		return nil, err

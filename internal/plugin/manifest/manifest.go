@@ -40,7 +40,7 @@ type Manifest struct {
 	ManifestFormat string `json:"manifest_format,omitempty"`
 }
 
-// Command represents a command exposed by the plugin (legacy interface)
+// Command is one command a plugin exposes.
 type Command struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`

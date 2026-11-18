@@ -30,10 +30,8 @@ func (d *PolicyV1) Compile(defaults *Config) (*Config, error) {
 	cfg.TransactionTypes = d.TransactionTypes.Clone()
 	cfg.RekeyPolicy = nil
 	setConfigLimitsV1(cfg, d.Limits)
-	addressSets, assetSets, err := compileSetsV1(d.AddressSets, d.AssetSets)
-	if err != nil {
-		return nil, err
-	}
+	addressSets, assetSets := compileSetsV1(d.AddressSets, d.AssetSets)
+	var err error
 	if cfg.TransferPolicy, err = compileTransferPolicyV1(d.OnNoRoute, d.CloseOnNoRoute, d.ClawbackOnNoRoute,
 		d.BlockedDestinations, d.Routes, addressSets, assetSets); err != nil {
 		return nil, err
@@ -83,7 +81,7 @@ func setNestedLimit(m map[string]map[uint64]uint64, network string, assetID, amo
 	m[network][assetID] = amount
 }
 
-func compileSetsV1(addressSets map[string]AddressSetV1, assetSets map[string]AssetSetV1) (map[string]compiledAddressSet, map[string]compiledAssetSet, error) {
+func compileSetsV1(addressSets map[string]AddressSetV1, assetSets map[string]AssetSetV1) (map[string]compiledAddressSet, map[string]compiledAssetSet) {
 	compiledAddresses := make(map[string]compiledAddressSet, len(addressSets))
 	for name, set := range addressSets {
 		compiledAddresses[name] = compiledAddressSet{
@@ -108,7 +106,7 @@ func compileSetsV1(addressSets map[string]AddressSetV1, assetSets map[string]Ass
 		}
 		compiledAssets[name] = cs
 	}
-	return compiledAddresses, compiledAssets, nil
+	return compiledAddresses, compiledAssets
 }
 
 // compileTransferPolicyV1 compiles routes and attaches per-asset limits.

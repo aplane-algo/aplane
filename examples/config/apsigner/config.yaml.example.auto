@@ -4,11 +4,9 @@
 # Config schema version. Omit means v1 for existing configs.
 schema_version: 1
 
-# INSECURE / DEV ONLY: Auto-unlock by reading passphrase from a file via appass-file helper.
-# Set argv[0] to the absolute path of your installed appass-file helper.
-# In production, use a secrets manager (macOS Keychain, TPM, Vault, etc.)
-# See docs/USER_CONFIG.md for secure examples.
-passphrase_command_argv: ["/usr/local/bin/appass-file", "passphrase"]
+# Auto-unlock is not set here. Run appass to choose a passphrase helper; it
+# writes identities/default/unlock.yaml for the store it unlocks.
+# See docs/USER_CONFIG.md.
 
 # Signer endpoint exposure settings.
 endpoint:

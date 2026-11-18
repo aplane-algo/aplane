@@ -378,6 +378,7 @@ Stay inside the network's LogicSig argument limits:
 
 - no single argument over 4,096 bytes: no `byte_length` or `max_size` above 4,096, and
   no signature slot above it (split a larger signature across arguments)
+- every runtime argument sets exactly one of `byte_length` or `max_size`
 - at most 255 arguments in all, counting signature, derived, runtime, and cosigner
   slots
 - do not plan on dummy transactions to lift either limit; they pool program size and

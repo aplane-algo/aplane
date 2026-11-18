@@ -485,10 +485,8 @@ func decodeServerConfigKnownFields(data []byte) error {
 func TestServerConfigCloneDeepCopiesMutableFields(t *testing.T) {
 	lockOnDisconnect := true
 	cfg := ServerConfig{
-		UserAutoApprove:       true,
-		LockOnDisconnect:      &lockOnDisconnect,
-		PassphraseCommandArgv: []string{"appass-file", "/tmp/pass"},
-		PassphraseCommandEnv:  map[string]string{"A": "B"},
+		UserAutoApprove:  true,
+		LockOnDisconnect: &lockOnDisconnect,
 		Algod: apconfig.AlgodConfig{
 			"testnet": {Server: "http://algod", Token: "token"},
 		},
@@ -501,18 +499,10 @@ func TestServerConfigCloneDeepCopiesMutableFields(t *testing.T) {
 	clone := cfg.Clone()
 	clone.UserAutoApprove = false
 	*clone.LockOnDisconnect = false
-	clone.PassphraseCommandArgv[0] = "changed"
-	clone.PassphraseCommandEnv["A"] = "C"
 	clone.Algod["testnet"].Server = "changed"
 
 	if *cfg.LockOnDisconnect != true {
 		t.Fatal("Clone shared LockOnDisconnect pointer")
-	}
-	if cfg.PassphraseCommandArgv[0] != "appass-file" {
-		t.Fatal("Clone shared PassphraseCommandArgv slice")
-	}
-	if cfg.PassphraseCommandEnv["A"] != "B" {
-		t.Fatal("Clone shared PassphraseCommandEnv map")
 	}
 	if cfg.Algod["testnet"].Server != "http://algod" {
 		t.Fatal("Clone shared Algod nested config")

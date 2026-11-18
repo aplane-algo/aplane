@@ -3,9 +3,9 @@
 
 // Package tealtemplate owns the TEAL template grammar for all three template
 // modes. Strict mode renders $symbol references into typed generated constant
-// blocks (this file); legacy and generated modes use @variable textual
-// substitution and restricted list-template expansion (legacy.go,
-// legacy_list.go). Mode resolution and validation dispatch live in
+// blocks (this file); generated mode uses @variable textual
+// substitution and restricted list-template expansion (substitute.go,
+// lists.go). Mode resolution and validation dispatch live in
 // lsig/generictemplate.ValidateTemplateSpecMode, shared by generic and
 // composed templates.
 package tealtemplate
@@ -65,7 +65,7 @@ type RenderedTemplate struct {
 }
 
 func ValidateStrictTemplate(teal string, variables []TemplateVariable) error {
-	if err := rejectLegacySyntax(teal); err != nil {
+	if err := rejectAtVariableSyntax(teal); err != nil {
 		return err
 	}
 	decls, err := validateDeclarations(variables)
@@ -89,7 +89,7 @@ func RenderStrict(teal string, params map[string]string, variables []TemplateVar
 }
 
 func RenderStrictFragment(teal string, params map[string]string, variables []TemplateVariable) (RenderedTemplate, error) {
-	if err := rejectLegacySyntax(teal); err != nil {
+	if err := rejectAtVariableSyntax(teal); err != nil {
 		return RenderedTemplate{}, err
 	}
 
@@ -124,9 +124,9 @@ func RenderStrictFragment(teal string, params map[string]string, variables []Tem
 	}, nil
 }
 
-func rejectLegacySyntax(teal string) error {
+func rejectAtVariableSyntax(teal string) error {
 	if match := atVariablePattern.FindString(teal); match != "" {
-		return fmt.Errorf("strict templates do not support legacy scalar substitution %s", match)
+		return fmt.Errorf("strict templates do not support @variable substitution %s", match)
 	}
 	for _, pattern := range goTemplatePatterns {
 		if strings.Contains(teal, pattern) {

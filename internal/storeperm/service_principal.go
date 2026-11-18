@@ -79,7 +79,7 @@ func parseServicePrincipalMetadata(data []byte) (servicePrincipalMetadata, error
 
 // PublishManagedMetadata records the service principal and publishes the
 // managed-store marker last. Callers must hold the exclusive store lock and
-// must have completed the legacy migration before calling this function.
+// must have completed the shared-to-private migration before calling this function.
 func PublishManagedMetadata(root string, uid, gid int) error {
 	if uid <= 0 || gid < 0 {
 		return fmt.Errorf("invalid managed service ownership %d:%d", uid, gid)

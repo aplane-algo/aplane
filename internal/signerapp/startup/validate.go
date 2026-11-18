@@ -140,19 +140,6 @@ func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths
 		warnings = append(warnings, "Keystore not initialized — run 'apstore initialize'")
 	} else {
 		info.KeystoreExists = true
-
-		if len(config.PassphraseCommandArgv) > 0 {
-			if config.LockOnDisconnect != nil && *config.LockOnDisconnect {
-				return nil, fmt.Errorf("conflicting config: passphrase_command_argv and lock_on_disconnect:true cannot be used together (headless mode requires signer to stay unlocked)")
-			}
-			if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
-				return nil, fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode disables admin idle timeout, got %q)", config.PassphraseTimeout)
-			}
-			if err := serverconfig.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
-				return nil, err
-			}
-			warnings = append(warnings, serverconfig.ValidateHeadlessPolicy(config)...)
-		}
 	}
 
 	if config.RequireMemoryProtection {

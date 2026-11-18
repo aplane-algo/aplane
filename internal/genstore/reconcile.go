@@ -69,7 +69,7 @@ func selectedGenerationFromStoreRoot(paths storepaths.Paths, kr *crypto.Keyring)
 	return selection.CurrentGenerationID, nil
 }
 
-func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, referenced map[string]bool, remove bool) (ReconcileReport, error) {
+func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, referenced map[string]bool, remove bool) (ReconcileReport, error) { //nolint:gocognit // unslop phase 3
 	report := ReconcileReport{}
 	report.Current = current
 

@@ -360,7 +360,7 @@ The migration order is fixed:
 2. establish config-free runtime-socket discovery and move normal clients;
 3. add missing authenticated policy, cosigner-reference, and generation reads;
 4. move the socket to the protected runtime directory;
-5. audit and migrate a stopped legacy store;
+5. audit and migrate a stopped shared-group store to the private layout;
 6. enable strict startup enforcement and private creation defaults;
 7. remove legacy group-shared behavior from normal writers, retaining only the
    read-only legacy profile needed to validate supported upgrades.
@@ -1070,7 +1070,7 @@ contains:
 - `display_name`
 - `description`
 - `display_color`
-- `template_mode` (`legacy`, `strict`, or `generated`) — carried on
+- `template_mode` (`strict` or `generated`, required) — carried on
   `TemplateSpec`, not on the embedded `BaseTemplateSpec`
 
 Template capability notes:

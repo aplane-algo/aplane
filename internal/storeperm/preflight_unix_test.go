@@ -23,8 +23,8 @@ func TestPreflightLegacyRejectsFIFO(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := PreflightLegacy(root)
+	_, err := PreflightShared(root)
 	if err == nil || !strings.Contains(err.Error(), "refusing unexpected object") {
-		t.Fatalf("PreflightLegacy() error = %v, want FIFO rejection", err)
+		t.Fatalf("PreflightShared() error = %v, want FIFO rejection", err)
 	}
 }

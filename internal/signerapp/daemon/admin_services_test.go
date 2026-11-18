@@ -49,16 +49,10 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 		t.Errorf("no config: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "none")
 	}
 
-	// Write product-store passfile config
-	unlockCfg := &unlockconfig.UnlockConfig{
-		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
-	}
-	if err := unlockconfig.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
-		t.Fatalf("SaveUnlockConfig: %v", err)
-	}
-
-	// Should now report "passfile"
-	settings = svc.adminApp().BuildAdminSettings()
+	// A runtime that started with a passfile helper reports it.
+	headless, headlessCleanup := setupHeadlessTestSigner(t, "passfile")
+	defer headlessCleanup()
+	settings = headless.adminServices().adminApp().BuildAdminSettings()
 	if settings.PassphraseMethod != "passfile" {
 		t.Errorf("after selecting Passfile in appass: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "passfile")
 	}
@@ -136,7 +130,7 @@ func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 	}
 }
 
-func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
+func TestBuildAdminSettingsReportsTheRuntimeNotUnlockYAML(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -168,21 +162,22 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
-	// With passfile: headless overrides must apply
+	// A helper written while the signer runs takes effect at the next start.
+	// Until then the runtime still times out and locks, and the settings say so.
 	settings = svc.adminApp().BuildAdminSettings()
-	if settings.PassphraseTimeout != "0" {
-		t.Errorf("headless mode: got PassphraseTimeout %q, want %q", settings.PassphraseTimeout, "0")
+	if settings.PassphraseTimeout != "15m0s" {
+		t.Errorf("after unlock.yaml: got PassphraseTimeout %q, want the runtime's 15m0s", settings.PassphraseTimeout)
 	}
-	if settings.LockOnDisconnect {
-		t.Errorf("headless mode: got LockOnDisconnect true, want false")
+	if !settings.LockOnDisconnect {
+		t.Errorf("after unlock.yaml: got LockOnDisconnect false, want the runtime's true")
 	}
-	if settings.PassphraseMethod != "passfile" {
-		t.Errorf("headless mode: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "passfile")
+	if settings.PassphraseMethod != "none" {
+		t.Errorf("after unlock.yaml: got PassphraseMethod %q, want the runtime's %q", settings.PassphraseMethod, "none")
 	}
 }
 
 func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
+	server, cleanup := setupHeadlessTestSigner(t, "passfile")
 	defer cleanup()
 
 	// Write config.yaml so the external-change check passes
@@ -194,14 +189,6 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 	ir := server.productRuntime()
 	if ir == nil {
 		t.Fatal("expected default product runtime")
-	}
-
-	// Enable product-store passfile (headless mode)
-	unlockCfg := &unlockconfig.UnlockConfig{
-		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
-	}
-	if err := unlockconfig.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
-		t.Fatal(err)
 	}
 
 	svc := server.adminServices()
@@ -229,7 +216,7 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 }
 
 func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
+	server, cleanup := setupHeadlessTestSigner(t, "passfile")
 	defer cleanup()
 
 	configPath := filepath.Join(server.dataDir, "config.yaml")
@@ -240,14 +227,6 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 	ir := server.productRuntime()
 	if ir == nil {
 		t.Fatal("expected default product runtime")
-	}
-
-	// Enable product-store passfile (headless mode)
-	unlockCfg := &unlockconfig.UnlockConfig{
-		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
-	}
-	if err := unlockconfig.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
-		t.Fatal(err)
 	}
 
 	svc := server.adminServices()

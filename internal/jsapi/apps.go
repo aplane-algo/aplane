@@ -187,7 +187,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() appArgs: %v", err)))
 	}
 
-	opts := a.parseAppCallOptions(call, 3, "appCallRaw()", appID)
+	opts := a.parseAppCallOptions(call, 3, "appCallRaw()")
 	fromAddr, accounts, err := a.resolveAppAccounts(from, opts.Accounts, "appCallRaw()")
 	if err != nil {
 		panic(a.runtime.ToValue(err.Error()))
@@ -263,7 +263,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue("appCall() error preparing transaction: ABI path is required"))
 	}
 
-	opts := a.parseAppCallOptions(call, 5, "appCall()", appID)
+	opts := a.parseAppCallOptions(call, 5, "appCall()")
 	fromAddr, accounts, err := a.resolveAppAccounts(from, opts.Accounts, "appCall()")
 	if err != nil {
 		panic(a.runtime.ToValue(err.Error()))
@@ -342,7 +342,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 	return a.submitResultValue(result, prepared.Method.Signature())
 }
 
-func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName string, appID uint64) appCallOptions {
+func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName string) appCallOptions {
 	opts := appCallOptions{
 		txnOptions:   a.parseTxnOptions(call, argIndex, funcName, "pay", "accounts", "apps", "assets", "boxes", "onCompletion"),
 		OnCompletion: types.NoOpOC,

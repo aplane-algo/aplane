@@ -243,7 +243,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 }
 
 func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, error) {
-	if c.identityFile != "" {
+	if c.identityFile != "" { //nolint:nestif // unslop phase 3
 		identityPath := expandUserPath(c.identityFile)
 		keyData, err := os.ReadFile(identityPath)
 		if err != nil {

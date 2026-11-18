@@ -52,7 +52,6 @@ import (
 const CurrentSchemaVersion = 1
 
 const (
-	TemplateModeLegacy    = "legacy"
 	TemplateModeStrict    = "strict"
 	TemplateModeGenerated = "generated"
 )
@@ -343,14 +342,14 @@ func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
 		return "", err
 	}
 
-	switch EffectiveTemplateMode(t.spec) {
+	switch t.spec.TemplateMode {
 	case TemplateModeStrict:
 		rendered, err := tealtemplate.RenderStrict(t.spec.TEAL, normalizedParams, t.spec.TemplateVariables)
 		if err != nil {
 			return "", fmt.Errorf("failed to render strict template: %w", err)
 		}
 		return t.applySaltAnchor(rendered.TEAL)
-	case TemplateModeLegacy, TemplateModeGenerated:
+	case TemplateModeGenerated:
 	default:
 		return "", fmt.Errorf("unsupported template_mode %q", t.spec.TemplateMode)
 	}
@@ -773,12 +772,7 @@ func stripTEALComment(line string) string {
 }
 
 func ValidateTemplateSpecMode(spec *TemplateSpec) error {
-	switch EffectiveTemplateMode(spec) {
-	case TemplateModeLegacy:
-		if schemaVersion(spec) >= 2 {
-			return fmt.Errorf("schema_version %d templates must use template_mode strict or generated", schemaVersion(spec))
-		}
-		return ValidateVariablesAgainstParams(spec.TEAL, spec)
+	switch spec.TemplateMode {
 	case TemplateModeStrict:
 		if err := validateTemplateVariablesAgainstParameters(spec.TemplateVariables, spec.Parameters); err != nil {
 			return err
@@ -793,29 +787,10 @@ func ValidateTemplateSpecMode(spec *TemplateSpec) error {
 		}
 		return ValidateVariablesAgainstParams(spec.TEAL, spec)
 	case "":
-		return fmt.Errorf("template_mode is required for schema_version 1 templates")
+		return fmt.Errorf("template_mode is required: generated or strict")
 	default:
 		return fmt.Errorf("unsupported template_mode %q", spec.TemplateMode)
 	}
-}
-
-// EffectiveTemplateMode resolves a spec's template mode, defaulting
-// schema_version 1 templates to legacy mode.
-func EffectiveTemplateMode(spec *TemplateSpec) string {
-	if spec.TemplateMode != "" {
-		return spec.TemplateMode
-	}
-	if schemaVersion(spec) <= 1 {
-		return TemplateModeLegacy
-	}
-	return ""
-}
-
-func schemaVersion(spec *TemplateSpec) int {
-	if spec.SchemaVersion == 0 {
-		return 1
-	}
-	return spec.SchemaVersion
 }
 
 func validateTemplateVariablesAgainstParameters(variables []tealtemplate.TemplateVariable, params []ParameterSpec) error {
@@ -963,7 +938,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		DerivationVersion: fingerprintDerivationVersion(spec),
 		MaxOpcodeCost:     spec.LogicSigOpcodeProfile(false).Default,
-		TemplateMode:      EffectiveTemplateMode(spec),
+		TemplateMode:      spec.TemplateMode,
 		TemplateVariables: spec.TemplateVariables,
 		TEAL:              strings.TrimSpace(spec.TEAL),
 		Parameters:        params,

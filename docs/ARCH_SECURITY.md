@@ -1907,9 +1907,7 @@ passphrase_command_env:          # optional, process env is never inherited
 
 Path resolution: the helper is configured in `identities/default/unlock.yaml`,
 and its `passphrase_command_argv` elements are used as written; `argv[0]` must
-be an absolute path. Relative-path resolution against the data directory
-applies only to the legacy `passphrase_command_argv` in the process-global
-`config.yaml`, which is consulted only when `unlock.yaml` has no command.
+be an absolute path. `config.yaml` has no passphrase helper field.
 
 **Protocol contract:**
 

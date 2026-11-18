@@ -122,93 +122,26 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 	return Service{Deps: deps, Runtime: ir}, ir, deps
 }
 
-func TestDetectPassphraseMethod(t *testing.T) {
-	tests := []struct {
-		name string
-		argv []string
-		want string
-	}{
-		{name: "empty argv returns none", argv: nil, want: "none"},
-		{name: "appass-file bare", argv: []string{"appass-file", "/tmp/secret"}, want: "passfile"},
-		{name: "appass-file absolute", argv: []string{"/usr/local/bin/appass-file", "/tmp/secret"}, want: "passfile"},
-		{name: "appass-systemd-creds bare", argv: []string{"appass-systemd-creds"}, want: "systemd-creds"},
-		{name: "appass-systemd-creds absolute", argv: []string{"/usr/bin/appass-systemd-creds"}, want: "systemd-creds"},
-		{name: "custom command", argv: []string{"/usr/bin/my-unlock-helper"}, want: "custom"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := DetectPassphraseMethod(tt.argv)
-			if got != tt.want {
-				t.Errorf("DetectPassphraseMethod(%v) = %q, want %q", tt.argv, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestServiceDetectPassphraseMethodReadsUnlockYAML(t *testing.T) {
+func TestServiceReportsTheRuntimeUnlockMethod(t *testing.T) {
 	svc, _, deps := setupAdminService(t)
-
-	got := svc.detectPassphraseMethod()
-	if got != "none" {
-		t.Fatalf("before unlock.yaml: got %q, want %q", got, "none")
+	if got := svc.BuildAdminSettings().PassphraseMethod; got != "none" {
+		t.Fatalf("prompt runtime: PassphraseMethod = %q, want none", got)
 	}
 
-	unlockCfg := &unlockconfig.UnlockConfig{
+	// A helper written after startup takes effect at the next start, so the
+	// running signer still reports prompt mode.
+	if err := unlockconfig.SaveUnlockConfig(deps.dataDir, &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-file", "/tmp/secret"},
-	}
-	if err := unlockconfig.SaveUnlockConfig(deps.dataDir, unlockCfg); err != nil {
+	}); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
-
-	got = svc.detectPassphraseMethod()
-	if got != "passfile" {
-		t.Fatalf("after unlock.yaml with appass-file: got %q, want %q", got, "passfile")
-	}
-}
-
-func TestServiceDetectPassphraseMethodFallsBackToGlobalConfig(t *testing.T) {
-	svc, _, deps := setupAdminService(t)
-
-	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
-
-	got := svc.detectPassphraseMethod()
-	if got != "systemd-creds" {
-		t.Fatalf("global fallback: got %q, want %q", got, "systemd-creds")
-	}
-}
-
-func TestServiceDetectPassphraseMethodProductStoreOverridesGlobal(t *testing.T) {
-	svc, _, deps := setupAdminService(t)
-
-	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
-	unlockCfg := &unlockconfig.UnlockConfig{
-		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
-	}
-	if err := unlockconfig.SaveUnlockConfig(deps.dataDir, unlockCfg); err != nil {
-		t.Fatalf("SaveUnlockConfig: %v", err)
+	if got := svc.BuildAdminSettings().PassphraseMethod; got != "none" {
+		t.Fatalf("after unlock.yaml: PassphraseMethod = %q, want the runtime's none", got)
 	}
 
-	got := svc.detectPassphraseMethod()
-	if got != "passfile" {
-		t.Fatalf("product-store should override global: got %q, want %q", got, "passfile")
-	}
-}
-
-func TestServiceDetectPassphraseMethodMalformedUnlockYAMLFallsBackToGlobal(t *testing.T) {
-	svc, _, deps := setupAdminService(t)
-	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
-
-	unlockPath := unlockconfig.UnlockConfigPath(deps.dataDir)
-	if err := os.MkdirAll(filepath.Dir(unlockPath), 0o700); err != nil {
-		t.Fatalf("MkdirAll(unlock config dir): %v", err)
-	}
-	if err := os.WriteFile(unlockPath, []byte("passphrase_command: [\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile(unlock.yaml): %v", err)
-	}
-
-	if got := svc.detectPassphraseMethod(); got != "systemd-creds" {
-		t.Fatalf("malformed unlock.yaml fallback = %q, want systemd-creds", got)
+	headless := Service{Deps: deps, Runtime: productruntime.New(productruntime.Config{UnlockMethod: "passfile"})}
+	if got := headless.BuildAdminSettings().PassphraseMethod; got != "passfile" {
+		t.Fatalf("headless runtime: PassphraseMethod = %q, want passfile", got)
 	}
 }
 

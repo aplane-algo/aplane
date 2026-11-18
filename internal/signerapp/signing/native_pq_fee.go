@@ -194,7 +194,7 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, res
 	totalCapacity := uint64(0)
 	for _, target := range targets {
 		current := uint64(txns[target].Fee)
-		capacity := uint64(math.MaxUint64 - current)
+		capacity := math.MaxUint64 - current
 		if budgets[target].maxFeeConstrained {
 			if current >= budgets[target].maxFee {
 				capacity = 0

@@ -386,7 +386,7 @@ func singlePicture(review *protocol.Review, width int) (reviewPane, bool) {
 // drawLanes draws the lanes. rows is set for a group, whose lines are
 // numbered rows to select; a lone transaction's lines are neither numbered
 // nor selectable.
-func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
+func drawLanes(review *protocol.Review, width int, rows bool) reviewPane { //nolint:gocognit // unslop phase 3
 	lanes := reviewLanes(review)
 	shown, laneWidth := lanesShown(review, lanes, width)
 	if shown == 0 {

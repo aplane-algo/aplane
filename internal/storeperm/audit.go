@@ -18,9 +18,9 @@ import (
 type profile uint8
 
 const (
-	// legacySharedProfile audits the transitional 2770/0660 group-shared
+	// sharedProfile audits the transitional 2770/0660 group-shared
 	// layout. It exists only to validate inputs before migration.
-	legacySharedProfile profile = iota
+	sharedProfile profile = iota
 	// privateServiceProfile audits the service-user-only 0700/0600 layout.
 	privateServiceProfile
 )
@@ -31,7 +31,7 @@ const (
 type AuditOptions struct{ policy options }
 
 // MigrationOptions is an opaque stopped-store migration policy. It is a
-// distinct type because a removable legacy socket is not an audit exception.
+// distinct type because a removable in-store socket is not an audit exception.
 type MigrationOptions struct{ policy options }
 
 type options struct {
@@ -62,12 +62,12 @@ func SameUIDAuditOptions(root string, expectedUID, expectedGID int, socketPath s
 	}}
 }
 
-// LegacyMigrationOptions recognizes one exact stale in-store socket that a
+// SharedMigrationOptions recognizes one exact stale in-store socket that a
 // stopped migration may remove after complete inventory validation.
-func LegacyMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
+func SharedMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
 	return MigrationOptions{policy: options{
 		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
-		profile: legacySharedProfile, socketPath: socketPath,
+		profile: sharedProfile, socketPath: socketPath,
 	}}
 }
 
@@ -99,7 +99,7 @@ type artifactExpectation struct {
 
 func policyForProfile(profile profile) (profilePolicy, error) {
 	switch profile {
-	case legacySharedProfile:
+	case sharedProfile:
 		return profilePolicy{dirMode: 0o770, fileMode: 0o660, allowDirSetgid: true}, nil
 	case privateServiceProfile:
 		return profilePolicy{dirMode: 0o700, fileMode: 0o600}, nil
@@ -232,7 +232,7 @@ func expectedArtifact(root, path string, info os.FileInfo, opts options, policy 
 	case "install":
 		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o750
-		expect.allowDirSetgid = opts.profile == legacySharedProfile
+		expect.allowDirSetgid = opts.profile == sharedProfile
 		expect.wantDir = true
 	case "install/uninstall.sh":
 		expect.uid, expect.gid = 0, opts.expectedGID

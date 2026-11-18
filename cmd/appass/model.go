@@ -41,10 +41,11 @@ type Model struct {
 	quitting  bool
 
 	// Status info (loaded on init and after actions)
-	method  string       // "none", "passfile", "systemd-creds", "custom"
-	isLocal bool         // true when no systemd service file exists
-	isRoot  bool         // true when running as root
-	svcInfo *serviceInfo // resolved service info
+	method    string       // "none", "passfile", "systemd-creds", "custom", "unreadable"
+	methodErr string       // why unlock.yaml is unreadable
+	isLocal   bool         // true when no systemd service file exists
+	isRoot    bool         // true when running as root
+	svcInfo   *serviceInfo // resolved service info
 
 	// Menu
 	menuItems    []menuItem
@@ -66,9 +67,10 @@ type Model struct {
 
 // StatusLoadedMsg is sent when initial status loading completes.
 type StatusLoadedMsg struct {
-	method  string
-	isLocal bool
-	svcInfo *serviceInfo
+	method    string
+	methodErr string
+	isLocal   bool
+	svcInfo   *serviceInfo
 }
 
 // ActionDoneMsg is sent when an action completes (direct, no sudo).
@@ -108,17 +110,20 @@ func loadStatusCmd(dataDir string, svc *serviceInfo, isLocal bool) tea.Cmd {
 				}
 			}
 		}
-		method := "none"
-
-		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
-		if err == nil && unlockCfg.HasPassphraseCommand() {
-			method = detectMethod(unlockCfg.PassphraseCommandArgv)
+		method, err := currentAutoUnlockMethod(dataDir)
+		var methodErr string
+		if err != nil {
+			methodErr = err.Error()
+			if method == "" {
+				method = methodReadError
+			}
 		}
 
 		return StatusLoadedMsg{
-			method:  method,
-			isLocal: isLocal,
-			svcInfo: svc,
+			method:    method,
+			methodErr: methodErr,
+			isLocal:   isLocal,
+			svcInfo:   svc,
 		}
 	}
 }
@@ -132,7 +137,7 @@ func (m Model) buildMenu() []menuItem {
 	promptItem := menuItem{
 		label:   "Prompt",
 		action:  "set-none",
-		current: m.method == "none",
+		current: m.method == unlockconfig.MethodNone,
 	}
 	if !canMutate {
 		promptItem.disabled = true
@@ -144,7 +149,7 @@ func (m Model) buildMenu() []menuItem {
 	passfileItem := menuItem{
 		label:   "Passfile",
 		action:  "set-passfile",
-		current: m.method == "passfile",
+		current: m.method == unlockconfig.MethodPassfile,
 	}
 	if !canMutate {
 		passfileItem.disabled = true
@@ -156,7 +161,7 @@ func (m Model) buildMenu() []menuItem {
 	sysCreds := menuItem{
 		label:   "Systemd",
 		action:  "set-systemd-creds",
-		current: m.method == "systemd-creds",
+		current: m.method == unlockconfig.MethodSystemdCreds,
 	}
 	if m.isLocal {
 		sysCreds.disabled = true
@@ -166,6 +171,15 @@ func (m Model) buildMenu() []menuItem {
 		sysCreds.note = "(run as root)"
 	}
 	items = append(items, sysCreds)
+
+	// An unlock.yaml that cannot be read stops every action, so none is offered
+	// until the file is readable again.
+	if m.method == methodReadError {
+		for i := range items {
+			items[i].disabled = true
+			items[i].note = "(unlock.yaml unreadable)"
+		}
+	}
 
 	items = append(items, menuItem{
 		label:  "Quit",
@@ -194,7 +208,7 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 	}
 
 	switch m.method {
-	case "passfile":
+	case unlockconfig.MethodPassfile:
 		filePath = filepath.Join(storepaths.NewPaths(m.dataDir).ProductDir(), "passphrase")
 		if len(argv) > 1 {
 			filePath = argv[1]
@@ -206,7 +220,7 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 			fileStatus = "OK"
 		}
 
-	case "systemd-creds":
+	case unlockconfig.MethodSystemdCreds:
 		filePath = filepath.Join(storepaths.NewPaths(m.dataDir).ProductDir(), "passphrase.cred")
 		if len(argv) > 1 {
 			filePath = argv[1]

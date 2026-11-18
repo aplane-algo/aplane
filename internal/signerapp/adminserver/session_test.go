@@ -415,8 +415,7 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 		runtime:     ir,
 		unlockOK:    true,
 		newIdentity: auth.NewProductIdentity("ipc-passphrase"),
-	}.deps())
-	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
+	}.deps(), OriginLocal)
 
 	if !session.Authenticate() {
 		t.Fatal("Authenticate() = false, want true")
@@ -437,11 +436,8 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if sessionCtx.AuthMethod != "ipc-passphrase" {
 		t.Fatalf("SessionContext().AuthMethod = %q, want ipc-passphrase", sessionCtx.AuthMethod)
 	}
-	if sessionCtx.Transport != TransportIPC {
-		t.Fatalf("SessionContext().Transport = %q, want %q", sessionCtx.Transport, TransportIPC)
-	}
-	if sessionCtx.RemoteAddr != "unix:/tmp/aplane.sock" {
-		t.Fatalf("SessionContext().RemoteAddr = %q, want unix:/tmp/aplane.sock", sessionCtx.RemoteAddr)
+	if sessionCtx.RemoteAddr != conn.RemoteAddr() {
+		t.Fatalf("SessionContext().RemoteAddr = %q, want the connection's %q", sessionCtx.RemoteAddr, conn.RemoteAddr())
 	}
 	if sessionCtx.AdminPrincipal.ID != auth.SystemProductAdminPrincipalID {
 		t.Fatalf("SessionContext().AdminPrincipal.ID = %q, want %q", sessionCtx.AdminPrincipal.ID, auth.SystemProductAdminPrincipalID)
@@ -488,8 +484,7 @@ func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
 	}
 	svc := &stubServices{runtime: ir, unlockOK: true, newIdentity: auth.NewProductIdentity("ipc-passphrase")}
 	conn := &queueConn{reads: [][]byte{authMsg}}
-	session := NewSession(conn, SessionDeps{Product: svc})
-	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
+	session := NewSession(conn, SessionDeps{Product: svc}, OriginLocal)
 
 	if !session.Authenticate() {
 		t.Fatal("Authenticate() = false, want authenticate-only success")
@@ -528,7 +523,7 @@ func TestAuthOnlyDispatchRejectsMutationAndPinsPublicReadAllowlist(t *testing.T)
 	}
 
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
+	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	session.authenticatedOnly = true
 	raw := []byte(`{"kind":"request","type":"activate_key_type","id":"mutate-1"}`)
 	if !session.Dispatch(raw) {
@@ -562,8 +557,7 @@ func TestSessionAuthenticateOutcomeHandlesLocalInitialize(t *testing.T) {
 		},
 	}
 	conn := &queueConn{reads: [][]byte{initMsg}}
-	session := NewSession(conn, SessionDeps{Product: svc})
-	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
+	session := NewSession(conn, SessionDeps{Product: svc}, OriginLocal)
 
 	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
 		t.Fatalf("AuthenticateOutcome() = %v, want %v", got, AuthOutcomeBootstrapHandled)
@@ -599,8 +593,7 @@ func TestSessionAuthenticateOutcomeRejectsInitializeAfterNodeFailure(t *testing.
 		NodeFailure: func() error {
 			return productruntime.ErrNodeFailClosed
 		},
-	})
-	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
+	}, OriginLocal)
 
 	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
 		t.Fatalf("AuthenticateOutcome() = %v, want %v", got, AuthOutcomeBootstrapHandled)
@@ -622,7 +615,7 @@ func TestSessionAuthenticateOutcomeRejectsInitializeAfterNodeFailure(t *testing.
 
 func TestSessionDispatchInvalidTypedRequestPreservesRequestID(t *testing.T) {
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
+	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	raw := []byte(`{"kind":"request","type":"generate_key","id":"gen-1","key_type":123}`)
 
 	if !session.Dispatch(raw) {
@@ -643,7 +636,7 @@ func TestSessionDispatchInvalidTypedRequestPreservesRequestID(t *testing.T) {
 
 func TestSessionDispatchRejectsNonRequestEnvelope(t *testing.T) {
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
+	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	raw := []byte(`{"kind":"response","type":"generate_key","id":"gen-1"}`)
 
 	if !session.Dispatch(raw) {
@@ -671,7 +664,7 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 	session := NewSession(conn, SessionDeps{
 		Product:  svc,
 		Settings: svc,
-	})
+	}, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	if !session.Dispatch([]byte(`{"kind":"request","type":"get_admin_settings","id":"settings-1"}`)) {
@@ -693,7 +686,7 @@ func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *t
 		NodeFailure: func() error {
 			return productruntime.ErrNodeFailClosed
 		},
-	})
+	}, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	if !session.Dispatch([]byte(`{"kind":"request","type":"list_keys","id":"keys-1"}`)) {
@@ -724,7 +717,7 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 		unlockOK:    true,
 		newIdentity: &auth.Identity{ID: "alice", Type: "service", Method: "ssh-passphrase"},
 	}
-	session := NewSession(conn, svc.templateDeps())
+	session := NewSession(conn, svc.templateDeps(), OriginLocal)
 	session.SetAuthMethod("ssh-passphrase")
 
 	if !session.Authenticate() {
@@ -745,7 +738,7 @@ func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 		runtime:  ir,
 		unlockOK: true,
 	}
-	session := NewSession(conn, svc.templateDeps())
+	session := NewSession(conn, svc.templateDeps(), OriginLocal)
 	session.SetAuthMethod("ssh-passphrase")
 
 	if session.Authenticate() {
@@ -783,7 +776,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 		runtime:  ir,
 		unlockOK: true,
 	}
-	session := NewSession(conn, svc.templateDeps())
+	session := NewSession(conn, svc.templateDeps(), OriginLocal)
 
 	if session.Authenticate() {
 		t.Fatal("Authenticate() = true, want false")
@@ -824,7 +817,7 @@ func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
 		runtime:    ir,
 		verifyErrs: []error{errors.New("bad"), nil},
 		unlockOK:   true,
-	}.deps())
+	}.deps(), OriginLocal)
 
 	if !session.Authenticate() {
 		t.Fatal("Authenticate() = false, want true")
@@ -861,7 +854,7 @@ func TestSessionAuthenticateMissingProductRuntimeIsGeneric(t *testing.T) {
 	}
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
-	session := NewSession(conn, stubServices{}.deps())
+	session := NewSession(conn, stubServices{}.deps(), OriginLocal)
 
 	if session.Authenticate() {
 		t.Fatal("Authenticate() = true, want false")
@@ -902,7 +895,7 @@ func TestSessionAuthenticateRejectsAdminProtocolMajorMismatch(t *testing.T) {
 			}
 
 			conn := &queueConn{reads: [][]byte{authMsg}}
-			session := NewSession(conn, stubServices{}.deps())
+			session := NewSession(conn, stubServices{}.deps(), OriginLocal)
 
 			if session.Authenticate() {
 				t.Fatal("Authenticate() = true, want false")
@@ -935,7 +928,7 @@ func TestSessionAuthenticateRejectsMissingAdminProtocolVersion(t *testing.T) {
 	}
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
-	session := NewSession(conn, stubServices{}.deps())
+	session := NewSession(conn, stubServices{}.deps(), OriginLocal)
 
 	if session.Authenticate() {
 		t.Fatal("Authenticate() = true, want false")
@@ -969,9 +962,8 @@ func TestValidateAdminProtocolVersionAcceptsCurrentAndMinorSkew(t *testing.T) {
 func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
+	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	session.SetAuthMethod("test-method")
-	session.SetTransportInfo(TransportSSH, "10.0.0.1:2222")
 
 	principal := &auth.Identity{
 		ID:     "admin-1",
@@ -993,11 +985,8 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	if sessionCtx.AuthMethod != "test-method" {
 		t.Fatalf("AuthMethod = %q, want test-method", sessionCtx.AuthMethod)
 	}
-	if sessionCtx.Transport != TransportSSH {
-		t.Fatalf("Transport = %q, want %q", sessionCtx.Transport, TransportSSH)
-	}
-	if sessionCtx.RemoteAddr != "10.0.0.1:2222" {
-		t.Fatalf("RemoteAddr = %q, want 10.0.0.1:2222", sessionCtx.RemoteAddr)
+	if sessionCtx.RemoteAddr != conn.RemoteAddr() {
+		t.Fatalf("RemoteAddr = %q, want the connection's %q", sessionCtx.RemoteAddr, conn.RemoteAddr())
 	}
 
 	sessionCtx.AdminPrincipal.Metadata["role"] = "mutated"
@@ -1029,8 +1018,7 @@ func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 	}()
 	promptID := <-sent
 
-	session := NewSession(conn, SessionDeps{})
-	session.SetTransportInfo(TransportSSH, "10.0.0.1:2222")
+	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "alice-admin", Type: "service", Method: "ssh-passphrase"}, ir)
 	session.HandleSignResponse(&protocol.SignResponseMessage{
 		BaseMessage: protocol.BaseMessage{ID: promptID},
@@ -1062,4 +1050,31 @@ func (s *stubServices) ExportKey(_ context.Context, req adminproto.ExportKeyRequ
 	protocol.SensitiveBytes(result.Mnemonic).Zero()
 	result.Mnemonic = nil
 	return result
+}
+
+func TestSessionAuthenticateOutcomeRefusesRemoteInitialize(t *testing.T) {
+	initMsg, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},
+		Passphrase:  protocol.NewSensitiveBytes("new-passphrase"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubServices{}
+	conn := &queueConn{reads: [][]byte{initMsg}}
+	session := NewSession(conn, SessionDeps{Product: svc}, OriginRemote)
+
+	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
+		t.Fatalf("AuthenticateOutcome() = %v, want %v", got, AuthOutcomeBootstrapHandled)
+	}
+	if svc.lastInitializeStore.Passphrase != nil {
+		t.Fatal("InitializeStore ran for a remote session")
+	}
+	var result protocol.InitializeStoreResultMessage
+	if err := json.Unmarshal(conn.writes[len(conn.writes)-1], &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.Success || result.Code != protocol.ErrCodeAuthorizationDenied {
+		t.Fatalf("result = %+v, want authorization_denied", result)
+	}
 }

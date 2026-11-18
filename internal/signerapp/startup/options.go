@@ -52,6 +52,9 @@ type UnlockPlan struct {
 	StartLocked bool
 	Passphrase  []byte
 	Source      UnlockSource
+	// Method is the auto-unlock method that unlocked the store
+	// (unlockconfig.MethodNone unless Source is the passphrase command).
+	Method string
 }
 
 // ValidateAndBuildUnlockPlan validates every startup precondition, including
@@ -71,23 +74,15 @@ func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassph
 	return info, plan, nil
 }
 
-// ResolveUnlockConfig returns the product-store passphrase command config.
-// It checks the product unlock.yaml first, then falls back to the
-// process-global config for backward compatibility.
-func ResolveUnlockConfig(dataDir string, config *serverconfig.ServerConfig) (*unlockconfig.UnlockConfig, error) {
+// ResolveUnlockConfig returns the product store's passphrase helper from
+// unlock.yaml, or nil when none is configured.
+func ResolveUnlockConfig(dataDir string) (*unlockconfig.UnlockConfig, error) {
 	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
 	if err != nil {
 		return nil, err
 	}
 	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
 		return unlockCfg, nil
-	}
-
-	if len(config.PassphraseCommandArgv) > 0 {
-		return &unlockconfig.UnlockConfig{
-			PassphraseCommandArgv: config.PassphraseCommandArgv,
-			PassphraseCommandEnv:  config.PassphraseCommandEnv,
-		}, nil
 	}
 
 	return nil, nil
@@ -117,7 +112,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		}, nil
 	}
 
-	unlockCfg, err := ResolveUnlockConfig(opts.DataDir, &opts.Config)
+	unlockCfg, err := ResolveUnlockConfig(opts.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("load identity unlock config: %w", err)
 	}
@@ -146,5 +141,6 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		StartLocked: false,
 		Passphrase:  passphrase,
 		Source:      UnlockSourcePassphraseCommand,
+		Method:      unlockCfg.Method(),
 	}, nil
 }

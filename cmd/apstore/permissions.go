@@ -30,11 +30,11 @@ func cmdPermissions(args []string) error {
 		return permissionsUsageError()
 	}
 	if args[0] == "preflight" {
-		result, err := storeperm.PreflightLegacy(dataDirectory)
+		result, err := storeperm.PreflightShared(dataDirectory)
 		if err != nil {
 			return err
 		}
-		logInfof("legacy store structural preflight passed: inspected %d object(s)", result.Inspected)
+		logInfof("shared-group store structural preflight passed: inspected %d object(s)", result.Inspected)
 		return nil
 	}
 	managed, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
@@ -60,7 +60,7 @@ func cmdPermissions(args []string) error {
 		if err != nil {
 			return err
 		}
-		opts := storeperm.LegacyMigrationOptions(dataDirectory, uid, gid, socketPath)
+		opts := storeperm.SharedMigrationOptions(dataDirectory, uid, gid, socketPath)
 		result, err := storeperm.MigratePrivate(opts)
 		if err != nil {
 			return err
@@ -157,14 +157,14 @@ func cmdPermissionsConvertManaged(args []string) error {
 	if currentEUID() != 0 {
 		return fmt.Errorf("permissions convert-managed requires root")
 	}
-	if _, err := storeperm.PreflightLegacy(dataDirectory); err != nil {
+	if _, err := storeperm.PreflightShared(dataDirectory); err != nil {
 		return err
 	}
 	socketPath, err := configuredMigrationSocketPath(dataDirectory)
 	if err != nil {
 		return err
 	}
-	result, err := storeperm.MigratePrivate(storeperm.LegacyMigrationOptions(dataDirectory, uid, gid, socketPath))
+	result, err := storeperm.MigratePrivate(storeperm.SharedMigrationOptions(dataDirectory, uid, gid, socketPath))
 	if err != nil {
 		return err
 	}
@@ -221,9 +221,9 @@ func configuredMigrationSocketPath(root string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("load signer config for permission migration: %w", err)
 	}
-	path, err := adminipc.ResolveLegacyStoreSocketPath(root, cfg.IPCPath)
+	path, err := adminipc.ResolveInStoreSocketPath(root, cfg.IPCPath)
 	if err != nil {
-		return "", fmt.Errorf("resolve legacy signer socket for permission migration: %w", err)
+		return "", fmt.Errorf("resolve in-store signer socket for permission migration: %w", err)
 	}
 	return path, nil
 }

@@ -63,7 +63,7 @@ func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 		Templates:  svc,
 		Authorizer: authorizer,
 		Audit:      audit,
-	})
+	}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleListKeyTypes("req-authz")
@@ -105,7 +105,7 @@ func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 func TestSessionAuthorizationWithoutBoundRuntimeFailsClosed(t *testing.T) {
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Authorizer: authorizer})
+	session := NewSession(conn, SessionDeps{Authorizer: authorizer}, OriginLocal)
 
 	if session.authorize("req-missing", auth.ActionKeysView, auth.Resource{Type: "keys"}) {
 		t.Fatal("authorize() = true, want false")
@@ -187,7 +187,7 @@ func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			conn := &queueConn{}
-			test.handle(NewSession(conn, SessionDeps{}))
+			test.handle(NewSession(conn, SessionDeps{}, OriginLocal))
 
 			msgs := decodeAdminProtoWrites(t, conn)
 			if len(msgs) != 1 {
@@ -210,7 +210,7 @@ func boundAuditedPolicySession(svc *stubServices, audit AuthorizationAudit) (*Se
 	ir := productruntime.New(productruntime.Config{})
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Product: svc, Settings: svc, Authorizer: authorizer, Audit: audit})
+	session := NewSession(conn, SessionDeps{Product: svc, Settings: svc, Authorizer: authorizer, Audit: audit}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 	return session, authorizer, conn, audit
 }

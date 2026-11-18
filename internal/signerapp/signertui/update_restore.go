@@ -8,7 +8,7 @@ import tea "github.com/charmbracelet/bubbletea"
 // openBackups opens the Backups page and lists the repository.
 func (m Model) openBackups() (tea.Model, tea.Cmd) {
 	fromRecovery := m.signerState == signerRuntimeRecovery || m.viewState == ViewStoreRecovery
-	m.resetRestoreFlow(true)
+	m.resetRestoreFlow()
 	m.restore.returnToRecovery = fromRecovery
 	m.viewState = ViewBackups
 	return m, tea.Batch(m.sendListBackupsCmd(), m.waitForMessageCmd())
@@ -182,7 +182,7 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// the only valid destination.
 			return m.openStoreRecovery()
 		}
-		m.resetRestoreFlow(true)
+		m.resetRestoreFlow()
 		if len(result.Activated) > 0 {
 			m.selectKeyByAddress(result.Activated[0].Address)
 		}

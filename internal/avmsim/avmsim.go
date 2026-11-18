@@ -165,7 +165,7 @@ func unsupportedf(format string, a ...any) error {
 // err, or a zero return rejects with a nil error. A runtime fault (type error,
 // overflow, out-of-range slice or argument, oversized value) is an error, as
 // it is on the AVM, and means the transaction is rejected too.
-func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
+func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) { //nolint:gocognit // the AVM interpreter's opcode dispatch loop
 	var (
 		stack = make([]Value, 0, 32)
 		// scratch is allocated on first use: most programs never touch it.
@@ -383,7 +383,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 			}
 		case "==", "!=":
 			var a, b Value
-			if b, err = pop(); err == nil {
+			if b, err = pop(); err == nil { //nolint:nestif // unslop phase 3
 				if a, err = pop(); err == nil {
 					if a.isBytes != b.isBytes {
 						err = errors.New("comparing bytes with uint64")
@@ -531,7 +531,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 			}
 		case "ed25519verify_bare", "falcon_verify":
 			var data, sig, key []byte
-			if key, err = popBytes(); err == nil {
+			if key, err = popBytes(); err == nil { //nolint:nestif // unslop phase 3
 				if sig, err = popBytes(); err == nil {
 					if data, err = popBytes(); err == nil {
 						verify := hooks.Ed25519

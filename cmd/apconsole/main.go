@@ -257,7 +257,7 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 	// otherwise erase it on exit), and then re-panic so the trace also reaches
 	// stderr if anything is reading it.
 	model := newModelWithShell(
-		connector, dataDir, shellExecutorForSession(shellSession), shellStartup,
+		connector, shellExecutorForSession(shellSession), shellStartup,
 		daemon, shellEnabled, initialNodeRole,
 	)
 	if shellSession != nil {

@@ -40,7 +40,7 @@ func TestPolicyApplyEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = logger.Close() }()
-	ctx := adminserver.SessionContext{SessionID: "s-1", Transport: "ipc", AdminPrincipal: adminserver.SessionPrincipal{ID: "operator"}}
+	ctx := adminserver.SessionContext{SessionID: "s-1", Origin: adminserver.OriginLocal, AdminPrincipal: adminserver.SessionPrincipal{ID: "operator"}}
 
 	docs := make([]adminproto.PolicyDocument, 70)
 	for i := range docs {

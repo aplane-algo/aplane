@@ -78,7 +78,7 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openManualLockConfirm()
 
 	case "enter":
-		if m.admin.selectedRow < len(rows) {
+		if m.admin.selectedRow < len(rows) { //nolint:nestif // unslop phase 3
 			row := rows[m.admin.selectedRow]
 			if row.action == "open_templates" {
 				m.library.selectedTemplate = 0

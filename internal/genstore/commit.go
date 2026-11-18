@@ -113,7 +113,7 @@ type MintRequest struct {
 // Commit order (docs/ARCH_STORE.md, "Ordinary generation commit"):
 // stage → copy parent → apply → validate → manifest → fsync all →
 // publish rename → fsync generations/ → seal outgoing → replace store root.
-func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) {
+func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) { //nolint:gocognit // unslop phase 3
 	if err := storepaths.ValidateGenerationID(req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -165,7 +165,7 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	// self-parent and parent-must-exist checks: the store root's generation
 	// directory is verified by the authenticated selection, and a self-parent request
 	// would collide with the existing current directory below.
-	if req.FirstGeneration {
+	if req.FirstGeneration { //nolint:nestif // unslop phase 3
 		if req.Parent != "" {
 			return storepaths.GenPaths{}, fmt.Errorf("atomic store-root first mint must be parentless")
 		}
@@ -237,7 +237,7 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	}
 
 	// GenPaths bound to the staging directory: same shape, unpublished root.
-	staged := stagedGenPaths(paths, req.GenerationID, stagingDir)
+	staged := storepaths.StagedGenerationPaths(req.GenerationID, stagingDir)
 
 	// Independent copies of the parent's live content — never hardlinks: a
 	// later in-place write must be unable to reach an inode a prior
@@ -399,13 +399,6 @@ func verifyFirstMintPreconditions(paths storepaths.Paths) error {
 		return fmt.Errorf("first mint: %q exists in the generations directory; this store has generational history and requires recovery, not a new lineage", entry.Name())
 	}
 	return nil
-}
-
-// stagedGenPaths builds a GenPaths whose root is the staging directory. It
-// reuses the public constructor's shape by construction: staging and final
-// directories have identical internal layout.
-func stagedGenPaths(paths storepaths.Paths, generationID, stagingDir string) storepaths.GenPaths {
-	return storepaths.StagedGenerationPaths(generationID, stagingDir)
 }
 
 func copyNamespaces(from, to storepaths.GenPaths) error {

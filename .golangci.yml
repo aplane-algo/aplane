@@ -1,8 +1,29 @@
-# Keeps the default linter set. These are the only two departures from it.
+# The default linter set, plus linters that catch unused parameters,
+# conversions, copied code, and complex functions. The departures are below.
+#
+# gocognit and nestif hold the line on complexity. A site marked
+# "unslop phase 3" is backlog waiting for a refactor; nolintlint fails the
+# marker once the function drops under the threshold. New code gets no marker.
 version: "2"
 
 linters:
+  enable:
+    - unparam
+    - unconvert
+    - dupl
+    - nolintlint # every nolint names its linter and gives a reason; unused nolints fail
+    - gocognit
+    - nestif
   settings:
+    gocognit:
+      min-complexity: 60
+    nestif:
+      min-complexity: 8
+    dupl:
+      threshold: 150
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     staticcheck:
       # golangci-lint's default set, plus -QF1012. WriteString(fmt.Sprintf(...))
       # is a style quick fix, not a defect.
@@ -22,3 +43,15 @@ linters:
       - linters:
           - errcheck
         source: '^\s*(case\s+|defer func\(\) \{ _ = \S+; )?<-[\w.]+(:| \}\(\))?\s*(//.*)?$'
+      # Test helpers that always get the same argument read better with it
+      # named, and long or repeated table tests are normal.
+      - path: _test\.go
+        linters:
+          - unparam
+          - dupl
+          - gocognit
+          - nestif
+      # Stat_t.Nlink's type depends on the platform.
+      - path: internal/storeperm/linkcount_unix\.go
+        linters:
+          - unconvert

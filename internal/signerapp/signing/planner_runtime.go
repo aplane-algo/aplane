@@ -4,7 +4,6 @@
 package signing
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math"
 
@@ -84,9 +83,9 @@ func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummi
 	if dummiesNeeded > 0 {
 		firstTxn := txns[0]
 		sp := types.SuggestedParams{
-			Fee:             types.MicroAlgos(firstTxn.Fee),
-			FirstRoundValid: types.Round(firstTxn.FirstValid),
-			LastRoundValid:  types.Round(firstTxn.LastValid),
+			Fee:             firstTxn.Fee,
+			FirstRoundValid: firstTxn.FirstValid,
+			LastRoundValid:  firstTxn.LastValid,
 			GenesisID:       firstTxn.GenesisID,
 			GenesisHash:     firstTxn.GenesisHash[:],
 			FlatFee:         true,
@@ -130,11 +129,7 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		}
 
 		if foreignIndices[i] {
-			usage, present, usageErr := foreignLogicSigUsage(request)
-			if usageErr != nil {
-				return lsigresource.Plan{}, nil, usageErr
-			}
-			if present {
+			if usage, present := foreignLogicSigUsage(request); present {
 				usages = append(usages, usage)
 			}
 			continue
@@ -160,15 +155,12 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		if usageErr != nil {
 			return lsigresource.Plan{}, nil, internal(fmt.Sprintf("transaction %d: invalid stored LogicSig resource profile: %v", i+1, usageErr))
 		}
+		// A plan, or a cosigner's release for a held position, must not accept a
+		// request that /sign will refuse for a missing required argument.
 		if metadata.BoundedAuthorization == nil {
-			unsized, sizeErr := unsizedRuntimeArgBytes(metadata.SigningArgs, request.LsigArgs)
-			if sizeErr != nil {
-				return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: %v", i+1, sizeErr))
+			if name, missing := missingRequiredRuntimeArg(metadata.SigningArgs, request.LsigArgs); missing {
+				return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: missing required arg: %s", i+1, name))
 			}
-			if unsized > math.MaxUint64-usage.ArgumentBytes {
-				return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: LogicSig argument size overflows resource calculation", i+1))
-			}
-			usage.ArgumentBytes += unsized
 		}
 		usages = append(usages, usage)
 		lsigIndices = append(lsigIndices, i)
@@ -219,54 +211,6 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 	return resourcePlan, lsigIndices, nil
 }
 
-// unsizedRuntimeArgBytes is the size of the request's value for each runtime
-// argument that declares neither byte_length nor max_size. The stored profile
-// counts such an argument as empty, so planning adds what the request
-// actually carries. A required one the request leaves out is refused, as
-// signing refuses it: a plan sized without it is too small for the group that
-// /sign then receives with the value. An optional one left out adds nothing.
-func unsizedRuntimeArgBytes(defs []lsigprovider.RuntimeArgDef, lsigArgs map[string]string) (uint64, error) {
-	total := uint64(0)
-	for _, def := range defs {
-		if def.ByteLength > 0 || def.MaxSize > 0 {
-			continue
-		}
-		value, ok := lsigArgs[def.Name]
-		if !ok {
-			if def.Required {
-				return 0, fmt.Errorf("missing required arg: %s", def.Name)
-			}
-			continue
-		}
-		size, err := hexDecodedLen(value)
-		if err != nil {
-			return 0, fmt.Errorf("invalid hex for arg %s: %w", def.Name, err)
-		}
-		total += uint64(size)
-	}
-	return total, nil
-}
-
-// hexDecodedLen is the length value decodes to under hex.DecodeString, which
-// the executor decodes runtime arguments with, and fails with the error it
-// would. It does not decode: the value can be a secret, such as an HTLC
-// preimage, and a decoded copy would stay on the heap unzeroed.
-func hexDecodedLen(value string) (int, error) {
-	for i := 0; i < len(value); i++ {
-		if !isHexDigit(value[i]) {
-			return 0, hex.InvalidByteError(value[i])
-		}
-	}
-	if len(value)%2 != 0 {
-		return 0, hex.ErrLength
-	}
-	return hex.DecodedLen(len(value)), nil
-}
-
-func isHexDigit(c byte) bool {
-	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
-}
-
 func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath, error) {
 	switch path {
 	case boundedPathPureSpend:
@@ -280,15 +224,15 @@ func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath
 	}
 }
 
-func foreignLogicSigUsage(request signerapi.SignRequest) (lsigresource.Usage, bool, *ServiceError) {
+func foreignLogicSigUsage(request signerapi.SignRequest) (lsigresource.Usage, bool) {
 	if request.LsigResources != nil {
 		return lsigresource.Usage{
 			ProgramBytes:  request.LsigResources.ProgramBytes,
 			ArgumentBytes: request.LsigResources.ArgumentBytes,
 			MaxOpcodeCost: request.LsigResources.MaxOpcodeCost,
-		}, true, nil
+		}, true
 	}
-	return lsigresource.Usage{}, false, nil
+	return lsigresource.Usage{}, false
 }
 
 func passthroughLogicSigUsage(encoded []byte, declared *signerapi.LogicSigResourceUsage, txnIndex int) (lsigresource.Usage, bool, *ServiceError) {
@@ -402,4 +346,18 @@ func isNativeKeyType(keyType string) bool {
 	}
 	kind := meta.AuthorizationKind()
 	return kind == algorithm.AuthorizationEd25519 || kind == algorithm.AuthorizationNativePQ
+}
+
+// missingRequiredRuntimeArg names the first required runtime argument that
+// lsigArgs leaves out.
+func missingRequiredRuntimeArg(defs []lsigprovider.RuntimeArgDef, lsigArgs map[string]string) (string, bool) {
+	for _, def := range defs {
+		if !def.Required {
+			continue
+		}
+		if _, ok := lsigArgs[def.Name]; !ok {
+			return def.Name, true
+		}
+	}
+	return "", false
 }

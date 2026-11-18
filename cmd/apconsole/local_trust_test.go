@@ -38,10 +38,8 @@ endpoints:
   primary:
     role: signer
     url: ssh://localhost:56870
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 `)
 
 	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
@@ -85,10 +83,8 @@ endpoints:
   primary:
     role: signer
     url: ssh://signer.example.com:56870
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 `)
 
 	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
@@ -131,10 +127,8 @@ endpoints:
   primary:
     role: signer
     url: ssh://127.0.0.1:56870
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 `)
 
 	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
@@ -174,45 +168,13 @@ endpoints:
   primary:
     role: signer
     url: ssh://127.0.0.1:56870
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 `)
 
 	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
 	if err == nil {
 		t.Fatal("trustLocalSignerHostKey error = nil, want mismatch")
-	}
-	if notice != "" {
-		t.Fatalf("notice = %q, want empty", notice)
-	}
-	if _, err := os.Stat(filepath.Join(clientDir, ".ssh/known_hosts")); !os.IsNotExist(err) {
-		t.Fatalf("known_hosts stat err = %v, want not exist", err)
-	}
-}
-
-func TestTrustLocalSignerHostKeyRefusesLegacyClientEndpointConfig(t *testing.T) {
-	clientDir := t.TempDir()
-	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
-	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
-network: testnet
-signer_port: 11270
-ssh:
-  host: 127.0.0.1
-  port: 56870
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
-`), 0o600); err != nil {
-		t.Fatalf("write client config: %v", err)
-	}
-
-	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
-	if err == nil {
-		t.Fatal("trustLocalSignerHostKey error = nil, want unsupported endpoint config error")
-	}
-	if !strings.Contains(err.Error(), "unsupported apclient endpoint config") {
-		t.Fatalf("error = %v, want unsupported endpoint config message", err)
 	}
 	if notice != "" {
 		t.Fatalf("notice = %q, want empty", notice)
@@ -294,10 +256,8 @@ endpoints:
   primary:
     role: signer
     url: ssh://127.0.0.1:56870
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 `)
 	return clientDir
 }
@@ -307,6 +267,32 @@ func refusedProbeError() error {
 		&net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)})
 }
 
+// An invalid client config must stop the trust step before anything is
+// written to known_hosts.
+func TestTrustLocalSignerHostKeyRefusesInvalidClientConfigBeforeWriting(t *testing.T) {
+	clientDir := t.TempDir()
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
+network: testnet
+signer_port: 11270
+ssh:
+  host: 127.0.0.1
+  port: 56870
+`), 0o600); err != nil {
+		t.Fatalf("write client config: %v", err)
+	}
+
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("trustLocalSignerHostKey error = %v, want an unknown field rejection", err)
+	}
+	if notice != "" {
+		t.Fatalf("notice = %q, want empty", notice)
+	}
+	if _, statErr := os.Stat(filepath.Join(clientDir, ".ssh", "known_hosts")); !os.IsNotExist(statErr) {
+		t.Fatalf("known_hosts stat error = %v, want not exist", statErr)
+	}
+}
 func TestTrustLocalSignerHostKeyRetriesRefusedProbeWhileDaemonStarts(t *testing.T) {
 	clientDir := writeLoopbackClientConfig(t)
 	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())

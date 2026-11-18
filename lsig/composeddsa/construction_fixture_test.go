@@ -298,7 +298,7 @@ func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 			}
 			index := -1
 			for _, slot := range metadata.ArgumentLayout {
-				if string(slot.Source) == test.source {
+				if slot.Source == test.source {
 					index = slot.Index
 				}
 			}
