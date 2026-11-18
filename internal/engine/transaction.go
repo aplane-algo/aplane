@@ -27,6 +27,9 @@ type TransactionPrepResult struct {
 	AmountInUnits  uint64                 // Amount in base units
 	AppCallInfo    *signerapi.AppCallInfo // Optional app-call metadata for signer approval rendering
 	Incentive      *IncentiveDecision     // For a key registration that asked for incentive eligibility
+	// Batch labels the transaction's place among several the caller signs
+	// one at a time, for the approval prompt. Nil labels nothing.
+	Batch *signerapi.SignBatch
 }
 
 // SubmitResult contains the result of submitting a transaction
@@ -240,6 +243,7 @@ func (e *Engine) SignAndSubmit(ctx context.Context, prep *TransactionPrepResult,
 	if prep.AppCallInfo != nil {
 		opts.AppCallInfo = []*signerapi.AppCallInfo{prep.AppCallInfo}
 	}
+	opts.Batch = prep.Batch
 
 	txids, submittedTxns, err := e.signAndSubmitGroup([]types.Transaction{prep.Transaction}, args, opts)
 	submittedTxn := prep.Transaction

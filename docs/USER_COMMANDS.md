@@ -70,7 +70,7 @@ is refused.
 | `note=<text>` | Attach a note to the transaction. Written with `=`; the spaced form `note <text>` is not accepted |
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
-| `atomic` | Send as atomic group (with sets) |
+| `atomic` | Send as atomic group (with sets): one request and one approval for all of them. Without it, each transaction is its own request and approval, and the signer's prompt says which of them it is (`Single transaction · 1 of 3`) |
 | `arg:[<account>:]<name>=<value>` | LogicSig argument: for every transaction the command builds, or, with `<account>:`, for the transactions that account sends. See [LogicSig Arguments](#logicsig-arguments) |
 
 A word a command does not take is refused, on this and every transaction

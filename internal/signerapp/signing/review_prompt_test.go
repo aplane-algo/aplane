@@ -322,3 +322,47 @@ func TestPromptShowsARekeyToAHeldKeyAsANotice(t *testing.T) {
 		t.Errorf("the text does not show a foreign rekey loud:\n%s", loud.Description)
 	}
 }
+
+// A request the client labels as one of several it sends one at a time says
+// so in the review and on the first line of the text, for a lone transaction
+// and a group alike. Without a label neither says anything.
+func TestPromptShowsTheClientsBatchLabel(t *testing.T) {
+	own, other := reviewTestAddr(1), reviewTestAddr(2)
+	pay := types.Transaction{Type: types.PaymentTx}
+	pay.Sender, pay.Receiver, pay.Amount, pay.Fee = own, other, 1_000_000, 1000
+	const line = "Request 2 of 3 from the client, each approved on its own\n"
+
+	for _, tc := range []struct {
+		name    string
+		count   int
+		heading string
+	}{
+		{"single", 1, "[TXN APPROVAL]\n"},
+		{"group", 2, "[GROUP APPROVAL]\n"},
+	} {
+		requests := make([]signerapi.SignRequest, tc.count)
+		txns := make([]types.Transaction, tc.count)
+		for i := range requests {
+			requests[i] = signerapi.SignRequest{AuthAddress: own.String()}
+			txns[i] = pay
+		}
+		plan := func() *PlanResult {
+			return &PlanResult{AllTxns: txns, PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
+				AuthKeyTypes: make([]string, tc.count)}
+		}
+		known := map[string]bool{own.String(): true}
+
+		labeled := promptForReviewTest(t, signerapi.GroupSignRequest{Requests: requests, Batch: &signerapi.SignBatch{Position: 2, Count: 3}}, plan(), known)
+		if b := labeled.Review.Batch; b == nil || b.Position != 2 || b.Count != 3 {
+			t.Errorf("%s: review batch = %+v, want 2 of 3", tc.name, b)
+		}
+		if !strings.HasPrefix(labeled.Description, tc.heading+line) {
+			t.Errorf("%s: description does not open with the batch line:\n%s", tc.name, labeled.Description)
+		}
+
+		plain := promptForReviewTest(t, signerapi.GroupSignRequest{Requests: requests}, plan(), known)
+		if plain.Review.Batch != nil || strings.Contains(plain.Description, "from the client, each approved") {
+			t.Errorf("%s: an unlabeled request shows a batch: %+v\n%s", tc.name, plain.Review.Batch, plain.Description)
+		}
+	}
+}

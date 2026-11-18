@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // SendRequest captures parsed send-command inputs before semantic resolution.
@@ -326,14 +327,19 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 	}
 
 	result := &NonAtomicSendResult{Amount: plan.Amount}
-	for _, item := range plan.Items {
+	checks := make([]error, len(plan.Items))
+	for i, item := range plan.Items {
+		checks[i] = validatePreparedSendItem(item, plan.Amount)
+	}
+	batches := sendBatches(checks)
+	for i, item := range plan.Items {
 		itemResult := SendItemResult{
 			From:           item.From,
 			To:             item.To,
 			SigningKeyType: item.Prep.SigningContext.DisplayKeyType,
 		}
 
-		if err := validatePreparedSendItem(item, plan.Amount); err != nil {
+		if err := checks[i]; err != nil {
 			itemResult.Error = err.Error()
 			result.LastError = itemResult.Error
 			result.FailureCount++
@@ -342,7 +348,14 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 		}
 
 		itemResult.Warnings = sendWarnings(item, plan.Amount)
-		submit, err := a.eng.SignAndSubmit(ctx, item.Prep.enginePrep, plan.LsigArgs, wait)
+		prep := item.Prep.enginePrep
+		if batches[i] != nil && prep != nil {
+			// The label goes on a copy, so the plan stays as prepared.
+			labeled := *prep
+			labeled.Batch = batches[i]
+			prep = &labeled
+		}
+		submit, err := a.eng.SignAndSubmit(ctx, prep, plan.LsigArgs, wait)
 		if err != nil {
 			if submit != nil {
 				itemResult.TxID = submit.TxID
@@ -394,6 +407,30 @@ func (a *App) executeAtomicSend(ctx context.Context, plan *AtomicSendPlan) (*Ato
 		Output:          submit.Output,
 		Warnings:        warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}, nil
+}
+
+// sendBatches labels each transaction a send asks for, one at a time, with its
+// place among them, for the approval prompt. One whose check failed is never
+// sent and takes no place; with fewer than two to send, none is labeled.
+func sendBatches(checks []error) []*signerapi.SignBatch {
+	sendable := 0
+	for _, err := range checks {
+		if err == nil {
+			sendable++
+		}
+	}
+	batches := make([]*signerapi.SignBatch, len(checks))
+	if sendable < 2 {
+		return batches
+	}
+	position := 0
+	for i, err := range checks {
+		if err == nil {
+			position++
+			batches[i] = &signerapi.SignBatch{Position: position, Count: sendable}
+		}
+	}
+	return batches
 }
 
 func validatePreparedSendItem(item PreparedSendItem, amount asa.Amount) error {

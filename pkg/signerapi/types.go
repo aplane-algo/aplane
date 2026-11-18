@@ -102,6 +102,33 @@ func (i *AppCallInfo) validate() error {
 type GroupSignRequest struct {
 	RequestID string        `json:"request_id,omitempty"` // Optional client-generated ID used to cancel pending manual approval
 	Requests  []SignRequest `json:"requests"`             // Array of transactions to sign as a group
+	Batch     *SignBatch    `json:"batch,omitempty"`      // Optional display label: this request's place among several the client sends one at a time
+}
+
+// maxSignBatchCount bounds a batch label's count, which is only shown.
+const maxSignBatchCount = 100000
+
+// SignBatch says that a request is one of several the client sends one at a
+// time, each for its own approval: the Position-th of Count. It is a label
+// for the approval prompt, like AppCallInfo. The signer cannot check it,
+// shows it as the client's, and it decides nothing.
+type SignBatch struct {
+	Position int `json:"position"`
+	Count    int `json:"count"`
+}
+
+// validate refuses a label that names no place in a batch.
+func (b *SignBatch) validate() error {
+	if b == nil {
+		return nil
+	}
+	if b.Count < 1 || b.Count > maxSignBatchCount {
+		return fmt.Errorf("batch count must be between 1 and %d", maxSignBatchCount)
+	}
+	if b.Position < 1 || b.Position > b.Count {
+		return fmt.Errorf("batch position must be between 1 and the count")
+	}
+	return nil
 }
 
 // CancelSignRequest is the request payload for /sign/cancel.
@@ -192,6 +219,9 @@ func (r SignRequest) Validate() error {
 // Validate checks that all contained requests use a supported request mode.
 func (r GroupSignRequest) Validate() error {
 	if err := validateSignRequestID(r.RequestID); err != nil {
+		return err
+	}
+	if err := r.Batch.validate(); err != nil {
 		return err
 	}
 	if len(r.Requests) == 0 {

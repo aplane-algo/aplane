@@ -81,3 +81,15 @@ func TestSetPartiesCallsAnAccountSignableByWhatTheSignerKnows(t *testing.T) {
 		}
 	}
 }
+
+// The escaped copy every prompt is sent as keeps the client's batch label.
+func TestSafeKeepsTheBatchLabel(t *testing.T) {
+	r := Review{Batch: &Batch{Position: 2, Count: 3}}
+	safe := r.Safe()
+	if safe.Batch == nil || *safe.Batch != *r.Batch || safe.Batch == r.Batch {
+		t.Fatalf("Safe().Batch = %+v, want a copy of %+v", safe.Batch, r.Batch)
+	}
+	if got := (Review{}).Safe().Batch; got != nil {
+		t.Fatalf("Safe() of an unlabeled review has batch %+v", got)
+	}
+}

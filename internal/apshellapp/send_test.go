@@ -6,7 +6,9 @@ package apshellapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestPrepareSendRejectsManyToMany(t *testing.T) {
@@ -393,5 +396,66 @@ func TestPreflightMessageForAnOverflowingRequirement(t *testing.T) {
 	}
 	if want := "insufficient balance: have 2 ALGO, and the amount plus fee exceeds the largest representable amount"; err.Error() != want {
 		t.Fatalf("validatePreparedSendItem() error = %q, want %q", err, want)
+	}
+}
+
+// A send to several recipients, one at a time, labels each transaction it
+// asks for with its place among them. One that fails its checks is never
+// sent and takes no place, and a send of one labels nothing.
+func TestSendBatchesNumberOnlyWhatIsSent(t *testing.T) {
+	failed := errors.New("insufficient balance")
+	label := func(position, count int) *signerapi.SignBatch {
+		return &signerapi.SignBatch{Position: position, Count: count}
+	}
+	for _, tc := range []struct {
+		name   string
+		checks []error
+		want   []*signerapi.SignBatch
+	}{
+		{"three", []error{nil, nil, nil}, []*signerapi.SignBatch{label(1, 3), label(2, 3), label(3, 3)}},
+		{"the second fails", []error{nil, failed, nil}, []*signerapi.SignBatch{label(1, 2), nil, label(2, 2)}},
+		{"one left to send", []error{failed, nil, failed}, []*signerapi.SignBatch{nil, nil, nil}},
+		{"one", []error{nil}, []*signerapi.SignBatch{nil}},
+		{"none", nil, []*signerapi.SignBatch{}},
+	} {
+		if got := sendBatches(tc.checks); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: sendBatches() = %s, want %s", tc.name, batchesString(got), batchesString(tc.want))
+		}
+	}
+}
+
+func batchesString(batches []*signerapi.SignBatch) string {
+	parts := make([]string, len(batches))
+	for i, b := range batches {
+		parts[i] = "none"
+		if b != nil {
+			parts[i] = fmt.Sprintf("%d of %d", b.Position, b.Count)
+		}
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// Running a send labels copies of its transactions, so the plan stays as it
+// was prepared.
+func TestNonAtomicSendLeavesThePlanAsPrepared(t *testing.T) {
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	app := New(eng, config.DefaultConfig(), t.TempDir())
+	plan := &NonAtomicSendPlan{Amount: asa.Amount{Raw: 1_000_000}}
+	for i := 0; i < 3; i++ {
+		plan.Items = append(plan.Items, PreparedSendItem{
+			Prep:         preparedTxnFromEngine(&engine.TransactionPrepResult{Transaction: types.Transaction{Type: types.PaymentTx}}),
+			BalanceCheck: &BalanceCheckDetails{SufficientFunds: true},
+		})
+	}
+	if _, err := app.executeNonAtomicSend(context.Background(), plan, false); err != nil {
+		t.Fatalf("executeNonAtomicSend() error = %v", err)
+	}
+	for i, item := range plan.Items {
+		if got := item.Prep.enginePrep.Batch; got != nil {
+			t.Errorf("transaction %d of the plan is labeled %+v", i+1, got)
+		}
 	}
 }

@@ -34,6 +34,26 @@ type Review struct {
 	// Chain is when the signer read the parties from its node, or why it
 	// could not. It is nil until the request is put to an operator.
 	Chain *ChainRead
+	// Batch is the request's place among several the client sends one at a
+	// time, as the client gives it. It is nil when the client gives none.
+	Batch *Batch
+}
+
+// Batch is a request's place among several sent one at a time, each for its
+// own approval. The client gives it and the signer cannot check it: it is a
+// label and decides nothing.
+type Batch struct {
+	Position int
+	Count    int
+}
+
+// BatchLine says which of the client's requests this is, ending in a newline,
+// or is empty when the client named no batch.
+func (r Review) BatchLine() string {
+	if r.Batch == nil {
+		return ""
+	}
+	return fmt.Sprintf("Request %d of %d from the client, each approved on its own\n", r.Batch.Position, r.Batch.Count)
 }
 
 // ChainRead is when the signer read a review's parties from its node, or
@@ -157,6 +177,7 @@ func (c Changes) Text() string {
 // accounts.
 func (r Review) Text() string {
 	var b strings.Builder
+	b.WriteString(r.BatchLine())
 	if r.Group {
 		fmt.Fprintf(&b, "=== TRANSACTION GROUP (%d transactions) ===\n", len(r.Items))
 		for _, banner := range r.Banners {
@@ -290,6 +311,10 @@ func (r Review) Safe() Review {
 		chain := *r.Chain
 		chain.Unavailable = line(chain.Unavailable)
 		safe.Chain = &chain
+	}
+	if r.Batch != nil {
+		batch := *r.Batch
+		safe.Batch = &batch
 	}
 	safe.Changes.Heading, safe.Changes.Lines = line(r.Changes.Heading), lines(r.Changes.Lines)
 	for _, item := range r.Items {

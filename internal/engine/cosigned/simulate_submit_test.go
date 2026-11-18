@@ -47,11 +47,12 @@ type cosignedSimulationCapture struct {
 	// operator denial would. Set before the server starts; read-only after.
 	rejectSign bool
 
-	mu             sync.Mutex
-	assembly       signerapi.AssemblyRequest
-	assembledGroup []string
-	events         []string
-	baseRequest    signerapi.ComponentRequest
+	mu              sync.Mutex
+	assembly        signerapi.AssemblyRequest
+	assembledGroup  []string
+	events          []string
+	baseRequest     signerapi.ComponentRequest
+	cosignerRequest signerapi.ComponentRequest
 }
 
 func (c *cosignedSimulationCapture) record(event string) {
@@ -148,6 +149,9 @@ func newCosignedExecutableTestHandler(t *testing.T, publicKeyHex string, capture
 		case signerapi.ComponentTargetKindCosigner:
 			capture.cosignerRoleCalls.Add(1)
 			capture.record("cosigner")
+			capture.mu.Lock()
+			capture.cosignerRequest = req
+			capture.mu.Unlock()
 		default:
 			http.Error(w, "unexpected component role", http.StatusBadRequest)
 			return
@@ -337,6 +341,44 @@ func TestSignAndSubmitGroupSimulateUsesExecutableCosignedFlow(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Simulation successful") {
 		t.Fatalf("output = %q, want simulation success", out.String())
+	}
+}
+
+// A send's batch label goes to the user signer's base component request, the
+// one whose prompt an operator answers, and not to the cosigner, which has no
+// operator.
+func TestCosignedSendLabelsOnlyTheUserSignersRequest(t *testing.T) {
+	publicKey, _ := testFalconCosignerKeypair(t, 0x72)
+	cosignerHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned batch")
+
+	capture := &cosignedSimulationCapture{}
+	handler := newCosignedExecutableTestHandler(t, cosignerHex, capture)
+	signerServer := httptest.NewServer(handler)
+	defer signerServer.Close()
+	var simulateReq models.SimulateRequest
+	algodClient, closeAlgod := newCosignedAlgodSimulationClient(t, "", &simulateReq)
+	defer closeAlgod()
+
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s.conn.SignerClient = signerclient.NewSignerClient(signerServer.URL)
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignedCosignerNode(t, handler))
+	s.algod = algodClient
+
+	batch := &signerapi.SignBatch{Position: 2, Count: 3}
+	if _, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
+		Ctx: context.Background(), Simulate: true, Out: io.Discard, Batch: batch,
+	}); err != nil {
+		t.Fatalf("SignAndSubmitGroup(simulate) error = %v", err)
+	}
+	capture.mu.Lock()
+	base, cosigner := capture.baseRequest, capture.cosignerRequest
+	capture.mu.Unlock()
+	if base.Batch == nil || *base.Batch != *batch {
+		t.Fatalf("base component batch = %+v, want %+v", base.Batch, batch)
+	}
+	if cosigner.TargetKind() != signerapi.ComponentTargetKindCosigner || cosigner.Batch != nil {
+		t.Fatalf("cosigner request kind %q batch %+v, want a cosigner request without a batch", cosigner.TargetKind(), cosigner.Batch)
 	}
 }
 

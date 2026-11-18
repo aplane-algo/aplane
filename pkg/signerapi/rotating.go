@@ -44,6 +44,7 @@ type RotatingSignRequest struct {
 	Account      string       `json:"account"`
 	Transactions []string     `json:"transactions"`
 	AppCallInfo  *AppCallInfo `json:"app_call_info,omitempty"`
+	Batch        *SignBatch   `json:"batch,omitempty"`
 }
 
 // RotatingSignResponse carries the signed group. Stage is the stage whose
@@ -74,6 +75,9 @@ func (r RotatingPrepareRequest) Validate() error {
 // Validate checks the request shape.
 func (r RotatingSignRequest) Validate() error {
 	if err := validateSignRequestID(r.RequestID); err != nil {
+		return err
+	}
+	if err := r.Batch.validate(); err != nil {
 		return err
 	}
 	if r.Account == "" {

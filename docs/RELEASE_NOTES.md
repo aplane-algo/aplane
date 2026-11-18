@@ -7,6 +7,15 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A split send numbers its requests
+
+- **A send to several recipients says which one is up.** Without `atomic`,
+  `send` asks for each transaction on its own, and the review now says
+  `Single transaction · 1 of 3`. The client gives the place as an optional
+  `batch` label on `/sign`, the component and the rotating sign requests; the
+  signer shows it as the client's and it decides nothing. The SDKs' request
+  types carry it too.
+
 ## An unlock waits for a lock to finish
 
 - **An unlock that arrives during a lock waits for the lock's cleanup.** A

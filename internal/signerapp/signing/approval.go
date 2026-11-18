@@ -262,6 +262,9 @@ func (s *ApprovalService) review(req signerapi.GroupSignRequest, plan *PlanResul
 func buildReview(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, describe DescribeTxnFunc) txnreview.Review {
 	total := len(req.Requests)
 	review := txnreview.Review{Group: total != 1}
+	if b := req.Batch; b != nil {
+		review.Batch = &txnreview.Batch{Position: b.Position, Count: b.Count}
+	}
 	review.Changes = planChanges(plan, allTxns, review.Group)
 	if review.Group {
 		if plan.HasPassthrough {
@@ -728,7 +731,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	console.Printf("[IPC] TXN APPROVAL: Waiting for approval from apadmin TUI (request %s)...\n", requestIDPreview(requestID))
 	console.Sync()
 
-	txnDesc := "[TXN APPROVAL]\n"
+	txnDesc := "[TXN APPROVAL]\n" + review.BatchLine()
 	if changes := review.Changes.Text(); changes != "" {
 		txnDesc += changes + "\n"
 	}

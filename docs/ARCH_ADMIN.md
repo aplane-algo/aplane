@@ -514,6 +514,11 @@ loses nothing but the structure.
   shown and decides nothing; see "Chain State in the Review" in
   [ARCH_SIGNING.md](ARCH_SIGNING.md). The description ends with the same
   accounts.
+- `batch`: present when the client labeled the request as one of several it
+  sends one at a time, each approved on its own: `position` of `count`. It is
+  the client's label and the signer cannot check it; the description opens
+  with the same line. apadmin shows it after the summary (`Single
+  transaction · 1 of 3`).
 
 The fields are the review. Effects and parties only arrange them, and
 `chain` is the description's account list as data: a new field on a

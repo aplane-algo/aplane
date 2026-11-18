@@ -146,7 +146,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	if err := validateBoundedTargetFees(group.Txns, targets); err != nil {
 		return nil, nil, err
 	}
-	components, baseRequestID, err := s.requestBoundedBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex, opts.AppCallInfo)
+	components, baseRequestID, err := s.requestBoundedBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex, opts.AppCallInfo, opts.Batch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -277,8 +277,11 @@ func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignReq
 	return componentReq
 }
 
-func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]signerapi.Component, string, error) {
+func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo, batch *signerapi.SignBatch) (map[int]signerapi.Component, string, error) {
 	componentReq := boundedBaseComponentRequest(group, requests, targetsByIndex, appCallInfo)
+	// The user signer's prompt is the one an operator answers, so the batch
+	// label goes on this request alone.
+	componentReq.Batch = batch
 	componentResp, err := s.conn.RequestComponentsWithContext(ctx, componentReq)
 	if err != nil {
 		return nil, "", fmt.Errorf("bounded base component signing failed: %w", err)
