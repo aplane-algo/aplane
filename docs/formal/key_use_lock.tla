@@ -303,6 +303,10 @@ GenerationMoves == [u \in Unlockers |-> ulStale[u] \/ ul[u] = "deriving"]
 \* signer in recovery locks the same way. From the locked state this is
 \* BeginMaintenance, which runs a cleanup there too, and a maintenance that
 \* ends without republishing, which clears what it reloaded.
+\* BeginMaintenance does not wait for cleanups, so in the code it may also
+\* start a second cleanup while a lock's is running (life "locking" or
+\* "draining" here). That is left out: the signer stays locked throughout,
+\* registration is refused, and an unlock waits for both cleanups.
 LockState ==
     /\ life \in {"unlocked", "recovery", "locked"}
     /\ locks < MaxLocks

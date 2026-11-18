@@ -1482,9 +1482,11 @@ Store maintenance adds a product-store state fence in `Runtime.stateMu`.
 Beginning maintenance clears and locks the published key session before any
 root transition. Unlock and recovery attempts that start during the fence are
 rejected without loading authority; attempts already in flight lose on the
-generation check and clear anything they loaded. Only the matching successful
-maintenance token may republish after verified reload. Failure, a stale token,
-or a racing explicit lock leaves the runtime locked.
+generation check, lock the runtime and clear anything they loaded. Only the
+matching successful maintenance token may republish after verified reload,
+and only if the runtime was unlocked when the maintenance began. Failure, a
+stale token, or a racing lock leaves the runtime locked, and the maintenance
+then clears what it reloaded, since no later lock of a locked runtime would.
 
 The watcher is owned by the product runtime but is not tied to every lock
 transition:
