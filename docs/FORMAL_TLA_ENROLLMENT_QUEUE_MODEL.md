@@ -98,9 +98,12 @@ cannot silently stop being load-bearing.
   durable, and audited; meanwhile it serves an empty registry, which refuses
   every key, or an empty queue, which it never publishes
   (`clientsIntended`, `pendingIntended`); and the next operation, once the
-  file reads again, publishes the document the failed write intended.
-  `TestUnreadableRegistryIsNeverWrittenBackEmpty`
-  and its neighbours in `unreadable_after_failed_write_test.go` pin it.
+  file reads again, publishes the document the failed write intended,
+  keeping that view if the publish fails again. The commitment is held in
+  memory, so a restart before it is written serves what the file holds.
+  `TestUnreadableRegistryIsNeverWrittenBackEmpty`,
+  `TestRevocationHoldsWhenItsRepublishFailsAgain` and their neighbours in
+  `unreadable_after_failed_write_test.go` pin it.
 - `Lapse` removes an entry from the live and durable contents together,
   since every reader (`Parse`, `Pruned`) drops lapsed entries; the on-disk
   bytes are rewritten at the next publish.

@@ -703,7 +703,16 @@ func (ir *Runtime) ensureRegistryDurableLocked() error {
 		if _, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil {
 			return fmt.Errorf("registry is unreadable after an earlier failed write; repair %s: %w", ir.AuthorizedKeysPath(), err)
 		}
+		if err := clientregistry.Publish(ir.AuthorizedKeysPath(), ir.clientsIntended); err != nil {
+			// Not durable yet. Keep the commitment and keep refusing every
+			// key: adopting what the file holds now could undo a change
+			// that was reported made, a revocation included.
+			return fmt.Errorf("registry from an earlier failed write is still not durable: %w", err)
+		}
 		ir.clients = ir.clientsIntended
+		ir.clientsUnsynced = false
+		ir.clientsIntended = nil
+		return nil
 	}
 	current := ir.clients
 	if current == nil {
@@ -869,7 +878,15 @@ func (ir *Runtime) ensureQueueDurableLocked() error {
 		if _, err := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now()); err != nil {
 			return fmt.Errorf("enrollment queue is unreadable after an earlier failed write; repair %s: %w", ir.PendingEnrollmentsPath(), err)
 		}
+		if err := enrollqueue.Publish(ir.PendingEnrollmentsPath(), ir.pendingIntended); err != nil {
+			// As for the registry: keep the commitment rather than adopt
+			// what the file holds, which could bring back a cleared request.
+			return fmt.Errorf("enrollment queue from an earlier failed write is still not durable: %w", err)
+		}
 		ir.pending = ir.pendingIntended
+		ir.pendingUnsynced = false
+		ir.pendingIntended = nil
+		return nil
 	}
 	if _, err := ir.publishQueueFileLocked(ir.pendingLocked()); err != nil {
 		return fmt.Errorf("enrollment queue from an earlier failed write is still not durable: %w", err)

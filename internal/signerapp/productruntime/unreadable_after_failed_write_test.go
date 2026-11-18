@@ -174,3 +174,53 @@ func TestRejectWaitsForAnUnreadableRegistry(t *testing.T) {
 		t.Fatalf("pending = %+v, want the request still waiting", ir.PendingEnrollments())
 	}
 }
+
+// A revocation reported made holds even when the write that would make it
+// durable fails again once the file reads: the runtime keeps refusing every
+// key, rather than serve the repaired file that still lists the revoked key,
+// until that write succeeds.
+func TestRevocationHoldsWhenItsRepublishFailsAgain(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	revokedKey, other := testSSHKey(t), testSSHKey(t)
+	if _, err := ir.EnrollAuthorizedKey(revokedKey, "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	good, err := os.ReadFile(ir.AuthorizedKeysPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	failSyncAndCorrupt(t, ir.AuthorizedKeysPath())
+	if _, revoked, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(revokedKey)); !revoked || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("RevokeAuthorizedKey() = %v, %v; want revoked and not durable", revoked, err)
+	}
+	if err := os.WriteFile(ir.AuthorizedKeysPath(), good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path := ir.AuthorizedKeysPath()
+	fsutil.TestHook = func(op fsutil.HookOp, target string) error {
+		if op == fsutil.OpRename && target == path {
+			fsutil.TestHook = nil
+			return errors.New("injected rename failure")
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+	if _, err := ir.EnrollAuthorizedKey(other, "other"); err == nil {
+		t.Fatal("EnrollAuthorizedKey() succeeded though the registry it depends on is not durable")
+	}
+	if ir.HasAuthorizedKey(revokedKey) {
+		t.Fatal("the revoked key came back when the re-publish failed again")
+	}
+
+	if _, err := ir.EnrollAuthorizedKey(other, "other"); err != nil {
+		t.Fatalf("EnrollAuthorizedKey() once the disk recovered = %v", err)
+	}
+	if ir.HasAuthorizedKey(revokedKey) || !ir.HasAuthorizedKey(other) {
+		t.Fatalf("revoked key enrolled = %v, other enrolled = %v; want false and true", ir.HasAuthorizedKey(revokedKey), ir.HasAuthorizedKey(other))
+	}
+	file, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(file), strings.Fields(string(ssh.MarshalAuthorizedKey(revokedKey)))[1]) {
+		t.Fatalf("authorized_keys still lists the revoked key (read error %v)", err)
+	}
+}
