@@ -24,6 +24,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -34,6 +35,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -90,6 +92,18 @@ type argsFixture struct {
 	// unfunded is an account the node reports with no balance, so a send
 	// from it fails its preflight check.
 	unfunded string
+	// holdings are the assets the node reports an account opted into.
+	holdings map[string][]models.AssetHolding
+	// unreachable is an account the node fails to look up.
+	unreachable string
+	// signs makes the signer answer /sign for these senders with each
+	// transaction wrapped as signed, and the node accept what is submitted.
+	// Any other sender's request is still answered 503.
+	signsFor map[string]bool
+	// submitted counts the transactions the node accepted.
+	submitted atomic.Int32
+	// rejectsSubmit makes the node refuse what is submitted.
+	rejectsSubmit bool
 }
 
 func newArgsFixture(t *testing.T) *argsFixture {
@@ -120,7 +134,13 @@ func newArgsFixture(t *testing.T) *argsFixture {
 				} else {
 					f.plans = append(f.plans, req.Requests)
 				}
+				signsFor := f.signsFor
 				f.mu.Unlock()
+				if signed, ok := signAsTestSigner(t, req.Requests, signsFor); ok && r.URL.Path == "/sign" {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(signerapi.GroupSignResponse{Signed: signed})
+					return
+				}
 			}
 		}
 		http.Error(w, "test signer", http.StatusServiceUnavailable)
@@ -141,7 +161,13 @@ func newArgsFixture(t *testing.T) *argsFixture {
 			if address == f.unfunded {
 				account.Amount = 0
 			}
+			account.Assets = f.holdings[address]
+			unreachable := address == f.unreachable
 			f.mu.Unlock()
+			if unreachable {
+				http.Error(w, "test node cannot find the account", http.StatusServiceUnavailable)
+				return
+			}
 			switch address {
 			case argsRekeyed:
 				account.AuthAddr = argsFalcon
@@ -149,6 +175,21 @@ func newArgsFixture(t *testing.T) *argsFixture {
 				account.AuthAddr = argsStage
 			}
 			_ = json.NewEncoder(w).Encode(account)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/transactions":
+			f.mu.Lock()
+			accepts, rejects := len(f.signsFor) > 0, f.rejectsSubmit
+			f.mu.Unlock()
+			if rejects {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": "TransactionPool.Remember: overspend"})
+				return
+			}
+			if !accepts {
+				http.Error(w, "test node", http.StatusServiceUnavailable)
+				return
+			}
+			f.submitted.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]string{"txId": "TESTTXID"})
 		default:
 			http.Error(w, "test node", http.StatusServiceUnavailable)
 		}
@@ -172,6 +213,28 @@ func newArgsFixture(t *testing.T) *argsFixture {
 	f.eng.SetCache.Sets = map[string][]string{"lsigs": {argsHTLC, argsHTLC2}}
 	f.app = New(f.eng, config.DefaultConfig(), t.TempDir())
 	return f
+}
+
+// signAsTestSigner wraps each requested transaction as signed, when every
+// one of them is sent by an account the fixture signs for.
+func signAsTestSigner(t *testing.T, requests []signerapi.SignRequest, signsFor map[string]bool) ([]string, bool) {
+	t.Helper()
+	if len(requests) == 0 {
+		return nil, false
+	}
+	signed := make([]string, len(requests))
+	for i, request := range requests {
+		txn, err := txnutil.DecodePrefixedHex(request.TxnBytesHex)
+		if err != nil {
+			t.Errorf("decode sign request %d: %v", i, err)
+			return nil, false
+		}
+		if !signsFor[txn.Sender.String()] {
+			return nil, false
+		}
+		signed[i] = hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{1}}))
+	}
+	return signed, true
 }
 
 // sent returns each request entry's lsig_args, decoded, from the recorded
