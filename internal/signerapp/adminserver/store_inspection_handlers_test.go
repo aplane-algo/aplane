@@ -142,7 +142,7 @@ func TestHandleCosignerReferenceMutationsRejectLockedIdentity(t *testing.T) {
 	}
 	inspection := &inspectionStub{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{}})
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{}}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleImportCosignerReference(&protocol.ImportCosignerReferenceMessage{
@@ -170,7 +170,7 @@ func TestHandleListCosignerReferencesAuthorizesBeforeReading(t *testing.T) {
 	}}
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer})
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleListCosignerReferences("list-cosigners")
@@ -196,7 +196,7 @@ func TestHandleImportCosignerReferenceDenialStopsMutation(t *testing.T) {
 	inspection := &inspectionStub{}
 	authorizer := &recordingAuthorizer{err: auth.ErrForbidden}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer})
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleImportCosignerReference(&protocol.ImportCosignerReferenceMessage{
@@ -231,7 +231,7 @@ func TestHandlePruneGenerationQuarantineRequiresAuditBeforeMutation(t *testing.T
 		Inspection: inspection,
 		Authorizer: authorizer,
 		Audit:      audit,
-	})
+	}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandlePruneGenerationQuarantine(&protocol.PruneGenerationQuarantineMessage{
@@ -307,7 +307,7 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 				Inspection: inspection,
 				Authorizer: &recordingAuthorizer{},
 				Audit:      test.audit,
-			})
+			}, OriginLocal)
 			session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 			session.HandlePruneGenerationQuarantine(&protocol.PruneGenerationQuarantineMessage{
 				BaseMessage:   protocol.BaseMessage{Type: protocol.MsgTypePruneGenerationQuarantine, ID: "prune-fail"},
@@ -340,7 +340,7 @@ func TestHandleListDeletedArchiveAuthorizesBeforeReading(t *testing.T) {
 	}}
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer})
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleListDeletedArchive("archive-list")
@@ -370,7 +370,7 @@ func TestHandlePruneDeletedArchiveRequiresAuthorizationAndDurableAudit(t *testin
 	authorizer := &recordingAuthorizer{}
 	audit := &archivePruneAudit{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer, Audit: audit})
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer, Audit: audit}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandlePruneDeletedArchive(&protocol.PruneDeletedArchiveMessage{
@@ -409,7 +409,7 @@ func TestHandlePruneDeletedArchiveFailsClosedBeforeMutation(t *testing.T) {
 			ir.SetUnlocked()
 			inspection := &inspectionStub{}
 			conn := &queueConn{}
-			session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{err: test.authorizeErr}, Audit: test.audit})
+			session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{err: test.authorizeErr}, Audit: test.audit}, OriginLocal)
 			session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 			session.HandlePruneDeletedArchive(&protocol.PruneDeletedArchiveMessage{
 				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePruneDeletedArchive, ID: "archive-prune-fail"},
@@ -463,7 +463,7 @@ func TestHandleDiscardAbandonedGenerationsFailsClosedWithoutDurableAudit(t *test
 			ir.SetUnlocked()
 			inspection := &inspectionStub{}
 			conn := &queueConn{}
-			session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{}, Audit: tt.audit})
+			session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{}, Audit: tt.audit}, OriginLocal)
 			session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 			session.HandleDiscardAbandonedGenerations(&protocol.DiscardAbandonedGenerationsMessage{
 				BaseMessage:   protocol.BaseMessage{Type: protocol.MsgTypeDiscardAbandonedGenerations, ID: "discard-fail"},

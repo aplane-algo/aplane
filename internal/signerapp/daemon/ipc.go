@@ -175,7 +175,7 @@ func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newCon
 
 func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 	setPreAuthReadDeadline(adminConn, time.Now().Add(s.loginTimeout()))
-	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps())
+	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps(), adminserver.OriginLocal)
 	session.SetAuthMethod("ipc-passphrase")
 
 	var active *adminserver.Session

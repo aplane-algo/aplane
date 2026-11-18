@@ -38,6 +38,7 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
 		server.adminSessionDeps(),
+		adminserver.OriginLocal,
 	)
 	if ok := session.Authenticate(); ok {
 		t.Fatal("Authenticate() = true, want false for missing kind")
@@ -77,6 +78,7 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
 		server.adminSessionDeps(),
+		adminserver.OriginLocal,
 	)
 	if ok := session.Authenticate(); !ok {
 		t.Fatal("Authenticate() = false, want true")
@@ -131,6 +133,7 @@ func TestAuthenticateClientRejectsNewAdminAfterNodeFailure(t *testing.T) {
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
 		server.adminSessionDeps(),
+		adminserver.OriginLocal,
 	)
 	if ok := session.Authenticate(); ok {
 		t.Fatal("Authenticate() = true after node failure")
@@ -221,7 +224,7 @@ func TestHandleListKeysRejectsUnboundSession(t *testing.T) {
 	defer cleanup()
 
 	recorder := &ipcJSONRecorderConn{}
-	session := adminserver.NewSession(adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(bytes.NewReader(nil))), server.adminSessionDeps())
+	session := adminserver.NewSession(adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(bytes.NewReader(nil))), server.adminSessionDeps(), adminserver.OriginLocal)
 	session.Bind(&auth.Identity{ID: "other-identity", Type: "service", Method: "test"}, nil)
 	session.HandleListKeys("req-1")
 
@@ -332,8 +335,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if connected.AdminSessionID == "" {
 		t.Fatal("connected admin_session_id is empty")
 	}
-	if connected.Transport != adminserver.TransportIPC {
-		t.Fatalf("connected transport = %q, want %q", connected.Transport, adminserver.TransportIPC)
+	if connected.Transport != "ipc" {
+		t.Fatalf("connected transport = %q, want %q", connected.Transport, "ipc")
 	}
 
 	var disconnected AuditEntry
@@ -346,8 +349,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if disconnected.AdminSessionID != connected.AdminSessionID {
 		t.Fatalf("disconnected admin_session_id = %q, want %q", disconnected.AdminSessionID, connected.AdminSessionID)
 	}
-	if disconnected.Transport != adminserver.TransportIPC {
-		t.Fatalf("disconnected transport = %q, want %q", disconnected.Transport, adminserver.TransportIPC)
+	if disconnected.Transport != "ipc" {
+		t.Fatalf("disconnected transport = %q, want %q", disconnected.Transport, "ipc")
 	}
 	for i, line := range lines {
 		var fields map[string]any
@@ -371,7 +374,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 	conn := newIPCMockConn(authLine+unknownLine, "unix:/tmp/test-ipc.sock")
 
 	ipcServer := &IPCServer{signer: server}
-	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn), server.adminSessionDeps())
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn), server.adminSessionDeps(), adminserver.OriginLocal)
 	session.SetAuthMethod("ipc-passphrase")
 	if !ipcServer.sessionManager().RegisterPreAuthPending(session) {
 		t.Fatal("RegisterPreAuthPending() = false, want true")
@@ -399,7 +402,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 
 func TestIPCConnWriteJSONSerializesConcurrentWriters(t *testing.T) {
 	conn := &interleavingRecorderConn{}
-	session := adminserver.NewSession(adminproto.NewUnixAdminConnWithReader(conn, protocol.NewFrameReader(bytes.NewReader(nil))), adminserver.SessionDeps{})
+	session := adminserver.NewSession(adminproto.NewUnixAdminConnWithReader(conn, protocol.NewFrameReader(bytes.NewReader(nil))), adminserver.SessionDeps{}, adminserver.OriginLocal)
 
 	msgA := protocol.ErrorMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError, ID: "a"},

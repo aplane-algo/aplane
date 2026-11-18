@@ -83,11 +83,15 @@ func TestSessionGeneratesAndImports(t *testing.T) {
 }
 
 func newKeyTransportTestSession() (*Session, *queueConn, *stubServices) {
+	return newKeyTransportTestSessionAt(OriginLocal)
+}
+
+func newKeyTransportTestSessionAt(origin Origin) (*Session, *queueConn, *stubServices) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	conn := &queueConn{}
 	svc := &stubServices{}
-	session := NewSession(conn, SessionDeps{Keys: svc})
+	session := NewSession(conn, SessionDeps{Keys: svc}, origin)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	return session, conn, svc
 }
@@ -180,4 +184,39 @@ func TestGenerateKeyPassesTheExpectedFingerprint(t *testing.T) {
 	}
 	var msg protocol.GenerateResultMessage
 	decodeOnlyMessage(t, conn, &msg)
+}
+
+// Operations that move recovery material or prepare a key run only on the
+// local socket. A remote session, or one whose server never stated an origin,
+// is refused before the service is called.
+func TestNonLocalSessionRefusesRecoveryMaterialOperations(t *testing.T) {
+	for _, origin := range []Origin{OriginRemote, Origin(0)} {
+		t.Run(origin.AuditTransport(), func(t *testing.T) {
+			ops := []struct {
+				name  string
+				run   func(*Session)
+				calls func(*stubServices) int
+			}{
+				{"import", func(s *Session) {
+					s.HandleImportKey(&protocol.ImportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "import"}, KeyType: "ed25519", Mnemonic: "mnemonic words"})
+				}, func(s *stubServices) int { return s.importKeyCalls }},
+				{"export", func(s *Session) {
+					s.HandleExportKey(&protocol.ExportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "export"}, Address: "ADDR", Passphrase: protocol.NewSensitiveBytes("passphrase")})
+				}, func(s *stubServices) int { return s.exportCalls }},
+				{"prepare_generate", func(s *Session) {
+					s.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{BaseMessage: protocol.BaseMessage{ID: "prepare"}, KeyType: "ed25519"})
+				}, func(s *stubServices) int { return s.prepareGenerateCalls }},
+			}
+			for _, op := range ops {
+				session, conn, svc := newKeyTransportTestSessionAt(origin)
+				op.run(session)
+				if n := op.calls(svc); n != 0 {
+					t.Fatalf("%s: service calls = %d, want 0", op.name, n)
+				}
+				if msg := decodeProtocolError(t, conn); msg.Code != protocol.ErrCodeAuthorizationDenied {
+					t.Fatalf("%s: error code = %q, want %q", op.name, msg.Code, protocol.ErrCodeAuthorizationDenied)
+				}
+			}
+		})
+	}
 }

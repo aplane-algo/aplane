@@ -1032,6 +1032,9 @@ func (s *Session) HandlePrepareGenerateKey(msg *protocol.PrepareGenerateKeyMessa
 	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
 		return
 	}
+	if !s.requireLocal(msg.ID, auth.ActionKeysGenerate, resource, "generation preparation is only available on local AP Admin") {
+		return
+	}
 	result := s.keyServices.PrepareGenerateKey(adminproto.PrepareGenerateKeyRequest{
 		KeyType:    msg.KeyType,
 		Parameters: msg.Parameters,
@@ -1077,6 +1080,9 @@ func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysExport, resource) {
 		return
 	}
+	if !s.requireLocal(msg.ID, auth.ActionKeysExport, resource, "key export is only available on local AP Admin") {
+		return
+	}
 	// The service delivers a successful phrase itself, while it still holds
 	// the key for use, so its audit outcome reflects what reached the client.
 	deliver := func(result adminproto.ExportKeyResult) error {
@@ -1104,10 +1110,25 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}
+	if !s.requireLocal(msg.ID, auth.ActionKeysImport, resource, "key import is only available on local AP Admin") {
+		return
+	}
 	imp := s.keyServices.ImportKey(s.auditContext(), adminproto.ImportKeyRequest{
 		KeyType:    msg.KeyType,
 		Mnemonic:   msg.Mnemonic,
 		Parameters: msg.Parameters,
 	})
 	_ = s.WriteJSON(ProtocolImportResultMessage(msg.ID, imp))
+}
+
+// requireLocal refuses an operation that moves recovery material or bootstraps
+// a store unless the session is on the local IPC socket. Allowing one remotely
+// must be a deliberate change here, not a default of a new transport.
+func (s *Session) requireLocal(requestID string, action auth.Action, resource auth.Resource, reason string) bool {
+	if s.isLocal() {
+		return true
+	}
+	s.logAuthorizationDenied(s.Identity(), action, resource, reason)
+	_ = s.SendError(requestID, protocol.ErrCodeAuthorizationDenied, reason)
+	return false
 }

@@ -91,7 +91,9 @@ func (s *Session) markBackupExportChunk(fileName string, offset int64, eof bool)
 	return started
 }
 
-func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
+// NewSession creates an admin session on conn. origin says where conn comes
+// from; the recovery-material operations run only for OriginLocal.
+func NewSession(conn adminproto.AdminConn, deps SessionDeps, origin Origin) *Session {
 	method := "ipc-passphrase"
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Session{
@@ -107,7 +109,7 @@ func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 		nodeFailure:        deps.NodeFailure,
 		state:              StateConnected,
 		method:             method,
-		context:            newSessionContext(method, conn),
+		context:            newSessionContext(method, conn, origin),
 		ctx:                ctx,
 		cancel:             cancel,
 	}
@@ -289,6 +291,13 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeNodeFailClosed,
 			Error: "signer node is fail-closed; restart required",
+		}))
+		return AuthOutcomeBootstrapHandled
+	}
+	if !s.isLocal() {
+		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
+			Code:  protocol.ErrCodeAuthorizationDenied,
+			Error: "initialize_store is only available on local AP Admin",
 		}))
 		return AuthOutcomeBootstrapHandled
 	}
@@ -485,4 +494,11 @@ func (s *Session) sendAuthResult(success bool, code, errMsg string) {
 
 func zeroBytes(data []byte) {
 	algocrypto.ZeroBytes(data)
+}
+
+// isLocal reports whether the session's connection is the local IPC socket.
+func (s *Session) isLocal() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.context.Origin == OriginLocal
 }
