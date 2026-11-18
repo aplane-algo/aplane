@@ -204,6 +204,9 @@ type signingState struct {
 type enrollmentApprovalState struct {
 	request *PendingEnrollmentRequest
 	focus   int // 0 = approve, 1 = reject
+	// shownAt is when request came into view; approval waits
+	// approvalArmDelay after it (see handleClientEnrollmentPopupKeys).
+	shownAt time.Time
 	// queue holds requests announced while another was on screen; each is
 	// shown in turn once the operator answers the current one.
 	queue []PendingEnrollmentRequest

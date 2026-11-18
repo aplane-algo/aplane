@@ -28,6 +28,7 @@ func (m *Model) queueEnrollmentRequest(req PendingEnrollmentRequest) {
 		return
 	}
 	m.enrollmentApproval.request = &req
+	m.enrollmentApproval.shownAt = signingNow()
 	m.enrollmentApproval.focus = 1 // Default to reject button (safety-first)
 }
 
@@ -76,6 +77,8 @@ func (m *Model) nextEnrollmentRequest() bool {
 	next := m.enrollmentApproval.queue[0]
 	m.enrollmentApproval.queue = m.enrollmentApproval.queue[1:]
 	m.enrollmentApproval.request = &next
+	// The popup stays up, so the next request is in view from now.
+	m.enrollmentApproval.shownAt = signingNow()
 	m.enrollmentApproval.focus = 1
 	return true
 }
@@ -100,6 +103,12 @@ func (m Model) handleClientEnrollmentPopupKeys(msg tea.KeyMsg) (tea.Model, tea.C
 
 	m, cmd, focus, _ := m.handleApprovalKeys(msg, m.enrollmentApproval.focus, requestID,
 		func(m Model, _ string, approved bool) (Model, tea.Cmd) {
+			// A key repeated from the request just answered must not
+			// approve the one that replaces it. Rejecting is always
+			// immediate.
+			if approved && signingNow().Sub(m.enrollmentApproval.shownAt) < approvalArmDelay {
+				return m, m.setTransientNotice("One moment...")
+			}
 			answer := m.sendRejectEnrollmentCmd(fingerprint)
 			if approved {
 				answer = m.sendApproveEnrollmentCmd(fingerprint, "")
@@ -107,7 +116,11 @@ func (m Model) handleClientEnrollmentPopupKeys(msg tea.KeyMsg) (tea.Model, tea.C
 			m.markEnrollmentAnswered(fingerprint)
 			return m.leaveEnrollmentPopup(answer)
 		})
-	m.enrollmentApproval.focus = focus
+	// The focus moved for the request the key was pressed on. Once that
+	// request is answered, the next one keeps the Reject focus it opened with.
+	if req := m.enrollmentApproval.request; req != nil && req.ID == requestID {
+		m.enrollmentApproval.focus = focus
+	}
 	return m, cmd
 }
 
