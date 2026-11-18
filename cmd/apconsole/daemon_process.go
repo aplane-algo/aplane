@@ -297,13 +297,19 @@ func watchDaemonReadiness(events chan<- daemonEvent, done <-chan struct{}, ipcPa
 	}
 }
 
-// waitForDaemonReady blocks until the IPC socket appears, the daemon process
-// exits, or the timeout elapses. The independent goroutine in watchDaemonReadiness
-// still owns event emission — this just delays callers (shell/signer connect)
-// past the daemon startup window so first-attempt connections succeed.
-func waitForDaemonReady(ipcPath string, dp *daemonProcess, timeout time.Duration) {
+// waitForDaemonReady blocks until the daemon accepts a connection on its IPC
+// socket, the daemon process exits, or the timeout elapses. It dials rather
+// than checking that the socket file exists: a daemon that was killed leaves
+// its socket file behind, and that file says nothing about the new daemon.
+// The independent goroutine in watchDaemonReadiness still owns event emission;
+// this just delays callers (shell/signer connect) past the daemon startup
+// window so first-attempt connections succeed.
+func waitForDaemonReady(ipcPath string, dp *daemonProcess, dial func(string) (io.Closer, error), timeout time.Duration) {
 	if ipcPath == "" || timeout <= 0 {
 		return
+	}
+	if dial == nil {
+		dial = dialUnixSocketForDaemon
 	}
 	var done <-chan struct{}
 	if dp != nil {
@@ -314,7 +320,8 @@ func waitForDaemonReady(ipcPath string, dp *daemonProcess, timeout time.Duration
 	ticker := time.NewTicker(daemonReadyInterval)
 	defer ticker.Stop()
 	for {
-		if _, err := os.Stat(ipcPath); err == nil {
+		if conn, err := dial(ipcPath); err == nil {
+			_ = conn.Close()
 			return
 		}
 		select {

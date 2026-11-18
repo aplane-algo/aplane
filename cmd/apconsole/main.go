@@ -150,7 +150,7 @@ func main() {
 	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
 	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, daemonIPCPath, !*noStartDaemon)
 	if daemonStartup.Status == daemonStatusStarting {
-		waitForDaemonReady(ipcPath, daemonProcess, daemonReadyTimeout)
+		waitForDaemonReady(ipcPath, daemonProcess, dialUnixSocketForDaemon, daemonReadyTimeout)
 	}
 	if roleWarning != "" {
 		logWarnf("%s", roleWarning)
@@ -159,7 +159,13 @@ func main() {
 	var shellStartup []string
 	shellEnabled := shellPaneEnabledForNodeRole(nodeRole)
 	if shellEnabled {
-		trustNotice, err := trustLocalSignerHostKey(startupCfg.ClientData, startup.Config)
+		// A daemon this console just started opens its SSH listener after
+		// its IPC socket, so give the probe a moment to find it listening.
+		var probeWait time.Duration
+		if daemonStartup.Status == daemonStatusStarting {
+			probeWait = localSignerProbeStartupWait
+		}
+		trustNotice, err := trustLocalSignerHostKey(startupCfg.ClientData, startup.Config, probeWait)
 		if err != nil {
 			logWarnf("could not pretrust local signer SSH host key: %v", err)
 		}
