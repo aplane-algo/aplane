@@ -258,16 +258,8 @@ func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
 		state.CommandRegistry = state.initCommandRegistry()
 	}
 	registered, builtIn := state.CommandRegistry.Lookup(cmd.Name)
-	if builtIn {
-		policy := registered.Automation
-		if policy.Disposition == command.AutomationBlocked {
-			return mcp.NewToolResultError(fmt.Sprintf("command '%s' not available via MCP: %s", registered.Name, policy.Reason))
-		}
-		if policy.Guard != nil {
-			if err := policy.Guard(cmd.Args); err != nil {
-				return mcp.NewToolResultError(err.Error())
-			}
-		}
+	if refusal := mcpAutomationRefusal(state.CommandRegistry, cmd); refusal != nil {
+		return refusal
 	}
 
 	result, err := state.executeCommandResult(cmd)
@@ -286,6 +278,29 @@ func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
 		return mcp.NewToolResultError(err.Error())
 	}
 	return mcpJSONTextResult(data)
+}
+
+// mcpAutomationRefusal is MCP's refusal of cmd under the automation policy
+// of the built-in command it names, or nil. One-shot simulate runs the
+// command its arguments name, so that command's policy applies as well.
+func mcpAutomationRefusal(registry *command.Registry, cmd Command) *mcp.CallToolResult {
+	registered, builtIn := registry.Lookup(cmd.Name)
+	if !builtIn {
+		return nil
+	}
+	policy := registered.Automation
+	if policy.Disposition == command.AutomationBlocked {
+		return mcp.NewToolResultError(fmt.Sprintf("command '%s' not available via MCP: %s", registered.Name, policy.Reason))
+	}
+	if policy.Guard != nil {
+		if err := policy.Guard(cmd.Args); err != nil {
+			return mcp.NewToolResultError(err.Error())
+		}
+	}
+	if registered.Name == "simulate" && len(cmd.Args) > 0 {
+		return mcpAutomationRefusal(registry, Command{Name: cmd.Args[0], Args: cmd.Args[1:]})
+	}
+	return nil
 }
 
 func mcpJSONTextResult(data []byte) *mcp.CallToolResult {

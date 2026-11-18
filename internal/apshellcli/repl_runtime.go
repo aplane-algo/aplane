@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/shellrepl"
@@ -123,9 +124,11 @@ func (r *REPLState) executeCommandWithInterrupt(cmd Command, sigCh <-chan os.Sig
 		}
 	}()
 
+	r.commandRunning.Store(true)
 	r.runtimeMu.Lock()
 	err := r.executeCommand(cmd)
 	r.runtimeMu.Unlock()
+	r.commandRunning.Store(false)
 	close(done)
 
 	if ctx.Err() == context.Canceled {
@@ -135,12 +138,21 @@ func (r *REPLState) executeCommandWithInterrupt(cmd Command, sigCh <-chan os.Sig
 	return err
 }
 
+// lockedAutoCompleter completes at the command prompt under runtimeMu, which
+// a running command holds. A command's own prompts read through the same
+// readline instance, and they ask for an answer rather than a command, so
+// while a command runs there is nothing to complete: Tab offers nothing and
+// takes no lock, which it could never get.
 type lockedAutoCompleter struct {
-	mu    *sync.Mutex
-	inner readline.AutoCompleter
+	mu      *sync.Mutex
+	running *atomic.Bool
+	inner   readline.AutoCompleter
 }
 
 func (c lockedAutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
+	if c.running != nil && c.running.Load() {
+		return nil, 0
+	}
 	if c.mu != nil {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -149,5 +161,5 @@ func (c lockedAutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
 }
 
 func (r *REPLState) lockedCompleter(inner readline.AutoCompleter) readline.AutoCompleter {
-	return lockedAutoCompleter{mu: &r.runtimeMu, inner: inner}
+	return lockedAutoCompleter{mu: &r.runtimeMu, running: &r.commandRunning, inner: inner}
 }
