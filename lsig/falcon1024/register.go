@@ -24,12 +24,10 @@ package falcon
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
@@ -58,7 +56,6 @@ func RegisterClient() {
 					Ops:       v1.NewFalconOps(family.FalconBase),
 					SaltStyle: lsigsalt.StyleAlgodAutoSalt,
 				}),
-				AddressDeriver: falconkeys.GetFalconAddressDeriverForType("aplane.falcon1024.v1"),
 			}},
 			Extra: []func(){func() {
 				composeddsa.RegisterBase(composeddsa.BaseRegistration{
@@ -66,9 +63,6 @@ func RegisterClient() {
 					FamilyName:  family.Name,
 					Version:     1,
 					Ops:         v1.NewFalconOps(family.FalconBase),
-					NewAddressDeriver: func(templateKeyType string) addressderive.Deriver {
-						return falconkeys.GetFalconAddressDeriverForType(templateKeyType)
-					},
 				})
 			}},
 		})

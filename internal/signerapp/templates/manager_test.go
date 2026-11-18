@@ -6,17 +6,17 @@ package templates
 import (
 	"bytes"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
-	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -178,9 +178,6 @@ func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testin
 	}
 	if lsigprovider.Get(composedKeyType) == nil {
 		t.Fatalf("composed provider %s was not registered", composedKeyType)
-	}
-	if _, err := addressderive.Get(composedKeyType); err != nil {
-		t.Fatalf("composed address deriver was not registered: %v", err)
 	}
 }
 
@@ -659,11 +656,10 @@ func registerManagerTestBase(keyType string) {
 	}
 	familyName = strings.TrimSuffix(familyName, ".v1")
 	composeddsa.RegisterBase(composeddsa.BaseRegistration{
-		BaseKeyType:       keyType,
-		FamilyName:        familyName,
-		Version:           1,
-		Ops:               managerTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return managerTestDeriver{} },
+		BaseKeyType: keyType,
+		FamilyName:  familyName,
+		Version:     1,
+		Ops:         managerTestOps{},
 	})
 }
 
@@ -724,12 +720,6 @@ func (managerTestOps) DisplayColor() string                        { return "" }
 func (managerTestOps) TEALVersion() int                            { return 12 }
 func (managerTestOps) BuildSignatureArgs([]byte) ([][]byte, error) { return nil, nil }
 func (managerTestOps) BuildVerifyTEAL([]byte) (string, error)      { return "int 1\nreturn\n", nil }
-
-type managerTestDeriver struct{}
-
-func (managerTestDeriver) DeriveAddress(string, map[string]string) (string, error) {
-	return "addr", nil
-}
 
 type templatesTestProvider struct {
 	keyType     string

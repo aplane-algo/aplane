@@ -11,7 +11,6 @@ package ed25519
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 )
@@ -37,8 +36,5 @@ func RegisterClient() {
 
 		// Algorithm metadata (display color, signature size, etc.)
 		algorithm.RegisterEd25519Metadata()
-
-		// Address deriver for Ed25519 public key to Algorand address
-		addressderive.RegisterEd25519()
 	})
 }

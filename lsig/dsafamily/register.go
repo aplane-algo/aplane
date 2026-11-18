@@ -16,7 +16,6 @@
 package dsafamily
 
 import (
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 )
@@ -27,13 +26,10 @@ type KeyType struct {
 	KeyType string
 	// DSA is the LogicSig provider registered for the key type.
 	DSA logicsigdsa.LogicSigDSA
-	// AddressDeriver derives on-chain addresses for the key type; nil skips
-	// address-derivation registration.
-	AddressDeriver addressderive.Deriver
 }
 
 // ClientRegistration is the client-safe half of a family's capabilities:
-// LogicSig derivation, address derivation, and display metadata. It must not
+// LogicSig derivation and display metadata. It must not
 // reference signer-side machinery so client binaries stay lean.
 type ClientRegistration struct {
 	// Family is the registry family name, e.g. "falcon1024".
@@ -56,9 +52,6 @@ func RegisterClient(r ClientRegistration) {
 		// runtime template registration), and per-family v1 helpers may have
 		// already registered the same provider in test binaries.
 		logicsigdsa.RegisterIfAbsent(kt.DSA)
-		if kt.AddressDeriver != nil {
-			addressderive.Register(kt.KeyType, kt.AddressDeriver)
-		}
 	}
 	if r.Metadata != nil {
 		algorithm.RegisterMetadata(r.Metadata)
