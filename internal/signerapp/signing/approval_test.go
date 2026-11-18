@@ -571,10 +571,10 @@ func TestRequestSingleTxnApprovalBlocksNonReviewableTxn(t *testing.T) {
 	called := false
 	svc := &ApprovalService{
 		HasClient: func() bool { return true },
-		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			called = true
 			return true, nil
-		},
+		}),
 	}
 
 	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{{Type: types.TxType("mystery")}}, "", nil)
@@ -594,10 +594,10 @@ func TestRequestGroupApprovalBlocksNonReviewableTxn(t *testing.T) {
 	called := false
 	svc := &ApprovalService{
 		HasClient: func() bool { return true },
-		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			called = true
 			return true, nil
-		},
+		}),
 		KnownAddresses: func() map[string]bool { return nil },
 	}
 
@@ -629,10 +629,10 @@ func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing
 	svc := &ApprovalService{
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return nil },
-		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotViolations = violations
 			return true, nil
-		},
+		}),
 	}
 
 	txn := types.Transaction{
@@ -663,10 +663,10 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 		AuditLog:       audit,
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return nil },
-		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
+		RequestSigningApprovalPrompt: promptFromResponse(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			gotTimeout = timeout
 			return signerapproval.SignResponse{}, signerapproval.ErrApprovalTimeout
-		},
+		}),
 	}
 
 	txn := types.Transaction{
@@ -695,9 +695,9 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 		AuditLog:       audit,
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return nil },
-		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
+		RequestSigningApprovalPrompt: promptFromResponse(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			return signerapproval.SignResponse{ID: requestID, Approved: false}, nil
-		},
+		}),
 	}
 
 	txn := types.Transaction{
@@ -722,11 +722,11 @@ func TestRequestGroupApprovalPassesWarningViolationsAndCanApprove(t *testing.T) 
 	svc := &ApprovalService{
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return nil },
-		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotRequestID = requestID
 			gotViolations = violations
 			return true, nil
-		},
+		}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -773,10 +773,10 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 	svc := &ApprovalService{
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return nil },
-		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotRequestID = requestID
 			return true, nil
-		},
+		}),
 	}
 
 	txn := types.Transaction{
