@@ -78,47 +78,53 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openManualLockConfirm()
 
 	case "enter":
-		if m.admin.selectedRow < len(rows) { //nolint:nestif // complexity backlog
-			row := rows[m.admin.selectedRow]
-			if row.action == "open_templates" {
-				m.library.selectedTemplate = 0
-				m.library.scrollOffset = 0
-				m.library.installError = ""
-				m.library.installStatus = ""
-				m.library.pendingTemplate = nil
-				m.viewState = ViewTemplateLibrary
-				return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
-			}
-			if row.action == "open_policies" {
-				return m.openPolicies()
-			}
-			if !row.editable {
-				return m, nil
-			}
-			if row.isBool {
-				// Toggle boolean, except that a setting in effect but not
-				// saved re-sends the value in effect, which the signer takes
-				// as a retry of its save. Turning it back is a toggle once
-				// it is saved.
-				newValue := "true"
-				if row.value == "true" {
-					newValue = "false"
-				}
-				if m.settingUnsaved(row.key) {
-					newValue = row.value
-				}
-				return m, m.sendUpdateAdminSettingCmd(row.key, newValue)
-			}
-			if row.choices != nil {
-				// Cycle to next choice
-				return m, m.sendUpdateAdminSettingCmd(row.key, nextChoice(row.value, row.choices))
-			}
-			// Start editing text value
-			m.admin.editingRow = m.admin.selectedRow
-			m.admin.editValue = row.value
+		if m.admin.selectedRow < len(rows) {
+			return m.activateAdminRow(rows[m.admin.selectedRow])
 		}
 	}
 
+	return m, nil
+}
+
+// activateAdminRow acts on Enter on a settings row: it opens what the row
+// opens, toggles or cycles its value, or starts editing its text.
+func (m Model) activateAdminRow(row adminRow) (tea.Model, tea.Cmd) {
+	if row.action == "open_templates" {
+		m.library.selectedTemplate = 0
+		m.library.scrollOffset = 0
+		m.library.installError = ""
+		m.library.installStatus = ""
+		m.library.pendingTemplate = nil
+		m.viewState = ViewTemplateLibrary
+		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
+	}
+	if row.action == "open_policies" {
+		return m.openPolicies()
+	}
+	if !row.editable {
+		return m, nil
+	}
+	if row.isBool {
+		// Toggle boolean, except that a setting in effect but not
+		// saved re-sends the value in effect, which the signer takes
+		// as a retry of its save. Turning it back is a toggle once
+		// it is saved.
+		newValue := "true"
+		if row.value == "true" {
+			newValue = "false"
+		}
+		if m.settingUnsaved(row.key) {
+			newValue = row.value
+		}
+		return m, m.sendUpdateAdminSettingCmd(row.key, newValue)
+	}
+	if row.choices != nil {
+		// Cycle to next choice
+		return m, m.sendUpdateAdminSettingCmd(row.key, nextChoice(row.value, row.choices))
+	}
+	// Start editing text value
+	m.admin.editingRow = m.admin.selectedRow
+	m.admin.editValue = row.value
 	return m, nil
 }
 

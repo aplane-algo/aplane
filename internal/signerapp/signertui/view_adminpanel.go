@@ -178,67 +178,73 @@ func (m Model) renderAdminPanel() string {
 	}
 
 	rows := m.adminRows()
-	if len(rows) == 0 { //nolint:nestif // complexity backlog
+	if len(rows) == 0 {
 		sb.WriteString(subtitleStyle.Render("  Loading settings..."))
 		sb.WriteString("\n")
 	} else {
-		// Find max label width for alignment
-		maxLabel := 0
-		for _, r := range rows {
-			if len(r.label) > maxLabel {
-				maxLabel = len(r.label)
-			}
-		}
-
-		section := ""
-		for i, r := range rows {
-			if r.section != section {
-				if section != "" {
-					sb.WriteString("\n")
-				}
-				section = r.section
-				sb.WriteString(subtitleStyle.Render(section))
-				sb.WriteString("\n")
-			}
-
-			prefix := "  "
-			if i == m.admin.selectedRow {
-				prefix = "> "
-			}
-
-			// Format value display
-			var valueStr string
-			if m.admin.editingRow == i {
-				valueStr = fmt.Sprintf("[%s_]", m.admin.editValue)
-			} else if r.action != "" {
-				valueStr = r.value
-			} else if r.choices != nil {
-				valueStr = formatChoices(r.value, r.choices)
-			} else if r.isBool {
-				if r.value == "true" {
-					valueStr = "ON"
-				} else {
-					valueStr = "OFF"
-				}
-				if m.settingUnsaved(r.key) {
-					valueStr += unsavedRowNote
-				}
-			} else {
-				valueStr = r.value
-			}
-
-			line := fmt.Sprintf("%s%-*s  %s", prefix, maxLabel, r.label, valueStr)
-
-			if i == m.admin.selectedRow {
-				sb.WriteString(selectedStyle.Render(line))
-			} else if r.isBool && r.value == "true" {
-				sb.WriteString(statusUnlockedStyle.Render(line))
-			} else {
-				sb.WriteString(normalStyle.Render(line))
-			}
-			sb.WriteString("\n")
-		}
+		m.writeSettingRows(&sb, rows)
 	}
 
 	return sb.String()
+}
+
+// writeSettingRows writes the settings, one line each under its section's
+// heading, with the selected row marked.
+func (m Model) writeSettingRows(sb *strings.Builder, rows []adminRow) {
+	// Find max label width for alignment
+	maxLabel := 0
+	for _, r := range rows {
+		if len(r.label) > maxLabel {
+			maxLabel = len(r.label)
+		}
+	}
+
+	section := ""
+	for i, r := range rows {
+		if r.section != section {
+			if section != "" {
+				sb.WriteString("\n")
+			}
+			section = r.section
+			sb.WriteString(subtitleStyle.Render(section))
+			sb.WriteString("\n")
+		}
+
+		prefix := "  "
+		if i == m.admin.selectedRow {
+			prefix = "> "
+		}
+
+		// Format value display
+		var valueStr string
+		if m.admin.editingRow == i {
+			valueStr = fmt.Sprintf("[%s_]", m.admin.editValue)
+		} else if r.action != "" {
+			valueStr = r.value
+		} else if r.choices != nil {
+			valueStr = formatChoices(r.value, r.choices)
+		} else if r.isBool {
+			if r.value == "true" {
+				valueStr = "ON"
+			} else {
+				valueStr = "OFF"
+			}
+			if m.settingUnsaved(r.key) {
+				valueStr += unsavedRowNote
+			}
+		} else {
+			valueStr = r.value
+		}
+
+		line := fmt.Sprintf("%s%-*s  %s", prefix, maxLabel, r.label, valueStr)
+
+		if i == m.admin.selectedRow {
+			sb.WriteString(selectedStyle.Render(line))
+		} else if r.isBool && r.value == "true" {
+			sb.WriteString(statusUnlockedStyle.Render(line))
+		} else {
+			sb.WriteString(normalStyle.Render(line))
+		}
+		sb.WriteString("\n")
+	}
 }

@@ -230,7 +230,7 @@ func (m Model) renderKeyListView() string {
 	tabKeys := filterKeysForTab(m.keylist.keys, m.effectiveKeyListTab())
 	displayKeys := m.filteredKeys()
 
-	if len(m.keylist.keys) == 0 { //nolint:nestif // complexity backlog
+	if len(m.keylist.keys) == 0 {
 		if m.keyCount > 0 {
 			sb.WriteString(fmt.Sprintf("✓ %d keys loaded in signer\n", m.keyCount))
 			sb.WriteString(subtitleStyle.Render("Press 'r' to load key details"))
@@ -248,63 +248,69 @@ func (m Model) renderKeyListView() string {
 		sb.WriteString("\n")
 		sb.WriteString(fmt.Sprintf("\n  Showing: 0 of %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
 	} else {
-		visibleHeight := m.keyListVisibleHeight()
-
-		// Adjust scroll offset for filtered list
-		scrollOffset := m.keylist.scrollOffset
-		if scrollOffset >= len(displayKeys) {
-			scrollOffset = 0
-		}
-
-		sb.WriteString(scrollMoreAboveLine(scrollOffset))
-		sb.WriteString("\n")
-
-		// Calculate end index
-		endIdx := scrollOffset + visibleHeight
-		if endIdx > len(displayKeys) {
-			endIdx = len(displayKeys)
-		}
-
-		// Key list (only visible portion)
-		for i := scrollOffset; i < endIdx; i++ {
-			key := displayKeys[i]
-
-			// Use cursor prefix for selection (more reliable than background colors)
-			var prefix string
-			if i == m.keylist.selectedKey {
-				prefix = "> "
-			} else {
-				prefix = "  "
-			}
-
-			keyTypeText := keyTypeDisplayWithTemplateProvenanceStatus(key.KeyType, key.TemplateProvenanceStatus)
-			keyTypeSuffix := "  " + keyTypeText
-			line := fmt.Sprintf("%s%s  %s",
-				prefix,
-				formatKeyAddress(key.Address, key.KeyType, keyAddressWidth(m.width, prefix, "", keyTypeSuffix), true),
-				styledKeyTypeWithTemplateProvenanceStatus(key.KeyType, key.TemplateProvenanceStatus),
-			)
-
-			if i == m.keylist.selectedKey {
-				sb.WriteString(selectedStyle.Render(line))
-			} else {
-				sb.WriteString(normalStyle.Render(line))
-			}
-			sb.WriteString("\n")
-		}
-
-		sb.WriteString(scrollMoreBelowLine(len(displayKeys) - endIdx))
-		sb.WriteString("\n")
-
-		// Show filtered count vs total
-		if m.keylist.filterInput != "" {
-			sb.WriteString(fmt.Sprintf("\n  Showing: %d of %d %s keys\n", len(displayKeys), len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
-		} else {
-			sb.WriteString(fmt.Sprintf("\n  Total: %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
-		}
+		m.writeKeyRows(&sb, displayKeys, tabKeys)
 	}
 
 	return sb.String()
+}
+
+// writeKeyRows writes the visible part of the key list, the selected key
+// marked, and under it how many keys are shown.
+func (m Model) writeKeyRows(sb *strings.Builder, displayKeys, tabKeys []KeyInfo) {
+	visibleHeight := m.keyListVisibleHeight()
+
+	// Adjust scroll offset for filtered list
+	scrollOffset := m.keylist.scrollOffset
+	if scrollOffset >= len(displayKeys) {
+		scrollOffset = 0
+	}
+
+	sb.WriteString(scrollMoreAboveLine(scrollOffset))
+	sb.WriteString("\n")
+
+	// Calculate end index
+	endIdx := scrollOffset + visibleHeight
+	if endIdx > len(displayKeys) {
+		endIdx = len(displayKeys)
+	}
+
+	// Key list (only visible portion)
+	for i := scrollOffset; i < endIdx; i++ {
+		key := displayKeys[i]
+
+		// Use cursor prefix for selection (more reliable than background colors)
+		var prefix string
+		if i == m.keylist.selectedKey {
+			prefix = "> "
+		} else {
+			prefix = "  "
+		}
+
+		keyTypeText := keyTypeDisplayWithTemplateProvenanceStatus(key.KeyType, key.TemplateProvenanceStatus)
+		keyTypeSuffix := "  " + keyTypeText
+		line := fmt.Sprintf("%s%s  %s",
+			prefix,
+			formatKeyAddress(key.Address, key.KeyType, keyAddressWidth(m.width, prefix, "", keyTypeSuffix), true),
+			styledKeyTypeWithTemplateProvenanceStatus(key.KeyType, key.TemplateProvenanceStatus),
+		)
+
+		if i == m.keylist.selectedKey {
+			sb.WriteString(selectedStyle.Render(line))
+		} else {
+			sb.WriteString(normalStyle.Render(line))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(scrollMoreBelowLine(len(displayKeys) - endIdx))
+	sb.WriteString("\n")
+
+	// Show filtered count vs total
+	if m.keylist.filterInput != "" {
+		sb.WriteString(fmt.Sprintf("\n  Showing: %d of %d %s keys\n", len(displayKeys), len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
+	} else {
+		sb.WriteString(fmt.Sprintf("\n  Total: %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
+	}
 }
 
 func wrapShortcutHint(hint string, width int) string {
