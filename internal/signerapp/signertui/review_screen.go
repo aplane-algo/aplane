@@ -268,8 +268,21 @@ func reviewPositionWords(position string) string {
 	}
 }
 
-// reviewSummary says how the request is made up, in one line.
+// reviewSummary says how the request is made up, in one line, and its place
+// in the client's batch when the client gives one.
 func reviewSummary(review *protocol.Review) string {
+	summary := reviewShape(review)
+	// The client's batch label: this request is one of several it sends one
+	// at a time, each approved on its own.
+	if b := review.Batch; b != nil {
+		summary += fmt.Sprintf(" · %d of %d", b.Position, b.Count)
+	}
+	return summary
+}
+
+// reviewShape is how the request is made up: one transaction, or a group and
+// how this request treats its transactions.
+func reviewShape(review *protocol.Review) string {
 	if !review.Group {
 		return "Single transaction"
 	}

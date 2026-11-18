@@ -25,6 +25,7 @@ type ComponentRequest struct {
 	Targets             []ComponentTarget          `json:"targets"`
 	ContextualPositions []ComponentContextPosition `json:"contextual_positions,omitempty"`
 	DummyPositions      []ComponentDummyPosition   `json:"dummy_positions,omitempty"`
+	Batch               *SignBatch                 `json:"batch,omitempty"`
 }
 
 type ComponentTarget struct {
@@ -94,6 +95,9 @@ type ComponentResponse struct {
 
 func (r ComponentRequest) Validate() error {
 	if err := validateSignRequestID(r.RequestID); err != nil {
+		return err
+	}
+	if err := r.Batch.validate(); err != nil {
 		return err
 	}
 	if err := validateGroupBytesHex(r.GroupBytesHex); err != nil {
@@ -210,7 +214,7 @@ func (r ComponentRequest) GroupSignRequest() GroupSignRequest {
 			requests[position.TargetIndex].AppCallInfo = position.AppCallInfo
 		}
 	}
-	return GroupSignRequest{RequestID: r.RequestID, Requests: requests}
+	return GroupSignRequest{RequestID: r.RequestID, Requests: requests, Batch: r.Batch}
 }
 
 // Validate checks response-intrinsic fields only. Call ValidateForRequest to

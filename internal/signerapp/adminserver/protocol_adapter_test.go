@@ -202,6 +202,7 @@ func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
 		}},
 		Parties: []txnreview.Party{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true, MicroAlgos: &balance, Signable: true}},
 		Chain:   &txnreview.ChainRead{Round: 77, Unavailable: "why"},
+		Batch:   &txnreview.Batch{Position: 2, Count: 3},
 	}
 	got := ProtocolSignRequestMessage(signerapproval.SignRequest{ID: "apv-1", Review: review}).Review
 	want := &protocol.Review{
@@ -222,6 +223,7 @@ func TestProtocolSignRequestMessageCarriesTheReview(t *testing.T) {
 		}},
 		Parties: []protocol.ReviewParty{{Address: "S", Held: true, Signs: true, KeyType: "ed25519", Lookalike: true, MicroAlgos: &wantBalance, Signable: true}},
 		Chain:   &protocol.ReviewChain{Round: 77, Unavailable: "why"},
+		Batch:   &protocol.ReviewBatch{Position: 2, Count: 3},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("review on the wire:\n%+v\nwant:\n%+v", got, want)

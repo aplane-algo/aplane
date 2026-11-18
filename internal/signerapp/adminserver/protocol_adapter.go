@@ -1121,6 +1121,9 @@ func protocolReview(review *txnreview.Review) *protocol.Review {
 	if c := review.Chain; c != nil {
 		out.Chain = &protocol.ReviewChain{Round: c.Round, Unavailable: c.Unavailable}
 	}
+	if b := review.Batch; b != nil {
+		out.Batch = &protocol.ReviewBatch{Position: b.Position, Count: b.Count}
+	}
 	return out
 }
 

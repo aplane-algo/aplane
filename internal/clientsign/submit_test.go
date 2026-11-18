@@ -119,6 +119,42 @@ func TestSignAndSubmitViaGroupIncludesAppCallMetadata(t *testing.T) {
 	})
 }
 
+// A send's batch label reaches /sign beside the requests, and a send without
+// one sends none.
+func TestSignAndSubmitViaGroupSendsTheBatchLabel(t *testing.T) {
+	for _, batch := range []*signerapi.SignBatch{{Position: 2, Count: 3}, nil} {
+		var sent *signerapi.GroupSignRequest
+		signerClient := signerclient.NewSignerClient("http://signer.test")
+		signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/sign" {
+				return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
+			}
+			var req signerapi.GroupSignRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			sent = &req
+			return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{Error: "stop here"})
+		})}
+		authCache := cache.NewAuthAddressCache()
+		algodClient, err := algod.MakeClient("http://algod.test", "")
+		if err != nil {
+			t.Fatalf("MakeClient() error = %v", err)
+		}
+		txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
+		_, _, _ = SignAndSubmitViaGroup(txns, &authCache, signerClient, algodClient, SubmitOptions{Out: io.Discard, Batch: batch})
+		if sent == nil {
+			t.Fatalf("batch %+v: /sign was never called", batch)
+		}
+		switch {
+		case batch == nil && sent.Batch != nil:
+			t.Fatalf("an unlabeled send sent batch %+v", sent.Batch)
+		case batch != nil && (sent.Batch == nil || *sent.Batch != *batch):
+			t.Fatalf("batch on the wire = %+v, want %+v", sent.Batch, batch)
+		}
+	}
+}
+
 func TestSignAndSubmitViaGroupSimulateSignsThenUsesClientAlgod(t *testing.T) {
 	var signerPaths []string
 	simulatedTxn := types.Transaction{

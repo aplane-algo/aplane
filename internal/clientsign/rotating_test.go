@@ -1009,7 +1009,7 @@ func TestRefreshRotatingValidityWidth(t *testing.T) {
 
 // TestRotatingSignRequestCarriesAppCallInfo checks that the sign request
 // sends the prepared group unchanged and forwards the spend's app-call
-// metadata, which the signer renders in the approval prompt.
+// metadata and batch label, which the signer renders in the approval prompt.
 func TestRotatingSignRequestCarriesAppCallInfo(t *testing.T) {
 	prep := &signerapi.RotatingPrepareResponse{Transactions: []string{"5458aa", "5458bb"}}
 	info := &signerapi.AppCallInfo{Mode: "abi", Method: "withdraw(uint64)void"}
@@ -1022,6 +1022,13 @@ func TestRotatingSignRequestCarriesAppCallInfo(t *testing.T) {
 	}
 	if got := rotatingSignRequest("ACCOUNT", prep, SubmitOptions{}).AppCallInfo; got != nil {
 		t.Fatalf("app-call info without options = %+v, want none", got)
+	}
+	batch := &signerapi.SignBatch{Position: 2, Count: 3}
+	if got := rotatingSignRequest("ACCOUNT", prep, SubmitOptions{Batch: batch}).Batch; got != batch {
+		t.Fatalf("batch = %+v, want the send's %+v", got, batch)
+	}
+	if got := rotatingSignRequest("ACCOUNT", prep, SubmitOptions{}).Batch; got != nil {
+		t.Fatalf("batch without options = %+v, want none", got)
 	}
 }
 

@@ -374,10 +374,10 @@ func authorizerMovedSummary(err error, rekeyTo types.Address) string {
 }
 
 // rotatingSignRequest is the sign request for a prepared spend: the prepared
-// group exactly as returned, and the spend's app-call metadata, which the
-// signer uses only to render the approval prompt.
+// group exactly as returned, and the spend's app-call metadata and batch
+// label, which the signer uses only to render the approval prompt.
 func rotatingSignRequest(account string, prep *signerapi.RotatingPrepareResponse, opts SubmitOptions) signerapi.RotatingSignRequest {
-	req := signerapi.RotatingSignRequest{Account: account, Transactions: prep.Transactions}
+	req := signerapi.RotatingSignRequest{Account: account, Transactions: prep.Transactions, Batch: opts.Batch}
 	if len(opts.AppCallInfo) > 0 {
 		req.AppCallInfo = opts.AppCallInfo[0]
 	}

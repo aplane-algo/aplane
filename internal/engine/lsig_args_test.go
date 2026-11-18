@@ -99,6 +99,7 @@ type lsigArgsEngine struct {
 	mu          sync.Mutex
 	signs       [][]signerapi.SignRequest
 	plans       [][]signerapi.SignRequest
+	batches     []*signerapi.SignBatch // each /sign request's batch label
 	signerCalls atomic.Int32
 }
 
@@ -124,6 +125,7 @@ func newLsigArgsEngine(t *testing.T, keys []signerapi.KeyInfo, authAddrs map[str
 			f.mu.Lock()
 			if r.URL.Path == "/sign" {
 				f.signs = append(f.signs, req.Requests)
+				f.batches = append(f.batches, req.Batch)
 			} else {
 				f.plans = append(f.plans, req.Requests)
 			}

@@ -495,6 +495,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	signReq := signerapi.GroupSignRequest{
 		RequestID: req.RequestID,
 		Requests:  []signerapi.SignRequest{{AuthAddress: req.Account, TxnBytesHex: hex.EncodeToString(raws[0]), AppCallInfo: req.AppCallInfo}},
+		Batch:     req.Batch,
 	}
 	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
 	if gateErr != nil {

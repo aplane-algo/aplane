@@ -29,7 +29,10 @@ type SubmitOptions struct {
 	Verbose             bool
 	LsigArgsMap         []map[string][]byte
 	AppCallInfo         []*signerapi.AppCallInfo
-	Simulate            bool
+	// Batch labels the request's place among several the caller sends one
+	// at a time, for the approval prompt. Nil labels nothing.
+	Batch    *signerapi.SignBatch
+	Simulate bool
 	// Out is the writer for progress/status output. Nil discards output.
 	Out io.Writer
 	// TxnWriter is called for each original transaction after successful
@@ -114,7 +117,7 @@ func SignAndSubmitViaGroup(
 	}
 
 	// Send to /sign endpoint
-	resp, err := signerClient.RequestGroupSignWithContext(opts.Ctx, requests)
+	resp, err := signerClient.RequestGroupSignInBatchWithContext(opts.Ctx, requests, opts.Batch)
 	if err != nil {
 		return nil, nil, err
 	}

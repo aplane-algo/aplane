@@ -202,6 +202,12 @@ See [HTTP API Contract](#http-api-contract) for the `/sign` request lifecycle, f
 type GroupSignRequest struct {
     RequestID string        `json:"request_id,omitempty"` // Optional signer request lifecycle ID
     Requests []SignRequest `json:"requests"`
+    Batch    *SignBatch    `json:"batch,omitempty"`      // Optional approval label: this request's place in a batch
+}
+
+type SignBatch struct {
+    Position int `json:"position"` // 1-based
+    Count    int `json:"count"`
 }
 
 // SignRequest supports three mutually exclusive modes:
@@ -1436,7 +1442,7 @@ Fixed runtime binding:
 `/sign` and `/plan` share request type `signerapi.GroupSignRequest`
 from `pkg/signerapi/types.go`:
 
-- top-level fields: optional `request_id`, `requests[]`
+- top-level fields: optional `request_id`, `requests[]`, optional `batch`
 - each entry is one of:
   - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
   - passthrough: `signed_txn_hex`; if the signed envelope uses LogicSig,
@@ -1478,6 +1484,16 @@ policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
   ASCII (bytes 0x20 to 0x7e), as every ABI signature is; anything else is
   refused with 400 on every request that carries `app_call_info` (`/sign`,
   `/plan`, the component and rotating sign requests).
+
+`batch` is approval-rendering metadata too. A client that sends several
+requests one at a time, each for its own approval, such as apshell's `send`
+to several recipients without `atomic`, labels each with its place:
+`position` of `count`, with `1 <= position <= count <= 100000`. Anything else
+is refused with 400 on every request that takes it (`/sign`, `/plan`, the
+component and rotating sign requests). The signer cannot check it: it shows
+it as the client's (`Request 2 of 3 from the client, each approved on its
+own` in the text, `batch` in the review) and it decides nothing. It is not
+part of the approval binding, as `app_call_info` and `txn_sender` are not.
 
 `/sign` uses `app_call_info` to render application-call approval prompts.
 The label is the client's claim: the signer shows it only when the call's
@@ -1681,8 +1697,10 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 
 `/sign/component` accepts `signerapi.ComponentRequest`: optional `request_id`,
 frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`,
-`contextual_positions[]`, and a contiguous `dummy_positions[]` suffix. The
-three position sets form a closed partition.
+`contextual_positions[]`, a contiguous `dummy_positions[]` suffix, and an
+optional `batch` label as on `/sign`. The three position sets form a closed
+partition. A client sends `batch` on the user signer's base component request,
+the one an operator answers; a cosigner has no operator.
 
 A contextual position is one this request doesn't sign and its policy doesn't
 judge; policy and the operator see it on the later `/sign`. The
@@ -1819,6 +1837,7 @@ Clients simulate exactly these bytes and send them back unchanged.
 - optional `app_call_info`: app-call metadata for the approval prompt, as on
   `/sign`; it is checked against the spend's bytes when rendered and is not
   signed
+- optional `batch`: the request's place in a batch, as on `/sign`
 
 The group's `rekey_to` names stage `n + 1`, which fixes `n`; the request
 carries no stage of its own and nothing is carried over from prepare. The

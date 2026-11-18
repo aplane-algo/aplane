@@ -902,3 +902,20 @@ func TestReviewTitleSitsUnderABlankLine(t *testing.T) {
 		}
 	}
 }
+
+// A request the client labels as one of several it sends one at a time says
+// which in the title line, beside the validity window at 80x24.
+func TestReviewTitleShowsTheClientsBatchPosition(t *testing.T) {
+	request := singleReviewRequest()
+	request.Review.Batch = &protocol.ReviewBatch{Position: 1, Count: 3}
+	m := reviewModelForTest(t, request, true, 80, 24)
+	lines := strings.Split(requireFits(t, m, 80, 24), "\n")
+	title := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "Signing Request") })
+	if title < 0 || !strings.Contains(lines[title], "Signing Request  Single transaction · 1 of 3") || !strings.Contains(lines[title], "Valid Rounds: 100 - 1100") {
+		t.Fatalf("title line = %q", lines[max(title, 0)])
+	}
+
+	if got := reviewSummary(singleReviewRequest().Review); got != "Single transaction" {
+		t.Fatalf("an unlabeled request's summary = %q", got)
+	}
+}

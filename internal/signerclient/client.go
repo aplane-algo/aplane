@@ -357,11 +357,18 @@ func (c *Client) RequestGroupSign(requests []signerapi.SignRequest) (*signerapi.
 }
 
 func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
+	return c.RequestGroupSignInBatchWithContext(ctx, requests, nil)
+}
+
+// RequestGroupSignInBatchWithContext is RequestGroupSignWithContext for a
+// request that is one of several the caller sends one at a time: batch labels
+// its place for the approval prompt. A nil batch labels nothing.
+func (c *Client) RequestGroupSignInBatchWithContext(ctx context.Context, requests []signerapi.SignRequest, batch *signerapi.SignBatch) (*signerapi.GroupSignResponse, error) {
 	requestID, err := newSignRequestID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sign request ID: %w", err)
 	}
-	groupReq := signerapi.GroupSignRequest{RequestID: requestID, Requests: requests}
+	groupReq := signerapi.GroupSignRequest{RequestID: requestID, Requests: requests, Batch: batch}
 	if err := groupReq.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid group sign request: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // SendRequest captures parsed send-command inputs before semantic resolution.
@@ -326,7 +327,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 	}
 
 	result := &NonAtomicSendResult{Amount: plan.Amount}
-	for _, item := range plan.Items {
+	for i, item := range plan.Items {
 		itemResult := SendItemResult{
 			From:           item.From,
 			To:             item.To,
@@ -342,6 +343,11 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 		}
 
 		itemResult.Warnings = sendWarnings(item, plan.Amount)
+		// Each transaction is its own request and approval; with more than
+		// one, the prompt says which of them this is.
+		if len(plan.Items) > 1 && item.Prep.enginePrep != nil {
+			item.Prep.enginePrep.Batch = &signerapi.SignBatch{Position: i + 1, Count: len(plan.Items)}
+		}
 		submit, err := a.eng.SignAndSubmit(ctx, item.Prep.enginePrep, plan.LsigArgs, wait)
 		if err != nil {
 			if submit != nil {

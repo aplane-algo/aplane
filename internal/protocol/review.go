@@ -26,6 +26,16 @@ type Review struct {
 	// Chain is when the signer read the parties from its node, or why it
 	// could not. What the node says is shown and decides nothing.
 	Chain *ReviewChain `json:"chain,omitempty"`
+	// Batch is the request's place among several the client sends one at a
+	// time, each approved on its own, as the client gives it.
+	Batch *ReviewBatch `json:"batch,omitempty"`
+}
+
+// ReviewBatch is a request's place in the client's batch: the Position-th of
+// Count. The signer cannot check it.
+type ReviewBatch struct {
+	Position int `json:"position"`
+	Count    int `json:"count"`
 }
 
 // ReviewChain is when the signer read a review's parties from its node.

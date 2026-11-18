@@ -395,3 +395,41 @@ func TestPreflightMessageForAnOverflowingRequirement(t *testing.T) {
 		t.Fatalf("validatePreparedSendItem() error = %q, want %q", err, want)
 	}
 }
+
+// A send to several recipients, one at a time, labels each transaction with
+// its place among them for the approval prompt. A send of one labels nothing.
+func TestNonAtomicSendLabelsEachTransactionsPlace(t *testing.T) {
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	app := New(eng, config.DefaultConfig(), t.TempDir())
+	plan := func(n int) *NonAtomicSendPlan {
+		p := &NonAtomicSendPlan{Amount: asa.Amount{Raw: 1_000_000}}
+		for i := 0; i < n; i++ {
+			p.Items = append(p.Items, PreparedSendItem{
+				Prep:         preparedTxnFromEngine(&engine.TransactionPrepResult{Transaction: types.Transaction{Type: types.PaymentTx}}),
+				BalanceCheck: &BalanceCheckDetails{SufficientFunds: true},
+			})
+		}
+		return p
+	}
+
+	three := plan(3)
+	if _, err := app.executeNonAtomicSend(context.Background(), three, false); err != nil {
+		t.Fatalf("executeNonAtomicSend() error = %v", err)
+	}
+	for i, item := range three.Items {
+		if got := item.Prep.enginePrep.Batch; got == nil || got.Position != i+1 || got.Count != 3 {
+			t.Errorf("transaction %d: batch = %+v, want %d of 3", i+1, got, i+1)
+		}
+	}
+
+	one := plan(1)
+	if _, err := app.executeNonAtomicSend(context.Background(), one, false); err != nil {
+		t.Fatalf("executeNonAtomicSend() error = %v", err)
+	}
+	if got := one.Items[0].Prep.enginePrep.Batch; got != nil {
+		t.Fatalf("a send of one is labeled %+v", got)
+	}
+}
