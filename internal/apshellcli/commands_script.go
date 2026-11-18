@@ -30,9 +30,7 @@ func (r *REPLState) cmdJS(args []string, ctxRaw interface{}) (command.Result, er
 	return newTerminalCommandResult(nil), r.runJS(args, ctxRaw)
 }
 
-func (r *REPLState) runJS(args []string, ctxRaw interface{}) error { //nolint:gocognit // complexity backlog
-	var code string
-
+func (r *REPLState) runJS(args []string, ctxRaw interface{}) error {
 	// Get raw args from context (preserves quotes that ParseCommand strips)
 	ctx, _ := ctxRaw.(*command.Context)
 	rawArgs := ""
@@ -45,107 +43,9 @@ func (r *REPLState) runJS(args []string, ctxRaw interface{}) error { //nolint:go
 		return nil
 	}
 
-	if len(args) == 0 { //nolint:nestif // complexity backlog
-		// Multi-line mode: read lines until blank line
-		r.println("Enter JavaScript code (blank line to execute, Ctrl+C to cancel):")
-
-		var lines []string
-		if r.hasInteractiveLineReader() {
-			r.clearInputPrompt()
-			for {
-				line, err := r.readInteractiveLine()
-				if err != nil {
-					if errors.Is(err, readline.ErrInterrupt) {
-						r.println("\nCancelled.")
-						return nil
-					}
-					return err
-				}
-				if line == "" {
-					break
-				}
-				lines = append(lines, line)
-			}
-		} else {
-			scanner := bufio.NewScanner(os.Stdin)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if line == "" {
-					break
-				}
-				lines = append(lines, line)
-			}
-			if err := scanner.Err(); err != nil {
-				return err
-			}
-		}
-		if len(lines) == 0 {
-			return nil
-		}
-		code = strings.Join(lines, "\n")
-	} else if strings.HasPrefix(rawArgs, "{") {
-		// Brace-delimited mode: js { code here }
-		// Use rawArgs to preserve quotes inside the braces
-		inner := strings.TrimPrefix(rawArgs, "{")
-		inner = strings.TrimSpace(inner)
-
-		if strings.HasSuffix(inner, "}") {
-			code = strings.TrimSuffix(inner, "}")
-			code = strings.TrimSpace(code)
-		} else {
-			// Read more lines until we find closing brace
-			lines := []string{inner}
-			if r.hasInteractiveLineReader() {
-				r.clearInputPrompt()
-				for {
-					line, err := r.readInteractiveLine()
-					if err != nil {
-						if errors.Is(err, readline.ErrInterrupt) {
-							r.println("\nCancelled.")
-							return nil
-						}
-						return err
-					}
-					if strings.TrimSpace(line) == "}" {
-						break
-					}
-					lines = append(lines, line)
-				}
-			} else {
-				scanner := bufio.NewScanner(os.Stdin)
-				for scanner.Scan() {
-					line := scanner.Text()
-					if strings.TrimSpace(line) == "}" {
-						break
-					}
-					lines = append(lines, line)
-				}
-				if err := scanner.Err(); err != nil {
-					return err
-				}
-			}
-			code = strings.Join(lines, "\n")
-		}
-	} else if strings.HasSuffix(args[0], ".js") {
-		// File mode: js script.js
-		// Absolute paths are used as-is; bare filenames resolve to the scripts directory.
-		scriptPath := args[0]
-		if !filepath.IsAbs(scriptPath) {
-			scriptPath = filepath.Join(r.DataDir, "scripts", scriptPath)
-		}
-		content, err := os.ReadFile(scriptPath)
-		if err != nil {
-			return fmt.Errorf("failed to read script: %w", err)
-		}
-		code = string(content)
-	} else {
-		// Inline mode: js <code>
-		// Use rawArgs to preserve quotes
-		if rawArgs != "" {
-			code = rawArgs
-		} else {
-			code = strings.Join(args, " ")
-		}
+	code, ok, err := r.jsCode(args, rawArgs)
+	if err != nil || !ok {
+		return err
 	}
 
 	r.ensureJSRunner()
@@ -169,6 +69,105 @@ func (r *REPLState) runJS(args []string, ctxRaw interface{}) error { //nolint:go
 	}
 
 	return nil
+}
+
+// jsCode returns the code a js command names, from whichever of its four
+// forms was used. ok is false when there is nothing to run: the input was
+// cancelled or empty.
+func (r *REPLState) jsCode(args []string, rawArgs string) (code string, ok bool, err error) {
+	switch {
+	case len(args) == 0:
+		return r.jsCodeFromLines()
+	case strings.HasPrefix(rawArgs, "{"):
+		return r.jsCodeFromBraces(rawArgs)
+	case strings.HasSuffix(args[0], ".js"):
+		return r.jsCodeFromFile(args[0])
+	}
+	// Inline mode: js <code>
+	// Use rawArgs to preserve quotes
+	if rawArgs != "" {
+		return rawArgs, true, nil
+	}
+	return strings.Join(args, " "), true, nil
+}
+
+// jsCodeFromLines is multi-line mode: lines until a blank one.
+func (r *REPLState) jsCodeFromLines() (string, bool, error) {
+	r.println("Enter JavaScript code (blank line to execute, Ctrl+C to cancel):")
+
+	lines, cancelled, err := r.readJSLines(nil, func(line string) bool { return line == "" })
+	if err != nil || cancelled || len(lines) == 0 {
+		return "", false, err
+	}
+	return strings.Join(lines, "\n"), true, nil
+}
+
+// jsCodeFromBraces is brace-delimited mode: js { code here }. It uses rawArgs
+// to preserve quotes inside the braces. Without a closing brace on the line,
+// it reads more lines until one that holds only the closing brace.
+func (r *REPLState) jsCodeFromBraces(rawArgs string) (string, bool, error) {
+	inner := strings.TrimPrefix(rawArgs, "{")
+	inner = strings.TrimSpace(inner)
+
+	if strings.HasSuffix(inner, "}") {
+		code := strings.TrimSuffix(inner, "}")
+		return strings.TrimSpace(code), true, nil
+	}
+
+	lines, cancelled, err := r.readJSLines([]string{inner}, func(line string) bool { return strings.TrimSpace(line) == "}" })
+	if err != nil || cancelled {
+		return "", false, err
+	}
+	return strings.Join(lines, "\n"), true, nil
+}
+
+// jsCodeFromFile is file mode: js script.js. Absolute paths are used as-is;
+// bare filenames resolve to the scripts directory.
+func (r *REPLState) jsCodeFromFile(scriptPath string) (string, bool, error) {
+	if !filepath.IsAbs(scriptPath) {
+		scriptPath = filepath.Join(r.DataDir, "scripts", scriptPath)
+	}
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read script: %w", err)
+	}
+	return string(content), true, nil
+}
+
+// readJSLines appends lines to lines until isEnd accepts one, reading from
+// the interactive line reader when there is one and from standard input
+// otherwise. An interrupt at the line reader cancels the command.
+func (r *REPLState) readJSLines(lines []string, isEnd func(line string) bool) (_ []string, cancelled bool, _ error) {
+	if !r.hasInteractiveLineReader() {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if isEnd(line) {
+				break
+			}
+			lines = append(lines, line)
+		}
+		if err := scanner.Err(); err != nil {
+			return nil, false, err
+		}
+		return lines, false, nil
+	}
+
+	r.clearInputPrompt()
+	for {
+		line, err := r.readInteractiveLine()
+		if err != nil {
+			if errors.Is(err, readline.ErrInterrupt) {
+				r.println("\nCancelled.")
+				return nil, true, nil
+			}
+			return nil, false, err
+		}
+		if isEnd(line) {
+			return lines, false, nil
+		}
+		lines = append(lines, line)
+	}
 }
 
 // cmdJSSave saves JavaScript code to a file in the data directory's scripts/ folder.
