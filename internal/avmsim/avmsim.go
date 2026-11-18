@@ -383,22 +383,24 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) { //nol
 			}
 		case "==", "!=":
 			var a, b Value
-			if b, err = pop(); err == nil { //nolint:nestif // complexity backlog
-				if a, err = pop(); err == nil {
-					if a.isBytes != b.isBytes {
-						err = errors.New("comparing bytes with uint64")
-					} else {
-						if hooks.Equal != nil {
-							hooks.Equal(a, b)
-						}
-						eq := a.uint == b.uint
-						if a.isBytes {
-							eq = string(a.bytes) == string(b.bytes)
-						}
-						err = push(U(boolUint(eq == (in.op == "=="))))
-					}
-				}
+			if b, err = pop(); err != nil {
+				break
 			}
+			if a, err = pop(); err != nil {
+				break
+			}
+			if a.isBytes != b.isBytes {
+				err = errors.New("comparing bytes with uint64")
+				break
+			}
+			if hooks.Equal != nil {
+				hooks.Equal(a, b)
+			}
+			eq := a.uint == b.uint
+			if a.isBytes {
+				eq = string(a.bytes) == string(b.bytes)
+			}
+			err = push(U(boolUint(eq == (in.op == "=="))))
 		case "b<":
 			var a, b []byte
 			if b, err = popBytes(); err == nil {
@@ -531,20 +533,23 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) { //nol
 			}
 		case "ed25519verify_bare", "falcon_verify":
 			var data, sig, key []byte
-			if key, err = popBytes(); err == nil { //nolint:nestif // complexity backlog
-				if sig, err = popBytes(); err == nil {
-					if data, err = popBytes(); err == nil {
-						verify := hooks.Ed25519
-						if in.op == "falcon_verify" {
-							verify = hooks.Falcon
-						}
-						if verify == nil {
-							err = unsupportedf("no hook for %s", in.op)
-						} else {
-							err = push(U(boolUint(verify(data, sig, key))))
-						}
-					}
-				}
+			if key, err = popBytes(); err != nil {
+				break
+			}
+			if sig, err = popBytes(); err != nil {
+				break
+			}
+			if data, err = popBytes(); err != nil {
+				break
+			}
+			verify := hooks.Ed25519
+			if in.op == "falcon_verify" {
+				verify = hooks.Falcon
+			}
+			if verify == nil {
+				err = unsupportedf("no hook for %s", in.op)
+			} else {
+				err = push(U(boolUint(verify(data, sig, key))))
 			}
 		default:
 			err = unsupportedf("opcode %q", in.op)
