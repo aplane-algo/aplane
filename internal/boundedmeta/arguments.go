@@ -125,7 +125,7 @@ func (metadata *Metadata) ValidateNetworkLimits() error {
 	return nil
 }
 
-func validateArgumentLayout(metadata *Metadata) error { //nolint:gocognit // unslop phase 3
+func validateArgumentLayout(metadata *Metadata) error { //nolint:gocognit // complexity backlog
 	if len(metadata.ArgumentLayout) == 0 {
 		return fmt.Errorf("bounded argument_layout must not be empty")
 	}

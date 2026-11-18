@@ -266,7 +266,7 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 		return nil, keyType, internal(fmt.Sprintf("unsupported key type: %s", keyType))
 	}
 
-	if keyMaterial.Bytecode == nil { //nolint:nestif // unslop phase 3
+	if keyMaterial.Bytecode == nil { //nolint:nestif // complexity backlog
 		if transactionAuthorizer, ok := provider.(coresigning.TransactionAuthorizer); ok {
 			if keyType != nativefalcon.KeyType {
 				return nil, keyType, internal(fmt.Sprintf("key type %s unexpectedly implements structured transaction authorization", keyType))

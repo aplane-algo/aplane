@@ -1143,7 +1143,7 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 		}
 
 		// Check if this parameter has input modes and the selected mode requires a transform.
-		if len(paramDef.InputModes) > 0 { //nolint:nestif // unslop phase 3
+		if len(paramDef.InputModes) > 0 { //nolint:nestif // complexity backlog
 			modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
 			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
 				mode := paramDef.InputModes[modeIdx]

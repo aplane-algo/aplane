@@ -113,7 +113,7 @@ type MintRequest struct {
 // Commit order (docs/ARCH_STORE.md, "Ordinary generation commit"):
 // stage → copy parent → apply → validate → manifest → fsync all →
 // publish rename → fsync generations/ → seal outgoing → replace store root.
-func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) { //nolint:gocognit // unslop phase 3
+func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) { //nolint:gocognit // complexity backlog
 	if err := storepaths.ValidateGenerationID(req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -165,7 +165,7 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	// self-parent and parent-must-exist checks: the store root's generation
 	// directory is verified by the authenticated selection, and a self-parent request
 	// would collide with the existing current directory below.
-	if req.FirstGeneration { //nolint:nestif // unslop phase 3
+	if req.FirstGeneration { //nolint:nestif // complexity backlog
 		if req.Parent != "" {
 			return storepaths.GenPaths{}, fmt.Errorf("atomic store-root first mint must be parentless")
 		}

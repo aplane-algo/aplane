@@ -178,7 +178,7 @@ func (m Model) renderAdminPanel() string {
 	}
 
 	rows := m.adminRows()
-	if len(rows) == 0 { //nolint:nestif // unslop phase 3
+	if len(rows) == 0 { //nolint:nestif // complexity backlog
 		sb.WriteString(subtitleStyle.Render("  Loading settings..."))
 		sb.WriteString("\n")
 	} else {

@@ -22,7 +22,7 @@ import (
 // committing its managed credentials through one generation transaction.
 // Destination policy, templates, and key-type generation state are neither
 // read from the archive nor changed by this operation.
-func (s Service) RestoreBackup( //nolint:gocognit // unslop phase 3
+func (s Service) RestoreBackup( //nolint:gocognit // complexity backlog
 	req adminproto.RestoreBackupRequest,
 ) adminproto.RestoreBackupResult {
 	ir := s.Runtime

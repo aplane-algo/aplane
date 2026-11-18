@@ -242,7 +242,7 @@ func (m shellModel) Update(msg tea.Msg) (shellModel, tea.Cmd) {
 	}
 }
 
-func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) { //nolint:gocognit // unslop phase 3
+func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) { //nolint:gocognit // complexity backlog
 	if m.pendingHostKey != nil {
 		ch := m.pendingHostKey.response
 		m.pendingHostKey = nil

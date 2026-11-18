@@ -81,7 +81,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return next, cmd
 }
 
-func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocognit // unslop phase 3
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocognit // complexity backlog
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.belowMinSize() {
