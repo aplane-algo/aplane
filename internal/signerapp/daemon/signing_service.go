@@ -20,6 +20,16 @@ type signingAudit interface {
 }
 
 func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLog signingAudit) *signersigning.Service {
+	// One request, one session: the request signs only while the signer is
+	// unlocked in the session it began in. A recovery and a reconcile while
+	// it waits for approval end that session as a lock does, so the request
+	// is refused rather than signed on a plan from before them. It is read
+	// before the policy snapshot below, and the caller builds the service
+	// before it takes the request's key session, so both belong to this
+	// session or the request is refused.
+	generation := ir.LockGeneration()
+	inSession := func() bool { return ir.IsUnlockedIn(generation) }
+
 	// One request, one policy snapshot: every slot of this request resolves
 	// against the NodePolicy captured here, whatever reloads land later, and
 	// its approval prompts show amounts from the context it was loaded in.
@@ -29,14 +39,6 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 		ctx := nodePolicy.Context
 		describe = func(txn types.Transaction) txnreview.Details { return txdesc.DetailTxnInContext(txn, ctx) }
 	}
-	// One request, one session: the request signs only while the signer is
-	// unlocked in the session it began in. A recovery and a reconcile while
-	// it waits for approval end that session as a lock does, so the request
-	// is refused rather than signed on a plan from before them. The caller
-	// builds the service before it takes the request's key session, so the
-	// keys it signs with are that session's.
-	generation := ir.LockGeneration()
-	inSession := func() bool { return ir.IsUnlockedIn(generation) }
 	return &signersigning.Service{
 		Planner:                       fs.newPlannerWithAudit(auditLog),
 		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),

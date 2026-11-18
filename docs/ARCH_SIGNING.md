@@ -1093,10 +1093,11 @@ is built, then uses:
   signing service, before it takes the request's key session, and every
   unlocked check of the request, the one after approval included, asks
   whether the signer is still unlocked in that session
-  (`productruntime.Runtime.IsUnlockedIn`). A lock and an unlock, or a
-  recovery and a reconcile, while a request waits for approval end that
-  session, and the request answers `locked` instead of signing on a plan
-  made before them; the client sends it again
+  (`productruntime.Runtime.IsUnlockedIn`). A recovery and a reconcile while
+  a request waits for approval end that session, and the request answers
+  `locked` instead of signing on a plan made before them; the client sends
+  it again. (A lock fails the pending approval itself, so a request waiting
+  across a lock answers `forbidden`, rejected by the operator.)
 
 ### Approval Text Is Escaped
 
@@ -1384,7 +1385,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `bad_request` | malformed or invalid request input | `400` |
 | `unauthorized` | missing or invalid authentication | `401` |
 | `forbidden` | authenticated request the signer refuses (policy or role) | `403` |
-| `locked` | signer keystore is locked | `403` |
+| `locked` | signer keystore is locked, or the session the request began in has ended (a lock, or a recovery and a reconcile, since it began); send it again | `403` |
 | `not_found` | unknown key or resource | `404` |
 | `invalid_passphrase` | passphrase verification failure | `403` |
 | `unavailable` | temporary inability to serve the request | `503` |
