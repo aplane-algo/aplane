@@ -4,8 +4,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -69,13 +71,15 @@ func cmdPermissions(args []string) error {
 		return nil
 	}
 	var opts storeperm.AuditOptions
+	var configFinding error
 	if managed {
 		opts = storeperm.ProductionAuditOptions(dataDirectory, uid, gid)
 	} else {
-		socketPath, err := configuredLiveAuditSocketPath(auditRoot)
+		socketPath, unreadable, err := configuredLiveAuditSocketPath(auditRoot)
 		if err != nil {
 			return err
 		}
+		configFinding = unreadable
 		socketPath, err = canonicalSocketParent(socketPath)
 		if err != nil {
 			return err
@@ -86,11 +90,16 @@ func cmdPermissions(args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(findings) != 0 {
+	count := len(findings)
+	if configFinding != nil {
+		logErrorf("%s", configFinding.Error())
+		count++
+	}
+	if count != 0 {
 		for _, finding := range findings {
 			logErrorf("%s", finding.Error())
 		}
-		return fmt.Errorf("private store permission audit failed with %d finding(s)", len(findings))
+		return fmt.Errorf("private store permission audit failed with %d finding(s)", count)
 	}
 	logInfof("private store permission audit passed")
 	return nil
@@ -201,19 +210,29 @@ func parseManagedPrincipalFlags(name string, args []string) (int, int, error) {
 	return uid, gid, nil
 }
 
-func configuredLiveAuditSocketPath(root string) (string, error) {
+// configuredLiveAuditSocketPath resolves the signer socket the audit checks.
+// A config.yaml the audit cannot read (a filesystem error, often its own
+// permissions) is returned as unreadable, a finding of the audit, and the
+// default socket is checked instead, so the audit still reports what is
+// wrong. A config.yaml that reads but does not parse fails the audit.
+func configuredLiveAuditSocketPath(root string) (path string, unreadable error, err error) {
 	cfg, err := serverconfig.LoadServerConfig(root)
+	var readErr *fs.PathError
+	if errors.As(err, &readErr) {
+		unreadable = fmt.Errorf("signer config cannot be read; checked the default socket instead: %w", err)
+		cfg, err = serverconfig.DefaultServerConfig(), nil
+	}
 	if err != nil {
-		return "", fmt.Errorf("load signer config for permission audit: %w", err)
+		return "", nil, fmt.Errorf("load signer config for permission audit: %w", err)
 	}
 	path, managed, err := adminipc.ResolveDaemonPathForDataDir(root, cfg.IPCPath)
 	if err != nil {
-		return "", fmt.Errorf("resolve signer socket for permission audit: %w", err)
+		return "", nil, fmt.Errorf("resolve signer socket for permission audit: %w", err)
 	}
 	if managed {
-		return "", fmt.Errorf("same-UID permission audit unexpectedly resolved a managed store")
+		return "", nil, fmt.Errorf("same-UID permission audit unexpectedly resolved a managed store")
 	}
-	return path, nil
+	return path, unreadable, nil
 }
 
 func configuredMigrationSocketPath(root string) (string, error) {
