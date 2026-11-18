@@ -26,8 +26,11 @@ func (s Service) SignGroup(ctx context.Context, ir *productruntime.Runtime, req 
 	ctx, finishSignRequest := ir.BeginSigningRequest(ctx, req.RequestID)
 	defer finishSignRequest()
 
+	// The service records the session the request runs in, so it is built
+	// before the keys are taken from that session.
+	svc := s.Deps.NewSigningService(ir)
 	session := ir.SnapshotKeySession()
-	result, err := s.Deps.NewSigningService(ir).SignGroupWithContext(ctx, req, session)
+	result, err := svc.SignGroupWithContext(ctx, req, session)
 	if err != nil {
 		return nil, err
 	}

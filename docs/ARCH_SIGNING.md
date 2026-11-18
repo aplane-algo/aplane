@@ -1088,6 +1088,15 @@ is built, then uses:
 - `user_auto_approve:true` satisfies all signer review requirements without human approval; hard rejections still apply
 - explicit auto-approval policy never bypasses hard-reject safety policy
 - warning analysis informs approval, but remains separate from the hard-reject layer
+- a request signs only in the session it began in: the daemon records the
+  session generation (`LockGeneration`) when it builds the request's
+  signing service, before it takes the request's key session, and every
+  unlocked check of the request, the one after approval included, asks
+  whether the signer is still unlocked in that session
+  (`productruntime.Runtime.IsUnlockedIn`). A lock and an unlock, or a
+  recovery and a reconcile, while a request waits for approval end that
+  session, and the request answers `locked` instead of signing on a plan
+  made before them; the client sends it again
 
 ### Approval Text Is Escaped
 
