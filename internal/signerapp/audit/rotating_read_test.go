@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,7 +62,12 @@ func TestRotationDuringTheReleaseReadHidesNoFile(t *testing.T) {
 	if len(leaves) != 3 || leaves[0].Index != 0 || leaves[1].Index != 1 || leaves[2].Index != 2 {
 		t.Fatalf("read %+v across a rotation, want leaves 0, 1 and 2 in log order", leaves)
 	}
-	if _, err := os.Stat(path + ".2"); err != nil {
-		t.Fatalf("the entry did not rotate the log: %v", err)
+	// The entry did rotate the log: the middle file now has the oldest's
+	// name, and the current file holds only the new entry.
+	if rotated, err := os.ReadFile(path + ".2"); err != nil || !strings.Contains(string(rotated), `"txid":"middle"`) {
+		t.Fatalf("the entry did not rotate the log: %s.2 = %q, %v", path, rotated, err)
+	}
+	if current, err := os.ReadFile(path); err != nil || strings.Contains(string(current), "ROTATING_RELEASE") {
+		t.Fatalf("the current file after the rotation = %q, %v; want only the new entry", current, err)
 	}
 }

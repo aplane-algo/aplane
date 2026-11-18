@@ -75,8 +75,8 @@ func (a *AuditLogger) ReadRotatingReleases() (map[string]RotatingRelease, error)
 	return readReleaseLogs(files)
 }
 
-// afterReleaseLogOpen, when a test sets it, runs after each file
-// openReleaseLogs opens.
+// afterReleaseLogOpen, when a test sets it, runs before each attempt to open
+// a further file once openReleaseLogs holds at least one open.
 var afterReleaseLogOpen func()
 
 // openReleaseLogs opens the audit log at path and its rotated predecessors,
