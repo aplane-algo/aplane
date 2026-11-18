@@ -148,15 +148,18 @@ type Runtime struct {
 	// crash. The next registry operation re-publishes it before doing
 	// anything else, so no retry is acknowledged on top of an unsynced file.
 	clientsUnsynced bool
-	// clientsUnreadable records that the registry file could not be read
-	// back after a failed publish. clients is then a placeholder that
-	// refuses every key, not the registry, so it must never be published:
-	// the next registry operation reads the file again first.
-	clientsUnreadable bool
-	// pendingUnsynced and pendingUnreadable are the same markers for the
+	// clientsIntended is set when the registry file could not be read back
+	// after a failed publish. The outcome on disk is then unknown, so the
+	// change is reported as applied and this is the registry it intended.
+	// clients meanwhile is a placeholder that refuses every key and is
+	// never published; the next registry operation waits for the file to
+	// be readable and then publishes clientsIntended, so what was reported
+	// is what the file ends up holding.
+	clientsIntended *clientregistry.Registry
+	// pendingUnsynced and pendingIntended are the same markers for the
 	// enrollment queue file.
-	pendingUnsynced   bool
-	pendingUnreadable bool
+	pendingUnsynced bool
+	pendingIntended *enrollqueue.Queue
 
 	// reloadFn performs template registration + key scan + snapshot publish.
 	// Injected by the process root after construction.
@@ -692,15 +695,15 @@ func (ir *Runtime) ensureRegistryDurableLocked() error {
 	if !ir.clientsUnsynced {
 		return nil
 	}
-	if ir.clientsUnreadable {
+	if ir.clientsIntended != nil {
 		// What the runtime holds is the placeholder, not the registry:
 		// publishing it would write every enrolled key out of the file.
-		reloaded, err := clientregistry.Load(ir.AuthorizedKeysPath())
-		if err != nil {
+		// Wait until the file reads again, then publish the registry the
+		// failed write intended, whichever of the two the file holds.
+		if _, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil {
 			return fmt.Errorf("registry is unreadable after an earlier failed write; repair %s: %w", ir.AuthorizedKeysPath(), err)
 		}
-		ir.clients = reloaded
-		ir.clientsUnreadable = false
+		ir.clients = ir.clientsIntended
 	}
 	current := ir.clients
 	if current == nil {
@@ -721,17 +724,20 @@ func (ir *Runtime) publishRegistryFileLocked(reg *clientregistry.Registry) (appl
 		ir.clientsUnsynced = true
 		reloaded, loadErr := clientregistry.Load(ir.AuthorizedKeysPath())
 		if loadErr != nil {
+			// The file holds the old registry or reg, and which cannot be
+			// known: refuse every key until it can be read, and commit to
+			// reg, which the next registry operation publishes.
 			ir.clients, _ = clientregistry.Parse(nil)
-			ir.clientsUnreadable = true
-			return false, fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
+			ir.clientsIntended = reg
+			return true, fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
 		}
 		ir.clients = reloaded
-		ir.clientsUnreadable = false
+		ir.clientsIntended = nil
 		return bytes.Equal(reloaded.Marshal(), reg.Marshal()), err
 	}
 	ir.clients = reg
 	ir.clientsUnsynced = false
-	ir.clientsUnreadable = false
+	ir.clientsIntended = nil
 	return true, nil
 }
 
@@ -832,17 +838,19 @@ func (ir *Runtime) publishQueueFileLocked(next *enrollqueue.Queue) (applied bool
 		now := time.Now()
 		reloaded, loadErr := enrollqueue.Load(ir.PendingEnrollmentsPath(), now)
 		if loadErr != nil {
+			// As for the registry: commit to next, which the next queue
+			// operation publishes once the file reads again.
 			ir.pending = &enrollqueue.Queue{}
-			ir.pendingUnreadable = true
-			return false, fmt.Errorf("%w (queue unreadable after the failed publish, waiting requests dropped until it is repaired: %v)", err, loadErr)
+			ir.pendingIntended = next
+			return true, fmt.Errorf("%w (queue unreadable after the failed publish, waiting requests hidden until it is repaired: %v)", err, loadErr)
 		}
 		ir.pending = reloaded
-		ir.pendingUnreadable = false
+		ir.pendingIntended = nil
 		return bytes.Equal(reloaded.Marshal(), next.Pruned(now).Marshal()), err
 	}
 	ir.pending = next
 	ir.pendingUnsynced = false
-	ir.pendingUnreadable = false
+	ir.pendingIntended = nil
 	return true, nil
 }
 
@@ -855,15 +863,13 @@ func (ir *Runtime) ensureQueueDurableLocked() error {
 	if !ir.pendingUnsynced {
 		return nil
 	}
-	if ir.pendingUnreadable {
+	if ir.pendingIntended != nil {
 		// As for the registry: the empty queue held is a placeholder, and
 		// publishing it would drop every waiting request from the file.
-		reloaded, err := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now())
-		if err != nil {
+		if _, err := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now()); err != nil {
 			return fmt.Errorf("enrollment queue is unreadable after an earlier failed write; repair %s: %w", ir.PendingEnrollmentsPath(), err)
 		}
-		ir.pending = reloaded
-		ir.pendingUnreadable = false
+		ir.pending = ir.pendingIntended
 	}
 	if _, err := ir.publishQueueFileLocked(ir.pendingLocked()); err != nil {
 		return fmt.Errorf("enrollment queue from an earlier failed write is still not durable: %w", err)
@@ -984,6 +990,11 @@ func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	if err := ir.ensureQueueDurableLocked(); err != nil {
+		return enrollqueue.Entry{}, false, err
+	}
+	// The already-enrolled check reads the registry, so it must be the
+	// registry and not the placeholder an unreadable file leaves.
+	if err := ir.ensureRegistryDurableLocked(); err != nil {
 		return enrollqueue.Entry{}, false, err
 	}
 	next, entry, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
