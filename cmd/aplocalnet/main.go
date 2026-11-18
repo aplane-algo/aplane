@@ -368,30 +368,8 @@ func (m model) View() string {
 		sb.WriteString(errorStyle.Render(wrap(m.err, contentWidth(m.width))))
 		sb.WriteString("\n")
 	}
-	if m.result != nil { //nolint:nestif // complexity backlog
-		sb.WriteString("\n")
-		if m.result.SignerConfigPath != "" {
-			sb.WriteString(kv("Signer config", changedText(m.result.SignerConfigChanged)+" - "+m.result.SignerConfigPath))
-		}
-		if m.result.ClientConfigPath != "" {
-			sb.WriteString(kv("Client config", changedText(m.result.ClientConfigChanged)+" - "+m.result.ClientConfigPath))
-		}
-		if m.result.PluginConfigPath != "" {
-			sb.WriteString(kv("Plugin config", changedText(m.result.PluginActivationChanged)+" - "+m.result.PluginConfigPath))
-		}
-		if m.result.EnvConfigPath != "" {
-			sb.WriteString(kv("Plugin env", changedText(m.result.EnvConfigChanged)+" - "+m.result.EnvConfigPath))
-		}
-		if m.result.PluginConfigPath != "" {
-			if m.result.PluginAvailable {
-				sb.WriteString(kv("Plugin payload", "installed"))
-			} else {
-				sb.WriteString(kv("Plugin payload", "not found"))
-			}
-		}
-		for _, warning := range m.result.Warnings {
-			sb.WriteString(warningStyle.Render("Warning: "+warning) + "\n")
-		}
+	if m.result != nil {
+		writeApplyResult(&sb, m.result)
 	}
 
 	sb.WriteString("\n")
@@ -403,6 +381,34 @@ func (m model) View() string {
 	}
 	sb.WriteString("\n")
 	return sb.String()
+}
+
+// writeApplyResult writes what a run changed: each config file it wrote or
+// left alone, whether the plugin payload is there, and its warnings.
+func writeApplyResult(sb *strings.Builder, result *aplocalnet.ApplyResult) {
+	sb.WriteString("\n")
+	if result.SignerConfigPath != "" {
+		sb.WriteString(kv("Signer config", changedText(result.SignerConfigChanged)+" - "+result.SignerConfigPath))
+	}
+	if result.ClientConfigPath != "" {
+		sb.WriteString(kv("Client config", changedText(result.ClientConfigChanged)+" - "+result.ClientConfigPath))
+	}
+	if result.PluginConfigPath != "" {
+		sb.WriteString(kv("Plugin config", changedText(result.PluginActivationChanged)+" - "+result.PluginConfigPath))
+	}
+	if result.EnvConfigPath != "" {
+		sb.WriteString(kv("Plugin env", changedText(result.EnvConfigChanged)+" - "+result.EnvConfigPath))
+	}
+	if result.PluginConfigPath != "" {
+		if result.PluginAvailable {
+			sb.WriteString(kv("Plugin payload", "installed"))
+		} else {
+			sb.WriteString(kv("Plugin payload", "not found"))
+		}
+	}
+	for _, warning := range result.Warnings {
+		sb.WriteString(warningStyle.Render("Warning: "+warning) + "\n")
+	}
 }
 
 func kv(label, value string) string {

@@ -209,45 +209,46 @@ func checkFile(path string) []finding {
 			hasZero = false
 		}
 
-		if inFunc { //nolint:nestif // complexity backlog
-			braceCount += strings.Count(code, "{") - strings.Count(code, "}")
+		if !inFunc {
+			continue
+		}
+		braceCount += strings.Count(code, "{") - strings.Count(code, "}")
 
-			// Check for key material references
-			for _, pat := range keyPatterns {
-				if pat.MatchString(code) {
-					// Skip type declarations and struct definitions
-					if !strings.Contains(code, "type ") {
-						hasKeyRef = true
-						keyRefLine = lineNum
-						keyRefContent = line
-					}
-					break
+		// Check for key material references
+		for _, pat := range keyPatterns {
+			if pat.MatchString(code) {
+				// Skip type declarations and struct definitions
+				if !strings.Contains(code, "type ") {
+					hasKeyRef = true
+					keyRefLine = lineNum
+					keyRefContent = line
+				}
+				break
+			}
+		}
+
+		// Check for zeroing calls
+		for _, pat := range zeroPatterns {
+			if pat.MatchString(code) {
+				hasZero = true
+				break
+			}
+		}
+
+		// Function ended
+		if braceCount == 0 && funcStart != lineNum {
+			if hasKeyRef && !hasZero {
+				// Check if function is exempt (ownership passed to caller)
+				if _, exempt := exemptFunctions[funcName]; !exempt {
+					findings = append(findings, finding{
+						file:     path,
+						line:     keyRefLine,
+						content:  keyRefContent,
+						funcName: funcName,
+					})
 				}
 			}
-
-			// Check for zeroing calls
-			for _, pat := range zeroPatterns {
-				if pat.MatchString(code) {
-					hasZero = true
-					break
-				}
-			}
-
-			// Function ended
-			if braceCount == 0 && funcStart != lineNum {
-				if hasKeyRef && !hasZero {
-					// Check if function is exempt (ownership passed to caller)
-					if _, exempt := exemptFunctions[funcName]; !exempt {
-						findings = append(findings, finding{
-							file:     path,
-							line:     keyRefLine,
-							content:  keyRefContent,
-							funcName: funcName,
-						})
-					}
-				}
-				inFunc = false
-			}
+			inFunc = false
 		}
 	}
 
