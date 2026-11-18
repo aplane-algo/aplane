@@ -69,7 +69,7 @@ func selectedGenerationFromStoreRoot(paths storepaths.Paths, kr *crypto.Keyring)
 	return selection.CurrentGenerationID, nil
 }
 
-func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, referenced map[string]bool, remove bool) (ReconcileReport, error) { //nolint:gocognit // complexity backlog
+func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, referenced map[string]bool, remove bool) (ReconcileReport, error) {
 	report := ReconcileReport{}
 	report.Current = current
 
@@ -102,40 +102,8 @@ func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyrin
 		}
 	}
 
-	// Garbage-collect orphaned durable-write temp files in the current
-	// generation (a crash mid-seal leaves seal.json.tmp-* at the
-	// generation root; the committing rename is atomic, so residue never
-	// carries state). Structural validation tolerates them; this is where
-	// they are removed.
-	currentDir := paths.GenerationPaths(current).Dir()
-	residueDirs := []string{currentDir}
-	for _, namespace := range generationLeafNamespaces {
-		residueDirs = append(residueDirs, filepath.Join(currentDir, namespace))
-	}
-	for _, dir := range residueDirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return report, err
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			// Root residue is a crashed seal/manifest write; namespace
-			// residue is a crashed durable single-file write inside the
-			// mutable current generation. Neither ever carries state (the
-			// committing rename is atomic), and unswept namespace residue
-			// would be copied into every child generation and sealed there.
-			isResidue := isDurableWriteResidue(name) ||
-				(dir != currentDir && hasDurableWriteTempSuffix(name))
-			if entry.IsDir() || !isResidue {
-				continue
-			}
-			if remove {
-				if err := fsutil.RemoveDurable(filepath.Join(dir, name)); err != nil {
-					return report, fmt.Errorf("discard durable-write residue %s: %w", name, err)
-				}
-			}
-			report.DiscardedStaging = append(report.DiscardedStaging, name)
-		}
+	if err := sweepWriteResidue(paths, current, remove, &report); err != nil {
+		return report, err
 	}
 
 	generationsDir := paths.GenerationsDir()
@@ -217,6 +185,45 @@ func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyrin
 	slices.Sort(report.SealedPriors)
 	slices.Reverse(report.SealedPriors)
 	return report, nil
+}
+
+// sweepWriteResidue garbage-collects orphaned durable-write temp files in the
+// current generation (a crash mid-seal leaves seal.json.tmp-* at the
+// generation root; the committing rename is atomic, so residue never
+// carries state). Structural validation tolerates them; this is where
+// they are removed, or only reported when remove is unset.
+func sweepWriteResidue(paths storepaths.Paths, current string, remove bool, report *ReconcileReport) error {
+	currentDir := paths.GenerationPaths(current).Dir()
+	residueDirs := []string{currentDir}
+	for _, namespace := range generationLeafNamespaces {
+		residueDirs = append(residueDirs, filepath.Join(currentDir, namespace))
+	}
+	for _, dir := range residueDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			// Root residue is a crashed seal/manifest write; namespace
+			// residue is a crashed durable single-file write inside the
+			// mutable current generation. Neither ever carries state (the
+			// committing rename is atomic), and unswept namespace residue
+			// would be copied into every child generation and sealed there.
+			isResidue := isDurableWriteResidue(name) ||
+				(dir != currentDir && hasDurableWriteTempSuffix(name))
+			if entry.IsDir() || !isResidue {
+				continue
+			}
+			if remove {
+				if err := fsutil.RemoveDurable(filepath.Join(dir, name)); err != nil {
+					return fmt.Errorf("discard durable-write residue %s: %w", name, err)
+				}
+			}
+			report.DiscardedStaging = append(report.DiscardedStaging, name)
+		}
+	}
+	return nil
 }
 
 // CollectGarbageStoreRoot prunes retained generations only after the sole

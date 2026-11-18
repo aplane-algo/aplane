@@ -221,19 +221,9 @@ func PruneQuarantined(
 			paths.QuarantineDir(), storepaths.GenerationStagingPrefix+"prune-"+generationID,
 		)
 		info, err := os.Lstat(path)
-		if os.IsNotExist(err) { //nolint:nestif // complexity backlog
-			if tombstoneInfo, tombstoneErr := os.Lstat(tombstone); tombstoneErr == nil {
-				if tombstoneInfo.Mode()&os.ModeSymlink != 0 || !tombstoneInfo.IsDir() {
-					return results, fmt.Errorf("quarantine prune tombstone is not a regular directory: %s", tombstone)
-				}
-				if err := os.RemoveAll(tombstone); err != nil {
-					return results, fmt.Errorf("finish quarantine prune %s: %w", generationID, err)
-				}
-				if err := fsutil.SyncDir(paths.QuarantineDir()); err != nil {
-					return results, err
-				}
-			} else if !os.IsNotExist(tombstoneErr) {
-				return results, tombstoneErr
+		if os.IsNotExist(err) {
+			if err := finishInterruptedPrune(paths, tombstone, generationID); err != nil {
+				return results, err
 			}
 			result.AlreadyAbsent = true
 			results = append(results, result)
@@ -273,6 +263,25 @@ func PruneQuarantined(
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+// finishInterruptedPrune removes the tombstone an interrupted prune of the
+// generation left behind, if there is one, and makes its removal durable.
+func finishInterruptedPrune(paths storepaths.Paths, tombstone, generationID string) error {
+	tombstoneInfo, tombstoneErr := os.Lstat(tombstone)
+	if os.IsNotExist(tombstoneErr) {
+		return nil
+	}
+	if tombstoneErr != nil {
+		return tombstoneErr
+	}
+	if tombstoneInfo.Mode()&os.ModeSymlink != 0 || !tombstoneInfo.IsDir() {
+		return fmt.Errorf("quarantine prune tombstone is not a regular directory: %s", tombstone)
+	}
+	if err := os.RemoveAll(tombstone); err != nil {
+		return fmt.Errorf("finish quarantine prune %s: %w", generationID, err)
+	}
+	return fsutil.SyncDir(paths.QuarantineDir())
 }
 
 // classifyQuarantineCandidate proves only safe, bounded relocation. It does
