@@ -69,7 +69,7 @@ func TestReadIdentityPublicKeyDerivesTheExistingKey(t *testing.T) {
 
 func TestReadIdentityPublicKeyMatchesAGeneratedKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "id")
-	client := NewClient("example.com", 22, 0, path, "")
+	client := NewClient("example.com", 22, path, "")
 	var created []IdentityCreated
 	client.SetIdentityCreatedCallback(func(c IdentityCreated) { created = append(created, c) })
 	signer, err := client.generateIdentityKey(path)

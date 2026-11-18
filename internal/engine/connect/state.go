@@ -6,9 +6,7 @@ package connect
 import (
 	"context"
 	"io"
-	"net"
 	"sync"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -26,7 +24,6 @@ type ConnectionState struct {
 	TunnelCancel      context.CancelFunc
 	ConnectionTarget  string
 	connectingTarget  string
-	portDialTimeout   func(network, address string, timeout time.Duration) (net.Conn, error)
 	identityCreated   func(sshtunnel.IdentityCreated)
 }
 

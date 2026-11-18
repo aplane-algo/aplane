@@ -193,7 +193,6 @@ internal/engine/
 │   ├── client.go          # Signer client construction and request helpers
 │   ├── lifecycle.go       # Connect/disconnect and tunnel lifecycle
 │   ├── cosigner_endpoint.go # Cosigner endpoint connection helpers
-│   ├── local_port.go      # Free loopback port selection for tunnels
 │   ├── signing.go         # Signer-facing plan/sign requests
 │   └── state.go           # Mutex-protected ConnectionState
 ├── connection.go          # Core-facing connection facade

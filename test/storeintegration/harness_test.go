@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -123,7 +124,7 @@ type storeEnv struct {
 	knownHostsPath  string
 	tunnelMu        sync.Mutex
 	tunnel          *sshtunnel.Client
-	tunnelCancel    context.CancelFunc
+	tunnelStop      func()
 	tunnelURL       string
 }
 
@@ -247,20 +248,16 @@ func (e *storeEnv) url() string {
 		return e.tunnelURL
 	}
 	e.closeTunnelLocked()
-	localPort := reservePorts(e.t, 1)[0]
-	client := sshtunnel.NewClient("127.0.0.1", e.sshPort, localPort, e.clientKeyPath, e.knownHostsPath)
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := client.ConnectWithKey(ctx); err != nil {
-		cancel()
+	client := sshtunnel.NewClient("127.0.0.1", e.sshPort, e.clientKeyPath, e.knownHostsPath)
+	if err := client.ConnectWithKey(context.Background()); err != nil {
 		e.t.Fatalf("open signer tunnel: %v", err)
 	}
-	if err := client.StartPortForwarding(ctx); err != nil {
-		cancel()
+	url, stop, err := sshtest.ForwardAPI(client)
+	if err != nil {
 		_ = client.Close()
 		e.t.Fatalf("forward signer tunnel: %v", err)
 	}
-	e.tunnel, e.tunnelCancel = client, cancel
-	e.tunnelURL = fmt.Sprintf("http://127.0.0.1:%d", localPort)
+	e.tunnel, e.tunnelStop, e.tunnelURL = client, stop, url
 	return e.tunnelURL
 }
 
@@ -271,13 +268,13 @@ func (e *storeEnv) closeTunnel() {
 }
 
 func (e *storeEnv) closeTunnelLocked() {
+	if e.tunnelStop != nil {
+		e.tunnelStop()
+	}
 	if e.tunnel != nil {
 		_ = e.tunnel.Close()
 	}
-	if e.tunnelCancel != nil {
-		e.tunnelCancel()
-	}
-	e.tunnel, e.tunnelCancel, e.tunnelURL = nil, nil, ""
+	e.tunnel, e.tunnelStop, e.tunnelURL = nil, nil, ""
 }
 
 // reservePorts returns count distinct free ports. Every listener stays open

@@ -671,7 +671,7 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 ```
 ┌──────────┐                                          ┌────────────┐
 │  apshell │◄═══════ SSH Tunnel (encrypted) ═════════►│  apsigner  │
-│          │ :random ───── direct-tcpip channels ────►│ API conns  │
+│          │ in-process ── direct-tcpip channels ────►│ API conns  │
 └──────────┘                                          └────────────┘
      │
      └── HTTP through the tunnel; each request attributed to the connection's key
@@ -685,7 +685,9 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 **Connection properties:**
 - SSH provides transport encryption and client authentication
 - Host key verification prevents MITM (TOFU via known_hosts)
-- Random local port avoids conflicts
+- No port is opened on the client machine: the signer client opens a
+  channel for each HTTP connection from inside apshell, so another process on
+  that machine cannot send requests under the client's identity
 - Authorization is evaluated per HTTP request against the client role
 
 **Configuration:**

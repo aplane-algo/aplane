@@ -96,7 +96,7 @@ func TestCosignerSSHHTTPTransportRejectsOtherDestinations(t *testing.T) {
 	}))
 	defer transport.CloseIdleConnections()
 	_, err := transport.DialContext(context.Background(), "tcp", "other.example:80")
-	if err == nil || !strings.Contains(err.Error(), "unexpected cosigner HTTP dial target") {
+	if err == nil || !strings.Contains(err.Error(), "unexpected node HTTP dial target") {
 		t.Fatalf("DialContext() error = %v, want restricted-target error", err)
 	}
 	if dialed {
@@ -152,4 +152,9 @@ func TestCosignerSSHLifetimeHonorsSetupCancellation(t *testing.T) {
 	if err := detach(); !errors.Is(err, context.Canceled) {
 		t.Fatalf("detach() error = %v, want context canceled", err)
 	}
+}
+
+// newCosignerSSHHTTPTransport is the transport a cosigner connection uses.
+func newCosignerSSHHTTPTransport(dialer sshAPIDialer) *http.Transport {
+	return newSSHHTTPTransport(dialer, cosignerSSHHTTPAuthority)
 }

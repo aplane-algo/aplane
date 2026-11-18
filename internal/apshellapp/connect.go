@@ -42,19 +42,15 @@ type ConnectRequest struct {
 	OnDisconnect    func()
 }
 
-// Connect establishes an SSH tunnel authenticated by the client's enrolled key.
+// Connect establishes an SSH connection authenticated by the client's
+// enrolled key. Requests to the signer travel over it in-process; nothing
+// listens on this machine.
 func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, error) {
-	localPort, err := engineconnect.FindAvailableLocalPort()
-	if err != nil {
-		return nil, fmt.Errorf("failed to find available local port: %w", err)
-	}
-
 	target := fmt.Sprintf("%s (ssh:%d)", req.Host, req.SSHPort)
 	connectResult, err := a.eng.ConnectWithTunnel(
 		target,
 		req.Host,
 		req.SSHPort,
-		localPort,
 		req.IdentityFile,
 		req.KnownHostsPath,
 		req.HostKeyApproval,
@@ -70,19 +66,18 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 
 	res := &ConnectResult{
 		Target:   target,
-		Port:     result.Port,
 		KeyCount: result.KeyCount,
 		Locked:   result.Locked,
 	}
 
-	if result.Connected && result.Port == 0 {
+	if result.AlreadyConnected {
 		res.AlreadyConnected = true
 		res.Summary = Summary{Message: fmt.Sprintf("Already connected to %s", target)}
 		decorateConnectResult(res)
 		return res, nil
 	}
 
-	res.Summary = Summary{Message: fmt.Sprintf("Signer verified via tunnel at http://localhost:%d", result.Port)}
+	res.Summary = Summary{Message: fmt.Sprintf("Signer verified over SSH at %s", target)}
 	if result.Locked {
 		res.Warnings = append(res.Warnings, Warning{
 			Code:    "signer_locked",
