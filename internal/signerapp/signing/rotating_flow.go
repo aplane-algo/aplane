@@ -366,7 +366,7 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 // SignRotatingWithContext signs a prepared rotating group. It is the
 // complete validation boundary: everything is re-established from the
 // presented bytes and a fresh chain read; nothing from prepare is remembered.
-func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.RotatingSignRequest, session *keystore.KeySession) (*signerapi.RotatingSignResponse, *ServiceError) { //nolint:gocognit // complexity backlog
+func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.RotatingSignRequest, session *keystore.KeySession) (*signerapi.RotatingSignResponse, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -447,13 +447,8 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if groupErr != nil {
 		return nil, groupErr
 	}
-	if len(rebuilt.AllTxns) != len(allTxns) {
-		return nil, badRequest(fmt.Sprintf("group has %d transactions; the spend needs %d", len(allTxns), len(rebuilt.AllTxns)))
-	}
-	for i := range allTxns {
-		if !bytes.Equal(txnutil.EncodeWithPrefix(rebuilt.AllTxns[i]), raws[i]) {
-			return nil, badRequest(fmt.Sprintf("transaction %d differs from the group the signer would build (dummies, fees and group ID must be exactly the prepared ones)", i+1))
-		}
+	if mismatch := presentedGroupMismatch(rebuilt.AllTxns, raws); mismatch != nil {
+		return nil, mismatch
 	}
 	item := &rotatingPlanItem{Stage: stage, Target: targetStage, TargetAddress: spend.RekeyTo}
 	// One key-index snapshot builds the plan's known addresses, its held
@@ -613,28 +608,8 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// chain after that work and before releasing bytes. The existing execution
 	// lease remains held; do not acquire a second lease here.
 	if leafProfile.StatelessHash {
-		readCtx, cancelRead := context.WithTimeout(ctx, DefaultChainReadTimeout)
-		fresh, readErr := deps.Chain.ReadAccount(readCtx, genesis, account)
-		cancelRead()
-		if readErr != nil {
-			// The read runs under the key use, so a lock cuts it short. Only
-			// the report differs: a read the lock cut (cancelled, with the
-			// key use ended and the request live) answers locked, as a key
-			// use the lock cuts does everywhere else. The request's own end,
-			// or the read's own failure (its own timeout expires as
-			// DeadlineExceeded) answers unavailable, even if a lock lands
-			// just after.
-			if errors.Is(readErr, context.Canceled) && ctx.Err() != nil && requestCtx.Err() == nil {
-				return nil, lockedError()
-			}
-			return nil, unavailable(readErr.Error())
-		}
-		if fresh.Authorizer != stageAddr {
-			return nil, rotatingStageChanged(fresh.Authorizer)
-		}
-		if uint64(spend.FirstValid) > fresh.Round+rotatingkey.RotatingMaxLead ||
-			uint64(spend.LastValid) < fresh.Round+rotatingkey.RotatingMinRemaining {
-			return nil, rotatingWindowNotCurrent("validity window aged during signing; prepare the spend again")
+		if stale := recheckChainAfterSigning(ctx, requestCtx, deps, genesis, account, spend, stageAddr); stale != nil {
+			return nil, stale
 		}
 	}
 	signed := make([]string, 0, len(allTxns))
@@ -697,6 +672,53 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		TxID:    txIDText,
 		GroupID: groupIDText,
 	}, nil
+}
+
+// presentedGroupMismatch is rule 5's comparison: the group rebuilt from the
+// client's spend must be the presented bytes exactly. It returns nil when it
+// is.
+func presentedGroupMismatch(rebuilt []types.Transaction, raws [][]byte) *ServiceError {
+	if len(rebuilt) != len(raws) {
+		return badRequest(fmt.Sprintf("group has %d transactions; the spend needs %d", len(raws), len(rebuilt)))
+	}
+	for i := range raws {
+		if !bytes.Equal(txnutil.EncodeWithPrefix(rebuilt[i]), raws[i]) {
+			return badRequest(fmt.Sprintf("transaction %d differs from the group the signer would build (dummies, fees and group ID must be exactly the prepared ones)", i+1))
+		}
+	}
+	return nil
+}
+
+// recheckChainAfterSigning reads the chain again after a stateless signature,
+// which takes long enough for the account to move on: the authorizer must
+// still be the stage that signed and the spend's validity window still
+// current. It runs inside the key-use window, on ctx; requestCtx is the
+// request's own context, which outlives that window.
+func recheckChainAfterSigning(ctx, requestCtx context.Context, deps *RotatingDeps, genesis []byte, account types.Address, spend types.Transaction, stageAddr types.Address) *ServiceError {
+	readCtx, cancelRead := context.WithTimeout(ctx, DefaultChainReadTimeout)
+	fresh, readErr := deps.Chain.ReadAccount(readCtx, genesis, account)
+	cancelRead()
+	if readErr != nil {
+		// The read runs under the key use, so a lock cuts it short. Only
+		// the report differs: a read the lock cut (cancelled, with the
+		// key use ended and the request live) answers locked, as a key
+		// use the lock cuts does everywhere else. The request's own end,
+		// or the read's own failure (its own timeout expires as
+		// DeadlineExceeded) answers unavailable, even if a lock lands
+		// just after.
+		if errors.Is(readErr, context.Canceled) && ctx.Err() != nil && requestCtx.Err() == nil {
+			return lockedError()
+		}
+		return unavailable(readErr.Error())
+	}
+	if fresh.Authorizer != stageAddr {
+		return rotatingStageChanged(fresh.Authorizer)
+	}
+	if uint64(spend.FirstValid) > fresh.Round+rotatingkey.RotatingMaxLead ||
+		uint64(spend.LastValid) < fresh.Round+rotatingkey.RotatingMinRemaining {
+		return rotatingWindowNotCurrent("validity window aged during signing; prepare the spend again")
+	}
+	return nil
 }
 
 // logWithheldSignature records a rotating signature that was recorded as
