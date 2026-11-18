@@ -266,37 +266,9 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 		return nil, keyType, internal(fmt.Sprintf("unsupported key type: %s", keyType))
 	}
 
-	if keyMaterial.Bytecode == nil { //nolint:nestif // complexity backlog
+	if keyMaterial.Bytecode == nil {
 		if transactionAuthorizer, ok := provider.(coresigning.TransactionAuthorizer); ok {
-			if keyType != nativefalcon.KeyType {
-				return nil, keyType, internal(fmt.Sprintf("key type %s unexpectedly implements structured transaction authorization", keyType))
-			}
-			authorizer, err := types.DecodeAddress(authAddr)
-			if err != nil {
-				if e.AuditLog != nil {
-					e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
-				}
-				return nil, keyType, badRequest(fmt.Sprintf("invalid auth address %q: %v", authAddr, err))
-			}
-			stxn, err := transactionAuthorizer.AuthorizeTransaction(keyMaterial, txn, authorizer)
-			if err != nil {
-				if e.AuditLog != nil {
-					e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
-				}
-				return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
-			}
-			if err := falconsignerops.ValidateTransaction(stxn, txn, authorizer); err != nil {
-				return nil, keyType, internal(fmt.Sprintf("provider returned invalid authorization: %v", err))
-			}
-			encoded := msgpack.Encode(stxn)
-			var decoded types.SignedTxn
-			if err := msgpack.Decode(encoded, &decoded); err != nil {
-				return nil, keyType, internal(fmt.Sprintf("failed to decode assembled authorization: %v", err))
-			}
-			if reencoded := msgpack.Encode(decoded); !bytes.Equal(reencoded, encoded) {
-				return nil, keyType, internal("assembled authorization is not canonically encoded")
-			}
-			return encoded, keyType, nil
+			return e.authorizeStructured(transactionAuthorizer, txn, authAddr, txnSender, keyMaterial)
 		}
 	}
 
@@ -337,6 +309,48 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 		stxn.AuthAddr = authAddrDecoded
 	}
 	return msgpack.Encode(stxn), keyType, nil
+}
+
+// authorizeStructured signs with a provider that returns the whole signed
+// transaction, which only native Falcon does, and checks what came back: it
+// must authorize this transaction for this authorizer and be canonically
+// encoded.
+func (e *Executor) authorizeStructured(
+	transactionAuthorizer coresigning.TransactionAuthorizer,
+	txn types.Transaction,
+	authAddr, txnSender string,
+	keyMaterial *coresigning.KeyMaterial,
+) ([]byte, string, *ServiceError) {
+	keyType := keyMaterial.Type
+	if keyType != nativefalcon.KeyType {
+		return nil, keyType, internal(fmt.Sprintf("key type %s unexpectedly implements structured transaction authorization", keyType))
+	}
+	authorizer, err := types.DecodeAddress(authAddr)
+	if err != nil {
+		if e.AuditLog != nil {
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
+		}
+		return nil, keyType, badRequest(fmt.Sprintf("invalid auth address %q: %v", authAddr, err))
+	}
+	stxn, err := transactionAuthorizer.AuthorizeTransaction(keyMaterial, txn, authorizer)
+	if err != nil {
+		if e.AuditLog != nil {
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
+		}
+		return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
+	}
+	if err := falconsignerops.ValidateTransaction(stxn, txn, authorizer); err != nil {
+		return nil, keyType, internal(fmt.Sprintf("provider returned invalid authorization: %v", err))
+	}
+	encoded := msgpack.Encode(stxn)
+	var decoded types.SignedTxn
+	if err := msgpack.Decode(encoded, &decoded); err != nil {
+		return nil, keyType, internal(fmt.Sprintf("failed to decode assembled authorization: %v", err))
+	}
+	if reencoded := msgpack.Encode(decoded); !bytes.Equal(reencoded, encoded) {
+		return nil, keyType, internal("assembled authorization is not canonically encoded")
+	}
+	return encoded, keyType, nil
 }
 
 func zeroLoadedKeyMaterial(key *coresigning.KeyMaterial) {
