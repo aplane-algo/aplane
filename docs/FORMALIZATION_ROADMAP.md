@@ -808,3 +808,13 @@ cosigner. Not established: whether every cosigner key's public key reaches
 the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
+
+Fixed 2026-11-18: the recovery reconcile entered recovery after releasing
+the store mutation lock. `ReconcileStore` called `SetRecovery` once
+`reconcileReloadAndPromote` had returned, so a reconcile that failed from
+the unlocked state left a window where another mutation could take the lock
+while the runtime still read unlocked. `BeginReload` and `ReloadFail` with
+`RecoveryBeforeRelease` already describe the order the code now follows:
+`reconcileReloadAndPromote` enters recovery inside its locked work. The spec
+is unchanged; RB2's row names the reconcile and
+`TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock`.

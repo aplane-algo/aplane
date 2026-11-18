@@ -13,7 +13,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 )
 
 // convertTestSignerToGenerational remains as a test-call-site compatibility
@@ -202,5 +204,27 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	ir.Lock()
 	if success, _, errMsg, code := svc.UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+}
+
+// A reconcile that fails enters recovery before it releases the store
+// mutation lock (RB2), not after: until then the runtime may still serve a
+// generation behind the store root, and another mutation could take the lock.
+func TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.runtime
+	ir.SetUnlocked()
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		return nil, errors.New("simulated reload failure")
+	})
+
+	if _, err := server.adminServices().reconcileReloadAndPromote(ir); err == nil {
+		t.Fatal("the reconcile succeeded though its reload failed")
+	}
+	// reconcileReloadAndPromote holds the lock for all of its work and
+	// returns once it has released it; nothing else has run since.
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v after the failed reconcile released the lock, want recovery", ir.GetState())
 	}
 }

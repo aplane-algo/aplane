@@ -314,7 +314,8 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	defer s.daemon.rearmWatcherAfterGenerationFlip(ir)
 	report, err := s.daemon.reconcileReloadAndPromote(ir)
 	if err != nil {
-		ir.SetRecovery()
+		// reconcileReloadAndPromote entered recovery before it released the
+		// store mutation lock.
 		result.Code = protocol.ResultCodeRecoveryBlocked
 		result.Error = err.Error()
 		result.State = ir.GetState().String()
@@ -334,16 +335,23 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 // reconcileReloadAndPromote keeps strict validation, key publication, and the
 // recovery-to-unlocked transition under one store mutation lock. This
 // prevents a concurrent admin mutation from landing between validation and
-// the runtime snapshot that authorizes signing.
+// the runtime snapshot that authorizes signing. A reconcile that fails enters
+// recovery before the lock is released (RB2): the reload may have left the
+// runtime behind the store root, and a signing request or key write must not
+// run from it once another mutation can take the lock.
 func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport
-	work := func() error {
+	work := func() (err error) {
+		defer func() {
+			if err != nil {
+				ir.SetRecovery()
+			}
+		}()
 		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 			return s.reconcileGenerationsLocked(ir, kr)
 		}); err != nil {
 			return err
 		}
-		var err error
 		report, err = ir.Reload()
 		if err != nil {
 			return fmt.Errorf("current generation failed credential reload: %w", err)
