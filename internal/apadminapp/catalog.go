@@ -83,125 +83,153 @@ func (c Catalog) normalized() Catalog {
 // CatalogAuthMode returns the lock-state behavior required by a catalog
 // command. It validates enough grammar to reject unknown verbs before a
 // connection or passphrase prompt.
-func CatalogAuthMode(command string, args []string) (AuthMode, error) { //nolint:gocognit // complexity backlog
+func CatalogAuthMode(command string, args []string) (AuthMode, error) {
+	// A command's check reports whether it recognized the verb; one it did
+	// not recognize is unknown or malformed.
+	var (
+		mode       AuthMode
+		recognized bool
+		err        error
+	)
 	switch command {
-	case "template":
-		if len(args) == 0 {
-			return AuthUnlock, fmt.Errorf("usage: apadmin template <list|show|import|remove>")
-		}
-		switch args[0] {
-		case "list":
-			if len(args) != 1 {
-				return AuthUnlock, fmt.Errorf("usage: apadmin template list")
-			}
-			return AuthUnlock, nil
-		case "show":
-			if len(args) != 3 || args[2] != "--show-sensitive-template" {
-				return AuthUnlock, fmt.Errorf("usage: apadmin template show <key-type> --show-sensitive-template")
-			}
-			return AuthUnlock, nil
-		case "import", "remove":
-			if len(args) != 2 {
-				return AuthUnlock, fmt.Errorf("usage: apadmin template %s <file-or-key-type>", args[0])
-			}
-			return AuthUnlock, nil
-		}
-	case "keytype":
-		if len(args) == 2 && (args[0] == "enable" || args[0] == "disable") {
-			return AuthUnlock, nil
-		}
-	case "cosigner":
-		if len(args) == 0 {
-			return AuthUnlock, fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
-		}
-		switch args[0] {
-		case "export":
-			if len(args) < 2 || len(args) > 3 {
-				return AuthReadOnly, fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
-			}
-			return AuthReadOnly, nil
-		case "list":
-			if len(args) != 1 {
-				return AuthReadOnly, fmt.Errorf("usage: apadmin cosigner list")
-			}
-			return AuthReadOnly, nil
-		case "show":
-			if len(args) != 2 {
-				return AuthReadOnly, fmt.Errorf("usage: apadmin cosigner show <name>")
-			}
-			return AuthReadOnly, nil
-		case "import":
-			if len(args) != 3 {
-				return AuthUnlock, fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
-			}
-			return AuthUnlock, nil
-		case "remove":
-			if len(args) != 2 {
-				return AuthUnlock, fmt.Errorf("usage: apadmin cosigner remove <name>")
-			}
-			return AuthUnlock, nil
-		}
 	case "clients":
 		return clientsCommandAuth(args)
 	case "asa":
 		return asaCommandAuth(args)
+	case "template":
+		mode = AuthUnlock
+		recognized, err = templateCommandAuth(args)
+	case "keytype":
+		mode = AuthUnlock
+		recognized = keytypeCommandAuth(args)
+	case "cosigner":
+		mode, recognized, err = cosignerCommandAuth(args)
 	case "endpoint":
-		if len(args) > 0 && args[0] == "export" {
-			fs := flag.NewFlagSet("apadmin endpoint export", flag.ContinueOnError)
-			fs.SetOutput(io.Discard)
-			_ = fs.String("host", "", "")
-			_ = fs.String("url", "", "")
-			_ = fs.Int("signer-port", 0, "")
-			_ = fs.Int("local-port", 0, "")
-			_ = fs.String("out", "", "")
-			if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
-				return AuthReadOnly, errors.New(endpointExportUsage)
-			}
-			return AuthReadOnly, nil
-		}
+		mode, recognized, err = endpointCommandAuth(args)
 	case "generations":
-		if len(args) == 1 && args[0] == "list" {
-			return AuthReadOnly, nil
-		}
-		if len(args) > 0 && args[0] == "prune" {
-			fs := flag.NewFlagSet("apadmin generations prune", flag.ContinueOnError)
-			fs.SetOutput(io.Discard)
-			_ = fs.Bool("confirm", false, "")
-			if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
-				return AuthUnlock, errors.New(
-					"usage: apadmin generations prune --confirm <generation-id> [generation-id...]",
-				)
-			}
-			return AuthUnlock, nil
-		}
-		if len(args) > 0 && args[0] == "discard" {
-			fs := flag.NewFlagSet("apadmin generations discard", flag.ContinueOnError)
-			fs.SetOutput(io.Discard)
-			_ = fs.Bool("confirm", false, "")
-			if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
-				return AuthUnlock, errors.New(
-					"usage: apadmin generations discard --confirm <generation-id> [generation-id...]",
-				)
-			}
-			return AuthUnlock, nil
-		}
+		mode, recognized, err = generationsCommandAuth(args)
 	case "archive":
 		// The daemon serves the archive listing only to an unlocked or
 		// recovery-admin session, never to an auth_only observer.
-		if len(args) == 1 && args[0] == "list" {
-			return AuthUnlock, nil
-		}
-		if len(args) > 0 && args[0] == "prune" {
-			fs := flag.NewFlagSet("apadmin archive prune", flag.ContinueOnError)
-			fs.SetOutput(io.Discard)
-			_ = fs.Bool("confirm", false, "")
-			if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
-				return AuthUnlock, errors.New("usage: apadmin archive prune --confirm <deleted/path> [deleted/path...]")
-			}
-			return AuthUnlock, nil
-		}
+		mode = AuthUnlock
+		recognized, err = archiveCommandAuth(args)
+	}
+	if recognized {
+		return mode, err
 	}
 	return AuthUnlock, fmt.Errorf("unknown or malformed apadmin command: %s", strings.TrimSpace(command+" "+strings.Join(args, " ")))
+}
+
+// templateCommandAuth checks a template command; every one needs an unlocked
+// signer.
+func templateCommandAuth(args []string) (recognized bool, err error) {
+	if len(args) == 0 {
+		return true, fmt.Errorf("usage: apadmin template <list|show|import|remove>")
+	}
+	switch args[0] {
+	case "list":
+		if len(args) != 1 {
+			return true, fmt.Errorf("usage: apadmin template list")
+		}
+		return true, nil
+	case "show":
+		if len(args) != 3 || args[2] != "--show-sensitive-template" {
+			return true, fmt.Errorf("usage: apadmin template show <key-type> --show-sensitive-template")
+		}
+		return true, nil
+	case "import", "remove":
+		if len(args) != 2 {
+			return true, fmt.Errorf("usage: apadmin template %s <file-or-key-type>", args[0])
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// keytypeCommandAuth recognizes enabling or disabling one key type.
+func keytypeCommandAuth(args []string) bool {
+	return len(args) == 2 && (args[0] == "enable" || args[0] == "disable")
+}
+
+func cosignerCommandAuth(args []string) (AuthMode, bool, error) {
+	if len(args) == 0 {
+		return AuthUnlock, true, fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
+	}
+	switch args[0] {
+	case "export":
+		if len(args) < 2 || len(args) > 3 {
+			return AuthReadOnly, true, fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
+		}
+		return AuthReadOnly, true, nil
+	case "list":
+		if len(args) != 1 {
+			return AuthReadOnly, true, fmt.Errorf("usage: apadmin cosigner list")
+		}
+		return AuthReadOnly, true, nil
+	case "show":
+		if len(args) != 2 {
+			return AuthReadOnly, true, fmt.Errorf("usage: apadmin cosigner show <name>")
+		}
+		return AuthReadOnly, true, nil
+	case "import":
+		if len(args) != 3 {
+			return AuthUnlock, true, fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
+		}
+		return AuthUnlock, true, nil
+	case "remove":
+		if len(args) != 2 {
+			return AuthUnlock, true, fmt.Errorf("usage: apadmin cosigner remove <name>")
+		}
+		return AuthUnlock, true, nil
+	}
+	return AuthUnlock, false, nil
+}
+
+func endpointCommandAuth(args []string) (AuthMode, bool, error) {
+	if len(args) == 0 || args[0] != "export" {
+		return AuthUnlock, false, nil
+	}
+	fs := flag.NewFlagSet("apadmin endpoint export", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	_ = fs.String("host", "", "")
+	_ = fs.String("url", "", "")
+	_ = fs.String("out", "", "")
+	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
+		return AuthReadOnly, true, errors.New(endpointExportUsage)
+	}
+	return AuthReadOnly, true, nil
+}
+
+func generationsCommandAuth(args []string) (AuthMode, bool, error) {
+	if len(args) == 1 && args[0] == "list" {
+		return AuthReadOnly, true, nil
+	}
+	if len(args) > 0 && (args[0] == "prune" || args[0] == "discard") {
+		return AuthUnlock, true, confirmedListAuth("generations "+args[0], "<generation-id> [generation-id...]", args[1:])
+	}
+	return AuthUnlock, false, nil
+}
+
+func archiveCommandAuth(args []string) (recognized bool, err error) {
+	if len(args) == 1 && args[0] == "list" {
+		return true, nil
+	}
+	if len(args) > 0 && args[0] == "prune" {
+		return true, confirmedListAuth("archive prune", "<deleted/path> [deleted/path...]", args[1:])
+	}
+	return false, nil
+}
+
+// confirmedListAuth checks a verb that takes --confirm and at least one
+// operand, such as "generations prune".
+func confirmedListAuth(verb, operands string, args []string) error {
+	fs := flag.NewFlagSet("apadmin "+verb, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	_ = fs.Bool("confirm", false, "")
+	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
+		return fmt.Errorf("usage: apadmin %s --confirm %s", verb, operands)
+	}
+	return nil
 }
 
 // Run executes one validated catalog command using an already authenticated
