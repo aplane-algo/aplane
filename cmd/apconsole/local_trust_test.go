@@ -7,12 +7,16 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -40,7 +44,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
 	if err != nil {
 		t.Fatalf("trustLocalSignerHostKey failed: %v", err)
 	}
@@ -87,7 +91,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
 	if err != nil {
 		t.Fatalf("trustLocalSignerHostKey failed: %v", err)
 	}
@@ -133,7 +137,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
 	if err != nil {
 		t.Fatalf("trustLocalSignerHostKey failed: %v", err)
 	}
@@ -176,7 +180,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
 	if err == nil {
 		t.Fatal("trustLocalSignerHostKey error = nil, want mismatch")
 	}
@@ -203,7 +207,7 @@ ssh:
 		t.Fatalf("write client config: %v", err)
 	}
 
-	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
 	if err == nil {
 		t.Fatal("trustLocalSignerHostKey error = nil, want unsupported endpoint config error")
 	}
@@ -275,4 +279,88 @@ func stubLocalSignerHostKeyProbe(t *testing.T, fn func(string, int, ssh.PublicKe
 	t.Cleanup(func() {
 		localSignerHostKeyProbe = prev
 	})
+}
+
+func writeLoopbackClientConfig(t *testing.T) string {
+	t.Helper()
+	clientDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte("network: testnet\n"), 0o600); err != nil {
+		t.Fatalf("write client config: %v", err)
+	}
+	writeClientEndpointRegistry(t, clientDir, `
+schema_version: 2
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://127.0.0.1:56870
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+`)
+	return clientDir
+}
+
+func refusedProbeError() error {
+	return fmt.Errorf("probe local signer SSH host key at 127.0.0.1:56870: %w",
+		&net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)})
+}
+
+func TestTrustLocalSignerHostKeyRetriesRefusedProbeWhileDaemonStarts(t *testing.T) {
+	clientDir := writeLoopbackClientConfig(t)
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	calls := 0
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error {
+		calls++
+		if calls < 3 {
+			return refusedProbeError()
+		}
+		return nil
+	})
+
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 2*time.Second)
+	if err != nil {
+		t.Fatalf("trustLocalSignerHostKey failed: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("probe calls = %d, want 3", calls)
+	}
+	if !strings.Contains(notice, "[127.0.0.1]:56870") {
+		t.Fatalf("notice = %q", notice)
+	}
+}
+
+func TestTrustLocalSignerHostKeyDoesNotRetryRefusedProbeWithoutWait(t *testing.T) {
+	clientDir := writeLoopbackClientConfig(t)
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	calls := 0
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error {
+		calls++
+		return refusedProbeError()
+	})
+
+	if _, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0); !errors.Is(err, syscall.ECONNREFUSED) {
+		t.Fatalf("error = %v, want connection refused", err)
+	}
+	if calls != 1 {
+		t.Fatalf("probe calls = %d, want 1", calls)
+	}
+}
+
+func TestTrustLocalSignerHostKeyDoesNotRetryOtherProbeErrors(t *testing.T) {
+	clientDir := writeLoopbackClientConfig(t)
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	calls := 0
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error {
+		calls++
+		return fmt.Errorf("local signer SSH host key mismatch at 127.0.0.1:56870")
+	})
+
+	if _, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 2*time.Second); err == nil {
+		t.Fatal("trustLocalSignerHostKey error = nil, want mismatch")
+	}
+	if calls != 1 {
+		t.Fatalf("probe calls = %d, want 1", calls)
+	}
 }

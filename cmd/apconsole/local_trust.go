@@ -5,12 +5,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
@@ -20,7 +22,17 @@ import (
 
 var localSignerHostKeyProbe = probeLoopbackSignerHostKey
 
-func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.ServerConfig) (string, error) {
+const (
+	// localSignerProbeStartupWait is how long the probe keeps retrying a
+	// refused connection when the console has just started the daemon.
+	localSignerProbeStartupWait   = 3 * time.Second
+	localSignerProbeRetryInterval = 50 * time.Millisecond
+)
+
+// trustLocalSignerHostKey records the local signer's SSH host key in the
+// client's known_hosts after probing the listener for it. refusedWait is how
+// long a refused connection is retried; zero fails at once.
+func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.ServerConfig, refusedWait time.Duration) (string, error) {
 	if err := config.CheckSupportedClientEndpointConfig(clientDataDir); err != nil {
 		return "", err
 	}
@@ -46,7 +58,7 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 		return "", fmt.Errorf("load local signer SSH host key: %w", err)
 	}
 	if localSignerHostKeyProbe != nil {
-		if err := localSignerHostKeyProbe(host, sshPort, hostKey); err != nil {
+		if err := probeLocalSignerHostKey(host, sshPort, hostKey, refusedWait); err != nil {
 			return "", err
 		}
 	}
@@ -98,6 +110,20 @@ func loadSSHPublicKeyFromPrivateKey(path string) (ssh.PublicKey, error) {
 		return nil, err
 	}
 	return signer.PublicKey(), nil
+}
+
+// probeLocalSignerHostKey runs the probe, retrying a refused connection until
+// wait elapses: a daemon that is still starting has not opened its listener.
+// Any other error, such as a host key mismatch, returns at once.
+func probeLocalSignerHostKey(host string, port int, key ssh.PublicKey, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		err := localSignerHostKeyProbe(host, port, key)
+		if err == nil || !errors.Is(err, syscall.ECONNREFUSED) || !time.Now().Before(deadline) {
+			return err
+		}
+		time.Sleep(localSignerProbeRetryInterval)
+	}
 }
 
 func probeLoopbackSignerHostKey(host string, port int, expected ssh.PublicKey) error {

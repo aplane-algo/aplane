@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -322,3 +323,49 @@ func (fakeFileInfo) Sys() any           { return nil }
 type fakeCloser struct{}
 
 func (fakeCloser) Close() error { return nil }
+
+func TestWaitForDaemonReadyWaitsForADialableSocket(t *testing.T) {
+	calls := 0
+	dial := func(string) (io.Closer, error) {
+		calls++
+		if calls < 3 {
+			return nil, errors.New("connection refused")
+		}
+		return fakeCloser{}, nil
+	}
+
+	waitForDaemonReady("/tmp/apsigner.sock", nil, dial, 5*time.Second)
+	if calls != 3 {
+		t.Fatalf("dial calls = %d, want 3", calls)
+	}
+}
+
+// A killed daemon leaves its socket file behind. The file must not count as
+// a ready daemon.
+func TestWaitForDaemonReadyIgnoresStaleSocketFile(t *testing.T) {
+	// Unix socket paths are length-limited, so stay out of deep test dirs.
+	dir, err := os.MkdirTemp("", "apc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "s.sock")
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	ln.SetUnlinkOnClose(false)
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("stale socket file missing: %v", err)
+	}
+
+	const timeout = 300 * time.Millisecond
+	start := time.Now()
+	waitForDaemonReady(path, nil, dialUnixSocketForDaemon, timeout)
+	if elapsed := time.Since(start); elapsed < timeout {
+		t.Fatalf("returned after %v on a stale socket file, want the %v timeout", elapsed, timeout)
+	}
+}
