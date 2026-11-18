@@ -202,7 +202,7 @@ func ValidateDocumentKey(role noderole.Role, key string) error {
 // DecodePolicyV1 decodes and validates one policy document for role. key is
 // the document's file name (DefaultKey or a key selector); the signed "key"
 // field must equal it, and the signed "role" field must equal role.
-func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, error) { //nolint:gocognit // complexity backlog
+func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, error) {
 	if role != noderole.RoleSigner && role != noderole.RoleCosigner {
 		return nil, fmt.Errorf("unsupported node role %q", role)
 	}
@@ -214,182 +214,240 @@ func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, err
 	if err != nil {
 		return nil, err
 	}
-	formatNode, err := r.required("format")
-	if err != nil {
-		return nil, err
-	}
-	format, err := jsonString(formatNode)
-	if err != nil {
-		return nil, err
-	}
-	if format != policyschema.FormatV1 {
-		return nil, docErrorf(formatNode.pointer, "unsupported format %q; expected %q", format, policyschema.FormatV1)
-	}
-	doc := &PolicyV1{}
-	roleNode, err := r.required("role")
-	if err != nil {
-		return nil, err
-	}
-	rawRole, err := jsonString(roleNode)
-	if err != nil {
-		return nil, err
-	}
-	switch noderole.Role(rawRole) {
-	case noderole.RoleSigner, noderole.RoleCosigner:
-		doc.Role = noderole.Role(rawRole)
-	default:
-		return nil, docErrorf(roleNode.pointer, "role must be %q or %q", noderole.RoleSigner, noderole.RoleCosigner)
-	}
-	if doc.Role != role {
-		return nil, docErrorf(roleNode.pointer, "a %s document is not accepted on a %s node", doc.Role, role)
-	}
-	signer := role == noderole.RoleSigner
-
-	keyNode, err := r.required("key")
-	if err != nil {
-		return nil, err
-	}
-	if doc.Key, err = jsonString(keyNode); err != nil {
-		return nil, err
-	}
-	if err := ValidateDocumentKey(role, doc.Key); err != nil {
-		return nil, docErrorf(keyNode.pointer, "%v", err)
-	}
-	if doc.Key != key {
-		return nil, docErrorf(keyNode.pointer, "key %q does not match its file name %q", doc.Key, key)
-	}
-	if doc.Description, err = optionalDescription(r); err != nil {
-		return nil, err
-	}
-
-	if !signer {
-		if err := rejectRoleField(r, "rekeys", role); err != nil {
-			return nil, err
-		}
-	} else {
-		n, err := r.required("rekeys")
-		if err != nil {
-			return nil, err
-		}
-		if doc.Rekeys, err = decodeRekeys(n); err != nil {
-			return nil, err
-		}
-	}
-	// Scalars: required on both roles, required on one role and rejected on
-	// the other.
-	for _, f := range []struct {
-		name string
-		dst  *bool
-		on   bool // accepted (and required) on this node role
-	}{
-		{"reject_close_remainder", &doc.RejectCloseRemainder, true},
-		{"reject_asset_close", &doc.RejectAssetClose, true},
-		{"reject_clawback", &doc.RejectClawback, true},
-		{"reject_rekey", &doc.RejectRekey, !signer},
-		{"always_review_warnings", &doc.AlwaysReviewWarnings, signer},
-		{"auto_approve_self_noop_transfer", &doc.AutoApproveSelfNoOpTransfer, signer},
+	d := &policyV1Decoder{r: r, doc: &PolicyV1{}, key: key, role: role, signer: role == noderole.RoleSigner}
+	// The order of these steps is the order errors are reported in: a
+	// document broken in two places names the earlier one. Unknown members
+	// are refused after every field is read, and the document is validated
+	// as a whole last.
+	for _, step := range []func() error{
+		d.format,
+		d.documentRole,
+		d.keyAndDescription,
+		d.rekeys,
+		d.flags,
+		d.feeTypesLimitsAndSets,
+		d.transferPolicy,
+		d.rekeyPolicy,
 	} {
-		if !f.on {
-			if err := rejectRoleField(r, f.name, role); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		n, err := r.required(f.name)
-		if err != nil {
-			return nil, err
-		}
-		if *f.dst, err = jsonBool(n); err != nil {
-			return nil, err
-		}
-	}
-	feeNode, err := r.required("max_fee_microalgos")
-	if err != nil {
-		return nil, err
-	}
-	if doc.MaxFeeMicroAlgos, err = decodeAmount(feeNode); err != nil {
-		return nil, err
-	}
-
-	typesNode, err := r.required("transaction_types")
-	if err != nil {
-		return nil, err
-	}
-	if doc.TransactionTypes, err = decodeTransactionTypes(typesNode, role); err != nil {
-		return nil, err
-	}
-	if n := r.field("limits"); n != nil {
-		if doc.Limits, err = decodeLimits(n, !signer); err != nil {
-			return nil, err
-		}
-	}
-	if doc.AddressSets, doc.AssetSets, err = decodeSets(r); err != nil {
-		return nil, err
-	}
-
-	tpNode, err := r.required("transfer_policy")
-	if err != nil {
-		return nil, err
-	}
-	tp, err := readJSONObject(tpNode, "transfer_policy")
-	if err != nil {
-		return nil, err
-	}
-	for _, f := range []struct {
-		name string
-		dst  *TransferOnNoRoute
-	}{
-		{"on_no_route", &doc.OnNoRoute},
-		{"close_on_no_route", &doc.CloseOnNoRoute},
-		{"clawback_on_no_route", &doc.ClawbackOnNoRoute},
-	} {
-		if !signer {
-			if err := rejectRoleField(tp, f.name, role); err != nil {
-				return nil, err
-			}
-			*f.dst = TransferOnNoRouteReject
-			continue
-		}
-		n, err := tp.required(f.name)
-		if err != nil {
-			return nil, err
-		}
-		if *f.dst, err = decodeRouteMissAction(n); err != nil {
-			return nil, err
-		}
-	}
-	if n := tp.field("blocked_destinations"); n != nil {
-		if doc.BlockedDestinations, err = decodeAddressList(n, 0); err != nil {
-			return nil, err
-		}
-	}
-	routesNode, err := tp.required("routes")
-	if err != nil {
-		return nil, err
-	}
-	if doc.Routes, err = decodeRoutes(routesNode, !signer); err != nil {
-		return nil, err
-	}
-	if err := tp.finish(); err != nil {
-		return nil, err
-	}
-
-	if signer {
-		if err := rejectRoleField(r, "rekey_policy", role); err != nil {
-			return nil, err
-		}
-	} else if n := r.field("rekey_policy"); n != nil {
-		if doc.RekeyPolicy, err = decodeRekeyPolicy(n); err != nil {
+		if err := step(); err != nil {
 			return nil, err
 		}
 	}
 	if err := r.finish(); err != nil {
 		return nil, err
 	}
-	if err := doc.validate(); err != nil {
+	if err := d.doc.validate(); err != nil {
 		return nil, err
 	}
-	return doc, nil
+	return d.doc, nil
+}
+
+// policyV1Decoder reads one policy document's fields into doc. key is the
+// document's file name and role the node's; signer is whether that role is
+// the signer.
+type policyV1Decoder struct {
+	r      *jsonObjectReader
+	doc    *PolicyV1
+	key    string
+	role   noderole.Role
+	signer bool
+}
+
+func (d *policyV1Decoder) format() error {
+	formatNode, err := d.r.required("format")
+	if err != nil {
+		return err
+	}
+	format, err := jsonString(formatNode)
+	if err != nil {
+		return err
+	}
+	if format != policyschema.FormatV1 {
+		return docErrorf(formatNode.pointer, "unsupported format %q; expected %q", format, policyschema.FormatV1)
+	}
+	return nil
+}
+
+// documentRole reads the signed role, which must be the node's.
+func (d *policyV1Decoder) documentRole() error {
+	roleNode, err := d.r.required("role")
+	if err != nil {
+		return err
+	}
+	rawRole, err := jsonString(roleNode)
+	if err != nil {
+		return err
+	}
+	switch noderole.Role(rawRole) {
+	case noderole.RoleSigner, noderole.RoleCosigner:
+		d.doc.Role = noderole.Role(rawRole)
+	default:
+		return docErrorf(roleNode.pointer, "role must be %q or %q", noderole.RoleSigner, noderole.RoleCosigner)
+	}
+	if d.doc.Role != d.role {
+		return docErrorf(roleNode.pointer, "a %s document is not accepted on a %s node", d.doc.Role, d.role)
+	}
+	return nil
+}
+
+// keyAndDescription reads the signed key, which must be the document's file
+// name, and the optional description.
+func (d *policyV1Decoder) keyAndDescription() error {
+	keyNode, err := d.r.required("key")
+	if err != nil {
+		return err
+	}
+	if d.doc.Key, err = jsonString(keyNode); err != nil {
+		return err
+	}
+	if err := ValidateDocumentKey(d.role, d.doc.Key); err != nil {
+		return docErrorf(keyNode.pointer, "%v", err)
+	}
+	if d.doc.Key != d.key {
+		return docErrorf(keyNode.pointer, "key %q does not match its file name %q", d.doc.Key, d.key)
+	}
+	d.doc.Description, err = optionalDescription(d.r)
+	return err
+}
+
+// rekeys is required on a signer and refused on a cosigner.
+func (d *policyV1Decoder) rekeys() error {
+	if !d.signer {
+		return rejectRoleField(d.r, "rekeys", d.role)
+	}
+	n, err := d.r.required("rekeys")
+	if err != nil {
+		return err
+	}
+	d.doc.Rekeys, err = decodeRekeys(n)
+	return err
+}
+
+// flags reads the scalars: required on both roles, or required on one role
+// and rejected on the other.
+func (d *policyV1Decoder) flags() error {
+	for _, f := range []struct {
+		name string
+		dst  *bool
+		on   bool // accepted (and required) on this node role
+	}{
+		{"reject_close_remainder", &d.doc.RejectCloseRemainder, true},
+		{"reject_asset_close", &d.doc.RejectAssetClose, true},
+		{"reject_clawback", &d.doc.RejectClawback, true},
+		{"reject_rekey", &d.doc.RejectRekey, !d.signer},
+		{"always_review_warnings", &d.doc.AlwaysReviewWarnings, d.signer},
+		{"auto_approve_self_noop_transfer", &d.doc.AutoApproveSelfNoOpTransfer, d.signer},
+	} {
+		if !f.on {
+			if err := rejectRoleField(d.r, f.name, d.role); err != nil {
+				return err
+			}
+			continue
+		}
+		n, err := d.r.required(f.name)
+		if err != nil {
+			return err
+		}
+		if *f.dst, err = jsonBool(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *policyV1Decoder) feeTypesLimitsAndSets() error {
+	feeNode, err := d.r.required("max_fee_microalgos")
+	if err != nil {
+		return err
+	}
+	if d.doc.MaxFeeMicroAlgos, err = decodeAmount(feeNode); err != nil {
+		return err
+	}
+
+	typesNode, err := d.r.required("transaction_types")
+	if err != nil {
+		return err
+	}
+	if d.doc.TransactionTypes, err = decodeTransactionTypes(typesNode, d.role); err != nil {
+		return err
+	}
+	if n := d.r.field("limits"); n != nil {
+		if d.doc.Limits, err = decodeLimits(n, !d.signer); err != nil {
+			return err
+		}
+	}
+	d.doc.AddressSets, d.doc.AssetSets, err = decodeSets(d.r)
+	return err
+}
+
+func (d *policyV1Decoder) transferPolicy() error {
+	tpNode, err := d.r.required("transfer_policy")
+	if err != nil {
+		return err
+	}
+	tp, err := readJSONObject(tpNode, "transfer_policy")
+	if err != nil {
+		return err
+	}
+	if err := d.routeMissActions(tp); err != nil {
+		return err
+	}
+	if n := tp.field("blocked_destinations"); n != nil {
+		if d.doc.BlockedDestinations, err = decodeAddressList(n, 0); err != nil {
+			return err
+		}
+	}
+	routesNode, err := tp.required("routes")
+	if err != nil {
+		return err
+	}
+	if d.doc.Routes, err = decodeRoutes(routesNode, !d.signer); err != nil {
+		return err
+	}
+	return tp.finish()
+}
+
+// routeMissActions are required on a signer. A cosigner refuses them and
+// rejects every route miss.
+func (d *policyV1Decoder) routeMissActions(tp *jsonObjectReader) error {
+	for _, f := range []struct {
+		name string
+		dst  *TransferOnNoRoute
+	}{
+		{"on_no_route", &d.doc.OnNoRoute},
+		{"close_on_no_route", &d.doc.CloseOnNoRoute},
+		{"clawback_on_no_route", &d.doc.ClawbackOnNoRoute},
+	} {
+		if !d.signer {
+			if err := rejectRoleField(tp, f.name, d.role); err != nil {
+				return err
+			}
+			*f.dst = TransferOnNoRouteReject
+			continue
+		}
+		n, err := tp.required(f.name)
+		if err != nil {
+			return err
+		}
+		if *f.dst, err = decodeRouteMissAction(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rekeyPolicy is optional on a cosigner and refused on a signer.
+func (d *policyV1Decoder) rekeyPolicy() error {
+	if d.signer {
+		return rejectRoleField(d.r, "rekey_policy", d.role)
+	}
+	if n := d.r.field("rekey_policy"); n != nil {
+		var err error
+		if d.doc.RekeyPolicy, err = decodeRekeyPolicy(n); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // rejectRoleField fails when a field the role does not support is present.
