@@ -138,3 +138,116 @@ func TestAFailedCloseDoesNotStopTheLog(t *testing.T) {
 		t.Fatalf("current log = %q, %v; want both entries", current, err)
 	}
 }
+
+// A line an earlier run left torn (a crash, or a full disk before a restart)
+// is detected when the log is opened, so the first entry written after it is
+// not merged into the fragment and lost.
+func TestATornLineFromAnEarlierRunDoesNotSwallowTheFirstEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	if err := os.WriteFile(path, []byte(`{"event":"ROTATING_RELEASE","txn_a`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logger.Close() })
+	if err := logger.logDurable(rotatingRelease("after-restart")); err != nil {
+		t.Fatal(err)
+	}
+	releases, err := ReadRotatingReleases(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if releases["A"].TxID != "after-restart" {
+		t.Fatalf("releases = %+v; want the entry written after the torn line", releases)
+	}
+}
+
+// After Close nothing is written and the file is not reopened, even by an
+// entry that would rotate the log.
+func TestNothingIsWrittenAfterClose(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := logger.Close(); err != nil {
+		t.Fatal(err)
+	}
+	logger.written = maxAuditLogSize
+	logger.Log(AuditEntry{Event: AuditSignRequest})
+	if err := logger.logDurable(rotatingRelease("late")); err == nil {
+		t.Fatal("a durable entry after Close reported success")
+	}
+	if data, err := os.ReadFile(path); err != nil || len(data) != 0 {
+		t.Fatalf("log after Close = %q, %v; want nothing written", data, err)
+	}
+	if _, err := os.Stat(path + ".1"); !os.IsNotExist(err) {
+		t.Fatalf("the log rotated after Close: %v", err)
+	}
+}
+
+// A rotation that cannot open the new log puts the old one back, so the
+// entry is written once, in the current file, and the earlier history is
+// kept in .2.
+func TestARotationThatCannotOpenTheNewLogPutsTheOldOneBack(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	if err := os.WriteFile(path+".1", []byte("older history\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logger.Close() })
+	logger.Log(AuditEntry{Event: AuditSignRequest, Reason: "before"})
+	logger.written = maxAuditLogSize
+
+	original := openAuditFile
+	failOnce := true
+	openAuditFile = func(p string) (auditFile, error) {
+		if failOnce {
+			failOnce = false
+			return nil, errors.New("simulated open failure")
+		}
+		return original(p)
+	}
+	t.Cleanup(func() { openAuditFile = original })
+	logger.Log(AuditEntry{Event: AuditSignRequest, Reason: "after"})
+
+	current, err := os.ReadFile(path)
+	if err != nil || strings.Count(string(current), `"reason":"before"`) != 1 || strings.Count(string(current), `"reason":"after"`) != 1 {
+		t.Fatalf("current log = %q, %v; want both entries once", current, err)
+	}
+	if older, err := os.ReadFile(path + ".2"); err != nil || string(older) != "older history\n" {
+		t.Fatalf("%s.2 = %q, %v; want the older history", path, older, err)
+	}
+}
+
+// A rotation starts the new file cleanly even after a write was cut short:
+// the guard newline belongs to the file the fragment is in.
+func TestARotationAfterAShortWriteStartsCleanly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	shortFirst := true
+	useFaultyFiles(t, func(f *faultyFile) {
+		if shortFirst {
+			shortFirst = false
+			f.shortWrites = 1
+		}
+	})
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logger.Close() })
+	_ = logger.logDurable(rotatingRelease("cut-short"))
+	logger.written = maxAuditLogSize
+	if err := logger.logDurable(rotatingRelease("in-the-new-file")); err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(path)
+	if err != nil || len(current) == 0 || current[0] == '\n' {
+		t.Fatalf("new log = %q, %v; want it to start with the entry", current, err)
+	}
+}

@@ -216,10 +216,13 @@ type AuditLogger struct {
 	mu      sync.Mutex
 	path    string
 	written uint64
-	// partial records that the last write stopped partway through an
-	// entry, leaving a fragment with no newline: the next entry starts with
-	// one, so it is not merged into the fragment and lost with it.
+	// partial records that the file ends partway through an entry (a write
+	// that stopped short, or a line an earlier run left torn), leaving a
+	// fragment with no newline: the next entry starts with one, so it is
+	// not merged into the fragment and lost with it.
 	partial bool
+	// closed is set by Close; nothing is written, or reopened, after it.
+	closed bool
 
 	authFailures       entryLimiter
 	cosignerRejections entryLimiter
@@ -257,7 +260,7 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 		written = uint64(info.Size())
 	}
 
-	logger := &AuditLogger{file: file, path: path, written: written}
+	logger := &AuditLogger{file: file, path: path, written: written, partial: endsMidLine(path, written)}
 	logger.authFailures.init(AuditAuthFailuresSuppressed, "authentication failures")
 	logger.cosignerRejections.init(AuditCosignerRejectionsSuppressed, "cosigner component rejections")
 	return logger, nil
@@ -341,6 +344,9 @@ func boundOperationID(id string) string {
 func (a *AuditLogger) Log(entry AuditEntry) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed {
+		return
+	}
 	entry = normalizeEntry(entry)
 
 	// Set timestamp if not provided
@@ -379,12 +385,34 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 	}
 }
 
+// endsMidLine reports whether the file at path, of size bytes, ends without
+// a newline: a line an earlier run left torn by a crash or a full disk. The
+// logger's own handle is write-only, so the last byte is read separately.
+func endsMidLine(path string, size uint64) bool {
+	if size == 0 {
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, int64(size)-1); err != nil {
+		return false
+	}
+	return last[0] != '\n'
+}
+
 // writeLineLocked appends line, one entry ending in a newline, and syncs it
 // to disk (important for audit trails). A write that stops partway leaves a
 // fragment with no newline; the next line then starts with one, so a later
 // entry, a durable rotating release among them, is never merged into the
 // fragment and dropped with it by the reader. Must be called with a.mu held.
 func (a *AuditLogger) writeLineLocked(line []byte) error {
+	if a.closed {
+		return fmt.Errorf("audit log is closed")
+	}
 	if a.partial {
 		line = append([]byte{'\n'}, line...)
 	}
@@ -411,6 +439,9 @@ func (a *AuditLogger) writeLineLocked(line []byte) error {
 func (a *AuditLogger) logDurable(entry AuditEntry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed {
+		return fmt.Errorf("audit log is closed")
+	}
 	entry = normalizeEntry(entry)
 
 	if entry.Timestamp.IsZero() {
@@ -446,7 +477,10 @@ func (a *AuditLogger) logDurable(entry AuditEntry) error {
 // use and keeps growing, and the next entry tries again.
 // Must be called with a.mu held.
 func (a *AuditLogger) rotate() error {
-	err := a.file.Close()
+	var err error
+	if a.file != nil {
+		err = a.file.Close()
+	}
 	// The handle is gone either way: if closing failed, the next write
 	// reopens the current file rather than writing to a closed one.
 	a.file = nil
@@ -489,17 +523,20 @@ func (a *AuditLogger) rotate() error {
 // nil if the open itself fails (Log drops entries until recovery succeeds).
 // Must be called with a.mu held.
 func (a *AuditLogger) reopenCurrent() {
-	file, err := openAuditFile(a.path)
 	a.file = nil
-	if err == nil {
-		a.file = file
-	}
 	a.written = 0
-	if a.file != nil {
-		if info, err := a.file.Stat(); err == nil {
-			a.written = uint64(info.Size())
-		}
+	if a.closed {
+		return
 	}
+	file, err := openAuditFile(a.path)
+	if err != nil {
+		return
+	}
+	a.file = file
+	if info, err := a.file.Stat(); err == nil {
+		a.written = uint64(info.Size())
+	}
+	a.partial = a.partial || endsMidLine(a.path, a.written)
 }
 
 // FlushSummaries writes the pending summaries of rate-limited entries without
@@ -521,10 +558,13 @@ func (a *AuditLogger) Close() error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.closed = true
 	if a.file == nil {
 		return nil
 	}
-	return a.file.Close()
+	err := a.file.Close()
+	a.file = nil
+	return err
 }
 
 // Helper methods for common events
