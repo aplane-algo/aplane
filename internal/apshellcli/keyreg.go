@@ -23,48 +23,18 @@ func (r *REPLState) keyRegPasteMode() error {
 
 	// Read multiline input using LineReader (supports Ctrl+C) or fallback to scanner
 	var lines []string
-	emptyLineCount := 0
-
-	if r.hasInteractiveLineReader() { //nolint:nestif // complexity backlog
-		// Use readline-based input (handles Ctrl+C gracefully)
-		r.clearInputPrompt()
-		for {
-			line, err := r.readInteractiveLine()
-			if err != nil {
-				if errors.Is(err, readline.ErrInterrupt) {
-					r.println("\nCancelled.")
-					return nil
-				}
-				return fmt.Errorf("error reading input: %w", err)
-			}
-			if strings.TrimSpace(line) == "" {
-				emptyLineCount++
-				if emptyLineCount >= 2 {
-					break
-				}
-			} else {
-				emptyLineCount = 0
-				lines = append(lines, line)
-			}
+	if r.hasInteractiveLineReader() {
+		pasted, cancelled, err := r.readPastedLines()
+		if err != nil || cancelled {
+			return err
 		}
+		lines = pasted
 	} else {
-		// Fallback: basic scanner mode (no Ctrl+C handling)
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.TrimSpace(line) == "" {
-				emptyLineCount++
-				if emptyLineCount >= 2 {
-					break
-				}
-			} else {
-				emptyLineCount = 0
-				lines = append(lines, line)
-			}
+		pasted, err := scanPastedLines()
+		if err != nil {
+			return err
 		}
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("error reading input: %w", err)
-		}
+		lines = pasted
 	}
 
 	if len(lines) == 0 {
@@ -113,4 +83,57 @@ func (r *REPLState) keyRegPasteMode() error {
 	}
 
 	return nil
+}
+
+// readPastedLines reads pasted lines from the interactive line reader until
+// two empty lines in a row. Ctrl+C cancels, which it says and reports.
+func (r *REPLState) readPastedLines() (lines []string, cancelled bool, err error) {
+	emptyLineCount := 0
+	// Use readline-based input (handles Ctrl+C gracefully)
+	r.clearInputPrompt()
+	for {
+		line, err := r.readInteractiveLine()
+		if err != nil {
+			if errors.Is(err, readline.ErrInterrupt) {
+				r.println("\nCancelled.")
+				return nil, true, nil
+			}
+			return nil, false, fmt.Errorf("error reading input: %w", err)
+		}
+		if strings.TrimSpace(line) == "" {
+			emptyLineCount++
+			if emptyLineCount >= 2 {
+				break
+			}
+		} else {
+			emptyLineCount = 0
+			lines = append(lines, line)
+		}
+	}
+	return lines, false, nil
+}
+
+// scanPastedLines reads pasted lines from standard input until two empty
+// lines in a row or the end of input. It has no Ctrl+C handling.
+func scanPastedLines() ([]string, error) {
+	var lines []string
+	emptyLineCount := 0
+	// Fallback: basic scanner mode (no Ctrl+C handling)
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			emptyLineCount++
+			if emptyLineCount >= 2 {
+				break
+			}
+		} else {
+			emptyLineCount = 0
+			lines = append(lines, line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading input: %w", err)
+	}
+	return lines, nil
 }
