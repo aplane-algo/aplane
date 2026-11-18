@@ -1343,7 +1343,7 @@ apsigner supports four startup modes that share a unified initialization path:
 
 | Mode | Passphrase Source | Starts | Use Case |
 |------|-------------------|--------|----------|
-| **Headless** | `passphrase_command_argv` config | Unlocked | Automation, CI/CD, systemd services |
+| **Headless** | `passphrase_command_argv` in `unlock.yaml` | Unlocked | Automation, CI/CD, systemd services |
 | **Locked** | apadmin IPC connection | Locked | Interactive operation, manual approval |
 | **Test** | `TEST_PASSPHRASE` env | Unlocked | Test harness / integration environments |
 | **Forced locked** | No `store-root.enc` present | Locked | Uninitialized signer state |

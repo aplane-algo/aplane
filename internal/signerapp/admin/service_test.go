@@ -167,37 +167,8 @@ func TestServiceDetectPassphraseMethodReadsUnlockYAML(t *testing.T) {
 	}
 }
 
-func TestServiceDetectPassphraseMethodFallsBackToGlobalConfig(t *testing.T) {
+func TestServiceDetectPassphraseMethodMalformedUnlockYAMLIsUnknown(t *testing.T) {
 	svc, _, deps := setupAdminService(t)
-
-	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
-
-	got := svc.detectPassphraseMethod()
-	if got != "systemd-creds" {
-		t.Fatalf("global fallback: got %q, want %q", got, "systemd-creds")
-	}
-}
-
-func TestServiceDetectPassphraseMethodProductStoreOverridesGlobal(t *testing.T) {
-	svc, _, deps := setupAdminService(t)
-
-	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
-	unlockCfg := &unlockconfig.UnlockConfig{
-		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
-	}
-	if err := unlockconfig.SaveUnlockConfig(deps.dataDir, unlockCfg); err != nil {
-		t.Fatalf("SaveUnlockConfig: %v", err)
-	}
-
-	got := svc.detectPassphraseMethod()
-	if got != "passfile" {
-		t.Fatalf("product-store should override global: got %q, want %q", got, "passfile")
-	}
-}
-
-func TestServiceDetectPassphraseMethodMalformedUnlockYAMLFallsBackToGlobal(t *testing.T) {
-	svc, _, deps := setupAdminService(t)
-	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
 
 	unlockPath := unlockconfig.UnlockConfigPath(deps.dataDir)
 	if err := os.MkdirAll(filepath.Dir(unlockPath), 0o700); err != nil {
@@ -207,8 +178,8 @@ func TestServiceDetectPassphraseMethodMalformedUnlockYAMLFallsBackToGlobal(t *te
 		t.Fatalf("WriteFile(unlock.yaml): %v", err)
 	}
 
-	if got := svc.detectPassphraseMethod(); got != "systemd-creds" {
-		t.Fatalf("malformed unlock.yaml fallback = %q, want systemd-creds", got)
+	if got := svc.detectPassphraseMethod(); got != "unknown" {
+		t.Fatalf("malformed unlock.yaml = %q, want unknown", got)
 	}
 }
 

@@ -19,13 +19,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestResolveUnlockConfigPrefersProductStore(t *testing.T) {
+func TestResolveUnlockConfigReadsProductStore(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	cfg := serverconfig.DefaultServerConfig()
-	cfg.PassphraseCommandArgv = []string{"global-pass", "/tmp/global"}
-	cfg.PassphraseCommandEnv = map[string]string{"GLOBAL": "1"}
 
 	want := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"identity-pass", "/tmp/identity"},
@@ -35,7 +32,7 @@ func TestResolveUnlockConfigPrefersProductStore(t *testing.T) {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
 
-	got, err := ResolveUnlockConfig(root, &cfg)
+	got, err := ResolveUnlockConfig(root)
 	if err != nil {
 		t.Fatalf("ResolveUnlockConfig() error = %v", err)
 	}
@@ -44,23 +41,12 @@ func TestResolveUnlockConfigPrefersProductStore(t *testing.T) {
 	}
 }
 
-func TestResolveUnlockConfigFallsBackToGlobal(t *testing.T) {
+func TestResolveUnlockConfigWithoutHelperIsNil(t *testing.T) {
 	t.Parallel()
 
-	cfg := serverconfig.DefaultServerConfig()
-	cfg.PassphraseCommandArgv = []string{"global-pass", "/tmp/global"}
-	cfg.PassphraseCommandEnv = map[string]string{"GLOBAL": "1"}
-
-	got, err := ResolveUnlockConfig(t.TempDir(), &cfg)
-	if err != nil {
-		t.Fatalf("ResolveUnlockConfig() error = %v", err)
-	}
-	want := &unlockconfig.UnlockConfig{
-		PassphraseCommandArgv: cfg.PassphraseCommandArgv,
-		PassphraseCommandEnv:  cfg.PassphraseCommandEnv,
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ResolveUnlockConfig() = %+v, want %+v", got, want)
+	got, err := ResolveUnlockConfig(t.TempDir())
+	if err != nil || got != nil {
+		t.Fatalf("ResolveUnlockConfig() = %+v, %v; want nil, nil", got, err)
 	}
 }
 
@@ -129,7 +115,9 @@ func TestBuildUnlockPlanUsesPassphraseCommand(t *testing.T) {
 	helper, marker := writePassphraseHelper(t, root, string(passphrase))
 
 	cfg := serverconfig.DefaultServerConfig()
-	cfg.PassphraseCommandArgv = []string{helper, marker}
+	if err := unlockconfig.SaveUnlockConfig(root, &unlockconfig.UnlockConfig{PassphraseCommandArgv: []string{helper, marker}}); err != nil {
+		t.Fatalf("SaveUnlockConfig() error = %v", err)
+	}
 	opts := &Options{
 		DataDir: root,
 		Config:  cfg,
@@ -167,7 +155,9 @@ func TestValidateAndBuildUnlockPlanRejectsExtraIdentityBeforePassphraseCommand(t
 	}
 	helper, marker := writePassphraseHelper(t, root, string(passphrase))
 	cfg := serverconfig.DefaultServerConfig()
-	cfg.PassphraseCommandArgv = []string{helper, marker}
+	if err := unlockconfig.SaveUnlockConfig(root, &unlockconfig.UnlockConfig{PassphraseCommandArgv: []string{helper, marker}}); err != nil {
+		t.Fatalf("SaveUnlockConfig() error = %v", err)
+	}
 	opts := &Options{
 		DataDir: root,
 		Config:  cfg,

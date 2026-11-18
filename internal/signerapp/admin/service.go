@@ -298,9 +298,11 @@ func parseBoolSetting(req adminproto.UpdateAdminSettingRequest) (bool, error) {
 }
 
 func (s Service) detectPassphraseMethod() string {
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), s.Deps.Config())
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir())
 	if err != nil {
-		return DetectPassphraseMethod(s.Deps.Config().PassphraseCommandArgv)
+		// An unreadable unlock.yaml blocks the settings a helper forbids, as
+		// a configured one would.
+		return "unknown"
 	}
 	if unlockCfg != nil {
 		return DetectPassphraseMethod(unlockCfg.PassphraseCommandArgv)

@@ -341,8 +341,7 @@ Day-to-day:
   `passfile`, `systemd-creds`).
 - `appass` refuses to run while `apsigner` is active for the same data
   directory.
-- Stop `apsigner` before changing `unlock.yaml` or the process-global
-  `passphrase_command_argv` compatibility setting.
+- Stop `apsigner` before changing `unlock.yaml`.
 
 Keeping live admin and offline unlock setup in separate tools prevents the
 running daemon's in-memory state from drifting out of sync with the signer
@@ -450,9 +449,8 @@ proxy if the signer's environment names one (`HTTPS_PROXY`, `HTTP_PROXY`,
 the Indexer, and for an `http://` Indexer it also sees the token. Use an
 `https://` Indexer when a proxy is in the path.
 
-`passphrase_command_argv` and `passphrase_command_env` are accepted in the
-top-level `config.yaml`. `appass` writes its configuration to
-`identities/default/unlock.yaml`, which takes precedence.
+The passphrase helper is not a `config.yaml` setting. `appass` writes it to
+`identities/default/unlock.yaml`, next to the store it unlocks.
 
 ### Genesis Hash Network Mapping
 
@@ -523,9 +521,6 @@ the product runtime in headless mode and the effective runtime behavior is:
 
 - passphrase timeout is disabled (`0`)
 - lock-on-disconnect is disabled
-
-For process-global `passphrase_command_argv`, `config.yaml` must set
-`passphrase_timeout: "0"` and must not set `lock_on_disconnect: true`.
 
 #### Lock / Unlock Behavior Matrix
 
@@ -1297,12 +1292,11 @@ Headless mode is intentionally long-lived: `passphrase_timeout` must be `0`, `lo
 ### Required Configuration
 
 Use `appass` to configure headless unlock for the product store. It writes
-`identities/default/unlock.yaml` and removes process-global passphrase helper
-compatibility settings so they do not conflict.
+`identities/default/unlock.yaml`, the only place a passphrase helper is configured.
 
 Three effective settings work together to enable headless operation:
 
-#### 1. `passphrase_command_argv` (`unlock.yaml`, or process-global `config.yaml`)
+#### 1. `passphrase_command_argv` (`unlock.yaml`)
 
 Specifies a helper command that can read and store the passphrase. The helper
 receives a **verb** (`read` or `write`) as its first argument,
@@ -1322,7 +1316,7 @@ For example, `passphrase_command_argv: ["/usr/local/bin/appass-file", "/etc/apla
 - Write: `/usr/local/bin/appass-file write /etc/aplane/passphrase` (with passphrase on stdin)
 
 **Requirements:**
-- All paths in `passphrase_command_argv` are resolved relative to the data directory (absolute paths are left unchanged)
+- `argv[0]` must be an absolute path; `unlock.yaml` paths are used as written
 - The binary must not be group/world-writable
 - `read` must exit 0 and produce non-empty stdout
 - Exactly one trailing newline is stripped from output
@@ -1335,8 +1329,8 @@ For example, `passphrase_command_argv: ["/usr/local/bin/appass-file", "/etc/apla
 
 ```yaml
 # INSECURE / DEV ONLY: Passphrase stored in plaintext file
-# Local install: helper path resolved relative to the signer data directory
-passphrase_command_argv: ["bin/appass-file", "passphrase"]
+# identities/default/unlock.yaml (appass writes absolute paths)
+passphrase_command_argv: ["/path/to/apsigner/bin/appass-file", "/path/to/apsigner/identities/default/passphrase"]
 ```
 
 Use `appass`, not manual line editing, if you want to switch between prompt mode and passfile mode on an existing signer data directory.
@@ -1398,9 +1392,7 @@ lock_on_disconnect: false
 ```
 
 - Default is `true` (signer locks when apadmin disconnects)
-- Product-store `unlock.yaml` forces the effective value to `false`
-- Process-global helper configuration must set this to `false`
-- Startup rejects a conflicting process-global helper/lock configuration
+- A passphrase helper in `unlock.yaml` forces the effective value to `false`
 
 #### 3. User Auto-Approve
 

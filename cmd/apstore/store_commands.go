@@ -113,7 +113,7 @@ func parseInitializeRole(args []string) (noderole.Role, error) {
 
 func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
 	var result protocol.InitializeStoreResultMessage
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory, &config)
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory)
 	if err != nil {
 		return result, fmt.Errorf("failed to resolve passphrase helper config: %w", err)
 	}

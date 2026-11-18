@@ -87,7 +87,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 	sessionTimeout := effectiveCfg.SessionTimeout
 	approvalWait := effectiveCfg.ApprovalWait
 
-	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, opts.Config)
+	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir)
 	if unlockErr != nil {
 		return nil, fmt.Errorf("failed to load product unlock config: %w", unlockErr)
 	}

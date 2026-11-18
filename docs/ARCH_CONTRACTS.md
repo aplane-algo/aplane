@@ -214,7 +214,6 @@ Validation:
 - `mainnet`, `testnet`, and `betanet` are reserved built-in Algorand network tokens; custom genesis-hash mappings cannot use those tokens or remap their built-in genesis hashes
 - duplicate genesis-hash mappings and duplicate custom token mappings are rejected at config load
 - relative SSH server paths resolve against the signer data dir
-- every `passphrase_command_argv` element resolves relative to the signer data dir before execution
 - `theme` is the signer-admin UI preference persisted by the admin setting
   update path; it is process-global signer config, not client config
 - `endpoint.signer_port` is the loopback REST API port behind the signer
@@ -233,12 +232,9 @@ Validation:
   address is detected, it falls back to `127.0.0.1`. A wildcard IPv6 bind
   (`::`) displays `::1`. Without an advertise URL and a live SSH port, no
   display URL is produced.
-- when `config.yaml` sets `passphrase_command_argv` and the store is
-  initialized, startup validation rejects `lock_on_disconnect:true` and any
-  `passphrase_timeout` other than `"0"`
-- when product `identities/default/unlock.yaml` supplies the helper, it takes
-  precedence over `config.yaml` (`startup.ResolveUnlockConfig`), and the
-  runtime forces lock-on-disconnect off and the session timeout to 0 instead
+- the passphrase helper is configured only in product
+  `identities/default/unlock.yaml` (`startup.ResolveUnlockConfig`); `config.yaml`
+  has no passphrase helper field. When a helper is configured, the runtime forces lock-on-disconnect off and the session timeout to 0 instead
   of rejecting the settings
 - `ipc_path` is the admin IPC Unix socket path. It defaults to
   `<APSIGNER_DATA>/aplane.sock` for same-UID deployments and
@@ -298,8 +294,7 @@ Operational rules:
 - process-owned `config.yaml` mutations are serialized by the signer process config mutation lock
 - admin setting writes fail if the loaded process config is stale relative to
   mutable on-disk process settings such as `endpoint.signer_port`,
-  `endpoint.ssh.port`, `passphrase_command_argv`, `passphrase_command_env`,
-  `networks`, `approval_wait`, and `theme`
+  `endpoint.ssh.port`, `networks`, `approval_wait`, and `theme`
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
 - product-runtime settings and policy writes are serialized by the store mutation lock
 - node role is immutable in supported tools; create a separate signer data root
@@ -394,10 +389,8 @@ Sources: `internal/signerapp/unlockconfig/unlock.go` owns product-store
 `unlock.yaml` persistence; `internal/serverconfig/passphrasecmd.go` owns helper
 execution, output decoding, environment filtering, and validation.
 
-- relative resolution against the signer data dir applies only to
-  `config.yaml` `passphrase_command_argv`; `unlock.yaml` argv is used as
-  written, so its `argv[0]` must already be absolute (`appass` always writes
-  absolute paths)
+- `unlock.yaml` argv is used as written, so its `argv[0]` must be absolute
+  (`appass` always writes absolute paths)
 - `unlock.yaml` is parsed without known-field checking, so unknown keys are
   ignored
 - `argv[0]` must resolve to an absolute path that is not a directory, has an

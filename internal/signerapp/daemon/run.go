@@ -135,7 +135,7 @@ func Run(dataDir string) int { //nolint:gocognit // unslop phase 3
 	if err != nil {
 		logErrorf("%v", err)
 		if strings.Contains(err.Error(), "passphrase from passphrase command does not match existing keystore") {
-			logErrorf("the passphrase_command_argv must return the same passphrase used to create the keystore")
+			logErrorf("the unlock.yaml passphrase helper must return the same passphrase used to create the keystore")
 		}
 		return 1
 	}
@@ -177,17 +177,13 @@ func Run(dataDir string) int { //nolint:gocognit // unslop phase 3
 	logInfof("Policy settings:")
 	logInfof("  user_auto_approve: %v", config.UserAutoApprove)
 
-	// Warn about unusual configs in interactive mode (not headless). A
-	// passphrase helper may come from config.yaml or from the product's
-	// unlock.yaml (appass); the unlock plan already resolved which.
-	headless := unlockPlan.Source == signerstartup.UnlockSourcePassphraseCommand
-	if !headless {
-		printInteractiveModeWarnings(&config)
-	} else if len(config.PassphraseCommandArgv) == 0 {
-		// Startup validation checked a config.yaml helper; an unlock.yaml
-		// helper gets the same headless notes here. The runtime turns off
-		// lock-on-disconnect and the idle timeout for it, so say so.
+	// A passphrase helper in the product's unlock.yaml (appass) makes the
+	// runtime headless: it turns off lock-on-disconnect and the idle timeout,
+	// so say so. Otherwise warn about unusual interactive settings.
+	if unlockPlan.Source == signerstartup.UnlockSourcePassphraseCommand {
 		printUnlockConfigHeadlessWarnings(&config)
+	} else {
+		printInteractiveModeWarnings(&config)
 	}
 
 	authorizer := authz.NewProductSingleAuthorizer()
@@ -469,8 +465,6 @@ func printSecurityAudit(passphraseTimeout time.Duration, userAutoApprove bool, i
 	}
 }
 
-// printInteractiveModeWarnings prints warnings for unusual configs in interactive mode.
-// These are not errors, just alerts that the user may have misconfigured something.
 // printUnlockConfigHeadlessWarnings reports headless mode for a passphrase
 // helper configured in unlock.yaml, and settings in config.yaml it overrides.
 func printUnlockConfigHeadlessWarnings(config *serverconfig.ServerConfig) {
@@ -487,6 +481,8 @@ func printUnlockConfigHeadlessWarnings(config *serverconfig.ServerConfig) {
 	}
 }
 
+// printInteractiveModeWarnings prints warnings for unusual configs in interactive mode.
+// These are not errors, just alerts that the user may have misconfigured something.
 func printInteractiveModeWarnings(config *serverconfig.ServerConfig) {
 	var warnings []string
 
@@ -494,10 +490,6 @@ func printInteractiveModeWarnings(config *serverconfig.ServerConfig) {
 	// including one that matches a review rule, signs without confirmation.
 	if config.UserAutoApprove {
 		warnings = append(warnings, "user_auto_approve:true - all non-rejected transactions, including review-rule matches, will be signed without confirmation")
-	}
-
-	if len(config.PassphraseCommandArgv) > 0 {
-		warnings = append(warnings, "headless mode keeps the signer unlocked in memory until process exit or manual lock")
 	}
 
 	// Warn if lock_on_disconnect is false - signer stays unlocked after admin leaves

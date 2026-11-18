@@ -19,8 +19,6 @@ func TestSignerConfigSnapshotIsIndependent(t *testing.T) {
 	lockOnDisconnect := true
 	cfg := serverconfig.DefaultServerConfig()
 	cfg.LockOnDisconnect = &lockOnDisconnect
-	cfg.PassphraseCommandArgv = []string{"appass-file", "/tmp/pass"}
-	cfg.PassphraseCommandEnv = map[string]string{"A": "B"}
 	cfg.Algod = apconfig.AlgodConfig{
 		"testnet": &apconfig.AlgodNetworkConfig{Server: "http://algod", Token: "token"},
 	}
@@ -29,8 +27,6 @@ func TestSignerConfigSnapshotIsIndependent(t *testing.T) {
 	snapshot := signer.ConfigSnapshot()
 	snapshot.Theme = "dark"
 	*snapshot.LockOnDisconnect = false
-	snapshot.PassphraseCommandArgv[0] = "changed"
-	snapshot.PassphraseCommandEnv["A"] = "C"
 	snapshot.Algod["testnet"].Server = "changed"
 
 	if signer.Theme() == "dark" {
@@ -38,12 +34,6 @@ func TestSignerConfigSnapshotIsIndependent(t *testing.T) {
 	}
 	if *signer.config.LockOnDisconnect != true {
 		t.Fatal("ConfigSnapshot shared LockOnDisconnect pointer")
-	}
-	if signer.config.PassphraseCommandArgv[0] != "appass-file" {
-		t.Fatal("ConfigSnapshot shared PassphraseCommandArgv slice")
-	}
-	if signer.config.PassphraseCommandEnv["A"] != "B" {
-		t.Fatal("ConfigSnapshot shared PassphraseCommandEnv map")
 	}
 	if signer.config.Algod["testnet"].Server != "http://algod" {
 		t.Fatal("ConfigSnapshot shared Algod nested config")
