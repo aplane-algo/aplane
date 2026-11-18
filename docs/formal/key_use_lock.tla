@@ -38,7 +38,17 @@ LockState and Wipe, so an unlock could otherwise read the generation the lock
 had already moved, pass the unlock fence, and publish a session that the
 cleanup still running would then clear.
 
-Six guards are switchable:
+An unlock is two steps, because its unlock function (passphrase check and key
+load) runs outside the state mutex: UnlockStart reads the lock generation and
+UnlockFinish compares it. Two unlocks may run at once, from two admin
+sessions or an automatic unlock beside one. An unlock that finds the
+generation moved has lost to a lock, and its function may have loaded keys
+after that lock's cleanup, so it clears them. The other unlock may meanwhile
+have published a session those keys now serve, or may publish one before the
+loser's clear runs; so the loser locks the signer as a lock does before it
+clears.
+
+Seven guards are switchable:
 
   RegisterChecksLock  registration refuses once the state is locked. Without
                       it, a holder registering after DrainBegin gets a fresh,
@@ -60,6 +70,11 @@ Six guards are switchable:
                       FinishMaintenance wait for it). Without it, an unlock
                       may land between LockState and Wipe, and the rest of
                       that cleanup runs against the new session.
+  LoserLocks          an unlock that lost to a lock locks the signer, moving
+                      the generation, before its cleanup clears what it
+                      loaded (runtime.Runtime loseUnlockLocked). Without it,
+                      the cleanup runs in whatever state the signer is in, and
+                      clears a session another unlock published.
 
 Properties:
 
@@ -99,9 +114,13 @@ Code anchors:
     productruntime's cancelKeyUses on the way in; DrainBegin and Wipe transcribe
     internal/signerapp/productruntime/runtime.go drainKeyUsers and
     performLockCleanup; registration transcribes KeyUseContext.
-  - Unlock's guard transcribes awaitCleanups in
+  - UnlockStart's guard transcribes awaitCleanups in
     internal/signerapp/runtime/runtime.go, which TryUnlock, TryRecovery and
-    FinishMaintenance call before they read the lock generation.
+    FinishMaintenance call before they read the lock generation;
+    UnlockFinish transcribes the fence after the unlock function and, when
+    the generation moved, loseUnlockLocked and the cleanup it decides.
+    LockInactive transcribes Lock on a signer that is already locked or
+    locking: the generation moves and no cleanup runs.
 
 See FORMAL_TLA_KEY_USE_LOCK_MODEL.md for the prose companion.
 ***************************************************************************)
@@ -113,9 +132,13 @@ CONSTANTS
     GenerationCheck,     \* BOOLEAN: the recheck compares lock generations
     RecoveryEndsSession, \* BOOLEAN: entering recovery moves the lock generation
     UnlockWaitsForCleanup, \* BOOLEAN: an unlock waits for the lock's cleanup
+    LoserLocks,          \* BOOLEAN: an unlock that lost to a lock locks first
     MaxLocks             \* bound on lock transitions (keeps the space finite)
 
 Holders == {"sign", "export"}
+
+\* Two unlock attempts that may overlap.
+Unlockers == {"u1", "u2"}
 
 VARIABLES
     life,       \* "unlocked" | "recovery" | "locking" | "draining" | "locked"
@@ -128,12 +151,15 @@ VARIABLES
     leaked,     \* ghost: a signature was returned although stale
     wipedHeld,  \* ghost: the session was cleared while a key use was registered
     lateExport, \* ghost: an export delivered after the session was cleared
-    late,       \* the step of a cleanup an early unlock overtook: "none" |
-                \* "locking" | "draining"
-    wipedLive   \* ghost: the session was cleared while the signer was unlocked
+    late,       \* the step of a cleanup that runs apart from the signer's
+                \* state: one an early unlock overtook, or a losing unlock's
+                \* without LoserLocks: "none" | "locking" | "draining"
+    wipedLive,  \* ghost: the session was cleared while the signer was unlocked
+    ul,         \* each unlock attempt: "idle" | "deriving"
+    ulStale     \* the lock generation moved after the attempt read it
 
 vars == <<life, locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld,
-          lateExport, late, wipedLive>>
+          lateExport, late, wipedLive, ul, ulStale>>
 
 \* Steps at which a holder has a registered key use.
 SignHolds == {"held", "made"}
@@ -155,6 +181,8 @@ Init ==
     /\ lateExport = FALSE
     /\ late = "none"
     /\ wipedLive = FALSE
+    /\ ul = [u \in Unlockers |-> "idle"]
+    /\ ulStale = [u \in Unlockers |-> FALSE]
 
 ----------------------------------------------------------------------------
 (* Registration (KeyUseContext), shared by both holders *)
@@ -267,6 +295,9 @@ ERelease ==
 ----------------------------------------------------------------------------
 (* Lock and unlock *)
 
+\* Every unlock attempt in flight finds the lock generation moved.
+GenerationMoves == [u \in Unlockers |-> ulStale[u] \/ ul[u] = "deriving"]
+
 \* The state locks and the generation moves for every holder in flight. A
 \* signer in recovery locks the same way.
 LockState ==
@@ -276,7 +307,16 @@ LockState ==
     /\ locks' = locks + 1
     /\ stale' = [h \in Holders |-> stale[h] \/ pc[h] # "idle"]
     /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
+    /\ ulStale' = GenerationMoves
     /\ UNCHANGED <<pc, cancelled, waited, leaked, wipedHeld, lateExport>>
+
+\* A Lock on a signer already locked or locking: the generation still moves,
+\* and no cleanup runs. Every holder in flight is stale already.
+LockInactive ==
+    /\ life \in {"locking", "draining", "locked"}
+    /\ ulStale' = GenerationMoves
+    /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
+                   wipedHeld, lateExport>>
 
 \* SetRecovery, or TryRecovery, from the unlocked state. The session ends for
 \* every holder in flight. Under RecoveryEndsSession the generation moves with
@@ -316,20 +356,48 @@ Wipe ==
     /\ wipedHeld' = (wipedHeld \/ \E h \in Holders : Holding(h))
     /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, lateExport>>
 
-\* TryUnlock. It waits for the cleanup, so it starts from the locked state.
-\* Without the wait it may also start between LockState and Wipe; the cleanup
-\* it overtook carries on as `late`.
-Unlock ==
+\* TryUnlock reads the lock generation, then runs its unlock function. It
+\* waits for every cleanup in progress first, so it starts from the locked
+\* state; without the wait it may also start between LockState and Wipe.
+UnlockStart(u) ==
+    /\ ul[u] = "idle"
     /\ IF UnlockWaitsForCleanup
-       THEN life = "locked"
+       THEN life = "locked" /\ late = "none"
        ELSE life \in {"locking", "draining", "locked"}
-    /\ life # "locked" => late = "none"
-    /\ late' = IF life = "locked" THEN late ELSE life
-    /\ life' = "unlocked"
-    /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld,
-                   lateExport, wipedLive>>
+    /\ ul' = [ul EXCEPT ![u] = "deriving"]
+    /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
+    /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
+                   wipedHeld, lateExport, late, wipedLive>>
 
-\* The overtaken cleanup's drainKeyUsers.
+\* The unlock function has returned. With the generation unchanged the
+\* attempt publishes a session; a cleanup it overtook carries on as `late`.
+\* With the generation moved the attempt lost to a lock and clears what it
+\* loaded: under LoserLocks it first locks as LockState does, moving the
+\* generation for the other attempt and the holders; otherwise its cleanup
+\* carries on as `late`, whatever the signer's state.
+UnlockFinish(u) ==
+    /\ ul[u] = "deriving"
+    /\ ul' = [ul EXCEPT ![u] = "idle"]
+    /\ IF ~ulStale[u]
+       THEN /\ life \in {"locking", "draining"} => late = "none"
+            /\ late' = IF life \in {"locking", "draining"} THEN life ELSE late
+            /\ life' = "unlocked"
+            /\ UNCHANGED <<stale, ended, ulStale>>
+       ELSE IF LoserLocks
+       THEN /\ life' = "locking"
+            /\ stale' = [h \in Holders |-> stale[h] \/ pc[h] # "idle"]
+            /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
+            /\ ulStale' = [v \in Unlockers |->
+                             IF v = u THEN FALSE ELSE GenerationMoves[v]]
+            /\ UNCHANGED late
+       ELSE /\ late = "none"
+            /\ late' = "locking"
+            /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
+            /\ UNCHANGED <<life, stale, ended>>
+    /\ UNCHANGED <<locks, pc, cancelled, waited, leaked, wipedHeld, lateExport,
+                   wipedLive>>
+
+\* The late cleanup's drainKeyUsers.
 LateDrainBegin ==
     /\ late = "locking"
     /\ late' = "draining"
@@ -337,7 +405,7 @@ LateDrainBegin ==
     /\ UNCHANGED <<life, locks, pc, stale, ended, waited, leaked, wipedHeld,
                    lateExport, wipedLive>>
 
-\* The overtaken cleanup clears the session, whatever state the signer is in.
+\* The late cleanup clears the session, whatever state the signer is in.
 LateWipe ==
     /\ late = "draining"
     /\ DrainWaits => \A h \in Holders : ~(Holding(h) /\ waited[h])
@@ -350,10 +418,16 @@ LateWipe ==
 Next ==
     \/ /\ \/ SStart \/ SRegister \/ SMake \/ SRelease \/ SReturn
           \/ EStart \/ ERegister \/ ERead \/ EDeliver \/ ERelease
-          \/ LockState \/ DrainBegin \/ Wipe
+          \/ DrainBegin \/ Wipe
+          \* Recovery moves the session generation, not the lock generation
+          \* the unlock fence compares.
           \/ EnterRecovery \/ LeaveRecovery
-       /\ UNCHANGED <<late, wipedLive>>
-    \/ Unlock \/ LateDrainBegin \/ LateWipe
+       /\ UNCHANGED <<late, wipedLive, ul, ulStale>>
+    \/ /\ LockState \/ LockInactive
+       /\ UNCHANGED <<late, wipedLive, ul>>
+    \/ \E u \in Unlockers : UnlockStart(u) \/ UnlockFinish(u)
+    \/ /\ LateDrainBegin \/ LateWipe
+       /\ UNCHANGED <<ul, ulStale>>
 
 Spec == Init /\ [][Next]_vars
 
@@ -370,6 +444,7 @@ TypeOK ==
     /\ leaked \in BOOLEAN /\ wipedHeld \in BOOLEAN /\ lateExport \in BOOLEAN
     /\ late \in {"none", "locking", "draining"}
     /\ wipedLive \in BOOLEAN
+    /\ \A u \in Unlockers : ul[u] \in {"idle", "deriving"} /\ ulStale[u] \in BOOLEAN
 
 \* KU1: no rotating signature is returned after a lock or a recovery began
 \* during its sign.

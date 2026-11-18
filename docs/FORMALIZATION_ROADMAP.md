@@ -808,3 +808,17 @@ cosigner. Not established: whether every cosigner key's public key reaches
 the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
+
+Fixed 2026-11-18: a losing unlock's cleanup (the first open divergence
+above). A `TryUnlock` or `TryRecovery` that finds `lockGen` moved now locks
+the runtime as `Lock` does, moving `lockGen` and the session in the critical
+section that decides its cleanup (`loseUnlockLocked`), so a session another
+attempt published ends, and an attempt still in flight loses too. A losing
+attempt during maintenance now also keeps the maintenance from
+republishing. `key_use_lock.tla` splits `Unlock` into `UnlockStart` and
+`UnlockFinish` over two attempts, adds `LockInactive` (a `Lock` on a signer
+already locked) and the guard `LoserLocks`, and gains the negative control
+`key_use_lock_negative_loser.cfg` (1216 states at depth 11). The positive
+runs grow to 2047 states at depth 18 and, deep, 3374 at depth 19, and every
+other key-use negative control still fails on its own property.
+`make formal-test` now has 37 runs, twenty-one of them negative controls.

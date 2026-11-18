@@ -206,6 +206,24 @@ func (r *Runtime) runCleanup(onLock func()) {
 	}
 }
 
+// loseUnlockLocked ends an unlock or recovery attempt that a lock overtook.
+// Its unlock function may have loaded keys after that lock's cleanup ran, and
+// another unlock may since have published a session that those keys now
+// serve, or may publish one before this attempt's cleanup runs. So the
+// attempt locks the runtime as Lock does: the state locks and the generation
+// and session move, which ends a published session and makes an unlock still
+// in flight lose too. Clearing what is loaded can then never leave the
+// runtime reading unlocked, or in recovery, with nothing behind it. The
+// caller holds stateMu for writing and runs the returned callback with
+// runCleanup after releasing it.
+func (r *Runtime) loseUnlockLocked() func() {
+	r.state = SignerStateLocked
+	r.lockGen++
+	r.session++
+	r.beginCleanupLocked()
+	return r.onLock
+}
+
 // awaitCleanups waits until no on-lock cleanup is in progress and returns
 // holding stateMu, for writing if write is set and for reading otherwise. A
 // cleanup that begins after it returns moves lockGen first, in a critical
@@ -322,8 +340,7 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 
 	r.stateMu.Lock()
 	if r.lockGen != gen || r.activeMaintenanceID != 0 {
-		onLock := r.onLock
-		r.beginCleanupLocked()
+		onLock := r.loseUnlockLocked()
 		r.stateMu.Unlock()
 		r.runCleanup(onLock)
 		return false, LockedDuringUnlockMessage
@@ -335,8 +352,9 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 
 // TryUnlock runs the supplied unlock function and, on success, transitions to
 // unlocked - unless a Lock call raced the unlock function, in which case the
-// lock wins: the lock callback runs again to destroy whatever the unlock
-// function loaded, the state stays locked, and the unlock reports failure.
+// lock wins: the attempt locks the runtime (loseUnlockLocked), the lock
+// callback runs again to destroy whatever the unlock function loaded, and the
+// unlock reports failure.
 //
 // It first waits for any lock cleanup in progress. A Lock moves lockGen and
 // then runs its cleanup outside the state mutex; an unlock that read lockGen
@@ -358,8 +376,7 @@ func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bo
 
 	r.stateMu.Lock()
 	if r.lockGen != gen || r.activeMaintenanceID != 0 {
-		onLock := r.onLock
-		r.beginCleanupLocked()
+		onLock := r.loseUnlockLocked()
 		r.stateMu.Unlock()
 		r.runCleanup(onLock)
 		return false, 0, LockedDuringUnlockMessage

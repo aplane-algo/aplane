@@ -229,8 +229,14 @@ func TestInFlightUnlockLosesToRacingMaintenance(t *testing.T) {
 	if cleanups != 2 {
 		t.Fatalf("maintenance race cleanups = %d, want 2", cleanups)
 	}
-	if !r.FinishMaintenance(token, true) {
-		t.Fatal("successful maintenance could not republish after rejecting the racing unlock")
+	// The losing unlock locked the runtime, which a maintenance cannot
+	// republish over: that unlock's cleanup may clear keys after the
+	// maintenance has reloaded them.
+	if r.FinishMaintenance(token, true) {
+		t.Fatal("maintenance republished over the lock a losing unlock made")
+	}
+	if r.GetState() != SignerStateLocked {
+		t.Fatalf("state after maintenance = %v, want locked", r.GetState())
 	}
 }
 

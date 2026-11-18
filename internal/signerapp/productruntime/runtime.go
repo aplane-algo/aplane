@@ -416,6 +416,10 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 		// As SetRecovery: a session that was unlocked until now is over.
 		ir.cancelKeyUses()
 	}
+	if !ok && msg == signerruntime.LockedDuringUnlockMessage {
+		// A lock overtook the attempt, which then locked the runtime.
+		ir.notifyLocked()
+	}
 	return ok, msg
 }
 
