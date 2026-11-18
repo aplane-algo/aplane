@@ -26,12 +26,35 @@ type Options struct {
 
 // Start watches dirs for managed credentials and .template changes and calls
 // reloadFn after a short debounce window.
-func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Options) error { //nolint:gocognit // complexity backlog
+func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Options) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("failed to create file watcher: %w", err)
 	}
 
+	watchCount := watchExistingDirs(watcher, dirs, opts)
+	if watchCount == 0 {
+		_ = watcher.Close()
+		return fmt.Errorf("no directories available to watch")
+	}
+
+	infof(opts, "file watcher enabled (%d directories) - keys and key types will auto-reload", watchCount)
+
+	loop := &reloadLoop{
+		watcher:     watcher,
+		pendingDirs: missingDirs(dirs),
+		reloadFn:    reloadFn,
+		opts:        opts,
+		delay:       debounceDelay,
+	}
+	go loop.run(ctx)
+
+	return nil
+}
+
+// watchExistingDirs adds each directory that exists to the watcher and returns
+// how many it is watching.
+func watchExistingDirs(watcher *fsnotify.Watcher, dirs []string, opts Options) int {
 	watchCount := 0
 	for _, dir := range dirs {
 		if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
@@ -43,86 +66,98 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 		}
 		watchCount++
 	}
+	return watchCount
+}
 
-	if watchCount == 0 {
-		_ = watcher.Close()
-		return fmt.Errorf("no directories available to watch")
-	}
-
-	infof(opts, "file watcher enabled (%d directories) - keys and key types will auto-reload", watchCount)
-
-	// Keep the full list so we can add newly created directories.
-	pendingDirs := make(map[string]bool)
+// missingDirs is the directories that do not exist yet, kept so the loop can
+// watch each one when it is created.
+func missingDirs(dirs []string) map[string]bool {
+	pending := make(map[string]bool)
 	for _, dir := range dirs {
 		if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
-			pendingDirs[dir] = true
+			pending[dir] = true
 		}
 	}
+	return pending
+}
 
-	go func() {
-		var debounceTimer *time.Timer
-		defer func() {
-			if debounceTimer != nil {
-				debounceTimer.Stop()
-			}
-			_ = watcher.Close()
-		}()
+const debounceDelay = 500 * time.Millisecond
 
-		const debounceDelay = 500 * time.Millisecond
+// reloadLoop turns watcher events into debounced reloads until its context
+// ends or the watcher closes.
+type reloadLoop struct {
+	watcher       *fsnotify.Watcher
+	pendingDirs   map[string]bool
+	reloadFn      func() error
+	opts          Options
+	delay         time.Duration
+	debounceTimer *time.Timer
+}
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-
-				// If a pending directory was just created, start watching it.
-				if event.Op&fsnotify.Create != 0 {
-					if pendingDirs[event.Name] {
-						if addErr := watcher.Add(event.Name); addErr == nil {
-							delete(pendingDirs, event.Name)
-							infof(opts, "now watching newly created directory: %s", event.Name)
-						}
-					}
-				}
-
-				// Only react to key files and key type template files. Key type
-				// state records (.json) are admin-mutated under the product-store
-				// mutation lock; reacting to them would race the same admin
-				// handlers that wrote them.
-				if !isReloadCandidate(event.Name) {
-					continue
-				}
-
-				if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename) != 0 {
-					if debounceTimer != nil {
-						debounceTimer.Stop()
-					}
-
-					debounceTimer = time.AfterFunc(debounceDelay, func() {
-						if ctx.Err() != nil {
-							return
-						}
-						if err := reloadFn(); err != nil {
-							warnf(opts, "error reloading keys/templates: %v", err)
-						}
-					})
-				}
-
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				warnf(opts, "file watcher error: %v", err)
-			}
+func (l *reloadLoop) run(ctx context.Context) {
+	defer func() {
+		if l.debounceTimer != nil {
+			l.debounceTimer.Stop()
 		}
+		_ = l.watcher.Close()
 	}()
 
-	return nil
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case event, ok := <-l.watcher.Events:
+			if !ok {
+				return
+			}
+			l.handleEvent(ctx, event)
+
+		case err, ok := <-l.watcher.Errors:
+			if !ok {
+				return
+			}
+			warnf(l.opts, "file watcher error: %v", err)
+		}
+	}
+}
+
+func (l *reloadLoop) handleEvent(ctx context.Context, event fsnotify.Event) {
+	l.watchIfPending(event)
+
+	// Only react to key files and key type template files. Key type
+	// state records (.json) are admin-mutated under the product-store
+	// mutation lock; reacting to them would race the same admin
+	// handlers that wrote them.
+	if !isReloadCandidate(event.Name) {
+		return
+	}
+	if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename) == 0 {
+		return
+	}
+
+	if l.debounceTimer != nil {
+		l.debounceTimer.Stop()
+	}
+	l.debounceTimer = time.AfterFunc(l.delay, func() {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := l.reloadFn(); err != nil {
+			warnf(l.opts, "error reloading keys/templates: %v", err)
+		}
+	})
+}
+
+// watchIfPending starts watching a pending directory that was just created.
+func (l *reloadLoop) watchIfPending(event fsnotify.Event) {
+	if event.Op&fsnotify.Create == 0 || !l.pendingDirs[event.Name] {
+		return
+	}
+	if addErr := l.watcher.Add(event.Name); addErr == nil {
+		delete(l.pendingDirs, event.Name)
+		infof(l.opts, "now watching newly created directory: %s", event.Name)
+	}
 }
 
 func isReloadCandidate(path string) bool {
