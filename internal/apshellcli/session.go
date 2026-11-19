@@ -6,6 +6,7 @@ package apshellcli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -110,7 +111,7 @@ func (s *Session) executeLineContext(ctx context.Context, raw string) (exit bool
 		return false, nil
 	}
 	if err := s.state.executeCommand(cmd); err != nil {
-		if err.Error() == "exit" {
+		if errors.Is(err, errQuit) {
 			return true, nil
 		}
 		return false, err

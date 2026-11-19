@@ -6,6 +6,7 @@ package apshellcli
 // Info and status commands: help, status, accounts, balance, holders, participation, signers, quit
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -330,8 +331,13 @@ func (r *REPLState) cmdClear(_ []string, _ interface{}) (command.Result, error) 
 	}), nil
 }
 
+// errQuit is what quit returns: the shell, or the script, ends with it and
+// is not failed. It is matched by identity, never by its text, which a
+// plugin's failure message could repeat.
+var errQuit = errors.New("exit")
+
 func (r *REPLState) cmdQuit(_ []string, _ interface{}) (command.Result, error) {
 	r.println("Goodbye!")
 	_ = disconnectTunnel(r) // Best-effort cleanup on exit
-	return newTerminalCommandResult(nil), fmt.Errorf("exit")
+	return newTerminalCommandResult(nil), errQuit
 }

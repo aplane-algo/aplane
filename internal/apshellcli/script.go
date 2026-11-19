@@ -4,6 +4,7 @@
 package apshellcli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -60,8 +61,8 @@ func (r *REPLState) runScript(args []string) error {
 		err = r.runCommand(cmd)
 
 		if err != nil {
-			// Check if it's an exit command
-			if err.Error() == "exit" {
+			// quit ends the script without failing it
+			if errors.Is(err, errQuit) {
 				return err
 			}
 			r.printf("Error on line %d: %v\n", lineNum+1, err)

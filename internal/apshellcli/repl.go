@@ -49,7 +49,7 @@ func startBasicREPL(state *REPLState) {
 		err = state.executeCommand(cmd)
 		state.runtimeMu.Unlock()
 		if err != nil {
-			if err.Error() == "exit" {
+			if errors.Is(err, errQuit) {
 				break
 			}
 			fmt.Printf("Error: %v\n", err)
@@ -144,7 +144,7 @@ func startREPL(network string, config config.Config, dataDir string) {
 		if cmd.Name == "network" && len(cmd.Args) == 1 {
 			err := state.executeCommandWithInterrupt(cmd, sigCh)
 			if err != nil {
-				if err.Error() == "exit" {
+				if errors.Is(err, errQuit) {
 					break
 				}
 				fmt.Printf("Error: %v\n", err)
@@ -155,7 +155,7 @@ func startREPL(network string, config config.Config, dataDir string) {
 
 		err = state.executeCommandWithInterrupt(cmd, sigCh)
 		if err != nil {
-			if err.Error() == "exit" {
+			if errors.Is(err, errQuit) {
 				break
 			}
 			fmt.Printf("Error: %v\n", err)
@@ -188,7 +188,7 @@ func runScriptMode(network string, config config.Config, dataDir string, scriptP
 
 	shutdownRuntime(state)
 
-	if err != nil && err.Error() != "exit" {
+	if err != nil && !errors.Is(err, errQuit) {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
