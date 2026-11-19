@@ -373,9 +373,8 @@ The color theme (`auto`, `dark` or `light`) chosen in the `apadmin` settings
 panel is saved only in `identities/default/config.yaml` as `theme`; the
 top-level `config.yaml` has no `theme` field and refuses one. If an earlier
 `apadmin` wrote a `theme:` line there, delete it: the load error names the
-field and says to remove it. `apadmin` and
-`apconsole` apply the saved theme once they connect, and detect the
-terminal's background until then.
+field and says to remove it. `apadmin` and `apconsole` apply the saved theme
+once they connect, and detect the terminal's background until then.
 
 Node role is stored separately in the signer data root `node.yaml`. Standard
 installations initialize as signer nodes; product config does not carry a role
@@ -1304,7 +1303,7 @@ In headless mode:
 2. Signing requests can skip manual review when `User Auto-Approve` is ON (`user_auto_approve: true`)
 3. The signer remains unlocked even without an admin connection
 
-Headless mode is intentionally long-lived: `passphrase_timeout` must be `0`, `lock_on_disconnect:true` is invalid, and the signer stays unlocked in memory until you stop it or lock it manually.
+Headless mode is intentionally long-lived: the signer stays unlocked in memory until you stop it or lock it manually. At startup it ignores a nonzero `passphrase_timeout` and `lock_on_disconnect: true`, from either config file, and says so in its headless mode warnings. While it runs, `apadmin` refuses to set either one.
 
 ### Use Cases
 
