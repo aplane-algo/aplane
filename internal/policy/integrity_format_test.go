@@ -17,7 +17,7 @@ func TestMarshalPolicyIntegritySidecarFormat(t *testing.T) {
 	mac := strings.Repeat("ab", 32)
 	sidecar := &IntegritySidecar{
 		Header: integritysidecar.Header{
-			Version: PolicyIntegritySidecarVersion, Algorithm: PolicyIntegrityAlgorithm, KeyID: PolicyIntegrityKeyID,
+			Version: integritysidecar.Version, Algorithm: integritysidecar.Algorithm, KeyID: PolicyIntegrityKeyID,
 			IntegrityTerm: 3, HMAC: mac,
 		},
 		PolicySHA256: "deadbeef", SignedAtUnix: 1700000000,
