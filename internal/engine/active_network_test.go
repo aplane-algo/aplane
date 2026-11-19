@@ -169,8 +169,8 @@ func TestCheckActiveNetworkReusesTheSuggestedParamsRead(t *testing.T) {
 		if err := eng.checkActiveNetwork(context.Background(), []types.Transaction{txn}); err != nil {
 			t.Fatalf("checkActiveNetwork() error = %v", err)
 		}
-		if err := eng.validateAlgodConsensus(context.Background()); err != nil {
-			t.Fatalf("validateAlgodConsensus() error = %v", err)
+		if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
+			t.Fatalf("activeAlgodNetwork() error = %v", err)
 		}
 	}
 	if got := paramsCalls.Load(); got != 1 {

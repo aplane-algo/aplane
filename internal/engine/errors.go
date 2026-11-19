@@ -19,23 +19,14 @@ var (
 	// ErrInvalidAddress indicates an invalid address or alias
 	ErrInvalidAddress = errors.New("invalid address or alias")
 
-	// ErrInvalidAmount indicates an invalid amount
-	ErrInvalidAmount = errors.New("invalid amount")
-
 	// ErrInvalidAssetID indicates an invalid asset ID
 	ErrInvalidAssetID = errors.New("invalid asset ID")
 
 	// ErrNoSigningKey indicates no signing key is available for an address
 	ErrNoSigningKey = errors.New("no signing key available for address")
 
-	// ErrTransactionFailed indicates a transaction submission failure
-	ErrTransactionFailed = errors.New("transaction failed")
-
 	// ErrAlreadyConnected indicates an attempt to connect when already connected
 	ErrAlreadyConnected = errors.New("already connected")
-
-	// ErrConnectionFailed indicates a connection attempt failure
-	ErrConnectionFailed = errors.New("connection failed")
 
 	// ErrInvalidNetwork indicates an invalid network name
 	ErrInvalidNetwork = errors.New("invalid network")

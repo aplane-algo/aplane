@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
-func TestConnectWithTunnelReturnsConnectedWhenAlreadyConnectedToTarget(t *testing.T) {
+func TestConnectWithTunnelReportsAlreadyConnectedToTarget(t *testing.T) {
 	state := NewState()
 	state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	state.ConnectionTarget = "remote-a"
@@ -22,8 +22,8 @@ func TestConnectWithTunnelReturnsConnectedWhenAlreadyConnectedToTarget(t *testin
 	if err != nil {
 		t.Fatalf("ConnectWithTunnel() error = %v", err)
 	}
-	if !result.Connected || result.Target != "remote-a" {
-		t.Fatalf("result = %+v, want connected remote-a", result)
+	if !result.AlreadyConnected || result.Target != "remote-a" {
+		t.Fatalf("result = %+v, want already connected to remote-a", result)
 	}
 }
 
@@ -71,9 +71,7 @@ func TestDisconnectClearsStateAndInvokesCallback(t *testing.T) {
 	state.connectingTarget = "remote-b"
 
 	callbackCalled := false
-	if err := state.Disconnect(func() { callbackCalled = true }); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	state.Disconnect(func() { callbackCalled = true })
 
 	if !cancelled {
 		t.Fatal("TunnelCancel was not called")
@@ -84,17 +82,15 @@ func TestDisconnectClearsStateAndInvokesCallback(t *testing.T) {
 	if state.SignerClient != nil || state.SSHTunnelClient != nil || state.TunnelConnected || state.ConnectionTarget != "" || state.connectingTarget != "" {
 		t.Fatalf("state was not fully cleared: %+v", state)
 	}
-	if state.TunnelCtx != nil || state.TunnelCancel != nil {
-		t.Fatal("tunnel context/cancel should be cleared")
+	if state.TunnelCancel != nil {
+		t.Fatal("tunnel cancel should be cleared")
 	}
 }
 
-func TestDisconnectReturnsNilWhenAlreadyDisconnected(t *testing.T) {
+func TestDisconnectIsANoOpWhenAlreadyDisconnected(t *testing.T) {
 	state := NewState()
 	callbackCalled := false
-	if err := state.Disconnect(func() { callbackCalled = true }); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	state.Disconnect(func() { callbackCalled = true })
 	if callbackCalled {
 		t.Fatal("callback should not be called when already disconnected")
 	}

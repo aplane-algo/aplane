@@ -33,19 +33,9 @@ func (e *Core) ConnectWithTunnel(ctx context.Context, target string, host string
 		if errors.Is(err, connect.ErrAlreadyConnected) {
 			return nil, fmt.Errorf("%w: %s", ErrAlreadyConnected, e.GetConnectionTarget())
 		}
-		if result == nil {
-			result = &connect.Result{Target: target}
-		}
-		return &ConnectionResult{
-			Connected:    result.Connected,
-			Target:       target,
-			KeyCount:     result.KeyCount,
-			Locked:       result.Locked,
-			ErrorMessage: result.ErrorMessage,
-		}, err
+		return nil, err
 	}
 	return &ConnectionResult{
-		Connected:        result.Connected,
 		AlreadyConnected: result.AlreadyConnected,
 		Target:           result.Target,
 		KeyCount:         result.KeyCount,
@@ -54,8 +44,8 @@ func (e *Core) ConnectWithTunnel(ctx context.Context, target string, host string
 }
 
 // Disconnect closes the connection to Signer
-func (e *Core) Disconnect() error {
-	return e.Connection.Disconnect(e.handleConnectionClosed(nil))
+func (e *Core) Disconnect() {
+	e.Connection.Disconnect(e.handleConnectionClosed(nil))
 }
 
 // IsConnected returns the current connection status

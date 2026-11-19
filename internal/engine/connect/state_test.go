@@ -32,12 +32,10 @@ func TestDisconnectInvokesCallbackOutsideLock(t *testing.T) {
 	state.ConnectionTarget = "remote"
 
 	done := make(chan struct{})
-	if err := state.Disconnect(func() {
+	state.Disconnect(func() {
 		_ = state.GetConnectionTarget()
 		close(done)
-	}); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	})
 
 	select {
 	case <-done:

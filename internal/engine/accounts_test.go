@@ -36,15 +36,18 @@ func TestGetStatus(t *testing.T) {
 		t.Errorf("GetStatus() SigningMode = %v, want 'disconnected'", result.SigningMode)
 	}
 
-	// Test with APlane client (local mode)
 	eng.Connection.SignerClient = &util.Client{}
+	eng.Connection.ConnectionTarget = "ssh://signer"
 	result = eng.GetStatus()
 
 	if !result.IsConnected {
 		t.Error("GetStatus() should be connected with SignerClient")
 	}
-	if result.SigningMode != "local" {
-		t.Errorf("GetStatus() SigningMode = %v, want 'local'", result.SigningMode)
+	if result.SigningMode != "remote" {
+		t.Errorf("GetStatus() SigningMode = %v, want 'remote'", result.SigningMode)
+	}
+	if result.ConnectionTarget != "ssh://signer" {
+		t.Errorf("GetStatus() ConnectionTarget = %q, want ssh://signer", result.ConnectionTarget)
 	}
 }
 
@@ -93,9 +96,7 @@ func TestDisconnectClearsSignerCacheAndConnectedStatus(t *testing.T) {
 		"ADDR2": "aplane.falcon1024.v1",
 	}
 
-	if err := eng.Disconnect(); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	eng.Disconnect()
 	if eng.IsConnected() {
 		t.Fatal("engine should report disconnected after Disconnect()")
 	}

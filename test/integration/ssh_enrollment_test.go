@@ -618,7 +618,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 		t.Fatalf("authorized_keys does not contain agent key:\n%s", readFileIfExists(t, env.AuthorizedKeysPath))
 	}
 
-	connected, err := eng.ConnectWithTunnel(
+	_, err = eng.ConnectWithTunnel(
 		context.Background(),
 		fmt.Sprintf("%s:%d", clientCfg.Host, clientCfg.Port),
 		clientCfg.Host,
@@ -631,13 +631,10 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent-backed connect failed unexpectedly: %v", err)
 	}
-	if !connected.Connected {
-		t.Fatalf("expected connected result, got %+v", connected)
-	}
 	if !eng.IsTunnelConnected() {
 		t.Fatal("expected tunnel to be marked connected")
 	}
-	t.Cleanup(func() { _ = eng.Disconnect() })
+	t.Cleanup(eng.Disconnect)
 
 	t.Setenv("SSH_AUTH_SOCK", "")
 	t.Setenv("SSH_AGENT_PID", "")
@@ -691,7 +688,7 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 		default:
 		}
 	}
-	connected, err := eng.ConnectWithTunnel(
+	if _, err := eng.ConnectWithTunnel(
 		context.Background(),
 		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
 		sshCfg.Host,
@@ -700,12 +697,8 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 		sshCfg.KnownHostsPath,
 		nil,
 		onDisconnect,
-	)
-	if err != nil {
+	); err != nil {
 		t.Fatalf("connect failed unexpectedly: %v", err)
-	}
-	if !connected.Connected {
-		t.Fatalf("expected connected result, got %+v", connected)
 	}
 
 	closed := mustRevokeKeyViaIPC(t, ipcClient, fingerprint)
@@ -737,7 +730,7 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 		nil,
 		nil,
 	); err == nil {
-		_ = eng.Disconnect()
+		eng.Disconnect()
 		t.Fatal("expected reconnect with the revoked key to fail")
 	}
 }

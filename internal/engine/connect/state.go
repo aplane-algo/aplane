@@ -18,7 +18,6 @@ type ConnectionState struct {
 	SignerClient     *signerclient.Client
 	SSHTunnelClient  *sshtunnel.Client
 	TunnelConnected  bool
-	TunnelCtx        context.Context
 	TunnelCancel     context.CancelFunc
 	ConnectionTarget string
 	connectingTarget string

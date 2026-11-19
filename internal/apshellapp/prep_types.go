@@ -120,12 +120,11 @@ type OptOutCheckDetails struct {
 
 // CloseCheckDetails is the app-owned close-account validation view.
 type CloseCheckDetails struct {
-	Balance      uint64
-	IsOnline     bool
-	HasASAs      bool
-	ASACount     int
-	ASAIDs       []uint64
-	CloseToValid bool
+	Balance  uint64
+	IsOnline bool
+	HasASAs  bool
+	ASACount int
+	ASAIDs   []uint64
 }
 
 func balanceCheckDetailsFromEngine(check *engine.BalanceCheckResult) *BalanceCheckDetails {
@@ -182,12 +181,11 @@ func closeCheckDetailsFromEngine(check *engine.CloseAccountCheckResult) *CloseCh
 		return nil
 	}
 	return &CloseCheckDetails{
-		Balance:      check.Balance,
-		IsOnline:     check.IsOnline,
-		HasASAs:      check.HasASAs,
-		ASACount:     check.ASACount,
-		ASAIDs:       append([]uint64(nil), check.ASAIDs...),
-		CloseToValid: check.CloseToValid,
+		Balance:  check.Balance,
+		IsOnline: check.IsOnline,
+		HasASAs:  check.HasASAs,
+		ASACount: check.ASACount,
+		ASAIDs:   append([]uint64(nil), check.ASAIDs...),
 	}
 }
 

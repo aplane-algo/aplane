@@ -69,9 +69,7 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 	eng.SignerCache = cache.NewSignerCache()
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
 
-	if err := eng.Disconnect(); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	eng.Disconnect()
 	if eng.Connection.IsConnected() {
 		t.Fatal("engine should be disconnected")
 	}
@@ -149,7 +147,7 @@ func TestSignerCacheConcurrentRefreshAndReadIsRaceSafe(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				_ = eng.SignerKeyCount()
-				_, _ = eng.CanSignForAddress(addr)
+				_, _ = eng.CanSignForAddressWithKind(addr)
 				_ = eng.GetStatus()
 				_, _ = eng.ListAllAddresses()
 				_ = eng.isSignable(addr)

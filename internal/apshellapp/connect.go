@@ -141,9 +141,7 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	if !wasConnected {
 		return &DisconnectResult{WasConnected: false}, nil
 	}
-	if err := a.eng.Disconnect(); err != nil {
-		return nil, err
-	}
+	a.eng.Disconnect()
 	return &DisconnectResult{
 		WasConnected: true,
 		Summary:      Summary{Message: "Tunnel disconnected"},

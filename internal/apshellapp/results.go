@@ -369,12 +369,10 @@ func createdAppDetailsFromEngine(result *engine.AppDeployResult) *CreatedAppDeta
 
 // ConnectionDetails is the app-owned signer connection outcome.
 type ConnectionDetails struct {
-	Connected        bool
 	AlreadyConnected bool
 	Target           string
 	KeyCount         int
 	Locked           bool
-	ErrorMessage     string
 }
 
 func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDetails {
@@ -382,12 +380,10 @@ func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDet
 		return nil
 	}
 	return &ConnectionDetails{
-		Connected:        result.Connected,
 		AlreadyConnected: result.AlreadyConnected,
 		Target:           result.Target,
 		KeyCount:         result.KeyCount,
 		Locked:           result.Locked,
-		ErrorMessage:     result.ErrorMessage,
 	}
 }
 

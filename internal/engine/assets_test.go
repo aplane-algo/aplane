@@ -54,31 +54,6 @@ func TestCacheASAInitializesMap(t *testing.T) {
 	}
 }
 
-func TestSaveASACachePersistsCurrentNetwork(t *testing.T) {
-	store := cache.NewStore(t.TempDir())
-	eng, err := NewEngine("testnet",
-		WithCacheStore(store),
-		WithASACache(cache.LoadASACacheFromStore(store, "testnet")),
-	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
-	eng.AsaCache.Assets[900001] = cache.ASAInfo{Name: "Persisted", UnitName: "PST", Decimals: 3}
-	if err := eng.SaveASACache(); err != nil {
-		t.Fatalf("SaveASACache() error = %v", err)
-	}
-
-	reloaded := cache.LoadASACacheFromStore(store, "testnet")
-	got, ok := reloaded.Assets[900001]
-	if !ok {
-		t.Fatal("persisted asset missing after reload")
-	}
-	if got.Name != "Persisted" || got.UnitName != "PST" || got.Decimals != 3 {
-		t.Fatalf("reloaded asset = %+v, want Persisted/PST/3", got)
-	}
-}
-
 func TestRemoveASAFromCachePersistsDeletion(t *testing.T) {
 	store := cache.NewStore(t.TempDir())
 	asaCache := cache.LoadASACacheFromStore(store, "testnet")
