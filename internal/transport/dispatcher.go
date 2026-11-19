@@ -316,7 +316,7 @@ func (d *dispatcher) readLoop() {
 			return
 		}
 
-		base, err := parseBaseMessage(response)
+		base, err := protocol.ParseAdminBaseMessage(response)
 		if err != nil {
 			protocol.SensitiveBytes(response).Zero()
 			d.failAll(dispatcherLifecycleProtocolError, err)

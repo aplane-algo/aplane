@@ -60,7 +60,7 @@ func TestPassphraseRequestsCarryTheCallersBytesAndZeroTheirCopy(t *testing.T) {
 			name: "auth",
 			run: func(t *testing.T, conn *frameRecordingConn, passphrase []byte) error {
 				conn.reads = authReplies(t)
-				return authenticate(conn, passphrase, time.Second)
+				return authenticateWithMode(conn, passphrase, time.Second, false)
 			},
 			sent: func(v interface{}) protocol.SensitiveBytes { return v.(protocol.AuthMessage).Passphrase },
 		},
@@ -68,7 +68,7 @@ func TestPassphraseRequestsCarryTheCallersBytesAndZeroTheirCopy(t *testing.T) {
 			name: "auth_only",
 			run: func(t *testing.T, conn *frameRecordingConn, passphrase []byte) error {
 				conn.reads = authReplies(t)
-				return authenticateOnly(conn, passphrase, time.Second)
+				return authenticateWithMode(conn, passphrase, time.Second, true)
 			},
 			sent: func(v interface{}) protocol.SensitiveBytes { return v.(protocol.AuthMessage).Passphrase },
 		},

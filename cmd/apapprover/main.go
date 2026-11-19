@@ -211,11 +211,7 @@ func loginApprover(conn approverConn, ipcPath string, readPassphrase func() ([]b
 
 	logInfof("connecting to signer via IPC")
 	if err := conn.Dial(); err != nil {
-		if errors.Is(err, transport.ErrAlreadyConnected) {
-			logErrorf("another apadmin/apapprover is already connected")
-		} else {
-			logErrorf("IPC connection failed: %v", err)
-		}
+		logErrorf("IPC connection failed: %v", err)
 		return false
 	}
 	logInfof("connected via IPC (%s)", ipcPath)

@@ -47,9 +47,6 @@ func (c *raceConn) ReadMessage() ([]byte, error) {
 	}
 }
 
-func (c *raceConn) SetReadDeadline(time.Duration) {}
-func (c *raceConn) ClearReadDeadline()            {}
-
 func raceReply(t *testing.T, id, marker string) []byte {
 	t.Helper()
 	return mustMarshalProtocolMessage(t, protocol.KeysListMessage{

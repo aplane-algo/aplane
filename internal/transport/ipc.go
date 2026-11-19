@@ -144,14 +144,14 @@ func (c *IPCClient) WaitForStatus(timeout time.Duration) (*protocol.StatusMessag
 // It reads the auth_required message, sends the auth message with passphrase,
 // and waits for the auth_result. The caller zeroes passphrase.
 func (c *IPCClient) Authenticate(passphrase []byte, timeout time.Duration) error {
-	return authenticate(c, passphrase, timeout)
+	return authenticateWithMode(c, passphrase, timeout, false)
 }
 
 // AuthenticateOnly verifies and binds the admin session without transitioning
 // a locked identity to unlocked. It is intended for bound-runtime reads; it
 // creates a server-enforced, non-owning public-read session capability.
 func (c *IPCClient) AuthenticateOnly(passphrase []byte, timeout time.Duration) error {
-	return authenticateOnly(c, passphrase, timeout)
+	return authenticateWithMode(c, passphrase, timeout, true)
 }
 
 // Unlock sends an unlock request and waits for the result. The caller zeroes

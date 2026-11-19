@@ -13,14 +13,21 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
+// adminProtocolConn carries admin frames: what the dispatcher needs.
 type adminProtocolConn interface {
 	WriteJSON(v interface{}) error
 	ReadMessage() ([]byte, error)
+}
+
+// handshakeConn is an adminProtocolConn whose reads can be bounded, for the
+// status wait and login that run before the dispatcher reads.
+type handshakeConn interface {
+	adminProtocolConn
 	SetReadDeadline(d time.Duration)
 	ClearReadDeadline()
 }
 
-func waitForStatus(conn adminProtocolConn, timeout time.Duration) (*protocol.StatusMessage, error) {
+func waitForStatus(conn handshakeConn, timeout time.Duration) (*protocol.StatusMessage, error) {
 	conn.SetReadDeadline(timeout)
 	defer conn.ClearReadDeadline()
 
@@ -37,18 +44,10 @@ func waitForStatus(conn adminProtocolConn, timeout time.Duration) (*protocol.Sta
 	return &status, nil
 }
 
-func authenticate(conn adminProtocolConn, passphrase []byte, timeout time.Duration) error {
-	return authenticateWithMode(conn, passphrase, timeout, false)
-}
-
-func authenticateOnly(conn adminProtocolConn, passphrase []byte, timeout time.Duration) error {
-	return authenticateWithMode(conn, passphrase, timeout, true)
-}
-
 // authenticateWithMode runs the login handshake. The auth message carries its
 // own copy of the passphrase, zeroed once the handshake ends, and the frame
 // writer zeroes the encoding; the caller zeroes its own buffer.
-func authenticateWithMode(conn adminProtocolConn, passphrase []byte, timeout time.Duration, only bool) error {
+func authenticateWithMode(conn handshakeConn, passphrase []byte, timeout time.Duration, only bool) error {
 	conn.SetReadDeadline(timeout)
 	defer conn.ClearReadDeadline()
 
@@ -174,8 +173,4 @@ func messageID(msg interface{}) (string, error) {
 		return "", fmt.Errorf("request %T has no admin message envelope", msg)
 	}
 	return identified.MessageID(), nil
-}
-
-func parseBaseMessage(data []byte) (protocol.BaseMessage, error) {
-	return protocol.ParseAdminBaseMessage(data)
 }

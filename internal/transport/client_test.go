@@ -17,24 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-func TestErrors(t *testing.T) {
-	// Test that sentinel errors are properly defined
-	if !errors.Is(ErrAlreadyConnected, ErrAlreadyConnected) {
-		t.Error("ErrAlreadyConnected is not itself")
-	}
-	if !errors.Is(ErrUnauthorized, ErrUnauthorized) {
-		t.Error("ErrUnauthorized is not itself")
-	}
-
-	// Test error messages
-	if ErrAlreadyConnected.Error() == "" {
-		t.Error("ErrAlreadyConnected has empty message")
-	}
-	if ErrUnauthorized.Error() == "" {
-		t.Error("ErrUnauthorized has empty message")
-	}
-}
-
 func TestNewIPC(t *testing.T) {
 	client := NewIPC("/tmp/test.sock")
 	switch {
@@ -189,11 +171,6 @@ func TestIPCCloseClearsDispatcher(t *testing.T) {
 	}
 }
 
-func TestTransportInterface(t *testing.T) {
-	// Verify IPC client implements Transport interface
-	var _ Transport = (*IPCClient)(nil)
-}
-
 func TestIPCAuthenticateHappyPath(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
@@ -266,7 +243,7 @@ func TestIPCAuthenticateClientExistsMismatch(t *testing.T) {
 		_, _ = serverConn.Write(mustJSONLine(t, protocol.ClientExistsMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeClientExists},
 		}))
-		// The authenticate() loop handles client_exists by writing displace_confirm
+		// The authentication loop handles client_exists by writing displace_confirm
 		// and then looping to read the next message. We must drain the displace_confirm
 		// so the client's WriteJSON doesn't block on the unbuffered pipe, then close
 		// so the next ReadMessage returns EOF.
@@ -278,9 +255,6 @@ func TestIPCAuthenticateClientExistsMismatch(t *testing.T) {
 	err := client.Authenticate([]byte("secret"), time.Second)
 	if err == nil {
 		t.Fatal("Authenticate() error = nil, want error after displacement")
-	}
-	if errors.Is(err, ErrAlreadyConnected) {
-		t.Fatalf("Authenticate() unexpectedly mapped to ErrAlreadyConnected: %v", err)
 	}
 	// After displacement, the client reads again and gets EOF (connection closed)
 	if !strings.Contains(err.Error(), "failed to receive auth_required") {
@@ -370,9 +344,6 @@ func TestIPCAuthenticateUnauthorizedReturnsFormattedError(t *testing.T) {
 	err := client.Authenticate([]byte("secret"), time.Second)
 	if err == nil {
 		t.Fatal("Authenticate() error = nil, want auth failure")
-	}
-	if errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("Authenticate() unexpectedly mapped to ErrUnauthorized: %v", err)
 	}
 	if !strings.Contains(err.Error(), "authentication failed: invalid passphrase") {
 		t.Fatalf("Authenticate() error = %q, want formatted auth failure", err)

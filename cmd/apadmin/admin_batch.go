@@ -274,7 +274,7 @@ func adminBatchExitCode(err error) int {
 	}
 }
 
-func selectAdminTransport(globals adminBatchGlobalOptions) (transport.Transport, error) {
+func selectAdminTransport(globals adminBatchGlobalOptions) (*transport.IPCClient, error) {
 	dataDir := serverconfig.GetSignerDataDir(globals.dataDir)
 	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
 		DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",
