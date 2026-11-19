@@ -1468,7 +1468,9 @@ or
 - Process cleanup on timeout or error
 - A command or signing call ends when the shell command that made it is
   cancelled (Ctrl+C at the shell, or apconsole quitting); the plugin, still
-  working on the abandoned request, is killed at once
+  working on the abandoned request, has its stdin closed and one second to
+  exit, so it can finish writing its own state, before it is killed. A call
+  whose command is cancelled before it starts runs no plugin
 
 **Integrity Verification:**
 - All plugins must include `checksums.sha256` with SHA256 hashes

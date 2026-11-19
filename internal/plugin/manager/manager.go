@@ -595,9 +595,18 @@ func (i *Instance) reportHeldStderr() {
 	}
 }
 
+// abandonGrace is how long a plugin whose call was abandoned has to exit
+// once its stdin closes, so a stateful plugin can finish writing its own
+// state, before it is killed. It bounds how long a cancel waits.
+const abandonGrace = time.Second
+
 // ExecuteCommand executes a command on a plugin. It ends when ctx does, and
-// then kills the plugin, which is still running the abandoned command.
+// then stops the plugin, which is still running the abandoned command,
+// within abandonGrace. A ctx already ended starts no plugin.
 func (m *Manager) ExecuteCommand(ctx context.Context, pluginName, command string, args []string, pluginContext jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("command not run: %w", err)
+	}
 	// Start plugin if needed
 	instance, err := m.StartPlugin(pluginName)
 	if err != nil {
@@ -618,8 +627,9 @@ func (m *Manager) ExecuteCommand(ctx context.Context, pluginName, command string
 }
 
 // call makes one call to a running instance within its manifest's timeout.
-// A failed call discards the instance; one abandoned because ctx ended kills
-// it at once rather than waiting for it to finish what it was asked.
+// A failed call discards the instance; one abandoned because ctx ended stops
+// it within abandonGrace rather than waiting for it to finish what it was
+// asked.
 func (m *Manager) call(ctx context.Context, pluginName string, instance *Instance, method string, params, result interface{}) error {
 	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
 	if timeout == 0 {
@@ -631,7 +641,7 @@ func (m *Manager) call(ctx context.Context, pluginName string, instance *Instanc
 	}
 	instance.reportHeldStderr()
 	if ctx.Err() != nil {
-		m.killInstance(pluginName, instance)
+		m.abandonInstance(pluginName, instance)
 	} else {
 		m.discardInstance(pluginName, instance)
 	}
@@ -642,8 +652,11 @@ func (m *Manager) call(ctx context.Context, pluginName string, instance *Instanc
 // it owns (declared via ExecuteResult.PluginSigners), as part of the pre-sign
 // planning flow. It reuses the instance left running after ExecuteCommand, so the
 // plugin's signing material is never exported to APlane. It ends when ctx does,
-// as ExecuteCommand does.
+// as ExecuteCommand does, and a ctx already ended starts no plugin.
 func (m *Manager) SignTransactions(ctx context.Context, pluginName string, params jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("plugin signTransactions not run: %w", err)
+	}
 	instance, err := m.StartPlugin(pluginName)
 	if err != nil {
 		return nil, err
@@ -662,11 +675,11 @@ func (m *Manager) discardInstance(pluginName string, instance *Instance) {
 	}
 }
 
-// killInstance is discardInstance for a plugin whose call was abandoned: it
-// is killed at once.
-func (m *Manager) killInstance(pluginName string, instance *Instance) {
+// abandonInstance is discardInstance for a plugin whose call was abandoned:
+// it gets abandonGrace, not Stop's few seconds, to exit before it is killed.
+func (m *Manager) abandonInstance(pluginName string, instance *Instance) {
 	if m.forgetInstance(pluginName, instance) {
-		instance.stop(0)
+		instance.stop(abandonGrace)
 	}
 }
 
@@ -738,8 +751,8 @@ func (i *Instance) Stop() {
 	i.stop(5 * time.Second)
 }
 
-// stop terminates the instance, killing its process if it has not exited
-// within grace: at once when grace is 0.
+// stop terminates the instance: its stdin closes, and its process is killed
+// if it has not exited within grace.
 func (i *Instance) stop(grace time.Duration) {
 	defer func() {
 		if i.stateLock != nil {
@@ -761,18 +774,13 @@ func (i *Instance) stop(grace time.Duration) {
 		done <- i.Process.Wait()
 	}()
 
-	if grace == 0 {
+	select {
+	case <-done:
+		// Process exited cleanly
+	case <-time.After(grace):
+		// Force kill (best effort)
 		_ = i.Process.Process.Kill()
 		<-done
-	} else {
-		select {
-		case <-done:
-			// Process exited cleanly
-		case <-time.After(grace):
-			// Force kill (best effort)
-			_ = i.Process.Process.Kill()
-			<-done
-		}
 	}
 
 	i.Client.Close()
