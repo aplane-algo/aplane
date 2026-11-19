@@ -4,6 +4,7 @@
 package serverconfig
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -690,4 +691,43 @@ func TestBuildPassphraseEnvPassthrough(t *testing.T) {
 			t.Fatal("process env should not override declared env")
 		}
 	})
+}
+
+// The helper's stdout is collected in one buffer of the output limit, which
+// never grows, so no outgrown array is left holding part of the passphrase;
+// zeroing it clears everything the helper wrote.
+func TestHelperOutputNeverGrowsAndZeroesEverything(t *testing.T) {
+	out := newHelperOutput(maxPassphraseOutputBytes)
+	backing := out.buf[:cap(out.buf)]
+	// Small writes, as a helper's may be, past the sizes at which a growing
+	// buffer would reallocate.
+	secret := strings.Repeat("correct horse battery staple ", 20)
+	for i := 0; i < len(secret); i += 7 {
+		end := min(i+7, len(secret))
+		if n, err := out.Write([]byte(secret[i:end])); err != nil || n != end-i {
+			t.Fatalf("Write = %d, %v", n, err)
+		}
+	}
+	if string(out.buf) != secret || out.truncated {
+		t.Fatalf("collected %d bytes (truncated %v), want %d", len(out.buf), out.truncated, len(secret))
+	}
+	if cap(out.buf) != maxPassphraseOutputBytes || &out.buf[0] != &backing[0] {
+		t.Fatal("the output buffer was reallocated")
+	}
+	out.zero()
+	if !bytes.Equal(backing, make([]byte, len(backing))) {
+		t.Fatal("zero left helper output in the buffer")
+	}
+}
+
+// Output past the limit is discarded, reported as written, and marks the
+// output truncated.
+func TestHelperOutputTruncatesPastTheLimit(t *testing.T) {
+	out := newHelperOutput(4)
+	if n, err := out.Write([]byte("abc")); n != 3 || err != nil || out.truncated {
+		t.Fatalf("Write(abc) = %d, %v, truncated %v", n, err, out.truncated)
+	}
+	if n, err := out.Write([]byte("de")); n != 2 || err != nil || !out.truncated || string(out.buf) != "abcd" {
+		t.Fatalf("Write(de) = %d, %v, truncated %v, buf %q", n, err, out.truncated, out.buf)
+	}
 }

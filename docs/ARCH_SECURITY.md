@@ -2052,6 +2052,10 @@ when memory protection is enabled, until the runtime reuses or frees it.
   `SensitiveBytes.MarshalJSON` returns its encoding to the encoder, which drops
   it unzeroed. Writing each value straight into one exact-size buffer without
   HTML escaping keeps this to one copy per value.
+- **Passphrase helper output.** os/exec copies a helper's stdout from its
+  pipe into aplane's buffer through `io.Copy`, whose 32 KiB buffer holds the
+  passphrase and is dropped unzeroed. aplane's own buffer is fixed-size and
+  zeroed after use.
 - **Generated LogicSig and rotating keys.** Their seed is derived from a fresh
   mnemonic, so generation makes the words as strings; they go no further than
   the generator. Native key generation no longer makes words at all: an export
@@ -2090,7 +2094,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `["/
 - Exactly one trailing newline is stripped (not `TrimSpace` — leading/trailing spaces in passphrases are preserved)
 - Output prefixed with `base64:` or `hex:` is decoded accordingly
 - NUL bytes are rejected
-- stdout is capped at 8 KB; stderr is discarded (a misbehaving helper could leak secrets to stderr)
+- stdout is capped at 8 KB and collected in one buffer of that size, allocated once and zeroed after use, so it never grows and leaves no outgrown copy; stderr is discarded (a misbehaving helper could leak secrets to stderr)
 - stdout must close within one second of the helper exiting; a process the helper left holding it fails the run, whatever the exit status, since it could still write
 
 **Callers:**

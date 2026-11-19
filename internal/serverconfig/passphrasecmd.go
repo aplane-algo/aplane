@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,11 +93,11 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 		cmd.Stdin = nil
 	}
 
-	// Capture stdout with size limit; defer zeroing so all exit paths are covered.
-	var stdoutBuf bytes.Buffer
-	defer zeroBuffer(&stdoutBuf)
-	lw := &limitedWriter{w: &stdoutBuf, remaining: maxPassphraseOutputBytes}
-	cmd.Stdout = lw
+	// Capture stdout in one buffer of the size limit, which never grows;
+	// defer zeroing so all exit paths are covered.
+	stdout := newHelperOutput(maxPassphraseOutputBytes)
+	defer stdout.zero()
+	cmd.Stdout = stdout
 
 	// Discard stderr — do not capture or propagate it, as a misbehaving helper
 	// could write sensitive content (passphrases, keys) to stderr. Nil is the
@@ -149,17 +148,14 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 		return nil, fmt.Errorf("passphrase_command_argv: command failed: %w", runErr)
 	}
 
-	// Check if output was silently truncated (single write filled the buffer exactly)
-	if lw.truncated {
+	if stdout.truncated {
 		return nil, fmt.Errorf("passphrase_command_argv: stdout exceeded %d bytes", maxPassphraseOutputBytes)
 	}
 
-	// Copy stdout content so we can work on it; the buffer itself is zeroed by defer.
-	rawOutput := make([]byte, stdoutBuf.Len())
-	copy(rawOutput, stdoutBuf.Bytes())
-
-	// Strip exactly one trailing newline (preserve leading/trailing spaces in passphrase)
-	output := rawOutput
+	// Strip exactly one trailing newline (preserve leading/trailing spaces in
+	// passphrase). The output is read in place; decodePassphraseOutput returns
+	// a copy, and the deferred zero clears the buffer.
+	output := stdout.buf
 	if len(output) > 0 && output[len(output)-1] == '\n' {
 		output = output[:len(output)-1]
 		// Also strip \r if present (Windows-style \r\n)
@@ -169,20 +165,16 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 	}
 
 	if len(output) == 0 {
-		zeroBytes(rawOutput)
 		return nil, fmt.Errorf("passphrase_command_argv: command produced empty output")
 	}
 
 	// Reject NUL bytes (invalid in passphrases, indicates binary corruption)
 	if bytes.ContainsRune(output, 0) {
-		zeroBytes(rawOutput)
 		return nil, fmt.Errorf("passphrase_command_argv: output contains NUL bytes (invalid)")
 	}
 
 	// Decode prefixed output formats
 	result, err := decodePassphraseOutput(output)
-	// Zero the raw output now that we have the decoded result (or an error)
-	zeroBytes(rawOutput)
 	if err != nil {
 		return nil, err
 	}
@@ -255,13 +247,6 @@ func zeroBytes(b []byte) {
 		return
 	}
 	subtle.ConstantTimeCopy(1, b, make([]byte, len(b)))
-}
-
-// zeroBuffer zeros the internal contents of a bytes.Buffer.
-func zeroBuffer(buf *bytes.Buffer) {
-	b := buf.Bytes()
-	zeroBytes(b)
-	buf.Reset()
 }
 
 // validateAndResolveArgv checks that argv is well-formed and returns the resolved binary path.
@@ -344,31 +329,31 @@ func buildPassphraseEnv(declaredEnv map[string]string) []string {
 	return env
 }
 
-// limitedWriter wraps an io.Writer and stops writing after a byte limit.
-// It tracks whether output was truncated so the caller can detect silent truncation.
-type limitedWriter struct {
-	w         io.Writer
-	remaining int64
+// helperOutput collects the helper's stdout in one buffer of the output
+// limit, allocated once, so it never grows and leaves no outgrown copy of the
+// passphrase behind. Output past the limit is discarded and marks the output
+// truncated; the full length is still reported, so the helper sees no short
+// write.
+type helperOutput struct {
+	buf       []byte
 	truncated bool
 }
 
-func (lw *limitedWriter) Write(p []byte) (int, error) {
-	if lw.remaining <= 0 {
-		// Already exhausted — silently discard and report full length
-		// so the child process doesn't get a short write error.
-		lw.truncated = true
-		return len(p), nil
+func newHelperOutput(limit int) *helperOutput {
+	return &helperOutput{buf: make([]byte, 0, limit)}
+}
+
+func (o *helperOutput) Write(p []byte) (int, error) {
+	n := copy(o.buf[len(o.buf):cap(o.buf)], p)
+	o.buf = o.buf[:len(o.buf)+n]
+	if n < len(p) {
+		o.truncated = true
 	}
-	originalLen := len(p)
-	if int64(originalLen) > lw.remaining {
-		p = p[:lw.remaining]
-		lw.truncated = true
-	}
-	n, err := lw.w.Write(p)
-	lw.remaining -= int64(n)
-	if err != nil {
-		return n, err
-	}
-	// Report the original length so the child process doesn't see a short write.
-	return originalLen, nil
+	return len(p), nil
+}
+
+// zero clears the whole buffer, up to its capacity.
+func (o *helperOutput) zero() {
+	zeroBytes(o.buf[:cap(o.buf)])
+	o.buf = o.buf[:0]
 }
