@@ -207,7 +207,7 @@ func ActiveTemplateTypes() []TemplateType {
 }
 
 func GetTemplateFilePathForPaths(paths storepaths.Paths, keyType string, templateType TemplateType) (string, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return "", err
 	}
@@ -216,13 +216,13 @@ func GetTemplateFilePathForPaths(paths storepaths.Paths, keyType string, templat
 
 // GetTemplateFilePathActive is GetTemplateFilePathForPaths against resolved
 // authenticated active-generation paths.
-func GetTemplateFilePathActive(active storepaths.ActivePaths, keyType string, _ TemplateType) string {
+func GetTemplateFilePathActive(active storepaths.GenPaths, keyType string, _ TemplateType) string {
 	return active.KeyTypeTemplate(normalizeKeyType(keyType))
 }
 
 // SaveTemplateActive writes an encrypted template against resolved active-store
 // paths.
-func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
+func SaveTemplateActive(active storepaths.GenPaths, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
 	keyType = normalizeKeyType(keyType)
 	if _, ok := sourceForTemplateType(templateType); !ok {
 		return "", fmt.Errorf("unsupported template_type %q", templateType)
@@ -276,7 +276,7 @@ func TemplateContextForFile(path string) (crypto.ObjectContext, error) {
 }
 
 func TemplateExistsForPaths(paths storepaths.Paths, keyType string, templateType TemplateType) bool {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return false
 	}
@@ -285,7 +285,7 @@ func TemplateExistsForPaths(paths storepaths.Paths, keyType string, templateType
 
 // TemplateExistsActive is TemplateExistsForPaths against resolved
 // active-store paths.
-func TemplateExistsActive(active storepaths.ActivePaths, keyType string, templateType TemplateType) bool {
+func TemplateExistsActive(active storepaths.GenPaths, keyType string, templateType TemplateType) bool {
 	source, sourceOK := sourceForTemplateType(templateType)
 	if !sourceOK {
 		return false

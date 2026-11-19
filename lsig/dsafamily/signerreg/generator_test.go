@@ -656,9 +656,9 @@ func TestKeyFileNaming(t *testing.T) {
 	}
 
 	// Verify file naming inside the active generation.
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	expectedFile := filepath.Join(active.KeysDir(), result.Address+".key")
 	if result.KeyFiles.PrivateFile != expectedFile {
@@ -815,7 +815,7 @@ func TestGenerateFromSeedFailsWhenTEALGenerationFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "template render failed") {
 		t.Fatalf("GenerateFromSeed() error = %v, want the TEAL generation failure", err)
 	}
-	active, resolveErr := genstore.ResolveActive(paths)
+	active, resolveErr := genstore.Resolve(paths)
 	if resolveErr != nil {
 		t.Fatal(resolveErr)
 	}

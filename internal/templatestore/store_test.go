@@ -622,11 +622,11 @@ func testUint64Ptr(value uint64) *uint64 {
 	return &value
 }
 
-func mustActiveTS(t *testing.T, paths utilkeys.Paths) utilkeys.ActivePaths {
+func mustActiveTS(t *testing.T, paths utilkeys.Paths) utilkeys.GenPaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active
 }

@@ -35,9 +35,9 @@ func TestExportKeyUsesCosignerCredentialSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := t.TempDir()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	if err := ExportKey(active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("ExportKey() error = %v", err)
@@ -55,7 +55,7 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}

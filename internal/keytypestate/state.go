@@ -84,7 +84,7 @@ func (e *InUseError) Unwrap() error {
 //     contains unknown source/state values. Treat this as corruption, not as an
 //     absent record.
 func Get(paths storepaths.Paths, keyType string) (Record, bool, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return Record{}, false, err
 	}
@@ -93,7 +93,7 @@ func Get(paths storepaths.Paths, keyType string) (Record, bool, error) {
 
 // GetActive is Get against resolved active-store paths (generational or
 // legacy); the caller resolved the layout once for the whole operation.
-func GetActive(active storepaths.ActivePaths, keyType string) (Record, bool, error) {
+func GetActive(active storepaths.GenPaths, keyType string) (Record, bool, error) {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
 		return Record{}, false, err
@@ -117,7 +117,7 @@ func GetActive(active storepaths.ActivePaths, keyType string) (Record, bool, err
 //
 // CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func Put(paths storepaths.Paths, rec Record) error {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func Put(paths storepaths.Paths, rec Record) error {
 // PutActive is Put against resolved active-store paths.
 //
 // CONTRACT: product callers MUST hold Signer.storeMutationLock.
-func PutActive(active storepaths.ActivePaths, rec Record) error {
+func PutActive(active storepaths.GenPaths, rec Record) error {
 	normalized, err := normalizeRecord(rec)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 //
 // CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func Delete(paths storepaths.Paths, keyType string) error {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func Delete(paths storepaths.Paths, keyType string) error {
 // callers that need to alert operators about corruption use ListInvalid to
 // enumerate the affected key types separately.
 func List(paths storepaths.Paths) ([]Record, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func List(paths storepaths.Paths) ([]Record, error) {
 }
 
 // ListActive is List against resolved active-store paths. Lock-free.
-func ListActive(active storepaths.ActivePaths) ([]Record, error) {
+func ListActive(active storepaths.GenPaths) ([]Record, error) {
 	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -213,7 +213,7 @@ func ListActive(active storepaths.ActivePaths) ([]Record, error) {
 }
 
 // ListInvalidActive is ListInvalid against resolved active-store paths.
-func ListInvalidActive(active storepaths.ActivePaths) ([]string, error) {
+func ListInvalidActive(active storepaths.GenPaths) ([]string, error) {
 	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -240,7 +240,7 @@ func ListInvalidActive(active storepaths.ActivePaths) ([]string, error) {
 // ListEnabled returns the key types whose record state is StateEnabled.
 // Lock-free.
 func ListEnabled(paths storepaths.Paths) ([]string, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func ListEnabled(paths storepaths.Paths) ([]string, error) {
 // RequireUnused scans existing identity keys and returns ErrKeyTypeInUse if any
 // key uses keyType.
 func RequireUnused(paths storepaths.Paths, keyType string, kr *apcrypto.Keyring) error {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return err
 	}

@@ -475,11 +475,11 @@ func keyTypesOf(records []Record) []string {
 	return out
 }
 
-func mustActive(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
+func mustActive(t *testing.T, paths storepaths.Paths) storepaths.GenPaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active
 }

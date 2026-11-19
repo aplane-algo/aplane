@@ -89,7 +89,7 @@ func TestRestoreKeyWritesCredentialOnlyAndRequiresOverwrite(t *testing.T) {
 	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), payload, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestCredentialEntryZeroSecrets(t *testing.T) {
 func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 func TestClassifyRestoreSetReportsReadableDifferentCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -347,7 +347,7 @@ func snapshotCredentialBackupArchive(archivePath string) (string, string, func()
 // error: this is what permits an explicitly authorized restore to repair a
 // damaged credential while the signer remains recovery-blocked.
 func ClassifyRestoreSet(
-	active storepaths.ActivePaths,
+	active storepaths.GenPaths,
 	set *RestoreSet,
 	kr *crypto.Keyring,
 ) (RestoreClassification, error) {
@@ -422,7 +422,7 @@ func ClassifyRestoreSet(
 // installed. A destination without a policy takes the archived one; a
 // different destination policy is a conflict that replace_existing resolves;
 // a destination policy is kept when the archive carries none.
-func classifyRestorePolicy(active storepaths.ActivePaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring, result *RestoreClassification) {
+func classifyRestorePolicy(active storepaths.GenPaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring, result *RestoreClassification) {
 	if entry.Policy == nil {
 		return
 	}
@@ -496,7 +496,7 @@ func isManagedClassConflict(err error) bool {
 // public witness metadata. It never installs templates or changes key-type
 // generation state.
 func ApplyCredentialEntry(
-	active storepaths.ActivePaths,
+	active storepaths.GenPaths,
 	entry CredentialEntry,
 	kr *crypto.Keyring,
 	replaceExisting bool,

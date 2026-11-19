@@ -90,7 +90,7 @@ func TestInitializeCreatesStoreMetadataKeysAndPolicy(t *testing.T) {
 // default key types: it carries no key type state records and no installed
 // templates, so library key types such as aplane.ed25519.v1 stay opt-in and a
 // deleted template's name is never installed.
-func assertNoKeyTypesEnabled(t *testing.T, active storepaths.ActivePaths, role string) {
+func assertNoKeyTypesEnabled(t *testing.T, active storepaths.GenPaths, role string) {
 	t.Helper()
 	records, err := keytypestate.ListActive(active)
 	if err != nil {

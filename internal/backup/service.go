@@ -55,7 +55,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	defer func() { _ = os.RemoveAll(stageDir) }()
 
 	// Export sources resolve through the active layout once per archive.
-	activeStore, err := genstore.ResolveActive(req.Paths)
+	activeStore, err := genstore.Resolve(req.Paths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
 	}

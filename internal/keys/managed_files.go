@@ -154,7 +154,7 @@ func CanonicalManagedCredentialFilename(selector, category string) (string, erro
 
 // CanonicalManagedCredentialPathActive returns the canonical credential path
 // for selector and category in an authenticated generation.
-func CanonicalManagedCredentialPathActive(active storepaths.ActivePaths, selector, category string) (string, error) {
+func CanonicalManagedCredentialPathActive(active storepaths.GenPaths, selector, category string) (string, error) {
 	name, err := CanonicalManagedCredentialFilename(selector, category)
 	if err != nil {
 		return "", err
@@ -165,20 +165,20 @@ func CanonicalManagedCredentialPathActive(active storepaths.ActivePaths, selecto
 // AccountKeyFilePathActive is for code that already owns a validated Algorand
 // account address. Canonical writers should prefer
 // CanonicalManagedCredentialPathActive.
-func AccountKeyFilePathActive(active storepaths.ActivePaths, address string) string {
+func AccountKeyFilePathActive(active storepaths.GenPaths, address string) string {
 	return filepath.Join(active.KeysDir(), address+AccountKeyExtension)
 }
 
 // CosignerCredentialFilePathActive is for code that already owns a validated
 // Witness Key ID. Canonical writers should prefer
 // CanonicalManagedCredentialPathActive.
-func CosignerCredentialFilePathActive(active storepaths.ActivePaths, witnessKeyID string) string {
+func CosignerCredentialFilePathActive(active storepaths.GenPaths, witnessKeyID string) string {
 	return filepath.Join(active.KeysDir(), witnessKeyID+CosignerCredentialExtension)
 }
 
 // ManagedCredentialDestinationActive reports the canonical destination and
 // whether it exists, while rejecting an active file in the contradictory class.
-func ManagedCredentialDestinationActive(active storepaths.ActivePaths, selector, category string) (string, bool, error) {
+func ManagedCredentialDestinationActive(active storepaths.GenPaths, selector, category string) (string, bool, error) {
 	class, err := ManagedCredentialClassForCategory(category)
 	if err != nil {
 		return "", false, err

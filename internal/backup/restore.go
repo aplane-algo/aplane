@@ -218,7 +218,7 @@ func PreviewRestoreWithNodeRole(
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}
@@ -262,7 +262,7 @@ func PreviewRestoreWithNodeRole(
 // policy the archive carries for it, into active. It is the offline rebuild
 // adapter; live restores use LoadManagedRestoreSet and a generation mint.
 func RestoreForRebuild(
-	active storepaths.ActivePaths,
+	active storepaths.GenPaths,
 	role noderole.Role,
 	keysDir, selector string,
 	kr *crypto.Keyring,

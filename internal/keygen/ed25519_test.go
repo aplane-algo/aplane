@@ -485,9 +485,9 @@ func TestAddressFormat(t *testing.T) {
 	}
 
 	// Verify filename matches address inside the active generation.
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	expectedFile := filepath.Join(active.KeysDir(), result.Address+".key")
 	if result.KeyFiles.PrivateFile != expectedFile {

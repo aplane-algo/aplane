@@ -641,9 +641,9 @@ func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T
 	if !removed.Removed {
 		t.Fatal("RemoveInstalledTemplate().Removed = false, want true")
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	wantArchive := active.DeletedKeyTypeTemplate(parsed.KeyType)
 	if removed.OutputPath != wantArchive {
@@ -676,9 +676,9 @@ func TestRemoveInstalledTemplateRestoresStateWhenArchiveFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	blockingPath := active.DeletedKeyTypeRecordsDir()
 	if err := os.RemoveAll(blockingPath); err != nil {
@@ -1101,9 +1101,9 @@ func assertInstalledTemplateProjection(t *testing.T, paths storepaths.Paths, par
 	if got := templatestore.TemplateExistsForPaths(paths, parsed.KeyType, parsed.TemplateType); got != want.templateExists {
 		t.Fatalf("template exists = %v, want %v", got, want.templateExists)
 	}
-	active, resolveErr := genstore.ResolveActive(paths)
+	active, resolveErr := genstore.Resolve(paths)
 	if resolveErr != nil {
-		t.Fatalf("ResolveActive() error = %v", resolveErr)
+		t.Fatalf("Resolve() error = %v", resolveErr)
 	}
 	if _, err := os.Stat(active.DeletedKeyTypeTemplate(parsed.KeyType)); (err == nil) != want.archiveExists {
 		t.Fatalf("archive exists = %v, want %v (stat err=%v)", err == nil, want.archiveExists, err)

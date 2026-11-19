@@ -109,6 +109,10 @@ func StagedGenerationPaths(generationID, stagingDir string) GenPaths {
 }
 
 // GenPaths carries the active-store paths of one resolved generation.
+// Consumers take it instead of deriving paths from Paths, so one operation
+// resolves the layout exactly once (under the store mutation lock, via
+// internal/genstore.Resolve) and passes the result down, never re-resolving
+// mid-operation. The zero value names no generation.
 type GenPaths struct {
 	root         string
 	generationID string

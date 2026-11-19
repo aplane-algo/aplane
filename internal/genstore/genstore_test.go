@@ -563,12 +563,12 @@ func TestGenerationIDValidation(t *testing.T) {
 	}
 }
 
-func TestResolveActiveResolvesGeneration(t *testing.T) {
+func TestResolveResolvesGeneration(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
 	// An unbound path cannot choose authority from public filesystem state.
-	if _, err := ResolveActive(paths); err == nil {
-		t.Fatal("ResolveActive accepted an unbound capability")
+	if _, err := Resolve(paths); err == nil {
+		t.Fatal("Resolve accepted an unbound capability")
 	}
 
 	gen := mintTestGeneration(t, paths, testGenA, nil)
@@ -576,9 +576,9 @@ func TestResolveActiveResolvesGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	active, err := ResolveActive(bound)
+	active, err := Resolve(bound)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	if active.KeysDir() != gen.KeysDir() {
 		t.Fatalf("KeysDir = %s, want %s", active.KeysDir(), gen.KeysDir())

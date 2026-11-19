@@ -817,9 +817,9 @@ func TestServiceKeyTypesIncludesEnabledYAMLComposedProvider(t *testing.T) {
 
 func TestServiceKeyTypesForRuntimeReportsCorruptStateRecord(t *testing.T) {
 	ir := setupProductRuntime(t, false)
-	active, err := genstore.ResolveActive(ir.KeyPaths())
+	active, err := genstore.Resolve(ir.KeyPaths())
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	path := active.KeyTypeRecord("bad-rest-state-v1")
 	if err := os.WriteFile(path, []byte(`{bad`), 0o600); err != nil {

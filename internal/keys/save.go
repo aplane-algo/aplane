@@ -21,7 +21,7 @@ import (
 // omission. Every key creation path saves through here; a path that carries an
 // existing record (backup, restore, copy) writes the record it holds.
 func SaveNewPayload(paths storepaths.Paths, payload *Payload, validRekeyTarget bool, kr *crypto.Keyring) (*ImportKeyResult, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func SaveNewPayload(paths storepaths.Paths, payload *Payload, validRekeyTarget b
 
 // SaveNewPayloadActive is SaveNewPayload against an active generation the
 // caller already resolved, once for the whole operation.
-func SaveNewPayloadActive(active storepaths.ActivePaths, payload *Payload, validRekeyTarget bool, kr *crypto.Keyring) (*ImportKeyResult, error) {
+func SaveNewPayloadActive(active storepaths.GenPaths, payload *Payload, validRekeyTarget bool, kr *crypto.Keyring) (*ImportKeyResult, error) {
 	if kr == nil {
 		return nil, fmt.Errorf("an open keyring is required to save a key file")
 	}
@@ -88,7 +88,7 @@ func SaveNewPayloadActive(active storepaths.ActivePaths, payload *Payload, valid
 
 // requireCosignerCredentialCapacity refuses a new cosigner credential once
 // the store holds MaxCosignerCredentials. Rewriting an existing one is allowed.
-func requireCosignerCredentialCapacity(active storepaths.ActivePaths, privateFile string) error {
+func requireCosignerCredentialCapacity(active storepaths.GenPaths, privateFile string) error {
 	if _, err := os.Lstat(privateFile); err == nil {
 		return nil
 	}

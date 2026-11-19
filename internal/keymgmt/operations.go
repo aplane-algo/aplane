@@ -236,12 +236,8 @@ func isKeyTypeInList(keyType string, validTypes []string) bool {
 // DeleteKeyActive preflights the selected generation's closed deleted-archive
 // limits before moving a credential. The active credential remains untouched
 // when capacity is unavailable.
-func DeleteKeyActive(active storepaths.ActivePaths, address, keyFile string) (*DeleteResult, error) {
-	gen, ok := active.(storepaths.GenPaths)
-	if !ok {
-		return nil, fmt.Errorf("credential deletion requires generation-qualified active paths")
-	}
-	if _, err := genstore.PreflightDeletedArchiveAppend(gen, keyFile); err != nil {
+func DeleteKeyActive(active storepaths.GenPaths, address, keyFile string) (*DeleteResult, error) {
+	if _, err := genstore.PreflightDeletedArchiveAppend(active, keyFile); err != nil {
 		return nil, err
 	}
 	return deleteKey(address, keyFile, active.DeletedKeysDir())

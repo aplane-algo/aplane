@@ -18,7 +18,7 @@ func restoreKey(keysDir, address string, kr *crypto.Keyring, exportPassphrase []
 	if err != nil {
 		return "", err
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return "", err
 	}

@@ -775,7 +775,7 @@ func mustActiveAccountKeyPath(t *testing.T, signerDataDir, address string) strin
 	return apkeys.AccountKeyFilePathActive(mustActiveStorePaths(t, signerDataDir), address)
 }
 
-func mustActiveStorePaths(t *testing.T, signerDataDir string) utilkeys.ActivePaths {
+func mustActiveStorePaths(t *testing.T, signerDataDir string) utilkeys.GenPaths {
 	t.Helper()
 
 	paths := utilkeys.NewPaths(signerDataDir)

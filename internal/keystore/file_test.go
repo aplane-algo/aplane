@@ -49,9 +49,9 @@ func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
 	paths = genstoretest.MintFirst(t, paths)
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active.KeysDir(), paths, func() {}
 }

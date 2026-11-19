@@ -777,9 +777,9 @@ func (p keymgmtTestDSAProvider) DeriveLsig(context.Context, []byte, map[string]s
 
 func activeKeysDirForKeymgmtTest(t *testing.T, paths storepaths.Paths) string {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active.KeysDir()
 }

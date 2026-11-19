@@ -264,7 +264,7 @@ func ReadDecryptedKeyJSONWithKeyring(keyFile string, kr *crypto.Keyring) ([]byte
 // ScanKeysDirectoryWithKeyring scans the product store's keys subdirectory,
 // opening each credential with the keyring. Only term envelopes are read.
 func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +273,7 @@ func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (m
 
 // ScanKeysDirectoryWithKeyringActive is ScanKeysDirectoryWithKeyring
 // against an authenticated generation capability.
-func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
+func ScanKeysDirectoryWithKeyringActive(active storepaths.GenPaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
 	report, err := ScanKeysDirectoryWithKeyringReportActive(active, kr)
 	if err != nil {
 		return nil, err
@@ -284,7 +284,7 @@ func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypt
 // ScanKeysDirectoryWithKeyringReportActive scans an authenticated
 // generation's keys directory and returns structured warnings for key files
 // that were skipped.
-func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*KeyScanReport, error) {
+func ScanKeysDirectoryWithKeyringReportActive(active storepaths.GenPaths, kr *crypto.Keyring) (*KeyScanReport, error) {
 	return scanKeysDirectoryInternalReport(active, nil, func(keyFile string) ([]byte, error) {
 		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
 	})
@@ -296,7 +296,7 @@ func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr 
 // authenticated credential selection is healthy before replacing that exact
 // selection. Unexpected entries and public metadata are never excluded.
 func ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive(
-	active storepaths.ActivePaths,
+	active storepaths.GenPaths,
 	kr *crypto.Keyring,
 	excluded map[string]bool,
 ) (*KeyScanReport, error) {
@@ -308,7 +308,7 @@ func ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive(
 // scanKeysDirectoryInternalReport is the shared implementation for scanning
 // keys. The decryptFunc parameter lets the caller supply either passphrase or
 // keyring decryption.
-func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSelectors map[string]bool, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
+func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelectors map[string]bool, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
 	var warnings []KeyScanWarning

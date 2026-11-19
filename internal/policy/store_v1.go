@@ -81,7 +81,7 @@ func unsupportedRole(role noderole.Role) error {
 
 // LoadVerifiedDefault verifies and decodes the node default in one
 // already-resolved generation. A generation without one fails closed.
-func LoadVerifiedDefault(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring) (StoredDocument, *PolicyV1, error) {
+func LoadVerifiedDefault(active storepaths.GenPaths, role noderole.Role, kr *crypto.Keyring) (StoredDocument, *PolicyV1, error) {
 	data, signedAt, err := readVerifiedPolicyFile(active.DefaultPolicyPath(), kr)
 	if err != nil {
 		return StoredDocument{}, nil, err
@@ -96,7 +96,7 @@ func LoadVerifiedDefault(active storepaths.ActivePaths, role noderole.Role, kr *
 // LoadVerifiedKeyPolicies verifies and decodes every per-key document in one
 // already-resolved generation, sorted by key. The namespace may hold only
 // <selector>.json documents and their sidecars; anything else fails closed.
-func LoadVerifiedKeyPolicies(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring) ([]KeyPolicy, error) {
+func LoadVerifiedKeyPolicies(active storepaths.GenPaths, role noderole.Role, kr *crypto.Keyring) ([]KeyPolicy, error) {
 	keys, err := KeyPolicyKeys(active)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func LoadVerifiedKeyPolicies(active storepaths.ActivePaths, role noderole.Role, 
 // LoadVerifiedKeyPolicy verifies and decodes one key's own policy document.
 // ok is false only when neither the document nor its sidecar exists; a
 // sidecar without its document fails, as it does for a full load.
-func LoadVerifiedKeyPolicy(active storepaths.ActivePaths, role noderole.Role, key string, kr *crypto.Keyring) (doc StoredDocument, ok bool, err error) {
+func LoadVerifiedKeyPolicy(active storepaths.GenPaths, role noderole.Role, key string, kr *crypto.Keyring) (doc StoredDocument, ok bool, err error) {
 	if err := storepaths.ValidatePolicySelector(key); err != nil {
 		return StoredDocument{}, false, err
 	}
@@ -148,7 +148,7 @@ func LoadVerifiedKeyPolicy(active storepaths.ActivePaths, role noderole.Role, ke
 // KeyPolicyKeys lists the key selectors that have a policy document of their
 // own, sorted, after checking that the namespace holds only complete document
 // and sidecar pairs. It does not verify or decode the documents.
-func KeyPolicyKeys(active storepaths.ActivePaths) ([]string, error) {
+func KeyPolicyKeys(active storepaths.GenPaths) ([]string, error) {
 	entries, err := os.ReadDir(active.PoliciesDir())
 	if err != nil {
 		return nil, fmt.Errorf("read key policies: %w", err)
@@ -188,7 +188,7 @@ func KeyPolicyKeys(active storepaths.ActivePaths) ([]string, error) {
 
 // WriteEmbeddedDefault seeds a new generation's default.json from the
 // shipped default for role.
-func WriteEmbeddedDefault(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring, signedAt time.Time) error {
+func WriteEmbeddedDefault(active storepaths.GenPaths, role noderole.Role, kr *crypto.Keyring, signedAt time.Time) error {
 	data, err := EmbeddedDefault(role)
 	if err != nil {
 		return err
@@ -198,7 +198,7 @@ func WriteEmbeddedDefault(active storepaths.ActivePaths, role noderole.Role, kr 
 
 // WriteDefault validates data as the node default for role and writes it
 // with a fresh sidecar into one generation.
-func WriteDefault(active storepaths.ActivePaths, role noderole.Role, data []byte, kr *crypto.Keyring, signedAt time.Time) error {
+func WriteDefault(active storepaths.GenPaths, role noderole.Role, data []byte, kr *crypto.Keyring, signedAt time.Time) error {
 	if _, err := DecodePolicyV1(data, DefaultKey, role); err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func WriteDefault(active storepaths.ActivePaths, role noderole.Role, data []byte
 
 // WriteKeyPolicy validates data as key's own document for role and writes
 // it with a fresh sidecar into one generation.
-func WriteKeyPolicy(active storepaths.ActivePaths, role noderole.Role, key string, data []byte, kr *crypto.Keyring, signedAt time.Time) error {
+func WriteKeyPolicy(active storepaths.GenPaths, role noderole.Role, key string, data []byte, kr *crypto.Keyring, signedAt time.Time) error {
 	if err := storepaths.ValidatePolicySelector(key); err != nil {
 		return err
 	}
@@ -219,7 +219,7 @@ func WriteKeyPolicy(active storepaths.ActivePaths, role noderole.Role, key strin
 
 // RemoveKeyPolicy removes key's document and sidecar from one generation.
 // Removing a document that does not exist is an error.
-func RemoveKeyPolicy(active storepaths.ActivePaths, key string) error {
+func RemoveKeyPolicy(active storepaths.GenPaths, key string) error {
 	if err := storepaths.ValidatePolicySelector(key); err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func RemoveKeyPolicy(active storepaths.ActivePaths, key string) error {
 // ArchiveKeyPolicy moves key's document and sidecar into the deleted
 // archive, replacing an earlier archived pair for the same key. It is a no-op
 // when key has no document.
-func ArchiveKeyPolicy(active storepaths.ActivePaths, key string) error {
+func ArchiveKeyPolicy(active storepaths.GenPaths, key string) error {
 	if err := storepaths.ValidatePolicySelector(key); err != nil {
 		return err
 	}
@@ -265,7 +265,7 @@ func ArchiveKeyPolicy(active storepaths.ActivePaths, key string) error {
 
 // ResignDefault validates the node default as stored and replaces its
 // sidecar. It is the offline path for a document placed by hand.
-func ResignDefault(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring, signedAt time.Time) error {
+func ResignDefault(active storepaths.GenPaths, role noderole.Role, kr *crypto.Keyring, signedAt time.Time) error {
 	data, err := readPolicyFile(active.DefaultPolicyPath())
 	if err != nil {
 		return err
@@ -279,7 +279,7 @@ func ResignDefault(active storepaths.ActivePaths, role noderole.Role, kr *crypto
 // ResignKeyPolicies validates every per-key document as stored and replaces
 // its sidecar. A document may lack a sidecar; a sidecar without a document
 // fails.
-func ResignKeyPolicies(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring, signedAt time.Time) error {
+func ResignKeyPolicies(active storepaths.GenPaths, role noderole.Role, kr *crypto.Keyring, signedAt time.Time) error {
 	entries, err := os.ReadDir(active.PoliciesDir())
 	if err != nil {
 		return fmt.Errorf("read key policies: %w", err)
