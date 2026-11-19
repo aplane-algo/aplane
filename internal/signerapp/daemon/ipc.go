@@ -224,7 +224,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 			if wasActiveClient && s.signer != nil {
 				s.signer.adminServices().LogSessionDisconnectedContext(session.SessionContext())
 			}
-			boundIR.FailAllPendingApprovals("apadmin disconnected")
+			boundIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisconnected)
 
 			// Lock behavior is driven by the live product runtime config,
 			// which should already reflect any stored overrides.
@@ -286,7 +286,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 	}
 	if replaced != nil && replaced != session {
 		if replacedIR := replaced.BoundRuntime(); replacedIR != nil {
-			replacedIR.FailAllPendingApprovals("apadmin displaced")
+			replacedIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisplaced)
 		}
 		adminserver.DisplaceSession(replaced)
 	}

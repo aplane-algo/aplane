@@ -68,3 +68,14 @@ func lockedError() *ServiceError {
 func sessionEndedError() *ServiceError {
 	return &ServiceError{Kind: ErrorLocked, Message: "the signer's session ended while the request waited for approval; send it again"}
 }
+
+// approverGoneError answers a request whose prompt was withdrawn because the
+// apadmin session it was shown to disconnected or was replaced before
+// answering. Nobody rejected it: like a request that finds no apadmin
+// connected, it is unavailable, and it can be sent again.
+func approverGoneError(displaced bool) *ServiceError {
+	if displaced {
+		return unavailable("another apadmin session replaced the one showing the approval before it was answered; send the request again")
+	}
+	return unavailable("apadmin disconnected before answering the approval; send the request again once an apadmin session is connected")
+}

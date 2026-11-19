@@ -235,6 +235,14 @@ const (
 	// while the request waited: it locked, entered recovery, or began store
 	// maintenance. A request from the ended session can no longer sign.
 	SignRequestCancelReasonSessionEnded = "session_ended"
+
+	// SignRequestCancelReasonApproverDisconnected means the apadmin session
+	// the request was shown to disconnected before answering it.
+	SignRequestCancelReasonApproverDisconnected = "approver_disconnected"
+
+	// SignRequestCancelReasonApproverDisplaced means another apadmin session
+	// replaced the one the request was shown to before it answered.
+	SignRequestCancelReasonApproverDisplaced = "approver_displaced"
 )
 
 // AuthResultMessage is sent back after an authentication attempt

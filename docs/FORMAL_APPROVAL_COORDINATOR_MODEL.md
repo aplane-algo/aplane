@@ -14,7 +14,9 @@ from `New` to `Queued` to `Delivered`, then to exactly one terminal state:
 
 The model includes operator decisions, timeout, cancellation, operator-client
 disconnect, and authenticated client displacement. Disconnect and displacement
-are modeled as reason-independent fail-all actions. A session end (a lock,
+are modeled as reason-independent fail-all actions; the model's `Failed`
+outcome is how the code answers them, a withdrawal (`ErrApproverGone`), not an
+operator rejection. A session end (a lock,
 an entry into recovery, the start of store maintenance, a losing unlock) is
 not a fail-all: `Coordinator.EndSessionSignRequests` ends every approval wait
 in flight, as `/sign/cancel` ends one, so each ends through the `Cancel`
@@ -57,8 +59,10 @@ liveness configurations are all recorded in `formal/metrics*.json`.
   `TestCoordinatorFailAllClearsPendingMaps` and
   `TestCoordinatorFailAllUnblocksPendingRequest`.
 - `internal/signerapp/daemon/hub_test.go`: daemon-level fail-all forwarding.
-- `internal/signerapp/daemon/ipc.go`: displacement fails pending approvals
-  before changing the active operator session.
+- `internal/signerapp/daemon/ipc.go`: displacement withdraws pending
+  approvals right after promoting the replacement session and before
+  notifying and closing the displaced one, so the withdrawal's cancel notice
+  reaches the replacement.
 - `internal/signerapp/signing/service_test.go`:
   `TestSignGroupWithPlanStopsBeforeExecute` proves a rejected final-execution
   gate produces no signer output.
@@ -66,8 +70,7 @@ liveness configurations are all recorded in `formal/metrics*.json`.
 The end-to-end mapping from approval outcome to signing output is checked in
 [`formal/approval_composition.tla`](formal/approval_composition.tla). A
 `Failed` coordinator outcome is not approval and produces no signed output,
-independent of whether the production reason was disconnect, displacement,
-or lock.
+whether the production reason was disconnect or displacement.
 
 ## Run
 

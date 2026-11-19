@@ -514,6 +514,10 @@ func approvalCancelReason(reason string) string {
 		return "timed out"
 	case "session_ended":
 		return "withdrawn: the signer locked or its session ended"
+	case "approver_displaced":
+		return "withdrawn: another apadmin session took over"
+	case "approver_disconnected":
+		return "withdrawn: its apadmin session disconnected"
 	default:
 		return reason
 	}
