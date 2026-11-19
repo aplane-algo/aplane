@@ -1115,8 +1115,13 @@ with a bidirectional control. So:
   one path by which a signing prompt reaches the operator, escapes the whole
   prompt (description, addresses, policy warnings and the review the
   description is printed from) with `internal/termsafe`, keeping only
-  newlines and tabs; the description the daemon prints to its console is
-  escaped the same way;
+  newlines and tabs;
+- everything the signing service prints to the daemon's console (which
+  apconsole shows in a pane) is escaped the same way, in one place:
+  `consoleOf` (`internal/signerapp/signing/console.go`) hands every caller a
+  console that escapes what it prints. That covers the description, and the
+  lines that quote a client-chosen transaction type: a policy rejection, the
+  review banner's rule ID, a reviewability block;
 - apadmin and apapprover escape a request again where they decode it
   (`protocol.SignRequestMessage.TerminalSafe`), so a missed path on the
   signer still can't reach the terminal.

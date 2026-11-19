@@ -187,3 +187,75 @@ func TestOperatorSafeViolationsEscapesEveryString(t *testing.T) {
 		t.Fatal("operatorSafeViolations changed its input")
 	}
 }
+
+// A transaction type is whatever string the client's msgpack holds, and
+// policy builds its rule ID and message from it. hostileTxnType would clear
+// the operator's screen and retitle the terminal if printed as is.
+const hostileTxnType = types.TxType("x\x1b[2J\x1b]0;owned\x07")
+
+const hostileTxnTypeEscaped = `x\x1b[2J\x1b]0;owned\a`
+
+// A type the policy rejects is named in the policy engine's rejection line.
+func TestPolicyRejectionPrintsTheClientsTypeEscaped(t *testing.T) {
+	console := &printedConsole{}
+	txns := []types.Transaction{{Type: hostileTxnType, Header: types.Header{Sender: types.Address{1}, Fee: 1000}}}
+	err := EvaluateAutoRejectionRules(txns, 1, nil, nil, fixedPolicy(&policy.Config{
+		TransactionTypes: policy.TransactionTypesV1{},
+	}), nil, nil, console)
+	if err == nil {
+		t.Fatal("EvaluateAutoRejectionRules() error = nil, want the type rejected")
+	}
+	requireTerminalSafe(t, "console", console.String())
+	if !strings.Contains(console.String(), "[POLICY ENGINE] Rejected: ") ||
+		!strings.Contains(console.String(), hostileTxnTypeEscaped) {
+		t.Fatalf("console does not show the rejected type escaped:\n%s", console.String())
+	}
+}
+
+// A type the policy sends to review is named in the review banner (its rule
+// ID) and in the reviewability block that follows.
+func TestReviewBannersPrintTheClientsTypeEscaped(t *testing.T) {
+	console := &printedConsole{}
+	txn := types.Transaction{Type: hostileTxnType, Header: types.Header{Sender: types.Address{1}, Fee: 1000}}
+	service := &Service{
+		Approval: &ApprovalService{
+			UserAutoApprove: userAutoApproveDefault(false),
+			HasClient:       func() bool { return true },
+			KnownAddresses:  func() map[string]bool { return nil },
+			Console:         console,
+			RequestSigningApprovalPrompt: promptFromDecision(func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+				t.Fatal("an unreviewable type reached the operator prompt")
+				return false, nil
+			}),
+		},
+		Executor:                      &Executor{},
+		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(txdesc.DetailTxn),
+		IsUnlocked:                    func() bool { return true },
+		Console:                       console,
+		PolicyFor: fixedPolicy(&policy.Config{
+			TransactionTypes: policy.TransactionTypesV1{policy.TransactionTypeWildcard: policy.TransactionTypeReview},
+			Rekeys:           policy.RekeysRejectForeign,
+		}),
+	}
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: "5458aa"}}}
+	plan := &PlanResult{
+		AllTxns:               []types.Transaction{txn},
+		PassthroughIndices:    map[int]bool{},
+		PassthroughSignedTxns: map[int][]byte{},
+		ForeignIndices:        map[int]bool{},
+	}
+	if _, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); err == nil || !strings.Contains(err.Message, "not reviewable") {
+		t.Fatalf("signGroupWithPlanContext() error = %#v, want the reviewability block", err)
+	}
+
+	printed := console.String()
+	requireTerminalSafe(t, "console", printed)
+	for _, want := range []string{
+		"[POLICY] Txn requires manual review (" + policy.TransactionTypeRuleID(hostileTxnTypeEscaped) + ")",
+		"[REVIEWABILITY] Blocked txn approval: transaction type " + hostileTxnTypeEscaped,
+	} {
+		if !strings.Contains(printed, want) {
+			t.Fatalf("console lacks %q:\n%s", want, printed)
+		}
+	}
+}
