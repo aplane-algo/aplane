@@ -809,6 +809,26 @@ the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
 
+Fixed 2026-11-18: a losing unlock's cleanup (the first open divergence
+above). A `TryUnlock` or `TryRecovery` that finds `lockGen` moved now locks
+the runtime as `Lock` does, moving `lockGen` and the session in the critical
+section that decides its cleanup (`lockForCleanupLocked`), so a session
+another attempt published ends, and an attempt still in flight loses too.
+`FinishMaintenance` now publishes unlocked only if the signer was unlocked
+when the maintenance began, so a lock that landed just before it stays in
+force, and a maintenance that ends locked clears what it reloaded the same
+way, since no later `Lock` of a locked signer would. `key_use_lock.tla`
+splits `Unlock` into `UnlockStart` and `UnlockFinish` over two attempts,
+which may start from any state with no cleanup running, lets `LockState`
+start from locked (`BeginMaintenance`, and a maintenance that ends locked),
+adds `LockInactive` (a `Lock` on a signer already locked) and the guard
+`LoserLocks`, and gains the negative control
+`key_use_lock_negative_loser.cfg` (2700 states at depth 10). The positive
+runs grow to 3616 states at depth 18 and, deep, 5588 at depth 19, and every
+other key-use negative control still fails on its own property.
+Republication is not modeled; three Go tests pin it. `make formal-test` now
+has 37 runs, twenty-one of them negative controls.
+
 Aligned 2026-11-18: the recovery reconcile now enters recovery before it
 releases the store mutation lock, the order `BeginReload` and `ReloadFail`
 with `RecoveryBeforeRelease` transcribe. `ReconcileStore` used to call

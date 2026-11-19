@@ -229,8 +229,18 @@ func TestInFlightUnlockLosesToRacingMaintenance(t *testing.T) {
 	if cleanups != 2 {
 		t.Fatalf("maintenance race cleanups = %d, want 2", cleanups)
 	}
-	if !r.FinishMaintenance(token, true) {
-		t.Fatal("successful maintenance could not republish after rejecting the racing unlock")
+	// The losing unlock locked the runtime, which a maintenance cannot
+	// republish over: that unlock's cleanup may clear keys after the
+	// maintenance has reloaded them. The maintenance clears what it reloaded
+	// itself, since no later Lock of a locked runtime would.
+	if r.FinishMaintenance(token, true) {
+		t.Fatal("maintenance republished over the lock a losing unlock made")
+	}
+	if r.GetState() != SignerStateLocked {
+		t.Fatalf("state after maintenance = %v, want locked", r.GetState())
+	}
+	if cleanups != 3 {
+		t.Fatalf("cleanups after the refused maintenance = %d, want 3", cleanups)
 	}
 }
 
@@ -562,6 +572,9 @@ func TestTryRecoveryWaitsForALockCleanupInProgress(t *testing.T) {
 
 // A maintenance that begins while an earlier Lock's cleanup is still running
 // must not republish the signer as unlocked under that cleanup.
+// FinishMaintenance waits for a cleanup an earlier lock left running. A
+// maintenance that began after that lock leaves the signer locked: the lock
+// stays in force, and the maintenance clears what it may have reloaded.
 func TestFinishMaintenanceWaitsForAnEarlierLockCleanup(t *testing.T) {
 	rt := New()
 	entered, release, returned := blockFirstCleanup(rt)
@@ -583,11 +596,12 @@ func TestFinishMaintenanceWaitsForAnEarlierLockCleanup(t *testing.T) {
 	}
 	close(release)
 	expectDone(t, done, "FinishMaintenance")
-	if !republished || !rt.IsUnlocked() {
-		t.Fatalf("after the cleanup: republished=%v unlocked=%v, want both true", republished, rt.IsUnlocked())
+	if republished || rt.IsUnlocked() {
+		t.Fatalf("after the cleanup: republished=%v unlocked=%v, want the earlier lock to stand", republished, rt.IsUnlocked())
 	}
-	if got := returned.Load(); got != 2 {
-		t.Fatalf("cleanups finished = %d, want 2", got)
+	// The lock's, BeginMaintenance's, and the refused maintenance's own.
+	if got := returned.Load(); got != 3 {
+		t.Fatalf("cleanups finished = %d, want 3", got)
 	}
 }
 
