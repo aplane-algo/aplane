@@ -26,10 +26,13 @@ type Session struct {
 	state       *REPLState
 	stopPolling context.CancelFunc
 
-	execMu       sync.Mutex
-	activeMu     sync.Mutex
-	activeCancel context.CancelFunc
-	activeID     uint64
+	execMu   sync.Mutex
+	activeMu sync.Mutex
+	// active holds the cancel of every operation begun and not yet ended:
+	// the one running under execMu and any waiting for it. Cancel and
+	// Shutdown reach them all.
+	active   map[uint64]context.CancelFunc
+	activeID uint64
 	// closing is set, under activeMu, when Shutdown begins: nothing starts
 	// after it, so no operation can slip past Shutdown's cancel.
 	closing bool
@@ -68,7 +71,7 @@ func (s *Session) StartupConnect() (string, error) {
 	if s == nil {
 		return "", errSessionNotInitialized
 	}
-	ctx, end, err := s.beginActive()
+	ctx, end, err := s.beginActive(context.Background())
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +100,8 @@ func (s *Session) ExecuteLine(raw string) (exit bool, err error) {
 	return s.ExecuteLineContext(context.Background(), raw)
 }
 
-// ExecuteLineContext parses and executes one apshell input line with a caller-owned context.
+// ExecuteLineContext parses and executes one apshell input line with a
+// caller-owned context. The line also ends with Cancel and Shutdown.
 func (s *Session) ExecuteLineContext(ctx context.Context, raw string) (exit bool, err error) {
 	if s == nil {
 		return false, errSessionNotInitialized
@@ -105,9 +109,11 @@ func (s *Session) ExecuteLineContext(ctx context.Context, raw string) (exit bool
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if s.isClosing() {
-		return false, errSessionShutDown
+	ctx, end, err := s.beginActive(ctx)
+	if err != nil {
+		return false, err
 	}
+	defer end()
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
 	if err := s.startable(ctx); err != nil {
@@ -149,7 +155,7 @@ func (s *Session) ExecuteLineCaptured(raw string) (output string, exit bool, err
 	if s == nil {
 		return "", false, errSessionNotInitialized
 	}
-	ctx, end, err := s.beginActive()
+	ctx, end, err := s.beginActive(context.Background())
 	if err != nil {
 		return "", false, err
 	}
@@ -287,28 +293,45 @@ func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, strin
 }
 
 // beginActive makes the context of the operation about to run, a line or the
-// startup connect: Cancel and Shutdown cancel it until end is called. Once
-// Shutdown has begun it refuses.
-func (s *Session) beginActive() (ctx context.Context, end func(), err error) {
-	ctx, cancel := context.WithCancel(context.Background())
+// startup connect, from parent: Cancel and Shutdown cancel it until end is
+// called, whether it runs or still waits for execMu. Once Shutdown has begun
+// it refuses.
+func (s *Session) beginActive(parent context.Context) (ctx context.Context, end func(), err error) {
+	ctx, cancel := context.WithCancel(parent)
 	s.activeMu.Lock()
 	if s.closing {
 		s.activeMu.Unlock()
 		cancel()
 		return nil, nil, errSessionShutDown
 	}
+	if s.active == nil {
+		s.active = make(map[uint64]context.CancelFunc)
+	}
 	s.activeID++
 	activeID := s.activeID
-	s.activeCancel = cancel
+	s.active[activeID] = cancel
 	s.activeMu.Unlock()
 	return ctx, func() {
 		s.activeMu.Lock()
-		if s.activeID == activeID {
-			s.activeCancel = nil
-		}
+		delete(s.active, activeID)
 		s.activeMu.Unlock()
 		cancel()
 	}, nil
+}
+
+// activeCancels returns the cancel of every active operation; closing also
+// marks the session closing in the same step, so none begins after.
+func (s *Session) activeCancels(closing bool) []context.CancelFunc {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	if closing {
+		s.closing = true
+	}
+	cancels := make([]context.CancelFunc, 0, len(s.active))
+	for _, cancel := range s.active {
+		cancels = append(cancels, cancel)
+	}
+	return cancels
 }
 
 // startable reports, under execMu, why an operation on ctx must not run:
@@ -338,33 +361,28 @@ func (r *REPLState) bindCommandContext(ctx context.Context) (restore func()) {
 	}
 }
 
-// Cancel interrupts the currently executing embedded command, if any.
+// Cancel interrupts the executing embedded command, and any line waiting to
+// run after it. It reports whether there was one.
 func (s *Session) Cancel() bool {
 	if s == nil {
 		return false
 	}
-	s.activeMu.Lock()
-	cancel := s.activeCancel
-	s.activeMu.Unlock()
-	if cancel == nil {
-		return false
+	cancels := s.activeCancels(false)
+	for _, cancel := range cancels {
+		cancel()
 	}
-	cancel()
-	return true
+	return len(cancels) > 0
 }
 
 // Shutdown releases apshell runtime resources owned by the session. It
-// cancels a running command and waits for it to return first: the command
-// still uses the runtime, and the state, while it unwinds.
+// cancels every active operation, the running one and any waiting, and waits
+// for the running one to return first: it still uses the runtime, and the
+// state, while it unwinds.
 func (s *Session) Shutdown() {
 	if s == nil {
 		return
 	}
-	s.activeMu.Lock()
-	s.closing = true
-	cancel := s.activeCancel
-	s.activeMu.Unlock()
-	if cancel != nil {
+	for _, cancel := range s.activeCancels(true) {
 		cancel()
 	}
 	s.execMu.Lock()

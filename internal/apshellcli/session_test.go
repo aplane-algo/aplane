@@ -4,6 +4,7 @@
 package apshellcli
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"os"
@@ -374,6 +375,76 @@ func waitForShutdownToBegin(t *testing.T, session *Session) {
 	for !session.isClosing() {
 		if time.Now().After(deadline) {
 			t.Fatal("Shutdown never began")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// Shutdown cancels every operation the session has begun, not only the
+// latest: a line running under a caller-owned context, or one a second line
+// queued behind, ends, so Shutdown does not wait on it.
+func TestSessionShutdownCancelsEveryActiveLine(t *testing.T) {
+	for _, first := range []string{"ExecuteLineContext", "ExecuteLineCaptured"} {
+		t.Run(first, func(t *testing.T) {
+			session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
+			if err != nil {
+				t.Fatalf("NewSession() error = %v", err)
+			}
+			state := session.state
+			started := make(chan struct{}, 1)
+			release := make(chan struct{})
+			t.Cleanup(func() { close(release) })
+			if err := state.CommandRegistry.Register(&command.Command{
+				Name: "waits", Category: command.CategoryInfo, Automation: command.StructuredAutomation,
+				Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+					started <- struct{}{}
+					select {
+					case <-state.commandContext().Done():
+					case <-release:
+					}
+					return nil, state.commandContext().Err()
+				}),
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			go func() {
+				if first == "ExecuteLineContext" {
+					_, _ = session.ExecuteLineContext(context.Background(), "waits")
+				} else {
+					_, _, _ = session.ExecuteLineCaptured("waits")
+				}
+			}()
+			<-started
+			go func() { _, _, _ = session.ExecuteLineCaptured("waits") }() // queued behind the first
+			waitForActiveLines(t, session, 2)
+
+			shutDown := make(chan struct{})
+			go func() {
+				session.Shutdown()
+				close(shutDown)
+			}()
+			select {
+			case <-shutDown:
+			case <-time.After(2 * time.Second):
+				t.Fatal("Shutdown waited on the running line, which it never cancelled")
+			}
+		})
+	}
+}
+
+func waitForActiveLines(t *testing.T, session *Session, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		session.activeMu.Lock()
+		active := len(session.active)
+		session.activeMu.Unlock()
+		if active >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d line(s) active, want %d", active, n)
 		}
 		time.Sleep(time.Millisecond)
 	}
