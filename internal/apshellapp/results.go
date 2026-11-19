@@ -426,7 +426,10 @@ type BalanceCommandResult struct {
 	AssetSpecified bool
 	Single         *BalanceDetails
 	Addresses      []string
-	Balances       []*BalanceDetails
+	// Balances are BalanceModeMulti's accounts whose query succeeded; each
+	// account whose query failed is a balance_query_failed warning.
+	Balances []*BalanceDetails
+	Warnings []Warning
 }
 
 // StatusCommandResult describes the semantic outcome of a status command.
@@ -448,7 +451,9 @@ type HoldersCommandResult struct {
 	Balances  []*BalanceDetails
 	// Asset is the asset held: ALGO (AssetID 0) unless the command named an
 	// ASA.
-	Asset    asa.Metadata
+	Asset asa.Metadata
+	// Warnings has a balance_query_failed warning for each account whose
+	// query failed, which may or may not hold the asset.
 	Warnings []Warning
 }
 

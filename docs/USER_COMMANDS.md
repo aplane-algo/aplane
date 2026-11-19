@@ -459,6 +459,14 @@ asset that does not resolve is refused, in the shell and through MCP. Through
 MCP, the balance of one account with no asset lists every holding in
 `assets`, as the shell shows them; with an ASA, only that asset's entry.
 
+For a set (`@all`, `@signers`, `@setname`), an account whose balance query
+fails (a rate-limited or unreachable node) is a warning naming the account and
+the error, and the total says how many accounts it leaves out. Through MCP the
+result is `{ balances, warnings }`: `balances` lists the accounts that
+answered, and each failed account is a `balance_query_failed` warning. When no
+account of the set can be queried, the command fails, in the shell and through
+MCP.
+
 **Aliases:** `bal`
 
 **Examples:**
@@ -478,6 +486,10 @@ Show accounts with non-zero balance for an asset.
 ```
 holders [asset]
 ```
+
+An account whose query fails is a warning, as in `balance @all`, and the
+total leaves it out; through MCP each is a `balance_query_failed` warning in
+`warnings`. When no known account can be queried, the command fails.
 
 **Examples:**
 ```

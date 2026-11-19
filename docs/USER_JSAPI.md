@@ -334,6 +334,9 @@ print(generated.address)
 | `holders(asset = "algo")` | Addresses with non-zero ALGO or ASA balance |
 | `holders(addresses, asset = "algo")` | Filtered subset of `addresses` |
 
+`holders()` throws when no known account could be queried, rather than
+returning no holders.
+
 `getAsaId()` uses the same ASA resolver as shell commands. On the current
 network it checks cached asset unit/name metadata first, then built-in metadata
 and explicit convenience aliases. With an explicit non-current network argument,

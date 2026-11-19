@@ -5,9 +5,19 @@ package apshellapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -43,7 +53,9 @@ func TestBalanceRejectsTooManyArgs(t *testing.T) {
 	}
 }
 
-func TestBalanceResolvesSetModeWithoutAlgod(t *testing.T) {
+// A set none of whose accounts can be queried is an error that names the
+// count and the first failure, not an empty listing: here there is no algod.
+func TestBalanceOfASetNoAccountOfWhichCanBeQueriedFails(t *testing.T) {
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
@@ -55,14 +67,112 @@ func TestBalanceResolvesSetModeWithoutAlgod(t *testing.T) {
 	}
 	app := New(eng, cfg, t.TempDir())
 	res, err := app.Balance(context.Background(), BalanceRequest{Args: []string{"@team"}})
+	if !errors.Is(err, engine.ErrNoAlgodClient) || !strings.Contains(err.Error(), "none of the 1 account(s) could be queried: "+testAddress) {
+		t.Fatalf("Balance() = %+v, %v; want the failed query of every account as the error", res, err)
+	}
+}
+
+// balanceQueryApp is an app on an algod that answers each account's query
+// with a balance of 1 ALGO, except for the accounts in failing, whose every
+// query fails, and those in failingAgain, whose queries after the first fail.
+// The accounts are aliased by name and form the set "team".
+func balanceQueryApp(t *testing.T, aliases map[string]string, failing, failingAgain map[string]bool) *App {
+	t.Helper()
+	var mu sync.Mutex
+	queries := map[string]int{}
+	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		address, ok := strings.CutPrefix(r.URL.Path, "/v2/accounts/")
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		queries[address]++
+		n := queries[address]
+		mu.Unlock()
+		if failing[address] || (failingAgain[address] && n > 1) {
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.Account{Address: address, Amount: 1_000_000, MinBalance: 100_000, Status: "Offline"})
+	}))
+	t.Cleanup(node.Close)
+	client, err := algod.MakeClient(node.URL, "")
 	if err != nil {
-		t.Fatalf("Balance() error = %v", err)
+		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	if res.Mode != BalanceModeMulti {
-		t.Fatalf("Mode = %q, want %q", res.Mode, BalanceModeMulti)
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
 	}
-	if res.Asset.AssetID != 0 || res.Asset.UnitName != "ALGO" {
-		t.Fatalf("Asset = %+v, want ALGO", res.Asset)
+	eng.AlgodClient = client
+	eng.AliasCache.Aliases = aliases
+	team := make([]string, 0, len(aliases))
+	for _, address := range aliases {
+		team = append(team, address)
+	}
+	sort.Strings(team)
+	eng.SetCache.Sets = map[string][]string{"team": team}
+	return New(eng, config.DefaultConfig(), t.TempDir())
+}
+
+// An account of a set or of @all whose balance query fails is a
+// balance_query_failed warning naming it and the error, not an account left
+// out in silence; every account whose query succeeded is listed.
+func TestMultiAccountBalanceWarnsOfEveryFailedQuery(t *testing.T) {
+	alice, bob, carol := crypto.GenerateAccount().Address.String(), crypto.GenerateAccount().Address.String(), crypto.GenerateAccount().Address.String()
+	app := balanceQueryApp(t, map[string]string{"alice": alice, "bob": bob, "carol": carol}, map[string]bool{bob: true, carol: true}, nil)
+	for _, set := range []string{"@team", "@all"} {
+		res, err := app.Balance(context.Background(), BalanceRequest{Args: []string{set}})
+		if err != nil {
+			t.Fatalf("balance %s: %v", set, err)
+		}
+		if len(res.Balances) != 1 || res.Balances[0].Address != alice {
+			t.Fatalf("balance %s listed %+v, want alice's balance only", set, res.Balances)
+		}
+		if len(res.Warnings) != 2 {
+			t.Fatalf("balance %s warnings = %+v, want one for bob and one for carol", set, res.Warnings)
+		}
+		for _, account := range []string{"bob (" + bob + ")", "carol (" + carol + ")"} {
+			found := false
+			for _, warning := range res.Warnings {
+				found = found || (warning.Code == "balance_query_failed" &&
+					strings.HasPrefix(warning.Message, "could not query "+account+": ") && strings.Contains(warning.Message, "rate limited"))
+			}
+			if !found {
+				t.Fatalf("balance %s warnings = %+v, want a balance_query_failed warning naming %s", set, res.Warnings, account)
+			}
+		}
+	}
+}
+
+// Holders lists every holder it found, with the balance it read to find it,
+// whatever a later query of that account would answer, and warns of each
+// account it could not query.
+func TestHoldersKeepsEveryHolderFound(t *testing.T) {
+	alice, bob, carol := crypto.GenerateAccount().Address.String(), crypto.GenerateAccount().Address.String(), crypto.GenerateAccount().Address.String()
+	app := balanceQueryApp(t, map[string]string{"alice": alice, "bob": bob, "carol": carol},
+		map[string]bool{carol: true}, map[string]bool{bob: true})
+	res, err := app.Holders(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Holders() error = %v", err)
+	}
+	got := map[string]string{}
+	for _, balance := range res.Balances {
+		got[balance.Address] = balance.Alias
+	}
+	if !reflect.DeepEqual(got, map[string]string{alice: "alice", bob: "bob"}) || len(res.Addresses) != 2 {
+		t.Fatalf("holders = %v (addresses %v), want alice and bob with their aliases", got, res.Addresses)
+	}
+	if len(res.Warnings) != 1 || res.Warnings[0].Code != "balance_query_failed" ||
+		!strings.HasPrefix(res.Warnings[0].Message, "could not query carol ("+carol+"): ") {
+		t.Fatalf("warnings = %+v, want one balance_query_failed warning naming carol", res.Warnings)
+	}
+
+	app = balanceQueryApp(t, map[string]string{"alice": alice}, map[string]bool{alice: true}, nil)
+	if res, err := app.Holders(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "none of the 1 account(s) could be queried: "+alice) {
+		t.Fatalf("Holders() = %+v, %v; want the failed query of every account as the error", res, err)
 	}
 }
 

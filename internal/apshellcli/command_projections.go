@@ -295,7 +295,34 @@ func projectMCPBalanceForAsset(result *apshellapp.BalanceDetails, asset *asa.Met
 	return projected
 }
 
-func projectHolders(result *apshellapp.HoldersCommandResult) interface{} {
+// multiBalanceProjection is balance's MCP result for a set of accounts: the
+// balance of each account whose query succeeded, and a balance_query_failed
+// warning for each account whose query failed.
+type multiBalanceProjection struct {
+	Balances []appresult.MCPBalance `json:"balances"`
+	Warnings []warningProjection    `json:"warnings,omitempty"`
+}
+
+func projectMultiBalance(result *apshellapp.BalanceCommandResult, asset *asa.Metadata) multiBalanceProjection {
+	projection := multiBalanceProjection{
+		Balances: make([]appresult.MCPBalance, 0, len(result.Balances)),
+		Warnings: projectWarnings(result.Warnings),
+	}
+	for _, balance := range result.Balances {
+		projection.Balances = append(projection.Balances, projectMCPBalanceForAsset(balance, asset))
+	}
+	return projection
+}
+
+// holdersProjection is holders' MCP result: the holders, their total, and
+// a balance_query_failed warning for each account whose query failed, which
+// the total leaves out.
+type holdersProjection struct {
+	appresult.MCPHolders
+	Warnings []warningProjection `json:"warnings,omitempty"`
+}
+
+func projectHolders(result *apshellapp.HoldersCommandResult) holdersProjection {
 	meta := result.Asset
 	isAlgo := meta.AssetID == 0
 	entries := make([]appresult.MCPHolderEntry, 0, len(result.Balances))
@@ -318,7 +345,10 @@ func projectHolders(result *apshellapp.HoldersCommandResult) interface{} {
 		entries = append(entries, appresult.HolderEntryToMCP(balance.Address, balance.Alias, raw, meta.Decimals))
 		totalRaw += raw
 	}
-	return appresult.HoldersToMCP(meta.UnitName, meta.Decimals, entries, totalRaw)
+	return holdersProjection{
+		MCPHolders: appresult.HoldersToMCP(meta.UnitName, meta.Decimals, entries, totalRaw),
+		Warnings:   projectWarnings(result.Warnings),
+	}
 }
 
 type sendProjection struct {

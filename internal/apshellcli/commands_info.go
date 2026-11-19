@@ -204,11 +204,7 @@ func (r *REPLState) cmdBalance(args []string, _ interface{}) (command.Result, er
 	}
 	var projection interface{}
 	if res.Mode == apshellapp.BalanceModeMulti {
-		items := make([]appresult.MCPBalance, 0, len(res.Balances))
-		for _, balance := range res.Balances {
-			items = append(items, projectMCPBalanceForAsset(balance, asset))
-		}
-		projection = items
+		projection = projectMultiBalance(res, asset)
 	} else {
 		projection = projectMCPBalanceForAsset(res.Single, asset)
 	}
@@ -216,7 +212,8 @@ func (r *REPLState) cmdBalance(args []string, _ interface{}) (command.Result, er
 		return r.withOutputResult(w, func() error {
 			switch res.Mode {
 			case apshellapp.BalanceModeMulti:
-				return r.showMultiAccountBalances(res.Balances, res.Asset, false)
+				r.renderWarnings(res.Warnings)
+				return r.showMultiAccountBalances(res.Balances, res.Asset, false, len(res.Warnings))
 			case apshellapp.BalanceModeSingleFull:
 				return r.showFullBalance(res.Single)
 			case apshellapp.BalanceModeSingleAsset:
@@ -242,7 +239,7 @@ func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, er
 				r.println("No accounts with non-zero balance found")
 				return nil
 			}
-			return r.showMultiAccountBalances(result.Balances, result.Asset, true)
+			return r.showMultiAccountBalances(result.Balances, result.Asset, true, len(result.Warnings))
 		})
 	}, projection)
 }
