@@ -1117,11 +1117,15 @@ with a bidirectional control. So:
   description is printed from) with `internal/termsafe`, keeping only
   newlines and tabs;
 - everything the signing service prints to the daemon's console (which
-  apconsole shows in a pane) is escaped the same way, in one place:
-  `consoleOf` (`internal/signerapp/signing/console.go`) hands every caller a
-  console that escapes what it prints. That covers the description, and the
-  lines that quote a client-chosen transaction type: a policy rejection, the
-  review banner's rule ID, a reviewability block;
+  apconsole shows in a pane) goes through `consoleOf`
+  (`internal/signerapp/signing/console.go`), which escapes it with
+  `termsafe.Lines`: control characters show escaped, newlines and tabs are
+  kept, so the description prints as the lines it is. A value printed within
+  one line is also escaped with `termsafe.Line` where it is printed, newline
+  included, so it cannot start a line the signer did not write: the
+  client-chosen transaction type in a policy rejection, in the review
+  banner's rule ID and in a reviewability block, and the request ID in the
+  approval wait line;
 - apadmin and apapprover escape a request again where they decode it
   (`protocol.SignRequestMessage.TerminalSafe`), so a missed path on the
   signer still can't reach the terminal.

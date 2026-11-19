@@ -259,3 +259,126 @@ func TestReviewBannersPrintTheClientsTypeEscaped(t *testing.T) {
 		}
 	}
 }
+
+// The console keeps newlines (a review is printed over many lines), so a
+// value printed within one line must be escaped on its own, or a newline in
+// it starts a line the signer did not write. forgedLine is one the operator
+// would read as the signer's.
+const forgedLine = "[USER AUTO-APPROVE] Group approved without operator prompt"
+
+func forging(line string) string { return "x\n" + line + "\n" }
+
+// requireNoLineStarts fails if a console line starts with line.
+func requireNoLineStarts(t *testing.T, printed, line string) {
+	t.Helper()
+	for _, got := range strings.Split(printed, "\n") {
+		if strings.HasPrefix(got, line) {
+			t.Fatalf("console printed a forged line %q:\n%s", got, printed)
+		}
+	}
+}
+
+// signHostileTypeForTest runs txn type typ through /sign as count requests,
+// under a policy that sends every type to review, and returns the console.
+func signHostileTypeForTest(t *testing.T, typ types.TxType, count int, autoApprove bool) string {
+	t.Helper()
+	console := &printedConsole{}
+	service := &Service{
+		Approval: &ApprovalService{
+			UserAutoApprove: userAutoApproveDefault(autoApprove),
+			HasClient:       func() bool { return true },
+			KnownAddresses:  func() map[string]bool { return nil },
+			Console:         console,
+			RequestSigningApprovalPrompt: promptFromDecision(func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+				t.Fatal("an unreviewable type reached the operator prompt")
+				return false, nil
+			}),
+		},
+		Executor:                      &Executor{},
+		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(txdesc.DetailTxn),
+		IsUnlocked:                    func() bool { return true },
+		Console:                       console,
+		BeforeExecute: func() (func(), *ServiceError) {
+			return nil, forbidden("stop after approval")
+		},
+		PolicyFor: fixedPolicy(&policy.Config{
+			TransactionTypes: policy.TransactionTypesV1{policy.TransactionTypeWildcard: policy.TransactionTypeReview},
+			Rekeys:           policy.RekeysRejectForeign,
+		}),
+	}
+	plan := &PlanResult{
+		PassthroughIndices:    map[int]bool{},
+		PassthroughSignedTxns: map[int][]byte{},
+		ForeignIndices:        map[int]bool{},
+	}
+	var req signerapi.GroupSignRequest
+	for i := 0; i < count; i++ {
+		plan.AllTxns = append(plan.AllTxns, types.Transaction{Type: typ, Header: types.Header{Sender: types.Address{byte(i + 1)}, Fee: 1000}})
+		req.Requests = append(req.Requests, signerapi.SignRequest{AuthAddress: "AUTHADDR", TxnBytesHex: "5458aa"})
+	}
+	if _, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); err == nil {
+		t.Fatal("signGroupWithPlanContext() error = nil, want a refusal")
+	}
+	return console.String()
+}
+
+// A rejected type's policy line keeps to its line.
+func TestPolicyRejectionKeepsTheClientsTypeOnItsLine(t *testing.T) {
+	console := &printedConsole{}
+	txns := []types.Transaction{{Type: types.TxType(forging(forgedLine)), Header: types.Header{Sender: types.Address{1}, Fee: 1000}}}
+	if err := EvaluateAutoRejectionRules(txns, 1, nil, nil, fixedPolicy(&policy.Config{
+		TransactionTypes: policy.TransactionTypesV1{},
+	}), nil, nil, console); err == nil {
+		t.Fatal("EvaluateAutoRejectionRules() error = nil, want the type rejected")
+	}
+	requireNoLineStarts(t, console.String(), forgedLine)
+	if !strings.Contains(console.String(), `x\n`+forgedLine+`\n`) {
+		t.Fatalf("console does not show the type escaped on its line:\n%s", console.String())
+	}
+}
+
+// So do the review banner's rule ID and the reviewability block, for one
+// request and for a group, and the banner User Auto-Approve prints.
+func TestReviewBannersKeepTheClientsTypeOnItsLine(t *testing.T) {
+	for _, count := range []int{1, 2} {
+		printed := signHostileTypeForTest(t, types.TxType(forging(forgedLine)), count, false)
+		requireNoLineStarts(t, printed, forgedLine)
+		if !strings.Contains(printed, "[REVIEWABILITY] Blocked") || !strings.Contains(printed, "manual review (") {
+			t.Fatalf("%d request(s): console lacks the banner or the block:\n%s", count, printed)
+		}
+
+		const approved = "[OK] TXN APPROVED"
+		printed = signHostileTypeForTest(t, types.TxType(forging(approved)), count, true)
+		requireNoLineStarts(t, printed, approved)
+		if !strings.Contains(printed, "Satisfying review requirement (") {
+			t.Fatalf("%d request(s): console lacks the auto-approve banner:\n%s", count, printed)
+		}
+	}
+}
+
+// A direct caller's request ID keeps to its line as well. The HTTP API
+// admits only [A-Za-z0-9._:-] in a request_id.
+func TestApprovalWaitLineKeepsTheRequestIDOnItsLine(t *testing.T) {
+	const rejected = "[X] TXN REJECTED"
+	pay := func(sender byte) types.Transaction {
+		return types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{sender}, Fee: 1000},
+			PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{sender}, Amount: 1}}
+	}
+	for _, count := range []int{1, 2} {
+		req := signerapi.GroupSignRequest{RequestID: "a\n" + rejected}
+		plan := &PlanResult{
+			PassthroughIndices:    map[int]bool{},
+			PassthroughSignedTxns: map[int][]byte{},
+			ForeignIndices:        map[int]bool{},
+		}
+		for i := 0; i < count; i++ {
+			req.Requests = append(req.Requests, signerapi.SignRequest{AuthAddress: "AUTHADDR", TxnBytesHex: "5458aa"})
+			plan.AllTxns = append(plan.AllTxns, pay(byte(i+1)))
+		}
+		got := signForEscapingTest(t, req, plan)
+		requireNoLineStarts(t, got.console.String(), rejected)
+		if !strings.Contains(got.console.String(), `(request a\n`+rejected) {
+			t.Fatalf("%d request(s): console does not show the request ID escaped:\n%s", count, got.console.String())
+		}
+	}
+}

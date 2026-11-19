@@ -39,7 +39,8 @@ func consoleOf(c Console) Console {
 // text quotes what a client chose (a transaction type, and the policy rule ID
 // and message built from it), and the signer's stdout is an operator's
 // terminal (apconsole shows it in a pane): a control sequence printed as is
-// would act on that terminal.
+// would act on that terminal. Lines keeps newlines, so a value printed
+// within one line is escaped with termsafe.Line where it is printed.
 type terminalSafeConsole struct{ Console }
 
 func (c terminalSafeConsole) Printf(format string, args ...any) {
