@@ -150,7 +150,11 @@ The REPL/UI layer and `internal/apshellapp` are responsible for:
 - Expanding sets ("@validators" -> ["ADDR1", "ADDR2", ...])
 - Converting amounts ("1.5" ALGO -> 1500000 microAlgos)
 - Formatting output for display
-- Providing command history, tab completion, etc.
+- Providing command history, tab completion, etc. The history is
+  `~/.apshell_history`, owner-only (mode `0600`) whether readline or the
+  apconsole shell pane writes it (`internal/apshellcli/history.go`); with the
+  home directory unknown, history is off rather than written to the current
+  directory
 
 Shell ownership is layered:
 - `internal/apshellcli` owns command registry, command adapters, REPL/session
