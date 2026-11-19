@@ -34,11 +34,9 @@ type fakeDeps struct {
 	dataDir  string
 	config   *serverconfig.ServerConfig
 	keyPaths storepaths.Paths
-	theme    string
 	sshInfo  SSHInfo
 	mu       sync.Mutex
 
-	processMutationCalls  int
 	identityMutationCalls int
 	warningsMu            sync.Mutex
 	warnings              []string
@@ -56,16 +54,6 @@ func (d *fakeDeps) KeyPaths() storepaths.Paths {
 	return d.keyPaths
 }
 
-func (d *fakeDeps) Theme() string {
-	return d.theme
-}
-
-// SetTheme updates the process config too, as the signer's does.
-func (d *fakeDeps) SetTheme(v string) {
-	d.theme = v
-	d.config.Theme = v
-}
-
 func (d *fakeDeps) SSHInfo() SSHInfo {
 	return d.sshInfo
 }
@@ -76,13 +64,6 @@ func (d *fakeDeps) Warnf(format string, args ...any) {
 	d.warningsMu.Lock()
 	defer d.warningsMu.Unlock()
 	d.warnings = append(d.warnings, fmt.Sprintf(format, args...))
-}
-
-func (d *fakeDeps) WithProcessConfigMutation(fn func() error) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.processMutationCalls++
-	return fn()
 }
 
 func (d *fakeDeps) WithStoreMutation(fn func() error) error {
@@ -106,12 +87,10 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 	keyPaths = genstoretest.BindActive(t, keyPaths, active)
 
 	cfg := serverconfig.DefaultServerConfig()
-	cfg.Theme = "auto"
 	deps := &fakeDeps{
 		dataDir:  tmpDir,
 		config:   &cfg,
 		keyPaths: keyPaths,
-		theme:    cfg.Theme,
 	}
 	keyStore := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	ir := productruntime.New(productruntime.Config{
@@ -204,36 +183,23 @@ func TestBuildAdminSettingsEndpointDisplayURL(t *testing.T) {
 	}
 }
 
+// Every writable setting, theme included, saves the product runtime config
+// under the store mutation lock.
 func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
-	t.Run("theme uses process config mutation lock", func(t *testing.T) {
-		svc, _, deps := setupAdminService(t)
-		writeRootConfig(t, deps)
-
-		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingTheme, Value: "dark"}); err != nil {
-			t.Fatalf("UpdateAdminSetting(theme) error = %v", err)
-		}
-		if deps.processMutationCalls != 1 {
-			t.Fatalf("processMutationCalls = %d, want 1", deps.processMutationCalls)
-		}
-		if deps.identityMutationCalls != 0 {
-			t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
-		}
-	})
-
-	t.Run("identity setting uses store mutation lock", func(t *testing.T) {
-		svc, _, deps := setupAdminService(t)
-		writeRootConfig(t, deps)
-
-		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "true"}); err != nil {
-			t.Fatalf("UpdateAdminSetting(user_auto_approve) error = %v", err)
-		}
-		if deps.processMutationCalls != 0 {
-			t.Fatalf("processMutationCalls = %d, want 0", deps.processMutationCalls)
-		}
-		if deps.identityMutationCalls != 1 {
-			t.Fatalf("identityMutationCalls = %d, want 1", deps.identityMutationCalls)
-		}
-	})
+	for _, req := range []adminproto.UpdateAdminSettingRequest{
+		{Key: adminproto.AdminSettingTheme, Value: "dark"},
+		{Key: adminproto.AdminSettingUserAutoApprove, Value: "true"},
+	} {
+		t.Run(req.Key, func(t *testing.T) {
+			svc, _, deps := setupAdminService(t)
+			if err := svc.UpdateAdminSetting(req); err != nil {
+				t.Fatalf("UpdateAdminSetting(%s) error = %v", req.Key, err)
+			}
+			if deps.identityMutationCalls != 1 {
+				t.Fatalf("identityMutationCalls = %d, want 1", deps.identityMutationCalls)
+			}
+		})
+	}
 }
 
 func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
@@ -248,7 +214,6 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
 			svc, _, deps := setupAdminService(t)
-			writeRootConfig(t, deps)
 
 			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
 				Key:   tt.key,
@@ -259,9 +224,6 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "unknown or read-only setting") {
 				t.Fatalf("UpdateAdminSetting(%s) error = %v, want read-only rejection", tt.key, err)
-			}
-			if deps.processMutationCalls != 0 {
-				t.Fatalf("processMutationCalls = %d, want 0", deps.processMutationCalls)
 			}
 			if deps.identityMutationCalls != 0 {
 				t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
@@ -298,7 +260,6 @@ func TestGenerationRequirementsAreSavedAndLoaded(t *testing.T) {
 
 func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
-	writeRootConfig(t, deps)
 	for _, test := range []struct {
 		key                     string
 		wantAdmin, wantCosigner bool
@@ -335,7 +296,6 @@ func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 // cannot be saved; one turned off is not applied unless it is saved.
 func TestGenerationRequirementCannotBeSaved(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
-	writeRootConfig(t, deps)
 	ir.Config().SetGenerationRequirements(false, true)
 	// A directory where the runtime config belongs makes the save fail.
 	if err := os.MkdirAll(productruntime.ConfigPath(deps.dataDir), 0o700); err != nil {
@@ -354,15 +314,6 @@ func TestGenerationRequirementCannotBeSaved(t *testing.T) {
 	}
 	if _, cosigner := ir.Config().GenerationRequirements(); !cosigner {
 		t.Fatal("a requirement turned off was applied after its save failed")
-	}
-}
-
-// writeRootConfig gives the service a root config.yaml, which a theme save
-// rewrites.
-func writeRootConfig(t *testing.T, deps *fakeDeps) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -392,7 +343,6 @@ func TestUpdateAdminSettingRefusesNonCanonicalBooleans(t *testing.T) {
 		for _, value := range []string{"", "True", "1", "yes"} {
 			t.Run(key+"="+strconv.Quote(value), func(t *testing.T) {
 				svc, _, deps := setupAdminService(t)
-				writeRootConfig(t, deps)
 				// Every setting on, so a value read as false would show.
 				for _, k := range boolSettingKeys {
 					if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: k, Value: "true"}); err != nil {
@@ -458,11 +408,9 @@ func settingChanges() []settingChange {
 	}
 }
 
-// settingTarget is the file key is saved in.
-func settingTarget(dataDir, key string) string {
-	if key == adminproto.AdminSettingTheme {
-		return filepath.Join(dataDir, "config.yaml")
-	}
+// settingTarget is the file key is saved in: the product runtime config,
+// for every setting.
+func settingTarget(dataDir, _ string) string {
 	return productruntime.ConfigPath(dataDir)
 }
 
@@ -496,7 +444,7 @@ func liveSetting(t *testing.T, svc Service, ir *productruntime.Runtime, key stri
 	case adminproto.AdminSettingPassphraseTimeout:
 		return cfg.SessionTimeout().String()
 	case adminproto.AdminSettingTheme:
-		return svc.Deps.Theme()
+		return cfg.Theme()
 	}
 	t.Fatalf("no live reader for %s", key)
 	return ""
@@ -505,13 +453,6 @@ func liveSetting(t *testing.T, svc Service, ir *productruntime.Runtime, key stri
 // storedSetting is the value the next start loads.
 func storedSetting(t *testing.T, dataDir, key string) string {
 	t.Helper()
-	if key == adminproto.AdminSettingTheme {
-		cfg, err := serverconfig.LoadServerConfig(dataDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return cfg.Theme
-	}
 	stored, err := productruntime.LoadStoredConfig(dataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -533,6 +474,8 @@ func storedSetting(t *testing.T, dataDir, key string) string {
 		return b(stored.LockOnDisconnect)
 	case adminproto.AdminSettingPassphraseTimeout:
 		return normalSetting(t, key, stored.PassphraseTimeout)
+	case adminproto.AdminSettingTheme:
+		return stored.Theme
 	}
 	t.Fatalf("no stored reader for %s", key)
 	return ""
@@ -542,7 +485,6 @@ func storedSetting(t *testing.T, dataDir, key string) string {
 func startSettingChange(t *testing.T, c settingChange) (Service, *productruntime.Runtime, *fakeDeps) {
 	t.Helper()
 	svc, ir, deps := setupAdminService(t)
-	writeRootConfig(t, deps)
 	if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
 		t.Fatalf("UpdateAdminSetting(%s=%s) error = %v", c.key, c.from, err)
 	}
@@ -649,8 +591,8 @@ func TestUnchangedValueWhoseSaveFailsReportsNothingInEffect(t *testing.T) {
 // A save whose directory flush fails after its rename has put the new file in
 // place, which is what the next start loads. The flush is best effort: a
 // failed one does not say the change missed the disk, so the update is a
-// success, in either direction, theme (root config.yaml) included, and the
-// signer logs one warning naming the setting and the flush error.
+// success, in either direction, and the signer logs one warning naming the
+// setting and the flush error.
 func TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning(t *testing.T) {
 	for _, c := range settingChanges() {
 		t.Run(c.name(), func(t *testing.T) {
@@ -743,26 +685,21 @@ func TestUnsavedSettingIsReportedUntilASaveSucceeds(t *testing.T) {
 	}
 }
 
-// config.yaml is read when the signer starts: an edit to the file while it
-// runs takes effect at the next start, and a setting changed through the
-// admin protocol rewrites only its own key. Hand edits to other keys of
-// either file (the identity's config.yaml and root config.yaml) therefore
-// stay in the file, do not change what is in effect, and do not stop the
-// update. The update was once refused while root config.yaml differed from
-// the startup configuration.
+// The product runtime config is read when the signer starts: an edit to the
+// file while it runs takes effect at the next start, and a setting changed
+// through the admin protocol rewrites only its own key. Hand edits to other
+// keys therefore stay in the file, do not change what is in effect, and do
+// not stop the update. The update was once refused while root config.yaml
+// differed from the startup configuration.
 func TestSettingSaveKeepsAHandEditToAnotherKey(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
-	writeRootConfig(t, deps)
 	if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "false"}); err != nil {
 		t.Fatal(err)
 	}
 	identityPath := productruntime.ConfigPath(deps.dataDir)
-	rootPath := filepath.Join(deps.dataDir, "config.yaml")
-	// Hand edits while the signer runs, to keys the updates below leave alone.
+	// A hand edit while the signer runs, to a key the updates below leave
+	// alone.
 	if err := os.WriteFile(identityPath, []byte("user_auto_approve: false\nlock_on_disconnect: true\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(rootPath, []byte("theme: auto\napproval_wait: 7m\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 
@@ -778,18 +715,39 @@ func TestSettingSaveKeepsAHandEditToAnotherKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.UserAutoApprove == nil || !*stored.UserAutoApprove || stored.LockOnDisconnect == nil || !*stored.LockOnDisconnect {
-		t.Fatalf("identity config = %+v, want user_auto_approve replaced and the hand-edited lock_on_disconnect kept", stored)
-	}
-	root, err := serverconfig.LoadServerConfig(deps.dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if root.Theme != "dark" || root.ApprovalWait != "7m" {
-		t.Fatalf("root config theme %q, approval_wait %q; want theme replaced and the hand-edited approval_wait kept", root.Theme, root.ApprovalWait)
+	if stored.UserAutoApprove == nil || !*stored.UserAutoApprove || stored.LockOnDisconnect == nil || !*stored.LockOnDisconnect || stored.Theme != "dark" {
+		t.Fatalf("identity config = %+v, want user_auto_approve and theme replaced and the hand-edited lock_on_disconnect kept", stored)
 	}
 	if ir.Config().LockOnDisconnect() {
 		t.Fatal("a hand edit took effect while the signer runs")
+	}
+}
+
+// No setting change writes the process-global config.yaml, whose comments
+// and key order are the operator's: every one, theme included, is saved to
+// the product runtime config. A theme change once rewrote config.yaml through
+// a map, which dropped every comment and sorted the keys.
+func TestSettingChangesLeaveRootConfigUntouched(t *testing.T) {
+	svc, _, deps := setupAdminService(t)
+	rootPath := filepath.Join(deps.dataDir, "config.yaml")
+	root := []byte("# Operator notes.\npassphrase_timeout: \"15m\"\napproval_wait: 7m # long reviews\n")
+	if err := os.WriteFile(rootPath, root, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range settingChanges() {
+		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to}); err != nil {
+			t.Fatalf("UpdateAdminSetting(%s=%s) error = %v", c.key, c.to, err)
+		}
+	}
+	if got, err := os.ReadFile(rootPath); err != nil || !bytes.Equal(got, root) {
+		t.Fatalf("root config.yaml after the setting changes = %q, %v; want it unchanged:\n%s", got, err, root)
+	}
+	if got := svc.BuildAdminSettings().Theme; got != "dark" {
+		t.Fatalf("admin settings theme = %q, want dark", got)
+	}
+	if saved, err := os.ReadFile(productruntime.ConfigPath(deps.dataDir)); err != nil || !bytes.Contains(saved, []byte("theme: dark")) {
+		t.Fatalf("product runtime config = %q, %v; want the theme saved there", saved, err)
 	}
 }
 
@@ -800,9 +758,6 @@ func TestSettingSaveKeepsAHandEditToAnotherKey(t *testing.T) {
 // hung save showed nothing. admin_settings takes no lock the update holds.
 func TestRestrictiveValueIsReportedUnsavedWhileItsSaveIsHeld(t *testing.T) {
 	for _, c := range settingChanges() {
-		if c.key == adminproto.AdminSettingTheme {
-			continue
-		}
 		t.Run(c.name(), func(t *testing.T) {
 			svc, _, deps := startSettingChange(t, c)
 			held := fsutiltest.Hold(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key), func() error {

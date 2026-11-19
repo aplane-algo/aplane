@@ -55,9 +55,6 @@ networks:
 # Network whose algod is used for TEAL compilation (default: testnet)
 teal_compile_network: testnet
 
-# Color theme: auto (detect terminal), dark, or light
-# theme: auto
-
 # Security settings
 # If true, fail startup when memory protection cannot be enabled (requires root/sudo)
 # Memory protection includes: disabling core dumps + locking memory (prevents swap)

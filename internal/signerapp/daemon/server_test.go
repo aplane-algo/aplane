@@ -25,12 +25,12 @@ func TestSignerConfigSnapshotIsIndependent(t *testing.T) {
 	signer := &Signer{config: &cfg}
 
 	snapshot := signer.ConfigSnapshot()
-	snapshot.Theme = "dark"
+	snapshot.ApprovalWait = "9m"
 	*snapshot.LockOnDisconnect = false
 	snapshot.Algod["testnet"].Server = "changed"
 
-	if signer.Theme() == "dark" {
-		t.Fatal("ConfigSnapshot shared Theme with signer config")
+	if signer.config.ApprovalWait == "9m" {
+		t.Fatal("ConfigSnapshot shared ApprovalWait with signer config")
 	}
 	if *signer.config.LockOnDisconnect != true {
 		t.Fatal("ConfigSnapshot shared LockOnDisconnect pointer")

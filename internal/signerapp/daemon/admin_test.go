@@ -165,7 +165,6 @@ func setupTestNodeWithUnlockMethod(t *testing.T, role noderole.Role, defaultPoli
 
 func serverConfigForTest() *serverconfig.ServerConfig {
 	cfg := serverconfig.DefaultServerConfig()
-	cfg.Theme = "auto"
 	return &cfg
 }
 

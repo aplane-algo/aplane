@@ -8,56 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
-
-func TestSaveSettingPreservesOtherFields(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	initial := `user_auto_approve: false
-theme: auto
-passphrase_timeout: "15m"
-`
-	if err := os.WriteFile(path, []byte(initial), 0o640); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	if err := SaveSetting(dir, "theme", "dark"); err != nil {
-		t.Fatalf("SaveSetting: %v", err)
-	}
-
-	cfg, err := LoadServerConfig(dir)
-	if err != nil {
-		t.Fatalf("LoadServerConfig: %v", err)
-	}
-
-	if cfg.Theme != "dark" {
-		t.Fatalf("theme = %q, want %q", cfg.Theme, "dark")
-	}
-	if cfg.UserAutoApprove {
-		t.Fatal("user_auto_approve = true, want false")
-	}
-	if cfg.PassphraseTimeout != "15m" {
-		t.Fatalf("passphrase_timeout = %q, want %q", cfg.PassphraseTimeout, "15m")
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat(config): %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("config mode = %04o, want 0600", got)
-	}
-}
 
 func TestLoadServerConfigDefaultsUserAutoApprove(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 1\n"), 0o640); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -539,49 +498,6 @@ func TestServerConfigCloneDeepCopiesMutableFields(t *testing.T) {
 	}
 }
 
-func TestSaveSettingPreservesFileMetadata(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	initial := []byte("theme: auto\n")
-	if err := os.WriteFile(path, initial, 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	before, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat before: %v", err)
-	}
-	beforeStat, ok := before.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatal("Stat before missing syscall metadata")
-	}
-
-	if err := SaveSetting(dir, "theme", "dark"); err != nil {
-		t.Fatalf("SaveSetting: %v", err)
-	}
-
-	after, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat after: %v", err)
-	}
-	afterStat, ok := after.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatal("Stat after missing syscall metadata")
-	}
-
-	if after.Mode().Perm() != before.Mode().Perm() {
-		t.Fatalf("mode = %04o, want %04o", after.Mode().Perm(), before.Mode().Perm())
-	}
-	if afterStat.Uid != beforeStat.Uid {
-		t.Fatalf("uid = %d, want %d", afterStat.Uid, beforeStat.Uid)
-	}
-	if afterStat.Gid != beforeStat.Gid {
-		t.Fatalf("gid = %d, want %d", afterStat.Gid, beforeStat.Gid)
-	}
-}
-
 func mustReadTestFile(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -626,7 +542,7 @@ func TestServerConfigRotatingStageHorizonDefaultsAndOverrides(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 1\n"), 0o640); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	cfg, err := LoadServerConfig(dir)

@@ -6,14 +6,12 @@ package daemon
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -180,12 +178,6 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 	server, cleanup := setupHeadlessTestSigner(t, "passfile")
 	defer cleanup()
 
-	// Write config.yaml so the external-change check passes
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
 	ir := server.productRuntime()
 	if ir == nil {
 		t.Fatal("expected default product runtime")
@@ -218,11 +210,6 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T) {
 	server, cleanup := setupHeadlessTestSigner(t, "passfile")
 	defer cleanup()
-
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
 
 	ir := server.productRuntime()
 	if ir == nil {
@@ -257,11 +244,6 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
 	ir := server.productRuntime()
 	if ir == nil {
 		t.Fatal("expected default product runtime")
@@ -279,14 +261,11 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 	}
 }
 
-func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
+// Concurrent theme changes are serialized by the store mutation lock, so the
+// saved theme is the one in effect.
+func TestConcurrentThemeUpdatesAreSerialized(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
 
 	ir := server.productRuntime()
 	if ir == nil {
@@ -325,12 +304,12 @@ func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
 		}
 	}
 
-	disk, err := serverconfig.LoadServerConfig(server.dataDir)
+	disk, err := productruntime.LoadStoredConfig(server.dataDir)
 	if err != nil {
-		t.Fatalf("LoadServerConfig() error = %v", err)
+		t.Fatalf("LoadStoredConfig() error = %v", err)
 	}
-	if disk.Theme != server.Theme() {
-		t.Fatalf("disk Theme = %q, in-memory Theme = %q", disk.Theme, server.Theme())
+	if disk.Theme != ir.Config().Theme() {
+		t.Fatalf("disk Theme = %q, in-memory Theme = %q", disk.Theme, ir.Config().Theme())
 	}
 	switch disk.Theme {
 	case "auto", "dark", "light":
@@ -342,11 +321,6 @@ func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
 func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
 
 	productRuntime := server.productRuntime()
 	if productRuntime == nil {

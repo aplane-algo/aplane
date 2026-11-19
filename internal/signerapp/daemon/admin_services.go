@@ -737,14 +737,6 @@ func adminCosignerReference(record cosignerrefs.Record) adminproto.CosignerRefer
 	}
 }
 
-func (s signerAdminServices) Theme() string {
-	return s.signer.Theme()
-}
-
-func (s signerAdminServices) SetTheme(v string) {
-	s.signer.SetTheme(v)
-}
-
 func (s signerAdminServices) Config() *serverconfig.ServerConfig {
 	cfg := s.signer.ConfigSnapshot()
 	return &cfg
@@ -864,14 +856,6 @@ func (d signerAdminAppDeps) GenesisHashMappings() map[string]string {
 	return maps.Clone(cfg.GenesisHashNetworks)
 }
 
-func (d signerAdminAppDeps) Theme() string {
-	return d.signer.Theme()
-}
-
-func (d signerAdminAppDeps) SetTheme(v string) {
-	d.signer.SetTheme(v)
-}
-
 func (d signerAdminAppDeps) SSHInfo() signeradmin.SSHInfo {
 	cfg := d.signer.ConfigSnapshot()
 	sshServer := d.signer.currentSSHServer()
@@ -884,10 +868,6 @@ func (d signerAdminAppDeps) SSHInfo() signeradmin.SSHInfo {
 		info.Fingerprint = sshServer.GetHostKeyFingerprint()
 	}
 	return info
-}
-
-func (d signerAdminAppDeps) WithProcessConfigMutation(fn func() error) error {
-	return d.signer.withProcessConfigMutation(fn)
 }
 
 func (d signerAdminAppDeps) WithStoreMutation(fn func() error) error {

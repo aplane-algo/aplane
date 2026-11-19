@@ -52,9 +52,6 @@ func TestSigningSeesAutoApproveByTheChangesDirection(t *testing.T) {
 			t.Run(change.name+"/"+failure.name, func(t *testing.T) {
 				server, cleanup := setupTestSigner(t)
 				t.Cleanup(cleanup)
-				if err := os.WriteFile(filepath.Join(server.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-					t.Fatal(err)
-				}
 				ir := server.productRuntime()
 				app := server.adminServices().adminApp()
 				signingSees := func() bool {
@@ -138,9 +135,6 @@ func TestSettingSaveOutcomesReachTheAdminClientAndTheLogs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server, cleanup := setupTestSigner(t)
 			t.Cleanup(cleanup)
-			if err := os.WriteFile(filepath.Join(server.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-				t.Fatal(err)
-			}
 			logs := &syncBuffer{}
 			appLogger.SetOutput(logs)
 			t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })

@@ -48,7 +48,8 @@ func main() {
 	fmt.Println()
 	printStructTable(reflect.TypeOf(serverconfig.ServerConfig{}))
 	fmt.Println()
-	fmt.Println("Product-local `identities/default/config.yaml` contains settings only.")
+	fmt.Println("Product-local `identities/default/config.yaml` contains settings only, among them")
+	fmt.Println("the signer-admin UI `theme` (auto, dark, or light) that apadmin saves.")
 	fmt.Println("Node role is stored separately in root `node.yaml`.")
 	fmt.Println()
 

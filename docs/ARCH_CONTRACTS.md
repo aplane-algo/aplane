@@ -150,8 +150,9 @@ Validation:
 - top-level client `ssh:` and `signer_port:` routing is not supported; signer
   routing lives in `endpoints.yaml`
 - relative SSH paths in endpoint records resolve against the client data dir
-- `theme` is a local client UI preference for apshell/apadmin/apconsole before
-  any signer-admin setting is received; it does not mutate signer config
+- `theme` is the local client UI preference of apshell; it does not mutate
+  signer config. apadmin and apconsole use the signer's saved `theme` once
+  connected and detect the terminal before that
 - `signer_status_poll_interval` parses as a Go duration string; empty defaults
   to `10s`, `"0"` disables background `/status` polling, and nonzero values
   below `1s` are rejected
@@ -214,8 +215,10 @@ Validation:
 - `mainnet`, `testnet`, and `betanet` are reserved built-in Algorand network tokens; custom genesis-hash mappings cannot use those tokens or remap their built-in genesis hashes
 - duplicate genesis-hash mappings and duplicate custom token mappings are rejected at config load
 - relative SSH server paths resolve against the signer data dir
-- `theme` is the signer-admin UI preference persisted by the admin setting
-  update path; it is process-global signer config, not client config
+- `theme` is not a `config.yaml` field: the signer-admin UI theme is a
+  product runtime setting in `identities/default/config.yaml`, saved by the
+  admin setting update path. A `config.yaml` that sets it fails parsing as an
+  unknown field
 - `endpoint.signer_port` is the loopback REST API port behind the signer
   endpoint. It defaults to `11270`.
 - `endpoint.ssh.listen_address` is the SSH listener bind host/address. It
@@ -295,10 +298,8 @@ Operational rules:
 - missing the effective `networks.<teal_compile_network>.algod.server` is a warning because TEAL-dependent generation will fail later
 - headless mode with `user_auto_approve:false` is only a warning because
   transactions require an admin approver
-- process-owned `config.yaml` mutations are serialized by the signer process config mutation lock
-- admin setting writes fail if the loaded process config is stale relative to
-  mutable on-disk process settings such as `endpoint.signer_port`,
-  `endpoint.ssh.port`, `networks`, `approval_wait`, and `theme`
+- the signer never writes `config.yaml`, and nothing changes the loaded
+  process config after startup
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
 - product-runtime settings and policy writes are serialized by the store mutation lock
 - node role is immutable in supported tools; create a separate signer data root

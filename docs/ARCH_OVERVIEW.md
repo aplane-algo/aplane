@@ -1091,15 +1091,18 @@ Server config includes process-global settings such as:
 - TEAL compile network context token,
 - optional custom transaction genesis-hash to network-token mappings,
 - memory protection requirement,
-- rotating stage-table lookahead (`rotating.stage_horizon`),
-- theme.
+- rotating stage-table lookahead (`rotating.stage_horizon`).
+
+The signer never writes `config.yaml`, and the loaded `ServerConfig` does not
+change after startup.
 
 Product runtime settings are owned separately by `internal/signerapp/productruntime.RuntimeConfig`:
 
 - `user_auto_approve`,
 - `lock_on_disconnect`,
 - `passphrase_timeout` (admin idle disconnect timeout),
-- `approval_wait` (maximum manual signing approval wait).
+- `approval_wait` (maximum manual signing approval wait),
+- `theme` (the signer-admin UI theme; no process-global default).
 
 Those values are persisted at `identities/default/config.yaml` via
 `internal/signerapp/productruntime.StoredConfig`. Unknown fields, including
@@ -1434,8 +1437,6 @@ The key indexes are authoritative runtime indexes of what the server believes is
 
 | Lock | Protects |
 |------|----------|
-| `Signer.configMu` | Live `ServerConfig` snapshots and mutable process settings such as theme; SSH listener and advertise values are deployment-owned reads, not writable admin settings |
-| `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
 | `Signer.storeMutationLock` | Product key/template/config/policy mutation serialization |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-archive restore backoff limiter |
 | `Signer.sshRuntimeMu` | SSH runtime and server swaps |

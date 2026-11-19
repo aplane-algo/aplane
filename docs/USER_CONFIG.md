@@ -354,8 +354,9 @@ starts. Without a top-level `config.yaml` it starts on the defaults and
 warns; one that exists but cannot be read (permissions, a disk error) stops
 it, rather than starting it on defaults that would drop what the file sets.
 An edit to either file while it runs takes effect at the next restart. A setting changed through `apadmin` takes effect while the signer
-runs and rewrites only its own key in the file, so other keys keep their
-values, a hand edit included (comments and key order are not kept).
+runs and rewrites only its own key in `identities/default/config.yaml`, so
+other keys keep their values, a hand edit included (comments and key order
+are not kept there). apsigner never writes the top-level `config.yaml`.
 
 ### Fields
 
@@ -367,6 +368,12 @@ change `user_auto_approve`, `lock_on_disconnect`, or `passphrase_timeout`
 through admin IPC, the signer writes it as a product-local override at
 `identities/default/config.yaml`. `approval_wait` is process/YAML-only; it is
 not part of the admin settings payload and cannot be changed through admin IPC.
+
+The color theme (`auto`, `dark` or `light`) chosen in the `apadmin` settings
+panel is saved only in `identities/default/config.yaml` as `theme`; the
+top-level `config.yaml` has no `theme` field and refuses one. `apadmin` and
+`apconsole` apply the saved theme once they connect, and detect the
+terminal's background until then.
 
 Node role is stored separately in the signer data root `node.yaml`. Standard
 installations initialize as signer nodes; product config does not carry a role
