@@ -988,6 +988,13 @@ path. Keywords stay case-sensitive where the command handler compares them
 exactly: readline only appends the rest of a suggestion, so folding case would
 complete `RE` into a word the handler rejects.
 
+Completion runs under `runtimeMu`, which a running command holds for its whole
+run. A command's own prompts (an approval, pasted lines) read through the same
+readline instance and ask for an answer, not a command, so while the
+interactive REPL runs a command the completer offers nothing and takes no
+lock. Waiting for it there would never end, since the command is waiting for
+the line.
+
 ### Command Result Rendering
 
 Every registered handler returns a `command.Result`:
@@ -1872,8 +1879,11 @@ submission output, which lists the IDs, and nothing of the outcome.
 | `keyreg` (no args) | Paste mode requires interactive input |
 
 Policies are attached to primary registry commands after alias resolution, so
-aliases cannot bypass a block. Explicit `keyreg` arguments and non-`add`
-`endpoints` subcommands remain structured.
+aliases cannot bypass a block. One-shot `simulate <command>` runs the command
+it names, so `mcpAutomationRefusal` applies that command's policy as well:
+`simulate keyreg` is refused like `keyreg`, and so is a simulated command MCP
+blocks. Explicit `keyreg` arguments and non-`add` `endpoints` subcommands
+remain structured.
 
 ### stdout/stderr Separation
 
