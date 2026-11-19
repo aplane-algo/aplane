@@ -80,6 +80,30 @@ func (c Catalog) normalized() Catalog {
 	return c
 }
 
+// CatalogReadsStdin reports whether a catalog command reads its input from
+// stdin, which it does for an import whose path is "-". The caller must then
+// take the passphrase from somewhere else. It parses the arguments with the
+// parsers Run uses, so every spelling Run accepts is recognized; a malformed
+// command reads nothing.
+func CatalogReadsStdin(command string, args []string) bool {
+	if len(args) == 0 || args[0] != "import" {
+		return false
+	}
+	var (
+		path string
+		err  error
+	)
+	switch command {
+	case "clients":
+		path, _, err = parseClientsImportArgs(args[1:])
+	case "cosigner":
+		path, _, err = parseCosignerImportArgs(args[1:])
+	default:
+		return false
+	}
+	return err == nil && path == "-"
+}
+
 // CatalogAuthMode returns the lock-state behavior required by a catalog
 // command. It validates enough grammar to reject unknown verbs before a
 // connection or passphrase prompt.
@@ -172,8 +196,8 @@ func cosignerCommandAuth(args []string) (AuthMode, bool, error) {
 		}
 		return AuthReadOnly, true, nil
 	case "import":
-		if len(args) != 3 {
-			return AuthUnlock, true, fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
+		if _, _, err := parseCosignerImportArgs(args[1:]); err != nil {
+			return AuthUnlock, true, err
 		}
 		return AuthUnlock, true, nil
 	case "remove":
@@ -183,6 +207,15 @@ func cosignerCommandAuth(args []string) (AuthMode, bool, error) {
 		return AuthUnlock, true, nil
 	}
 	return AuthUnlock, false, nil
+}
+
+// parseCosignerImportArgs parses the arguments after "cosigner import": the
+// public key envelope's path, "-" for stdin, and the cosigner's name.
+func parseCosignerImportArgs(args []string) (path, name string, err error) {
+	if len(args) != 2 {
+		return "", "", fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
+	}
+	return args[0], args[1], nil
 }
 
 func endpointCommandAuth(args []string) (AuthMode, bool, error) {
@@ -445,10 +478,11 @@ func (c Catalog) runCosigner(args []string) error {
 		}
 		return c.exportCosigner(args[1:])
 	case "import":
-		if len(args) != 3 {
-			return fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
+		path, name, err := parseCosignerImportArgs(args[1:])
+		if err != nil {
+			return err
 		}
-		return c.importCosigner(args[1], args[2])
+		return c.importCosigner(path, name)
 	case "list":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: apadmin cosigner list")
