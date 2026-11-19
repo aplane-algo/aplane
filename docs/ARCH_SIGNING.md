@@ -1446,9 +1446,8 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `rekey_target_not_valid` | in a request that reaches the signer's gates, a transaction at any position of the group, whether this signer signs it or not (passthrough, foreign and contextual positions included), rekeys an account, its own address included, to an address this signer holds an aplane key for that records it is not a valid rekey target, a held rotating account included; the message names that position; refused under every `rekeys` setting before policy; nothing was signed | `403` |
 | `rotating_window_not_current` | the rotating spend's validity window is not acceptable at the round the signer read (`first_valid` more than 2 rounds ahead, or fewer than 10 rounds before `last_valid`); this attempt released no signature, rebuild the validity rounds and prepare again | `409` |
 
-An empty `code` means the server predates code support or the failure had no
-specific classification. New codes may be added; existing values must not change
-meaning.
+An empty `code` means the failure had no specific classification. New codes
+may be added; existing values must not change meaning.
 
 Timeout behavior:
 

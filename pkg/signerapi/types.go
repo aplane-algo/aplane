@@ -393,7 +393,7 @@ const SigningFlowBounded1 = "bounded1"
 // path the signer classified; a listed rekey needs no cosigner component, so
 // the client asks the cosigner for every other target only, and assembly
 // classifies the transaction again before it accepts or forbids a cosigner
-// signature. It replaces bounded-cosigner1, which carried spends only.
+// signature.
 const SigningFlowCosigned1 = "cosigned1"
 
 // SigningFlowRotating1 names the rotating account choreography: the signer

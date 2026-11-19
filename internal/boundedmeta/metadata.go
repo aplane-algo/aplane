@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	// Contract is the bounded account contract. "bounded2" is a working name: it
-	// replaced bounded1 in place, with a rekey setting where bounded1 had
-	// administrative operations.
+	// Contract is the bounded account contract: the spending signature, a
+	// transaction envelope (fee ceiling, rekey setting, admitted spend types)
+	// and a Layer 3 policy. docs/ARCH_BOUNDED_DSA.md freezes it.
 	Contract = "bounded2"
 	// PlainContract is the plain host: the spending key and its overlays, with
 	// no host rules. Every transaction that doesn't rekey is a spend, of any
@@ -46,8 +46,8 @@ const (
 	CosignerKeyTypeParameter = "cosigner_key_type"
 	CosignerSignatureSlot    = "cosigner_signature"
 	// DefaultCosignerComponentKeyType is the cosigner key type of an account
-	// that records none: every account made before accounts could take
-	// another, and every composed template's. Its sizes follow.
+	// that records none: a plain host account with a Falcon-1024 cosigner, and
+	// every composed template's. Its sizes follow.
 	DefaultCosignerComponentKeyType = witness.Falcon1024V1
 	DefaultCosignerPublicKeySize    = witness.Falcon1024PublicKeySize
 	DefaultCosignerSignatureMaxSize = witness.Falcon1024SignatureSize

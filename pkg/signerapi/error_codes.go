@@ -7,8 +7,8 @@ package signerapi
 //
 // These values are a stable wire contract: clients and SDKs branch on them
 // instead of matching error message text. New codes may be added; existing
-// values must not change meaning. An empty code means the server predates
-// code support or the failure had no specific classification.
+// values must not change meaning. An empty code means the failure had no
+// specific classification.
 const (
 	// ErrCodeBadRequest covers malformed or invalid request input.
 	ErrCodeBadRequest = "bad_request"

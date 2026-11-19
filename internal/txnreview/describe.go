@@ -516,7 +516,7 @@ func describeUnknownTx(txn types.Transaction, view View) Details {
 	return d
 }
 
-// appendCommonFields adds fee, network identity, note, close remainder, rekey, group, and round info.
+// appendCommonFields adds fee, network identity, note, close remainder, rekey, lease, and group.
 func appendCommonFields(d *Details, txn types.Transaction, view View) {
 	d.addf("Fee", "%s ALGO", asaset.FormatFixed(uint64(txn.Fee), 6))
 
