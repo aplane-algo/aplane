@@ -7,6 +7,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
 func (fs *Signer) restService() signerrest.Service {
@@ -28,7 +29,7 @@ func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAud
 				return fs.newSigningServiceWithAudit(ir, signingAudit)
 			},
 			PlanGroup:    fs.planGroupWithAudit(signingAudit),
-			EncodeTxnHex: encodeTxnToHex,
+			EncodeTxnHex: txnutil.EncodeWithPrefixHex,
 			KeyAdmin: keyadmin.Service{
 				AuditLog: keyAudit,
 				Runtime:  fs.productRuntime(),

@@ -52,6 +52,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 				manager: adminserver.NewSessionManager(),
 			}
 			signer.ipcServer = ipcServer
+			signer.hub = signer.ipcServer
 
 			serverConn, clientConn := net.Pipe()
 			defer func() { _ = clientConn.Close() }()
@@ -112,6 +113,7 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 		manager: adminserver.NewSessionManager(),
 	}
 	signer.ipcServer = ipcServer
+	signer.hub = signer.ipcServer
 
 	owner := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps(), adminserver.OriginLocal)
 	owner.Bind(auth.NewProductIdentity("test-owner"), ir)
@@ -194,6 +196,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 		manager: adminserver.NewSessionManager(),
 	}
 	signer.ipcServer = ipcServer
+	signer.hub = signer.ipcServer
 
 	blocker := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}), signer.adminSessionDeps(), adminserver.OriginLocal)
 	if !registerPendingSession(ipcServer.manager, blocker) {

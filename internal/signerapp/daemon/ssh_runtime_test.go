@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
@@ -30,7 +31,6 @@ func TestStopSSHRuntimePropagatesLifecycleContextAndDetachesRuntime(t *testing.T
 	wantErr := errors.New("stop result")
 	called := false
 	rt := &sshRuntime{
-		ctx:    sshCtx,
 		cancel: cancelSSH,
 		stopper: sshStopperFunc(func(ctx context.Context) error {
 			called = true
@@ -53,7 +53,7 @@ func TestStopSSHRuntimePropagatesLifecycleContextAndDetachesRuntime(t *testing.T
 	if !called {
 		t.Fatal("stopSSHRuntime() did not call the SSH StopContext seam")
 	}
-	if signer.sshRuntime != nil || signer.sshServer != nil {
+	if signer.sshRuntime != nil {
 		t.Fatal("stopSSHRuntime() left the stopped SSH runtime published")
 	}
 }
@@ -79,11 +79,11 @@ func TestSSHSessionAuditEntriesNameTheClientKey(t *testing.T) {
 
 	// An enroll connection's key is not enrolled, and anyone who reaches the
 	// SSH port can open one, so its entries say "ssh-enroll", not "ssh".
-	want := []AuditEntry{
-		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
-		{Event: AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
-		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
-		{Event: AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
+	want := []signeraudit.AuditEntry{
+		{Event: signeraudit.AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: signeraudit.AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: signeraudit.AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
+		{Event: signeraudit.AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
 	}
 	entries := readAuditEntries(t, path)
 	if len(entries) != len(want) {

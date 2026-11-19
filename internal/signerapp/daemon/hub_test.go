@@ -14,28 +14,29 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-// TestSignerStateString verifies SignerState.String() returns correct values
+// TestSignerStateString verifies signerruntime.SignerState.String() returns correct values
 func TestSignerStateString(t *testing.T) {
 	tests := []struct {
-		state    SignerState
+		state    signerruntime.SignerState
 		expected string
 	}{
-		{SignerStateLocked, "locked"},
-		{SignerStateUnlocked, "unlocked"},
-		{SignerStateRecovery, "recovery"},
-		{SignerState(99), "unknown"}, // Invalid state
+		{signerruntime.SignerStateLocked, "locked"},
+		{signerruntime.SignerStateUnlocked, "unlocked"},
+		{signerruntime.SignerStateRecovery, "recovery"},
+		{signerruntime.SignerState(99), "unknown"}, // Invalid state
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
 			result := tt.state.String()
 			if result != tt.expected {
-				t.Errorf("SignerState(%d).String() = %q, want %q", tt.state, result, tt.expected)
+				t.Errorf("signerruntime.SignerState(%d).String() = %q, want %q", tt.state, result, tt.expected)
 			}
 		})
 	}
@@ -52,7 +53,7 @@ func TestRegistryInitializesSignerRuntime(t *testing.T) {
 		t.Fatal("registry did not store product runtime")
 	}
 
-	if signer.getState() != SignerStateLocked {
+	if signer.getState() != signerruntime.SignerStateLocked {
 		t.Errorf("Initial state should be locked, got %v", signer.getState())
 	}
 
@@ -83,8 +84,8 @@ func TestSignerIsUnlocked(t *testing.T) {
 	}
 
 	// Verify state
-	if signer.getState() != SignerStateUnlocked {
-		t.Errorf("getState() = %v, want %v", signer.getState(), SignerStateUnlocked)
+	if signer.getState() != signerruntime.SignerStateUnlocked {
+		t.Errorf("getState() = %v, want %v", signer.getState(), signerruntime.SignerStateUnlocked)
 	}
 }
 
@@ -122,6 +123,7 @@ func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
+	signer.hub = signer.ipcServer
 
 	approved, err := approvalOutcome(ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "req-timeout", Address: "ADDR", TxnSender: "SENDER", Description: "desc", FirstValid: 1, LastValid: 2}, 10*time.Millisecond))
 	if err == nil {
@@ -225,6 +227,7 @@ func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
+	signer.hub = signer.ipcServer
 
 	done := make(chan struct{})
 	var approved bool

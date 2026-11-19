@@ -19,6 +19,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/productmode"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 
@@ -1223,9 +1224,9 @@ func TestAdminKeyMutationsAttributedToRequestingClient(t *testing.T) {
 		t.Fatalf("Delete failed: %d: %s", delW.Code, delW.Body.String())
 	}
 
-	seen := map[AuditEventType]bool{}
+	seen := map[signeraudit.AuditEventType]bool{}
 	for _, entry := range readAuditEntries(t, server.auditLog.Path()) {
-		if entry.Event != AuditKeyGenerated && entry.Event != AuditKeyDeleted {
+		if entry.Event != signeraudit.AuditKeyGenerated && entry.Event != signeraudit.AuditKeyDeleted {
 			continue
 		}
 		seen[entry.Event] = true
@@ -1233,7 +1234,7 @@ func TestAdminKeyMutationsAttributedToRequestingClient(t *testing.T) {
 			t.Errorf("%s entry not attributed to the client: %#v", entry.Event, entry)
 		}
 	}
-	if !seen[AuditKeyGenerated] || !seen[AuditKeyDeleted] {
+	if !seen[signeraudit.AuditKeyGenerated] || !seen[signeraudit.AuditKeyDeleted] {
 		t.Fatalf("missing key mutation entries: %v", seen)
 	}
 }

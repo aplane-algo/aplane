@@ -26,9 +26,7 @@ func authFailureReason(err error) string {
 // request is authenticated by its connection, so there is no header to ask
 // for: a client that reaches this did not arrive through an enrolled SSH
 // connection.
-func authRequiredError(string) string {
-	return "Authentication required: connect through an enrolled SSH key"
-}
+const authRequiredError = "Authentication required: connect through an enrolled SSH key"
 
 // requireAuth is middleware that validates authentication and authorization
 // using the configured authenticator and authorizer.
@@ -48,7 +46,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 				writeErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 				return
 			}
-			writeErrorJSON(w, http.StatusUnauthorized, authRequiredError(fs.httpAuth.Method()))
+			writeErrorJSON(w, http.StatusUnauthorized, authRequiredError)
 			return
 		}
 

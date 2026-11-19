@@ -46,6 +46,4 @@ func (a *productAuthenticator) Authenticate(ctx context.Context, _ *http.Request
 	return auth.NewClientIdentity(entry.Fingerprint, entry.Label), nil
 }
 
-func (*productAuthenticator) Method() string { return auth.MethodSSHKey }
-
 var _ auth.Authenticator = (*productAuthenticator)(nil)

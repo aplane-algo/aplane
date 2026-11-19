@@ -21,7 +21,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 )
 
 func testAdminProtocolVersion() *protocol.ProtocolVersion {
@@ -173,7 +175,7 @@ func TestSendStatusEmitsCurrentStateAndKeyCount(t *testing.T) {
 	if !reflectJSONSubset(msgs[0], map[string]any{
 		"kind":      string(protocol.MessageKindNotification),
 		"type":      protocol.MsgTypeStatus,
-		"state":     SignerStateUnlocked.String(),
+		"state":     signerruntime.SignerStateUnlocked.String(),
 		"key_count": float64(1),
 	}) {
 		t.Fatalf("status shape mismatch: %#v", msgs[0])
@@ -325,12 +327,12 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 		t.Fatalf("audit entry count = %d, want 2", len(lines))
 	}
 
-	var connected AuditEntry
+	var connected signeraudit.AuditEntry
 	if err := json.Unmarshal([]byte(lines[0]), &connected); err != nil {
 		t.Fatal(err)
 	}
-	if connected.Event != AuditSessionConnected {
-		t.Fatalf("first event = %q, want %q", connected.Event, AuditSessionConnected)
+	if connected.Event != signeraudit.AuditSessionConnected {
+		t.Fatalf("first event = %q, want %q", connected.Event, signeraudit.AuditSessionConnected)
 	}
 	if connected.AdminSessionID == "" {
 		t.Fatal("connected admin_session_id is empty")
@@ -339,12 +341,12 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 		t.Fatalf("connected transport = %q, want %q", connected.Transport, "ipc")
 	}
 
-	var disconnected AuditEntry
+	var disconnected signeraudit.AuditEntry
 	if err := json.Unmarshal([]byte(lines[1]), &disconnected); err != nil {
 		t.Fatal(err)
 	}
-	if disconnected.Event != AuditSessionDisconnected {
-		t.Fatalf("second event = %q, want %q", disconnected.Event, AuditSessionDisconnected)
+	if disconnected.Event != signeraudit.AuditSessionDisconnected {
+		t.Fatalf("second event = %q, want %q", disconnected.Event, signeraudit.AuditSessionDisconnected)
 	}
 	if disconnected.AdminSessionID != connected.AdminSessionID {
 		t.Fatalf("disconnected admin_session_id = %q, want %q", disconnected.AdminSessionID, connected.AdminSessionID)

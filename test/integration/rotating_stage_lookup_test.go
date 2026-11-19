@@ -140,7 +140,7 @@ func TestRotatingStageLookupOnChain(t *testing.T) {
 					KeyMetadata: map[string]signersigning.PlannerKeyMetadata{address: {Category: keys.CategoryRotatingLsig, LogicSigResources: &profile}},
 				}
 			}},
-			Approval:                      &signersigning.ApprovalService{UserAutoApprove: &approve},
+			Approval:                      &signersigning.ApprovalService{UserAutoApprove: approve},
 			GenerateTxnDescriptionFromTxn: func(types.Transaction) txnreview.Details { return txnreview.Details{Title: "rotating spend"} },
 			IsUnlocked:                    func() bool { return true },
 			PolicyFor:                     func(string) *policy.Config { return policy.DefaultConfig() },

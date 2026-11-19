@@ -16,6 +16,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -29,7 +30,7 @@ func TestRefusedSigningRequestsLeaveSmallAuditEntries(t *testing.T) {
 	path := filepath.Join(server.dataDir, "audit.log")
 	logged := 0
 	// newEntries are the entries written since the last call.
-	newEntries := func() []AuditEntry {
+	newEntries := func() []signeraudit.AuditEntry {
 		t.Helper()
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -54,7 +55,7 @@ func TestRefusedSigningRequestsLeaveSmallAuditEntries(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return encodeTxnToHex(txn)
+		return txnutil.EncodeWithPrefixHex(txn)
 	}
 	for name, req := range map[string]signerapi.SignRequest{
 		"oversized auth address": {AuthAddress: huge, TxnBytesHex: payment("testnet-v1.0")},
@@ -67,10 +68,10 @@ func TestRefusedSigningRequestsLeaveSmallAuditEntries(t *testing.T) {
 		for _, call := range []struct {
 			path   string
 			handle http.HandlerFunc
-			event  AuditEventType
+			event  signeraudit.AuditEventType
 		}{
-			{"/plan", server.handlePlan, AuditPlanRequest},
-			{"/sign", server.handleSign, AuditSignRequest},
+			{"/plan", server.handlePlan, signeraudit.AuditPlanRequest},
+			{"/sign", server.handleSign, signeraudit.AuditSignRequest},
 		} {
 			w := httptest.NewRecorder()
 			call.handle(w, requestWithIdentity(http.MethodPost, call.path, body))

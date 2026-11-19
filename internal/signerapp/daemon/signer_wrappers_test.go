@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
@@ -17,12 +18,12 @@ import (
 // call sites. They route through productRuntime() which is the
 // only process-boundary use of the fixed product runtime in the runtime path.
 
-func (fs *Signer) getState() SignerState {
+func (fs *Signer) getState() signerruntime.SignerState {
 	return fs.productRuntime().GetState()
 }
 
 func (fs *Signer) isUnlocked() bool {
-	return fs.getState() == SignerStateUnlocked
+	return fs.getState() == signerruntime.SignerStateUnlocked
 }
 
 func (fs *Signer) setUnlocked() {
@@ -47,7 +48,7 @@ func (fs *Signer) failAllPendingApprovals(reason string) {
 }
 
 func (fs *Signer) newApprovalServiceForRuntime(ir *productruntime.Runtime) *signersigning.ApprovalService {
-	return fs.newApprovalServiceWithAudit(ir, fs.auditLog)
+	return fs.newApprovalServiceWithAudit(ir, nil)
 }
 
 // offerDisplacement sends a client_exists message to the new connection and waits

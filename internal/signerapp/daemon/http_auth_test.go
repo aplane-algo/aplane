@@ -11,7 +11,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -23,14 +22,11 @@ import (
 type stubHTTPAuthenticator struct {
 	identity *auth.Identity
 	err      error
-	method   string
 }
 
 func (s stubHTTPAuthenticator) Authenticate(context.Context, *http.Request) (*auth.Identity, error) {
 	return s.identity, s.err
 }
-
-func (s stubHTTPAuthenticator) Method() string { return s.method }
 
 type stubAuthorizer struct {
 	err error
@@ -91,12 +87,6 @@ func TestAuthFailureReason(t *testing.T) {
 	}
 }
 
-func TestAuthRequiredError(t *testing.T) {
-	if got := authRequiredError(auth.MethodSSHKey); got == "" || !strings.Contains(got, "enrolled SSH key") {
-		t.Fatalf("authRequiredError() = %q", got)
-	}
-}
-
 func TestRequireAuthMissingCredentials(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
@@ -110,8 +100,8 @@ func TestRequireAuthMissingCredentials(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", w.Code)
 	}
-	if got := decodeErrorResponse(t, w); got != authRequiredError("") {
-		t.Fatalf("error = %q, want %q", got, authRequiredError(""))
+	if got := decodeErrorResponse(t, w); got != authRequiredError {
+		t.Fatalf("error = %q, want %q", got, authRequiredError)
 	}
 }
 
@@ -211,7 +201,7 @@ func TestProductAuthenticatorRejectsConnectionWithoutIdentity(t *testing.T) {
 func TestRequireAuthRejectsNilIdentity(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
-	server.httpAuth = stubHTTPAuthenticator{method: "test"}
+	server.httpAuth = stubHTTPAuthenticator{}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/keys", nil)

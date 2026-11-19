@@ -121,14 +121,14 @@ func (l *signingAuditLogger) LogSignRejected(authAddress, txnSender, reason stri
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignRejectedAttributed(l.attribution, authAddress, txnSender, reason)
+	l.log.LogSignRejectedAttributed(l.attribution, authAddress, txnSender, reason, "")
 }
 
 func (l *signingAuditLogger) LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignRejectedAttributedWithPolicyRule(l.attribution, authAddress, txnSender, reason, policyRuleID)
+	l.log.LogSignRejectedAttributed(l.attribution, authAddress, txnSender, reason, policyRuleID)
 }
 
 func (l *signingAuditLogger) LogCosignerComponentRejected(witnessKeyID, txnSender, reason, policyRuleID string) {

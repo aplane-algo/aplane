@@ -51,10 +51,10 @@ func TestNewSigningServiceForRuntimeCapturesPolicyAndUserAutoApproveSnapshot(t *
 	if second != first {
 		t.Fatal("two resolutions on one service returned different snapshots")
 	}
-	if svc.Approval == nil || svc.Approval.UserAutoApprove == nil {
-		t.Fatal("captured approval service/user_auto_approve = nil")
+	if svc.Approval == nil {
+		t.Fatal("captured approval service = nil")
 	}
-	if *svc.Approval.UserAutoApprove {
+	if svc.Approval.UserAutoApprove {
 		t.Fatal("captured user_auto_approve observed later runtime mutation")
 	}
 }

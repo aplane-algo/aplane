@@ -6,8 +6,9 @@ package adminserver
 import "sync"
 
 // SessionManager tracks the process-wide active and pending admin sessions.
-// Local IPC sessions start in the pre-auth pending slot. SSH sessions enter
-// the authenticated pending slot directly.
+// A session starts in the pre-auth pending slot. Once it authenticates as the
+// owner it moves to the pending slot, where it waits while any displacement of
+// the active session is offered, and then becomes active.
 type SessionManager struct {
 	mu             sync.Mutex
 	active         *Session

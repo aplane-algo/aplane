@@ -23,10 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func userAutoApproveDefault(v bool) *bool {
-	return &v
-}
-
 func TestPlannerReturnsTypedBadRequestError(t *testing.T) {
 	planner := &Planner{}
 
@@ -559,7 +555,7 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 	approvalCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(true),
+			UserAutoApprove: true,
 			HasClient:       func() bool { return true },
 			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
@@ -780,7 +776,7 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 	var gotViolations []signerapproval.Violation
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(false),
+			UserAutoApprove: false,
 			HasClient:       func() bool { return true },
 			KnownAddresses: func() map[string]bool {
 				return nil
@@ -922,7 +918,7 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 }`)
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(false),
+			UserAutoApprove: false,
 			HasClient:       func() bool { return true },
 			KnownAddresses:  func() map[string]bool { return nil },
 			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
@@ -1376,7 +1372,7 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 	beforeExecuteCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(true),
+			UserAutoApprove: true,
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -1424,7 +1420,7 @@ func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) 
 	releaseCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(true),
+			UserAutoApprove: true,
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -1782,7 +1778,7 @@ func TestSignGroupWithPlanRoutesSelfNoOpTransfers(t *testing.T) {
 			prompted, executed := false, false
 			service := &Service{
 				Approval: &ApprovalService{
-					UserAutoApprove: userAutoApproveDefault(false),
+					UserAutoApprove: false,
 					HasClient: func() bool {
 						prompted = true
 						return false

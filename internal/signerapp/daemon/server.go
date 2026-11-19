@@ -27,36 +27,14 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/txnutil"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 // maxRequestBodyBytes limits HTTP request body size to prevent DoS via
 // oversized payloads. 5MB is well above any legitimate request (a maximal
 // 16-txn Falcon group is ~300KB hex-encoded) while still blocking multi-GB abuse.
 const maxRequestBodyBytes = 5 * 1024 * 1024
-
-// encodeTxnToHex encodes a transaction to TX-prefixed hex string (same format as TxnBytesHex)
-func encodeTxnToHex(txn types.Transaction) string {
-	return txnutil.EncodeWithPrefixHex(txn)
-}
-
-// assembleSignedTransaction creates a complete signed transaction ready for submission.
-// It handles Ed25519 (SignedTransaction), LogicSig DSA (LogicSigTransaction with sig in args),
-// and generic LogicSig (LogicSigTransaction with just bytecode and args).
-//
-// Parameters:
-//   - txnBytesHex: Full transaction bytes as hex (TX prefix + msgpack)
-//   - keyType: Type of key used (ed25519, aplane.falcon1024.v1, aplane.htlc.v1, etc.)
-//   - signature: Cryptographic signature (nil for generic lsigs)
-//   - bytecode: LogicSig bytecode (nil for ed25519)
-//   - orderedArgs: Runtime args for generic lsigs (nil otherwise)
-//   - authAddress: Address of the signing key
-//   - txnSender: Address of the transaction sender
-//
-// Returns hex-encoded msgpack of the signed transaction, or error.
 
 type Signer struct {
 	runtime           *productruntime.Runtime            // The one product runtime
@@ -66,9 +44,8 @@ type Signer struct {
 	auditLog          *AuditLogger                       // Audit logger for security events
 	ipcServer         *IPCServer                         // IPC server for local Unix socket connections
 	hub               adminserver.AdminHub               // Process-root admin facade for non-transport code
-	sshServer         *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
-	sshRuntime        *sshRuntime                        // SSH runtime holder for live listener restarts
-	sshRuntimeMu      sync.RWMutex                       // Protects sshRuntime and sshServer swaps
+	sshRuntime        *sshRuntime                        // SSH tunnel server and its lifecycle (nil if SSH disabled)
+	sshRuntimeMu      sync.RWMutex                       // Protects sshRuntime swaps
 	apiListener       *sshtunnel.APIListener             // Receives tunneled API channels for the HTTP server
 	config            *serverconfig.ServerConfig         // Server configuration, fixed after startup
 	storeHealth       signerrest.StoreHealthCache        // Bounds the unauthenticated /health store inspection

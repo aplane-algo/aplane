@@ -45,6 +45,7 @@ func TestEnrollmentRequestQueuesNotifiesAndApproves(t *testing.T) {
 
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	server.ipcServer = ipcServer
+	server.hub = server.ipcServer
 	adminConn := addActiveProductSession(t, ipcServer)
 
 	key := testClientKey(t)
@@ -165,7 +166,7 @@ func TestImportClientKeyRefusesOptionsAndExtraLines(t *testing.T) {
 		`from="127.0.0.1",restrict ` + line + " laptop",
 		"restrict " + line,
 		"no-pty " + line,
-		clientregistry.ReservedOptionPrefix + "future " + line,
+		"aplane-future " + line,
 		line + "\n" + other,
 	} {
 		_, _, added, err := server.ImportClientKey(adminserver.SessionContext{}, ir, input, "")
@@ -222,8 +223,8 @@ func TestAdminEnrollmentLabelsAreValidated(t *testing.T) {
 	if ir.HasAuthorizedKey(imported) {
 		t.Fatal("a refused label enrolled the key")
 	}
-	if reg, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil || reg.Len() != 1 {
-		t.Fatalf("registry on disk: err = %v, len = %d, want exactly the approved key", err, reg.Len())
+	if reg, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil || len(reg.Entries()) != 1 {
+		t.Fatalf("registry on disk: err = %v, len = %d, want exactly the approved key", err, len(reg.Entries()))
 	}
 }
 
@@ -427,6 +428,7 @@ func TestEnrollmentRequestIsFollowedByChangeNotification(t *testing.T) {
 	defer cleanup()
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	server.ipcServer = ipcServer
+	server.hub = server.ipcServer
 	adminConn := addActiveProductSession(t, ipcServer)
 
 	key := testClientKey(t)

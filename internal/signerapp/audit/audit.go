@@ -764,25 +764,10 @@ func (a *AuditLogger) LogSignRejectedTxnAttributed(attr Attribution, record TxnR
 	a.Log(entry)
 }
 
-// LogSignRejected logs when a signing request is rejected by policy or user.
-func (a *AuditLogger) LogSignRejected(address, txnSender, reason string) {
-	a.Log(signRejectedEntry(Attribution{}, address, txnSender, reason, ""))
-}
-
-// LogSignRejectedWithPolicyRule logs a signing rejection from a request that
-// entered manual review because of a policy rule.
-func (a *AuditLogger) LogSignRejectedWithPolicyRule(address, txnSender, reason, policyRuleID string) {
-	a.Log(signRejectedEntry(Attribution{}, address, txnSender, reason, policyRuleID))
-}
-
-// LogSignRejectedAttributed logs a signing rejection with explicit request attribution.
-func (a *AuditLogger) LogSignRejectedAttributed(attr Attribution, address, txnSender, reason string) {
-	a.Log(signRejectedEntry(attr, address, txnSender, reason, ""))
-}
-
-// LogSignRejectedAttributedWithPolicyRule logs a signing rejection with
-// explicit request attribution and the policy rule that forced manual review.
-func (a *AuditLogger) LogSignRejectedAttributedWithPolicyRule(attr Attribution, address, txnSender, reason, policyRuleID string) {
+// LogSignRejectedAttributed logs a signing rejection with explicit request
+// attribution. policyRuleID is the policy rule that forced manual review, or
+// empty when none did.
+func (a *AuditLogger) LogSignRejectedAttributed(attr Attribution, address, txnSender, reason, policyRuleID string) {
 	a.Log(signRejectedEntry(attr, address, txnSender, reason, policyRuleID))
 }
 
@@ -795,7 +780,6 @@ func (a *AuditLogger) LogCosignerComponentRejectedAttributed(attr Attribution, w
 	a.Log(signRejectedEntry(attr, witnessKeyID, txnSender, reason, policyRuleID))
 }
 
-// LogSignFailed logs when a signing attempt fails due to technical errors.
 // Path is the audit log's current file; rotated files are Path()+".1" and
 // Path()+".2".
 func (a *AuditLogger) Path() string { return a.path }
@@ -831,10 +815,6 @@ func (a *AuditLogger) LogRotatingRecoveryAttributed(attr Attribution, account, a
 		entry.Reason = fmt.Sprintf("grant %d: %s", grantID, detail)
 	}
 	a.Log(entry)
-}
-
-func (a *AuditLogger) LogSignFailed(address, txnSender, reason string) {
-	a.Log(signFailedEntry(Attribution{}, address, txnSender, reason))
 }
 
 // LogSignFailedAttributed logs a signing failure with explicit request attribution.

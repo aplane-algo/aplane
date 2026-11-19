@@ -81,7 +81,7 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 	service := &Service{
 		AuditLog: audit,
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(true),
+			UserAutoApprove: true,
 			HasClient:       func() bool { return true },
 			RequestSigningApprovalPrompt: promptFromDecision(func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 				approvalCalled = true

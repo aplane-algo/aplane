@@ -16,7 +16,7 @@ import (
 
 func TestLoadMissingFileIsEmpty(t *testing.T) {
 	reg, err := Load(filepath.Join(t.TempDir(), "missing"))
-	if err != nil || reg.Len() != 0 {
+	if err != nil || len(reg.Entries()) != 0 {
 		t.Fatalf("Load(missing) = %v, %v", reg, err)
 	}
 }

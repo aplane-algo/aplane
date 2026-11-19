@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -68,7 +69,7 @@ func TestPlanAndSignProduceMatchingCanonicalTransactionForEd25519(t *testing.T) 
 	reqBody := signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: genResp.Address,
-			TxnBytesHex: encodeTxnToHex(txn),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	}
 	reqJSON, err := json.Marshal(reqBody)
@@ -116,7 +117,7 @@ func TestPlanAndSignProduceMatchingCanonicalTransactionForEd25519(t *testing.T) 
 		t.Fatalf("msgpack.Decode() error = %v", err)
 	}
 
-	if got := encodeTxnToHex(stxn.Txn); got != planResp.Transactions[0] {
+	if got := txnutil.EncodeWithPrefixHex(stxn.Txn); got != planResp.Transactions[0] {
 		t.Fatalf("signed canonical txn mismatch:\nplan=%s\nsign=%s", planResp.Transactions[0], got)
 	}
 }
@@ -199,7 +200,7 @@ func TestPlanAndSignPreserveCanonicalTransactionsForMixedSignAndPassthroughGroup
 		Requests: []signerapi.SignRequest{
 			{
 				AuthAddress: payer,
-				TxnBytesHex: encodeTxnToHex(txnToSign),
+				TxnBytesHex: txnutil.EncodeWithPrefixHex(txnToSign),
 			},
 			{
 				SignedTxnHex: hex.EncodeToString(msgpack.Encode(passthroughSigned)),
@@ -256,7 +257,7 @@ func TestPlanAndSignPreserveCanonicalTransactionsForMixedSignAndPassthroughGroup
 			t.Fatalf("msgpack.Decode(%d) error = %v", i, err)
 		}
 
-		if got := encodeTxnToHex(stxn.Txn); got != planResp.Transactions[i] {
+		if got := txnutil.EncodeWithPrefixHex(stxn.Txn); got != planResp.Transactions[i] {
 			t.Fatalf("signed canonical txn mismatch at index %d:\nplan=%s\nsign=%s", i, planResp.Transactions[i], got)
 		}
 	}
@@ -329,10 +330,10 @@ func TestPlanAllowsMixedSignAndForeignGroupAndPreservesCanonicalTransactions(t *
 		Requests: []signerapi.SignRequest{
 			{
 				AuthAddress: signerAddr,
-				TxnBytesHex: encodeTxnToHex(txnToSign),
+				TxnBytesHex: txnutil.EncodeWithPrefixHex(txnToSign),
 			},
 			{
-				TxnBytesHex: encodeTxnToHex(foreignTxn),
+				TxnBytesHex: txnutil.EncodeWithPrefixHex(foreignTxn),
 			},
 		},
 	}
@@ -454,7 +455,7 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 	reqJSON, err := json.Marshal(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: falconResp.Address,
-			TxnBytesHex: encodeTxnToHex(falconTxn),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(falconTxn),
 		}},
 	})
 	if err != nil {
@@ -544,7 +545,7 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 		if err := msgpack.Decode(signedBytes, &stxn); err != nil {
 			t.Fatalf("msgpack.Decode(%d) error = %v", i, err)
 		}
-		if got := encodeTxnToHex(stxn.Txn); got != planResp.Transactions[i] {
+		if got := txnutil.EncodeWithPrefixHex(stxn.Txn); got != planResp.Transactions[i] {
 			t.Fatalf("signed canonical txn mismatch at index %d:\nplan=%s\nsign=%s", i, planResp.Transactions[i], got)
 		}
 	}
@@ -603,7 +604,7 @@ func TestSignReplansAgainstCurrentSnapshotAfterKeyRemoval(t *testing.T) {
 	reqBody := signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: genResp.Address,
-			TxnBytesHex: encodeTxnToHex(txn),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	}
 	reqJSON, err := json.Marshal(reqBody)

@@ -57,7 +57,4 @@ type Authenticator interface {
 	// Returns ErrNoCredentials if no credentials are present.
 	// Returns ErrInvalidCredentials if credentials are invalid.
 	Authenticate(ctx context.Context, r *http.Request) (*Identity, error)
-
-	// Method returns the authentication method name (for logging/debugging)
-	Method() string
 }

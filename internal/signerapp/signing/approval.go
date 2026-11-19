@@ -56,7 +56,7 @@ type RequestSigningApprovalPromptFunc func(ctx context.Context, prompt signerapp
 const defaultApprovalWait = 60 * time.Second
 
 type ApprovalService struct {
-	UserAutoApprove              *bool
+	UserAutoApprove              bool
 	ApprovalWait                 func() time.Duration
 	AuditLog                     AuditRejectLogger
 	Console                      Console
@@ -104,13 +104,6 @@ func approverGone(err error) (gone, displaced bool, auditReason string) {
 		return true, false, "approval_withdrawn_apadmin_disconnected"
 	}
 	return false, false, ""
-}
-
-func (s *ApprovalService) userAutoApprove() bool {
-	if s == nil || s.UserAutoApprove == nil {
-		return false
-	}
-	return *s.UserAutoApprove
 }
 
 type approvalResponseRecorder interface {
@@ -594,7 +587,7 @@ func requestIDPreview(requestID string) string {
 // review (ApprovalService.review): the prompt's text and warnings are its own.
 func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
-	if s.userAutoApprove() {
+	if s.UserAutoApprove {
 		if forceReviewRuleID != "" {
 			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", termsafe.Line(forceReviewRuleID))
 		}
@@ -710,7 +703,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	approvalReason := ""
 	decodedSender := txns[0].Sender.String()
 
-	if s.userAutoApprove() {
+	if s.UserAutoApprove {
 		if forceReviewRuleID != "" {
 			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", termsafe.Line(forceReviewRuleID))
 		}
