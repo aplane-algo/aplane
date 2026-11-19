@@ -1206,7 +1206,9 @@ the disconnect or the replacement, and is audited as
 `approval_withdrawn_apadmin_disconnected` or
 `approval_withdrawn_apadmin_displaced`.
 Requests queued behind it are not withdrawn: they are shown to the next
-session, or fail because none is connected. A disconnect that also locks the
+session, or fail because none is connected. A displacement promotes the
+replacement before it withdraws, so a request shown to the replacement in that
+moment is withdrawn too, and reported as displaced. A disconnect that also locks the
 signer (`lock_on_disconnect`) ends the session too, and a request that sees
 the session end first answers `locked` as above.
 

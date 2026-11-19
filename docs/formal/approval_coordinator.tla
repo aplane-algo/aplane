@@ -150,9 +150,11 @@ OperatorDisconnect ==
 \* operator confirms displacement (daemon/ipc.go calls
 \* FailAllPendingApprovals(SignRequestCancelReasonApproverDisplaced) before
 \* DisplaceSession).
-\* A delivered prompt was shown to the OLD client only -- the replacement
-\* has no way to render or answer it -- so it must be failed in the same
-\* step that the client is replaced. Otherwise the prompt is orphaned: it
+\* A delivered prompt was shown to the OLD client -- the replacement has no
+\* way to render or answer it -- so it must be failed in the same step that
+\* the client is replaced (the code promotes the replacement first, so a
+\* prompt shown to it in that moment is failed too, which the spec's single
+\* step covers). Otherwise the prompt is orphaned: it
 \* holds the delivery turn, invisible to the new client, and every later
 \* request queues behind it until the timer frees the turn.
 \*
