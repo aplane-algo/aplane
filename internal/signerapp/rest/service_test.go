@@ -1202,10 +1202,9 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 
 	svc = Service{
 		Deps: Dependencies{
-			KeyAdmin: keyadmin.Service{Runtime: ir},
-			GenerateGenericLSig: func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error) {
+			KeyAdmin: keyadmin.Service{Runtime: ir, GenerateGenericLSig: func(context.Context, string, map[string]string) (string, error) {
 				return "", errors.New("boom")
-			},
+			}},
 		},
 	}
 	registerRestGenericTemplate(t)

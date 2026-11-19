@@ -38,7 +38,7 @@ func setupPlainHost(t *testing.T) (*productruntime.Runtime, Service, []byte) {
 // parameters, or plain1 with any overlays, a cosigner included or not.
 func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
 	ir, service, _ := setupPlainHost(t)
-	plain, err := service.GenerateKey(context.Background(), plainHostKeyType, nil, nil)
+	plain, err := service.GenerateKey(context.Background(), plainHostKeyType, nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(no parameters) error = %#v", err)
 	}
@@ -56,7 +56,7 @@ func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
 		t.Fatalf("prepared contract = %+v", bounded)
 	}
 	listed, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
-		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
@@ -126,11 +126,11 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 				}
 				// Generation, reviewed or not, has nothing to say either.
 				generated, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
-					ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+					ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 				if err != nil || len(generated.Warnings) != 0 {
 					t.Fatalf("GenerateReviewedKey() error = %#v, warnings = %q; want none", err, warningsOf(generated))
 				}
-				unreviewed, err := service.GenerateKey(context.Background(), plainHostKeyType, request(test.maxFee), nil)
+				unreviewed, err := service.GenerateKey(context.Background(), plainHostKeyType, request(test.maxFee))
 				if err != nil || len(unreviewed.Warnings) != 0 {
 					t.Fatalf("GenerateKey() error = %#v, warnings = %q; want none", err, warningsOf(unreviewed))
 				}
@@ -148,7 +148,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			// The warning refuses nothing: the reviewed account is generated, with
 			// the limit it was reviewed with.
 			generated, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
-				ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+				ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 			if err != nil {
 				t.Fatalf("GenerateReviewedKey() error = %#v", err)
 			}
@@ -164,7 +164,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			if !slices.Equal(generated.Warnings, prepared.Warnings) {
 				t.Fatalf("generated Warnings = %q, want %q", generated.Warnings, prepared.Warnings)
 			}
-			unreviewed, err := service.GenerateKey(context.Background(), plainHostKeyType, request(test.maxFee), nil)
+			unreviewed, err := service.GenerateKey(context.Background(), plainHostKeyType, request(test.maxFee))
 			if err != nil {
 				t.Fatalf("GenerateKey() error = %#v", err)
 			}
@@ -185,7 +185,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 	}
 	// An account with no bounds, and the plain program, have no limit to warn of.
 	for _, params := range []map[string]string{nil, {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}} {
-		generated, err := service.GenerateKey(context.Background(), plainHostKeyType, params, nil)
+		generated, err := service.GenerateKey(context.Background(), plainHostKeyType, params)
 		if err != nil || len(generated.Warnings) != 0 {
 			t.Fatalf("GenerateKey(%v) error = %#v, warnings = %q; want none", params, err, warningsOf(generated))
 		}
@@ -195,7 +195,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 		if _, err := service.PrepareGenerateKey(plainHostKeyType, request(bad)); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "max_fee must be a whole number") {
 			t.Fatalf("PrepareGenerateKey(max_fee=%s) error = %#v", bad, err)
 		}
-		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request(bad), nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "max_fee must be a whole number") {
+		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request(bad)); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "max_fee must be a whole number") {
 			t.Fatalf("GenerateKey(max_fee=%s) error = %#v", bad, err)
 		}
 	}
@@ -205,7 +205,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 		if _, err := service.PrepareGenerateKey(plainHostKeyType, request(bad)); err == nil || err.Kind != ErrorInvalidInput || err.Message != want {
 			t.Fatalf("PrepareGenerateKey(max_fee=%s) error = %#v", bad, err)
 		}
-		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request(bad), nil); err == nil || err.Kind != ErrorInvalidInput || err.Message != want {
+		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request(bad)); err == nil || err.Kind != ErrorInvalidInput || err.Message != want {
 			t.Fatalf("GenerateKey(max_fee=%s) error = %#v", bad, err)
 		}
 	}
@@ -213,7 +213,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 	if prepareErr != nil || largest.Bounded == nil || largest.Bounded.MaxFee == nil || *largest.Bounded.MaxFee != boundedmeta.MaxFeeLimit || len(largest.Warnings) != 0 {
 		t.Fatalf("PrepareGenerateKey(largest max_fee) = %+v, %#v", largest, prepareErr)
 	}
-	if generated, err := service.GenerateKey(context.Background(), plainHostKeyType, request("9007199254740991"), nil); err != nil ||
+	if generated, err := service.GenerateKey(context.Background(), plainHostKeyType, request("9007199254740991")); err != nil ||
 		generated.Parameters[plainhost.ParameterMaxFee] != "9007199254740991" || len(generated.Warnings) != 0 {
 		t.Fatalf("GenerateKey(largest max_fee) error = %#v, warnings = %q", err, warningsOf(generated))
 	}
@@ -258,7 +258,7 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 	assertNoKeys(t, service)
 
 	result, genErr := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
-		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 	if genErr != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", genErr)
 	}
@@ -289,7 +289,7 @@ func TestGenerationRequirementsGovernPlainHosts(t *testing.T) {
 		if _, err := service.PrepareGenerateKey(plainHostKeyType, params); err == nil || !strings.Contains(err.Message, "require_cosigner") {
 			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
 		}
-		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, "require_cosigner") {
+		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, params); err == nil || !strings.Contains(err.Message, "require_cosigner") {
 			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
 		}
 	}

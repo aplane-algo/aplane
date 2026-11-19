@@ -22,12 +22,11 @@ type SigningService interface {
 }
 
 type Dependencies struct {
-	NewSigningService   func(*productruntime.Runtime) SigningService
-	PlanGroup           func(signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError)
-	EncodeTxnHex        func(types.Transaction) string
-	KeyAdmin            keyadmin.Service
-	GenerateGenericLSig keyadmin.GenerateGenericLSigFunc
-	StoreHealth         *StoreHealthCache // optional; bounds the health endpoint's store inspection
+	NewSigningService func(*productruntime.Runtime) SigningService
+	PlanGroup         func(signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError)
+	EncodeTxnHex      func(types.Transaction) string
+	KeyAdmin          keyadmin.Service
+	StoreHealth       *StoreHealthCache // optional; bounds the health endpoint's store inspection
 	// NetworkGenesisHashes lists the networks the signer knows; rotating key
 	// generation offers their names. Optional.
 	NetworkGenesisHashes func() map[string]string

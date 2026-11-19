@@ -22,7 +22,7 @@ func TestQueuedKeyWriteRefusesAfterRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
-	svc := Service{Runtime: ir, MutationLock: func() Locker { return &mu }}
+	svc := Service{Runtime: ir, MutationLock: &mu}
 
 	type outcome struct {
 		result *GenerateResult
@@ -31,7 +31,7 @@ func TestQueuedKeyWriteRefusesAfterRecovery(t *testing.T) {
 	done := make(chan outcome, 1)
 	mu.Lock() // a generation commit holds the lock
 	go func() {
-		result, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+		result, err := svc.GenerateKey(context.Background(), "ed25519", nil)
 		done <- outcome{result, err}
 	}()
 	time.Sleep(50 * time.Millisecond) // let the request queue on the lock

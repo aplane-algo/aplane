@@ -146,7 +146,7 @@ func TestReviewedGenerationKeepsTheReviewedAuthority(t *testing.T) {
 	}
 	importPrepareReference(t, ir, prepareTestReference, 0x62)
 
-	result, err := service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, ReviewedValues{Fingerprint: prepared.ReviewFingerprint}, nil)
+	result, err := service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, ReviewedValues{Fingerprint: prepared.ReviewFingerprint})
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
@@ -166,14 +166,14 @@ func TestReviewedGenerationRejectsAChangedDefinition(t *testing.T) {
 	}
 
 	stale := "1:" + strings.Repeat("0", 64)
-	_, err = service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, ReviewedValues{Fingerprint: stale}, nil)
+	_, err = service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, ReviewedValues{Fingerprint: stale})
 	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "changed after this request was reviewed") {
 		t.Fatalf("GenerateReviewedKey(stale) error = %#v", err)
 	}
 	assertNoKeys(t, service)
 
 	// A direct request names no expected fingerprint and is judged on its own.
-	if _, err := service.GenerateKey(context.Background(), keyType, prepared.Parameters, nil); err != nil {
+	if _, err := service.GenerateKey(context.Background(), keyType, prepared.Parameters); err != nil {
 		t.Fatalf("GenerateKey() error = %#v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestPrepareGenerateKeyRefusesWhatGenerationRefuses(t *testing.T) {
 			if prepareErr == nil || prepareErr.Kind != ErrorInvalidInput || !strings.Contains(prepareErr.Message, test.want) {
 				t.Fatalf("PrepareGenerateKey() error = %#v, want %q", prepareErr, test.want)
 			}
-			_, generateErr := service.GenerateKey(context.Background(), test.key, test.params, nil)
+			_, generateErr := service.GenerateKey(context.Background(), test.key, test.params)
 			if generateErr == nil || generateErr.Message != prepareErr.Message {
 				t.Fatalf("GenerateKey() error = %#v, want the same as preparation %#v", generateErr, prepareErr)
 			}

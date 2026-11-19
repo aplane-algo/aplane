@@ -31,14 +31,12 @@ func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAud
 			PlanGroup:    fs.planGroupWithAudit(signingAudit),
 			EncodeTxnHex: txnutil.EncodeWithPrefixHex,
 			KeyAdmin: keyadmin.Service{
-				AuditLog: keyAudit,
-				Runtime:  fs.productRuntime(),
-				MutationLock: func() keyadmin.Locker {
-					return &fs.storeMutationLock
-				},
+				AuditLog:             keyAudit,
+				Runtime:              fs.productRuntime(),
+				MutationLock:         &fs.storeMutationLock,
+				GenerateGenericLSig:  fs.generateGenericLSig,
 				NetworkGenesisHashes: fs.networkGenesisHashes,
 			},
-			GenerateGenericLSig:  fs.generateGenericLSigForRuntimeContext,
 			StoreHealth:          &fs.storeHealth,
 			NetworkGenesisHashes: fs.networkGenesisHashes,
 		},

@@ -1583,7 +1583,7 @@ authorization: generation repeats every check.
 | 3 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values | `lsigprovider.ResolveInstance` |
 | 4 | Collect the provider's warnings | `lsigprovider.CreationAdvisor` |
 | 5 | Take the mutation lock and refuse a locked signer. Check the key type is enabled, then the signer's generation settings. Then check the request against the keys this signer holds: refuse a rekey-to list that names a rotating account held here, and add a warning for a cosigner key held here | `lockUnlockedMutation`, `keytypestate.CanGenerate`, `checkGenerationRequirements`, `checkAgainstHeldKeys` |
-| 6 | Branch: generic LogicSigs go to `generateGenericLSig`; everything else continues below | `genericlsig.IsGenericLSigType` |
+| 6 | Branch: generic LogicSigs go to `Service.GenerateGenericLSig`; everything else continues below | `genericlsig.IsGenericLSigType` |
 | 7 | Choose the family generator | `keymgmt.GenerateKeyWithActivatedContext`, `keygen.GetGenerator` |
 
 The checks against the held keys come last in step 5, under the mutation lock, so the

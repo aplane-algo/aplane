@@ -52,7 +52,7 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 			ir := setupProductRuntime(t)
 			audit := &auditRecorder{}
 			svc := Service{Runtime: ir, AuditLog: audit}
-			generated, err := svc.GenerateKey(context.Background(), keyType, nil, nil)
+			generated, err := svc.GenerateKey(context.Background(), keyType, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,7 +97,7 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 func TestNativeMnemonicExportDenials(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
-	generated, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	generated, err := svc.GenerateKey(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestNativeMnemonicExportDenials(t *testing.T) {
 func TestNativeMnemonicExportReportsADamagedStoreRootApartFromAPassphrase(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
-	generated, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	generated, err := svc.GenerateKey(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestNativeMnemonicExportAuditsDeliveryFailure(t *testing.T) {
 	ir := setupProductRuntime(t)
 	audit := &auditRecorder{}
 	svc := Service{Runtime: ir, AuditLog: audit}
-	generated, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	generated, err := svc.GenerateKey(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestLegacyNativeFalconMnemonicUnavailable(t *testing.T) {
 	nativereg.RegisterSigner()
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
-	generated, genErr := svc.GenerateKey(context.Background(), "falcon1024", nil, nil)
+	generated, genErr := svc.GenerateKey(context.Background(), "falcon1024", nil)
 	if genErr != nil {
 		t.Fatal(genErr)
 	}
@@ -209,7 +209,7 @@ func TestLegacyNativeFalconMnemonicUnavailable(t *testing.T) {
 func TestNativeMnemonicExportRejectsWitness(t *testing.T) {
 	ir := setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 	svc := Service{Runtime: ir}
-	key, err := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil, nil)
+	key, err := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,12 +230,12 @@ func (g *exportTestGate) Unlock() {}
 func TestNativeMnemonicExportRechecksLockAfterWaiting(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
-	key, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	key, err := svc.GenerateKey(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	gate := &exportTestGate{make(chan struct{}), make(chan struct{})}
-	svc.MutationLock = func() Locker { return gate }
+	svc.MutationLock = gate
 	done := make(chan adminproto.ExportKeyResult, 1)
 	pass := protocol.SensitiveBytes(bytes.Clone(testPassphrase))
 	capture := &exportCapture{}

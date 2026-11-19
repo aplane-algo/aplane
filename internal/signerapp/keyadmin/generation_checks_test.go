@@ -60,11 +60,11 @@ func prepareThenGenerate(t *testing.T, service Service, params map[string]string
 		t.Fatalf("the IPC projection carries %q, the preparation %q", projected.Warnings, review.Warnings)
 	}
 	generated, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, review.Parameters,
-		ReviewedValues{Fingerprint: review.ReviewFingerprint, BoundaryDigest: review.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: review.ReviewFingerprint, BoundaryDigest: review.BoundaryDigest})
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
-	direct, err := service.GenerateKey(context.Background(), plainHostKeyType, params, nil)
+	direct, err := service.GenerateKey(context.Background(), plainHostKeyType, params)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %#v", err)
 	}
@@ -203,7 +203,7 @@ func TestAHeldCosignerKeyAndALowFeeLimitBothWarn(t *testing.T) {
 func generateHeldFalconKey(t *testing.T, ir *productruntime.Runtime, service Service) (selector, publicKeyHex string) {
 	t.Helper()
 	nativefalconreg.RegisterSigner()
-	held, err := service.GenerateKey(context.Background(), "falcon1024", nil, nil)
+	held, err := service.GenerateKey(context.Background(), "falcon1024", nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(falcon1024) error = %#v", err)
 	}
@@ -243,7 +243,7 @@ func setupRotatingHolder(t *testing.T) (*productruntime.Runtime, Service) {
 
 func generateRotating(t *testing.T, service Service) *GenerateResult {
 	t.Helper()
-	rotating, err := service.GenerateKey(context.Background(), rotatingTestKeyType, map[string]string{rotatingkey.RotatingNetworkParameter: "testnet"}, nil)
+	rotating, err := service.GenerateKey(context.Background(), rotatingTestKeyType, map[string]string{rotatingkey.RotatingNetworkParameter: "testnet"})
 	if err != nil {
 		t.Fatalf("GenerateKey(%s) error = %#v", rotatingTestKeyType, err)
 	}
@@ -277,7 +277,7 @@ func TestRekeyListRefusesARotatingAccountThisSignerHolds(t *testing.T) {
 	}
 	// A native account: the compile mock gives every Falcon LogicSig account one
 	// address, and this one must stay held while those come and go.
-	plain, err := service.GenerateKey(context.Background(), "ed25519", nil, nil)
+	plain, err := service.GenerateKey(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(ed25519) error = %#v", err)
 	}
@@ -323,7 +323,7 @@ func TestRekeyListRefusesARotatingAccountThisSignerHolds(t *testing.T) {
 					t.Fatalf("PrepareGenerateKey() error = %#v", prepareErr)
 				}
 				generated, generateErr := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters,
-					ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+					ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 				if generateErr != nil {
 					t.Fatalf("GenerateReviewedKey() error = %#v", generateErr)
 				}
@@ -335,14 +335,14 @@ func TestRekeyListRefusesARotatingAccountThisSignerHolds(t *testing.T) {
 			if prepareErr == nil || prepareErr.Kind != ErrorInvalidInput || prepareErr.Message != want {
 				t.Fatalf("PrepareGenerateKey() error = %#v, want %q", prepareErr, want)
 			}
-			if _, generateErr := service.GenerateKey(context.Background(), boundedHostKeyType, test.params, nil); generateErr == nil ||
+			if _, generateErr := service.GenerateKey(context.Background(), boundedHostKeyType, test.params); generateErr == nil ||
 				generateErr.Kind != ErrorInvalidInput || generateErr.Message != want {
 				t.Fatalf("GenerateKey() error = %#v, want %q", generateErr, want)
 			}
 			// A review made before the signer held the account doesn't carry it past
 			// generation: the reviewed call is checked like any other.
 			if _, generateErr := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, test.params,
-				ReviewedValues{Fingerprint: "1:" + strings.Repeat("0", 64), BoundaryDigest: strings.Repeat("0", 64)}, nil); generateErr == nil ||
+				ReviewedValues{Fingerprint: "1:" + strings.Repeat("0", 64), BoundaryDigest: strings.Repeat("0", 64)}); generateErr == nil ||
 				generateErr.Kind != ErrorInvalidInput || generateErr.Message != want {
 				t.Fatalf("GenerateReviewedKey() error = %#v, want %q", generateErr, want)
 			}
@@ -385,7 +385,7 @@ func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 	params := generalParams(plainhost.RekeyOnlyThese)
 	params[plainhost.ParameterRekeyTo] = rotating.Address
 	// Not held: the address says nothing about its type, so it is taken.
-	listed, err := service.GenerateKey(context.Background(), boundedHostKeyType, params, nil)
+	listed, err := service.GenerateKey(context.Background(), boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("GenerateKey(list naming a rotating account held elsewhere) error = %#v", err)
 	}
@@ -489,7 +489,7 @@ func TestGenerationWarningsAreThoseOfTheKeysHeldAtGeneration(t *testing.T) {
 			generate := func(review *PreparedGeneration) []string {
 				t.Helper()
 				generated, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, review.Parameters,
-					ReviewedValues{Fingerprint: review.ReviewFingerprint, BoundaryDigest: review.BoundaryDigest}, nil)
+					ReviewedValues{Fingerprint: review.ReviewFingerprint, BoundaryDigest: review.BoundaryDigest})
 				if err != nil {
 					t.Fatalf("GenerateReviewedKey() error = %#v", err)
 				}
@@ -546,7 +546,7 @@ func TestAReviewMadeBeforeTheRotatingAccountWasHeldIsRefusedAtGeneration(t *test
 	putBack()
 	want := "rekey_to: " + rotatingkey.RekeyTargetRefusal(rotating.Address)
 	generated, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, review.Parameters,
-		ReviewedValues{Fingerprint: review.ReviewFingerprint, BoundaryDigest: review.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: review.ReviewFingerprint, BoundaryDigest: review.BoundaryDigest})
 	if err == nil || err.Kind != ErrorInvalidInput || err.Message != want {
 		t.Fatalf("GenerateReviewedKey() = %+v, %#v; want %q", generated, err, want)
 	}
@@ -569,8 +569,8 @@ func TestHeldKeyChecksComeAfterTheLockAndTheGenerationChecks(t *testing.T) {
 	bogus := ReviewedValues{Fingerprint: "1:" + strings.Repeat("0", 64), BoundaryDigest: strings.Repeat("0", 64)}
 	attempt := func() map[string]*Error {
 		_, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, params())
-		_, generateErr := service.GenerateKey(context.Background(), boundedHostKeyType, params(), nil)
-		_, reviewedErr := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, params(), bogus, nil)
+		_, generateErr := service.GenerateKey(context.Background(), boundedHostKeyType, params())
+		_, reviewedErr := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, params(), bogus)
 		return map[string]*Error{"PrepareGenerateKey": prepareErr, "GenerateKey": generateErr, "GenerateReviewedKey": reviewedErr}
 	}
 	expect := func(t *testing.T, kind ErrorKind, contains string) {
