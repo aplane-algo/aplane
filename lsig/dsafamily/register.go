@@ -47,8 +47,8 @@ type ClientRegistration struct {
 func RegisterClient(r ClientRegistration) {
 	for _, kt := range r.KeyTypes {
 		// First-wins: compiled families register at process start (before any
-		// runtime template registration), and per-family v1 helpers may have
-		// already registered the same provider in test binaries.
+		// runtime template registration), and a test binary may already have
+		// registered the same key type.
 		logicsigdsa.RegisterIfAbsent(kt.DSA)
 	}
 	algorithm.RegisterMetadata(r.Metadata)

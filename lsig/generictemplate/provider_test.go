@@ -923,16 +923,21 @@ func TestYAMLTemplateGenerateTEALOmittedDerivationIsUnsalted(t *testing.T) {
 }
 
 // Retired derivation contracts must not be resurrectable by a hand-authored
-// template: ValidateBase rejects every version but the TEAL v13 auto-salt one.
+// template: ValidateBase rejects every version but the TEAL v13 auto-salt one,
+// and GenerateTEAL refuses an unvalidated spec with one before rendering.
 func TestYAMLTemplateRejectsRetiredDerivationVersions(t *testing.T) {
-	for _, version := range []int{1, 2} {
+	for _, version := range []int{1, 2, 4} {
 		spec := &TemplateSpec{
 			BaseTemplateSpec: testBaseWithDerivationVersion(version),
 			TemplateMode:     "generated",
 			TEAL:             "int 1\nreturn",
 		}
-		if err := ValidateSpec(spec); err == nil || !strings.Contains(err.Error(), "is not supported") {
-			t.Errorf("ValidateSpec(derivation_version %d) error = %v, want rejection", version, err)
+		want := fmt.Sprintf("derivation_version %d is not supported", version)
+		if err := ValidateSpec(spec); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ValidateSpec(derivation_version %d) error = %v, want %q", version, err, want)
+		}
+		if teal, err := NewYAMLTemplate(spec).GenerateTEAL(nil); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("GenerateTEAL(derivation_version %d) = %q, %v; want %q", version, teal, err, want)
 		}
 	}
 }

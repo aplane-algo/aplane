@@ -122,11 +122,9 @@ address. The derivation mode is part of a versioned provider/template contract:
 templates with omitted `derivation_version` are unsalted and compile exactly as
 written, succeeding only if the unmodified bytecode already derives an
 off-curve LogicSig address. Template `derivation_version: 3` requires TEAL v13
-and delegates salting to the compiler, and is the only explicit contract still
-accepted. The retired `derivation_version: 1` (stack-neutral generated marker
-preamble) and `derivation_version: 2` (trailing dead-code `bytecblock 0x00`
-after the program's terminating instruction) are rejected at template
-validation; republish such a template with `derivation_version: 3`. Provider-owned
+and delegates salting to the compiler, and is the only explicit contract
+accepted. Template validation rejects any other value, with `derivation_version
+N is not supported`; such a template must set `derivation_version: 3`. Provider-owned
 bare DSA versions use compiler auto-salting. Assignments are: omitted
 `derivation_version` means unsalted, and explicit `derivation_version: 3` means
 compiler-owned TEAL v13 auto-salting.

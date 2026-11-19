@@ -330,7 +330,12 @@ func (t *YAMLTemplate) ValidateCreationParams(params map[string]string) error {
 }
 
 // GenerateTEAL generates the TEAL source code with parameters substituted.
+// A spec whose derivation_version has no salt style fails here, before
+// anything is rendered or sent to algod.
 func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
+	if _, err := t.saltStyle(); err != nil {
+		return "", err
+	}
 	normalizedParams, err := lsigprovider.NormalizeCreationParams(params, t.CreationParams())
 	if err != nil {
 		return "", err
