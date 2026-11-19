@@ -469,11 +469,8 @@ func (m Model) submitCosignerImportReview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.cosigner.importError = ""
-	m.viewState = ViewCosignerImporting
-	return m, tea.Batch(
-		m.sendImportCosignerReferenceCmd(m.cosigner.importName, m.cosigner.envelopeJSON),
-		m.waitForMessageCmd(),
-	)
+	id := m.beginOperation(ViewCosignerImporting)
+	return m, m.sendImportCosignerReferenceCmd(m.cosigner.importName, m.cosigner.envelopeJSON, id)
 }
 
 func (m Model) completeCosignerImport(
@@ -489,7 +486,6 @@ func (m Model) completeCosignerImport(
 		m.cosigner.returnView = ViewKeyList
 		m.viewState = ViewCosignerReferences
 		return m, tea.Batch(
-			m.waitForMessageCmd(),
 			m.sendListCosignerReferencesCmd(),
 			m.sendListKeyTypesCmd(),
 		)
@@ -498,7 +494,6 @@ func (m Model) completeCosignerImport(
 	m.cosigner.pendingWitnessID = reference.ComponentKey
 	m.viewState = ViewGenerateParams
 	return m, tea.Batch(
-		m.waitForMessageCmd(),
 		m.sendListCosignerReferencesCmd(),
 		m.sendListKeyTypesCmd(),
 	)

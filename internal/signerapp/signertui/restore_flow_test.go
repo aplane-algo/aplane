@@ -106,10 +106,11 @@ func TestRestorePreviewPreselectsOnlyNewKeysAndKeepsPassphrase(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "aplane-backup.tar.gz")
 	m := Model{
 		viewState: ViewRestorePassphrase,
-		restore:   restoreState{archivePath: archivePath, passphrase: []byte("export-passphrase"), previewing: true},
+		restore:   restoreState{archivePath: archivePath, passphrase: []byte("export-passphrase"), previewing: true, pendingID: "preview-restore-1"},
 	}
 
 	next, _ := m.Update(RestorePreviewMsg{
+		ID:          "preview-restore-1",
 		ArchivePath: archivePath,
 		Keys: []RestoreKeyInfo{
 			{Address: "NEWADDR", KeyType: "ed25519"},
@@ -139,10 +140,11 @@ func TestRestorePreviewFailureClearsPassphrase(t *testing.T) {
 	passphrase := []byte("export-passphrase")
 	m := Model{
 		viewState: ViewRestorePassphrase,
-		restore:   restoreState{archivePath: archivePath, passphrase: passphrase, previewing: true},
+		restore:   restoreState{archivePath: archivePath, passphrase: passphrase, previewing: true, pendingID: "preview-restore-1"},
 	}
 
 	next, _ := m.Update(RestorePreviewMsg{
+		ID:     "preview-restore-1",
 		Errors: []RestoreError{{Error: "invalid backup export passphrase"}},
 	})
 	got := next.(Model)

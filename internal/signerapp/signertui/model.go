@@ -259,6 +259,9 @@ type restoreState struct {
 	recoveryError string
 	// progressLabel names the operation ViewRestoring is waiting on.
 	progressLabel string
+	// pendingID names the latest preview, restore, rollback or reconcile
+	// request. An untyped failure is this flow's only when it names it.
+	pendingID string
 }
 
 // Focus positions shared by the restore preview and review screens. Committing
@@ -518,6 +521,11 @@ type Model struct {
 	browser            fileBrowserState // file browser over a path field, if open
 	backups            backupsPageState // the Backups page's own state
 
+	// heldResult is a generate, import or backup success that arrived after
+	// a lock took the operator off its progress screen, held until the
+	// signer is unlocked again or the session ends; see holdLateSuccess.
+	heldResult tea.Msg
+
 	// Displace confirmation state
 	displaceConfirmFocus int // 0 = cancel, 1 = proceed
 
@@ -697,9 +705,18 @@ type EnrollmentChangedMsg struct {
 	Fingerprint string
 }
 
-// ErrorMsg is sent when an error occurs. ID is the request the daemon's error
-// answers; it is empty for local failures and uncorrelated daemon errors.
+// ErrorMsg is a failure the message listener delivered: the daemon's error
+// reply, a signer message the TUI cannot decode, or a lost connection. ID is
+// the request it answers; it is empty when it answers none. A request that
+// could not be sent comes back as sendFailedMsg instead.
 type ErrorMsg struct {
+	ID    string
+	Error error
+}
+
+// sendFailedMsg reports a request that could not be sent. It is routed as the
+// daemon's ErrorMsg for the request would be; ID names the request.
+type sendFailedMsg struct {
 	ID    string
 	Error error
 }
@@ -722,6 +739,7 @@ type PrepareGenerateResultMsg struct {
 
 // DeleteResultMsg is sent when key deletion completes
 type DeleteResultMsg struct {
+	ID      string
 	Success bool
 	Error   string
 }
@@ -779,6 +797,7 @@ type RevokeAllEnrolledKeysResultMsg struct {
 
 // BackupResultMsg is sent when signer-managed backup creation completes.
 type BackupResultMsg struct {
+	ID          string
 	Success     bool
 	ArchivePath string
 	Warning     string
@@ -793,6 +812,7 @@ type BackupsListMsg struct {
 
 // RestorePreviewMsg is sent when a backup archive preview completes.
 type RestorePreviewMsg struct {
+	ID               string
 	ArchivePath      string
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
@@ -823,6 +843,7 @@ type ReconcileStoreResultMsg struct {
 
 // ImportResultMsg is sent when key import completes
 type ImportResultMsg struct {
+	ID      string
 	Success bool
 	Address string
 	KeyType string
@@ -920,6 +941,7 @@ type LibraryTemplatesMsg struct {
 }
 
 type InstallLibraryTemplateResultMsg struct {
+	ID            string
 	Success       bool
 	KeyType       string
 	TemplateType  string
@@ -939,6 +961,7 @@ type ShowLibraryTemplateResultMsg struct {
 }
 
 type ActivateKeyTypeResultMsg struct {
+	ID            string
 	Success       bool
 	KeyType       string
 	AlreadyExists bool
@@ -946,6 +969,7 @@ type ActivateKeyTypeResultMsg struct {
 }
 
 type DeactivateKeyTypeResultMsg struct {
+	ID      string
 	Success bool
 	KeyType string
 	Removed bool
@@ -963,12 +987,14 @@ type CosignerReferencesMsg struct {
 }
 
 type CosignerImportResultMsg struct {
+	ID        string
 	Success   bool
 	Reference CosignerReferenceInfo
 	Error     string
 }
 
 type CosignerRemoveResultMsg struct {
+	ID      string
 	Success bool
 	Name    string
 	Removed bool
@@ -976,6 +1002,7 @@ type CosignerRemoveResultMsg struct {
 }
 
 type CosignerExportResultMsg struct {
+	ID           string
 	Success      bool
 	WitnessKeyID string
 	EnvelopeJSON string

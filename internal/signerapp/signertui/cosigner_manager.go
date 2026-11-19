@@ -49,7 +49,7 @@ func (m Model) openCosignerReferenceManager() (tea.Model, tea.Cmd) {
 	m.cosigner.managerScroll = 0
 	m.cosigner.managerStatus = ""
 	m.viewState = ViewCosignerReferences
-	return m, tea.Batch(m.sendListCosignerReferencesCmd(), m.waitForMessageCmd())
+	return m, m.sendListCosignerReferencesCmd()
 }
 
 func (m Model) beginManagerCosignerImport() Model {
@@ -81,7 +81,7 @@ func (m Model) handleCosignerReferencesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return m, nil
 	case "r":
 		m.cosigner.managerStatus = "Refreshing..."
-		return m, tea.Batch(m.sendListCosignerReferencesCmd(), m.waitForMessageCmd())
+		return m, m.sendListCosignerReferencesCmd()
 	case "up", "k":
 		if m.cosigner.managerSelected > 0 {
 			m.cosigner.managerSelected--
@@ -270,8 +270,8 @@ func (m Model) handleCosignerRemoveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.C
 			m.viewState = ViewCosignerReferenceDetails
 			return m, nil
 		}
-		m.viewState = ViewCosignerRemoving
-		return m, tea.Batch(m.sendRemoveCosignerReferenceCmd(reference.Name), m.waitForMessageCmd())
+		id := m.beginOperation(ViewCosignerRemoving)
+		return m, m.sendRemoveCosignerReferenceCmd(reference.Name, id)
 	}
 	return m, nil
 }

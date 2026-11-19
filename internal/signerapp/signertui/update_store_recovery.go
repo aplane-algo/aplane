@@ -8,7 +8,7 @@ import tea "github.com/charmbracelet/bubbletea"
 func (m Model) openStoreRecovery() (tea.Model, tea.Cmd) {
 	m.restore.recoveryError = ""
 	m.viewState = ViewStoreRecovery
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleStoreRecoveryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -26,19 +26,16 @@ func (m Model) handleStoreRecoveryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.restore.recoveryError = ""
 		m.restore.progressLabel = "Reconciling Store"
 		m.viewState = ViewRestoring
-		return m, tea.Batch(m.sendReconcileStoreCmd(), m.waitForMessageCmd())
+		return m, m.sendReconcileStoreCmd(m.beginRestoreRequest("reconcile-store"))
 	case "x", "X":
 		m.restore.recoveryError = ""
 		m.restore.progressLabel = "Rolling Back Latest Credential Restore"
 		m.viewState = ViewRestoring
-		return m, tea.Batch(m.sendRollbackRestoreCmd(), m.waitForMessageCmd())
+		return m, m.sendRollbackRestoreCmd(m.beginRestoreRequest("rollback-restore"))
 	case "b", "B":
 		return m.openBackups()
 	case "l", "L":
-		return m, tea.Batch(
-			m.sendLockIdentityCmd("operator locked signer from store recovery"),
-			m.waitForMessageCmd(),
-		)
+		return m, m.sendLockIdentityCmd("operator locked signer from store recovery")
 	}
 	return m, nil
 }

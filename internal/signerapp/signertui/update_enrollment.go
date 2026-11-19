@@ -130,13 +130,13 @@ func (m Model) handleClientEnrollmentPopupKeys(msg tea.KeyMsg) (tea.Model, tea.C
 func (m Model) leaveEnrollmentPopup(cmd tea.Cmd) (Model, tea.Cmd) {
 	if m.nextEnrollmentRequest() {
 		// Another request is waiting; keep the popup up for it.
-		return m, tea.Batch(cmd, m.waitForMessageCmd())
+		return m, cmd
 	}
 	if m.signerState == signerRuntimeRecovery {
 		// Recovery is blocking: leaving an enrollment popup must return to
 		// the blocking recovery screen, never to normal navigation.
 		m.viewState = ViewStoreRecovery
-		return m, tea.Batch(cmd, m.waitForMessageCmd())
+		return m, cmd
 	}
 	m.viewState = m.screenUnderApproval()
 	return m, cmd

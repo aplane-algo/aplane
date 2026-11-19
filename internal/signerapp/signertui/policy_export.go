@@ -154,10 +154,7 @@ func (m Model) fetchNextPolicyExportDocument() (tea.Model, tea.Cmd) {
 	export.busy = fmt.Sprintf("Reading policy documents (%d of %d)...", total-len(export.queue), total)
 	export.pendingID = newRequestID("policy-export-doc")
 	id, snapshot := export.pendingID, export.snapshot
-	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocumentAt(key, snapshot, id) }),
-		m.waitForMessageCmd(),
-	)
+	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocumentAt(key, snapshot, id) })
 }
 
 // handlePolicyExportDocumentLoaded records one fetched document, then fetches
@@ -169,14 +166,14 @@ func (m Model) handlePolicyExportDocumentLoaded(msg PolicyDocumentLoadedMsg) (te
 	if !doc.Success {
 		export.busy = ""
 		export.err = policyResultError(doc.Code, doc.Error, "a policy document is unavailable")
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	export.docs = append(export.docs, policyexport.Document{Key: doc.Key, Document: doc.Document, SHA256: export.expected[doc.Key]})
 	if len(export.queue) > 0 {
 		return m.fetchNextPolicyExportDocument()
 	}
 	export.busy = "Writing policy files..."
-	return m, tea.Batch(writePolicyExportCmd(export.path, export.docs, export.context), m.waitForMessageCmd())
+	return m, writePolicyExportCmd(export.path, export.docs, export.context)
 }
 
 func writePolicyExportCmd(dir string, docs []policyexport.Document, context adminproto.PolicyContextView) tea.Cmd {

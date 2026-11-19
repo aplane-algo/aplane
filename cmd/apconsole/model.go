@@ -141,6 +141,11 @@ func (m model) shellEnabled() bool {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// The signer pane's messages arrive wrapped by its listener; the wrapped
+	// message itself is what the pane must receive.
+	if settings, ok := tui.Unwrap(msg).(tui.AdminSettingsMsg); ok {
+		return m.handleSignerSettings(msg, settings)
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -245,34 +250,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		daemon, cmd := m.daemon.Update(msg)
 		m.daemon = daemon
 		return m, cmd
-	case tui.AdminSettingsMsg:
-		updated, signerCmd := m.forwardToSigner(msg)
-		m = updated.(model)
-		if !m.shellRolePending {
-			return m, signerCmd
-		}
-		switch strings.ToLower(strings.TrimSpace(msg.Settings.NodeRole)) {
-		case "signer":
-			m.shellRolePending = false
-			m.shellDisabled = false
-			resized, resizeCmd := m.resyncSignerSize()
-			m = resized.(model)
-			return m, tea.Batch(signerCmd, m.shell.Init(), resizeCmd)
-		case "cosigner":
-			m.shellRolePending = false
-			m.daemon.lines = append(m.daemon.lines, "[config] shell pane disabled on cosigner nodes")
-			return m, signerCmd
-		default:
-			// Unknown and missing roles remain fail-closed. A later settings
-			// refresh can still resolve the role.
-			return m, signerCmd
-		}
 	}
 
 	if m.focus == paneSigner || shouldForwardToSigner(msg) {
 		return m.forwardToSigner(msg)
 	}
 	return m, nil
+}
+
+// handleSignerSettings forwards the signer's admin settings, msg as it
+// arrived, to the signer pane and settles the shell pane on the node role
+// they report.
+func (m model) handleSignerSettings(msg tea.Msg, settings tui.AdminSettingsMsg) (tea.Model, tea.Cmd) {
+	updated, signerCmd := m.forwardToSigner(msg)
+	m = updated.(model)
+	if !m.shellRolePending {
+		return m, signerCmd
+	}
+	switch strings.ToLower(strings.TrimSpace(settings.Settings.NodeRole)) {
+	case "signer":
+		m.shellRolePending = false
+		m.shellDisabled = false
+		resized, resizeCmd := m.resyncSignerSize()
+		m = resized.(model)
+		return m, tea.Batch(signerCmd, m.shell.Init(), resizeCmd)
+	case "cosigner":
+		m.shellRolePending = false
+		m.daemon.lines = append(m.daemon.lines, "[config] shell pane disabled on cosigner nodes")
+		return m, signerCmd
+	default:
+		// Unknown and missing roles remain fail-closed. A later settings
+		// refresh can still resolve the role.
+		return m, signerCmd
+	}
 }
 
 // resyncSignerSize forwards a synthetic WindowSizeMsg sized to the signer pane so

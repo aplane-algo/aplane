@@ -8,10 +8,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/protocol"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -1832,5 +1834,50 @@ func TestSplitLayoutGivesSignerPaneApadminMinimum(t *testing.T) {
 	}
 	if l := m.splitLayout(splitMinWidth, splitMinHeight-1-headerHeight-footerHeight); l.signer.height-paneBorderSize-1 >= tui.MinHeight {
 		t.Fatalf("splitMinHeight %d is larger than needed: one row less leaves apadmin %d rows", splitMinHeight, l.signer.height-paneBorderSize-1)
+	}
+}
+
+// pipeConnector hands out one end of an in-memory connection.
+type pipeConnector struct{ conn io.ReadWriteCloser }
+
+func (c pipeConnector) Connect() (io.ReadWriteCloser, error) { return c.conn, nil }
+func (c pipeConnector) Label() string                        { return "pipe" }
+
+// The signer pane's messages reach the console wrapped by the pane's
+// listener. The console still reads the node role from the settings inside,
+// so a cosigner node keeps the shell pane disabled.
+func TestPendingShellRoleReadsSettingsTheSignerListenerDelivered(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	client := tui.NewAdminClient(pipeConnector{conn: clientConn})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer client.Disconnect()
+	raw, err := protocol.MarshalAdminMessage(protocol.AdminSettingsMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: "admin-1"}, NodeRole: "cosigner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = serverConn.Write(append(raw, '\n')) }()
+	delivered := make(chan tea.Msg, 1)
+	go func() { delivered <- client.ListenForMessages()() }()
+	var msg tea.Msg
+	select {
+	case msg = <-delivered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the listener delivered nothing")
+	}
+	if _, raw := msg.(tui.AdminSettingsMsg); raw {
+		t.Fatal("the listener delivered the settings unwrapped; this test no longer covers the wrapper")
+	}
+
+	m := newModelWithShell(testConnector{}, &fakeShellExecutor{}, nil, newDaemonModel(daemonInfo{}, nil), false, "")
+	m.signer = stubTeaModel{}
+	updated, _ := m.Update(msg)
+	m = updated.(model)
+	if m.shellRolePending || m.shellEnabled() {
+		t.Fatalf("settings from the listener: pending %v enabled %v, want the cosigner role settled with the shell off", m.shellRolePending, m.shellEnabled())
 	}
 }

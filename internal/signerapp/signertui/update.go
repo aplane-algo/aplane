@@ -62,7 +62,25 @@ func (m *Model) setTransientNotice(notice string) tea.Cmd {
 
 // Update handles all TUI events and messages. A pending approval popup stays
 // in front of whatever screen a message selects.
+//
+// Update alone owns the listener: exactly one wait is in flight while a
+// session lasts. ConnectCmd's ConnectedMsg starts it, and each message the
+// wait delivers (a listenerMsg, a reconnect's ConnectedMsg among them) starts
+// the next only once it has been handled, so the signer's messages are
+// handled in the order it sent them. Handlers never start a wait.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case listenerMsg:
+		next, cmd := m.updateOnTop(msg.msg)
+		return next, tea.Batch(cmd, next.listenAgain())
+	case ConnectedMsg:
+		next, cmd := m.updateOnTop(msg)
+		return next, tea.Batch(cmd, next.listen())
+	}
+	return m.updateOnTop(msg)
+}
+
+func (m Model) updateOnTop(msg tea.Msg) (Model, tea.Cmd) {
 	preferred := m.viewState
 	if _, isKey := msg.(tea.KeyMsg); !isKey && isApprovalView(m.viewState) {
 		// Background messages apply to the screen under the popup, so
@@ -71,10 +89,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewState = m.screenUnderApproval()
 	}
 	next, cmd := m.update(msg)
-	if got, ok := next.(Model); ok {
-		return got.keepApprovalOnTop(preferred), cmd
-	}
-	return next, cmd
+	shown, heldCmd := next.(Model).showHeldResult()
+	return shown.keepApprovalOnTop(preferred), tea.Batch(cmd, heldCmd)
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -92,8 +108,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.adminClient = msg.Client
 		}
 		m.resetActivityState()
-		// Start listening for messages - server will send auth_required first
-		return m, m.waitForMessageCmd()
+		// Update starts the listener; the server sends auth_required first.
+		return m, nil
 
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
@@ -101,7 +117,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewAuth
 		m.auth.passphraseInput = ""
 		m.auth.passphraseError = ""
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case AuthResultMsg:
 		return m.handleAuthResultMsg(msg)
@@ -128,10 +144,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.manualLock.pending = false
 			abort := m.interruptBackupTransfers(true)
 			m.applySignerLockedState()
-			return m, tea.Batch(m.waitForMessageCmd(), abort)
+			return m, abort
 		}
 		m.handleManualLockFailed(msg.Error)
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case SignRequestReceivedMsg:
 		m.signing.request = &msg.Request
@@ -140,8 +156,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.signing.review = reviewState{}
 		// Initialize scrollable viewport with description + violations
 		m.initSigningViewport(m.buildSigningViewportContent())
-		// Continue listening for messages
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case SignRequestCanceledMsg:
 		var warningCmd tea.Cmd
@@ -149,13 +164,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.signing.request = nil
 			warningCmd = m.setTransientWarning(signRequestCanceledWarning(msg.Reason))
 		}
-		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
+		return m, warningCmd
 
 	case ClientEnrollmentRequestReceivedMsg:
 		// Requests are announced when queued and again at login; one popup
 		// per request, shown in turn.
 		m.queueEnrollmentRequest(msg.Request)
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case EnrollmentChangedMsg:
 		return m.handleEnrollmentChanged()
@@ -182,21 +197,23 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case ErrorMsg:
-		return m.handleErrorMsg(msg)
+		return m.handleFailure(msg.ID, msg.Error)
+
+	case sendFailedMsg:
+		return m.handleFailure(msg.ID, msg.Error)
 
 	case NotificationsLostMsg:
 		m.notificationsLost = max(m.notificationsLost, msg.Total)
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case KeysChangedMsg:
 		// Server notified us that keys or key types changed - refresh both projections.
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd())
+		return m, tea.Batch(m.sendListKeysCmd(), m.sendListKeyTypesCmd())
 
 	case ReconnectingMsg:
 		m.endAdminSession()
 		m.connectionState = ConnectionConnecting
-		// Continue listening for messages
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case PrepareGenerateResultMsg:
 		return m.handlePreparedGeneration(msg.Result)
@@ -217,22 +234,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleDeleteResultMsg(msg)
 
 	case BackupResultMsg:
-		if msg.Success {
-			m.lastError = ""
-			m.backup.archivePath = msg.ArchivePath
-			m.backup.archiveWarning = msg.Warning
-			m.backup.exportPassphrase = ""
-			m.backup.confirmPassphrase = ""
-			m.backup.confirmError = ""
-			m.viewState = ViewBackupDisplay
-		} else {
-			m.backup.confirmError = msg.Error
-			m.viewState = ViewBackupConfirm
-		}
-		return m, m.waitForMessageCmd()
+		return m.handleBackupResultMsg(msg)
 
 	case BackupsListMsg:
-		return m.handleBackupsListed(msg), m.waitForMessageCmd()
+		return m.handleBackupsListed(msg), nil
 
 	case BackupDeleteResultMsg:
 		return m.handleBackupDeleteResult(msg)
@@ -260,7 +265,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case AbortBackupImportResultMsg:
 		// Abort is best effort; the signer also removes abandoned uploads.
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case RestorePreviewMsg:
 		return m.handleRestorePreviewMsg(msg)
@@ -281,14 +286,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Server says another client is already connected - show confirmation modal
 		m.viewState = ViewDisplaceConfirm
 		m.displaceConfirmFocus = 0 // Default to Cancel
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case DisplacedMsg:
 		// We've been displaced by another apadmin client
 		m.endAdminSession()
 		m.connectionState = ConnectionDisconnected
 		m.lastError = msg.Reason
-		// Do NOT issue WaitForMessageCmd - no reconnect
+		// Disconnected: Update starts no further wait, and nothing reconnects.
 		return m, nil
 
 	case AdminSettingsMsg:
@@ -312,18 +317,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PolicyApplyResultMsg:
 		return m.handlePolicyApplyResult(msg)
 
-	case policyRequestFailedMsg:
-		// A local send failure, not a daemon message: nothing was consumed
-		// from the listener, so do not start another wait.
-		if next, ok := m.failPendingPolicyExport(msg.id, msg.err); ok {
-			return next, nil
-		}
-		next, _ := m.failPendingPolicyApply(msg.id, msg.err)
-		return next, nil
-
 	case PolicyExportWrittenMsg:
-		// A local write, not a daemon message: the listener wait started with
-		// the write is still outstanding.
 		return m.handlePolicyExportWritten(msg)
 
 	case adminRefreshTickMsg:
@@ -364,20 +358,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLibraryTemplatesMsg(msg)
 
 	case InstallLibraryTemplateResultMsg:
-		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, "Key type enable failed")
+		return m.finishLibraryAction(msg.ID, msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, "Key type enable failed")
 
 	case ShowLibraryTemplateResultMsg:
 		return m.handleShowLibraryTemplateResultMsg(msg)
 
 	case ActivateKeyTypeResultMsg:
-		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
+		return m.finishLibraryAction(msg.ID, msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
 
 	case DeactivateKeyTypeResultMsg:
 		status := displayKeyType(msg.KeyType) + " was already disabled"
 		if msg.Removed {
 			status = displayKeyType(msg.KeyType) + " " + libraryDeactivatePastTense()
 		}
-		return m.finishLibraryAction(msg.Success, status, msg.Error, libraryDeactivateFailure())
+		return m.finishLibraryAction(msg.ID, msg.Success, status, msg.Error, libraryDeactivateFailure())
 
 	case KeyTypesMsg:
 		return m.handleKeyTypesMsg(msg)
@@ -393,9 +387,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cosigner.managerStatus = ""
 			}
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case CosignerImportResultMsg:
+		if !m.takeOperationReply(msg.ID) {
+			return m, nil
+		}
 		if !msg.Success {
 			m.clearCosignerImportEnvelope()
 			m.cosigner.importError = msg.Error
@@ -403,7 +400,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cosigner.importError = "Cosigner key import failed"
 			}
 			m.viewState = ViewCosignerImportForm
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
 		return m.completeCosignerImport(msg.Reference)
 
@@ -422,7 +419,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.cosigner.exportError = fmt.Sprintf("Cannot display JSON in terminal: %v", msg.err)
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case CosignerExportWrittenMsg:
 		if msg.Error != nil {
@@ -442,7 +439,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress handles keyboard input based on current view
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewCosignerImporting || m.viewState == ViewCosignerRemoving || m.viewState == ViewCosignerExporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
+	if msg.String() == "ctrl+c" || (msg.String() == "q" && isOperationInProgressView(m.viewState)) {
 		m.clearMnemonicExport()
 		return m, tea.Quit
 	}
@@ -595,14 +592,24 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTemplateInstallConfirmKeys(msg)
 	case ViewLibraryTemplateDetails:
 		return m.handleLibraryTemplateDetailsKeys(msg)
-	case ViewGenerating, ViewImporting, ViewCosignerImporting, ViewCosignerRemoving, ViewCosignerExporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
-		if msg.String() == "esc" {
+	default:
+		if isOperationInProgressView(m.viewState) && msg.String() == "esc" {
 			m.lastError = "Operation in progress; wait for completion or press q to quit"
 		}
-		return m, nil
 	}
 
 	return m, nil
+}
+
+// isOperationInProgressView reports whether view is a progress screen: it
+// waits on one request, refuses Esc, and offers q to quit.
+func isOperationInProgressView(view ViewState) bool {
+	switch view {
+	case ViewGenerating, ViewImporting, ViewCosignerImporting, ViewCosignerRemoving, ViewCosignerExporting,
+		ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
+		return true
+	}
+	return false
 }
 
 func (m Model) usesSharedPopupViewport() bool {
@@ -722,11 +729,25 @@ func (m *Model) beginOperation(view ViewState) string {
 	prefix := map[ViewState]string{
 		ViewGenerating: "gen", ViewImporting: "imp", ViewDeleting: "del",
 		ViewTemplateInstalling: "keytype", ViewBackingUp: "backup",
+		ViewCosignerImporting: "cosigner-import", ViewCosignerRemoving: "cosigner-remove",
+		ViewCosignerExporting: "cosigner-export",
 	}[view]
 	id := newRequestID(prefix)
 	m.operation = pendingOperation{id: id, view: view}
 	m.viewState = view
 	return id
+}
+
+// takeOperationReply reports whether id answers the operation the progress
+// screen on show waits on, and if so ends that wait. A reply for any other
+// request, or one that arrives after the screen moved on (a lock shows the
+// unlock screen), is not that operation's result and changes no screen.
+func (m *Model) takeOperationReply(id string) bool {
+	if id == "" || id != m.operation.id || m.viewState != m.operation.view {
+		return false
+	}
+	m.operation = pendingOperation{}
+	return true
 }
 
 // failOperationInProgress returns an untyped failure (an authorization
@@ -736,10 +757,9 @@ func (m *Model) beginOperation(view ViewState) string {
 // must name the operation's request: an error for any other request, such as
 // a background refresh, leaves the operation waiting for its own result.
 func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
-	if id == "" || id != m.operation.id || m.viewState != m.operation.view {
+	if !m.takeOperationReply(id) {
 		return m, false
 	}
-	m.operation = pendingOperation{}
 	switch m.viewState {
 	case ViewGenerating:
 		m.forms.generateError = err.Error()
@@ -749,7 +769,7 @@ func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
 		}
 	case ViewImporting:
 		m.forms.importError = err.Error()
-		m.viewState = ViewImportParams
+		m.viewState = m.importErrorView()
 	case ViewDeleting:
 		m.lastError = err.Error()
 		m.viewState = ViewDeleteConfirm
@@ -759,6 +779,15 @@ func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
 	case ViewBackingUp:
 		m.backup.confirmError = err.Error()
 		m.viewState = ViewBackupConfirm
+	case ViewCosignerImporting:
+		m.cosigner.importError = err.Error()
+		m.viewState = ViewCosignerImportReview
+	case ViewCosignerRemoving:
+		m.cosigner.importError = err.Error()
+		m.viewState = ViewCosignerRemoveConfirm
+	case ViewCosignerExporting:
+		m.cosigner.exportError = err.Error()
+		m.viewState = ViewCosignerExportPath
 	default:
 		return m, false
 	}

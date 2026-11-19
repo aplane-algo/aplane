@@ -59,7 +59,7 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.library.installStatus = ""
 		m.library.pendingTemplate = nil
 		m.viewState = ViewTemplateLibrary
-		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
+		return m, m.sendListLibraryTemplatesCmd()
 
 	case "p", "P":
 		return m.openPolicies()
@@ -96,7 +96,7 @@ func (m Model) activateAdminRow(row adminRow) (tea.Model, tea.Cmd) {
 		m.library.installStatus = ""
 		m.library.pendingTemplate = nil
 		m.viewState = ViewTemplateLibrary
-		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
+		return m, m.sendListLibraryTemplatesCmd()
 	}
 	if row.action == "open_policies" {
 		return m.openPolicies()

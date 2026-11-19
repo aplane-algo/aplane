@@ -576,6 +576,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeBackupResult: decodeAs(func(backupResult BackupResultMessage) tea.Msg {
 		return BackupResultMsg{
+			ID:          backupResult.ID,
 			Success:     backupResult.Success,
 			ArchivePath: backupResult.ArchivePath,
 			Warning:     backupResult.Warning,
@@ -590,6 +591,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeRestorePreview: decodeAs(func(preview RestorePreviewMessage) tea.Msg {
 		return RestorePreviewMsg{
+			ID:               preview.ID,
 			ArchivePath:      preview.ArchivePath,
 			ArchiveCreatedAt: preview.ArchiveCreatedAt,
 			Keys:             preview.Keys,
@@ -608,6 +610,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeDeleteResult: decodeAs(func(delResult DeleteResultMessage) tea.Msg {
 		return DeleteResultMsg{
+			ID:      delResult.ID,
 			Success: delResult.Success,
 			Error:   delResult.Error,
 		}
@@ -644,6 +647,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeImportResult: decodeAs(func(impResult ImportResultMessage) tea.Msg {
 		return ImportResultMsg{
+			ID:      impResult.ID,
 			Success: impResult.Success,
 			Address: impResult.Address,
 			KeyType: impResult.KeyType,
@@ -673,6 +677,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeInstallLibraryTemplateResult: decodeAs(func(result InstallLibraryTemplateResultMessage) tea.Msg {
 		return InstallLibraryTemplateResultMsg{
+			ID:            result.ID,
 			Success:       result.Success,
 			KeyType:       result.KeyType,
 			TemplateType:  result.TemplateType,
@@ -703,6 +708,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeActivateKeyTypeResult: decodeAs(func(result ActivateKeyTypeResultMessage) tea.Msg {
 		return ActivateKeyTypeResultMsg{
+			ID:            result.ID,
 			Success:       result.Success,
 			KeyType:       result.KeyType,
 			AlreadyExists: result.AlreadyExists,
@@ -711,6 +717,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeDeactivateKeyTypeResult: decodeAs(func(result DeactivateKeyTypeResultMessage) tea.Msg {
 		return DeactivateKeyTypeResultMsg{
+			ID:      result.ID,
 			Success: result.Success,
 			KeyType: result.KeyType,
 			Removed: result.Removed,
@@ -731,6 +738,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeImportCosignerReferenceResult: decodeAs(func(result ImportCosignerReferenceResultMessage) tea.Msg {
 		return CosignerImportResultMsg{
+			ID:        result.ID,
 			Success:   result.Success,
 			Reference: result.Reference,
 			Error:     result.Error,
@@ -738,6 +746,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeRemoveCosignerReferenceResult: decodeAs(func(result RemoveCosignerReferenceResultMessage) tea.Msg {
 		return CosignerRemoveResultMsg{
+			ID:      result.ID,
 			Success: result.Success,
 			Name:    result.Name,
 			Removed: result.Removed,
@@ -746,6 +755,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeExportCosignerPublicResult: decodeAs(func(result ExportCosignerPublicResultMessage) tea.Msg {
 		return CosignerExportResultMsg{
+			ID:           result.ID,
 			Success:      result.Success,
 			WitnessKeyID: result.WitnessKeyID,
 			EnvelopeJSON: result.EnvelopeJSON,
@@ -899,7 +909,28 @@ func (c *IPCClient) reconnect(sessionID uint64, done <-chan struct{}) {
 	}
 }
 
-// ListenForMessages returns a tea.Cmd that listens for IPC messages
+// listenerMsg carries one message the listener took from the client's queue.
+// Model.Update handles the message it carries and only then starts the next
+// wait, so exactly one wait is in flight and the model handles messages in
+// the order the signer sent them.
+type listenerMsg struct{ msg tea.Msg }
+
+// Unwrap returns the signer message msg carries when it came through the
+// signer TUI's listener, and msg itself otherwise. A host model that reads
+// signer messages, as apconsole reads the admin settings, looks through the
+// wrapper with Unwrap and still forwards msg itself, so the signer model
+// starts its next wait.
+func Unwrap(msg tea.Msg) tea.Msg {
+	if delivered, ok := msg.(listenerMsg); ok {
+		return delivered.msg
+	}
+	return msg
+}
+
+// ListenForMessages returns a tea.Cmd that waits for the next queued message
+// and delivers it as a listenerMsg, or nothing once the session's done
+// channel closes. On a client already disconnected (done is nil) there is
+// nothing to wait for: a wait there would block for good.
 func (c *IPCClient) ListenForMessages() tea.Cmd {
 	return func() tea.Msg {
 		for {
@@ -907,6 +938,9 @@ func (c *IPCClient) ListenForMessages() tea.Cmd {
 			done := c.done
 			currentSession := c.sessionID
 			c.mu.Unlock()
+			if done == nil {
+				return nil
+			}
 
 			select {
 			case queued := <-c.msgChan:
@@ -914,7 +948,7 @@ func (c *IPCClient) ListenForMessages() tea.Cmd {
 					zeroSensitiveMsg(queued.msg)
 					continue
 				}
-				return queued.msg
+				return listenerMsg{msg: queued.msg}
 			case <-done:
 				return nil
 			}
@@ -934,28 +968,21 @@ func ConnectCmd(connector AdminConnector) tea.Cmd {
 	}
 }
 
-// ipcCmd wraps an IPC client method call into a tea.Cmd with nil-check and error handling.
+// ipcCmd wraps an IPC client method call into a tea.Cmd that reports a send
+// failure as sendFailedMsg.
 func ipcCmd(client *IPCClient, fn func(*IPCClient) error) tea.Cmd {
-	return func() tea.Msg {
-		if client == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
-		}
-		if err := fn(client); err != nil {
-			return ErrorMsg{Error: err}
-		}
-		return nil
-	}
+	return operationCmd(client, "", fn)
 }
 
-// operationCmd is ipcCmd for a request an in-progress screen waits on: a send
-// failure carries the request's ID so it fails that operation.
+// operationCmd is ipcCmd for a request a screen waits on: a send failure
+// carries the request's ID so it fails that request.
 func operationCmd(client *IPCClient, id string, fn func(*IPCClient) error) tea.Cmd {
 	return func() tea.Msg {
 		if client == nil {
-			return ErrorMsg{ID: id, Error: fmt.Errorf("not connected")}
+			return sendFailedMsg{ID: id, Error: fmt.Errorf("not connected")}
 		}
 		if err := fn(client); err != nil {
-			return ErrorMsg{ID: id, Error: err}
+			return sendFailedMsg{ID: id, Error: err}
 		}
 		return nil
 	}
@@ -999,14 +1026,24 @@ func (m Model) sendImportClientKeyCmd(publicKey, label string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportClientKey(publicKey, label) })
 }
 
-// WaitForMessageCmd returns a tea.Cmd that waits for the next message
-func (m Model) waitForMessageCmd() tea.Cmd {
-	return func() tea.Msg {
-		if m.adminClient == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
-		}
-		return m.adminClient.ListenForMessages()()
+// listen starts the listener wait. Only Update calls it: after ConnectCmd's
+// ConnectedMsg, and after handling each message the listener delivered. With
+// no client there is nothing to wait on.
+func (m Model) listen() tea.Cmd {
+	if m.adminClient == nil {
+		return nil
 	}
+	return m.adminClient.ListenForMessages()
+}
+
+// listenAgain starts the next wait after a message from the listener, unless
+// that message ended the session (a displacement, a login timeout): nothing
+// more comes on it, and the next connection starts listening afresh.
+func (m Model) listenAgain() tea.Cmd {
+	if m.connectionState == ConnectionDisconnected {
+		return nil
+	}
+	return m.listen()
 }
 
 // SendDisplaceConfirm sends a displacement confirmation to the server
@@ -1072,14 +1109,14 @@ func (c *IPCClient) SendListBackups() error {
 }
 
 // SendPreviewRestore requests a decrypted preview for a signer-managed backup archive.
-func (c *IPCClient) SendPreviewRestore(archivePath string, exportPassphrase []byte) error {
+func (c *IPCClient) SendPreviewRestore(archivePath string, exportPassphrase []byte, id string) error {
 	passphrase := SensitiveBytes(append([]byte(nil), exportPassphrase...))
 	defer passphrase.Zero()
 
 	msg := PreviewRestoreMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypePreviewRestore,
-			ID:   fmt.Sprintf("preview-restore-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		ArchivePath:      archivePath,
 		ExportPassphrase: passphrase,
@@ -1092,13 +1129,14 @@ func (c *IPCClient) SendRestoreBackup(
 	addresses []string,
 	exportPassphrase []byte,
 	replaceExisting bool,
+	id string,
 ) error {
 	passphrase := SensitiveBytes(append([]byte(nil), exportPassphrase...))
 	defer passphrase.Zero()
 	return c.sendMessage(RestoreBackupMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeRestoreBackup,
-			ID:   fmt.Sprintf("restore-backup-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		ArchivePath:      archivePath,
 		Addresses:        append([]string(nil), addresses...),
@@ -1107,17 +1145,17 @@ func (c *IPCClient) SendRestoreBackup(
 	})
 }
 
-func (c *IPCClient) SendRollbackRestore() error {
+func (c *IPCClient) SendRollbackRestore(id string) error {
 	return c.sendMessage(RollbackRestoreMessage{BaseMessage: BaseMessage{
 		Type: MsgTypeRollbackRestore,
-		ID:   fmt.Sprintf("rollback-restore-%d", time.Now().UnixNano()),
+		ID:   id,
 	}})
 }
 
-func (c *IPCClient) SendReconcileStore() error {
+func (c *IPCClient) SendReconcileStore(id string) error {
 	return c.sendMessage(ReconcileStoreMessage{BaseMessage: BaseMessage{
 		Type: MsgTypeReconcileStore,
-		ID:   fmt.Sprintf("reconcile-store-%d", time.Now().UnixNano()),
+		ID:   id,
 	}})
 }
 
@@ -1166,15 +1204,15 @@ func (m Model) sendListBackupsCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListBackups() })
 }
 
-func (m Model) sendPreviewRestoreCmd(archivePath string, exportPassphrase []byte) tea.Cmd {
+func (m Model) sendPreviewRestoreCmd(archivePath string, exportPassphrase []byte, id string) tea.Cmd {
 	passphrase := cloneBytes(exportPassphrase)
 	return func() tea.Msg {
 		defer zeroBytes(passphrase)
 		if m.adminClient == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
+			return sendFailedMsg{ID: id, Error: fmt.Errorf("not connected")}
 		}
-		if err := m.adminClient.SendPreviewRestore(archivePath, passphrase); err != nil {
-			return ErrorMsg{Error: err}
+		if err := m.adminClient.SendPreviewRestore(archivePath, passphrase, id); err != nil {
+			return sendFailedMsg{ID: id, Error: err}
 		}
 		return nil
 	}
@@ -1185,29 +1223,30 @@ func (m Model) sendRestoreBackupCmd(
 	addresses []string,
 	exportPassphrase []byte,
 	replaceExisting bool,
+	id string,
 ) tea.Cmd {
 	passphrase := cloneBytes(exportPassphrase)
 	selectedAddresses := append([]string(nil), addresses...)
 	return func() tea.Msg {
 		defer zeroBytes(passphrase)
 		if m.adminClient == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
+			return sendFailedMsg{ID: id, Error: fmt.Errorf("not connected")}
 		}
 		if err := m.adminClient.SendRestoreBackup(
-			archivePath, selectedAddresses, passphrase, replaceExisting,
+			archivePath, selectedAddresses, passphrase, replaceExisting, id,
 		); err != nil {
-			return ErrorMsg{Error: err}
+			return sendFailedMsg{ID: id, Error: err}
 		}
 		return nil
 	}
 }
 
-func (m Model) sendRollbackRestoreCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRollbackRestore() })
+func (m Model) sendRollbackRestoreCmd(id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendRollbackRestore(id) })
 }
 
-func (m Model) sendReconcileStoreCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendReconcileStore() })
+func (m Model) sendReconcileStoreCmd(id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendReconcileStore(id) })
 }
 
 // SendPrepareGenerateKey asks what a generation request would create.
@@ -1292,20 +1331,8 @@ func (m Model) sendRevokeAllEnrolledKeysCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRevokeAllEnrolledKeys() })
 }
 
-// SendImportKey sends a request to import a key from mnemonic
-func (c *IPCClient) SendImportKey(keyType, mnemonic string) error {
-	msg := ImportKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeImportKey,
-			ID:   fmt.Sprintf("imp-%d", time.Now().UnixNano()),
-		},
-		KeyType:  keyType,
-		Mnemonic: mnemonic,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendImportKeyWithParams sends a request to import a key with additional parameters.
+// SendImportKeyWithParams sends a request to import a key; params is nil for a
+// key type that takes none.
 func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map[string]string, id string) error {
 	msg := ImportKeyMessage{
 		BaseMessage: BaseMessage{
@@ -1319,9 +1346,10 @@ func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map
 	return c.sendMessage(msg)
 }
 
-// SendImportKeyCmd returns a tea.Cmd that sends an import key request
-func (m Model) sendImportKeyCmd(keyType, mnemonic string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportKey(keyType, mnemonic) })
+// sendImportKeyCmd returns a tea.Cmd that sends an import request for a key
+// type that takes no parameters.
+func (m Model) sendImportKeyCmd(keyType, mnemonic, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, nil, id) })
 }
 
 // SendImportKeyWithParamsCmd returns a tea.Cmd that sends an import key request with parameters.
@@ -1499,11 +1527,11 @@ func (m Model) sendListCosignerReferencesCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListCosignerReferences() })
 }
 
-func (c *IPCClient) SendImportCosignerReference(name, envelopeJSON string) error {
+func (c *IPCClient) SendImportCosignerReference(name, envelopeJSON, id string) error {
 	msg := ImportCosignerReferenceMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeImportCosignerReference,
-			ID:   fmt.Sprintf("cosigner-import-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		Name:         name,
 		EnvelopeJSON: envelopeJSON,
@@ -1511,43 +1539,43 @@ func (c *IPCClient) SendImportCosignerReference(name, envelopeJSON string) error
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendImportCosignerReferenceCmd(name, envelopeJSON string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		return c.SendImportCosignerReference(name, envelopeJSON)
+func (m Model) sendImportCosignerReferenceCmd(name, envelopeJSON, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.SendImportCosignerReference(name, envelopeJSON, id)
 	})
 }
 
-func (c *IPCClient) SendRemoveCosignerReference(name string) error {
+func (c *IPCClient) SendRemoveCosignerReference(name, id string) error {
 	msg := RemoveCosignerReferenceMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeRemoveCosignerReference,
-			ID:   fmt.Sprintf("cosigner-remove-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		Name: name,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendRemoveCosignerReferenceCmd(name string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		return c.SendRemoveCosignerReference(name)
+func (m Model) sendRemoveCosignerReferenceCmd(name, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.SendRemoveCosignerReference(name, id)
 	})
 }
 
-func (c *IPCClient) SendExportCosignerPublic(witnessKeyID string) error {
+func (c *IPCClient) SendExportCosignerPublic(witnessKeyID, id string) error {
 	msg := ExportCosignerPublicMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeExportCosignerPublic,
-			ID:   fmt.Sprintf("cosigner-export-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		WitnessKeyID: witnessKeyID,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendExportCosignerPublicCmd(witnessKeyID string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		return c.SendExportCosignerPublic(witnessKeyID)
+func (m Model) sendExportCosignerPublicCmd(witnessKeyID, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.SendExportCosignerPublic(witnessKeyID, id)
 	})
 }
 

@@ -152,10 +152,7 @@ func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
 	m.policies.status = ""
 	m.viewState = ViewPolicyEdit
 	id := edit.pendingDocumentID
-	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) }),
-		m.waitForMessageCmd(),
-	)
+	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) })
 }
 
 // openPolicyEditForDocument edits the document shown in the document view.
@@ -178,7 +175,7 @@ func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.
 		detail := policyResultError(msg.Document.Code, msg.Document.Error, "document is unavailable")
 		m = m.closePolicyApply()
 		m.policies.status = "Could not open the policy for editing: " + detail
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if edit.templateFor != "" {
 		role, err := noderole.ParseRole(m.policies.policy.NodeRole)
@@ -189,11 +186,11 @@ func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.
 		if err != nil {
 			m = m.closePolicyApply()
 			m.policies.status = "Cannot start a policy for this key from the node default: " + err.Error()
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
-		return m.startPolicyEditor(edit.templateFor, template, true), m.waitForMessageCmd()
+		return m.startPolicyEditor(edit.templateFor, template, true), nil
 	}
-	return m.startPolicyEditor(edit.key, msg.Document.Document, false), m.waitForMessageCmd()
+	return m.startPolicyEditor(edit.key, msg.Document.Document, false), nil
 }
 
 // startPolicyEditor opens the editor on text with the cursor at the top. A
@@ -270,11 +267,13 @@ func (m Model) handlePolicyEditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	input := m.sizedPolicyEditor()
 	linesBefore := input.LineCount()
-	pastedLines := strings.Count(string(msg.Runes), "\n")
+	breaks := lineBreaksTyped(msg)
 	var cmd tea.Cmd
 	edit.input, cmd = input.Update(msg)
 	switch {
-	case edit.input.LineCount() < linesBefore+pastedLines:
+	// Only text that adds lines can have been cut short. Other edits, such
+	// as a backspace that joins two lines, change the line count on their own.
+	case breaks > 0 && edit.input.LineCount() < linesBefore+breaks:
 		apply.problems = nil
 		apply.err = fmt.Sprintf("That paste would take the text past %d lines, so its end was not inserted. Check the end of the text.", policyEditMaxLines)
 	case edit.input.Length() >= policyreview.MaxPolicyBytes:
@@ -282,6 +281,17 @@ func (m Model) handlePolicyEditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		apply.err = fmt.Sprintf("The editor is full: a policy document is at most %d bytes.", policyreview.MaxPolicyBytes)
 	}
 	return m, cmd
+}
+
+// lineBreaksTyped counts the line breaks msg types, as the text area counts
+// them: it turns every carriage return and every newline into one, so "\r\n"
+// adds two. A key that is not text input types none.
+func lineBreaksTyped(msg tea.KeyMsg) int {
+	if msg.Type != tea.KeyRunes {
+		return 0
+	}
+	text := string(msg.Runes)
+	return strings.Count(text, "\n") + strings.Count(text, "\r")
 }
 
 // submitPolicyEdit sends the edited text to the daemon's policy check. Syntax
@@ -326,7 +336,7 @@ func (m Model) submitPolicyEdit() (tea.Model, tea.Cmd) {
 	apply.file = label
 	apply.busy = "Checking policy..."
 	apply.pendingCheckID = newRequestID("policy-check")
-	return m, tea.Batch(m.sendCheckPolicyCmd(doc, apply.pendingCheckID), m.waitForMessageCmd())
+	return m, m.sendCheckPolicyCmd(doc, apply.pendingCheckID)
 }
 
 // policyJSONSyntaxError reports a JSON syntax error with its line and column,

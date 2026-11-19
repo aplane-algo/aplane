@@ -121,21 +121,18 @@ func (m Model) startBackupExport() (tea.Model, tea.Cmd) {
 func (m Model) requestBackupExportChunk() (tea.Model, tea.Cmd) {
 	export := &m.backups.export
 	export.pendingID = newRequestID("backup-export-chunk")
-	return m, tea.Batch(
-		m.sendReadBackupChunkCmd(export.pendingID, export.target.FileName, export.writer.Written()),
-		m.waitForMessageCmd(),
-	)
+	return m, m.sendReadBackupChunkCmd(export.pendingID, export.target.FileName, export.writer.Written())
 }
 
 func (m Model) handleBackupChunk(msg BackupChunkMsg) (tea.Model, tea.Cmd) {
 	export := &m.backups.export
 	if export.writer == nil || msg.Chunk.ID == "" || msg.Chunk.ID != export.pendingID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	export.pendingID = ""
 	done, err := export.writer.Write(msg.Chunk)
 	if err != nil {
-		return m.failBackupExport(err), m.waitForMessageCmd()
+		return m.failBackupExport(err), nil
 	}
 	if !done {
 		return m.requestBackupExportChunk()
@@ -147,7 +144,7 @@ func (m Model) handleBackupChunk(msg BackupChunkMsg) (tea.Model, tea.Cmd) {
 		checksum, warnings, err := writer.Finish()
 		return backupExportFinishedMsg{writer: writer, checksum: checksum, warnings: warnings, err: err}
 	}
-	return m, tea.Batch(finish, m.waitForMessageCmd())
+	return m, finish
 }
 
 func (m Model) handleBackupExportFinished(msg backupExportFinishedMsg) (tea.Model, tea.Cmd) {

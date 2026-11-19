@@ -1174,18 +1174,45 @@ signer locks. Disconnect, reconnect, reauthentication, displacement, and lock
 clear local popups too; persisted enrollment requests remain queued and are
 announced again on a later login.
 
-Each in-progress generate, import, delete, key-type install, or backup records
-its request ID. An untyped failure (an authorization denial, a send error, or a
-signer message the TUI cannot decode) whose ID names that request returns the
-operation to the screen it started from, as its own failure result would.
-Progress screens ignore Esc, so nothing may strand them. An error for any other
+The TUI handles the signer's messages one at a time, in the order the signer
+sent them, so a `sign_request_canceled` never overtakes the `sign_request` it
+cancels. Exactly one wait on the session's message queue is in flight:
+`Model.Update` starts it when a connection is made and starts the next only
+after it has handled the message the last one delivered (a `listenerMsg`).
+Screens and handlers never start one. A displacement or login timeout leaves
+none, and the next connection starts afresh. A host that embeds the TUI, as
+`apconsole` does, forwards the wrapped message unchanged and reads its content
+with `signertui.Unwrap`.
+
+Each in-progress generate, import, delete, key-type install, backup, or
+cosigner key import, removal, or export records its request ID. An untyped
+failure (an authorization denial, a send error, or a signer message the TUI
+cannot decode) whose ID names that request returns the operation to the screen
+it started from, as its own failure result would. The operation's reply (its
+result, or for a generation also the `prepare_generate_key` reply) changes the
+screen only when it carries the request ID its progress screen still shows, so
+a reply arriving after a lock leaves the unlock screen in place and sends
+nothing further. A generate, import, or backup that succeeded all the same is
+not lost across a lock: its result is held and shown once the TUI is back on
+the key list of the unlocked signer, so a bounded account's receipt can still
+be saved. It is held only within its admin session: any session end (an idle
+or other disconnect, a login timeout, a reconnect, a displacement) and
+quitting discard it, together with what its form still holds (the import's
+recovery phrase, the backup's passphrases). A late failure is dropped. The restore flow
+records the ID of its latest preview, restore, rollback, or reconcile request
+the same way: only a failure naming that request clears the restore passphrase
+or leaves the restore progress screen, and a preview reply is shown only while
+the passphrase screen still waits on that preview.
+Progress screens ignore Esc, so nothing may strand them; `q` quits from
+every one of them (`isOperationInProgressView`). An error for any other
 request, such as a background refresh, leaves the operation waiting for its own
 result, matching the policy-load flow.
 
 In parameter forms, `j`, `k`, space, `<`, and `>` type into free-text fields;
 they navigate or cycle only on choice fields and the submit button. Tab and the
-arrow keys always navigate. Parameter fields accept ASCII only and refuse other
-input with an error rather than rewriting it.
+arrow keys always navigate. Only typed or pasted text enters a field; a key
+with no text, such as ctrl+a or f1, is ignored there. Parameter fields accept
+ASCII only and refuse other input with an error rather than rewriting it.
 
 The key type lists of the generate, import, and cosigned-account forms fit the
 window: when a list is too long, it shows the rows around the selection between
@@ -1246,7 +1273,9 @@ identifies the current screen. The enum has families for:
   reject) followed by every enrolled key with fingerprint, label, key type,
   and live connection state (`r` revoke, `A` revoke all); `i` opens the key
   import form (`ViewImportClientKey`: a public-key file on this machine plus
-  an optional label). The screen has no manual refresh: it re-fetches both
+  an optional label). Labels and remote addresses come from the client, so
+  this screen and its revoke dialog draw them escaped, as the enrollment
+  popup does. The screen has no manual refresh: it re-fetches both
   lists on every `enrollment_changed` notification while it, one of its
   sub-views, or a popup raised over it is showing, so requests arriving over
   SSH, answers from another admin client, and clients connecting or
@@ -1586,7 +1615,9 @@ confirmed apply.
   10,000 without notice. A document is opened only if the editor holds all of
   it (compared as JSON, since the component normalizes whitespace); otherwise
   editing is refused in favor of export, edit, and load. A paste that is cut
-  off at that limit is reported.
+  off at that limit is reported; the check counts the line breaks the text
+  adds (each carriage return and newline, as the component does), so an edit
+  that removes a line, such as a backspace joining two, is not reported.
 - **Keys.** Every key except `ctrl+s` and `esc` goes to the text area, so the
   list's single-letter shortcuts are inert while editing. Paste is the
   terminal's own paste, which arrives as key input. The component's `ctrl+v`

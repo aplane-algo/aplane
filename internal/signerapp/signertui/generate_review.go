@@ -34,21 +34,26 @@ const (
 
 // handlePreparedGeneration receives what a request would create. A bounded account
 // goes to review. Anything else was never reviewed here, so it generates from the
-// request as entered, exactly as it did before preparation existed.
+// request as entered, exactly as it did before preparation existed. A reply that
+// is not for the preparation the progress screen still waits on, such as one
+// arriving after a lock showed the unlock screen, changes nothing.
 func (m Model) handlePreparedGeneration(result PrepareGenerateResultMessage) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(result.ID) {
+		return m, nil
+	}
 	if !result.Success {
 		m.forms.generateError = result.Error
 		m.viewState = m.generateErrorView()
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if result.Bounded == nil {
 		id := m.beginOperation(ViewGenerating)
-		return m, tea.Batch(m.sendGenerateKeyWithParamsCmd(result.KeyType, "", m.forms.pendingGenerateParams, id), m.waitForMessageCmd())
+		return m, m.sendGenerateKeyWithParamsCmd(result.KeyType, "", m.forms.pendingGenerateParams, id)
 	}
 	m.forms.review = &result
 	m.forms.reviewFocus = reviewFocusCancel
 	m.viewState = ViewGenerateReview
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) generateErrorView() ViewState {
@@ -98,7 +103,7 @@ func (m Model) submitReviewedGeneration() (tea.Model, tea.Cmd) {
 	}
 	id := m.beginOperation(ViewGenerating)
 	m.forms.reviewedRequestID = id
-	return m, tea.Batch(m.sendReviewedGenerateKeyCmd(*review, id), m.waitForMessageCmd())
+	return m, m.sendReviewedGenerateKeyCmd(*review, id)
 }
 
 func (m Model) handleGenerateReviewDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

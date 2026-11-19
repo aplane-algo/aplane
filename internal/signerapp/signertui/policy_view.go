@@ -6,6 +6,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -50,8 +51,14 @@ type policiesState struct {
 	presetPick policyPresetPickState
 }
 
+// requestSeq numbers the request IDs this process names, so two named within
+// one tick of the clock still differ.
+var requestSeq atomic.Uint64
+
+// newRequestID names a request: its prefix says what it is, and the time and
+// sequence number make it distinct from every other this process sends.
 func newRequestID(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UnixNano(), requestSeq.Add(1))
 }
 
 // PolicyDocumentLoadedMsg carries the daemon's response for one document.
@@ -100,7 +107,6 @@ func (m Model) requestPolicy() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.sendGetPolicyCmd(m.policies.pendingPolicyID),
 		ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicyContext(contextID) }),
-		m.waitForMessageCmd(),
 	)
 }
 
@@ -108,7 +114,7 @@ func (m Model) requestPolicy() (tea.Model, tea.Cmd) {
 // summary.
 func (m Model) handlePolicyContextLoaded(msg PolicyContextLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.Context.ID == "" || msg.Context.ID != m.policies.pendingContextID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.policies.pendingContextID = ""
 	ctx := msg.Context
@@ -122,21 +128,21 @@ func (m Model) handlePolicyContextLoaded(msg PolicyContextLoadedMsg) (tea.Model,
 func (m Model) settlePolicySnapshot() (tea.Model, tea.Cmd) {
 	ctx := m.policies.loadedContext
 	if m.policies.pendingPolicyID != "" || ctx == nil {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if !ctx.Success || !m.policies.policy.Success {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if ctx.PolicySetSHA256 != m.policies.policy.PolicySetSHA256 {
 		return m.requestPolicy()
 	}
 	m.policies.snapshot = ctx.SnapshotSHA256
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handlePolicyLoaded(msg PolicyLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.Policy.ID == "" || msg.Policy.ID != m.policies.pendingPolicyID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.policies.pendingPolicyID = ""
 	m.policies.loading = false
@@ -204,7 +210,7 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.policies.pendingDocumentID = newRequestID("policy-doc")
 			m.viewState = ViewPolicyDocument
 			key := rows[m.policies.selected].doc.Key
-			return m, tea.Batch(m.sendGetPolicyDocumentCmd(key, m.policies.pendingDocumentID), m.waitForMessageCmd())
+			return m, m.sendGetPolicyDocumentCmd(key, m.policies.pendingDocumentID)
 		}
 	}
 	return m, nil
@@ -221,12 +227,12 @@ func (m Model) handlePolicyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.Mode
 		return m.handlePolicyEditDocumentLoaded(msg)
 	}
 	if msg.Document.ID == "" || msg.Document.ID != m.policies.pendingDocumentID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.policies.pendingDocumentID = ""
 	m.policies.docLoading = false
 	m.policies.document = msg.Document
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) policyDocumentLines() []string {

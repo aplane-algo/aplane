@@ -145,7 +145,7 @@ func (m Model) submitBoundaryFile() (tea.Model, tea.Cmd) {
 	m.forms.genericLSigParams = nil
 	m.forms.pendingGenerateParams = params
 	id := m.beginOperation(ViewGenerating)
-	return m, tea.Batch(m.sendPrepareGenerateKeyCmd(m.forms.boundaryKeyType, params, id), m.waitForMessageCmd())
+	return m, m.sendPrepareGenerateKeyCmd(m.forms.boundaryKeyType, params, id)
 }
 
 func (m Model) renderBoundaryPreset() string {

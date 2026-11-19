@@ -118,7 +118,7 @@ func (m Model) selectedClientDetails() []string {
 		addLabel(req.Label)
 		lines = append(lines, field("Key type", req.KeyType))
 		if req.RemoteAddr != "" {
-			lines = append(lines, field("From", req.RemoteAddr))
+			lines = append(lines, field("From", terminalSafe(req.RemoteAddr)))
 		}
 		return append(lines, field("Requested", time.Unix(req.RequestedAt, 0).Local().Format("2006-01-02 15:04")))
 	}
@@ -141,9 +141,10 @@ func (m Model) renderRevokeClientConfirm() string {
 	} else {
 		sb.WriteString(errorStyle.Render("REVOKE CLIENT KEY"))
 		sb.WriteString("\n\n")
-		sb.WriteString("Key: " + m.clients.confirmKey + "\n")
+		// The label is the client's own, sent before it was trusted.
+		sb.WriteString("Key: " + terminalSafe(m.clients.confirmKey) + "\n")
 		if m.clients.confirmLabel != "" {
-			sb.WriteString("Label: " + m.clients.confirmLabel + "\n")
+			sb.WriteString("Label: " + terminalSafe(m.clients.confirmLabel) + "\n")
 		}
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render("This client's connections will be closed."))

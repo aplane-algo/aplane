@@ -6,6 +6,7 @@ package tui
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ import (
 )
 
 // sentRequestIDs runs cmd and returns the IDs of the requests it sent. With
-// no admin client every send fails at once with an ErrorMsg carrying its
+// no admin client every send fails at once with a sendFailedMsg carrying its
 // request ID, whose prefix names the request.
 func sentRequestIDs(cmd tea.Cmd) []string {
 	if cmd == nil {
@@ -30,7 +31,7 @@ func sentRequestIDs(cmd tea.Cmd) []string {
 			ids = append(ids, sentRequestIDs(c)...)
 		}
 		return ids
-	case ErrorMsg:
+	case sendFailedMsg:
 		if msg.ID != "" {
 			return []string{msg.ID}
 		}
@@ -758,5 +759,32 @@ func TestReconcileSuccessAfterLeavingRecoveryUnlocksInPlace(t *testing.T) {
 	}
 	if got, _ := pressKey(t, m, "esc"); got.viewState != ViewKeyList {
 		t.Fatalf("esc from Backups after unlocking: view %v, want the key list", got.viewState)
+	}
+}
+
+// A failed upload step aborts the upload: the daemon's error for the append
+// request, or its refusal of the append, sends the abort for the upload,
+// ends the transfer, and keeps the reason on the form.
+func TestFailedUploadStepAbortsTheImport(t *testing.T) {
+	uploading := Model{viewState: ViewBackupImport, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked}
+	uploading.backups.imp = backupImportState{phase: importUploading, pendingID: "backup-import-append-1", uploadID: "upload-1"}
+	for _, failure := range []struct {
+		name string
+		msg  tea.Msg
+		want string
+	}{
+		{"daemon error", fromListener(ErrorMsg{ID: "backup-import-append-1", Error: errors.New("authorization denied")}), "authorization denied"},
+		{"refused append", fromListener(AppendBackupImportResultMsg{Result: protocol.AppendBackupImportResultMessage{
+			BaseMessage: protocol.BaseMessage{ID: "backup-import-append-1"}, Error: "disk full",
+		}}), "disk full"},
+	} {
+		next, cmd := uploading.Update(failure.msg)
+		got := next.(Model)
+		if got.backups.imp.phase != importIdle || got.backups.imp.uploadID != "" || !strings.Contains(got.backups.imp.err, failure.want) {
+			t.Fatalf("%s: phase %v upload %q err %q, want the transfer ended with %q", failure.name, got.backups.imp.phase, got.backups.imp.uploadID, got.backups.imp.err, failure.want)
+		}
+		if sentRequest(cmd, "backup-import-abort") == "" {
+			t.Fatalf("%s: no abort was sent for the upload: sent %v", failure.name, sentRequestIDs(cmd))
+		}
 	}
 }

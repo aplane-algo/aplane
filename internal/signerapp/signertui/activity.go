@@ -95,6 +95,7 @@ func (m *Model) endAdminSession() {
 	m.clearRestorePassphrase()
 	m.clearPendingApprovals()
 	m.clearCosignerWorkflowState()
+	m.discardHeldResult()
 	m.resetActivityState()
 	m.manualLock.pending = false
 }
@@ -104,7 +105,6 @@ func (m *Model) endAdminSession() {
 func (m *Model) enterUnlocked(keyCount int) tea.Cmd {
 	m.applySignerUnlockedState(keyCount)
 	return tea.Batch(
-		m.waitForMessageCmd(),
 		m.sendListKeysCmd(),
 		m.sendListKeyTypesCmd(),
 		m.sendListCosignerReferencesCmd(),
@@ -117,7 +117,7 @@ func (m *Model) enterUnlocked(keyCount int) tea.Cmd {
 // shows.
 func (m *Model) enterRecovery() tea.Cmd {
 	m.applySignerRecoveryState()
-	return tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
+	return tea.Batch(m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
 }
 
 // applySignerRecoveryState opens the blocking recovery screen: an incomplete

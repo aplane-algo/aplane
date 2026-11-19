@@ -530,9 +530,11 @@ func TestCompiledProviderLibraryEntryUsesDSAColumn(t *testing.T) {
 }
 
 func TestCompiledProviderInstallResultUsesActivatedStatus(t *testing.T) {
-	m := Model{viewState: ViewTemplateInstalling}
+	m := Model{viewState: ViewTemplateInstallConfirm}
+	id := m.beginOperation(ViewTemplateInstalling)
 
 	next, _ := m.Update(ActivateKeyTypeResultMsg{
+		ID:      id,
 		Success: true,
 		KeyType: "aplane.ed25519.v1",
 	})
@@ -543,9 +545,11 @@ func TestCompiledProviderInstallResultUsesActivatedStatus(t *testing.T) {
 }
 
 func TestTemplateInstallResultUsesEnabledStatus(t *testing.T) {
-	m := Model{viewState: ViewTemplateInstalling}
+	m := Model{viewState: ViewTemplateInstallConfirm}
+	id := m.beginOperation(ViewTemplateInstalling)
 
 	next, _ := m.Update(InstallLibraryTemplateResultMsg{
+		ID:           id,
 		Success:      true,
 		KeyType:      "test.timed-policy.v1",
 		TemplateType: "generic",
@@ -581,9 +585,11 @@ func TestCompiledProviderAlreadyActivatedStatus(t *testing.T) {
 }
 
 func TestCompiledProviderDeactivateResultUsesDeactivatedStatus(t *testing.T) {
-	m := Model{viewState: ViewTemplateInstalling}
+	m := Model{viewState: ViewTemplateInstallConfirm}
+	id := m.beginOperation(ViewTemplateInstalling)
 
 	next, _ := m.Update(DeactivateKeyTypeResultMsg{
+		ID:      id,
 		Success: true,
 		KeyType: "aplane.ed25519.v1",
 		Removed: true,

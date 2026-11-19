@@ -8,7 +8,7 @@ import tea "github.com/charmbracelet/bubbletea"
 // handleAuthKeys handles keyboard input on authentication screen
 func (m Model) handleAuthKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handlePassphraseKeys(msg, func(passphrase string) tea.Cmd {
-		return tea.Batch(m.sendAuthCmd(passphrase), m.waitForMessageCmd())
+		return m.sendAuthCmd(passphrase)
 	})
 }
 

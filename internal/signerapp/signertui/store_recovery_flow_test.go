@@ -81,8 +81,8 @@ func TestStoreRecoveryRestoreShortcutPreservesRecoveryReturn(t *testing.T) {
 }
 
 func TestUntypedRecoveryRestoreFailureRemainsVisible(t *testing.T) {
-	m := Model{viewState: ViewRestoring, signerState: signerRuntimeRecovery}
-	got, _ := updateForTest(t, m, ErrorMsg{Error: errors.New("authorization denied")})
+	m := Model{viewState: ViewRestoring, signerState: signerRuntimeRecovery, restore: restoreState{pendingID: "reconcile-store-1"}}
+	got, _ := updateForTest(t, m, ErrorMsg{ID: "reconcile-store-1", Error: errors.New("authorization denied")})
 	if got.viewState != ViewStoreRecovery || got.signerState != signerRuntimeRecovery {
 		t.Fatalf("untyped recovery failure = state %v view %v", got.signerState, got.viewState)
 	}

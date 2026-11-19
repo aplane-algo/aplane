@@ -423,9 +423,48 @@ func TestReviewedRequestCarriesTheResolvedValues(t *testing.T) {
 	}
 }
 
+// preparingOperation is a preparation the generating screen waits on, and
+// preparingReply the daemon's answer to it.
+var (
+	preparingOperation = pendingOperation{id: "gen-1", view: ViewGenerating}
+	preparingReply     = protocol.BaseMessage{Type: protocol.MsgTypePrepareGenerateResult, ID: "gen-1"}
+)
+
+// A preparation reply is applied only while the generating screen still
+// waits on that preparation. One that arrives after a lock showed the unlock
+// screen, or that answers another request, neither takes over the screen nor
+// sends generate_key to a signer that would refuse it.
+func TestLatePreparationReplyChangesNothing(t *testing.T) {
+	bounded := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 2)
+	unbounded := PrepareGenerateResultMessage{Success: true, KeyType: "aplane.htlc.v1"}
+	for name, result := range map[string]PrepareGenerateResultMessage{"bounded": bounded, "unbounded": unbounded} {
+		t.Run(name, func(t *testing.T) {
+			m := Model{viewState: ViewGenerateParams, connectionState: ConnectionConnected,
+				forms: formsState{pendingGenerateParams: map[string]string{"a": "b"}}}
+			result.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePrepareGenerateResult, ID: m.beginOperation(ViewGenerating)}
+
+			locked := updateModel(t, m, SignerStatusMsg{State: "locked"})
+			next, cmd := locked.Update(PrepareGenerateResultMsg{Result: result})
+			if got := next.(Model); got.viewState != ViewUnlock || got.forms.review != nil {
+				t.Fatalf("late reply after a lock: view %v review %v, want the unlock screen kept", got.viewState, got.forms.review != nil)
+			}
+			if sent := sentRequest(cmd, "gen"); sent != "" {
+				t.Fatalf("late reply after a lock sent generate request %q", sent)
+			}
+
+			other := result
+			other.ID = "gen-other"
+			next, cmd = m.Update(PrepareGenerateResultMsg{Result: other})
+			if got := next.(Model); got.viewState != ViewGenerating || got.forms.review != nil || sentRequest(cmd, "gen") != "" {
+				t.Fatalf("reply for another request: view %v review %v", got.viewState, got.forms.review != nil)
+			}
+		})
+	}
+}
+
 func TestNonBoundedRequestSkipsReview(t *testing.T) {
-	m := Model{viewState: ViewGenerating, forms: formsState{pendingGenerateParams: map[string]string{"a": "b"}}}
-	next, cmd := m.handlePreparedGeneration(PrepareGenerateResultMessage{Success: true, KeyType: "aplane.htlc.v1"})
+	m := Model{viewState: ViewGenerating, operation: preparingOperation, forms: formsState{pendingGenerateParams: map[string]string{"a": "b"}}}
+	next, cmd := m.handlePreparedGeneration(PrepareGenerateResultMessage{BaseMessage: preparingReply, Success: true, KeyType: "aplane.htlc.v1"})
 	got := next.(Model)
 	if got.viewState != ViewGenerating || got.forms.review != nil || cmd == nil {
 		t.Fatalf("view = %v, review = %v", got.viewState, got.forms.review)
@@ -433,8 +472,8 @@ func TestNonBoundedRequestSkipsReview(t *testing.T) {
 }
 
 func TestPreparationFailureReturnsToTheForm(t *testing.T) {
-	m := Model{viewState: ViewGenerating, forms: formsState{genericLSigParams: map[string]string{}}}
-	next, _ := m.handlePreparedGeneration(PrepareGenerateResultMessage{Error: "needs approval"})
+	m := Model{viewState: ViewGenerating, operation: preparingOperation, forms: formsState{genericLSigParams: map[string]string{}}}
+	next, _ := m.handlePreparedGeneration(PrepareGenerateResultMessage{BaseMessage: preparingReply, Error: "needs approval"})
 	got := next.(Model)
 	if got.viewState != ViewGenerateParams || got.forms.generateError != "needs approval" {
 		t.Fatalf("view = %v, error = %q", got.viewState, got.forms.generateError)
@@ -442,8 +481,10 @@ func TestPreparationFailureReturnsToTheForm(t *testing.T) {
 }
 
 func TestReviewStartsOnCancelAndGeneratesOnlyFromGenerate(t *testing.T) {
-	m := Model{viewState: ViewGenerating}
-	next, _ := m.handlePreparedGeneration(preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 2))
+	m := Model{viewState: ViewGenerating, operation: preparingOperation}
+	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 2)
+	prepared.BaseMessage = preparingReply
+	next, _ := m.handlePreparedGeneration(prepared)
 	got := next.(Model)
 	if got.viewState != ViewGenerateReview || got.forms.reviewFocus != reviewFocusCancel {
 		t.Fatalf("view = %v, focus = %d", got.viewState, got.forms.reviewFocus)
@@ -461,10 +502,17 @@ func TestReviewStartsOnCancelAndGeneratesOnlyFromGenerate(t *testing.T) {
 }
 
 func reviewedResult(address string, prepared PrepareGenerateResultMessage) (Model, GenerateResultMsg) {
-	m := Model{viewState: ViewGenerating, width: 80, height: 23, standalone: true}
+	m := awaitingGeneration(Model{width: 80, height: 23, standalone: true}, "reviewed")
 	m.forms.review = &prepared
 	m.forms.reviewedRequestID = "reviewed"
 	return m, GenerateResultMsg{ID: "reviewed", Success: true, Address: address, KeyType: prepared.KeyType}
+}
+
+// awaitingGeneration puts m on the generating screen, waiting on request id.
+func awaitingGeneration(m Model, id string) Model {
+	m.viewState = ViewGenerating
+	m.operation = pendingOperation{id: id, view: ViewGenerating}
+	return m
 }
 
 func TestReceiptNamesTheSavedAccountAndNeverOverwrites(t *testing.T) {
@@ -537,7 +585,7 @@ func TestFailedReviewCannotLabelALaterNativeAccount(t *testing.T) {
 	failed.Success, failed.Error = false, "signer refused"
 	next, _ := m.Update(failed)
 	m = next.(Model)
-	next, _ = m.Update(GenerateResultMsg{ID: "gen-2", Success: true, Address: "NATIVE", KeyType: "ed25519"})
+	next, _ = awaitingGeneration(m, "gen-2").Update(GenerateResultMsg{ID: "gen-2", Success: true, Address: "NATIVE", KeyType: "ed25519"})
 	m = next.(Model)
 	if m.forms.generatedAddress != "NATIVE" {
 		t.Fatalf("address = %q", m.forms.generatedAddress)

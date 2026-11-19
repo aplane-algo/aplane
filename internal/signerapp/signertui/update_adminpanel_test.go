@@ -191,22 +191,10 @@ func TestFailedSettingUpdateRereadsTheSettings(t *testing.T) {
 	if got := next.(Model); got.lastError != "" || !strings.Contains(stripANSI(got.renderStatusBar()), want) {
 		t.Fatalf("lastError = %q, status bar = %q; want no error and the warning %q", got.lastError, stripANSI(got.renderStatusBar()), want)
 	}
-	// A lone listener wait blocks until the client disconnects.
-	produced := make(chan tea.Msg, 1)
-	go func() { produced <- cmd() }()
-	var batch tea.BatchMsg
-	select {
-	case msg := <-produced:
-		var ok bool
-		if batch, ok = msg.(tea.BatchMsg); !ok {
-			t.Fatalf("command after a failed update = %T, want a batch that re-reads the settings", msg)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("the command after a failed update only waits for messages; it does not re-read the settings")
+	if cmd == nil {
+		t.Fatal("a failed update does not re-read the settings")
 	}
-	for _, c := range batch {
-		go c()
-	}
+	go cmd()
 	select {
 	case msgType := <-sent:
 		if msgType != protocol.MsgTypeGetAdminSettings {

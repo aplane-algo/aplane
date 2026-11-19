@@ -15,7 +15,7 @@ func (m Model) handleTemplateLibraryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r", "R":
 		m.library.installError = ""
 		m.library.installStatus = ""
-		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
+		return m, m.sendListLibraryTemplatesCmd()
 
 	case "up", "k":
 		if m.library.selectedTemplate > 0 {
@@ -104,14 +104,11 @@ func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo) (Model, tea.
 		m.library.detailsInstalled = true
 		m.library.detailsLoading = true
 		m.viewState = ViewLibraryTemplateDetails
-		return m, tea.Batch(m.sendShowInstalledTemplateCmd(tmpl.KeyType), m.waitForMessageCmd()), ""
+		return m, m.sendShowInstalledTemplateCmd(tmpl.KeyType), ""
 	}
 	m.library.detailsLoading = true
 	m.viewState = ViewLibraryTemplateDetails
-	return m, tea.Batch(
-		m.sendShowLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType),
-		m.waitForMessageCmd(),
-	), ""
+	return m, m.sendShowLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType), ""
 }
 
 func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -138,10 +135,7 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 		}
 		tmpl := *m.library.pendingTemplate
 		id := m.beginOperation(ViewTemplateInstalling)
-		return m, tea.Batch(
-			m.libraryActionCmd(tmpl, id),
-			m.waitForMessageCmd(),
-		)
+		return m, m.libraryActionCmd(tmpl, id)
 
 	case "y", "Y":
 		if m.library.pendingTemplate == nil {
@@ -151,10 +145,7 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 		}
 		tmpl := *m.library.pendingTemplate
 		id := m.beginOperation(ViewTemplateInstalling)
-		return m, tea.Batch(
-			m.libraryActionCmd(tmpl, id),
-			m.waitForMessageCmd(),
-		)
+		return m, m.libraryActionCmd(tmpl, id)
 	}
 
 	return m, nil
@@ -204,22 +195,25 @@ func (m Model) ensureTemplateVisible() Model {
 }
 
 // finishLibraryAction applies the result of installing, enabling, or disabling
-// a KeyType Library entry.
-func (m Model) finishLibraryAction(success bool, status, errText, fallbackErr string) (tea.Model, tea.Cmd) {
+// a KeyType Library entry, when id names the request its progress screen
+// still waits on.
+func (m Model) finishLibraryAction(id string, success bool, status, errText, fallbackErr string) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(id) {
+		return m, nil
+	}
 	if !success {
 		m.library.installError = errText
 		if m.library.installError == "" {
 			m.library.installError = fallbackErr
 		}
 		m.viewState = ViewTemplateInstallConfirm
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.library.installError = ""
 	m.library.installStatus = status
 	m.library.pendingTemplate = nil
 	m.viewState = ViewTemplateLibrary
 	return m, tea.Batch(
-		m.waitForMessageCmd(),
 		m.sendListLibraryTemplatesCmd(),
 		m.sendListKeyTypesCmd(),
 		m.sendListKeysCmd(),

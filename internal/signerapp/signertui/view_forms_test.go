@@ -157,12 +157,12 @@ func TestGeneratedWarningsFollowTheGenerationResult(t *testing.T) {
 	}
 
 	// A failed generation shows no account, so no warnings either.
-	failed, _ := m.Update(GenerateResultMsg{ID: "gen-2", Success: false, Error: "signer refused", Warnings: []string{"not shown"}})
+	failed, _ := awaitingGeneration(m, "gen-2").Update(GenerateResultMsg{ID: "gen-2", Success: false, Error: "signer refused", Warnings: []string{"not shown"}})
 	if got := failed.(Model); got.viewState == ViewGenerateDisplay || strings.Contains(flatReview(got.View()), "not shown") {
 		t.Fatalf("a failed generation shows a warning: view %v", got.viewState)
 	}
 
-	next, _ = m.Update(GenerateResultMsg{ID: "gen-3", Success: true, Address: "NATIVE", KeyType: "ed25519"})
+	next, _ = awaitingGeneration(m, "gen-3").Update(GenerateResultMsg{ID: "gen-3", Success: true, Address: "NATIVE", KeyType: "ed25519"})
 	m = next.(Model)
 	if len(m.forms.generatedWarnings) != 0 {
 		t.Fatalf("a later account kept the earlier one's warnings: %q", m.forms.generatedWarnings)

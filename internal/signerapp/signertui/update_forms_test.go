@@ -671,3 +671,39 @@ func TestParamFieldsRejectNonASCIIInput(t *testing.T) {
 		t.Fatalf("appendToCurrentParam narrowed a non-ASCII rune: %q", v)
 	}
 }
+
+// Only printable input types into a parameter field. A key such as ctrl+a,
+// f1 or alt+enter has no text of its own, and typing its name would put
+// "ctrl+a" into a string field and "CTRLA" into an address.
+func TestParamFieldsIgnoreKeysThatAreNotText(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType: "named-keys-test-v1", DisplayName: "Named Keys Test",
+		CreationParams: []protocol.TemplateParamInfo{
+			{Name: "label", Type: "string"},
+			{Name: "owner", Type: "address"},
+		},
+	}})
+	keys := []tea.KeyMsg{
+		{Type: tea.KeyCtrlA}, {Type: tea.KeyF1}, {Type: tea.KeyEnter, Alt: true},
+		{Type: tea.KeyDelete}, {Type: tea.KeyInsert}, {Type: tea.KeyCtrlUp},
+	}
+	for focus, name := range []string{"label", "owner"} {
+		m := Model{viewState: ViewGenerateParams, height: 60, forms: formsState{
+			genericLSigParams:     map[string]string{"label": "", "owner": ""},
+			genericLSigParamOrder: []string{"label", "owner"},
+			generateFocus:         focus,
+		}}
+		for _, key := range keys {
+			m = applyParamKey(t, m, key)
+		}
+		m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		want := "x"
+		if name == "owner" {
+			want = "X"
+		}
+		if got := m.forms.genericLSigParams[name]; got != want {
+			t.Fatalf("%s = %q after named keys and x, want only %q", name, got, want)
+		}
+	}
+}

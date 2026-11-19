@@ -13,6 +13,9 @@ func (m Model) viewFooterText() string {
 	if m.fileBrowserOpen() {
 		return m.fileBrowserFooterText()
 	}
+	if isOperationInProgressView(m.viewState) {
+		return "q: Quit"
+	}
 	switch m.viewState {
 	case ViewAuth, ViewUnlock:
 		return m.passphraseFooterText()
@@ -140,8 +143,6 @@ func (m Model) viewFooterText() string {
 		return "up/down: Select key type | tab: Next | enter: Import | esc: Back"
 	case ViewImportParams:
 		return m.parameterModalFooterText(getImportKeyTypeByIndex(m.forms.importKeyType), "Import")
-	case ViewGenerating, ViewImporting, ViewCosignerImporting, ViewCosignerRemoving, ViewCosignerExporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
-		return "q: Quit"
 	case ViewDeleteConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Delete | n/esc: Cancel"
 	case ViewEnrolledClients:

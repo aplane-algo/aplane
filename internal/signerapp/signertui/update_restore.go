@@ -11,7 +11,7 @@ func (m Model) openBackups() (tea.Model, tea.Cmd) {
 	m.resetRestoreFlow()
 	m.restore.returnToRecovery = fromRecovery
 	m.viewState = ViewBackups
-	return m, tea.Batch(m.sendListBackupsCmd(), m.waitForMessageCmd())
+	return m, m.sendListBackupsCmd()
 }
 
 func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -44,17 +44,18 @@ func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 				return m, nil
 			}
 			restoreCmd := m.sendRestoreBackupCmd(
-				m.restore.archivePath, addresses, m.restore.passphrase, true,
+				m.restore.archivePath, addresses, m.restore.passphrase, true, m.beginRestoreRequest("restore-backup"),
 			)
 			m.clearRestorePassphrase()
 			m.restore.passphraseError = ""
 			m.restore.progressLabel = "Replacing Conflicting Credentials"
 			m.viewState = ViewRestoring
-			return m, tea.Batch(restoreCmd, m.waitForMessageCmd())
+			return m, restoreCmd
 		}
 		m.restore.passphraseError = ""
 		m.restore.previewing = true
-		return m, tea.Batch(m.sendPreviewRestoreCmd(m.restore.archivePath, m.restore.passphrase), m.waitForMessageCmd())
+		id := m.beginRestoreRequest("preview-restore")
+		return m, m.sendPreviewRestoreCmd(m.restore.archivePath, m.restore.passphrase, id)
 	case "backspace":
 		if len(m.restore.passphrase) > 0 {
 			m.restore.passphrase[len(m.restore.passphrase)-1] = 0
@@ -151,13 +152,13 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		restoreCmd := m.sendRestoreBackupCmd(
-			m.restore.archivePath, addresses, m.restore.passphrase, false,
+			m.restore.archivePath, addresses, m.restore.passphrase, false, m.beginRestoreRequest("restore-backup"),
 		)
 		m.clearRestorePassphrase()
 		m.restore.previewError = ""
 		m.restore.progressLabel = "Restoring Credentials"
 		m.viewState = ViewRestoring
-		return m, tea.Batch(restoreCmd, m.waitForMessageCmd())
+		return m, restoreCmd
 	}
 	return m, nil
 }
@@ -187,7 +188,7 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectKeyByAddress(result.Activated[0].Address)
 		}
 		m.viewState = ViewKeyList
-		return m, tea.Batch(m.sendListKeysCmd(), m.waitForMessageCmd())
+		return m, m.sendListKeysCmd()
 	}
 	return m, nil
 }

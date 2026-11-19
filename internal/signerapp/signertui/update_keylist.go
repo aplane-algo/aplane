@@ -122,7 +122,6 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sendListKeyTypesCmd(),
 			m.sendListCosignerReferencesCmd(),
 			m.sendListLibraryTemplatesCmd(),
-			m.waitForMessageCmd(),
 		)
 
 	case "i":
@@ -155,12 +154,12 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.admin.editingRow = -1
 		m.admin.editValue = ""
 		m.viewState = ViewAdminPanel
-		return m, tea.Batch(m.sendGetAdminSettingsCmd(), m.waitForMessageCmd(), adminRefreshTickCmd())
+		return m, tea.Batch(m.sendGetAdminSettingsCmd(), adminRefreshTickCmd())
 
 	case "enter":
 		// Show key details
 		if len(displayKeys) > 0 && m.keylist.selectedKey < len(displayKeys) {
-			return m, tea.Batch(m.sendGetKeyDetailsCmd(displayKeys[m.keylist.selectedKey].Address), m.waitForMessageCmd())
+			return m, m.sendGetKeyDetailsCmd(displayKeys[m.keylist.selectedKey].Address)
 		}
 	}
 

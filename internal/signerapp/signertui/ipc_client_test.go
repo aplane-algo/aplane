@@ -18,18 +18,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestWaitForMessageCmdReturnsErrorWhenDisconnected(t *testing.T) {
-	m := Model{}
-	msg := m.waitForMessageCmd()()
-	errMsg, ok := msg.(ErrorMsg)
-	if !ok {
-		t.Fatalf("m.waitForMessageCmd() message type = %T, want ErrorMsg", msg)
-	}
-	if errMsg.Error == nil || errMsg.Error.Error() != "not connected" {
-		t.Fatalf("m.waitForMessageCmd() error = %v, want not connected", errMsg.Error)
-	}
-}
-
 func TestIPCClientForwardsSignRequestCanceled(t *testing.T) {
 	raw, err := protocol.MarshalAdminMessage(protocol.SignRequestCanceledMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSignRequestCanceled, ID: "sign-1"},
@@ -59,7 +47,7 @@ func TestIPCClientForwardsSignRequestCanceled(t *testing.T) {
 		Raw: raw,
 	}
 
-	msg := client.ListenForMessages()()
+	msg := Unwrap(client.ListenForMessages()())
 	canceled, ok := msg.(SignRequestCanceledMsg)
 	if !ok {
 		t.Fatalf("forwarded message type = %T, want SignRequestCanceledMsg", msg)
@@ -125,7 +113,7 @@ func TestIPCClientSendBackupRestoreMessagesUseSensitivePassphraseWireString(t *t
 		}
 		previewLineCh <- line
 	}()
-	if err := client.SendPreviewRestore("aplane-backup.tar.gz", passphrase); err != nil {
+	if err := client.SendPreviewRestore("aplane-backup.tar.gz", passphrase, "preview-restore-1"); err != nil {
 		t.Fatalf("SendPreviewRestore() error = %v", err)
 	}
 	select {
@@ -237,7 +225,7 @@ func waitForClientMsg(t *testing.T, client *IPCClient, timeout time.Duration) te
 
 	resultCh := make(chan tea.Msg, 1)
 	go func() {
-		resultCh <- client.ListenForMessages()()
+		resultCh <- Unwrap(client.ListenForMessages()())
 	}()
 
 	select {
@@ -254,7 +242,7 @@ func assertNoClientMsg(t *testing.T, client *IPCClient, timeout time.Duration) {
 
 	resultCh := make(chan tea.Msg, 1)
 	go func() {
-		resultCh <- client.ListenForMessages()()
+		resultCh <- Unwrap(client.ListenForMessages()())
 	}()
 
 	select {
@@ -686,7 +674,7 @@ func TestIPCClientReportsUndecodableMessage(t *testing.T) {
 		Raw:  []byte(`{"type":"generate_result","success":"not-a-bool"}`),
 	}
 	forwarded := make(chan tea.Msg, 1)
-	go func() { forwarded <- client.ListenForMessages()() }()
+	go func() { forwarded <- Unwrap(client.ListenForMessages()()) }()
 	var msg tea.Msg
 	select {
 	case msg = <-forwarded:

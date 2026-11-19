@@ -64,7 +64,7 @@ func (m Model) backupsRecovery() bool {
 // refreshBackups lists the repository again, keeping the page where it is.
 func (m Model) refreshBackups() (Model, tea.Cmd) {
 	m.restore.backupsLoaded = false
-	return m, tea.Batch(m.sendListBackupsCmd(), m.waitForMessageCmd())
+	return m, m.sendListBackupsCmd()
 }
 
 // returnToBackups shows the list and refreshes it, selecting name when given.
@@ -220,18 +220,18 @@ func (m Model) sendBackupDelete() (tea.Model, tea.Cmd) {
 	del := &m.backups.del
 	del.err = ""
 	del.pendingID = newRequestID("backup-delete")
-	return m, tea.Batch(m.sendDeleteBackupCmd(del.pendingID, del.target.FileName), m.waitForMessageCmd())
+	return m, m.sendDeleteBackupCmd(del.pendingID, del.target.FileName)
 }
 
 func (m Model) handleBackupDeleteResult(msg BackupDeleteResultMsg) (tea.Model, tea.Cmd) {
 	del := &m.backups.del
 	if msg.Result.ID == "" || msg.Result.ID != del.pendingID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	del.pendingID = ""
 	if !msg.Result.Success {
 		del.err = backupResultText(msg.Result.Error, "the backup could not be deleted")
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	name := del.target.FileName
 	m.backups.del = backupDeleteState{}
@@ -239,7 +239,7 @@ func (m Model) handleBackupDeleteResult(msg BackupDeleteResultMsg) (tea.Model, t
 	// A reply that arrives after the operator left the dialog (the signer
 	// locked, say) is recorded, not shown by taking over the screen.
 	if m.viewState != ViewBackupDeleteConfirm {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	next, cmd := m.returnToBackups("")
 	return next, cmd
@@ -302,7 +302,7 @@ func (m Model) sendBackupUndo() (tea.Model, tea.Cmd) {
 	m.restore.recoveryError = ""
 	m.restore.progressLabel = "Undoing Latest Restore"
 	m.viewState = ViewRestoring
-	return m, tea.Batch(m.sendRollbackRestoreCmd(), m.waitForMessageCmd())
+	return m, m.sendRollbackRestoreCmd(m.beginRestoreRequest("rollback-restore"))
 }
 
 // handleRefusedBackupUndo returns a refused undo to the Backups page. It
@@ -488,12 +488,14 @@ func confirmButtons(focus int, action string) string {
 // Shutdown releases what the model holds when the program exits: a revealed
 // recovery phrase or typed export passphrase, recovery-phrase replies still
 // queued on the admin client, an export's staging file, an import's open
-// archive and passphrase. An export already being verified and saved is left
+// archive and passphrase, a held late result (and the import form a held
+// import leaves filled). An export already being verified and saved is left
 // to finish; an upload in progress is left to the signer's cleanup of
 // abandoned uploads. The apadmin and apconsole binaries call it on the final
 // model, whatever ended the program (keyboard quit, signal, or the console).
 func (m Model) Shutdown() {
 	m.clearMnemonicExport()
+	m.discardHeldResult()
 	if m.adminClient != nil {
 		m.adminClient.Disconnect()
 	}

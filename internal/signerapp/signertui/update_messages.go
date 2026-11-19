@@ -84,7 +84,7 @@ func (m Model) handleAuthResultMsg(msg AuthResultMsg) (tea.Model, tea.Cmd) {
 			m.auth.loggingIn = false
 		}
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleLocalIdleDisconnectedMsg(msg localIdleDisconnectedMsg) (tea.Model, tea.Cmd) {
@@ -119,7 +119,7 @@ func (m Model) handleSignerStatusMsg(msg SignerStatusMsg) (tea.Model, tea.Cmd) {
 		// locked signer cannot list them, and enterUnlocked loads them.
 		abort := m.interruptBackupTransfers(true)
 		m.applySignerLockedState()
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), abort)
+		return m, tea.Batch(m.sendGetAdminSettingsCmd(), abort)
 	}
 }
 
@@ -142,8 +142,7 @@ func (m Model) handleUnlockResultMsg(msg UnlockResultMsg) (tea.Model, tea.Cmd) {
 			m.auth.loggingIn = false
 		}
 	}
-	// Continue listening for messages
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleKeysListMsg(msg KeysListMsg) (tea.Model, tea.Cmd) {
@@ -164,73 +163,51 @@ func (m Model) handleKeysListMsg(msg KeysListMsg) (tea.Model, tea.Cmd) {
 	if m.keylist.scrollOffset > m.keylist.selectedKey {
 		m.keylist.scrollOffset = m.keylist.selectedKey
 	}
-	// Continue listening for messages
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
-func (m Model) handleErrorMsg(msg ErrorMsg) (tea.Model, tea.Cmd) {
-	if m.mnemonicExport.pending && msg.ID == m.mnemonicExport.requestID {
+// handleFailure routes an untyped failure, from the daemon (ErrorMsg) or from
+// a send (sendFailedMsg), to the request id names.
+func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
+	if m.mnemonicExport.pending && id == m.mnemonicExport.requestID {
 		m.mnemonicExport.pending = false
-		m.mnemonicExport.error = msg.Error.Error()
-		return m, m.waitForMessageCmd()
+		m.mnemonicExport.error = err.Error()
+		return m, nil
 	}
-	if m.viewState == ViewCosignerImporting {
-		m.cosigner.importError = msg.Error.Error()
-		m.viewState = ViewCosignerImportReview
-		return m, m.waitForMessageCmd()
+	if next, ok := m.failPendingPolicyExport(id, err); ok {
+		return next, nil
 	}
-	if m.viewState == ViewCosignerRemoving {
-		m.cosigner.importError = msg.Error.Error()
-		m.viewState = ViewCosignerRemoveConfirm
-		return m, m.waitForMessageCmd()
+	if next, ok := m.failPendingBackupExport(id, err); ok {
+		return next, nil
 	}
-	if m.viewState == ViewCosignerExporting {
-		m.cosigner.exportError = msg.Error.Error()
-		m.viewState = ViewCosignerExportPath
-		return m, m.waitForMessageCmd()
+	if next, cmd, ok := m.failPendingBackupImport(id, err); ok {
+		return next, cmd
 	}
-	if next, ok := m.failPendingPolicyExport(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if next, ok := m.failPendingBackupDelete(id, err); ok {
+		return next, nil
 	}
-	if next, ok := m.failPendingBackupExport(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if next, ok := m.failPendingPolicyApply(id, err); ok {
+		return next, nil
 	}
-	if next, cmd, ok := m.failPendingBackupImport(msg.ID, msg.Error); ok {
-		return next, tea.Batch(cmd, next.waitForMessageCmd())
+	if next, ok := m.failOperationInProgress(id, err); ok {
+		return next, nil
 	}
-	if next, ok := m.failPendingBackupDelete(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if id != "" && id == m.restore.pendingID {
+		return m.failRestoreRequest(err), nil
 	}
-	if next, ok := m.failPendingPolicyApply(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
-	}
-	if next, ok := m.failOperationInProgress(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
-	}
-	if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
-		m.clearRestorePassphrase()
-		m.restore.previewing = false
-	}
-	if m.viewState == ViewRestoring {
-		// An untyped failure (authorization denial, service
-		// unavailable, a send error) must not strand the operator on
-		// the progress screen, where Esc refuses and only q quits.
-		// Route the same way typed failures do.
-		if m.signerState == signerRuntimeRecovery {
-			m.viewState = ViewStoreRecovery
-			m.restore.recoveryError = msg.Error.Error()
-			return m, m.waitForMessageCmd()
-		}
-		m.lastError = msg.Error.Error()
-		m.viewState = ViewBackups
-		return m, m.waitForMessageCmd()
-	}
-	m.lastError = msg.Error.Error()
-	// Continue listening for messages
-	return m, m.waitForMessageCmd()
+	m.lastError = err.Error()
+	return m, nil
 }
 
 func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
+	}
+	return m.applyGenerateResult(msg)
+}
+
+// applyGenerateResult shows a generation's result.
+func (m Model) applyGenerateResult(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
 	m = m.settleGenerateReview(msg)
 	if msg.Success {
 		m.lastError = ""
@@ -240,7 +217,7 @@ func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cm
 		m.forms.generatedWarnings = msg.Warnings
 		m.forms.generatedWarningsOpen = false
 		m.viewState = ViewGenerateDisplay
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
+		return m, m.sendListKeysCmd()
 	} else {
 		m.forms.generateError = msg.Error
 		// Go back to params view for generic LogicSigs, otherwise form
@@ -250,10 +227,13 @@ func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cm
 			m.viewState = ViewGenerateForm
 		}
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleDeleteResultMsg(msg DeleteResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, nil
+	}
 	if msg.Success {
 		m.lastError = ""
 		// Clear delete state and return to key list
@@ -261,16 +241,23 @@ func (m Model) handleDeleteResultMsg(msg DeleteResultMsg) (tea.Model, tea.Cmd) {
 		m.del.keyType = ""
 		m.viewState = ViewKeyList
 		// Request updated key list
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
+		return m, m.sendListKeysCmd()
 	} else {
 		m.lastError = msg.Error
 		// Return to confirm dialog on error
 		m.viewState = ViewDeleteConfirm
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
+// handleRestorePreviewMsg applies a preview only while the passphrase screen
+// still waits on that preview request. One that arrives after a lock showed
+// the unlock screen, where previewing is still set, changes nothing.
 func (m Model) handleRestorePreviewMsg(msg RestorePreviewMsg) (tea.Model, tea.Cmd) {
+	if msg.ID == "" || msg.ID != m.restore.pendingID || !m.restore.previewing || m.viewState != ViewRestorePassphrase {
+		return m, nil
+	}
+	m.restore.pendingID = ""
 	m.restore.previewing = false
 	if msg.Error != "" || (len(msg.Keys) == 0 && len(msg.Errors) > 0) {
 		m.clearRestorePassphrase()
@@ -282,7 +269,7 @@ func (m Model) handleRestorePreviewMsg(msg RestorePreviewMsg) (tea.Model, tea.Cm
 			m.restore.passphraseError = "Restore preview failed"
 		}
 		m.viewState = ViewRestorePassphrase
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.lastError = ""
 	m.restore.archivePath = msg.ArchivePath
@@ -296,7 +283,7 @@ func (m Model) handleRestorePreviewMsg(msg RestorePreviewMsg) (tea.Model, tea.Cm
 	m.restore.previewFocus = restoreFocusList
 	m.initializeRestoreSelection()
 	m.viewState = ViewRestorePreview
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Model, tea.Cmd) {
@@ -309,7 +296,7 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 			len(msg.Result.Conflicts),
 		)
 		m.viewState = ViewRestorePassphrase
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.clearRestorePassphrase()
 	m.restore.replaceExisting = false
@@ -338,7 +325,7 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 	m.restore.displaySelectedKey = 0
 	m.restore.displayScrollOffset = 0
 	m.viewState = ViewRestoreDisplay
-	cmds := []tea.Cmd{m.waitForMessageCmd()}
+	var cmds []tea.Cmd
 	if msg.Result.Success {
 		cmds = append(cmds, m.sendListKeysCmd(), m.sendListKeyTypesCmd())
 	} else if msg.Result.Code == protocol.ResultCodeRestoreRollbackFailed {
@@ -349,7 +336,7 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 
 func (m Model) handleRollbackRestoreResultMsg(msg RollbackRestoreResultMsg) (tea.Model, tea.Cmd) {
 	if m.signerKnownLocked() {
-		return m.recordLateRollback(msg.Result), m.waitForMessageCmd()
+		return m.recordLateRollback(msg.Result), nil
 	}
 	if !msg.Result.Success {
 		if next, cmd, ok := m.handleRefusedBackupUndo(msg.Result); ok {
@@ -365,12 +352,12 @@ func (m Model) handleRollbackRestoreResultMsg(msg RollbackRestoreResultMsg) (tea
 			m.lastError = msg.Result.Error
 			m.viewState = ViewKeyList
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.backups.undoPending = false
 	m.restore.recoveryError = "Restore rollback completed; reconciling current generation"
 	m.viewState = ViewStoreRecovery
-	return m, tea.Batch(m.sendReconcileStoreCmd(), m.waitForMessageCmd())
+	return m, m.sendReconcileStoreCmd(m.beginRestoreRequest("reconcile-store"))
 }
 
 func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.Model, tea.Cmd) {
@@ -381,7 +368,7 @@ func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.M
 		if !msg.Result.Success {
 			m.restore.recoveryError = msg.Result.Error
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if !msg.Result.Success {
 		// The signer is recovery-blocked whichever screen the operator
@@ -389,7 +376,7 @@ func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.M
 		m.signerState = signerRuntimeRecovery
 		m.restore.recoveryError = msg.Result.Error
 		m.viewState = ViewStoreRecovery
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.restore.recoveryError = ""
 	if !m.restoreFlowWaiting() {
@@ -406,6 +393,14 @@ func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.M
 }
 
 func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
+	}
+	return m.applyImportResult(msg)
+}
+
+// applyImportResult shows an import's result.
+func (m Model) applyImportResult(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Success {
 		m.lastError = ""
 		m.forms.importMnemonicInput.SetValue("")
@@ -416,15 +411,46 @@ func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 		m.forms.importedKeyType = msg.KeyType
 		m.viewState = ViewImportDisplay
 		// Also refresh key list in background
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
+		return m, m.sendListKeysCmd()
 	} else {
 		m.forms.importError = msg.Error
-		// Return to the appropriate form to show the error
-		if m.viewState == ViewImportParams || m.viewState == ViewImporting {
-			m.viewState = ViewImportParams
-		}
+		// Return to the form the import was sent from to show the error.
+		m.viewState = m.importErrorView()
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
+}
+
+func (m Model) handleBackupResultMsg(msg BackupResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
+	}
+	return m.applyBackupResult(msg)
+}
+
+// applyBackupResult shows a backup's result.
+func (m Model) applyBackupResult(msg BackupResultMsg) (tea.Model, tea.Cmd) {
+	if msg.Success {
+		m.lastError = ""
+		m.backup.archivePath = msg.ArchivePath
+		m.backup.archiveWarning = msg.Warning
+		m.backup.exportPassphrase = ""
+		m.backup.confirmPassphrase = ""
+		m.backup.confirmError = ""
+		m.viewState = ViewBackupDisplay
+	} else {
+		m.backup.confirmError = msg.Error
+		m.viewState = ViewBackupConfirm
+	}
+	return m, nil
+}
+
+// importErrorView is the form a failed import returns to: the parameter form
+// for a key type that takes parameters, otherwise the import form.
+func (m Model) importErrorView() ViewState {
+	if getParamSpecForKeyType(getImportKeyTypeByIndex(m.forms.importKeyType)) != nil {
+		return ViewImportParams
+	}
+	return ViewImportForm
 }
 
 func (m Model) handleAdminSettingsMsg(msg AdminSettingsMsg) (tea.Model, tea.Cmd) {
@@ -440,7 +466,7 @@ func (m Model) handleAdminSettingsMsg(msg AdminSettingsMsg) (tea.Model, tea.Cmd)
 	}
 	m.syncKeyListTabWithMode()
 	timeoutCmd := m.applyAdminSettingsTimeout(msg.Settings)
-	return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
+	return m, timeoutCmd
 }
 
 func (m Model) handleAdminSettingUpdatedMsg(msg AdminSettingUpdatedMsg) (tea.Model, tea.Cmd) {
@@ -468,7 +494,7 @@ func (m Model) handleAdminSettingUpdatedMsg(msg AdminSettingUpdatedMsg) (tea.Mod
 	// Re-read the settings either way: a failed update can still be in
 	// effect (a restrictive value not saved), so the panel shows what the
 	// signer holds rather than what it showed before.
-	return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd())
+	return m, m.sendGetAdminSettingsCmd()
 }
 
 func (m Model) handleKeyDetailsMsg(msg KeyDetailsMsg) (tea.Model, tea.Cmd) {
@@ -487,7 +513,7 @@ func (m Model) handleKeyDetailsMsg(msg KeyDetailsMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.lastError = msg.Error
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleLibraryTemplatesMsg(msg LibraryTemplatesMsg) (tea.Model, tea.Cmd) {
@@ -504,7 +530,7 @@ func (m Model) handleLibraryTemplatesMsg(msg LibraryTemplatesMsg) (tea.Model, te
 		}
 		m = m.ensureTemplateVisible()
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleShowLibraryTemplateResultMsg(msg ShowLibraryTemplateResultMsg) (tea.Model, tea.Cmd) {
@@ -532,7 +558,7 @@ func (m Model) handleShowLibraryTemplateResultMsg(msg ShowLibraryTemplateResultM
 			}
 		}
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleKeyTypesMsg(msg KeyTypesMsg) (tea.Model, tea.Cmd) {
@@ -568,17 +594,20 @@ func (m Model) handleKeyTypesMsg(msg KeyTypesMsg) (tea.Model, tea.Cmd) {
 			m = m.resumeCosignerImport()
 		}
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleCosignerRemoveResultMsg(msg CosignerRemoveResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, nil
+	}
 	if !msg.Success {
 		m.cosigner.importError = msg.Error
 		if m.cosigner.importError == "" {
 			m.cosigner.importError = "Cosigner reference removal failed"
 		}
 		m.viewState = ViewCosignerRemoveConfirm
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.cosigner.importError = ""
 	if msg.Removed {
@@ -588,31 +617,33 @@ func (m Model) handleCosignerRemoveResultMsg(msg CosignerRemoveResultMsg) (tea.M
 	}
 	m.viewState = ViewCosignerReferences
 	return m, tea.Batch(
-		m.waitForMessageCmd(),
 		m.sendListCosignerReferencesCmd(),
 		m.sendListKeyTypesCmd(),
 	)
 }
 
 func (m Model) handleCosignerExportResultMsg(msg CosignerExportResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, nil
+	}
 	if !msg.Success {
 		m.cosigner.exportError = msg.Error
 		if m.cosigner.exportError == "" {
 			m.cosigner.exportError = "Cosigner key export failed"
 		}
 		m.viewState = ViewCosignerExportPath
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if msg.WitnessKeyID != m.cosigner.exportWitnessID || msg.EnvelopeJSON == "" {
 		m.cosigner.exportError = "Signer returned inconsistent cosigner key metadata"
 		m.viewState = ViewCosignerExportPath
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	artifactJSON, err := composeCosignerExportArtifact(msg.EnvelopeJSON)
 	if err != nil {
 		m.cosigner.exportError = "Cannot compose cosigner key JSON: " + err.Error()
 		m.viewState = ViewCosignerExportPath
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if m.cosigner.exportShowJSON {
 		m.cosigner.exportError = ""
@@ -621,8 +652,5 @@ func (m Model) handleCosignerExportResultMsg(msg CosignerExportResultMsg) (tea.M
 			return cosignerJSONTerminalClosedMsg{err: err}
 		})
 	}
-	return m, tea.Batch(
-		m.waitForMessageCmd(),
-		writeCosignerPublicEnvelopeCmd(m.cosigner.exportPath, artifactJSON),
-	)
+	return m, writeCosignerPublicEnvelopeCmd(m.cosigner.exportPath, artifactJSON)
 }
