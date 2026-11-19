@@ -153,7 +153,7 @@ func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
 	m.viewState = ViewPolicyEdit
 	id := edit.pendingDocumentID
 	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) }),
+		operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) }),
 		m.waitForMessageCmd(),
 	)
 }

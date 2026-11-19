@@ -271,7 +271,7 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 	apply.pendingDocumentID = newRequestID("policy-apply-doc")
 	id := apply.pendingDocumentID
 	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error {
+		operationCmd(m.adminClient, id, func(c *IPCClient) error {
 			return c.SendGetPolicyDocumentAt(key, apply.reviewedSnapshot, id)
 		}),
 		m.waitForMessageCmd(),
@@ -395,26 +395,6 @@ func (m Model) handlePolicyApplyResult(msg PolicyApplyResultMsg) (tea.Model, tea
 	m = m.closePolicyApply()
 	m.policies.status = status
 	return m.requestPolicy()
-}
-
-// policyRequestFailedMsg reports that a policy request could not be sent.
-type policyRequestFailedMsg struct {
-	id  string
-	err error
-}
-
-// policyRequestCmd sends one policy request and ties a send failure to its
-// request ID, so the failure reaches the step that is waiting on it.
-func policyRequestCmd(client *IPCClient, id string, send func(*IPCClient) error) tea.Cmd {
-	return func() tea.Msg {
-		if client == nil {
-			return policyRequestFailedMsg{id: id, err: fmt.Errorf("not connected")}
-		}
-		if err := send(client); err != nil {
-			return policyRequestFailedMsg{id: id, err: err}
-		}
-		return nil
-	}
 }
 
 // failPendingPolicyApply routes an untyped failure (authorization denial, a
@@ -639,7 +619,7 @@ func (c *IPCClient) SendCheckPolicy(doc adminproto.PolicyDocument, id string) er
 }
 
 func (m Model) sendCheckPolicyCmd(doc adminproto.PolicyDocument, id string) tea.Cmd {
-	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendCheckPolicy(doc, id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendCheckPolicy(doc, id) })
 }
 
 // SendApplyPolicy asks the daemon to install one document against the policy
@@ -654,7 +634,7 @@ func (c *IPCClient) SendApplyPolicy(doc adminproto.PolicyDocument, expectedPolic
 }
 
 func (m Model) sendApplyPolicyCmd(doc adminproto.PolicyDocument, expectedPolicySetSHA256, expectedSnapshot, id string) tea.Cmd {
-	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.SendApplyPolicy(doc, expectedPolicySetSHA256, expectedSnapshot, id)
 	})
 }

@@ -17,7 +17,7 @@ import (
 )
 
 // sentRequestIDs runs cmd and returns the IDs of the requests it sent. With
-// no admin client every send fails at once with an ErrorMsg carrying its
+// no admin client every send fails at once with a sendFailedMsg carrying its
 // request ID, whose prefix names the request.
 func sentRequestIDs(cmd tea.Cmd) []string {
 	if cmd == nil {
@@ -30,7 +30,7 @@ func sentRequestIDs(cmd tea.Cmd) []string {
 			ids = append(ids, sentRequestIDs(c)...)
 		}
 		return ids
-	case ErrorMsg:
+	case sendFailedMsg:
 		if msg.ID != "" {
 			return []string{msg.ID}
 		}

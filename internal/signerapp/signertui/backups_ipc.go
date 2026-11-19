@@ -67,7 +67,7 @@ func base(msgType, id string) protocol.BaseMessage {
 }
 
 // backupRequestCmd sends one Backups-page request. A send failure comes back
-// as an ErrorMsg carrying id, like the daemon's error replies.
+// as a sendFailedMsg carrying id, routed as the daemon's error reply would be.
 func (m Model) backupRequestCmd(id string, send func(*IPCClient) error) tea.Cmd {
 	return operationCmd(m.adminClient, id, send)
 }

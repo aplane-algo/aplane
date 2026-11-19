@@ -155,7 +155,7 @@ func (m Model) fetchNextPolicyExportDocument() (tea.Model, tea.Cmd) {
 	export.pendingID = newRequestID("policy-export-doc")
 	id, snapshot := export.pendingID, export.snapshot
 	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocumentAt(key, snapshot, id) }),
+		operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocumentAt(key, snapshot, id) }),
 		m.waitForMessageCmd(),
 	)
 }

@@ -182,7 +182,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case ErrorMsg:
-		return m.handleErrorMsg(msg)
+		// The listener delivered it, so start the next wait.
+		next, cmd := m.handleFailure(msg.ID, msg.Error)
+		return next, tea.Batch(cmd, next.waitForMessageCmd())
+
+	case sendFailedMsg:
+		// Nothing was taken from the listener: the wait started beside the
+		// send is still outstanding, so do not start another.
+		return m.handleFailure(msg.ID, msg.Error)
 
 	case NotificationsLostMsg:
 		m.notificationsLost = max(m.notificationsLost, msg.Total)
@@ -311,15 +318,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PolicyApplyResultMsg:
 		return m.handlePolicyApplyResult(msg)
-
-	case policyRequestFailedMsg:
-		// A local send failure, not a daemon message: nothing was consumed
-		// from the listener, so do not start another wait.
-		if next, ok := m.failPendingPolicyExport(msg.id, msg.err); ok {
-			return next, nil
-		}
-		next, _ := m.failPendingPolicyApply(msg.id, msg.err)
-		return next, nil
 
 	case PolicyExportWrittenMsg:
 		// A local write, not a daemon message: the listener wait started with

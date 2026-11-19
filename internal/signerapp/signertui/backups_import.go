@@ -256,7 +256,7 @@ func (m Model) sendNextBackupImportStep() (tea.Model, tea.Cmd) {
 			err = errors.New("the archive file changed while it was being uploaded")
 		}
 		next, cmd := m.abortBackupImport(err)
-		return next, cmd
+		return next, tea.Batch(cmd, next.waitForMessageCmd())
 	}
 	imp.pendingID = newRequestID("backup-import-append")
 	return m, tea.Batch(m.sendAppendBackupImportCmd(imp.pendingID, imp.uploadID, imp.offset, buffer), m.waitForMessageCmd())
@@ -270,11 +270,11 @@ func (m Model) handleAppendBackupImportResult(msg AppendBackupImportResultMsg) (
 	imp.pendingID = ""
 	if !msg.Result.Success {
 		next, cmd := m.abortBackupImport(errors.New(backupResultText(msg.Result.Error, "the upload failed")))
-		return next, cmd
+		return next, tea.Batch(cmd, next.waitForMessageCmd())
 	}
 	if msg.Result.NextOffset <= imp.offset || msg.Result.NextOffset > imp.source.Size {
 		next, cmd := m.abortBackupImport(fmt.Errorf("the signer reported offset %d after %d", msg.Result.NextOffset, imp.offset))
-		return next, cmd
+		return next, tea.Batch(cmd, next.waitForMessageCmd())
 	}
 	imp.offset = msg.Result.NextOffset
 	return m.sendNextBackupImportStep()
@@ -408,15 +408,15 @@ func (m *Model) takeUnresolvedImport(id string) string {
 }
 
 // abortBackupImport ends an upload that began, telling the signer to remove
-// it, and reports err on the form.
+// it, and reports err on the form. It starts no listener wait; a caller
+// handling a message from the listener starts the next one.
 func (m Model) abortBackupImport(err error) (Model, tea.Cmd) {
 	imp := &m.backups.imp
 	var cmd tea.Cmd
 	if imp.uploadID != "" {
 		cmd = m.sendAbortBackupImportCmd(imp.uploadID)
 	}
-	m = m.failBackupImport(err)
-	return m, tea.Batch(cmd, m.waitForMessageCmd())
+	return m.failBackupImport(err), cmd
 }
 
 func (m Model) failBackupImport(err error) Model {

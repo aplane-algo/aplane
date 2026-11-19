@@ -6,9 +6,11 @@ package tui
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,15 +20,88 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestWaitForMessageCmdReturnsErrorWhenDisconnected(t *testing.T) {
-	m := Model{}
-	msg := m.waitForMessageCmd()()
-	errMsg, ok := msg.(ErrorMsg)
-	if !ok {
-		t.Fatalf("m.waitForMessageCmd() message type = %T, want ErrorMsg", msg)
+// With no client there is nothing to wait on. An error here would be handled
+// by starting another wait, which would fail the same way, round and round.
+func TestWaitForMessageCmdDeliversNothingWithoutAClient(t *testing.T) {
+	if msg := (Model{}).waitForMessageCmd()(); msg != nil {
+		t.Fatalf("waitForMessageCmd() with no client = %#v, want nothing", msg)
 	}
-	if errMsg.Error == nil || errMsg.Error.Error() != "not connected" {
-		t.Fatalf("m.waitForMessageCmd() error = %v, want not connected", errMsg.Error)
+}
+
+// listenerMarker stands in for a queued notification in listenerWaits.
+type listenerMarker struct{}
+
+// listenerTestClient returns a client that is not connected, so every send
+// fails at once, holding markers for listener waits to take.
+func listenerTestClient() *IPCClient {
+	client := &IPCClient{msgChan: make(chan queuedMsg, 8), done: make(chan struct{}), notificationLoss: newNotificationLoss()}
+	for range cap(client.msgChan) {
+		client.msgChan <- queuedMsg{msg: listenerMarker{}}
+	}
+	return client
+}
+
+// listenerWaits runs cmd, whose model holds a listenerTestClient, and counts
+// the listener waits it started: each takes one marker and returns it.
+func listenerWaits(cmd tea.Cmd) int {
+	if cmd == nil {
+		return 0
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		n := 0
+		for _, inner := range msg {
+			n += listenerWaits(inner)
+		}
+		return n
+	case listenerMarker:
+		return 1
+	}
+	return 0
+}
+
+// Exactly one listener wait is outstanding at a time: every message the
+// listener delivers starts the next, and nothing else does. With two, the
+// goroutines race for the queue and can hand the model a sign request's
+// cancellation before the request.
+func TestFailuresStartOneListenerWaitOnlyForWhatTheListenerDelivered(t *testing.T) {
+	m := Model{viewState: ViewKeyList, connectionState: ConnectionConnected, adminClient: listenerTestClient()}
+
+	// A request that could not be sent took nothing from the listener.
+	failed := m.sendListKeysCmd()()
+	if failed == nil {
+		t.Fatal("a send on a client that is not connected did not fail")
+	}
+	next, cmd := m.Update(failed)
+	if n := listenerWaits(cmd); n != 0 {
+		t.Fatalf("a send failure started %d listener waits, want none", n)
+	}
+	if got := next.(Model); got.lastError != "not connected" {
+		t.Fatalf("send failure left lastError %q", got.lastError)
+	}
+
+	// The daemon's error for an upload step came from the listener: the
+	// upload is aborted and exactly one wait follows.
+	uploading := m
+	uploading.viewState = ViewBackupImport
+	uploading.backups.imp = backupImportState{phase: importUploading, pendingID: "backup-import-append-1", uploadID: "upload-1"}
+	next, cmd = uploading.Update(ErrorMsg{ID: "backup-import-append-1", Error: errors.New("authorization denied")})
+	if got := next.(Model); got.backups.imp.phase != importIdle || !strings.Contains(got.backups.imp.err, "authorization denied") {
+		t.Fatalf("the failed upload step: phase %v err %q", got.backups.imp.phase, got.backups.imp.err)
+	}
+	if n := listenerWaits(cmd); n != 1 {
+		t.Fatalf("a daemon error for the upload started %d listener waits, want 1", n)
+	}
+
+	// So does a refused append, which aborts the same way.
+	next, cmd = uploading.Update(AppendBackupImportResultMsg{Result: protocol.AppendBackupImportResultMessage{
+		BaseMessage: protocol.BaseMessage{ID: "backup-import-append-1"}, Error: "disk full",
+	}})
+	if got := next.(Model); got.backups.imp.phase != importIdle {
+		t.Fatalf("the refused append left phase %v", got.backups.imp.phase)
+	}
+	if n := listenerWaits(cmd); n != 1 {
+		t.Fatalf("a refused append started %d listener waits, want 1", n)
 	}
 }
 

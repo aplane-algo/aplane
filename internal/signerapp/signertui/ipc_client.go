@@ -934,28 +934,21 @@ func ConnectCmd(connector AdminConnector) tea.Cmd {
 	}
 }
 
-// ipcCmd wraps an IPC client method call into a tea.Cmd with nil-check and error handling.
+// ipcCmd wraps an IPC client method call into a tea.Cmd that reports a send
+// failure as sendFailedMsg.
 func ipcCmd(client *IPCClient, fn func(*IPCClient) error) tea.Cmd {
-	return func() tea.Msg {
-		if client == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
-		}
-		if err := fn(client); err != nil {
-			return ErrorMsg{Error: err}
-		}
-		return nil
-	}
+	return operationCmd(client, "", fn)
 }
 
-// operationCmd is ipcCmd for a request an in-progress screen waits on: a send
-// failure carries the request's ID so it fails that operation.
+// operationCmd is ipcCmd for a request a screen waits on: a send failure
+// carries the request's ID so it fails that request.
 func operationCmd(client *IPCClient, id string, fn func(*IPCClient) error) tea.Cmd {
 	return func() tea.Msg {
 		if client == nil {
-			return ErrorMsg{ID: id, Error: fmt.Errorf("not connected")}
+			return sendFailedMsg{ID: id, Error: fmt.Errorf("not connected")}
 		}
 		if err := fn(client); err != nil {
-			return ErrorMsg{ID: id, Error: err}
+			return sendFailedMsg{ID: id, Error: err}
 		}
 		return nil
 	}
@@ -999,11 +992,13 @@ func (m Model) sendImportClientKeyCmd(publicKey, label string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportClientKey(publicKey, label) })
 }
 
-// WaitForMessageCmd returns a tea.Cmd that waits for the next message
+// waitForMessageCmd returns a tea.Cmd that waits for the next message. With
+// no client there is nothing to wait on, and it delivers nothing: an error
+// here would be handled by starting another wait, round and round.
 func (m Model) waitForMessageCmd() tea.Cmd {
 	return func() tea.Msg {
 		if m.adminClient == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
+			return nil
 		}
 		return m.adminClient.ListenForMessages()()
 	}
@@ -1171,10 +1166,10 @@ func (m Model) sendPreviewRestoreCmd(archivePath string, exportPassphrase []byte
 	return func() tea.Msg {
 		defer zeroBytes(passphrase)
 		if m.adminClient == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
+			return sendFailedMsg{Error: fmt.Errorf("not connected")}
 		}
 		if err := m.adminClient.SendPreviewRestore(archivePath, passphrase); err != nil {
-			return ErrorMsg{Error: err}
+			return sendFailedMsg{Error: err}
 		}
 		return nil
 	}
@@ -1191,12 +1186,12 @@ func (m Model) sendRestoreBackupCmd(
 	return func() tea.Msg {
 		defer zeroBytes(passphrase)
 		if m.adminClient == nil {
-			return ErrorMsg{Error: fmt.Errorf("not connected")}
+			return sendFailedMsg{Error: fmt.Errorf("not connected")}
 		}
 		if err := m.adminClient.SendRestoreBackup(
 			archivePath, selectedAddresses, passphrase, replaceExisting,
 		); err != nil {
-			return ErrorMsg{Error: err}
+			return sendFailedMsg{Error: err}
 		}
 		return nil
 	}

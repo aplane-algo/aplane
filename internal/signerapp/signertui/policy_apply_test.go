@@ -350,9 +350,9 @@ func TestPolicyApplyUntypedFailureReleasesOnlyItsOwnRequest(t *testing.T) {
 	}
 
 	// A request that could not be sent fails the step waiting on it.
-	failed, ok := policyRequestCmd(nil, applying.policies.apply.pendingApplyID, func(*IPCClient) error { return nil })().(policyRequestFailedMsg)
+	failed, ok := operationCmd(nil, applying.policies.apply.pendingApplyID, func(*IPCClient) error { return nil })().(sendFailedMsg)
 	if !ok {
-		t.Fatal("unsent policy request did not report a policy request failure")
+		t.Fatal("unsent policy request did not report a send failure")
 	}
 	next, cmd := applying.Update(failed)
 	if got := next.(Model); got.policies.apply.applying || got.policies.apply.applyErr != "Apply failed: not connected" || cmd != nil {

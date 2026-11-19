@@ -697,9 +697,21 @@ type EnrollmentChangedMsg struct {
 	Fingerprint string
 }
 
-// ErrorMsg is sent when an error occurs. ID is the request the daemon's error
-// answers; it is empty for local failures and uncorrelated daemon errors.
+// ErrorMsg is a failure the message listener delivered: the daemon's error
+// reply, a signer message the TUI cannot decode, or a lost connection. ID is
+// the request it answers; it is empty when it answers none. A request that
+// could not be sent comes back as sendFailedMsg instead.
 type ErrorMsg struct {
+	ID    string
+	Error error
+}
+
+// sendFailedMsg reports a request that could not be sent. It does not come
+// from the listener, so handling it starts no listener wait: the wait started
+// beside the send is still outstanding, and a second one would let two
+// goroutines race for the next notification. ID names the request, as on
+// the ErrorMsg the daemon would have sent.
+type sendFailedMsg struct {
 	ID    string
 	Error error
 }

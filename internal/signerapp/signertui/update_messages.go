@@ -168,44 +168,47 @@ func (m Model) handleKeysListMsg(msg KeysListMsg) (tea.Model, tea.Cmd) {
 	return m, m.waitForMessageCmd()
 }
 
-func (m Model) handleErrorMsg(msg ErrorMsg) (tea.Model, tea.Cmd) {
-	if m.mnemonicExport.pending && msg.ID == m.mnemonicExport.requestID {
+// handleFailure routes an untyped failure, from the daemon (ErrorMsg) or from
+// a send (sendFailedMsg), to the request id names. It starts no listener
+// wait: only the caller knows whether the failure came from the listener.
+func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
+	if m.mnemonicExport.pending && id == m.mnemonicExport.requestID {
 		m.mnemonicExport.pending = false
-		m.mnemonicExport.error = msg.Error.Error()
-		return m, m.waitForMessageCmd()
+		m.mnemonicExport.error = err.Error()
+		return m, nil
 	}
 	if m.viewState == ViewCosignerImporting {
-		m.cosigner.importError = msg.Error.Error()
+		m.cosigner.importError = err.Error()
 		m.viewState = ViewCosignerImportReview
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if m.viewState == ViewCosignerRemoving {
-		m.cosigner.importError = msg.Error.Error()
+		m.cosigner.importError = err.Error()
 		m.viewState = ViewCosignerRemoveConfirm
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if m.viewState == ViewCosignerExporting {
-		m.cosigner.exportError = msg.Error.Error()
+		m.cosigner.exportError = err.Error()
 		m.viewState = ViewCosignerExportPath
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
-	if next, ok := m.failPendingPolicyExport(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if next, ok := m.failPendingPolicyExport(id, err); ok {
+		return next, nil
 	}
-	if next, ok := m.failPendingBackupExport(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if next, ok := m.failPendingBackupExport(id, err); ok {
+		return next, nil
 	}
-	if next, cmd, ok := m.failPendingBackupImport(msg.ID, msg.Error); ok {
-		return next, tea.Batch(cmd, next.waitForMessageCmd())
+	if next, cmd, ok := m.failPendingBackupImport(id, err); ok {
+		return next, cmd
 	}
-	if next, ok := m.failPendingBackupDelete(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if next, ok := m.failPendingBackupDelete(id, err); ok {
+		return next, nil
 	}
-	if next, ok := m.failPendingPolicyApply(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if next, ok := m.failPendingPolicyApply(id, err); ok {
+		return next, nil
 	}
-	if next, ok := m.failOperationInProgress(msg.ID, msg.Error); ok {
-		return next, next.waitForMessageCmd()
+	if next, ok := m.failOperationInProgress(id, err); ok {
+		return next, nil
 	}
 	if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
 		m.clearRestorePassphrase()
@@ -218,16 +221,15 @@ func (m Model) handleErrorMsg(msg ErrorMsg) (tea.Model, tea.Cmd) {
 		// Route the same way typed failures do.
 		if m.signerState == signerRuntimeRecovery {
 			m.viewState = ViewStoreRecovery
-			m.restore.recoveryError = msg.Error.Error()
-			return m, m.waitForMessageCmd()
+			m.restore.recoveryError = err.Error()
+			return m, nil
 		}
-		m.lastError = msg.Error.Error()
+		m.lastError = err.Error()
 		m.viewState = ViewBackups
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
-	m.lastError = msg.Error.Error()
-	// Continue listening for messages
-	return m, m.waitForMessageCmd()
+	m.lastError = err.Error()
+	return m, nil
 }
 
 func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
