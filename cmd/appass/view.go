@@ -84,6 +84,8 @@ func (m Model) View() string {
 		return m.renderPassphraseView("Enter passphrase", false)
 	case ViewConfirmPassphrase:
 		return m.renderPassphraseView("Confirm passphrase", true)
+	case ViewWorking:
+		return m.renderWorkingView()
 	case ViewResult:
 		return m.renderResultView()
 	default:
@@ -194,21 +196,14 @@ func (m Model) renderPassphraseView(prompt string, isConfirm bool) string {
 	sb.WriteString(titleStyle.Render("appass — Auto-Unlock Manager"))
 	sb.WriteString("\n")
 
-	actionLabel := m.currentAction
-	switch m.currentAction {
-	case "set-passfile":
-		actionLabel = "Set passfile auto-unlock"
-		if !isConfirm {
-			sb.WriteString(warningStyle.Render("WARNING: This stores the passphrase in a plaintext file."))
-			sb.WriteString("\n")
-			sb.WriteString(warningStyle.Render("Passphrase file is permissioned 600."))
-			sb.WriteString("\n\n")
-		}
-	case "set-systemd-creds":
-		actionLabel = "Set systemd-creds auto-unlock"
+	if m.currentAction == "set-passfile" && !isConfirm {
+		sb.WriteString(warningStyle.Render("WARNING: This stores the passphrase in a plaintext file."))
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render("Passphrase file is permissioned 600."))
+		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString(subtitleStyle.Render(actionLabel))
+	sb.WriteString(subtitleStyle.Render(actionLabel(m.currentAction)))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(prompt + ":\n")
@@ -233,6 +228,33 @@ func (m Model) renderPassphraseView(prompt string, isConfirm bool) string {
 	}
 
 	sb.WriteString(helpStyle.Render("Enter: Submit | Tab: Toggle visibility | Esc: Cancel"))
+
+	return sb.String()
+}
+
+// actionLabel names an action on the passphrase and working screens.
+func actionLabel(action string) string {
+	switch action {
+	case "set-passfile":
+		return "Set passfile auto-unlock"
+	case "set-systemd-creds":
+		return "Set systemd-creds auto-unlock"
+	case "set-none":
+		return "Switch to prompt (manual unlock)"
+	}
+	return action
+}
+
+// renderWorkingView renders the screen shown while an action runs. It offers
+// no keys: the action finishes before anything else can be done.
+func (m Model) renderWorkingView() string {
+	var sb strings.Builder
+
+	sb.WriteString(titleStyle.Render("appass — Auto-Unlock Manager"))
+	sb.WriteString("\n")
+	sb.WriteString(subtitleStyle.Render(actionLabel(m.currentAction)))
+	sb.WriteString("\n\n")
+	sb.WriteString("Applying...\n")
 
 	return sb.String()
 }

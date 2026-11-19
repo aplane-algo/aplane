@@ -67,6 +67,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handlePassphraseInputKeys(msg)
 		case ViewConfirmPassphrase:
 			return m.handleConfirmKeys(msg)
+		case ViewWorking:
+			// The action runs until ActionDoneMsg. A second Enter would run
+			// it again, and quitting would leave it half done.
+			return m, nil
 		case ViewResult:
 			return m.handleResultKeys()
 		}
@@ -220,13 +224,15 @@ func (m Model) handleResultKeys() (tea.Model, tea.Cmd) {
 	return m, loadStatusCmd(m.dataDir, m.svcInfo, m.isLocal)
 }
 
-// dispatchAction runs the current action directly in-process. It owns
-// passphrase and zeroes it once the action has run.
+// dispatchAction runs the current action directly in-process, showing the
+// working screen until it is done. It owns passphrase and zeroes it once the
+// action has run.
 func (m Model) dispatchAction(passphrase []byte) (tea.Model, tea.Cmd) {
 	action := m.currentAction
 	dataDir := m.dataDir
 	svcInfo := m.svcInfo
 	isLocal := m.isLocal
+	m.viewState = ViewWorking
 	return m, func() tea.Msg {
 		defer clear(passphrase)
 		var (

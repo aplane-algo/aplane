@@ -22,9 +22,16 @@ import (
 
 const systemdCredentialName = "aplane-passphrase"
 
+// errEmptyPassphrase refuses an auto-unlock secret that could never unlock
+// the store: the signer refuses an empty passphrase.
+var errEmptyPassphrase = errors.New("passphrase must not be empty")
+
 // executeSetPassfile sets up appass-file auto-unlock.
 // passphrase is the raw passphrase bytes. svc and isLocal describe the environment.
 func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isLocal bool) (string, error) {
+	if len(passphrase) == 0 {
+		return "", errEmptyPassphrase
+	}
 	if err := requireSignerStopped(dataDir); err != nil {
 		return "", err
 	}
@@ -92,6 +99,9 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 // executeSetSystemcreds sets up systemd-creds auto-unlock.
 // This always requires root and a systemd service installation.
 func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) (string, error) {
+	if len(passphrase) == 0 {
+		return "", errEmptyPassphrase
+	}
 	if err := requireSignerStopped(dataDir); err != nil {
 		return "", err
 	}
