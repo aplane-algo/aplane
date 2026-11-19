@@ -6,6 +6,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -50,8 +51,14 @@ type policiesState struct {
 	presetPick policyPresetPickState
 }
 
+// requestSeq numbers the request IDs this process names, so two named within
+// one tick of the clock still differ.
+var requestSeq atomic.Uint64
+
+// newRequestID names a request: its prefix says what it is, and the time and
+// sequence number make it distinct from every other this process sends.
 func newRequestID(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UnixNano(), requestSeq.Add(1))
 }
 
 // PolicyDocumentLoadedMsg carries the daemon's response for one document.
