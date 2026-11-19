@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 
@@ -703,7 +704,7 @@ func parseGeneric(path string, data []byte) (ParsedTemplate, error) {
 	if err := generictemplate.ValidateSpecAdmission(spec); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid generic template: %w", err)
 	}
-	return ParsedTemplate{
+	parsed := ParsedTemplate{
 		TemplateRef: TemplateRef{
 			KeyType:      spec.KeyType(),
 			TemplateType: templatestore.TemplateTypeGeneric,
@@ -714,7 +715,11 @@ func parseGeneric(path string, data []byte) (ParsedTemplate, error) {
 		RuntimeArgs: generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs),
 		SourcePath:  path,
 		YAMLData:    append([]byte(nil), data...),
-	}, nil
+	}
+	if err := checkTemplateText(parsed, nil); err != nil {
+		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid generic template: %w", err)
+	}
+	return parsed, nil
 }
 
 func parseComposed(path string, data []byte) (ParsedTemplate, error) {
@@ -727,7 +732,7 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 	if err := composeddsa.ValidateTemplateAdmission(spec); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid composed template: %w", err)
 	}
-	return ParsedTemplate{
+	parsed := ParsedTemplate{
 		TemplateRef: TemplateRef{
 			KeyType:      spec.KeyType(),
 			TemplateType: templatestore.TemplateTypeComposed,
@@ -738,7 +743,50 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 		RuntimeArgs: generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs),
 		SourcePath:  path,
 		YAMLData:    append([]byte(nil), data...),
-	}, nil
+	}
+	var boundedArgs []lsigprovider.RuntimeArgDef
+	if spec.Bounded != nil {
+		for _, arg := range spec.Bounded.RuntimeArgs {
+			boundedArgs = append(boundedArgs, lsigprovider.RuntimeArgDef{Name: arg.Name, Label: arg.Label, Description: arg.Description})
+		}
+	}
+	if err := checkTemplateText(parsed, boundedArgs); err != nil {
+		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid composed template: %w", err)
+	}
+	return parsed, nil
+}
+
+// checkTemplateText refuses a template whose display text holds a character
+// that does not print as itself: a control or format character, a
+// bidirectional one among them, or invalid UTF-8. That text is the author's,
+// and every client that lists the key type shows it: its name, description,
+// parameter labels and hints, choice values and defaults, and argument labels.
+// Admission only, as the checks above are: a store's own templates load
+// without it, and the screens that show them escape it.
+func checkTemplateText(parsed ParsedTemplate, boundedArgs []lsigprovider.RuntimeArgDef) error {
+	type text struct{ field, value string }
+	texts := []text{{"display_name", parsed.DisplayName}, {"description", parsed.Description}}
+	for _, p := range parsed.Parameters {
+		at := "parameter " + p.Name + " "
+		texts = append(texts, text{at + "label", p.Label}, text{at + "description", p.Description},
+			text{at + "example", p.Example}, text{at + "placeholder", p.Placeholder}, text{at + "default", p.Default})
+		for _, option := range p.Options {
+			texts = append(texts, text{at + "option", option})
+		}
+		for _, mode := range p.InputModes {
+			texts = append(texts, text{at + "input mode " + mode.Name + " label", mode.Label})
+		}
+	}
+	for _, a := range append(append([]lsigprovider.RuntimeArgDef(nil), parsed.RuntimeArgs...), boundedArgs...) {
+		at := "runtime_arg " + a.Name + " "
+		texts = append(texts, text{at + "label", a.Label}, text{at + "description", a.Description})
+	}
+	for _, t := range texts {
+		if shown := termsafe.Line(t.value); shown != t.value {
+			return fmt.Errorf("%s holds a character that does not print, shown escaped: %s", termsafe.Line(t.field), shown)
+		}
+	}
+	return nil
 }
 
 func applyInstallStatus(paths storepaths.Paths, parsed ParsedTemplate, item *LibraryTemplate) {
