@@ -885,7 +885,14 @@ an account's auth address on chain.
 **Trust boundary.** In `presign-plan`, apsigner still owns its slots — it applies its
 full policy and approval to the managed transactions, exactly as for a direct `/sign`.
 A plugin can *add* signers to a group; it cannot bypass apsigner's authority over
-apsigner's keys. APlane validates the live client algod against the v42/v43 allowlist before
+apsigner's keys. Before `/plan`, the managed slots meet the preconditions the
+default flow gives every transaction it signs: each sender's auth address is
+looked up when the client has none cached, so a rekeyed account is planned under
+its authorizer; the key list is refreshed when a slot's signer is not in it; and a
+slot is refused, by its position, when its sender is a rotating account (which
+signs alone), when its signer signs through the cosigned flow (which
+`presign-plan` does not run), or when its LogicSig arguments do not match what
+its signer declares. APlane validates the live client algod against the v42/v43 allowlist before
 invoking a `presign-plan` callback. It performs the same check before broadcasting
 or simulating a `pregrouped-signed` group verbatim.
 

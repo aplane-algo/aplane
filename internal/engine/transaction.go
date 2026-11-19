@@ -89,17 +89,20 @@ func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotic
 // cache does not describe passes, and the signer judges.
 func (e *Engine) validateSubmitLsigArgs(txns []types.Transaction, lsigArgsMap []map[string][]byte) error {
 	for i, txn := range txns {
-		var lsigArgs map[string][]byte
-		if i < len(lsigArgsMap) {
-			lsigArgs = lsigArgsMap[i]
+		if err := e.validateSlotLsigArgs(txn, lsigArgsAt(lsigArgsMap, i)); err != nil {
+			return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
 		}
+	}
+	return nil
+}
 
-		signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
-		if e.signerCacheIsGenericLsig(signer) || len(lsigArgs) > 0 {
-			if err := e.validateSignerLsigArgs(signer, lsigArgs); err != nil {
-				return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
-			}
-		}
+// validateSlotLsigArgs checks one transaction's placed arguments against the
+// declared arguments of the key that signs for its sender
+// (validateSubmitLsigArgs).
+func (e *Engine) validateSlotLsigArgs(txn types.Transaction, lsigArgs map[string][]byte) error {
+	signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
+	if e.signerCacheIsGenericLsig(signer) || len(lsigArgs) > 0 {
+		return e.validateSignerLsigArgs(signer, lsigArgs)
 	}
 	return nil
 }
@@ -130,7 +133,9 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, args LsigArgs, opt
 // connected signer and algod, a supported consensus version, transactions for
 // the active algod's network, fresh signer metadata for the senders, and then,
 // against that metadata, the placed LogicSig arguments. Plugin drafts in the
-// default group mode and transaction files reach the signer through here.
+// default group mode and transaction files reach the signer through here; a
+// presign-plan group's managed slots meet the same ones in
+// checkManagedSlotsReady.
 func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.SubmitOptions) error {
 	if !e.IsConnected() {
 		return ErrNotConnected

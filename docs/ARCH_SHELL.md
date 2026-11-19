@@ -575,7 +575,8 @@ methods take them.
   `SignAndSubmitWithPluginSigners` set each position's map from
   `LsigArgs.For(sender)`; a presign-plan slot the plugin signs gets none.
   The engine judges nothing in it, except through the existing pre-sign
-  check (`validateSubmitLsigArgs`), which compares each position's map with
+  check (`validateSubmitLsigArgs`; for a presign-plan group's managed slots,
+  `checkManagedSlotsReady`), which compares each position's map with
   the declared arguments of the sender's effective signer in the signer
   cache, after `refreshSubmitSigningState`. A key the cache describes no
   arguments for passes; the signer judges every key, and refuses

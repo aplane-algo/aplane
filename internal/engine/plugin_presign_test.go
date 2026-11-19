@@ -50,6 +50,18 @@ func presignTestTxn(t *testing.T, sender, note string) types.Transaction {
 
 // presignAlgodParams is what a fake algod reports: a supported consensus
 // version and the network presignTestTxn builds for.
+// presignManagedCaches is what the client knows of a presign-plan group's
+// managed account before /plan: it signs for itself, and the signer holds its
+// ed25519 key. Its slot then meets the managed-slot preconditions without a
+// query.
+func presignManagedCaches(managed string) []EngineOption {
+	authCache := cache.NewAuthAddressCache()
+	authCache.AuthAddresses[managed] = ""
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(managed, "ed25519")
+	return []EngineOption{WithAuthCache(authCache), WithSignerCache(signerCache)}
+}
+
 func presignAlgodParams() models.TransactionParametersResponse {
 	return models.TransactionParametersResponse{
 		ConsensusVersion: string(protocol.ConsensusV42),
@@ -577,8 +589,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		t.Fatalf("MakeClient() error = %v", err)
 	}
 
-	authCache := cache.NewAuthAddressCache()
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(authCache))
+	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -769,7 +780,7 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -854,7 +865,7 @@ func TestSignAndSubmitWithPluginSignersRefusesAFeeRaiseOnAPluginSlot(t *testing.
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -945,7 +956,7 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", WithAlgodClient(algodClient), WithAuthCache(cache.NewAuthAddressCache()))
+	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -975,5 +986,64 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 	var carrier interface{ SubmissionOutput() string }
 	if !errors.As(err, &carrier) || carrier.SubmissionOutput() != want {
 		t.Fatalf("error %v does not carry the plan lines", err)
+	}
+}
+
+// A presign-plan group's managed slots meet the preconditions the default
+// flow gives every transaction it signs, before /plan: the sender's auth
+// address is filled when the cache has none, so a rekeyed sender is planned
+// under its authorizer, and a slot this mode cannot sign is refused by its
+// position, not later at the signer or algod.
+func TestPresignManagedSlotsMeetTheDefaultFlowsPreconditions(t *testing.T) {
+	plugin := testAddress(31)
+	rekeyed, native := testAddress(32), testAddress(33)
+	lsigRekeyed, hashlock := testAddress(34), testAddress(35)
+	rotating, cosigned := testAddress(36), testAddress(37)
+	keys := []signerapi.KeyInfo{
+		{Address: native.String(), KeyType: "ed25519"},
+		{Address: hashlock.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true,
+			SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true, MaxSize: 64}}},
+		{Address: rotating.String(), KeyType: "aplane.rotating-triple-xmss.v1", SigningFlow: signerapi.SigningFlowRotating1},
+		{Address: cosigned.String(), KeyType: "test.bounded-cosigner.v1", SigningFlow: signerapi.SigningFlowCosigned1},
+	}
+	authAddrs := map[string]string{rekeyed.String(): native.String(), lsigRekeyed.String(): hashlock.String()}
+	refs := map[string]string{plugin.String(): "plugin-ref"}
+	notReached := func([]PluginSlotSignRequest) ([]PluginSlotSigned, error) { return nil, errors.New("not reached") }
+
+	t.Run("a rekeyed sender is planned under its authorizer", func(t *testing.T) {
+		f := newLsigArgsEngine(t, keys, authAddrs)
+		_, err := f.eng.SignAndSubmitWithPluginSigners(context.Background(),
+			[]types.Transaction{f.payment(t, plugin), f.payment(t, rekeyed)}, refs, nil, notReached, LsigArgs{})
+		if err == nil || !strings.Contains(err.Error(), "group planning failed") {
+			t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want the test signer's /plan refusal", err)
+		}
+		plans := plansOf(f)
+		if len(plans) != 1 || plans[0][1].AuthAddress != native.String() {
+			t.Fatalf("/plan requests = %+v, want the managed slot under its authorizer %s", plans, native)
+		}
+	})
+	for _, tc := range []struct {
+		name   string
+		sender types.Address
+		want   string
+	}{
+		{"a required LogicSig argument of the authorizer is missing", lsigRekeyed,
+			"transaction 2: invalid LogicSig arguments: missing required argument: preimage"},
+		{"a rotating account", rotating,
+			"transaction 2: a rotating account's transaction must be sent alone"},
+		{"a cosigned account", cosigned,
+			`transaction 2: ` + cosigned.String() + ` signs through the "cosigned1" signing flow, which a presign-plan group cannot use`},
+	} {
+		t.Run(tc.name+" is refused before /plan", func(t *testing.T) {
+			f := newLsigArgsEngine(t, keys, authAddrs)
+			_, err := f.eng.SignAndSubmitWithPluginSigners(context.Background(),
+				[]types.Transaction{f.payment(t, plugin), f.payment(t, tc.sender)}, refs, nil, notReached, LsigArgs{})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want %q", err, tc.want)
+			}
+			if plans := plansOf(f); len(plans) != 0 {
+				t.Fatalf("/plan was called %d time(s), want none", len(plans))
+			}
+		})
 	}
 }

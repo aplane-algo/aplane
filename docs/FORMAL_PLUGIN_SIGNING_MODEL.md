@@ -325,6 +325,21 @@ what was reviewed.
   gates; the model carries no network and claims nothing about it. Go tests:
   `internal/engine/active_network_test.go`,
   `internal/apshellapp/submission_network_test.go`.
+- **The managed slots' signing preconditions are checked, not modeled.** In
+  presign-plan, after the network check and before the plan requests are built
+  and `/plan`, the slots APlane signs meet the preconditions the default flow's
+  `internal/engine/transaction.go::checkReadyToSign` gives every transaction
+  (`internal/engine/plugin_presign.go::checkManagedSlotsReady`): a connected
+  signer; each managed sender's auth address filled when the cache has none and
+  the key list refreshed when a slot's effective signer is not in it
+  (`refreshSubmitSigningState`); a rotating sender refused, and an effective
+  signer on the cosigned flow refused, since presign-plan runs neither
+  choreography; and each slot's placed LogicSig arguments checked against its
+  effective signer's declared ones. Plugin-owned slots are not judged. These
+  only refuse, before anything is planned or signed, and change none of the
+  modeled gates or their order: without them the signer or algod refused the
+  same slots later. The model carries none of this state. Go test:
+  `internal/engine/plugin_presign_test.go::TestPresignManagedSlotsMeetTheDefaultFlowsPreconditions`.
 - **LogicSig arguments are checked, not modeled.** A plugin command's `arg:`
   words apply to its first result only and are placed by the account that
   sends each transaction: `arg:<name>=<value>` on every position,

@@ -80,13 +80,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if len(pluginSignerRefs) == 0 {
 		return nil, fmt.Errorf("pre-sign planning requires at least one plugin signer")
 	}
-	managed := 0
-	for _, txn := range txns {
-		if _, owned := pluginSignerRefs[txn.Sender.String()]; !owned {
-			managed++
-		}
-	}
-	if managed == 0 {
+	if len(managedPositions(txns, pluginSignerRefs)) == 0 {
 		return nil, fmt.Errorf("pre-sign planning requires at least one APlane-managed slot; use pregrouped-signed for an all-plugin group")
 	}
 	// Every declared plugin signer must own a slot. Otherwise the plugin output is
@@ -105,6 +99,9 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	// would only repeat both on these same transactions, so the plan request
 	// below goes to the signer connection directly.
 	if err := e.checkActiveNetwork(ctx, txns); err != nil {
+		return nil, err
+	}
+	if err := e.checkManagedSlotsReady(ctx, txns, pluginSignerRefs, lsigArgs); err != nil {
 		return nil, err
 	}
 
@@ -280,16 +277,66 @@ func (e *Engine) submitPlannedPluginGroup(ctx context.Context, canonicalTxns []t
 	return result, nil
 }
 
+// checkManagedSlotsReady gives the slots APlane signs the preconditions the
+// default flow gives every transaction it signs (checkReadyToSign; the
+// network check already ran on the whole draft), so a sender this mode cannot
+// sign for is refused here, by its slot, before /plan rather than late at the
+// signer or algod: a connected signer; each managed sender's auth address,
+// queried when the cache has none, and a fresh key list when a managed slot's
+// effective signer is not in it (refreshSubmitSigningState); a rotating
+// account refused, since it signs alone and the signer forms its group; an
+// effective signer on the cosigned flow refused, since its signatures come
+// from that flow, which presign-plan does not run; and each slot's placed
+// LogicSig arguments checked against its effective signer's declared ones.
+// Plugin-owned slots are the plugin's to sign and are not judged.
+func (e *Engine) checkManagedSlotsReady(ctx context.Context, txns []types.Transaction, pluginSignerRefs map[string]string, lsigArgs []map[string][]byte) error {
+	if !e.IsConnected() {
+		return ErrNotConnected
+	}
+	positions := managedPositions(txns, pluginSignerRefs)
+	managed := make([]types.Transaction, len(positions))
+	for j, i := range positions {
+		managed[j] = txns[i]
+	}
+	if err := e.refreshSubmitSigningState(ctx, managed); err != nil {
+		return err
+	}
+	cosigned := e.cosignedSigner()
+	for j, i := range positions {
+		txn := managed[j]
+		sender := txn.Sender.String()
+		if e.IsRotatingAccount(sender) {
+			return fmt.Errorf("transaction %d: a rotating account's transaction must be sent alone; it cannot be grouped with other transactions", i+1)
+		}
+		if cosigned.HasCosignedEffectiveSigner(managed[j : j+1]) {
+			signer := e.AuthCache.ResolveEffectiveSigner(sender)
+			return fmt.Errorf("transaction %d: %s signs through the %q signing flow, which a presign-plan group cannot use", i+1, signer, e.signerCacheSigningFlow(signer))
+		}
+		if err := e.validateSlotLsigArgs(txn, lsigArgsAt(lsigArgs, i)); err != nil {
+			return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
+		}
+	}
+	return nil
+}
+
+// managedPositions lists the positions of txns that APlane signs: those whose
+// sender no plugin signer owns.
+func managedPositions(txns []types.Transaction, pluginSignerRefs map[string]string) []int {
+	var positions []int
+	for i, txn := range txns {
+		if _, owned := pluginSignerRefs[txn.Sender.String()]; !owned {
+			positions = append(positions, i)
+		}
+	}
+	return positions
+}
+
 // managedSignRequest builds an apsigner sign-mode request for a managed slot,
-// resolving the auth address and attaching lsig args.
+// naming the sender's effective signer and attaching lsig args.
 func (e *Engine) managedSignRequest(txn types.Transaction, lsigArgs map[string][]byte) signerapi.SignRequest {
 	sender := txn.Sender.String()
-	effectiveSigner := sender
-	if authAddr, exists := e.AuthCache.GetAuthAddress(sender); exists && authAddr != "" {
-		effectiveSigner = authAddr
-	}
 	req := signerapi.SignRequest{
-		AuthAddress: effectiveSigner,
+		AuthAddress: e.AuthCache.ResolveEffectiveSigner(sender),
 		TxnSender:   sender,
 		TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		AppCallInfo: pluginAppCallInfo(txn),
