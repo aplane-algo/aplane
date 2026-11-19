@@ -163,7 +163,8 @@ func (c *Client) call(ctx context.Context, method string, params interface{}, re
 	select {
 	case resp, ok := <-respChan:
 		if !ok {
-			if err := c.GetLastError(); err != nil {
+			// The client failed; report its first failure, as later calls do.
+			if err := c.terminalError(); err != nil {
 				return err
 			}
 			return ErrConnectionClosed

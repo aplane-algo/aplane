@@ -254,3 +254,22 @@ func TestEndedContextSendsNothingAndKeepsTheClient(t *testing.T) {
 		})
 	}
 }
+
+// A call waiting for its answer when the client fails reports that first
+// failure, not one that follows it, such as the client being closed.
+func TestWaitingCallReportsTheClientsFirstFailure(t *testing.T) {
+	first := errors.New("first failure")
+	for i := 0; i < 50; i++ {
+		entered := make(chan struct{})
+		c := NewClient(&bytes.Buffer{}, &enteredWriter{w: io.Discard, entered: entered})
+		callErr := make(chan error, 1)
+		go func() { callErr <- c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 5*time.Second) }()
+		<-entered
+		time.Sleep(5 * time.Millisecond) // let the call reach its wait for the answer
+		c.failPending(first)
+		c.Close()
+		if err := <-callErr; !errors.Is(err, first) {
+			t.Fatalf("attempt %d: error = %v, want the first failure", i, err)
+		}
+	}
+}
