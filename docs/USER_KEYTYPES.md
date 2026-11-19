@@ -160,6 +160,9 @@ generate <key_type> [param=value ...]
 ```
 
 `keytypes` lists only key types currently exposed by the connected signer.
+While the signer is locked that is the built-in key types only (on a signer
+node `ed25519`, `falcon1024` and `aplane.falcon1024.v1`); key types enabled
+in the store, and template-backed ones, are listed once it is unlocked.
 Use the full canonical key type shown by `keytypes`, for example
 `aplane.htlc.v1` or `example.my_escrow.v1`. Files, IPC/HTTP
 responses, and JSON fields use the same canonical `publisher.family.vN`

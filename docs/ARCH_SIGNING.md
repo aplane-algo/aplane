@@ -1377,7 +1377,7 @@ request state and principals without a runtime ID.
 | `GET` | `/health` | no | no |
 | `GET` | `/status` | yes | no |
 | `GET` | `/keys` | yes | yes |
-| `GET` | `/keytypes` | yes | no (but template-backed types appear only after unlock) |
+| `GET` | `/keytypes` | yes | no (while locked, the built-in key types only; see below) |
 | `POST` | `/sign` | yes | yes |
 | `POST` | `/sign/component` | yes | yes |
 | `POST` | `/sign/assemble` | yes | yes |
@@ -2403,6 +2403,15 @@ mnemonic import capability; clients must not infer importability from
 has populated signer-side signing, keygen, mnemonic, or key-processor registries.
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning.
+
+`/keytypes` answers while the signer is locked, in the same shape. A locked
+store's key type activation records cannot be read, so the locked answer lists
+the built-in key types only: those enabled by default for the node's role
+(`ed25519`, `falcon1024` and `aplane.falcon1024.v1` on a signer node; the two
+witness key types on a cosigner node). A library key type the store enables
+(`aplane.ed25519.v1`, a rotating type) and every template-backed type appear
+only after unlock. Cosigner reference options apply as when unlocked: they
+live outside the generation and need no unlock.
 
 The plain Falcon and Ed25519 LogicSig types are plain hosts, listed in `/keytypes`
 as per-key types (`per_key_contract`) with `boundary_schema` `aplane.boundary.v1`:
