@@ -14,7 +14,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
-var errSessionNotInitialized = errors.New("apshell session is not initialized")
+var (
+	errSessionNotInitialized = errors.New("apshell session is not initialized")
+	errSessionShutDown       = errors.New("apshell session is shut down")
+)
 
 // Session is an embedded apshell command session for non-readline hosts.
 // execMu is held while a line runs and while the session shuts down, so
@@ -27,6 +30,9 @@ type Session struct {
 	activeMu     sync.Mutex
 	activeCancel context.CancelFunc
 	activeID     uint64
+	// closing is set, under activeMu, when Shutdown begins: nothing starts
+	// after it, so no operation can slip past Shutdown's cancel.
+	closing bool
 }
 
 // NewSession initializes apshell state without taking over terminal input or
@@ -62,12 +68,15 @@ func (s *Session) StartupConnect() (string, error) {
 	if s == nil {
 		return "", errSessionNotInitialized
 	}
-	ctx, end := s.beginActive()
+	ctx, end, err := s.beginActive()
+	if err != nil {
+		return "", err
+	}
 	defer end()
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
-	if s.state == nil {
-		return "", errSessionNotInitialized
+	if err := s.startable(ctx); err != nil {
+		return "", err
 	}
 	defer s.state.bindCommandContext(ctx)()
 
@@ -75,7 +84,7 @@ func (s *Session) StartupConnect() (string, error) {
 	previous := s.state.Out
 	s.state.SetOutput(&buf)
 	defer s.state.SetOutput(previous)
-	err := attemptStartupConnection(s.state)
+	err = attemptStartupConnection(s.state)
 	if err != nil {
 		s.state.printf("Warning: Signer verification failed: %v\n", err)
 		s.state.println("Signer not available (run 'connect' to retry)")
@@ -96,10 +105,13 @@ func (s *Session) ExecuteLineContext(ctx context.Context, raw string) (exit bool
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if s.isClosing() {
+		return false, errSessionShutDown
+	}
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
-	if s.state == nil {
-		return false, errSessionNotInitialized
+	if err := s.startable(ctx); err != nil {
+		return false, err
 	}
 	return s.executeLineContext(ctx, raw)
 }
@@ -137,13 +149,16 @@ func (s *Session) ExecuteLineCaptured(raw string) (output string, exit bool, err
 	if s == nil {
 		return "", false, errSessionNotInitialized
 	}
-	ctx, end := s.beginActive()
+	ctx, end, err := s.beginActive()
+	if err != nil {
+		return "", false, err
+	}
 	defer end()
 
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
-	if s.state == nil {
-		return "", false, errSessionNotInitialized
+	if err := s.startable(ctx); err != nil {
+		return "", false, err
 	}
 	state := s.state
 	previous := state.Out
@@ -272,10 +287,16 @@ func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, strin
 }
 
 // beginActive makes the context of the operation about to run, a line or the
-// startup connect: Cancel and Shutdown cancel it until end is called.
-func (s *Session) beginActive() (ctx context.Context, end func()) {
+// startup connect: Cancel and Shutdown cancel it until end is called. Once
+// Shutdown has begun it refuses.
+func (s *Session) beginActive() (ctx context.Context, end func(), err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.activeMu.Lock()
+	if s.closing {
+		s.activeMu.Unlock()
+		cancel()
+		return nil, nil, errSessionShutDown
+	}
 	s.activeID++
 	activeID := s.activeID
 	s.activeCancel = cancel
@@ -287,7 +308,22 @@ func (s *Session) beginActive() (ctx context.Context, end func()) {
 		}
 		s.activeMu.Unlock()
 		cancel()
+	}, nil
+}
+
+// startable reports, under execMu, why an operation on ctx must not run:
+// Shutdown began or finished, or cancelled ctx while it waited for execMu.
+func (s *Session) startable(ctx context.Context) error {
+	if s.state == nil || s.isClosing() {
+		return errSessionShutDown
 	}
+	return ctx.Err()
+}
+
+func (s *Session) isClosing() bool {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	return s.closing
 }
 
 // bindCommandContext runs what follows, until the returned restore, on ctx:
@@ -324,7 +360,13 @@ func (s *Session) Shutdown() {
 	if s == nil {
 		return
 	}
-	s.Cancel()
+	s.activeMu.Lock()
+	s.closing = true
+	cancel := s.activeCancel
+	s.activeMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
 	if s.state == nil {

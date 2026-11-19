@@ -173,8 +173,8 @@ func TestSessionShutdownWaitsForTheCancelledCommand(t *testing.T) {
 	if !returnedAfterTheCommand {
 		t.Fatal("Shutdown returned before the cancelled command had unwound")
 	}
-	if _, _, err := session.ExecuteLineCaptured("status"); err == nil || err.Error() != "apshell session is not initialized" {
-		t.Fatalf("a line after Shutdown returned %v, want the session not initialized", err)
+	if _, _, err := session.ExecuteLineCaptured("status"); err == nil || err.Error() != "apshell session is shut down" {
+		t.Fatalf("a line after Shutdown returned %v, want the session shut down", err)
 	}
 }
 
@@ -309,5 +309,72 @@ func TestSessionShutdownStopsTheStartupConnect(t *testing.T) {
 	}
 	if err := <-returned; err == nil {
 		t.Fatal("the interrupted startup connect reported success")
+	}
+}
+
+// A line that starts once Shutdown has begun is refused at once, without
+// running: Shutdown's cancel found nothing to cancel, so a line that slipped
+// in after it and took execMu first would run uncancelled while Shutdown
+// waited for it.
+func TestSessionRefusesALineOnceShutdownBegins(t *testing.T) {
+	session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	var ran atomic.Bool
+	if err := session.state.CommandRegistry.Register(&command.Command{
+		Name: "records", Category: command.CategoryInfo, Automation: command.StructuredAutomation,
+		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+			ran.Store(true)
+			return nil, nil
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	session.execMu.Lock() // a step that holds the session while Shutdown begins
+	shutDown := make(chan struct{})
+	go func() {
+		session.Shutdown()
+		close(shutDown)
+	}()
+	waitForShutdownToBegin(t, session)
+
+	returned := make(chan error, 1)
+	go func() {
+		_, _, err := session.ExecuteLineCaptured("records")
+		returned <- err
+	}()
+	var lineErr error
+	refused := false
+	select {
+	case lineErr = <-returned:
+		refused = true
+	case <-time.After(time.Second):
+	}
+	session.execMu.Unlock()
+	<-shutDown
+	if !refused {
+		lineErr = <-returned
+	}
+	if ran.Load() {
+		t.Fatal("a line that started after Shutdown began ran")
+	}
+	if !refused {
+		t.Fatalf("the line waited for the session, then returned %v, instead of being refused", lineErr)
+	}
+	if lineErr == nil || lineErr.Error() != "apshell session is shut down" {
+		t.Fatalf("the line returned %v, want it refused", lineErr)
+	}
+}
+
+func waitForShutdownToBegin(t *testing.T, session *Session) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !session.isClosing() {
+		if time.Now().After(deadline) {
+			t.Fatal("Shutdown never began")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
