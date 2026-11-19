@@ -32,7 +32,7 @@ outcomes (Approved, Rejected, TimedOut, Canceled, Failed, NotConsulted) are
 mapped to the policy `approval` value, and the module checks that only `Approved`
 yields a signed output for a review-class verdict, that every non-approve outcome
 rejects, and — most importantly — that a `Failed` outcome (the fail-all
-mechanism used for disconnect, displacement, or lock) produces no
+mechanism used for disconnect and displacement) produces no
 signed output anywhere in the pipeline. This lifts AP6 and AP2 from the
 coordinator into an end-to-end claim and demonstrates the soundness of the
 coarser four-valued `approval` oracle that `policy_precedence.tla` uses.

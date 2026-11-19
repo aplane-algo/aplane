@@ -844,3 +844,87 @@ func TestRequestSingleTxnApprovalWithdrawnBySessionEndAnswersLocked(t *testing.T
 		t.Fatalf("audit = %+v, want one approval_withdrawn_session_ended rejection", audit.rejected)
 	}
 }
+
+// A prompt withdrawn because the apadmin session it was shown to ended
+// answers unavailable, as a request that finds no apadmin connected does,
+// and is audited as withdrawn, not as an operator rejection.
+func TestRequestSingleTxnApprovalWithdrawnByApadminDisconnectAnswersUnavailable(t *testing.T) {
+	audit := &testAuditLogger{}
+	svc := &ApprovalService{
+		AuditLog:       audit,
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
+		RequestSigningApprovalPrompt: func(context.Context, signerapproval.Prompt, time.Duration) (signerapproval.SignResponse, error) {
+			return signerapproval.SignResponse{}, fmt.Errorf("%w: %w (%s)", signerapproval.ErrApprovalCanceled, signerapproval.ErrApproverGone, signerapproval.SignRequestCancelReasonApproverDisconnected)
+		},
+	}
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, "", nil)
+	if err == nil || err.Kind != ErrorUnavailable || strings.Contains(err.Message, "rejected") {
+		t.Fatalf("error = %+v, want an unavailable error that is not a rejection", err)
+	}
+	if len(audit.rejected) != 1 || audit.rejected[0].reason != "approval_withdrawn_apadmin_disconnected" {
+		t.Fatalf("audit = %+v, want one approval_withdrawn_apadmin_disconnected entry", audit.rejected)
+	}
+}
+
+// A displacement is told apart from a disconnect: its own audit reason and a
+// message that does not claim no apadmin is connected.
+func TestRequestSingleTxnApprovalWithdrawnByDisplacementSaysSo(t *testing.T) {
+	audit := &testAuditLogger{}
+	svc := &ApprovalService{
+		AuditLog:       audit,
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
+		RequestSigningApprovalPrompt: func(context.Context, signerapproval.Prompt, time.Duration) (signerapproval.SignResponse, error) {
+			return signerapproval.SignResponse{}, fmt.Errorf("%w: %w", signerapproval.ErrApprovalCanceled, signerapproval.ErrApproverDisplaced)
+		},
+	}
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, "", nil)
+	if err == nil || err.Kind != ErrorUnavailable || !strings.Contains(err.Message, "replaced") {
+		t.Fatalf("error = %+v, want an unavailable error naming the replacement", err)
+	}
+	if len(audit.rejected) != 1 || audit.rejected[0].reason != "approval_withdrawn_apadmin_displaced" {
+		t.Fatalf("audit = %+v, want one approval_withdrawn_apadmin_displaced entry", audit.rejected)
+	}
+}
+
+// A group prompt withdrawn because its apadmin session ended answers
+// unavailable and audits every position as withdrawn, with no auth address
+// for a position the signer does not hold.
+func TestRequestGroupApprovalWithdrawnByApadminDisconnectAnswersUnavailable(t *testing.T) {
+	audit := &testAuditLogger{}
+	svc := &ApprovalService{
+		AuditLog:       audit,
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
+		RequestSigningApprovalPrompt: func(context.Context, signerapproval.Prompt, time.Duration) (signerapproval.SignResponse, error) {
+			return signerapproval.SignResponse{}, fmt.Errorf("%w: %w", signerapproval.ErrApprovalCanceled, signerapproval.ErrApproverGone)
+		},
+	}
+	txns := []types.Transaction{
+		{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}},
+		{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{2}}},
+	}
+	plan := &PlanResult{
+		AllTxns: txns, ForeignIndices: map[int]bool{1: true}, HasForeign: true,
+		PassthroughIndices: map[int]bool{}, BoundedItems: make([]*boundedPlanItem, 2),
+	}
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}, {AuthAddress: "FOREIGN"}}}
+	err := promptGroup(svc, req, plan, txns, describeAs("txn\n"))
+	if err == nil || err.Kind != ErrorUnavailable || strings.Contains(err.Message, "rejected") {
+		t.Fatalf("error = %+v, want an unavailable error that is not a rejection", err)
+	}
+	if len(audit.rejected) != 2 {
+		t.Fatalf("audit = %+v, want one entry per position", audit.rejected)
+	}
+	for i, entry := range audit.rejected {
+		if entry.reason != "approval_withdrawn_apadmin_disconnected" {
+			t.Fatalf("audit[%d] reason = %q", i, entry.reason)
+		}
+	}
+	if audit.rejected[0].authAddress != "AUTH" || audit.rejected[1].authAddress != "" {
+		t.Fatalf("audit auth addresses = %q, %q; want AUTH and none for the foreign position", audit.rejected[0].authAddress, audit.rejected[1].authAddress)
+	}
+}

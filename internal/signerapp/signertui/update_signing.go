@@ -73,6 +73,10 @@ func signRequestCanceledWarning(reason string) string {
 		return "Signing request timed out"
 	case protocol.SignRequestCancelReasonSessionEnded:
 		return "Signing request withdrawn: the signer locked or its session ended"
+	case protocol.SignRequestCancelReasonApproverDisplaced:
+		return "Signing request withdrawn: another apadmin session took over"
+	case protocol.SignRequestCancelReasonApproverDisconnected:
+		return "Signing request withdrawn: its apadmin session disconnected"
 	case "":
 		return "Signing request canceled"
 	default:

@@ -94,6 +94,18 @@ func planRotatingAddresses(plan *PlanResult) map[string]bool {
 	return plan.RotatingAddresses
 }
 
+// approverGone reports whether err is a prompt withdrawn because its apadmin
+// session ended, whether by a displacement, and the audit reason for it.
+func approverGone(err error) (gone, displaced bool, auditReason string) {
+	switch {
+	case errors.Is(err, signerapproval.ErrApproverDisplaced):
+		return true, true, "approval_withdrawn_apadmin_displaced"
+	case errors.Is(err, signerapproval.ErrApproverGone):
+		return true, false, "approval_withdrawn_apadmin_disconnected"
+	}
+	return false, false, ""
+}
+
 func (s *ApprovalService) userAutoApprove() bool {
 	if s == nil || s.UserAutoApprove == nil {
 		return false
@@ -650,6 +662,18 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 			console.Sync()
 			return sessionEndedError()
 		}
+		if gone, displaced, reason := approverGone(err); gone {
+			for i, txReq := range req.Requests {
+				authAddr := txReq.AuthAddress
+				if plan.ForeignIndices[i] {
+					authAddr = ""
+				}
+				s.logSignRejected(authAddr, txns[i].Sender.String(), reason, forceReviewRuleID)
+			}
+			console.Println("[X] GROUP APPROVAL WITHDRAWN: its apadmin session ended before answering")
+			console.Sync()
+			return approverGoneError(displaced)
+		}
 		if errors.Is(err, signerapproval.ErrApprovalTimeout) {
 			s.logGroupApprovalTimeout(req, plan, txns, forceReviewRuleID)
 		}
@@ -751,6 +775,12 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 			console.Println("[X] TXN APPROVAL WITHDRAWN: the signer's session ended")
 			console.Sync()
 			return sessionEndedError()
+		}
+		if gone, displaced, reason := approverGone(err); gone {
+			s.logSignRejected(txReq.AuthAddress, decodedSender, reason, forceReviewRuleID)
+			console.Println("[X] TXN APPROVAL WITHDRAWN: its apadmin session ended before answering")
+			console.Sync()
+			return approverGoneError(displaced)
 		}
 		if errors.Is(err, signerapproval.ErrApprovalTimeout) {
 			s.logSignRejected(txReq.AuthAddress, decodedSender, "txn_approval_timeout", forceReviewRuleID)

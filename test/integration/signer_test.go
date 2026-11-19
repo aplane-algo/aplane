@@ -2179,11 +2179,13 @@ func TestApprovalTimeoutOrClientDisconnect(t *testing.T) {
 	ipcClient.Close()
 	wg.Wait()
 
-	if firstStatus != http.StatusForbidden {
-		t.Fatalf("expected 403 when approval client disconnects, got %d: %s", firstStatus, string(firstBody))
+	// The disconnect withdraws the prompt: nobody rejected the request, so it
+	// answers unavailable, as a request that finds no apadmin connected does.
+	if firstStatus != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when approval client disconnects, got %d: %s", firstStatus, string(firstBody))
 	}
-	if !strings.Contains(string(firstBody), "rejected by operator") {
-		t.Fatalf("expected disconnect to fail request without signing, got %s", string(firstBody))
+	if !strings.Contains(string(firstBody), "apadmin disconnected before answering") || strings.Contains(string(firstBody), "rejected by operator") {
+		t.Fatalf("expected disconnect to withdraw the request without signing, got %s", string(firstBody))
 	}
 
 	secondClient := mustConnectIPCClient(t, signerd.GetWorkDir())

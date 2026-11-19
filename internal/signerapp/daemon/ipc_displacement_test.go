@@ -7,7 +7,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -204,13 +206,11 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 
 	approvalResult := make(chan error, 1)
 	go func() {
-		response, err := ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "displaced-prompt", Address: "A", TxnSender: "A", Description: "desc", FirstValid: 0, LastValid: 0}, time.Minute)
-		if err != nil {
-			approvalResult <- err
-			return
-		}
-		if response.Approved || response.Reason != "apadmin displaced" {
-			approvalResult <- fmt.Errorf("response = %+v, want rejected apadmin displaced response", response)
+		// Displacement withdraws the prompt shown to the old session: it
+		// ends as ErrApproverDisplaced, not as a rejection.
+		response, err := ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "displaced-prompt", Address: "A", TxnSender: "A", Description: "desc"}, time.Minute)
+		if !errors.Is(err, signerapproval.ErrApproverDisplaced) || response.Approved {
+			approvalResult <- fmt.Errorf("response = %+v, err = %v; want the prompt withdrawn with ErrApproverDisplaced", response, err)
 			return
 		}
 		approvalResult <- nil
@@ -258,6 +258,12 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	}
 	readAdminMessageType(t, oldClient, oldReader, protocol.MsgTypeDisplaced)
 	readAdminMessageType(t, newClient, newReader, protocol.MsgTypeStatus)
+	// Keep reading the replacement: the withdrawal's cancel notice is written
+	// to it, and an unread net.Pipe would hold that write.
+	if err := newClient.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = io.Copy(io.Discard, newReader) }()
 
 	select {
 	case err := <-approvalResult:
