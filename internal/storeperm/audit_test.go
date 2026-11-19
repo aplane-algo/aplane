@@ -16,7 +16,7 @@ import (
 
 func TestAuditAcceptsPrivateStore(t *testing.T) {
 	root := privateStoreFixture(t)
-	findings, err := Audit(ownerOptions(t, root, privateServiceProfile))
+	findings, err := Audit(ownerOptions(t, root))
 	if err != nil {
 		t.Fatalf("Audit() error = %v", err)
 	}
@@ -144,7 +144,7 @@ func TestMigratePrivateRejectsStoreLocalBinariesWithoutMutation(t *testing.T) {
 	}
 	uid, gid := ownerIDs(t, root)
 
-	_, err := MigratePrivate(SharedMigrationOptions(root, uid, gid, ""))
+	_, err := MigratePrivate(StoppedMigrationOptions(root, uid, gid, ""))
 	if err == nil || !strings.Contains(err.Error(), "store-local bin directory") {
 		t.Fatalf("MigratePrivate() error = %v, want local binary rejection", err)
 	}
@@ -215,7 +215,7 @@ func TestAuditReportsUnsafeModeOwnerSymlinkAndHardlink(t *testing.T) {
 		t.Fatalf("Symlink: %v", err)
 	}
 
-	opts := ownerOptions(t, root, privateServiceProfile)
+	opts := ownerOptions(t, root)
 	opts.policy.expectedUID++
 	findings, err := Audit(opts)
 	if err != nil {
@@ -244,24 +244,7 @@ func TestAuditAcceptsNarrowRootCredentialException(t *testing.T) {
 	if err := os.Chown(cred, 0, 0); err != nil {
 		t.Fatalf("Chown(cred): %v", err)
 	}
-	findings, err := Audit(ownerOptions(t, root, privateServiceProfile))
-	if err != nil {
-		t.Fatalf("Audit() error = %v", err)
-	}
-	if storeFindings := withoutAncestorFindings(findings); len(storeFindings) != 0 {
-		t.Fatalf("Audit() store findings = %+v, want none", storeFindings)
-	}
-}
-
-func TestAuditLegacyProfileAcceptsSetgidSharedLayout(t *testing.T) {
-	root := workspaceTempDir(t)
-	if err := os.Chmod(root, 0o770|os.ModeSetgid); err != nil {
-		t.Fatalf("Chmod(root): %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("x"), 0o660); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	findings, err := Audit(ownerOptions(t, root, sharedProfile))
+	findings, err := Audit(ownerOptions(t, root))
 	if err != nil {
 		t.Fatalf("Audit() error = %v", err)
 	}
@@ -310,7 +293,7 @@ func TestMigratePrivateClampsModesAndPreservesCredentialOwner(t *testing.T) {
 	if result.Inspected != expectedEntries || result.Changed == 0 {
 		t.Fatalf("MigratePrivate() result = %+v", result)
 	}
-	privateOpts := ownerOptions(t, root, privateServiceProfile)
+	privateOpts := ownerOptions(t, root)
 	privateOpts.policy.ancestorBoundary = filepath.Dir(root)
 	findings, err := Audit(privateOpts)
 	if err != nil || len(findings) != 0 {
@@ -341,7 +324,7 @@ func TestMigratePrivateExplainsUnsafeAncestorIsNotRepairable(t *testing.T) {
 	uid, gid := ownerIDs(t, root)
 	opts := MigrationOptions{policy: options{
 		root: root, expectedUID: uid, expectedGID: gid,
-		profile: sharedProfile, ancestorBoundary: boundary,
+		ancestorBoundary: boundary,
 	}}
 
 	_, err := MigratePrivate(opts)
@@ -495,11 +478,11 @@ func workspaceTempDir(t *testing.T) string {
 	return root
 }
 
-func ownerOptions(t *testing.T, root string, profile profile) AuditOptions {
+func ownerOptions(t *testing.T, root string) AuditOptions {
 	t.Helper()
 	uid, gid := ownerIDs(t, root)
 	return AuditOptions{policy: options{
-		root: root, expectedUID: uid, expectedGID: gid, profile: profile,
+		root: root, expectedUID: uid, expectedGID: gid,
 	}}
 }
 
@@ -508,8 +491,7 @@ func ownerMigrationOptions(t *testing.T, root, socketPath string) MigrationOptio
 	uid, gid := ownerIDs(t, root)
 	return MigrationOptions{policy: options{
 		root: root, expectedUID: uid, expectedGID: gid,
-		profile: sharedProfile, socketPath: socketPath,
-		ancestorBoundary: filepath.Dir(root),
+		socketPath: socketPath, ancestorBoundary: filepath.Dir(root),
 	}}
 }
 

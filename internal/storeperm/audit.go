@@ -14,15 +14,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
-// profile selects one complete signer-store permission contract.
-type profile uint8
-
+// storeDirMode and storeFileMode are the permission ceilings of the
+// service-user-only signer-store layout.
 const (
-	// sharedProfile audits the transitional 2770/0660 group-shared
-	// layout. It exists only to validate inputs before migration.
-	sharedProfile profile = iota
-	// privateServiceProfile audits the service-user-only 0700/0600 layout.
-	privateServiceProfile
+	storeDirMode  os.FileMode = 0o700
+	storeFileMode os.FileMode = 0o600
 )
 
 // AuditOptions is an opaque, complete read-only store policy. Callers obtain
@@ -38,7 +34,6 @@ type options struct {
 	root             string
 	expectedUID      int
 	expectedGID      int
-	profile          profile
 	socketPath       string
 	ancestorBoundary string
 	localBin         bool
@@ -49,7 +44,6 @@ type options struct {
 func ProductionAuditOptions(root string, expectedUID, expectedGID int) AuditOptions {
 	return AuditOptions{policy: options{
 		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
-		profile: privateServiceProfile,
 	}}
 }
 
@@ -58,16 +52,16 @@ func ProductionAuditOptions(root string, expectedUID, expectedGID int) AuditOpti
 func SameUIDAuditOptions(root string, expectedUID, expectedGID int, socketPath string) AuditOptions {
 	return AuditOptions{policy: options{
 		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
-		profile: privateServiceProfile, socketPath: socketPath, localBin: true,
+		socketPath: socketPath, localBin: true,
 	}}
 }
 
-// SharedMigrationOptions recognizes one exact stale in-store socket that a
+// StoppedMigrationOptions recognizes one exact stale in-store socket that a
 // stopped migration may remove after complete inventory validation.
-func SharedMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
+func StoppedMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
 	return MigrationOptions{policy: options{
 		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
-		profile: sharedProfile, socketPath: socketPath,
+		socketPath: socketPath,
 	}}
 }
 
@@ -82,30 +76,12 @@ func (f Finding) Error() string {
 	return fmt.Sprintf("%s: %s (%s)", f.Path, f.Detail, f.Code)
 }
 
-type profilePolicy struct {
-	dirMode        os.FileMode
-	fileMode       os.FileMode
-	allowDirSetgid bool
-}
-
 type artifactExpectation struct {
-	uid            int
-	gid            int
-	mode           os.FileMode
-	allowDirSetgid bool
-	wantDir        bool
-	wantRegular    bool
-}
-
-func policyForProfile(profile profile) (profilePolicy, error) {
-	switch profile {
-	case sharedProfile:
-		return profilePolicy{dirMode: 0o770, fileMode: 0o660, allowDirSetgid: true}, nil
-	case privateServiceProfile:
-		return profilePolicy{dirMode: 0o700, fileMode: 0o600}, nil
-	default:
-		return profilePolicy{}, fmt.Errorf("unknown store permission profile %d", profile)
-	}
+	uid         int
+	gid         int
+	mode        os.FileMode
+	wantDir     bool
+	wantRegular bool
 }
 
 // Audit performs a read-only, no-symlink-traversal inspection. Findings are
@@ -116,10 +92,6 @@ func Audit(opts AuditOptions) ([]Finding, error) {
 }
 
 func audit(opts options) ([]Finding, error) {
-	policy, err := policyForProfile(opts.profile)
-	if err != nil {
-		return nil, err
-	}
 	if opts.root == "" {
 		return nil, fmt.Errorf("store root is required")
 	}
@@ -155,7 +127,7 @@ func audit(opts options) ([]Finding, error) {
 		if !ok {
 			return fmt.Errorf("ownership metadata unavailable for %s", path)
 		}
-		expect := expectedArtifact(root, path, info, opts, policy)
+		expect := expectedArtifact(root, path, info, opts)
 		if uid != expect.uid || gid != expect.gid {
 			findings = append(findings, Finding{
 				Path: path, Code: "owner",
@@ -168,9 +140,9 @@ func audit(opts options) ([]Finding, error) {
 
 		switch {
 		case info.IsDir():
-			auditMode(path, info.Mode(), expect.mode, expect.allowDirSetgid, &findings)
+			auditMode(path, info.Mode(), expect.mode, &findings)
 		case info.Mode().IsRegular():
-			auditMode(path, info.Mode(), expect.mode, false, &findings)
+			auditMode(path, info.Mode(), expect.mode, &findings)
 			if links, ok := regularFileLinkCount(info); ok && links != 1 {
 				findings = append(findings, Finding{
 					Path: path, Code: "hardlink",
@@ -178,7 +150,7 @@ func audit(opts options) ([]Finding, error) {
 				})
 			}
 		case info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, opts.socketPath):
-			auditMode(path, info.Mode(), 0o660, false, &findings)
+			auditMode(path, info.Mode(), 0o660, &findings)
 		default:
 			findings = append(findings, Finding{Path: path, Code: "type", Detail: "unexpected filesystem object type"})
 		}
@@ -197,13 +169,12 @@ func audit(opts options) ([]Finding, error) {
 	return findings, nil
 }
 
-func expectedArtifact(root, path string, info os.FileInfo, opts options, policy profilePolicy) artifactExpectation {
+func expectedArtifact(root, path string, info os.FileInfo, opts options) artifactExpectation {
 	expect := artifactExpectation{uid: opts.expectedUID, gid: opts.expectedGID}
 	if info.IsDir() {
-		expect.mode = policy.dirMode
-		expect.allowDirSetgid = policy.allowDirSetgid
+		expect.mode = storeDirMode
 	} else {
-		expect.mode = policy.fileMode
+		expect.mode = storeFileMode
 	}
 	if isRootCredential(root, path) {
 		expect.uid, expect.gid = 0, 0
@@ -232,7 +203,6 @@ func expectedArtifact(root, path string, info os.FileInfo, opts options, policy 
 	case "install":
 		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o750
-		expect.allowDirSetgid = opts.profile == sharedProfile
 		expect.wantDir = true
 	case "install/uninstall.sh":
 		expect.uid, expect.gid = 0, opts.expectedGID
@@ -337,18 +307,14 @@ func isTrustedStickyTempRoot(path string, info os.FileInfo, ownerUID, rootUID in
 	return trustedPath && ownerUID == rootUID && info.Mode()&os.ModeSticky != 0
 }
 
-func auditMode(path string, actual, ceiling os.FileMode, allowSetgid bool, findings *[]Finding) {
+func auditMode(path string, actual, ceiling os.FileMode, findings *[]Finding) {
 	if actual.Perm()&^ceiling != 0 {
 		*findings = append(*findings, Finding{
 			Path: path, Code: "mode",
 			Detail: fmt.Sprintf("mode %04o exceeds permission ceiling %04o", actual.Perm(), ceiling),
 		})
 	}
-	allowedSpecial := os.FileMode(0)
-	if allowSetgid {
-		allowedSpecial = os.ModeSetgid
-	}
-	if actual&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky)&^allowedSpecial != 0 {
+	if actual&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
 		*findings = append(*findings, Finding{Path: path, Code: "special-mode", Detail: "unexpected special permission bits"})
 	}
 }
