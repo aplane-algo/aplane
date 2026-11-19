@@ -371,7 +371,9 @@ not part of the admin settings payload and cannot be changed through admin IPC.
 
 The color theme (`auto`, `dark` or `light`) chosen in the `apadmin` settings
 panel is saved only in `identities/default/config.yaml` as `theme`; the
-top-level `config.yaml` has no `theme` field and refuses one. `apadmin` and
+top-level `config.yaml` has no `theme` field and refuses one. If an earlier
+`apadmin` wrote a `theme:` line there, delete it: the load error names the
+field and says to remove it. `apadmin` and
 `apconsole` apply the saved theme once they connect, and detect the
 terminal's background until then.
 

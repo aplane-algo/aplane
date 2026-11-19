@@ -128,8 +128,9 @@ Installer-written client configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`, and restrict `networks_allowed` to `mainnet` and
 `testnet` by default; existing configs are left unchanged if the
 installer is pointed at a supported in-place upgrade target.
-Unknown YAML fields are rejected by the Go loader with guidance that the file
-may have been written by a newer version or may contain a typo.
+Unknown YAML fields are rejected by the Go loader. The error names the field,
+says it is unknown or no longer supported (a typo, or a field this version no
+longer reads, such as one an earlier version wrote), and says to remove it.
 
 The Go `Config` type contains no signer-routing fields. Current signer and
 cosigner routing is loaded from `endpoints.yaml` into `ClientEndpointRegistry`.
@@ -173,8 +174,9 @@ and unsupported versions fail during load.
 Installer-written signer configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`; existing configs are left unchanged if the installer
 is pointed at a supported in-place upgrade target.
-Unknown YAML fields are rejected by the Go loader with guidance that the file
-may have been written by a newer version or may contain a typo.
+Unknown YAML fields are rejected by the Go loader. The error names the field,
+says it is unknown or no longer supported (a typo, or a field this version no
+longer reads, such as one an earlier version wrote), and says to remove it.
 
 Process-global settings live in `config.yaml`. Product runtime settings live in
 `identities/default/config.yaml`; nil means inherit from process defaults.

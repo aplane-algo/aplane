@@ -64,7 +64,7 @@ func TestLoadServerConfigRejectsManualApproval(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadServerConfig error = nil, want unknown-field rejection")
 	}
-	if !strings.Contains(err.Error(), `unknown field "manual_approval"`) {
+	if !strings.Contains(err.Error(), `config field "manual_approval" is unknown or no longer supported`) {
 		t.Fatalf("LoadServerConfig error = %q, want manual_approval unknown-field guidance", err)
 	}
 }
@@ -162,8 +162,33 @@ func TestLoadServerConfigRejectsUnknownFields(t *testing.T) {
 	if !strings.Contains(err.Error(), "field surprise not found") {
 		t.Fatalf("LoadServerConfig error = %q, want surprise", err)
 	}
-	if !strings.Contains(err.Error(), "newer version") {
-		t.Fatalf("LoadServerConfig error = %q, want newer-version guidance", err)
+	if !strings.Contains(err.Error(), "is unknown or no longer supported; remove it") {
+		t.Fatalf("LoadServerConfig error = %q, want the remove-it guidance", err)
+	}
+}
+
+// A field this version no longer reads, such as theme, which earlier
+// apadmin versions wrote here before the setting moved to the product runtime
+// config, is refused by name with the advice to remove it. The error once
+// said the file was written by a newer version.
+func TestLoadServerConfigNamesARemovedField(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("approval_wait: 5m\ntheme: dark\n"), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := LoadServerConfig(dir)
+	if err == nil {
+		t.Fatal("LoadServerConfig error = nil, want the removed field refused")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `config field "theme" is unknown or no longer supported; remove it from the file`) {
+		t.Fatalf("LoadServerConfig error = %q, want theme named with the remove-it guidance", msg)
+	}
+	if strings.Contains(msg, "newer version") {
+		t.Fatalf("LoadServerConfig error = %q, blames a newer version for a field an earlier one wrote", msg)
 	}
 }
 

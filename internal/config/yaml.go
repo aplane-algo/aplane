@@ -43,10 +43,14 @@ func ValidateConfigSchemaVersion(label string, version int) error {
 	return nil
 }
 
+// wrapUnknownConfigFieldError names the field a strict decode refused and
+// says what to do. The field is misspelled or one this version does not
+// read, often one an earlier version wrote before the setting moved or went
+// away; either way the file has to drop it.
 func wrapUnknownConfigFieldError(err error) error {
 	matches := yamlUnknownFieldRE.FindStringSubmatch(err.Error())
 	if len(matches) != 2 {
 		return err
 	}
-	return fmt.Errorf("config written by a newer version or contains unknown field %q: %w", matches[1], err)
+	return fmt.Errorf("config field %q is unknown or no longer supported; remove it from the file: %w", matches[1], err)
 }

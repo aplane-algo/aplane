@@ -147,8 +147,8 @@ unknown_setting: true
 	if !strings.Contains(err.Error(), "field unknown_setting not found") {
 		t.Fatalf("LoadConfigFromPath error = %q, want unknown_setting", err)
 	}
-	if !strings.Contains(err.Error(), "newer version") {
-		t.Fatalf("LoadConfigFromPath error = %q, want newer-version guidance", err)
+	if !strings.Contains(err.Error(), "is unknown or no longer supported; remove it") {
+		t.Fatalf("LoadConfigFromPath error = %q, want the remove-it guidance", err)
 	}
 }
 
@@ -189,7 +189,7 @@ ssh:
 	if err == nil {
 		t.Fatal("LoadConfigFromPath error = nil, want removed ssh field error")
 	}
-	if !strings.Contains(err.Error(), `unknown field "ssh"`) {
+	if !strings.Contains(err.Error(), `config field "ssh" is unknown or no longer supported`) {
 		t.Fatalf("LoadConfigFromPath error = %q, want unknown ssh field", err)
 	}
 }
@@ -207,7 +207,7 @@ signer_port: 11270
 	if err == nil {
 		t.Fatal("LoadConfigFromPath error = nil, want removed signer_port field error")
 	}
-	if !strings.Contains(err.Error(), `unknown field "signer_port"`) {
+	if !strings.Contains(err.Error(), `config field "signer_port" is unknown or no longer supported`) {
 		t.Fatalf("LoadConfigFromPath error = %q, want unknown signer_port field", err)
 	}
 }
