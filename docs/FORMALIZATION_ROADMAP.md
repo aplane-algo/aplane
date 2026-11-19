@@ -809,12 +809,18 @@ the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
 
-Fixed 2026-11-18: the recovery reconcile entered recovery after releasing
-the store mutation lock. `ReconcileStore` called `SetRecovery` once
-`reconcileReloadAndPromote` had returned, so a reconcile that failed from
-the unlocked state left a window where another mutation could take the lock
-while the runtime still read unlocked. `BeginReload` and `ReloadFail` with
-`RecoveryBeforeRelease` already describe the order the code now follows:
-`reconcileReloadAndPromote` enters recovery inside its locked work. The spec
-is unchanged; RB2's row names the reconcile and
-`TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock`.
+Aligned 2026-11-18: the recovery reconcile now enters recovery before it
+releases the store mutation lock, the order `BeginReload` and `ReloadFail`
+with `RecoveryBeforeRelease` transcribe. `ReconcileStore` used to call
+`SetRecovery` after `reconcileReloadAndPromote` had returned. The 2026-11-16
+review above settled that interval as harmless (a reconcile never moves the
+root, and every failed reload leaves the selected generation's cache or an
+empty one), and that still holds: this is a transcription alignment, not a
+safety fix. `reconcileLocked`, the locked work, enters recovery itself. The
+recovery-exit rescan after a restore or rollback passes
+`enterRecoveryOnFailure=false`: it starts in recovery, so entering it again
+could only overturn a lock that came in meanwhile (the "Recovery during a
+cleanup" divergence above). A promotion refused after a clean reload enters
+no recovery. The spec is unchanged; RB2's row names `reconcileLocked`,
+`TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock` and
+`TestARecoveryExitRescanKeepsALockThatCameFirst`.

@@ -50,8 +50,8 @@ The transitions transcribe the post-commit reload and the recovery paths:
   and, with `RecoveryBeforeRelease`, enters recovery in the same step the
   lock is released (`commitAndReload` sets `Uncertain`, `ApplyPolicy` calls
   `SetRecovery` inside `WithStoreMutation`; restore does the same, and so does
-  the recovery reconcile, `reconcileReloadAndPromote`, which once entered
-  recovery only after `ReconcileStore` had released the lock).
+  the recovery reconcile, whose locked work `reconcileLocked` enters recovery
+  itself; it once did so only after `ReconcileStore` had released the lock).
 - `Serve` is a signing request or key write, gated by the runtime state
   (`IsUnlocked`; recovery is a distinct state that refuses both). `Maintain`
   is deleted-archive list or prune through `authenticatedSelection`, which
