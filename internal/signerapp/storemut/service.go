@@ -36,7 +36,7 @@ func New(keyPaths storepaths.Paths) *Service {
 // archive. Deleting a key also archives its own policy document, if it has
 // one, so a re-imported key starts on the node default.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
-	active, err := genstore.ResolveActive(s.keyPaths)
+	active, err := genstore.Resolve(s.keyPaths)
 	if err != nil {
 		return nil, err
 	}
@@ -54,11 +54,7 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 		}
 	}
 	if hasPolicy {
-		gen, ok := active.(storepaths.GenPaths)
-		if !ok {
-			return nil, fmt.Errorf("credential deletion requires generation-qualified active paths")
-		}
-		if _, err := genstore.PreflightDeletedArchiveAppend(gen, candidates...); err != nil {
+		if _, err := genstore.PreflightDeletedArchiveAppend(active, candidates...); err != nil {
 			return nil, err
 		}
 	}

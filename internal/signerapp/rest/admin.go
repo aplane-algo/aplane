@@ -24,15 +24,19 @@ func (s Service) AdminGenerate(ctx context.Context, ir *productruntime.Runtime, 
 		return signerapi.AdminGenerateResponse{}, sanitizeKeyAdminError(err, "key generation failed")
 	}
 
-	return signerapi.AdminGenerateResponse{
-		Address:           result.Address,
-		PublicKeyHex:      result.PublicKeyHex,
-		KeyType:           result.KeyType,
-		IsWitnessKey:      result.IsWitnessKey,
-		IsSpendingAccount: result.IsSpendingAccount,
-		Parameters:        result.Parameters,
-		Warnings:          result.Warnings,
-	}, nil
+	response := signerapi.AdminGenerateResponse{
+		Address:      result.Address,
+		PublicKeyHex: result.PublicKeyHex,
+		KeyType:      result.KeyType,
+		IsWitnessKey: result.IsWitnessKey,
+		Parameters:   result.Parameters,
+		Warnings:     result.Warnings,
+	}
+	if result.IsWitnessKey {
+		spending := false
+		response.IsSpendingAccount = &spending
+	}
+	return response, nil
 }
 
 func (s Service) AdminDelete(ctx context.Context, ir *productruntime.Runtime, address string) (signerapi.AdminDeleteResponse, *svcerr.Error) {

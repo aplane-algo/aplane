@@ -11,11 +11,13 @@ import (
 
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 )
 
 func TestRestoreKeyRejectsWrongExportPassphrase(t *testing.T) {
 	RegisterProviders()
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths())
 	backupDir := t.TempDir()
 	address, keyJSON := testEd25519KeyJSON(t)
 	encrypted, err := apcrypto.EncryptStandalone(keyJSON, []byte("correct-export-passphrase"))

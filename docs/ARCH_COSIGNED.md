@@ -1093,7 +1093,7 @@ Primary packages and files:
 
 - `pkg/signerapi`: HTTP DTOs for component signing, assembly, and key inventory.
 - `internal/witness`: witness key-type identifiers, Witness Key ID derivation,
-  public identity validation, keypair validation, and custodian capabilities.
+  public identity validation, and keypair validation.
 - `internal/cosigner/keytypes`: the durable `cosigner_public_key` parameter name.
 - `internal/cosigner/message`: the cosigner-role component message.
 - `internal/cosigner/canonical`: canonical group decoding and group hashing.

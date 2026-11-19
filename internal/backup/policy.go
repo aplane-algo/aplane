@@ -39,7 +39,7 @@ func backupPoliciesDirFor(keysDir string) string {
 
 // exportKeyPolicies writes the policy document of each selected credential
 // that has one of its own. It returns the keys whose policy was exported.
-func exportKeyPolicies(active storepaths.ActivePaths, role noderole.Role, stageDir string, selectors []string, kr *crypto.Keyring, exportPassphrase []byte) ([]string, error) {
+func exportKeyPolicies(active storepaths.GenPaths, role noderole.Role, stageDir string, selectors []string, kr *crypto.Keyring, exportPassphrase []byte) ([]string, error) {
 	destDir := filepath.Join(stageDir, backupPoliciesDir)
 	var exported []string
 	for _, selector := range selectors {
@@ -111,7 +111,7 @@ func scanBackupPolicies(keysDir string) ([]string, error) {
 
 // ApplyPolicyEntry installs a restored credential's archived policy document
 // with a sidecar signed by the destination keyring.
-func ApplyPolicyEntry(active storepaths.ActivePaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring) error {
+func ApplyPolicyEntry(active storepaths.GenPaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring) error {
 	if entry.Policy == nil {
 		return fmt.Errorf("restore entry %s carries no policy", entry.Selector)
 	}
@@ -120,7 +120,7 @@ func ApplyPolicyEntry(active storepaths.ActivePaths, role noderole.Role, entry C
 
 // destinationPolicy returns the destination's verified policy bytes for key,
 // or nil when it has none of its own.
-func destinationPolicy(active storepaths.ActivePaths, role noderole.Role, key string, kr *crypto.Keyring) ([]byte, error) {
+func destinationPolicy(active storepaths.GenPaths, role noderole.Role, key string, kr *crypto.Keyring) ([]byte, error) {
 	doc, ok, err := policy.LoadVerifiedKeyPolicy(active, role, key, kr)
 	if err != nil || !ok {
 		return nil, err

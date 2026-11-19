@@ -47,20 +47,6 @@ func sealWithRandomNonce(gcm cipher.AEAD, plaintext []byte) (nonce, ciphertext [
 	return nonce, ciphertext, nil
 }
 
-// checkEnvelopeVersion unmarshals the envelope_version from JSON and verifies it matches expected.
-func checkEnvelopeVersion(data []byte, expected int, context string) error {
-	var v struct {
-		EnvelopeVersion int `json:"envelope_version"`
-	}
-	if err := json.Unmarshal(data, &v); err != nil {
-		return fmt.Errorf("failed to parse encrypted data: %w", err)
-	}
-	if v.EnvelopeVersion != expected {
-		return fmt.Errorf("envelope_version %d not supported by %s (expected %d)", v.EnvelopeVersion, context, expected)
-	}
-	return nil
-}
-
 const (
 	// Argon2id parameters for new keystores (OWASP recommended: time≥2, memory≥64MB)
 	argon2Time    = 2         // iterations
@@ -76,18 +62,12 @@ const (
 // apply the same limit before allocation.
 const MaxStandaloneEnvelopeBytes = 1 << 20
 
-// EncryptedData stores the encrypted content with metadata
-type EncryptedData struct {
-	EnvelopeVersion int    `json:"envelope_version"` // Encryption envelope format version
-	Salt            string `json:"salt"`             // Base64-encoded salt for PBKDF2
-	Nonce           string `json:"nonce"`            // Base64-encoded nonce for AES-GCM
-	Ciphertext      string `json:"ciphertext"`       // Base64-encoded encrypted data
-}
-
 // IsEncrypted checks if data appears to be in encrypted format
 func IsEncrypted(data []byte) bool {
-	var encrypted EncryptedData
-	return json.Unmarshal(data, &encrypted) == nil && encrypted.EnvelopeVersion > 0
+	var envelope struct {
+		EnvelopeVersion int `json:"envelope_version"`
+	}
+	return json.Unmarshal(data, &envelope) == nil && envelope.EnvelopeVersion > 0
 }
 
 const (

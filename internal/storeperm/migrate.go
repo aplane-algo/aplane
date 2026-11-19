@@ -24,13 +24,12 @@ type migrationEntry struct {
 	info os.FileInfo
 }
 
-// MigratePrivate validates the complete shared-group tree before changing it,
-// removes group access at the root first, and then repairs every recognized
-// object through an opened descriptor. Structural findings are fatal; owner
-// and mode findings are precisely what this operation repairs.
+// MigratePrivate validates the complete tree before changing it, removes
+// group access at the root first, and then repairs every recognized object
+// through an opened descriptor. Structural findings are fatal; owner and mode
+// findings are precisely what this operation repairs.
 func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	opts := migration.policy
-	opts.profile = sharedProfile
 	if err := rejectStoreLocalBinaries(opts.root); err != nil {
 		return MigrationResult{}, err
 	}
@@ -72,10 +71,6 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	})
 
 	result := MigrationResult{Inspected: len(entries)}
-	privatePolicy, err := policyForProfile(privateServiceProfile)
-	if err != nil {
-		return result, err
-	}
 	for _, entry := range entries {
 		if entry.info.Mode()&os.ModeSocket != 0 {
 			if err := removeInventoriedStoreSocket(entry, storeSocket); err != nil {
@@ -84,7 +79,7 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 			result.Changed++
 			continue
 		}
-		expect := expectedArtifact(root, entry.path, entry.info, opts, privatePolicy)
+		expect := expectedArtifact(root, entry.path, entry.info, opts)
 		uid, gid, ok := fsutil.FileOwnership(entry.info)
 		if !ok {
 			return result, fmt.Errorf("ownership metadata unavailable for %s", entry.path)
@@ -103,7 +98,6 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	}
 
 	privateOpts := opts
-	privateOpts.profile = privateServiceProfile
 	privateOpts.socketPath = ""
 	post, err := audit(privateOpts)
 	if err != nil {

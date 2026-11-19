@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -151,9 +150,6 @@ func isDecimalDigits(s string) bool {
 // check tries again, and the failure is reported only if the checks run out
 // without a confirmation.
 func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid string, maxRounds uint64, w io.Writer) error {
-	if w == nil {
-		w = os.Stdout
-	}
 	_, _ = fmt.Fprint(w, "\nWaiting for confirmation")
 
 	clock := newRoundClock(ctx, algodClient)

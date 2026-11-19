@@ -6,7 +6,7 @@
 //
 // This package implements a 2-level hierarchy:
 //  1. LogicSigDSA interface - defines the contract for all LogicSig-based DSAs
-//  2. Concrete implementations - e.g., aplane.falcon1024.v1, falcon-512-v1
+//  2. Concrete implementations - e.g., aplane.falcon1024.v1, aplane.ed25519.v1
 //
 // Version is part of the identity (not a parameter) because the same mnemonic
 // with different derivation versions produces different addresses.
@@ -21,7 +21,7 @@ import (
 // LogicSigDSA defines the interface for LogicSig-based signature algorithms.
 // Each implementation represents a specific algorithm AND version combination.
 //
-// Examples: "aplane.falcon1024.v1", "falcon-512-v1", "falcon1024-v2"
+// Examples: "aplane.falcon1024.v1", "aplane.ed25519.v1"
 //
 // The version is embedded in the type identity because different versions
 // produce different LogicSig bytecode, and therefore different addresses.
@@ -53,7 +53,8 @@ type LogicSigDSA interface {
 	// The version is implicit in the implementation type.
 	// The params argument allows passing additional parameters for hybrid schemes:
 	//   - Pure DSA (aplane.falcon1024.v1): params is empty or ignored
-	//   - Hybrid (falcon-aplane.htlc.v1): params contains unlock_round, recipients, etc.
+	//   - With overlays or bounds (the plain host): params carries their values,
+	//     such as cosigner and recipients
 	// Returns: (lsigBytecode, algorandAddress, error)
 	DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) (lsigBytecode []byte, address string, err error)
 }

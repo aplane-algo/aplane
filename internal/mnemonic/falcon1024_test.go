@@ -24,7 +24,7 @@ func TestNativeFalconMnemonicEntropyRoundTrip(t *testing.T) {
 	if got := len(strings.Fields(words)); got != nativefalcon.MnemonicWordCount {
 		t.Fatalf("word count = %d", got)
 	}
-	recovered, err := handler.MnemonicToEntropy(strings.Fields(words))
+	recovered, err := handler.SeedFromMnemonic(strings.Fields(words), "")
 	if err != nil {
 		t.Fatal(err)
 	}

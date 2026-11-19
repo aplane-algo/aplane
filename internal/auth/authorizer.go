@@ -58,10 +58,6 @@ const (
 	ActionClientsEnroll              Action = "clients.enroll"
 	ActionClientsRevoke              Action = "clients.revoke"
 	ActionHealthGet                  Action = "health.get"
-
-	ActionSign      = ActionSignRequest
-	ActionListKeys  = ActionKeysView
-	ActionGetHealth = ActionHealthGet
 )
 
 var knownActions = map[Action]struct{}{

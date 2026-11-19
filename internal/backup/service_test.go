@@ -283,9 +283,9 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	srcDir := active.KeysDir()
 	corruptFile := apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -293,17 +293,17 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}
 
-	_, err = ExportAllKeys(srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	err = ExportAllKeys(srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}
 }
 
-func activePathsForBackupTest(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
+func activePathsForBackupTest(t *testing.T, paths storepaths.Paths) storepaths.GenPaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	return active
 }

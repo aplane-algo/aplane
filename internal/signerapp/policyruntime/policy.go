@@ -99,7 +99,7 @@ func (p *NodePolicy) HasOwn(selector string) bool {
 // ASA set and the configured networks. Any document that fails verification
 // or validation fails the whole load, as does a generation with no default
 // or an ASA set that does not verify.
-func Load(role noderole.Role, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*NodePolicy, error) {
+func Load(role noderole.Role, serverCfg *serverconfig.ServerConfig, active storepaths.GenPaths, kr *crypto.Keyring) (*NodePolicy, error) {
 	def, _, err := policy.LoadVerifiedDefault(active, role, kr)
 	if err != nil {
 		return nil, err

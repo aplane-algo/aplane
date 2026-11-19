@@ -52,12 +52,11 @@ const (
 )
 
 type GenerateResult struct {
-	Address           string
-	PublicKeyHex      string
-	KeyType           string
-	IsWitnessKey      bool
-	IsSpendingAccount *bool
-	Parameters        map[string]string
+	Address      string
+	PublicKeyHex string
+	KeyType      string
+	IsWitnessKey bool
+	Parameters   map[string]string
 	// Warnings are the provider's and the signer's own advice about the account.
 	// They refused nothing.
 	Warnings []string
@@ -265,13 +264,12 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	}
 
 	return &GenerateResult{
-		Address:           genResult.Address,
-		PublicKeyHex:      genResult.PublicKeyHex,
-		KeyType:           genResult.KeyType,
-		IsWitnessKey:      genResult.IsWitnessKey,
-		IsSpendingAccount: genResult.IsSpendingAccount,
-		Parameters:        params,
-		Warnings:          warnings,
+		Address:      genResult.Address,
+		PublicKeyHex: genResult.PublicKeyHex,
+		KeyType:      genResult.KeyType,
+		IsWitnessKey: genResult.IsWitnessKey,
+		Parameters:   params,
+		Warnings:     warnings,
 	}, nil
 }
 

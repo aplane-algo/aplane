@@ -34,6 +34,7 @@ func stageArchiveForManifest(t *testing.T, passphrase []byte) string {
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
 		passphrase,
+		nil,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}
@@ -134,6 +135,7 @@ func TestSealedManifestOmitsOperationalSourceContext(t *testing.T) {
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
 		passphrase,
+		nil,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}
@@ -279,6 +281,7 @@ func TestSealedManifestSizeCapMatchesReader(t *testing.T) {
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
 		passphrase,
+		nil,
 	)
 	if err == nil {
 		// If it sealed, the reader must accept it — never seal-then-fail.

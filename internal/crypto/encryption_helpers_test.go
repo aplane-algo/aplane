@@ -6,7 +6,6 @@ package crypto
 import (
 	"bytes"
 	"crypto/rand"
-	"strings"
 	"testing"
 )
 
@@ -111,33 +110,5 @@ func TestSealWithRandomNonce_EmptyPlaintext(t *testing.T) {
 	}
 	if len(decrypted) != 0 {
 		t.Errorf("expected empty plaintext, got %d bytes", len(decrypted))
-	}
-}
-
-func TestCheckEnvelopeVersion_Match(t *testing.T) {
-	data := []byte(`{"envelope_version":1}`)
-	if err := checkEnvelopeVersion(data, 1, "test"); err != nil {
-		t.Errorf("should pass for matching version: %v", err)
-	}
-}
-
-func TestCheckEnvelopeVersion_Mismatch(t *testing.T) {
-	data := []byte(`{"envelope_version":2}`)
-	err := checkEnvelopeVersion(data, 1, "master key decryption")
-	if err == nil {
-		t.Fatal("should fail for mismatched version")
-	}
-	if !strings.Contains(err.Error(), "master key decryption") {
-		t.Errorf("error should include context, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "expected 1") {
-		t.Errorf("error should include expected version, got: %v", err)
-	}
-}
-
-func TestCheckEnvelopeVersion_InvalidJSON(t *testing.T) {
-	err := checkEnvelopeVersion([]byte("not json"), 1, "test")
-	if err == nil {
-		t.Fatal("should fail for invalid JSON")
 	}
 }

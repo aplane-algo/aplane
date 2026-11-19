@@ -91,7 +91,7 @@ func (r *REPLState) appCallResult(wait bool, out appCallOutput) (command.Result,
 func renderAppCallLines(lines []string, fromAddress string, r *REPLState) []string {
 	rendered := make([]string, 0, len(lines))
 	for _, line := range lines {
-		rendered = append(rendered, strings.ReplaceAll(line, "{from}", r.app().FormatAddress(fromAddress, "")))
+		rendered = append(rendered, strings.ReplaceAll(line, "{from}", r.app().FormatAddress(fromAddress)))
 	}
 	return rendered
 }

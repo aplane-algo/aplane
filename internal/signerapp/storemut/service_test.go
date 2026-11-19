@@ -74,9 +74,9 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	if _, err := os.Stat(result.DeletedPath); err != nil {
 		t.Fatalf("expected deleted key at %s: %v", result.DeletedPath, err)
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	if wantDir := active.DeletedKeysDir(); filepath.Dir(result.DeletedPath) != wantDir {
 		t.Fatalf("deleted path dir = %s, want %s", filepath.Dir(result.DeletedPath), wantDir)
@@ -212,9 +212,9 @@ func TestSaveProductSettingPersistsRuntimeConfigValue(t *testing.T) {
 
 func mustActiveKeysDirStoremut(t *testing.T, paths utilkeys.Paths) string {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active.KeysDir()
 }
@@ -223,7 +223,7 @@ func TestDeleteCosignerKeyArchivesItsPolicy(t *testing.T) {
 	const witnessKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 	paths, kr, cleanup := setupKeystore(t)
 	defer cleanup()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestDeleteCosignerKeyRefusesWhenArchiveCannotHoldItsPolicy(t *testing.T) {
 	const witnessKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 	paths, kr, cleanup := setupKeystore(t)
 	defer cleanup()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestDeleteCosignerKeyRefusesWhenArchiveCannotHoldItsPolicy(t *testing.T) {
 			t.Fatalf("refused deletion moved %s: %v", path, err)
 		}
 	}
-	if usage, err := genstore.InspectDeletedArchive(active.(utilkeys.GenPaths)); err != nil || usage.Entries != genstore.DeletedArchiveMaxEntries-2 {
+	if usage, err := genstore.InspectDeletedArchive(active); err != nil || usage.Entries != genstore.DeletedArchiveMaxEntries-2 {
 		t.Fatalf("archive after refused deletion = %+v, %v", usage, err)
 	}
 }

@@ -326,6 +326,7 @@ func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
 		noderole.RoleSigner,
 		time.Unix(100, 0),
 		passphrase,
+		nil,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}
@@ -347,6 +348,7 @@ func TestSelectRebuildNodeRoleUsesSealedManifestRole(t *testing.T) {
 		noderole.RoleCosigner,
 		time.Unix(100, 0),
 		passphrase,
+		nil,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}
@@ -446,34 +448,6 @@ func TestCmdVerifyFailsWhenAnyCredentialIsInvalid(t *testing.T) {
 	var coded codedError
 	if !errors.As(err, &coded) || coded.code != "verification_failed" {
 		t.Fatalf("cmdVerify() error = %v, want verification_failed code", err)
-	}
-}
-
-func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
-	RegisterProviders()
-
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths())
-	backupDir := t.TempDir()
-	address, keyJSON := testEd25519KeyJSON(t)
-	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackup() error = %v", err)
-	}
-
-	masterKey := bytes32(0x55)
-	firstType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
-	if err != nil {
-		t.Fatalf("first restoreKey() error = %v", err)
-	}
-	secondType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
-	if err != nil {
-		t.Fatalf("second restoreKey() error = %v", err)
-	}
-	if firstType != "ed25519" || secondType != "ed25519" {
-		t.Fatalf("restoreKey() key types = %q, %q, want ed25519 both times", firstType, secondType)
-	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, boundKeystorePaths(t)), address)); err != nil {
-		t.Fatalf("restored key file missing after repeated restore: %v", err)
 	}
 }
 
@@ -774,25 +748,6 @@ func boundKeystorePaths(t *testing.T) storepaths.Paths {
 		t.Fatalf("bind test store: %v", err)
 	}
 	return paths
-}
-
-func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
-	bytecode := saltedLogicSigBytecodeForTest()
-	keyJSON := canonicalGenericKeyJSONForApstore(t, "test.generic-policy.v1", bytecode)
-
-	keyType, address, hasLogicSigBytecode, err := restoreKeyMetadata(keyJSON)
-	if err != nil {
-		t.Fatalf("restoreKeyMetadata() error = %v", err)
-	}
-	if keyType != "test.generic-policy.v1" {
-		t.Fatalf("restoreKeyMetadata() keyType = %q, want test.generic-policy.v1", keyType)
-	}
-	if address != logicSigAddressForTestForBytes(t, bytecode) {
-		t.Fatalf("restoreKeyMetadata() address = %q, want %q", address, logicSigAddressForTestForBytes(t, bytecode))
-	}
-	if !hasLogicSigBytecode {
-		t.Fatal("restoreKeyMetadata() hasLogicSigBytecode = false, want true")
-	}
 }
 
 func testCosignerComponentKeyJSONForApstore(t *testing.T) (string, []byte) {

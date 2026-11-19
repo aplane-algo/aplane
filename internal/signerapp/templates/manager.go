@@ -148,7 +148,7 @@ func (r RegistrationReport) Notices() []string {
 // Manager owns keystore template registration ordering for signer reloads.
 type Manager struct {
 	Paths       storepaths.Paths
-	ActivePaths storepaths.ActivePaths
+	ActivePaths storepaths.GenPaths
 	Registrars  []TemplateRegistrar
 }
 
@@ -203,12 +203,13 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 
 	report := RegistrationReport{}
 	// Bind every record and template read to one caller-authenticated
-	// generation. The fallback remains for low-level tests until their fixtures
-	// are converted; production assembly always supplies ActivePaths.
+	// generation. The fallback, for an unset ActivePaths, remains for
+	// low-level tests until their fixtures are converted; production assembly
+	// always supplies ActivePaths.
 	active := m.ActivePaths
-	if active == nil {
+	if active.GenerationID() == "" {
 		var err error
-		active, err = genstore.ResolveActive(m.Paths)
+		active, err = genstore.Resolve(m.Paths)
 		if err != nil {
 			return report, fmt.Errorf("failed to resolve active key store layout: %w", err)
 		}
@@ -277,7 +278,7 @@ func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
 // Enabled templates and malformed records are already covered by
 // registration and ListInvalidActive; the sweep does not re-report them.
 // Defects feed the fail-closed reload gate (docs/ARCH_STORE.md, "Runtime reload behavior").
-func sweepKeyTypeNamespace(active storepaths.ActivePaths, kr *crypto.Keyring, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) []string {
+func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) []string {
 	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -383,7 +384,7 @@ func validateTemplateContent(dir, name, keyType string, kr *crypto.Keyring, regi
 	return nil
 }
 
-func processTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, register bool) templatepolicy.RegistrationOutcome {
+func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, register bool) templatepolicy.RegistrationOutcome {
 	var outcome templatepolicy.RegistrationOutcome
 	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType, registrar.TemplateType)
 	if _, err := os.Stat(path); err != nil {

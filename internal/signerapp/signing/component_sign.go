@@ -133,9 +133,6 @@ func loadCosignerComponentKey(ctx context.Context, session componentKeyGetter, c
 }
 
 func signCosignerComponentMessage(keyType string, privateKey, msg []byte) ([]byte, *ServiceError) {
-	if err := witness.RequireCapability(witness.CustodianNetworkedSigner, witness.DomainCosignerComponent); err != nil {
-		return nil, internal(err.Error())
-	}
 	switch keyType {
 	case witness.Falcon1024V1:
 		signature, err := signerops.New(nil).Sign(privateKey, msg)

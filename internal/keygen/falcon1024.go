@@ -35,9 +35,7 @@ func (g *NativeFalconGenerator) GenerateFromSeed(ctx context.Context, paths stor
 	if len(entropy) != nativefalcon.RecoveryEntropySize {
 		return nil, fmt.Errorf("native Falcon recovery entropy length %d, want %d", len(entropy), nativefalcon.RecoveryEntropySize)
 	}
-	ownedEntropy := append([]byte(nil), entropy...)
-	defer securecrypto.ZeroBytes(ownedEntropy)
-	return g.generate(paths, ownedEntropy, kr)
+	return g.generate(paths, entropy, kr)
 }
 
 func (g *NativeFalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, words string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {

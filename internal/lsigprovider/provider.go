@@ -81,7 +81,8 @@ type SigningProvider interface {
 	// DeriveLsig derives the LogicSig bytecode and address from a public key.
 	// The params argument allows passing additional parameters for hybrid schemes:
 	//   - Pure DSA (aplane.falcon1024.v1): params is empty or ignored
-	//   - Hybrid (falcon-aplane.htlc.v1): params contains unlock_round, recipients, etc.
+	//   - With overlays or bounds (the plain host): params carries their values,
+	//     such as cosigner and recipients
 	// Returns: (lsigBytecode, algorandAddress, error)
 	DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) (lsigBytecode []byte, address string, err error)
 }

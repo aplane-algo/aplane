@@ -58,7 +58,7 @@ func slhDiskFixture(b *testing.B) (*rotatingFixture, *keystore.FileKeyStore) {
 	if err := store.Unlock(passphrase); err != nil {
 		b.Fatal(err)
 	}
-	if err := store.Scan(nil); err != nil {
+	if err := store.Scan(); err != nil {
 		b.Fatal(err)
 	}
 	f.session.Destroy()

@@ -192,7 +192,6 @@ type YAMLTemplate struct {
 
 // Compile-time check that YAMLTemplate implements Template
 var _ genericlsig.Template = (*YAMLTemplate)(nil)
-var _ genericlsig.SaltedTemplate = (*YAMLTemplate)(nil)
 var _ lsigprovider.OpcodeProfileProvider = (*YAMLTemplate)(nil)
 var _ lsigprovider.RekeyTargetDeclarer = (*YAMLTemplate)(nil)
 
@@ -365,15 +364,6 @@ func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
 	}
 
 	return t.applySaltAnchor(teal)
-}
-
-// Compile compiles the TEAL and returns bytecode and address.
-func (t *YAMLTemplate) Compile(ctx context.Context, params map[string]string, algodClient *algod.Client) ([]byte, string, error) {
-	result, err := t.CompileWithSalt(ctx, params, algodClient)
-	if err != nil {
-		return nil, "", err
-	}
-	return result.Bytecode, result.Address.String(), nil
 }
 
 // CompileWithSalt compiles the TEAL, applies the off-curve salt counter, and

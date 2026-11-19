@@ -49,9 +49,9 @@ func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
 	paths = genstoretest.MintFirst(t, paths)
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active.KeysDir(), paths, func() {}
 }
@@ -180,7 +180,7 @@ func TestAtomicFileKeyStoreAuthenticatesFreshRootSelection(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Mint(successor) error = %v", err)
 	}
-	if err := store.Scan(nil); err != nil {
+	if err := store.Scan(); err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
 	active, err = store.ActivePaths()

@@ -14,14 +14,7 @@ import (
 )
 
 const (
-	// PolicyIntegrityKeyLength is the byte length of policy HMAC keys derived
-	// from an identity's current term key.
-	PolicyIntegrityKeyLength = 32
-
-	// NodeRoleIntegrityKeyLength is the byte length of node-role HMAC keys
-	// derived from an identity's current term key.
-	NodeRoleIntegrityKeyLength = 32
-
+	// integrityKeyLength is the byte length of every per-term HMAC key.
 	integrityKeyLength = 32
 
 	policyIntegrityHKDFInfo         = "aplane policy integrity v1"
@@ -45,7 +38,7 @@ const (
 // domain. The returned term must be stored beside the MAC.
 func (kr *Keyring) SignIntegrity(domain IntegrityDomain, payload []byte) (int64, string, error) {
 	if kr == nil || len(kr.terms) == 0 {
-		return 0, "", fmt.Errorf("keyring is not open")
+		return 0, "", ErrKeyringNotOpen
 	}
 	term := kr.currentTerm
 	key, err := kr.integrityKeyForTerm(domain, term)
@@ -57,13 +50,12 @@ func (kr *Keyring) SignIntegrity(domain IntegrityDomain, payload []byte) (int64,
 }
 
 // VerifyIntegrity authenticates payload under the named term only when that
-// term has current-state read authority: the current term, plus the one
-// retiring term while a rotation descriptor is pending.
+// term has current-state read authority, which only the current term has.
 func (kr *Keyring) VerifyIntegrity(domain IntegrityDomain, payload []byte, term int64, encodedMAC string) error {
 	if kr == nil || len(kr.terms) == 0 {
-		return fmt.Errorf("keyring is not open")
+		return ErrKeyringNotOpen
 	}
-	if !kr.authorizesCurrentStateTerm(term) {
+	if term != kr.currentTerm {
 		return fmt.Errorf("term %d is not authorized for current integrity state", term)
 	}
 	return kr.verifyIntegrityForTerm(domain, payload, term, encodedMAC)
@@ -79,7 +71,7 @@ func (kr *Keyring) VerifyHistoricalGenerationSealIntegrity(
 	encodedMAC string,
 ) error {
 	if kr == nil || len(kr.terms) == 0 {
-		return fmt.Errorf("keyring is not open")
+		return ErrKeyringNotOpen
 	}
 	return kr.verifyIntegrityForTerm(
 		IntegrityDomainGenerationSeal,
@@ -145,7 +137,7 @@ func computeIntegrityMAC(payload, key []byte) string {
 // It stays unexported as the reference the keyring's confined integrity
 // operations are tested against.
 func derivePolicyIntegrityKey(masterKey []byte) ([]byte, error) {
-	return deriveIntegrityKey(masterKey, []byte(policyIntegrityHKDFInfo), PolicyIntegrityKeyLength, "policy")
+	return deriveIntegrityKey(masterKey, []byte(policyIntegrityHKDFInfo), integrityKeyLength, "policy")
 }
 
 func deriveIntegrityKey(masterKey []byte, info []byte, length int, label string) ([]byte, error) {

@@ -103,15 +103,6 @@ func appendKeyType(types []string, seen map[string]bool, keyType string) []strin
 	return append(types, keyType)
 }
 
-// IsValidKeyType checks if a key type is valid by querying the registry.
-func IsValidKeyType(keyType string) bool {
-	return IsValidKeyTypeWithActivated(keyType, nil)
-}
-
-func IsValidKeyTypeWithActivated(keyType string, activated []string) bool {
-	return isKeyTypeInList(keyType, GetValidKeyTypesWithActivated(activated))
-}
-
 // SupportsMnemonicImport reports whether user-entered mnemonic import is
 // enabled for a key type. This is intentionally narrower than "has mnemonic
 // material"; only externally recoverable wallet/tool protocols should return
@@ -165,13 +156,9 @@ func keyTypeEnabledForGeneration(keyType string, activated map[string]bool) bool
 	return activated[strings.ToLower(strings.TrimSpace(keyType))]
 }
 
-// GenerateKey creates a new random key with mnemonic backup.
-// keyType must be explicitly specified (e.g., "ed25519", "aplane.falcon1024.v1").
-// kr is the derived encryption key from the keystore (not raw passphrase).
-func GenerateKey(paths storepaths.Paths, keyType string, kr *crypto.Keyring, params map[string]string) (*GenerateResult, error) {
-	return GenerateKeyWithActivatedContext(context.Background(), paths, keyType, kr, params, nil)
-}
-
+// GenerateKeyWithActivatedContext creates a new random key of keyType, which
+// must be explicitly specified (e.g., "ed25519", "aplane.falcon1024.v1"). kr
+// is the derived encryption key from the keystore (not raw passphrase).
 func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*GenerateResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -201,20 +188,12 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		KeyType:      genResult.KeyType, // Full versioned type from generator
 		KeyFile:      genResult.KeyFiles.PrivateFile,
 	}
-	if witness.IsKeyType(genResult.KeyType) {
-		spending := false
-		result.IsWitnessKey = true
-		result.IsSpendingAccount = &spending
-	}
+	result.IsWitnessKey = witness.IsKeyType(genResult.KeyType)
 	return result, nil
 }
 
-// ImportKey imports a key from a mnemonic phrase.
-// kr is the derived encryption key from the keystore (not raw passphrase).
-func ImportKey(paths storepaths.Paths, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string) (*ImportResult, error) {
-	return ImportKeyWithActivatedContext(context.Background(), paths, keyType, mnemonicStr, kr, params, nil)
-}
-
+// ImportKeyWithActivatedContext imports a key from a mnemonic phrase. kr is
+// the derived encryption key from the keystore (not raw passphrase).
 func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string, activated []string) (*ImportResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -257,22 +236,15 @@ func isKeyTypeInList(keyType string, validTypes []string) bool {
 // DeleteKeyActive preflights the selected generation's closed deleted-archive
 // limits before moving a credential. The active credential remains untouched
 // when capacity is unavailable.
-func DeleteKeyActive(active storepaths.ActivePaths, address, keyFile string) (*DeleteResult, error) {
-	gen, ok := active.(storepaths.GenPaths)
-	if !ok {
-		return nil, fmt.Errorf("credential deletion requires generation-qualified active paths")
-	}
-	if _, err := genstore.PreflightDeletedArchiveAppend(gen, keyFile); err != nil {
+func DeleteKeyActive(active storepaths.GenPaths, address, keyFile string) (*DeleteResult, error) {
+	if _, err := genstore.PreflightDeletedArchiveAppend(active, keyFile); err != nil {
 		return nil, err
 	}
-	return DeleteKey(address, keyFile, active.DeletedKeysDir())
+	return deleteKey(address, keyFile, active.DeletedKeysDir())
 }
 
-// DeleteKey moves a key file to a caller-selected deleted/keys directory.
-// Production generation stores use DeleteKeyActive so capacity is checked
-// before mutation; this lower-level primitive remains useful for isolated
-// filesystem behavior tests.
-func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
+// deleteKey moves a key file to the deleted/keys directory.
+func deleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
 	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return nil, fmt.Errorf("failed to create deleted keys directory: %w", err)
 	}

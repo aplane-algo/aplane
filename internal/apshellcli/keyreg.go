@@ -60,7 +60,7 @@ func (r *REPLState) keyRegPasteMode() (command.Result, error) {
 
 	// Display parsed information
 	r.println("\nParsed participation key info:")
-	r.printf("  Account: %s\n", r.app().FormatAddress(parsedInfo.ParentAddress, ""))
+	r.printf("  Account: %s\n", r.app().FormatAddress(parsedInfo.ParentAddress))
 	r.printf("  Voting key: %s\n", parsedInfo.VoteKey)
 	r.printf("  Selection key: %s\n", parsedInfo.SelectionKey)
 	r.printf("  State proof key: %s\n", parsedInfo.StateProofKey)
@@ -106,7 +106,7 @@ func (r *REPLState) keyRegCommandResult(result *apshellapp.KeyRegCommandResult, 
 func (r *REPLState) renderKeyRegResult(result *apshellapp.KeyRegCommandResult, simulated, prompted bool) {
 	r.renderSubmissionOutput(result.Output)
 	r.renderWarnings(result.Warnings)
-	account := r.app().FormatAddress(result.Account, "")
+	account := r.app().FormatAddress(result.Account)
 	statusMsg := "OFFLINE"
 	if result.Mode == "online" {
 		statusMsg = "ONLINE in consensus"

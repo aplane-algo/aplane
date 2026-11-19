@@ -402,7 +402,7 @@ func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 	if err := fresh.Unlock(testPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
-	if err := fresh.Scan(nil); err != nil {
+	if err := fresh.Scan(); err != nil {
 		t.Fatalf("Scan(): %v", err)
 	}
 	for name, store := range map[string]*keystore.FileKeyStore{"reloaded": ir.KeyStore(), "restarted": fresh} {

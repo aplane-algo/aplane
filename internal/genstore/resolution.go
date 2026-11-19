@@ -34,8 +34,3 @@ func requireRegularDirectory(path string) error {
 	}
 	return nil
 }
-
-// ResolveActive is Resolve projected through the narrow ActivePaths surface.
-func ResolveActive(paths storepaths.Paths) (storepaths.ActivePaths, error) {
-	return Resolve(paths)
-}

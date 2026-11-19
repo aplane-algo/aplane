@@ -83,13 +83,13 @@ func (r *REPLState) cmdOptin(args []string, _ *command.Context) (command.Result,
 			r.renderSubmissionOutput(result.Output)
 			r.renderWarnings(result.Warnings)
 			r.printf("Opting into ASA %d (%s) from %s using %s...\n",
-				result.Asset.AssetID, asa.DisplayRef(result.Asset), r.app().FormatAddress(result.Account, ""), result.SigningKeyType)
+				result.Asset.AssetID, asa.DisplayRef(result.Asset), r.app().FormatAddress(result.Account), result.SigningKeyType)
 			if !simulated {
 				r.printf("Opt-in submitted: %s\n", result.TxID)
 			}
 			if result.Confirmed {
 				r.printf("Opt-in confirmed for %s into ASA %d (%s)\n",
-					r.app().FormatAddress(result.Account, ""), result.Asset.AssetID, asa.DisplayRef(result.Asset))
+					r.app().FormatAddress(result.Account), result.Asset.AssetID, asa.DisplayRef(result.Asset))
 			}
 		})
 	}, optInProjection{
@@ -115,18 +115,18 @@ func (r *REPLState) cmdOptout(args []string, _ *command.Context) (command.Result
 			r.renderWarnings(result.Warnings)
 			if result.AssetBalance > 0 {
 				r.printf("Opting out of ASA %d (%s) from %s, sending %d units to %s using %s...\n",
-					result.Asset.AssetID, asa.DisplayRef(result.Asset), r.app().FormatAddress(result.Account, ""),
-					result.AssetBalance, r.app().FormatAddress(result.CloseTo, ""), result.SigningKeyType)
+					result.Asset.AssetID, asa.DisplayRef(result.Asset), r.app().FormatAddress(result.Account),
+					result.AssetBalance, r.app().FormatAddress(result.CloseTo), result.SigningKeyType)
 			} else {
 				r.printf("Opting out of ASA %d (%s) from %s using %s...\n",
-					result.Asset.AssetID, asa.DisplayRef(result.Asset), r.app().FormatAddress(result.Account, ""), result.SigningKeyType)
+					result.Asset.AssetID, asa.DisplayRef(result.Asset), r.app().FormatAddress(result.Account), result.SigningKeyType)
 			}
 			if !simulated {
 				r.printf("Opt-out submitted: %s\n", result.TxID)
 			}
 			if result.Confirmed {
 				r.printf("Opt-out confirmed: %s is no longer opted into ASA %d (%s)\n",
-					r.app().FormatAddress(result.Account, ""), result.Asset.AssetID, asa.DisplayRef(result.Asset))
+					r.app().FormatAddress(result.Account), result.Asset.AssetID, asa.DisplayRef(result.Asset))
 			}
 		})
 	}, optOutProjection{

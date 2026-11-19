@@ -39,7 +39,7 @@ func (r *REPLState) renderAliasResult(result *apshellapp.AliasCommandResult) err
 
 		r.println("Defined aliases:")
 		for _, alias := range result.Aliases {
-			r.printf("  %s\n", r.app().FormatAddress(alias.Address, ""))
+			r.printf("  %s\n", r.app().FormatAddress(alias.Address))
 		}
 
 		if len(result.Warnings) > 0 {
@@ -50,19 +50,19 @@ func (r *REPLState) renderAliasResult(result *apshellapp.AliasCommandResult) err
 		}
 		return nil
 	case "delete":
-		r.printf("Removed alias: %s (was %s)\n", result.Name, r.app().FormatAddress(result.Removed, ""))
+		r.printf("Removed alias: %s (was %s)\n", result.Name, r.app().FormatAddress(result.Removed))
 		return nil
 	case "show":
-		r.printf("%s → %s\n", result.Name, r.app().FormatAddress(result.Alias.Address, ""))
+		r.printf("%s → %s\n", result.Name, r.app().FormatAddress(result.Alias.Address))
 		return nil
 	case "upsert":
 		added := result.Added
 		if added.WasUpdated {
-			r.printf("Updated alias: %s → %s (was %s)\n", result.Name, r.app().FormatAddress(added.Address, ""), r.app().FormatAddress(added.OldAddress, ""))
+			r.printf("Updated alias: %s → %s (was %s)\n", result.Name, r.app().FormatAddress(added.Address), r.app().FormatAddress(added.OldAddress))
 		} else if added.OldAddress == "" {
-			r.printf("Added alias: %s → %s\n", result.Name, r.app().FormatAddress(added.Address, ""))
+			r.printf("Added alias: %s → %s\n", result.Name, r.app().FormatAddress(added.Address))
 		} else {
-			r.printf("Alias '%s' already points to %s\n", result.Name, r.app().FormatAddress(added.Address, ""))
+			r.printf("Alias '%s' already points to %s\n", result.Name, r.app().FormatAddress(added.Address))
 		}
 		return nil
 	}
@@ -113,7 +113,7 @@ func (r *REPLState) renderSetsResult(result *apshellapp.SetsCommandResult) error
 	case "show":
 		r.printf("Set '%s' (%d addresses):\n", result.SetName, len(result.Addresses))
 		for i, addr := range result.Addresses {
-			r.printf("  %d. %s\n", i+1, r.app().FormatAddress(addr, ""))
+			r.printf("  %d. %s\n", i+1, r.app().FormatAddress(addr))
 		}
 		return nil
 	case "create":

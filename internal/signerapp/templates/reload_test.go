@@ -59,7 +59,7 @@ func (f *fakeKeyStore) BindStoreRootSelection() error {
 	f.bindCalled = true
 	return f.bindErr
 }
-func (f *fakeKeyStore) Scan(_ []byte) error {
+func (f *fakeKeyStore) Scan() error {
 	f.scanCalled = true
 	if f.onScan != nil {
 		f.onScan()

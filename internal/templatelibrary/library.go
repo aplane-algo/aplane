@@ -264,7 +264,7 @@ func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateM
 }
 
 func InstallParsed(paths storepaths.Paths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return InstallResult{KeyType: tmpl.KeyType, TemplateType: tmpl.TemplateType}, err
 	}
@@ -274,7 +274,7 @@ func InstallParsed(paths storepaths.Paths, tmpl ParsedTemplate, kr *crypto.Keyri
 // InstallParsedActive is InstallParsed against resolved active-store paths
 // authenticated generation; the caller resolved the layout once for the
 // whole operation.
-func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
+func InstallParsedActive(active storepaths.GenPaths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
 	result := InstallResult{
 		KeyType:      tmpl.KeyType,
 		TemplateType: tmpl.TemplateType,
@@ -353,7 +353,7 @@ type templateStateChange struct {
 	Previous    keytypestate.Record
 }
 
-func putTemplateState(active storepaths.ActivePaths, tmpl ParsedTemplate, state keytypestate.State) (templateStateChange, error) {
+func putTemplateState(active storepaths.GenPaths, tmpl ParsedTemplate, state keytypestate.State) (templateStateChange, error) {
 	fingerprint, err := semanticFingerprint(tmpl.TemplateType, tmpl.YAMLData)
 	if err != nil {
 		return templateStateChange{}, err
@@ -442,7 +442,7 @@ func ActivateCompiledProvider(paths storepaths.Paths, keyType string) (InstallRe
 	}
 	// The record path reported back must be the one the writes actually
 	// use: the active namespace, never the flat legacy path.
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return result, err
 	}
@@ -483,7 +483,7 @@ func DeactivateCompiledProvider(paths storepaths.Paths, keyType string, kr *cryp
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return result, err
 	}
@@ -518,7 +518,7 @@ func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 		return result, err
 	}
 	result.OutputPath = outputPath
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return result, err
 	}
@@ -561,7 +561,7 @@ func DisableInstalledTemplate(paths storepaths.Paths, keyType string, templateTy
 		return result, err
 	}
 	result.OutputPath = outputPath
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return result, err
 	}
@@ -641,14 +641,14 @@ func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 // template file. It deliberately leaves key type state rollback to
 // RollbackTemplateStateChange.
 func RollbackInstalledTemplateFile(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) error {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return err
 	}
 	return rollbackInstalledTemplateFileActive(active, keyType, templateType)
 }
 
-func rollbackInstalledTemplateFileActive(active storepaths.ActivePaths, keyType string, templateType templatestore.TemplateType) error {
+func rollbackInstalledTemplateFileActive(active storepaths.GenPaths, keyType string, templateType templatestore.TemplateType) error {
 	path := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
 	if err := fsutil.RemoveDurable(path); err != nil {
 		return fmt.Errorf("failed to remove installed template: %w", err)
@@ -657,16 +657,12 @@ func rollbackInstalledTemplateFileActive(active storepaths.ActivePaths, keyType 
 }
 
 func archiveInstalled(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) (string, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return "", err
 	}
 	sourcePath := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
-	gen, ok := active.(storepaths.GenPaths)
-	if !ok {
-		return "", fmt.Errorf("template archival requires generation-qualified active paths")
-	}
-	if _, err := genstore.PreflightDeletedArchiveAppend(gen, sourcePath); err != nil {
+	if _, err := genstore.PreflightDeletedArchiveAppend(active, sourcePath); err != nil {
 		return "", err
 	}
 	deletedKeysDir := active.DeletedKeysDir()

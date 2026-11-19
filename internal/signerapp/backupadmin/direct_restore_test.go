@@ -407,6 +407,7 @@ func writeCredentialOnlyManagedArchive(t *testing.T, paths storepaths.Paths) (st
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
 		[]byte("export-passphrase"),
+		nil,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +441,7 @@ func writeMixedValidityManagedArchive(t *testing.T, paths storepaths.Paths) (str
 	if err := os.WriteFile(filepath.Join(apbDir, "BAD.apb"), badEncrypted, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+	if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase"), nil); err != nil {
 		t.Fatal(err)
 	}
 	archivePath := backup.BuildManagedArchivePath(paths, "mixed-validity")

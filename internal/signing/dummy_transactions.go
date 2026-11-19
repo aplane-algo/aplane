@@ -11,9 +11,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// TxLsigBudget is Algorand's LogicSig pool budget contribution per transaction in a group
-const TxLsigBudget = 1000
-
 // DummyAddress returns the address authorized by the embedded dummy LogicSig.
 func DummyAddress() (types.Address, error) {
 	lsigAcct := crypto.LogicSigAccount{Lsig: dummyLogicSig()}

@@ -513,7 +513,7 @@ func HeldPolicyKeys(role noderole.Role, keyFiles map[string]string) map[string]b
 
 // HeldPolicyKeysInGeneration lists the role's credentials in a generation's
 // key namespace by file name, without opening them.
-func HeldPolicyKeysInGeneration(role noderole.Role, active storepaths.ActivePaths) (map[string]bool, error) {
+func HeldPolicyKeysInGeneration(role noderole.Role, active storepaths.GenPaths) (map[string]bool, error) {
 	entries, err := os.ReadDir(active.KeysDir())
 	if err != nil {
 		return nil, err

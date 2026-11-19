@@ -120,15 +120,10 @@ func (w *payloadWire) zeroSecrets() {
 	w.RecoveryEntropyHex.zero()
 }
 
-const (
-	// LogicSigDerivationManualCounter is the transitional manual-salt key-file
-	// contract. The empty durable value also means this mode for existing keys.
-	LogicSigDerivationManualCounter = "manual_counter"
-
-	// LogicSigDerivationAlgodV13AutoSalt records that the stored bytecode is the
-	// authoritative final output of algod's TEAL v13 auto-salting assembler.
-	LogicSigDerivationAlgodV13AutoSalt = "algod_v13_auto_salt"
-)
+// LogicSigDerivationAlgodV13AutoSalt records that the stored bytecode is the
+// authoritative final output of algod's TEAL v13 auto-salting assembler. An
+// empty lsig_derivation is the manual salt counter, which salt_counter records.
+const LogicSigDerivationAlgodV13AutoSalt = "algod_v13_auto_salt"
 
 // NewEd25519Payload constructs a canonical native Ed25519 key payload.
 func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
@@ -832,7 +827,7 @@ func validateLogicSigFields(p *Payload) error {
 		return incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
 	}
 	switch p.LogicSigDerivation {
-	case "", LogicSigDerivationManualCounter:
+	case "":
 		if p.SaltCounter == nil {
 			return ErrMissingLogicSigSaltCounter
 		}

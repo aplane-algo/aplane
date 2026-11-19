@@ -22,7 +22,7 @@ var (
 	ResolveInStoreSocket = adminipc.ResolveInStoreSocketPath
 	AcquireStoreLock     = storelock.AcquireExclusive
 	NormalizeStore       = func(dataDir string, uid, gid int, socketPath string) error {
-		_, err := storeperm.MigratePrivate(storeperm.SharedMigrationOptions(dataDir, uid, gid, socketPath))
+		_, err := storeperm.MigratePrivate(storeperm.StoppedMigrationOptions(dataDir, uid, gid, socketPath))
 		return err
 	}
 )
