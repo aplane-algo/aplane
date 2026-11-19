@@ -442,7 +442,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress handles keyboard input based on current view
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewCosignerImporting || m.viewState == ViewCosignerRemoving || m.viewState == ViewCosignerExporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
+	if msg.String() == "ctrl+c" || (msg.String() == "q" && isOperationInProgressView(m.viewState)) {
 		m.clearMnemonicExport()
 		return m, tea.Quit
 	}
@@ -595,14 +595,24 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTemplateInstallConfirmKeys(msg)
 	case ViewLibraryTemplateDetails:
 		return m.handleLibraryTemplateDetailsKeys(msg)
-	case ViewGenerating, ViewImporting, ViewCosignerImporting, ViewCosignerRemoving, ViewCosignerExporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
-		if msg.String() == "esc" {
+	default:
+		if isOperationInProgressView(m.viewState) && msg.String() == "esc" {
 			m.lastError = "Operation in progress; wait for completion or press q to quit"
 		}
-		return m, nil
 	}
 
 	return m, nil
+}
+
+// isOperationInProgressView reports whether view is a progress screen: it
+// waits on one request, refuses Esc, and offers q to quit.
+func isOperationInProgressView(view ViewState) bool {
+	switch view {
+	case ViewGenerating, ViewImporting, ViewCosignerImporting, ViewCosignerRemoving, ViewCosignerExporting,
+		ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
+		return true
+	}
+	return false
 }
 
 func (m Model) usesSharedPopupViewport() bool {

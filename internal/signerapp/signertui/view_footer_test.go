@@ -6,6 +6,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestWindowFooterAndStatusArePinnedAcrossScreens(t *testing.T) {
@@ -240,4 +242,29 @@ func TestStandaloneAdminHeaderStaysWithinWidth(t *testing.T) {
 
 func renderedViewLines(rendered string) []string {
 	return strings.Split(strings.TrimRight(stripANSI(rendered), "\n"), "\n")
+}
+
+// Every progress screen offers q to quit, in its footer and in the message
+// Esc leaves, so q must quit on each of them.
+func TestProgressScreensQuitOnQAsTheirFooterSays(t *testing.T) {
+	for _, view := range []ViewState{
+		ViewGenerating, ViewImporting, ViewCosignerImporting, ViewCosignerRemoving, ViewCosignerExporting,
+		ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring,
+	} {
+		m := Model{viewState: view, connectionState: ConnectionConnected, width: MinWidth, height: MinHeight}
+		if footer := m.viewFooterText(); footer != "q: Quit" {
+			t.Fatalf("view %v footer = %q, want q: Quit", view, footer)
+		}
+		next, _ := m.handleKeyPress(tea.KeyMsg{Type: tea.KeyEsc})
+		if got := next.(Model); got.viewState != view || !strings.Contains(got.lastError, "press q to quit") {
+			t.Fatalf("view %v: Esc left view %v with %q, want it refused with the quit hint", view, got.viewState, got.lastError)
+		}
+		_, cmd := m.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+		if cmd == nil {
+			t.Fatalf("view %v: q does nothing", view)
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Fatalf("view %v: q does not quit", view)
+		}
+	}
 }

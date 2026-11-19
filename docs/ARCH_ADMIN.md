@@ -1178,7 +1178,8 @@ Each in-progress generate, import, delete, key-type install, or backup records
 its request ID. An untyped failure (an authorization denial, a send error, or a
 signer message the TUI cannot decode) whose ID names that request returns the
 operation to the screen it started from, as its own failure result would.
-Progress screens ignore Esc, so nothing may strand them. An error for any other
+Progress screens ignore Esc, so nothing may strand them; `q` quits from
+every one of them (`isOperationInProgressView`). An error for any other
 request, such as a background refresh, leaves the operation waiting for its own
 result, matching the policy-load flow.
 
