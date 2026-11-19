@@ -1185,8 +1185,9 @@ result, matching the policy-load flow.
 
 In parameter forms, `j`, `k`, space, `<`, and `>` type into free-text fields;
 they navigate or cycle only on choice fields and the submit button. Tab and the
-arrow keys always navigate. Parameter fields accept ASCII only and refuse other
-input with an error rather than rewriting it.
+arrow keys always navigate. Only typed or pasted text enters a field; a key
+with no text, such as ctrl+a or f1, is ignored there. Parameter fields accept
+ASCII only and refuse other input with an error rather than rewriting it.
 
 The key type lists of the generate, import, and cosigned-account forms fit the
 window: when a list is too long, it shows the rows around the selection between

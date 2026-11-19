@@ -519,14 +519,10 @@ func (m Model) handleParamModalKeys(
 		if onField {
 			m = m.ensureCurrentParamInputVisible(params)
 		}
-	case "insert", "delete":
 	default:
-		input := key
-		if msg.Type == tea.KeyRunes {
-			input = string(msg.Runes)
-		}
-		if input != "" && onField {
-			return m.typeIntoCurrentParam(input, params)
+		// Only printable input types; any other key would type its name.
+		if msg.Type == tea.KeyRunes && onField {
+			return m.typeIntoCurrentParam(string(msg.Runes), params)
 		}
 	}
 	return m, nil, ""
