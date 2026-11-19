@@ -97,12 +97,12 @@ func (h secretHex[F]) zero() {
 }
 
 // decode returns the bytes the field encodes; an absent or empty field
-// decodes to nil. It applies decodeCanonicalHex's rule and errors exactly:
-// non-empty lowercase hex. A string the encoder could have written, plain
-// ASCII without escapes, is decoded from the buffer in place. Any other
-// string, which no canonical payload holds, goes through decodeCanonicalHex
-// itself, so its result and errors are unchanged; that path makes a string
-// copy.
+// decodes to nil. It applies the canonical-hex rule, as decodeCanonicalHex
+// does: a string the encoder could have written, plain ASCII without escapes,
+// is decoded from the buffer in place by the rule's bytes form. Any other
+// string, which no canonical payload holds, is decoded from JSON first and
+// goes through decodeCanonicalHex itself, so its result and errors are
+// unchanged; that path makes a string copy.
 func (h secretHex[F]) decode() ([]byte, error) {
 	if len(h) == 0 {
 		return nil, nil
@@ -117,20 +117,7 @@ func (h secretHex[F]) decode() ([]byte, error) {
 		}
 		return decodeCanonicalHex(field, value)
 	}
-	if len(text) == 0 {
-		return nil, nil
-	}
-	for _, c := range text {
-		if 'A' <= c && c <= 'Z' {
-			return nil, incompatibleKeyFormat("%s must be non-empty lowercase hex", field)
-		}
-	}
-	decoded := make([]byte, hex.DecodedLen(len(text)))
-	if _, err := hex.Decode(decoded, text); err != nil {
-		crypto.ZeroBytes(decoded)
-		return nil, incompatibleKeyFormat("invalid %s: %v", field, err)
-	}
-	return decoded, nil
+	return decodeCanonicalHexBytes(field, text)
 }
 
 // plainJSONString reports whether the body of a JSON string decodes to

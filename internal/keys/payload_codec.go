@@ -686,6 +686,18 @@ func decodeCanonicalHex(field, value string) ([]byte, error) {
 	return decoded, nil
 }
 
+// decodeCanonicalHexBytes is decodeCanonicalHex for a value held as bytes.
+func decodeCanonicalHexBytes(field string, value []byte) ([]byte, error) {
+	if len(value) == 0 {
+		return nil, nil
+	}
+	decoded, err := boundedmeta.DecodeCanonicalHexBytes(field, value, 0, 0)
+	if err != nil {
+		return nil, incompatibleKeyFormat("%v", err)
+	}
+	return decoded, nil
+}
+
 func validateEd25519Payload(p *Payload) error {
 	if len(p.PublicKey) != ed25519.PublicKeySize {
 		return incompatibleKeyFormat("ed25519 public key length %d invalid (expected %d bytes)", len(p.PublicKey), ed25519.PublicKeySize)
