@@ -283,7 +283,7 @@ ssh:
 	}
 
 	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
-	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+	if err == nil || !strings.Contains(err.Error(), `config field "signer_port" is unknown or no longer supported`) {
 		t.Fatalf("trustLocalSignerHostKey error = %v, want an unknown field rejection", err)
 	}
 	if notice != "" {
