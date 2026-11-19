@@ -898,7 +898,7 @@ Cosigner failures are fail-closed:
 
 An endpoint that failed its probe may be skipped only when the completed
 sweep's remaining usable inventory uniquely resolves every required key;
-the failure is reported. This includes unavailable/locked endpoints and
+the failure is reported in the send's output. This includes unavailable/locked endpoints and
 endpoint-specific authentication, configuration, or metadata failures.
 An SSH host-key mismatch aborts the whole sweep. Caller cancellation,
 incomplete sweeps, duplicate usable routes, and unresolved required keys also

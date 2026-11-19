@@ -171,7 +171,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	var cosignerSignatures map[int]string
 	var cosignerRequestIDs map[cosignerRequestKey]string
 	if len(cosigned) > 0 {
-		cosignerSignatures, cosignerRequestIDs, err = s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, cosigned, opts.AppCallInfo)
+		cosignerSignatures, cosignerRequestIDs, err = s.requestCosignerComponentSignatures(opts.Ctx, w, group.BytesHex, group.OriginalCount, cosigned, opts.AppCallInfo)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -721,7 +721,7 @@ func signCosignedDummies(group frozenGroup) ([]string, error) {
 	return signedHex, nil
 }
 
-func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {
+func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, w io.Writer, groupBytesHex []string, originalCount int, targets []cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {
 	byCosigner := make(map[cosignerRequestKey][]int)
 	for _, target := range targets {
 		key := target.requestKey()
@@ -731,7 +731,7 @@ func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBy
 	for key := range byCosigner {
 		required = append(required, key)
 	}
-	snapshot, err := s.resolveCosignerEndpoints(ctx, required)
+	snapshot, err := s.resolveCosignerEndpoints(ctx, required, w)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -115,7 +115,11 @@ func (r *resolvedCosignerEndpoint) close() {
 	}
 }
 
-func (s *Signer) resolveCosignerEndpoints(ctx context.Context, required []cosignerRequestKey) (*cosignerEndpointSnapshot, error) {
+// resolveCosignerEndpoints sweeps the configured cosigner endpoints and
+// picks the one route each required key has. An endpoint the sweep skipped
+// (failed, locked or untrusted) is named on w, the caller's output, when a
+// route was still found for every key.
+func (s *Signer) resolveCosignerEndpoints(ctx context.Context, required []cosignerRequestKey, w io.Writer) (*cosignerEndpointSnapshot, error) {
 	required = distinctSortedCosignerRequestKeys(required)
 	if len(required) == 0 {
 		return &cosignerEndpointSnapshot{routes: map[cosignerRequestKey]*resolvedCosignerEndpoint{}}, nil
@@ -149,7 +153,7 @@ func (s *Signer) resolveCosignerEndpoints(ctx context.Context, required []cosign
 		}
 	}
 	closeProbeResults(states, keep)
-	s.warnSkippedCosignerEndpoints(states)
+	warnSkippedCosignerEndpoints(w, states)
 	return snapshot, nil
 }
 
@@ -274,13 +278,11 @@ func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint
 			}
 			sshPort = port
 		}
-		progressOut := s.signerProgressWriter()
 		client, cleanup, err := connect.ConnectCosignerWithSSH(ctx, connect.CosignerSSHConfig{
 			Host:            parsed.Hostname(),
 			SSHPort:         sshPort,
 			IdentityFile:    endpoint.IdentityFile,
 			KnownHostsPath:  endpoint.KnownHostsPath,
-			ProgressOut:     progressOut,
 			HostKeyApproval: s.hostKeyApproval,
 			IdentityCreated: s.identityCreatedHandler(),
 		})
@@ -465,8 +467,7 @@ func cosignerDiscoveryFailureLabel(err error) string {
 	}
 }
 
-func (s *Signer) warnSkippedCosignerEndpoints(states []*cosignerEndpointProbeResult) {
-	w := s.signerProgressWriter()
+func warnSkippedCosignerEndpoints(w io.Writer, states []*cosignerEndpointProbeResult) {
 	if w == nil {
 		return
 	}
@@ -602,13 +603,4 @@ func (s *Signer) identityCreatedHandler() connect.IdentityCreatedHandler {
 		return nil
 	}
 	return s.conn.IdentityCreatedHandler()
-}
-
-func (s *Signer) signerProgressWriter() io.Writer {
-	if s == nil || s.conn == nil {
-		return nil
-	}
-	s.conn.Mu.Lock()
-	defer s.conn.Mu.Unlock()
-	return s.conn.SignerProgressOut
 }

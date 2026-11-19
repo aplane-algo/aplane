@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -307,6 +308,7 @@ func TestRequestCosignerComponentSignaturesUsesConfiguredSSHEndpoint(t *testing.
 
 	signatures, requestIDs, err := s.requestCosignerComponentSignatures(
 		context.Background(),
+		io.Discard,
 		groupBytesHex,
 		len(groupBytesHex),
 		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},
@@ -368,6 +370,7 @@ func TestRequestCosignerComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 
 	_, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
+		io.Discard,
 		groupBytesHex,
 		len(groupBytesHex),
 		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},
@@ -409,6 +412,7 @@ func TestRequestCosignerComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 
 	_, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
+		io.Discard,
 		groupBytesHex,
 		len(groupBytesHex),
 		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},
@@ -439,6 +443,7 @@ func TestRequestCosignerComponentSignaturesUsesExplicitLoopbackEndpoint(t *testi
 
 	signatures, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
+		io.Discard,
 		groupBytesHex,
 		len(groupBytesHex),
 		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},

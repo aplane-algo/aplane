@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -341,6 +342,51 @@ func TestSignAndSubmitGroupSimulateUsesExecutableCosignedFlow(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Simulation successful") {
 		t.Fatalf("output = %q, want simulation success", out.String())
+	}
+}
+
+// An endpoint the sweep skipped, here one that is offline, is named in the
+// send's output when another endpoint still serves the cosigner key. The
+// output is the caller's: a writer nothing set would lose the line.
+func TestCosignedSendReportsASkippedCosignerEndpoint(t *testing.T) {
+	publicKey, _ := testFalconCosignerKeypair(t, 0x73)
+	cosignerHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
+
+	capture := &cosignedSimulationCapture{}
+	handler := newCosignedExecutableTestHandler(t, cosignerHex, capture)
+	signerServer := httptest.NewServer(handler)
+	defer signerServer.Close()
+	var simulateReq models.SimulateRequest
+	algodClient, closeAlgod := newCosignedAlgodSimulationClient(t, "", &simulateReq)
+	defer closeAlgod()
+
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s.conn.SignerClient = signerclient.NewSignerClient(signerServer.URL)
+	registry := cosignerEndpointRegistry("b-cosigner", cosignedCosignerNode(t, handler))
+	registry.Endpoints["a-offline"] = config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: "ssh://a-offline.example"}
+	s.endpointRegistry = registry
+	s.probeEndpoint = func(ctx context.Context, alias string, endpoint config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
+		if alias == "a-offline" {
+			return nil, nil, fmt.Errorf("%w: connection refused", ErrCosignerDiscoveryUnavailable)
+		}
+		return s.probeConfiguredCosignerEndpoint(ctx, alias, endpoint)
+	}
+	s.algod = algodClient
+
+	var out bytes.Buffer
+	if _, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
+		Ctx:      t.Context(),
+		Simulate: true,
+		Out:      &out,
+	}); err != nil {
+		t.Fatalf("SignAndSubmitGroup(simulate) error = %v", err)
+	}
+	if capture.cosignerRoleCalls.Load() != 1 {
+		t.Fatalf("cosigner component calls = %d, want 1 through the reachable endpoint", capture.cosignerRoleCalls.Load())
+	}
+	if want := "[cosigner discovery] skipped endpoint a-offline: unavailable"; !strings.Contains(out.String(), want) {
+		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
 }
 

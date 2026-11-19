@@ -8,13 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
@@ -49,7 +49,7 @@ func TestLiveCosignerResolverReusesOneProbeForSeveralKeys(t *testing.T) {
 		},
 	}
 
-	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{first, second, first})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{first, second, first}, io.Discard)
 	if err != nil {
 		t.Fatalf("resolveCosignerEndpoints() error = %v", err)
 	}
@@ -74,7 +74,7 @@ func TestLiveCosignerResolverRejectsDuplicateAdvertisers(t *testing.T) {
 			}, []DiscoveredCosignerComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
-	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key}, io.Discard)
 	if snapshot != nil {
 		snapshot.close()
 	}
@@ -104,7 +104,7 @@ func TestLiveCosignerResolverDoesNotAcceptRouteAfterDiscoveryCancellation(t *tes
 		},
 	}
 
-	snapshot, err := s.resolveCosignerEndpoints(ctx, []cosignerRequestKey{key})
+	snapshot, err := s.resolveCosignerEndpoints(ctx, []cosignerRequestKey{key}, io.Discard)
 	if snapshot != nil {
 		snapshot.close()
 		t.Fatal("resolveCosignerEndpoints() returned a snapshot after cancellation")
@@ -145,7 +145,7 @@ func TestLiveCosignerResolverLimitsConcurrentProbes(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}})
+		_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}}, io.Discard)
 		done <- err
 	}()
 	for range cosignerDiscoveryWorkers {
@@ -173,7 +173,7 @@ func TestLiveCosignerResolverClosesEveryUnusedEndpoint(t *testing.T) {
 			return &resolvedCosignerEndpoint{source: alias, cleanup: func() { closes.Add(1) }}, nil, nil
 		},
 	}
-	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}})
+	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}}, io.Discard)
 	if err == nil {
 		t.Fatal("resolveCosignerEndpoints() error = nil, want missing-key failure")
 	}
@@ -199,7 +199,7 @@ func TestLiveCosignerResolverHostKeyMismatchAbortsGlobalSearch(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key})
+		snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key}, io.Discard)
 		if snapshot != nil {
 			snapshot.close()
 		}
@@ -217,10 +217,7 @@ func TestLiveCosignerResolverHostKeyMismatchAbortsGlobalSearch(t *testing.T) {
 func TestLiveCosignerResolverWarnsWhenEarlierEndpointFails(t *testing.T) {
 	key := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
 	var progress bytes.Buffer
-	conn := connect.NewState()
-	conn.SetSignerProgressWriter(&progress)
 	s := &Signer{
-		conn:             conn,
 		endpointRegistry: resolverTestRegistry("a-offline", "b-match"),
 		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 			if alias == "a-offline" {
@@ -229,7 +226,7 @@ func TestLiveCosignerResolverWarnsWhenEarlierEndpointFails(t *testing.T) {
 			return resolverTestEndpoint(alias), []DiscoveredCosignerComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
-	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key}, &progress)
 	if err != nil {
 		t.Fatalf("resolveCosignerEndpoints() error = %v", err)
 	}
@@ -252,7 +249,7 @@ func TestLiveCosignerResolverRejectsEndpointOverflowBeforeProbing(t *testing.T) 
 			return nil, nil, nil
 		},
 	}
-	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}})
+	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}}, io.Discard)
 	if !errors.Is(err, ErrCosignerDiscoveryConfig) || !strings.Contains(err.Error(), "configured 13 cosigner endpoints; maximum is 12") {
 		t.Fatalf("resolveCosignerEndpoints() error = %v, want explicit endpoint ceiling", err)
 	}
@@ -263,7 +260,7 @@ func TestLiveCosignerResolverRejectsEndpointOverflowBeforeProbing(t *testing.T) 
 
 func TestLiveCosignerResolverRemovesImplicitPrimarySignerFallback(t *testing.T) {
 	s := &Signer{endpointRegistry: config.ClientEndpointRegistry{Endpoints: map[string]config.ClientEndpointConfig{}}}
-	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}})
+	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}}, io.Discard)
 	if !errors.Is(err, ErrCosignerDiscoveryConfig) || !strings.Contains(err.Error(), "no cosigner endpoints configured") {
 		t.Fatalf("resolveCosignerEndpoints() error = %v, want explicit cosigner endpoint requirement", err)
 	}
@@ -316,7 +313,7 @@ func TestLiveCosignerResolverPublishesEachCleanupOnce(t *testing.T) {
 			}}, []DiscoveredCosignerComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
-	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key, key})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key, key}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
