@@ -529,8 +529,11 @@ transaction type is one more entry in `fields` and needs no client change.
 - `backup`: `export_passphrase`, optional `addresses[]` ->
   `backup_result`: `success`, optional `archive_path`,
   `archive_checksum`, `archive_size`, `key_count`, `addresses[]`,
-  `verified`, `code`, `error`. Backup is all-or-nothing; a selected
-  credential that fails canonical validation fails the request.
+  `verified`, optional `warning`, `code`, `error`. Backup is all-or-nothing;
+  a selected credential that fails canonical validation fails the request.
+  `verified` means the archive itself was extracted and every payload and
+  the manifest opened. `warning` reports an archive published without a
+  durable directory entry, as `commit_backup_import_result` does.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`,
   `error`; each item has a basename-only compatibility `path`, file name,
   packaging metadata, checksum, and size; `created_at` is the archive file's

@@ -125,7 +125,16 @@ Layout notes:
   `<data_dir>/backups/default/`; the archive contains `README.md`,
   `apb/*.apb` encrypted canonical credential payloads, `policies/*.apb`
   encrypted per-key policy documents, and `manifest.sealed` (see
-  [Backup and restore](#backup-and-restore))
+  [Backup and restore](#backup-and-restore)). A new archive is written and
+  synced as `<name>.tar.gz.partial`, which the listing ignores, verified by
+  extracting it into a `.create-validation-*` directory beside it and opening
+  every payload and the manifest with the export passphrase, checksummed,
+  then renamed to its managed name under the store mutation lock (never over
+  a file there) and its directory synced. A failure before the rename removes
+  it, so a backup that failed is never listed; a directory sync that fails
+  after it leaves the archive published with a warning, as an import does.
+  The daemon's startup sweep removes partial archives and verification
+  directories a crash left behind
 - imported backup archives are validated by the operator client, streamed to
   the daemon in bounded admin-protocol chunks, and atomically published under
   `<data_dir>/backups/default/`; exports stream bounded chunks in the other

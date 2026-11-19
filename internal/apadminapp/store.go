@@ -200,6 +200,9 @@ func (s Store) backupCreate(args []string) error {
 	if result.Verified {
 		s.info("verified: yes")
 	}
+	if result.Warning != "" {
+		s.warn("backup warning: %s", result.Warning)
+	}
 	return nil
 }
 
