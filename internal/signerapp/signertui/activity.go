@@ -95,6 +95,7 @@ func (m *Model) endAdminSession() {
 	m.clearRestorePassphrase()
 	m.clearPendingApprovals()
 	m.clearCosignerWorkflowState()
+	m.discardHeldResult()
 	m.resetActivityState()
 	m.manualLock.pending = false
 }

@@ -1193,10 +1193,12 @@ result, or for a generation also the `prepare_generate_key` reply) changes the
 screen only when it carries the request ID its progress screen still shows, so
 a reply arriving after a lock leaves the unlock screen in place and sends
 nothing further. A generate, import, or backup that succeeded all the same is
-not lost: its result is held and shown once the TUI is back on the key list of
-an unlocked signer, after unlocking or re-authenticating, so a bounded
-account's receipt can still be saved. A displacement or quitting discards it,
-and a late failure is dropped. The restore flow
+not lost across a lock: its result is held and shown once the TUI is back on
+the key list of the unlocked signer, so a bounded account's receipt can still
+be saved. It is held only within its admin session: any session end (an idle
+or other disconnect, a login timeout, a reconnect, a displacement) and
+quitting discard it, together with what its form still holds (the import's
+recovery phrase, the backup's passphrases). A late failure is dropped. The restore flow
 records the ID of its latest preview, restore, rollback, or reconcile request
 the same way: only a failure naming that request clears the restore passphrase
 or leaves the restore progress screen, and a preview reply is shown only while

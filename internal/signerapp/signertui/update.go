@@ -291,7 +291,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DisplacedMsg:
 		// We've been displaced by another apadmin client
 		m.endAdminSession()
-		m.discardHeldResult()
 		m.connectionState = ConnectionDisconnected
 		m.lastError = msg.Reason
 		// Disconnected: Update starts no further wait, and nothing reconnects.

@@ -9,8 +9,9 @@ import tea "github.com/charmbracelet/bubbletea"
 // into recovery) took the operator off its progress screen still happened.
 // Its result is not shown over the screen that took over; it is held and
 // shown once the operator is back on the key list of an unlocked signer, so
-// the generated account's receipt, for one, can still be saved. A late
-// failure changed nothing and is dropped.
+// the generated account's receipt, for one, can still be saved. It is held
+// only within the session it arrived in; when the session ends it is
+// discarded. A late failure changed nothing and is dropped.
 
 // holdLateSuccess keeps result when it is a success for the operation the
 // TUI started, which a reply for any other request is not.
@@ -24,7 +25,7 @@ func (m Model) holdLateSuccess(id string, success bool, result tea.Msg) Model {
 }
 
 // showHeldResult shows a held result once the TUI is on the key list of an
-// unlocked signer, where unlocking and re-authenticating lead.
+// unlocked signer, where unlocking leads.
 func (m Model) showHeldResult() (Model, tea.Cmd) {
 	if m.heldResult == nil || m.signerState != signerRuntimeUnlocked || m.viewState != ViewKeyList {
 		return m, nil
@@ -46,13 +47,20 @@ func (m Model) showHeldResult() (Model, tea.Cmd) {
 	return next.(Model), cmd
 }
 
-// discardHeldResult drops a held result when the session ends for good. The
-// result itself holds no secret, but a held import leaves its recovery phrase
-// in the import form, which nothing will now clear.
+// discardHeldResult drops a held result when the admin session ends, however
+// it ends: a result is held only across a lock within one session, never
+// into the next (an idle disconnect exists for a terminal walked away from).
+// The result holds no secret, but its operation's form is cleared with it:
+// the recovery phrase a held import leaves in the import form, and the
+// passphrases of a held backup's form.
 func (m *Model) discardHeldResult() {
-	if _, ok := m.heldResult.(ImportResultMsg); ok {
+	switch m.heldResult.(type) {
+	case ImportResultMsg:
 		m.forms.importMnemonicInput.SetValue("")
 		m.forms.importMnemonicInput.Blur()
+	case BackupResultMsg:
+		m.backup.exportPassphrase = ""
+		m.backup.confirmPassphrase = ""
 	}
 	m.heldResult = nil
 }

@@ -522,7 +522,8 @@ type Model struct {
 	backups            backupsPageState // the Backups page's own state
 
 	// heldResult is a generate, import or backup success that arrived after
-	// a lock took the operator off its progress screen; see holdLateSuccess.
+	// a lock took the operator off its progress screen, held until the
+	// signer is unlocked again or the session ends; see holdLateSuccess.
 	heldResult tea.Msg
 
 	// Displace confirmation state

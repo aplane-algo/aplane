@@ -110,29 +110,57 @@ func errorIf(failed bool) string {
 	return ""
 }
 
-// A held result outlives a reconnect and re-authentication, but a
-// displacement ends the session for good, and it is discarded with the
-// import form it left filled.
-func TestHeldResultIsDiscardedOnDisplacement(t *testing.T) {
-	input := newImportMnemonicInput()
-	input.SetValue("w01 w02 w03")
-	m := Model{viewState: ViewImportForm, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked,
-		forms: formsState{importMnemonicInput: input}}
-	id := m.beginOperation(ViewImporting)
-	m = lockedDuring(t, m)
-	m = updateModel(t, m, fromListener(ImportResultMsg{ID: id, Success: true, Address: "ADDR", KeyType: "ed25519"}))
+// A held result lasts only across a lock within the session it arrived in.
+// However the session ends, it is discarded with its operation's form: the
+// recovery phrase a held import leaves in the import form, the passphrases of
+// a held backup's. A later session shows nothing of it.
+func TestHeldResultIsDiscardedWhenTheSessionEnds(t *testing.T) {
+	for _, end := range []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{"idle disconnect", localIdleDisconnectedMsg{Reason: localIdleDisconnectReason}},
+		{"login timeout", fromListener(AuthResultMsg{Code: protocol.ErrCodeLoginTimeout})},
+		{"disconnected", DisconnectedMsg{Error: errors.New("connection refused")}},
+		{"reconnecting", fromListener(ReconnectingMsg{})},
+		{"new session", fromListener(AuthRequiredMsg{})},
+		{"displaced", fromListener(DisplacedMsg{Reason: "replaced"})},
+	} {
+		t.Run(end.name, func(t *testing.T) {
+			input := newImportMnemonicInput()
+			input.SetValue("w01 w02 w03")
+			m := Model{viewState: ViewImportForm, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked,
+				forms: formsState{importMnemonicInput: input}}
+			id := m.beginOperation(ViewImporting)
+			m = lockedDuring(t, m)
+			m = updateModel(t, m, fromListener(ImportResultMsg{ID: id, Success: true, Address: "ADDR", KeyType: "ed25519"}))
+			if m.heldResult == nil {
+				t.Fatal("the late import was not held")
+			}
 
-	reconnected := updateModel(t, m, fromListener(ErrorMsg{Error: errors.New("connection reset")}))
-	reconnected = updateModel(t, reconnected, fromListener(ReconnectingMsg{}))
-	reconnected = updateModel(t, reconnected, fromListener(AuthRequiredMsg{}))
-	reconnected = updateModel(t, reconnected, fromListener(AuthResultMsg{Success: true}))
-	reconnected = updateModel(t, reconnected, fromListener(SignerStatusMsg{State: "unlocked", KeyCount: 1}))
-	if reconnected.viewState != ViewImportDisplay {
-		t.Fatalf("after reconnecting and unlocking: view %v, want the held import shown", reconnected.viewState)
+			m = updateModel(t, m, end.msg)
+			if m.heldResult != nil || m.forms.importMnemonicInput.Value() != "" {
+				t.Fatalf("held %v form %q after the session ended, want both cleared", m.heldResult != nil, m.forms.importMnemonicInput.Value())
+			}
+			// The next session's login and unlock show the key list.
+			for _, msg := range []tea.Msg{ConnectedMsg{}, fromListener(AuthRequiredMsg{}), fromListener(AuthResultMsg{Success: true}),
+				fromListener(SignerStatusMsg{State: "unlocked", KeyCount: 1})} {
+				m = updateModel(t, m, msg)
+			}
+			if m.viewState != ViewKeyList {
+				t.Fatalf("the next session showed view %v, want the key list", m.viewState)
+			}
+		})
 	}
 
-	displaced := updateModel(t, m, fromListener(DisplacedMsg{Reason: "replaced"}))
-	if displaced.heldResult != nil || displaced.forms.importMnemonicInput.Value() != "" {
-		t.Fatalf("displaced: held %v form %q, want both cleared", displaced.heldResult != nil, displaced.forms.importMnemonicInput.Value())
+	// A held backup is discarded with its form's passphrases.
+	m := Model{viewState: ViewBackupConfirm, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked}
+	id := m.beginOperation(ViewBackingUp)
+	m = lockedDuring(t, m)
+	m = updateModel(t, m, fromListener(BackupResultMsg{ID: id, Success: true, ArchivePath: "aplane-backup.tar.gz"}))
+	m.backup.exportPassphrase, m.backup.confirmPassphrase = "typed", "typed"
+	m = updateModel(t, m, localIdleDisconnectedMsg{Reason: localIdleDisconnectReason})
+	if m.heldResult != nil || m.backup.exportPassphrase != "" || m.backup.confirmPassphrase != "" {
+		t.Fatalf("held backup after an idle disconnect: held %v passphrases %q %q", m.heldResult != nil, m.backup.exportPassphrase, m.backup.confirmPassphrase)
 	}
 }
