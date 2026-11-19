@@ -739,8 +739,10 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
     or what the node's export would refuse), the status line starts with
     "does not pass check"; warnings alone do not set it. If the file changed on disk, was
     deleted, or appeared since it was loaded, nothing is written: you choose
-    to reload it (discarding your edits), save your edits to a new file, or
-    overwrite it after seeing what the overwrite replaces. The check is
+    to reload it (discarding your edits), save your edits to a new file (a
+    path with nothing on disk that no workspace file has, a new document not
+    yet saved included), or overwrite it after seeing what the overwrite
+    replaces. The check is
     best-effort; another program can still write the file between the check
     and the write.
   - **Trying and saved cases:** `t` opens a form to try a transaction

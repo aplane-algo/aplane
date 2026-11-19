@@ -142,9 +142,13 @@ func (v *ApAdminHarness) runWithEnv(env []string, input string, args ...string) 
 
 	// Pass through environment (APSIGNER_DATA, TEST_PASSPHRASE already set)
 	// Add DISABLE_MEMORY_LOCK for tests
+	// An inherited APSIGNER_IPC_PATH (a systemd install's apenv.sh exports
+	// one) would take precedence over APSIGNER_DATA and send the call to
+	// another signer; clear it.
 	cmd.Env = append(
 		os.Environ(),
 		fmt.Sprintf("APSIGNER_DATA=%s", v.dataDir),
+		"APSIGNER_IPC_PATH=",
 		"DISABLE_MEMORY_LOCK=1",
 	)
 	cmd.Env = append(cmd.Env, env...)
@@ -216,6 +220,7 @@ func (v *ApAdminHarness) RunPolicy(stdin string, args ...string) (PolicyResult, 
 		os.Environ(),
 		fmt.Sprintf("APSIGNER_DATA=%s", v.dataDir),
 		fmt.Sprintf("APSIGNER_PASSPHRASE=%s", passphrase),
+		"APSIGNER_IPC_PATH=",
 		"DISABLE_MEMORY_LOCK=1",
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
