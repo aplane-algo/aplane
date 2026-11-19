@@ -287,7 +287,13 @@ func (m Model) policyDocumentLines() []string {
 	if m.policies.docLoading || !doc.Success {
 		return nil
 	}
-	return strings.Split(strings.TrimRight(doc.Document, "\n"), "\n")
+	// The node stores a file's exact bytes, so a policy written on Windows
+	// has CRLF line ends, which are line ends here.
+	lines := strings.Split(strings.TrimRight(doc.Document, "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSuffix(line, "\r")
+	}
+	return lines
 }
 
 func (m Model) policyDocumentVisibleLines() int {
@@ -335,7 +341,7 @@ func (m Model) renderPolicies() string {
 		header.WriteString(subtitleStyle.Render("Loading policy..."))
 		return header.String()
 	case m.policies.err != "":
-		header.WriteString(subtitleStyle.Render("Policy unavailable: " + terminalSafe(m.policies.err)))
+		header.WriteString(subtitleStyle.Render(wrapPlainText("Policy unavailable: "+terminalSafe(m.policies.err), m.tableWidth())))
 		return header.String()
 	}
 	p := m.policies.policy

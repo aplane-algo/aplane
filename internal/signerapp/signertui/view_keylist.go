@@ -486,7 +486,7 @@ func (m Model) renderTEALFullDisplay() string {
 	for _, line := range lines[offset:end] {
 		// The program as its template wrote it, with every control and
 		// format character, bidirectional ones included, shown as an escape.
-		sb.WriteString(ellipsize(truncateLongHex(terminalSafeLines(line), 80), width))
+		sb.WriteString(ellipsize(truncateLongHex(terminalSafeLines(strings.TrimSuffix(line, "\r")), 80), width))
 		sb.WriteString("\n")
 	}
 	if end < len(lines) {

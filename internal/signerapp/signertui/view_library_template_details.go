@@ -47,7 +47,7 @@ func (m Model) renderLibraryTemplateDetails() string {
 		sb.WriteString(subtitleStyle.Render("Loading..."))
 		return sb.String()
 	case m.library.detailsError != "" && m.library.detailsContent == "":
-		sb.WriteString(errorStyle.Render(terminalSafeLines(m.library.detailsError)))
+		sb.WriteString(errorStyle.Render(wrapPlainText(terminalSafeLines(m.library.detailsError), width)))
 		return sb.String()
 	}
 

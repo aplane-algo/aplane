@@ -260,3 +260,44 @@ func TestViewEscapesWhatAScreenLeavesRaw(t *testing.T) {
 	}}
 	assertNeutralized(t, "View", m.View(), `ADDR\x1b[2J\u202e`)
 }
+
+// A policy written on Windows is stored with CRLF line ends, and the node
+// keeps a file's exact bytes: the pagers show its lines, not a \r at each end.
+func TestPagersTreatCRLFAsLineEnds(t *testing.T) {
+	m := Model{width: 100, height: 40, viewState: ViewPolicyDocument}
+	m.policies.document = protocol.PolicyDocumentMessage{Success: true, Key: "default", Document: "{\r\n  \"key\": \"default\"\r\n}\r\n"}
+	rendered := m.renderPolicyDocument()
+	assertNeutralized(t, "policy document", rendered)
+	if strings.Contains(rendered, `\r`) || !strings.Contains(rendered, "\n  \"key\": \"default\"\n}\n") {
+		t.Fatalf("policy document with CRLF line ends:\n%s", rendered)
+	}
+
+	teal := Model{width: 100, height: 40, viewState: ViewTEALFullDisplay, details: keyDetailsState{teal: "#pragma version 10\r\nint 1\r\nreturn"}}
+	rendered = teal.renderTEALFullDisplay()
+	if strings.Contains(rendered, `\r`) || !strings.Contains(rendered, "\nint 1\nreturn\n") {
+		t.Fatalf("TEAL with CRLF line ends:\n%s", rendered)
+	}
+}
+
+// A long daemon error on a screen that waited for a read is wrapped to the
+// window, not cut at its edge.
+func TestLongReadErrorsWrapToTheWindow(t *testing.T) {
+	long := "open /var/lib/aplane/identities/default/policies: permission denied while reading the policy set for the node, check the data directory's owner and mode END"
+	policies := Model{width: MinWidth, height: MinHeight, viewState: ViewPolicies}
+	policies.policies.err = long
+	library := Model{width: MinWidth, height: MinHeight, viewState: ViewLibraryTemplateDetails, library: libraryState{
+		detailsKeyType: "aplane.htlc.v1", detailsError: long,
+	}}
+	for name, rendered := range map[string]string{"Policies": policies.renderPolicies(), "library details": library.renderLibraryTemplateDetails()} {
+		plain := stripANSI(rendered)
+		for _, line := range strings.Split(plain, "\n") {
+			if visibleWidth(line) > MinWidth {
+				t.Fatalf("%s: line wider than %d: %q", name, MinWidth, line)
+			}
+		}
+		if !strings.Contains(strings.Join(strings.Fields(plain), " "), "check the data directory's owner and mode END") {
+			t.Fatalf("%s: the end of the error is lost:\n%s", name, plain)
+		}
+	}
+}
+
