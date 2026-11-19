@@ -78,7 +78,10 @@ passphrases do not extend it. When the deadline passes the server sends a
 failed `auth_result` with code `login_timeout` and closes the connection, so an
 `apadmin` left at its login screen cannot lock out every other admin client.
 `apadmin` does not reconnect automatically after `login_timeout`; it shows the
-reason and waits for the operator to press `c`.
+reason and waits for the operator to press `c`. A login the signer ends with
+`authentication_failed` or `unlock_failed` also closes the connection;
+`apadmin` reconnects, but keeps the error up over the new login until the
+operator dismisses it, so it is not mistaken for a passphrase to retype.
 
 Transport notes:
 
