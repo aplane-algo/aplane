@@ -712,9 +712,11 @@ func (m Model) handleErrorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // isSeriousUnlockError reports whether an auth/unlock failure is a server-side
 // fault that deserves a popup rather than the inline "try again" treatment a
 // wrong passphrase gets. apsigner codes every unlock failure: a wrong
-// passphrase is invalid_passphrase and anything else is unlock_failed.
+// passphrase is invalid_passphrase and anything else is unlock_failed. A
+// login the signer cannot check at all, such as one against a store root it
+// cannot open, is authentication_failed, and the signer ends that login.
 func isSeriousUnlockError(code string) bool {
-	return code == protocol.ErrCodeUnlockFailed
+	return code == protocol.ErrCodeUnlockFailed || code == protocol.ErrCodeAuthenticationFailed
 }
 
 // pendingOperation is the request an in-progress screen waits on.

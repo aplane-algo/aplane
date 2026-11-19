@@ -90,8 +90,16 @@ func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
 	return s.product
 }
 
+// VerifyPassphrase checks a login passphrase against the store root. A
+// failure other than a passphrase that does not open the root means the store
+// root is damaged or unreadable; its cause is logged here, because the login
+// reply carries none of it.
 func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
-	return crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
+	err := crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
+	if err != nil && !errors.Is(err, crypto.ErrInvalidPassphrase) {
+		logErrorf("admin login: the store root could not be opened: %v", err)
+	}
+	return err
 }
 
 func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
@@ -102,7 +110,7 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	if reconcileErr := s.reconcileGenerations(ir, passphrase); reconcileErr != nil {
 		success, errMsg := ir.TryRecoveryUnlock(passphrase)
 		if !success {
-			return false, 0, errMsg, unlockFailureCode(errMsg)
+			return failedUnlock(errMsg)
 		}
 		logWarnf("identity is recovery-blocked: %v", reconcileErr)
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
@@ -116,12 +124,26 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 		// the operator resolves the store from recovery mode.
 		recoverySuccess, recoveryErrMsg := ir.TryRecoveryUnlock(passphrase)
 		if !recoverySuccess {
-			return false, 0, recoveryErrMsg, unlockFailureCode(recoveryErrMsg)
+			return failedUnlock(recoveryErrMsg)
 		}
 		logWarnf("identity is recovery-blocked: %s", errMsg)
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
-	return success, keyCount, errMsg, unlockFailureCode(errMsg)
+	if !success {
+		return failedUnlock(errMsg)
+	}
+	return true, keyCount, "", ""
+}
+
+// failedUnlock answers an unlock that failed with errMsg. A failure other
+// than a wrong passphrase, such as a store root that cannot be opened, is
+// logged with its cause.
+func failedUnlock(errMsg string) (bool, int, string, string) {
+	code := unlockFailureCode(errMsg)
+	if code == protocol.ErrCodeUnlockFailed {
+		logErrorf("unlock failed: %s", errMsg)
+	}
+	return false, 0, errMsg, code
 }
 
 // reconcileGenerations opens the authenticated root under the store mutation

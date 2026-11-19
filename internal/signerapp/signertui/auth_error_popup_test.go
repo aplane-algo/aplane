@@ -47,6 +47,31 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 	}
 }
 
+// A login the signer could not check, because it cannot open its store root,
+// is a fault to report, not a passphrase to type again.
+func TestAuthResultStoreRootFailureShowsBlockingPopup(t *testing.T) {
+	m := Model{
+		viewState:       ViewAuth,
+		connectionState: ConnectionConnected,
+		auth:            authState{passphraseInput: SensitiveBytes("secret"), passphraseMasked: true},
+		width:           80,
+		height:          MinHeight,
+	}
+
+	msg := "the signer cannot open its store root; see the signer log"
+	next, _ := m.Update(AuthResultMsg{Success: false, Code: protocol.ErrCodeAuthenticationFailed, Error: msg})
+	got := next.(Model)
+	if got.viewState != ViewError || got.errorPopup.returnView != ViewAuth {
+		t.Fatalf("viewState = %v (return %v), want the error popup over ViewAuth", got.viewState, got.errorPopup.returnView)
+	}
+	if len(got.auth.passphraseInput) != 0 {
+		t.Fatal("passphraseInput retained after a store-root failure")
+	}
+	if view := stripANSI(got.View()); !strings.Contains(view, "cannot open its store root") {
+		t.Fatalf("popup missing the failure:\n%s", view)
+	}
+}
+
 func TestSeriousErrorPopupEscReturnsToPassphraseView(t *testing.T) {
 	m := Model{
 		viewState:       ViewError,

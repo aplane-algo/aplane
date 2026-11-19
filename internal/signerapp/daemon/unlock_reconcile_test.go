@@ -12,11 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // convertTestSignerToGenerational remains as a test-call-site compatibility
@@ -254,5 +256,36 @@ func TestARecoveryExitRescanKeepsALockThatCameFirst(t *testing.T) {
 	}
 	if ir.GetState() != signerruntime.SignerStateLocked {
 		t.Fatalf("state = %v after the rescan, want the lock kept", ir.GetState())
+	}
+}
+
+// A wrong passphrase is the only unlock failure coded invalid_passphrase. A
+// store root the right passphrase cannot open is unlock_failed with its
+// cause, and through the login it fails verification as something other than
+// a wrong passphrase, so the login does not ask again.
+func TestUnlockOfADamagedStoreRootIsNotAnInvalidPassphrase(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	svc := server.adminServices()
+	ir.Lock()
+
+	if success, _, errMsg, code := svc.UnlockIdentity([]byte("wrong passphrase")); success || code != protocol.ErrCodeInvalidPassphrase {
+		t.Fatalf("UnlockIdentity(wrong) = (%v, %q, %q), want invalid_passphrase", success, errMsg, code)
+	}
+
+	rootPath := filepath.Join(server.keyPaths.KeystoreMetadataDir(), storepaths.StoreRootName)
+	if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	success, _, errMsg, code := svc.UnlockIdentity(testPassphrase)
+	if success || code != protocol.ErrCodeUnlockFailed || !strings.Contains(errMsg, "parse store root") {
+		t.Fatalf("UnlockIdentity(damaged root) = (%v, %q, %q), want unlock_failed naming the cause", success, errMsg, code)
+	}
+	if ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf("state = %v after a failed unlock, want locked", ir.GetState())
+	}
+	if err := svc.VerifyPassphrase(testPassphrase); err == nil || errors.Is(err, crypto.ErrInvalidPassphrase) {
+		t.Fatalf("VerifyPassphrase(damaged root) = %v, want a store-root failure, not a wrong passphrase", err)
 	}
 }

@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	nativereg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -114,6 +118,28 @@ func TestNativeMnemonicExportDenials(t *testing.T) {
 	result, delivered := exportWith(svc, ctx, generated.Address, bytes.Clone(testPassphrase))
 	if result.Success || delivered.calls != 0 {
 		t.Fatal("canceled export released material")
+	}
+}
+
+// A store root the right passphrase cannot open is a damaged store, not an
+// incorrect passphrase, and releases nothing.
+func TestNativeMnemonicExportReportsADamagedStoreRootApartFromAPassphrase(t *testing.T) {
+	ir := setupProductRuntime(t)
+	svc := Service{Runtime: ir}
+	generated, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootPath := filepath.Join(ir.KeyPaths().KeystoreMetadataDir(), storepaths.StoreRootName)
+	if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, delivered := exportWith(svc, context.Background(), generated.Address, bytes.Clone(testPassphrase))
+	if result.Success || delivered.calls != 0 {
+		t.Fatal("export released material from a damaged store")
+	}
+	if result.Code == "invalid_passphrase" || !strings.Contains(result.Error, "store root could not be opened") {
+		t.Fatalf("export result = (%q, %q), want a store-root failure, not an incorrect passphrase", result.Code, result.Error)
 	}
 }
 

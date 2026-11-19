@@ -357,7 +357,7 @@ Server to Client:
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the product store's keyring root and format marker and may write the configured passphrase helper
-- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, `code`, `error`; local IPC only, rejects identical current/new passphrases, seals the current generation, builds a successor generation re-encrypted under a fresh key term (live encrypted artifacts and integrity sidecars), and makes the new passphrase, term, and generation authoritative in one store-root replacement; `root_committed` reports whether that replacement became visible (it can be true alongside an error when root durability needs recovery confirmation); reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning
+- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, `code`, `error`; local IPC only, rejects identical current/new passphrases, seals the current generation, builds a successor generation re-encrypted under a fresh key term (live encrypted artifacts and integrity sidecars), and makes the new passphrase, term, and generation authoritative in one store-root replacement; `root_committed` reports whether that replacement became visible (it can be true alongside an error when root durability needs recovery confirmation); reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning; `code` is `invalid_passphrase` when a passphrase is missing, the new one equals the current one, or the current one does not open the store root, and `passphrase_change_failed` for any other failure, including a store root or selected generation that cannot be opened
 - `status`: `state`, `key_count`, optional `warnings[]` (operator alerts the
   signer raised on its own, currently rotating account alerts; each `status`
   message replaces the previous set, and the signer pushes a new `status`
@@ -368,13 +368,26 @@ Server to Client:
 
 The pre-auth `auth` request verifies the passphrase and may also unlock and
 reload the bound runtime. Therefore `auth_result{success:false}` does not
-always mean a bad passphrase. If passphrase verification succeeds but unlock or
+always mean a bad passphrase. Only a passphrase that does not open the store
+root (`crypto.ErrInvalidPassphrase`: empty, or the sealed keyring fails
+authentication under it) is `code:"invalid_passphrase"`, and only then does
+the signer read another login frame. A store root the signer cannot open for
+any other reason (unreadable, unparsable or unsupported, a failed selection
+MAC) fails every passphrase, so the signer answers
+`code:"authentication_failed"` with a fixed `error` that names the store root,
+logs the cause, and ends the login; the pre-auth reply carries no cause.
+`authentication_failed` also answers a login with no product runtime bound.
+If passphrase verification succeeds but unlock or
 reload fails, the signer returns `auth_result` with `code:"unlock_failed"` and
 an `error` prefixed with `auth ok but unlock failed:`. Clients should surface
-that case as a serious post-auth load/integrity failure, not as ordinary
-credential rejection. A direct authenticated `unlock` request reports failed
-unlock/reload after passphrase verification through
-`unlock_result{success:false, code:"unlock_failed"}`.
+`authentication_failed` and `unlock_failed` as a serious store or post-auth
+load/integrity failure, not as ordinary credential rejection, and must not
+prompt for the passphrase again as if it were wrong. A direct authenticated
+`unlock` request reports a store root it cannot open, and failed unlock/reload
+after passphrase verification, through
+`unlock_result{success:false, code:"unlock_failed"}` with the cause in `error`;
+`invalid_passphrase` again means only a passphrase that does not open the
+root.
 
 An unlock can also succeed into recovery mode: when the passphrase verifies
 but generation reconciliation or validation of the selected generation fails,

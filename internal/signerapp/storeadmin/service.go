@@ -6,6 +6,7 @@ package storeadmin
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -134,8 +135,14 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 	}
 	if err := storepass.VerifyCurrentPassphrase(s.Deps.KeyPaths(), req.CurrentPassphrase); err != nil {
 		s.logPassphraseChangeFailed(ctx, err.Error())
+		code := protocol.ErrCodeInvalidPassphrase
+		if !errors.Is(err, crypto.ErrInvalidPassphrase) {
+			// The current passphrase may be right: the store root or its
+			// selected generation is damaged or unreadable.
+			code = "passphrase_change_failed"
+		}
 		return adminproto.ChangeStorePassphraseResult{
-			Code:  protocol.ErrCodeInvalidPassphrase,
+			Code:  code,
 			Error: err.Error(),
 		}
 	}

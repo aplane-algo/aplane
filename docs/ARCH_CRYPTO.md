@@ -465,6 +465,15 @@ The plaintext root header carries the bounded Argon2id parameters and salt
 needed to derive the KEK. The keyring payload is AES-256-GCM sealed; successful
 unwrap is the passphrase check. The KEK is zeroed before return and is not
 cached. Strict parsing and size/KDF limits run before expensive derivation.
+A failed unwrap, or an empty passphrase, is `crypto.ErrInvalidPassphrase`, the
+only store-root error a caller may report as a wrong passphrase (AEAD cannot
+tell a wrong passphrase from altered sealed-keyring bytes). Every other
+failure (an unreadable, unparsable or unsupported root, a selection that does
+not authenticate, a damaged selected generation) is a damaged store:
+apsigner logs its cause and answers `authentication_failed` at login or
+`unlock_failed` at unlock, headless startup reports the cause instead of the
+unlock.yaml helper hint, and `apstore` exits 1 (operation failed) rather
+than 3, its exit for `invalid_passphrase`.
 
 Ordinary generation commits authenticate a fresh exact root read under the
 mutation lock, preserve its wrapped-keyring bytes, and recompute only the

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -84,6 +85,43 @@ func deriveTestStore(t *testing.T, passphrase []byte) (storepaths.Paths, *crypto
 		t.Fatalf("BindActive() error = %v", err)
 	}
 	return bound, keyring
+}
+
+// Only a passphrase that does not open the store root exits as one. A store
+// whose selected generation is damaged is an operation failure (exit 1), not
+// a wrong passphrase to type again.
+func TestReadStoreReportsADamagedStoreApartFromAWrongPassphrase(t *testing.T) {
+	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
+		read := func(input string) error {
+			return withTestStdin(input+"\n", func() error {
+				_, kr, err := readStore()
+				if err == nil {
+					kr.Zero()
+				}
+				return err
+			})
+		}
+		err := read("wrong-passphrase")
+		if got := exitCodeForError(err); got != apstoreExitUnavailable || !strings.Contains(err.Error(), "invalid_passphrase") {
+			t.Fatalf("readStore(wrong) = %v (exit %d), want invalid_passphrase (exit %d)", err, got, apstoreExitUnavailable)
+		}
+
+		active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), passphrase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kr.Zero()
+		if err := os.RemoveAll(active.Dir()); err != nil {
+			t.Fatal(err)
+		}
+		err = read(string(passphrase))
+		if err == nil {
+			t.Fatal("readStore() opened a store whose selected generation is gone")
+		}
+		if got := exitCodeForError(err); got != apstoreExitFailure || strings.Contains(err.Error(), "invalid_passphrase") {
+			t.Fatalf("readStore(damaged) = %v (exit %d), want an operation failure (exit %d)", err, got, apstoreExitFailure)
+		}
+	})
 }
 
 func TestCmdKeysRejectsUnknownSubcommand(t *testing.T) {

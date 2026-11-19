@@ -4,6 +4,7 @@
 package startup
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -103,7 +104,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		passphrase := []byte(testPassphrase)
 		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
 			crypto.ZeroBytes(passphrase)
-			return nil, fmt.Errorf("TEST_PASSPHRASE does not match existing keystore")
+			return nil, startupPassphraseError("TEST_PASSPHRASE", "", err)
 		}
 		return &UnlockPlan{
 			StartLocked: false,
@@ -134,7 +135,11 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 	}
 	if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
 		crypto.ZeroBytes(passphrase)
-		return nil, fmt.Errorf("passphrase from passphrase command does not match existing keystore")
+		return nil, startupPassphraseError(
+			"the passphrase from the unlock.yaml passphrase helper",
+			"; the helper must return the passphrase the keystore was created with",
+			err,
+		)
 	}
 
 	return &UnlockPlan{
@@ -143,4 +148,15 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		Source:      UnlockSourcePassphraseCommand,
 		Method:      unlockCfg.Method(),
 	}, nil
+}
+
+// startupPassphraseError reports a startup passphrase, from source, that
+// failed to open the store root. Only a passphrase that does not open the
+// root is reported as one, with hint appended; any other failure is the store
+// root itself (unreadable or damaged), and its cause is kept.
+func startupPassphraseError(source, hint string, err error) error {
+	if errors.Is(err, crypto.ErrInvalidPassphrase) {
+		return fmt.Errorf("%s does not open the existing keystore%s: %w", source, hint, err)
+	}
+	return fmt.Errorf("the keystore's store root could not be opened to check %s: %w", source, err)
 }

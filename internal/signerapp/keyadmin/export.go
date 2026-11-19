@@ -56,8 +56,14 @@ func (s Service) ExportKey(ctx context.Context, req adminproto.ExportKeyRequest,
 	}
 	// Verify before taking the mutation lock so the Argon2id cost does not
 	// stall other key administration; the lock below re-checks the state.
-	if len(req.Passphrase) == 0 || crypto.VerifyPassphraseWithStoreRoot(req.Passphrase, s.Runtime.KeyPaths().KeystoreMetadataDir()) != nil {
+	if len(req.Passphrase) == 0 {
 		return fail(svcerr.KindInvalidPassphrase, "incorrect passphrase")
+	}
+	if err := crypto.VerifyPassphraseWithStoreRoot(req.Passphrase, s.Runtime.KeyPaths().KeystoreMetadataDir()); err != nil {
+		if errors.Is(err, crypto.ErrInvalidPassphrase) {
+			return fail(svcerr.KindInvalidPassphrase, "incorrect passphrase")
+		}
+		return fail(svcerr.KindInternal, fmt.Sprintf("the store root could not be opened: %v", err))
 	}
 	unlock, lockErr := s.lockUnlockedMutation()
 	if lockErr != nil {

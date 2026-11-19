@@ -18,9 +18,6 @@ var (
 	// ErrKeyNotFound indicates the requested key does not exist
 	ErrKeyNotFound = errors.New("key not found")
 
-	// ErrInvalidPassphrase indicates the passphrase is incorrect
-	ErrInvalidPassphrase = errors.New("invalid passphrase")
-
 	// ErrStoreLocked indicates the keystore is locked and requires unlock
 	ErrStoreLocked = errors.New("keystore is locked")
 )

@@ -7,12 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -817,7 +819,7 @@ func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
 	conn := &queueConn{reads: [][]byte{msg1, msg2}}
 	session := NewSession(conn, stubServices{
 		runtime:    ir,
-		verifyErrs: []error{errors.New("bad"), nil},
+		verifyErrs: []error{fmt.Errorf("verify: %w", algocrypto.ErrInvalidPassphrase), nil},
 		unlockOK:   true,
 	}.deps(), OriginLocal)
 
@@ -842,6 +844,45 @@ func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
 	}
 	if !secondResult.Success {
 		t.Fatal("second auth result success = false, want true")
+	}
+}
+
+// A store root the signer cannot open fails every passphrase, so the login
+// says so and ends rather than asking for the passphrase again, and nothing
+// is unlocked. The cause stays in the signer log, out of the pre-auth reply.
+func TestSessionAuthenticateEndsOnADamagedStoreRoot(t *testing.T) {
+	ir := productruntime.New(productruntime.Config{})
+	first := mustAuthFrame(t, "right-secret", "")
+	second := mustAuthFrame(t, "right-secret", "")
+	conn := &queueConn{reads: [][]byte{first, second}}
+	svc := &stubServices{
+		runtime:    ir,
+		verifyErrs: []error{errors.New("read store root: open store-root.enc: permission denied")},
+		unlockOK:   true,
+	}
+	session := NewSession(conn, svc.templateDeps(), OriginLocal)
+
+	if got := session.AuthenticateOutcome(); got != AuthOutcomeFailed {
+		t.Fatalf("AuthenticateOutcome() = %v, want AuthOutcomeFailed", got)
+	}
+	if svc.verifyCalls != 1 || svc.unlockCalls != 0 {
+		t.Fatalf("VerifyPassphrase calls = %d, UnlockIdentity calls = %d; want one check and no unlock", svc.verifyCalls, svc.unlockCalls)
+	}
+	if len(conn.reads) != 1 {
+		t.Fatalf("unread login frames = %d, want the second attempt left unread", len(conn.reads))
+	}
+	var result protocol.AuthResultMessage
+	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.Code != protocol.ErrCodeAuthenticationFailed {
+		t.Fatalf("auth result = %+v, want authentication_failed", result)
+	}
+	if result.Error == "invalid passphrase" || strings.Contains(result.Error, "permission denied") {
+		t.Fatalf("auth result error = %q, want the store-root failure without its cause", result.Error)
+	}
+	if !isZeroedFrame(first) {
+		t.Fatalf("login frame left as %q", first)
 	}
 }
 
@@ -1114,7 +1155,7 @@ func TestSessionAuthenticateZeroesLoginFrames(t *testing.T) {
 	ir.SetUnlocked()
 	wrong := mustAuthFrame(t, "wrong-secret", "")
 	right := mustAuthFrame(t, "right-secret", "")
-	svc := &stubServices{runtime: ir, verifyErrs: []error{errors.New("bad passphrase")}, newIdentity: auth.NewProductIdentity("ipc-passphrase")}
+	svc := &stubServices{runtime: ir, verifyErrs: []error{algocrypto.ErrInvalidPassphrase}, newIdentity: auth.NewProductIdentity("ipc-passphrase")}
 	session := NewSession(&queueConn{reads: [][]byte{wrong, right}}, SessionDeps{Product: svc}, OriginLocal)
 
 	if !session.Authenticate() {

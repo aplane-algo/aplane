@@ -50,7 +50,7 @@ type RotateResult struct {
 func VerifyCurrentPassphrase(paths storepaths.Paths, passphrase []byte) error {
 	_, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
 	if err != nil {
-		return fmt.Errorf("current passphrase verification failed: %w", err)
+		return fmt.Errorf("open the store with the current passphrase: %w", err)
 	}
 	kr.Zero()
 	return nil

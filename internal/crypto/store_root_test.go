@@ -6,6 +6,7 @@ package crypto
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -368,8 +369,12 @@ func TestStoreRootStrictCanonicalParsing(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, _, err := OpenStoreRoot(test.data(t), []byte("passphrase")); err == nil {
+			_, _, err := OpenStoreRoot(test.data(t), []byte("passphrase"))
+			if err == nil {
 				t.Fatal("OpenStoreRoot accepted malformed or unauthenticated input")
+			}
+			if errors.Is(err, ErrInvalidPassphrase) {
+				t.Fatalf("OpenStoreRoot() error = %v, reported as a wrong passphrase", err)
 			}
 		})
 	}
@@ -436,5 +441,84 @@ func TestStoreRootLayoutGateRejectsLegacyAndNonRegularRoots(t *testing.T) {
 	}
 	if _, err := ReadStoreRootExact(symlinkStore); err == nil {
 		t.Fatal("ReadStoreRootExact followed a symlink root")
+	}
+}
+
+// Only a passphrase that does not open the sealed keyring is
+// ErrInvalidPassphrase. A root that cannot be read, parsed or authenticated
+// under the right passphrase is a damaged store, which callers must not
+// report as a wrong passphrase.
+func TestStoreRootReportsOnlyAPassphraseFailureAsInvalidPassphrase(t *testing.T) {
+	passphrase := []byte("passphrase")
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	root, err := SealStoreRoot(kr, passphrase, testStoreRootGenerationA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file storeRootFile
+	if err := json.Unmarshal(root, &file); err != nil {
+		t.Fatal(err)
+	}
+	storeWith := func(t *testing.T, data []byte) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := writeStoreRootMarker(dir); err != nil {
+			t.Fatal(err)
+		}
+		if data != nil {
+			if err := os.WriteFile(filepath.Join(dir, storepaths.StoreRootName), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	reselected := func(t *testing.T, fn func(*storeRootFile)) []byte {
+		t.Helper()
+		candidate := file
+		fn(&candidate)
+		data, err := json.Marshal(candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+
+	valid := storeWith(t, root)
+	if err := VerifyPassphraseWithStoreRoot(passphrase, valid); err != nil {
+		t.Fatalf("VerifyPassphraseWithStoreRoot(right) error = %v", err)
+	}
+	for name, wrong := range map[string][]byte{"wrong": []byte("wrong passphrase"), "empty": nil} {
+		if err := VerifyPassphraseWithStoreRoot(wrong, valid); !errors.Is(err, ErrInvalidPassphrase) {
+			t.Fatalf("VerifyPassphraseWithStoreRoot(%s) error = %v, want ErrInvalidPassphrase", name, err)
+		}
+	}
+
+	damaged := map[string]string{
+		"missing root":    storeWith(t, nil),
+		"unparsable root": storeWith(t, []byte("{}")),
+		"selection MAC": storeWith(t, reselected(t, func(f *storeRootFile) {
+			f.CurrentGenerationID = testStoreRootGenerationB
+		})),
+		"selection term": storeWith(t, reselected(t, func(f *storeRootFile) { f.SelectionTerm++ })),
+	}
+	if os.Geteuid() != 0 {
+		unreadable := storeWith(t, root)
+		if err := os.Chmod(filepath.Join(unreadable, storepaths.StoreRootName), 0); err != nil {
+			t.Fatal(err)
+		}
+		damaged["unreadable root"] = unreadable
+	}
+	for name, dir := range damaged {
+		err := VerifyPassphraseWithStoreRoot(passphrase, dir)
+		if err == nil {
+			t.Fatalf("VerifyPassphraseWithStoreRoot(%s) accepted a damaged store", name)
+		}
+		if errors.Is(err, ErrInvalidPassphrase) {
+			t.Fatalf("VerifyPassphraseWithStoreRoot(%s) error = %v, reported as a wrong passphrase", name, err)
+		}
 	}
 }
