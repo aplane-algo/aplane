@@ -26,10 +26,6 @@ var registerOnce sync.Once
 // built for one of them serves the others.
 var stageOps = signerops.NewStageOps()
 
-// StageOps returns the registered stage cryptography, for callers that
-// pre-build trees or inspect the cache.
-func StageOps() *signerops.StageOps { return stageOps }
-
 // Register installs the key file codec, the stage cryptography and the
 // generator. It is safe to call more than once. The registered stage
 // cryptography is stageOps itself, so its tree cache and its
