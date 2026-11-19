@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -924,24 +923,16 @@ func TestYAMLTemplateGenerateTEALOmittedDerivationIsUnsalted(t *testing.T) {
 }
 
 // Retired derivation contracts must not be resurrectable by a hand-authored
-// template: rejection happens in ValidateBase, before any salt anchoring.
+// template: ValidateBase rejects every version but the TEAL v13 auto-salt one.
 func TestYAMLTemplateRejectsRetiredDerivationVersions(t *testing.T) {
-	for _, version := range []int{
-		templatestore.DerivationVersionPushbytes,
-		templatestore.DerivationVersionTrailingBytecblock,
-	} {
+	for _, version := range []int{1, 2} {
 		spec := &TemplateSpec{
 			BaseTemplateSpec: testBaseWithDerivationVersion(version),
 			TemplateMode:     "generated",
 			TEAL:             "int 1\nreturn",
 		}
-		if err := ValidateSpec(spec); err == nil {
-			t.Errorf("ValidateSpec(derivation_version %d) error = nil, want rejection", version)
-		} else if !strings.Contains(err.Error(), "retired") {
-			t.Errorf("ValidateSpec(derivation_version %d) error = %v, want retirement message", version, err)
-		}
-		if _, err := NewYAMLTemplate(spec).GenerateTEAL(nil); err == nil {
-			t.Errorf("GenerateTEAL(derivation_version %d) error = nil, want rejection", version)
+		if err := ValidateSpec(spec); err == nil || !strings.Contains(err.Error(), "is not supported") {
+			t.Errorf("ValidateSpec(derivation_version %d) error = %v, want rejection", version, err)
 		}
 	}
 }
@@ -1106,39 +1097,6 @@ func TestYAMLTemplateGenerateTEALWithAddressList(t *testing.T) {
 	}
 	if !strings.Contains(teal, "addr AEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEA5RCDXMI") {
 		t.Fatalf("GenerateTEAL() missing second recipient:\n%s", teal)
-	}
-}
-
-func TestLoadTemplatesFromSkipsMalformed(t *testing.T) {
-	validYAML := `
-publisher: test
-family: good
-version: 1
-display_name: Good Template
-valid_rekey_target: false
-max_opcode_cost: 20000
-template_mode: generated
-teal: "return"
-parameters: []
-`
-	fs := fstest.MapFS{
-		"templates/good.yaml":      {Data: []byte(validYAML)},
-		"templates/malformed.yaml": {Data: []byte("not: valid: yaml: [")},
-		"templates/empty.yaml":     {Data: []byte("")},
-		"templates/bad-spec.yaml":  {Data: []byte("family: \"\"\nversion: 0\nteal: return\n")},
-		"templates/readme.md":      {Data: []byte("should be ignored")},
-	}
-
-	templates, err := loadTemplatesFrom(fs, "templates")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(templates) != 1 {
-		t.Errorf("expected 1 valid template, got %d", len(templates))
-	}
-	if len(templates) > 0 && templates[0].RoutingFamily() != "good" {
-		t.Errorf("expected family 'good', got %q", templates[0].RoutingFamily())
 	}
 }
 

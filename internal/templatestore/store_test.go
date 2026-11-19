@@ -125,7 +125,7 @@ teal: |
 	assertTemplateDirMode(t, filepath.Dir(outputPath))
 
 	// Load template back
-	templatePath, pathErr := GetTemplateFilePathForPaths(paths, keyType, TemplateTypeGeneric)
+	templatePath, pathErr := GetTemplateFilePathForPaths(paths, keyType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -193,7 +193,7 @@ teal: |
 	}
 
 	// Load template back
-	templatePath, pathErr := GetTemplateFilePathForPaths(paths, keyType, TemplateTypeComposed)
+	templatePath, pathErr := GetTemplateFilePathForPaths(paths, keyType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -293,62 +293,10 @@ func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	if _, err := ScanTemplateDirectoryForPaths(paths, unknownType); err == nil {
 		t.Fatal("ScanTemplateDirectoryForPaths() error = nil, want unsupported template_type")
 	}
-	if _, err := LoadAllTemplatesForPaths(paths, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
-		t.Fatal("LoadAllTemplatesForPaths() error = nil, want unsupported template_type")
-	}
 	if _, ok, err := keytypestate.Get(paths, keyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	} else if ok {
 		t.Fatal("SaveTemplateActive() wrote state for unsupported template_type")
-	}
-}
-
-func TestLoadAllTemplates(t *testing.T) {
-	// Create temp directory
-	tmpDir, err := os.MkdirTemp("", "templatestore-loadall-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
-
-	// Set keystore path
-	paths := utilkeys.NewPaths(tmpDir)
-	paths = genstoretest.MintFirst(t, paths)
-
-	// Save multiple templates
-	templates := map[string][]byte{
-		"test.template-a.v1": []byte("template A"),
-		"test.template-b.v1": []byte("template B"),
-		"test.template-c.v1": []byte("template C"),
-	}
-
-	for keyType, data := range templates {
-		_, err := SaveTemplateActive(genstoretest.Active(t, paths), data, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
-		if err != nil {
-			t.Fatalf("SaveTemplate failed for %s: %v", keyType, err)
-		}
-		markTemplateState(t, paths, keyType, TemplateTypeGeneric, keytypestate.StateEnabled)
-	}
-
-	// Load all templates
-	loaded, err := LoadAllTemplatesForPaths(paths, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
-	if err != nil {
-		t.Fatalf("LoadAllTemplates failed: %v", err)
-	}
-
-	if len(loaded) != len(templates) {
-		t.Errorf("Expected %d templates, got %d", len(templates), len(loaded))
-	}
-
-	for keyType, expectedData := range templates {
-		loadedData, ok := loaded[keyType]
-		if !ok {
-			t.Errorf("Template %s not found in loaded templates", keyType)
-			continue
-		}
-		if string(loadedData) != string(expectedData) {
-			t.Errorf("Template %s data mismatch", keyType)
-		}
 	}
 }
 
@@ -381,8 +329,6 @@ func markTemplateState(t *testing.T, paths utilkeys.Paths, keyType string, templ
 }
 
 func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
-	derivationVersion1 := DerivationVersionPushbytes
-	derivationVersion2 := DerivationVersionTrailingBytecblock
 	derivationVersion3 := DerivationVersionAlgodAutoSalt
 	derivationVersion99 := 99
 	tests := []struct {
@@ -401,32 +347,6 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 				DisplayName:   "Test",
 			},
 			wantErr: false,
-		},
-		{
-			name: "retired derivation version 1",
-			spec: BaseTemplateSpec{
-				SchemaVersion:     1,
-				DerivationVersion: &derivationVersion1,
-				Publisher:         "test",
-				Family:            "test",
-				Version:           1,
-				DisplayName:       "Test",
-			},
-			wantErr: true,
-			errMsg:  "derivation_version 1 is retired",
-		},
-		{
-			name: "retired derivation version 2",
-			spec: BaseTemplateSpec{
-				SchemaVersion:     1,
-				DerivationVersion: &derivationVersion2,
-				Publisher:         "test",
-				Family:            "test",
-				Version:           1,
-				DisplayName:       "Test",
-			},
-			wantErr: true,
-			errMsg:  "derivation_version 2 is retired",
 		},
 		{
 			name: "supported derivation version 3",

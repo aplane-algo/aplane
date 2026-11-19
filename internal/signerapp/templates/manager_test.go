@@ -502,7 +502,7 @@ func TestRegisterKeystoreTemplatesReportsUnreadableTemplateAsInvalid(t *testing.
 	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.manager-unreadable-template.v1"
-	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, keyType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}

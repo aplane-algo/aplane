@@ -576,7 +576,6 @@ func TestSignerManagedBackupRoundTripViaApadminRestore(t *testing.T) {
 	installedTemplatePath := templatestore.GetTemplateFilePathActive(
 		mustActiveStorePaths(t, destClone.SignerDataDir),
 		"aplane.htlc.v1",
-		templatestore.TemplateTypeGeneric,
 	)
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
@@ -650,7 +649,6 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	installedTemplatePath := templatestore.GetTemplateFilePathActive(
 		mustActiveStorePaths(t, destClone.SignerDataDir),
 		"aplane.htlc.v1",
-		templatestore.TemplateTypeGeneric,
 	)
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)

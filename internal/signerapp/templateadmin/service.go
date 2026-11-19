@@ -268,7 +268,7 @@ func (s Service) ShowInstalledTemplate(req adminproto.ShowInstalledTemplateReque
 		}
 	}
 
-	path, err := templatestore.GetTemplateFilePathForPaths(s.Deps.KeyPaths(), keyType, templateType)
+	path, err := templatestore.GetTemplateFilePathForPaths(s.Deps.KeyPaths(), keyType)
 	if err != nil {
 		return adminproto.ShowInstalledTemplateResult{
 			Code:  protocol.ResultCodeTemplateStateFailed,
@@ -669,7 +669,7 @@ func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyTyp
 func rollbackFailedTemplateInstall(paths storepaths.Paths, result templatelibrary.InstallResult, cause error) error {
 	var rollbackErr error
 	if !result.AlreadyExists {
-		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, result.KeyType, result.TemplateType)
+		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, result.KeyType)
 		signertemplates.UnregisterProductProvider(result.KeyType)
 	}
 	if result.StateChanged {

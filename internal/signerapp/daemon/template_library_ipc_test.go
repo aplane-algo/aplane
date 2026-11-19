@@ -511,7 +511,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	if !initial.Success || initial.AlreadyExists {
 		t.Fatalf("initial InstallLibraryTemplate result = %+v, want fresh success", initial)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -577,7 +577,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	}); err != nil {
 		t.Fatalf("preinstall template: %v", err)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -618,7 +618,7 @@ func writeLibraryTemplateForTest(t *testing.T, server *Signer, filename string, 
 
 func assertInstalledTemplateRemoved(t *testing.T, server *Signer, keyType string, templateType templatestore.TemplateType) {
 	t.Helper()
-	path, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType, templateType)
+	path, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
