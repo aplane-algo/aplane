@@ -49,9 +49,6 @@ func TestWitnessEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	if result.Address != wantID {
 		t.Fatalf("Address = %q, want the Witness Key ID %q", result.Address, wantID)
 	}
-	if result.Mnemonic != "" {
-		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
-	}
 
 	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
 	if err != nil {

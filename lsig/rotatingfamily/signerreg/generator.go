@@ -39,7 +39,9 @@ func (g generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", keygen.ErrInvalidParams, err)
 	}
-	words, seed, err := rotatinghybrid.NewMnemonic()
+	// The seed is derived from the words, so they are made here, but they go
+	// no further: the key file keeps the seed.
+	_, seed, err := rotatinghybrid.NewMnemonic()
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +58,6 @@ func (g generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr 
 	return &keygen.GenerationResult{
 		Address:  address,
 		KeyType:  keyType,
-		Mnemonic: strings.Join(words, " "),
 		KeyFiles: saved,
 	}, nil
 }

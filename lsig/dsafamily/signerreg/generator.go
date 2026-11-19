@@ -75,15 +75,10 @@ func (g *LogicSigGenerator) RoutingFamily() string {
 	return g.family
 }
 
-// keygenOpts holds optional result data for key generation.
-type keygenOpts struct {
-	mnemonic string
-}
-
 // generateKey is the internal helper that handles the common keygen logic:
 // keypair generation, LSig derivation, key file saving, and result building.
 // All sensitive data (seed, priv) is zeroed by this function.
-func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Paths, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string, opts *keygenOpts) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Paths, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -210,18 +205,12 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}
 
-	// Build result
-	result := &keygen.GenerationResult{
+	return &keygen.GenerationResult{
 		Address:      address,
 		KeyType:      keyType,
 		PublicKeyHex: hex.EncodeToString(pub),
 		KeyFiles:     keyFiles,
-	}
-	if opts != nil {
-		result.Mnemonic = opts.mnemonic
-	}
-
-	return result, nil
+	}, nil
 }
 
 func deriveSaltedLogicSig(ctx context.Context, dsa logicsigdsa.LogicSigDSA, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
@@ -243,7 +232,7 @@ func (g *LogicSigGenerator) GenerateFromSeed(ctx context.Context, paths storepat
 	seedCopy := make([]byte, len(seed))
 	copy(seedCopy, seed)
 
-	return g.generateKey(ctx, paths, seedCopy, kr, keyType, params, nil)
+	return g.generateKey(ctx, paths, seedCopy, kr, keyType, params)
 }
 
 // GenerateFromMnemonic generates a Falcon key from mnemonic words.
@@ -263,28 +252,25 @@ func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths stor
 		return nil, fmt.Errorf("failed to derive seed from mnemonic: %w", err)
 	}
 
-	return g.generateKey(ctx, paths, seed, kr, keyType, params, &keygenOpts{
-		mnemonic: mnemonic,
-	})
+	return g.generateKey(ctx, paths, seed, kr, keyType, params)
 }
 
 // GenerateRandom generates a new random Falcon key.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
-// Mnemonic, seed, and entropy come from the family's registered mnemonic
-// handler so families with a non-BIP-39 scheme derive correctly.
+// Seed and entropy come from the family's registered mnemonic handler so
+// families with a non-BIP-39 scheme derive correctly. The handler derives the
+// seed from the words, so it still makes them, but they go no further.
 func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	handler, err := mnemonicreg.GetHandler(g.RoutingFamily())
 	if err != nil {
 		return nil, err
 	}
 
-	mnemonic, seed, entropy, err := handler.GenerateMnemonic()
+	_, seed, entropy, err := handler.GenerateMnemonic()
 	if err != nil {
 		return nil, err
 	}
 	defer crypto.ZeroBytes(entropy)
 
-	return g.generateKey(ctx, paths, seed, kr, keyType, params, &keygenOpts{
-		mnemonic: mnemonic,
-	})
+	return g.generateKey(ctx, paths, seed, kr, keyType, params)
 }

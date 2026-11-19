@@ -163,9 +163,6 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 	if result.KeyType != "ed25519" {
 		t.Fatalf("GenerateKey() keyType = %q, want ed25519", result.KeyType)
 	}
-	if result.Mnemonic == "" {
-		t.Fatal("GenerateKey() returned empty mnemonic")
-	}
 	if _, err := ir.FindKeyFile(result.Address); err != nil {
 		t.Fatalf("FindKeyFile(%q) error = %v", result.Address, err)
 	}
@@ -216,9 +213,6 @@ func TestServiceGenerateKeyCosignerComponent(t *testing.T) {
 			}
 			if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
 				t.Fatalf("GenerateKey(component) IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
-			}
-			if result.Mnemonic != "" {
-				t.Fatalf("GenerateKey(component) mnemonic = %q, want empty", result.Mnemonic)
 			}
 			if _, err := ir.FindKeyFile(result.Address); err != nil {
 				t.Fatalf("FindKeyFile(%q) error = %v", result.Address, err)

@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	algomnemonic "github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
@@ -103,16 +105,21 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	first, err := GenerateKey(paths, "ed25519", cryptotest.Keyring(t, masterKey), nil)
+	account := algocrypto.GenerateAccount()
+	words, err := algomnemonic.FromPrivateKey(account.PrivateKey)
 	if err != nil {
-		t.Fatalf("GenerateKey(first) error = %v", err)
+		t.Fatalf("FromPrivateKey() error = %v", err)
+	}
+	first, err := ImportKey(paths, "ed25519", words, cryptotest.Keyring(t, masterKey), nil)
+	if err != nil {
+		t.Fatalf("ImportKey(first) error = %v", err)
 	}
 	duplicatePath := filepath.Join(activeKeysDirForKeymgmtTest(t, paths), "duplicate.key")
 	if err := os.Rename(first.KeyFile, duplicatePath); err != nil {
 		t.Fatalf("Rename(%q, %q) error = %v", first.KeyFile, duplicatePath, err)
 	}
 
-	second, err := ImportKey(paths, "ed25519", first.Mnemonic, cryptotest.Keyring(t, masterKey), nil)
+	second, err := ImportKey(paths, "ed25519", words, cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
 		t.Fatalf("ImportKey(second) error = %v", err)
 	}
@@ -315,9 +322,6 @@ func TestGenerateKeyCosignerComponent(t *testing.T) {
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("component address unexpectedly equals public key hex")
-			}
-			if result.Mnemonic != "" {
-				t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
 			}
 		})
 	}

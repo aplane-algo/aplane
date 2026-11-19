@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/algorand/falcon"
+	algomnemonic "github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -50,21 +51,43 @@ func TestNativeFalconGenerateAndRecover(t *testing.T) {
 	if result.Address != expectedAddress {
 		t.Fatalf("address = %s, want %s", result.Address, expectedAddress)
 	}
-	if result.Mnemonic != "" {
-		t.Fatal("seed generation unexpectedly returned a mnemonic")
-	}
 }
 
-func TestNativeFalconGenerateRandomReturnsRecoverableMnemonic(t *testing.T) {
+// GenerateRandom keeps the recovery entropy in the key file, and the phrase
+// an export derives from it recovers the same account.
+func TestNativeFalconGenerateRandomKeepsRecoverableEntropy(t *testing.T) {
 	registerNativeValidatorForKeygenTest()
 	paths, cleanup := setupTestKeystore(t)
 	defer cleanup()
 	gen := &NativeFalconGenerator{}
-	result, err := gen.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), nativefalcon.KeyType, nil)
+	kr := cryptotest.Keyring(t, testMasterKey)
+	result, err := gen.GenerateRandom(context.Background(), paths, kr, nativefalcon.KeyType, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := len(strings.Fields(result.Mnemonic)); got != nativefalcon.MnemonicWordCount {
+	data, err := keys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := keys.ParsePayload(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer payload.ZeroSecrets()
+	words, err := algomnemonic.FromKey(payload.RecoveryEntropy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(strings.Fields(words)); got != nativefalcon.MnemonicWordCount {
 		t.Fatalf("mnemonic words = %d, want %d", got, nativefalcon.MnemonicWordCount)
+	}
+	otherPaths, otherCleanup := setupTestKeystore(t)
+	defer otherCleanup()
+	recovered, err := gen.GenerateFromMnemonic(context.Background(), otherPaths, words, kr, nativefalcon.KeyType, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Address != result.Address {
+		t.Fatalf("recovered %s from the stored entropy, generated %s", recovered.Address, result.Address)
 	}
 }

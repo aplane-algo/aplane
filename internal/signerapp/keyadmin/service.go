@@ -57,7 +57,6 @@ type GenerateResult struct {
 	KeyType           string
 	IsWitnessKey      bool
 	IsSpendingAccount *bool
-	Mnemonic          string
 	Parameters        map[string]string
 	// Warnings are the provider's and the signer's own advice about the account.
 	// They refused nothing.
@@ -268,7 +267,6 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 		KeyType:           genResult.KeyType,
 		IsWitnessKey:      genResult.IsWitnessKey,
 		IsSpendingAccount: genResult.IsSpendingAccount,
-		Mnemonic:          genResult.Mnemonic,
 		Parameters:        params,
 		Warnings:          warnings,
 	}, nil
