@@ -36,6 +36,14 @@ func (s *ConnectionState) IsConnected() bool {
 	return s.SignerClient != nil
 }
 
+// Snapshot reports whether a signer client is active and the target it
+// serves, read under one lock so a concurrent disconnect cannot split them.
+func (s *ConnectionState) Snapshot() (connected bool, target string) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	return s.SignerClient != nil, s.ConnectionTarget
+}
+
 // IsTunnelConnected reports whether an SSH tunnel connection is active.
 func (s *ConnectionState) IsTunnelConnected() bool {
 	s.Mu.Lock()

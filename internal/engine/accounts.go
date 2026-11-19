@@ -21,7 +21,7 @@ import (
 
 // GetStatus returns the current engine status as structured data
 func (e *Engine) GetStatus() *StatusResult {
-	isConnected := e.IsConnected()
+	isConnected, connectionTarget := e.Connection.Snapshot()
 	signingMode := "disconnected"
 	if isConnected {
 		signingMode = "remote"
@@ -45,7 +45,7 @@ func (e *Engine) GetStatus() *StatusResult {
 	return &StatusResult{
 		Network:          e.Network,
 		IsConnected:      isConnected,
-		ConnectionTarget: e.GetConnectionTarget(),
+		ConnectionTarget: connectionTarget,
 		SigningMode:      signingMode,
 		WriteMode:        e.WriteMode,
 		ASACacheCount:    asaCacheCount,
