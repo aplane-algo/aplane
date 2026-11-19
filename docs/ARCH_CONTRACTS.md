@@ -400,7 +400,9 @@ execution, output decoding, environment filtering, and validation.
 - helper timeout is 5 seconds; a timeout kills the helper's whole process group
 - the helper's stdout must close when it exits: if a process it started still
   holds stdout one second after the helper exits (or is killed), the run fails,
-  even after exit 0, and the helper's process group is killed
+  whatever the exit status
+- a run that fails for any reason kills the helper's whole process group, so
+  nothing the helper left in it outlives the failure
 - stdout over 8 KiB is an error
 - stderr is discarded
 - one trailing `\n` (or `\r\n`) is stripped

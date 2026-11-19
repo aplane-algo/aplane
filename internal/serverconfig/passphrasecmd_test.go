@@ -6,10 +6,13 @@ package serverconfig
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -336,6 +339,70 @@ func writeHelper(t *testing.T, script string) string {
 	return path
 }
 
+// pidFile returns a path a helper script can write a background process's
+// pid to, and kills that process, and its process group, when the test ends.
+func pidFile(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "bg.pid")
+	t.Cleanup(func() {
+		if pid, err := readPID(path); err == nil {
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
+	return path
+}
+
+func readPID(path string) (int, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(raw)))
+}
+
+// processGone reports whether pid has gone within a few seconds, allowing for
+// its new parent to reap it.
+func processGone(pid int) bool {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
+// A failed run leaves nothing the helper started in its process group
+// running, whatever made it fail.
+func TestRunPassphraseCommandFailureKillsHelperProcessGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, wantErr string
+	}{
+		{name: "non-zero exit with stdout held", body: "sleep 30 &\necho $! > PIDFILE\necho mysecret\nexit 3\n", wantErr: "command failed"},
+		{name: "non-zero exit", body: "sleep 30 >/dev/null &\necho $! > PIDFILE\nexit 3\n", wantErr: "command failed"},
+		{name: "exit 0 with empty output", body: "sleep 30 >/dev/null &\necho $! > PIDFILE\n", wantErr: "empty output"},
+		{name: "exit 0 with stdout held", body: "sleep 30 &\necho $! > PIDFILE\necho mysecret\n", wantErr: "kept its stdout open"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pids := pidFile(t)
+			helper := writeHelper(t, "#!/bin/sh\n"+strings.ReplaceAll(tc.body, "PIDFILE", pids))
+			_, err := RunPassphraseCommand(&PassphraseCommandConfig{Argv: []string{helper}}, nil)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("RunPassphraseCommand() error = %v, want containing %q", err, tc.wantErr)
+			}
+			pid, err := readPID(pids)
+			if err != nil {
+				t.Fatalf("helper wrote no background pid: %v", err)
+			}
+			if !processGone(pid) {
+				t.Fatalf("background process %d still running after the helper failed", pid)
+			}
+		})
+	}
+}
+
 // A helper that prints a passphrase and exits 0, but leaves a background
 // process holding its stdout, fails promptly and says so: that output is not
 // settled, and the helper must not be reported as having timed out.
@@ -358,7 +425,8 @@ func TestRunPassphraseCommandHelperLeavesStdoutOpen(t *testing.T) {
 // stderr is discarded, so a background process that keeps only stderr open
 // changes nothing.
 func TestRunPassphraseCommandIgnoresHeldStderr(t *testing.T) {
-	helper := writeHelper(t, "#!/bin/sh\nsleep 9 >/dev/null &\necho mysecret\n")
+	pids := pidFile(t)
+	helper := writeHelper(t, "#!/bin/sh\nsleep 9 >/dev/null &\necho $! > "+pids+"\necho mysecret\n")
 	start := time.Now()
 	got, err := RunPassphraseCommand(&PassphraseCommandConfig{Argv: []string{helper}}, nil)
 	if err != nil {
@@ -382,11 +450,14 @@ func TestRunPassphraseCommandTimeoutWithEscapedDescendant(t *testing.T) {
 	if err != nil {
 		t.Skip("setsid not available")
 	}
-	sleep, err := exec.LookPath("sleep")
+	sh, err := exec.LookPath("sh")
 	if err != nil {
-		t.Skip("sleep not available")
+		t.Skip("sh not available")
 	}
-	helper := writeHelper(t, "#!/bin/sh\n"+setsid+" "+sleep+" 12 &\nsleep 30\n")
+	// The escaped process writes its own pid, so the cleanup finds it however
+	// setsid starts it.
+	pids := pidFile(t)
+	helper := writeHelper(t, "#!/bin/sh\n"+setsid+" "+sh+" -c 'echo $$ > "+pids+"; exec sleep 12' &\nsleep 30\n")
 	start := time.Now()
 	_, err = RunPassphraseCommand(&PassphraseCommandConfig{Argv: []string{helper}}, nil)
 	elapsed := time.Since(start)

@@ -114,6 +114,15 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 	go func() { waitDone <- cmd.Wait() }()
 
 	killGroup := func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	// A run that fails for any reason ends whatever the helper left in its
+	// process group, as the timeout always has.
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			killGroup()
+		}
+	}()
+
 	var runErr error
 	timedOut := false
 	select {
@@ -131,8 +140,8 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 	case errors.Is(runErr, exec.ErrWaitDelay):
 		// The helper exited 0, but a process it started still holds its stdout
 		// and could still write to it, so what was read is not its settled
-		// answer. Fail closed, and end whatever is left of its process group.
-		killGroup()
+		// answer. Fail closed. (After a non-zero exit, Wait reports the exit
+		// status instead, and the run fails as any failed helper does.)
 		return nil, fmt.Errorf("passphrase_command_argv: helper exited, but a process it started kept its stdout open for %s afterwards; redirect background processes' output away from the helper's stdout", passphraseOutputCloseWait)
 	case timedOut:
 		return nil, fmt.Errorf("passphrase_command_argv: command timed out after %s", passphraseCommandTimeout)
@@ -178,6 +187,7 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 		return nil, err
 	}
 
+	succeeded = true
 	return result, nil
 }
 
