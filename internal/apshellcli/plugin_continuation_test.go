@@ -250,7 +250,8 @@ func TestJSPluginErrorInALaterStepIsAnError(t *testing.T) {
 
 // A result that reports failure but carries transactions or a continuation
 // breaks the plugin contract and is refused before the loop sees it
-// (apshellapp's result check), on every entry: its transactions are never
+// (apshellapp's result check), on every entry, with the plugin's own message
+// kept in the refusal: its transactions are never
 // reviewed or sent and its continuation is not run, so a retry after the
 // failure cannot broadcast them again. Refused in a continuation step, only
 // the earlier steps' transactions were sent, and plugin() lists them.
@@ -312,12 +313,12 @@ func TestPluginFailedResultIsNeitherSubmittedNorContinued(t *testing.T) {
 		refusal string
 		result  func(t *testing.T) map[string]any
 	}{
-		"transactions": {"plugin returned transactions with success=false", func(t *testing.T) map[string]any {
+		"transactions": {"plugin returned transactions with success=false; it reported: slippage exceeded", func(t *testing.T) map[string]any {
 			step, _ := pregroupedStep(t, "fallback", map[string]any{"command": "wf", "args": []string{"_retry"}})
 			step["success"], step["message"] = false, "slippage exceeded"
 			return step
 		}},
-		"continuation only": {"plugin returned continuation with success=false", func(*testing.T) map[string]any {
+		"continuation only": {"plugin returned continuation with success=false; it reported: not yet", func(*testing.T) map[string]any {
 			return map[string]any{"success": false, "message": "not yet", "continuation": map[string]any{"command": "wf", "args": []string{"_retry"}}}
 		}},
 	}
