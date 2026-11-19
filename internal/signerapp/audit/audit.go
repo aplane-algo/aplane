@@ -148,6 +148,10 @@ type AuditEntry struct {
 	SuppressedCount       int    `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
 	ClientLabel           string `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
 	ClosedConnections     int    `json:"closed_connections,omitempty"`
+	// SESSION_CONNECTED / SESSION_DISCONNECTED for an SSH client connection:
+	// the SHA256 fingerprint of the client key that opened it (an enrolled
+	// key, or the key an enroll connection asks to have enrolled).
+	SSHFingerprint string `json:"ssh_fingerprint,omitempty"`
 	// SIGN_APPROVED: the signed transaction's final fee in microAlgos (0 is
 	// written), and, when it was signed in a group, the final group ID
 	// (base64), every transaction ID of that group in order, and how many of
@@ -287,7 +291,7 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 		&entry.TxnAuth, &entry.TxnSender, &entry.TxnType, &entry.TxID,
 		&entry.RemoteAddr, &entry.PolicyRuleID, &entry.WitnessKeyID,
 		&entry.ArchiveSHA256, &entry.GenerationID, &entry.ParentGenerationID,
-		&entry.ManifestSHA256, &entry.LiveInventorySHA256, &entry.ClientLabel,
+		&entry.ManifestSHA256, &entry.LiveInventorySHA256, &entry.ClientLabel, &entry.SSHFingerprint,
 		&entry.ResultCode, &entry.ExpectedPolicySetSHA256, &entry.ExpectedSnapshotSHA256,
 		&entry.BasePolicySetSHA256, &entry.PolicySetSHA256, &entry.ASAAction,
 		&entry.Network, &entry.GenesisHash, &entry.GroupID,
@@ -992,13 +996,25 @@ func (a *AuditLogger) LogKeyReload(keyCount int) {
 	a.Log(entry)
 }
 
-// LogSessionConnected logs when a new IPC or API session is established.
-func (a *AuditLogger) LogSessionConnected(remoteAddr, user string) {
+// sshSessionReason is an SSH session entry's reason: "ssh" for an enrolled
+// client's connection, "ssh-enroll" for an enroll connection, whose key is
+// not enrolled and which anyone who reaches the SSH port can open.
+func sshSessionReason(enrolled bool) string {
+	if enrolled {
+		return "ssh"
+	}
+	return "ssh-enroll"
+}
+
+// LogSSHSessionConnected logs an SSH client connection opening. enrolled
+// says whether the key that opened it is enrolled.
+func (a *AuditLogger) LogSSHSessionConnected(remoteAddr, sshFingerprint string, enrolled bool) {
 	entry := productPrincipalAuditFields()
 	entry.Event = AuditSessionConnected
 	entry.Outcome = "connected"
 	entry.RemoteAddr = remoteAddr
-	entry.Reason = user
+	entry.Reason = sshSessionReason(enrolled)
+	entry.SSHFingerprint = sshFingerprint
 	a.Log(entry)
 }
 
@@ -1010,13 +1026,14 @@ func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext)
 	a.Log(entry)
 }
 
-// LogSessionDisconnected logs when a session is terminated.
-func (a *AuditLogger) LogSessionDisconnected(remoteAddr, user string) {
+// LogSSHSessionDisconnected logs an SSH client connection closing.
+func (a *AuditLogger) LogSSHSessionDisconnected(remoteAddr, sshFingerprint string, enrolled bool) {
 	entry := productPrincipalAuditFields()
 	entry.Event = AuditSessionDisconnected
 	entry.Outcome = "disconnected"
 	entry.RemoteAddr = remoteAddr
-	entry.Reason = user
+	entry.Reason = sshSessionReason(enrolled)
+	entry.SSHFingerprint = sshFingerprint
 	a.Log(entry)
 }
 

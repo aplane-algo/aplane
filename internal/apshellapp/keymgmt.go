@@ -121,13 +121,17 @@ func (a *App) Signers(ctx context.Context) (*SignersCommandResult, error) {
 	}, nil
 }
 
-// KeyTypes returns the available signer key types.
+// KeyTypes returns the available signer key types, and whether the signer
+// is locked, when its list holds only the built-in key types. The lock state
+// only annotates the list: a failure to read it leaves SignerLocked false
+// rather than failing a listing that succeeded.
 func (a *App) KeyTypes(ctx context.Context) (*KeyTypesCommandResult, error) {
 	keyTypes, err := a.eng.ListKeyTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &KeyTypesCommandResult{KeyTypes: keyTypes}, nil
+	locked, _ := a.eng.SignerLocked(ctx)
+	return &KeyTypesCommandResult{KeyTypes: keyTypes, SignerLocked: locked}, nil
 }
 
 // GenerateKey generates a signer key. Key-type canonicalization and address-list

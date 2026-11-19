@@ -312,6 +312,9 @@ func (r *REPLState) cmdKeytypes(_ []string, _ interface{}) (command.Result, erro
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
+			if result.SignerLocked {
+				r.println("The signer is locked: only its built-in key types are listed. Unlock it in apadmin to see the rest.")
+			}
 			if len(result.KeyTypes) == 0 {
 				r.println("No key types available")
 				return

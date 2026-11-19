@@ -1115,8 +1115,17 @@ with a bidirectional control. So:
   one path by which a signing prompt reaches the operator, escapes the whole
   prompt (description, addresses, policy warnings and the review the
   description is printed from) with `internal/termsafe`, keeping only
-  newlines and tabs; the description the daemon prints to its console is
-  escaped the same way;
+  newlines and tabs;
+- everything the signing service prints to the daemon's console (which
+  apconsole shows in a pane) goes through `consoleOf`
+  (`internal/signerapp/signing/console.go`), which escapes it with
+  `termsafe.Lines`: control characters show escaped, newlines and tabs are
+  kept, so the description prints as the lines it is. A value printed within
+  one line is also escaped with `termsafe.Line` where it is printed, newline
+  included, so it cannot start a line the signer did not write: the
+  client-chosen transaction type in a policy rejection, in the review
+  banner's rule ID and in a reviewability block, and the request ID in the
+  approval wait line;
 - apadmin and apapprover escape a request again where they decode it
   (`protocol.SignRequestMessage.TerminalSafe`), so a missed path on the
   signer still can't reach the terminal.
@@ -1372,7 +1381,7 @@ request state and principals without a runtime ID.
 | `GET` | `/health` | no | no |
 | `GET` | `/status` | yes | no |
 | `GET` | `/keys` | yes | yes |
-| `GET` | `/keytypes` | yes | no (but template-backed types appear only after unlock) |
+| `GET` | `/keytypes` | yes | no (while locked, the built-in key types only; see below) |
 | `POST` | `/sign` | yes | yes |
 | `POST` | `/sign/component` | yes | yes |
 | `POST` | `/sign/assemble` | yes | yes |
@@ -2398,6 +2407,15 @@ mnemonic import capability; clients must not infer importability from
 has populated signer-side signing, keygen, mnemonic, or key-processor registries.
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning.
+
+`/keytypes` answers while the signer is locked, in the same shape. A locked
+store's key type activation records cannot be read, so the locked answer lists
+the built-in key types only: those enabled by default for the node's role
+(`ed25519`, `falcon1024` and `aplane.falcon1024.v1` on a signer node; the two
+witness key types on a cosigner node). A library key type the store enables
+(`aplane.ed25519.v1`, a rotating type) and every template-backed type appear
+only after unlock. Cosigner reference options apply as when unlocked: they
+live outside the generation and need no unlock.
 
 The plain Falcon and Ed25519 LogicSig types are plain hosts, listed in `/keytypes`
 as per-key types (`per_key_contract`) with `boundary_schema` `aplane.boundary.v1`:

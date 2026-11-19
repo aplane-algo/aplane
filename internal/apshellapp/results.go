@@ -439,8 +439,10 @@ type SignersCommandResult struct {
 }
 
 // KeyTypesCommandResult describes the semantic outcome of a keytypes command.
+// SignerLocked marks KeyTypes as a locked signer's built-in key types only.
 type KeyTypesCommandResult struct {
-	KeyTypes []signerapi.KeyTypeInfo
+	KeyTypes     []signerapi.KeyTypeInfo
+	SignerLocked bool
 }
 
 // PluginCommandSummary describes one discovered plugin for shell rendering.

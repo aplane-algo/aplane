@@ -10,23 +10,15 @@ import (
 )
 
 func (fs *Signer) restService() signerrest.Service {
-	var auditLog keyadmin.AuditLogger
-	if fs.auditLog != nil {
-		auditLog = fs.auditLog
-	}
 	var signerAudit signingAudit
 	if fs.auditLog != nil {
 		signerAudit = &signingAuditLogger{log: fs.auditLog}
 	}
-	return fs.restServiceWithAudit(auditLog, signerAudit)
+	return fs.restServiceWithAudit(optionalAuditLog[keyadmin.AuditLogger](fs.auditLog), signerAudit)
 }
 
 func (fs *Signer) restServiceWithSigningAudit(auditLog signingAudit) signerrest.Service {
-	var keyAudit keyadmin.AuditLogger
-	if fs.auditLog != nil {
-		keyAudit = fs.auditLog
-	}
-	return fs.restServiceWithAudit(keyAudit, auditLog)
+	return fs.restServiceWithAudit(optionalAuditLog[keyadmin.AuditLogger](fs.auditLog), auditLog)
 }
 
 func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAudit signingAudit) signerrest.Service {

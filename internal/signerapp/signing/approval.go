@@ -549,7 +549,7 @@ func planFacts(req signerapi.GroupSignRequest, plan *PlanResult) *policyeval.Pla
 // rejection.
 func policyRejection(violations []policy.LintViolation, console Console) *ServiceError {
 	errText := policy.JoinLintViolations(violations)
-	console.Printf("[POLICY ENGINE] Rejected: %s\n", errText)
+	console.Printf("[POLICY ENGINE] Rejected: %s\n", termsafe.Line(errText))
 	console.Sync()
 	return forbidden(fmt.Sprintf("policy engine rejected request: %s", errText))
 }
@@ -581,11 +581,12 @@ func matchesSelfNoOpTransferPlanAutoApproval(plan *PlanResult, allTxns []types.T
 	return policyeval.MatchesSelfNoOpPlan(allTxns, *planFacts(signerapi.GroupSignRequest{}, plan))
 }
 
+// requestIDPreview is the start of requestID, escaped for one console line.
 func requestIDPreview(requestID string) string {
-	if len(requestID) <= 20 {
-		return requestID
+	if len(requestID) > 20 {
+		requestID = requestID[:20]
 	}
-	return requestID[:20]
+	return termsafe.Line(requestID)
 }
 
 // requestGroupApprovalWithContext prompts for a group, or for a lone request
@@ -595,14 +596,14 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	console := consoleOf(s.Console)
 	if s.userAutoApprove() {
 		if forceReviewRuleID != "" {
-			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", forceReviewRuleID)
+			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", termsafe.Line(forceReviewRuleID))
 		}
 		console.Println("[USER AUTO-APPROVE] Group approved without operator prompt")
 		console.Sync()
 		return nil
 	}
 	if forceReviewRuleID != "" {
-		console.Printf("[POLICY] Group requires manual review (%s)\n", forceReviewRuleID)
+		console.Printf("[POLICY] Group requires manual review (%s)\n", termsafe.Line(forceReviewRuleID))
 		console.Sync()
 	}
 
@@ -612,7 +613,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 
 	for i, txn := range txns {
 		if reason := reviewabilityReason(txn); reason != "" {
-			console.Printf("[REVIEWABILITY] Blocked group approval: tx %d/%d: %s\n", i+1, len(txns), reason)
+			console.Printf("[REVIEWABILITY] Blocked group approval: tx %d/%d: %s\n", i+1, len(txns), termsafe.Line(reason))
 			console.Sync()
 			for j, txReq := range req.Requests {
 				authAddr := txReq.AuthAddress
@@ -711,7 +712,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 
 	if s.userAutoApprove() {
 		if forceReviewRuleID != "" {
-			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", forceReviewRuleID)
+			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", termsafe.Line(forceReviewRuleID))
 		}
 		txnApproved = true
 		approvalReason = "user_auto_approve: true"
@@ -723,7 +724,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return nil
 	}
 	if forceReviewRuleID != "" {
-		console.Printf("[POLICY] Txn requires manual review (%s)\n", forceReviewRuleID)
+		console.Printf("[POLICY] Txn requires manual review (%s)\n", termsafe.Line(forceReviewRuleID))
 		console.Sync()
 	}
 
@@ -731,7 +732,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		return unavailable("no apadmin connected - cannot approve transaction")
 	}
 	if reason := reviewabilityReason(allTxns[0]); reason != "" {
-		console.Printf("[REVIEWABILITY] Blocked txn approval: %s\n", reason)
+		console.Printf("[REVIEWABILITY] Blocked txn approval: %s\n", termsafe.Line(reason))
 		console.Sync()
 		s.logSignRejected(txReq.AuthAddress, decodedSender, "reviewability_blocked: "+reason, forceReviewRuleID)
 		return forbidden("transaction approval blocked: " + reason)

@@ -1338,7 +1338,9 @@ app call raw 123 from alice arg-raw=hex:010203 box=text:counter
 
 ### keytypes
 
-List the key types exposed by the connected Signer.
+List the key types exposed by the connected Signer. While the Signer is
+locked, only the built-in key types are listed, and `keytypes` says so above
+the list; key types enabled in its store appear once it is unlocked.
 
 ```
 keytypes

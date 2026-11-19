@@ -47,6 +47,11 @@ var (
 	// ErrSignerLocked indicates the signer is locked and must be unlocked via apadmin
 	ErrSignerLocked = errors.New("signer is locked — unlock via apadmin before signing")
 
+	// ErrSignerLockedForGeneration answers a key type the signer does not
+	// list while it is locked: a locked signer lists only its built-in key
+	// types, and generates none.
+	ErrSignerLockedForGeneration = errors.New("the signer is locked; unlock it in apadmin to generate keys (a locked signer lists only its built-in key types)")
+
 	// ErrNoAlgodClient indicates the algod client is not configured
 	ErrNoAlgodClient = errors.New("algod client not configured")
 

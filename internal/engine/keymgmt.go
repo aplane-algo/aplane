@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -22,6 +23,41 @@ func (e *Engine) ListKeyTypes(ctx context.Context) ([]signerapi.KeyTypeInfo, err
 	return resp.KeyTypes, nil
 }
 
+// KeyTypesForGeneration lists the signer's key types for generating keyType.
+// A locked signer lists only its built-in key types, so when keyType is not
+// among them and the signer reports itself locked, the answer is
+// ErrSignerLockedForGeneration rather than a listing that reads as keyType
+// being unknown.
+func (e *Engine) KeyTypesForGeneration(ctx context.Context, keyType string) ([]signerapi.KeyTypeInfo, error) {
+	keyTypes, err := e.ListKeyTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if slices.ContainsFunc(keyTypes, func(info signerapi.KeyTypeInfo) bool { return info.KeyType == keyType }) {
+		return keyTypes, nil
+	}
+	locked, err := e.SignerLocked(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("the signer does not list key type %s, and its lock state could not be read: %w", keyType, err)
+	}
+	if locked {
+		return nil, ErrSignerLockedForGeneration
+	}
+	return keyTypes, nil
+}
+
+// SignerLocked reports whether the signer's /status says it is locked.
+func (e *Engine) SignerLocked(ctx context.Context) (bool, error) {
+	if !e.IsConnected() {
+		return false, ErrNotConnected
+	}
+	status, err := e.GetSignerStatusWithContext(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch signer status: %w", err)
+	}
+	return status.SignerLocked, nil
+}
+
 func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[string]string) (*GenerateKeyResult, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
@@ -32,7 +68,7 @@ func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[str
 	// MCP callers all behave identically.
 	keyType = keytypecatalog.Canonicalize(keyType)
 	if len(params) > 0 {
-		keyTypes, err := e.ListKeyTypes(ctx)
+		keyTypes, err := e.KeyTypesForGeneration(ctx, keyType)
 		if err != nil {
 			return nil, err
 		}

@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -43,15 +44,20 @@ type BoundaryPreview struct {
 
 // CheckBoundaryKeyType confirms from the signer's inventory that keyType takes
 // boundary files, before the file is read or summarized. It is the only key type
-// read on this path: creation from literals fetches none.
+// read on this path: creation from literals fetches none. A type a locked
+// signer does not list is engine.ErrSignerLockedForGeneration.
 func (a *App) CheckBoundaryKeyType(ctx context.Context, keyType string) error {
-	return checkBoundaryKeyType(keyType, func() ([]signerapi.KeyTypeInfo, error) {
-		return a.eng.ListKeyTypes(ctx)
+	canonical := keytypecatalog.Canonicalize(keyType)
+	return checkBoundaryKeyType(canonical, func() ([]signerapi.KeyTypeInfo, error) {
+		return a.eng.KeyTypesForGeneration(ctx, canonical)
 	})
 }
 
 func checkBoundaryKeyType(keyType string, inventory func() ([]signerapi.KeyTypeInfo, error)) error {
 	keyTypes, err := inventory()
+	if errors.Is(err, engine.ErrSignerLockedForGeneration) {
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("read the signer's key types to check %s: %w", GenerateFlagBoundaryFile, err)
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,6 +27,11 @@ type IPCServer struct {
 	manager  *adminserver.SessionManager
 
 	preAuthTimeout time.Duration // 0 means preAuthLoginTimeout; settable in tests
+
+	// stopped is closed by Stop, so acceptLoop ends a backoff wait at once.
+	// A server built without NewIPCServer has none and waits it out.
+	stopped  chan struct{}
+	stopOnce sync.Once
 }
 
 const existingIPCProbeTimeout = 300 * time.Millisecond
@@ -36,6 +42,7 @@ func NewIPCServer(path string, signer *Signer) *IPCServer {
 		path:    path,
 		signer:  signer,
 		manager: adminserver.NewSessionManager(),
+		stopped: make(chan struct{}),
 	}
 }
 
@@ -113,6 +120,11 @@ func removeStaleIPCSocket(path string) error {
 
 // Stop closes the IPC server.
 func (s *IPCServer) Stop() {
+	s.stopOnce.Do(func() {
+		if s.stopped != nil {
+			close(s.stopped)
+		}
+	})
 	if s.listener != nil {
 		_ = s.listener.Close() // Best-effort cleanup
 	}
@@ -123,18 +135,52 @@ func (s *IPCServer) Stop() {
 	_ = os.Remove(s.path) // Best-effort cleanup
 }
 
-// acceptLoop accepts incoming IPC connections.
+// The wait before the next Accept after one fails doubles from the initial
+// value up to the maximum, and resets once an Accept succeeds.
+const (
+	initialIPCAcceptBackoff = 25 * time.Millisecond
+	maxIPCAcceptBackoff     = time.Second
+)
+
+// acceptLoop accepts incoming IPC connections until Stop closes the listener.
+// Any other Accept error (EMFILE or ENFILE when the process runs out of
+// descriptors) is retried after a capped backoff: ending the loop would
+// leave the daemon running with no way for apadmin to connect, unlock or
+// approve until it restarts.
 func (s *IPCServer) acceptLoop() {
+	var backoff time.Duration
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			// Listener closed
-			return
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			if backoff == 0 {
+				logWarnf("IPC accept failed, retrying: %v", err)
+			}
+			backoff = nextIPCAcceptBackoff(backoff)
+			select {
+			case <-s.stopped:
+				return
+			case <-time.After(backoff):
+			}
+			continue
+		}
+		if backoff != 0 {
+			logInfof("IPC accept recovered")
+			backoff = 0
 		}
 
 		logInfof("apadmin client connected via IPC")
 		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn))
 	}
+}
+
+func nextIPCAcceptBackoff(current time.Duration) time.Duration {
+	if current <= 0 {
+		return initialIPCAcceptBackoff
+	}
+	return min(current*2, maxIPCAcceptBackoff)
 }
 
 // displacementTimeout is the maximum time to wait for a displacement confirmation.
