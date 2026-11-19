@@ -2049,7 +2049,10 @@ policy under which restored authority runs.
 ### Offline rebuild
 
 `apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]` remains the rescue
-path for an absent product store. It applies the same credential validation
+path for an absent product store. Before its first prompt it refuses an existing
+identity directory or root `node.yaml`. It writes `node.yaml` before the mint and
+removes it again when the mint fails before commit; after an uncertain commit
+it keeps the file, since the root may select the new generation. It applies the same credential validation
 and credential-only semantics into a newly staged first generation. `--address` limits the rebuild to the
 selected credentials; without it every `.apb` payload is restored. The sealed
 manifest source role supplies the default role. An explicit `--role` overrides

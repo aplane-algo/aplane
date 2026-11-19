@@ -650,8 +650,9 @@ credentials will run.
 ### Rebuild an Absent Keystore
 
 `apstore rebuild` is the rescue path for a replacement keystore. It is a local
-filesystem operation and only runs when the destination product directory
-`identities/default/` does not already exist.
+filesystem operation and only runs when neither the destination product
+directory `identities/default/` nor the data root's node role file `node.yaml`
+exists. It checks both before the first prompt.
 
 ```bash
 ./apstore rebuild /mnt/usb/aplane-backup.tar.gz
@@ -660,7 +661,10 @@ filesystem operation and only runs when the destination product directory
 ```
 
 If an existing keystore or `identities/default/` directory is present, move it aside
-explicitly before rebuilding. `rebuild` creates a fresh `store-root.enc`,
+explicitly before rebuilding, together with `node.yaml`, which lives at the data
+root beside it. A rebuild that fails before it commits removes the `node.yaml`
+it wrote, so after moving the new `identities/default/` aside the retry starts
+clean; one that may have committed keeps it. `rebuild` creates a fresh `store-root.enc`,
 restores credentials from the backup archive, and writes a new store encrypted under
 the new store passphrase you enter. Rebuild uses `manifest.sealed`
 `source_node_role` metadata as the default destination role. Pass `--role signer` or
