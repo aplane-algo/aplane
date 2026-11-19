@@ -337,7 +337,14 @@ const shellCommandWaitDelay = 500 * time.Millisecond
 
 // runShellCommand executes a shell command (used by ! prefix). It runs on
 // the command's context, so cancelling the command, as an embedded host's
-// Ctrl-C or its session's shutdown does, kills the shell.
+// Ctrl-C or its session's shutdown does, kills it.
+//
+// When its output is captured (an embedded host's pane), the command has no
+// terminal of its own: it runs in its own process group, which a cancel kills
+// whole, so the processes a compound command started end with the shell. At
+// the interactive REPL it writes to the shell's own output and stays in the
+// terminal's foreground group, where the terminal's Ctrl-C reaches every
+// process of it and a program such as vim can read the terminal.
 func (r *REPLState) runShellCommand(cmdStr string) error {
 	if cmdStr == "" {
 		return nil
@@ -350,6 +357,9 @@ func (r *REPLState) runShellCommand(cmdStr string) error {
 	cmd.Stderr = r.Out
 	cmd.Stdin = os.Stdin
 	cmd.WaitDelay = shellCommandWaitDelay
+	if _, direct := r.Out.(*os.File); !direct {
+		runInOwnProcessGroup(cmd)
+	}
 
 	err := cmd.Run()
 	if ctxErr := ctx.Err(); ctxErr != nil {

@@ -1718,7 +1718,9 @@ clear
 ## Shell Commands
 
 At the interactive prompt, execute shell commands by prefixing with `!`. A
-script refuses them (see [script](#script)):
+script refuses them (see [script](#script)). In apconsole's shell pane, whose
+output the pane captures, Ctrl+C stops a shell command and every process it
+started; such a command cannot read the terminal:
 
 ```
 !ls
