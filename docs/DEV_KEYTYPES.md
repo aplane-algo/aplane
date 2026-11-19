@@ -255,8 +255,6 @@ Use these terms consistently:
 | **Binary capability** | Compiled providers | The current binary contains and registers the provider code, whether or not the product store enables that key type. |
 | **Default-enabled** | Compiled providers | Catalog availability `default_enabled`; the product runtime can see and create the key type without a product-store state record. |
 | **Library-visible** | Compiled providers | Catalog availability `library`; the provider is registered in the binary and appears in the KeyType Library, but an enabled product-store state record is required before it appears in generation surfaces. |
-| **Internal-only** | Compiled providers | Registered for composition, signing and restore; excluded from library/discovery and standalone creation/import even with an old enabled record. |
-| **Disabled** | Compiled providers | Catalog availability `disabled`; the provider may exist in source but should not be registered or exposed by the runtime path that owns the catalog entry. |
 | **Enabled in product store** | Library-visible compiled providers | An enabled `source:"compiled"` state record exposes the compiled key type to product discovery and generation surfaces. |
 | **Installed** | YAML templates | The selected generation has an encrypted `.template` file under `keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |
 | **Template disabled** | Installed YAML templates | A `source:"yaml_*"` state record has `state:"disabled"`; the encrypted template remains installed but is hidden from discovery and generation until re-enabled. |

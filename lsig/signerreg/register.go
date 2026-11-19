@@ -7,7 +7,6 @@ package signerreg
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 	ed25519witnesskeygen "github.com/aplane-algo/aplane/lsig/ed25519lsig/keygen"
 	ed25519lsigsignerreg "github.com/aplane-algo/aplane/lsig/ed25519lsig/signerreg"
@@ -24,9 +23,8 @@ var registerSignerOnce sync.Once
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
 		clientreg.RegisterClient()
-		// The same catalog entries lsig/clientreg registers.
-		registerCompiledSigner(clientreg.FalconPlainHostEntry(), falconsignerreg.RegisterSigner)
-		registerCompiledSigner(clientreg.Ed25519PlainHostEntry(), ed25519lsigsignerreg.RegisterSigner)
+		falconsignerreg.RegisterSigner()
+		ed25519lsigsignerreg.RegisterSigner()
 		// A cosigner key is no account type's: its cosigner node needs it
 		// registered whatever the Ed25519 plain host's availability, or its
 		// .cos files would no longer load.
@@ -38,11 +36,4 @@ func RegisterSigner() {
 		rotatingslhsignerreg.Register()
 		rotatingwotscsignerreg.Register()
 	})
-}
-
-func registerCompiledSigner(entry keytypecatalog.Entry, register func()) {
-	if entry.Availability == keytypecatalog.AvailabilityDisabled {
-		return
-	}
-	register()
 }

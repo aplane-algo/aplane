@@ -33,8 +33,8 @@ var declaredValidRekeyTarget = map[string]bool{
 	"aplane.witness-ed25519.v1":    false,
 }
 
-// Every catalog entry, whatever its availability (default-enabled, library,
-// internal-only or disabled), has a decision here. The catalog is a compiled
+// Every catalog entry, whatever its availability (default-enabled or
+// library), has a decision here. The catalog is a compiled
 // key type's only source: it resolves from there, and its registered provider
 // does not declare the attribute itself, so nothing can disagree with it.
 func TestEveryCompiledKeyTypeDeclaresValidRekeyTarget(t *testing.T) {

@@ -58,13 +58,11 @@ func TestRegisterConflictingEntryPanics(t *testing.T) {
 }
 
 // EntriesForTest, which the valid_rekey_target decision test iterates, returns
-// entries of every availability, internal-only and disabled included.
+// entries of both availabilities.
 func TestEntriesForTestReturnsEveryAvailability(t *testing.T) {
 	want := map[string]Availability{
-		"catalog-all-default-v1":  AvailabilityDefaultEnabled,
-		"catalog-all-library-v1":  AvailabilityLibrary,
-		"catalog-all-internal-v1": AvailabilityInternalOnly,
-		"catalog-all-disabled-v1": AvailabilityDisabled,
+		"catalog-all-default-v1": AvailabilityDefaultEnabled,
+		"catalog-all-library-v1": AvailabilityLibrary,
 	}
 	for keyType, availability := range want {
 		unregisterForTest(t, keyType)
