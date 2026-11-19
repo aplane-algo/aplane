@@ -302,6 +302,11 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 	}
 }
 
+// decodeInitializeStore decodes a pre-login initialize_store request; a decode
+// that fails after filling the passphrase zeroes it. Tests replace it to watch
+// the decoded passphrase.
+var decodeInitializeStore = decodeRequest[protocol.InitializeStoreMessage]
+
 // handlePreAuthInitialize answers an initialize_store frame read before login,
 // and zeroes the frame, which carries the new store passphrase.
 func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutcome {
@@ -327,7 +332,7 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 		}))
 		return AuthOutcomeBootstrapHandled
 	}
-	msg, err := decodeRequest[protocol.InitializeStoreMessage](raw)
+	msg, err := decodeInitializeStore(raw)
 	if err != nil {
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInvalidRequest,
