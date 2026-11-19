@@ -1258,7 +1258,10 @@ identifies the current screen. The enum has families for:
   client is waiting on the answer. A signing popup refuses approval for one
   second after it comes into view (rejection is immediate): a requester can
   withdraw a request and send another in its place, and a key pressed for the
-  first must not approve the second. `apapprover` reads whole lines, which the
+  first must not approve the second. The enrollment popup does the same, from
+  when each request comes into view, the next queued one included, and each
+  request opens with Reject focused whatever the focus was on the request
+  before it; the client's label and address are drawn escaped. `apapprover` reads whole lines, which the
   terminal buffers until Enter, so instead of a delay it shows each request
   with a fresh four-digit code and approves only `y <code>` for the request on
   screen
