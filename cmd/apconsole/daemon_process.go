@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -77,7 +78,13 @@ type daemonEvent struct {
 type daemonProcess struct {
 	cmd    *exec.Cmd
 	events chan daemonEvent
-	done   chan struct{}
+	// done closes once the process has exited and all of its output has
+	// been read.
+	done chan struct{}
+	// stopping closes when Stop begins. Nobody reads events after that, so
+	// the output readers drop lines instead of waiting to deliver them.
+	stopping chan struct{}
+	stopOnce sync.Once
 }
 
 type daemonDeps struct {
@@ -202,23 +209,35 @@ func startDaemonProcess(bin, dataDir string) (*daemonProcess, error) {
 	}
 
 	events := make(chan daemonEvent, 128)
-	dp := &daemonProcess{cmd: cmd, events: events, done: make(chan struct{})}
-	go scanDaemonOutput(events, dp.done, stdout)
-	go scanDaemonOutput(events, dp.done, stderr)
+	dp := &daemonProcess{
+		cmd:      cmd,
+		events:   events,
+		done:     make(chan struct{}),
+		stopping: make(chan struct{}),
+	}
+	var output sync.WaitGroup
+	output.Add(2)
 	go func() {
+		defer output.Done()
+		scanDaemonOutput(events, dp.stopping, stdout)
+	}()
+	go func() {
+		defer output.Done()
+		scanDaemonOutput(events, dp.stopping, stderr)
+	}()
+	go func() {
+		// Wait closes the pipes once the process exits, so read them to
+		// EOF first: apsigner's last lines most likely say why it exited.
+		output.Wait()
 		err := cmd.Wait()
 		event := daemonEvent{Status: daemonStatusExited, Line: "apsigner exited"}
 		if err != nil {
 			event.Detail = err.Error()
 			event.Line = "apsigner exited: " + err.Error()
 		}
-		// Never block Stop on an unread events channel: if the buffer is
-		// full nobody is draining it, and closing done below carries the
-		// exit signal.
-		select {
-		case events <- event:
-		default:
-		}
+		// The exit event follows every output line. Once Stop has begun
+		// nobody reads it, and closing done below carries the exit.
+		sendDaemonEvent(events, dp.stopping, event)
 		close(dp.done)
 	}()
 	return dp, nil
@@ -242,13 +261,17 @@ func findApsigner(deps daemonDeps) (string, error) {
 	return "", fmt.Errorf("apsigner binary not found in PATH or next to apconsole")
 }
 
-func scanDaemonOutput(events chan<- daemonEvent, done <-chan struct{}, r io.Reader) {
+// scanDaemonOutput reads r to EOF, sending each line as an event until
+// stopping closes and dropping lines after that.
+func scanDaemonOutput(events chan<- daemonEvent, stopping <-chan struct{}, r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		sendDaemonEvent(events, done, daemonEvent{Line: scanner.Text()})
+		sendDaemonEvent(events, stopping, daemonEvent{Line: scanner.Text()})
 	}
 	if err := scanner.Err(); err != nil {
-		sendDaemonEvent(events, done, daemonEvent{Line: "log stream error: " + err.Error()})
+		sendDaemonEvent(events, stopping, daemonEvent{Line: "log stream error: " + err.Error()})
+		// Keep draining, so apsigner never blocks writing to a full pipe.
+		_, _ = io.Copy(io.Discard, r)
 	}
 }
 
@@ -348,6 +371,9 @@ func sendDaemonEvent(events chan<- daemonEvent, done <-chan struct{}, event daem
 func (p *daemonProcess) Stop() {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
+	}
+	if p.stopping != nil {
+		p.stopOnce.Do(func() { close(p.stopping) })
 	}
 	_ = p.cmd.Process.Signal(syscall.SIGTERM)
 	select {
