@@ -178,7 +178,7 @@ through normal signer approval and policy boundaries.
 | Function | Returns |
 |---|---|
 | `print(...values)` | Prints concatenated values; returns `undefined` |
-| `log(...values)` | Prints only when verbose mode is enabled; returns `undefined` |
+| `log(...values)` | Prints only when verbose mode is enabled (the shell's `verbose on`, or `setVerbose(true)`); returns `undefined` |
 | `network()` | Current network name |
 | `status()` | `{ network, connected, target, signingMode, writeMode, simulate }` |
 | `connected()` | Boolean signer connection state |
@@ -188,6 +188,10 @@ through normal signer approval and policy boundaries.
 | `setSimulate(enabled)` | Sets simulation mode |
 | `simulate()` | Boolean simulation mode state |
 | `waitForTx(txid, rounds = 5)` | Waits for confirmation; returns `true` |
+
+Write, verbose and simulation mode are the shell's own modes: a script starts
+with the shell's settings, and any change it makes with `setWriteMode()`,
+`setVerbose()` or `setSimulate()` is undone when the script ends.
 
 Simulation mode requests ordinary executable signatures and normal signer
 approval, then routes the exact signed group from the client to algod

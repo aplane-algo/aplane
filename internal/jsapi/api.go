@@ -84,7 +84,6 @@ type SweepItem struct {
 type API struct {
 	engine         *engine.Engine
 	runtime        *goja.Runtime
-	verbose        bool
 	output         func(string)
 	hostMu         sync.RWMutex
 	pluginExecutor PluginExecutor
@@ -93,13 +92,13 @@ type API struct {
 	ctx            context.Context
 }
 
-// NewAPI creates a new JavaScript API instance.
-func NewAPI(eng *engine.Engine, verbose bool, output func(string)) *API {
+// NewAPI creates a new JavaScript API instance. The engine owns the write,
+// verbose and simulate modes; the API reads and sets them there.
+func NewAPI(eng *engine.Engine, output func(string)) *API {
 	return &API{
-		engine:  eng,
-		verbose: verbose,
-		output:  output,
-		ctx:     context.Background(),
+		engine: eng,
+		output: output,
+		ctx:    context.Background(),
 	}
 }
 
@@ -161,17 +160,11 @@ func (a *API) Engine() *engine.Engine {
 	return a.engine
 }
 
-// Verbose returns the current JS-side verbose flag used by log().
-func (a *API) Verbose() bool {
-	return a.verbose
-}
-
-// RestoreModeState resets engine and JS mode flags after a script run.
+// RestoreModeState resets the engine's mode flags after a script run.
 func (a *API) RestoreModeState(writeMode, verbose, simulate bool) {
 	a.engine.SetWriteMode(writeMode)
 	a.engine.SetVerbose(verbose)
 	a.engine.SetSimulate(simulate)
-	a.verbose = verbose
 }
 
 // RegisterAll registers all API functions on the given Goja runtime.
@@ -367,9 +360,9 @@ func (a *API) jsPrint(call goja.FunctionCall) goja.Value {
 	return goja.Undefined()
 }
 
-// jsLog outputs a debug message (only in verbose mode).
+// jsLog outputs a debug message (only in the engine's verbose mode).
 func (a *API) jsLog(call goja.FunctionCall) goja.Value {
-	if !a.verbose {
+	if !a.engine.GetVerbose() {
 		return goja.Undefined()
 	}
 	args := make([]interface{}, len(call.Arguments))
@@ -449,7 +442,6 @@ func (a *API) jsSetVerbose(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "setVerbose() requires a boolean argument")
 	enabled := a.boolArg(call, 0, "setVerbose()")
 	a.engine.SetVerbose(enabled)
-	a.verbose = enabled
 
 	return goja.Undefined()
 }

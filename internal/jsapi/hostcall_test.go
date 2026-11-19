@@ -30,7 +30,7 @@ func TestHostCallMadeAfterTheCancelIsNotRun(t *testing.T) {
 	eng := newTempStoreEngine(t)
 	vm := goja.New()
 	var output []string
-	api := NewAPI(eng, false, func(msg string) { output = append(output, msg) })
+	api := NewAPI(eng, func(msg string) { output = append(output, msg) })
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("RegisterAll() error = %v", err)
 	}

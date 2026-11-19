@@ -238,6 +238,34 @@ func TestGojaRunnerRestoresModeStateBetweenRuns(t *testing.T) {
 	}
 }
 
+// TestGojaRunnerUsesTheEnginesVerboseMode pins that verbose mode belongs to
+// the engine: a script sees the shell's verbose setting in log(), and a run
+// leaves the engine's setting as it found it.
+func TestGojaRunnerUsesTheEnginesVerboseMode(t *testing.T) {
+	runner := newRunnerForTest(t)
+	var output []string
+	runner.SetOutput(func(msg string) { output = append(output, msg) })
+	eng := runner.api.Engine()
+	eng.SetVerbose(true)
+
+	if _, err := runner.Run(`log("shown")`); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := strings.Join(output, "\n"); !strings.Contains(got, "[debug] shown") {
+		t.Fatalf("log() output = %q, want the debug line under the engine's verbose mode", got)
+	}
+	if !eng.GetVerbose() {
+		t.Fatal("engine verbose mode = false after a script run, want it kept on")
+	}
+
+	if _, err := runner.Run(`setVerbose(false)`); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !eng.GetVerbose() {
+		t.Fatal("engine verbose mode = false after a script turned it off, want it restored")
+	}
+}
+
 func TestGojaRunnerEmitsStartupWarningOnce(t *testing.T) {
 	runner := newRunnerForTest(t)
 	runner.startupWarning = "Warning: warmup failed"

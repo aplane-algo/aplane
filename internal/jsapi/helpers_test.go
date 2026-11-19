@@ -446,7 +446,7 @@ func TestParseTxnOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
-	api := NewAPI(eng, false, nil)
+	api := NewAPI(eng, nil)
 	api.runtime = vm
 
 	tests := []struct {
@@ -564,7 +564,7 @@ func TestOptOutOverloadParsing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
-	api := NewAPI(eng, false, nil)
+	api := NewAPI(eng, nil)
 	api.runtime = vm
 
 	tests := []struct {
