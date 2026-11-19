@@ -233,6 +233,7 @@ type backupState struct {
 type restoreState struct {
 	backups             []BackupInfo
 	backupsLoaded       bool
+	backupsListErr      string // why the last list failed; a list that arrives clears it
 	selectedBackup      int
 	backupScrollOffset  int
 	archivePath         string
@@ -339,6 +340,7 @@ type cosignerChoice struct {
 type cosignerState struct {
 	references []CosignerReferenceInfo
 	loaded     bool
+	listErr    string // why the last list failed; a list that arrives clears it
 	choices    []cosignerChoice
 	selected   int
 	paramName  string

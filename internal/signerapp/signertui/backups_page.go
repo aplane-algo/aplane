@@ -167,9 +167,11 @@ func (m Model) openBackupView(info BackupInfo) Model {
 func (m Model) handleBackupsListed(msg BackupsListMsg) Model {
 	m.restore.backupsLoaded = true
 	if msg.Error != "" {
+		m.restore.backupsListErr = msg.Error
 		m.lastError = "Backup list failed: " + msg.Error
 		return m
 	}
+	m.restore.backupsListErr = ""
 	m.lastError = ""
 	previous, hadPrevious := m.currentRestoreBackup()
 	m.restore.backups = msg.Backups
@@ -371,7 +373,18 @@ func (m Model) renderBackups() string {
 	if count == 1 {
 		noun = "backup"
 	}
-	header.WriteString(subtitleStyle.Render(fmt.Sprintf("%d %s on this %s", count, noun, node)))
+	// A failed list says so in place of the count: an unreadable repository
+	// is not an empty one.
+	listErr := m.restore.backupsListErr
+	switch {
+	case listErr != "" && count > 0:
+		header.WriteString(errorStyle.Render(wrapPlainText("Backup list failed: "+terminalSafe(listErr), width)))
+		header.WriteString("\n" + subtitleStyle.Render("Showing the last list read."))
+	case listErr != "":
+		header.WriteString(errorStyle.Render(wrapPlainText("Backup list failed: "+terminalSafe(listErr), width)))
+	default:
+		header.WriteString(subtitleStyle.Render(fmt.Sprintf("%d %s on this %s", count, noun, node)))
+	}
 	header.WriteString("\n")
 	if banner := m.unresolvedImportBanner(); banner != "" {
 		header.WriteString("\n" + warningStyle.Render(wrapPlainText(banner, width)) + "\n")
@@ -386,7 +399,11 @@ func (m Model) renderBackups() string {
 	header.WriteString("\n")
 
 	if count == 0 {
-		header.WriteString(subtitleStyle.Render("No backups yet. n creates one; i imports one."))
+		if listErr == "" {
+			header.WriteString(subtitleStyle.Render("No backups yet. n creates one; i imports one."))
+		} else {
+			header.WriteString(subtitleStyle.Render("r lists them again."))
+		}
 		return m.renderPopup(popupWidth, header.String())
 	}
 

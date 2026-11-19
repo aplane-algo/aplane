@@ -92,6 +92,11 @@ func (m Model) openCosignerPicker(keyType, paramName string) (Model, string) {
 		return m, "Cosigner references are still loading; try again"
 	}
 	choices := m.compatibleCosignerChoices(info.CosignerComponentKeyTypes)
+	if len(choices) == 0 && m.cosigner.listErr != "" {
+		// A failed list is not an empty one, which would offer only a new
+		// import.
+		return m, "Cosigner references could not be listed: " + m.cosigner.listErr
+	}
 	m.cosigner.paramName = paramName
 	m.cosigner.returnView = m.viewState
 	m.cosigner.requiredKeyTypes = slices.Clone(info.CosignerComponentKeyTypes)
@@ -176,6 +181,7 @@ func (m *Model) clearCosignerImportTransient() {
 func (m *Model) clearCosignerWorkflowState() {
 	m.cosigner.references = nil
 	m.cosigner.loaded = false
+	m.cosigner.listErr = ""
 	m.cosigner.choices = nil
 	m.cosigner.selected = 0
 	m.cosigner.paramName = ""
