@@ -37,8 +37,6 @@ type menuItem struct {
 type Model struct {
 	viewState ViewState
 	dataDir   string
-	width     int
-	height    int
 	quitting  bool
 
 	// Status info (loaded on init and after actions)
@@ -71,7 +69,6 @@ type Model struct {
 type StatusLoadedMsg struct {
 	method    string
 	methodErr string
-	isLocal   bool
 	svcInfo   *serviceInfo
 }
 
@@ -124,7 +121,6 @@ func loadStatusCmd(dataDir string, svc *serviceInfo, isLocal bool) tea.Cmd {
 		return StatusLoadedMsg{
 			method:    method,
 			methodErr: methodErr,
-			isLocal:   isLocal,
 			svcInfo:   svc,
 		}
 	}

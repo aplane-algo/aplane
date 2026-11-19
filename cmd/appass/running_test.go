@@ -15,13 +15,9 @@ import (
 func TestSignerRunningFalseWhenSocketMissing(t *testing.T) {
 	dataDir := t.TempDir()
 
-	dialSignerIPCMu.Lock()
-	origDial := dialSignerIPC
-	dialSignerIPC = func(socketPath string) (net.Conn, error) {
+	stubSignerDial(t, func(socketPath string) (net.Conn, error) {
 		return nil, syscall.ENOENT
-	}
-	dialSignerIPCMu.Unlock()
-	defer func() { dialSignerIPCMu.Lock(); dialSignerIPC = origDial; dialSignerIPCMu.Unlock() }()
+	})
 
 	running, socketPath, err := signerRunning(dataDir)
 	if err != nil {
@@ -42,16 +38,12 @@ func TestSignerRunningTrueWhenSocketAcceptsConnections(t *testing.T) {
 	socketPath := filepath.Join(dataDir, "aplane.sock")
 	t.Setenv("APSIGNER_IPC_PATH", filepath.Join(t.TempDir(), "unrelated.sock"))
 
-	dialSignerIPCMu.Lock()
-	origDial := dialSignerIPC
-	dialSignerIPC = func(path string) (net.Conn, error) {
+	stubSignerDial(t, func(path string) (net.Conn, error) {
 		if path != socketPath {
 			t.Fatalf("dial socket path = %q, want %q", path, socketPath)
 		}
 		return &stubConn{}, nil
-	}
-	dialSignerIPCMu.Unlock()
-	defer func() { dialSignerIPCMu.Lock(); dialSignerIPC = origDial; dialSignerIPCMu.Unlock() }()
+	})
 
 	running, gotPath, err := signerRunning(dataDir)
 	if err != nil {
@@ -69,16 +61,12 @@ func TestRequireSignerStoppedReturnsErrorWhenRunning(t *testing.T) {
 	dataDir := t.TempDir()
 	socketPath := filepath.Join(dataDir, "aplane.sock")
 
-	dialSignerIPCMu.Lock()
-	origDial := dialSignerIPC
-	dialSignerIPC = func(path string) (net.Conn, error) {
+	stubSignerDial(t, func(path string) (net.Conn, error) {
 		if path != socketPath {
 			t.Fatalf("dial socket path = %q, want %q", path, socketPath)
 		}
 		return &stubConn{}, nil
-	}
-	dialSignerIPCMu.Unlock()
-	defer func() { dialSignerIPCMu.Lock(); dialSignerIPC = origDial; dialSignerIPCMu.Unlock() }()
+	})
 
 	err := requireSignerStopped(dataDir)
 	if err == nil {
@@ -89,18 +77,24 @@ func TestRequireSignerStoppedReturnsErrorWhenRunning(t *testing.T) {
 func TestSignerRunningReturnsErrorForUnexpectedDialFailure(t *testing.T) {
 	dataDir := t.TempDir()
 
-	dialSignerIPCMu.Lock()
-	origDial := dialSignerIPC
-	dialSignerIPC = func(string) (net.Conn, error) {
+	stubSignerDial(t, func(string) (net.Conn, error) {
 		return nil, errors.New("boom")
-	}
-	dialSignerIPCMu.Unlock()
-	defer func() { dialSignerIPCMu.Lock(); dialSignerIPC = origDial; dialSignerIPCMu.Unlock() }()
+	})
 
 	_, _, err := signerRunning(dataDir)
 	if err == nil {
 		t.Fatal("signerRunning returned nil error, want non-nil")
 	}
+}
+
+// stubSignerDial makes signerRunning dial through dial for the rest of the test.
+func stubSignerDial(t *testing.T, dial func(socketPath string) (net.Conn, error)) {
+	t.Helper()
+	orig := signerProbeDial
+	signerProbeDial = func(socketPath string, _ time.Duration) (net.Conn, error) {
+		return dial(socketPath)
+	}
+	t.Cleanup(func() { signerProbeDial = orig })
 }
 
 type stubConn struct{}

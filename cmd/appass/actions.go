@@ -175,12 +175,7 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 	}
 	tmpCredPath := tmpCredFile.Name()
 	_ = tmpCredFile.Close()
-	cleanupTemp := true
-	defer func() {
-		if cleanupTemp {
-			_ = os.Remove(tmpCredPath)
-		}
-	}()
+	defer func() { _ = os.Remove(tmpCredPath) }()
 
 	cmd, finish := boundedCommand(passCredsBin, "write", tmpCredPath)
 	cmd.Stdin = bytes.NewReader(passphrase)

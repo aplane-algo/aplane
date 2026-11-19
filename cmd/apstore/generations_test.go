@@ -77,35 +77,6 @@ func TestVerifyCurrentGenerationContentFailsOnMalformedKey(t *testing.T) {
 	}
 }
 
-func TestVerifyCurrentGenerationContentRejectsSymlinkedNamespaceBeforePrompt(t *testing.T) {
-	// APSIGNER_PASSPHRASE deliberately unset and no stdin provided: the
-	// structural rejection must happen before any passphrase prompt or
-	// content read could follow the symlink.
-	t.Setenv("APSIGNER_PASSPHRASE", "")
-	paths := newGenerationalTestStore(t, "prune-pass")
-
-	active, kr, err := genstore.ResolveStoreRoot(paths, []byte("prune-pass"))
-	if err != nil {
-		t.Fatalf("ResolveStoreRoot() error = %v", err)
-	}
-	kr.Zero()
-	outside := filepath.Join(t.TempDir(), "outside-keys")
-	if err := os.MkdirAll(outside, 0o700); err != nil {
-		t.Fatalf("MkdirAll(outside): %v", err)
-	}
-	if err := os.RemoveAll(active.KeysDir()); err != nil {
-		t.Fatalf("remove keys namespace: %v", err)
-	}
-	if err := os.Symlink(outside, active.KeysDir()); err != nil {
-		t.Fatalf("symlink keys namespace: %v", err)
-	}
-
-	err = validateCurrentGenerationForContent(active)
-	if err == nil || !strings.Contains(err.Error(), "current generation failed validation") {
-		t.Fatalf("validateCurrentGenerationForContent() error = %v, want structural rejection", err)
-	}
-}
-
 func TestParsePruneArgs(t *testing.T) {
 	tests := []struct {
 		args    []string

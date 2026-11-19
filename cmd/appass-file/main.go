@@ -6,14 +6,14 @@
 //
 //	appass-file read   — prints the passphrase from the file to stdout
 //	appass-file write  — reads a new passphrase from stdin, writes it to the file,
-//	                   then prints it back to stdout for round-trip verification
+//	                   then echoes stdin back to stdout; it does not re-read the file
 //
 // INSECURE / DEV ONLY: The passphrase is stored in plaintext.
 // In production, use a secrets manager (macOS Keychain, TPM, Vault, etc.)
 // The write verb assumes appass supplied an already-private, service-owned
 // path; it is not a general-purpose safe publisher for operator-chosen paths.
 //
-// Usage in config.yaml:
+// Usage in identities/default/unlock.yaml (appass writes it):
 //
 //	passphrase_command_argv: ["/path/to/appass-file", "/path/to/passphrase-file"]
 package main
@@ -61,7 +61,9 @@ func run() int {
 			logErrorf("write %s: %v", filePath, err)
 			return 1
 		}
-		// Read back and echo for round-trip verification
+		// The protocol wants the passphrase echoed. This echoes stdin and does not
+		// re-read the file, so the caller's read-back comparison checks nothing
+		// for this helper.
 		_, _ = os.Stdout.Write(passphrase)
 		return 0
 

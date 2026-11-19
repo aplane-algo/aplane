@@ -20,9 +20,10 @@
 // read fallback. When using LoadCredentialEncrypted, systemd handles
 // decryption before the service starts.
 //
-// Usage in config.yaml:
+// Usage in identities/default/unlock.yaml (appass writes it). Helpers run
+// with no PATH, so both paths are absolute:
 //
-//	passphrase_command_argv: ["appass-systemd-creds", "passphrase.cred"]
+//	passphrase_command_argv: ["/path/to/appass-systemd-creds", "/path/to/passphrase.cred"]
 //
 // Systemd unit file (recommended):
 //

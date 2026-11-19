@@ -97,16 +97,8 @@ func TestParseAppassOptions(t *testing.T) {
 // stubSignerStopped makes requireSignerStopped succeed (socket not found).
 func stubSignerStopped(t *testing.T) {
 	t.Helper()
-	dialSignerIPCMu.Lock()
-	orig := dialSignerIPC
-	dialSignerIPC = func(string) (net.Conn, error) {
+	stubSignerDial(t, func(string) (net.Conn, error) {
 		return nil, syscall.ENOENT
-	}
-	dialSignerIPCMu.Unlock()
-	t.Cleanup(func() {
-		dialSignerIPCMu.Lock()
-		dialSignerIPC = orig
-		dialSignerIPCMu.Unlock()
 	})
 }
 

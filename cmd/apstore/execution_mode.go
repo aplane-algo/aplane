@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -231,26 +230,6 @@ func acquireOfflineMutationLock(command, dataDir string) (func(), error) {
 	default:
 		return func() {}, nil
 	}
-}
-
-func sudoUserIDs() (int, int, bool, error) {
-	uidText := os.Getenv("SUDO_UID")
-	gidText := os.Getenv("SUDO_GID")
-	if uidText == "" || gidText == "" {
-		return 0, 0, false, nil
-	}
-	uid, err := strconv.Atoi(uidText)
-	if err != nil {
-		return 0, 0, false, fmt.Errorf("invalid SUDO_UID %q: %w", uidText, err)
-	}
-	gid, err := strconv.Atoi(gidText)
-	if err != nil {
-		return 0, 0, false, fmt.Errorf("invalid SUDO_GID %q: %w", gidText, err)
-	}
-	if uid < 0 || gid < 0 {
-		return 0, 0, false, fmt.Errorf("invalid sudo ownership %d:%d", uid, gid)
-	}
-	return uid, gid, true, nil
 }
 
 func fileOwnerGroup(info os.FileInfo) (int, int, error) {

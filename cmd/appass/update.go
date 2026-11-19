@@ -27,15 +27,9 @@ func (m *Model) clearPassphrases() {
 // Update handles all messages and key events.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		return m, nil
-
 	case StatusLoadedMsg:
 		m.method = msg.method
 		m.methodErr = msg.methodErr
-		m.isLocal = msg.isLocal
 		m.svcInfo = msg.svcInfo
 		m.menuItems = m.buildMenu()
 		// Select first item that isn't current or disabled

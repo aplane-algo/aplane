@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerprobe"
@@ -14,12 +13,9 @@ import (
 
 const signerCheckTimeout = 300 * time.Millisecond
 
-var (
-	dialSignerIPCMu sync.Mutex
-	dialSignerIPC   = func(socketPath string) (net.Conn, error) {
-		return net.DialTimeout("unix", socketPath, signerCheckTimeout)
-	}
-)
+// signerProbeDial replaces signerprobe's default dial in tests. Production
+// leaves it nil.
+var signerProbeDial func(socketPath string, timeout time.Duration) (net.Conn, error)
 
 // requireSignerStopped fails closed when apsigner is reachable for the same data dir.
 func requireSignerStopped(dataDir string) error {
@@ -34,16 +30,10 @@ func requireSignerStopped(dataDir string) error {
 }
 
 func signerRunning(dataDir string) (bool, string, error) {
-	dialSignerIPCMu.Lock()
-	dial := dialSignerIPC
-	dialSignerIPCMu.Unlock()
-
 	result, err := signerprobe.Check(dataDir, signerprobe.Options{
 		Timeout:         signerCheckTimeout,
 		DataDirExplicit: true,
-		Dial: func(socketPath string, _ time.Duration) (net.Conn, error) {
-			return dial(socketPath)
-		},
+		Dial:            signerProbeDial,
 	})
 	if err != nil {
 		if result.IPCPath != "" {
