@@ -327,8 +327,8 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 		}))
 		return AuthOutcomeBootstrapHandled
 	}
-	var msg protocol.InitializeStoreMessage
-	if err := json.Unmarshal(raw, &msg); err != nil {
+	msg, err := decodeRequest[protocol.InitializeStoreMessage](raw)
+	if err != nil {
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInvalidRequest,
 			Error: "invalid initialize store message",
