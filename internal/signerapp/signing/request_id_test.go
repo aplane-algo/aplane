@@ -67,7 +67,7 @@ func approvingCoordinator(t *testing.T) (*ApprovalService, *[]string) {
 		ApprovalWait:   func() time.Duration { return 10 * time.Second },
 		RequestSigningApprovalPrompt: promptFromContextResponse(func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			requestIDs = append(requestIDs, requestID)
-			return coordinator.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+			return coordinator.RequestSigningApprovalPrompt(ctx, signerapproval.Prompt{RequestID: requestID, Address: address, TxnSender: txnSender, Description: description, FirstValid: firstValid, LastValid: lastValid, Violations: violations}, timeout)
 		}),
 	}, &requestIDs
 }
