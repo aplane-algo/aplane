@@ -75,10 +75,15 @@ func TestSSHSessionAuditEntriesNameTheClientKey(t *testing.T) {
 	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.2:1", Fingerprint: "SHA256:enrolled", EnrolledKey: true})
 	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.3:1", Fingerprint: "SHA256:asking", Connected: true})
 
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.3:1", Fingerprint: "SHA256:asking"})
+
+	// An enroll connection's key is not enrolled, and anyone who reaches the
+	// SSH port can open one, so its entries say "ssh-enroll", not "ssh".
 	want := []AuditEntry{
-		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.2:1", SSHFingerprint: "SHA256:enrolled"},
-		{Event: AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.2:1", SSHFingerprint: "SHA256:enrolled"},
-		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.3:1", SSHFingerprint: "SHA256:asking"},
+		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
+		{Event: AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
 	}
 	entries := readAuditEntries(t, path)
 	if len(entries) != len(want) {
@@ -89,7 +94,6 @@ func TestSSHSessionAuditEntriesNameTheClientKey(t *testing.T) {
 		w.Timestamp = entry.Timestamp
 		w.Principal = auth.SystemProductAdminPrincipalID
 		w.RequesterPrincipal = auth.SystemProductAdminPrincipalID
-		w.Reason = "ssh"
 		if !reflect.DeepEqual(entry, w) {
 			t.Errorf("entry %d = %+v, want %+v", i, entry, w)
 		}

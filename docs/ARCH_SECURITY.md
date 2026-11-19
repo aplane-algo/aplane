@@ -359,6 +359,9 @@ All SSH connections are logged for audit purposes:
 Logged information:
 - Remote IP address and port
 - Connect/disconnect events, including `enroll` connections
+- `reason`: `ssh` for a connection an enrolled key opened, `ssh-enroll` for
+  an `enroll` connection. Anyone who can reach the SSH port can open an
+  `enroll` connection, so an `ssh-enroll` entry identifies no client
 - `ssh_fingerprint`: the SHA256 fingerprint of the client key that opened the
   connection, the same form `client:<fingerprint>` principals and the
   enrollment and revocation events use. For an `enroll` connection it is the
@@ -1226,7 +1229,8 @@ Audit entries carry attribution fields:
 - `closed_connections`: live connections closed by a key revocation
 - `ssh_fingerprint`: on an SSH client's `SESSION_CONNECTED` and
   `SESSION_DISCONNECTED`, the fingerprint of the client key that opened the
-  connection
+  connection (with `reason` `ssh-enroll`, an unenrolled key asking to be
+  enrolled)
 - `suppressed_count`: failures or rejections counted by a suppression summary entry
 - `rotating_stage`, `rotating_last_valid`: stage revealed and last valid round
   for `ROTATING_RELEASE`
@@ -1440,7 +1444,7 @@ Signing-audit semantics:
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a review rule matched, including when User Auto-Approve satisfied it without a human decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
-- IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, `reason:"ssh"`, and outcome, attributed to `system:product-admin`
+- IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection) and `reason`: `ssh` for an enrolled key's connection, `ssh-enroll` for an `enroll` connection, whose key is not enrolled; they are attributed to `system:product-admin`
 - key-management audit events are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time key-file invariant; for LogicSig salt failures,

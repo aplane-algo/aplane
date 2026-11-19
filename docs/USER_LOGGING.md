@@ -207,7 +207,7 @@ LogicSig argument values.
 
 | Event | Description |
 |-------|-------------|
-| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`reason` `ssh`, `ssh_fingerprint` names the client key) |
+| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened: `reason` is `ssh` for an enrolled key, `ssh-enroll` for an `enroll` connection (an unenrolled key, which anyone who reaches the SSH port can offer), and `ssh_fingerprint` names the key |
 | `SESSION_DISCONNECTED` | Session or SSH client connection ended |
 | `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
 | `SETTING_SAVE_ERROR` | An admin setting change could not be saved; `reason` names the setting, the value, `in_effect=true` (`outcome` `applied`: a restrictive value left in effect, which a restart reverts) or `in_effect=false` (`outcome` `failed`: nothing changed), and the cause. Refused requests and other setting changes are not audited |

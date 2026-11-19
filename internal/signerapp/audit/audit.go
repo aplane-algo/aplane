@@ -996,13 +996,24 @@ func (a *AuditLogger) LogKeyReload(keyCount int) {
 	a.Log(entry)
 }
 
-// LogSSHSessionConnected logs an SSH client connection opening.
-func (a *AuditLogger) LogSSHSessionConnected(remoteAddr, sshFingerprint string) {
+// sshSessionReason is an SSH session entry's reason: "ssh" for an enrolled
+// client's connection, "ssh-enroll" for an enroll connection, whose key is
+// not enrolled and which anyone who reaches the SSH port can open.
+func sshSessionReason(enrolled bool) string {
+	if enrolled {
+		return "ssh"
+	}
+	return "ssh-enroll"
+}
+
+// LogSSHSessionConnected logs an SSH client connection opening. enrolled
+// says whether the key that opened it is enrolled.
+func (a *AuditLogger) LogSSHSessionConnected(remoteAddr, sshFingerprint string, enrolled bool) {
 	entry := productPrincipalAuditFields()
 	entry.Event = AuditSessionConnected
 	entry.Outcome = "connected"
 	entry.RemoteAddr = remoteAddr
-	entry.Reason = "ssh"
+	entry.Reason = sshSessionReason(enrolled)
 	entry.SSHFingerprint = sshFingerprint
 	a.Log(entry)
 }
@@ -1016,12 +1027,12 @@ func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext)
 }
 
 // LogSSHSessionDisconnected logs an SSH client connection closing.
-func (a *AuditLogger) LogSSHSessionDisconnected(remoteAddr, sshFingerprint string) {
+func (a *AuditLogger) LogSSHSessionDisconnected(remoteAddr, sshFingerprint string, enrolled bool) {
 	entry := productPrincipalAuditFields()
 	entry.Event = AuditSessionDisconnected
 	entry.Outcome = "disconnected"
 	entry.RemoteAddr = remoteAddr
-	entry.Reason = "ssh"
+	entry.Reason = sshSessionReason(enrolled)
 	entry.SSHFingerprint = sshFingerprint
 	a.Log(entry)
 }
