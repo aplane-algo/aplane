@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -152,6 +153,56 @@ func TestCmdRebuildRemovesItsNodeRoleWhenTheMintFails(t *testing.T) {
 	}
 	if !apcrypto.StoreRootExistsIn(keystorePaths().KeystoreMetadataDir()) {
 		t.Fatal("store root missing after the retried rebuild")
+	}
+}
+
+// A rebuild whose store root became visible but could not be made durable
+// may have committed: it keeps the node role file the new root's generation
+// needs, and says so.
+func TestCmdRebuildKeepsItsNodeRoleWhenTheCommitIsUncertain(t *testing.T) {
+	RegisterProviders()
+
+	oldDataDirectory := dataDirectory
+	oldReader := stdinReader
+	dataDirectory = t.TempDir()
+	stdinReader = nil
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	defer func() {
+		dataDirectory = oldDataDirectory
+		stdinReader = oldReader
+	}()
+
+	archivePath, address := writeSignerRebuildArchiveForTest(t)
+	paths := keystorePaths()
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == paths.ProductDir() {
+			if _, err := os.Stat(paths.StoreRootPath()); err == nil {
+				return errors.New("simulated identity-directory sync failure")
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	err := withTestStdin("export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n", func() error {
+		return cmdRebuild([]string{archivePath, "--address", address})
+	})
+	fsutil.TestHook = nil
+	if err == nil || !strings.Contains(err.Error(), "rebuild may have committed") {
+		t.Fatalf("cmdRebuild() error = %v, want the may-have-committed error", err)
+	}
+	if _, statErr := os.Stat(paths.NodeRolePath()); statErr != nil {
+		t.Fatalf("node role file after an uncertain rebuild commit: %v, want it kept", statErr)
+	}
+	// The root that may have landed selects a generation whose node role
+	// sidecar authenticates exactly the kept file.
+	active, kr, err := genstore.ResolveStoreRoot(paths, []byte("new-store-passphrase"))
+	if err != nil {
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
+	}
+	defer kr.Zero()
+	if _, err := noderole.LoadAndVerifyGenerationWithKeyring(paths, active, kr); err != nil {
+		t.Fatalf("kept node role does not verify against the committed generation: %v", err)
 	}
 }
 
