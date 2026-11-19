@@ -15,7 +15,6 @@ package algorithm
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/xregistry"
@@ -48,9 +47,9 @@ type SignatureMetadata interface {
 	// Returns 0 if this key type doesn't require LogicSig (e.g., ed25519).
 	CurrentLsigVersion() int
 
-	// SupportedLsigVersions returns all supported LogicSig derivation versions.
-	// Used for mnemonic recovery to try all possible versions.
-	// Returns nil/empty if this key type doesn't require LogicSig.
+	// SupportedLsigVersions returns all supported LogicSig derivation versions,
+	// for the provider manifest. Returns nil/empty if this key type doesn't
+	// require LogicSig.
 	SupportedLsigVersions() []int
 
 	// DefaultDerivation returns the default key derivation method
@@ -151,23 +150,19 @@ func GetRegisteredFamilies() []string {
 	return metadataRegistry.Keys()
 }
 
-var registerEd25519MetadataOnce sync.Once
-
-// RegisterEd25519Metadata registers Ed25519 metadata with the algorithm registry.
-// This is idempotent and safe to call multiple times.
+// RegisterEd25519Metadata registers Ed25519 metadata with the algorithm
+// registry. A repeated call is ignored: the registry keeps the first entry.
 func RegisterEd25519Metadata() {
-	registerEd25519MetadataOnce.Do(func() {
-		RegisterMetadata(&basicMetadata{
-			family:                 "ed25519",
-			signatureSize:          64,
-			mnemonicWordCount:      25,
-			supportsMnemonicImport: true,
-			mnemonicScheme:         "algorand",
-			authorizationKind:      AuthorizationEd25519,
-			currentLsigVersion:     0,   // No LSig needed
-			supportedLsigVersions:  nil, // No LSig needed
-			defaultDerivation:      "algorand-standard",
-			displayColor:           "36", // Cyan for ed25519
-		})
+	RegisterMetadata(&basicMetadata{
+		family:                 "ed25519",
+		signatureSize:          64,
+		mnemonicWordCount:      25,
+		supportsMnemonicImport: true,
+		mnemonicScheme:         "algorand",
+		authorizationKind:      AuthorizationEd25519,
+		currentLsigVersion:     0,   // No LSig needed
+		supportedLsigVersions:  nil, // No LSig needed
+		defaultDerivation:      "algorand-standard",
+		displayColor:           "36", // Cyan for ed25519
 	})
 }

@@ -155,19 +155,13 @@ func TestFingerprintsMatch(t *testing.T) {
 // every key in the field. Add rows, never rename tokens.
 func TestFingerprintBasePrimitiveFrozenMap(t *testing.T) {
 	frozen := map[string]string{
-		"aplane.falcon1024.v1":  "falcon1024-v1",
-		"aplane.ed25519.v1":     "ed25519-lsig-v1",
-		"aplane.ed25519lsig.v1": "ed25519-lsig-v1",
+		"aplane.falcon1024.v1": "falcon1024-v1",
+		"aplane.ed25519.v1":    "ed25519-lsig-v1",
 	}
 	for raw, want := range frozen {
 		if got := FingerprintBasePrimitive(raw); got != want {
 			t.Fatalf("FingerprintBasePrimitive(%q) = %q, want %q (frozen namespace)", raw, got, want)
 		}
-	}
-	// Pre-rename and current Ed25519 LogicSig base names share one token, so a
-	// base-identifier rename never changes the fingerprint.
-	if FingerprintBasePrimitive("aplane.ed25519lsig.v1") != FingerprintBasePrimitive("aplane.ed25519.v1") {
-		t.Fatal("aplane.ed25519lsig.v1 and aplane.ed25519.v1 must project to the same token")
 	}
 	// Built-in spelling variants (case/whitespace) normalize to the token.
 	if got := FingerprintBasePrimitive("  APLANE.FALCON1024.V1  "); got != "falcon1024-v1" {

@@ -8,7 +8,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 )
 
 func signingContextDetailsFromEngine(signingCtx *engine.SigningContext) SigningContextDetails {
@@ -31,9 +30,9 @@ func signingContextDetailsFromEngine(signingCtx *engine.SigningContext) SigningC
 func displaySigningKeyType(keyType string, authorizationKind algorithm.AuthorizationKind) string {
 	switch authorizationKind {
 	case algorithm.AuthorizationLogicSig:
-		return keytypefmt.Display(keyType) + " lsig"
+		return keyType + " lsig"
 	case algorithm.AuthorizationNativePQ:
-		return keytypefmt.Display(keyType)
+		return keyType
 	default:
 		return "Ed25519 key"
 	}

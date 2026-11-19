@@ -840,7 +840,7 @@ deciding where a change belongs:
 | `key*` | `internal/signingargs` | Shared internal model for signing-time LogicSig argument metadata projected into key files, signer cache records, and wire DTOs. |
 | `key*` | `internal/keytypestate` | Product-store key type state record format and primitive read/write/delete operations for installed/disabled/activated template or provider definitions. |
 | `key*` | `internal/keytypecatalog` | Key type catalog metadata assembled from registered providers and template records. |
-| `key*` | `internal/keytypefmt` | Presentation-only key type formatting and publisher extraction. |
+| `key*` | `internal/keytypefmt` | Key type publisher extraction and segment validation. |
 | `template*` | `internal/templatelibrary` | Plaintext signer-data template parsing and sole feature-level coordinator for template files and key-type state mutation. |
 | `template*` | `internal/templatestore` | Encrypted product-store `.template` format and primitive save, load, scan, remove, and archive operations. |
 | `template*` | `internal/templatepolicy` | Template registration outcome vocabulary and reload/report policy helpers. |

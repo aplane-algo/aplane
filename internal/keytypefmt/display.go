@@ -8,12 +8,6 @@ import (
 	"unicode"
 )
 
-// Display returns the presentation form of a key type. Key types are displayed
-// canonically; publisher namespaces are not elided.
-func Display(keyType string) string {
-	return keyType
-}
-
 // Publisher returns the publisher segment of a canonical key type.
 func Publisher(keyType string) string {
 	publisher, _, ok := splitCanonical(keyType)

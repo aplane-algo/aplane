@@ -8,7 +8,7 @@ import "github.com/aplane-algo/aplane/internal/keytypefmt"
 // displayKeyType and keyTypePublisher escape what they return: a key type
 // can come from a template file or a backup archive.
 func displayKeyType(keyType string) string {
-	return terminalSafe(keytypefmt.Display(keyType))
+	return terminalSafe(keyType)
 }
 
 func keyTypePublisher(keyType string) string {

@@ -46,7 +46,7 @@ func verifyDeep(backupPath string) error {
 
 	for _, result := range report.Results {
 		if result.Valid {
-			logInfof("  %s (%s, decrypts OK)", result.FileName, displayKeyType(result.KeyType))
+			logInfof("  %s (%s, decrypts OK)", result.FileName, result.KeyType)
 		} else {
 			logErrorf("  %s - %s", result.FileName, result.Error)
 		}

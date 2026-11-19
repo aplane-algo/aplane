@@ -3,51 +3,7 @@
 
 package keytypefmt
 
-import (
-	"testing"
-
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-)
-
-func TestDisplay(t *testing.T) {
-	tests := []struct {
-		name    string
-		keyType string
-		want    string
-	}{
-		{name: "ed25519", keyType: "ed25519", want: "ed25519"},
-		{name: "aplane falcon unchanged", keyType: "aplane.falcon1024.v1", want: "aplane.falcon1024.v1"},
-		{name: "aplane template unchanged", keyType: "aplane." + "falcon1024-allowlist.v1", want: "aplane." + "falcon1024-allowlist.v1"},
-		{name: "other publisher unchanged", keyType: "custom.allowlist.v2", want: "custom.allowlist.v2"},
-		{name: "filename unchanged", keyType: "test.generic-policy.v1.yaml", want: "test.generic-policy.v1.yaml"},
-		{name: "extra family dot unchanged", keyType: "aplane.white.list.v1", want: "aplane.white.list.v1"},
-		{name: "unsafe family unchanged", keyType: "aplane.white list.v1", want: "aplane.white list.v1"},
-		{name: "legacy unchanged", keyType: "allowlist-v1", want: "allowlist-v1"},
-		{name: "unqualified versioned unchanged", keyType: "allowlist.v1", want: "allowlist.v1"},
-		{name: "invalid version unchanged", keyType: "aplane.allowlist.version1", want: "aplane.allowlist.version1"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := Display(tt.keyType); got != tt.want {
-				t.Fatalf("Display(%q) = %q, want %q", tt.keyType, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestDisplayCanonicalizeRoundTrip(t *testing.T) {
-	canonical := []string{
-		"aplane.falcon1024.v1",
-		"aplane." + "falcon1024-allowlist.v1",
-		"aplane." + "falcon1024-timelock.v1",
-	}
-	for _, kt := range canonical {
-		if got := keytypecatalog.Canonicalize(Display(kt)); got != kt {
-			t.Fatalf("Canonicalize(Display(%q)) = %q, want %q", kt, got, kt)
-		}
-	}
-}
+import "testing"
 
 func TestPublisher(t *testing.T) {
 	tests := []struct {

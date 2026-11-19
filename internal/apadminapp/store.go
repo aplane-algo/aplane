@@ -535,7 +535,7 @@ func (s Store) renderRestorePreview(result protocol.RestorePreviewMessage) {
 		}
 		parts := []string{key.Address}
 		if key.KeyType != "" {
-			parts = append(parts, displayKeyType(key.KeyType))
+			parts = append(parts, key.KeyType)
 		}
 		parts = append(parts, status)
 		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s\n", strings.Join(parts, "  "))

@@ -10,7 +10,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
@@ -324,9 +323,9 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		// not depend on the key's metadata entry.
 		if len(txReq.LsigArgs) > 0 && isNativeKeyType(keyType) {
 			return 0, badRequest(fmt.Sprintf("transaction %d: lsig_args were given for %s, whose %s key is native and takes no LogicSig arguments",
-				i+1, txReq.AuthAddress, keytypefmt.Display(keyType)))
+				i+1, txReq.AuthAddress, keyType))
 		}
-		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))
+		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keyType)
 		signableCount++
 	}
 

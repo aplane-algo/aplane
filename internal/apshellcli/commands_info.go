@@ -15,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
 )
@@ -321,7 +320,7 @@ func (r *REPLState) cmdKeytypes(_ []string, _ interface{}) (command.Result, erro
 				return
 			}
 			for _, kt := range result.KeyTypes {
-				r.printf("%s\t%s\n", keytypefmt.Display(kt.KeyType), kt.Description)
+				r.printf("%s\t%s\n", kt.KeyType, kt.Description)
 			}
 		})
 	}, result.KeyTypes)
