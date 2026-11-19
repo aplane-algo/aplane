@@ -66,7 +66,7 @@ func (s Service) InitializeStore(req adminproto.InitializeStoreRequest) adminpro
 	if err != nil {
 		s.logStoreInitializeFailed(err.Error())
 		return adminproto.InitializeStoreResult{
-			Code:  "passphrase_helper_error",
+			Code:  protocol.ResultCodePassphraseHelperError,
 			Error: err.Error(),
 		}
 	}
@@ -122,14 +122,14 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 	if len(req.CurrentPassphrase) == 0 || len(req.NewPassphrase) == 0 {
 		s.logPassphraseChangeFailed(ctx, "current and new passphrases are required")
 		return adminproto.ChangeStorePassphraseResult{
-			Code:  "invalid_passphrase",
+			Code:  protocol.ErrCodeInvalidPassphrase,
 			Error: "current and new passphrases are required",
 		}
 	}
 	if bytes.Equal(req.CurrentPassphrase, req.NewPassphrase) {
 		s.logPassphraseChangeFailed(ctx, "new passphrase must be different from current passphrase")
 		return adminproto.ChangeStorePassphraseResult{
-			Code:  "invalid_passphrase",
+			Code:  protocol.ErrCodeInvalidPassphrase,
 			Error: "new passphrase must be different from current passphrase",
 		}
 	}
@@ -139,7 +139,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 		if !errors.Is(err, crypto.ErrInvalidPassphrase) {
 			// The current passphrase may be right: the store root or its
 			// selected generation is damaged or unreadable.
-			code = "passphrase_change_failed"
+			code = protocol.ResultCodePassphraseChangeFailed
 		}
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  code,
@@ -151,7 +151,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 	if err != nil {
 		s.logPassphraseChangeFailed(ctx, err.Error())
 		return adminproto.ChangeStorePassphraseResult{
-			Code:  "passphrase_helper_error",
+			Code:  protocol.ResultCodePassphraseHelperError,
 			Error: err.Error(),
 		}
 	}
@@ -214,7 +214,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 			PriorGenerations:         rotation.PriorGenerations,
 			HelperWarning:            rotation.HelperWarning,
 			RootCommitted:            rotation.RootCommitted,
-			Code:                     "passphrase_change_failed",
+			Code:                     protocol.ResultCodePassphraseChangeFailed,
 			Error:                    err.Error(),
 		}
 	}

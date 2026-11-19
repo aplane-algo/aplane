@@ -217,7 +217,7 @@ func TestChangeStorePassphraseReportsADamagedStoreApartFromAWrongPassphrase(t *t
 		t.Fatalf("change with a wrong passphrase = %#v, want invalid_passphrase", result)
 	}
 	result := change(current)
-	if result.Success || result.Code != "passphrase_change_failed" || !strings.Contains(result.Error, "selected generation") {
+	if result.Success || result.Code != protocol.ResultCodePassphraseChangeFailed || !strings.Contains(result.Error, "selected generation") {
 		t.Fatalf("change on a damaged store = %#v, want passphrase_change_failed naming the selected generation", result)
 	}
 }
