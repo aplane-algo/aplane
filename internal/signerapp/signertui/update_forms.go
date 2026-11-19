@@ -6,6 +6,7 @@ package tui
 // Form handlers for import, generate, and delete operations.
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -18,13 +19,22 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/secretbuf"
 )
+
+// clearBackupPassphrases zeroes and drops the backup form's export and
+// confirm passphrases.
+func (m *Model) clearBackupPassphrases() {
+	m.backup.exportPassphrase.Zero()
+	m.backup.confirmPassphrase.Zero()
+	m.backup.exportPassphrase = nil
+	m.backup.confirmPassphrase = nil
+}
 
 func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.backup.exportPassphrase = ""
-		m.backup.confirmPassphrase = ""
+		m.clearBackupPassphrases()
 		m.backup.confirmError = ""
 		m.viewState = ViewBackups
 		return m, nil
@@ -39,38 +49,33 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.backup.confirmFocus = 1
 			return m, nil
 		}
-		if m.backup.exportPassphrase == "" {
+		if len(m.backup.exportPassphrase) == 0 {
 			m.backup.confirmError = "Please enter an export passphrase"
 			return m, nil
 		}
-		if m.backup.exportPassphrase != m.backup.confirmPassphrase {
+		if !bytes.Equal(m.backup.exportPassphrase, m.backup.confirmPassphrase) {
 			m.backup.confirmError = "Passphrases do not match"
 			return m, nil
 		}
-		passphrase := m.backup.exportPassphrase
-		m.backup.exportPassphrase = ""
-		m.backup.confirmPassphrase = ""
-		m.backup.confirmError = ""
 		id := m.beginOperation(ViewBackingUp)
-		return m, m.sendBackupCmd(passphrase, id)
+		send := m.sendBackupCmd(m.backup.exportPassphrase, id)
+		m.clearBackupPassphrases()
+		m.backup.confirmError = ""
+		return m, send
 	case "backspace":
 		if m.backup.confirmFocus == 0 {
-			if len(m.backup.exportPassphrase) > 0 {
-				m.backup.exportPassphrase = m.backup.exportPassphrase[:len(m.backup.exportPassphrase)-1]
-			}
+			m.backup.exportPassphrase = secretbuf.TrimRune(m.backup.exportPassphrase)
 		} else {
-			if len(m.backup.confirmPassphrase) > 0 {
-				m.backup.confirmPassphrase = m.backup.confirmPassphrase[:len(m.backup.confirmPassphrase)-1]
-			}
+			m.backup.confirmPassphrase = secretbuf.TrimRune(m.backup.confirmPassphrase)
 		}
 		m.backup.confirmError = ""
 		return m, nil
 	default:
 		if len(msg.String()) == 1 {
 			if m.backup.confirmFocus == 0 {
-				m.backup.exportPassphrase += msg.String()
+				m.backup.exportPassphrase = secretbuf.AppendText(m.backup.exportPassphrase, msg.String())
 			} else {
-				m.backup.confirmPassphrase += msg.String()
+				m.backup.confirmPassphrase = secretbuf.AppendText(m.backup.confirmPassphrase, msg.String())
 			}
 			m.backup.confirmError = ""
 		}

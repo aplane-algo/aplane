@@ -19,7 +19,6 @@ type GenerateResult struct {
 	KeyType           string // Full versioned type: "aplane.falcon1024.v1" or "ed25519"
 	IsWitnessKey      bool
 	IsSpendingAccount *bool
-	Mnemonic          string // Internal recovery material persisted to the encrypted keyfile.
 	KeyFile           string // Path to saved key
 }
 

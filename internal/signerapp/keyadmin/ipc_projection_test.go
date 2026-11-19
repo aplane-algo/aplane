@@ -17,7 +17,6 @@ func TestProjectGenerateIPC(t *testing.T) {
 	result := ProjectGenerateIPC(&GenerateResult{
 		Address:    "ADDR",
 		KeyType:    "ed25519",
-		Mnemonic:   "one two three",
 		Parameters: map[string]string{"owner": "alice"},
 	}, nil)
 	if !result.Success {
@@ -33,7 +32,7 @@ func TestProjectGenerateIPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal(result) error = %v", err)
 	}
-	if strings.Contains(strings.ToLower(string(wire)), "mnemonic") || strings.Contains(string(wire), "one two three") {
+	if strings.Contains(strings.ToLower(string(wire)), "mnemonic") {
 		t.Fatalf("Generate IPC projection leaked mnemonic material: %s", wire)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/secretbuf"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -23,23 +24,6 @@ type mnemonicExportState struct {
 
 type nativeMnemonicResultMsg protocol.ExportResultMessage
 type mnemonicExpiredMsg struct{ Serial uint64 }
-
-// appendPassphraseRune owns growth so an abandoned allocation never retains
-// the previously typed passphrase.
-func (e *mnemonicExportState) appendPassphraseRune(r rune) {
-	n := utf8.RuneLen(r)
-	if n < 0 {
-		r = utf8.RuneError
-		n = utf8.RuneLen(r)
-	}
-	if len(e.passphrase)+n > cap(e.passphrase) {
-		grown := make(protocol.SensitiveBytes, len(e.passphrase), max(2*cap(e.passphrase), len(e.passphrase)+n))
-		copy(grown, e.passphrase)
-		e.passphrase[:cap(e.passphrase)].Zero()
-		e.passphrase = grown
-	}
-	e.passphrase = utf8.AppendRune(e.passphrase, r)
-}
 
 // mnemonicDisplayTimeout bounds both the passphrase prompt and, restarted at
 // reveal, how long a revealed phrase stays on screen.
@@ -97,18 +81,13 @@ func (m Model) handleMnemonicExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return send()
 		}
 	case tea.KeyBackspace, tea.KeyCtrlH:
-		if len(e.passphrase) > 0 {
-			_, n := utf8.DecodeLastRune(e.passphrase)
-			end := len(e.passphrase) - n
-			e.passphrase[end:].Zero()
-			e.passphrase = e.passphrase[:end]
-		}
+		e.passphrase = secretbuf.TrimRune(e.passphrase)
 	case tea.KeyRunes:
 		for _, r := range msg.Runes {
-			e.appendPassphraseRune(r)
+			e.passphrase = secretbuf.AppendRune(e.passphrase, r)
 		}
 	case tea.KeySpace:
-		e.appendPassphraseRune(' ')
+		e.passphrase = secretbuf.AppendRune(e.passphrase, ' ')
 	}
 	return m, nil
 }

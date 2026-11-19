@@ -104,6 +104,7 @@ type stubServices struct {
 	lastGenerateKeyContext context.Context
 	lastGenerateKey        adminproto.GenerateKeyRequest
 	lastImportKey          adminproto.ImportKeyRequest
+	lastImportMnemonic     []byte // a copy, taken while the service had the phrase
 	lastBackupRequest      adminproto.BackupIdentityRequest
 	lastDeleteBackup       adminproto.DeleteBackupRequest
 	lastInitializeStore    adminproto.InitializeStoreRequest
@@ -250,6 +251,7 @@ func (s *stubServices) DeleteKey(_ context.Context, req adminproto.DeleteKeyRequ
 func (s *stubServices) ImportKey(_ context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
 	s.importKeyCalls++
 	s.lastImportKey = req
+	s.lastImportMnemonic = append([]byte(nil), req.Mnemonic...)
 	return s.importKeyResult
 }
 func (s *stubServices) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
@@ -1076,5 +1078,121 @@ func TestSessionAuthenticateOutcomeRefusesRemoteInitialize(t *testing.T) {
 	}
 	if result.Success || result.Code != protocol.ErrCodeAuthorizationDenied {
 		t.Fatalf("result = %+v, want authorization_denied", result)
+	}
+}
+
+func isZeroedFrame(frame []byte) bool {
+	for _, b := range frame {
+		if b != 0 {
+			return false
+		}
+	}
+	return len(frame) > 0
+}
+
+func mustAuthFrame(t *testing.T, passphrase string, extra string) []byte {
+	t.Helper()
+	frame, err := protocol.MarshalAdminMessage(protocol.AuthMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuth},
+		Passphrase:      protocol.NewSensitiveBytes(passphrase),
+		ProtocolVersion: currentAdminProtocolVersion(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extra != "" {
+		frame = append(frame[:len(frame)-1:len(frame)-1], []byte(`,`+extra+`}`)...)
+	}
+	return frame
+}
+
+// Login frames carry the store passphrase as JSON text. Each is zeroed once
+// handled: one with a wrong passphrase before the next attempt is read, the
+// accepted one when the login returns.
+func TestSessionAuthenticateZeroesLoginFrames(t *testing.T) {
+	ir := productruntime.New(productruntime.Config{})
+	ir.SetUnlocked()
+	wrong := mustAuthFrame(t, "wrong-secret", "")
+	right := mustAuthFrame(t, "right-secret", "")
+	svc := &stubServices{runtime: ir, verifyErrs: []error{errors.New("bad passphrase")}, newIdentity: auth.NewProductIdentity("ipc-passphrase")}
+	session := NewSession(&queueConn{reads: [][]byte{wrong, right}}, SessionDeps{Product: svc}, OriginLocal)
+
+	if !session.Authenticate() {
+		t.Fatal("Authenticate() = false, want the second attempt to succeed")
+	}
+	if svc.verifyCalls != 2 {
+		t.Fatalf("VerifyPassphrase calls = %d, want 2", svc.verifyCalls)
+	}
+	for name, frame := range map[string][]byte{"wrong": wrong, "accepted": right} {
+		if !isZeroedFrame(frame) {
+			t.Fatalf("%s login frame left as %q", name, frame)
+		}
+	}
+
+	refused := mustAuthFrame(t, "refused-secret", `"unexpected":1`)
+	session = NewSession(&queueConn{reads: [][]byte{refused}}, SessionDeps{Product: &stubServices{runtime: ir}}, OriginLocal)
+	if session.Authenticate() {
+		t.Fatal("Authenticate() accepted an auth frame with an unknown field")
+	}
+	if !isZeroedFrame(refused) {
+		t.Fatalf("refused login frame left as %q", refused)
+	}
+}
+
+// An initialize_store frame read before login is zeroed once handled,
+// including when it is refused before the store is touched.
+func TestSessionPreAuthInitializeZeroesFrame(t *testing.T) {
+	newFrame := func() []byte {
+		frame, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},
+			Passphrase:  protocol.NewSensitiveBytes("new-passphrase"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return frame
+	}
+
+	handled := newFrame()
+	svc := &stubServices{initializeStoreResult: adminproto.InitializeStoreResult{Success: true}}
+	session := NewSession(&queueConn{reads: [][]byte{handled}}, SessionDeps{Product: svc}, OriginLocal)
+	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled || svc.initializeStoreCalls != 1 {
+		t.Fatalf("AuthenticateOutcome() = %v with %d initialize calls", got, svc.initializeStoreCalls)
+	}
+	if !isZeroedFrame(handled) {
+		t.Fatalf("initialize frame left as %q", handled)
+	}
+
+	refused := newFrame()
+	remote := NewSession(&queueConn{}, SessionDeps{Product: &stubServices{}}, OriginRemote)
+	if got := remote.handlePreAuthInitialize("init-1", refused); got != AuthOutcomeBootstrapHandled {
+		t.Fatalf("handlePreAuthInitialize() = %v", got)
+	}
+	if !isZeroedFrame(refused) {
+		t.Fatalf("refused initialize frame left as %q", refused)
+	}
+}
+
+// A request whose decode fails after its passphrase was decoded (here, a
+// later id of the wrong type) has that passphrase zeroed, and the request is
+// refused as before.
+func TestDecodeRequestZeroesPartialDecodeOnError(t *testing.T) {
+	raw := []byte(`{"kind":"request","type":"unlock","passphrase":"partly-decoded","id":7}`)
+	msg, err := decodeRequest[protocol.UnlockMessage](raw)
+	if err == nil {
+		t.Fatal("decodeRequest accepted a numeric id")
+	}
+	if len(msg.Passphrase) == 0 || !isZeroedFrame(msg.Passphrase) {
+		t.Fatalf("partly decoded passphrase left as %q", []byte(msg.Passphrase))
+	}
+
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{Product: &stubServices{}}, OriginLocal)
+	if !session.Dispatch([]byte(`{"kind":"request","type":"unlock","id":"u","passphrase":7}`)) {
+		t.Fatal("Dispatch() did not handle a malformed unlock")
+	}
+	var refusal protocol.ErrorMessage
+	if len(conn.writes) != 1 || json.Unmarshal(conn.writes[0], &refusal) != nil || refusal.Code != protocol.ErrCodeInvalidRequest {
+		t.Fatalf("malformed unlock answered with %q", conn.writes)
 	}
 }

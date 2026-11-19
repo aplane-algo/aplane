@@ -153,9 +153,10 @@ func (c *testModeClient) ImportKeyWithParams(keyType, mnemonic string, params ma
 			ID:   fmt.Sprintf("imp-%d", time.Now().UnixNano()),
 		},
 		KeyType:    keyType,
-		Mnemonic:   mnemonic,
+		Mnemonic:   protocol.NewSensitiveBytes(mnemonic),
 		Parameters: params,
 	}
+	defer msg.Mnemonic.Zero()
 
 	response, err := c.request(msg, 30*time.Second)
 	if err != nil {

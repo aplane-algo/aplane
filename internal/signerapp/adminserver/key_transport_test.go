@@ -35,7 +35,7 @@ func TestSessionGeneratesAndImports(t *testing.T) {
 	session.HandleImportKey(&protocol.ImportKeyMessage{
 		BaseMessage: protocol.BaseMessage{ID: "import-ipc", Type: protocol.MsgTypeImportKey},
 		KeyType:     "ed25519",
-		Mnemonic:    "mnemonic words",
+		Mnemonic:    protocol.NewSensitiveBytes("mnemonic words"),
 	})
 
 	if svc.generateKeyCalls != 1 || svc.importKeyCalls != 1 {
@@ -52,7 +52,7 @@ func TestSessionGeneratesAndImports(t *testing.T) {
 		t.Fatal("generate key context canceled before session close")
 	default:
 	}
-	if svc.lastImportKey.KeyType != "ed25519" || svc.lastImportKey.Mnemonic != "mnemonic words" {
+	if svc.lastImportKey.KeyType != "ed25519" || string(svc.lastImportMnemonic) != "mnemonic words" {
 		t.Fatalf("import request = %+v, want key type and mnemonic", svc.lastImportKey)
 	}
 	if len(conn.writes) != 2 {
@@ -198,7 +198,7 @@ func TestNonLocalSessionRefusesRecoveryMaterialOperations(t *testing.T) {
 				calls func(*stubServices) int
 			}{
 				{"import", func(s *Session) {
-					s.HandleImportKey(&protocol.ImportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "import"}, KeyType: "ed25519", Mnemonic: "mnemonic words"})
+					s.HandleImportKey(&protocol.ImportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "import"}, KeyType: "ed25519", Mnemonic: protocol.NewSensitiveBytes("mnemonic words")})
 				}, func(s *stubServices) int { return s.importKeyCalls }},
 				{"export", func(s *Session) {
 					s.HandleExportKey(&protocol.ExportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "export"}, Address: "ADDR", Passphrase: protocol.NewSensitiveBytes("passphrase")})
@@ -218,5 +218,38 @@ func TestNonLocalSessionRefusesRecoveryMaterialOperations(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The import handler zeroes the recovery phrase it decoded once the import
+// returns, and also when it refuses the request before calling the service.
+func TestSessionImportZeroesMnemonicAfterUse(t *testing.T) {
+	session, _, svc := newKeyTransportTestSession()
+	svc.importKeyResult = adminproto.ImportKeyResult{Success: true, Address: "ADDR", KeyType: "ed25519"}
+	msg := &protocol.ImportKeyMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-zero", Type: protocol.MsgTypeImportKey},
+		KeyType:     "ed25519",
+		Mnemonic:    protocol.NewSensitiveBytes("mnemonic words"),
+	}
+	session.HandleImportKey(msg)
+	if svc.importKeyCalls != 1 || string(svc.lastImportMnemonic) != "mnemonic words" {
+		t.Fatalf("service saw %d imports with phrase %q", svc.importKeyCalls, svc.lastImportMnemonic)
+	}
+	if !bytes.Equal(svc.lastImportKey.Mnemonic, make([]byte, len("mnemonic words"))) {
+		t.Fatalf("phrase left as %q after the import", svc.lastImportKey.Mnemonic)
+	}
+
+	refusing, _, refusingSvc := newKeyTransportTestSessionAt(OriginRemote)
+	refused := &protocol.ImportKeyMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-refused", Type: protocol.MsgTypeImportKey},
+		KeyType:     "ed25519",
+		Mnemonic:    protocol.NewSensitiveBytes("mnemonic words"),
+	}
+	refusing.HandleImportKey(refused)
+	if refusingSvc.importKeyCalls != 0 {
+		t.Fatal("a remote session reached the import service")
+	}
+	if !bytes.Equal(refused.Mnemonic, make([]byte, len("mnemonic words"))) {
+		t.Fatalf("refused import left the phrase as %q", []byte(refused.Mnemonic))
 	}
 }

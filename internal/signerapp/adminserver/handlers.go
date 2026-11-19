@@ -1103,7 +1103,10 @@ func protocolExportResult(id string, result adminproto.ExportKeyResult) *protoco
 	}
 }
 
+// HandleImportKey imports a key from the recovery phrase in msg, and zeroes the
+// phrase whether or not the import runs.
 func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
+	defer msg.Mnemonic.Zero()
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}

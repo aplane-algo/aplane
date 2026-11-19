@@ -59,8 +59,7 @@ func (m *Model) discardHeldResult() {
 		m.forms.importMnemonicInput.SetValue("")
 		m.forms.importMnemonicInput.Blur()
 	case BackupResultMsg:
-		m.backup.exportPassphrase = ""
-		m.backup.confirmPassphrase = ""
+		m.clearBackupPassphrases()
 	}
 	m.heldResult = nil
 }

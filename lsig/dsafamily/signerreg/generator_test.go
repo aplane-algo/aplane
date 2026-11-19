@@ -271,11 +271,6 @@ func TestGenerateFromSeed(t *testing.T) {
 		t.Error("Generated public key should not be empty")
 	}
 
-	// Verify no mnemonic (seed-based generation)
-	if result1.Mnemonic != "" {
-		t.Error("Seed-based generation should not return mnemonic")
-	}
-
 	// Verify key files were created
 	if result1.KeyFiles == nil {
 		t.Fatal("KeyFiles should not be nil")
@@ -479,11 +474,6 @@ func TestGenerateFromMnemonic(t *testing.T) {
 		t.Error("Public key should not be empty")
 	}
 
-	// Verify mnemonic is preserved
-	if result.Mnemonic != testMnemonic {
-		t.Error("Mnemonic should be preserved in result")
-	}
-
 	// Verify key files were created
 	if result.KeyFiles == nil || result.KeyFiles.PrivateFile == "" {
 		t.Error("Private key file should be created")
@@ -563,16 +553,6 @@ func TestGenerateRandom(t *testing.T) {
 		t.Error("Public key should not be empty")
 	}
 
-	// Verify mnemonic is generated (24 words for 256-bit entropy)
-	if result.Mnemonic == "" {
-		t.Error("Mnemonic should be generated")
-	}
-
-	words := strings.Fields(result.Mnemonic)
-	if len(words) != 24 {
-		t.Errorf("Expected 24 words in mnemonic, got %d", len(words))
-	}
-
 	// Verify key files were created
 	if result.KeyFiles == nil || result.KeyFiles.PrivateFile == "" {
 		t.Error("Private key file should be created")
@@ -598,7 +578,6 @@ func TestGenerateRandomUniqueness(t *testing.T) {
 	generator := newTestGenerator()
 
 	addresses := make(map[string]bool)
-	mnemonics := make(map[string]bool)
 	iterations := 5
 
 	for i := 0; i < iterations; i++ {
@@ -612,12 +591,6 @@ func TestGenerateRandomUniqueness(t *testing.T) {
 			t.Errorf("Duplicate address generated at iteration %d", i)
 		}
 		addresses[result.Address] = true
-
-		// Check for duplicate mnemonics
-		if mnemonics[result.Mnemonic] {
-			t.Errorf("Duplicate mnemonic generated at iteration %d", i)
-		}
-		mnemonics[result.Mnemonic] = true
 	}
 
 	if len(addresses) != iterations {
@@ -742,21 +715,31 @@ func TestLSigBytecodeGeneration(t *testing.T) {
 	}
 }
 
-// TestMnemonicRoundTrip verifies mnemonic can regenerate the same keys
+// TestMnemonicRoundTrip verifies a mnemonic regenerates the key its seed
+// makes, which is how GenerateRandom makes a key.
 func TestMnemonicRoundTrip(t *testing.T) {
 	paths, cleanup := setupTestKeystore(t)
 	defer cleanup()
 
 	generator := newTestGenerator()
-
-	// Generate random key with mnemonic
-	result1, err := generator.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	handler, err := mnemonicreg.GetHandler(generator.RoutingFamily())
 	if err != nil {
-		t.Fatalf("GenerateRandom failed: %v", err)
+		t.Fatalf("GetHandler failed: %v", err)
+	}
+	words, seed, entropy, err := handler.GenerateMnemonic()
+	if err != nil {
+		t.Fatalf("GenerateMnemonic failed: %v", err)
+	}
+	defer crypto.ZeroBytes(seed)
+	defer crypto.ZeroBytes(entropy)
+
+	result1, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	if err != nil {
+		t.Fatalf("GenerateFromSeed failed: %v", err)
 	}
 
 	// Regenerate from mnemonic
-	result2, err := generator.GenerateFromMnemonic(context.Background(), paths, result1.Mnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result2, err := generator.GenerateFromMnemonic(context.Background(), paths, words, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromMnemonic failed: %v", err)
 	}

@@ -16,13 +16,24 @@ type dispatchFunc func(s *Session, raw []byte, id string)
 // invokes handle, reporting "invalid <label> message" on decode failure.
 func typed[T any](label string, handle func(*Session, *T)) dispatchFunc {
 	return func(s *Session, raw []byte, id string) {
-		var msg T
-		if err := json.Unmarshal(raw, &msg); err != nil {
+		msg, err := decodeRequest[T](raw)
+		if err != nil {
 			_ = s.SendError(id, protocol.ErrCodeInvalidRequest, "invalid "+label+" message")
 			return
 		}
 		handle(s, &msg)
 	}
+}
+
+// decodeRequest decodes raw into a T. A decode can fail after it has filled
+// some fields (a later field of the wrong type, or a bad escape), so on error
+// every SensitiveBytes value already decoded is zeroed before msg, which then
+// holds only that partial and zeroed decode, is returned.
+func decodeRequest[T any](raw []byte) (msg T, err error) {
+	if err = json.Unmarshal(raw, &msg); err != nil {
+		protocol.ZeroSensitive(&msg)
+	}
+	return msg, err
 }
 
 // dispatchTable routes request messages handled entirely within the

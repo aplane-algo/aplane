@@ -83,9 +83,6 @@ func TestGenerateFromSeed(t *testing.T) {
 	if result.PublicKeyHex == "" {
 		t.Error("PublicKeyHex should not be empty")
 	}
-	if result.Mnemonic != "" {
-		t.Error("Mnemonic should be empty when generating from seed")
-	}
 	if result.KeyFiles == nil {
 		t.Fatal("KeyFiles should not be nil")
 	}
@@ -184,9 +181,6 @@ func TestGenerateFromMnemonic(t *testing.T) {
 	if result.PublicKeyHex == "" {
 		t.Error("PublicKeyHex should not be empty")
 	}
-	if result.Mnemonic != testMnemonic {
-		t.Errorf("Mnemonic in result = %q, want %q", result.Mnemonic, testMnemonic)
-	}
 
 	// Verify determinism: same mnemonic should produce same address
 	result2, err := gen.GenerateFromMnemonic(context.Background(), paths, testMnemonic, cryptotest.Keyring(t, masterKey), "ed25519", nil)
@@ -281,21 +275,17 @@ func TestGenerateRandom(t *testing.T) {
 	if result.PublicKeyHex == "" {
 		t.Error("PublicKeyHex should not be empty")
 	}
-	if result.Mnemonic == "" {
-		t.Error("Mnemonic should not be empty for random generation")
-	}
 	if result.KeyFiles == nil {
 		t.Fatal("KeyFiles should not be nil")
 	}
 
-	// Verify mnemonic has 25 words (Algorand standard)
-	words := strings.Fields(result.Mnemonic)
-	if len(words) != 25 {
-		t.Errorf("Mnemonic should have 25 words, got %d", len(words))
+	// The key file keeps the private key, and the phrase an export derives
+	// from it (25 words, Algorand standard) recovers the same account.
+	words := exportedEd25519Phrase(t, result, cryptotest.Keyring(t, masterKey))
+	if len(strings.Fields(words)) != 25 {
+		t.Errorf("Mnemonic should have 25 words, got %d", len(strings.Fields(words)))
 	}
-
-	// Verify we can derive the same key from the mnemonic
-	result2, err := gen.GenerateFromMnemonic(context.Background(), paths, result.Mnemonic, cryptotest.Keyring(t, masterKey), "ed25519", nil)
+	result2, err := gen.GenerateFromMnemonic(context.Background(), paths, words, cryptotest.Keyring(t, masterKey), "ed25519", nil)
 	if err != nil {
 		t.Fatalf("Failed to regenerate from mnemonic: %v", err)
 	}
@@ -316,9 +306,27 @@ func TestGenerateRandom(t *testing.T) {
 	if result.Address == result3.Address {
 		t.Error("Two random generations should produce different addresses")
 	}
-	if result.Mnemonic == result3.Mnemonic {
-		t.Error("Two random generations should produce different mnemonics")
+}
+
+// exportedEd25519Phrase reads a generated key's file and derives the recovery
+// phrase from the private key it keeps, as an export does.
+func exportedEd25519Phrase(t *testing.T, result *GenerationResult, kr *algocrypto.Keyring) string {
+	t.Helper()
+	data, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, kr)
+	if err != nil {
+		t.Fatalf("read generated key: %v", err)
 	}
+	defer algocrypto.ZeroBytes(data)
+	payload, err := apkeys.ParsePayload(data)
+	if err != nil {
+		t.Fatalf("parse generated key: %v", err)
+	}
+	defer payload.ZeroSecrets()
+	words, err := mnemonic.FromPrivateKey(payload.PrivateKey)
+	if err != nil {
+		t.Fatalf("derive the recovery phrase: %v", err)
+	}
+	return words
 }
 
 // TestSaveEd25519KeysWithEncryption verifies key file saving with encryption

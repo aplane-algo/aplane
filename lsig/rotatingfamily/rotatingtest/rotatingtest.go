@@ -291,8 +291,8 @@ func testScan(t *testing.T, s Scheme) {
 }
 
 // testGenerator checks that the generator needs the network parameter, makes
-// an account on that network from a fresh 24-word mnemonic, and refuses the
-// ways of generating a rotating account it does not support.
+// an account on that network from the seed its aplane key keeps, and refuses
+// the ways of generating a rotating account it does not support.
 func testGenerator(t *testing.T, s Scheme) {
 	s.Register()
 	// Creation records the key type's valid_rekey_target, which its catalog
@@ -311,9 +311,8 @@ func testGenerator(t *testing.T, s Scheme) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	words := strings.Fields(result.Mnemonic)
-	if result.KeyType != s.KeyType || len(words) != 24 {
-		t.Fatalf("generated key type %q with a %d-word mnemonic", result.KeyType, len(words))
+	if result.KeyType != s.KeyType {
+		t.Fatalf("generated key type %q, want %q", result.KeyType, s.KeyType)
 	}
 	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
 	if err != nil {
@@ -326,9 +325,19 @@ func testGenerator(t *testing.T, s Scheme) {
 		// records that when it is created.
 		t.Fatalf("generated rotating account %s recorded valid_rekey_target true", result.Address)
 	}
-	seed, err := rotatinghybrid.SeedFromMnemonic(words)
+	data, err := keys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, kr)
 	if err != nil {
 		t.Fatal(err)
+	}
+	defer crypto.ZeroBytes(data)
+	stored, err := keys.ParsePayload(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stored.ZeroSecrets()
+	var seed rotatinghybrid.Seed
+	if copy(seed[:], stored.PrivateKey) != len(seed) {
+		t.Fatalf("stored rotating seed is %d bytes, want %d", len(stored.PrivateKey), len(seed))
 	}
 	defer seed.Zero()
 	testnet, err := rotatingfamilyreg.GenesisHashParameter(map[string]string{"network": "testnet"})
@@ -341,7 +350,7 @@ func testGenerator(t *testing.T, s Scheme) {
 	}
 	payload.ZeroSecrets()
 	if address != result.Address {
-		t.Fatalf("generated account %s is not the mnemonic's account on testnet, %s", result.Address, address)
+		t.Fatalf("generated account %s is not the stored seed's account on testnet, %s", result.Address, address)
 	}
 	if _, err := gen.GenerateRandom(ctx, paths, kr, "aplane.rotating-hybrid.v1", map[string]string{"network": "testnet"}); err == nil {
 		t.Fatal("generator accepted a retired rotating key type")
@@ -349,7 +358,11 @@ func testGenerator(t *testing.T, s Scheme) {
 	if _, err := gen.GenerateFromSeed(ctx, paths, seed[:], kr, s.KeyType, nil); err == nil {
 		t.Fatal("generation from a raw seed accepted")
 	}
-	if _, err := gen.GenerateFromMnemonic(ctx, paths, result.Mnemonic, kr, s.KeyType, map[string]string{"network": "testnet"}); err == nil {
+	words, _, err := rotatinghybrid.NewMnemonic()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gen.GenerateFromMnemonic(ctx, paths, strings.Join(words, " "), kr, s.KeyType, map[string]string{"network": "testnet"}); err == nil {
 		t.Fatal("generation from a mnemonic accepted")
 	}
 }

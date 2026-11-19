@@ -199,7 +199,6 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		Address:      genResult.Address,
 		PublicKeyHex: genResult.PublicKeyHex,
 		KeyType:      genResult.KeyType, // Full versioned type from generator
-		Mnemonic:     genResult.Mnemonic,
 		KeyFile:      genResult.KeyFiles.PrivateFile,
 	}
 	if witness.IsKeyType(genResult.KeyType) {

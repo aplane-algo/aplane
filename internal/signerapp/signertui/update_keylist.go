@@ -172,8 +172,7 @@ func (m *Model) resetKeyListSelection() {
 }
 
 func (m Model) openBackupConfirm() (tea.Model, tea.Cmd) {
-	m.backup.exportPassphrase = ""
-	m.backup.confirmPassphrase = ""
+	m.clearBackupPassphrases()
 	m.backup.confirmError = ""
 	m.backup.confirmFocus = 0
 	m.viewState = ViewBackupConfirm

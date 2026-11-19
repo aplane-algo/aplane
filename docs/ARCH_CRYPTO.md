@@ -476,10 +476,10 @@ There is no pending-term authority or resumable rotation state.
 are rejected with rebuild-from-backup guidance; no in-place migration or
 compatibility parser is provided.
 
-Term keys are random stored keys, not passphrase-derived values. JSON base64
-encoding creates short-lived immutable string copies during root seal/open;
-they do not persist for a session. Eliminating those copies would require a
-binary root payload.
+Term keys are random stored keys, not passphrase-derived values. Root seal and
+open zero the plaintext and the decoded term keys, but encoding/json keeps its
+own copies of the base64 text in buffers aplane cannot clear; that limit is
+accepted and described in ARCH_SECURITY.md under "Residual Copies".
 
 ### `.key` and `.cos`
 
@@ -616,7 +616,9 @@ the product store's compiled-provider opt-in.
 
 - Private key material stays on the signer host.
 - Passphrases and decrypted key data are zeroed promptly with
-  `crypto.ZeroBytes`.
+  `crypto.ZeroBytes`. The copies that cannot be zeroed (string-based mnemonic
+  code, encoding/json buffers) are listed under "Residual Copies" in
+  ARCH_SECURITY.md.
 - Term keys are cached only while unlocked.
 - Template registration happens before key scanning on reload/unlock so key
   discovery sees the correct enabled provider set.

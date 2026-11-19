@@ -179,8 +179,14 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		return AuthOutcomeFailed
 	}
 
+	// Each frame read here may carry the store passphrase as JSON text. The
+	// deferred zero covers the frame in hand on every return; a frame whose
+	// passphrase was wrong is zeroed before the next one is read.
+	var raw []byte
+	defer func() { protocol.SensitiveBytes(raw).Zero() }()
 	for {
-		raw, err := s.conn.ReadMessage()
+		var err error
+		raw, err = s.conn.ReadMessage()
 		if err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {
 				s.sendAuthResult(false, protocol.ErrCodeLoginTimeout, "login timed out")
@@ -240,6 +246,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		authMsg.Passphrase.Zero()
 		if err := s.productServices.VerifyPassphrase(passphraseBytes); err != nil {
 			zeroBytes(passphraseBytes)
+			protocol.SensitiveBytes(raw).Zero()
 			s.sendAuthResult(false, protocol.ErrCodeInvalidPassphrase, "invalid passphrase")
 			continue
 		}
@@ -286,7 +293,10 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 	}
 }
 
+// handlePreAuthInitialize answers an initialize_store frame read before login,
+// and zeroes the frame, which carries the new store passphrase.
 func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutcome {
+	defer protocol.SensitiveBytes(raw).Zero()
 	if s.nodeFailure != nil && s.nodeFailure() != nil {
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeNodeFailClosed,

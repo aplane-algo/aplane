@@ -169,7 +169,7 @@ type activityState struct {
 
 // authState is the unlock/auth passphrase prompt.
 type authState struct {
-	passphraseInput  string
+	passphraseInput  SensitiveBytes
 	passphraseMasked bool
 	passphraseError  string
 	loggingIn        bool // true while waiting for auth/unlock response
@@ -219,8 +219,8 @@ type enrollmentApprovalState struct {
 
 // backupState is the managed-backup confirm/result flow.
 type backupState struct {
-	exportPassphrase  string
-	confirmPassphrase string
+	exportPassphrase  SensitiveBytes
+	confirmPassphrase SensitiveBytes
 	confirmError      string
 	confirmFocus      int // 0 = export passphrase, 1 = confirm passphrase
 	archivePath       string

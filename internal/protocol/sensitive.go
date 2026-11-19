@@ -5,8 +5,8 @@ package protocol
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"reflect"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -40,6 +40,54 @@ func (s SensitiveBytes) Zero() {
 	}
 }
 
+// ZeroSensitive zeroes every SensitiveBytes value reachable from v through
+// pointers, interfaces, exported struct fields, arrays, slices and map values.
+// It is for a value that is being dropped, such as a message whose decode
+// failed after filling some of its fields.
+func ZeroSensitive(v any) {
+	zeroSensitiveValue(reflect.ValueOf(v))
+}
+
+var sensitiveBytesType = reflect.TypeFor[SensitiveBytes]()
+
+func zeroSensitiveValue(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if !v.IsNil() {
+			zeroSensitiveValue(v.Elem())
+		}
+	case reflect.Struct:
+		t := v.Type()
+		for i := range v.NumField() {
+			if t.Field(i).IsExported() {
+				zeroSensitiveValue(v.Field(i))
+			}
+		}
+	case reflect.Slice:
+		if v.Type() == sensitiveBytesType {
+			clear(v.Bytes())
+			return
+		}
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return
+		}
+		for i := range v.Len() {
+			zeroSensitiveValue(v.Index(i))
+		}
+	case reflect.Array:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return
+		}
+		for i := range v.Len() {
+			zeroSensitiveValue(v.Index(i))
+		}
+	case reflect.Map:
+		for iter := v.MapRange(); iter.Next(); {
+			zeroSensitiveValue(iter.Value())
+		}
+	}
+}
+
 func (s SensitiveBytes) String() string {
 	return "<redacted>"
 }
@@ -48,8 +96,80 @@ func (s SensitiveBytes) GoString() string {
 	return "protocol.SensitiveBytes(<redacted>)"
 }
 
+// MarshalJSON writes the bytes as a JSON string straight into one buffer of
+// the exact size: no intermediate string, no pooled encoder buffer, and no
+// HTML escaping. Otherwise it escapes as encoding/json does: invalid UTF-8
+// becomes U+FFFD, and control characters, quotes, backslashes, U+2028 and
+// U+2029 are escaped. The calling encoder copies the returned buffer into
+// its own and drops it unzeroed; that copy is the residue this cannot avoid.
 func (s SensitiveBytes) MarshalJSON() ([]byte, error) {
-	return json.Marshal(string([]byte(s)))
+	size := 2
+	for i := 0; i < len(s); {
+		escape, consumed := jsonStringEscape(s, i)
+		if escape == "" {
+			size += consumed
+		} else {
+			size += len(escape)
+		}
+		i += consumed
+	}
+	out := make([]byte, 0, size)
+	out = append(out, '"')
+	for i := 0; i < len(s); {
+		escape, consumed := jsonStringEscape(s, i)
+		if escape == "" {
+			out = append(out, s[i:i+consumed]...)
+		} else {
+			out = append(out, escape...)
+		}
+		i += consumed
+	}
+	return append(out, '"'), nil
+}
+
+// jsonControlEscapes holds the JSON escape for each control character.
+var jsonControlEscapes = func() [0x20]string {
+	var escapes [0x20]string
+	const hex = "0123456789abcdef"
+	for c := range escapes {
+		escapes[c] = `\u00` + string(hex[c>>4]) + string(hex[c&0xF])
+	}
+	escapes['\b'] = `\b`
+	escapes['\f'] = `\f`
+	escapes['\n'] = `\n`
+	escapes['\r'] = `\r`
+	escapes['\t'] = `\t`
+	return escapes
+}()
+
+// jsonStringEscape reports how the rune at s[i:] is written inside a JSON
+// string: consumed is the number of input bytes it takes, and escape is the
+// text written in their place, or "" when they are written as they are.
+func jsonStringEscape(s []byte, i int) (escape string, consumed int) {
+	c := s[i]
+	if c < utf8.RuneSelf {
+		switch {
+		case c < 0x20:
+			return jsonControlEscapes[c], 1
+		case c == '"':
+			return `\"`, 1
+		case c == '\\':
+			return `\\`, 1
+		default:
+			return "", 1
+		}
+	}
+	r, size := utf8.DecodeRune(s[i:])
+	switch {
+	case r == utf8.RuneError && size == 1:
+		return `\ufffd`, 1
+	case r == '\u2028':
+		return `\u2028`, size
+	case r == '\u2029':
+		return `\u2029`, size
+	default:
+		return "", size
+	}
 }
 
 func (s *SensitiveBytes) UnmarshalJSON(data []byte) error {
@@ -69,7 +189,20 @@ func unmarshalJSONStringBytes(data []byte) ([]byte, error) {
 	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
 		return nil, fmt.Errorf("expected JSON string")
 	}
-	out := make([]byte, 0, len(data)-2)
+	// Decoding never lengthens a string, so out never grows past this
+	// capacity and leaves no outgrown copy behind.
+	return decodeJSONStringBytes(make([]byte, 0, len(data)-2), data)
+}
+
+// decodeJSONStringBytes appends the decoded contents of the JSON string data
+// to out. On error it zeroes all of out, up to its capacity, so a value cut
+// off by a bad escape leaves no partial copy.
+func decodeJSONStringBytes(out, data []byte) (_ []byte, err error) {
+	defer func() {
+		if err != nil {
+			SensitiveBytes(out[:cap(out)]).Zero()
+		}
+	}()
 	end := len(data) - 1
 	for i := 1; i < end; i++ {
 		c := data[i]

@@ -356,15 +356,17 @@ func (v *ApAdminHarness) ImportKeyWithType(keyType, mnemonic string) (string, er
 
 // ImportKeyWithTypeAndParams imports a key with creation parameters over the admin IPC protocol.
 func (v *ApAdminHarness) ImportKeyWithTypeAndParams(keyType, mnemonic string, params map[string]string) (string, error) {
-	response, err := v.ipcRequest(protocol.ImportKeyMessage{
+	msg := protocol.ImportKeyMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeImportKey,
 			ID:   fmt.Sprintf("import-%d", time.Now().UnixNano()),
 		},
 		KeyType:    keyType,
-		Mnemonic:   mnemonic,
+		Mnemonic:   protocol.NewSensitiveBytes(mnemonic),
 		Parameters: params,
-	})
+	}
+	response, err := v.ipcRequest(msg)
+	msg.Mnemonic.Zero()
 	if err != nil {
 		return "", err
 	}

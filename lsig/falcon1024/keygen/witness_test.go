@@ -41,9 +41,6 @@ func TestCosignerFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	if result.Address == result.PublicKeyHex {
 		t.Fatalf("Address unexpectedly equals full Falcon public key hex")
 	}
-	if result.Mnemonic != "" {
-		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
-	}
 	if result.KeyFiles == nil || result.KeyFiles.PrivateFile == "" {
 		t.Fatalf("KeyFiles = %#v, want private file", result.KeyFiles)
 	}

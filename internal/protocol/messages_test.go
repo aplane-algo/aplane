@@ -1368,6 +1368,23 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 				msg.(*ExportKeyMessage).Passphrase.Zero()
 			},
 		},
+		{
+			name:       "import_key",
+			raw:        []byte(`{"kind":"request","type":"import_key","id":"import-1","key_type":"ed25519","mnemonic":"recovery words"}`),
+			msg:        &ImportKeyMessage{},
+			fieldNames: []string{"mnemonic"},
+			values:     []string{"recovery words"},
+			check: func(t *testing.T, msg any) {
+				t.Helper()
+				imported := msg.(*ImportKeyMessage)
+				if got := string(imported.Mnemonic); got != "recovery words" {
+					t.Fatalf("ImportKeyMessage.Mnemonic = %q, want recovery words", got)
+				}
+			},
+			zero: func(msg any) {
+				msg.(*ImportKeyMessage).Mnemonic.Zero()
+			},
+		},
 	}
 
 	for _, tt := range tests {

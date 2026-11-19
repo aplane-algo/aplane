@@ -193,29 +193,33 @@ drain:
 	}
 }
 
-// SendAuth sends an authentication request
-func (c *IPCClient) SendAuth(passphrase string) error {
+// SendAuth sends an authentication request. It zeroes its copy of the
+// passphrase once sent; the caller zeroes its own.
+func (c *IPCClient) SendAuth(passphrase []byte) error {
 	protocolVersion := CurrentAdminProtocolVersion()
 	msg := AuthMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeAuth,
 			ID:   fmt.Sprintf("auth-%d", time.Now().UnixNano()),
 		},
-		Passphrase:      SensitiveBytes([]byte(passphrase)),
+		Passphrase:      SensitiveBytes(cloneBytes(passphrase)),
 		ProtocolVersion: &protocolVersion,
 	}
+	defer msg.Passphrase.Zero()
 	return c.sendMessage(msg)
 }
 
-// SendUnlock sends an unlock request
-func (c *IPCClient) SendUnlock(passphrase string) error {
+// SendUnlock sends an unlock request. It zeroes its copy of the passphrase
+// once sent; the caller zeroes its own.
+func (c *IPCClient) SendUnlock(passphrase []byte) error {
 	msg := UnlockMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeUnlock,
 			ID:   fmt.Sprintf("unlock-%d", time.Now().UnixNano()),
 		},
-		Passphrase: SensitiveBytes([]byte(passphrase)),
+		Passphrase: SensitiveBytes(cloneBytes(passphrase)),
 	}
+	defer msg.Passphrase.Zero()
 	return c.sendMessage(msg)
 }
 
@@ -988,14 +992,32 @@ func operationCmd(client *IPCClient, id string, fn func(*IPCClient) error) tea.C
 	}
 }
 
-// SendAuthCmd returns a tea.Cmd that sends an authentication request
-func (m Model) sendAuthCmd(passphrase string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendAuth(passphrase) })
+// sendAuthCmd returns a tea.Cmd that sends an authentication request. The
+// command keeps its own copy of the passphrase and zeroes it once it has run.
+func (m Model) sendAuthCmd(passphrase []byte) tea.Cmd {
+	return secretCmd(passphrase, func(p []byte) tea.Cmd {
+		return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendAuth(p) })
+	})
 }
 
-// SendUnlockCmd returns a tea.Cmd that sends an unlock request
-func (m Model) sendUnlockCmd(passphrase string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendUnlock(passphrase) })
+// sendUnlockCmd returns a tea.Cmd that sends an unlock request. The command
+// keeps its own copy of the passphrase and zeroes it once it has run.
+func (m Model) sendUnlockCmd(passphrase []byte) tea.Cmd {
+	return secretCmd(passphrase, func(p []byte) tea.Cmd {
+		return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendUnlock(p) })
+	})
+}
+
+// secretCmd gives build a copy of secret to send and returns a command that
+// runs the send and then zeroes the copy, so the caller can zero its own
+// buffer at once.
+func secretCmd(secret []byte, build func([]byte) tea.Cmd) tea.Cmd {
+	owned := cloneBytes(secret)
+	send := build(owned)
+	return func() tea.Msg {
+		defer zeroBytes(owned)
+		return send()
+	}
 }
 
 // sendSignResponseCmd returns a tea.Cmd that sends a sign response
@@ -1085,15 +1107,17 @@ func (c *IPCClient) SendGenerateKey(keyType, name string, id string) error {
 	return c.sendMessage(msg)
 }
 
-// SendBackup requests signer-managed creation of a backup archive.
-func (c *IPCClient) SendBackup(exportPassphrase string, id string) error {
+// SendBackup requests signer-managed creation of a backup archive. It zeroes
+// its copy of the passphrase once sent; the caller zeroes its own.
+func (c *IPCClient) SendBackup(exportPassphrase []byte, id string) error {
 	msg := BackupMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeBackup,
 			ID:   id,
 		},
-		ExportPassphrase: SensitiveBytes([]byte(exportPassphrase)),
+		ExportPassphrase: SensitiveBytes(cloneBytes(exportPassphrase)),
 	}
+	defer msg.ExportPassphrase.Zero()
 	return c.sendMessage(msg)
 }
 
@@ -1196,8 +1220,12 @@ func (m Model) sendGenerateKeyCmd(keyType, name, id string) tea.Cmd {
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKey(keyType, name, id) })
 }
 
-func (m Model) sendBackupCmd(exportPassphrase, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendBackup(exportPassphrase, id) })
+// sendBackupCmd returns a tea.Cmd that requests a backup. The command keeps
+// its own copy of the passphrase and zeroes it once it has run.
+func (m Model) sendBackupCmd(exportPassphrase []byte, id string) tea.Cmd {
+	return secretCmd(exportPassphrase, func(p []byte) tea.Cmd {
+		return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendBackup(p, id) })
+	})
 }
 
 func (m Model) sendListBackupsCmd() tea.Cmd {
@@ -1340,9 +1368,10 @@ func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map
 			ID:   id,
 		},
 		KeyType:    keyType,
-		Mnemonic:   mnemonic,
+		Mnemonic:   SensitiveBytes(mnemonic),
 		Parameters: params,
 	}
+	defer msg.Mnemonic.Zero()
 	return c.sendMessage(msg)
 }
 

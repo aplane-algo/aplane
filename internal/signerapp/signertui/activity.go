@@ -67,7 +67,7 @@ func (m *Model) applySignerLockedState() {
 	m.signerState = signerRuntimeLocked
 	m.signerStatusKnown = true
 	m.viewState = ViewUnlock
-	m.auth.passphraseInput = ""
+	m.clearAuthPassphrase()
 	m.auth.passphraseError = ""
 	m.resetActivityState()
 }
@@ -89,6 +89,8 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 // the restore passphrase must not outlive the session.
 func (m *Model) endAdminSession() {
 	m.clearMnemonicExport()
+	m.clearAuthPassphrase()
+	m.clearBackupPassphrases()
 	// The connection is gone: nothing more can be sent on it, and no reply
 	// to a request made on it will arrive.
 	_ = m.interruptBackupTransfers(false)

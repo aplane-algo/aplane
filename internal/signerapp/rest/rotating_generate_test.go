@@ -5,7 +5,6 @@ package rest
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -77,14 +76,9 @@ func testRotatingKeyGenerationIsOptIn(t *testing.T, keyType string) {
 		}
 	}
 
-	// apadmin receives the keyadmin result, which carries the mnemonic; the
-	// HTTP generate response never does.
 	resp, genErr := svc.Deps.KeyAdmin.GenerateKey(ctx, req.KeyType, req.Parameters, nil)
 	if genErr != nil {
 		t.Fatal(genErr)
-	}
-	if words := strings.Fields(resp.Mnemonic); len(words) != 24 {
-		t.Fatalf("mnemonic has %d words, want 24", len(words))
 	}
 	keysResp, keysErr := svc.Keys(ir)
 	if keysErr != nil {

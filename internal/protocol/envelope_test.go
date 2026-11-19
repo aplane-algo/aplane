@@ -42,3 +42,41 @@ func TestMarshalAdminMessageBoundsDocumentGrowth(t *testing.T) {
 		t.Fatalf("HTML characters escaped: %s, %v", data, err)
 	}
 }
+
+// The inferred kind is added to the first encoding in place of a decode and
+// re-encode through a map, which left unzeroed copies of every passphrase
+// and recovery phrase a message carried. Members therefore keep their struct
+// order and the kind comes last.
+func TestMarshalAdminMessageAppendsInferredKindWithoutReencoding(t *testing.T) {
+	data, err := MarshalAdminMessage(UnlockMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeUnlock, ID: "unlock-1"},
+		Passphrase:  NewSensitiveBytes("secret"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"type":"unlock","id":"unlock-1","passphrase":"secret","kind":"request"}`
+	if string(data) != want {
+		t.Fatalf("MarshalAdminMessage() = %s, want %s", data, want)
+	}
+
+	data, err = MarshalAdminMessage(UnlockMessage{
+		BaseMessage: BaseMessage{Kind: MessageKindRequest, Type: MsgTypeUnlock, ID: "unlock-2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"kind":"request","type":"unlock","id":"unlock-2","passphrase":""}`; string(data) != want {
+		t.Fatalf("MarshalAdminMessage(with kind) = %s, want %s", data, want)
+	}
+}
+
+func TestAppendObjectKindHandlesEmptyObjectAndRejectsNonObject(t *testing.T) {
+	got, err := appendObjectKind([]byte(`{}`), MessageKindNotification)
+	if err != nil || string(got) != `{"kind":"notification"}` {
+		t.Fatalf("appendObjectKind({}) = %s, %v", got, err)
+	}
+	if _, err := appendObjectKind([]byte(`[]`), MessageKindRequest); err == nil {
+		t.Fatal("appendObjectKind accepted a non-object")
+	}
+}

@@ -122,7 +122,13 @@ func main() {
 	model := NewModel(dataDir, svc, isLocal)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
-	if _, err := p.Run(); err != nil {
+	final, err := p.Run()
+	// Whatever ended the program, a passphrase still typed into a form is
+	// zeroed before exit.
+	if finalModel, ok := final.(Model); ok {
+		finalModel.clearPassphrases()
+	}
+	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

@@ -37,7 +37,7 @@ func (g *NativeFalconGenerator) GenerateFromSeed(ctx context.Context, paths stor
 	}
 	ownedEntropy := append([]byte(nil), entropy...)
 	defer securecrypto.ZeroBytes(ownedEntropy)
-	return g.generate(paths, ownedEntropy, kr, "")
+	return g.generate(paths, ownedEntropy, kr)
 }
 
 func (g *NativeFalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, words string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
@@ -49,33 +49,21 @@ func (g *NativeFalconGenerator) GenerateFromMnemonic(ctx context.Context, paths 
 		return nil, fmt.Errorf("decode native Falcon mnemonic: %w", err)
 	}
 	defer securecrypto.ZeroBytes(entropy)
-	result, err := g.GenerateFromSeed(ctx, paths, entropy, kr, keyType, params)
-	if err != nil {
-		return nil, err
-	}
-	result.Mnemonic = words
-	return result, nil
+	return g.GenerateFromSeed(ctx, paths, entropy, kr, keyType, params)
 }
 
+// GenerateRandom creates a key from fresh recovery entropy. The key file keeps
+// the entropy; the recovery phrase is derived from it only when exported.
 func (g *NativeFalconGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	entropy := make([]byte, nativefalcon.RecoveryEntropySize)
 	if _, err := rand.Read(entropy); err != nil {
 		return nil, fmt.Errorf("generate native Falcon recovery entropy: %w", err)
 	}
 	defer securecrypto.ZeroBytes(entropy)
-	words, err := algomnemonic.FromKey(entropy)
-	if err != nil {
-		return nil, fmt.Errorf("encode native Falcon mnemonic: %w", err)
-	}
-	result, err := g.GenerateFromSeed(ctx, paths, entropy, kr, keyType, params)
-	if err != nil {
-		return nil, err
-	}
-	result.Mnemonic = words
-	return result, nil
+	return g.GenerateFromSeed(ctx, paths, entropy, kr, keyType, params)
 }
 
-func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte, kr *securecrypto.Keyring, mnemonicWords string) (*GenerationResult, error) {
+func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte, kr *securecrypto.Keyring) (*GenerationResult, error) {
 	publicKey, privateKey, err := nativeops.DeriveKeyPair(entropy)
 	if err != nil {
 		return nil, fmt.Errorf("generate native Falcon key pair: %w", err)
@@ -97,7 +85,6 @@ func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte,
 		Address:      address.String(),
 		KeyType:      nativefalcon.KeyType,
 		PublicKeyHex: hex.EncodeToString(publicKey[:]),
-		Mnemonic:     mnemonicWords,
 		KeyFiles:     keyFiles,
 	}, nil
 }

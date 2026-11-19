@@ -54,7 +54,7 @@ func TestLockDoesNotAskForKeyTypes(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := Model{
 				viewState: ViewKeyList,
-				auth:      authState{passphraseInput: "secret", passphraseError: "old error"},
+				auth:      authState{passphraseInput: SensitiveBytes("secret"), passphraseError: "old error"},
 			}
 			sent := sentMessageTypes(t, &m)
 
@@ -66,8 +66,8 @@ func TestLockDoesNotAskForKeyTypes(t *testing.T) {
 			if got.viewState != ViewUnlock {
 				t.Fatalf("viewState = %v, want ViewUnlock", got.viewState)
 			}
-			if got.auth.passphraseInput != "" || got.auth.passphraseError != "" {
-				t.Fatalf("passphrase state = input %q error %q, want cleared", got.auth.passphraseInput, got.auth.passphraseError)
+			if len(got.auth.passphraseInput) != 0 || got.auth.passphraseError != "" {
+				t.Fatalf("passphrase state = input %q error %q, want cleared", []byte(got.auth.passphraseInput), got.auth.passphraseError)
 			}
 			runSends(cmd)
 			// A request sent after the lock's own marks the end of what it sent.

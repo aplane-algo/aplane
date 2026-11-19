@@ -269,7 +269,7 @@ func wrapText(text string, width int) string {
 }
 
 // sendUnlockRequest sends an unlock request via the admin protocol transport.
-func (m Model) sendUnlockRequest(passphrase string) tea.Cmd {
+func (m Model) sendUnlockRequest(passphrase []byte) tea.Cmd {
 	return m.sendUnlockCmd(passphrase)
 }
 

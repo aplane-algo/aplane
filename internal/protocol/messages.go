@@ -204,6 +204,12 @@ type BaseMessage struct {
 	ID   string      `json:"id"` // Unique request ID for correlation
 }
 
+// MessageID returns the correlation ID. Every message embeds BaseMessage, so
+// a sender can read the ID without encoding the message.
+func (b BaseMessage) MessageID() string {
+	return b.ID
+}
+
 // AuthRequiredMessage is sent by signer when a client connects
 // Client must respond with AuthMessage before any other operations
 type AuthRequiredMessage struct {
@@ -887,11 +893,12 @@ type ExportResultMessage struct {
 	Error      string            `json:"error,omitempty"`
 }
 
-// ImportKeyMessage requests import of a key from mnemonic
+// ImportKeyMessage requests import of a key from mnemonic. Zero Mnemonic after
+// use.
 type ImportKeyMessage struct {
 	BaseMessage
 	KeyType    string            `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", etc.
-	Mnemonic   string            `json:"mnemonic"` // The recovery phrase
+	Mnemonic   SensitiveBytes    `json:"mnemonic"` // The recovery phrase
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 

@@ -49,7 +49,6 @@ type GenerationResult struct {
 	Address      string
 	KeyType      string // Full versioned type: "aplane.falcon1024.v1" or "ed25519"
 	PublicKeyHex string
-	Mnemonic     string // Recovery mnemonic
 	KeyFiles     *keys.ImportKeyResult
 }
 

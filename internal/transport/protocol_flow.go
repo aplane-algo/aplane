@@ -6,6 +6,7 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -91,6 +92,7 @@ func authenticateWithMode(conn adminProtocolConn, passphrase string, timeout tim
 		Passphrase:      protocol.NewSensitiveBytes(passphrase),
 		ProtocolVersion: ptrProtocolVersion(protocol.CurrentAdminProtocolVersion()),
 	}
+	defer authMsg.Passphrase.Zero()
 	if err := conn.WriteJSON(authMsg); err != nil {
 		return fmt.Errorf("failed to send auth message: %w", err)
 	}
@@ -131,6 +133,7 @@ func unlockWithDispatcher(dispatcher *dispatcher, passphrase string, timeout tim
 		},
 		Passphrase: protocol.NewSensitiveBytes(passphrase),
 	}
+	defer msg.Passphrase.Zero()
 
 	response, err := dispatcher.request(msg, timeout)
 	if err != nil {
@@ -145,20 +148,26 @@ func unlockWithDispatcher(dispatcher *dispatcher, passphrase string, timeout tim
 	return &result, nil
 }
 
-func messageID(msg interface{}) (string, error) {
-	data, err := protocol.MarshalAdminMessage(msg)
+// writeAdminFrame encodes v as one admin frame, writes it to w, and zeroes
+// the encoding, which may carry a passphrase or a recovery phrase.
+func writeAdminFrame(w io.Writer, v interface{}) error {
+	data, err := protocol.MarshalAdminMessage(v)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode request envelope: %w", err)
+		return err
 	}
-	return rawMessageID(data)
+	defer protocol.SensitiveBytes(data).Zero()
+	return protocol.WriteJSONLine(w, data)
 }
 
-func rawMessageID(data []byte) (string, error) {
-	base, err := parseBaseMessage(data)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse protocol envelope: %w", err)
+// messageID reads the correlation ID of an outgoing request from its
+// envelope without encoding it, so a request that carries a passphrase is
+// encoded only once, by the zeroing frame writer.
+func messageID(msg interface{}) (string, error) {
+	identified, ok := msg.(interface{ MessageID() string })
+	if !ok {
+		return "", fmt.Errorf("request %T has no admin message envelope", msg)
 	}
-	return base.ID, nil
+	return identified.MessageID(), nil
 }
 
 func parseBaseMessage(data []byte) (protocol.BaseMessage, error) {

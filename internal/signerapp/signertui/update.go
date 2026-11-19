@@ -115,7 +115,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Server requires authentication - show auth screen
 		m.endAdminSession()
 		m.viewState = ViewAuth
-		m.auth.passphraseInput = ""
+		m.clearAuthPassphrase()
 		m.auth.passphraseError = ""
 		return m, nil
 

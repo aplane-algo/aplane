@@ -85,8 +85,8 @@ func TestUpdateIgnoresUnlockTypingEvenWithStaleUnlockedState(t *testing.T) {
 	if !got.activity.lastInputAt.IsZero() {
 		t.Fatalf("unlock typing activity state = last %v, want ignored", got.activity.lastInputAt)
 	}
-	if got.auth.passphraseInput != "s" {
-		t.Fatalf("passphraseInput = %q, want key still handled by unlock view", got.auth.passphraseInput)
+	if string(got.auth.passphraseInput) != "s" {
+		t.Fatalf("passphraseInput = %q, want key still handled by unlock view", []byte(got.auth.passphraseInput))
 	}
 }
 
@@ -204,7 +204,7 @@ func TestLocalIdleDisconnectedMsgStaysDisconnectedWithoutLocking(t *testing.T) {
 	if got.viewState != ViewAuth {
 		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
 	}
-	if got.auth.passphraseInput != "" || got.auth.passphraseError != "" || got.auth.loggingIn {
+	if len(got.auth.passphraseInput) != 0 || got.auth.passphraseError != "" || got.auth.loggingIn {
 		t.Fatalf("auth state = %+v, want fresh login prompt", got.auth)
 	}
 	if got.auth.endedReason != localIdleDisconnectReason {
@@ -241,7 +241,7 @@ func TestLoginTimeoutAuthResultStaysDisconnected(t *testing.T) {
 	m := activityReadyModel()
 	m.connectionState = ConnectionConnected
 	m.viewState = ViewAuth
-	m.auth.passphraseInput = "half-typed"
+	m.auth.passphraseInput = SensitiveBytes("half-typed")
 
 	got, cmd := updateForTest(t, m, AuthResultMsg{
 		Success: false,
@@ -255,7 +255,7 @@ func TestLoginTimeoutAuthResultStaysDisconnected(t *testing.T) {
 	if got.auth.endedReason != loginTimeoutReason {
 		t.Fatalf("endedReason = %q, want %q", got.auth.endedReason, loginTimeoutReason)
 	}
-	if got.auth.passphraseInput != "" {
+	if len(got.auth.passphraseInput) != 0 {
 		t.Fatal("login timeout kept the half-typed passphrase")
 	}
 	if cmd != nil {

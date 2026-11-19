@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/secretbuf"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -138,10 +139,7 @@ func (m Model) handleBackupImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case importFocusPath:
 			imp.path = trimLastRune(imp.path)
 		case importFocusPassphrase:
-			if n := len(imp.passphrase); n > 0 {
-				imp.passphrase[n-1] = 0
-				imp.passphrase = imp.passphrase[:n-1]
-			}
+			imp.passphrase = secretbuf.TrimRune(imp.passphrase)
 		}
 		imp.err = ""
 		return m, nil
@@ -151,7 +149,9 @@ func (m Model) handleBackupImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case importFocusPath:
 			imp.path += string(msg.Runes)
 		case importFocusPassphrase:
-			imp.passphrase = append(imp.passphrase, string(msg.Runes)...)
+			for _, r := range msg.Runes {
+				imp.passphrase = secretbuf.AppendRune(imp.passphrase, r)
+			}
 		}
 		imp.err = ""
 	}

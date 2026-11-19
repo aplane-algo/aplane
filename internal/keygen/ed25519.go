@@ -54,7 +54,6 @@ func (g *Ed25519Generator) GenerateFromSeed(ctx context.Context, paths storepath
 		Address:      keyFiles.Address,
 		KeyType:      "ed25519",
 		PublicKeyHex: fmt.Sprintf("%x", publicKey),
-		Mnemonic:     "",
 		KeyFiles:     keyFiles,
 	}, nil
 }
@@ -78,18 +77,11 @@ func (g *Ed25519Generator) GenerateFromMnemonic(ctx context.Context, paths store
 	seed := append([]byte(nil), privateKey[:32]...)
 	defer securecrypto.ZeroBytes(seed)
 
-	// Generate key from seed
-	result, err := g.GenerateFromSeed(ctx, paths, seed, kr, keyType, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add the mnemonic to the result
-	result.Mnemonic = mnemonicStr
-	return result, nil
+	return g.GenerateFromSeed(ctx, paths, seed, kr, keyType, nil)
 }
 
-// GenerateRandom generates a new random Ed25519 key.
+// GenerateRandom generates a new random Ed25519 key. The key file keeps the
+// private key; the recovery phrase is derived from it only when exported.
 // keyType must be "ed25519".
 func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
@@ -102,12 +94,6 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 	account := algocrypto.GenerateAccount()
 	defer securecrypto.ZeroBytes(account.PrivateKey)
 
-	// Convert private key to 25-word mnemonic
-	mnemonicStr, err := mnemonic.FromPrivateKey(account.PrivateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate mnemonic: %w", err)
-	}
-
 	// Save key files
 	keyFiles, err := saveEd25519Keys(paths, account.PublicKey, account.PrivateKey, kr)
 	if err != nil {
@@ -118,7 +104,6 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 		Address:      keyFiles.Address,
 		KeyType:      "ed25519",
 		PublicKeyHex: fmt.Sprintf("%x", account.PublicKey),
-		Mnemonic:     mnemonicStr,
 		KeyFiles:     keyFiles,
 	}, nil
 }
