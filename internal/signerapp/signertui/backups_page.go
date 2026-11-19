@@ -64,7 +64,7 @@ func (m Model) backupsRecovery() bool {
 // refreshBackups lists the repository again, keeping the page where it is.
 func (m Model) refreshBackups() (Model, tea.Cmd) {
 	m.restore.backupsLoaded = false
-	return m, tea.Batch(m.sendListBackupsCmd(), m.waitForMessageCmd())
+	return m, m.sendListBackupsCmd()
 }
 
 // returnToBackups shows the list and refreshes it, selecting name when given.
@@ -220,18 +220,18 @@ func (m Model) sendBackupDelete() (tea.Model, tea.Cmd) {
 	del := &m.backups.del
 	del.err = ""
 	del.pendingID = newRequestID("backup-delete")
-	return m, tea.Batch(m.sendDeleteBackupCmd(del.pendingID, del.target.FileName), m.waitForMessageCmd())
+	return m, m.sendDeleteBackupCmd(del.pendingID, del.target.FileName)
 }
 
 func (m Model) handleBackupDeleteResult(msg BackupDeleteResultMsg) (tea.Model, tea.Cmd) {
 	del := &m.backups.del
 	if msg.Result.ID == "" || msg.Result.ID != del.pendingID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	del.pendingID = ""
 	if !msg.Result.Success {
 		del.err = backupResultText(msg.Result.Error, "the backup could not be deleted")
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	name := del.target.FileName
 	m.backups.del = backupDeleteState{}
@@ -239,7 +239,7 @@ func (m Model) handleBackupDeleteResult(msg BackupDeleteResultMsg) (tea.Model, t
 	// A reply that arrives after the operator left the dialog (the signer
 	// locked, say) is recorded, not shown by taking over the screen.
 	if m.viewState != ViewBackupDeleteConfirm {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	next, cmd := m.returnToBackups("")
 	return next, cmd
@@ -302,7 +302,7 @@ func (m Model) sendBackupUndo() (tea.Model, tea.Cmd) {
 	m.restore.recoveryError = ""
 	m.restore.progressLabel = "Undoing Latest Restore"
 	m.viewState = ViewRestoring
-	return m, tea.Batch(m.sendRollbackRestoreCmd(m.beginRestoreRequest("rollback-restore")), m.waitForMessageCmd())
+	return m, m.sendRollbackRestoreCmd(m.beginRestoreRequest("rollback-restore"))
 }
 
 // handleRefusedBackupUndo returns a refused undo to the Backups page. It

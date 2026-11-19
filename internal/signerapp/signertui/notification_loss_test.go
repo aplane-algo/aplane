@@ -216,7 +216,7 @@ func drainForLoss(t *testing.T, client *IPCClient, want uint64) {
 	var got uint64
 	for {
 		result := make(chan tea.Msg, 1)
-		go func() { result <- client.ListenForMessages()() }()
+		go func() { result <- Unwrap(client.ListenForMessages()()) }()
 		select {
 		case msg := <-result:
 			if lost, ok := msg.(NotificationsLostMsg); ok {

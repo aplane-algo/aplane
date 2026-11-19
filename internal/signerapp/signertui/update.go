@@ -62,7 +62,25 @@ func (m *Model) setTransientNotice(notice string) tea.Cmd {
 
 // Update handles all TUI events and messages. A pending approval popup stays
 // in front of whatever screen a message selects.
+//
+// Update alone owns the listener: exactly one wait is in flight while a
+// session lasts. ConnectCmd's ConnectedMsg starts it, and each message the
+// wait delivers (a listenerMsg, a reconnect's ConnectedMsg among them) starts
+// the next only once it has been handled, so the signer's messages are
+// handled in the order it sent them. Handlers never start a wait.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case listenerMsg:
+		next, cmd := m.updateOnTop(msg.msg)
+		return next, tea.Batch(cmd, next.listenAgain())
+	case ConnectedMsg:
+		next, cmd := m.updateOnTop(msg)
+		return next, tea.Batch(cmd, next.listen())
+	}
+	return m.updateOnTop(msg)
+}
+
+func (m Model) updateOnTop(msg tea.Msg) (Model, tea.Cmd) {
 	preferred := m.viewState
 	if _, isKey := msg.(tea.KeyMsg); !isKey && isApprovalView(m.viewState) {
 		// Background messages apply to the screen under the popup, so
@@ -71,10 +89,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewState = m.screenUnderApproval()
 	}
 	next, cmd := m.update(msg)
-	if got, ok := next.(Model); ok {
-		return got.keepApprovalOnTop(preferred), cmd
-	}
-	return next, cmd
+	return next.(Model).keepApprovalOnTop(preferred), cmd
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -92,8 +107,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.adminClient = msg.Client
 		}
 		m.resetActivityState()
-		// Start listening for messages - server will send auth_required first
-		return m, m.waitForMessageCmd()
+		// Update starts the listener; the server sends auth_required first.
+		return m, nil
 
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
@@ -101,7 +116,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewAuth
 		m.auth.passphraseInput = ""
 		m.auth.passphraseError = ""
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case AuthResultMsg:
 		return m.handleAuthResultMsg(msg)
@@ -128,10 +143,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.manualLock.pending = false
 			abort := m.interruptBackupTransfers(true)
 			m.applySignerLockedState()
-			return m, tea.Batch(m.waitForMessageCmd(), abort)
+			return m, abort
 		}
 		m.handleManualLockFailed(msg.Error)
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case SignRequestReceivedMsg:
 		m.signing.request = &msg.Request
@@ -140,8 +155,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.signing.review = reviewState{}
 		// Initialize scrollable viewport with description + violations
 		m.initSigningViewport(m.buildSigningViewportContent())
-		// Continue listening for messages
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case SignRequestCanceledMsg:
 		var warningCmd tea.Cmd
@@ -149,13 +163,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.signing.request = nil
 			warningCmd = m.setTransientWarning(signRequestCanceledWarning(msg.Reason))
 		}
-		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
+		return m, warningCmd
 
 	case ClientEnrollmentRequestReceivedMsg:
 		// Requests are announced when queued and again at login; one popup
 		// per request, shown in turn.
 		m.queueEnrollmentRequest(msg.Request)
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case EnrollmentChangedMsg:
 		return m.handleEnrollmentChanged()
@@ -182,28 +196,23 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case ErrorMsg:
-		// The listener delivered it, so start the next wait.
-		next, cmd := m.handleFailure(msg.ID, msg.Error)
-		return next, tea.Batch(cmd, next.waitForMessageCmd())
+		return m.handleFailure(msg.ID, msg.Error)
 
 	case sendFailedMsg:
-		// Nothing was taken from the listener: the wait started beside the
-		// send is still outstanding, so do not start another.
 		return m.handleFailure(msg.ID, msg.Error)
 
 	case NotificationsLostMsg:
 		m.notificationsLost = max(m.notificationsLost, msg.Total)
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case KeysChangedMsg:
 		// Server notified us that keys or key types changed - refresh both projections.
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd())
+		return m, tea.Batch(m.sendListKeysCmd(), m.sendListKeyTypesCmd())
 
 	case ReconnectingMsg:
 		m.endAdminSession()
 		m.connectionState = ConnectionConnecting
-		// Continue listening for messages
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case PrepareGenerateResultMsg:
 		return m.handlePreparedGeneration(msg.Result)
@@ -225,7 +234,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case BackupResultMsg:
 		if !m.takeOperationReply(msg.ID) {
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
 		if msg.Success {
 			m.lastError = ""
@@ -239,10 +248,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.backup.confirmError = msg.Error
 			m.viewState = ViewBackupConfirm
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case BackupsListMsg:
-		return m.handleBackupsListed(msg), m.waitForMessageCmd()
+		return m.handleBackupsListed(msg), nil
 
 	case BackupDeleteResultMsg:
 		return m.handleBackupDeleteResult(msg)
@@ -270,7 +279,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case AbortBackupImportResultMsg:
 		// Abort is best effort; the signer also removes abandoned uploads.
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case RestorePreviewMsg:
 		return m.handleRestorePreviewMsg(msg)
@@ -291,14 +300,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Server says another client is already connected - show confirmation modal
 		m.viewState = ViewDisplaceConfirm
 		m.displaceConfirmFocus = 0 // Default to Cancel
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case DisplacedMsg:
 		// We've been displaced by another apadmin client
 		m.endAdminSession()
 		m.connectionState = ConnectionDisconnected
 		m.lastError = msg.Reason
-		// Do NOT issue WaitForMessageCmd - no reconnect
+		// Disconnected: Update starts no further wait, and nothing reconnects.
 		return m, nil
 
 	case AdminSettingsMsg:
@@ -323,8 +332,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handlePolicyApplyResult(msg)
 
 	case PolicyExportWrittenMsg:
-		// A local write, not a daemon message: the listener wait started with
-		// the write is still outstanding.
 		return m.handlePolicyExportWritten(msg)
 
 	case adminRefreshTickMsg:
@@ -394,11 +401,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cosigner.managerStatus = ""
 			}
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case CosignerImportResultMsg:
 		if !m.takeOperationReply(msg.ID) {
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
 		if !msg.Success {
 			m.clearCosignerImportEnvelope()
@@ -407,7 +414,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cosigner.importError = "Cosigner key import failed"
 			}
 			m.viewState = ViewCosignerImportForm
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
 		return m.completeCosignerImport(msg.Reference)
 
@@ -426,7 +433,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.cosigner.exportError = fmt.Sprintf("Cannot display JSON in terminal: %v", msg.err)
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 
 	case CosignerExportWrittenMsg:
 		if msg.Error != nil {

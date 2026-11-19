@@ -709,11 +709,8 @@ type ErrorMsg struct {
 	Error error
 }
 
-// sendFailedMsg reports a request that could not be sent. It does not come
-// from the listener, so handling it starts no listener wait: the wait started
-// beside the send is still outstanding, and a second one would let two
-// goroutines race for the next notification. ID names the request, as on
-// the ErrorMsg the daemon would have sent.
+// sendFailedMsg reports a request that could not be sent. It is routed as the
+// daemon's ErrorMsg for the request would be; ID names the request.
 type sendFailedMsg struct {
 	ID    string
 	Error error

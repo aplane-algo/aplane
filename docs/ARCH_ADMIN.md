@@ -1174,6 +1174,16 @@ signer locks. Disconnect, reconnect, reauthentication, displacement, and lock
 clear local popups too; persisted enrollment requests remain queued and are
 announced again on a later login.
 
+The TUI handles the signer's messages one at a time, in the order the signer
+sent them, so a `sign_request_canceled` never overtakes the `sign_request` it
+cancels. Exactly one wait on the session's message queue is in flight:
+`Model.Update` starts it when a connection is made and starts the next only
+after it has handled the message the last one delivered (a `listenerMsg`).
+Screens and handlers never start one. A displacement or login timeout leaves
+none, and the next connection starts afresh. A host that embeds the TUI, as
+`apconsole` does, forwards the wrapped message unchanged and reads its content
+with `signertui.Unwrap`.
+
 Each in-progress generate, import, delete, key-type install, backup, or
 cosigner key import, removal, or export records its request ID. An untyped
 failure (an authorization denial, a send error, or a signer message the TUI

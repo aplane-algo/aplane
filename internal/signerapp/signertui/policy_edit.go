@@ -152,10 +152,7 @@ func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
 	m.policies.status = ""
 	m.viewState = ViewPolicyEdit
 	id := edit.pendingDocumentID
-	return m, tea.Batch(
-		operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) }),
-		m.waitForMessageCmd(),
-	)
+	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) })
 }
 
 // openPolicyEditForDocument edits the document shown in the document view.
@@ -178,7 +175,7 @@ func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.
 		detail := policyResultError(msg.Document.Code, msg.Document.Error, "document is unavailable")
 		m = m.closePolicyApply()
 		m.policies.status = "Could not open the policy for editing: " + detail
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if edit.templateFor != "" {
 		role, err := noderole.ParseRole(m.policies.policy.NodeRole)
@@ -189,11 +186,11 @@ func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.
 		if err != nil {
 			m = m.closePolicyApply()
 			m.policies.status = "Cannot start a policy for this key from the node default: " + err.Error()
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
-		return m.startPolicyEditor(edit.templateFor, template, true), m.waitForMessageCmd()
+		return m.startPolicyEditor(edit.templateFor, template, true), nil
 	}
-	return m.startPolicyEditor(edit.key, msg.Document.Document, false), m.waitForMessageCmd()
+	return m.startPolicyEditor(edit.key, msg.Document.Document, false), nil
 }
 
 // startPolicyEditor opens the editor on text with the cursor at the top. A
@@ -339,7 +336,7 @@ func (m Model) submitPolicyEdit() (tea.Model, tea.Cmd) {
 	apply.file = label
 	apply.busy = "Checking policy..."
 	apply.pendingCheckID = newRequestID("policy-check")
-	return m, tea.Batch(m.sendCheckPolicyCmd(doc, apply.pendingCheckID), m.waitForMessageCmd())
+	return m, m.sendCheckPolicyCmd(doc, apply.pendingCheckID)
 }
 
 // policyJSONSyntaxError reports a JSON syntax error with its line and column,

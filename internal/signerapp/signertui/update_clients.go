@@ -22,7 +22,7 @@ func (m Model) openEnrolledClients() (tea.Model, tea.Cmd) {
 
 // refreshClientsCmd reloads both lists shown on the screen.
 func (m Model) refreshClientsCmd() tea.Cmd {
-	return tea.Batch(m.sendListPendingEnrollmentsCmd(), m.sendListEnrolledKeysCmd(), m.waitForMessageCmd())
+	return tea.Batch(m.sendListPendingEnrollmentsCmd(), m.sendListEnrolledKeysCmd())
 }
 
 // clientsRowCount is the number of selectable rows: pending requests first,
@@ -52,7 +52,7 @@ func (m Model) handleEnrollmentChanged() (tea.Model, tea.Cmd) {
 	if m.showsEnrolledClients() {
 		return m, m.refreshClientsCmd()
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 // showsEnrolledClients reports whether the Enrolled Clients lists are on
@@ -74,14 +74,14 @@ func (m Model) showsEnrolledClients() bool {
 func (m Model) handlePendingEnrollmentsList(msg PendingEnrollmentsListMsg) (tea.Model, tea.Cmd) {
 	m.clients.pending = msg.Requests
 	m.clientsClampSelection()
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handleEnrolledKeysList(msg EnrolledKeysListMsg) (tea.Model, tea.Cmd) {
 	m.clients.keys = msg.Keys
 	m.clients.loading = false
 	m.clientsClampSelection()
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 // handleApproveEnrollmentResult reports the signer's answer where the
@@ -136,13 +136,13 @@ func (m Model) reportEnrollmentAnswer(
 	} else {
 		clearCmd = m.setTransientWarning(status(shortDigest(fingerprint)))
 	}
-	return m, tea.Batch(clearCmd, m.waitForMessageCmd())
+	return m, clearCmd
 }
 
 func (m Model) handleImportClientKeyResult(msg ImportClientKeyResultMsg) (tea.Model, tea.Cmd) {
 	if !msg.Success {
 		m.clients.importError = msg.Error
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	m.lastError = ""
 	switch {
@@ -214,13 +214,13 @@ func (m Model) handleEnrolledClientsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if req, ok := m.selectedPendingRequest(); ok {
 			m.clients.status = ""
 			m.markEnrollmentAnswered(req.Fingerprint)
-			return m, tea.Batch(m.sendApproveEnrollmentCmd(req.Fingerprint, ""), m.waitForMessageCmd())
+			return m, m.sendApproveEnrollmentCmd(req.Fingerprint, "")
 		}
 	case "x":
 		if req, ok := m.selectedPendingRequest(); ok {
 			m.clients.status = ""
 			m.markEnrollmentAnswered(req.Fingerprint)
-			return m, tea.Batch(m.sendRejectEnrollmentCmd(req.Fingerprint), m.waitForMessageCmd())
+			return m, m.sendRejectEnrollmentCmd(req.Fingerprint)
 		}
 	case "r":
 		if key, ok := m.selectedEnrolledKey(); ok {
@@ -297,9 +297,9 @@ func (m Model) handleRevokeClientConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 func (m Model) sendClientRevocation() (tea.Model, tea.Cmd) {
 	m.clients.status = ""
 	if m.clients.confirmAll {
-		return m, tea.Batch(m.sendRevokeAllEnrolledKeysCmd(), m.waitForMessageCmd())
+		return m, m.sendRevokeAllEnrolledKeysCmd()
 	}
-	return m, tea.Batch(m.sendRevokeEnrolledKeyCmd(m.clients.confirmKey), m.waitForMessageCmd())
+	return m, m.sendRevokeEnrolledKeyCmd(m.clients.confirmKey)
 }
 
 // Focus positions on the import form.
@@ -368,5 +368,5 @@ func (m Model) submitImportClientKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.clients.importError = ""
-	return m, tea.Batch(m.sendImportClientKeyCmd(line, strings.TrimSpace(m.clients.importLabel)), m.waitForMessageCmd())
+	return m, m.sendImportClientKeyCmd(line, strings.TrimSpace(m.clients.importLabel))
 }

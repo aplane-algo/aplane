@@ -908,7 +908,27 @@ func (c *IPCClient) reconnect(sessionID uint64, done <-chan struct{}) {
 	}
 }
 
-// ListenForMessages returns a tea.Cmd that listens for IPC messages
+// listenerMsg carries one message the listener took from the client's queue.
+// Model.Update handles the message it carries and only then starts the next
+// wait, so exactly one wait is in flight and the model handles messages in
+// the order the signer sent them.
+type listenerMsg struct{ msg tea.Msg }
+
+// Unwrap returns the signer message msg carries when it came through the
+// signer TUI's listener, and msg itself otherwise. A host model that reads
+// signer messages, as apconsole reads the admin settings, looks through the
+// wrapper with Unwrap and still forwards msg itself, so the signer model
+// starts its next wait.
+func Unwrap(msg tea.Msg) tea.Msg {
+	if delivered, ok := msg.(listenerMsg); ok {
+		return delivered.msg
+	}
+	return msg
+}
+
+// ListenForMessages returns a tea.Cmd that waits for the next queued message
+// and delivers it as a listenerMsg, or nothing once the session's done
+// channel closes.
 func (c *IPCClient) ListenForMessages() tea.Cmd {
 	return func() tea.Msg {
 		for {
@@ -923,7 +943,7 @@ func (c *IPCClient) ListenForMessages() tea.Cmd {
 					zeroSensitiveMsg(queued.msg)
 					continue
 				}
-				return queued.msg
+				return listenerMsg{msg: queued.msg}
 			case <-done:
 				return nil
 			}
@@ -1001,16 +1021,24 @@ func (m Model) sendImportClientKeyCmd(publicKey, label string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportClientKey(publicKey, label) })
 }
 
-// waitForMessageCmd returns a tea.Cmd that waits for the next message. With
-// no client there is nothing to wait on, and it delivers nothing: an error
-// here would be handled by starting another wait, round and round.
-func (m Model) waitForMessageCmd() tea.Cmd {
-	return func() tea.Msg {
-		if m.adminClient == nil {
-			return nil
-		}
-		return m.adminClient.ListenForMessages()()
+// listen starts the listener wait. Only Update calls it: after ConnectCmd's
+// ConnectedMsg, and after handling each message the listener delivered. With
+// no client there is nothing to wait on.
+func (m Model) listen() tea.Cmd {
+	if m.adminClient == nil {
+		return nil
 	}
+	return m.adminClient.ListenForMessages()
+}
+
+// listenAgain starts the next wait after a message from the listener, unless
+// that message ended the session (a displacement, a login timeout): nothing
+// more comes on it, and the next connection starts listening afresh.
+func (m Model) listenAgain() tea.Cmd {
+	if m.connectionState == ConnectionDisconnected {
+		return nil
+	}
+	return m.listen()
 }
 
 // SendDisplaceConfirm sends a displacement confirmation to the server

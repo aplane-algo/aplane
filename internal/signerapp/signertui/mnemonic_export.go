@@ -92,10 +92,10 @@ func (m Model) handleMnemonicExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		e.passphrase.Zero()
 		e.passphrase = nil
 		send := operationCmd(m.adminClient, request.ID, func(c *IPCClient) error { return c.sendMessage(request) })
-		return m, tea.Batch(func() tea.Msg {
+		return m, func() tea.Msg {
 			defer request.Passphrase.Zero()
 			return send()
-		}, m.waitForMessageCmd())
+		}
 	case tea.KeyBackspace, tea.KeyCtrlH:
 		if len(e.passphrase) > 0 {
 			_, n := utf8.DecodeLastRune(e.passphrase)
@@ -117,22 +117,22 @@ func (m Model) handleNativeMnemonicResult(msg nativeMnemonicResultMsg) (tea.Mode
 	defer msg.Mnemonic.Zero()
 	e := &m.mnemonicExport
 	if !e.pending || msg.ID != e.requestID || m.viewState != ViewMnemonicExport || m.signerState != signerRuntimeUnlocked {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	e.pending = false
 	if !msg.Success {
 		e.error = msg.Error
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if msg.Address != e.address || msg.KeyType != e.keyType || msg.WordCount != 25 || len(bytes.Fields(msg.Mnemonic)) != 25 {
 		e.error = "Invalid recovery phrase response"
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	e.words = protocol.SensitiveBytes(msg.Mnemonic.Clone())
 	// Restart the timeout at reveal: a slow passphrase entry must not shorten
 	// how long the phrase is readable. The new serial retires the prompt's tick.
 	e.serial++
-	return m, tea.Batch(m.waitForMessageCmd(), mnemonicExpiryCmd(e.serial))
+	return m, mnemonicExpiryCmd(e.serial)
 }
 
 func (m Model) renderMnemonicExport() string {

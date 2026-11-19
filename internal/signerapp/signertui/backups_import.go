@@ -216,7 +216,7 @@ func (m Model) handleBackupImportPrepared(msg backupImportPreparedMsg) (tea.Mode
 	imp.uploadID = ""
 	imp.phase = importBeginning
 	imp.pendingID = newRequestID("backup-import-begin")
-	return m, tea.Batch(m.sendBeginBackupImportCmd(imp.pendingID, msg.source.Name), m.waitForMessageCmd())
+	return m, m.sendBeginBackupImportCmd(imp.pendingID, msg.source.Name)
 }
 
 func (m Model) handleBeginBackupImportResult(msg BeginBackupImportResultMsg) (tea.Model, tea.Cmd) {
@@ -225,17 +225,17 @@ func (m Model) handleBeginBackupImportResult(msg BeginBackupImportResultMsg) (te
 	if id != "" && imp.canceledBegins[id] {
 		delete(imp.canceledBegins, id)
 		if msg.Result.Success && msg.Result.UploadID != "" {
-			return m, tea.Batch(m.sendAbortBackupImportCmd(msg.Result.UploadID), m.waitForMessageCmd())
+			return m, m.sendAbortBackupImportCmd(msg.Result.UploadID)
 		}
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if id == "" || id != imp.pendingID || imp.phase != importBeginning {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	imp.pendingID = ""
 	if !msg.Result.Success {
 		m = m.failBackupImport(errors.New(backupResultText(msg.Result.Error, "the upload could not start")))
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	imp.uploadID = msg.Result.UploadID
 	imp.phase = importUploading
@@ -256,25 +256,25 @@ func (m Model) sendNextBackupImportStep() (tea.Model, tea.Cmd) {
 			err = errors.New("the archive file changed while it was being uploaded")
 		}
 		next, cmd := m.abortBackupImport(err)
-		return next, tea.Batch(cmd, next.waitForMessageCmd())
+		return next, cmd
 	}
 	imp.pendingID = newRequestID("backup-import-append")
-	return m, tea.Batch(m.sendAppendBackupImportCmd(imp.pendingID, imp.uploadID, imp.offset, buffer), m.waitForMessageCmd())
+	return m, m.sendAppendBackupImportCmd(imp.pendingID, imp.uploadID, imp.offset, buffer)
 }
 
 func (m Model) handleAppendBackupImportResult(msg AppendBackupImportResultMsg) (tea.Model, tea.Cmd) {
 	imp := &m.backups.imp
 	if msg.Result.ID == "" || msg.Result.ID != imp.pendingID || imp.phase != importUploading {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	imp.pendingID = ""
 	if !msg.Result.Success {
 		next, cmd := m.abortBackupImport(errors.New(backupResultText(msg.Result.Error, "the upload failed")))
-		return next, tea.Batch(cmd, next.waitForMessageCmd())
+		return next, cmd
 	}
 	if msg.Result.NextOffset <= imp.offset || msg.Result.NextOffset > imp.source.Size {
 		next, cmd := m.abortBackupImport(fmt.Errorf("the signer reported offset %d after %d", msg.Result.NextOffset, imp.offset))
-		return next, tea.Batch(cmd, next.waitForMessageCmd())
+		return next, cmd
 	}
 	imp.offset = msg.Result.NextOffset
 	return m.sendNextBackupImportStep()
@@ -290,7 +290,7 @@ func (m Model) commitBackupImport() (tea.Model, tea.Cmd) {
 	imp.passphrase = nil
 	id := imp.pendingID
 	timeout := tea.Tick(backupCommitWait, func(time.Time) tea.Msg { return backupCommitTimeoutMsg{id: id} })
-	return m, tea.Batch(cmd, timeout, m.waitForMessageCmd())
+	return m, tea.Batch(cmd, timeout)
 }
 
 // handleBackupCommitTimeout stops waiting on a commit that has not replied.
@@ -313,25 +313,25 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 	imp := &m.backups.imp
 	id := msg.Result.ID
 	if id == "" {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if id == imp.pendingID && imp.phase == importCommitting {
 		imp.pendingID = ""
 		imp.phase = importIdle
 		if !msg.Result.Success {
 			imp.err = "Import failed: " + backupResultText(msg.Result.Error, "the signer refused the archive")
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
 		m.setBackupsStatus(importedStatus(imp.source.Name, msg.Result.Warning), false)
 		if m.viewState != ViewBackupImport {
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
 		next, cmd := m.returnToBackups(imp.source.Name)
 		return next, cmd
 	}
 	name := m.takeUnresolvedImport(id)
 	if name == "" {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if !msg.Result.Success {
 		m.setBackupsStatus("Import of "+name+" failed: "+backupResultText(msg.Result.Error, "the signer refused the archive"), true)
@@ -342,7 +342,7 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 		next, cmd := m.refreshBackups()
 		return next, cmd
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func importedStatus(name, warning string) string {
@@ -408,8 +408,7 @@ func (m *Model) takeUnresolvedImport(id string) string {
 }
 
 // abortBackupImport ends an upload that began, telling the signer to remove
-// it, and reports err on the form. It starts no listener wait; a caller
-// handling a message from the listener starts the next one.
+// it, and reports err on the form.
 func (m Model) abortBackupImport(err error) (Model, tea.Cmd) {
 	imp := &m.backups.imp
 	var cmd tea.Cmd

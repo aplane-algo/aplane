@@ -158,13 +158,7 @@ func TestBoundaryFileGoesToTheClassifiedType(t *testing.T) {
 	if got := next.(Model); got.forms.generateError != "" || cmd == nil {
 		t.Fatalf("error = %q", got.forms.generateError)
 	}
-	batch, ok := cmd().(tea.BatchMsg)
-	if !ok {
-		t.Fatal("submitBoundaryFile() did not return a batch")
-	}
-	for _, sub := range batch {
-		go sub()
-	}
+	go cmd()
 	select {
 	case line := <-lines:
 		var request protocol.PrepareGenerateKeyMessage

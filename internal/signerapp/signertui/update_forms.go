@@ -52,7 +52,7 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.backup.confirmPassphrase = ""
 		m.backup.confirmError = ""
 		id := m.beginOperation(ViewBackingUp)
-		return m, tea.Batch(m.sendBackupCmd(passphrase, id), m.waitForMessageCmd())
+		return m, m.sendBackupCmd(passphrase, id)
 	case "backspace":
 		if m.backup.confirmFocus == 0 {
 			if len(m.backup.exportPassphrase) > 0 {
@@ -277,14 +277,14 @@ func (m Model) submitImport() (tea.Model, tea.Cmd) {
 	}
 
 	id := m.beginOperation(ViewImporting)
-	return m, tea.Batch(m.sendImportKeyCmd(keyType, mnemonic, id), m.waitForMessageCmd())
+	return m, m.sendImportKeyCmd(keyType, mnemonic, id)
 }
 
 // handleImportParamsKeys handles keyboard input on parameter input modal for import.
 func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	mnemonic := m.importMnemonic()
 	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
-		return tea.Batch(m.sendImportKeyWithParamsCmd(keyType, mnemonic, params, id), m.waitForMessageCmd())
+		return m.sendImportKeyWithParamsCmd(keyType, mnemonic, params, id)
 	}
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.importKeyType, ViewImportForm, ViewImporting, submitFn)
 	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {
@@ -353,7 +353,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		takesBoundary, known := keyTypeTakesBoundary(keyType)
 		if !known {
 			m.forms.generateError = generateKeyTypesNotLoaded
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
+			return m, m.sendListKeyTypesCmd()
 		}
 		m = m.endBoundaryFlow()
 		if takesBoundary {
@@ -376,7 +376,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// For non-parameterized keys, generate immediately
 		m.forms.generateError = ""
 		id := m.beginOperation(ViewGenerating)
-		return m, tea.Batch(m.sendGenerateKeyCmd(keyType, "", id), m.waitForMessageCmd())
+		return m, m.sendGenerateKeyCmd(keyType, "", id)
 	}
 
 	return m, nil
@@ -420,7 +420,7 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
-		return tea.Batch(m.sendPrepareGenerateKeyCmd(keyType, params, id), m.waitForMessageCmd())
+		return m.sendPrepareGenerateKeyCmd(keyType, params, id)
 	}
 	escView := ViewGenerateForm
 	if m.forms.boundaryPreset != nil {
@@ -1038,12 +1038,12 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Delete selected - send delete request
 		id := m.beginOperation(ViewDeleting)
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address, id), m.waitForMessageCmd())
+		return m, m.sendDeleteKeyCmd(m.del.address, id)
 
 	case "y":
 		// Quick confirm delete
 		id := m.beginOperation(ViewDeleting)
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address, id), m.waitForMessageCmd())
+		return m, m.sendDeleteKeyCmd(m.del.address, id)
 	}
 
 	return m, nil
@@ -1087,7 +1087,7 @@ func (m Model) startManualLock() (tea.Model, tea.Cmd) {
 	m.manualLock.focus = 0
 	m.viewState = m.lockConfirmReturnView()
 	m.lastError = ""
-	return m, tea.Batch(m.sendLockIdentityCmd(manualLockReason), m.waitForMessageCmd())
+	return m, m.sendLockIdentityCmd(manualLockReason)
 }
 
 // handleDisplaceConfirmKeys handles keyboard input on the displacement confirmation modal
@@ -1100,7 +1100,7 @@ func (m Model) handleDisplaceConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "y":
 		// Quick confirm - displace the existing client
-		return m, tea.Batch(m.sendDisplaceConfirmCmd(), m.waitForMessageCmd())
+		return m, m.sendDisplaceConfirmCmd()
 
 	case "tab", "left", "right", "h", "l":
 		// Toggle between Cancel and Proceed buttons
@@ -1110,7 +1110,7 @@ func (m Model) handleDisplaceConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		if m.displaceConfirmFocus == 1 {
 			// Proceed - displace the existing client
-			return m, tea.Batch(m.sendDisplaceConfirmCmd(), m.waitForMessageCmd())
+			return m, m.sendDisplaceConfirmCmd()
 		}
 		// Cancel - disconnect and exit
 		m.disconnectAdminClient()

@@ -169,7 +169,7 @@ func (m Model) submitPolicyApplyFile() (tea.Model, tea.Cmd) {
 	apply.err = ""
 	apply.busy = "Checking policy..."
 	apply.pendingCheckID = newRequestID("policy-check")
-	return m, tea.Batch(m.sendCheckPolicyCmd(doc, apply.pendingCheckID), m.waitForMessageCmd())
+	return m, m.sendCheckPolicyCmd(doc, apply.pendingCheckID)
 }
 
 // policyKeyHeld reports whether the loaded policy summary lists key as a key
@@ -225,37 +225,37 @@ func policyResultError(code, msg, fallback string) string {
 func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea.Cmd) {
 	apply := &m.policies.apply
 	if msg.Result.ID == "" || msg.Result.ID != apply.pendingCheckID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	apply.pendingCheckID = ""
 	apply.busy = ""
 	if !msg.Result.Success {
 		apply.err = policyResultError(msg.Result.Code, msg.Result.Error, "policy check failed")
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	names := map[string]string{apply.doc.Key: apply.file}
 	warnings := policyProblemLines("warning", msg.Result.Warnings, names)
 	if !msg.Result.Valid {
 		apply.problems = append(policyProblemLines("error", msg.Result.Errors, names), warnings...)
 		apply.err = "Policy is invalid"
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	apply.warnings = warnings
 	if m.policies.snapshot == "" || m.policies.loadedContext == nil {
 		apply.err = "The node's policy context is still loading; try again"
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	if apply.export != nil {
 		live := m.policies.loadedContext
 		if err := apply.export.Compare(live.ContextSHA256, live.PolicySetSHA256, live.SnapshotSHA256); err != nil {
 			apply.err = err.Error()
-			return m, m.waitForMessageCmd()
+			return m, nil
 		}
 	}
 	reviewContext, err := apadminapp.PolicyContextFromView(apadminapp.PolicyContextViewFromMessage(*m.policies.loadedContext))
 	if err != nil {
 		apply.err = err.Error()
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	apply.reviewContext = reviewContext
 	apply.reviewedSetSHA256 = m.policies.policy.PolicySetSHA256
@@ -270,12 +270,9 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 	apply.busy = "Loading active policy..."
 	apply.pendingDocumentID = newRequestID("policy-apply-doc")
 	id := apply.pendingDocumentID
-	return m, tea.Batch(
-		operationCmd(m.adminClient, id, func(c *IPCClient) error {
-			return c.SendGetPolicyDocumentAt(key, apply.reviewedSnapshot, id)
-		}),
-		m.waitForMessageCmd(),
-	)
+	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.SendGetPolicyDocumentAt(key, apply.reviewedSnapshot, id)
+	})
 }
 
 // handlePolicyApplyDocumentLoaded receives the active document the candidate
@@ -286,7 +283,7 @@ func (m Model) handlePolicyApplyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea
 	apply.busy = ""
 	if !msg.Document.Success {
 		apply.err = policyResultError(msg.Document.Code, msg.Document.Error, "active policy is unavailable")
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	return m.reviewPolicyApply(msg.Document.Document)
 }
@@ -298,12 +295,12 @@ func (m Model) reviewPolicyApply(current string) (tea.Model, tea.Cmd) {
 	role, err := noderole.ParseRole(m.policies.policy.NodeRole)
 	if err != nil {
 		apply.err = err.Error()
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	changes, identical, err := policyreview.DiffCandidate(role, apply.doc.Key, current, apply.doc.Document, apply.ownCurrent, policyreview.ContextLabel(apply.reviewContext))
 	if err != nil {
 		apply.err = err.Error()
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	var sb strings.Builder
 	policyreview.PrintDiffs(&sb, []policyreview.DocumentDiff{{Label: apply.file, Changes: changes, Identical: identical}})
@@ -312,7 +309,7 @@ func (m Model) reviewPolicyApply(current string) (tea.Model, tea.Cmd) {
 	apply.scrollOffset = 0
 	apply.applyErr = ""
 	m.viewState = ViewPolicyApplyReview
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -346,10 +343,7 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		}
 		apply.applying = true
 		apply.pendingApplyID = newRequestID("policy-apply")
-		return m, tea.Batch(
-			m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.reviewedSnapshot, apply.pendingApplyID),
-			m.waitForMessageCmd(),
-		)
+		return m, m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.reviewedSnapshot, apply.pendingApplyID)
 	case "up", "k":
 		apply.scrollOffset--
 	case "down", "j":
@@ -366,7 +360,7 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 func (m Model) handlePolicyApplyResult(msg PolicyApplyResultMsg) (tea.Model, tea.Cmd) {
 	apply := &m.policies.apply
 	if msg.Result.ID == "" || msg.Result.ID != apply.pendingApplyID {
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	apply.pendingApplyID = ""
 	apply.applying = false
@@ -380,13 +374,13 @@ func (m Model) handlePolicyApplyResult(msg PolicyApplyResultMsg) (tea.Model, tea
 			m.policies = policiesState{}
 			m.applySignerRecoveryState()
 			m.restore.recoveryError = "Policy apply: " + detail
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
+			return m, tea.Batch(m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
 		}
 		lines := policyProblemLines("error", msg.Result.Errors, map[string]string{apply.doc.Key: apply.file})
 		lines = append(lines, "Apply failed: "+detail)
 		apply.applyErr = strings.Join(lines, "\n")
 		apply.scrollOffset = 0
-		return m, m.waitForMessageCmd()
+		return m, nil
 	}
 	status := "Policy unchanged"
 	if msg.Result.Policy != nil && msg.Result.Policy.GenerationID != "" {

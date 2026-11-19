@@ -14,8 +14,8 @@ import (
 
 // An enrollment_changed notification re-fetches the Enrolled Clients lists
 // whenever they are on screen or are the screen a popup will return to;
-// elsewhere it only keeps listening, since the screen loads afresh when
-// opened. The refresh is the pair of list requests plus the listener.
+// elsewhere it sends nothing, since the screen loads afresh when
+// opened. The refresh is the pair of list requests.
 func TestEnrollmentChangedRefreshesClientsScreenOnly(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -44,9 +44,9 @@ func TestEnrollmentChangedRefreshesClientsScreenOnly(t *testing.T) {
 			if got.viewState != before {
 				t.Fatalf("view changed from %v to %v", before, got.viewState)
 			}
-			want := 1
+			want := 0
 			if tt.refresh {
-				want = 3
+				want = 2
 			}
 			if n := batchSize(t, cmd); n != want {
 				t.Fatalf("commands issued = %d, want %d", n, want)
