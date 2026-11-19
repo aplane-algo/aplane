@@ -16,7 +16,7 @@ import (
 
 func cmdKeys(args []string) error {
 	if len(args) != 1 || args[0] != "list" {
-		return fmt.Errorf("usage: apstore keys list")
+		return usageErrorf("usage: apstore keys list")
 	}
 	return cmdKeysList()
 }

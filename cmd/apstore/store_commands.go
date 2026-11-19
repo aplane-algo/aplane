@@ -5,7 +5,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -99,14 +98,14 @@ func parseInitializeRole(args []string) (noderole.Role, error) {
 	fs.SetOutput(io.Discard)
 	roleArg := fs.String("role", string(noderole.DefaultRole()), "node role")
 	if err := fs.Parse(args); err != nil {
-		return "", errors.New(initializeUsage)
+		return "", usageErrorf("%s", initializeUsage)
 	}
 	if fs.NArg() != 0 {
-		return "", errors.New(initializeUsage)
+		return "", usageErrorf("%s", initializeUsage)
 	}
 	role, err := noderole.ParseRole(*roleArg)
 	if err != nil {
-		return "", fmt.Errorf("invalid initialize role: %w", err)
+		return "", usageErrorf("invalid initialize role: %v", err)
 	}
 	return role, nil
 }

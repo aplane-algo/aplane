@@ -81,10 +81,37 @@ func TestExitCodeDoesNotClassifyRemoteOutcomesFromProse(t *testing.T) {
 	}
 }
 
+// Every malformed command line exits with the usage code, whatever its
+// message says, and a failure that merely starts with "usage:" does not.
 func TestExitCodeForLocalUsageError(t *testing.T) {
-	err := fmt.Errorf("usage: apstore keys list")
-	if got := exitCodeForError(err); got != apstoreExitUsage {
-		t.Fatalf("exitCodeForError(%v) = %d, want %d", err, got, apstoreExitUsage)
+	_, initializeErr := parseInitializeRole([]string{"--role", "bogus"})
+	_, pruneErr := parsePruneArgs([]string{"--yes", "--yes"})
+	_, uidErr := func() (int, error) {
+		uid, _, err := parseManagedPrincipalFlags("permissions convert-managed", []string{"--uid", "x", "--gid", "1"})
+		return uid, err
+	}()
+	_, verifyErr := verifyBackupPathFromArgs([]string{"verify", "backup.tar.gz", "--deep"})
+	usageErrors := map[string]error{
+		"keys":                 cmdKeys([]string{"show"}),
+		"policy":               cmdPolicy([]string{"bogus"}),
+		"rebuild option":       cmdRebuild([]string{"archive.tar.gz", "--bogus"}),
+		"rebuild role":         cmdRebuild([]string{"archive.tar.gz", "--role", "bogus"}),
+		"generations":          cmdGenerations([]string{"bogus"}),
+		"duplicate prune flag": pruneErr,
+		"initialize role":      initializeErr,
+		"managed service uid":  uidErr,
+		"verify option":        verifyErr,
+	}
+	for name, err := range usageErrors {
+		if err == nil {
+			t.Fatalf("%s: no error for a malformed command line", name)
+		}
+		if got := exitCodeForError(err); got != apstoreExitUsage {
+			t.Fatalf("%s: exitCodeForError(%v) = %d, want %d", name, err, got, apstoreExitUsage)
+		}
+	}
+	if got := exitCodeForError(fmt.Errorf("usage: of the store failed")); got != apstoreExitFailure {
+		t.Fatalf("exitCodeForError(prose) = %d, want %d", got, apstoreExitFailure)
 	}
 }
 

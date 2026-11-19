@@ -25,7 +25,7 @@ import (
 
 func cmdPolicy(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: apstore policy <check|verify|sign>")
+		return usageErrorf("usage: apstore policy <check|verify|sign>")
 	}
 	switch args[0] {
 	case "check":
@@ -35,7 +35,7 @@ func cmdPolicy(args []string) error {
 	case "sign":
 		return cmdPolicySign()
 	default:
-		return fmt.Errorf("usage: apstore policy <check|verify|sign>")
+		return usageErrorf("usage: apstore policy <check|verify|sign>")
 	}
 }
 

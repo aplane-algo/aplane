@@ -24,7 +24,7 @@ import (
 // (with APSIGNER_PASSPHRASE for --all-priors); the consequence is still logged.
 func cmdGenerations(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%s", generationsPruneUsage)
+		return usageErrorf("%s", generationsPruneUsage)
 	}
 	switch args[0] {
 	case "prune":
@@ -77,7 +77,7 @@ func cmdGenerations(args []string) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown generations subcommand %q (use prune; live inventory is `apadmin generations list`)", args[0])
+		return usageErrorf("unknown generations subcommand %q (use prune; live inventory is `apadmin generations list`)", args[0])
 	}
 }
 
@@ -93,7 +93,7 @@ func parsePruneArgs(args []string) (pruneOptions, error) {
 	seen := make(map[string]bool, len(args))
 	for _, arg := range args {
 		if seen[arg] {
-			return pruneOptions{}, fmt.Errorf("duplicate prune option %s; %s", arg, generationsPruneUsage)
+			return pruneOptions{}, usageErrorf("duplicate prune option %s; %s", arg, generationsPruneUsage)
 		}
 		seen[arg] = true
 		switch arg {
@@ -102,7 +102,7 @@ func parsePruneArgs(args []string) (pruneOptions, error) {
 		case "--yes":
 			opts.assumeYes = true
 		default:
-			return pruneOptions{}, fmt.Errorf("%s", generationsPruneUsage)
+			return pruneOptions{}, usageErrorf("%s", generationsPruneUsage)
 		}
 	}
 	return opts, nil

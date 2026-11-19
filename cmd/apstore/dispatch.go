@@ -5,7 +5,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 )
 
@@ -49,8 +48,7 @@ func dispatchApstoreCommand(args []string) {
 	case "verify":
 		backupPath, err := verifyBackupPathFromArgs(args)
 		if err != nil {
-			logErrorf("%v", err)
-			os.Exit(apstoreExitUsage)
+			exitWithError(err)
 		}
 		if err := cmdVerify(backupPath); err != nil {
 			exitWithError(err)
@@ -82,10 +80,10 @@ func dispatchApstoreCommand(args []string) {
 
 func verifyBackupPathFromArgs(args []string) (string, error) {
 	if len(args) < 2 {
-		return "", fmt.Errorf("usage: apstore verify <backup-dir|archive-path>")
+		return "", usageErrorf("usage: apstore verify <backup-dir|archive-path>")
 	}
 	if len(args) > 2 {
-		return "", fmt.Errorf("unknown verify option: %s", args[2])
+		return "", usageErrorf("unknown verify option: %s", args[2])
 	}
 	return args[1], nil
 }
