@@ -241,8 +241,8 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 		return m, nil
 	}
 	apply.warnings = warnings
-	if m.policies.snapshot == "" || m.policies.loadedContext == nil {
-		apply.err = "The node's policy context is still loading; try again"
+	if problem := m.policyContextProblem(); problem != "" {
+		apply.err = problem
 		return m, nil
 	}
 	if apply.export != nil {

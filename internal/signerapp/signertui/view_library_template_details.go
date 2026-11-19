@@ -115,6 +115,7 @@ func (m Model) handleLibraryTemplateDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.
 		m.library.detailsTemplateType = ""
 		m.library.detailsScrollOffset = 0
 		m.library.detailsLoading = false
+		m.library.detailsRequestID = ""
 		m.library.detailsReturnView = 0
 		return m, nil
 	case "up", "k":

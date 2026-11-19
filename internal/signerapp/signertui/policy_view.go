@@ -43,6 +43,9 @@ type policiesState struct {
 	snapshot         string
 	pendingContextID string
 	loadedContext    *PolicyContextMessage
+	// contextErr is why the context read failed, which apply and export
+	// report instead of waiting for it.
+	contextErr string
 	// status reports the last apply on the list.
 	status string
 	apply  policyApplyState
@@ -102,12 +105,50 @@ func (m Model) requestPolicy() (tea.Model, tea.Cmd) {
 	m.policies.loading = true
 	m.policies.pendingPolicyID = newRequestID("policy")
 	m.policies.pendingContextID = newRequestID("policy-context")
-	m.policies.snapshot, m.policies.loadedContext = "", nil
+	m.policies.snapshot, m.policies.loadedContext, m.policies.contextErr = "", nil, ""
 	contextID := m.policies.pendingContextID
 	return m, tea.Batch(
 		m.sendGetPolicyCmd(m.policies.pendingPolicyID),
-		ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicyContext(contextID) }),
+		operationCmd(m.adminClient, contextID, func(c *IPCClient) error { return c.SendGetPolicyContext(contextID) }),
 	)
+}
+
+// failPendingPolicyView settles the summary, context or document read that
+// id names with err, from the daemon (an authorization denial, a node with no
+// runtime bound) or from a send, so the screen shows the error rather than
+// staying on Loading.
+func (m Model) failPendingPolicyView(id string, err error) (Model, bool) {
+	if id == "" {
+		return m, false
+	}
+	switch id {
+	case m.policies.pendingPolicyID:
+		m.policies.pendingPolicyID = ""
+		m.policies.loading = false
+		m.policies.err = err.Error()
+	case m.policies.pendingContextID:
+		m.policies.pendingContextID = ""
+		m.policies.contextErr = err.Error()
+	case m.policies.pendingDocumentID:
+		m.policies.pendingDocumentID = ""
+		m.policies.docLoading = false
+		m.policies.document = protocol.PolicyDocumentMessage{Error: err.Error()}
+	default:
+		return m, false
+	}
+	return m, true
+}
+
+// policyContextProblem is why apply and export cannot use the node's policy
+// context, or "" when they can.
+func (m Model) policyContextProblem() string {
+	switch {
+	case m.policies.contextErr != "":
+		return "The node's policy context could not be read: " + m.policies.contextErr + ". Refresh the Policies list (r) and try again"
+	case m.policies.snapshot == "" || m.policies.loadedContext == nil:
+		return "The node's policy context is still loading; try again"
+	}
+	return ""
 }
 
 // handlePolicyContextLoaded receives the context read paired with the
@@ -119,6 +160,12 @@ func (m Model) handlePolicyContextLoaded(msg PolicyContextLoadedMsg) (tea.Model,
 	m.policies.pendingContextID = ""
 	ctx := msg.Context
 	m.policies.loadedContext = &ctx
+	if !ctx.Success {
+		m.policies.contextErr = ctx.Error
+		if m.policies.contextErr == "" {
+			m.policies.contextErr = "policy context is unavailable"
+		}
+	}
 	return m.settlePolicySnapshot()
 }
 
@@ -449,7 +496,7 @@ func (c *IPCClient) SendGetPolicy(id string) error {
 }
 
 func (m Model) sendGetPolicyCmd(id string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicy(id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicy(id) })
 }
 
 // SendGetPolicyContext requests the node's policy context under request id.
@@ -476,5 +523,5 @@ func (c *IPCClient) SendGetPolicyDocument(key, id string) error {
 }
 
 func (m Model) sendGetPolicyDocumentCmd(key, id string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) })
 }

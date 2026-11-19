@@ -103,12 +103,29 @@ func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo) (Model, tea.
 		// copy this identity stores.
 		m.library.detailsInstalled = true
 		m.library.detailsLoading = true
+		m.library.detailsRequestID = newRequestID("tmpl-show-installed")
 		m.viewState = ViewLibraryTemplateDetails
-		return m, m.sendShowInstalledTemplateCmd(tmpl.KeyType), ""
+		return m, m.sendShowInstalledTemplateCmd(tmpl.KeyType, m.library.detailsRequestID), ""
 	}
 	m.library.detailsLoading = true
+	m.library.detailsRequestID = newRequestID("tmpl-show-library")
 	m.viewState = ViewLibraryTemplateDetails
-	return m, m.sendShowLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType), ""
+	return m, m.sendShowLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType, m.library.detailsRequestID), ""
+}
+
+// failPendingLibraryDetails settles the details read id names with err, so
+// the pager shows the error rather than staying on Loading.
+func (m Model) failPendingLibraryDetails(id string, err error) (Model, bool) {
+	if id == "" || id != m.library.detailsRequestID {
+		return m, false
+	}
+	m.library.detailsRequestID = ""
+	if m.library.detailsLoading {
+		m.library.detailsLoading = false
+		m.library.detailsContent = ""
+		m.library.detailsError = err.Error()
+	}
+	return m, true
 }
 
 func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

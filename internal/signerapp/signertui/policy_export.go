@@ -133,8 +133,8 @@ func (m Model) startPolicyExport() (tea.Model, tea.Cmd) {
 		export.queue = append(export.queue, doc.Key)
 		export.expected[doc.Key] = doc.SHA256
 	}
-	if m.policies.snapshot == "" || m.policies.loadedContext == nil {
-		export.err = "The node's policy context is still loading; try again"
+	if problem := m.policyContextProblem(); problem != "" {
+		export.err = problem
 		return m, nil
 	}
 	export.context = apadminapp.PolicyContextViewFromMessage(*m.policies.loadedContext)

@@ -425,6 +425,14 @@ type clientsState struct {
 	importLabel  string
 	importFocus  int
 	importError  string
+
+	// pendingListID and keysListID name the latest list requests, so a
+	// failure of either is shown; pendingListErr and keysListErr hold it
+	// until that list arrives.
+	pendingListID  string
+	keysListID     string
+	pendingListErr string
+	keysListErr    string
 }
 
 // manualLockState is the manual signer-lock confirmation dialog.
@@ -469,6 +477,7 @@ type libraryState struct {
 	detailsContent       string
 	detailsScrollOffset  int
 	detailsLoading       bool
+	detailsRequestID     string // the read detailsLoading waits on
 	detailsError         string
 	detailsReturnView    ViewState
 }
