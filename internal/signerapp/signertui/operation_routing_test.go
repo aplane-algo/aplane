@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -179,5 +180,39 @@ func TestRestoreFailuresNameTheirOwnRequest(t *testing.T) {
 	next, _ = restoring.Update(ErrorMsg{ID: id, Error: errors.New("authorization denied")})
 	if got := next.(Model); got.viewState != ViewBackups || !strings.Contains(got.lastError, "authorization denied") {
 		t.Fatalf("its own error: view %v lastError %q, want the Backups page with the error", got.viewState, got.lastError)
+	}
+}
+
+// An import for a key type without parameters waits on the import progress
+// screen like every other operation: Enter cannot send it a second time, and
+// its failure, untyped or typed, returns to the import form it came from.
+func TestPlainImportRunsAsAnOperation(t *testing.T) {
+	setServerKeyTypes([]protocol.KeyTypeInfo{{KeyType: "ed25519", DisplayName: "Ed25519", MnemonicImport: true, MnemonicWordCount: 25}})
+	t.Cleanup(func() { setServerKeyTypes(nil) })
+	words := make([]string, 25)
+	for i := range words {
+		words[i] = fmt.Sprintf("w%02d", i)
+	}
+	input := newImportMnemonicInput()
+	input.SetValue(strings.Join(words, " "))
+	m := Model{viewState: ViewImportForm, connectionState: ConnectionConnected, forms: formsState{importFocus: 2, importMnemonicInput: input}}
+	next, cmd := m.handleImportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	importing := next.(Model)
+	id := sentRequest(cmd, "imp")
+	if importing.viewState != ViewImporting || id == "" || id != importing.operation.id {
+		t.Fatalf("import: view %v sent %v error %q, want the progress screen and the operation's request", importing.viewState, sentRequestIDs(cmd), importing.forms.importError)
+	}
+	again, cmd := importing.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil || again.(Model).viewState != ViewImporting {
+		t.Fatalf("a second Enter: view %v cmd %v, want nothing sent", again.(Model).viewState, cmd != nil)
+	}
+
+	next, _ = importing.Update(ErrorMsg{ID: id, Error: errors.New("authorization denied")})
+	if got := next.(Model); got.viewState != ViewImportForm || got.forms.importError != "authorization denied" {
+		t.Fatalf("untyped failure: view %v error %q, want the import form", got.viewState, got.forms.importError)
+	}
+	next, _ = importing.Update(ImportResultMsg{Error: "invalid recovery phrase"})
+	if got := next.(Model); got.viewState != ViewImportForm || got.forms.importError != "invalid recovery phrase" {
+		t.Fatalf("typed failure: view %v error %q, want the import form", got.viewState, got.forms.importError)
 	}
 }

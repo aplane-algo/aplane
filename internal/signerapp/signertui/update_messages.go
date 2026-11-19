@@ -391,12 +391,21 @@ func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
 	} else {
 		m.forms.importError = msg.Error
-		// Return to the appropriate form to show the error
-		if m.viewState == ViewImportParams || m.viewState == ViewImporting {
-			m.viewState = ViewImportParams
+		// Return to the form the import was sent from to show the error.
+		if m.viewState == ViewImporting {
+			m.viewState = m.importErrorView()
 		}
 	}
 	return m, m.waitForMessageCmd()
+}
+
+// importErrorView is the form a failed import returns to: the parameter form
+// for a key type that takes parameters, otherwise the import form.
+func (m Model) importErrorView() ViewState {
+	if getParamSpecForKeyType(getImportKeyTypeByIndex(m.forms.importKeyType)) != nil {
+		return ViewImportParams
+	}
+	return ViewImportForm
 }
 
 func (m Model) handleAdminSettingsMsg(msg AdminSettingsMsg) (tea.Model, tea.Cmd) {

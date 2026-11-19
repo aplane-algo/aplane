@@ -1292,20 +1292,8 @@ func (m Model) sendRevokeAllEnrolledKeysCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRevokeAllEnrolledKeys() })
 }
 
-// SendImportKey sends a request to import a key from mnemonic
-func (c *IPCClient) SendImportKey(keyType, mnemonic string) error {
-	msg := ImportKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeImportKey,
-			ID:   fmt.Sprintf("imp-%d", time.Now().UnixNano()),
-		},
-		KeyType:  keyType,
-		Mnemonic: mnemonic,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendImportKeyWithParams sends a request to import a key with additional parameters.
+// SendImportKeyWithParams sends a request to import a key; params is nil for a
+// key type that takes none.
 func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map[string]string, id string) error {
 	msg := ImportKeyMessage{
 		BaseMessage: BaseMessage{
@@ -1319,9 +1307,10 @@ func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map
 	return c.sendMessage(msg)
 }
 
-// SendImportKeyCmd returns a tea.Cmd that sends an import key request
-func (m Model) sendImportKeyCmd(keyType, mnemonic string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportKey(keyType, mnemonic) })
+// sendImportKeyCmd returns a tea.Cmd that sends an import request for a key
+// type that takes no parameters.
+func (m Model) sendImportKeyCmd(keyType, mnemonic, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, nil, id) })
 }
 
 // SendImportKeyWithParamsCmd returns a tea.Cmd that sends an import key request with parameters.

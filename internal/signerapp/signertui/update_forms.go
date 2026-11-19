@@ -276,7 +276,8 @@ func (m Model) submitImport() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m, tea.Batch(m.sendImportKeyCmd(keyType, mnemonic), m.waitForMessageCmd())
+	id := m.beginOperation(ViewImporting)
+	return m, tea.Batch(m.sendImportKeyCmd(keyType, mnemonic, id), m.waitForMessageCmd())
 }
 
 // handleImportParamsKeys handles keyboard input on parameter input modal for import.

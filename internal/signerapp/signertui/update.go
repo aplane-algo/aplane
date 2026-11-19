@@ -773,7 +773,7 @@ func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
 		}
 	case ViewImporting:
 		m.forms.importError = err.Error()
-		m.viewState = ViewImportParams
+		m.viewState = m.importErrorView()
 	case ViewDeleting:
 		m.lastError = err.Error()
 		m.viewState = ViewDeleteConfirm

@@ -64,6 +64,11 @@ func TestCanceledSigningRequestReturnsToScreenUnderneath(t *testing.T) {
 
 // Handlers that act on the current screen see the screen under the popup.
 func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) {
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType: "import-params-test-v1", DisplayName: "Import Params Test", MnemonicImport: true, MnemonicWordCount: 25,
+		CreationParams: []protocol.TemplateParamInfo{{Name: "label", Type: "string"}},
+	}})
+	t.Cleanup(func() { setServerKeyTypes(nil) })
 	m := approvalTestModel(ViewImportParams)
 	id := m.beginOperation(ViewImporting)
 	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
@@ -117,7 +122,7 @@ func TestSessionEndAndLockDropPendingApprovals(t *testing.T) {
 func TestUntypedFailureLeavesProgressScreens(t *testing.T) {
 	for progress, want := range map[ViewState]ViewState{
 		ViewGenerating:         ViewGenerateForm,
-		ViewImporting:          ViewImportParams,
+		ViewImporting:          ViewImportForm, // the default import key type takes no parameters
 		ViewDeleting:           ViewDeleteConfirm,
 		ViewTemplateInstalling: ViewTemplateInstallConfirm,
 		ViewBackingUp:          ViewBackupConfirm,
