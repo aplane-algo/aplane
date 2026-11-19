@@ -29,7 +29,8 @@ type RotateOptions struct {
 	Logf Logger
 	// ValidateCandidate applies signer semantic gates to the fresh-term staged
 	// successor before publication and store-root replacement. It is
-	// required: without it Mint refuses the passphrase change.
+	// required: without it Rotate refuses the passphrase change before
+	// writing anything.
 	ValidateCandidate func(staged storepaths.GenPaths, successor *crypto.Keyring) error
 
 	// AfterRootCommit updates passphrase helpers after the new cryptographic
@@ -75,6 +76,11 @@ func Rotate(
 	}
 	if len(oldPassphrase) == 0 || len(newPassphrase) == 0 {
 		return result, fmt.Errorf("current and new passphrases are required")
+	}
+	// Refused before anything is read or written: the outgoing seal below
+	// would otherwise rewrite the selected generation first.
+	if opts.ValidateCandidate == nil {
+		return result, fmt.Errorf("passphrase change requires candidate validation")
 	}
 
 	selected, oldKeyring, err := genstore.OpenStoreRootSelection(paths, oldPassphrase)
@@ -141,8 +147,8 @@ func Rotate(
 		return result, err
 	}
 
-	// A caller without candidate validation hands Mint none, so Mint's own
-	// guard refuses the passphrase change.
+	// None is passed through as none, so Mint's own guard backs up the
+	// refusal above.
 	var validateCandidate func(staged storepaths.GenPaths) error
 	if opts.ValidateCandidate != nil {
 		validateCandidate = func(staged storepaths.GenPaths) error {

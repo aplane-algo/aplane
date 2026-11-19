@@ -138,10 +138,11 @@ var rotateArchivedPolicy = []byte(policytest.MustDocument(noderole.RoleSigner, r
 // for the tests about the rotation itself.
 func acceptCandidate(storepaths.GenPaths, *crypto.Keyring) error { return nil }
 
-// A passphrase change without candidate validation is refused by Mint's
-// guard and replaces nothing. Rotate once handed Mint a validation that
-// accepted every successor when the caller gave none, so the guard could not
-// fire and the change published an unvalidated generation.
+// A passphrase change without candidate validation is refused before it
+// writes anything, the outgoing seal included. Rotate once handed Mint a
+// validation that accepted every successor when the caller gave none, so
+// Mint's guard could not fire and the change published an unvalidated
+// generation.
 func TestRotateRefusesWithoutCandidateValidation(t *testing.T) {
 	fixture := newRotateFixture(t)
 	newPassphrase := []byte("new-store-passphrase")
@@ -153,6 +154,9 @@ func TestRotateRefusesWithoutCandidateValidation(t *testing.T) {
 	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{})
 	if err == nil || result.RootCommitted || !strings.Contains(err.Error(), "requires candidate validation") {
 		t.Fatalf("Rotate(no candidate validation) = %+v, %v; want the candidate validation refusal", result, err)
+	}
+	if sealed, err := genstore.HasSeal(fixture.paths.GenerationPaths(rotateFirstGeneration)); err != nil || sealed {
+		t.Fatalf("selected generation sealed after the refusal = %v, %v; want no seal written", sealed, err)
 	}
 	after, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
 	if err != nil || !bytes.Equal(before, after) {
