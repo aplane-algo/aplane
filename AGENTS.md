@@ -234,6 +234,27 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Define interfaces where they're used, not where implemented
 - Use compile-time checks: `var _ Interface = (*Implementation)(nil)`
 
+### Keeping Code Lean
+- **No compatibility code.** There are no external users. When a format, API
+  or behaviour changes, change every caller and delete the old path: no shims,
+  deprecated aliases, fallbacks or legacy readers.
+- **Delete what nothing uses.** Remove code when its last production caller
+  goes, along with the tests that only kept it alive. Code reached only from
+  tests is dead.
+- **No unused generality.** Add an option, interface, registry or parameter
+  only once a second real caller needs it.
+- **No thin wrappers.** A function that only forwards its arguments gets
+  inlined; call the real one.
+- **One flow per outcome.** If two paths reach the same result, keep one.
+- **Decide outcomes in types.** Use typed errors, sentinels or result values
+  that callers can test, never message text.
+- **Check once.** A guard belongs where its owner enforces it, so don't repeat
+  a check the callee already makes. A deliberately layered guard says so in a
+  comment.
+- **Comments say why.** Don't narrate what the next line does.
+- **Split complex functions.** gocognit (60) and nestif (8) are enforced.
+  Split a function that goes over rather than adding a `nolint`.
+
 ## Testing Guidelines
 
 ### Framework

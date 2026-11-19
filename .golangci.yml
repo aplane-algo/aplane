@@ -1,9 +1,10 @@
 # The default linter set, plus linters that catch unused parameters,
 # conversions, copied code, and complex functions. The departures are below.
 #
-# gocognit and nestif hold the line on complexity. A site marked
-# "complexity backlog" is a function waiting for a refactor; nolintlint fails the
-# marker once the function drops under the threshold. New code gets no marker.
+# gocognit and nestif hold the line on complexity. A function over either limit
+# is split, not exempted. The one exception is internal/avmsim's opcode dispatch
+# loop, which carries a nolint stating its reason. nolintlint fails any nolint
+# that names no linter, gives no reason, or is no longer needed.
 version: "2"
 
 linters:
