@@ -591,6 +591,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeRestorePreview: decodeAs(func(preview RestorePreviewMessage) tea.Msg {
 		return RestorePreviewMsg{
+			ID:               preview.ID,
 			ArchivePath:      preview.ArchivePath,
 			ArchiveCreatedAt: preview.ArchiveCreatedAt,
 			Keys:             preview.Keys,

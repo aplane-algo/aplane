@@ -245,7 +245,14 @@ func (m Model) handleDeleteResultMsg(msg DeleteResultMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleRestorePreviewMsg applies a preview only while the passphrase screen
+// still waits on that preview request. One that arrives after a lock showed
+// the unlock screen, where previewing is still set, changes nothing.
 func (m Model) handleRestorePreviewMsg(msg RestorePreviewMsg) (tea.Model, tea.Cmd) {
+	if msg.ID == "" || msg.ID != m.restore.pendingID || !m.restore.previewing || m.viewState != ViewRestorePassphrase {
+		return m, nil
+	}
+	m.restore.pendingID = ""
 	m.restore.previewing = false
 	if msg.Error != "" || (len(msg.Keys) == 0 && len(msg.Errors) > 0) {
 		m.clearRestorePassphrase()

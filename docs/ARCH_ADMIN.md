@@ -1195,7 +1195,8 @@ a reply arriving after a lock leaves the unlock screen in place and sends
 nothing further. The restore flow
 records the ID of its latest preview, restore, rollback, or reconcile request
 the same way: only a failure naming that request clears the restore passphrase
-or leaves the restore progress screen.
+or leaves the restore progress screen, and a preview reply is shown only while
+the passphrase screen still waits on that preview.
 Progress screens ignore Esc, so nothing may strand them; `q` quits from
 every one of them (`isOperationInProgressView`). An error for any other
 request, such as a background refresh, leaves the operation waiting for its own

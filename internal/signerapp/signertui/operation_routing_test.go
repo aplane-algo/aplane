@@ -282,3 +282,35 @@ func TestOperationResultsApplyOnlyToTheirOwnProgressScreen(t *testing.T) {
 		})
 	}
 }
+
+// A preview reply is applied only while the passphrase screen still waits on
+// that preview. One arriving after a lock showed the unlock screen, where
+// previewing is still set, leaves that screen in place, and so does a reply
+// that names another request.
+func TestRestorePreviewReplyAppliesOnlyToItsOwnRequest(t *testing.T) {
+	m := Model{viewState: ViewRestorePassphrase, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked,
+		restore: restoreState{archivePath: "aplane-backup.tar.gz", passphrase: []byte("export passphrase")}}
+	next, cmd := m.handleRestorePassphraseKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	previewing := next.(Model)
+	id := sentRequest(cmd, "preview-restore")
+	if !previewing.restore.previewing || id == "" {
+		t.Fatalf("preview: previewing %v sent %v", previewing.restore.previewing, sentRequestIDs(cmd))
+	}
+	reply := func(id string) tea.Msg {
+		return decodeSignerReply(t, protocol.RestorePreviewMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestorePreview, ID: id}, ArchivePath: "aplane-backup.tar.gz",
+			Keys: []protocol.RestoreKeyInfo{{Address: "ADDR", KeyType: "ed25519"}},
+		})
+	}
+
+	locked := updateModel(t, previewing, SignerStatusMsg{State: "locked"})
+	if late := updateModel(t, locked, reply(id)); late.viewState != ViewUnlock {
+		t.Fatalf("late preview after a lock moved the unlock screen to view %v", late.viewState)
+	}
+	if stray := updateModel(t, previewing, reply("preview-restore-other")); stray.viewState != ViewRestorePassphrase || !stray.restore.previewing {
+		t.Fatalf("a preview for another request: view %v previewing %v", stray.viewState, stray.restore.previewing)
+	}
+	if own := updateModel(t, previewing, reply(id)); own.viewState != ViewRestorePreview || own.restore.previewing {
+		t.Fatalf("its own preview: view %v previewing %v, want the preview shown", own.viewState, own.restore.previewing)
+	}
+}

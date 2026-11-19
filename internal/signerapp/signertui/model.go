@@ -807,6 +807,7 @@ type BackupsListMsg struct {
 
 // RestorePreviewMsg is sent when a backup archive preview completes.
 type RestorePreviewMsg struct {
+	ID               string
 	ArchivePath      string
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
