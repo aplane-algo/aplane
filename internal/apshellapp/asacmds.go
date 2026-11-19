@@ -37,9 +37,12 @@ func asaInfoDetailsListFromEngine(items []engine.ASAInfo) []ASAInfoDetails {
 	return result
 }
 
-// ASAInfo returns metadata for a specific ASA.
+// ASAInfo returns the full metadata for a specific ASA, read from the
+// network: the ASA cache and the built-in metadata hold only the unit name,
+// name and decimals, so total supply and the role addresses come from algod.
+// The read refreshes the cache.
 func (a *App) ASAInfo(ctx context.Context, assetID uint64) (*ASAInfoCommandResult, error) {
-	info, err := a.eng.GetASAInfoWithContext(ctx, assetID)
+	info, err := a.eng.GetASAInfoWithContext(ctx, assetID, true)
 	if err != nil {
 		return nil, err
 	}

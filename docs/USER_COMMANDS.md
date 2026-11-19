@@ -525,7 +525,10 @@ status
 
 ### info
 
-Show detailed information about an ASA.
+Show detailed information about an ASA: name, unit name, decimals, total
+supply, URL and creator. It is read from the network each time, and the
+machine result (MCP) also carries the manager, reserve, freeze and clawback
+addresses and whether holdings start frozen.
 
 ```
 info <asa-id>
