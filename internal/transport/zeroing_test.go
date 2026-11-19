@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -167,5 +168,79 @@ func TestDispatcherRequestEncodesMessageOnce(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("request encoded the message %d times, want 1", got)
+	}
+}
+
+// A strict dispatcher drops, and zeroes, the late reply to a request that
+// timed out: its caller already has the timeout, and the connection stays up
+// for the next request.
+func TestStrictDispatcherDropsTheLateReplyToATimedOutRequest(t *testing.T) {
+	reply := func(id string) []byte {
+		return mustMarshalProtocolMessage(t, protocol.KeysListMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeKeysList, ID: id},
+			Keys:        []protocol.AdminKeyInfo{},
+		})
+	}
+	request := func(id string) protocol.ListKeysMessage {
+		return protocol.ListKeysMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListKeys, ID: id}}
+	}
+	timedOut, done := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	late := reply("keys-slow")
+	conn := &stubAdminProtocolConn{readFunc: func(s *stubAdminProtocolConn) ([]byte, error) {
+		s.mu.Lock()
+		index := s.readIndex
+		s.readIndex++
+		s.mu.Unlock()
+		switch index {
+		case 0:
+			<-timedOut
+			return late, nil
+		case 1:
+			for s.writeCount() < 2 {
+				time.Sleep(time.Millisecond)
+			}
+			return reply("keys-next"), nil
+		default:
+			<-done
+			return nil, errors.New("test over")
+		}
+	}}
+	dispatcher := newDispatcher(conn)
+
+	if _, err := dispatcher.request(request("keys-slow"), 20*time.Millisecond); err == nil {
+		t.Fatal("slow request did not time out")
+	}
+	close(timedOut)
+	if _, err := dispatcher.request(request("keys-next"), 5*time.Second); err != nil {
+		t.Fatalf("request after the late reply failed: %v", err)
+	}
+	if !isZeroed(late) {
+		t.Fatalf("dropped late reply left as %q", late)
+	}
+	select {
+	case event := <-dispatcher.lifecycleChan():
+		t.Fatalf("late reply ended the connection: %v %v", event.Type, event.Err)
+	default:
+	}
+}
+
+// A reply nobody asked for still ends a strict connection, and its frame is
+// zeroed first.
+func TestStrictDispatcherZeroesAnUnmatchedReplyBeforeFailing(t *testing.T) {
+	unmatched := mustMarshalProtocolMessage(t, protocol.KeysListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeKeysList, ID: "never-sent"},
+		Keys:        []protocol.AdminKeyInfo{},
+	})
+	conn := &stubAdminProtocolConn{reads: [][]byte{unmatched}}
+	dispatcher := newDispatcher(conn)
+	_, err := dispatcher.request(protocol.ListKeysMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListKeys, ID: "keys-1"},
+	}, 5*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "without pending waiter") {
+		t.Fatalf("request error = %v, want the unmatched-reply failure", err)
+	}
+	if !isZeroed(unmatched) {
+		t.Fatalf("unmatched reply left as %q", unmatched)
 	}
 }

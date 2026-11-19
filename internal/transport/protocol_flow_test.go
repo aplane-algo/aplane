@@ -4,6 +4,7 @@
 package transport
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"slices"
@@ -158,7 +159,9 @@ func TestDispatcherRequestKeepsNotificationsWhileWaiting(t *testing.T) {
 				writes := len(s.writes)
 				s.mu.Unlock()
 				if writes == 1 {
-					return result, nil
+					// Each read is a fresh frame, as FrameReader's are; the
+					// dispatcher zeroes a frame it drops.
+					return bytes.Clone(result), nil
 				}
 				time.Sleep(time.Millisecond)
 			}
@@ -228,7 +231,9 @@ func TestDispatcherRequestKeepsMultipleNotificationsWhileWaiting(t *testing.T) {
 				writes := len(s.writes)
 				s.mu.Unlock()
 				if writes == 1 {
-					return result, nil
+					// Each read is a fresh frame, as FrameReader's are; the
+					// dispatcher zeroes a frame it drops.
+					return bytes.Clone(result), nil
 				}
 				time.Sleep(time.Millisecond)
 			}
@@ -490,36 +495,40 @@ func TestDispatcherRequestWriteFailureClearsPending(t *testing.T) {
 	}
 }
 
+// A request that timed out leaves no pending entry, and a new request with
+// the same ID receives the reply, in either mode.
 func TestDispatcherRequestTimeoutClearsPending(t *testing.T) {
-	request := protocol.ListKeysMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeListKeys,
-			ID:   "keys-timeout",
-		},
-	}
-	releaseRead := make(chan struct{})
-	conn := &stubAdminProtocolConn{
-		readFunc: func(s *stubAdminProtocolConn) ([]byte, error) {
-			<-releaseRead
-			return mustMarshalProtocolMessage(t, protocol.KeysListMessage{
-				BaseMessage: protocol.BaseMessage{
-					Type: protocol.MsgTypeKeysList,
-					ID:   "keys-timeout",
-				},
-				Keys: []protocol.AdminKeyInfo{},
-			}), nil
-		},
-	}
-	dispatcher := newDispatcherWithMode(conn, false)
+	for _, strict := range []bool{false, true} {
+		request := protocol.ListKeysMessage{
+			BaseMessage: protocol.BaseMessage{
+				Type: protocol.MsgTypeListKeys,
+				ID:   "keys-timeout",
+			},
+		}
+		releaseRead := make(chan struct{})
+		conn := &stubAdminProtocolConn{
+			readFunc: func(s *stubAdminProtocolConn) ([]byte, error) {
+				<-releaseRead
+				return mustMarshalProtocolMessage(t, protocol.KeysListMessage{
+					BaseMessage: protocol.BaseMessage{
+						Type: protocol.MsgTypeKeysList,
+						ID:   "keys-timeout",
+					},
+					Keys: []protocol.AdminKeyInfo{},
+				}), nil
+			},
+		}
+		dispatcher := newDispatcherWithMode(conn, strict)
 
-	_, err := dispatcher.request(request, 20*time.Millisecond)
-	if err == nil || !strings.Contains(err.Error(), "timed out waiting for response") {
-		t.Fatalf("first request error = %v, want timeout", err)
-	}
+		_, err := dispatcher.request(request, 20*time.Millisecond)
+		if err == nil || !strings.Contains(err.Error(), "timed out waiting for response") {
+			t.Fatalf("strict %v: first request error = %v, want timeout", strict, err)
+		}
 
-	close(releaseRead)
-	if _, err := dispatcher.request(request, time.Second); err != nil {
-		t.Fatalf("second request after timeout error = %v, want nil", err)
+		close(releaseRead)
+		if _, err := dispatcher.request(request, time.Second); err != nil {
+			t.Fatalf("strict %v: second request after timeout error = %v, want nil", strict, err)
+		}
 	}
 }
 
