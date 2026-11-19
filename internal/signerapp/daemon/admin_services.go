@@ -651,13 +651,20 @@ func (s signerAdminServices) DiscardAbandonedGenerations(
 	return result
 }
 
+// ListDeletedArchive is a read-only inspection: like its siblings it does not
+// run during a store mutation, answering retryable store_busy instead.
 func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInventory {
 	ir := s.ProductRuntime()
-	active, err := authenticatedSelection(ir)
-	if err != nil {
-		return adminproto.DeletedArchiveInventory{Code: protocol.ResultCodeArchiveListFailed, Error: err.Error()}
-	}
-	entries, usage, err := genstore.ListDeletedArchive(active)
+	var entries []genstore.DeletedArchiveEntry
+	var usage genstore.DeletedArchiveUsage
+	err := s.withStoreInspection(func() error {
+		active, err := authenticatedSelection(ir)
+		if err != nil {
+			return err
+		}
+		entries, usage, err = genstore.ListDeletedArchive(active)
+		return err
+	})
 	result := adminproto.DeletedArchiveInventory{
 		Entries:    make([]adminproto.DeletedArchiveEntry, 0, len(entries)),
 		EntryCount: usage.Entries, EncodedBytes: usage.EncodedBytes, Warning: usage.Warning(),
@@ -666,8 +673,7 @@ func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInven
 		result.Entries = append(result.Entries, adminproto.DeletedArchiveEntry{Path: entry.Path, EncodedBytes: entry.EncodedBytes})
 	}
 	if err != nil {
-		result.Code = protocol.ResultCodeArchiveListFailed
-		result.Error = err.Error()
+		result.Code, result.Error = identityStoreInspectionError(err, protocol.ResultCodeArchiveListFailed)
 	}
 	return result
 }

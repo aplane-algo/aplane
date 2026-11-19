@@ -611,7 +611,8 @@ apadmin archive prune --confirm <deleted/path> [deleted/path...]
 ```
 
 Both need an unlocked or recovery-admin session; a locked signer is unlocked
-first. Prune accepts only canonical `deleted/keys/*.key|*.cos`,
+first. `archive list` is read-only and waits out a store mutation in progress,
+as `generations list` does. Prune accepts only canonical `deleted/keys/*.key|*.cos`,
 `deleted/keytypes/*.template`, and `deleted/policies/*.json|*.json.hmac`
 paths, and an archived policy document must be pruned with its sidecar. It
 requires the `identity.archive.prune` authorization action and writes a durable

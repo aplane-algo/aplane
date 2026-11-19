@@ -759,6 +759,8 @@ Policy selection semantics:
 - `list_deleted_archive` -> `deleted_archive_list`: canonical `entries[]` with
   `path` and `encoded_bytes`, aggregate `entry_count`, `encoded_bytes`, and a
   `warning` when release headroom has been consumed; optional `code`, `error`.
+  It is read-only inspection: if a store mutation is active, the request
+  returns retryable `store_busy` rather than reading the archive mid-mutation.
 - `prune_deleted_archive`: canonical `entries[]`, `confirm` ->
   `prune_deleted_archive_result`: `success`, `pruned[]`, optional `code`,
   `error`. Each result carries `path`, `encoded_bytes`, and optional

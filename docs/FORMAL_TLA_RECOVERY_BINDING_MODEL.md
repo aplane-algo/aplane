@@ -55,7 +55,10 @@ The transitions transcribe the post-commit reload and the recovery paths:
 - `Serve` is a signing request or key write, gated by the runtime state
   (`IsUnlocked`; recovery is a distinct state that refuses both). `Maintain`
   is deleted-archive list or prune through `authenticatedSelection`, which
-  reads and authenticates the root itself.
+  reads and authenticates the root itself. Its `~lockHeld` guard is the store
+  mutation lock both take: prune through `withStoreMutation`, list through
+  `withStoreInspection`, whose `TryLock` answers `store_busy` instead of
+  reading the archive while a mutation holds the lock.
 - `RootDamaged` and `RootRepaired` stand for a `store-root.enc` that stops or
   resumes authenticating.
 
