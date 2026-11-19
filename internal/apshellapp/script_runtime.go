@@ -18,7 +18,7 @@ import (
 type GojaScriptRuntime struct {
 	engine  *engine.Engine
 	sweeper jsapi.Sweeper
-	runner  scripting.Runner
+	runner  *scripting.GojaRunner
 }
 
 // NewGojaScriptRuntime constructs the default JavaScript runtime for apshell.
@@ -27,16 +27,15 @@ func NewGojaScriptRuntime(eng *engine.Engine) *GojaScriptRuntime {
 }
 
 // EnsureRunner returns a persistent Goja runner, creating it on first use.
-func (r *GojaScriptRuntime) EnsureRunner(output func(string), pluginExecutor jsapi.PluginExecutor) scripting.Runner {
+func (r *GojaScriptRuntime) EnsureRunner(output func(string), pluginExecutor jsapi.PluginExecutor) *scripting.GojaRunner {
 	if r.runner == nil {
-		gojaRunner := scripting.NewGojaRunner(r.engine)
+		r.runner = scripting.NewGojaRunner(r.engine)
 		if pluginExecutor != nil {
-			gojaRunner.SetPluginExecutor(pluginExecutor)
+			r.runner.SetPluginExecutor(pluginExecutor)
 		}
 		if r.sweeper != nil {
-			gojaRunner.SetSweeper(r.sweeper)
+			r.runner.SetSweeper(r.sweeper)
 		}
-		r.runner = gojaRunner
 	}
 	r.runner.SetOutput(output)
 	return r.runner

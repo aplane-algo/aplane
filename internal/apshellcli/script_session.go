@@ -7,6 +7,6 @@ import "github.com/aplane-algo/aplane/internal/scripting"
 
 // ScriptSession holds mutable state for JavaScript execution.
 type ScriptSession struct {
-	Runner   scripting.Runner
+	Runner   *scripting.GojaRunner
 	LastCode string // last successfully executed JavaScript code
 }

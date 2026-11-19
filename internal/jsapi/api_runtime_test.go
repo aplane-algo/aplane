@@ -74,7 +74,7 @@ func newTestAPI(t *testing.T) (*engine.Engine, *goja.Runtime, *API) {
 
 	eng := newTempStoreEngine(t)
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("RegisterAll() error = %v", err)
 	}

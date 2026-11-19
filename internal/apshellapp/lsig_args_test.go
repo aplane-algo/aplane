@@ -609,7 +609,7 @@ func TestAppCallCompanionPaymentGetsTheSendersArguments(t *testing.T) {
 func TestScriptLsigArgsAreUntargeted(t *testing.T) {
 	run := func(t *testing.T, f *argsFixture, code string) error {
 		t.Helper()
-		_, err := f.app.Scripts.EnsureRunner(func(string) {}, nil).Run(code)
+		_, err := f.app.Scripts.EnsureRunner(func(string) {}, nil).RunWithContext(context.Background(), code)
 		return err
 	}
 
