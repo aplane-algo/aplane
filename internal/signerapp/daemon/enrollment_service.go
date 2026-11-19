@@ -18,10 +18,6 @@ import (
 // requests to: requests are queued on the product runtime and the connected
 // operator, if any, is told at once.
 func (fs *Signer) enrollmentService() enrollment.Service {
-	var auditLog enrollment.AuditLogger
-	if fs.auditLog != nil {
-		auditLog = fs.auditLog
-	}
 	return enrollment.Service{
 		Queue: func(key ssh.PublicKey, label, remoteAddr string) (bool, bool, error) {
 			ir := fs.productRuntime()
@@ -34,7 +30,7 @@ func (fs *Signer) enrollmentService() enrollment.Service {
 		Changed: func(fingerprint string) {
 			fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRequested, fingerprint)
 		},
-		AuditLog: auditLog,
+		AuditLog: optionalAuditLog[enrollment.AuditLogger](fs.auditLog),
 		Logf:     logInfof,
 	}
 }

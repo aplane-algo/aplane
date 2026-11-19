@@ -830,7 +830,7 @@ func (s signerAdminServices) storeApp() storeadmin.Service {
 	return storeadmin.Service{
 		Deps:           signerAdminAppDeps{signer: s.signer},
 		Runtime:        s.ProductRuntime(),
-		AuditLog:       s.signer.auditLog,
+		AuditLog:       optionalAuditLog[storeadmin.AuditLogger](s.signer.auditLog),
 		UnlockIdentity: s.UnlockIdentity,
 	}
 }

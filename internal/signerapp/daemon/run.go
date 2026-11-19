@@ -278,7 +278,7 @@ func Run(dataDir string) int {
 	runErr := signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
 		ProductRuntime:  ir,
 		ShutdownTimeout: 5 * time.Second,
-		AuditLog:        auditLog,
+		AuditLog:        optionalAuditLog[signerstartup.ServerAuditLogger](auditLog),
 		StartWatcher: func(product *productruntime.Runtime) {
 			product.EnsureKeyWatcher(startKeyWatcherForDir)
 		},
