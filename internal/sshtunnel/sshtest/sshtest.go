@@ -47,7 +47,7 @@ type Node struct {
 
 	mu       sync.Mutex
 	enrolled map[string]bool
-	pending  map[string]ssh.PublicKey
+	pending  map[string]struct{}
 	queue    bool
 	requests []EnrollmentRequest
 }
@@ -63,8 +63,8 @@ type Options struct {
 	// Unenrolled starts the node without the client key enrolled, so the
 	// first connection is refused until the client enrolls.
 	Unenrolled bool
-	// Queue makes enrollment requests wait for Approve, as a real node does;
-	// otherwise a request enrolls the key at once.
+	// Queue makes enrollment requests wait, as a real node does, and Pending
+	// reports them; otherwise a request enrolls the key at once.
 	Queue bool
 	// Dir holds the client identity (id_ed25519), known_hosts, and host key;
 	// a temp dir when empty. Pointing it at a client data directory's .ssh
@@ -91,7 +91,7 @@ func ServeWithOptions(t testing.TB, handler http.Handler, opts Options) *Node {
 		IdentityFile: identityFile,
 		Fingerprint:  ssh.FingerprintSHA256(clientPub),
 		enrolled:     make(map[string]bool),
-		pending:      make(map[string]ssh.PublicKey),
+		pending:      make(map[string]struct{}),
 		queue:        opts.Queue,
 	}
 	if !opts.Unenrolled {
@@ -109,14 +109,6 @@ func ServeWithOptions(t testing.TB, handler http.Handler, opts Options) *Node {
 			defer node.mu.Unlock()
 			return node.enrolled[ssh.FingerprintSHA256(key)]
 		},
-		EnrollKey: func(key ssh.PublicKey, _ string) (bool, error) {
-			node.mu.Lock()
-			defer node.mu.Unlock()
-			fp := ssh.FingerprintSHA256(key)
-			added := !node.enrolled[fp]
-			node.enrolled[fp] = true
-			return added, nil
-		},
 	})
 	server.SetEnrollmentHooks(sshtunnel.EnrollmentHooks{
 		Request: func(key ssh.PublicKey, label, _ string) (bool, error) {
@@ -128,7 +120,7 @@ func ServeWithOptions(t testing.TB, handler http.Handler, opts Options) *Node {
 				return false, nil
 			}
 			if node.queue {
-				node.pending[fingerprint] = key
+				node.pending[fingerprint] = struct{}{}
 				return true, nil
 			}
 			node.enrolled[fingerprint] = true

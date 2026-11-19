@@ -63,9 +63,9 @@ func TestClientDialSignerAPIUsesAuthenticatedDirectChannel(t *testing.T) {
 		return nil
 	})
 	_, clientPub, identityPath := generateClientIdentityFile(t, tmpDir)
-	srv.authKeysMu.Lock()
-	srv.authKeys = append(srv.authKeys, clientPub)
-	srv.authKeysMu.Unlock()
+	enrolled := newEnrolledSet()
+	enrolled.add(clientPub)
+	srv.SetProductHooks(enrolled.hooks())
 	serverCtx, cancelServer := context.WithCancel(context.Background())
 	defer cancelServer()
 	if err := srv.Start(serverCtx); err != nil {

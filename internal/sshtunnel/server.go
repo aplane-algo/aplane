@@ -4,7 +4,6 @@
 package sshtunnel
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -90,27 +89,16 @@ type EnrollmentRequestFunc func(key ssh.PublicKey, label, remoteAddr string) (pe
 // KeyCheckerFunc reports whether a public key is currently enrolled.
 type KeyCheckerFunc func(key ssh.PublicKey) bool
 
-// KeyEnrollerFunc enrolls a public key with a display label. It must be
-// idempotent for an already-enrolled key. enrolled reports that the key is
-// now usable; it can be true alongside an error when the registry was
-// installed but its write is not yet durable. The server answers any error
-// as a failure so the client retries; the product path does not use this
-// hook for client requests, which are queued through EnrollmentHooks.
-type KeyEnrollerFunc func(key ssh.PublicKey, label string) (enrolled bool, err error)
-
 // ProductHooks connects the server to the product's enrolled-key registry.
-// Both hooks are required together; without them the server keeps an
-// in-memory key list that exists for tests.
+// Without CheckKey no key is enrolled.
 type ProductHooks struct {
-	CheckKey  KeyCheckerFunc
-	EnrollKey KeyEnrollerFunc
+	CheckKey KeyCheckerFunc
 }
 
 // EnrollmentHooks configures the enroll flow. A request is
 // recorded and answered at once; the operator approves it later, and the
-// client learns the outcome by connecting. Without the hook the server
-// enrolls the key immediately into its in-memory list, which exists for
-// tests.
+// client learns the outcome by connecting. Without the hook every request is
+// refused.
 type EnrollmentHooks struct {
 	Request EnrollmentRequestFunc
 }
@@ -176,18 +164,13 @@ type Server struct {
 	listener  net.Listener
 	hostKey   ssh.Signer
 
-	// In-memory enrolled keys, used only when no product hooks are set.
-	authKeys   []ssh.PublicKey
-	authKeysMu sync.RWMutex
-
-	// Product registry hooks
-	keyChecker  KeyCheckerFunc
-	keyEnroller KeyEnrollerFunc
+	// Product registry hook; nil enrolls no key.
+	keyChecker KeyCheckerFunc
 
 	// API channel handoff; nil refuses every API channel.
 	apiHandoff APIHandoff
 
-	// Enrollment request hook; nil enrolls immediately into the in-memory list.
+	// Enrollment request hook; nil refuses every request.
 	enrollmentRequest EnrollmentRequestFunc
 
 	mu        sync.Mutex
@@ -313,20 +296,13 @@ func (s *Server) SetProductHooks(hooks ProductHooks) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.assertNotStartedLocked("SetProductHooks")
-	if (hooks.CheckKey == nil) != (hooks.EnrollKey == nil) {
-		panic("product SSH hooks require CheckKey and EnrollKey together")
-	}
 	s.keyChecker = hooks.CheckKey
-	s.keyEnroller = hooks.EnrollKey
 }
 
-// isEnrolled reports whether key is currently enrolled, through the product
-// registry when hooks are set and the in-memory list otherwise.
+// isEnrolled reports whether key is currently enrolled in the product
+// registry.
 func (s *Server) isEnrolled(key ssh.PublicKey) bool {
-	if s.keyChecker != nil {
-		return s.keyChecker(key)
-	}
-	return s.hasAuthorizedKey(key)
+	return s.keyChecker != nil && s.keyChecker(key)
 }
 
 func (s *Server) assertNotStartedLocked(method string) {
@@ -521,36 +497,6 @@ func (s *Server) handleEnrollmentAuth(key ssh.PublicKey, remoteAddr, keyFingerpr
 			"public_key":      string(ssh.MarshalAuthorizedKey(key)),
 		},
 	}, nil
-}
-
-// enrollKey enrolls a public key through the product registry when hooks are
-// set, and into the in-memory list otherwise.
-func (s *Server) enrollKey(key ssh.PublicKey, label string) (enrolled bool, err error) {
-	if s.keyEnroller != nil {
-		return s.keyEnroller(key, label)
-	}
-	s.authKeysMu.Lock()
-	defer s.authKeysMu.Unlock()
-	if authorizedKeyInList(s.authKeys, key) {
-		return false, nil
-	}
-	s.authKeys = append(s.authKeys, key)
-	return true, nil
-}
-
-func (s *Server) hasAuthorizedKey(key ssh.PublicKey) bool {
-	s.authKeysMu.RLock()
-	defer s.authKeysMu.RUnlock()
-	return authorizedKeyInList(s.authKeys, key)
-}
-
-func authorizedKeyInList(keys []ssh.PublicKey, key ssh.PublicKey) bool {
-	for _, allowedKey := range keys {
-		if bytes.Equal(allowedKey.Marshal(), key.Marshal()) {
-			return true
-		}
-	}
-	return false
 }
 
 // Start begins listening for SSH connections
@@ -1037,13 +983,7 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 	fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
 
 	if s.enrollmentRequest == nil {
-		// No product hook: the in-memory list exists for tests and enrolls
-		// immediately.
-		if _, err := s.enrollKey(key, label); err != nil {
-			_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
-			return true
-		}
-		_ = s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0)
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to record enrollment request\n", 1)
 		return true
 	}
 

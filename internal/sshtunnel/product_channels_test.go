@@ -17,13 +17,13 @@ import (
 )
 
 // connectProductClient starts srv and connects a client whose key is
-// enrolled in the server's in-memory list.
+// enrolled.
 func connectProductClient(t *testing.T, srv *Server, tmpDir string) *Client {
 	t.Helper()
 	_, clientPub, identityPath := generateClientIdentityFile(t, tmpDir)
-	srv.authKeysMu.Lock()
-	srv.authKeys = append(srv.authKeys, clientPub)
-	srv.authKeysMu.Unlock()
+	enrolled := newEnrolledSet()
+	enrolled.add(clientPub)
+	srv.SetProductHooks(enrolled.hooks())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

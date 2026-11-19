@@ -195,29 +195,25 @@ func runEnrollmentSessionWithCommand(t *testing.T, srv *Server, clientSigner ssh
 	return outStr, 0, nil
 }
 
-// Without a product hook the server enrolls the key at once into its
-// in-memory list and answers "enrolled".
-func TestEnrollment_ImmediateWithoutProductHook(t *testing.T) {
+// Without the product hook a request is refused and nothing is enrolled.
+func TestEnrollment_RefusedWithoutProductHook(t *testing.T) {
 	srv, _ := testServer(t)
 
-	clientSigner, clientPub := generateClientKey(t)
+	clientSigner, _ := generateClientKey(t)
 	output, exitCode, err := runEnrollmentSessionWithCommand(t, srv, clientSigner, "enroll laptop")
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
-	if exitCode != 0 {
-		t.Errorf("expected exit 0, got %d; output: %s", exitCode, output)
+	if exitCode == 0 {
+		t.Errorf("expected non-zero exit, got 0; output: %s", output)
 	}
-	if want := "enrolled " + ssh.FingerprintSHA256(clientPub) + "\n"; output != want {
+	if want := "ERROR: failed to record enrollment request\n"; output != want {
 		t.Errorf("output = %q, want %q", output, want)
-	}
-	if !srv.hasAuthorizedKey(clientPub) {
-		t.Error("key was not enrolled")
 	}
 }
 
 // With the product hook a request is recorded with its label and answered
-// "pending"; nothing is enrolled until the operator approves.
+// "pending".
 func TestEnrollment_Pending(t *testing.T) {
 	srv, _ := testServer(t)
 	var requests []string
@@ -237,9 +233,6 @@ func TestEnrollment_Pending(t *testing.T) {
 	}
 	if len(requests) != 1 || requests[0] != fingerprint+" laptop" {
 		t.Errorf("recorded requests = %q", requests)
-	}
-	if srv.hasAuthorizedKey(clientPub) {
-		t.Error("key was enrolled before approval")
 	}
 }
 
@@ -261,7 +254,7 @@ func TestEnrollment_AlreadyEnrolled(t *testing.T) {
 }
 
 // A request the product refuses (for example a full queue) is answered with
-// the refusal and a non-zero exit; nothing is enrolled.
+// the refusal and a non-zero exit.
 func TestEnrollment_Refused(t *testing.T) {
 	srv, _ := testServer(t)
 	setEnrollmentHooks(srv, EnrollmentHooks{
@@ -270,7 +263,7 @@ func TestEnrollment_Refused(t *testing.T) {
 		},
 	})
 
-	clientSigner, clientPub := generateClientKey(t)
+	clientSigner, _ := generateClientKey(t)
 	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
 	if err != nil {
 		t.Fatalf("session error: %v", err)
@@ -280,8 +273,5 @@ func TestEnrollment_Refused(t *testing.T) {
 	}
 	if !strings.Contains(output, "ERROR: ") || !strings.Contains(output, "enrollment queue is full") {
 		t.Errorf("output = %q, want the refusal", output)
-	}
-	if srv.hasAuthorizedKey(clientPub) {
-		t.Error("key should not be enrolled after a refusal")
 	}
 }
