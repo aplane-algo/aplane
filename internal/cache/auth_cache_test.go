@@ -506,7 +506,7 @@ func TestMergeAuthCacheIntoStoreEmptyOwned(t *testing.T) {
 		t.Fatalf("SaveCache(existing) error = %v", err)
 	}
 
-	cache := MergeAuthCacheIntoStore(store, "testnet", nil, map[string]bool{})
+	cache := MergeAuthCacheIntoStore(store, "testnet", SnapshotAuthCache(store, "testnet"), nil, map[string]bool{})
 	if cache.AuthAddresses == nil || len(cache.AuthAddresses) != 0 {
 		t.Fatalf("auth cache = %v, want initialized and empty", cache.AuthAddresses)
 	}
@@ -532,8 +532,9 @@ func TestQueryAndMergeAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t 
 	})
 
 	owned := map[string]bool{"CURRENT_ADDR": true, "UNANSWERED_ADDR": true}
+	before := SnapshotAuthCache(store, network)
 	answers := QueryAuthAddresses(context.Background(), algodClient, owned)
-	built := MergeAuthCacheIntoStore(store, network, answers, owned)
+	built := MergeAuthCacheIntoStore(store, network, before, answers, owned)
 
 	for name, cache := range map[string]AuthAddressCache{"merged": built, "persisted": LoadAuthCacheFromStore(store, network)} {
 		if got, ok := cache.GetAuthAddress("STALE_ADDR"); ok {
@@ -545,6 +546,52 @@ func TestQueryAndMergeAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t 
 		if got, ok := cache.GetAuthAddress("UNANSWERED_ADDR"); !ok || got != "KEPT_AUTH" {
 			t.Fatalf("%s unanswered auth cache entry = (%q, %v), want (KEPT_AUTH, true)", name, got, ok)
 		}
+	}
+}
+
+// A rebuild's answers were read from algod without the lock, after its
+// snapshot. An entry another process wrote meanwhile, such as its refresh
+// after a rekey or an unrekey it confirmed, may be newer than the answer, so
+// the merge keeps it; an entry still as the snapshot saw it takes the answer.
+func TestMergeAuthCacheKeepsAnEntryWrittenAfterTheSnapshot(t *testing.T) {
+	const absent = "<absent>"
+	for _, tc := range []struct {
+		name                     string
+		snapshot, answer, onDisk string
+		want                     string
+	}{
+		{"another process confirmed a rekey", "", "", "Y_AUTH", "Y_AUTH"},
+		{"another process confirmed an unrekey", "Y_AUTH", "Y_AUTH", "", ""},
+		{"another process confirmed a rekey to a new authorizer", "Y_AUTH", "Y_AUTH", "Z_AUTH", "Z_AUTH"},
+		{"another process added the entry", absent, "", "Y_AUTH", "Y_AUTH"},
+		{"the entry is as the snapshot saw it", "OLD_AUTH", "NEW_AUTH", "OLD_AUTH", "NEW_AUTH"},
+		{"there was no entry and still is none", absent, "NEW_AUTH", absent, "NEW_AUTH"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewStore(t.TempDir())
+			write := func(value string) {
+				t.Helper()
+				cache := LoadAuthCacheFromStore(store, "testnet")
+				cache.ensureInitialized()
+				if value == absent {
+					delete(cache.AuthAddresses, "X_ADDR")
+				} else {
+					cache.AuthAddresses["X_ADDR"] = value
+				}
+				if err := cache.SaveCache("testnet"); err != nil {
+					t.Fatalf("SaveCache() error = %v", err)
+				}
+			}
+			write(tc.snapshot)
+			before := SnapshotAuthCache(store, "testnet")
+			write(tc.onDisk) // another process, while the answers were read
+			merged := MergeAuthCacheIntoStore(store, "testnet", before, map[string]string{"X_ADDR": tc.answer}, map[string]bool{"X_ADDR": true})
+			for name, cache := range map[string]AuthAddressCache{"merged": merged, "persisted": LoadAuthCacheFromStore(store, "testnet")} {
+				if got, ok := cache.GetAuthAddress("X_ADDR"); !ok || got != tc.want {
+					t.Fatalf("%s entry = (%q, %v), want (%q, true)", name, got, ok, tc.want)
+				}
+			}
+		})
 	}
 }
 

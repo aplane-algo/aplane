@@ -425,6 +425,68 @@ func TestAuthCacheRebuildQueriesAlgodOutsideTheClientDataLock(t *testing.T) {
 	}
 }
 
+// While a rebuild's queries are out, another apshell process confirms a
+// rekey of one of the accounts, or an unrekey, and its refresh writes the new
+// authorizer. The rebuild's answer for that account was read before and is
+// older, so the merge keeps the other process's entry: a later signing names
+// the authorizer that now signs.
+func TestAuthCacheRebuildKeepsAnEntryAnotherProcessWroteMeanwhile(t *testing.T) {
+	account, newAuth := testAddress(78).String(), testAddress(79).String()
+	for _, tc := range []struct {
+		name                         string
+		onDisk, answered, otherWrote string
+	}{
+		{"a rekey another process confirmed", "", "", newAuth},
+		{"an unrekey another process confirmed", newAuth, newAuth, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			store := cache.NewStore(dataDir)
+			seed := cache.NewAuthAddressCacheForStore(store)
+			seed.AuthAddresses[account] = tc.onDisk
+			if err := seed.SaveCache("testnet"); err != nil {
+				t.Fatal(err)
+			}
+			node := &authRebuildNode{authAddr: tc.answered, queried: make(chan struct{}, 1), gate: make(chan struct{})}
+			client := node.serve(t)
+			eng := authRebuildEngine(t, dataDir, account, client)
+			var once atomic.Bool
+			open := func() {
+				if once.CompareAndSwap(false, true) {
+					close(node.gate)
+				}
+			}
+			defer open()
+
+			rebuilt := make(chan error, 1)
+			go func() { rebuilt <- eng.SetNetwork(context.Background(), "testnet", client) }()
+			select {
+			case <-node.queried:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the rebuild never queried algod")
+			}
+			if err := clientdata.WithExclusiveLock(dataDir, func() error {
+				auth := cache.LoadAuthCacheFromStore(store, "testnet")
+				auth.AuthAddresses[account] = tc.otherWrote
+				return auth.SaveCache("testnet")
+			}); err != nil {
+				t.Fatalf("other process's write error = %v", err)
+			}
+			open()
+			if err := <-rebuilt; err != nil {
+				t.Fatalf("SetNetwork() error = %v", err)
+			}
+			if got, ok := eng.AuthCache.GetAuthAddress(account); !ok || got != tc.otherWrote {
+				t.Fatalf("auth cache entry = (%q, %v), want the other process's (%q, true)", got, ok, tc.otherWrote)
+			}
+			saved := cache.LoadAuthCacheFromStore(store, "testnet")
+			if got, ok := saved.GetAuthAddress(account); !ok || got != tc.otherWrote {
+				t.Fatalf("saved auth cache entry = (%q, %v), want the other process's (%q, true)", got, ok, tc.otherWrote)
+			}
+		})
+	}
+}
+
 // The auth-cache rebuild copies the signer's addresses and lets go of the
 // signer cache before it queries algod, so a tunnel disconnect, which resets
 // the signer cache from the tunnel's monitor goroutine, does not wait for the

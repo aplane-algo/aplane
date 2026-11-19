@@ -183,16 +183,18 @@ func (e *Core) SetNetwork(ctx context.Context, network string, algodClient *algo
 
 // rebuildAuthCache rebuilds the active network's auth cache from algod, with
 // ctx, for every account the client knows: the alias book's and the signer's.
-// algod is queried first, holding no lock: the signer's addresses are copied
-// under signerCacheMu, released at once, so a tunnel disconnect, which resets
-// the signer cache from the tunnel's monitor goroutine, never waits on the
-// queries, and the client-data lock is not held across them, so another
-// apshell process on the same data directory is not kept from its own
-// writes. The answers are then merged under the client-data lock, as every
-// auth-cache write is: the alias book and the auth cache are reloaded under
-// it, so a write another process made meanwhile is kept, and entries for
-// addresses the client no longer knows are pruned. With no algod client,
-// the cache is loaded as it is on disk.
+// Under the client-data lock, briefly, it reloads the alias book, takes the
+// addresses and snapshots the auth cache on disk. algod is then queried
+// holding no lock: the signer's addresses were copied under signerCacheMu,
+// released at once, so a tunnel disconnect, which resets the signer cache
+// from the tunnel's monitor goroutine, never waits on the queries, and
+// another apshell process on the same data directory is not kept from its
+// own writes. The answers are merged under the client-data lock again, as
+// every auth-cache write is: the alias book and the auth cache are reloaded,
+// an entry another process changed since the snapshot is kept over this
+// rebuild's older answer, and entries for addresses the client no longer
+// knows are pruned. With no algod client, the cache is loaded as it is on
+// disk.
 func (e *Core) rebuildAuthCache(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -201,12 +203,24 @@ func (e *Core) rebuildAuthCache(ctx context.Context) error {
 		e.AuthCache = cache.LoadAuthCacheFromStore(e.CacheStore, e.Network)
 		return nil
 	}
-	answers := cache.QueryAuthAddresses(ctx, e.AlgodClient, e.collectAllAddresses())
+	var before cache.AuthCacheSnapshot
+	var addresses map[string]bool
+	if err := e.withClientDataLock(func() error {
+		if e.DataDir != "" {
+			e.AliasCache = cache.LoadAliasCacheFromStore(e.CacheStore)
+		}
+		before = cache.SnapshotAuthCache(e.CacheStore, e.Network)
+		addresses = e.collectAllAddresses()
+		return nil
+	}); err != nil {
+		return err
+	}
+	answers := cache.QueryAuthAddresses(ctx, e.AlgodClient, addresses)
 	return e.withClientDataLock(func() error {
 		if e.DataDir != "" {
 			e.AliasCache = cache.LoadAliasCacheFromStore(e.CacheStore)
 		}
-		e.AuthCache = cache.MergeAuthCacheIntoStore(e.CacheStore, e.Network, answers, e.collectAllAddresses())
+		e.AuthCache = cache.MergeAuthCacheIntoStore(e.CacheStore, e.Network, before, answers, e.collectAllAddresses())
 		return nil
 	})
 }

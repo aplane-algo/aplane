@@ -76,16 +76,42 @@ func QueryAuthAddresses(ctx context.Context, algodClient *algod.Client, addresse
 	return answers
 }
 
+// AuthCacheSnapshot is a network's auth-cache entries as they were on disk
+// when a rebuild began, before it queried algod. MergeAuthCacheIntoStore
+// applies an answer only to an entry that is still as the snapshot saw it.
+type AuthCacheSnapshot struct {
+	entries map[string]string
+}
+
+// SnapshotAuthCache reads the network's auth-cache entries from store, for a
+// rebuild about to query algod. The caller holds the client-data lock.
+func SnapshotAuthCache(store *Store, network string) AuthCacheSnapshot {
+	cache := LoadAuthCacheFromStore(store, network)
+	entries := make(map[string]string, len(cache.AuthAddresses))
+	for address, authAddr := range cache.AuthAddresses {
+		entries[address] = authAddr
+	}
+	return AuthCacheSnapshot{entries: entries}
+}
+
 // MergeAuthCacheIntoStore reloads the network's auth-address cache from
 // store, sets the entries answers gives, removes the entry of every address
-// not in owned, the client's known accounts, and saves the result. An owned
-// address with no answer keeps the entry it has on disk, which may be
-// another process's. The caller holds the client-data lock, so no other
-// process writes the file between the load and the save.
-func MergeAuthCacheIntoStore(store *Store, network string, answers map[string]string, owned map[string]bool) AuthAddressCache {
+// not in owned, the client's known accounts, and saves the result. The
+// answers were read from algod after before was taken, without the lock, so
+// an entry that changed on disk since then is kept: another process wrote it
+// meanwhile, for example its refresh after a rekey it confirmed, and its
+// answer may be newer than this one. An owned address with no answer keeps
+// the entry it has on disk too. The caller holds the client-data lock, so no
+// other process writes the file between the load and the save.
+func MergeAuthCacheIntoStore(store *Store, network string, before AuthCacheSnapshot, answers map[string]string, owned map[string]bool) AuthAddressCache {
 	cache := LoadAuthCacheFromStore(store, network)
 	cache.ensureInitialized()
 	for address, authAddr := range answers {
+		current, present := cache.AuthAddresses[address]
+		seen, wasPresent := before.entries[address]
+		if present != wasPresent || current != seen {
+			continue
+		}
 		cache.AuthAddresses[address] = authAddr
 	}
 	for address := range cache.AuthAddresses {
