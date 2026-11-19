@@ -27,7 +27,7 @@ func TestDelayedApprovalCannotAuthorizeReplacement(t *testing.T) {
 	start := func(ctx context.Context, description string) <-chan result {
 		out := make(chan result, 1)
 		go func() {
-			response, err := c.RequestSigningApprovalResponseContext(ctx, "client-controlled-id", "key", "sender", description, 1, 100, nil, time.Second)
+			response, err := c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "client-controlled-id", Address: "key", TxnSender: "sender", Description: description, FirstValid: 1, LastValid: 100}, time.Second)
 			out <- result{response, err}
 		}()
 		return out
@@ -98,7 +98,7 @@ func TestCancelByClientRequestIDDismissesGeneratedPrompt(t *testing.T) {
 	})
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.RequestSigningApproval("client-id", "key", "sender", "d", 1, 100, nil, time.Minute)
+		_, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "client-id", Address: "key", TxnSender: "sender", Description: "d", FirstValid: 1, LastValid: 100}, time.Minute))
 		done <- err
 	}()
 	prompt := <-delivered

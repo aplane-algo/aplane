@@ -13,6 +13,14 @@ import (
 	"time"
 )
 
+// approvedOf reads an approval answer as a bool: approved, or the error.
+func approvedOf(response SignResponse, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	return response.Approved, nil
+}
+
 func TestCoordinatorSerializesSigningRequests(t *testing.T) {
 	sent := make(chan string, 2)
 	c := New(
@@ -30,7 +38,7 @@ func TestCoordinatorSerializesSigningRequests(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		ok, err := c.RequestSigningApproval("sign-1", "A", "A", "first", 0, 0, nil, time.Second)
+		ok, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "first"}, time.Second))
 		if err != nil {
 			t.Errorf("first signing request failed: %v", err)
 			return
@@ -45,7 +53,7 @@ func TestCoordinatorSerializesSigningRequests(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		ok, err := c.RequestSigningApproval("sign-2", "B", "B", "second", 0, 0, nil, time.Second)
+		ok, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-2", Address: "B", TxnSender: "B", Description: "second"}, time.Second))
 		if err != nil {
 			t.Errorf("second signing request failed: %v", err)
 			return
@@ -94,7 +102,7 @@ func TestCoordinatorCancelSignRequestDismissesPendingApproval(t *testing.T) {
 
 	result := make(chan error, 1)
 	go func() {
-		_, err := c.RequestSigningApproval("sign-1", "A", "A", "first", 0, 0, nil, time.Minute)
+		_, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "first"}, time.Minute))
 		result <- err
 	}()
 
@@ -118,10 +126,10 @@ func TestCoordinatorCancelSignRequestDismissesPendingApproval(t *testing.T) {
 	select {
 	case err := <-result:
 		if !errors.Is(err, ErrApprovalCanceled) {
-			t.Fatalf("RequestSigningApproval() error = %v, want ErrApprovalCanceled", err)
+			t.Fatalf("RequestSigningApprovalPrompt() error = %v, want ErrApprovalCanceled", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("RequestSigningApproval() did not return after cancel")
+		t.Fatal("RequestSigningApprovalPrompt() did not return after cancel")
 	}
 	if got := c.PendingSignCount(); got != 0 {
 		t.Fatalf("PendingSignCount() = %d, want 0", got)
@@ -148,9 +156,9 @@ func TestCoordinatorCancelSignRequestBeforeApprovalIsPending(t *testing.T) {
 	if got := c.CancelSignRequest("sign-early", SignRequestCancelReasonClientCanceled); got.State != SignRequestCancelStateCanceled {
 		t.Fatalf("duplicate CancelSignRequest() state = %q, want canceled", got.State)
 	}
-	_, err := c.RequestSigningApprovalContext(ctx, "sign-early", "A", "A", "first", 0, 0, nil, time.Minute)
+	_, err := approvedOf(c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "sign-early", Address: "A", TxnSender: "A", Description: "first"}, time.Minute))
 	if !errors.Is(err, ErrApprovalCanceled) {
-		t.Fatalf("RequestSigningApproval() error = %v, want ErrApprovalCanceled", err)
+		t.Fatalf("RequestSigningApprovalPrompt() error = %v, want ErrApprovalCanceled", err)
 	}
 	select {
 	case got := <-delivered:
@@ -239,8 +247,8 @@ func TestCoordinatorRejectsEmptyRequestID(t *testing.T) {
 		nil,
 	)
 
-	if _, err := c.RequestSigningApproval("", "A", "A", "desc", 0, 0, nil, time.Second); err == nil {
-		t.Fatal("RequestSigningApproval() error = nil, want request ID rejection")
+	if _, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "", Address: "A", TxnSender: "A", Description: "desc"}, time.Second)); err == nil {
+		t.Fatal("RequestSigningApprovalPrompt() error = nil, want request ID rejection")
 	}
 }
 
@@ -272,7 +280,7 @@ func TestCoordinatorLateResponseAfterTimeoutIsIgnored(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.RequestSigningApproval("sign-timeout", "A", "A", "first", 0, 0, nil, 20*time.Millisecond)
+		_, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-timeout", Address: "A", TxnSender: "A", Description: "first"}, 20*time.Millisecond))
 		done <- err
 	}()
 
@@ -281,7 +289,7 @@ func TestCoordinatorLateResponseAfterTimeoutIsIgnored(t *testing.T) {
 		t.Fatalf("delivered request = %q, want a generated prompt ID", promptTimeout)
 	}
 	if err := <-done; err == nil {
-		t.Fatal("RequestSigningApproval() error = nil, want timeout")
+		t.Fatal("RequestSigningApprovalPrompt() error = nil, want timeout")
 	}
 
 	c.HandleSignResponse(&SignResponse{ID: promptTimeout, Approved: true})
@@ -309,7 +317,7 @@ func TestCoordinatorRequestSigningApprovalContextCancelCleansPendingRequest(t *t
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.RequestSigningApprovalContext(ctx, "sign-cancel", "A", "A", "first", 0, 0, nil, time.Second)
+		_, err := approvedOf(c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "sign-cancel", Address: "A", TxnSender: "A", Description: "first"}, time.Second))
 		done <- err
 	}()
 
@@ -321,7 +329,7 @@ func TestCoordinatorRequestSigningApprovalContextCancelCleansPendingRequest(t *t
 
 	err := <-done
 	if !errors.Is(err, ErrApprovalCanceled) {
-		t.Fatalf("RequestSigningApprovalContext() error = %v, want ErrApprovalCanceled", err)
+		t.Fatalf("RequestSigningApprovalPrompt() error = %v, want ErrApprovalCanceled", err)
 	}
 	if got := c.PendingSignCount(); got != 0 {
 		t.Fatalf("PendingSignCount() = %d, want 0", got)
@@ -345,7 +353,7 @@ func TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn(
 
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := c.RequestSigningApproval("sign-1", "A", "A", "first", 0, 0, nil, time.Second)
+		_, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "first"}, time.Second))
 		firstDone <- err
 	}()
 
@@ -357,7 +365,7 @@ func TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn(
 	ctx, cancel := context.WithCancel(context.Background())
 	secondDone := make(chan error, 1)
 	go func() {
-		_, err := c.RequestSigningApprovalContext(ctx, "sign-2", "B", "B", "second", 0, 0, nil, time.Second)
+		_, err := approvedOf(c.RequestSigningApprovalPrompt(ctx, Prompt{RequestID: "sign-2", Address: "B", TxnSender: "B", Description: "second"}, time.Second))
 		secondDone <- err
 	}()
 	waitForDeliveryQueueLength(t, c, 1)
@@ -367,15 +375,15 @@ func TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn(
 	select {
 	case err := <-secondDone:
 		if !errors.Is(err, ErrApprovalCanceled) {
-			t.Fatalf("queued RequestSigningApprovalContext() error = %v, want ErrApprovalCanceled", err)
+			t.Fatalf("queued RequestSigningApprovalPrompt() error = %v, want ErrApprovalCanceled", err)
 		}
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("queued RequestSigningApprovalContext() did not return after context cancellation")
+		t.Fatal("queued RequestSigningApprovalPrompt() did not return after context cancellation")
 	}
 
 	c.HandleSignResponse(&SignResponse{ID: prompt1, Approved: true})
 	if err := <-firstDone; err != nil {
-		t.Fatalf("first RequestSigningApproval() error = %v, want nil", err)
+		t.Fatalf("first RequestSigningApprovalPrompt() error = %v, want nil", err)
 	}
 
 	select {
@@ -404,7 +412,7 @@ func TestCoordinatorMismatchedResponseIDDoesNotSatisfyActiveRequest(t *testing.T
 		err      error
 	}, 1)
 	go func() {
-		approved, err := c.RequestSigningApproval("sign-1", "A", "A", "first", 0, 0, nil, time.Second)
+		approved, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "first"}, time.Second))
 		resultCh <- struct {
 			approved bool
 			err      error
@@ -432,10 +440,10 @@ func TestCoordinatorMismatchedResponseIDDoesNotSatisfyActiveRequest(t *testing.T
 
 	result := <-resultCh
 	if result.err != nil {
-		t.Fatalf("RequestSigningApproval() error = %v, want nil", result.err)
+		t.Fatalf("RequestSigningApprovalPrompt() error = %v, want nil", result.err)
 	}
 	if !result.approved {
-		t.Fatal("RequestSigningApproval() approved = false, want true")
+		t.Fatal("RequestSigningApprovalPrompt() approved = false, want true")
 	}
 	if got := c.PendingSignCount(); got != 0 {
 		t.Fatalf("PendingSignCount() = %d, want 0 after matching response", got)
@@ -458,7 +466,7 @@ func TestCoordinatorRequestSigningApprovalResponseReturnsApproverPrincipal(t *te
 		err      error
 	}, 1)
 	go func() {
-		response, err := c.RequestSigningApprovalResponse("sign-1", "A", "A", "first", 0, 0, nil, time.Second)
+		response, err := c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "first"}, time.Second)
 		resultCh <- struct {
 			response SignResponse
 			err      error
@@ -474,10 +482,10 @@ func TestCoordinatorRequestSigningApprovalResponseReturnsApproverPrincipal(t *te
 
 	result := <-resultCh
 	if result.err != nil {
-		t.Fatalf("RequestSigningApprovalResponse() error = %v, want nil", result.err)
+		t.Fatalf("RequestSigningApprovalPrompt() error = %v, want nil", result.err)
 	}
 	if !result.response.Approved {
-		t.Fatal("RequestSigningApprovalResponse() approved = false, want true")
+		t.Fatal("RequestSigningApprovalPrompt() approved = false, want true")
 	}
 	if result.response.ApproverPrincipal != "alice-admin" {
 		t.Fatalf("ApproverPrincipal = %q, want alice-admin", result.response.ApproverPrincipal)
@@ -500,7 +508,7 @@ func TestCoordinatorFailAllUnblocksPendingRequest(t *testing.T) {
 		err      error
 	}, 1)
 	go func() {
-		approved, err := c.RequestSigningApproval("sign-fail", "A", "A", "first", 0, 0, nil, time.Second)
+		approved, err := approvedOf(c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-fail", Address: "A", TxnSender: "A", Description: "first"}, time.Second))
 		resultCh <- struct {
 			approved bool
 			err      error
@@ -516,10 +524,10 @@ func TestCoordinatorFailAllUnblocksPendingRequest(t *testing.T) {
 
 	result := <-resultCh
 	if result.err != nil {
-		t.Fatalf("RequestSigningApproval() error = %v, want nil", result.err)
+		t.Fatalf("RequestSigningApprovalPrompt() error = %v, want nil", result.err)
 	}
 	if result.approved {
-		t.Fatal("RequestSigningApproval() approved = true, want false")
+		t.Fatal("RequestSigningApprovalPrompt() approved = true, want false")
 	}
 }
 

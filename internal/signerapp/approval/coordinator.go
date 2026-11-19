@@ -415,33 +415,6 @@ func (c *Coordinator) releaseDeliveryTurn() {
 	c.deliveryMu.Unlock()
 }
 
-func (c *Coordinator) RequestSigningApproval(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []Violation, timeout time.Duration) (bool, error) {
-	response, err := c.RequestSigningApprovalResponseContext(context.Background(), requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (c *Coordinator) RequestSigningApprovalResponse(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []Violation, timeout time.Duration) (SignResponse, error) {
-	return c.RequestSigningApprovalResponseContext(context.Background(), requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-}
-
-func (c *Coordinator) RequestSigningApprovalContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []Violation, timeout time.Duration) (bool, error) {
-	response, err := c.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []Violation, timeout time.Duration) (SignResponse, error) {
-	return c.RequestSigningApprovalPrompt(ctx, Prompt{
-		RequestID: requestID, Address: address, TxnSender: txnSender, Description: description,
-		FirstValid: firstValid, LastValid: lastValid, Violations: violations,
-	}, timeout)
-}
-
 // RequestSigningApprovalPrompt shows prompt to the operator and waits for the
 // answer, the timeout, or the request's cancellation.
 func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt Prompt, timeout time.Duration) (SignResponse, error) {
