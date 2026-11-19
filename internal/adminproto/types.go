@@ -288,8 +288,9 @@ type RestoreBackupResult struct {
 	ArchiveSHA256 string
 	GenerationID  string
 	// CommitUncertain is process-local audit metadata. It is set when the
-	// store-root replacement is visible but its durability could not be confirmed and
-	// is deliberately not projected onto the admin protocol.
+	// store-root replacement may have landed but could not be confirmed
+	// (genstore.RootCommitUncertain), and is deliberately not projected onto
+	// the admin protocol.
 	CommitUncertain bool
 	Restored        []RestoreCredential
 	Identical       []RestoreCredential
@@ -313,8 +314,13 @@ type RollbackRestoreResult struct {
 	OperationID  string
 	GenerationID string
 	KeyCount     int
-	Code         string
-	Error        string
+	// CommitUncertain is process-local audit metadata: the rollback's root
+	// commit may have landed but could not be confirmed
+	// (genstore.RootCommitUncertain). It is not projected onto the admin
+	// protocol.
+	CommitUncertain bool
+	Code            string
+	Error           string
 }
 
 type ReconcileStoreResult struct {

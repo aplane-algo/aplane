@@ -99,8 +99,8 @@ Fields are omitted when empty.
 | `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
 | `CREDENTIAL_RESTORE_SUCCEEDED` | Credential restore committed and reloaded successfully |
 | `CREDENTIAL_RESTORE_FAILED` | Credential restore failed; a reload failure after commit enters recovery mode and requires explicit reconciliation or eligible rollback |
-| `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` is visible but durability is unconfirmed; signing remains recovery-blocked pending reconciliation |
-| `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded or failed |
+| `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` may have landed but could not be confirmed (visible but not confirmed durable, or not readable back); signing remains recovery-blocked pending reconciliation |
+| `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded, failed, or may have committed (`commit_uncertain`, with the generation) |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |

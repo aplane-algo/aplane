@@ -809,6 +809,18 @@ the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
 
+Fixed 2026-11-18: the `ErrStoreRootCommitStateUnknown` edge (open since the
+RB4 and I10 divergences above). Policy apply, the ASA set, restore and
+rollback classified a root commit whose root could not be read back, or
+matched neither the old record nor the candidate, as a failure before
+commit, so a root that had landed was served from the old generation
+without recovery. They now treat it as uncertain
+(`genstore.RootCommitUncertain`), as for unconfirmed durability: recovery,
+and a reload where the caller already reloads. A passphrase change in that
+state still ends locked, and its error now says the new passphrase may be in
+effect. The spec is unchanged: `CommitRoot` already stands for every commit
+that may have moved the root. RB2's row names the four new tests.
+
 Changed 2026-11-18: `enrollment_queue.tla`'s `Reject` now requires the
 registry synced, as `RejectEnrollment` re-publishes a registry left unsynced
 before its already-enrolled check (`ensureRegistryDurableLocked`). The check
