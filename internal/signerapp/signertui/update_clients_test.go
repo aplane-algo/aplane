@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -96,5 +97,36 @@ func TestKeyListCShortcutOpensEnrolledClients(t *testing.T) {
 	next, _ = admin.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	if next.(Model).viewState != ViewAdminPanel {
 		t.Fatalf("settings still binds c: view = %v", next.(Model).viewState)
+	}
+}
+
+// The revoke dialog names the key by the label the client sent before it was
+// trusted, so the label is drawn escaped there too: a right-to-left override
+// or a C1 control cannot rearrange or recolour the dialog.
+func TestRevokeDialogEscapesTheClientLabel(t *testing.T) {
+	const label = "ops\u202elaptop\u009b31m"
+	m := sizedForTest(t, Model{viewState: ViewEnrolledClients, connectionState: ConnectionConnected, clients: clientsState{
+		keys: []protocol.EnrolledKeyInfo{{Fingerprint: "SHA256:one", Label: label, KeyType: "ssh-ed25519"}},
+	}}, MinWidth, MinHeight)
+	next, _ := m.handleEnrolledClientsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = next.(Model)
+	if m.viewState != ViewRevokeClientConfirm {
+		t.Fatalf("r opened %v, want the revoke dialog", m.viewState)
+	}
+	view := requireFits(t, m, MinWidth, MinHeight)
+	if strings.ContainsAny(view, "\u202e\u009b") {
+		t.Fatalf("the revoke dialog draws the client's control characters raw:\n%q", view)
+	}
+	if !strings.Contains(view, `Label: ops\u202elaptop\u009b31m`) {
+		t.Fatalf("the revoke dialog does not show the label escaped:\n%q", view)
+	}
+
+	// The address a waiting request came from is drawn escaped on the list,
+	// as it is on the popup.
+	waiting := sizedForTest(t, Model{viewState: ViewEnrolledClients, connectionState: ConnectionConnected, clients: clientsState{
+		pending: []protocol.PendingEnrollmentInfo{{Fingerprint: "SHA256:two", KeyType: "ssh-ed25519", RemoteAddr: "10.0.0.7\u009b31m"}},
+	}}, MinWidth, MinHeight)
+	if view := requireFits(t, waiting, MinWidth, MinHeight); strings.Contains(view, "\u009b") || !strings.Contains(view, `From:      10.0.0.7\u009b31m`) {
+		t.Fatalf("the waiting request's address is not drawn escaped:\n%q", view)
 	}
 }

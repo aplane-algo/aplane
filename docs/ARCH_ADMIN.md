@@ -1246,7 +1246,9 @@ identifies the current screen. The enum has families for:
   reject) followed by every enrolled key with fingerprint, label, key type,
   and live connection state (`r` revoke, `A` revoke all); `i` opens the key
   import form (`ViewImportClientKey`: a public-key file on this machine plus
-  an optional label). The screen has no manual refresh: it re-fetches both
+  an optional label). Labels and remote addresses come from the client, so
+  this screen and its revoke dialog draw them escaped, as the enrollment
+  popup does. The screen has no manual refresh: it re-fetches both
   lists on every `enrollment_changed` notification while it, one of its
   sub-views, or a popup raised over it is showing, so requests arriving over
   SSH, answers from another admin client, and clients connecting or
