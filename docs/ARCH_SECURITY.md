@@ -352,15 +352,18 @@ secret of any kind.
 All SSH connections are logged for audit purposes:
 
 ```json
-{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"connected","remote_addr":"192.168.1.5:54321","reason":"ssh"}
-{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"disconnected","remote_addr":"192.168.1.5:54321","reason":"ssh"}
+{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"connected","remote_addr":"192.168.1.5:54321","reason":"ssh","ssh_fingerprint":"SHA256:Vb3x..."}
+{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"disconnected","remote_addr":"192.168.1.5:54321","reason":"ssh","ssh_fingerprint":"SHA256:Vb3x..."}
 ```
 
 Logged information:
 - Remote IP address and port
 - Connect/disconnect events, including `enroll` connections
-- The key fingerprint appears only in the enrollment and revocation events,
-  not in the session entries
+- `ssh_fingerprint`: the SHA256 fingerprint of the client key that opened the
+  connection, the same form `client:<fingerprint>` principals and the
+  enrollment and revocation events use. For an `enroll` connection it is the
+  key asking to be enrolled. The principal fields still name the product
+  admin
 
 **Note:** The SSH username is the fixed non-secret value `aplane`. The SSH auth-log
 callback records only remote address, authentication method, and outcome; it
@@ -1221,6 +1224,9 @@ Audit entries carry attribution fields:
 - `witness_key_id`: public witness authority affected by a cosigner-reference mutation
 - `client_label`: display label of the key in enrollment and revocation events
 - `closed_connections`: live connections closed by a key revocation
+- `ssh_fingerprint`: on an SSH client's `SESSION_CONNECTED` and
+  `SESSION_DISCONNECTED`, the fingerprint of the client key that opened the
+  connection
 - `suppressed_count`: failures or rejections counted by a suppression summary entry
 - `rotating_stage`, `rotating_last_valid`: stage revealed and last valid round
   for `ROTATING_RELEASE`

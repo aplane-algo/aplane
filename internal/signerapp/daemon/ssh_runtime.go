@@ -35,9 +35,9 @@ func (fs *Signer) sshSessionCallback(auditLog *AuditLogger) sshtunnel.SessionCal
 	return func(event sshtunnel.SessionEvent) {
 		if auditLog != nil {
 			if event.Connected {
-				auditLog.LogSessionConnected(event.RemoteAddr, "ssh")
+				auditLog.LogSSHSessionConnected(event.RemoteAddr, event.Fingerprint)
 			} else {
-				auditLog.LogSessionDisconnected(event.RemoteAddr, "ssh")
+				auditLog.LogSSHSessionDisconnected(event.RemoteAddr, event.Fingerprint)
 			}
 		}
 		if !event.EnrolledKey {
