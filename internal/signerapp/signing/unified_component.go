@@ -35,8 +35,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 	case signerapi.ComponentTargetKindCosigner:
 		planReq := componentPlanRequest{
 			RequestID: req.RequestID, GroupBytesHex: req.GroupBytesHex,
-			Requests: req.GroupSignRequest().Requests,
-			Role:     ComponentSignRoleCosigner,
+			Role: ComponentSignRoleCosigner,
 		}
 		for _, target := range req.Targets {
 			planReq.TargetIndices = append(planReq.TargetIndices, target.TargetIndex)

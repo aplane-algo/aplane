@@ -473,9 +473,9 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 }
 
 // assembleBoundedLogicSig assembles the spend-path bounded LogicSig. Policy
-// checks (classification, fee ceiling, caller-args validation, admin-path
-// routing) ran at the plan boundary and were rechecked against the loaded key
-// via verifyBoundedPlanIntegrity; only assembly-shape enforcement remains here.
+// checks (classification, fee ceiling, caller-args validation) ran at the plan
+// boundary and were rechecked against the loaded key via
+// verifyBoundedPlanIntegrity; only assembly-shape enforcement remains here.
 func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnSender string, item *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, signatureArgs [][]byte, keyType string) ([]byte, string, *ServiceError) {
 	metadata := keyMaterial.BoundedAuthorization
 	if item == nil {

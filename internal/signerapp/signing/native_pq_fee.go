@@ -74,7 +74,7 @@ func signedTxnPQScheme(stxn types.SignedTxn) (string, error) {
 	return "", nil
 }
 
-func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, resourcePlan lsigresource.Plan, dummyCount int, preferredTargets []int, immutable bool) (DummyFeeInfo, *ServiceError) {
+func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, resourcePlan lsigresource.Plan, preferredTargets []int, immutable bool) (DummyFeeInfo, *ServiceError) {
 	var info DummyFeeInfo
 	params, ok := sdkconfig.Consensus[lsigresource.CurrentConsensusVersion]
 	if !ok {
@@ -133,10 +133,6 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, res
 	if overflow {
 		return DummyFeeInfo{}, badRequest("native PQ fee contribution overflowed")
 	}
-	if dummyCount < 0 || uint64(dummyCount) > math.MaxUint64/minFee {
-		return DummyFeeInfo{}, badRequest("dummy fee contribution overflowed")
-	}
-	info.DummyFeeContribution = uint64(dummyCount) * minFee
 	// An immutable group (pre-grouped, or carrying signatures) cannot be
 	// raised, so it is only checked: it must already pay the full requirement.
 	if immutable {

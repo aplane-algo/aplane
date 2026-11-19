@@ -9,7 +9,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
-	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // ComponentSignRole is an internal gate/message role derived from the public
@@ -28,7 +27,6 @@ type ComponentSignPlan struct {
 	MessageRole  message.Role
 	ComponentKey string
 	Group        *canonical.Group
-	Requests     []signerapi.SignRequest
 	Targets      []ComponentSignTarget
 }
 
@@ -47,7 +45,6 @@ type componentPlanRequest struct {
 	ComponentKey  string
 	GroupBytesHex []string
 	TargetIndices []int
-	Requests      []signerapi.SignRequest
 }
 
 func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *ServiceError) {
@@ -86,7 +83,6 @@ func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *Ser
 		MessageRole:  role,
 		ComponentKey: req.ComponentKey,
 		Group:        group,
-		Requests:     append([]signerapi.SignRequest(nil), req.Requests...),
 		Targets:      targets,
 	}, nil
 }

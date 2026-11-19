@@ -47,7 +47,6 @@ type DummyFeeInfo struct {
 	TotalFees               uint64
 	LSigCount               int
 	FeeIndices              []int
-	DummyFeeContribution    uint64
 	ProgramFeeContribution  uint64
 	NativePQFeeContribution uint64
 }
@@ -324,7 +323,7 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 	if budgetErr != nil {
 		return nil, budgetErr
 	}
-	feeInfo, feeErr := applyGroupFees(allTxns, budgets, resourcePlan, dummiesNeeded, lsigIndices, in.IsPreGrouped || in.HasPassthrough)
+	feeInfo, feeErr := applyGroupFees(allTxns, budgets, resourcePlan, lsigIndices, in.IsPreGrouped || in.HasPassthrough)
 	if feeErr != nil {
 		return nil, feeErr
 	}

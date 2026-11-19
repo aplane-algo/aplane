@@ -78,8 +78,8 @@ func validateCosignedPassthrough(ctx context.Context, passthrough signerapi.Asse
 
 	// One rule for forwarded signed bytes, shared with /sign passthrough:
 	// they must be the canonical encoding of what they decode to. The decoder
-	// reports that here; the refusal for it stays last, after the checks
-	// below, so the order of refusals is unchanged.
+	// reports that here; the refusal for it comes last, after the checks
+	// below.
 	stxn, decodeErr := canonical.DecodeSignedTxn(signedTxnBytes)
 	notCanonical := errors.Is(decodeErr, canonical.ErrNotCanonical)
 	if decodeErr != nil && !notCanonical {

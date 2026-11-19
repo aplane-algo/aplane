@@ -24,7 +24,7 @@ func TestApplyGroupFeesNativePQ(t *testing.T) {
 
 	t.Run("adds only PQ contribution", func(t *testing.T) {
 		txns := []types.Transaction{baseTxn}
-		info, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}}, resourcePlan, 0, nil, false)
+		info, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}}, resourcePlan, nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +39,7 @@ func TestApplyGroupFeesNativePQ(t *testing.T) {
 		// transactions, so the signer adds its charge on top instead.
 		txns := []types.Transaction{baseTxn, baseTxn}
 		txns[0].Fee = 4_000
-		info, err := applyGroupFees(txns, []authorizationBudget{{mutable: true}, {pqScheme: nativefalcon.Scheme, mutable: true}}, lsigresource.Plan{TransactionCount: 2, GroupSize: 2}, 0, nil, false)
+		info, err := applyGroupFees(txns, []authorizationBudget{{mutable: true}, {pqScheme: nativefalcon.Scheme, mutable: true}}, lsigresource.Plan{TransactionCount: 2, GroupSize: 2}, nil, false)
 		if err != nil || info.TotalFees != 2_000 || txns[0].Fee != 4_000 || txns[1].Fee != 3_000 {
 			t.Fatalf("applyGroupFees() = info %#v, fees [%d %d], error %v; want the 2000 charge on the PQ slot and the surplus kept", info, txns[0].Fee, txns[1].Fee, err)
 		}
@@ -50,7 +50,7 @@ func TestApplyGroupFeesNativePQ(t *testing.T) {
 		txn.Note = make([]byte, 1_025)
 		txn.Fee = 1_001
 		txns := []types.Transaction{txn}
-		info, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}}, resourcePlan, 0, nil, false)
+		info, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}}, resourcePlan, nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -63,7 +63,7 @@ func TestApplyGroupFeesNativePQ(t *testing.T) {
 		txn := baseTxn
 		txn.Note = make([]byte, 1_025)
 		txns := []types.Transaction{txn}
-		_, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}}, resourcePlan, 0, nil, false)
+		_, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}}, resourcePlan, nil, false)
 		if err == nil || !strings.Contains(err.Message, "client-supplied group") {
 			t.Fatalf("error = %#v, want ordinary fee rejection", err)
 		}
@@ -71,7 +71,7 @@ func TestApplyGroupFeesNativePQ(t *testing.T) {
 
 	t.Run("rejects immutable underfunding", func(t *testing.T) {
 		txns := []types.Transaction{baseTxn}
-		_, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme}}, resourcePlan, 0, nil, true)
+		_, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme}}, resourcePlan, nil, true)
 		if err == nil || !strings.Contains(err.Message, "immutable group") {
 			t.Fatalf("error = %#v, want immutable fee rejection", err)
 		}
@@ -83,7 +83,7 @@ func TestApplyGroupFeesNativePQ(t *testing.T) {
 		txn := baseTxn
 		txn.Fee = 3_000
 		txns := []types.Transaction{txn}
-		info, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme}}, resourcePlan, 0, nil, true)
+		info, err := applyGroupFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme}}, resourcePlan, nil, true)
 		if err != nil || info.TotalFees != 0 || len(info.FeeIndices) != 0 || txns[0].Fee != 3_000 {
 			t.Fatalf("applyGroupFees() = info %#v, fee %d, error %v; want the paid group accepted unchanged", info, txns[0].Fee, err)
 		}
@@ -106,7 +106,6 @@ func TestApplyGroupFeesCombinesDummyProgramAndPQUsage(t *testing.T) {
 		txns,
 		[]authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}},
 		resourcePlan,
-		1,
 		[]int{0},
 		false,
 	)
@@ -118,7 +117,7 @@ func TestApplyGroupFeesCombinesDummyProgramAndPQUsage(t *testing.T) {
 	if info.TotalFees != 3_250 || uint64(txns[0].Fee) != 4_250 {
 		t.Fatalf("fee result = %#v, fee %d; want delta 3250/final 4250", info, txns[0].Fee)
 	}
-	if info.DummyFeeContribution != 1_000 || info.ProgramFeeContribution != 250 || info.NativePQFeeContribution != 2_000 {
+	if info.ProgramFeeContribution != 250 || info.NativePQFeeContribution != 2_000 {
 		t.Fatalf("fee contributions = %#v", info)
 	}
 	if len(info.FeeIndices) != 1 || info.FeeIndices[0] != 0 {
@@ -137,7 +136,6 @@ func TestApplyGroupFeesKeepsClientSurplusForDummies(t *testing.T) {
 		txns,
 		[]authorizationBudget{{mutable: true}},
 		lsigresource.Plan{TransactionCount: 1, DummyCount: 1, GroupSize: 2},
-		1,
 		[]int{0},
 		false,
 	)
@@ -160,7 +158,6 @@ func TestApplyGroupFeesChargeDependsOnlyOnShape(t *testing.T) {
 		txns       []types.Transaction
 		budgets    []authorizationBudget
 		plan       lsigresource.Plan
-		dummies    int
 		lsigs      []int
 		wantCharge uint64
 	}{
@@ -176,7 +173,6 @@ func TestApplyGroupFeesChargeDependsOnlyOnShape(t *testing.T) {
 			txns:       []types.Transaction{{Type: types.PaymentTx}, {Type: types.PaymentTx}, {Type: types.PaymentTx}},
 			budgets:    []authorizationBudget{{mutable: true}},
 			plan:       lsigresource.Plan{TransactionCount: 1, DummyCount: 2, GroupSize: 3, ProgramFeeFactorUsage: 250_000},
-			dummies:    2,
 			lsigs:      []int{0},
 			wantCharge: 2_250,
 		},
@@ -215,7 +211,7 @@ func TestApplyGroupFeesChargeDependsOnlyOnShape(t *testing.T) {
 					txns[i].Fee = types.MicroAlgos(fee)
 					paid += fee
 				}
-				info, err := applyGroupFees(txns, shape.budgets, shape.plan, shape.dummies, shape.lsigs, false)
+				info, err := applyGroupFees(txns, shape.budgets, shape.plan, shape.lsigs, false)
 				if err != nil {
 					t.Fatalf("client fees %v: %v", fees, err)
 				}
@@ -243,7 +239,6 @@ func TestApplyGroupFeesChargesTopLevelNativePQBeforeLogicSig(t *testing.T) {
 		txns,
 		[]authorizationBudget{{mutable: true}, {pqScheme: nativefalcon.Scheme, mutable: true}},
 		lsigresource.Plan{TransactionCount: 2, GroupSize: 2},
-		0,
 		[]int{0},
 		false,
 	)
@@ -280,7 +275,6 @@ func TestApplyGroupFeesHonorsZeroBoundedFeeCeiling(t *testing.T) {
 			GroupSize:             2,
 			ProgramFeeFactorUsage: 1_000_000,
 		},
-		0,
 		[]int{0},
 		false,
 	)

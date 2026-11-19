@@ -43,7 +43,7 @@ func previousRotatingGroup(t *testing.T, txn types.Transaction, profile *lsigres
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}
-	if _, feeErr := applyGroupFees(allTxns, []authorizationBudget{{mutable: true}}, resourcePlan, dummies, []int{0}, false); feeErr != nil {
+	if _, feeErr := applyGroupFees(allTxns, []authorizationBudget{{mutable: true}}, resourcePlan, []int{0}, false); feeErr != nil {
 		t.Fatal(feeErr)
 	}
 	if len(allTxns) > 1 {

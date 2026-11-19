@@ -455,7 +455,7 @@ func processTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, re
 		return outcome
 	}
 
-	if !registerProductProvider(rec.KeyType, prepared.Register) {
+	if prepared.Register == nil || !prepared.Register() {
 		outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
 		return outcome
 	}
