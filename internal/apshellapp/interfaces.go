@@ -18,7 +18,6 @@ type PluginRuntime interface {
 	DiscoverPluginsCached() ([]*discovery.Plugin, error)
 	FindByCommand(command string) (*discovery.Plugin, error)
 	FindByName(name string) (*discovery.Plugin, error)
-	ListCommands() ([]string, error)
 	// ExecuteCommand and SignTransactions end when ctx does.
 	ExecuteCommand(ctx context.Context, pluginName, command string, args []string, pluginContext jsonrpc.Context) (*jsonrpc.ExecuteResult, error)
 	SignTransactions(ctx context.Context, pluginName string, params jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error)

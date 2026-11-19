@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
 )
 
-func TestPluginCommandAvailabilityMatchesShellAdapterAndMCP(t *testing.T) {
+func TestMCPRunsOnlyAvailablePluginCommands(t *testing.T) {
 	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
@@ -55,17 +55,6 @@ func TestPluginCommandAvailabilityMatchesShellAdapterAndMCP(t *testing.T) {
 		CommandRegistry: command.NewRegistry(),
 	}
 	state.App.Plugins = pm
-
-	adapter := &PluginExecutorAdapter{repl: state}
-	gotCommands := adapter.ListPluginCommands()
-	if len(gotCommands) != 1 || gotCommands[0] != "swap" {
-		t.Fatalf("ListPluginCommands() = %#v, want [swap]", gotCommands)
-	}
-	for _, cmd := range gotCommands {
-		if cmd == "lend" {
-			t.Fatalf("unexpected absent plugin command %q present in shell adapter list", cmd)
-		}
-	}
 
 	result := mcpExecuteCommand(state, Command{Name: "swap", Args: []string{"--fast"}})
 	if result.IsError {

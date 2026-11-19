@@ -49,11 +49,9 @@ type REPLState struct {
 	// AutoConfirm skips interactive confirmation prompts (for MCP mode).
 	AutoConfirm bool
 
-	// HostKeyApproval overrides the default stdin-based TOFU prompt. Set by
-	// TUI hosts that own stdin and need to route approval through their UI.
-	HostKeyApproval func(host, fingerprint string) (bool, error)
-	// HostKeyApprovalContext is the cancellation-aware form used by embedded
-	// hosts. Standalone readline sessions continue to use HostKeyApproval.
+	// HostKeyApprovalContext overrides the default stdin-based TOFU prompt.
+	// Set by embedded hosts that own stdin and route approval through their
+	// UI.
 	HostKeyApprovalContext func(context.Context, string, string) (bool, error)
 
 	// ProgressLine, when non-nil, receives status lines emitted during

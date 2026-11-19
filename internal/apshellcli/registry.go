@@ -62,7 +62,7 @@ var builtInAutomationPolicies = map[string]command.AutomationPolicy{
 	"connect":       command.StructuredAutomation,
 	"disconnect":    command.StructuredAutomation,
 	"endpoints":     command.GuardedStructuredAutomation(guardAutomatedEndpoints),
-	"cosigner":      command.BlockedAutomation("cosigner add and cosigner status are unavailable through MCP; use apshell directly"),
+	"cosigner":      command.BlockedAutomation("cosigner status is unavailable through MCP; use apshell directly"),
 	"help":          command.BlockedAutomation("use the mcp_reference MCP tool instead"),
 	"config":        command.BlockedAutomation("use the safe status command instead"),
 	"script":        command.BlockedAutomation("issue commands individually or use the js MCP tool"),

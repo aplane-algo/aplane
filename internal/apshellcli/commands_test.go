@@ -15,7 +15,7 @@ import (
 
 func TestRequestEnrollmentRejectsPositionalHost(t *testing.T) {
 	r := &REPLState{}
-	err := r.runEnroll([]string{"signer.example"}, nil)
+	err := r.runEnroll([]string{"signer.example"})
 	if err == nil {
 		t.Fatal("runEnroll() error = nil, want usage error")
 	}
@@ -26,7 +26,7 @@ func TestRequestEnrollmentRejectsPositionalHost(t *testing.T) {
 		t.Fatalf("runEnroll() retained positional host usage: %v", err)
 	}
 	for _, args := range [][]string{{"--endpoint"}, {"--label"}, {"--endpoint", "x", "extra"}} {
-		if err := r.runEnroll(args, nil); err == nil || err.Error() != "usage: "+enrollUsage {
+		if err := r.runEnroll(args); err == nil || err.Error() != "usage: "+enrollUsage {
 			t.Fatalf("runEnroll(%v) error = %v, want usage error", args, err)
 		}
 	}

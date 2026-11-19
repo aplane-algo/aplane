@@ -37,7 +37,7 @@ func TestCmdHelpIncludesDiscoveredPluginCommands(t *testing.T) {
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	if err := state.runHelp(nil, nil); err != nil {
+	if err := state.runHelp(nil); err != nil {
 		t.Fatalf("cmdHelp() error = %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestCmdHelpShowsDetailedPluginCommandHelp(t *testing.T) {
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	if err := state.runHelp([]string{"reti"}, nil); err != nil {
+	if err := state.runHelp([]string{"reti"}); err != nil {
 		t.Fatalf("cmdHelp(reti) error = %v", err)
 	}
 

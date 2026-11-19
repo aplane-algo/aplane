@@ -1919,7 +1919,7 @@ submission output, which lists the IDs, and nothing of the outcome.
 | `config` | Use the safe `status` command instead |
 | `script` | Issue commands individually or use `js` |
 | `enroll` | Client enrollment needs interactive host trust; run it in a real apshell |
-| `cosigner` | `cosigner status` and the forwarding alias `cosigner add` are unavailable through MCP; use apshell directly (guided setup is now `endpoints add`) |
+| `cosigner` | `cosigner status` is unavailable through MCP; use apshell directly |
 | `endpoints add` | Guided cosigner endpoint setup needs interactive host trust and an operator approval wait; other `endpoints` subcommands remain structured |
 | `clear`, `cls` | Terminal clearing has no machine meaning |
 | `quit`, `exit`, `q` | Use MCP disconnect instead |

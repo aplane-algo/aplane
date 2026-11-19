@@ -50,10 +50,6 @@ func (f *fakePluginRuntime) FindByName(string) (*discovery.Plugin, error) {
 	return nil, nil
 }
 
-func (f *fakePluginRuntime) ListCommands() ([]string, error) {
-	return nil, nil
-}
-
 func (f *fakePluginRuntime) ExecuteCommand(context.Context, string, string, []string, jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
 	return nil, nil
 }
