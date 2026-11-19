@@ -69,17 +69,17 @@ func (m Model) handleMnemonicExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		e.requestID = fmt.Sprintf("mnemonic-export-%d", time.Now().UnixNano())
 		e.pending, e.error = true, ""
-		request := protocol.ExportKeyMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportKey, ID: e.requestID},
-			Address:     e.address, Passphrase: protocol.SensitiveBytes(e.passphrase.Clone()),
-		}
+		requestID, address := e.requestID, e.address
+		send := secretCmd(e.passphrase, func(p []byte) tea.Cmd {
+			request := protocol.ExportKeyMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportKey, ID: requestID},
+				Address:     address, Passphrase: protocol.SensitiveBytes(p),
+			}
+			return operationCmd(m.adminClient, requestID, func(c *IPCClient) error { return c.sendMessage(request) })
+		})
 		e.passphrase.Zero()
 		e.passphrase = nil
-		send := operationCmd(m.adminClient, request.ID, func(c *IPCClient) error { return c.sendMessage(request) })
-		return m, func() tea.Msg {
-			defer request.Passphrase.Zero()
-			return send()
-		}
+		return m, send
 	case tea.KeyBackspace, tea.KeyCtrlH:
 		e.passphrase = secretbuf.TrimRune(e.passphrase)
 	case tea.KeyRunes:
