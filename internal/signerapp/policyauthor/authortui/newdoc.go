@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -172,7 +173,7 @@ func (m Model) newView() string {
 		lines = append(lines, "File name (created in the workspace's directory):", n.input.View())
 	}
 	if n.err != "" {
-		lines = append(lines, "", m.styles.err.Render(n.err))
+		lines = append(lines, "", m.styles.err.Render(termsafe.Line(n.err)))
 	}
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(l, m.width, "…")

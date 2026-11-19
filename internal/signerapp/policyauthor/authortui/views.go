@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -132,7 +133,7 @@ func (m Model) pageView() string {
 	h := m.pageHeight()
 	end := min(len(m.page.lines), m.page.offset+h)
 	var b strings.Builder
-	b.WriteString(m.styles.title.Render(ansi.Truncate(m.page.title, m.width, "…")) + "\n\n")
+	b.WriteString(m.styles.title.Render(ansi.Truncate(termsafe.Line(m.page.title), m.width, "…")) + "\n\n")
 	for _, line := range m.page.lines[m.page.offset:end] {
 		b.WriteString(ansi.Truncate(line, m.width, "…") + "\n")
 	}
@@ -179,7 +180,7 @@ func (m Model) problemsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) problemsView() string {
 	locs := m.problemLocations()
 	var b strings.Builder
-	b.WriteString(m.styles.title.Render("Problems in "+filepath.Base(m.file().Path)) + "\n\n")
+	b.WriteString(m.styles.title.Render("Problems in "+baseName(m.file().Path)) + "\n\n")
 	if len(locs) == 0 {
 		b.WriteString("No problems.\n")
 	}
@@ -197,7 +198,7 @@ func (m Model) problemsView() string {
 		if l.problem.Pointer != "" {
 			text += "  (" + l.problem.Pointer + ")"
 		}
-		text = ansi.Truncate(text, m.width-2, "…")
+		text = ansi.Truncate(termsafe.Line(text), m.width-2, "…")
 		if i == m.problemCursor {
 			text = m.styles.selected.Render("> " + text)
 		} else {
@@ -278,18 +279,14 @@ func (m Model) comparePickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) comparePickView() string {
 	var b strings.Builder
-	b.WriteString(m.styles.title.Render("Compare "+filepath.Base(m.file().Path)+" with") + "\n\n")
+	b.WriteString(m.styles.title.Render("Compare "+baseName(m.file().Path)+" with") + "\n\n")
 	var lines []string
 	selected := 0
 	for i, f := range m.ws.Files {
 		if i == m.current {
 			continue
 		}
-		key := f.Key
-		if key == "" {
-			key = "(no key)"
-		}
-		line := ansi.Truncate(fmt.Sprintf("%-28s %-10s %s", filepath.Base(f.Path), f.State, key), m.width-2, "…")
+		line := ansi.Truncate(fmt.Sprintf("%-28s %-10s %s", baseName(f.Path), f.State, keyLabel(f.Key)), m.width-2, "…")
 		if i == m.pickCursor {
 			selected = len(lines)
 			line = m.styles.selected.Render("> " + line)
@@ -359,7 +356,7 @@ func (m Model) openField() Model {
 	width := max(20, m.width-2)
 	var lines []string
 	if f.Pointer != "" {
-		lines = append(lines, m.styles.subtle.Render(ansi.Truncate(f.Pointer, width, "…")), "")
+		lines = append(lines, m.styles.subtle.Render(ansi.Truncate(termsafe.Line(f.Pointer), width, "…")), "")
 	}
 	lines = append(lines, wrap(f.Value, width)...)
 	if f.Note != "" {

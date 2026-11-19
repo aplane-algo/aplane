@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -33,6 +34,12 @@ func newStyles() styles {
 	}
 }
 
+// A policy file, its name and the saved cases may have come from anyone, and a
+// JSON string can decode to any control character. A view escapes such text
+// with termsafe where it lays it out (wrap does it for the text it wraps), so
+// widths are measured as shown, and View escapes the whole screen once more,
+// keeping its styling, for anything a view leaves raw: an edit's input, for
+// one, shows the value as it is.
 func (m Model) View() string {
 	var body string
 	switch m.screen {
@@ -60,16 +67,27 @@ func (m Model) View() string {
 	if s := m.statusText(); s != "" {
 		status = ansi.Truncate(s, m.width, "…") + "\n"
 	}
-	return body + "\n" + status + footer
+	return termsafe.Screen(body + "\n" + status + footer)
+}
+
+// baseName is a file's name, escaped for the screen.
+func baseName(path string) string { return termsafe.Line(filepath.Base(path)) }
+
+// keyLabel is a document's key, escaped for the screen, or "(no key)".
+func keyLabel(key string) string {
+	if key == "" {
+		return "(no key)"
+	}
+	return termsafe.Line(key)
 }
 
 // statusText is the status line: the last message, else the first
 // diagnostic. On a document that does not pass check it starts with that, so
 // a draft's state stays in view alongside messages such as Saved.
 func (m Model) statusText() string {
-	text := m.status
+	text := termsafe.Line(m.status)
 	if text == "" && len(*m.diagnostics) > 0 {
-		text = m.styles.warn.Render((*m.diagnostics)[0])
+		text = m.styles.warn.Render(termsafe.Line((*m.diagnostics)[0]))
 	}
 	if m.screen != screenDocument || !m.failsCheck() {
 		return text
@@ -177,15 +195,12 @@ func (m Model) filesView() string {
 	var lines []string
 	for i := range m.ws.Files {
 		f := m.shownFile(i)
-		key := f.Key
-		if key == "" {
-			key = "(no key)"
-		}
+		key := keyLabel(f.Key)
 		e, w := m.counts(i)
 		if s, ok := m.sessions[f.Path]; ok && s.Modified() {
 			key += "  (modified)"
 		}
-		line := fmt.Sprintf("%-28s %-10s %-30s %s", ansi.Truncate(filepath.Base(f.Path), 28, "…"), f.State, countLabel(e, w), key)
+		line := fmt.Sprintf("%-28s %-10s %-30s %s", ansi.Truncate(baseName(f.Path), 28, "…"), f.State, countLabel(e, w), key)
 		line = ansi.Truncate(line, m.width-2, "…")
 		if i == m.fileCursor {
 			line = m.styles.selected.Render("> " + line)
@@ -212,15 +227,12 @@ func roleOrUnknown(ws *policyauthor.Workspace) string {
 func (m Model) documentView() string {
 	f := m.shown()
 	e, w := m.counts(m.current)
-	key := f.Key
-	if key == "" {
-		key = "(no key)"
-	}
+	key := keyLabel(f.Key)
 	role := string(f.Role)
 	if role == "" {
 		role = "(no role)"
 	}
-	header := m.styles.title.Render(filepath.Base(f.Path)) + "  "
+	header := m.styles.title.Render(baseName(f.Path)) + "  "
 	switch s := m.session(); {
 	case s == nil:
 		header += m.styles.warn.Render("read-only") + "  "
@@ -279,7 +291,7 @@ func (m Model) outlineLines(width int) []string {
 		case all > 0:
 			mark = m.styles.warn.Render(fmt.Sprintf(" ⚠%d", all))
 		}
-		text := ansi.Truncate(strings.Repeat("  ", s.Depth)+s.Title, width-lipgloss.Width(mark), "…")
+		text := ansi.Truncate(strings.Repeat("  ", s.Depth)+termsafe.Line(s.Title), width-lipgloss.Width(mark), "…")
 		if i == m.sectionCursor {
 			text = m.styles.selected.Render(text)
 		}
@@ -292,23 +304,23 @@ func (m Model) outlineLines(width int) []string {
 // the selected field's first line.
 func (m Model) formLines(width int) ([]string, int) {
 	s := m.sections[m.sectionCursor]
-	lines := []string{m.styles.title.Render(ansi.Truncate(s.Title, width, "…")), ""}
+	lines := []string{m.styles.title.Render(ansi.Truncate(termsafe.Line(s.Title), width, "…")), ""}
 	for _, p := range s.Problems {
 		lines = append(lines, m.problemLines(p, width)...)
 	}
 	selected := 0
 	labelW := 0
 	for _, f := range s.Fields {
-		labelW = max(labelW, lipgloss.Width(f.Label))
+		labelW = max(labelW, lipgloss.Width(termsafe.Line(f.Label)))
 	}
 	labelW = min(labelW, width/2)
 	for i, f := range s.Fields {
 		if i == m.fieldCursor {
 			selected = len(lines)
 		}
-		label := ansi.Truncate(f.Label, labelW, "…")
+		label := ansi.Truncate(termsafe.Line(f.Label), labelW, "…")
 		label += strings.Repeat(" ", labelW-lipgloss.Width(label))
-		value := f.Value
+		value := termsafe.Line(f.Value)
 		switch {
 		case f.Missing:
 			value = m.styles.err.Render(value)
@@ -334,7 +346,7 @@ func (m Model) formLines(width int) ([]string, int) {
 			lines = append(lines, strings.Repeat(" ", labelW+2)+more)
 		}
 		if f.Note != "" {
-			lines = append(lines, strings.Repeat(" ", labelW+2)+m.styles.subtle.Render(ansi.Truncate(f.Note, max(10, width-labelW-2), "…")))
+			lines = append(lines, strings.Repeat(" ", labelW+2)+m.styles.subtle.Render(ansi.Truncate(termsafe.Line(f.Note), max(10, width-labelW-2), "…")))
 		}
 		for _, p := range f.Problems {
 			lines = append(lines, m.problemLines(p, width)...)
@@ -386,10 +398,11 @@ func window(lines []string, focus, height int) []string {
 
 // wrap breaks text into lines of at most width cells: at spaces and commas
 // when it can, and inside a word longer than a line, such as an address,
-// when it must, so no part of a value is cut off.
+// when it must, so no part of a value is cut off. text is one line of plain
+// text, escaped here: a newline in it shows as \n.
 func wrap(text string, width int) []string {
 	if text == "" {
 		return []string{""}
 	}
-	return strings.Split(ansi.Hardwrap(ansi.Wrap(text, width, " ,"), width, true), "\n")
+	return strings.Split(ansi.Hardwrap(ansi.Wrap(termsafe.Line(text), width, " ,"), width, true), "\n")
 }

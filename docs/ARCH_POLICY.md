@@ -828,7 +828,13 @@ Consequences:
   transaction simulator and not an oracle for the policy a node runs now.
   Saved cases live in `.appolicy/cases.json` in the workspace, in their own
   format, `aplane.policy-cases.v1` (`policyauthor/cases.go`), separate from
-  the node context and from the daemon's verdict fixtures. The commands,
+  the node context and from the daemon's verdict fixtures. A file's name,
+  its strings (a JSON `\u001b` decodes to a raw ESC) and the saved cases can
+  hold terminal control sequences or bidirectional controls, so the editor
+  shows each as its escape, as the apadmin TUI does
+  ([ARCH_ADMIN.md](ARCH_ADMIN.md#showing-outside-text)): the views escape the
+  text they lay out, and the whole screen passes through `termsafe.Screen`.
+  The value in the edit bar is shown escaped but edited as it is. The commands,
   editor, and case format are described for operators in
   [USER_POLICY.md](USER_POLICY.md#checking-policy-files-offline-with-appolicy).
 - Comments are a producer convenience, not part of the format. The apadmin

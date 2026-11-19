@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -83,7 +84,7 @@ func (m Model) saveReview() Model {
 	if s.Loaded.HadComments {
 		lines = append(lines, m.styles.warn.Render("This file has comments, which will not be kept; move notes into description fields."), "")
 	}
-	title := "Save " + filepath.Base(s.Loaded.Path) + "?"
+	title := "Save " + baseName(s.Loaded.Path) + "?"
 	if s.Loaded.Exists {
 		lines = append(lines, m.changeLines(s.Review(), "the file as loaded")...)
 		return m.openPage(screenSave, title, lines)
@@ -183,20 +184,17 @@ func (m Model) baselinePickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) baselinePickView() string {
 	var b strings.Builder
-	b.WriteString(m.styles.title.Render("Compare the new "+filepath.Base(m.session().Loaded.Path)+" with") + "\n\n")
+	b.WriteString(m.styles.title.Render("Compare the new "+baseName(m.session().Loaded.Path)+" with") + "\n\n")
 	var lines []string
 	for r, i := range m.baselineRows() {
 		line := "(no comparison)"
 		if i >= 0 {
 			f := m.shownFile(i)
-			key, role := f.Key, string(f.Role)
-			if key == "" {
-				key = "(no key)"
-			}
+			role := string(f.Role)
 			if role == "" {
 				role = "(no role)"
 			}
-			line = fmt.Sprintf("%-28s %-9s %-10s %s", filepath.Base(f.Path), role, f.State, key)
+			line = fmt.Sprintf("%-28s %-9s %-10s %s", baseName(f.Path), role, f.State, keyLabel(f.Key))
 			if s, ok := m.sessions[f.Path]; ok && s.Modified() {
 				line += "  (edited, not saved)"
 			}
@@ -443,7 +441,7 @@ func (m Model) coversPath(path string) bool {
 func (m Model) conflictView() string {
 	c := m.save.conflict
 	var b strings.Builder
-	b.WriteString(m.styles.title.Render("Not saved: "+filepath.Base(c.Path)+" was "+c.Kind.String()) + "\n\n")
+	b.WriteString(m.styles.title.Render("Not saved: "+baseName(c.Path)+" was "+c.Kind.String()) + "\n\n")
 	for _, line := range wrap("Another program changed the file after it was loaded. Choose what to do with your edits:", max(20, m.width-2)) {
 		b.WriteString(line + "\n")
 	}
@@ -455,7 +453,7 @@ func (m Model) conflictView() string {
 	if m.save.saveAs {
 		b.WriteString("\nSave as (a name in the file's directory, or a full path):\n" + m.save.input.View() + "\n")
 		if m.save.err != "" {
-			b.WriteString(m.styles.err.Render(m.save.err) + "\n")
+			b.WriteString(m.styles.err.Render(termsafe.Line(m.save.err)) + "\n")
 		}
 	}
 	return strings.TrimSuffix(b.String(), "\n")
