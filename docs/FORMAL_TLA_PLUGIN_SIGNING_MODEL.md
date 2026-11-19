@@ -65,7 +65,11 @@ in presign-plan an argument that reaches a plugin-signed slot
 (`apshellapp/lsig_args.go::refusePluginSignedLsigArgs`), after the decode and
 the non-interactive refusal and before the first rekey judgment and the
 review; and `processPluginResultStructured` refuses arguments for a
-successful first result with no transactions. TLC verifies that no
+successful first result with no transactions. So is the refusal of a result
+that reports failure but carries transactions or a continuation
+(`apshellapp/plugincmds.go::validatePluginResult`, run on the first result and
+on every continuation's before the loop sees it), which only refuses: such a
+result never reaches the review or submission. TLC verifies that no
 enumerated combination reaches submission without satisfying every named
 invariant. A dropped check in `Submitted` — the model's stand-in for a
 regression in the code path it transcribes — surfaces as a counterexample.
