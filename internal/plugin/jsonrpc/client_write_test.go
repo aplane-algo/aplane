@@ -4,6 +4,7 @@
 package jsonrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -119,7 +120,7 @@ func TestCallQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 	}
 }
 
-// Shutdown does not wait behind a frame the plugin is not reading.
+// Shutdown waits only briefly behind a frame the plugin is not reading.
 func TestShutdownDoesNotWaitForAStalledWrite(t *testing.T) {
 	c, entered, _ := unreadClient(t)
 	go func() { _ = c.CallWithTimeout(MethodExecute, bigParams(), nil, 30*time.Second) }()
@@ -156,5 +157,57 @@ func TestCallbackReplyQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 			t.Fatalf("callback reply still waiting; last error = %v", c.GetLastError())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A write that has returned has freed the writer, so a Shutdown right after a
+// healthy write is sent, never taken for one waiting behind a stalled write.
+func TestWriteFreesTheWriterBeforeItReturns(t *testing.T) {
+	c := NewClient(&bytes.Buffer{}, io.Discard)
+	for i := 0; i < 50000; i++ {
+		if err := c.Notify(context.Background(), CallbackLog, LogParams{Message: "x"}); err != nil {
+			t.Fatalf("Notify() error = %v", err)
+		}
+		select {
+		case c.writeSlot <- struct{}{}:
+			<-c.writeSlot
+		default:
+			t.Fatalf("write %d returned with the writer still held", i)
+		}
+	}
+}
+
+// slowWriter takes delay to accept each frame, as a plugin that reads slowly
+// does. entered closes when the first write begins.
+type slowWriter struct {
+	delay   time.Duration
+	once    sync.Once
+	entered chan struct{}
+	mu      sync.Mutex
+	frames  []string
+}
+
+func (w *slowWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.entered) })
+	time.Sleep(w.delay)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.frames = append(w.frames, string(p))
+	return len(p), nil
+}
+
+// Shutdown behind a write that is about to finish waits for it, and is sent.
+func TestShutdownWaitsForAWriteAboutToFinish(t *testing.T) {
+	w := &slowWriter{delay: 30 * time.Millisecond, entered: make(chan struct{})}
+	c := NewClient(&bytes.Buffer{}, w)
+	go func() { _ = c.Notify(context.Background(), CallbackLog, LogParams{Message: "x"}) }()
+	<-w.entered
+	if err := c.Shutdown(200 * time.Millisecond); errors.Is(err, errWriterBusy) {
+		t.Fatalf("Shutdown() error = %v, want it sent", err)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.frames) != 2 || !strings.Contains(w.frames[1], MethodShutdown) {
+		t.Fatalf("frames written = %q, want the notification then the shutdown", w.frames)
 	}
 }

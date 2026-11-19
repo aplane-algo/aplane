@@ -56,8 +56,8 @@ APlane Shell supports **external plugins** — standalone executables that run a
 5. **Execution**: Plugin processes `execute` calls for commands
 6. **Idle**: Plugin remains running between commands
 7. **Cleanup**: Plugin receives `shutdown` call when APlane Shell exits, then
-   has its stdin closed. The call is skipped while an earlier request is still
-   being written to its stdin
+   has its stdin closed. The call is skipped if an earlier request is still
+   being written to its stdin after a brief wait
 
 ### Plugin Stderr
 

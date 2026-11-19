@@ -739,9 +739,9 @@ func (m *Manager) GetRunningPlugins() []string {
 }
 
 // stopInstance asks the plugin to shut down, then stops it. The request is not
-// sent while another frame is still being written to the plugin, so a plugin
-// that stopped reading its input cannot hold the stop up; otherwise its write
-// and its answer get five seconds.
+// sent if another frame is still being written to the plugin after a brief
+// wait, so a plugin that stopped reading its input cannot hold the stop up;
+// otherwise its write and its answer get five seconds.
 func stopInstance(instance *Instance) {
 	if instance.Client != nil {
 		_ = instance.Client.Shutdown(5 * time.Second)

@@ -29,6 +29,11 @@ var ErrWriteStalled = errors.New("plugin did not read its input")
 // errWriterBusy is Shutdown's answer when another frame is still being written.
 var errWriterBusy = errors.New("another frame is still being written")
 
+// shutdownWriterWait is how long Shutdown waits for another frame's write to
+// finish: long enough for a plugin that is reading, too short to hold up a
+// stop behind one that is not.
+const shutdownWriterWait = 100 * time.Millisecond
+
 // Client handles JSON-RPC communication with a plugin
 type Client struct {
 	reader  io.Reader
@@ -100,18 +105,20 @@ func (c *Client) CallWithTimeout(method string, params interface{}, result inter
 // request included; a request cut off mid-write fails the client (see
 // ErrWriteStalled).
 func (c *Client) CallContext(ctx context.Context, method string, params interface{}, result interface{}, timeout time.Duration) error {
-	return c.call(ctx, method, params, result, timeout, true)
+	return c.call(ctx, method, params, result, timeout, 0)
 }
 
 // Shutdown sends the shutdown request and waits up to timeout for the answer.
-// It sends nothing while another frame is still being written: the plugin has
-// not read that one, so it would not read this one in time either, and its
-// input is about to be closed.
+// It sends nothing if another frame is still being written after
+// shutdownWriterWait: the plugin has not read that one, so it would not read
+// this one in time either, and its input is about to be closed.
 func (c *Client) Shutdown(timeout time.Duration) error {
-	return c.call(context.Background(), MethodShutdown, ShutdownParams{}, nil, timeout, false)
+	return c.call(context.Background(), MethodShutdown, ShutdownParams{}, nil, timeout, shutdownWriterWait)
 }
 
-func (c *Client) call(ctx context.Context, method string, params interface{}, result interface{}, timeout time.Duration, waitForWriter bool) error {
+// call makes one call. maxWriterWait, when positive, bounds the wait for
+// another frame's write to finish; zero waits for as long as the call lasts.
+func (c *Client) call(ctx context.Context, method string, params interface{}, result interface{}, timeout, maxWriterWait time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("request not sent: %w", err)
 	}
@@ -145,7 +152,7 @@ func (c *Client) call(ctx context.Context, method string, params interface{}, re
 	defer cancel()
 
 	// Send request
-	if err := c.writeFrame(callCtx, request, waitForWriter); err != nil {
+	if err := c.writeFrame(callCtx, request, maxWriterWait); err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("request abandoned: %w", ctx.Err())
 		}
@@ -181,7 +188,7 @@ func (c *Client) call(ctx context.Context, method string, params interface{}, re
 // as a call's timeout does.
 func (c *Client) Notify(ctx context.Context, method string, params interface{}) error {
 	request := NewRequest(method, params, nil)
-	return c.writeFrame(ctx, request, true)
+	return c.writeFrame(ctx, request, 0)
 }
 
 // SetRequestHandler installs the handler used for plugin-initiated requests.
@@ -298,7 +305,7 @@ func (c *Client) respondToInbound(id interface{}, result interface{}, rpcErr *Er
 	// No call bounds a reply, so it waits for as long as the client lasts. A
 	// plugin that stops reading also stops answering the call in progress, and
 	// that call's end tears the plugin down.
-	if err := c.writeFrame(context.Background(), &response, true); err != nil {
+	if err := c.writeFrame(context.Background(), &response, 0); err != nil {
 		c.setLastError(fmt.Errorf("failed to write callback response: %w", err))
 	}
 }
@@ -308,35 +315,38 @@ func (c *Client) respondToInbound(id interface{}, result interface{}, rpcErr *Er
 // sent; one it gives up on mid-write fails the client with ErrWriteStalled,
 // since the plugin's input may now hold part of it. The abandoned Write
 // itself returns once the writer is closed, as the manager does when it stops
-// the plugin. Without waitForWriter, a frame that would have to wait for
-// another is not sent.
-func (c *Client) writeFrame(ctx context.Context, v interface{}, waitForWriter bool) error {
+// the plugin. A positive maxWriterWait bounds the wait for another frame's
+// write; a frame still waiting after it is not sent.
+func (c *Client) writeFrame(ctx context.Context, v interface{}, maxWriterWait time.Duration) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON-RPC frame: %w", err)
 	}
 	data = append(data, '\n')
 
-	if waitForWriter {
-		select {
-		case c.writeSlot <- struct{}{}:
-		case <-c.done:
-			return c.terminalError()
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		}
-	} else {
-		select {
-		case c.writeSlot <- struct{}{}:
-		default:
-			return errWriterBusy
-		}
+	var writerBusy <-chan time.Time // nil, so never ready, unless bounded
+	if maxWriterWait > 0 {
+		timer := time.NewTimer(maxWriterWait)
+		defer timer.Stop()
+		writerBusy = timer.C
+	}
+	select {
+	case c.writeSlot <- struct{}{}:
+	case <-c.done:
+		return c.terminalError()
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-writerBusy:
+		return errWriterBusy
 	}
 
 	written := make(chan error, 1)
 	go func() {
-		defer func() { <-c.writeSlot }()
-		written <- c.writeHeld(data)
+		err := c.writeHeld(data)
+		// Free the writer before reporting, so a frame sent right after
+		// this one returns never finds it held.
+		<-c.writeSlot
+		written <- err
 	}()
 	select {
 	case err := <-written:
