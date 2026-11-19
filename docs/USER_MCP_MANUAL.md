@@ -284,11 +284,13 @@ The [approved native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery)
 limits mnemonic import, export, and recovery to native accounts. Use encrypted
 backups for all LogicSig accounts.
 
-> **Rekey refresh:** a confirmed rekey through the ordinary single-transaction
-> workflow refreshes the affected client
-> auth-cache entry automatically. Run `rekey refresh <addr>` after other
-> submission workflows, external changes, an unconfirmed submission, or a
-> reported refresh failure. See [USER_COMMANDS.md](USER_COMMANDS.md#rekeying-commands).
+> **Rekey refresh:** a confirmed rekey through any submission workflow (a
+> single transaction, a group, a transaction file, a plugin group, a rotating
+> spend) refreshes the affected client auth-cache entry automatically; a
+> refresh that fails is reported as an `auth_cache_refresh_failed` warning.
+> Run `rekey refresh <addr>` after external changes, an unconfirmed
+> submission, or a reported refresh failure. See
+> [USER_COMMANDS.md](USER_COMMANDS.md#rekeying-commands).
 
 > Full detail: [USER_KEYTYPES.md](USER_KEYTYPES.md),
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md),

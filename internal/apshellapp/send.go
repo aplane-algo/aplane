@@ -375,7 +375,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 				itemResult.TxID = submit.TxID
 				itemResult.Confirmed = submit.Confirmed
 				itemResult.Output = submit.Output
-				itemResult.Warnings = append(itemResult.Warnings, warningsFromTransactionWriteNotices(submit.WriteNotices)...)
+				itemResult.Warnings = append(itemResult.Warnings, submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)...)
 			}
 			itemResult.Error = fmt.Sprintf("transaction failed: %v", err)
 			itemResult.Submission = appresult.SubmissionFromError(err)
@@ -389,7 +389,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 			itemResult.TxID = submit.TxID
 			itemResult.Confirmed = submit.Confirmed
 			itemResult.Output = submit.Output
-			itemResult.Warnings = append(itemResult.Warnings, warningsFromTransactionWriteNotices(submit.WriteNotices)...)
+			itemResult.Warnings = append(itemResult.Warnings, submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)...)
 			result.SuccessCount++
 		}
 		result.Items = append(result.Items, itemResult)
@@ -423,7 +423,7 @@ func (a *App) executeAtomicSend(ctx context.Context, plan *AtomicSendPlan) (*Ato
 		TxIDs:           submit.TxIDs,
 		Confirmed:       submit.Confirmed,
 		Output:          submit.Output,
-		Warnings:        warningsFromTransactionWriteNotices(submit.WriteNotices),
+		Warnings:        submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	}, nil
 }
 

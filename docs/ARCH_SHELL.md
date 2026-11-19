@@ -771,7 +771,11 @@ command boundaries; those mechanisms improve freshness rather than prove intent.
 - SignerCache: rebuilt from `/keys` on `keys`/`accounts` commands, tab completion,
   `/status` keyset-revision changes, and cosigned submit paths whose cached
   signer row is missing current signing-flow or cosigner metadata
-- AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key
+- AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key,
+  and every confirmed submission refreshes the sender of each rekey it carried
+  (`refreshAfterConfirmedSubmit`, on every engine submission path); a failed
+  refresh is the result's `AuthRefreshWarning`, an `auth_cache_refresh_failed`
+  warning in `apshellapp`
 - ASACache: fetches from blockchain on cache miss
 
 #### Algod Client

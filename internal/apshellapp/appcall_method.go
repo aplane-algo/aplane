@@ -129,7 +129,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 		result.Structured.TxIDs = submit.TxIDs
 		result.Structured.Confirmed = submit.Confirmed
 		result.Output = submit.Output
-		result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+		result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 		appendAppCallMethodConfirmedLines(result)
 		return result, nil
 	}
@@ -143,7 +143,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 	result.Structured.TxIDs = []string{submit.TxID}
 	result.Structured.Confirmed = submit.Confirmed
 	result.Output = submit.Output
-	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+	result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	appendAppCallMethodConfirmedLines(result)
 	return result, nil
 }

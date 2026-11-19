@@ -265,9 +265,19 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(ctx, signedObjects, e.AlgodClient, &output)
 		return &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}, errorWithSubmissionOutput(simErr, output.String())
 	}
+	return e.submitPlannedPluginGroup(ctx, canonicalTxns, finalSignedTxns, &output)
+}
 
-	txIDs, err := signing.SubmitTransactionsWithContext(ctx, finalSignedTxns, e.AlgodClient, true, &output)
-	return &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}, errorWithSubmissionOutput(err, output.String())
+// submitPlannedPluginGroup submits the checked signed group, waits for it to
+// be confirmed, and then refreshes the auth cache for any rekey in it.
+func (e *Engine) submitPlannedPluginGroup(ctx context.Context, canonicalTxns []types.Transaction, signed [][]byte, output *bytes.Buffer) (*PluginSubmitResult, error) {
+	txIDs, err := signing.SubmitTransactionsWithContext(ctx, signed, e.AlgodClient, true, output)
+	result := &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}
+	if err != nil {
+		return result, errorWithSubmissionOutput(err, output.String())
+	}
+	result.AuthRefreshWarning = e.refreshAfterConfirmedSubmit(ctx, canonicalTxns)
+	return result, nil
 }
 
 // managedSignRequest builds an apsigner sign-mode request for a managed slot,

@@ -18,6 +18,27 @@ type Warning struct {
 	Message string
 }
 
+// submissionWarnings is what a submission warns of: its transaction JSON
+// write notices and, when a confirmed rekey committed but the engine could not
+// refresh the auth cache after it (authRefreshWarning), that.
+func submissionWarnings(notices []engine.TransactionWriteNotice, authRefreshWarning string) []Warning {
+	warnings := warningsFromTransactionWriteNotices(notices)
+	if authRefreshWarning != "" {
+		warnings = append(warnings, authRefreshFailed(authRefreshWarning))
+	}
+	return warnings
+}
+
+// authRefreshFailed is the warning for an auth-cache refresh that failed after
+// a confirmed rekey: the cache still names the old authorizer until
+// `rekey refresh` mends it.
+func authRefreshFailed(message string) Warning {
+	return Warning{
+		Code:    "auth_cache_refresh_failed",
+		Message: "failed to update auth cache after a rekey: " + message + "; run rekey refresh",
+	}
+}
+
 func warningsFromTransactionWriteNotices(notices []engine.TransactionWriteNotice) []Warning {
 	if len(notices) == 0 {
 		return nil
@@ -619,7 +640,6 @@ type RekeyCommandResult struct {
 	TxID                    string
 	Confirmed               bool
 	Output                  string
-	RefreshWarning          string
 	PreSubmitLines          []string
 	ConfirmedLines          []string
 	PendingLines            []string

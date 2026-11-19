@@ -180,7 +180,7 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 				item.TxID = submit.TxID
 				item.Confirmed = submit.Confirmed
 				item.Output = submit.Output
-				item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+				item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 			}
 			if !errors.Is(err, engine.ErrSimulationFailed) {
 				item.Error = err.Error()
@@ -194,7 +194,7 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 		item.TxID = submit.TxID
 		item.Confirmed = submit.Confirmed
 		item.Output = submit.Output
-		item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+		item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 		result.SuccessCount++
 		result.Items = append(result.Items, item)
 	}
@@ -263,7 +263,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 		TxID:           submit.TxID,
 		Confirmed:      submit.Confirmed,
 		Output:         submit.Output,
-		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
+		Warnings:       submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	}, nil
 }
 
@@ -319,7 +319,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 		TxID:           submit.TxID,
 		Confirmed:      submit.Confirmed,
 		Output:         submit.Output,
-		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
+		Warnings:       submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	}, nil
 }
 
@@ -381,7 +381,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		TxID:           submit.TxID,
 		Confirmed:      submit.Confirmed,
 		Output:         submit.Output,
-		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
+		Warnings:       submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	}, prepResult), nil
 }
 
@@ -430,7 +430,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		TxID:           submit.TxID,
 		Confirmed:      confirmed,
 		Output:         output,
-		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
+		Warnings:       submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	}, prepResult), nil
 }
 
@@ -514,11 +514,11 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	result.TxID = submit.TxID
 	result.Confirmed = submit.Confirmed
 	result.Output = submit.Output
-	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
-	// The auth-cache refresh after a confirmed rekey happens in the engine submit
-	// path (SignAndSubmit -> refreshRekeyedSenders), so every caller — REPL, JS,
-	// MCP — stays consistent without duplicating it. Surface its non-fatal warning.
-	result.RefreshWarning = submit.AuthRefreshWarning
+	// The auth-cache refresh after a confirmed rekey happens in the engine, on
+	// every submission path (refreshAfterConfirmedSubmit), so every caller —
+	// REPL, JS, MCP — stays consistent without duplicating it. Its non-fatal
+	// failure is one of the warnings.
+	result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	return result, nil
 }
 
@@ -575,9 +575,8 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 	result.TxID = submit.TxID
 	result.Confirmed = submit.Confirmed
 	result.Output = submit.Output
-	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
-	// See App.Rekey: the engine submit path performs the refresh; surface its warning.
-	result.RefreshWarning = submit.AuthRefreshWarning
+	// See App.Rekey: the engine submit path performs the refresh.
+	result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	return result, nil
 }
 
@@ -717,7 +716,7 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 	result.TxID = submit.TxID
 	result.Confirmed = submit.Confirmed
 	result.Output = submit.Output
-	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+	result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	return result, nil
 }
 
@@ -972,7 +971,7 @@ func (a *App) sweepFrom(ctx context.Context, plan sweepPlan, fromAddress string)
 			item.TxID = submit.TxID
 			item.Confirmed = submit.Confirmed
 			item.Output = submit.Output
-			item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+			item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 		}
 		if errors.Is(err, engine.ErrSimulationFailed) {
 			item.SimulationFailure = err.Error()
@@ -988,7 +987,7 @@ func (a *App) sweepFrom(ctx context.Context, plan sweepPlan, fromAddress string)
 	item.TxID = submit.TxID
 	item.Confirmed = submit.Confirmed
 	item.Output = submit.Output
-	item.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+	item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	return item, sweepSent, nil
 }
 

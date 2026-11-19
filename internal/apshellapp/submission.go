@@ -59,7 +59,7 @@ func (a *App) signTransactions(ctx context.Context, txns []types.Transaction, wa
 		result.TxIDs,
 		result.Confirmed,
 		result.Output,
-		warningsFromTransactionWriteNotices(result.WriteNotices),
+		submissionWarnings(result.WriteNotices, result.AuthRefreshWarning),
 	), nil
 }
 
@@ -440,7 +440,7 @@ func (a *App) submitDefaultDraft(ctx context.Context, group *PluginGroup) (*Grou
 				submit.TxIDs,
 				submit.Confirmed,
 				submit.Output,
-				warningsFromTransactionWriteNotices(submit.WriteNotices),
+				submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 			), err
 		}
 		return nil, err
@@ -449,7 +449,7 @@ func (a *App) submitDefaultDraft(ctx context.Context, group *PluginGroup) (*Grou
 		submit.TxIDs,
 		submit.Confirmed,
 		submit.Output,
-		warningsFromTransactionWriteNotices(submit.WriteNotices),
+		submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	), nil
 }
 
@@ -480,7 +480,7 @@ func (a *App) submitPregroupedSigned(ctx context.Context, group *PluginGroup) (*
 		}
 		return nil, err
 	}
-	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), nil
+	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, submissionWarnings(nil, submit.AuthRefreshWarning)), nil
 }
 
 // submitPresignPlan handles the pre-sign planning flow: the plugin supplies an
@@ -575,5 +575,5 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *P
 		}
 		return nil, err
 	}
-	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), nil
+	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, submissionWarnings(nil, submit.AuthRefreshWarning)), nil
 }

@@ -121,7 +121,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		result.Structured.TxIDs = submit.TxIDs
 		result.Structured.Confirmed = submit.Confirmed
 		result.Output = submit.Output
-		result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+		result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 		appendAppCallRawConfirmedLines(result)
 		return result, nil
 	}
@@ -135,7 +135,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 	result.Structured.TxIDs = []string{submit.TxID}
 	result.Structured.Confirmed = submit.Confirmed
 	result.Output = submit.Output
-	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+	result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	appendAppCallRawConfirmedLines(result)
 	return result, nil
 }
