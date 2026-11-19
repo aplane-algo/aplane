@@ -9,7 +9,9 @@ import (
 	"strings"
 )
 
-// runScript executes REPL commands from a file, line by line
+// runScript executes REPL commands from a file, line by line. It stops at the
+// first line that fails, names no command, or is a shell command: those run
+// only at the interactive prompt.
 func (r *REPLState) runScript(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: script <file>")
@@ -41,6 +43,11 @@ func (r *REPLState) runScript(args []string) error {
 		// Print the command being executed
 		r.printf("[%d] %s\n", lineNum+1, line)
 
+		if strings.HasPrefix(line, "!") {
+			r.printf("Error on line %d: shell commands (!) run only at the interactive prompt\n", lineNum+1)
+			return fmt.Errorf("script execution stopped at line %d", lineNum+1)
+		}
+
 		// Parse and execute the command
 		cmd, err := parseShellCommand(line)
 		if err != nil {
@@ -50,7 +57,7 @@ func (r *REPLState) runScript(args []string) error {
 		if cmd.Name == "" {
 			continue
 		}
-		err = r.executeCommand(cmd)
+		err = r.runCommand(cmd)
 
 		if err != nil {
 			// Check if it's an exit command

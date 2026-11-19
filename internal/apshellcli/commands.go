@@ -6,6 +6,7 @@ package apshellcli
 // Core command definitions and transaction handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -279,13 +280,22 @@ func (e *unknownCommandError) Error() string {
 }
 
 // executeCommand dispatches a command and renders its human presentation.
+// An unknown command is said and is not an error: the prompt goes on.
 func (r *REPLState) executeCommand(cmd Command) error {
+	err := r.runCommand(cmd)
+	var unknown *unknownCommandError
+	if errors.As(err, &unknown) {
+		r.printf("Unknown command: %s\nType 'help' for available commands\n", unknown.name)
+		return nil
+	}
+	return err
+}
+
+// runCommand dispatches a command and renders its human presentation. An
+// unknown command is its *unknownCommandError, which a script stops on.
+func (r *REPLState) runCommand(cmd Command) error {
 	result, err := r.executeCommandResult(cmd)
 	if err != nil {
-		if unknown, ok := err.(*unknownCommandError); ok {
-			r.printf("Unknown command: %s\nType 'help' for available commands\n", unknown.name)
-			return nil
-		}
 		if result != nil {
 			if renderErr := result.RenderText(r.Out); renderErr != nil {
 				r.renderErrorSubmissionOutput(renderErr)

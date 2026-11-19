@@ -1643,7 +1643,11 @@ jslist
 
 ### script
 
-Execute REPL commands from a file (one command per line).
+Execute REPL commands from a file (one command per line). Empty lines and
+lines starting with `#` are skipped. The script stops at the first line that
+fails, that names no command or plugin, or that starts with `!`: shell
+commands run only at the interactive prompt. `apshell --script <file>` then
+exits with status 1.
 
 ```
 script <file>
@@ -1697,7 +1701,8 @@ clear
 
 ## Shell Commands
 
-In an interactive shell session, execute shell commands by prefixing with `!`:
+At the interactive prompt, execute shell commands by prefixing with `!`. A
+script refuses them (see [script](#script)):
 
 ```
 !ls
