@@ -228,13 +228,26 @@ func (m Model) openExplain() Model {
 // Compare.
 
 // openCompare compares a key document with the workspace default. A default
-// document, or a workspace without one, picks the file to compare with.
+// document, or a workspace without one, picks the file to compare with. Both
+// sides are the documents as edited, a new default among them.
 func (m Model) openCompare() Model {
-	f := m.file()
-	if def := m.ws.Default(); def != nil && def != f {
-		return m.compareWith(def)
+	if j := m.defaultIndex(); j >= 0 && j != m.current {
+		return m.compareWith(j)
 	}
 	return m.openComparePick()
+}
+
+// defaultIndex is the index of the workspace's one default document as
+// edited, or -1 when it has none or several.
+func (m Model) defaultIndex() int {
+	ws := m.currentWS()
+	def := ws.Default()
+	for i, f := range ws.Files {
+		if f == def {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m Model) openComparePick() Model {
@@ -272,7 +285,7 @@ func (m Model) comparePickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "enter":
-		return m.compareWith(m.ws.Files[m.pickCursor]), nil
+		return m.compareWith(m.pickCursor), nil
 	}
 	return m, nil
 }
@@ -282,11 +295,16 @@ func (m Model) comparePickView() string {
 	b.WriteString(m.styles.title.Render("Compare "+baseName(m.file().Path)+" with") + "\n\n")
 	var lines []string
 	selected := 0
-	for i, f := range m.ws.Files {
+	for i := range m.ws.Files {
 		if i == m.current {
 			continue
 		}
-		line := ansi.Truncate(fmt.Sprintf("%-28s %-10s %s", baseName(f.Path), f.State, keyLabel(f.Key)), m.width-2, "…")
+		f := m.shownFile(i)
+		line := fmt.Sprintf("%-28s %-10s %s", baseName(f.Path), f.State, keyLabel(f.Key))
+		if s, ok := m.sessions[f.Path]; ok && s.Modified() {
+			line += "  (edited, not saved)"
+		}
+		line = ansi.Truncate(line, m.width-2, "…")
 		if i == m.pickCursor {
 			selected = len(lines)
 			line = m.styles.selected.Render("> " + line)
@@ -299,14 +317,12 @@ func (m Model) comparePickView() string {
 	return b.String()
 }
 
-// compareWith shows how the open file differs from base.
-func (m Model) compareWith(base *policyauthor.File) Model {
+// compareWith shows how the open file differs from workspace file j, both as
+// edited.
+func (m Model) compareWith(j int) Model {
 	f := m.shown()
-	c := policyauthor.Compare(base, f)
-	label := filepath.Base(base.Path)
-	if base == m.ws.Default() {
-		label = "the workspace default (" + label + ")"
-	}
+	c := policyauthor.Compare(m.shownFile(j), f)
+	label := m.baselineLabel(j)
 	var lines []string
 	for _, line := range wrap(fmt.Sprintf("%s compared with %s, by %s", filepath.Base(f.Path), label, c.Mode), max(20, m.width-2)) {
 		lines = append(lines, m.styles.subtle.Render(line))

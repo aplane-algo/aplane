@@ -702,7 +702,8 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   define are listed under "Other fields", so nothing in the file is hidden.
   - **Reading:** `v` shows a field in full, `]` and `[` jump between problems,
     `p` lists them, `x` explains the document, `c` compares it with the
-    workspace default or another file you pick, and `?` lists every key.
+    workspace default or another file you pick (both as edited, so a new
+    default not yet saved counts as the default), and `?` lists every key.
   - **Editing:** enter edits the selected field and space toggles a yes/no
     one. Choices offer only what the node role allows; amounts are typed in
     display units when the asset's decimals are known (the editor shows them
