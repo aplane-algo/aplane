@@ -17,12 +17,14 @@ import (
 )
 
 // jsAssetInfo returns information about an ASA.
-// assetInfo(assetId) - Returns full ASA metadata
+// assetInfo(assetId) - Returns full ASA metadata, read from the network: the
+// cache and the built-in metadata hold only the unit name, name and
+// decimals.
 func (a *API) jsAssetInfo(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "assetInfo() requires an assetId argument")
 	assetID := toUint64(a.runtime, call.Arguments[0])
 
-	info, err := a.engine.GetASAInfoWithContext(a.Context(), assetID)
+	info, err := a.engine.GetASAInfoWithContext(a.Context(), assetID, true)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("assetInfo() error: %v", err)))
 	}

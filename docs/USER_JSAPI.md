@@ -316,7 +316,7 @@ print(generated.address)
 
 | Function | Returns |
 |---|---|
-| `assetInfo(assetId)` | Full ASA metadata |
+| `assetInfo(assetId)` | Full ASA metadata, read from the network |
 | `cachedAssets()` | `[{ assetId, unitName, name, decimals }]` |
 | `cacheAsset(assetId)` | `{ assetId, unitName, name, decimals }` |
 | `uncacheAsset(assetId)` | `true` |
