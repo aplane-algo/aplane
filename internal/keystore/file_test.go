@@ -550,11 +550,11 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	publicKey, _, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x51}, 64))
+	publicKey, _, err := signerops.New().GenerateKeypair(bytes.Repeat([]byte{0x51}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKey(public) error = %v", err)
 	}
-	_, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x52}, 64))
+	_, privateKey, err := signerops.New().GenerateKeypair(bytes.Repeat([]byte{0x52}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKey(private) error = %v", err)
 	}

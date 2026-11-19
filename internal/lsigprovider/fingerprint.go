@@ -109,11 +109,6 @@ func FingerprintsMatch(stored, live string) (match bool, comparable bool) {
 var fingerprintBasePrimitives = map[string]string{
 	"aplane.falcon1024.v1": "falcon1024-v1",
 	"aplane.ed25519.v1":    "ed25519-lsig-v1",
-	// Pre-rename spelling of the Ed25519 LogicSig base maps to the same token so
-	// a base-identifier rename never changes the fingerprint. No keys of this
-	// name exist in a fresh deployment; the row documents the projection's intent
-	// and future-proofs the rename case.
-	"aplane.ed25519lsig.v1": "ed25519-lsig-v1",
 }
 
 // FingerprintBasePrimitive maps a raw base key type to its frozen behavior

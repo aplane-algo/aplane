@@ -73,22 +73,10 @@ func (s *BaseTemplateSpec) ValidateRekeyTargetDeclaration() error {
 	return nil
 }
 
-const (
-	// DerivationVersionPushbytes is the retired template derivation layout that
-	// used a generated pushbytes marker followed by pop. It is rejected; the
-	// constant survives only so the rejection can name it.
-	DerivationVersionPushbytes = 1
-
-	// DerivationVersionTrailingBytecblock is the retired layout that used a
-	// dead-code bytecblock after the program's logical exit as the single-byte
-	// salt anchor. It is rejected for the same reason as Pushbytes.
-	DerivationVersionTrailingBytecblock = 2
-
-	// DerivationVersionAlgodAutoSalt uses TEAL v13 assembler auto-salting. The
-	// compiler-returned bytecode is authoritative and is never patched by
-	// APlane. It is the only supported derivation contract.
-	DerivationVersionAlgodAutoSalt = 3
-)
+// DerivationVersionAlgodAutoSalt uses TEAL v13 assembler auto-salting. The
+// compiler-returned bytecode is authoritative and is never patched by
+// APlane. It is the only supported derivation contract.
+const DerivationVersionAlgodAutoSalt = 3
 
 // KeyType returns the computed key type using publisher.family.vN.
 func (s *BaseTemplateSpec) KeyType() string {
@@ -109,11 +97,6 @@ func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
 	if s.DerivationVersion != nil {
 		switch *s.DerivationVersion {
 		case DerivationVersionAlgodAutoSalt:
-		case DerivationVersionPushbytes, DerivationVersionTrailingBytecblock:
-			return fmt.Errorf(
-				"derivation_version %d is retired; republish this template with derivation_version %d (TEAL v13 compiler auto-salting)",
-				*s.DerivationVersion, DerivationVersionAlgodAutoSalt,
-			)
 		default:
 			return fmt.Errorf("derivation_version %d is not supported", *s.DerivationVersion)
 		}
@@ -206,17 +189,17 @@ func ActiveTemplateTypes() []TemplateType {
 	return []TemplateType{TemplateTypeGeneric, TemplateTypeComposed}
 }
 
-func GetTemplateFilePathForPaths(paths storepaths.Paths, keyType string, templateType TemplateType) (string, error) {
+func GetTemplateFilePathForPaths(paths storepaths.Paths, keyType string) (string, error) {
 	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return "", err
 	}
-	return GetTemplateFilePathActive(active, keyType, templateType), nil
+	return GetTemplateFilePathActive(active, keyType), nil
 }
 
 // GetTemplateFilePathActive is GetTemplateFilePathForPaths against resolved
 // authenticated active-generation paths.
-func GetTemplateFilePathActive(active storepaths.GenPaths, keyType string, _ TemplateType) string {
+func GetTemplateFilePathActive(active storepaths.GenPaths, keyType string) string {
 	return active.KeyTypeTemplate(normalizeKeyType(keyType))
 }
 
@@ -239,7 +222,7 @@ func SaveTemplateActive(active storepaths.GenPaths, yamlData []byte, keyType str
 	}
 
 	// Write the file
-	outputPath := GetTemplateFilePathActive(active, keyType, templateType)
+	outputPath := GetTemplateFilePathActive(active, keyType)
 	// Durable, never in-place (docs/ARCH_STORE.md, "Filesystem primitives").
 	if err := fsutil.WriteFileDurable(outputPath, encrypted); err != nil {
 		return "", fmt.Errorf("failed to write template file: %w", err)
@@ -294,7 +277,7 @@ func TemplateExistsActive(active storepaths.GenPaths, keyType string, templateTy
 	if err != nil || !ok || rec.Source != source {
 		return false
 	}
-	path := GetTemplateFilePathActive(active, keyType, templateType)
+	path := GetTemplateFilePathActive(active, keyType)
 	_, err = os.Stat(path)
 	return err == nil
 }
@@ -320,7 +303,7 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType Template
 		if rec.Source != source {
 			continue
 		}
-		path, err := GetTemplateFilePathForPaths(paths, rec.KeyType, templateType)
+		path, err := GetTemplateFilePathForPaths(paths, rec.KeyType)
 		if err != nil {
 			return nil, err
 		}
@@ -337,25 +320,6 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType Template
 	}
 
 	return files, nil
-}
-
-func LoadAllTemplatesForPaths(paths storepaths.Paths, templateType TemplateType, kr *crypto.Keyring) (map[string][]byte, error) {
-	files, err := ScanTemplateDirectoryForPaths(paths, templateType)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string][]byte)
-	for _, file := range files {
-		data, err := LoadTemplateFromPath(file.FilePath, kr)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load template %s: %v\n", file.KeyType, err)
-			continue
-		}
-		result[file.KeyType] = data
-	}
-
-	return result, nil
 }
 
 func sourceForTemplateType(templateType TemplateType) (keytypestate.Source, bool) {

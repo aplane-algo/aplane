@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 )
 
 func (r *REPLState) cmdGenerate(args []string, _ *command.Context) (command.Result, error) {
@@ -64,7 +63,7 @@ func (r *REPLState) cmdGenerate(args []string, _ *command.Context) (command.Resu
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
-			r.printf("Generated %s key: %s\n", keytypefmt.Display(result.KeyType), result.Address)
+			r.printf("Generated %s key: %s\n", result.KeyType, result.Address)
 			renderResolvedGeneration(r, result)
 		})
 	}, projectGeneratedKey(result))
@@ -99,7 +98,7 @@ func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.Gene
 // apadmin's review: the signer has not confirmed any of this yet.
 func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	r.println("Local summary. The signer has not confirmed this.")
-	r.printf("  Key type:   %s\n", keytypefmt.Display(preview.KeyType))
+	r.printf("  Key type:   %s\n", preview.KeyType)
 	if !preview.NoBounds {
 		r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
 		fee := preview.MaxFee

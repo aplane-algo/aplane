@@ -104,15 +104,15 @@ func (t *Table) RecordHint(h Hint) error {
 
 // NextCandidate gives a bounded initial forward preference, then three forward
 // probes for each lower-gap probe. Coverage is durable; scheduling phase is not.
-func (t *Table) NextCandidate(anchors ...uint64) uint64 {
+func (t *Table) NextCandidate(anchor *uint64) uint64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	low := t.firstMissingLocked(0)
 	var h uint64
 	if t.hint != nil {
 		h = t.hint.Stage
-	} else if len(anchors) > 0 {
-		h = anchors[0]
+	} else if anchor != nil {
+		h = *anchor
 	} else {
 		return low
 	}
@@ -140,7 +140,7 @@ func encodeCache(selector types.Address, genesis [32]byte, entries map[uint64]ty
 	if len(entries) > (maxCacheBytes-headerSize-checksumSize-len(meta))/40 {
 		return nil, errors.New("stage cache exceeds size limit")
 	}
-	buf := append([]byte(magic), 0, 2)
+	buf := binary.BigEndian.AppendUint16([]byte(magic), formatVersion)
 	buf = append(buf, selector[:]...)
 	buf = append(buf, genesis[:]...)
 	buf = binary.BigEndian.AppendUint64(buf, uint64(len(entries)))
@@ -164,23 +164,12 @@ func decodeCache(data []byte, selector types.Address, genesis [32]byte, keyType 
 	if len(data) < headerSize+checksumSize || len(data) > maxCacheBytes {
 		return nil, nil, "", errors.New("file too short")
 	}
-	if binary.BigEndian.Uint16(data[len(magic):]) == 1 {
-		old, err := decode(data, selector, genesis)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		out := make(map[uint64]types.Address, len(old))
-		for i, a := range old {
-			out[uint64(i)] = a
-		}
-		return out, nil, "", nil
-	}
 	body, sum := data[:len(data)-checksumSize], data[len(data)-checksumSize:]
 	want := sha256.Sum256(body)
 	if !bytes.Equal(sum, want[:]) {
 		return nil, nil, "", errors.New("checksum mismatch")
 	}
-	if string(body[:len(magic)]) != magic || binary.BigEndian.Uint16(body[len(magic):]) != 2 {
+	if string(body[:len(magic)]) != magic || binary.BigEndian.Uint16(body[len(magic):]) != formatVersion {
 		return nil, nil, "", errors.New("unsupported stage cache format")
 	}
 	off := len(magic) + 2

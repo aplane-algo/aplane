@@ -953,7 +953,6 @@ subject to the node role gate above.
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
 | Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. These are the protocol-native `ed25519` and `falcon1024` and the Falcon plain host `aplane.falcon1024.v1`; the Ed25519 plain host `aplane.ed25519.v1` and other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
 | Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current types are `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
-| Internal-only compiled provider | Binary catalog availability `internal_only` (no shipped provider uses it now that the plain LogicSig types are plain hosts); any old state record is retained but cannot grant creation. | Never, including explicit enable/generate/import requests. | Yes for valid existing/restored keys; also usable as a composed base. | Use native accounts or an enabled composed type for new creation. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
 | Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apadmin keytype enable <key_type>`. |
@@ -1169,9 +1168,8 @@ Template capability notes:
   retain `LogicSigMaxCost == 20,000` and `MaxTxGroupSize == 16`; supporting a
   profile with different values requires revisiting this numeric default
 - `derivation_version: 3` uses compiler-owned TEAL v13 auto-salting and is the
-  only explicit contract accepted; the retired `derivation_version: 1`
-  (generated `pushbytes; pop` marker) and `derivation_version: 2` (trailing
-  dead-code `bytecblock` salt anchor) are rejected at template validation
+  only explicit contract accepted; template validation rejects any other value
+  with `derivation_version N is not supported`
 - `template_mode` is required for imported, installed, bundled, and library
   templates; templates without `template_mode` are rejected rather than
   interpreted
@@ -1591,9 +1589,8 @@ selector, 32-byte genesis, big-endian `uint64` entry count, sorted records
 of `(uint64 stage, 32-byte address)`, JSON metadata (`key_type`, optional
 `hint`), and SHA-256 over everything preceding the checksum. The reader caps
 files at 64 MiB and rejects invalid lengths, duplicate indices/addresses,
-overflow and wrong identity. Version 1 arrays are read as explicitly numbered
-entries and rewritten as version 2 on publication. Older binaries cannot
-read version 2 and can discard it, requiring stage rediscovery.
+overflow and wrong identity. A file of any other version is discarded like
+any other unusable table and rebuilt by stage rediscovery.
 
 The cache is sparse: its entry count is neither history coverage nor the
 next stage. A matching hint at 50,000 inserts that stage immediately, without

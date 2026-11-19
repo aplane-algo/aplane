@@ -12,8 +12,6 @@ import (
 )
 
 const (
-	ConfigAdvisorySeverityWarning = "warning"
-
 	ConfigAdvisoryRejectCloseRemainderRouteOverlap = "policy_overlap:reject_close_remainder:route_close_allow"
 	ConfigAdvisoryRejectAssetCloseRouteOverlap     = "policy_overlap:reject_asset_close:route_close_allow"
 	ConfigAdvisoryRejectClawbackRouteOverlap       = "policy_overlap:reject_clawback:route_clawback_allow"
@@ -42,10 +40,9 @@ const (
 // Pointer is the JSON Pointer of the field an author would change to resolve
 // it; "" means the document as a whole.
 type ConfigAdvisory struct {
-	RuleID   string
-	Pointer  string
-	Severity string
-	Message  string
+	RuleID  string
+	Pointer string
+	Message string
 }
 
 // Advisories reports policy shapes that are valid but worth a second look.
@@ -61,7 +58,7 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 	}
 	var out []ConfigAdvisory
 	add := func(ruleID, pointer, message string) {
-		out = append(out, ConfigAdvisory{RuleID: ruleID, Pointer: pointer, Severity: ConfigAdvisorySeverityWarning, Message: message})
+		out = append(out, ConfigAdvisory{RuleID: ruleID, Pointer: pointer, Message: message})
 	}
 	allowsClose, allowsClawback := false, false
 	for _, route := range d.Routes {

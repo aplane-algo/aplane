@@ -32,7 +32,7 @@ func TestSignerAdvisoriesReportClawbackOverlap(t *testing.T) {
 		fmt.Sprintf(`, "allow_clawback": true, "asset_sources": [%q]`, v1Holder.String()))
 	got := doc.Advisories()
 	assertAdvisoryRuleIDs(t, got, []string{ConfigAdvisoryRejectClawbackRouteOverlap})
-	if got[0].Severity != ConfigAdvisorySeverityWarning || got[0].Pointer != "/reject_clawback" {
+	if got[0].Pointer != "/reject_clawback" {
 		t.Fatalf("advisory = %+v", got[0])
 	}
 }

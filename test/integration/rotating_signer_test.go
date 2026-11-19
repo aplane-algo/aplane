@@ -155,7 +155,8 @@ func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
 	session := keystore.NewKeySession(&rotatingSeedStore{keyType: kind.keyType, seed: bytes.Clone(seed[:]), genesis: genesis[:]})
 	session.InitializeSession()
 	approve := true
-	tables := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
+	tablePaths := storepaths.NewPaths(t.TempDir())
+	tables := stagetable.NewStore(tablePaths)
 	releases := &signersigning.ReleaseMemory{}
 	svc := &signersigning.Service{
 		Planner: &signersigning.Planner{GenesisHashResolver: resolver, Snapshot: func() signersigning.PlannerRuntimeSnapshot {
@@ -264,14 +265,13 @@ func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
 	// Restore: the table is the only file the signer kept, and it is a
 	// cache. Delete it and keep signing; prepare scans the account's stages
 	// from 0 and finds stage 3.
-	table, err := tables.Table(account, genesis[:], nil)
-	if err != nil {
+	if _, err := tables.Table(account, genesis[:], nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := tables.Delete(address); err != nil {
 		t.Fatal(err)
 	}
-	if _, statErr := os.Stat(table.Path()); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(tablePaths.StageTablePath(address)); !os.IsNotExist(statErr) {
 		t.Fatal("stage table not deleted")
 	}
 	prep, svcErr := svc.PrepareRotatingWithContext(ctx, signerapi.RotatingPrepareRequest{

@@ -57,7 +57,7 @@ func cmdKeysList() error {
 			w,
 			"%s\t%s\t%s\t%s\t%s\n",
 			address,
-			displayKeyType(info.KeyType),
+			info.KeyType,
 			displayValue(info.Category),
 			displayValue(info.CreatedAt),
 			displayKeyFile(info.KeyFile),

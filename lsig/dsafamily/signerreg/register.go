@@ -24,8 +24,7 @@ type GeneratorSpec struct {
 	// Ops maps each accepted key type (and the family name, when accepted) to
 	// its keypair-generation ops.
 	Ops map[string]LogicSigKeygenOps
-	// Mnemonic is the handler registered for Family; nil skips mnemonic
-	// registration (the generator then rejects mnemonic-based generation).
+	// Mnemonic is the handler registered for Family.
 	Mnemonic mnemonic.Handler
 }
 
@@ -34,8 +33,7 @@ type SignerRegistration struct {
 	// RegisterClient is the family's once-guarded client registration; it
 	// runs first so signer binaries always carry the client-safe surface.
 	RegisterClient func()
-	// SigningProvider is the family's transaction-signing provider; nil for
-	// pure-LogicSig families that sign via component flows.
+	// SigningProvider is the family's transaction-signing provider.
 	SigningProvider signing.Provider
 	// Generators lists the key generators the family registers.
 	Generators []GeneratorSpec
@@ -48,17 +46,11 @@ type SignerRegistration struct {
 // registries. Callers guard idempotency with their own sync.Once, matching
 // the per-family RegisterSigner convention.
 func RegisterSigner(r SignerRegistration) {
-	if r.RegisterClient != nil {
-		r.RegisterClient()
-	}
-	if r.SigningProvider != nil {
-		signing.Register(r.SigningProvider)
-	}
+	r.RegisterClient()
+	signing.Register(r.SigningProvider)
 	for _, g := range r.Generators {
 		keygen.Register(NewLogicSigGenerator(g.Family, g.Ops))
-		if g.Mnemonic != nil {
-			mnemonic.Register(g.Mnemonic)
-		}
+		mnemonic.Register(g.Mnemonic)
 	}
 	for _, fn := range r.Extra {
 		fn()

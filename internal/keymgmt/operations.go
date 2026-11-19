@@ -110,7 +110,7 @@ func appendKeyType(types []string, seen map[string]bool, keyType string) []strin
 // encrypted credential or backup, never from a mnemonic.
 func SupportsMnemonicImport(keyType string) bool {
 	keyType = strings.ToLower(strings.TrimSpace(keyType))
-	if keyType == "" || keytypecatalog.IsInternalOnly(keyType) {
+	if keyType == "" {
 		return false
 	}
 	if lsigprovider.Get(keyType) != nil {
@@ -147,9 +147,6 @@ func activatedKeyTypeSet(activated []string) map[string]bool {
 }
 
 func keyTypeEnabledForGeneration(keyType string, activated map[string]bool) bool {
-	if keytypecatalog.IsInternalOnly(keyType) {
-		return false
-	}
 	if keytypecatalog.IsDefaultEnabled(keyType) {
 		return true
 	}

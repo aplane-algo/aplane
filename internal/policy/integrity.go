@@ -14,11 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/integritysidecar"
 )
 
-const (
-	PolicyIntegritySidecarVersion = integritysidecar.Version
-	PolicyIntegrityAlgorithm      = integritysidecar.Algorithm
-	PolicyIntegrityKeyID          = "keystore-master-hkdf-v1"
-)
+const PolicyIntegrityKeyID = "keystore-master-hkdf-v1"
 
 var (
 	ErrPolicyIntegrity               = errors.New("policy integrity check failed")
@@ -43,10 +39,11 @@ var policySidecar = integritysidecar.Spec{
 	},
 }
 
-// IntegritySidecar is the JSON representation stored next to policy.yaml.
+// IntegritySidecar is the JSON representation stored next to each policy
+// document, as <doc>.json.hmac.
 //
-// The HMAC authenticates policy.yaml bytes only. Fields beyond the embedded
-// security header are diagnostic.
+// The HMAC authenticates that document's exact bytes only. Fields beyond the
+// embedded security header are diagnostic.
 type IntegritySidecar struct {
 	integritysidecar.Header
 	PolicySHA256 string `json:"policy_sha256,omitempty"`

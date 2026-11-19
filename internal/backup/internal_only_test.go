@@ -42,7 +42,7 @@ func TestPlainProgramRestoresAndSignsExistingCredentials(t *testing.T) {
 			var pub, priv []byte
 			if base == "aplane.falcon1024.v1" {
 				var err error
-				pub, priv, err = falconops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x42}, 64))
+				pub, priv, err = falconops.New().GenerateKeypair(bytes.Repeat([]byte{0x42}, 64))
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -81,7 +81,7 @@ func TestRotatingHintArchiveRestoreAndRebuild(t *testing.T) {
 	PublishRotatingHints(tables, hints, t.Logf)
 	addr, _ := types.DecodeAddress(account)
 	table, err := tables.Table(addr, genesis[:], nil, payload.KeyType)
-	if err != nil || table.Len() != 0 || table.RecoveryHint() == nil || table.NextCandidate() != 50000 {
+	if err != nil || table.Len() != 0 || table.RecoveryHint() == nil || table.NextCandidate(nil) != 50000 {
 		t.Fatalf("restored hint must not add trusted addresses: %v", err)
 	}
 	// A newer local observation wins over this older backup.

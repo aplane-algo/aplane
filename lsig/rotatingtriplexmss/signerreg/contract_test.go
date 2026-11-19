@@ -31,7 +31,7 @@ func TestContract(t *testing.T) {
 		Register:      Register,
 		NewKeyPayload: NewKeyPayload,
 		GoldenAddress: goldenAddress,
-		StageOps:      StageOps(),
+		StageOps:      stageOps,
 		TreeOps:       true,
 		Leaf: func(i uint64) uint32 {
 			_, lo, _ := stage.RangeFor(i)
@@ -58,11 +58,11 @@ func TestContract(t *testing.T) {
 		},
 		CachedFields: []string{"root"},
 		Cold: func(t *testing.T, key *signing.RotatingKeyMaterial) {
-			if err := StageOps().Forget(key); err != nil {
+			if err := stageOps.Forget(key); err != nil {
 				t.Fatal(err)
 			}
 		},
-		CacheSize: StageOps().CachedTrees,
+		CacheSize: stageOps.CachedTrees,
 		SkipSlow:  racetest.SkipFullTree,
 	})
 }

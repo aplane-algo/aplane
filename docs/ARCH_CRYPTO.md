@@ -350,12 +350,12 @@ signer-side signing, keygen, and mnemonic handlers. Ed25519 follows the same spl
 
 Compiled provider registration is distinct from default visibility. The
 `internal/keytypecatalog` package records whether a compiled key type is
-default-enabled, library-visible, internal-only, or disabled. Registered but
+default-enabled or library-visible. Registered but
 non-default providers remain binary capabilities, but are filtered out of
-generation surfaces until the product-store activation layer enables them;
-internal-only providers can never be enabled. Terminology is
+generation surfaces until the product-store activation layer enables them.
+Terminology is
 intentional: **registered** means provider code exists in a process-global
-registry; **default-enabled**, **library-visible**, and **internal-only** are
+registry; **default-enabled** and **library-visible** are
 catalog availability states; **activated** means the product store has opted into a library-visible
 compiled provider; **installed** means the product store has an encrypted YAML
 template; **enabled** means the key type appears in product discovery,
@@ -366,8 +366,6 @@ Visibility states recorded by `internal/keytypecatalog`:
 
 - `default_enabled`: visible to the product runtime, subject to node-role gates
 - `library`: compiled capability exists but needs product-store enablement
-- `internal_only`: registered for composition, existing-key signing and restore; no standalone creation or enablement (no shipped provider uses it since the plain LogicSig types became plain hosts)
-- `disabled`: compiled in source, not exposed by the owning runtime path
 
 Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under

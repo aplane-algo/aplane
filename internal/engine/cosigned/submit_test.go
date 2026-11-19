@@ -722,7 +722,7 @@ func cosignerEndpointHandler(t *testing.T, publicKeyHex string, privateKey []byt
 		}
 		for _, target := range req.Targets {
 			msg := message.ComponentMessage(message.RoleCosigner, group.Entries[target.TargetIndex].TxID)
-			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
+			signature, err := signerops.New().Sign(privateKey, msg[:])
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -741,7 +741,7 @@ func cosignerEndpointHandler(t *testing.T, publicKeyHex string, privateKey []byt
 
 func testFalconCosignerKeypair(t *testing.T, fill byte) ([]byte, []byte) {
 	t.Helper()
-	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
+	publicKey, privateKey, err := signerops.New().GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}

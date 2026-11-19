@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
@@ -93,7 +92,7 @@ func (a *App) FormatKeyTypeForDisplay(address, keyType string) string {
 	if nativeType == "" {
 		nativeType = keyType
 	}
-	return addressdisplay.FormatWithKeyColor(keytypefmt.Display(keyType), nativeType, algorithm.GetDisplayColor)
+	return addressdisplay.FormatWithKeyColor(keyType, nativeType, algorithm.GetDisplayColor)
 }
 
 // ResolveAddress resolves one address, alias, or dynamic set reference to a concrete address.

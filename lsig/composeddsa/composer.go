@@ -27,10 +27,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
-// ErrNoSuitableCounter is returned when no counter value 0-255 produces
-// a LogicSig address that is not on the ed25519 curve.
-var ErrNoSuitableCounter = lsigsalt.ErrNoSuitableCounter
-
 var returnTokenPattern = regexp.MustCompile(`\breturn\b`)
 
 // DSAOps defines client-safe algorithm-specific operations needed by the generic composer.

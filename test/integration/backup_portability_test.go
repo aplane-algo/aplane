@@ -88,7 +88,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			// the case stops at the restored inventory entry.
 			name: "library plain host enabled only on the source",
 			prepareSource: func(t *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
-				cosignerPublicKey, cosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+				cosignerPublicKey, cosignerPrivateKey, err := signerops.New().GenerateKeypair(randomFalconSeed(t))
 				if err != nil {
 					t.Fatalf("generate cosigner key: %v", err)
 				}
@@ -576,7 +576,6 @@ func TestSignerManagedBackupRoundTripViaApadminRestore(t *testing.T) {
 	installedTemplatePath := templatestore.GetTemplateFilePathActive(
 		mustActiveStorePaths(t, destClone.SignerDataDir),
 		"aplane.htlc.v1",
-		templatestore.TemplateTypeGeneric,
 	)
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
@@ -650,7 +649,6 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	installedTemplatePath := templatestore.GetTemplateFilePathActive(
 		mustActiveStorePaths(t, destClone.SignerDataDir),
 		"aplane.htlc.v1",
-		templatestore.TemplateTypeGeneric,
 	)
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)

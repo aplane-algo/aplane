@@ -227,7 +227,7 @@ func newAuthorAllowlistAccount(t *testing.T, network *harness.TestnetConfig, enc
 		t.Fatalf("build provider: %v", err)
 	}
 	provider.SetAlgodClient(network.Client)
-	ops := signerops.New(nil)
+	ops := signerops.New()
 	publicKey, privateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate spending key: %v", err)

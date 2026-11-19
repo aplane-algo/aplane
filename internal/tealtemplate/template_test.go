@@ -60,12 +60,6 @@ assert`
 	if rendered.TEAL != wantTEAL {
 		t.Fatalf("unexpected rendered TEAL:\n%s", rendered.TEAL)
 	}
-	if got := rendered.ByteSlots[0].Name; got != "recipient" {
-		t.Fatalf("byte slot name = %q, want recipient", got)
-	}
-	if got := rendered.IntSlots[0].Name; got != "unlock_round" {
-		t.Fatalf("int slot name = %q, want unlock_round", got)
-	}
 }
 
 func TestRenderStrictNormalizesBytesAndUint64(t *testing.T) {

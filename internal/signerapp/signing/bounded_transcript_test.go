@@ -19,7 +19,7 @@ import (
 // production builders, so a change that made two of them collide, or that checked a
 // proof against another role's message, fails here.
 func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
-	ops := signerops.New(nil)
+	ops := signerops.New()
 	keypair := func(first byte) ([]byte, []byte) {
 		t.Helper()
 		seed := make([]byte, 48)

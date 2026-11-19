@@ -24,9 +24,7 @@ const witnessFalcon1024SeedSize = 64
 // WitnessFalcon1024Generator creates raw Falcon-1024 witness keys.
 // These keys are not Algorand spending accounts and are intentionally
 // registered only under their exact witness key type.
-type WitnessFalcon1024Generator struct {
-	ops *signerops.Ops
-}
+type WitnessFalcon1024Generator struct{}
 
 func (g *WitnessFalcon1024Generator) RoutingFamily() string {
 	return witness.Falcon1024V1
@@ -42,10 +40,7 @@ func (g *WitnessFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths
 		return nil, fmt.Errorf("invalid seed size for Falcon-1024 witness: expected %d bytes, got %d", witnessFalcon1024SeedSize, len(seed))
 	}
 
-	seedCopy := append([]byte(nil), seed...)
-	defer securecrypto.ZeroBytes(seedCopy)
-
-	publicKey, privateKey, err := g.signerOps().GenerateKeypair(seedCopy)
+	publicKey, privateKey, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate witness key: %w", err)
 	}
@@ -76,7 +71,7 @@ func (g *WitnessFalcon1024Generator) GenerateRandom(ctx context.Context, paths s
 	}
 	defer securecrypto.ZeroBytes(seed)
 
-	publicKey, privateKey, err := g.signerOps().GenerateKeypair(seed)
+	publicKey, privateKey, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate witness key: %w", err)
 	}
@@ -85,18 +80,11 @@ func (g *WitnessFalcon1024Generator) GenerateRandom(ctx context.Context, paths s
 	return internalkeygen.SaveWitnessKey(paths, keyType, publicKey, privateKey, kr)
 }
 
-func (g *WitnessFalcon1024Generator) signerOps() *signerops.Ops {
-	if g.ops != nil {
-		return g.ops
-	}
-	return signerops.New(nil)
-}
-
 // validateWitnessPair verifies a Falcon-1024 witness keypair with a fixed,
 // domain-separated probe message.
 func validateWitnessPair(publicKey, privateKey []byte) error {
 	const probe = "APLANE_WITNESS_KEY_PAIR_V1"
-	signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
+	signature, err := signerops.New().Sign(privateKey, []byte(probe))
 	if err != nil {
 		return fmt.Errorf("witness public/private key validation failed: %w", err)
 	}

@@ -73,7 +73,7 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 		ops             composeddsa.DSAOps
 		publicKeySize   int
 	}{
-		{plainFalcon1024LsigKeyType, "aplane.falcon1024", falconv1.NewFalconOps(falconfamily.FalconBase), falconfamily.PublicKeySize},
+		{plainFalcon1024LsigKeyType, "aplane.falcon1024", falconv1.NewFalconOps(), falconfamily.PublicKeySize},
 		{plainEd25519LsigKeyType, "aplane.ed25519", ed25519v1.NewOps(), ed25519.PublicKeySize},
 	}
 	cosigner := &boundedmeta.CosignerAuthorization{

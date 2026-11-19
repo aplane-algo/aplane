@@ -12,6 +12,7 @@ import (
 
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/integritysidecar"
 )
 
 func TestPolicyIntegrityRoundTrip(t *testing.T) {
@@ -22,11 +23,11 @@ func TestPolicyIntegrityRoundTrip(t *testing.T) {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
 
-	if sidecar.Version != PolicyIntegritySidecarVersion {
-		t.Fatalf("Version = %d, want %d", sidecar.Version, PolicyIntegritySidecarVersion)
+	if sidecar.Version != integritysidecar.Version {
+		t.Fatalf("Version = %d, want %d", sidecar.Version, integritysidecar.Version)
 	}
-	if sidecar.Algorithm != PolicyIntegrityAlgorithm {
-		t.Fatalf("Algorithm = %q, want %q", sidecar.Algorithm, PolicyIntegrityAlgorithm)
+	if sidecar.Algorithm != integritysidecar.Algorithm {
+		t.Fatalf("Algorithm = %q, want %q", sidecar.Algorithm, integritysidecar.Algorithm)
 	}
 	if sidecar.KeyID != PolicyIntegrityKeyID {
 		t.Fatalf("KeyID = %q, want %q", sidecar.KeyID, PolicyIntegrityKeyID)

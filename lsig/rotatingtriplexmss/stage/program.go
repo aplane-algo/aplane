@@ -25,9 +25,6 @@ import (
 )
 
 const (
-	// TEALVersion is the AVM version of every stage program.
-	TEALVersion = 13
-
 	// MaxValidityWindow is the largest LastValid - FirstValid the program accepts.
 	MaxValidityWindow = 100
 
@@ -65,9 +62,6 @@ const (
 	IndicesPerStage = 64
 	StagesPerTree   = xmss.Leaves / IndicesPerStage
 
-	// SaltSearchLimit is the number of salt values the v13 assembler tries.
-	SaltSearchLimit = stageprog.SaltSearchLimit
-
 	opIntcblock  = 0x20
 	saltTailSize = stageprog.SaltTailSize
 
@@ -85,10 +79,6 @@ const (
 )
 
 var (
-	// ErrNoOffCurveSalt reports that every salt candidate hashed on-curve
-	// (probability about 2^-128). The stage is unusable and must be skipped.
-	ErrNoOffCurveSalt = stageprog.ErrNoOffCurveSalt
-
 	// ErrInvalidProgram reports bytes that are not a canonical stage program.
 	ErrInvalidProgram = stageprog.ErrInvalidProgram
 )

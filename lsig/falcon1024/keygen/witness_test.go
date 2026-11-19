@@ -106,7 +106,7 @@ func assertComponentMaterial(t *testing.T, km *signing.KeyMaterial, wantSelector
 }
 
 func TestValidateWitnessPairRefusesMismatchedKeys(t *testing.T) {
-	ops := signerops.New(nil)
+	ops := signerops.New()
 	newPair := func(fill byte) (publicKey, privateKey []byte) {
 		publicKey, privateKey, err := ops.GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
 		if err != nil {

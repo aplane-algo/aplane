@@ -32,8 +32,6 @@ type KeyType struct {
 // LogicSig derivation and display metadata. It must not
 // reference signer-side machinery so client binaries stay lean.
 type ClientRegistration struct {
-	// Family is the registry family name, e.g. "falcon1024".
-	Family string
 	// Metadata is the family's algorithm display/derivation metadata.
 	Metadata algorithm.SignatureMetadata
 	// KeyTypes lists every versioned key type the family compiles in.
@@ -49,13 +47,11 @@ type ClientRegistration struct {
 func RegisterClient(r ClientRegistration) {
 	for _, kt := range r.KeyTypes {
 		// First-wins: compiled families register at process start (before any
-		// runtime template registration), and per-family v1 helpers may have
-		// already registered the same provider in test binaries.
+		// runtime template registration), and a test binary may already have
+		// registered the same key type.
 		logicsigdsa.RegisterIfAbsent(kt.DSA)
 	}
-	if r.Metadata != nil {
-		algorithm.RegisterMetadata(r.Metadata)
-	}
+	algorithm.RegisterMetadata(r.Metadata)
 	for _, fn := range r.Extra {
 		fn()
 	}

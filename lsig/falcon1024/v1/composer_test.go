@@ -21,34 +21,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
-func TestFalconBase(t *testing.T) {
-	base := family.FalconBase
-
-	if base.Name() != family.Name {
-		t.Errorf("Name() = %q, want %q", base.Name(), family.Name)
-	}
-
-	if base.PublicKeySize() != family.PublicKeySize {
-		t.Errorf("PublicKeySize() = %d, want %d", base.PublicKeySize(), family.PublicKeySize)
-	}
-
-	if base.PrivateKeySize() != family.PrivateKeySize {
-		t.Errorf("PrivateKeySize() = %d, want %d", base.PrivateKeySize(), family.PrivateKeySize)
-	}
-
-	if base.CryptoSignatureSize() != family.MaxSignatureSize {
-		t.Errorf("CryptoSignatureSize() = %d, want %d", base.CryptoSignatureSize(), family.MaxSignatureSize)
-	}
-
-	if base.MnemonicScheme() != "bip39" {
-		t.Errorf("MnemonicScheme() = %q, want %q", base.MnemonicScheme(), "bip39")
-	}
-
-	if base.MnemonicWordCount() != 24 {
-		t.Errorf("MnemonicWordCount() = %d, want %d", base.MnemonicWordCount(), 24)
-	}
-}
-
 func newTestFalconHashlockProvider() *ComposedFalcon {
 	return NewComposedFalcon(ComposedFalconConfig{
 		KeyType:     "test.falcon1024-hashlock.v1",
@@ -56,7 +28,6 @@ func newTestFalconHashlockProvider() *ComposedFalcon {
 		Version:     1,
 		DisplayName: "Falcon-1024 Hashlock",
 		Description: "Falcon-1024 signature with SHA256 hash verification",
-		Base:        family.FalconBase,
 		Params: []lsigprovider.ParameterDef{{
 			Name:      "hash",
 			Label:     "SHA256 Hash",
@@ -149,7 +120,7 @@ func TestComposedFalconHashlockGenerateTEAL(t *testing.T) {
 		seed[i] = byte(i)
 	}
 
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
@@ -204,7 +175,6 @@ func TestComposedFalconStrictGenerateTEALKeepsCounterIsolated(t *testing.T) {
 		Version:      1,
 		DisplayName:  "Falcon-1024 Strict Hashlock",
 		Description:  "Falcon-1024 signature with strict SHA256 hash verification",
-		Base:         family.FalconBase,
 		TemplateMode: generictemplate.TemplateModeStrict,
 		Params: []lsigprovider.ParameterDef{{
 			Name:      "hash",
@@ -237,7 +207,7 @@ assert`,
 	for i := range seed {
 		seed[i] = byte(i)
 	}
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
@@ -280,14 +250,14 @@ func TestComposedFalconHashlockSign(t *testing.T) {
 		seed[i] = byte(i)
 	}
 
-	_, privKey, err := signerops.New(nil).GenerateKeypair(seed)
+	_, privKey, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
 
 	// Test signing
 	message := []byte("test message to sign")
-	signature, err := signerops.New(nil).Sign(privKey, message)
+	signature, err := signerops.New().Sign(privKey, message)
 	if err != nil {
 		t.Fatalf("Sign() error: %v", err)
 	}
@@ -309,11 +279,10 @@ func TestComposedFalconHashlockDeriveLsigRequiresClient(t *testing.T) {
 		KeyType:    "test-hashlock",
 		FamilyName: family.Name,
 		Version:    1,
-		Base:       family.FalconBase,
 	})
 
 	seed := make([]byte, 64)
-	pubKey, _, _ := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, _ := signerops.New().GenerateKeypair(seed)
 
 	// DeriveLsig should fail without client
 	_, _, err := p.DeriveLsig(context.Background(), pubKey, map[string]string{"hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"})
@@ -343,7 +312,7 @@ func TestComposedFalconHashlockDeriveLsig(t *testing.T) {
 		seed[i] = byte(i)
 	}
 
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
@@ -404,7 +373,7 @@ func TestComposedFalconHashlockAddressDeterminism(t *testing.T) {
 		seed[i] = byte(42)
 	}
 
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
@@ -443,7 +412,7 @@ func TestComposedFalconHashlockDifferentHashDifferentAddress(t *testing.T) {
 		seed[i] = byte(42)
 	}
 
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}

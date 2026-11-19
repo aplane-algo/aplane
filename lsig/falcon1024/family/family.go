@@ -13,6 +13,9 @@ import "github.com/aplane-algo/aplane/internal/falconparams"
 // intentionally distinct from any future native "falcon1024" key type.
 const Name = "aplane.falcon1024"
 
+// KeyTypeV1 is the Falcon-1024 LogicSig base key type, the Falcon plain host.
+const KeyTypeV1 = "aplane.falcon1024.v1"
+
 // Key sizes (from the falcongo library)
 const (
 	PublicKeySize  = falconparams.PublicKeySize

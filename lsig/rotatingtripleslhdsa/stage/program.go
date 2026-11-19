@@ -20,9 +20,6 @@ import (
 )
 
 const (
-	// TEALVersion is the AVM version of every stage program.
-	TEALVersion = 13
-
 	// MaxValidityWindow is the largest LastValid - FirstValid the program accepts.
 	MaxValidityWindow = 100
 
@@ -41,9 +38,6 @@ const (
 	// the arguments ChunkSizes lists.
 	ForsChunkSize = 16 + slhdsa.ForsSignatureSize
 
-	// SaltSearchLimit is the number of salt values the v13 assembler tries.
-	SaltSearchLimit = stageprog.SaltSearchLimit
-
 	opIntcblock  = 0x20
 	saltTailSize = stageprog.SaltTailSize
 
@@ -56,10 +50,6 @@ const (
 )
 
 var (
-	// ErrNoOffCurveSalt reports that every salt candidate hashed on-curve
-	// (probability about 2^-128). The stage is unusable and must be skipped.
-	ErrNoOffCurveSalt = stageprog.ErrNoOffCurveSalt
-
 	// ErrInvalidProgram reports bytes that are not a canonical stage program.
 	ErrInvalidProgram = stageprog.ErrInvalidProgram
 )
@@ -87,11 +77,6 @@ var (
 )
 
 func init() {
-	if len(template) == 0 {
-		// Bootstrap only: TestDumpTemplate regenerates the frozen templates
-		// from the verifier sources; until then Build refuses every key.
-		return
-	}
 	find := func(fill byte, size int) int {
 		run := bytes.Repeat([]byte{fill}, size)
 		off := bytes.Index(template, run)
@@ -118,9 +103,6 @@ func init() {
 func Build(keys *PublicKeys) (Program, error) {
 	if keys == nil {
 		return Program{}, fmt.Errorf("%w: nil public keys", ErrInvalidProgram)
-	}
-	if len(template) == 0 {
-		return Program{}, fmt.Errorf("%w: no frozen template for hypertree height %d", ErrInvalidProgram, Params.H)
 	}
 	base := make([]byte, UnsaltedProgramSize, SaltedProgramSize)
 	copy(base, template)

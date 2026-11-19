@@ -193,7 +193,7 @@ Each scheme's `stage.Build(keys)` fills its own template and computes
 it appends `intcblock 1 <salt>` (bytes `0x20 0x01 <salt>`), choosing the lowest
 salt in `[0, 128)` giving an off-curve address, as the TEAL v13 assembler does.
 If none exists (probability about 2^-128) the stage is unusable
-(`ErrNoOffCurveSalt`).
+(`stageprog.ErrNoOffCurveSalt`).
 
 `Build` writes the stage number into the prefix. XMSS's `Build` also refuses
 a `Lo` and `Hi` that are not the stage's range. `stage.Parse` is the strict

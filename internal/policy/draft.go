@@ -86,10 +86,10 @@ const (
 	ctxRekeyRule
 )
 
-// canonicalFieldOrder lists, for each policy object, its fields in the order
-// the decoder reads them (doc_v1.go). Fields of both roles are listed; a
-// document carries only its own role's. TestCanonicalFieldOrderMatchesSchema
-// keeps these lists equal to the schema's.
+// canonicalFieldOrder lists, for each policy object, its fields in canonical
+// output order. Fields of both roles are listed; a document carries only its
+// own role's. TestCanonicalFieldOrderMatchesSchema keeps each list's fields
+// equal to the schema's.
 var canonicalFieldOrder = map[canonicalContext][]string{
 	ctxRoot: {
 		"format", "role", "key", "description",

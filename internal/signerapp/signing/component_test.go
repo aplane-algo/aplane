@@ -756,7 +756,7 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 	if err := metadata.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	baseSignature, err := signerops.New(nil).Sign(spendingPrivateKey, entry.TxID[:])
+	baseSignature, err := signerops.New().Sign(spendingPrivateKey, entry.TxID[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -764,12 +764,12 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 	if err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := signerops.New(nil).Sign(spendingPrivateKey, receiptMessage[:])
+	receipt, err := signerops.New().Sign(spendingPrivateKey, receiptMessage[:])
 	if err != nil {
 		t.Fatal(err)
 	}
 	cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
-	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMessage[:])
+	cosignerSignature, err := signerops.New().Sign(cosignerPrivateKey, cosignerMessage[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1091,7 +1091,7 @@ func TestSignPreparedCosignerComponentsSignsEd25519Messages(t *testing.T) {
 func TestSignPreparedCosignerComponentsSignsFalcon1024Messages(t *testing.T) {
 	falconkeygen.RegisterWitnessKeygen()
 
-	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x43}, 64))
+	publicKey, privateKey, err := signerops.New().GenerateKeypair(bytes.Repeat([]byte{0x43}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}
@@ -1321,7 +1321,7 @@ func testFalconComponentSelector(t *testing.T, fill byte) string {
 func testFalconComponentKeypair(t *testing.T, fill byte) ([]byte, []byte) {
 	t.Helper()
 	falconkeygen.RegisterWitnessKeygen()
-	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
+	publicKey, privateKey, err := signerops.New().GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}

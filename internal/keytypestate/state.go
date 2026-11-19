@@ -91,8 +91,8 @@ func Get(paths storepaths.Paths, keyType string) (Record, bool, error) {
 	return GetActive(active, keyType)
 }
 
-// GetActive is Get against resolved active-store paths (generational or
-// legacy); the caller resolved the layout once for the whole operation.
+// GetActive is Get against resolved active-store paths; the caller resolved
+// the layout once for the whole operation.
 func GetActive(active storepaths.GenPaths, keyType string) (Record, bool, error) {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
@@ -308,9 +308,6 @@ func CanGenerate(paths storepaths.Paths, keyType string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if keytypecatalog.IsInternalOnly(keyType) {
-		return false, nil
-	}
 	return ok && rec.State == StateEnabled, nil
 }
 
@@ -321,9 +318,6 @@ func parseRecord(data []byte, keyType string) (Record, error) {
 	var rec Record
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return Record{}, err
-	}
-	if rec.KeyType == "" {
-		rec.KeyType = keyType
 	}
 	normalized, err := normalizeRecord(rec)
 	if err != nil {

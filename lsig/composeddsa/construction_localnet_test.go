@@ -42,7 +42,7 @@ func newFalconKey(t *testing.T) compositeKey {
 	if _, err := rand.Read(seed); err != nil {
 		t.Fatal(err)
 	}
-	public, private, err := signerops.New(nil).GenerateKeypair(seed)
+	public, private, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func (k compositeKey) sign(t *testing.T, message []byte) []byte {
 	if k.primitive == sigconstruction.PrimitiveEd25519 {
 		return stded25519.Sign(k.private, message)
 	}
-	signature, err := signerops.New(nil).Sign(k.private, message)
+	signature, err := signerops.New().Sign(k.private, message)
 	if err != nil {
 		t.Fatal(err)
 	}

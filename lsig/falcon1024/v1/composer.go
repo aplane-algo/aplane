@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
 // ComposedFalcon is the explicit Falcon name for the same underlying type.
@@ -24,7 +23,6 @@ type ComposedFalconConfig struct {
 	DisplayName string
 	Description string
 
-	Base          family.DSABase
 	TEALSuffix    string
 	SaltStyle     lsigsalt.Style
 	TemplateMode  string
@@ -37,12 +35,6 @@ type ComposedFalconConfig struct {
 // NewComposedFalcon returns a Falcon-composed provider powered by the generic
 // ComposedDSA engine.
 func NewComposedFalcon(cfg ComposedFalconConfig) *ComposedFalcon {
-	base := cfg.Base
-	if base == nil {
-		base = family.FalconBase
-	}
-	ops := NewFalconOps(base)
-
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType:       cfg.KeyType,
 		BaseKeyType:   cfg.BaseKeyType,
@@ -50,7 +42,7 @@ func NewComposedFalcon(cfg ComposedFalconConfig) *ComposedFalcon {
 		Version:       cfg.Version,
 		DisplayName:   cfg.DisplayName,
 		Description:   cfg.Description,
-		Ops:           ops,
+		Ops:           NewFalconOps(),
 		TEALSuffix:    cfg.TEALSuffix,
 		SaltStyle:     cfg.SaltStyle,
 		TemplateMode:  cfg.TemplateMode,

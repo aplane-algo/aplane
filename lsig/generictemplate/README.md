@@ -112,11 +112,9 @@ construct plus scalar `@name` substitution.
 - **Validated at load time**: Invalid templates fail at import or are skipped during reload
 - **Versioned derivation**: Omitted `derivation_version` means no generated
   salting; generation succeeds only when the unmodified bytecode is already
-  off-curve. `derivation_version: 1` preserves the legacy pushbytes/pop salt
-  marker; `derivation_version: 2` uses a trailing dead-code `bytecblock` and
-  requires the template TEAL to end with `return` or `err`;
-  `derivation_version: 3` requires TEAL v13 and delegates auto-salting to the
-  configured algod compiler
+  off-curve. `derivation_version: 3` requires TEAL v13 and delegates
+  auto-salting to the configured algod compiler. Any other value is rejected
+  with `derivation_version N is not supported`
 
 ## Adding a New Template
 

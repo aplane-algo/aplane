@@ -287,7 +287,7 @@ func InstallParsedActive(active storepaths.GenPaths, tmpl ParsedTemplate, kr *cr
 	}
 
 	if templatestore.TemplateExistsActive(active, tmpl.KeyType, tmpl.TemplateType) {
-		result.OutputPath = templatestore.GetTemplateFilePathActive(active, tmpl.KeyType, tmpl.TemplateType)
+		result.OutputPath = templatestore.GetTemplateFilePathActive(active, tmpl.KeyType)
 		if err := requireInstalledTemplateMatch(result.OutputPath, tmpl, kr); err != nil {
 			return result, err
 		}
@@ -316,7 +316,7 @@ func InstallParsedActive(active storepaths.GenPaths, tmpl ParsedTemplate, kr *cr
 	result.OutputPath = outputPath
 	stateChange, err := putTemplateState(active, tmpl, keytypestate.StateEnabled)
 	if err != nil {
-		if rollbackErr := rollbackInstalledTemplateFileActive(active, tmpl.KeyType, tmpl.TemplateType); rollbackErr != nil {
+		if rollbackErr := rollbackInstalledTemplateFileActive(active, tmpl.KeyType); rollbackErr != nil {
 			return result, fmt.Errorf("failed to write template state: %w (rollback failed: %v)", err, rollbackErr)
 		}
 		return result, err
@@ -427,9 +427,6 @@ func ActivateCompiledProvider(paths storepaths.Paths, keyType string) (InstallRe
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	if keytypecatalog.IsInternalOnly(result.KeyType) {
-		return result, fmt.Errorf("key type %s is internal-only and cannot be enabled for standalone account creation", result.KeyType)
-	}
 	if !keytypecatalog.IsLibraryVisible(result.KeyType) {
 		return result, fmt.Errorf("key type %s is not library-visible", result.KeyType)
 	}
@@ -513,7 +510,7 @@ func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	outputPath, err := templatestore.GetTemplateFilePathForPaths(paths, result.KeyType, templateType)
+	outputPath, err := templatestore.GetTemplateFilePathForPaths(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
@@ -556,7 +553,7 @@ func DisableInstalledTemplate(paths storepaths.Paths, keyType string, templateTy
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	outputPath, err := templatestore.GetTemplateFilePathForPaths(paths, result.KeyType, templateType)
+	outputPath, err := templatestore.GetTemplateFilePathForPaths(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
@@ -605,7 +602,7 @@ func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 		return result, fmt.Errorf("unsupported template type: %s", templateType)
 	}
 
-	path, err := templatestore.GetTemplateFilePathForPaths(paths, result.KeyType, templateType)
+	path, err := templatestore.GetTemplateFilePathForPaths(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
@@ -623,7 +620,7 @@ func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 	if err := keytypestate.Delete(paths, result.KeyType); err != nil {
 		return result, err
 	}
-	archivePath, err := archiveInstalled(paths, result.KeyType, templateType)
+	archivePath, err := archiveInstalled(paths, result.KeyType)
 	if err != nil {
 		if hadState {
 			if rollbackErr := keytypestate.Put(paths, rec); rollbackErr != nil {
@@ -640,28 +637,28 @@ func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 // RollbackInstalledTemplateFile removes only the newly written encrypted
 // template file. It deliberately leaves key type state rollback to
 // RollbackTemplateStateChange.
-func RollbackInstalledTemplateFile(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) error {
+func RollbackInstalledTemplateFile(paths storepaths.Paths, keyType string) error {
 	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return err
 	}
-	return rollbackInstalledTemplateFileActive(active, keyType, templateType)
+	return rollbackInstalledTemplateFileActive(active, keyType)
 }
 
-func rollbackInstalledTemplateFileActive(active storepaths.GenPaths, keyType string, templateType templatestore.TemplateType) error {
-	path := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
+func rollbackInstalledTemplateFileActive(active storepaths.GenPaths, keyType string) error {
+	path := templatestore.GetTemplateFilePathActive(active, keyType)
 	if err := fsutil.RemoveDurable(path); err != nil {
 		return fmt.Errorf("failed to remove installed template: %w", err)
 	}
 	return nil
 }
 
-func archiveInstalled(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) (string, error) {
+func archiveInstalled(paths storepaths.Paths, keyType string) (string, error) {
 	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return "", err
 	}
-	sourcePath := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
+	sourcePath := templatestore.GetTemplateFilePathActive(active, keyType)
 	if _, err := genstore.PreflightDeletedArchiveAppend(active, sourcePath); err != nil {
 		return "", err
 	}

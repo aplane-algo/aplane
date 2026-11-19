@@ -19,7 +19,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -285,11 +284,10 @@ func runTestList(client *testModeClient) {
 }
 
 func formatBatchKeyType(keyType, templateProvenanceStatus string) string {
-	label := keytypefmt.Display(keyType)
 	if provenanceLabel := keytypeux.TemplateProvenanceLabel(templateProvenanceStatus); provenanceLabel != "" {
-		return label + " [" + provenanceLabel + "]"
+		return keyType + " [" + provenanceLabel + "]"
 	}
-	return label
+	return keyType
 }
 
 func runTestGenerate(client *testModeClient, args []string) {
@@ -306,7 +304,7 @@ func runTestGenerate(client *testModeClient, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Generated %s key: %s\n", keytypefmt.Display(keyType), address)
+	fmt.Printf("Generated %s key: %s\n", keyType, address)
 }
 
 func runTestImport(client *testModeClient, args []string) {
@@ -346,7 +344,7 @@ func runTestImport(client *testModeClient, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Imported %s key: %s\n", keytypefmt.Display(keyType), address)
+	fmt.Printf("Imported %s key: %s\n", keyType, address)
 }
 
 func runTestDelete(client *testModeClient, args []string) {

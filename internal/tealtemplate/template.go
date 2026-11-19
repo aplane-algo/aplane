@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package tealtemplate owns the TEAL template grammar for all three template
+// Package tealtemplate owns the TEAL template grammar for both template
 // modes. Strict mode renders $symbol references into typed generated constant
 // blocks (this file); generated mode uses @variable textual
 // substitution and restricted list-template expansion (substitute.go,
@@ -48,20 +48,11 @@ type TemplateVariable struct {
 	Constant  ConstantKind `json:"constant" yaml:"constant"`
 }
 
-type ConstantSlot struct {
-	Name      string
-	Parameter string
-	Kind      ConstantKind
-	Type      string
-	Index     int
-	Value     string
-}
-
+// RenderedTemplate is a rendered strict template. ConstantBlocks holds its
+// intcblock and bytecblock lines, which RenderStrict places after the pragma.
 type RenderedTemplate struct {
 	TEAL           string
 	ConstantBlocks string
-	IntSlots       []ConstantSlot
-	ByteSlots      []ConstantSlot
 }
 
 func ValidateStrictTemplate(teal string, variables []TemplateVariable) error {
@@ -84,7 +75,7 @@ func RenderStrict(teal string, params map[string]string, variables []TemplateVar
 	if err != nil {
 		return RenderedTemplate{}, err
 	}
-	rendered.TEAL = insertConstantBlocks(rendered.TEAL, rendered.IntSlots, rendered.ByteSlots)
+	rendered.TEAL = insertConstantBlocks(rendered.TEAL, rendered.ConstantBlocks)
 	return rendered, nil
 }
 
@@ -106,7 +97,7 @@ func RenderStrictFragment(teal string, params map[string]string, variables []Tem
 		return RenderedTemplate{}, err
 	}
 
-	intSlots, byteSlots, replacements, err := buildSlots(variables, params)
+	intValues, byteValues, replacements, err := buildSlots(variables, params)
 	if err != nil {
 		return RenderedTemplate{}, err
 	}
@@ -118,9 +109,7 @@ func RenderStrictFragment(teal string, params map[string]string, variables []Tem
 
 	return RenderedTemplate{
 		TEAL:           body,
-		ConstantBlocks: strings.Join(renderConstantBlocks(intSlots, byteSlots), "\n"),
-		IntSlots:       intSlots,
-		ByteSlots:      byteSlots,
+		ConstantBlocks: strings.Join(renderConstantBlocks(intValues, byteValues), "\n"),
 	}, nil
 }
 
@@ -197,10 +186,11 @@ func validateConstantType(variable TemplateVariable) error {
 	return nil
 }
 
-func buildSlots(variables []TemplateVariable, params map[string]string) ([]ConstantSlot, []ConstantSlot, map[string]string, error) {
+// buildSlots encodes each variable's value into its constant block, in
+// declaration order, and maps each variable to the opcode that loads it.
+func buildSlots(variables []TemplateVariable, params map[string]string) ([]string, []string, map[string]string, error) {
 	replacements := make(map[string]string, len(variables))
-	intSlots := make([]ConstantSlot, 0)
-	byteSlots := make([]ConstantSlot, 0)
+	var intValues, byteValues []string
 
 	for _, variable := range variables {
 		value, ok := params[variable.Parameter]
@@ -215,33 +205,17 @@ func buildSlots(variables []TemplateVariable, params map[string]string) ([]Const
 
 		switch variable.Constant {
 		case ConstantInt:
-			index := len(intSlots)
-			intSlots = append(intSlots, ConstantSlot{
-				Name:      variable.Name,
-				Parameter: variable.Parameter,
-				Kind:      ConstantInt,
-				Type:      variable.Type,
-				Index:     index,
-				Value:     encoded,
-			})
-			replacements[variable.Name] = fmt.Sprintf("intc_%d", index)
+			replacements[variable.Name] = fmt.Sprintf("intc_%d", len(intValues))
+			intValues = append(intValues, encoded)
 		case ConstantByte:
-			index := len(byteSlots)
-			byteSlots = append(byteSlots, ConstantSlot{
-				Name:      variable.Name,
-				Parameter: variable.Parameter,
-				Kind:      ConstantByte,
-				Type:      variable.Type,
-				Index:     index,
-				Value:     encoded,
-			})
-			replacements[variable.Name] = fmt.Sprintf("bytec_%d", index)
+			replacements[variable.Name] = fmt.Sprintf("bytec_%d", len(byteValues))
+			byteValues = append(byteValues, encoded)
 		default:
 			return nil, nil, nil, fmt.Errorf("template variable %q uses unsupported constant kind %q", variable.Name, variable.Constant)
 		}
 	}
 
-	return intSlots, byteSlots, replacements, nil
+	return intValues, byteValues, replacements, nil
 }
 
 func encodeValue(value, valueType string) (string, error) {
@@ -279,8 +253,8 @@ func encodeValue(value, valueType string) (string, error) {
 	}
 }
 
-func insertConstantBlocks(teal string, intSlots, byteSlots []ConstantSlot) string {
-	if len(intSlots) == 0 && len(byteSlots) == 0 {
+func insertConstantBlocks(teal, blocks string) string {
+	if blocks == "" {
 		return teal
 	}
 
@@ -290,30 +264,20 @@ func insertConstantBlocks(teal string, intSlots, byteSlots []ConstantSlot) strin
 		insertAt = 1
 	}
 
-	blockLines := renderConstantBlocks(intSlots, byteSlots)
-	out := make([]string, 0, len(lines)+len(blockLines)+1)
+	out := make([]string, 0, len(lines)+2)
 	out = append(out, lines[:insertAt]...)
-	out = append(out, blockLines...)
-	out = append(out, "")
+	out = append(out, blocks, "")
 	out = append(out, lines[insertAt:]...)
 	return strings.Join(out, "\n")
 }
 
-func renderConstantBlocks(intSlots, byteSlots []ConstantSlot) []string {
+func renderConstantBlocks(intValues, byteValues []string) []string {
 	var lines []string
-	if len(intSlots) > 0 {
-		lines = append(lines, "intcblock "+joinSlotValues(intSlots))
+	if len(intValues) > 0 {
+		lines = append(lines, "intcblock "+strings.Join(intValues, " "))
 	}
-	if len(byteSlots) > 0 {
-		lines = append(lines, "bytecblock "+joinSlotValues(byteSlots))
+	if len(byteValues) > 0 {
+		lines = append(lines, "bytecblock "+strings.Join(byteValues, " "))
 	}
 	return lines
-}
-
-func joinSlotValues(slots []ConstantSlot) string {
-	values := make([]string, len(slots))
-	for i, slot := range slots {
-		values[i] = slot.Value
-	}
-	return strings.Join(values, " ")
 }

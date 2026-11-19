@@ -10,24 +10,18 @@ import (
 )
 
 // FalconOps adapts Falcon family primitives to the generic ComposedDSA engine.
-type FalconOps struct {
-	base family.DSABase
-}
+type FalconOps struct{}
 
 // NewFalconOps creates Falcon operations for generic composed DSA.
-// If base is nil, family.FalconBase is used.
-func NewFalconOps(base family.DSABase) *FalconOps {
-	if base == nil {
-		base = family.FalconBase
-	}
-	return &FalconOps{base: base}
+func NewFalconOps() *FalconOps {
+	return &FalconOps{}
 }
 
-func (o *FalconOps) PublicKeySize() int       { return o.base.PublicKeySize() }
-func (o *FalconOps) CryptoSignatureSize() int { return o.base.CryptoSignatureSize() }
-func (o *FalconOps) MnemonicScheme() string   { return o.base.MnemonicScheme() }
-func (o *FalconOps) MnemonicWordCount() int   { return o.base.MnemonicWordCount() }
-func (o *FalconOps) DisplayColor() string     { return o.base.DisplayColor() }
+func (o *FalconOps) PublicKeySize() int       { return family.PublicKeySize }
+func (o *FalconOps) CryptoSignatureSize() int { return family.MaxSignatureSize }
+func (o *FalconOps) MnemonicScheme() string   { return family.MnemonicScheme }
+func (o *FalconOps) MnemonicWordCount() int   { return family.MnemonicWordCount }
+func (o *FalconOps) DisplayColor() string     { return family.DisplayColor }
 
 // Construction returns the signature construction these operations render.
 func (o *FalconOps) Construction() sigconstruction.Construction { return sigconstruction.Falcon1024() }

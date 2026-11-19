@@ -36,7 +36,7 @@ func TestRegisterSignerInstallsSigningProvider(t *testing.T) {
 	for i := range seed {
 		seed[i] = byte(i)
 	}
-	pub, priv, err := signerops.New(nil).GenerateKeypair(seed)
+	pub, priv, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}

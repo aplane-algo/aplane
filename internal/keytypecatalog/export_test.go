@@ -5,8 +5,7 @@ package keytypecatalog
 
 import "testing"
 
-// EntriesForTest returns every cataloged key type, of every availability:
-// DefaultEnabled and LibraryVisible leave out internal-only and disabled ones.
+// EntriesForTest returns every cataloged key type, of both availabilities.
 func EntriesForTest() []Entry {
 	return filter(func(Entry) bool { return true })
 }

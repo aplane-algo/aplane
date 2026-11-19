@@ -353,8 +353,8 @@ provider/template derivation contract, not by user YAML. Templates with omitted
 only if the unmodified bytecode already derives an off-curve LogicSig address.
 Templates use `derivation_version: 3` and TEAL v13 compiler auto-salting;
 APlane persists and validates the compiler's final bytecode rather than patching
-it. The retired `derivation_version: 1` and `derivation_version: 2` contracts
-are rejected; republish such a template with `derivation_version: 3`. User-authored template TEAL must not hand-write raw `bytecblock`
+it. Any other `derivation_version` is rejected with `derivation_version N is
+not supported`; such a template must set `derivation_version: 3`. User-authored template TEAL must not hand-write raw `bytecblock`
 or `intcblock` declarations, numeric `bytec` or
 `intc` references, or short forms such as `bytec_0` or `intc_0`. Use declared
 template variables, symbolic `$name` references, and generated-mode list

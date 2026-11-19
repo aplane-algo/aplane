@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 )
 
 type IPCService struct {
@@ -65,7 +64,7 @@ func (s IPCService) ImportKey(ctx context.Context, req adminproto.ImportKeyReque
 	}
 
 	if importResult != nil {
-		s.logf("imported %s key via IPC: %s", keytypefmt.Display(importResult.KeyType), importResult.Address)
+		s.logf("imported %s key via IPC: %s", importResult.KeyType, importResult.Address)
 	}
 	return ipcResult
 }
@@ -87,7 +86,7 @@ func (s IPCService) logGenerateKey(genResult *GenerateResult) {
 		s.logf("generated %s via IPC: %s", template.DisplayName(), genResult.Address)
 		return
 	}
-	s.logf("generated new %s key via IPC: %s", keytypefmt.Display(genResult.KeyType), genResult.Address)
+	s.logf("generated new %s key via IPC: %s", genResult.KeyType, genResult.Address)
 }
 
 func (s IPCService) logf(format string, args ...interface{}) {

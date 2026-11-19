@@ -204,7 +204,7 @@ role.
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is product-scoped. Visibility states: `default_enabled` (for the applicable node role), `library` (compiled in but needs an enabled state record in the product
-store), `internal_only` (composition and existing credentials only), `disabled`. A library-visible or template key type must be activated
+store). A library-visible or template key type must be activated
 by an operator before it appears; an agent cannot install templates (that needs
 the master passphrase over local IPC) — generate the YAML and hand it to the
 user.

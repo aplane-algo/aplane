@@ -21,7 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -351,7 +350,7 @@ func (c Catalog) listTemplates() error {
 		if item.Enabled {
 			status = "enabled"
 		}
-		_, _ = fmt.Fprintf(c.Streams.Stdout, "  %s  (%s, %s, %s)\n", displayKeyType(item.KeyType), backup.FormatFileSize(item.Size), item.TemplateType, status)
+		_, _ = fmt.Fprintf(c.Streams.Stdout, "  %s  (%s, %s, %s)\n", item.KeyType, backup.FormatFileSize(item.Size), item.TemplateType, status)
 	}
 	return nil
 }
@@ -368,7 +367,7 @@ func (c Catalog) showTemplate(keyType string) error {
 	if !result.Success {
 		return resultError("template show failed", result.Code, result.Error)
 	}
-	c.info("template: %s (%s)", displayKeyType(result.KeyType), result.TemplateType)
+	c.info("template: %s (%s)", result.KeyType, result.TemplateType)
 	_, err := fmt.Fprintln(c.Streams.Stdout, string(result.TemplateYAML))
 	return err
 }
@@ -390,19 +389,19 @@ func (c Catalog) importTemplate(path string) error {
 		return resultError("template import failed", result.Code, result.Error)
 	}
 	if result.AlreadyExists {
-		c.info("%s template %s is already installed", result.TemplateType, displayKeyType(result.KeyType))
+		c.info("%s template %s is already installed", result.TemplateType, result.KeyType)
 		return nil
 	}
 	if templateUsesDefaultOpcodeCeiling(templateYAML) {
 		c.warn("template declares no max_opcode_cost; using the compiled v42 single-group-member opcode ceiling (%d) for each applicable authorization path", lsigresource.SingleTransactionOpcodeCeiling)
 	}
-	c.info("%s template %s imported", result.TemplateType, displayKeyType(result.KeyType))
+	c.info("%s template %s imported", result.TemplateType, result.KeyType)
 	return nil
 }
 
 func (c Catalog) removeTemplate(keyType string) error {
 	keyType = canonicalKeyType(keyType)
-	if !c.Confirm(fmt.Sprintf("Remove installed template %s? [y/N]: ", displayKeyType(keyType))) {
+	if !c.Confirm(fmt.Sprintf("Remove installed template %s? [y/N]: ", keyType)) {
 		return fmt.Errorf("template removal cancelled")
 	}
 	var result protocol.RemoveInstalledTemplateResultMessage
@@ -416,9 +415,9 @@ func (c Catalog) removeTemplate(keyType string) error {
 		return resultError("template remove failed", result.Code, result.Error)
 	}
 	if result.Removed {
-		c.info("template %s removed", displayKeyType(result.KeyType))
+		c.info("template %s removed", result.KeyType)
 	} else {
-		c.info("template %s was already absent", displayKeyType(result.KeyType))
+		c.info("template %s was already absent", result.KeyType)
 	}
 	return nil
 }
@@ -440,13 +439,13 @@ func (c Catalog) runKeyType(args []string) error {
 			return resultError("key type enable failed", result.Code, result.Error)
 		}
 		if result.AlreadyExists {
-			c.info("key type %s was already enabled", displayKeyType(result.KeyType))
+			c.info("key type %s was already enabled", result.KeyType)
 		} else {
-			c.info("key type %s enabled", displayKeyType(result.KeyType))
+			c.info("key type %s enabled", result.KeyType)
 		}
 		return nil
 	}
-	if !c.Confirm(fmt.Sprintf("Disable key type %s? [y/N]: ", displayKeyType(keyType))) {
+	if !c.Confirm(fmt.Sprintf("Disable key type %s? [y/N]: ", keyType)) {
 		return fmt.Errorf("key type disable cancelled")
 	}
 	var result protocol.DeactivateKeyTypeResultMessage
@@ -460,9 +459,9 @@ func (c Catalog) runKeyType(args []string) error {
 		return resultError("key type disable failed", result.Code, result.Error)
 	}
 	if result.Removed {
-		c.info("key type %s disabled", displayKeyType(result.KeyType))
+		c.info("key type %s disabled", result.KeyType)
 	} else {
-		c.info("key type %s was already disabled", displayKeyType(result.KeyType))
+		c.info("key type %s was already disabled", result.KeyType)
 	}
 	return nil
 }
@@ -899,7 +898,6 @@ func resultError(prefix, code, message string) error {
 }
 
 func canonicalKeyType(keyType string) string { return keytypecatalog.Canonicalize(keyType) }
-func displayKeyType(keyType string) string   { return keytypefmt.Display(keyType) }
 
 func templateUsesDefaultOpcodeCeiling(templateYAML []byte) bool {
 	var header struct {

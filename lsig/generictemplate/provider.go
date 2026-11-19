@@ -28,9 +28,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/fs"
-	"log"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -332,7 +329,12 @@ func (t *YAMLTemplate) ValidateCreationParams(params map[string]string) error {
 }
 
 // GenerateTEAL generates the TEAL source code with parameters substituted.
+// A spec whose derivation_version has no salt style fails here, before
+// anything is rendered or sent to algod.
 func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
+	if _, err := t.saltStyle(); err != nil {
+		return "", err
+	}
 	normalizedParams, err := lsigprovider.NormalizeCreationParams(params, t.CreationParams())
 	if err != nil {
 		return "", err
@@ -347,7 +349,7 @@ func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to render strict template: %w", err)
 		}
-		return t.applySaltAnchor(rendered.TEAL)
+		return rendered.TEAL, nil
 	case TemplateModeGenerated:
 	default:
 		return "", fmt.Errorf("unsupported template_mode %q", t.spec.TemplateMode)
@@ -363,7 +365,7 @@ func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
 		return "", fmt.Errorf("failed to substitute variables: %w", err)
 	}
 
-	return t.applySaltAnchor(teal)
+	return teal, nil
 }
 
 // CompileWithSalt compiles the TEAL, applies the off-curve salt counter, and
@@ -398,22 +400,11 @@ func (t *YAMLTemplate) CompileWithSalt(ctx context.Context, params map[string]st
 		}
 		return autoSalted, nil
 	}
-	if style == lsigsalt.StyleNone {
-		unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
-		if err != nil {
-			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate unsalted off-curve LogicSig address: %w", err)
-		}
-		return unsalted, nil
-	}
-	locate, err := style.Locator()
+	unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
 	if err != nil {
-		return lsigsalt.FindResult{}, err
+		return lsigsalt.FindResult{}, fmt.Errorf("failed to validate unsalted off-curve LogicSig address: %w", err)
 	}
-	salted, err := lsigsalt.FindOffCurve(bytecode, locate)
-	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("failed to derive off-curve LogicSig address: %w", err)
-	}
-	return salted, nil
+	return unsalted, nil
 }
 
 func (t *YAMLTemplate) saltStyle() (lsigsalt.Style, error) {
@@ -421,19 +412,6 @@ func (t *YAMLTemplate) saltStyle() (lsigsalt.Style, error) {
 		return lsigsalt.StyleNone, nil
 	}
 	return SaltStyleForDerivationVersion(*t.spec.DerivationVersion)
-}
-
-func (t *YAMLTemplate) applySaltAnchor(teal string) (string, error) {
-	style, err := t.saltStyle()
-	if err != nil {
-		return "", err
-	}
-	switch style {
-	case lsigsalt.StyleNone, lsigsalt.StyleAlgodAutoSalt:
-		return teal, nil
-	default:
-		return "", fmt.Errorf("generic template derivation does not support salt style %q", style)
-	}
 }
 
 // SaltStyleForDerivationVersion maps template derivation contracts to their
@@ -446,48 +424,6 @@ func SaltStyleForDerivationVersion(version int) (lsigsalt.Style, error) {
 		return lsigsalt.StyleAlgodAutoSalt, nil
 	}
 	return "", fmt.Errorf("derivation_version %d is not supported", version)
-}
-
-// loadTemplatesFrom loads YAML templates from the given filesystem, skipping
-// malformed or invalid entries with a warning. This is intentionally different
-// from startup provider registration: user-supplied templates are treated as
-// partial and recoverable configuration, so invalid entries are logged and
-// skipped while the rest continue loading.
-func loadTemplatesFrom(fsys fs.FS, dir string) ([]*YAMLTemplate, error) {
-	entries, err := fs.ReadDir(fsys, dir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read templates directory: %w", err)
-	}
-
-	var templates []*YAMLTemplate
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		path := filepath.Join(dir, entry.Name())
-		data, err := fs.ReadFile(fsys, path)
-		if err != nil {
-			log.Printf("WARNING: skipping template %s: %v", entry.Name(), err)
-			continue
-		}
-
-		spec, err := ParseTemplateSpec(data)
-		if err != nil {
-			log.Printf("WARNING: skipping template %s: %v", entry.Name(), err)
-			continue
-		}
-
-		if err := ValidateSpec(spec); err != nil {
-			log.Printf("WARNING: skipping template %s: %v", entry.Name(), err)
-			continue
-		}
-
-		templates = append(templates, NewYAMLTemplate(spec))
-	}
-
-	return templates, nil
 }
 
 // ParseTemplateSpec parses YAML data into a TemplateSpec.

@@ -129,7 +129,7 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	baseSignature, err := signerops.New(nil).Sign(spendingPrivateKey, group.Entries[0].TxID[:])
+	baseSignature, err := signerops.New().Sign(spendingPrivateKey, group.Entries[0].TxID[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,12 +137,12 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := signerops.New(nil).Sign(spendingPrivateKey, receiptMessage[:])
+	receipt, err := signerops.New().Sign(spendingPrivateKey, receiptMessage[:])
 	if err != nil {
 		t.Fatal(err)
 	}
 	cosignerMessage := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
-	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMessage[:])
+	cosignerSignature, err := signerops.New().Sign(cosignerPrivateKey, cosignerMessage[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 			}
 			txID := group.Entries[0].TxID
 			sign := func(key, message []byte) string {
-				signature, err := signerops.New(nil).Sign(key, message)
+				signature, err := signerops.New().Sign(key, message)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -343,12 +343,12 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 	seed := make([]byte, 48)
 	seed[0] = 1
-	falconPublicKey, falconPrivateKey, err := signerops.New(nil).GenerateKeypair(seed)
+	falconPublicKey, falconPrivateKey, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	message := bytes.Repeat([]byte{5}, 32)
-	falconSignature, err := signerops.New(nil).Sign(falconPrivateKey, message)
+	falconSignature, err := signerops.New().Sign(falconPrivateKey, message)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,12 +403,12 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 func TestCosignerAssemblySignatureRequiresAWitnessKeyType(t *testing.T) {
 	seed := make([]byte, 48)
 	seed[0] = 2
-	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(seed)
+	publicKey, privateKey, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	message := []byte("message")
-	signature, err := signerops.New(nil).Sign(privateKey, message)
+	signature, err := signerops.New().Sign(privateKey, message)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +469,7 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 				t.Fatal(err)
 			}
 			txID := group.Entries[0].TxID
-			baseSignature, err := signerops.New(nil).Sign(spendingPrivateKey, txID[:])
+			baseSignature, err := signerops.New().Sign(spendingPrivateKey, txID[:])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -477,12 +477,12 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			receipt, err := signerops.New(nil).Sign(spendingPrivateKey, receiptMessage[:])
+			receipt, err := signerops.New().Sign(spendingPrivateKey, receiptMessage[:])
 			if err != nil {
 				t.Fatal(err)
 			}
 			cosignerMessage := message.ComponentMessage(message.RoleCosigner, txID)
-			cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMessage[:])
+			cosignerSignature, err := signerops.New().Sign(cosignerPrivateKey, cosignerMessage[:])
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -165,22 +165,22 @@ func (o *StageOps) Prepare(key *signing.RotatingKeyMaterial, i uint64) error {
 	return err
 }
 
-// CachedTrees reports how many trees the cache holds, for status and tests.
+// CachedTrees reports how many trees the cache holds.
 func (o *StageOps) CachedTrees() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return len(o.trees)
 }
 
-// Forget drops every cached tree of the account with key, for example when
-// the key is deleted. Dropping a tree costs its regeneration, nothing else.
+// Forget drops every cached tree of the account with key. Dropping a tree
+// costs its regeneration, nothing else.
 func (o *StageOps) Forget(key *signing.RotatingKeyMaterial) error {
 	d, tag, err := deriverFor(key)
 	if err != nil {
 		return err
 	}
-	d.Zero()
 	genesis := d.GenesisHash()
+	d.Zero()
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for k := range o.trees {

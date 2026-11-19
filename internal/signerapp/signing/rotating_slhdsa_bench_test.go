@@ -114,7 +114,7 @@ func BenchmarkSLHLifecycle(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					if !warm {
 						b.StopTimer()
-						if err := f.tables.Discard(f.table(b)); err != nil {
+						if err := f.tables.Delete(f.account.String()); err != nil {
 							b.Fatal(err)
 						}
 						b.StartTimer()
@@ -145,7 +145,7 @@ func BenchmarkSLHLifecycle(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					b.StopTimer()
-					if err := f.tables.Discard(f.table(b)); err != nil {
+					if err := f.tables.Delete(f.account.String()); err != nil {
 						b.Fatal(err)
 					}
 					f.lockGen++
