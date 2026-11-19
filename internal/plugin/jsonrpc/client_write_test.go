@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -209,5 +210,47 @@ func TestShutdownWaitsForAWriteAboutToFinish(t *testing.T) {
 	defer w.mu.Unlock()
 	if len(w.frames) != 2 || !strings.Contains(w.frames[1], MethodShutdown) {
 		t.Fatalf("frames written = %q, want the notification then the shutdown", w.frames)
+	}
+}
+
+// countingWriter counts the frames written to it.
+type countingWriter struct{ n atomic.Int64 }
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.n.Add(1)
+	return len(p), nil
+}
+
+// A frame whose context has already ended is not sent, and does not fail a
+// healthy client.
+func TestEndedContextSendsNothingAndKeepsTheClient(t *testing.T) {
+	ended, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, tc := range []struct {
+		name string
+		send func(*Client) error
+	}{
+		{name: "notification with an ended ctx", send: func(c *Client) error {
+			return c.Notify(ended, CallbackLog, LogParams{Message: "x"})
+		}},
+		{name: "call with no time left", send: func(c *Client) error {
+			return c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 0)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < 300; i++ {
+				w := &countingWriter{}
+				c := NewClient(&bytes.Buffer{}, w)
+				if err := tc.send(c); err == nil {
+					t.Fatal("send = nil, want the ended ctx")
+				}
+				if err := c.terminalError(); err != nil {
+					t.Fatalf("attempt %d failed the client: %v", i, err)
+				}
+				if n := w.n.Load(); n != 0 {
+					t.Fatalf("attempt %d wrote %d frame(s), want none", i, n)
+				}
+			}
+		})
 	}
 }

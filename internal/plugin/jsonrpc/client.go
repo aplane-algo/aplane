@@ -316,8 +316,12 @@ func (c *Client) respondToInbound(id interface{}, result interface{}, rpcErr *Er
 // since the plugin's input may now hold part of it. The abandoned Write
 // itself returns once the writer is closed, as the manager does when it stops
 // the plugin. A positive maxWriterWait bounds the wait for another frame's
-// write; a frame still waiting after it is not sent.
+// write; a frame still waiting after it is not sent. A frame whose ctx has
+// already ended is not sent either.
 func (c *Client) writeFrame(ctx context.Context, v interface{}, maxWriterWait time.Duration) error {
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON-RPC frame: %w", err)
@@ -339,6 +343,12 @@ func (c *Client) writeFrame(ctx context.Context, v interface{}, maxWriterWait ti
 	case <-writerBusy:
 		return errWriterBusy
 	}
+	// The writer and an ending ctx can be ready together, and select picks
+	// either: send nothing once ctx has ended.
+	if ctx.Err() != nil {
+		<-c.writeSlot
+		return context.Cause(ctx)
+	}
 
 	written := make(chan error, 1)
 	go func() {
@@ -354,6 +364,12 @@ func (c *Client) writeFrame(ctx context.Context, v interface{}, maxWriterWait ti
 	case <-c.done:
 		return c.terminalError()
 	case <-ctx.Done():
+		// A write that finished as ctx ended went out whole.
+		select {
+		case err := <-written:
+			return err
+		default:
+		}
 		return c.failWrite(ctx)
 	}
 }
