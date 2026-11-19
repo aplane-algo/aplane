@@ -137,7 +137,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		crypto.ZeroBytes(passphrase)
 		return nil, startupPassphraseError(
 			"the passphrase from the unlock.yaml passphrase helper",
-			"; the helper must return the passphrase the keystore was created with",
+			"; the helper must return the store's current passphrase",
 			err,
 		)
 	}

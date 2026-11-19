@@ -186,7 +186,7 @@ func TestBuildUnlockPlanReportsADamagedStoreRootApartFromAWrongPassphrase(t *tes
 			if !errors.Is(err, crypto.ErrInvalidPassphrase) {
 				t.Fatalf("BuildUnlockPlan(wrong passphrase) error = %v, want ErrInvalidPassphrase", err)
 			}
-			if name == "helper" && !strings.Contains(err.Error(), "the helper must return the passphrase the keystore was created with") {
+			if name == "helper" && !strings.Contains(err.Error(), "the helper must return the store's current passphrase") {
 				t.Fatalf("BuildUnlockPlan(wrong helper passphrase) error = %v, want the helper hint", err)
 			}
 
