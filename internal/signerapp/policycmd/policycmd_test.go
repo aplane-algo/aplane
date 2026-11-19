@@ -61,13 +61,15 @@ type fakeOnlineSession struct {
 	closeCalls       int
 	authPassphrase   string
 	unlockPassphrase string
-	authErr          error
-	policy           protocol.PolicyMessage
-	bodies           map[string]string
-	checkResult      *protocol.CheckPolicyResultMessage
-	applyResult      *protocol.ApplyPolicyResultMessage
-	checks           []protocol.CheckPolicyMessage
-	applies          []protocol.ApplyPolicyMessage
+	// received keeps every passphrase slice the session was handed, uncopied.
+	received    [][]byte
+	authErr     error
+	policy      protocol.PolicyMessage
+	bodies      map[string]string
+	checkResult *protocol.CheckPolicyResultMessage
+	applyResult *protocol.ApplyPolicyResultMessage
+	checks      []protocol.CheckPolicyMessage
+	applies     []protocol.ApplyPolicyMessage
 	// snapshot is the node's composite snapshot; contextSet, when set, is a
 	// policy set digest the context reports instead of the summary's.
 	snapshot   string
@@ -154,15 +156,17 @@ func newFakeSession(role string, docs ...protocol.PolicyDocumentWire) *fakeOnlin
 
 func (f *fakeOnlineSession) Dial() error { f.dialCalls++; return nil }
 func (f *fakeOnlineSession) Close()      { f.closeCalls++ }
-func (f *fakeOnlineSession) Authenticate(passphrase string, _ time.Duration) error {
-	f.authPassphrase = passphrase
+func (f *fakeOnlineSession) Authenticate(passphrase []byte, _ time.Duration) error {
+	f.authPassphrase = string(passphrase)
+	f.received = append(f.received, passphrase)
 	return f.authErr
 }
 func (f *fakeOnlineSession) WaitForStatus(time.Duration) (*protocol.StatusMessage, error) {
 	return &protocol.StatusMessage{State: f.status}, nil
 }
-func (f *fakeOnlineSession) Unlock(passphrase string, _ time.Duration) (*protocol.UnlockResultMessage, error) {
-	f.unlockPassphrase = passphrase
+func (f *fakeOnlineSession) Unlock(passphrase []byte, _ time.Duration) (*protocol.UnlockResultMessage, error) {
+	f.unlockPassphrase = string(passphrase)
+	f.received = append(f.received, passphrase)
 	return &protocol.UnlockResultMessage{Success: true}, nil
 }
 func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration) ([]byte, error) {
@@ -357,6 +361,28 @@ func TestPolicyStatusAcceptsPipedPassphrase(t *testing.T) {
 	}
 	if session.authPassphrase != "explicit-secret" || ttyCalls != 0 {
 		t.Fatalf("passphrase %q, tty opens %d", session.authPassphrase, ttyCalls)
+	}
+}
+
+// The login and unlock get the passphrase Run read, not copies of it, so
+// Run's zeroing clears every passphrase the session was handed.
+func TestOnlineRunLeavesNoPassphraseCopyBehind(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "")
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
+	session.status = "locked"
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus},
+		Streams{Stdin: strings.NewReader("explicit-secret\n"), Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.authPassphrase != "explicit-secret" || session.unlockPassphrase != "explicit-secret" || len(session.received) != 2 {
+		t.Fatalf("auth %q unlock %q, %d passphrases", session.authPassphrase, session.unlockPassphrase, len(session.received))
+	}
+	for i, got := range session.received {
+		if len(got) == 0 || !bytes.Equal(got, make([]byte, len(got))) {
+			t.Fatalf("passphrase %d the session got is %q after Run returned", i, got)
+		}
 	}
 }
 

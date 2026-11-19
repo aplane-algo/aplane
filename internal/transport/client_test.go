@@ -168,7 +168,7 @@ func TestIPCUnlockInitializesDispatcher(t *testing.T) {
 		}))
 	}()
 
-	got, err := client.Unlock("secret", time.Second)
+	got, err := client.Unlock([]byte("secret"), time.Second)
 	if err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}
@@ -244,7 +244,7 @@ func TestIPCAuthenticateHappyPath(t *testing.T) {
 		errCh <- nil
 	}()
 
-	if err := client.Authenticate("secret", time.Second); err != nil {
+	if err := client.Authenticate([]byte("secret"), time.Second); err != nil {
 		t.Fatalf("Authenticate() error = %v", err)
 	}
 	if err := <-errCh; err != nil {
@@ -275,7 +275,7 @@ func TestIPCAuthenticateClientExistsMismatch(t *testing.T) {
 		_ = serverConn.Close()
 	}()
 
-	err := client.Authenticate("secret", time.Second)
+	err := client.Authenticate([]byte("secret"), time.Second)
 	if err == nil {
 		t.Fatal("Authenticate() error = nil, want error after displacement")
 	}
@@ -323,7 +323,7 @@ func TestIPCAuthenticateOnlyUsesFailClosedMessageType(t *testing.T) {
 		errCh <- err
 	}()
 
-	if err := client.AuthenticateOnly("secret", time.Second); err != nil {
+	if err := client.AuthenticateOnly([]byte("secret"), time.Second); err != nil {
 		t.Fatalf("AuthenticateOnly() error = %v", err)
 	}
 	if err := <-errCh; err != nil {
@@ -367,7 +367,7 @@ func TestIPCAuthenticateUnauthorizedReturnsFormattedError(t *testing.T) {
 		errCh <- nil
 	}()
 
-	err := client.Authenticate("secret", time.Second)
+	err := client.Authenticate([]byte("secret"), time.Second)
 	if err == nil {
 		t.Fatal("Authenticate() error = nil, want auth failure")
 	}
@@ -401,7 +401,7 @@ func TestIPCAuthenticatePreAuthErrorIncludesServerReason(t *testing.T) {
 		errCh <- err
 	}()
 
-	err := client.Authenticate("secret", time.Second)
+	err := client.Authenticate([]byte("secret"), time.Second)
 	if err == nil {
 		t.Fatal("Authenticate() error = nil, want server rejection")
 	}

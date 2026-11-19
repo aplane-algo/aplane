@@ -350,7 +350,7 @@ func TestUnlockWithDispatcherSkipsNotificationAndParsesResult(t *testing.T) {
 	}
 	dispatcher := newDispatcher(conn)
 
-	got, err := unlockWithDispatcher(dispatcher, "secret", 5*time.Second)
+	got, err := unlockWithDispatcher(dispatcher, []byte("secret"), 5*time.Second)
 	if err != nil {
 		t.Fatalf("unlockWithDispatcher() error = %v", err)
 	}

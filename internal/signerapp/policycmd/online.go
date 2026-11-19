@@ -183,7 +183,7 @@ func problemsFromWire(problems []protocol.PolicyProblemWire) []adminproto.Policy
 }
 
 func authenticateAndUnlock(session OnlineSession, passphrase []byte) error {
-	if err := session.Authenticate(string(passphrase), OnlineTimeout); err != nil {
+	if err := session.Authenticate(passphrase, OnlineTimeout); err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 	status, err := session.WaitForStatus(OnlineTimeout)
@@ -193,7 +193,7 @@ func authenticateAndUnlock(session OnlineSession, passphrase []byte) error {
 	if status.State != "locked" {
 		return nil
 	}
-	result, err := session.Unlock(string(passphrase), OnlineTimeout)
+	result, err := session.Unlock(passphrase, OnlineTimeout)
 	if err != nil {
 		return fmt.Errorf("unlock signer: %w", err)
 	}

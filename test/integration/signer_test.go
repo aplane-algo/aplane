@@ -2540,7 +2540,7 @@ func mustConnectIPCClient(t *testing.T, signerWorkDir string) *transport.IPCClie
 		t.Fatalf("failed to receive signer status over IPC: %v", err)
 	}
 	if status.State == "locked" {
-		result, err := ipcClient.Unlock(passphrase, 30*time.Second)
+		result, err := ipcClient.Unlock([]byte(passphrase), 30*time.Second)
 		if err != nil {
 			t.Fatalf("failed to unlock signer over IPC: %v", err)
 		}

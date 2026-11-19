@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
@@ -55,7 +56,7 @@ func (c *testModeClient) Connect(conn transport.Transport) error {
 }
 
 // Authenticate performs the IPC authentication handshake.
-func (c *testModeClient) Authenticate(passphrase string) error {
+func (c *testModeClient) Authenticate(passphrase []byte) error {
 	return c.transport.Authenticate(passphrase, 10*time.Second)
 }
 
@@ -77,7 +78,7 @@ func (c *testModeClient) request(msg interface{}, timeout time.Duration) ([]byte
 }
 
 // Unlock sends an unlock request.
-func (c *testModeClient) Unlock(passphrase string) error {
+func (c *testModeClient) Unlock(passphrase []byte) error {
 	result, err := c.transport.Unlock(passphrase, 30*time.Second)
 	if err != nil {
 		return err
@@ -216,8 +217,9 @@ func runTestSession(conn transport.Transport, args []string) {
 	}
 
 	// Get passphrase from environment (used for both auth and unlock)
-	passphrase := os.Getenv("TEST_PASSPHRASE")
-	if passphrase != "" {
+	passphrase := []byte(os.Getenv("TEST_PASSPHRASE"))
+	defer crypto.ZeroBytes(passphrase)
+	if len(passphrase) != 0 {
 		logWarnf("using TEST_PASSPHRASE from environment for test authentication/unlock")
 	}
 

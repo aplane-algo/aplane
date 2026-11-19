@@ -142,19 +142,20 @@ func (c *IPCClient) WaitForStatus(timeout time.Duration) (*protocol.StatusMessag
 
 // Authenticate handles the IPC authentication handshake.
 // It reads the auth_required message, sends the auth message with passphrase,
-// and waits for the auth_result.
-func (c *IPCClient) Authenticate(passphrase string, timeout time.Duration) error {
+// and waits for the auth_result. The caller zeroes passphrase.
+func (c *IPCClient) Authenticate(passphrase []byte, timeout time.Duration) error {
 	return authenticate(c, passphrase, timeout)
 }
 
 // AuthenticateOnly verifies and binds the admin session without transitioning
 // a locked identity to unlocked. It is intended for bound-runtime reads; it
 // creates a server-enforced, non-owning public-read session capability.
-func (c *IPCClient) AuthenticateOnly(passphrase string, timeout time.Duration) error {
+func (c *IPCClient) AuthenticateOnly(passphrase []byte, timeout time.Duration) error {
 	return authenticateOnly(c, passphrase, timeout)
 }
 
-// Unlock sends an unlock request and waits for the result.
-func (c *IPCClient) Unlock(passphrase string, timeout time.Duration) (*protocol.UnlockResultMessage, error) {
+// Unlock sends an unlock request and waits for the result. The caller zeroes
+// passphrase.
+func (c *IPCClient) Unlock(passphrase []byte, timeout time.Duration) (*protocol.UnlockResultMessage, error) {
 	return unlockWithDispatcher(c.adminDispatcher(), passphrase, timeout)
 }

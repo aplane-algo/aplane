@@ -21,6 +21,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/clientlog"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -175,34 +176,57 @@ func connectApprover(dataDir, ipcPathFlag string) (*transport.IPCClient, bool) {
 	logInfof("APApprover - Interactive Signing Approval CLI")
 	logInfof("================================================")
 
-	fmt.Print("Enter passphrase: ")
-	passphraseBytes, err := term.ReadPassword(syscall.Stdin)
-	if err != nil {
-		logErrorf("error reading passphrase: %v", err)
+	ipcClient := transport.NewIPC(ipcPath)
+	if !loginApprover(ipcClient, ipcPath, readTerminalPassphrase) {
 		return nil, false
 	}
+	return ipcClient, true
+}
+
+// approverConn is the part of the IPC client the login uses.
+type approverConn interface {
+	Dial() error
+	Authenticate(passphrase []byte, timeout time.Duration) error
+	Close()
+}
+
+// readTerminalPassphrase prompts for the passphrase and reads it unechoed.
+func readTerminalPassphrase() ([]byte, error) {
+	fmt.Print("Enter passphrase: ")
+	passphrase, err := term.ReadPassword(syscall.Stdin)
 	fmt.Println() // newline after password input
-	passphrase := string(passphraseBytes)
+	return passphrase, err
+}
+
+// loginApprover reads the passphrase, dials the signer and authenticates. The
+// passphrase is zeroed once the login is done, whatever its outcome. It logs a
+// failure and reports false.
+func loginApprover(conn approverConn, ipcPath string, readPassphrase func() ([]byte, error)) bool {
+	passphrase, err := readPassphrase()
+	defer crypto.ZeroBytes(passphrase)
+	if err != nil {
+		logErrorf("error reading passphrase: %v", err)
+		return false
+	}
 
 	logInfof("connecting to signer via IPC")
-	ipcClient := transport.NewIPC(ipcPath)
-	if err := ipcClient.Dial(); err != nil {
+	if err := conn.Dial(); err != nil {
 		if errors.Is(err, transport.ErrAlreadyConnected) {
 			logErrorf("another apadmin/apapprover is already connected")
 		} else {
 			logErrorf("IPC connection failed: %v", err)
 		}
-		return nil, false
+		return false
 	}
 	logInfof("connected via IPC (%s)", ipcPath)
 
-	if err := ipcClient.Authenticate(passphrase, 10*time.Second); err != nil {
+	if err := conn.Authenticate(passphrase, 10*time.Second); err != nil {
 		logErrorf("%v", err)
-		ipcClient.Close()
-		return nil, false
+		conn.Close()
+		return false
 	}
 	logInfof("authenticated and signer unlocked")
-	return ipcClient, true
+	return true
 }
 
 // connectionEnded logs a connection lifecycle event and reports whether it
