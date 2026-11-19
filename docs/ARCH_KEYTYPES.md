@@ -860,19 +860,18 @@ whose precondition (a populated registry / a provider instance) isn't met where
 that axis is actually called. The three APIs answer different availability
 constraints.
 
-### Not a fourth axis: the LogicSig metadata fallback
+### No string fallback for metadata
 
-`internal/algorithm/metadata.go`'s `GetMetadata` resolves via `ResolveByKeyType`
-(the Resolve axis). When that fails it has a best-effort `hasFamilyPrefix`
-fallback that substring-matches the key type against registered families. This is
-primarily a client compatibility aid for an unregistered LogicSig template (for
-example, a keystore template not loaded in this process). Because the returned
-metadata also carries authorization and mnemonic semantics, the fallback is
-restricted to registered `logic_sig` families. Native Ed25519 and native PQ
-families resolve only by exact registered identity and are never inferred from a
-third-party key-type substring. Keygen and signer execution still use registered
-providers or the stored base key type. This remains a fallback on the Resolve
-axis, not a separate resolution mechanism.
+`internal/algorithm/metadata.go`'s `GetMetadata` resolves only via
+`ResolveByKeyType` (the Resolve axis): an exact registered identity, or the
+routing family of a registered provider. It never infers a family from the
+key-type string, because families register under qualified names and the
+returned metadata carries authorization and mnemonic semantics. A key type
+that resolves neither way (for example, a keystore template not loaded in
+this process) has no metadata, and each caller applies its own default: the
+client signing context treats a non-Ed25519 unknown type as a LogicSig, and
+the signer cache classifies a LogicSig key by the resource profile the
+signer's inventory reports.
 
 ## LogicSig providers
 

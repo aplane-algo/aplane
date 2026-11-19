@@ -15,7 +15,6 @@ package algorithm
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -113,52 +112,15 @@ func RegisterMetadata(metadata SignatureMetadata) {
 }
 
 // GetMetadata retrieves metadata for a key type, resolving via the key type's
-// routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024"). If that
-// fails it falls back to a best-effort prefix match (see hasFamilyPrefix).
-//
-// This rides the RESOLVE axis (docs/ARCH_KEYTYPES.md). The prefix fallback
-// is limited to LogicSig families because callers also consume authorization
-// and mnemonic semantics from the returned metadata; native algorithms must
-// resolve only by their exact registered identity.
+// routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024"). It
+// rides the RESOLVE axis (docs/ARCH_KEYTYPES.md) and never guesses from the
+// key-type string: a key type with no registered metadata and no registered
+// provider is an error, and callers apply their own default for it.
 func GetMetadata(keyType string) (SignatureMetadata, error) {
 	if metadata, ok := logicsigdsa.ResolveByKeyType(keyType, metadataRegistry.Get); ok {
 		return metadata, nil
 	}
-
-	// Best-effort fallback for an UNREGISTERED template whose routing family is
-	// not resolvable from a registered provider — e.g. a keystore template not
-	// loaded in this process, queried on the client side for display. The base
-	// is not derivable from the key-type string alone, so this substring-matches
-	// the key type against registered families ("example.falcon1024-timelock.v1"
-	// -> the "aplane.falcon1024" family's metadata).
-	//
-	// Prefix matching is safe only for LogicSig families: composed/template key
-	// types deliberately extend their base family name. Applying the same guess
-	// to a native family could assign native authorization semantics to an
-	// unrelated third-party key type that merely contains the same word.
-	for _, registeredFamily := range metadataRegistry.Keys() {
-		metadata, ok := metadataRegistry.Get(registeredFamily)
-		if !ok || metadata.AuthorizationKind() != AuthorizationLogicSig {
-			continue
-		}
-		if hasFamilyPrefix(keyType, registeredFamily) {
-			return metadata, nil
-		}
-	}
-
 	return nil, fmt.Errorf("no metadata registered for key type: %s", keyType)
-}
-
-func hasFamilyPrefix(keyType, family string) bool {
-	keyType = strings.ToLower(strings.TrimSpace(keyType))
-	family = strings.ToLower(strings.TrimSpace(family))
-	if keyType == "" || family == "" {
-		return false
-	}
-	if strings.HasPrefix(keyType, family+"-") || strings.HasPrefix(keyType, family+"_") {
-		return true
-	}
-	return strings.Contains(keyType, "."+family+"-") || strings.Contains(keyType, "."+family+"_")
 }
 
 // DisplayLabel returns a short human-readable label for a key type's category.
