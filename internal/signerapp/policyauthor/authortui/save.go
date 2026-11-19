@@ -400,8 +400,10 @@ func (m Model) saveAs(path string) Model {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(filepath.Dir(m.session().Loaded.Path), path)
 	}
-	if _, err := os.Lstat(path); err == nil {
-		m.save.err = path + " already exists"
+	// A path taken on disk or by a workspace file is refused: saving over a
+	// new document not yet on disk would replace its session and its edits.
+	if err := m.ws.CheckFreePath(path); err != nil {
+		m.save.err = err.Error()
 		return m
 	}
 	s := m.session()

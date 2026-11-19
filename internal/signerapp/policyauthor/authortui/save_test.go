@@ -155,6 +155,46 @@ func TestSaveConflictDeletedReloadAndSaveAs(t *testing.T) {
 	}
 }
 
+// Save as refuses the name of a document open in the workspace but not yet
+// on disk: writing there would replace that document's session, discarding
+// its edits, and leave two files with one path.
+func TestSaveAsRefusesAnOpenUnsavedDocument(t *testing.T) {
+	m, path := editModel(t, "signer_key_full.json")
+	m, _ = press(t, m, "n")
+	m = typeText(t, m, newKeyAddress)
+	m, _ = press(t, m, "enter", "enter")
+	m = typeText(t, clearInput(t, m), "payroll.json")
+	m, _ = press(t, m, "enter")
+	payroll := filepath.Join(filepath.Dir(path), "payroll.json")
+	if m.file().Path != payroll || len(m.ws.Files) != 2 {
+		t.Fatalf("new document: open %s, %d files", m.file().Path, len(m.ws.Files))
+	}
+	newSession := m.session()
+
+	m = m.open(0)
+	m = selectField(t, m, "/max_fee_microalgos")
+	m, _ = press(t, m, "enter")
+	m = typeText(t, clearInput(t, m), "0.5")
+	m, _ = press(t, m, "enter")
+	_ = os.WriteFile(path, append(fixture(t, "signer_key_full.json"), ' '), 0o600)
+	m, _ = press(t, m, "s", "y", "a")
+	m = typeText(t, clearInput(t, m), "payroll.json")
+	m, _ = press(t, m, "enter")
+
+	if !strings.Contains(m.save.err, "already open") {
+		t.Fatalf("save as over an open unsaved document: error %q", m.save.err)
+	}
+	if _, err := os.Stat(payroll); err == nil {
+		t.Fatal("save as wrote over the unsaved document's path")
+	}
+	if len(m.ws.Files) != 2 || m.sessions[payroll] != newSession || newSession.Current().Key != newKeyAddress {
+		t.Fatalf("after the refused save as: %d files, the new document's session replaced %v", len(m.ws.Files), m.sessions[payroll] != newSession)
+	}
+	if !m.session().Modified() || m.file().Path != path {
+		t.Fatalf("the edited file lost its edits or is no longer open: %s", m.file().Path)
+	}
+}
+
 func TestQuitAsksAboutUnsavedEdits(t *testing.T) {
 	m, _ := editedFee(t)
 	m, cmd := press(t, m, "q")
