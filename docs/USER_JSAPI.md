@@ -187,7 +187,7 @@ through normal signer approval and policy boundaries.
 | `setVerbose(enabled)` | Sets verbose output mode |
 | `setSimulate(enabled)` | Sets simulation mode |
 | `simulate()` | Boolean simulation mode state |
-| `waitForTx(txid, rounds = 5)` | Waits up to `rounds` ledger rounds for confirmation, checking once a round; a failed status check does not end the wait; returns `true` |
+| `waitForTx(txid, rounds = 5)` | Checks up to `rounds` times, about once a ledger round, for confirmation; a failed status check does not end the wait; returns `true` |
 
 Simulation mode requests ordinary executable signatures and normal signer
 approval, then routes the exact signed group from the client to algod

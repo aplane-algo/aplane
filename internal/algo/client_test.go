@@ -167,6 +167,11 @@ type confirmationNode struct {
 	failAll           bool
 	pendingChecks     int
 	waitsForNextBlock int
+	// failBlockWaits fails the first block waits; advanceOnStatus moves the
+	// ledger a round after each status read, as time passing would.
+	failBlockWaits  int
+	advanceOnStatus bool
+	statusReads     int
 }
 
 func (n *confirmationNode) serve(t *testing.T) *algod.Client {
@@ -176,8 +181,12 @@ func (n *confirmationNode) serve(t *testing.T) *algod.Client {
 		defer n.mu.Unlock()
 		switch {
 		case r.URL.Path == "/v2/status":
+			n.statusReads++
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(models.NodeStatus{LastRound: n.round})
+			if n.advanceOnStatus {
+				n.round++
+			}
 		case strings.HasPrefix(r.URL.Path, "/v2/status/wait-for-block-after/"):
 			after, err := strconv.ParseUint(strings.TrimPrefix(r.URL.Path, "/v2/status/wait-for-block-after/"), 10, 64)
 			if err != nil {
@@ -185,6 +194,10 @@ func (n *confirmationNode) serve(t *testing.T) *algod.Client {
 				return
 			}
 			n.waitsForNextBlock++
+			if n.waitsForNextBlock <= n.failBlockWaits {
+				http.Error(w, `{"message":"node is busy"}`, http.StatusServiceUnavailable)
+				return
+			}
 			if n.round <= after {
 				n.round = after + 1
 			}
@@ -243,8 +256,8 @@ func TestWaitForConfirmationCountsLedgerRounds(t *testing.T) {
 
 		var out bytes.Buffer
 		err := WaitForConfirmation(context.Background(), client, "TXID", 3, &out)
-		if err == nil || !strings.Contains(err.Error(), "timed out after 3 rounds") {
-			t.Fatalf("WaitForConfirmation() error = %v, want a timeout after 3 rounds", err)
+		if err == nil || !strings.Contains(err.Error(), "not confirmed after 3 checks, about one a round") {
+			t.Fatalf("WaitForConfirmation() error = %v, want the 3 checks run out", err)
 		}
 		node.mu.Lock()
 		defer node.mu.Unlock()
@@ -258,7 +271,7 @@ func TestWaitForConfirmationCountsLedgerRounds(t *testing.T) {
 
 		var out bytes.Buffer
 		err := WaitForConfirmation(context.Background(), client, "TXID", 2, &out)
-		if err == nil || !strings.Contains(err.Error(), "not confirmed after 2 rounds; the last status check failed") {
+		if err == nil || !strings.Contains(err.Error(), "not confirmed after 2 checks, about one a round; the last check failed") {
 			t.Fatalf("WaitForConfirmation() error = %v, want the last failed check named", err)
 		}
 		if got := strings.Count(out.String(), "could not check pending transaction status"); got != 1 {
@@ -324,7 +337,7 @@ func TestWaitForConfirmationPollsWhenNoBlockComes(t *testing.T) {
 			start := time.Now()
 			err = WaitForConfirmation(context.Background(), client, "UNKNOWN", 5, &bytes.Buffer{})
 			elapsed := time.Since(start)
-			if err == nil || !strings.Contains(err.Error(), "not confirmed after 5 rounds") {
+			if err == nil || !strings.Contains(err.Error(), "not confirmed after 5 checks") {
 				t.Fatalf("WaitForConfirmation() error = %v, want the budget run out", err)
 			}
 			mu.Lock()
@@ -336,5 +349,25 @@ func TestWaitForConfirmationPollsWhenNoBlockComes(t *testing.T) {
 				t.Fatalf("WaitForConfirmation() took %s, want about one block-wait bound and four poll intervals", elapsed)
 			}
 		})
+	}
+}
+
+// One block wait that fails turns the wait to polling only until a status
+// read shows the ledger moving on: block waits then resume, and the checks
+// follow the ledger's rounds again.
+func TestWaitForConfirmationResumesBlockWaitsWhenTheRoundAdvances(t *testing.T) {
+	shortenConfirmationPacing(t, 10*time.Millisecond, time.Second)
+	node := &confirmationNode{round: 100, failBlockWaits: 1, advanceOnStatus: true}
+	client := node.serve(t)
+
+	err := WaitForConfirmation(context.Background(), client, "TXID", 4, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "not confirmed after 4 checks") {
+		t.Fatalf("WaitForConfirmation() error = %v, want the 4 checks run out", err)
+	}
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	if node.pendingChecks != 4 || node.waitsForNextBlock != 3 || node.statusReads != 2 {
+		t.Fatalf("checks/block waits/status reads = %d/%d/%d, want 4/3/2: one failed block wait, one poll, then block waits again",
+			node.pendingChecks, node.waitsForNextBlock, node.statusReads)
 	}
 }

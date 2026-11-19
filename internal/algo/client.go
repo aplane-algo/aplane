@@ -139,15 +139,16 @@ func isDecimalDigits(s string) bool {
 	return true
 }
 
-// WaitForConfirmation checks up to maxRounds times, once a ledger round, for
-// txid to be confirmed, printing a dot for each check that algod answers.
+// WaitForConfirmation checks up to maxRounds times, about once a ledger round,
+// for txid to be confirmed, printing a dot for each check that algod answers.
 // Between checks it waits for the next block (StatusAfterBlock), each wait
-// bounded by blockWaitTimeout; once a wait brings no new block in time, as on
-// a dev-mode node that writes no block while nothing is sent, or algod cannot
-// say which round it is on, the rest of the wait polls on
-// confirmationPollInterval, about a round. Nothing is waited for after the
-// last check. A status check that fails does not end the wait: the next round
-// checks again, and the failure is reported only if the budget runs out
+// bounded by blockWaitTimeout. A wait that brings no new block in time, as on
+// a dev-mode node that writes no block while nothing is sent, or algod not
+// saying which round it is on, turns the wait to polling on
+// confirmationPollInterval, about a round; block waits resume once a status
+// read shows the round past the last one seen. Nothing is waited for after
+// the last check. A status check that fails does not end the wait: the next
+// check tries again, and the failure is reported only if the checks run out
 // without a confirmation.
 func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid string, maxRounds uint64, w io.Writer) error {
 	if w == nil {
@@ -194,34 +195,36 @@ func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid st
 
 	_, _ = fmt.Fprintln(w)
 	if lastErr != nil {
-		return fmt.Errorf("transaction not confirmed after %d rounds; the last status check failed: %w", maxRounds, lastErr)
+		return fmt.Errorf("transaction not confirmed after %d checks, about one a round; the last check failed: %w", maxRounds, lastErr)
 	}
-	return fmt.Errorf("transaction timed out after %d rounds", maxRounds)
+	return fmt.Errorf("transaction not confirmed after %d checks, about one a round", maxRounds)
 }
 
 // roundClock paces a confirmation wait by the ledger's rounds while algod
 // brings a new block to each wait for one, and by confirmationPollInterval
-// from the first wait that does not.
+// while it does not.
 type roundClock struct {
 	client *algod.Client
 	round  uint64 // the last round algod reported
-	blocks bool   // round is algod's answer, and block waits still bring blocks
+	known  bool   // round is algod's answer
+	blocks bool   // block waits are in use; false while polling
 }
 
 func newRoundClock(ctx context.Context, client *algod.Client) *roundClock {
 	clock := &roundClock{client: client}
 	if status, err := client.Status().Do(ctx); err == nil {
-		clock.round, clock.blocks = status.LastRound, true
+		clock.round, clock.known, clock.blocks = status.LastRound, true, true
 	}
 	return clock
 }
 
 // next waits for the block after the last round algod reported, for at most
 // blockWaitTimeout. A wait that fails or brings no new block in that time
-// turns the clock to polling: it and every later call wait one poll interval
-// instead. algod holds a block wait up to a minute, longer than the client's
-// response header timeout, so a node with no new block would otherwise cost
-// that long a round. It returns an error only when ctx ends.
+// turns the clock to polling: it waits one poll interval and then reads
+// algod's round, and block waits resume once that read shows the round past
+// the last one seen. algod holds a block wait up to a minute, longer than the
+// client's response header timeout, so a node with no new block would
+// otherwise cost that long a round. It returns an error only when ctx ends.
 func (c *roundClock) next(ctx context.Context) error {
 	if c.blocks {
 		waitCtx, cancel := context.WithTimeout(ctx, blockWaitTimeout)
@@ -236,7 +239,16 @@ func (c *roundClock) next(ctx context.Context) error {
 		}
 		c.blocks = false
 	}
-	return waitForConfirmationPoll(ctx, confirmationPollInterval)
+	if err := waitForConfirmationPoll(ctx, confirmationPollInterval); err != nil {
+		return err
+	}
+	if status, err := c.client.Status().Do(ctx); err == nil {
+		if c.known && status.LastRound > c.round {
+			c.blocks = true
+		}
+		c.round, c.known = status.LastRound, true
+	}
+	return nil
 }
 
 func waitForConfirmationPoll(ctx context.Context, delay time.Duration) error {
