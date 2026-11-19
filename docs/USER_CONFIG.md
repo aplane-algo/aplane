@@ -621,6 +621,7 @@ lock_on_disconnect: true
 Important:
 
 - `appass` is an offline configuration tool
+- the data directory sets the mode: one with the `.prod` marker that the systemd installer writes is systemd-managed and needs `sudo appass`; any other is local and refuses root. `Systemd` is offered only in systemd mode, and only then does `appass` edit the `apsigner` unit, whatever units the host has
 - `apsigner` must be stopped before running `appass`
 - if `apsigner` is running, `appass` exits with a warning instead of editing auto-unlock configuration
 

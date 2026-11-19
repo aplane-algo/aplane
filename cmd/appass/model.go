@@ -28,7 +28,7 @@ type menuItem struct {
 	label    string
 	action   string // "set-passfile", "set-systemd-creds", "set-none", "quit"
 	disabled bool
-	note     string // e.g. "(no systemd service)"
+	note     string // e.g. "(run as root)"
 	current  bool   // true if this is the currently active method
 }
 
@@ -43,7 +43,7 @@ type Model struct {
 	// Status info (loaded on init and after actions)
 	method    string       // "none", "passfile", "systemd-creds", "custom", "unreadable"
 	methodErr string       // why unlock.yaml is unreadable
-	isLocal   bool         // true when no systemd service file exists
+	isLocal   bool         // true for a local data directory, one without the .prod marker
 	isRoot    bool         // true when running as root
 	svcInfo   *serviceInfo // resolved service info
 
@@ -165,7 +165,7 @@ func (m Model) buildMenu() []menuItem {
 	}
 	if m.isLocal {
 		sysCreds.disabled = true
-		sysCreds.note = "(no systemd service)"
+		sysCreds.note = "(systemd installs only)"
 	} else if !m.isRoot {
 		sysCreds.disabled = true
 		sysCreds.note = "(run as root)"
