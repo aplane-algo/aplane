@@ -572,7 +572,15 @@ unlocked or recovery-admin session, the stable
 confirmation, and a durable audit intent before any deletion.
 An in-place abandoned directory that cannot be safely quarantined requires the
 distinct `identity.generation.abandoned.discard` authorization. Discard refuses
-the selected generation, its rollback parent, and every sealed prior.
+the selected generation, its rollback parent, and every sealed prior. Neither
+discard nor prune has a size limit.
+
+Quarantine holds a generation of at most 65,536 files and directories,
+512 MiB in all, and 64 MiB for any one file. Every operation that commits a
+new generation (initialize, rebuild, restore and
+its rollback, passphrase change, policy apply and ASA set changes) refuses one larger than that before publishing
+anything, so a commit that fails part way always leaves something quarantine
+can hold. Prune the deleted archive, or delete keys, to get under the limit.
 
 A changepass interrupted before the root replacement may leave its successor
 quarantined. Retry is intentionally blocked until that non-authoritative entry

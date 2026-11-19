@@ -728,7 +728,9 @@ Policy selection semantics:
   unsealed parent, `code`, `error`; this is read-only inspection and never
   reconciles or prunes. Each quarantine record includes the generation and
   parent IDs, manifest and live-inventory digests, at-mint inventory-match
-  classification, entry count, encoded byte count, and `term_verified`,
+  classification, entry count and encoded byte count (every file and
+  directory in the generation tree, and every regular file's bytes, as the
+  quarantine candidate limits count them), and `term_verified`,
   `term_unavailable`, and `term_failed` counts. If a store mutation is
   active, the request returns retryable `store_busy` rather than waiting for
   the ordinary IPC timeout.

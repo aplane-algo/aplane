@@ -548,7 +548,8 @@ The commit order is:
 3. create a private `.staging-<gen-id>` directory;
 4. independently copy the parent, or construct an authorized empty successor;
 5. apply the transaction and validate the complete namespace;
-6. write the complete manifest and sync the staging tree bottom-up;
+6. write the complete manifest, check the staged tree against the quarantine
+   candidate limits, and sync the staging tree bottom-up;
 7. rename staging to `generations/<gen-id>` and sync `generations/`;
 8. write and sync the outgoing generation seal;
 9. durably replace `store-root.enc` once;
@@ -638,6 +639,23 @@ regular-file-only layout, bounded enumeration, and live inventory digests.
 At-mint mismatch is recorded but is not a veto because a formerly selected
 generation may have legitimate post-mint mutations.
 
+Bounded enumeration is one size rule, the quarantine candidate limits. It
+counts every path below the generation directory, files and directories
+alike, and every regular file's bytes: at most 65,536 entries, 512 MiB in
+all, and 64 MiB for any one file. Classification applies it before reading
+anything, quarantine accounting applies the same rule to each quarantined
+generation, and every mint applies it to its staged tree before publishing
+and refuses a successor that breaks it. A publication that a failed or
+crashed mint leaves behind therefore always fits quarantine, and the mint
+preflight's reserve of one maximum candidate covers it. The entry limit sits
+above the documented count caps (8,192 cosigner credentials with their public
+sidecars, 8,192 per-key policy documents with their sidecars, a full deleted
+archive), and the byte limit leaves as much again as a full deleted archive
+for live state. Ordinary key mutations do not mint, so a selected generation
+can grow past the limits in place; its next mint is refused until it is
+pruned back, and if an older root is restored it stays where it is and is
+removed with abandoned discard.
+
 Available term validation is classification, not authority. Known-term checks
 are recorded as `verified` or `failed`; a member whose term is absent from the
 current keyring is `term_unavailable`. All remain relocatable when structural
@@ -650,13 +668,16 @@ operator remediation. Quarantine capacity overflow behaves the same way.
 Explicit removal of an in-place unvalidatable final directory uses the
 separate `identity.generation.abandoned.discard` action, explicit confirmation,
 and a durable intent audit. It refuses current, rollback-parent, and sealed
-generation state.
+generation state. Discard applies no size limit and refuses nothing inside its
+target, since it exists for the directories that broke the limits or the
+layout; it renames and removes, following no link.
 
 Eligible candidates are atomically renamed to
 `quarantine/generations/<gen-id>` and both parent directories are synced.
 Quarantine is bounded to eight generations and 1 GiB. Live pruning requires
 the stable `identity.generation.quarantine.prune` action, explicit
-confirmation, and durable intent audit before deletion.
+confirmation, and durable intent audit before deletion. Like discard, prune
+applies no size limit.
 
 A crashed changepass before root replacement can leave its complete successor
 in quarantine. That ciphertext is non-authoritative; a later changepass remains

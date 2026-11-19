@@ -111,7 +111,7 @@ type MintRequest struct {
 // state selected — never a mixture.
 //
 // Commit order (docs/ARCH_STORE.md, "Ordinary generation commit"):
-// stage → copy parent → apply → validate → manifest → fsync all →
+// stage → copy parent → apply → validate → manifest → size check → fsync all →
 // publish rename → fsync generations/ → seal outgoing → replace store root.
 func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) {
 	if err := req.validate(); err != nil {
@@ -226,6 +226,15 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		Complete:           true,
 	}); err != nil {
 		return storepaths.GenPaths{}, err
+	}
+	// A failure between publication and the root replacement leaves this tree
+	// for reconciliation to quarantine, and requireMintableGenerationStore
+	// reserved room for one quarantine candidate: refuse a tree that would not
+	// be one.
+	if _, err := measureGenerationTree(stagingDir, quarantineCandidateLimits); err != nil {
+		return storepaths.GenPaths{}, fmt.Errorf(
+			"staged generation %s does not fit the quarantine candidate limits: %w", req.GenerationID, err,
+		)
 	}
 
 	// fsync every staged file and directory bottom-up, then publish.

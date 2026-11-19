@@ -17,18 +17,52 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// These are closed safety bounds for classifying one complete abandoned
-// publication. Capacity tests may tighten them before the new layout gate is
-// enabled, but production code must never classify through an unbounded read.
+// The quarantine candidate limits are the one size rule for a generation
+// directory that quarantine may hold. measureGenerationTree counts every path
+// below the directory (the manifest, the authority files, the namespace
+// directories and their members, and any durable-write residue) and every
+// regular file's bytes. Classification applies the rule before it reads
+// anything, quarantine accounting applies it to each quarantined generation,
+// and Mint applies it to the staged tree before publishing, so a publication
+// a crashed mint leaves behind can always be classified, and a generation
+// quarantine accepts can always be read back.
+//
+// Mint enforces the limits, so they are set to refuse no store the layout
+// otherwise allows in practice: the entry limit sits above every count cap the
+// store documents (8,192 cosigner credentials with their public sidecars,
+// 8,192 per-key policy documents with their sidecars, a full deleted
+// archive), and the byte limit leaves as much again as a full deleted archive
+// for live state. The quarantine total holds two maximum-sized candidates.
 const (
-	quarantineCandidateMaxFiles     = 4_096
+	quarantineCandidateMaxEntries   = 65_536
 	quarantineCandidateMaxFileBytes = 64 << 20
-	quarantineCandidateMaxBytes     = 256 << 20
-	quarantineManifestMaxBytes      = 16 << 20
+	quarantineCandidateMaxBytes     = 2 * DeletedArchiveMaxEncodedBytes
 	quarantineMaxGenerations        = 8
 	quarantineMaxBytes              = 1 << 30
 	quarantineMaxPruneSelection     = 64
 )
+
+// treeLimits bounds one generation directory tree.
+type treeLimits struct {
+	Entries   int
+	FileBytes int64
+	Bytes     int64
+}
+
+// quarantineCandidateLimits is the rule every caller applies. It is a
+// variable only so tests can reach the boundary without writing tens of
+// thousands of files; production code never assigns it.
+var quarantineCandidateLimits = treeLimits{
+	Entries:   quarantineCandidateMaxEntries,
+	FileBytes: quarantineCandidateMaxFileBytes,
+	Bytes:     quarantineCandidateMaxBytes,
+}
+
+// treeUsage is what measureGenerationTree counted.
+type treeUsage struct {
+	Entries int
+	Bytes   int64
+}
 
 // QuarantineRecord is non-authoritative metadata used to decide whether a
 // complete final generation directory can be safely relocated intact. A
@@ -40,8 +74,11 @@ type QuarantineRecord struct {
 	ManifestSHA256       string `json:"manifest_sha256"`
 	LiveInventorySHA256  string `json:"live_inventory_sha256"`
 	AtMintInventoryMatch bool   `json:"at_mint_inventory_match"`
-	EntryCount           int    `json:"entry_count"`
-	EncodedBytes         int64  `json:"encoded_bytes"`
+	// EntryCount and EncodedBytes are the generation tree's measure under the
+	// quarantine candidate limits: every file and directory below the
+	// generation directory, and every regular file's bytes.
+	EntryCount   int   `json:"entry_count"`
+	EncodedBytes int64 `json:"encoded_bytes"`
 	// TermValidation records best-effort integrity classification. Failures
 	// and unavailable terms never grant authority and do not veto safe,
 	// bounded relocation.
@@ -68,6 +105,9 @@ type QuarantinePruneResult struct {
 // unsealed final generation directories that reconciliation could not safely
 // quarantine. The caller must hold the mutation lock and enforce the distinct
 // abandoned-discard authorization, confirmation, and durable-audit contract.
+// It applies no size limit and refuses nothing inside the target: it exists
+// for the generations that broke the quarantine limits or layout, and it only
+// renames and removes.
 func DiscardAbandoned(
 	paths storepaths.Paths,
 	generationIDs []string,
@@ -116,7 +156,7 @@ func DiscardAbandoned(
 		if sealed {
 			return results, fmt.Errorf("generation %s is sealed retained state, refusing abandoned discard", generationID)
 		}
-		size, err := boundedTreeSize(path, quarantineMaxBytes)
+		size, err := removalBytes(path)
 		if err != nil {
 			return results, err
 		}
@@ -189,6 +229,8 @@ func listQuarantined(paths storepaths.Paths, kr *crypto.Keyring) ([]QuarantineRe
 // non-authoritative quarantine directories. The caller must hold the store
 // mutation lock and enforce authorization, confirmation, and durable audit.
 // Active and retained generation paths are not accepted by construction.
+// Like DiscardAbandoned it applies no size limit, so it can remove a
+// quarantine entry that the candidate limits would refuse.
 func PruneQuarantined(
 	paths storepaths.Paths,
 	generationIDs []string,
@@ -235,7 +277,7 @@ func PruneQuarantined(
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return results, fmt.Errorf("quarantine target is not a regular directory: %s", path)
 		}
-		size, err := boundedTreeSize(path, quarantineMaxBytes)
+		size, err := removalBytes(path)
 		if err != nil {
 			return results, err
 		}
@@ -291,13 +333,18 @@ func finishInterruptedPrune(paths storepaths.Paths, tombstone, generationID stri
 // so a term absent from the restored keyring is not a classification failure.
 func classifyQuarantineCandidate(gen storepaths.GenPaths, kr *crypto.Keyring) (QuarantineRecord, error) {
 	candidate := QuarantineRecord{GenerationID: gen.GenerationID()}
+	// Size the whole tree before reading any of it.
+	usage, err := measureGenerationTree(gen.Dir(), quarantineCandidateLimits)
+	if err != nil {
+		return candidate, fmt.Errorf("classify abandoned generation %s: %w", gen.GenerationID(), err)
+	}
 	if err := validateStructure(gen); err != nil {
 		return candidate, fmt.Errorf("classify abandoned generation: %w", err)
 	}
 
 	manifestBytes, _, err := fsutil.ReadRegularFileLimited(
 		gen.ManifestPath(),
-		quarantineManifestMaxBytes,
+		quarantineCandidateLimits.FileBytes,
 	)
 	if err != nil {
 		return candidate, fmt.Errorf("classify abandoned generation manifest: %w", err)
@@ -312,21 +359,12 @@ func classifyQuarantineCandidate(gen storepaths.GenPaths, kr *crypto.Keyring) (Q
 	manifestSum := sha256.Sum256(manifestBytes)
 	candidate.ManifestSHA256 = hex.EncodeToString(manifestSum[:])
 	candidate.ParentID = manifest.ParentID
-	candidate.EntryCount = 1
-	candidate.EncodedBytes = int64(len(manifestBytes))
+	candidate.EntryCount = usage.Entries
+	candidate.EncodedBytes = usage.Bytes
 
-	live, liveBytes, validation, err := buildBoundedQuarantineInventory(gen, kr)
+	live, validation, err := buildBoundedQuarantineInventory(gen, kr)
 	if err != nil {
 		return candidate, err
-	}
-	candidate.EntryCount += len(live)
-	candidate.EncodedBytes += liveBytes
-	if candidate.EncodedBytes > quarantineCandidateMaxBytes {
-		return candidate, fmt.Errorf(
-			"generation %s exceeds quarantine byte limit %d",
-			gen.GenerationID(),
-			quarantineCandidateMaxBytes,
-		)
 	}
 	digest, err := CanonicalInventoryDigest(live)
 	if err != nil {
@@ -416,7 +454,7 @@ func requireMintableGenerationStore(paths storepaths.Paths, kr *crypto.Keyring) 
 	if err != nil {
 		return fmt.Errorf("inspect quarantine capacity: %w", err)
 	}
-	if count >= quarantineMaxGenerations || encodedBytes > quarantineMaxBytes-quarantineCandidateMaxBytes {
+	if count >= quarantineMaxGenerations || encodedBytes > quarantineMaxBytes-quarantineCandidateLimits.Bytes {
 		return fmt.Errorf(
 			"generation quarantine lacks the reserved capacity required for a mint; prune quarantine first",
 		)
@@ -441,55 +479,82 @@ func quarantineUsage(paths storepaths.Paths) (int, int64, error) {
 		if err := storepaths.ValidateGenerationID(entry.Name()); err != nil {
 			return 0, 0, fmt.Errorf("unexpected quarantine entry %q", entry.Name())
 		}
-		path := paths.QuarantinedGenerationDir(entry.Name())
-		info, err := os.Lstat(path)
+		usage, err := measureGenerationTree(paths.QuarantinedGenerationDir(entry.Name()), quarantineCandidateLimits)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, fmt.Errorf("quarantined generation %s: %w", entry.Name(), err)
 		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return 0, 0, fmt.Errorf("quarantine entry is not a regular directory: %s", path)
+		if usage.Bytes > quarantineMaxBytes-total {
+			return 0, 0, fmt.Errorf("quarantine exceeds byte limit %d", quarantineMaxBytes)
 		}
-		size, err := boundedTreeSize(path, quarantineMaxBytes-total)
-		if err != nil {
-			return 0, 0, err
-		}
-		total += size
+		total += usage.Bytes
 	}
 	return len(entries), total, nil
 }
 
-func boundedTreeSize(root string, remaining int64) (int64, error) {
-	if remaining < 0 {
-		return 0, fmt.Errorf("quarantine exceeds byte limit %d", quarantineMaxBytes)
+// measureGenerationTree counts every path below root and every regular file's
+// bytes, and refuses a tree that breaks limits, holds a symlink or an
+// irregular file, or is not itself a directory. It reads no file contents and
+// follows no link.
+func measureGenerationTree(root string, limits treeLimits) (treeUsage, error) {
+	var usage treeUsage
+	info, err := os.Lstat(root)
+	if err != nil {
+		return usage, err
 	}
-	var total int64
-	var entries int
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return usage, fmt.Errorf("generation is not a regular directory: %s", root)
+	}
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if path == root {
 			return nil
 		}
-		entries++
-		if entries > quarantineCandidateMaxFiles {
-			return fmt.Errorf("quarantine generation exceeds entry limit %d", quarantineCandidateMaxFiles)
+		usage.Entries++
+		if usage.Entries > limits.Entries {
+			return fmt.Errorf("generation tree exceeds entry limit %d", limits.Entries)
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("quarantine contains symlink: %s", path)
+			return fmt.Errorf("generation contains symlink: %s", path)
 		}
 		if info.IsDir() {
 			return nil
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("quarantine contains irregular file: %s", path)
+			return fmt.Errorf("generation contains irregular file: %s", path)
 		}
-		if info.Size() > remaining-total {
-			return fmt.Errorf("quarantine exceeds byte limit %d", quarantineMaxBytes)
+		if info.Size() > limits.FileBytes {
+			return fmt.Errorf("generation member %s exceeds size limit %d", path, limits.FileBytes)
+		}
+		if info.Size() > limits.Bytes-usage.Bytes {
+			return fmt.Errorf("generation tree exceeds byte limit %d", limits.Bytes)
+		}
+		usage.Bytes += info.Size()
+		return nil
+	})
+	return usage, err
+}
+
+// removalBytes totals the regular-file bytes below root for a removal's
+// result. It has no limit and refuses nothing inside the tree, and it follows
+// no link.
+func removalBytes(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(_ string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
 		}
 		total += info.Size()
 		return nil
@@ -497,25 +562,18 @@ func boundedTreeSize(root string, remaining int64) (int64, error) {
 	return total, err
 }
 
-func buildBoundedQuarantineInventory(gen storepaths.GenPaths, kr *crypto.Keyring) ([]InventoryEntry, int64, TermValidation, error) {
+// buildBoundedQuarantineInventory reads a candidate that measureGenerationTree
+// has already sized; each read is still bounded by the per-file limit.
+func buildBoundedQuarantineInventory(gen storepaths.GenPaths, kr *crypto.Keyring) ([]InventoryEntry, TermValidation, error) {
 	var inventory []InventoryEntry
-	var totalBytes int64
 	var validation TermValidation
 	addMember := func(relative string) error {
 		data, _, err := fsutil.ReadRegularFileLimited(
 			filepath.Join(gen.Dir(), filepath.FromSlash(relative)),
-			quarantineCandidateMaxFileBytes,
+			quarantineCandidateLimits.FileBytes,
 		)
 		if err != nil {
 			return fmt.Errorf("classify %s: %w", relative, err)
-		}
-		totalBytes += int64(len(data))
-		if totalBytes > quarantineCandidateMaxBytes {
-			return fmt.Errorf(
-				"generation %s exceeds quarantine byte limit %d",
-				gen.GenerationID(),
-				quarantineCandidateMaxBytes,
-			)
 		}
 		sum := sha256.Sum256(data)
 		term, present, inspectErr := crypto.InspectTermEnvelope(data)
@@ -553,43 +611,29 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths, kr *crypto.Keyring
 	}
 	authority, err := presentAuthorityFiles(gen)
 	if err != nil {
-		return nil, 0, validation, err
+		return nil, validation, err
 	}
 	for _, relative := range authority {
-		if len(inventory)+1 > quarantineCandidateMaxFiles {
-			return nil, 0, validation, fmt.Errorf(
-				"generation %s exceeds quarantine file limit %d",
-				gen.GenerationID(),
-				quarantineCandidateMaxFiles,
-			)
-		}
 		if err := addMember(relative); err != nil {
-			return nil, 0, validation, err
+			return nil, validation, err
 		}
 	}
 	for _, namespace := range generationLeafNamespaces {
 		dir := filepath.Join(gen.Dir(), namespace)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return nil, 0, validation, err
-		}
-		if len(inventory)+len(entries) > quarantineCandidateMaxFiles {
-			return nil, 0, validation, fmt.Errorf(
-				"generation %s exceeds quarantine file limit %d",
-				gen.GenerationID(),
-				quarantineCandidateMaxFiles,
-			)
+			return nil, validation, err
 		}
 		for _, entry := range entries {
 			if err := addMember(filepath.ToSlash(filepath.Join(namespace, entry.Name()))); err != nil {
-				return nil, 0, validation, err
+				return nil, validation, err
 			}
 		}
 	}
 	slices.SortFunc(inventory, func(a, b InventoryEntry) int {
 		return strings.Compare(a.Path, b.Path)
 	})
-	return inventory, totalBytes, validation, nil
+	return inventory, validation, nil
 }
 
 func quarantineMemberContext(relative string) (crypto.ObjectContext, bool) {
