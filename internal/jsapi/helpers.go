@@ -4,6 +4,7 @@
 package jsapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -185,19 +186,71 @@ func (a *API) objectArg(call goja.FunctionCall, argIndex int, funcName string) m
 	return m
 }
 
-// toJSObject converts a Go value into a JSON-compatible JavaScript object.
+// toJSObject converts a Go value into a JSON-compatible JavaScript object,
+// keyed by the value's JSON field names. Whole numbers keep their exact
+// value, so a script can pass one back: one JavaScript holds exactly becomes
+// a number, and one past Number.MAX_SAFE_INTEGER (an app-state uint, say)
+// becomes a BigInt. Decoding into float64, as a plain json.Unmarshal does,
+// would round it, and the API refuses the rounded number when it comes back.
 func (a *API) toJSObject(v interface{}) goja.Value {
 	encoded, err := json.Marshal(v)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("failed to marshal JS object: %v", err)))
 	}
 
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
 	var decoded interface{}
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
+	if err := decoder.Decode(&decoded); err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("failed to unmarshal JS object: %v", err)))
 	}
+	converted, err := exactJSONNumbers(decoded)
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("failed to convert JS object: %v", err)))
+	}
 
-	return a.runtime.ToValue(decoded)
+	return a.runtime.ToValue(converted)
+}
+
+// exactJSONNumbers replaces each json.Number in a decoded JSON value, in
+// place: a whole number JavaScript holds exactly with an int64, a larger one
+// with a *big.Int (a BigInt in the script), and any other number with a
+// float64.
+func exactJSONNumbers(v interface{}) (interface{}, error) {
+	switch value := v.(type) {
+	case json.Number:
+		if i, err := value.Int64(); err == nil && i >= -maxSafeJSInteger && i <= maxSafeJSInteger {
+			return i, nil
+		}
+		if whole, ok := new(big.Int).SetString(value.String(), 10); ok {
+			return whole, nil
+		}
+		f, err := value.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("number %s: %w", value, err)
+		}
+		return f, nil
+	case map[string]interface{}:
+		for key, item := range value {
+			converted, err := exactJSONNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			value[key] = converted
+		}
+		return value, nil
+	case []interface{}:
+		for i, item := range value {
+			converted, err := exactJSONNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			value[i] = converted
+		}
+		return value, nil
+	default:
+		return v, nil
+	}
 }
 
 // toUint64 converts a Goja value to uint64.

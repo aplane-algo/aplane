@@ -657,6 +657,13 @@ A plan that passes is returned as the signer sent it.
 
 `boxName` accepts the byte formats described in [Conventions](#conventions).
 
+A whole number in these results that JavaScript cannot hold exactly, past
+`Number.MAX_SAFE_INTEGER`, such as a large `uint` in global or local state,
+comes back as a `BigInt`, so it keeps its value and can be passed back as an
+amount, ID or ABI argument. Smaller numbers are ordinary numbers. A `BigInt`
+does not mix with numbers in arithmetic (`v + 1n`, not `v + 1`), and
+`JSON.stringify()` refuses one; use `String(v)` to print it.
+
 ### Deploy
 
 ```javascript

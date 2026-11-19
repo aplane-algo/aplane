@@ -4,6 +4,8 @@
 package jsapi
 
 import (
+	"fmt"
+	"math"
 	"reflect"
 	"testing"
 
@@ -679,4 +681,58 @@ func TestStringArray(t *testing.T) {
 			t.Errorf("%s: stringArray() = %v, want an error", name, got)
 		}
 	}
+}
+
+// TestToJSObjectKeepsAppStateUintsExact pins that an app-state uint past
+// 2^53 reaches the script with its exact value, as a BigInt, and is accepted
+// when the script passes it back, as toUint64 reads every amount and ID. A
+// value JavaScript holds exactly stays a number.
+func TestToJSObjectKeepsAppStateUintsExact(t *testing.T) {
+	vm := goja.New()
+	api := &API{runtime: vm}
+	const pastSafe = uint64(1)<<53 + 1
+	const pastInt64 = uint64(math.MaxInt64) + 2
+	want := []uint64{pastSafe, math.MaxInt64, pastInt64, math.MaxUint64}
+	state := engine.AppGlobalStateResult{AppID: pastSafe}
+	for _, u := range want {
+		state.GlobalState = append(state.GlobalState, engine.AppStateEntry{
+			KeyBase64: "aw==", Value: engine.AppStateValue{Type: "uint", Uint: u},
+		})
+	}
+	if err := vm.Set("state", api.toJSObject(&state)); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(expr string, want uint64) {
+		t.Helper()
+		v, err := vm.RunString(expr)
+		if err != nil {
+			t.Fatalf("%s: %v", expr, err)
+		}
+		var got uint64
+		if err := jsError(func() { got = toUint64(vm, v) }); err != nil {
+			t.Errorf("%s = %v, refused when passed back: %v", expr, v, err)
+			return
+		}
+		if got != want {
+			t.Errorf("%s = %d, want %d", expr, got, want)
+		}
+	}
+	check("state.app_id", pastSafe)
+	for i, u := range want {
+		check(fmt.Sprintf("state.global_state[%d].value.uint", i), u)
+	}
+
+	small := engine.AppStateValue{Type: "uint", Uint: 1<<53 - 1}
+	if err := vm.Set("small", api.toJSObject(small)); err != nil {
+		t.Fatal(err)
+	}
+	v, err := vm.RunString(`[typeof small.uint, typeof state.app_id].join(",")`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.String(); got != "number,bigint" {
+		t.Errorf("types = %s, want number,bigint", got)
+	}
+	check("small.uint", 1<<53-1)
 }
