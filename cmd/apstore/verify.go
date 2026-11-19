@@ -36,7 +36,7 @@ func verifyDeep(backupPath string) error {
 
 	logInfof("verifying %s", backupPath)
 
-	report, err := backup.DeepVerifyBackup(backupPath, string(passphrase))
+	report, err := backup.DeepVerifyBackupBytes(backupPath, passphrase)
 	crypto.ZeroBytes(passphrase)
 	if err != nil {
 		return codedError{code: "verification_failed", message: err.Error()}
