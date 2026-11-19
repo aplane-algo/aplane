@@ -410,6 +410,21 @@ func (ir *Runtime) SetUnlocked() {
 func (ir *Runtime) SetRecovery() {
 	ir.lockRuntime.SetRecovery()
 	ir.cancelKeyUses()
+	ir.endSignRequests()
+}
+
+// endSignRequests ends every approval wait in flight when the session ends,
+// so no request from it is left waiting for, or showing, an approval; those
+// answer that the session ended. Requests that are planning or signing are
+// not interrupted here: the session check or the lock's cut of their key use
+// refuses them, as locked.
+// The lock cleanup calls it first, before it waits for key users, so a lock,
+// the start of store maintenance and an unlock that lost to a lock withdraw
+// at once; entering recovery, which runs no cleanup, calls it directly.
+func (ir *Runtime) endSignRequests() {
+	if c := ir.approval.Load(); c != nil {
+		c.EndSessionSignRequests()
+	}
 }
 
 // TryRecoveryUnlock opens the keyring without scanning or publishing
@@ -426,6 +441,7 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 	if ok {
 		// As SetRecovery: a session that was unlocked until now is over.
 		ir.cancelKeyUses()
+		ir.endSignRequests()
 	}
 	if !ok && msg == signerruntime.LockedDuringUnlockMessage {
 		// A lock overtook the attempt, which then locked the runtime.
@@ -1590,6 +1606,10 @@ func (ir *Runtime) Destroy() {
 func (ir *Runtime) performLockCleanup() {
 	// Watcher stays running — it will mark dirty instead of reloading while locked.
 	// StopKeyWatcher is only called on shutdown, by EndKeyUses and Destroy.
+
+	// The session is over: withdraw every signing request in flight before
+	// waiting for anything, so no approval stays up through the drain.
+	ir.endSignRequests()
 
 	// Holders of key material go first, so clearing the session
 	// below really is the end of every copy of a seed.

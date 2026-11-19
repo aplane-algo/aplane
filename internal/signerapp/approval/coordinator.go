@@ -16,6 +16,10 @@ import (
 var (
 	ErrApprovalTimeout  = errors.New("approval timeout")
 	ErrApprovalCanceled = errors.New("approval canceled")
+	// ErrSessionEnded accompanies ErrApprovalCanceled when an approval wait
+	// ended because the signer's session ended (EndSessionSignRequests):
+	// the request began in an earlier session epoch.
+	ErrSessionEnded = errors.New("the signer's session ended")
 )
 
 const maxRememberedCanceledSignRequests = 1024
@@ -27,6 +31,14 @@ type SendSignRequestCanceledFunc func(*SignRequestCanceled) bool
 type activeSignRequest struct {
 	cancel context.CancelFunc
 }
+
+// sessionEpochKey keys the session epoch a request registered in
+// (BeginSignRequest) in the request's context.
+type sessionEpochKey struct{}
+
+// errSessionEndedWait ends a wait for the delivery turn that a session end
+// interrupted.
+var errSessionEndedWait = errors.New("session ended while waiting for the delivery turn")
 
 type deliveryWaiter struct {
 	ready    chan struct{}
@@ -51,6 +63,13 @@ type Coordinator struct {
 	canceledRequests     map[string]string
 	canceledRequestOrder []string
 	pendingRequestsLock  sync.Mutex
+
+	// sessionEpoch counts the signer's session ends
+	// (EndSessionSignRequests); sessionEnded is closed at the next one. An
+	// approval wait from an earlier epoch is over: its session has ended.
+	// Both are guarded by pendingRequestsLock.
+	sessionEpoch uint64
+	sessionEnded chan struct{}
 
 	// One request is delivered at a time (AP4).
 	deliveryMu       sync.Mutex
@@ -78,6 +97,7 @@ func New(hasClient HasClientFunc, sendSignRequest SendSignRequestFunc, sendSignR
 		promptIDs:               make(map[string]string),
 		activeRequests:          make(map[string]map[*activeSignRequest]struct{}),
 		canceledRequests:        make(map[string]string),
+		sessionEnded:            make(chan struct{}),
 	}
 	return c
 }
@@ -105,13 +125,20 @@ func (c *Coordinator) HandleSignResponse(msg *SignResponse) {
 }
 
 // BeginSignRequest tracks a live /sign request before it reaches the manual
-// approval wait. The returned context is canceled by CancelSignRequest.
+// approval wait. The returned context is canceled by CancelSignRequest, and
+// carries the session epoch the request began in, so an approval it asks
+// for after the session ended is refused.
 func (c *Coordinator) BeginSignRequest(ctx context.Context, requestID string) (context.Context, func()) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if requestID == "" {
-		return ctx, func() {}
+		// Nothing to cancel by ID, but its approval still belongs to the
+		// session it began in.
+		c.pendingRequestsLock.Lock()
+		epoch := c.sessionEpoch
+		c.pendingRequestsLock.Unlock()
+		return context.WithValue(ctx, sessionEpochKey{}, epoch), func() {}
 	}
 	requestCtx, cancel := context.WithCancel(ctx)
 	active := &activeSignRequest{cancel: cancel}
@@ -121,9 +148,10 @@ func (c *Coordinator) BeginSignRequest(ctx context.Context, requestID string) (c
 		c.activeRequests[requestID] = make(map[*activeSignRequest]struct{})
 	}
 	c.activeRequests[requestID][active] = struct{}{}
+	epoch := c.sessionEpoch
 	c.pendingRequestsLock.Unlock()
 
-	return requestCtx, func() {
+	return context.WithValue(requestCtx, sessionEpochKey{}, epoch), func() {
 		c.pendingRequestsLock.Lock()
 		if activeSet := c.activeRequests[requestID]; activeSet != nil {
 			delete(activeSet, active)
@@ -137,8 +165,9 @@ func (c *Coordinator) BeginSignRequest(ctx context.Context, requestID string) (c
 	}
 }
 
-// CancelSignRequest cancels a queued or pending signing request and notifies
-// connected admin clients so visible approval prompts can be dismissed.
+// CancelSignRequest cancels a queued or pending signing request. A prompt
+// already shown is dismissed in the admin client by its own request when it
+// reads the withdrawal, after the prompt itself was sent.
 func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCancelResult {
 	if requestID == "" {
 		return SignRequestCancelResult{State: SignRequestCancelStateNotFound}
@@ -172,12 +201,80 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 	}
 	if exists {
 		if ch != nil {
-			c.notifySignRequestCanceled(promptID, reason)
-			trySendSignResponse(ch, SignResponse{ID: promptID, Approved: false, Reason: reason})
+			// The waiter dismisses the prompt when it reads this, after its
+			// own sendSignRequest, so the dismissal never overtakes the
+			// prompt it dismisses.
+			trySendSignResponse(ch, SignResponse{ID: promptID, Approved: false, Reason: reason, withdrawn: true})
 		}
 		return SignRequestCancelResult{State: SignRequestCancelStateCanceled}
 	}
 	return SignRequestCancelResult{State: SignRequestCancelStateNotFound}
+}
+
+// EndSessionSignRequests ends every approval wait in flight because the
+// signer's session ended: the prompt on the operator's screen is answered
+// as withdrawn, requests queued for the delivery turn stop waiting, and a
+// request from the ended session that asks for approval later is refused.
+// Each answers ErrApprovalCanceled wrapping ErrSessionEnded. It cancels no
+// request's context: a request that is planning or signing meets the
+// session check or a lock's key-use cut, which answer locked, not a
+// cancellation by its client. The withdrawn prompt is dismissed, with
+// reason session_ended, by its own request, so the caller never writes to
+// the operator's connection.
+func (c *Coordinator) EndSessionSignRequests() {
+	c.pendingRequestsLock.Lock()
+	c.sessionEpoch++
+	close(c.sessionEnded)
+	c.sessionEnded = make(chan struct{})
+	pending := c.pendingRequests
+	c.pendingRequests = make(map[string]chan SignResponse)
+	c.promptIDs = make(map[string]string)
+	c.pendingRequestsLock.Unlock()
+	for promptID, ch := range pending {
+		trySendSignResponse(ch, SignResponse{ID: promptID, Approved: false, Reason: SignRequestCancelReasonSessionEnded, withdrawn: true})
+	}
+}
+
+// requestSession returns the session epoch a request's approval belongs to,
+// the channel a session end closes, and whether that session has already
+// ended. A request registered with BeginSignRequest belongs to the epoch it
+// registered in; any other belongs to the current one.
+func (c *Coordinator) requestSession(ctx context.Context) (uint64, <-chan struct{}, bool) {
+	c.pendingRequestsLock.Lock()
+	defer c.pendingRequestsLock.Unlock()
+	epoch, ok := ctx.Value(sessionEpochKey{}).(uint64)
+	if !ok {
+		epoch = c.sessionEpoch
+	}
+	return epoch, c.sessionEnded, epoch != c.sessionEpoch
+}
+
+// sessionEndedSince reports whether a session end came after epoch.
+func (c *Coordinator) sessionEndedSince(epoch uint64) bool {
+	c.pendingRequestsLock.Lock()
+	defer c.pendingRequestsLock.Unlock()
+	return c.sessionEpoch != epoch
+}
+
+// sessionEndedError is the error a withdrawn approval wait answers.
+func sessionEndedError() error {
+	return fmt.Errorf("%w: %w", ErrApprovalCanceled, ErrSessionEnded)
+}
+
+// cancellationError is ErrApprovalCanceled with reason, or with ctxErr when
+// there is no reason. A session end also wraps ErrSessionEnded.
+func cancellationError(reason string, ctxErr error) error {
+	switch reason {
+	case SignRequestCancelReasonSessionEnded:
+		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ErrSessionEnded)
+	case "":
+		if ctxErr == nil {
+			return ErrApprovalCanceled
+		}
+		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ctxErr)
+	default:
+		return fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
+	}
 }
 
 func (c *Coordinator) rememberCanceledSignRequestLocked(requestID, reason string) {
@@ -225,19 +322,26 @@ func (c *Coordinator) consumeCanceledSignRequest(requestID string) (string, bool
 	return reason, exists
 }
 
+// isCancellationResponse reports whether response withdrew the request
+// rather than answering it: only the coordinator sends such a response
+// (CancelSignRequest). An operator's rejection is never one, whatever its
+// free-text reason says.
 func isCancellationResponse(response SignResponse) bool {
-	if response.Approved {
-		return false
-	}
-	return response.Reason == SignRequestCancelReasonClientCanceled ||
-		response.Reason == SignRequestCancelReasonTimeout
+	return !response.Approved && response.withdrawn
 }
 
-func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
+// acquireDeliveryTurnContext waits for the delivery turn until ctx ends or
+// sessionEnded closes (errSessionEndedWait); a nil sessionEnded never does.
+func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, sessionEnded <-chan struct{}) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
+		select {
+		case <-sessionEnded:
+			return errSessionEndedWait
+		default:
+		}
 		return err
 	}
 
@@ -258,7 +362,17 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
 		if c.cancelDeliveryWaiter(waiter) {
 			c.releaseDeliveryTurn()
 		}
+		select {
+		case <-sessionEnded:
+			return errSessionEndedWait
+		default:
+		}
 		return ctx.Err()
+	case <-sessionEnded:
+		if c.cancelDeliveryWaiter(waiter) {
+			c.releaseDeliveryTurn()
+		}
+		return errSessionEndedWait
 	}
 }
 
@@ -338,22 +452,32 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 	if requestID == "" {
 		return SignResponse{}, fmt.Errorf("request ID is required")
 	}
+	epoch, sessionEnded, ended := c.requestSession(ctx)
+	if ended {
+		return SignResponse{}, sessionEndedError()
+	}
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
-		return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
+		return SignResponse{}, cancellationError(reason, nil)
 	}
 	if c.hasClient == nil || !c.hasClient() {
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
 	}
 
-	if err := c.acquireDeliveryTurnContext(ctx); err != nil {
+	if err := c.acquireDeliveryTurnContext(ctx, sessionEnded); err != nil {
+		if errors.Is(err, errSessionEndedWait) {
+			return SignResponse{}, sessionEndedError()
+		}
 		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
 	}
 	defer c.releaseDeliveryTurn()
+	if c.sessionEndedSince(epoch) {
+		return SignResponse{}, sessionEndedError()
+	}
 	if err := ctx.Err(); err != nil {
 		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
 	}
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
-		return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
+		return SignResponse{}, cancellationError(reason, nil)
 	}
 	if c.hasClient == nil || !c.hasClient() {
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
@@ -365,7 +489,13 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 		return SignResponse{}, err
 	}
 
+	// Registered under the same lock a session end takes, so the prompt is
+	// either withdrawn by that end or refused here: it never outlives it.
 	c.pendingRequestsLock.Lock()
+	if c.sessionEpoch != epoch {
+		c.pendingRequestsLock.Unlock()
+		return SignResponse{}, sessionEndedError()
+	}
 	c.pendingRequests[promptID] = responseChan
 	c.promptIDs[requestID] = promptID
 	c.pendingRequestsLock.Unlock()
@@ -400,17 +530,54 @@ func (c *Coordinator) RequestSigningApprovalPrompt(ctx context.Context, prompt P
 
 	select {
 	case response := <-responseChan:
-		if isCancellationResponse(response) {
-			return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, response.Reason)
-		}
-		return response, nil
+		return c.answer(promptID, epoch, response)
 	case <-timer.C:
-		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
-		return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
+		return c.answerWaiting(promptID, epoch, responseChan, func() (SignResponse, error) {
+			c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
+			return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
+		})
 	case <-ctx.Done():
-		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonClientCanceled)
-		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, ctx.Err())
+		return c.answerWaiting(promptID, epoch, responseChan, func() (SignResponse, error) {
+			if c.sessionEndedSince(epoch) {
+				c.notifySignRequestCanceled(promptID, SignRequestCancelReasonSessionEnded)
+				return SignResponse{}, sessionEndedError()
+			}
+			c.notifySignRequestCanceled(promptID, SignRequestCancelReasonClientCanceled)
+			return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, ctx.Err())
+		})
 	}
+}
+
+// answer is the outcome of a prompt the operator or the coordinator
+// answered. A session end overrides an approval or a withdrawal answered in
+// the meantime (no request from the ended session can sign), but an
+// operator's rejection stays a rejection.
+func (c *Coordinator) answer(promptID string, epoch uint64, response SignResponse) (SignResponse, error) {
+	if response.withdrawn {
+		c.notifySignRequestCanceled(promptID, response.Reason)
+	}
+	if (response.Approved || response.withdrawn) && c.sessionEndedSince(epoch) {
+		return SignResponse{}, sessionEndedError()
+	}
+	if isCancellationResponse(response) {
+		return SignResponse{}, cancellationError(response.Reason, nil)
+	}
+	return response, nil
+}
+
+// answerWaiting resolves a prompt whose wait ended by timeout or by its
+// request's cancellation: an answer already waiting is handled as answer
+// handles it, so an operator's rejection is not lost to a cancellation or a
+// timeout that came at the same moment; otherwise ended decides.
+func (c *Coordinator) answerWaiting(promptID string, epoch uint64, responseChan chan SignResponse, ended func() (SignResponse, error)) (SignResponse, error) {
+	select {
+	case response, ok := <-responseChan:
+		if ok {
+			return c.answer(promptID, epoch, response)
+		}
+	default:
+	}
+	return ended()
 }
 
 // newPromptID returns an unguessable, single-use ID for one approval prompt.

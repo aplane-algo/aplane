@@ -13,6 +13,7 @@ import (
 const (
 	SignRequestCancelReasonClientCanceled = protocol.SignRequestCancelReasonClientCanceled
 	SignRequestCancelReasonTimeout        = protocol.SignRequestCancelReasonTimeout
+	SignRequestCancelReasonSessionEnded   = protocol.SignRequestCancelReasonSessionEnded
 )
 
 // SignRequestCancelState describes the result of a sign-request cancellation.
@@ -88,6 +89,10 @@ type SignResponse struct {
 	Approved          bool
 	Reason            string
 	ApproverPrincipal string
+	// withdrawn marks a response the coordinator sent to end the request
+	// (a cancellation), as opposed to an operator's answer; only this
+	// package can set it.
+	withdrawn bool
 }
 
 // ClientEnrollmentRequest tells the operator that a client's enrollment

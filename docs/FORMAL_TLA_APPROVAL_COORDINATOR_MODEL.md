@@ -36,7 +36,17 @@ single-product runtime has no identity-decommission drain, so the model has no
 corresponding state or fairness assumption. Daemon shutdown is not a fail-all
 either: it cancels every HTTP request context (`daemon/http_runtime.go::stopHTTPServer`,
 `TestStopHTTPServerCancelsParkedRequests`), so each parked request ends through
-the model's `Cancel` action.
+the model's `Cancel` action. A session end is not a fail-all either: a lock,
+an entry into recovery, the start of store maintenance and a losing unlock
+call `EndSessionSignRequests` (`productruntime.Runtime.endSignRequests`, from
+the lock cleanup before its drain, or directly on recovery), which ends every
+approval wait in flight, queued or delivered, by a session epoch; each ends
+through `Cancel`. The model's `Approve` and `Reject` are the request reading
+the operator's answer, not `HandleSignResponse` delivering it: a session end
+in between turns a delivered approval into `Cancel`, and leaves a rejection
+as `Reject`. An explicit lock no longer calls
+`FailAllPendingRequests`, so the fail-all callers are disconnect and
+displacement.
 
 Run both inventories with:
 

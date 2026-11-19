@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
@@ -109,6 +110,10 @@ func newRotatingLockFixture(t *testing.T) *rotatingLockFixture {
 	account, secret := installRotatingKey(t, server)
 	node.set("", 100)
 	ir.Config().SetUserAutoApprove(true)
+	if ir.Approval() == nil {
+		// A coordinator, so a request registers as it does in production.
+		ir.SetApprovalCoordinator(signerapproval.New(func() bool { return false }, nil, nil))
+	}
 	fx := &rotatingLockFixture{
 		ir:      ir,
 		svc:     server.newSigningServiceWithAudit(ir, &signingAuditLogger{log: server.auditLog}),
@@ -169,7 +174,11 @@ func TestLockWaitsForEveryRotatingSeedLoad(t *testing.T) {
 			t.Fatalf("prepare: %v", err)
 		}
 		return func(session *keystore.KeySession) *signersigning.ServiceError {
-			_, err := fx.svc.SignRotatingWithContext(context.Background(), signerapi.RotatingSignRequest{
+			// Registered as rest.SignRotating registers it, so a lock that
+			// ended the request's own context would answer canceled here.
+			ctx, finish := fx.ir.BeginSigningRequest(context.Background(), "rotating-lock-sign")
+			defer finish()
+			_, err := fx.svc.SignRotatingWithContext(ctx, signerapi.RotatingSignRequest{
 				Account: fx.account.String(), Transactions: prep.Transactions,
 			}, session)
 			return err

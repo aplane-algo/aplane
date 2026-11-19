@@ -5,6 +5,8 @@ package signing
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -817,5 +819,28 @@ func TestApprovalHidesTheMethodLabelWhenTheFirstArgIsNotJustTheSelector(t *testi
 	}
 	if !strings.Contains(desc, abiLabelMismatchLine) {
 		t.Fatalf("the review does not say a method label was offered and did not match:\n%s", desc)
+	}
+}
+
+// An approval withdrawn because the signer's session ended answers locked,
+// so the client sends it again, and is audited as withdrawn, not as an
+// operator rejection or a timeout.
+func TestRequestSingleTxnApprovalWithdrawnBySessionEndAnswersLocked(t *testing.T) {
+	audit := &testAuditLogger{}
+	svc := &ApprovalService{
+		AuditLog:       audit,
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
+		RequestSigningApprovalPrompt: func(context.Context, signerapproval.Prompt, time.Duration) (signerapproval.SignResponse, error) {
+			return signerapproval.SignResponse{}, fmt.Errorf("%w: %w", signerapproval.ErrApprovalCanceled, signerapproval.ErrSessionEnded)
+		},
+	}
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, "", nil)
+	if err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("error = %+v, want a locked error", err)
+	}
+	if len(audit.rejected) != 1 || audit.rejected[0].reason != "approval_withdrawn_session_ended" {
+		t.Fatalf("audit = %+v, want one approval_withdrawn_session_ended rejection", audit.rejected)
 	}
 }

@@ -383,9 +383,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// The session the request runs in, read before anything is decided for
 	// it: the plan, the policy verdict and the approval below all belong to
 	// this session, and the final check withholds the signature if it has
-	// ended by then. A lock fails a pending approval itself; an entry into
-	// recovery does not, and a reconcile can have the signer unlocked again
-	// before the operator answers.
+	// ended by then. A session end withdraws a pending approval, but a
+	// reconcile can have the signer unlocked again before a withdrawn
+	// request returns, so the session read is what decides.
 	var lockGeneration uint64
 	if deps.LockGeneration != nil {
 		lockGeneration = deps.LockGeneration()

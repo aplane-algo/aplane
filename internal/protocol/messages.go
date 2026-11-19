@@ -230,6 +230,11 @@ const (
 
 	// SignRequestCancelReasonTimeout means apsigner's approval wait expired.
 	SignRequestCancelReasonTimeout = "timeout"
+
+	// SignRequestCancelReasonSessionEnded means the signer's session ended
+	// while the request waited: it locked, entered recovery, or began store
+	// maintenance. A request from the ended session can no longer sign.
+	SignRequestCancelReasonSessionEnded = "session_ended"
 )
 
 // AuthResultMessage is sent back after an authentication attempt
