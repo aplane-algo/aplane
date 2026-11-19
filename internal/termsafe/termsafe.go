@@ -7,7 +7,7 @@
 // disk or a plugin's log line, may hold terminal control sequences: printed as
 // is, a name holding ESC [2J clears the screen, and bidirectional controls can
 // make one name look like another. These functions show every non-printing
-// character and every invalid UTF-8 byte as a Go escape (\x1b, ‮, \xff)
+// character and every invalid UTF-8 byte as a Go escape (\x1b, \u202e, \xff)
 // instead, so it is seen rather than acted on. Only the display changes; the
 // program keeps and uses the original text.
 package termsafe
