@@ -7,9 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunPassphraseCommand(t *testing.T) {
@@ -322,6 +324,78 @@ func TestWritePassphrase(t *testing.T) {
 			t.Fatalf("expected command failed error, got %q", err.Error())
 		}
 	})
+}
+
+// writeHelper writes an executable helper script and returns its path.
+func writeHelper(t *testing.T, script string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "helper.sh")
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A helper that prints a passphrase and exits 0, but leaves a background
+// process holding its stdout, fails promptly and says so: that output is not
+// settled, and the helper must not be reported as having timed out.
+func TestRunPassphraseCommandHelperLeavesStdoutOpen(t *testing.T) {
+	helper := writeHelper(t, "#!/bin/sh\nsleep 9 &\necho mysecret\n")
+	start := time.Now()
+	got, err := RunPassphraseCommand(&PassphraseCommandConfig{Argv: []string{helper}}, nil)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatalf("RunPassphraseCommand() = %q, want an error for the held stdout", got)
+	}
+	if !strings.Contains(err.Error(), "kept its stdout open") {
+		t.Fatalf("RunPassphraseCommand() error = %q, want it to name the held stdout", err)
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("RunPassphraseCommand() took %v, want about a second", elapsed)
+	}
+}
+
+// stderr is discarded, so a background process that keeps only stderr open
+// changes nothing.
+func TestRunPassphraseCommandIgnoresHeldStderr(t *testing.T) {
+	helper := writeHelper(t, "#!/bin/sh\nsleep 9 >/dev/null &\necho mysecret\n")
+	start := time.Now()
+	got, err := RunPassphraseCommand(&PassphraseCommandConfig{Argv: []string{helper}}, nil)
+	if err != nil {
+		t.Fatalf("RunPassphraseCommand() error = %v", err)
+	}
+	if string(got) != "mysecret" {
+		t.Fatalf("RunPassphraseCommand() = %q, want %q", got, "mysecret")
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("RunPassphraseCommand() took %v, want no wait for stderr", elapsed)
+	}
+}
+
+// A helper that hangs times out on time even when a process it started has
+// left its process group, so the group kill cannot reach it, and holds stdout.
+func TestRunPassphraseCommandTimeoutWithEscapedDescendant(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping timeout test in short mode")
+	}
+	setsid, err := exec.LookPath("setsid")
+	if err != nil {
+		t.Skip("setsid not available")
+	}
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep not available")
+	}
+	helper := writeHelper(t, "#!/bin/sh\n"+setsid+" "+sleep+" 12 &\nsleep 30\n")
+	start := time.Now()
+	_, err = RunPassphraseCommand(&PassphraseCommandConfig{Argv: []string{helper}}, nil)
+	elapsed := time.Since(start)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("RunPassphraseCommand() error = %v, want a timeout", err)
+	}
+	if elapsed > passphraseCommandTimeout+3*time.Second {
+		t.Fatalf("RunPassphraseCommand() took %v, want about %v", elapsed, passphraseCommandTimeout)
+	}
 }
 
 func TestValidateAndResolveArgv(t *testing.T) {
