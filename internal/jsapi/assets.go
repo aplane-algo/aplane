@@ -30,11 +30,11 @@ func (a *API) jsAssetInfo(call goja.FunctionCall) goja.Value {
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
-		"assetId":       info.AssetID,
+		"assetId":       jsUint(info.AssetID),
 		"unitName":      info.UnitName,
 		"name":          info.Name,
-		"decimals":      info.Decimals,
-		"total":         info.Total,
+		"decimals":      jsUint(info.Decimals),
+		"total":         jsUint(info.Total),
 		"creator":       info.Creator,
 		"manager":       info.Manager,
 		"reserve":       info.Reserve,
@@ -53,10 +53,10 @@ func (a *API) jsCachedAssets(call goja.FunctionCall) goja.Value {
 	result := make([]interface{}, len(assets))
 	for i, info := range assets {
 		result[i] = map[string]interface{}{
-			"assetId":  info.AssetID,
+			"assetId":  jsUint(info.AssetID),
 			"unitName": info.UnitName,
 			"name":     info.Name,
-			"decimals": info.Decimals,
+			"decimals": jsUint(info.Decimals),
 		}
 	}
 	return a.runtime.ToValue(result)
@@ -74,10 +74,10 @@ func (a *API) jsCacheAsset(call goja.FunctionCall) goja.Value {
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
-		"assetId":  info.AssetID,
+		"assetId":  jsUint(info.AssetID),
 		"unitName": info.UnitName,
 		"name":     info.Name,
-		"decimals": info.Decimals,
+		"decimals": jsUint(info.Decimals),
 	})
 }
 
@@ -128,5 +128,5 @@ func (a *API) jsGetAsaId(call goja.FunctionCall) goja.Value {
 		return goja.Null()
 	}
 
-	return a.runtime.ToValue(assetID)
+	return a.runtime.ToValue(jsUint(assetID))
 }

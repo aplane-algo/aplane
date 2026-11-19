@@ -101,6 +101,15 @@ strings such as `'0x10'` or `'1e6'` are errors, and so is a whole number past
 `Number.MAX_SAFE_INTEGER`, which JavaScript has already rounded; pass a
 `BigInt` or a decimal string for those.
 
+Whole numbers come back by the same rule. One past `Number.MAX_SAFE_INTEGER`,
+such as the balance of a token with a large supply (`balance().assets`,
+`assetInfo().total`) or a large `uint` in app state, is returned as a
+`BigInt`, so it keeps its value and can be passed back as an amount, ID or
+ABI argument. Smaller numbers are ordinary numbers, so the type of a field
+can differ between two calls. A `BigInt` does not mix with numbers in
+arithmetic (`v + 1n`, not `v + 1`; `Number(v)` rounds it), and
+`JSON.stringify()` refuses one; use `String(v)` to print it.
+
 Where a name is expected (an address, alias, asset or method), `undefined`
 and `null` are errors, not the words "undefined" and "null". A list of
 addresses must hold only strings. An option of the wrong type, such as
@@ -656,13 +665,6 @@ A plan that passes is returned as the signer sent it.
 | `appBoxes(appId)` | Box list |
 
 `boxName` accepts the byte formats described in [Conventions](#conventions).
-
-A whole number in these results that JavaScript cannot hold exactly, past
-`Number.MAX_SAFE_INTEGER`, such as a large `uint` in global or local state,
-comes back as a `BigInt`, so it keeps its value and can be passed back as an
-amount, ID or ABI argument. Smaller numbers are ordinary numbers. A `BigInt`
-does not mix with numbers in arithmetic (`v + 1n`, not `v + 1`), and
-`JSON.stringify()` refuses one; use `String(v)` to print it.
 
 ### Deploy
 

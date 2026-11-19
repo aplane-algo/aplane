@@ -88,7 +88,7 @@ func makeAlgoFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 		if err != nil {
 			panic(vm.ToValue(fmt.Sprintf("algo() invalid amount: %v", err)))
 		}
-		return vm.ToValue(microAlgos)
+		return vm.ToValue(jsUint(microAlgos))
 	}
 }
 
@@ -101,7 +101,7 @@ func makeMicroalgosFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Valu
 		}
 
 		val := toUint64(vm, call.Arguments[0])
-		return vm.ToValue(val)
+		return vm.ToValue(jsUint(val))
 	}
 }
 
@@ -187,11 +187,8 @@ func (a *API) objectArg(call goja.FunctionCall, argIndex int, funcName string) m
 }
 
 // toJSObject converts a Go value into a JSON-compatible JavaScript object,
-// keyed by the value's JSON field names. Whole numbers keep their exact
-// value, so a script can pass one back: one JavaScript holds exactly becomes
-// a number, and one past Number.MAX_SAFE_INTEGER (an app-state uint, say)
-// becomes a BigInt. Decoding into float64, as a plain json.Unmarshal does,
-// would round it, and the API refuses the rounded number when it comes back.
+// keyed by the value's JSON field names. Its whole numbers go through
+// jsWhole, as every whole number the API returns does.
 func (a *API) toJSObject(v interface{}) goja.Value {
 	encoded, err := json.Marshal(v)
 	if err != nil {
@@ -212,18 +209,35 @@ func (a *API) toJSObject(v interface{}) goja.Value {
 	return a.runtime.ToValue(converted)
 }
 
+// jsUint is a uint64 as the API returns it to a script; see jsWhole.
+func jsUint(v uint64) interface{} {
+	if v <= maxSafeJSInteger {
+		return int64(v)
+	}
+	return new(big.Int).SetUint64(v)
+}
+
+// jsWhole is a whole number as the API returns it to a script: a number when
+// JavaScript holds it exactly, and a *big.Int (a BigInt in the script) past
+// Number.MAX_SAFE_INTEGER, so it keeps its value and the API accepts it when
+// the script passes it back. A number would be rounded there: goja itself
+// turns an int64 past 2^53 into a float.
+func jsWhole(v *big.Int) interface{} {
+	if v.IsInt64() {
+		if i := v.Int64(); i >= -maxSafeJSInteger && i <= maxSafeJSInteger {
+			return i
+		}
+	}
+	return v
+}
+
 // exactJSONNumbers replaces each json.Number in a decoded JSON value, in
-// place: a whole number JavaScript holds exactly with an int64, a larger one
-// with a *big.Int (a BigInt in the script), and any other number with a
-// float64.
+// place: a whole number with jsWhole, and any other number with a float64.
 func exactJSONNumbers(v interface{}) (interface{}, error) {
 	switch value := v.(type) {
 	case json.Number:
-		if i, err := value.Int64(); err == nil && i >= -maxSafeJSInteger && i <= maxSafeJSInteger {
-			return i, nil
-		}
 		if whole, ok := new(big.Int).SetString(value.String(), 10); ok {
-			return whole, nil
+			return jsWhole(whole), nil
 		}
 		f, err := value.Float64()
 		if err != nil {
