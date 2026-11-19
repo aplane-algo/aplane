@@ -349,3 +349,34 @@ func TestRotateWithAnUnreadableRootSaysTheNewPassphraseMayBeInEffect(t *testing.
 		kr.Zero()
 	}
 }
+
+// A store whose selected generation grew past the quarantine candidate limits
+// in place is refused before the outgoing seal reads and hashes all of it.
+func TestRotateRefusesAnOverLimitGenerationBeforeSealing(t *testing.T) {
+	fixture := newRotateFixture(t)
+	active := fixture.paths.GenerationPaths(rotateFirstGeneration)
+	// A sparse member one byte over the 64 MiB per-file limit.
+	big := filepath.Join(active.KeysDir(), "OVERSIZED.key")
+	if err := os.WriteFile(big, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(big, 64<<20+1); err != nil {
+		t.Fatal(err)
+	}
+	before, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Rotate(fixture.paths, fixture.oldPassphrase, []byte("new-store-passphrase"), RotateOptions{})
+	if err == nil || !strings.Contains(err.Error(), "holds more than one generation may") {
+		t.Fatalf("Rotate error = %v, want the size refusal", err)
+	}
+	if _, err := os.Lstat(active.SealPath()); !os.IsNotExist(err) {
+		t.Fatalf("outgoing seal after the refusal: %v, want none written", err)
+	}
+	after, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("the refused passphrase change replaced the store root")
+	}
+}

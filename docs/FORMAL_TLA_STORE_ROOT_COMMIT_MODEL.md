@@ -77,6 +77,26 @@ silently stop being load-bearing.
   parsing, and filesystem sync behavior are covered by `internal/genstore`,
   `internal/crypto`, and the store integration/crash harnesses
   (`make store-lifecycle-test`, `make store-crash-test`).
+- Sizes are not modeled. `ReconcileOldRoot` is enabled for every durable
+  publication under the old root, which assumes classification succeeds; the
+  code makes that hold by construction for what a mint publishes, without a
+  model guard. One size rule, the quarantine candidate limits
+  (`internal/genstore/quarantine.go::measureGenerationTree`), sizes a
+  candidate before classification reads it, sizes each quarantined
+  generation in quarantine accounting, and sizes the staged tree in `Mint`
+  before publication, which refuses a tree that breaks it; before staging,
+  `Mint` and `storepass.Rotate` also refuse a selected generation already
+  too large for a successor (`RequireSuccessorFits`). A refused mint
+  never takes `Publish`, a behavior the model already has (a run that stays
+  at `Init`), so the refusal adds and removes no modeled transition. The
+  branch where classification refuses a candidate and leaves it in place
+  (a formerly selected generation that grew past the limits before an older
+  root was restored, or damage) is not modeled either, nor is the
+  operator's explicit removal of such a directory
+  (`internal/genstore/quarantine.go::DiscardAbandoned`) or of a quarantine
+  entry (`PruneQuarantined`); neither has a size limit. These are
+  availability properties: S13 and S14 hold whether a candidate is
+  quarantined, preserved, or removed by the operator.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.

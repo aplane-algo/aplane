@@ -32,8 +32,9 @@ func TestClassifyQuarantineCandidateRecordsExactAtMintMatch(t *testing.T) {
 	if !candidate.AtMintInventoryMatch {
 		t.Fatal("exact at-mint publication classified as diverged")
 	}
-	if candidate.EntryCount != 6 {
-		t.Fatalf("EntryCount = %d, want manifest plus five authority members", candidate.EntryCount)
+	// The manifest, five members, and the seven namespace directories.
+	if candidate.EntryCount != 13 {
+		t.Fatalf("EntryCount = %d, want every path in the generation tree", candidate.EntryCount)
 	}
 	if candidate.ManifestSHA256 == "" || candidate.LiveInventorySHA256 == "" {
 		t.Fatalf("candidate digests are incomplete: %#v", candidate)

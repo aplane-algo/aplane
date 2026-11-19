@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -56,6 +57,152 @@ func TestCmdRebuildRejectsExistingIdentityBeforePrompt(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "rebuild requires a missing identity directory") {
 		t.Fatalf("cmdRebuild() error = %v, want missing identity rule", err)
+	}
+}
+
+// writeSignerRebuildArchiveForTest seals a one-key signer backup archive and
+// returns its path and the key's address.
+func writeSignerRebuildArchiveForTest(t *testing.T) (string, string) {
+	t.Helper()
+	backupRoot := t.TempDir()
+	address, keyJSON := testEd25519KeyJSON(t)
+	if err := writeStandaloneBackup(filepath.Join(backupRoot, "apb"), address, keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackup() error = %v", err)
+	}
+	if err := backup.WriteReadme(backupRoot); err != nil {
+		t.Fatalf("WriteReadme() error = %v", err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "rebuild.tar.gz")
+	sealTestArchive(t, backupRoot, noderole.RoleSigner)
+	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
+		t.Fatalf("CreateTarGzArchive() error = %v", err)
+	}
+	return archivePath, address
+}
+
+// A node role file left at the data root, by the store being replaced or by
+// an earlier failed rebuild, is refused before the first prompt.
+func TestCmdRebuildRejectsExistingNodeRoleBeforePrompt(t *testing.T) {
+	RegisterProviders()
+
+	oldDataDirectory := dataDirectory
+	oldReader := stdinReader
+	dataDirectory = t.TempDir()
+	stdinReader = nil
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	defer func() {
+		dataDirectory = oldDataDirectory
+		stdinReader = oldReader
+	}()
+
+	archivePath, address := writeSignerRebuildArchiveForTest(t)
+	leftover := []byte("left by an earlier store\n")
+	if err := os.WriteFile(keystorePaths().NodeRolePath(), leftover, 0o600); err != nil {
+		t.Fatalf("write node role: %v", err)
+	}
+
+	// No input: reaching a prompt fails differently.
+	err := withTestStdin("", func() error {
+		return cmdRebuild([]string{archivePath, "--address", address})
+	})
+	if err == nil || !strings.Contains(err.Error(), "rebuild requires a missing node role file") {
+		t.Fatalf("cmdRebuild() error = %v, want the node role refusal", err)
+	}
+	if got, err := os.ReadFile(keystorePaths().NodeRolePath()); err != nil || string(got) != string(leftover) {
+		t.Fatalf("node role file = %q, %v; want it untouched", got, err)
+	}
+}
+
+// A rebuild whose mint fails before it commits removes the node role file it
+// wrote, so a retry after moving the identity directory aside succeeds.
+func TestCmdRebuildRemovesItsNodeRoleWhenTheMintFails(t *testing.T) {
+	RegisterProviders()
+
+	oldDataDirectory := dataDirectory
+	oldReader := stdinReader
+	dataDirectory = t.TempDir()
+	stdinReader = nil
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	defer func() {
+		dataDirectory = oldDataDirectory
+		stdinReader = oldReader
+	}()
+
+	archivePath, address := writeSignerRebuildArchiveForTest(t)
+	missing, _ := testEd25519KeyJSON(t) // a key the archive does not hold
+	const input = "export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n"
+
+	err := withTestStdin(input, func() error {
+		return cmdRebuild([]string{archivePath, "--address", missing})
+	})
+	if err == nil || !strings.Contains(err.Error(), "nothing was committed") {
+		t.Fatalf("cmdRebuild(missing address) error = %v, want a failure before commit", err)
+	}
+	if _, err := os.Lstat(keystorePaths().NodeRolePath()); !os.IsNotExist(err) {
+		t.Fatalf("node role file after a failed rebuild: %v, want it removed", err)
+	}
+
+	// The operator moves the identity directory aside, as the refusal says.
+	if err := os.Rename(keystorePaths().ProductDir(), filepath.Join(dataDirectory, "identity-aside")); err != nil {
+		t.Fatalf("move identity directory aside: %v", err)
+	}
+	if err := withTestStdin(input, func() error {
+		return cmdRebuild([]string{archivePath, "--address", address})
+	}); err != nil {
+		t.Fatalf("cmdRebuild(retry) error = %v", err)
+	}
+	if !apcrypto.StoreRootExistsIn(keystorePaths().KeystoreMetadataDir()) {
+		t.Fatal("store root missing after the retried rebuild")
+	}
+}
+
+// A rebuild whose store root became visible but could not be made durable
+// may have committed: it keeps the node role file the new root's generation
+// needs, and says so.
+func TestCmdRebuildKeepsItsNodeRoleWhenTheCommitIsUncertain(t *testing.T) {
+	RegisterProviders()
+
+	oldDataDirectory := dataDirectory
+	oldReader := stdinReader
+	dataDirectory = t.TempDir()
+	stdinReader = nil
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	defer func() {
+		dataDirectory = oldDataDirectory
+		stdinReader = oldReader
+	}()
+
+	archivePath, address := writeSignerRebuildArchiveForTest(t)
+	paths := keystorePaths()
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == paths.ProductDir() {
+			if _, err := os.Stat(paths.StoreRootPath()); err == nil {
+				return errors.New("simulated identity-directory sync failure")
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	err := withTestStdin("export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n", func() error {
+		return cmdRebuild([]string{archivePath, "--address", address})
+	})
+	fsutil.TestHook = nil
+	if err == nil || !strings.Contains(err.Error(), "rebuild may have committed") {
+		t.Fatalf("cmdRebuild() error = %v, want the may-have-committed error", err)
+	}
+	if _, statErr := os.Stat(paths.NodeRolePath()); statErr != nil {
+		t.Fatalf("node role file after an uncertain rebuild commit: %v, want it kept", statErr)
+	}
+	// The root that may have landed selects a generation whose node role
+	// sidecar authenticates exactly the kept file.
+	active, kr, err := genstore.ResolveStoreRoot(paths, []byte("new-store-passphrase"))
+	if err != nil {
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
+	}
+	defer kr.Zero()
+	if _, err := noderole.LoadAndVerifyGenerationWithKeyring(paths, active, kr); err != nil {
+		t.Fatalf("kept node role does not verify against the committed generation: %v", err)
 	}
 }
 

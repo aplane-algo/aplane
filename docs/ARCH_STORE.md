@@ -544,11 +544,14 @@ mint.
 The commit order is:
 
 1. acquire the store mutation lock and any maintenance fence;
-2. freshly authenticate the root and selected generation;
+2. freshly authenticate the root and selected generation, and refuse a
+   selected generation too large for any successor to fit the quarantine
+   candidate limits;
 3. create a private `.staging-<gen-id>` directory;
 4. independently copy the parent, or construct an authorized empty successor;
 5. apply the transaction and validate the complete namespace;
-6. write the complete manifest and sync the staging tree bottom-up;
+6. write the complete manifest, check the staged tree against the quarantine
+   candidate limits, and sync the staging tree bottom-up;
 7. rename staging to `generations/<gen-id>` and sync `generations/`;
 8. write and sync the outgoing generation seal;
 9. durably replace `store-root.enc` once;
@@ -638,6 +641,46 @@ regular-file-only layout, bounded enumeration, and live inventory digests.
 At-mint mismatch is recorded but is not a veto because a formerly selected
 generation may have legitimate post-mint mutations.
 
+Bounded enumeration is one size rule, the quarantine candidate limits. It
+counts every path below the generation directory, files and directories
+alike, and every regular file's bytes: at most 65,536 entries, 512 MiB in
+all, and 64 MiB for any one file. Classification applies it before reading
+anything, quarantine accounting applies the same rule to each quarantined
+generation, and every mint applies it to its staged tree before publishing
+and refuses a successor that breaks it. A publication that a failed or
+crashed mint leaves behind therefore always fits quarantine, and the mint
+preflight's reserve of one maximum candidate covers it. The entry limit sits
+above the documented count caps (8,192 cosigner credentials with their public
+sidecars, 8,192 per-key policy documents with their sidecars, a full deleted
+archive), and the byte limit leaves as much again as a full deleted archive
+for live state. Ordinary key mutations do not mint, so a selected generation
+can grow past the limits in place; its next mint is refused until keys are
+deleted and pruned from the deleted archive. If an older root is restored, a
+formerly selected generation past the limits stays where it is, and only
+abandoned discard (below) removes it.
+
+**Supported store size.** The supported size is 8,192 keys, each with a
+policy document of its own, beside a full deleted archive: account keys on a
+signer, cosigner credentials on a cosigner (where 8,192 is also a hard cap).
+That fits the limits with room for key files of up to about 25 KB (Falcon key
+files are 11 to 24 KB) and policy documents of a few KB. Signer account keys
+have no hard cap: key generation and import add to the selected generation in
+place and do not check the limits. A store past them keeps signing, but every
+operation that commits a new generation (passphrase change, policy apply, ASA
+set changes, restore and its rollback) is refused, because its new generation
+would not fit quarantine. On a signer the byte limit binds somewhere between
+about 10,000 and 45,000 keys, depending on the key type, per-key policies and
+how full the deleted archive is.
+
+The staged-tree check is the authority. Before staging, a mint (and a
+passphrase change, before it seals) also measures the selected generation as
+a successor would copy it, without its seal and with one manifest
+(`genstore.RequireSuccessorFits`), and refuses at once when that already
+breaks the rule, naming the remedy; an over-limit store is then not copied,
+re-encrypted and validated on every attempt. A mint that would itself shrink
+the generation is refused the same way. Deleting keys and then pruning them
+from the deleted archive, which do not mint, bring it back under.
+
 Available term validation is classification, not authority. Known-term checks
 are recorded as `verified` or `failed`; a member whose term is absent from the
 current keyring is `term_unavailable`. All remain relocatable when structural
@@ -650,13 +693,23 @@ operator remediation. Quarantine capacity overflow behaves the same way.
 Explicit removal of an in-place unvalidatable final directory uses the
 separate `identity.generation.abandoned.discard` action, explicit confirmation,
 and a durable intent audit. It refuses current, rollback-parent, and sealed
-generation state.
+generation state. Discard applies no size limit and refuses nothing inside its
+target, since it exists for the directories that broke the limits or the
+layout; it renames and removes, following no link. Such a directory can be
+newer state orphaned by restoring an older root, which reconciliation
+preserves and never deletes, holding the only copy of keys created after that
+root, so the operator copies it out of the store before discarding it. If
+it crossed a passphrase change, recovering those keys also needs the newer
+store root, as below.
 
 Eligible candidates are atomically renamed to
 `quarantine/generations/<gen-id>` and both parent directories are synced.
-Quarantine is bounded to eight generations and 1 GiB. Live pruning requires
+Quarantine is bounded to eight generations and 1 GiB, twice the candidate
+byte limit, so one maximum-sized candidate still leaves the next mint its
+reserve. Live pruning requires
 the stable `identity.generation.quarantine.prune` action, explicit
-confirmation, and durable intent audit before deletion.
+confirmation, and durable intent audit before deletion. Like discard, prune
+applies no size limit.
 
 A crashed changepass before root replacement can leave its complete successor
 in quarantine. That ciphertext is non-authoritative; a later changepass remains
@@ -2049,7 +2102,10 @@ policy under which restored authority runs.
 ### Offline rebuild
 
 `apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]` remains the rescue
-path for an absent product store. It applies the same credential validation
+path for an absent product store. Before its first prompt it refuses an existing
+identity directory or root `node.yaml`. It writes `node.yaml` before the mint and
+removes it again when the mint fails before commit; after an uncertain commit
+it keeps the file, since the root may select the new generation. It applies the same credential validation
 and credential-only semantics into a newly staged first generation. `--address` limits the rebuild to the
 selected credentials; without it every `.apb` payload is restored. The sealed
 manifest source role supplies the default role. An explicit `--role` overrides

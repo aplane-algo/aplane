@@ -95,6 +95,11 @@ func Rotate(
 	if len(preview.DiscardedStaging) != 0 || len(preview.Quarantined) != 0 || preview.RetainedUnsealedParent != "" {
 		return result, fmt.Errorf("passphrase change requires a reconciled generation store")
 	}
+	// Mint checks this too, but only after the seal below has read and
+	// hashed the whole generation.
+	if err := genstore.RequireSuccessorFits(active); err != nil {
+		return result, fmt.Errorf("passphrase change: %w", err)
+	}
 
 	now := time.Now()
 	logf(opts.Logf, "freezing selected generation %s", active.GenerationID())

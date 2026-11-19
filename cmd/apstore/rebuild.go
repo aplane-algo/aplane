@@ -61,6 +61,15 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to inspect identity directory: %w", err)
 	}
+	// The node role file sits at the data root, outside the identity
+	// directory, and rebuild writes a fresh one. Refuse a leftover here, not
+	// after every prompt and the deep verify.
+	nodeRolePath := keystorePaths().NodeRolePath()
+	if _, err := os.Lstat(nodeRolePath); err == nil {
+		return fmt.Errorf("rebuild requires a missing node role file; move or archive it with the identity directory first: %s", nodeRolePath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to inspect node role file: %w", err)
+	}
 	if !backup.IsArchivePath(source) {
 		return fmt.Errorf("rebuild source must end in .tar.gz or .tgz: %s", source)
 	}
@@ -131,6 +140,17 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	if err != nil {
 		return err
 	}
+	// Until the mint may have committed, the node role file belongs to this
+	// attempt alone: remove it on failure so a retry is not refused by it.
+	keepNodeRole := false
+	defer func() {
+		if keepNodeRole {
+			return
+		}
+		if err := os.Remove(nodeRolePath); err != nil && !os.IsNotExist(err) {
+			logWarnf("failed to remove the node role file this rebuild wrote; remove it before retrying: %v", err)
+		}
+	}()
 	generationID, err := genstore.NewGenerationID(time.Now())
 	if err != nil {
 		return err
@@ -167,10 +187,14 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		},
 	}); err != nil {
 		if genstore.RootCommitUncertain(err) {
+			// The root may select the new generation, which needs the
+			// node role file.
+			keepNodeRole = true
 			return fmt.Errorf("rebuild may have committed; unlock the signer to check: %w", err)
 		}
 		return fmt.Errorf("rebuild failed; nothing was committed: %w", err)
 	}
+	keepNodeRole = true
 	if hints, err := backup.LoadRebuildHints(sourceRoot, addresses, exportPassphrase); err != nil {
 		logWarnf("optional rotation hints were not restored: %v", err)
 	} else {

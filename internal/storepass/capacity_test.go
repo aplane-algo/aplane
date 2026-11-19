@@ -83,7 +83,7 @@ func TestDeletedArchiveReleaseCapacity(t *testing.T) {
 	scratch := storepaths.StagedGenerationPaths("gen-1785200001-00000002", scratchRoot)
 	for _, dir := range []string{
 		scratch.KeysDir(), scratch.KeyTypeRecordsDir(), scratch.DeletedKeysDir(),
-		scratch.DeletedKeyTypeRecordsDir(),
+		scratch.DeletedKeyTypeRecordsDir(), scratch.PoliciesDir(), scratch.DeletedPoliciesDir(),
 	} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
