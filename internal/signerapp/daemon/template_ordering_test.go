@@ -82,8 +82,8 @@ teal: |
 	// Standalone key metadata lets key inventory classify and expose signing args
 	// before the matching template has been registered for generation.
 	ks := ir.KeyStore()
-	if err := ks.Scan(nil); err != nil {
-		t.Fatalf("keyStore.Scan(nil) error = %v", err)
+	if err := ks.Scan(); err != nil {
+		t.Fatalf("keyStore.Scan() error = %v", err)
 	}
 	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 

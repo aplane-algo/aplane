@@ -24,8 +24,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// ErrMissingLogicSigSaltCounter indicates a LogicSig key file predates the
-// off-curve address invariant and cannot be safely loaded.
+// ErrMissingLogicSigSaltCounter indicates a manual-counter LogicSig key file
+// without the salt_counter that records how its address was made off-curve.
 var ErrMissingLogicSigSaltCounter = errors.New("logic sig key file missing salt_counter")
 
 // ErrLogicSigAddressOnCurve indicates a stored LogicSig key file whose bytecode
@@ -119,10 +119,8 @@ func incompatibleKeyFormatErr(detail error) error {
 // avoiding the need to re-decrypt keys for /keys API or signing budget calculation.
 type KeyScanInfo struct {
 	KeyFile                string // Path to the key file
-	KeyType                string // Key type (ed25519, aplane.falcon1024.v1, timelock-v3, etc.)
+	KeyType                string // Key type (ed25519, aplane.falcon1024.v1, aplane.htlc.v1, etc.)
 	Category               string // Key category from the key file, if present
-	PQScheme               string
-	PQAddressSalt          *byte
 	LogicSigResources      *lsigresource.Profile
 	PublicKeyHex           string // Hex-encoded public key (for /keys API)
 	BaseKeyType            string // Base DSA key type used for signing metadata, if present
@@ -437,8 +435,6 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 			KeyFile:                keyFile,
 			KeyType:                keyType,
 			Category:               category,
-			PQScheme:               signingMeta.PQScheme,
-			PQAddressSalt:          cloneBytePtr(signingMeta.PQAddressSalt),
 			LogicSigResources:      logicSigResources,
 			PublicKeyHex:           publicKeyHex,
 			BaseKeyType:            signingMeta.BaseKeyType,

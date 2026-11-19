@@ -28,9 +28,8 @@ func SaveNewPayload(paths storepaths.Paths, payload *Payload, validRekeyTarget b
 	return SaveNewPayloadActive(active, payload, validRekeyTarget, kr)
 }
 
-// SaveNewPayloadActive is SaveNewPayload against resolved active-store paths
-// authenticated generation; the caller resolved the layout once for the
-// whole operation.
+// SaveNewPayloadActive is SaveNewPayload against an active generation the
+// caller already resolved, once for the whole operation.
 func SaveNewPayloadActive(active storepaths.ActivePaths, payload *Payload, validRekeyTarget bool, kr *crypto.Keyring) (*ImportKeyResult, error) {
 	if kr == nil {
 		return nil, fmt.Errorf("an open keyring is required to save a key file")

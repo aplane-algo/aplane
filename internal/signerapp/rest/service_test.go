@@ -154,7 +154,7 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 
 func reloadKeysForTest(ir *productruntime.Runtime, _ storepaths.Paths) error {
 	ks := ir.KeyStore()
-	if err := ks.Scan(nil); err != nil {
+	if err := ks.Scan(); err != nil {
 		return err
 	}
 	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())

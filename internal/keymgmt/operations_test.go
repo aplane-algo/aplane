@@ -43,12 +43,12 @@ func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 	paths = genstoretest.MintFirst(t, paths)
 	paths = genstoretest.MintFirst(t, paths)
 
-	_, err := GenerateKey(paths, "", nil, nil)
+	_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "", nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "key type must be specified") {
 		t.Fatalf("GenerateKey(empty) error = %v, want missing key type", err)
 	}
 
-	_, err = GenerateKey(paths, "not-a-real-key-type", nil, nil)
+	_, err = GenerateKeyWithActivatedContext(context.Background(), paths, "not-a-real-key-type", nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid key type") {
 		t.Fatalf("GenerateKey(invalid) error = %v, want invalid key type", err)
 	}
@@ -59,7 +59,7 @@ func TestImportKeyRejectsInvalidType(t *testing.T) {
 	paths = genstoretest.MintFirst(t, paths)
 	paths = genstoretest.MintFirst(t, paths)
 
-	_, err := ImportKey(paths, "not-a-real-key-type", "mnemonic words here", nil, nil)
+	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "not-a-real-key-type", "mnemonic words here", nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid key type") {
 		t.Fatalf("ImportKey(invalid) error = %v, want invalid key type", err)
 	}
@@ -110,7 +110,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 	if err != nil {
 		t.Fatalf("FromPrivateKey() error = %v", err)
 	}
-	first, err := ImportKey(paths, "ed25519", words, cryptotest.Keyring(t, masterKey), nil)
+	first, err := ImportKeyWithActivatedContext(context.Background(), paths, "ed25519", words, cryptotest.Keyring(t, masterKey), nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKey(first) error = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 		t.Fatalf("Rename(%q, %q) error = %v", first.KeyFile, duplicatePath, err)
 	}
 
-	second, err := ImportKey(paths, "ed25519", words, cryptotest.Keyring(t, masterKey), nil)
+	second, err := ImportKeyWithActivatedContext(context.Background(), paths, "ed25519", words, cryptotest.Keyring(t, masterKey), nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKey(second) error = %v", err)
 	}
@@ -146,11 +146,11 @@ func TestValidKeyTypesIncludeIdentityActivatedLibraryProvider(t *testing.T) {
 	if !containsKeyType(GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
 		t.Fatal("GetValidKeyTypesWithActivated() did not include activated library provider")
 	}
-	if IsValidKeyType(keyType) {
-		t.Fatal("IsValidKeyType() accepted library-only provider without activation")
+	if isKeyTypeInList(keyType, GetValidKeyTypesWithActivated(nil)) {
+		t.Fatal("valid key types accepted library-only provider without activation")
 	}
-	if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
-		t.Fatal("IsValidKeyTypeWithActivated() rejected activated library provider")
+	if !isKeyTypeInList(keyType, GetValidKeyTypesWithActivated([]string{keyType})) {
+		t.Fatal("valid key types with activation rejected activated library provider")
 	}
 }
 
@@ -164,11 +164,11 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 	if !containsKeyType(GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
 		t.Fatal("GetValidKeyTypesWithActivated() did not include identity-enabled composed provider")
 	}
-	if IsValidKeyType(keyType) {
-		t.Fatal("IsValidKeyType() accepted composed provider without product-store state")
+	if isKeyTypeInList(keyType, GetValidKeyTypesWithActivated(nil)) {
+		t.Fatal("valid key types accepted composed provider without product-store state")
 	}
-	if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
-		t.Fatal("IsValidKeyTypeWithActivated() rejected identity-enabled composed provider")
+	if !isKeyTypeInList(keyType, GetValidKeyTypesWithActivated([]string{keyType})) {
+		t.Fatal("valid key types with activation rejected identity-enabled composed provider")
 	}
 }
 
@@ -176,14 +176,14 @@ func TestValidKeyTypesIncludeCosignerComponentKey(t *testing.T) {
 	if !containsKeyType(GetValidKeyTypes(), witness.Falcon1024V1) {
 		t.Fatalf("GetValidKeyTypes() missing %s", witness.Falcon1024V1)
 	}
-	if !IsValidKeyType(witness.Falcon1024V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", witness.Falcon1024V1)
+	if !isKeyTypeInList(witness.Falcon1024V1, GetValidKeyTypesWithActivated(nil)) {
+		t.Fatalf("valid key types rejected %s", witness.Falcon1024V1)
 	}
 	if !containsKeyType(GetValidKeyTypes(), witness.Falcon1024V1) {
 		t.Fatalf("GetValidKeyTypes() missing %s", witness.Falcon1024V1)
 	}
-	if !IsValidKeyType(witness.Falcon1024V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", witness.Falcon1024V1)
+	if !isKeyTypeInList(witness.Falcon1024V1, GetValidKeyTypesWithActivated(nil)) {
+		t.Fatalf("valid key types rejected %s", witness.Falcon1024V1)
 	}
 }
 
@@ -195,8 +195,8 @@ func TestValidKeyTypesExcludeExternalGovernancePrivateKeys(t *testing.T) {
 		if containsKeyType(GetValidKeyTypes(), keyType) {
 			t.Fatalf("GetValidKeyTypes() exposed signer-local governance key %s", keyType)
 		}
-		if IsValidKeyType(keyType) {
-			t.Fatalf("IsValidKeyType() accepted signer-local governance key %s", keyType)
+		if isKeyTypeInList(keyType, GetValidKeyTypesWithActivated(nil)) {
+			t.Fatalf("valid key types accepted signer-local governance key %s", keyType)
 		}
 	}
 }
@@ -301,7 +301,7 @@ func TestGenerateKeyCosignerComponent(t *testing.T) {
 			paths = genstoretest.MintFirst(t, paths)
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-			result, err := GenerateKey(paths, keyType, cryptotest.Keyring(t, masterKey), nil)
+			result, err := GenerateKeyWithActivatedContext(context.Background(), paths, keyType, cryptotest.Keyring(t, masterKey), nil, nil)
 			if err != nil {
 				t.Fatalf("GenerateKey(component) error = %v", err)
 			}
@@ -310,9 +310,6 @@ func TestGenerateKeyCosignerComponent(t *testing.T) {
 			}
 			if !result.IsWitnessKey {
 				t.Fatal("IsWitnessKey = false, want true")
-			}
-			if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
-				t.Fatalf("IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
 			}
 			if result.PublicKeyHex == "" {
 				t.Fatal("PublicKeyHex is empty")
@@ -459,7 +456,7 @@ func TestDeleteKey(t *testing.T) {
 	}
 
 	deletedKeysDir := filepath.Join(tmpDir, "deleted", "keys")
-	result, err := DeleteKey("TESTADDR", keyFile, deletedKeysDir)
+	result, err := deleteKey("TESTADDR", keyFile, deletedKeysDir)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
@@ -494,7 +491,7 @@ func TestDeleteKeyPreservesCosignerCredentialClass(t *testing.T) {
 	}
 
 	deletedKeysDir := filepath.Join(filepath.Dir(activeKeysDirForKeymgmtTest(t, paths)), "deleted", "keys")
-	result, err := DeleteKey(selector, keyFile, deletedKeysDir)
+	result, err := deleteKey(selector, keyFile, deletedKeysDir)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
@@ -514,7 +511,7 @@ func TestDeleteKey_MissingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := DeleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), filepath.Join(tmpDir, "deleted", "keys"))
+	_, err := deleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), filepath.Join(tmpDir, "deleted", "keys"))
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -542,7 +539,7 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := DeleteKey("TESTADDR", keyFile, deletedDir)
+	_, err := deleteKey("TESTADDR", keyFile, deletedDir)
 	if err == nil || !strings.Contains(err.Error(), "failed to move key file") {
 		t.Fatalf("DeleteKey(rename failure) error = %v, want move failure", err)
 	}

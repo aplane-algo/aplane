@@ -141,7 +141,7 @@ func setupProductRuntimeWithRole(t *testing.T, role noderole.Role) *productrunti
 
 func reloadKeysForTest(ir *productruntime.Runtime, _ storepaths.Paths) error {
 	ks := ir.KeyStore()
-	if err := ks.Scan(nil); err != nil {
+	if err := ks.Scan(); err != nil {
 		return err
 	}
 	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
@@ -210,9 +210,6 @@ func TestServiceGenerateKeyCosignerComponent(t *testing.T) {
 			}
 			if !result.IsWitnessKey {
 				t.Fatal("GenerateKey(component) IsWitnessKey = false, want true")
-			}
-			if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
-				t.Fatalf("GenerateKey(component) IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
 			}
 			if _, err := ir.FindKeyFile(result.Address); err != nil {
 				t.Fatalf("FindKeyFile(%q) error = %v", result.Address, err)

@@ -180,7 +180,7 @@ func TestAtomicFileKeyStoreAuthenticatesFreshRootSelection(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Mint(successor) error = %v", err)
 	}
-	if err := store.Scan(nil); err != nil {
+	if err := store.Scan(); err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
 	active, err = store.ActivePaths()

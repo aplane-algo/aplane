@@ -86,32 +86,17 @@ func (f *FileKeyStore) Unlock(passphrase []byte) error {
 	return nil
 }
 
-// Scan populates the internal cache by scanning the keys directory.
-// If Unlock was already called, the passphrase is ignored and the existing
-// keyring is reused. Otherwise the passphrase is required to open it.
-// Each key is decrypted only once to extract address, type, and path.
-func (f *FileKeyStore) Scan(passphrase []byte) error {
-	f.cacheLock.RLock()
-	unlocked := f.keyring != nil
-	f.cacheLock.RUnlock()
-
-	if !unlocked {
-		if len(passphrase) == 0 {
-			return fmt.Errorf("keystore not unlocked and no passphrase provided")
-		}
-		if err := f.Unlock(passphrase); err != nil {
-			return err
-		}
-	}
-
-	// Re-read and hold RLock through the entire scan to prevent
-	// ClearKeys() from zeroing the terms mid-operation. This also closes the
-	// gap after Unlock returns.
+// Scan populates the internal cache by scanning the keys directory with the
+// keyring Unlock opened. Each key is decrypted only once to extract address,
+// type, and path.
+func (f *FileKeyStore) Scan() error {
+	// Hold RLock through the entire scan to prevent ClearKeys() from zeroing
+	// the terms mid-operation.
 	f.cacheLock.RLock()
 	keyring := f.keyring
 	if keyring == nil {
 		f.cacheLock.RUnlock()
-		return fmt.Errorf("keystore not unlocked after unlock")
+		return fmt.Errorf("keystore not unlocked and no passphrase provided")
 	}
 	// Authenticate a fresh exact root read once per scan, so every reload
 	// after a root commit rebuilds against the newly selected generation.
@@ -121,15 +106,12 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 	}
 	var report *keys.KeyScanReport
 	var err error
-	switch {
-	case selectErr != nil:
+	if selectErr != nil {
 		err = fmt.Errorf("failed to resolve active key store layout: %w", selectErr)
-	default:
-		if validateErr := genstore.ValidateStoreRootSelection(selected); validateErr != nil {
-			err = fmt.Errorf("failed to resolve active key store layout: %w", validateErr)
-		} else if report, err = keys.ScanKeysDirectoryWithKeyringReportActive(selected, keyring); err != nil {
-			err = fmt.Errorf("failed to scan keys directory: %w", err)
-		}
+	} else if validateErr := genstore.ValidateStoreRootSelection(selected); validateErr != nil {
+		err = fmt.Errorf("failed to resolve active key store layout: %w", validateErr)
+	} else if report, err = keys.ScanKeysDirectoryWithKeyringReportActive(selected, keyring); err != nil {
+		err = fmt.Errorf("failed to scan keys directory: %w", err)
 	}
 	f.cacheLock.RUnlock()
 

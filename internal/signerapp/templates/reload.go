@@ -20,7 +20,7 @@ type KeyStore interface {
 	// BindStoreRootSelection binds the generation the store root selects
 	// before reload validates it.
 	BindStoreRootSelection() error
-	Scan(passphrase []byte) error
+	Scan() error
 	GetCache() map[string]string
 	GetKeyTypes() map[string]string
 }
@@ -158,7 +158,7 @@ func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {
 		return nil, fmt.Errorf("failed to register keystore templates: %w", err)
 	}
 
-	if err := s.KeyStore.Scan(nil); err != nil {
+	if err := s.KeyStore.Scan(); err != nil {
 		clearInitializedMasterKey()
 		if errors.Is(err, keys.ErrAddressCollision) {
 			s.clearKeyCache()

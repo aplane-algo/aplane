@@ -1399,12 +1399,13 @@ genesis hash, and versioned key-type implementation.
 The complete key file and key type state machines are documented in
 [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 LogicSig key files whose stored bytecode derives an on-curve address are
-rejected during key scan. Legacy empty/`manual_counter` derivations require
-`salt_counter`; `algod_v13_auto_salt` derivations forbid it and require final
-TEAL v13+ bytecode plus a valid `lsig_opcode_profile`. LogicSig key files without
-`signing_metadata_version` are rejected when signing or restore would need
-durable signing metadata. Key files with `signing_metadata_version >= 1` are
-**versioned signing-metadata keys**; non-bounded keys use version 1 and bounded
+rejected during key scan. Key files with no `lsig_derivation` (the manual
+salt counter) require `salt_counter`; `algod_v13_auto_salt` derivations forbid
+it and require final TEAL v13+ bytecode plus a valid `lsig_opcode_profile`.
+LogicSig key files without `signing_metadata_version` are rejected when
+signing or restore would need durable signing metadata. Key files with
+`signing_metadata_version >= 1` are **versioned signing-metadata keys**;
+non-bounded keys use version 1 and bounded
 keys require version 2 plus durable `bounded_authorization`. DSA LogicSig
 files persist `base_key_type` even when it equals `key_type`. The stored
 bytecode must derive an off-curve LogicSig address.
@@ -2374,8 +2375,8 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
     versioned key-type implementation.
 16. Every persisted LogicSig key file has an off-curve address. For DSA-backed
     and generic LogicSig keys, stored bytecode
-    that derives an on-curve LogicSig address is rejected on load. Legacy
-    empty/`manual_counter` derivations require `salt_counter`;
+    that derives an on-curve LogicSig address is rejected on load. Key files
+    with no `lsig_derivation` (the manual salt counter) require `salt_counter`;
     `algod_v13_auto_salt` derivations must omit it and carry final TEAL v13+
     bytecode plus a valid `lsig_opcode_profile`.
 

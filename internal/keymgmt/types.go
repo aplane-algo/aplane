@@ -5,21 +5,13 @@
 // This package is UI-agnostic and can be used by CLI, REPL, and TUI interfaces.
 package keymgmt
 
-// KeyInfo holds information about a key
-type KeyInfo struct {
-	Address  string
-	KeyType  string
-	FilePath string
-}
-
 // GenerateResult is the result of generating a new key
 type GenerateResult struct {
-	Address           string
-	PublicKeyHex      string
-	KeyType           string // Full versioned type: "aplane.falcon1024.v1" or "ed25519"
-	IsWitnessKey      bool
-	IsSpendingAccount *bool
-	KeyFile           string // Path to saved key
+	Address      string
+	PublicKeyHex string
+	KeyType      string // Full versioned type: "aplane.falcon1024.v1" or "ed25519"
+	IsWitnessKey bool
+	KeyFile      string // Path to saved key
 }
 
 // DeleteResult is the result of deleting a key
@@ -32,9 +24,4 @@ type ImportResult struct {
 	Address string
 	KeyType string
 	KeyFile string // Path to saved key
-}
-
-// ListResult is the result of listing keys
-type ListResult struct {
-	Keys []KeyInfo
 }

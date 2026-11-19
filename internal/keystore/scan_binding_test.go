@@ -68,7 +68,7 @@ func TestScanFailureBindsTheAuthenticatedSelection(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(keysDir, 0o700) })
 
-	if err := ks.Scan(passphrase); err == nil {
+	if err := ks.Scan(); err == nil {
 		t.Fatal("Scan() succeeded on an unreadable selected generation")
 	}
 	after, err := ks.ActivePaths()
@@ -98,7 +98,7 @@ func TestScanClearsBindingWhenRootStopsAuthenticating(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ks.Scan(passphrase); err == nil {
+	if err := ks.Scan(); err == nil {
 		t.Fatal("Scan() succeeded with a root sealed under another keyring")
 	}
 	if active, err := ks.ActivePaths(); err == nil {
