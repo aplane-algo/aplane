@@ -490,6 +490,23 @@ type PluginsCommandResult struct {
 	Warnings []Warning
 }
 
+// WarningCodeSignerAdvice is the code of a warning that carries the signer's
+// advice about an account it created; the signer sends the advice as text.
+const WarningCodeSignerAdvice = "signer_advice"
+
+// SignerAdviceWarnings is the signer's advice about an account it created,
+// each piece a warning with WarningCodeSignerAdvice.
+func SignerAdviceWarnings(advice []string) []Warning {
+	if len(advice) == 0 {
+		return nil
+	}
+	warnings := make([]Warning, len(advice))
+	for i, message := range advice {
+		warnings[i] = Warning{Code: WarningCodeSignerAdvice, Message: message}
+	}
+	return warnings
+}
+
 // GenerateKeyCommandResult describes the semantic outcome of key generation.
 type GenerateKeyCommandResult struct {
 	KeyType string

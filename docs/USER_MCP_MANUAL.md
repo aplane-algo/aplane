@@ -98,7 +98,11 @@ authoritative source; this manual is the map.
   (`send 5 usdc from treasury to alice`). Every supported command returns an
   intentional structured JSON result through the same handler used by the
   interactive shell. Interactive/process commands are rejected before they
-  run; use the dedicated tool or workflow named in the error.
+  run; use the dedicated tool or workflow named in the error. A result's
+  `warnings`, when it has any, is a list of objects, each with a `code` to
+  match on (for example `recipient_lookalike`, `auth_cache_refresh_failed`, or
+  `signer_advice` for the signer's notes on an account `generate` created) and
+  a `message`.
 - **`js`** — when you need control flow, arithmetic on amounts, or a typed
   result object. The last expression is JSON-serialized into `value`; `print()`
   output is captured into `output`.
@@ -289,9 +293,9 @@ backups for all LogicSig accounts.
 > spend) refreshes the affected client auth-cache entry automatically. A
 > refresh that fails leaves the transaction confirmed and is reported as an
 > `auth_cache_refresh_failed` warning. Of the MCP results, only those of
-> `rekey` and `unrekey` carry it, in `warnings`, each entry with `code` and
-> `message`; for every other command it appears only in the shell's printed
-> output, not in the MCP result. JS `rekey()`, `unrekey()` and `sign()`
+> `rekey` and `unrekey` carry it, in `warnings`; for every other command it
+> appears only in the shell's printed output, not in the MCP result. JS
+> `rekey()`, `unrekey()` and `sign()`
 > return its message as `authCacheWarning`.
 > Run `rekey refresh <addr>` after external changes, an unconfirmed
 > submission, or a reported refresh failure. See
