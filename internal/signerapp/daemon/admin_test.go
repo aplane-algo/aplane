@@ -8,8 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/asaset"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,9 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/productmode"
+
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -386,13 +386,7 @@ func registerComposedFalconTemplateForTest(t *testing.T, yaml string) {
 	if err != nil {
 		t.Fatalf("create provider from %s: %v", spec.KeyType(), err)
 	}
-	if logicsigdsa.RegisterIfAbsent(provider) {
-		base, ok := composeddsa.LookupBase(spec.BaseKeyType)
-		if !ok {
-			t.Fatalf("base key type %s was not registered", spec.BaseKeyType)
-		}
-		addressderive.Register(provider.KeyType(), base.NewAddressDeriver(provider.KeyType()))
-	}
+	logicsigdsa.RegisterIfAbsent(provider)
 }
 
 // --- Generate tests ---

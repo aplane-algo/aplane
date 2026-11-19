@@ -10,15 +10,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -28,11 +28,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
-
-func TestMain(m *testing.M) {
-	addressderive.RegisterEd25519()
-	os.Exit(m.Run())
-}
 
 // testMasterKey generates a 32-byte AES-256 key for test encryption.
 func testMasterKey(t *testing.T) []byte {

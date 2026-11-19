@@ -13,7 +13,6 @@ import (
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
-	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
@@ -41,7 +40,6 @@ func RegisterSigner() {
 			}},
 			Extra: []func(){
 				keygen.RegisterWitnessKeygen,
-				falconkeys.RegisterProcessors,
 			},
 		})
 	})
