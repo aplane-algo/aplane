@@ -11,15 +11,11 @@ import (
 )
 
 func (fs *Signer) genericLSigGenerator() keyadmin.GenericLSigGenerator {
-	var auditLog keyadmin.AuditLogger
-	if fs.auditLog != nil {
-		auditLog = fs.auditLog
-	}
 	cfg := fs.ConfigSnapshot()
 	return keyadmin.GenericLSigGenerator{
 		Config:    &cfg,
 		MakeAlgod: fs.makeAlgod,
-		AuditLog:  auditLog,
+		AuditLog:  optionalAuditLog[keyadmin.AuditLogger](fs.auditLog),
 	}
 }
 

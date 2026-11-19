@@ -6,6 +6,7 @@ package apshellcli
 // Info and status commands: help, status, accounts, balance, holders, participation, signers, quit
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -196,25 +197,30 @@ func (r *REPLState) cmdBalance(args []string, _ interface{}) (command.Result, er
 	if err != nil {
 		return nil, err
 	}
+	// A full balance shows every holding; the other modes show one asset.
+	asset := &res.Asset
+	if res.Mode == apshellapp.BalanceModeSingleFull {
+		asset = nil
+	}
 	var projection interface{}
 	if res.Mode == apshellapp.BalanceModeMulti {
 		items := make([]appresult.MCPBalance, 0, len(res.Balances))
 		for _, balance := range res.Balances {
-			items = append(items, projectMCPBalanceForAsset(r.app(), balance, res.AssetRef))
+			items = append(items, projectMCPBalanceForAsset(balance, asset))
 		}
 		projection = items
 	} else {
-		projection = projectMCPBalanceForAsset(r.app(), res.Single, res.AssetRef)
+		projection = projectMCPBalanceForAsset(res.Single, asset)
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutputResult(w, func() error {
 			switch res.Mode {
 			case apshellapp.BalanceModeMulti:
-				return r.showMultiAccountBalances(res.Balances, res.AssetRef, false)
+				return r.showMultiAccountBalances(res.Balances, res.Asset, false)
 			case apshellapp.BalanceModeSingleFull:
 				return r.showFullBalance(res.Single)
 			case apshellapp.BalanceModeSingleAsset:
-				return r.showSingleAssetBalance(res.Single, res.AssetRef)
+				return r.showSingleAssetBalance(res.Single, res.Asset)
 			default:
 				return fmt.Errorf("unsupported balance mode: %s", res.Mode)
 			}
@@ -228,10 +234,7 @@ func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, er
 	if err != nil {
 		return nil, err
 	}
-	projection, err := r.projectHolders(result)
-	if err != nil {
-		return nil, err
-	}
+	projection := projectHolders(result)
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutputResult(w, func() error {
 			r.renderWarnings(result.Warnings)
@@ -239,7 +242,7 @@ func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, er
 				r.println("No accounts with non-zero balance found")
 				return nil
 			}
-			return r.showMultiAccountBalances(result.Balances, result.AssetRef, true)
+			return r.showMultiAccountBalances(result.Balances, result.Asset, true)
 		})
 	}, projection)
 }
@@ -312,6 +315,9 @@ func (r *REPLState) cmdKeytypes(_ []string, _ interface{}) (command.Result, erro
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
+			if result.SignerLocked {
+				r.println("The signer is locked: only its built-in key types are listed. Unlock it in apadmin to see the rest.")
+			}
 			if len(result.KeyTypes) == 0 {
 				r.println("No key types available")
 				return
@@ -330,8 +336,13 @@ func (r *REPLState) cmdClear(_ []string, _ interface{}) (command.Result, error) 
 	}), nil
 }
 
+// errQuit is what quit returns: the shell, or the script, ends with it and
+// is not failed. It is matched by identity, never by its text, which a
+// plugin's failure message could repeat.
+var errQuit = errors.New("exit")
+
 func (r *REPLState) cmdQuit(_ []string, _ interface{}) (command.Result, error) {
 	r.println("Goodbye!")
 	_ = disconnectTunnel(r) // Best-effort cleanup on exit
-	return newTerminalCommandResult(nil), fmt.Errorf("exit")
+	return newTerminalCommandResult(nil), errQuit
 }

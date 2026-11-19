@@ -4,8 +4,10 @@
 package manager
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -45,7 +47,7 @@ func TestPresignSignTransactionsRoundTrip(t *testing.T) {
 	m.instances["presign"] = inst // inject so StartPlugin returns this instance
 
 	// execute -> draft + pluginSigners
-	exec, err := m.ExecuteCommand("presign", "deposit", nil, jsonrpc.Context{})
+	exec, err := m.ExecuteCommand(context.Background(), "presign", "deposit", nil, jsonrpc.Context{})
 	if err != nil {
 		t.Fatalf("ExecuteCommand: %v", err)
 	}
@@ -60,7 +62,7 @@ func TestPresignSignTransactionsRoundTrip(t *testing.T) {
 	}
 
 	// signTransactions callback over the canonical bytes
-	res, err := m.SignTransactions("presign", jsonrpc.SignTransactionsParams{
+	res, err := m.SignTransactions(context.Background(), "presign", jsonrpc.SignTransactionsParams{
 		Requests: []jsonrpc.SignTransactionRequest{{
 			Index: 0, Address: acct.Address.String(), SignerRef: exec.PluginSigners[0].SignerRef, Encoded: canonicalB64,
 		}},
@@ -148,4 +150,48 @@ func setResult(resp *jsonrpc.Response, v interface{}) {
 	raw, _ := json.Marshal(v)
 	rm := json.RawMessage(raw)
 	resp.Result = &rm
+}
+
+// A signing callback ends when its context does, as a command does, and the
+// plugin, still working on the abandoned request, is no longer the running
+// instance: it is not asked again.
+func TestSignTransactionsEndsWhenItsContextDoes(t *testing.T) {
+	serverToClientReader, serverToClientWriter := io.Pipe()
+	clientToServerReader, clientToServerWriter := io.Pipe()
+	t.Cleanup(func() {
+		_ = serverToClientWriter.Close()
+		_ = clientToServerReader.Close()
+	})
+	inst := &Instance{
+		Plugin:  &discovery.Plugin{Manifest: &manifest.Manifest{Name: "presign", Timeout: 30}},
+		Client:  jsonrpc.NewClient(serverToClientReader, clientToServerWriter),
+		Started: time.Now(),
+	}
+	inst.Client.Start()
+	asked := make(chan struct{})
+	go func() { // reads the request and never answers it
+		var req jsonrpc.Request
+		if err := json.NewDecoder(clientToServerReader).Decode(&req); err == nil {
+			close(asked)
+		}
+	}()
+	m := NewManager()
+	m.instances["presign"] = inst
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-asked
+		cancel()
+	}()
+	begin := time.Now()
+	_, err := m.SignTransactions(ctx, "presign", jsonrpc.SignTransactionsParams{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("SignTransactions() error = %v, want the call abandoned", err)
+	}
+	if took := time.Since(begin); took > 2*time.Second {
+		t.Fatalf("SignTransactions() took %v after its context ended", took)
+	}
+	if running := m.GetRunningPlugins(); len(running) != 0 {
+		t.Fatalf("running plugins = %v, want the abandoned instance gone", running)
+	}
 }

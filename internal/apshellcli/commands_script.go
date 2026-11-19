@@ -330,19 +330,45 @@ func listJSScripts(dataDir string) ([]jsScriptEntry, error) {
 	return out, nil
 }
 
-// runShellCommand executes a shell command (used by ! prefix).
+// shellCommandWaitDelay is how long a `!` command's output is still read
+// once its shell has exited or been killed: a process it started can keep
+// the output open after it.
+const shellCommandWaitDelay = 500 * time.Millisecond
+
+// runShellCommand executes a shell command (used by ! prefix). It runs on
+// the command's context, so cancelling the command, as an embedded host's
+// Ctrl-C or its session's shutdown does, kills it.
+//
+// When its output is captured (an embedded host's pane), the command has no
+// terminal of its own: it runs in its own process group, which a cancel kills
+// whole, so the processes a compound command started end with the shell. At
+// the interactive REPL it writes to the shell's own output and stays in the
+// terminal's foreground group, where the terminal's Ctrl-C reaches every
+// process of it and a program such as vim can read the terminal.
 func (r *REPLState) runShellCommand(cmdStr string) error {
 	if cmdStr == "" {
 		return nil
 	}
 
 	// Execute via sh -c to support pipes, redirects, etc.
-	cmd := exec.Command("sh", "-c", cmdStr)
+	ctx := r.commandContext()
+	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	cmd.Stdout = r.Out
 	cmd.Stderr = r.Out
 	cmd.Stdin = os.Stdin
+	cmd.WaitDelay = shellCommandWaitDelay
+	if _, direct := r.Out.(*os.File); !direct {
+		runInOwnProcessGroup(cmd)
+	}
 
 	err := cmd.Run()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("shell command stopped: %w", ctxErr)
+	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		// The shell exited; what it left running writes nowhere now.
+		return nil
+	}
 	if err != nil {
 		// Don't treat non-zero exit as error, just show it happened
 		if exitErr, ok := err.(*exec.ExitError); ok {

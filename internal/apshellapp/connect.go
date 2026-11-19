@@ -45,9 +45,10 @@ type ConnectRequest struct {
 // Connect establishes an SSH connection authenticated by the client's
 // enrolled key. Requests to the signer travel over it in-process; nothing
 // listens on this machine.
-func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, error) {
+func (a *App) Connect(ctx context.Context, req ConnectRequest) (*ConnectResult, error) {
 	target := fmt.Sprintf("%s (ssh:%d)", req.Host, req.SSHPort)
 	connectResult, err := a.eng.ConnectWithTunnel(
+		ctx,
 		target,
 		req.Host,
 		req.SSHPort,

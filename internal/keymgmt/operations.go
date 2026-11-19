@@ -19,7 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
@@ -102,17 +101,6 @@ func appendKeyType(types []string, seen map[string]bool, keyType string) []strin
 	}
 	seen[keyType] = true
 	return append(types, keyType)
-}
-
-// GetAvailableKeyTypes returns default-enabled key types plus opt-in compiled
-// providers enabled in the product store. Provider registries are
-// process-global; enabled-state records on disk select the available set.
-func GetAvailableKeyTypes(paths storepaths.Paths) ([]string, error) {
-	enabled, err := keytypestate.ListEnabled(paths)
-	if err != nil {
-		return nil, err
-	}
-	return GetValidKeyTypesWithActivated(enabled), nil
 }
 
 // IsValidKeyType checks if a key type is valid by querying the registry.

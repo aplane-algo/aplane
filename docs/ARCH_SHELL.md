@@ -673,10 +673,15 @@ canSign, isLsig := engine.CanSignForAddress(address)
 `apshell`. It opens, or reuses, an SSH connection to the signer, gives the
 signer client an HTTP transport that opens a channel to the signer's REST API
 for each connection, and populates the signer cache after connection. Nothing
-listens on the client machine.
+listens on the client machine. `ctx` bounds the setup (the TCP dial, the SSH
+handshake, a host-key prompt and the first `/keys` read), so cancelling the
+command that connects, or apconsole quitting during its startup connect,
+ends it; the connection it makes has its own lifetime, which `Disconnect`
+ends.
 
 ```go
 result, err := engine.ConnectWithTunnel(
+    ctx,         // the connecting command's context
     target,      // display label, e.g. "host.example.com (ssh:1127)"
     host,        // "host.example.com"
     sshPort,     // 1127
@@ -1001,6 +1006,12 @@ interactive REPL runs a command the completer offers nothing and takes no
 lock. Waiting for it there would never end, since the command is waiting for
 the line.
 
+The completer readline gets at startup is the only one it ever has: it
+builds the completion tree at each Tab, from the network, plugins and caches
+as they are then, so a network switch or a signer cache the status poller
+refreshed needs no new completer. readline reads its configured completer
+on its own goroutine, so replacing it later would race with that read.
+
 ### Command Result Rendering
 
 Every registered handler returns a `command.Result`:
@@ -1021,9 +1032,11 @@ Machine projections in `command_projections.go` are explicit security
 allowlists. Plugin projection filters the reserved `localSigners` field.
 One-shot `simulate <transaction-command>` invokes the same result-bearing
 executor while simulation is temporarily forced and restores the prior mode
-with deferred cleanup. The result is drawn after that, so a command reads
-the mode when it runs and passes it to its rendering; a renderer never asks
-for the mode itself.
+with deferred cleanup. It returns the command's own result, unwrapped, so a
+command without a machine projection (one with interactive prompts) is
+simulated in the REPL as it runs without simulate. The result is drawn after
+that, so a command reads the mode when it runs and passes it to its
+rendering; a renderer never asks for the mode itself.
 
 ### Command Dispatch
 
@@ -1307,6 +1320,12 @@ The CLI surface is:
 After confirmed submission, the engine can also resolve the created
 application:
 - `LookupCreatedApplication(ctx, txID)`
+
+A deploy that confirmed succeeds even when that lookup fails, since failing
+it would invite a second deploy: `app deploy` returns its `tx_id` and
+`confirmed` with no `app_id`, sets `app_lookup_error` to the lookup's error
+and warns, and JavaScript `appDeploy()` returns the same fields instead of
+throwing.
 
 #### ABI-backed method calls
 
@@ -1793,8 +1812,7 @@ one outcome for each `SubmissionError` in the error, following wrapped and
 joined errors, and for each one an `appresult.SubmissionFailures` error
 reports. An error without one did not fail at a submit call or a
 confirmation wait. It says nothing about submissions that completed before
-the failure: earlier ones in the same script or plugin run, or a confirmed deploy
-whose created app `app deploy` then could not look up.
+the failure, such as earlier ones in the same script or plugin run.
 
 Each outcome's `message` says what happened:
 
@@ -1838,7 +1856,12 @@ check's amounts, or the signer's refusal. Nothing retries.
 
 Commands that report items record each item's outcome as `submission` on the
 item of their successful result: `validate`, and a non-atomic `send` or a
-`sweep` in which some items succeeded. A non-atomic `send` or a `sweep` in
+`sweep` in which some items succeeded. A `validate` in which every item
+failed returns its result with an error whose text is `all N validation(s)
+failed`. The shell result carries that error as its terminal failure: the
+REPL draws each item and then returns it, which stops a script, while MCP,
+which reads the structured result alone, returns that result, each item's
+error and `submission` in it, and no error. A non-atomic `send` or a `sweep` in
 which every item failed, one item included, returns its result with an error
 whose text is `all N transaction(s) failed`, so the command fails: the REPL
 draws each item and then returns the error, which stops a script. That

@@ -684,10 +684,16 @@ Returns:
 {
   tx_id,
   confirmed,
-  app_id,       // present when wait=true and creation is confirmed
-  app_address   // present when wait=true and creation is confirmed
+  app_id,           // present when wait=true and creation is confirmed
+  app_address,      // present when wait=true and creation is confirmed
+  app_lookup_error  // present instead when the deploy is confirmed but the app it created could not be looked up
 }
 ```
+
+A confirmed deploy is never thrown: when the created app cannot be looked up,
+the result has `tx_id` and `confirmed: true` but no `app_id`, and
+`app_lookup_error` says why. Find the app from `tx_id` rather than deploying
+again.
 
 Note: `appDeploy` uses snake_case field names (`tx_id`, `app_id`, `app_address`),
 unlike the camelCase `txid` returned by other transaction functions.

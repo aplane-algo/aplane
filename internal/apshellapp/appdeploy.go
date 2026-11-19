@@ -95,7 +95,15 @@ func (a *App) AppDeploy(ctx context.Context, req AppDeployRequest) (*AppDeployRe
 	if req.Wait && submit.Confirmed {
 		createdResult, err := a.eng.LookupCreatedApplication(ctx, submit.TxID)
 		if err != nil {
-			return nil, err
+			// The deploy is confirmed: failing the command would invite a
+			// second one. It succeeds without the app's ID, and says why.
+			result.Structured.AppLookupError = err.Error()
+			result.Warnings = append(result.Warnings, Warning{
+				Code: "created_app_lookup_failed",
+				Message: fmt.Sprintf("app deploy %s is confirmed, but the app it created could not be looked up: %v",
+					submit.TxID, err),
+			})
+			return result, nil
 		}
 		created := createdAppDetailsFromEngine(createdResult)
 		result.Structured.AppID = created.AppID

@@ -7,7 +7,6 @@ package main
 
 import (
 	"flag"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 )
 
@@ -23,7 +22,7 @@ func initTestFlag() {
 	testFlag = flag.Bool("test", false, "Run in test mode (testing builds only)")
 }
 
-func runTestMode(_ serverconfig.ServerConfig, _ []string) {
+func runTestMode(_ string, _ []string) {
 	logErrorf(testBuildTagHint)
 	os.Exit(2)
 }

@@ -896,7 +896,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 				t.Helper()
-				return restMatrixRuntime(paths)
+				return restMatrixRuntime(t, paths)
 			},
 		},
 		{
@@ -911,7 +911,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 				}); err != nil {
 					t.Fatalf("Put() error = %v", err)
 				}
-				return restMatrixRuntime(paths)
+				return restMatrixRuntime(t, paths)
 			},
 			wantVisible: true,
 		},
@@ -927,7 +927,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
 				writeTemplateStateForRestTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-				return restMatrixRuntime(paths)
+				return restMatrixRuntime(t, paths)
 			},
 			wantVisible: true,
 		},
@@ -943,7 +943,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
 				writeTemplateStateForRestTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
-				return restMatrixRuntime(paths)
+				return restMatrixRuntime(t, paths)
 			},
 		},
 		{
@@ -960,7 +960,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 				}); err != nil {
 					t.Fatalf("Put() error = %v", err)
 				}
-				return restMatrixRuntime(paths)
+				return restMatrixRuntime(t, paths)
 			},
 			wantVisible: true,
 		},
@@ -978,7 +978,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 				}); err != nil {
 					t.Fatalf("Put() error = %v", err)
 				}
-				return restMatrixRuntime(paths)
+				return restMatrixRuntime(t, paths)
 			},
 		},
 	}
@@ -986,8 +986,9 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			paths = genstoretest.MintFirst(t, paths)
-			paths = genstoretest.BindActive(t, paths, genstoretest.Active(t, paths))
+			keyring, active := genstoretest.MintFirstAtomic(t, paths, restTestPassphrase)
+			keyring.Zero()
+			paths = genstoretest.BindActive(t, paths, active)
 			ir := tt.setup(t, paths)
 
 			resp, svcErr := Service{}.KeyTypes(ir)
@@ -1010,8 +1011,16 @@ func keyTypesResponseContains(items []signerapi.KeyTypeInfo, keyType string) boo
 	return false
 }
 
-func restMatrixRuntime(paths storepaths.Paths) *productruntime.Runtime {
+// restMatrixRuntime is a signer runtime over paths with its store unlocked,
+// so key type listings read the store's activation records.
+func restMatrixRuntime(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
+	t.Helper()
+	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	if err := ks.Unlock(restTestPassphrase); err != nil {
+		t.Fatalf("Unlock(): %v", err)
+	}
 	return productruntime.New(productruntime.Config{
+		KeyStore: ks,
 		KeyPaths: paths,
 		NodeRole: noderole.RoleSigner,
 	})

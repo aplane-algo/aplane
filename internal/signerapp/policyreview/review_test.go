@@ -172,6 +172,31 @@ func TestDocumentFromTextAppliesTheFileRules(t *testing.T) {
 	}
 }
 
+// A file over the cap is refused, not cut at the cap and parsed: with the cut
+// inside a trailing comment, the cut file is a valid document and would be
+// sent without its tail.
+func TestReadDocumentsRefusesAFileOverTheCap(t *testing.T) {
+	doc := policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"2000"}`)
+	oversize := doc + "\n// " + strings.Repeat("x", MaxPolicyBytes) + "\n"
+	if _, err := DocumentFromText("default.json", oversize[:MaxPolicyBytes]); err != nil {
+		t.Fatalf("test setup: the text cut at the cap is not a valid document: %v", err)
+	}
+	file := writePolicyFile(t, "default.json", oversize)
+	if docs, _, err := ReadDocuments([]string{file}, nil); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("ReadDocuments(over the cap) = %d documents, %v; want refused", len(docs), err)
+	}
+	if docs, _, err := ReadDocuments([]string{"-"}, strings.NewReader(oversize)); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("ReadDocuments(stdin over the cap) = %d documents, %v; want refused", len(docs), err)
+	}
+	if _, _, err := ReadRegularDocuments([]string{file}); err == nil {
+		t.Fatal("ReadRegularDocuments(over the cap) accepted the file")
+	}
+	atCap := writePolicyFile(t, "default.json", oversize[:MaxPolicyBytes])
+	if _, _, err := ReadDocuments([]string{atCap}, nil); err != nil {
+		t.Fatalf("ReadDocuments(at the cap) = %v, want accepted", err)
+	}
+}
+
 func TestReadDocumentsStripsCommentsBeforeTheNode(t *testing.T) {
 	// A complete document with comments added: a whole line, and one inside a
 	// line. Stripped, it is the document without them.

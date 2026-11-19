@@ -121,15 +121,30 @@ func (w *Workspace) NewFilePath(name string) (string, error) {
 		return "", fmt.Errorf("enter a file name ending in .json, with no directory")
 	}
 	path := filepath.Join(w.Dir(), name)
-	if _, err := os.Lstat(path); err == nil {
-		return "", fmt.Errorf("%s already exists", path)
-	}
-	for _, f := range w.Files {
-		if f.Path == path {
-			return "", fmt.Errorf("%s is already open", path)
-		}
+	if err := w.CheckFreePath(path); err != nil {
+		return "", err
 	}
 	return path, nil
+}
+
+// CheckFreePath refuses a path a new file cannot take: one where something
+// is on disk, or one a workspace file has, a new document not yet saved
+// included. Paths are compared as absolute paths, so a file opened under a
+// relative name is found under an absolute one too.
+func (w *Workspace) CheckFreePath(path string) error {
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("%s already exists", path)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	for _, f := range w.Files {
+		if open, err := filepath.Abs(f.Path); err == nil && open == abs {
+			return fmt.Errorf("%s is already open", path)
+		}
+	}
+	return nil
 }
 
 // Add returns a copy of the workspace holding f as well, with the rules

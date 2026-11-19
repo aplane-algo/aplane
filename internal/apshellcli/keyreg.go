@@ -7,16 +7,21 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/partkeyparse"
 
 	"github.com/chzyer/readline"
 )
 
-// keyRegPasteMode handles multiline paste of goal partkeyinfo output
-func (r *REPLState) keyRegPasteMode() error {
+// keyRegPasteMode handles multiline paste of goal partkeyinfo output. A
+// registration whose confirmation wait failed comes back with its result,
+// which names the transaction, and the error.
+func (r *REPLState) keyRegPasteMode() (command.Result, error) {
 	r.println("Paste the output from 'goal account partkeyinfo' below.")
 	r.println("Press Enter twice on empty lines when done, Ctrl+C to cancel.")
 	r.println()
@@ -25,20 +30,23 @@ func (r *REPLState) keyRegPasteMode() error {
 	var lines []string
 	if r.hasInteractiveLineReader() {
 		pasted, cancelled, err := r.readPastedLines()
-		if err != nil || cancelled {
-			return err
+		if err != nil {
+			return nil, err
+		}
+		if cancelled {
+			return newTerminalCommandResult(nil), nil
 		}
 		lines = pasted
 	} else {
 		pasted, err := scanPastedLines()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		lines = pasted
 	}
 
 	if len(lines) == 0 {
-		return fmt.Errorf("no input provided")
+		return nil, fmt.Errorf("no input provided")
 	}
 
 	// Join lines into single string for parsing
@@ -47,7 +55,7 @@ func (r *REPLState) keyRegPasteMode() error {
 	// Parse the partkeyinfo output
 	parsedInfo, err := partkeyparse.Parse(input)
 	if err != nil {
-		return fmt.Errorf("failed to parse partkeyinfo output: %w", err)
+		return nil, fmt.Errorf("failed to parse partkeyinfo output: %w", err)
 	}
 
 	// Display parsed information
@@ -63,26 +71,67 @@ func (r *REPLState) keyRegPasteMode() error {
 
 	incentiveEligible, err := askIncentiveEligibility(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	r.println()
 
 	result, err := r.app().KeyRegFromPartKey(r.commandContext(), parsedInfo, incentiveEligible)
-	if err != nil {
-		return err
+	if result == nil {
+		return nil, err
 	}
+	commandResult, resultErr := r.keyRegCommandResult(result, true)
+	if resultErr != nil {
+		return nil, resultErr
+	}
+	return commandResult, err
+}
 
-	r.printf("Marking %s ONLINE (participating) using %s...\n", r.app().FormatAddress(parsedInfo.ParentAddress, ""), result.SigningKeyType)
-	if !r.app().IsSimulateEnabled() {
+// keyRegCommandResult is a key registration's result, in either form of the
+// command. prompted is true in paste mode, which asked about incentive
+// eligibility.
+func (r *REPLState) keyRegCommandResult(result *apshellapp.KeyRegCommandResult, prompted bool) (command.Result, error) {
+	simulated := r.app().IsSimulateEnabled()
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() { r.renderKeyRegResult(result, simulated, prompted) })
+	}, keyRegProjection{
+		Account: result.Account, Mode: result.Mode, TxID: result.TxID,
+		Confirmed: result.Confirmed, Simulated: simulated,
+		IncentiveRequested: result.IncentiveRequested, AlreadyIncentiveEligible: result.AlreadyIncentiveEligible,
+	})
+}
+
+// renderKeyRegResult draws a key registration: the submission's output (the
+// simulation, the signing and the confirmation wait) and warnings, then what
+// the registration did or will do once confirmed.
+func (r *REPLState) renderKeyRegResult(result *apshellapp.KeyRegCommandResult, simulated, prompted bool) {
+	r.renderSubmissionOutput(result.Output)
+	r.renderWarnings(result.Warnings)
+	account := r.app().FormatAddress(result.Account, "")
+	statusMsg := "OFFLINE"
+	if result.Mode == "online" {
+		statusMsg = "ONLINE in consensus"
+	}
+	r.printf("Marking %s %s using %s...\n", account, statusMsg, result.SigningKeyType)
+	if !simulated {
 		r.printf("Key registration submitted: %s\n", result.TxID)
 	}
-	reportIncentiveEligibility(r, result, true)
+	reportIncentiveEligibility(r, result, prompted)
 	if result.Confirmed {
-		r.printf("\n%s is now ONLINE (participating)\n", r.app().FormatAddress(parsedInfo.ParentAddress, ""))
-		r.printf("Participation valid from round %d to %d\n", parsedInfo.VoteFirst, parsedInfo.VoteLast)
+		switch result.Mode {
+		case "online":
+			r.printf("\n%s is now ONLINE (participating in consensus)\n", account)
+			r.printf("Participation valid from round %d to %d\n", result.VoteFirst, result.VoteLast)
+		case "offline":
+			r.printf("\n%s is now OFFLINE\n", account)
+		}
+		return
 	}
-
-	return nil
+	switch result.Mode {
+	case "online":
+		r.printf("\nWhen confirmed, %s will be marked ONLINE\n", account)
+	case "offline":
+		r.printf("\nWhen confirmed, %s will be marked OFFLINE (temporary)\n", account)
+	}
 }
 
 // readPastedLines reads pasted lines from the interactive line reader until

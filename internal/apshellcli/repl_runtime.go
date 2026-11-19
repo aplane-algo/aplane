@@ -78,7 +78,7 @@ func (r *REPLState) newReadlineConfig() *readline.Config {
 		Prompt:            r.promptString(),
 		HistoryFile:       historyFilePath(),
 		HistoryLimit:      historyLimit,
-		AutoComplete:      r.lockedCompleter(r.discoverCompleter()),
+		AutoComplete:      r.lockedCompleter(r.discoverCompleter),
 		InterruptPrompt:   "^C",
 		EOFPrompt:         "exit",
 		HistorySearchFold: true,
@@ -92,10 +92,6 @@ func (r *REPLState) bindInteractiveIO(rl *readline.Instance) {
 	r.SetPrompt = func(p string) {
 		rl.SetPrompt(p)
 	}
-}
-
-func (r *REPLState) refreshCompleter(rl *readline.Instance) {
-	rl.Config.AutoComplete = r.lockedCompleter(r.discoverCompleter())
 }
 
 func (r *REPLState) executeCommandWithInterrupt(cmd Command, sigCh <-chan os.Signal) error {
@@ -143,10 +139,15 @@ func (r *REPLState) executeCommandWithInterrupt(cmd Command, sigCh <-chan os.Sig
 // readline instance, and they ask for an answer rather than a command, so
 // while a command runs there is nothing to complete: Tab offers nothing and
 // takes no lock, which it could never get.
+//
+// It builds the completer for each Tab, from the shell as it is then: the
+// network, its plugins and the caches a command or the signer status poller
+// changed. readline reads its configured completer on its own goroutine, so
+// the one installed at startup is never replaced.
 type lockedAutoCompleter struct {
 	mu      *sync.Mutex
 	running *atomic.Bool
-	inner   readline.AutoCompleter
+	build   func() readline.AutoCompleter
 }
 
 func (c lockedAutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
@@ -157,9 +158,9 @@ func (c lockedAutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 	}
-	return c.inner.Do(line, pos)
+	return c.build().Do(line, pos)
 }
 
-func (r *REPLState) lockedCompleter(inner readline.AutoCompleter) readline.AutoCompleter {
-	return lockedAutoCompleter{mu: &r.runtimeMu, running: &r.commandRunning, inner: inner}
+func (r *REPLState) lockedCompleter(build func() readline.AutoCompleter) readline.AutoCompleter {
+	return lockedAutoCompleter{mu: &r.runtimeMu, running: &r.commandRunning, build: build}
 }

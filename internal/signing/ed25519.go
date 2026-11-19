@@ -82,7 +82,7 @@ func SubmitTransactionsWithContext(
 		confirmedTxn, err := transaction.WaitForConfirmation(algodClient, txIDs[0], confirmationTimeoutRounds, ctx)
 		if err != nil {
 			_, _ = fmt.Fprintln(w)
-			return txIDs, submissionFailure(txIDs, SubmissionSubmitted, nil, fmt.Errorf("confirmation failed: %w", err))
+			return txIDs, ConfirmationFailure(txIDs, err)
 		}
 		_, _ = fmt.Fprintf(w, "\n✓ Confirmed in round %d\n", confirmedTxn.ConfirmedRound)
 	}

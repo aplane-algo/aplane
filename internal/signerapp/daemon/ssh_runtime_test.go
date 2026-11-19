@@ -6,8 +6,13 @@ package daemon
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
 type sshStopperFunc func(context.Context) error
@@ -50,5 +55,47 @@ func TestStopSSHRuntimePropagatesLifecycleContextAndDetachesRuntime(t *testing.T
 	}
 	if signer.sshRuntime != nil || signer.sshServer != nil {
 		t.Fatal("stopSSHRuntime() left the stopped SSH runtime published")
+	}
+}
+
+// SSH session entries named only the product admin, so the audit log could
+// not say which client key a connection belonged to. Each now carries the
+// fingerprint of the key that opened it, enrolled or asking to be, beside
+// the fields it had.
+func TestSSHSessionAuditEntriesNameTheClientKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	auditLog, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+	defer func() { _ = auditLog.Close() }()
+	cb := (&Signer{}).sshSessionCallback(auditLog)
+
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.2:1", Fingerprint: "SHA256:enrolled", EnrolledKey: true, Connected: true})
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.2:1", Fingerprint: "SHA256:enrolled", EnrolledKey: true})
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.3:1", Fingerprint: "SHA256:asking", Connected: true})
+
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.3:1", Fingerprint: "SHA256:asking"})
+
+	// An enroll connection's key is not enrolled, and anyone who reaches the
+	// SSH port can open one, so its entries say "ssh-enroll", not "ssh".
+	want := []AuditEntry{
+		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
+		{Event: AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != len(want) {
+		t.Fatalf("entries = %+v, want %d", entries, len(want))
+	}
+	for i, entry := range entries {
+		w := want[i]
+		w.Timestamp = entry.Timestamp
+		w.Principal = auth.SystemProductAdminPrincipalID
+		w.RequesterPrincipal = auth.SystemProductAdminPrincipalID
+		if !reflect.DeepEqual(entry, w) {
+			t.Errorf("entry %d = %+v, want %+v", i, entry, w)
+		}
 	}
 }

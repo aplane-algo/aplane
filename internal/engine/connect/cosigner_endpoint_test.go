@@ -130,7 +130,7 @@ func TestCosignerSSHHTTPTransportPropagatesRequestCancellation(t *testing.T) {
 
 func TestCosignerSSHLifetimeDetachesAfterSetup(t *testing.T) {
 	setupCtx, cancelSetup := context.WithCancel(context.Background())
-	lifetimeCtx, cancelLifetime, detach := newCosignerSSHLifetime(setupCtx)
+	lifetimeCtx, cancelLifetime, detach := newSSHLifetime(setupCtx)
 	defer cancelLifetime()
 
 	if err := detach(); err != nil {
@@ -151,7 +151,7 @@ func TestCosignerSSHLifetimeDetachesAfterSetup(t *testing.T) {
 
 func TestCosignerSSHLifetimeHonorsSetupCancellation(t *testing.T) {
 	setupCtx, cancelSetup := context.WithCancel(context.Background())
-	_, cancelLifetime, detach := newCosignerSSHLifetime(setupCtx)
+	_, cancelLifetime, detach := newSSHLifetime(setupCtx)
 	defer cancelLifetime()
 	cancelSetup()
 

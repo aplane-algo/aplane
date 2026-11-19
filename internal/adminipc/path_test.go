@@ -51,6 +51,38 @@ func TestResolveDaemonPathWithRelativeDataDirectory(t *testing.T) {
 	}
 }
 
+// A relative data directory reaches the store's socket whether or not it has
+// a config.yaml: the loaded config leaves an unset ipc_path to the resolver,
+// which joins it to the data directory once, for the daemon and its clients.
+func TestRelativeDataDirectoryResolvesTheSameSocketWithAndWithoutConfig(t *testing.T) {
+	t.Setenv(SocketPathEnv, "")
+	t.Chdir(t.TempDir())
+	dataDir := filepath.Join("relative", "signer")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dataDir, "aplane.sock")
+	for _, withConfig := range []bool{false, true} {
+		if withConfig {
+			if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("schema_version: 1\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg, err := serverconfig.LoadServerConfig(dataDir)
+		if err != nil {
+			t.Fatalf("LoadServerConfig (config file %v): %v", withConfig, err)
+		}
+		daemon, _, err := ResolveDaemonPathForDataDir(dataDir, cfg.IPCPath)
+		if err != nil || daemon != want {
+			t.Fatalf("daemon socket (config file %v) = %q, %v; want %q", withConfig, daemon, err, want)
+		}
+		client, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir})
+		if err != nil || client != want {
+			t.Fatalf("client socket (config file %v) = %q, %v; want %q", withConfig, client, err, want)
+		}
+	}
+}
+
 func TestResolveDaemonPathForDataDirRejectsManagedInStoreCustomPath(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, ".prod"), []byte("systemd-managed\n"), 0o600); err != nil {

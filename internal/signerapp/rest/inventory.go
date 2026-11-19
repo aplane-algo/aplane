@@ -4,6 +4,7 @@
 package rest
 
 import (
+	"errors"
 	"sort"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -212,26 +214,33 @@ func keysAnswer(ir *productruntime.Runtime, lockGen uint64, keyList []signerapi.
 	}, nil
 }
 
+// BuildKeyTypes lists the key types the node offers for its role. While the
+// store is locked its activation records cannot be read, so the list holds
+// the built-in key types only: those enabled by default. A library key type
+// the store enables, and every template-backed type, appears after unlock.
 func (s Service) BuildKeyTypes(ir *productruntime.Runtime) ([]signerapi.KeyTypeInfo, error) {
-	activePaths, err := ir.ActiveKeyPaths()
-	if err != nil {
-		activePaths = ir.KeyPaths()
-		if _, ok := activePaths.BoundActiveGeneration(); !ok {
-			return nil, err
-		}
-	}
-	validTypes, err := keymgmt.GetAvailableKeyTypes(activePaths)
+	enabled, err := storeEnabledKeyTypes(ir)
 	if err != nil {
 		return nil, err
 	}
-	validTypes = filterKeyTypesForNodeRole(validTypes, ir.NodeRole())
-	enabled, err := keytypestate.ListEnabled(activePaths)
-	if err != nil {
-		return nil, err
-	}
+	validTypes := filterKeyTypesForNodeRole(keymgmt.GetValidKeyTypesWithActivated(enabled), ir.NodeRole())
 	infos := s.buildKeyTypes(validTypes, enabled)
 	applyCosignerReferenceParams(ir, infos)
 	return infos, nil
+}
+
+// storeEnabledKeyTypes returns the key types the store's activation records
+// enable, or none while the store is locked. A list it returns is never nil,
+// which buildKeyTypes would read as every generic template enabled.
+func storeEnabledKeyTypes(ir *productruntime.Runtime) ([]string, error) {
+	activePaths, err := ir.ActiveKeyPaths()
+	if errors.Is(err, keystore.ErrStoreLocked) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return keytypestate.ListEnabled(activePaths)
 }
 
 func filterKeyTypesForNodeRole(validTypes []string, role noderole.Role) []string {

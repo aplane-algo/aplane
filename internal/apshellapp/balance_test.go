@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
@@ -60,7 +61,36 @@ func TestBalanceResolvesSetModeWithoutAlgod(t *testing.T) {
 	if res.Mode != BalanceModeMulti {
 		t.Fatalf("Mode = %q, want %q", res.Mode, BalanceModeMulti)
 	}
-	if res.AssetRef != "algo" {
-		t.Fatalf("AssetRef = %q, want algo", res.AssetRef)
+	if res.Asset.AssetID != 0 || res.Asset.UnitName != "ALGO" {
+		t.Fatalf("Asset = %+v, want ALGO", res.Asset)
+	}
+}
+
+// ALGO is named in any case: "Algo" shows ALGO balances, as "algo" does, in
+// each mode of balance and in holders, rather than an asset no account holds.
+func TestBalanceAndHoldersNameAlgoInAnyCase(t *testing.T) {
+	f := newArgsFixture(t)
+	ctx := context.Background()
+	for _, args := range [][]string{{"Algo"}, {"@all", "Algo"}, {argsNative, "Algo"}, {argsNative, "aLGO"}} {
+		res, err := f.app.Balance(ctx, BalanceRequest{Args: args})
+		if err != nil {
+			t.Fatalf("balance %v: %v", args, err)
+		}
+		if res.Asset.AssetID != 0 || res.Asset.UnitName != "ALGO" {
+			t.Fatalf("balance %v shows %+v, want ALGO", args, res.Asset)
+		}
+	}
+
+	res, err := f.app.Holders(ctx, []string{"Algo"})
+	if err != nil {
+		t.Fatalf("holders Algo: %v", err)
+	}
+	if res.Asset.AssetID != 0 || len(res.Addresses) == 0 || len(res.Balances) != len(res.Addresses) {
+		t.Fatalf("holders Algo = %+v, want the funded accounts' ALGO", res)
+	}
+
+	if _, err := f.app.Balance(ctx, BalanceRequest{Args: []string{argsNative, "nosuchcoin"}}); err == nil ||
+		!strings.Contains(err.Error(), "unknown asset 'nosuchcoin'") {
+		t.Fatalf("balance of an unknown asset: %v, want it refused", err)
 	}
 }

@@ -219,7 +219,7 @@ func (m Model) dispatchAction(passphrase []byte) (tea.Model, tea.Cmd) {
 		case "set-systemd-creds":
 			warning, err = executeSetSystemcreds(dataDir, passphrase, svcInfo)
 		case "set-none":
-			warning, err = executeClear(dataDir)
+			warning, err = executeClear(dataDir, isLocal)
 		}
 		return ActionDoneMsg{err: err, warning: warning}
 	}

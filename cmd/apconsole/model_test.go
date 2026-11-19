@@ -1317,6 +1317,51 @@ func TestShellPromptCancellationDismissesOnlyMatchingPrompt(t *testing.T) {
 	}
 }
 
+// The command context can end while its prompt is still open, for instance
+// when Ctrl+C races the prompt's arrival. The cancellation is a shell message
+// and must reach the shell pane whichever pane has focus, or the dead prompt
+// keeps taking every key and the host key overlay covers the layout.
+func TestRootRoutesPromptCancellationToShellRegardlessOfFocus(t *testing.T) {
+	hostResponse := make(chan bool, 1)
+	lineResponse := make(chan string, 1)
+	m := model{
+		focus:  paneSigner,
+		shell:  newShellModel(nil, nil),
+		signer: recordingTeaModel{},
+		width:  splitMinWidth,
+		height: splitMinHeight,
+	}
+	m.shell.running = true
+	m.shell.pendingHostKey = &shellHostKeyApprovalMsg{host: "signer.example", response: hostResponse}
+	m.shell.pendingLinePrompt = &shellLinePromptMsg{prompt: "Endpoint: ", response: lineResponse}
+
+	next, _ := m.Update(shellPromptCanceledMsg{hostResponse: hostResponse})
+	got := next.(model)
+	if got.shell.pendingHostKey != nil {
+		t.Fatal("host key prompt still pending after its cancellation")
+	}
+	if strings.Contains(got.View(), "Trust this server") {
+		t.Fatal("host key overlay still shown after its cancellation")
+	}
+	next, _ = got.Update(shellPromptCanceledMsg{lineResponse: lineResponse})
+	got = next.(model)
+	if got.shell.pendingLinePrompt != nil {
+		t.Fatal("line prompt still pending after its cancellation")
+	}
+	if updates := got.signer.(recordingTeaModel).updates; updates != 0 {
+		t.Fatalf("signer pane received %d shell prompt messages, want 0", updates)
+	}
+
+	_, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	select {
+	case <-hostResponse:
+		t.Fatal("a key reached the cancelled host key prompt")
+	case <-lineResponse:
+		t.Fatal("a key reached the cancelled line prompt")
+	default:
+	}
+}
+
 func TestCtrlCCancelsPendingEmbeddedPromptWithoutLateResponse(t *testing.T) {
 	response := make(chan string, 1)
 	exec := &fakeShellExecutor{}

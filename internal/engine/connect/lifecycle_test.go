@@ -4,6 +4,7 @@
 package connect
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ func TestConnectWithTunnelReturnsConnectedWhenAlreadyConnectedToTarget(t *testin
 	state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	state.ConnectionTarget = "remote-a"
 
-	result, err := state.ConnectWithTunnel("remote-a", "host", 22, "", "", nil, nil, nil)
+	result, err := state.ConnectWithTunnel(context.Background(), "remote-a", "host", 22, "", "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ConnectWithTunnel() error = %v", err)
 	}
@@ -31,7 +32,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state := NewState()
 		state.connectingTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-a", "host", 22, "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel(context.Background(), "remote-a", "host", 22, "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "connection to remote-a already in progress") {
 			t.Fatalf("error = %v, want same-target in-progress error", err)
 		}
@@ -41,7 +42,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state := NewState()
 		state.connectingTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-b", "host", 22, "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel(context.Background(), "remote-b", "host", 22, "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "already connecting to remote-a") {
 			t.Fatalf("error = %v, want different-target in-progress error", err)
 		}
@@ -52,7 +53,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 		state.ConnectionTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-b", "host", 22, "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel(context.Background(), "remote-b", "host", 22, "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "already connected to remote-a") {
 			t.Fatalf("error = %v, want already-connected error", err)
 		}

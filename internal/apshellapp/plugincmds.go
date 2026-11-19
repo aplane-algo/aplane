@@ -94,7 +94,7 @@ func logger() *slog.Logger {
 }
 
 // ExecutePluginCommand resolves and executes a plugin command against the current network context.
-func (a *App) ExecutePluginCommand(_ context.Context, commandName string, args []string) (*PluginCommandExecution, error) {
+func (a *App) ExecutePluginCommand(ctx context.Context, commandName string, args []string) (*PluginCommandExecution, error) {
 	if a == nil || a.Plugins == nil {
 		return nil, fmt.Errorf("plugin manager not initialized")
 	}
@@ -113,7 +113,7 @@ func (a *App) ExecutePluginCommand(_ context.Context, commandName string, args [
 	}
 
 	normalizedArgs := normalizePluginCommandArgs(plugin, commandName, args)
-	result, err := a.Plugins.ExecuteCommand(plugin.Manifest.Name, commandName, normalizedArgs, pluginContext)
+	result, err := a.Plugins.ExecuteCommand(ctx, plugin.Manifest.Name, commandName, normalizedArgs, pluginContext)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (a *App) ExecutePluginCommand(_ context.Context, commandName string, args [
 }
 
 // ContinuePluginCommand executes a plugin continuation step in the current runtime context.
-func (a *App) ContinuePluginCommand(_ context.Context, plugin *discovery.Plugin, cont *jsonrpc.Continuation) (*jsonrpc.ExecuteResult, error) {
+func (a *App) ContinuePluginCommand(ctx context.Context, plugin *discovery.Plugin, cont *jsonrpc.Continuation) (*jsonrpc.ExecuteResult, error) {
 	if a == nil || a.Plugins == nil {
 		return nil, fmt.Errorf("plugin manager not initialized")
 	}
@@ -143,7 +143,7 @@ func (a *App) ContinuePluginCommand(_ context.Context, plugin *discovery.Plugin,
 	pluginContext.Continuation = cont.Context
 
 	normalizedArgs := normalizePluginCommandArgs(plugin, cont.Command, cont.Args)
-	result, err := a.Plugins.ExecuteCommand(plugin.Manifest.Name, cont.Command, normalizedArgs, pluginContext)
+	result, err := a.Plugins.ExecuteCommand(ctx, plugin.Manifest.Name, cont.Command, normalizedArgs, pluginContext)
 	if err != nil {
 		return nil, err
 	}

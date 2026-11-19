@@ -147,7 +147,9 @@ With this configuration:
 - The `network` command can only switch to mainnet or testnet
 - Attempting to switch to localnet will fail unless `localnet` is added
 
-If `networks_allowed` is empty or omitted, all networks are allowed.
+If `networks_allowed` is empty or omitted, all networks are allowed. A client
+`config.yaml` that exists but cannot be read (permissions, a disk error) is an
+error, never the defaults, which would allow every network.
 
 ### Data Directory Setup
 
@@ -621,6 +623,7 @@ lock_on_disconnect: true
 Important:
 
 - `appass` is an offline configuration tool
+- the data directory sets the mode: one with the `.prod` marker that the systemd installer writes is systemd-managed and needs `sudo appass`; any other is local and refuses root. `Systemd` is offered only in systemd mode, and only then does `appass` edit the `apsigner` unit, whatever units the host has
 - `apsigner` must be stopped before running `appass`
 - if `apsigner` is running, `appass` exits with a warning instead of editing auto-unlock configuration
 

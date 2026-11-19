@@ -105,3 +105,28 @@ func TestCheckNewKeyAndNewFilePath(t *testing.T) {
 		t.Fatalf("add: %d files, paths %v", len(added.Files), added.Paths)
 	}
 }
+
+// A path a workspace file has is taken even when nothing is on disk there
+// yet, and however the path is spelled: a workspace opened under relative
+// names still finds its files by their absolute paths.
+func TestCheckFreePathRefusesAnOpenFileNotOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "default.json", fixture(t, "signer_default.json"))
+	t.Chdir(dir)
+	w, err := Open("default.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = w.Add(&File{Path: "new.json"})
+	for _, path := range []string{"new.json", filepath.Join(dir, "new.json")} {
+		if err := w.CheckFreePath(path); err == nil || !strings.Contains(err.Error(), "already open") {
+			t.Errorf("CheckFreePath(%s) = %v, want already open", path, err)
+		}
+	}
+	if err := w.CheckFreePath("default.json"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("CheckFreePath(on disk) = %v, want already exists", err)
+	}
+	if err := w.CheckFreePath(filepath.Join(dir, "other.json")); err != nil {
+		t.Errorf("CheckFreePath(free) = %v", err)
+	}
+}

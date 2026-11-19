@@ -418,8 +418,11 @@ const (
 
 // BalanceCommandResult describes the semantic outcome of a balance command.
 type BalanceCommandResult struct {
-	Mode           BalanceMode
-	AssetRef       string
+	Mode BalanceMode
+	// Asset is the asset the balances are shown in: ALGO (AssetID 0) unless
+	// the command named an ASA. BalanceModeSingleFull shows every holding
+	// and leaves it unset.
+	Asset          asa.Metadata
 	AssetSpecified bool
 	Single         *BalanceDetails
 	Addresses      []string
@@ -443,8 +446,10 @@ type AccountsCommandResult struct {
 type HoldersCommandResult struct {
 	Addresses []string
 	Balances  []*BalanceDetails
-	AssetRef  string
-	Warnings  []Warning
+	// Asset is the asset held: ALGO (AssetID 0) unless the command named an
+	// ASA.
+	Asset    asa.Metadata
+	Warnings []Warning
 }
 
 // ParticipationCommandResult describes the semantic outcome of a participation command.
@@ -460,8 +465,10 @@ type SignersCommandResult struct {
 }
 
 // KeyTypesCommandResult describes the semantic outcome of a keytypes command.
+// SignerLocked marks KeyTypes as a locked signer's built-in key types only.
 type KeyTypesCommandResult struct {
-	KeyTypes []signerapi.KeyTypeInfo
+	KeyTypes     []signerapi.KeyTypeInfo
+	SignerLocked bool
 }
 
 // PluginCommandSummary describes one discovered plugin for shell rendering.
