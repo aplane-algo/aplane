@@ -9,29 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 )
 
-func TestBuiltinMetadataByRef(t *testing.T) {
-	meta, ok := BuiltinMetadataByRef("testnet", "usdc")
-	if !ok {
-		t.Fatal("BuiltinMetadataByRef(testnet, usdc) = not found, want found")
-	}
-	if meta.AssetID != 10458941 {
-		t.Fatalf("AssetID = %d, want 10458941", meta.AssetID)
-	}
-	if meta.Decimals != 6 {
-		t.Fatalf("Decimals = %d, want 6", meta.Decimals)
-	}
-}
-
-func TestBuiltinMetadataByRefUsesAliases(t *testing.T) {
-	meta, ok := BuiltinMetadataByRef("mainnet", "akita")
-	if !ok {
-		t.Fatal("BuiltinMetadataByRef(mainnet, akita) = not found, want found")
-	}
-	if meta.AssetID != 523683256 || meta.UnitName != "AKTA" {
-		t.Fatalf("BuiltinMetadataByRef(mainnet, akita) = %+v, want AKTA asset", meta)
-	}
-}
-
 func TestResolverResolveIDNumeric(t *testing.T) {
 	r := NewResolver("testnet", nil, nil)
 	assetID, err := r.ResolveID("10458941")

@@ -114,15 +114,6 @@ func IsBuiltinMetadata(network string, assetID uint64) bool {
 	return ok
 }
 
-// BuiltinUnitName returns a built-in unit name when static metadata is present.
-func BuiltinUnitName(network string, assetID uint64) (string, bool) {
-	info, ok := BuiltinMetadata(network, assetID)
-	if !ok || strings.TrimSpace(info.UnitName) == "" {
-		return "", false
-	}
-	return info.UnitName, true
-}
-
 // ResolveReference resolves a static built-in unit/name or explicit alias.
 func ResolveReference(network, ref string) (uint64, bool, error) {
 	ref = strings.TrimSpace(ref)

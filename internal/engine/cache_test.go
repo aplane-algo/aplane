@@ -766,8 +766,8 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PopulateSignerCache(stale) error = %v", err)
 	}
-	if err := eng.SaveSignerCache(); err != nil {
-		t.Fatalf("SaveSignerCache(stale) error = %v", err)
+	if err := eng.SignerCache.SaveCache(); err != nil {
+		t.Fatalf("SaveCache(stale) error = %v", err)
 	}
 
 	persistedBefore := cache.LoadSignerCacheFromStore(cacheStore)
@@ -785,8 +785,8 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PopulateSignerCache(fresh) error = %v", err)
 	}
-	if err := eng.SaveSignerCache(); err != nil {
-		t.Fatalf("SaveSignerCache(fresh) error = %v", err)
+	if err := eng.SignerCache.SaveCache(); err != nil {
+		t.Fatalf("SaveCache(fresh) error = %v", err)
 	}
 
 	if eng.SignerCache.HasAddress(staleAddr) {

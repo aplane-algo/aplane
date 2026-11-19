@@ -20,8 +20,6 @@ import (
 )
 
 type Contract struct {
-	Name    string   `json:"name"`
-	Desc    string   `json:"desc,omitempty"`
 	Methods []Method `json:"methods"`
 }
 
@@ -29,7 +27,6 @@ type Method struct {
 	Name    string       `json:"name"`
 	Args    []MethodArg  `json:"args"`
 	Returns MethodReturn `json:"returns"`
-	Desc    string       `json:"desc,omitempty"`
 }
 
 type MethodArg struct {

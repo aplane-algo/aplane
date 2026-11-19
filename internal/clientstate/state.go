@@ -264,15 +264,6 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 	return converted, nil
 }
 
-// SaveSignerCache persists the signer cache to disk under APCLIENT_DATA.
-func (s *State) SaveSignerCache() error {
-	if s.CacheStore == nil {
-		return nil
-	}
-	s.SignerCache.BindStore(s.CacheStore)
-	return s.SignerCache.SaveCache()
-}
-
 // SaveSignerCacheLocked persists the signer cache while the caller already
 // holds the shared APCLIENT_DATA mutation lock.
 func (s *State) SaveSignerCacheLocked() error {

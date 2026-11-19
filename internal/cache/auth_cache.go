@@ -15,11 +15,6 @@ func GetAuthCacheFilenameForStore(store *Store, network string) string {
 	return storePath(store, fmt.Sprintf("%s_auth_cache.json", network))
 }
 
-// NewAuthAddressCache creates a new empty auth address cache
-func NewAuthAddressCache() AuthAddressCache {
-	return NewAuthAddressCacheForStore(nil)
-}
-
 // NewAuthAddressCacheForStore creates a new empty auth address cache bound to a store.
 func NewAuthAddressCacheForStore(store *Store) AuthAddressCache {
 	cache := AuthAddressCache{
@@ -165,11 +160,8 @@ func (cache *AuthAddressCache) ResolveEffectiveSigner(sender string) string {
 	return sender
 }
 
-// RefreshAuthAddress queries the blockchain for the current auth address and updates cache
-func (cache *AuthAddressCache) RefreshAuthAddress(algodClient *algod.Client, address string, network string) (string, error) {
-	return cache.RefreshAuthAddressWithContext(context.Background(), algodClient, address, network)
-}
-
+// RefreshAuthAddressWithContext queries the blockchain for the current auth
+// address and updates the cache.
 func (cache *AuthAddressCache) RefreshAuthAddressWithContext(ctx context.Context, algodClient *algod.Client, address string, network string) (string, error) {
 	acctInfo, err := algodClient.AccountInformation(address).Do(ctx)
 	if err != nil {

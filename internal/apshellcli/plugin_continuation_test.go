@@ -472,8 +472,12 @@ func TestJSPluginListsTheRunsTransactionIDsAfterAFailure(t *testing.T) {
 func TestPluginRunRecordOfAFailedRun(t *testing.T) {
 	project := func(t *testing.T, pr *PluginResult) map[string]any {
 		t.Helper()
+		data, err := json.Marshal(projectPluginResult(pr))
+		if err != nil {
+			t.Fatalf("Marshal() error = %v", err)
+		}
 		var got map[string]any
-		if err := json.Unmarshal(appresult.Marshal(projectPluginResult(pr)), &got); err != nil {
+		if err := json.Unmarshal(data, &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 		return got

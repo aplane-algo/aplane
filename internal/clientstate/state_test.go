@@ -5,6 +5,7 @@ package clientstate
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,7 +47,7 @@ func TestConcurrentAddAliasPersistsAllEntries(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			// Different aliases may race for the same backing address; that is acceptable.
-			_, _ = state.AddAlias(fmt.Sprintf("name%d", i), addresses[i%len(addresses)])
+			_, _ = state.AddAliasWithContext(context.Background(), fmt.Sprintf("name%d", i), addresses[i%len(addresses)])
 		}(i)
 	}
 	wg.Wait()
@@ -86,7 +87,7 @@ func TestAddAliasRefreshesAndPersistsAuthCacheFromAlgod(t *testing.T) {
 		address: authAddr,
 	})
 
-	result, err := state.AddAlias("alice", address)
+	result, err := state.AddAliasWithContext(context.Background(), "alice", address)
 	if err != nil {
 		t.Fatalf("AddAlias() error = %v", err)
 	}
@@ -126,7 +127,7 @@ func TestAddAliasRollsBackAliasWhenAuthCacheRefreshPersistenceFails(t *testing.T
 		t.Fatalf("failed to block auth cache path with directory: %v", err)
 	}
 
-	if _, err := state.AddAlias("alice", address); err == nil {
+	if _, err := state.AddAliasWithContext(context.Background(), "alice", address); err == nil {
 		t.Fatal("AddAlias() error = nil, want auth cache persistence failure")
 	} else if got := err.Error(); got == "" || !containsAll(got, []string{"failed to update auth cache"}) {
 		t.Fatalf("AddAlias() error = %q, want auth cache update failure", got)
@@ -154,10 +155,10 @@ func TestAddAliasUpdatePrunesStaleOldAuthCacheEntry(t *testing.T) {
 		newAddr: newAuth,
 	})
 
-	if _, err := state.AddAlias("alice", oldAddr); err != nil {
+	if _, err := state.AddAliasWithContext(context.Background(), "alice", oldAddr); err != nil {
 		t.Fatalf("AddAlias(old) error = %v", err)
 	}
-	if _, err := state.AddAlias("alice", newAddr); err != nil {
+	if _, err := state.AddAliasWithContext(context.Background(), "alice", newAddr); err != nil {
 		t.Fatalf("AddAlias(new) error = %v", err)
 	}
 
@@ -197,9 +198,10 @@ func TestNewInitializedLoadsPersistedAuthCacheWithoutAlgodRefresh(t *testing.T) 
 	state.DataDir = dataDir
 	state.CacheStore = store
 	state.SignerCache = cache.NewSignerCache()
+	state.SignerCache.BindStore(store)
 	state.SignerCache.AddAddress(address, "ed25519")
-	if err := state.SaveSignerCache(); err != nil {
-		t.Fatalf("SaveSignerCache() error = %v", err)
+	if err := state.SignerCache.SaveCache(); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
 	}
 
 	authCache := cache.NewAuthAddressCacheForStore(store)

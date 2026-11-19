@@ -957,15 +957,17 @@ Parsing contracts:
 
 `internal/addressbook/resolver.go` converts user-friendly names to addresses.
 The resolver consults the alias and set caches, plus optional providers
-(`SignerProvider`, `AllAddressesProvider`, `HoldersProvider`) attached through
-`WithSignerProvider`/`WithAllProvider`/`WithHoldersProvider` for the reserved
-`@signers`, `@all`, and `@holders(...)` dynamic sets:
+(`SignerProvider`, `AllAddressesProvider`, `HoldersProvider`) set as fields
+for the reserved `@signers`, `@all`, and `@holders(...)` dynamic sets:
 
 ```go
-resolver := addressbook.NewResolver(&aliasCache, &setCache).
-    WithSignerProvider(signerAddresses).
-    WithAllProvider(allAddresses).
-    WithHoldersProvider(holdersOf)
+resolver := &addressbook.Resolver{
+    AliasCache:      &aliasCache,
+    SetCache:        &setCache,
+    SignerProvider:  signerAddresses,
+    AllProvider:     allAddresses,
+    HoldersProvider: holdersOf,
+}
 
 addr,  err := resolver.ResolveSingle("alice")
 addrs, err := resolver.ResolveList([]string{"alice", "@team", "@signers"})

@@ -327,7 +327,7 @@ func TestRefreshAuthAddressInitializesZeroValueCache(t *testing.T) {
 
 	cache := AuthAddressCache{}
 	client := newBuildAuthCacheTestAlgodClient(t, map[string]string{"ADDR1": "AUTH1"})
-	got, err := cache.RefreshAuthAddress(client, "ADDR1", "testnet")
+	got, err := cache.RefreshAuthAddressWithContext(context.Background(), client, "ADDR1", "testnet")
 	if err != nil {
 		t.Fatalf("RefreshAuthAddress failed: %v", err)
 	}

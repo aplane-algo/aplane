@@ -55,7 +55,7 @@ func presignTestTxn(t *testing.T, sender, note string) types.Transaction {
 // ed25519 key. Its slot then meets the managed-slot preconditions without a
 // query.
 func presignManagedCaches(managed string) []EngineOption {
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	authCache.AuthAddresses[managed] = ""
 	signerCache := cache.NewSignerCache()
 	signerCache.AddAddress(managed, "ed25519")

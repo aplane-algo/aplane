@@ -363,7 +363,7 @@ func newAppCallTestEngine(t *testing.T, client *algod.Client, address string) *E
 		WithAlgodClient(client),
 		WithAliasCache(cache.AliasCache{Aliases: map[string]string{}}),
 		WithSignerCache(cache.NewSignerCache()),
-		WithAuthCache(cache.NewAuthAddressCache()),
+		WithAuthCache(cache.NewAuthAddressCacheForStore(nil)),
 	)
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)

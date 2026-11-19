@@ -67,7 +67,7 @@ func TestSignAndSubmitViaGroupRejectsForeignPlaceholders(t *testing.T) {
 		return jsonResponse(r, http.StatusOK, resp)
 	})}
 
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	algodClient, err := algod.MakeClient("http://algod.test", "")
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
@@ -106,7 +106,7 @@ func TestSignAndSubmitViaGroupIncludesAppCallMetadata(t *testing.T) {
 		return jsonResponse(r, http.StatusOK, resp)
 	})}
 
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	algodClient, err := algod.MakeClient("http://algod.test", "")
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
@@ -136,7 +136,7 @@ func TestSignAndSubmitViaGroupSendsTheBatchLabel(t *testing.T) {
 			sent = &req
 			return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{Error: "stop here"})
 		})}
-		authCache := cache.NewAuthAddressCache()
+		authCache := cache.NewAuthAddressCacheForStore(nil)
 		algodClient, err := algod.MakeClient("http://algod.test", "")
 		if err != nil {
 			t.Fatalf("MakeClient() error = %v", err)
@@ -202,7 +202,7 @@ func TestSignAndSubmitViaGroupSimulateSignsThenUsesClientAlgod(t *testing.T) {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
 
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	txns := []types.Transaction{simulatedTxn}
 	var out bytes.Buffer
 	txIDs, submitted, err := SignAndSubmitViaGroup(txns, &authCache, signerClient, algodClient, SubmitOptions{
@@ -283,7 +283,7 @@ func TestSignAndSubmitViaGroupSimulateFailureReturnsSentinel(t *testing.T) {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
 
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	_, _, err = SignAndSubmitViaGroup([]types.Transaction{txn}, &authCache, signerClient, algodClient, SubmitOptions{
 		Out:      io.Discard,
 		Simulate: true,
@@ -315,7 +315,7 @@ func TestSignAndSubmitViaGroupRejectsNilAlgodBeforeSigning(t *testing.T) {
 		return jsonResponse(r, http.StatusOK, resp)
 	})}
 
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
 
 	_, _, err := SignAndSubmitViaGroup(txns, &authCache, signerClient, nil, SubmitOptions{Out: io.Discard})
@@ -375,7 +375,7 @@ func TestSignAndSubmitViaGroupWritesSubmittedTransactions(t *testing.T) {
 	}
 
 	var written []types.Transaction
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	txIDs, submittedTxns, err := SignAndSubmitViaGroup(
 		[]types.Transaction{original},
 		&authCache,
@@ -442,7 +442,7 @@ func TestSignAndSubmitViaGroupShowsCheckedFeeRaise(t *testing.T) {
 		if err != nil {
 			t.Fatalf("MakeClient() error = %v", err)
 		}
-		authCache := cache.NewAuthAddressCache()
+		authCache := cache.NewAuthAddressCacheForStore(nil)
 		var out bytes.Buffer
 		_, _, err = SignAndSubmitViaGroup([]types.Transaction{original}, &authCache, signerClient, algodClient, SubmitOptions{Out: &out})
 		return out.String(), err
@@ -532,7 +532,7 @@ func TestSignAndSubmitViaGroupRefusesSignedBytesThatAreNotCanonical(t *testing.T
 			signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 				return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{Signed: []string{hex.EncodeToString(raw)}})
 			})}
-			authCache := cache.NewAuthAddressCache()
+			authCache := cache.NewAuthAddressCacheForStore(nil)
 			_, _, err := SignAndSubmitViaGroup([]types.Transaction{original}, &authCache, signerClient, algodClient, SubmitOptions{Out: io.Discard})
 			if !errors.Is(err, canonical.ErrNotCanonical) || !strings.Contains(err.Error(), "signed transaction at index 0: "+canonical.ErrNotCanonical.Error()) {
 				t.Fatalf("error = %v, want the response refused as not canonical", err)

@@ -562,7 +562,7 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 	if build != nil {
 		build(&signerCache)
 	}
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	s := New(Deps{
 		Conn:      connect.NewState(),
 		AuthCache: &authCache,

@@ -196,17 +196,6 @@ func formatAssetIDList(ids []uint64) string {
 	return strings.Join(parts, ", ")
 }
 
-// ResolveBuiltinASAReference resolves a builtin ASA by numeric ID, unit/name, or explicit alias.
-func ResolveBuiltinASAReference(network, asaRef string) (uint64, bool) {
-	assetID, ok, err := asaregistry.ResolveReference(network, asaRef)
-	return assetID, ok && err == nil
-}
-
-// BuiltinASAUnitName returns the builtin unit name for an ASA when available.
-func BuiltinASAUnitName(network string, asaID uint64) (string, bool) {
-	return asaregistry.BuiltinUnitName(network, asaID)
-}
-
 // BuiltinASAInfo returns builtin metadata for an ASA when available.
 func BuiltinASAInfo(network string, asaID uint64) (ASAInfo, bool) {
 	info, ok := asaregistry.BuiltinMetadata(network, asaID)

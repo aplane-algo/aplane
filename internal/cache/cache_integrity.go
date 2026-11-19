@@ -164,11 +164,6 @@ func VerifyHMAC(data []byte, signatureHex string, key []byte) error {
 	return nil
 }
 
-// SaveSignedCache saves cache data with HMAC signature.
-func SaveSignedCache(filePath string, data interface{}, key []byte) error {
-	return saveSignedCache(filePath, data, key)
-}
-
 func saveSignedCache(filePath string, data interface{}, key []byte) error {
 	ensureCachePayloadSchemaVersion(data)
 

@@ -288,31 +288,34 @@ func (e *Core) ApplyClientCacheUpdates() error {
 // @all, @holders) enabled. Each dynamic set lists its addresses sorted, so
 // every command over one sees its accounts in the same order every time.
 func (e *Core) NewAddressResolver() *addressbook.Resolver {
-	resolver := addressbook.NewResolver(&e.AliasCache, &e.SetCache)
-	return resolver.WithSignerProvider(func() []string {
-		signers := e.listSignersCached()
-		addresses := make([]string, 0, len(signers))
-		for addr := range signers {
-			addresses = append(addresses, addr)
-		}
-		sort.Strings(addresses)
-		return addresses
-	}).WithAllProvider(func() []string {
-		return e.listAllAddressesCached()
-	}).WithHoldersProvider(func(assetRef string) ([]string, error) {
-		// The resolver interface carries no context; resolution happens on the
-		// interactive command path where cancellation is not yet plumbed.
-		result, err := e.GetHolders(context.Background(), assetRef)
-		if err != nil {
-			return nil, err
-		}
-		// The set drives sends and sweeps, so an account that could not be
-		// queried, and may hold the asset, fails it rather than dropping out.
-		if len(result.Failures) > 0 {
-			return nil, AccountsNotQueriedError(result.Failures)
-		}
-		return result.Addresses, nil
-	})
+	return &addressbook.Resolver{
+		AliasCache: &e.AliasCache,
+		SetCache:   &e.SetCache,
+		SignerProvider: func() []string {
+			signers := e.listSignersCached()
+			addresses := make([]string, 0, len(signers))
+			for addr := range signers {
+				addresses = append(addresses, addr)
+			}
+			sort.Strings(addresses)
+			return addresses
+		},
+		AllProvider: e.listAllAddressesCached,
+		HoldersProvider: func(assetRef string) ([]string, error) {
+			// The resolver interface carries no context; resolution happens on the
+			// interactive command path where cancellation is not yet plumbed.
+			result, err := e.GetHolders(context.Background(), assetRef)
+			if err != nil {
+				return nil, err
+			}
+			// The set drives sends and sweeps, so an account that could not be
+			// queried, and may hold the asset, fails it rather than dropping out.
+			if len(result.Failures) > 0 {
+				return nil, AccountsNotQueriedError(result.Failures)
+			}
+			return result.Addresses, nil
+		},
+	}
 }
 
 // collectAllAddresses returns a deduplicated set of all known addresses
