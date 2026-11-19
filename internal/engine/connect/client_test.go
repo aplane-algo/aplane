@@ -47,23 +47,6 @@ func TestConnectionStateSignerClientErrorsWhenDisconnected(t *testing.T) {
 	}
 }
 
-func TestConnectionStateSignerClientInheritsProgressWriter(t *testing.T) {
-	var progress bytes.Buffer
-	client := signerclient.NewSignerClient("http://signer.test")
-	state := &ConnectionState{
-		SignerClient:      client,
-		SignerProgressOut: &progress,
-	}
-
-	got, err := state.signerClient()
-	if err != nil {
-		t.Fatalf("signerClient() error = %v", err)
-	}
-	if got.ProgressOut != &progress {
-		t.Fatal("signer client did not inherit progress writer")
-	}
-}
-
 func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	client := signerclient.NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: connectRoundTripper{t: t, handler: func(req *http.Request) (*http.Response, error) {

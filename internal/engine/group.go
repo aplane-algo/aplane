@@ -34,6 +34,9 @@ type PreparedGroupSubmitResult struct {
 	Confirmed    bool
 	Output       string
 	WriteNotices []TransactionWriteNotice
+	// AuthRefreshWarning is set (non-fatal) when a confirmed rekey committed but
+	// the follow-up auth-cache refresh failed, leaving the local cache stale.
+	AuthRefreshWarning string
 }
 
 type paymentAppGroupPreparer interface {
@@ -123,6 +126,9 @@ func (e *Engine) ExecutePreparedGroup(ctx context.Context, group *PreparedGroup,
 	}
 	if err != nil {
 		return result, fmt.Errorf("failed to sign and submit prepared group: %w", errorWithSubmissionOutput(err, output.String()))
+	}
+	if result.Confirmed {
+		result.AuthRefreshWarning = e.refreshAfterConfirmedSubmit(ctx, submittedTxns)
 	}
 
 	return result, nil

@@ -89,17 +89,20 @@ func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotic
 // cache does not describe passes, and the signer judges.
 func (e *Engine) validateSubmitLsigArgs(txns []types.Transaction, lsigArgsMap []map[string][]byte) error {
 	for i, txn := range txns {
-		var lsigArgs map[string][]byte
-		if i < len(lsigArgsMap) {
-			lsigArgs = lsigArgsMap[i]
+		if err := e.validateSlotLsigArgs(txn, lsigArgsAt(lsigArgsMap, i)); err != nil {
+			return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
 		}
+	}
+	return nil
+}
 
-		signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
-		if e.signerCacheIsGenericLsig(signer) || len(lsigArgs) > 0 {
-			if err := e.validateSignerLsigArgs(signer, lsigArgs); err != nil {
-				return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)
-			}
-		}
+// validateSlotLsigArgs checks one transaction's placed arguments against the
+// declared arguments of the key that signs for its sender
+// (validateSubmitLsigArgs).
+func (e *Engine) validateSlotLsigArgs(txn types.Transaction, lsigArgs map[string][]byte) error {
+	signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
+	if e.signerCacheIsGenericLsig(signer) || len(lsigArgs) > 0 {
+		return e.validateSignerLsigArgs(signer, lsigArgs)
 	}
 	return nil
 }
@@ -130,7 +133,9 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, args LsigArgs, opt
 // connected signer and algod, a supported consensus version, transactions for
 // the active algod's network, fresh signer metadata for the senders, and then,
 // against that metadata, the placed LogicSig arguments. Plugin drafts in the
-// default group mode and transaction files reach the signer through here.
+// default group mode and transaction files reach the signer through here; a
+// presign-plan group's managed slots meet the same ones in
+// checkManagedSlotsReady.
 func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.SubmitOptions) error {
 	if !e.IsConnected() {
 		return ErrNotConnected
@@ -182,6 +187,33 @@ func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []t
 	return nil
 }
 
+// refreshAfterConfirmedSubmit is the step every confirmed submission ends
+// with, whatever built the group and whoever signed it: a single transaction,
+// a group, a transaction file, an atomic or prepared group, a rotating spend,
+// and the three plugin group modes. A transaction in submitted that rekeyed
+// its sender moved the sender's on-chain authorizer, so its auth-cache entry
+// is overwritten (refreshRekeyedSenders). Only senders the client tracks are
+// refreshed: an account it knows (an alias or a signer key) or one the auth
+// cache already has an entry for. A plugin's own account, which a plugin
+// group may rekey, is neither, and gets no entry. The rekey has committed, so
+// a failed refresh is not an error: it is returned as the warning text the
+// result carries (AuthRefreshWarning), and `rekey refresh` mends the entry.
+// It is "" when nothing failed.
+func (e *Engine) refreshAfterConfirmedSubmit(ctx context.Context, submitted []types.Transaction) string {
+	known := e.collectAllAddresses()
+	tracked := make([]types.Transaction, 0, len(submitted))
+	for _, txn := range submitted {
+		sender := txn.Sender.String()
+		if _, cached := e.AuthCache.GetAuthAddress(sender); cached || known[sender] {
+			tracked = append(tracked, txn)
+		}
+	}
+	if err := e.refreshRekeyedSenders(ctx, tracked); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
 // refreshRekeyedSenders re-queries and overwrites the auth-address cache for the
 // senders of confirmed rekey transactions. It is the post-submit counterpart to
 // refreshMissingSubmitAuthAddresses: that hook is fill-on-miss, so after a rekey
@@ -190,7 +222,7 @@ func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []t
 //
 // It returns the first refresh error encountered. Such a failure is non-fatal —
 // the rekey already committed — but the local cache is left stale, so the caller
-// should surface it as a warning (and the user can run `rekey refresh`).
+// surfaces it as a warning (and the user can run `rekey refresh`).
 func (e *Engine) refreshRekeyedSenders(ctx context.Context, txns []types.Transaction) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -246,10 +278,10 @@ func (e *Engine) SignAndSubmit(ctx context.Context, prep *TransactionPrepResult,
 	opts.Batch = prep.Batch
 
 	txids, submittedTxns, err := e.signAndSubmitGroup([]types.Transaction{prep.Transaction}, args, opts)
-	submittedTxn := prep.Transaction
-	if len(submittedTxns) > 0 {
-		submittedTxn = submittedTxns[0]
+	if len(submittedTxns) == 0 {
+		submittedTxns = []types.Transaction{prep.Transaction}
 	}
+	submittedTxn := submittedTxns[0]
 	result := &SubmitResult{
 		Transaction:  submittedTxn,
 		Confirmed:    wait && !e.Simulate && err == nil,
@@ -263,14 +295,8 @@ func (e *Engine) SignAndSubmit(ctx context.Context, prep *TransactionPrepResult,
 		return result, fmt.Errorf("failed to sign and submit: %w", errorWithSubmissionOutput(err, output.String()))
 	}
 
-	// A confirmed rekey changes the sender's on-chain authorizer; refresh the
-	// stale auth-cache entry captured before signing. All rekeys flow through this
-	// path (only PrepareRekey sets RekeyTo). Best-effort: a failure is reported as
-	// a warning on the result, not an error, since the rekey already committed.
 	if result.Confirmed {
-		if refreshErr := e.refreshRekeyedSenders(ctx, []types.Transaction{submittedTxn}); refreshErr != nil {
-			result.AuthRefreshWarning = refreshErr.Error()
-		}
+		result.AuthRefreshWarning = e.refreshAfterConfirmedSubmit(ctx, submittedTxns)
 	}
 
 	return result, nil
@@ -327,6 +353,9 @@ func (e *Engine) SignAndSubmitGroup(ctx context.Context, txns []types.Transactio
 	if err != nil {
 		return result, errorWithSubmissionOutput(err, output.String())
 	}
+	if result.Confirmed {
+		result.AuthRefreshWarning = e.refreshAfterConfirmedSubmit(ctx, submittedTxns)
+	}
 	return result, nil
 }
 
@@ -337,6 +366,9 @@ type SignTransactionsResult struct {
 	Confirmed    bool                     // True if all were confirmed (when wait=true)
 	Output       string                   // Signer/submission output
 	WriteNotices []TransactionWriteNotice // Transaction JSON write outcomes
+	// AuthRefreshWarning is set (non-fatal) when a confirmed rekey committed but
+	// the follow-up auth-cache refresh failed, leaving the local cache stale.
+	AuthRefreshWarning string
 }
 
 // SignAndSubmitTransactions signs and submits pre-built transactions, such
@@ -359,6 +391,9 @@ func (e *Engine) SignAndSubmitTransactions(ctx context.Context, txns []types.Tra
 	}
 	if err != nil {
 		return result, errorWithSubmissionOutput(err, output.String())
+	}
+	if result.Confirmed {
+		result.AuthRefreshWarning = e.refreshAfterConfirmedSubmit(ctx, submittedTxns)
 	}
 
 	return result, nil

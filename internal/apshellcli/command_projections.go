@@ -121,11 +121,20 @@ type networkProjection struct {
 }
 
 type generatedKeyProjection struct {
-	KeyType       string            `json:"key_type"`
-	Address       string            `json:"address"`
-	Parameters    map[string]string `json:"parameters,omitempty"`
-	CosignerKeyID string            `json:"cosigner_key_id,omitempty"`
-	Warnings      []string          `json:"warnings,omitempty"`
+	KeyType       string              `json:"key_type"`
+	Address       string              `json:"address"`
+	Parameters    map[string]string   `json:"parameters,omitempty"`
+	CosignerKeyID string              `json:"cosigner_key_id,omitempty"`
+	Warnings      []warningProjection `json:"warnings,omitempty"`
+}
+
+// projectGeneratedKey is generate's MCP result: the signer's advice about
+// the account is its warnings, each with the signer_advice code.
+func projectGeneratedKey(result *apshellapp.GenerateKeyCommandResult) generatedKeyProjection {
+	return generatedKeyProjection{
+		KeyType: result.KeyType, Address: result.Address, Parameters: result.Parameters,
+		CosignerKeyID: result.CosignerKeyID, Warnings: projectWarnings(apshellapp.SignerAdviceWarnings(result.Warnings)),
+	}
 }
 
 type deletedKeyProjection struct {
@@ -321,7 +330,7 @@ type sendProjection struct {
 	SuccessCount int                  `json:"success_count,omitempty"`
 	FailureCount int                  `json:"failure_count,omitempty"`
 	Items        []sendItemProjection `json:"items,omitempty"`
-	Warnings     []string             `json:"warnings,omitempty"`
+	Warnings     []warningProjection  `json:"warnings,omitempty"`
 	Cancelled    bool                 `json:"cancelled,omitempty"`
 }
 
@@ -335,10 +344,8 @@ type sendItemProjection struct {
 }
 
 func projectSendResult(result *apshellapp.SendExecutionResult, simulated bool) sendProjection {
-	projection := sendProjection{Mode: string(result.Mode), Amount: asa.DisplayString(result.Amount), Simulated: simulated}
-	for _, warning := range result.Warnings {
-		projection.Warnings = append(projection.Warnings, warning.Message)
-	}
+	projection := sendProjection{Mode: string(result.Mode), Amount: asa.DisplayString(result.Amount), Simulated: simulated,
+		Warnings: projectWarnings(result.Warnings)}
 	if result.NonAtomic != nil {
 		projection.SuccessCount = result.NonAtomic.SuccessCount
 		projection.FailureCount = result.NonAtomic.FailureCount
@@ -369,7 +376,7 @@ type sweepProjection struct {
 	FailureCount int                   `json:"failure_count"`
 	LastTxID     string                `json:"last_tx_id,omitempty"`
 	Items        []sweepItemProjection `json:"items"`
-	Warnings     []string              `json:"warnings,omitempty"`
+	Warnings     []warningProjection   `json:"warnings,omitempty"`
 	Cancelled    bool                  `json:"cancelled,omitempty"`
 }
 
@@ -387,9 +394,7 @@ func projectSweepResult(result *apshellapp.SweepCommandResult, simulated bool) s
 		Asset: result.Asset.UnitName, Destination: result.ToAddress, Simulated: simulated,
 		SuccessCount: result.SuccessCount, FailureCount: result.FailureCount,
 		LastTxID: result.LastTxID, Items: make([]sweepItemProjection, len(result.Items)),
-	}
-	for _, warning := range result.Warnings {
-		projection.Warnings = append(projection.Warnings, warning.Message)
+		Warnings: projectWarnings(result.Warnings),
 	}
 	for i, item := range result.Items {
 		projection.Items[i] = sweepItemProjection{
@@ -468,6 +473,28 @@ type rekeyProjection struct {
 	Simulated bool                    `json:"simulated,omitempty"`
 	Entries   []rekeyEntryProjection  `json:"entries,omitempty"`
 	Refreshed []authRefreshProjection `json:"refreshed,omitempty"`
+	// Warnings are the transaction's, auth_cache_refresh_failed among them
+	// when the auth cache could not be updated after a confirmed rekey.
+	Warnings []warningProjection `json:"warnings,omitempty"`
+}
+
+// warningProjection is one warning a command result carries, with the code
+// a client can match on. Every MCP result's warnings field is a list of
+// these.
+type warningProjection struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func projectWarnings(warnings []apshellapp.Warning) []warningProjection {
+	if len(warnings) == 0 {
+		return nil
+	}
+	projected := make([]warningProjection, len(warnings))
+	for i, warning := range warnings {
+		projected[i] = warningProjection{Code: warning.Code, Message: warning.Message}
+	}
+	return projected
 }
 
 type rekeyEntryProjection struct {

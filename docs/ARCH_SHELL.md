@@ -575,7 +575,8 @@ methods take them.
   `SignAndSubmitWithPluginSigners` set each position's map from
   `LsigArgs.For(sender)`; a presign-plan slot the plugin signs gets none.
   The engine judges nothing in it, except through the existing pre-sign
-  check (`validateSubmitLsigArgs`), which compares each position's map with
+  check (`validateSubmitLsigArgs`; for a presign-plan group's managed slots,
+  `checkManagedSlotsReady`), which compares each position's map with
   the declared arguments of the sender's effective signer in the signer
   cache, after `refreshSubmitSigningState`. A key the cache describes no
   arguments for passes; the signer judges every key, and refuses
@@ -776,7 +777,13 @@ command boundaries; those mechanisms improve freshness rather than prove intent.
 - SignerCache: rebuilt from `/keys` on `keys`/`accounts` commands, tab completion,
   `/status` keyset-revision changes, and cosigned submit paths whose cached
   signer row is missing current signing-flow or cosigner metadata
-- AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key
+- AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key,
+  and every confirmed submission refreshes the sender of each rekey it carried
+  when the client tracks that sender, an alias, a signer key, or an account
+  with an entry already, so a plugin's own account gets none
+  (`refreshAfterConfirmedSubmit`, on every engine submission path); a failed
+  refresh is the result's `AuthRefreshWarning`, an `auth_cache_refresh_failed`
+  warning in `apshellapp`
 - ASACache: fetches from blockchain on cache miss
 
 #### Algod Client
@@ -805,16 +812,15 @@ Connection state is protected by a mutex:
 
 ```go
 type ConnectionState struct {
-    Mu                sync.Mutex
-    SignerClient      *signerclient.Client
-    SignerProgressOut io.Writer
-    SSHTunnelClient   *sshtunnel.Client
-    TunnelConnected   bool
-    TunnelCtx         context.Context
-    TunnelCancel      context.CancelFunc
-    ConnectionTarget  string
-    connectingTarget  string
-    portDialTimeout   func(network, address string, timeout time.Duration) (net.Conn, error)
+    Mu               sync.Mutex
+    SignerClient     *signerclient.Client
+    SSHTunnelClient  *sshtunnel.Client
+    TunnelConnected  bool
+    TunnelCtx        context.Context
+    TunnelCancel     context.CancelFunc
+    ConnectionTarget string
+    connectingTarget string
+    portDialTimeout  func(network, address string, timeout time.Duration) (net.Conn, error)
 }
 
 func (e *Engine) IsConnected() bool {
@@ -1977,7 +1983,7 @@ Client programs produce four kinds of output, and each has one owner:
 |---|---|---|
 | Result | The answer to a command, or something the user must keep | Typed application result, rendered by the host (`r.Out`, `command.Result`) |
 | Prompt | Asks for a decision or input | The line reader, or the host's approval handler |
-| Progress | Status that matters while an operation runs | `ProgressLine`, `SignerProgressOut`, or a host callback |
+| Progress | Status that matters while an operation runs | `ProgressLine`, the signer client's `ProgressOut` (stdout when unset), or a host callback |
 | Log | Operational diagnostics | `log/slog`, through the handler the host installs |
 
 If a command's answer would be incomplete without a message, it is a result, and

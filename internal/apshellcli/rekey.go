@@ -161,9 +161,6 @@ func rekeyTransactionResult(r *REPLState, result *apshellapp.RekeyCommandResult,
 				r.printf("%s: %s\n", submittedLabel, result.TxID)
 			}
 			if result.Confirmed {
-				if result.RefreshWarning != "" {
-					r.printf("⚠️  Warning: failed to update auth cache: %v\n", result.RefreshWarning)
-				}
 				for _, line := range renderRekeyLines(result.ConfirmedLines, result, r) {
 					r.println(line)
 				}
@@ -175,7 +172,7 @@ func rekeyTransactionResult(r *REPLState, result *apshellapp.RekeyCommandResult,
 		})
 	}, rekeyProjection{
 		Mode: "transaction", From: result.From, To: result.To, TxID: result.TxID,
-		Confirmed: result.Confirmed, Simulated: simulated,
+		Confirmed: result.Confirmed, Simulated: simulated, Warnings: projectWarnings(result.Warnings),
 	})
 }
 

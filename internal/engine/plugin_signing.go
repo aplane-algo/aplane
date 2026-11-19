@@ -23,6 +23,9 @@ import (
 type PluginSubmitResult struct {
 	TxIDs  []string
 	Output string
+	// AuthRefreshWarning is set (non-fatal) when a confirmed rekey committed but
+	// the follow-up auth-cache refresh failed, leaving the local cache stale.
+	AuthRefreshWarning string
 }
 
 func pluginAppCallInfo(txn types.Transaction) *signerapi.AppCallInfo {

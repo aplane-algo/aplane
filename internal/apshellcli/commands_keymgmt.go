@@ -67,10 +67,7 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 			r.printf("Generated %s key: %s\n", keytypefmt.Display(result.KeyType), result.Address)
 			renderResolvedGeneration(r, result)
 		})
-	}, generatedKeyProjection{
-		KeyType: result.KeyType, Address: result.Address, Parameters: result.Parameters,
-		CosignerKeyID: result.CosignerKeyID, Warnings: result.Warnings,
-	})
+	}, projectGeneratedKey(result))
 }
 
 // generateFromBoundary shows the local summary and creates the account. Interactive

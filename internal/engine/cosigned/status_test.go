@@ -6,6 +6,7 @@ package cosigned
 import (
 	"context"
 	"errors"
+	"io"
 	"sync/atomic"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestInspectRoutesMatchesResolverAndClosesConnections(t *testing.T) {
 			if closes.Load() != int32(lenNonNilObservations(result)) {
 				t.Fatalf("leaked connections: %d", closes.Load())
 			}
-			snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.v1", PublicKey: "aa"}})
+			snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.v1", PublicKey: "aa"}}, io.Discard)
 			if snapshot != nil {
 				snapshot.close()
 			}

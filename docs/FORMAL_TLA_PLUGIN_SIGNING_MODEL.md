@@ -51,7 +51,12 @@ does not transcribe, and it runs after the rekey judgments and the review: in
 `SignAndSubmitWithPluginSigners` before `/plan` (presign-plan), and in
 `SubmitPregroupedSigned` before the group is broadcast (pregrouped-signed),
 each after the submit function's second rekey judgment. It is checked by Go
-tests, not modeled. So are the refusals of a step's LogicSig arguments
+tests, not modeled. So are the presign-plan managed slots' signing
+preconditions, which follow the network check there and come before `/plan`
+(`engine/plugin_presign.go::checkManagedSlotsReady`, the default flow's
+`checkReadyToSign` for the slots APlane signs: auth fill and key refresh, a
+rotating or cosigned sender refused, LogicSig arguments checked); they only
+refuse, and change none of the modeled gates. So are the refusals of a step's LogicSig arguments
 (`arg:` words), which the model does not transcribe either and which change
 none of its gates: `CheckPluginGroup` refuses any for a pregrouped-signed
 group, an argument whose account is not a sender of the group or whose name

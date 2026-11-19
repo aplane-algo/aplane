@@ -75,6 +75,9 @@ type submitFixture struct {
 	signed  [][]string
 	// submits and simulations count the node's submit and simulate calls.
 	submits, simulations int
+	// failAccountsAfterSubmit makes the node's account queries fail once a
+	// transaction is submitted.
+	failAccountsAfterSubmit bool
 }
 
 func newSubmitFixture(t *testing.T, mode string) *submitFixture {
@@ -119,7 +122,7 @@ func newSubmitFixture(t *testing.T, mode string) *submitFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := eng.SetNetwork("testnet", client); err != nil {
+	if err := eng.SetNetwork(context.Background(), "testnet", client); err != nil {
 		t.Fatal(err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
@@ -243,6 +246,14 @@ func (f *submitFixture) serveNode(t *testing.T) func(http.ResponseWriter, *http.
 			w.Header().Set("Content-Type", "application/msgpack")
 			_, _ = w.Write(msgpack.Encode(info))
 		case strings.HasPrefix(path, "/v2/accounts/"):
+			f.mu.Lock()
+			failing := f.failAccountsAfterSubmit && f.submits > 0
+			f.mu.Unlock()
+			if failing {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": "node is catching up"})
+				return
+			}
 			address := strings.Split(strings.TrimPrefix(path, "/v2/accounts/"), "/")[0]
 			if strings.Contains(strings.TrimPrefix(path, "/v2/accounts/"), "/assets/") {
 				_ = json.NewEncoder(w).Encode(models.AccountAssetResponse{AssetHolding: models.AssetHolding{AssetId: submitTestAsset}})
@@ -467,6 +478,36 @@ func TestMCPSubmissionOutcomeStates(t *testing.T) {
 			t.Fatalf("result = %+v, want the confirmed group", got)
 		}
 	})
+}
+
+// A confirmed rekey whose auth-cache refresh then fails is still a success,
+// and its MCP result carries the warning by code and message, so a client
+// knows the cache names the old authorizer until rekey refresh.
+func TestMCPRekeyResultCarriesAFailedAuthCacheRefresh(t *testing.T) {
+	f := newSubmitFixture(t, nodeConfirms)
+	f.failAccountsAfterSubmit = true
+	cmd, err := parseShellCommand(fmt.Sprintf("rekey %s to %s", f.a.Address, f.b.Address))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := mcpExecuteCommand(f.state, cmd)
+	if result.IsError {
+		t.Fatalf("result = %+v, want success", result)
+	}
+	var got struct {
+		Confirmed bool `json:"confirmed"`
+		Warnings  []struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"warnings"`
+	}
+	if err := json.Unmarshal([]byte(mcpResultText(t, result)), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Confirmed || len(got.Warnings) != 1 || got.Warnings[0].Code != "auth_cache_refresh_failed" ||
+		!strings.Contains(got.Warnings[0].Message, f.a.Address.String()) {
+		t.Fatalf("result = %+v, want the confirmed rekey with an auth_cache_refresh_failed warning naming %s", got, f.a.Address)
+	}
 }
 
 // An error that carries no submission is the error text alone, as before.

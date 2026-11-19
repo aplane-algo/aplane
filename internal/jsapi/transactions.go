@@ -594,10 +594,14 @@ func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 		a.throwSubmitError(fmt.Errorf("sign() error: %w", err))
 	}
 
-	return a.runtime.ToValue(map[string]interface{}{
+	out := map[string]interface{}{
 		"txids":     result.TxIDs,
 		"confirmed": result.Confirmed,
-	})
+	}
+	if result.AuthRefreshWarning != "" {
+		out["authCacheWarning"] = result.AuthRefreshWarning
+	}
+	return a.runtime.ToValue(out)
 }
 
 // jsPlan sends transactions to the signer's /plan endpoint for group planning

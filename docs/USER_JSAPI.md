@@ -187,7 +187,7 @@ through normal signer approval and policy boundaries.
 | `setVerbose(enabled)` | Sets verbose output mode |
 | `setSimulate(enabled)` | Sets simulation mode |
 | `simulate()` | Boolean simulation mode state |
-| `waitForTx(txid, rounds = 5)` | Waits for confirmation; returns `true` |
+| `waitForTx(txid, rounds = 5)` | Checks up to `rounds` times, about once a ledger round, for confirmation; a failed status check does not end the wait; returns `true` |
 
 Simulation mode requests ordinary executable signatures and normal signer
 approval, then routes the exact signed group from the client to algod
@@ -486,9 +486,14 @@ atomicSendAsset([
 
 | Function | Returns |
 |---|---|
-| `rekey(from, to, options = {})` | `{ txid, confirmed }` |
-| `unrekey(account, options = {})` | `{ txid, confirmed }` |
+| `rekey(from, to, options = {})` | `{ txid, confirmed, authCacheWarning? }` |
+| `unrekey(account, options = {})` | `{ txid, confirmed, authCacheWarning? }` |
 | `isRekeyed(addressOrAlias)` | `{ rekeyed, authAddr }` |
+
+A confirmed rekey updates the client's auth cache, so later calls sign with
+the new authorizer. When that update fails, the rekey still stands and the
+result carries `authCacheWarning`; run `rekey refresh` in the shell to mend
+the cache.
 
 Examples:
 
@@ -556,8 +561,11 @@ it registers.
 
 | Function | Returns |
 |---|---|
-| `sign(filepath, { wait = true } = {})` | `{ txids, confirmed }` |
+| `sign(filepath, { wait = true } = {})` | `{ txids, confirmed, authCacheWarning? }` |
 | `plan(signRequests)` | `{ transactions, mutations? }` |
+
+A confirmed file that rekeys an account updates the auth cache as `rekey()`
+does, with the same `authCacheWarning` when that fails.
 
 `sign()` reads an external transaction file by the rules of the shell's
 [`sign`](USER_COMMANDS.md#sign), verifies the live algod is

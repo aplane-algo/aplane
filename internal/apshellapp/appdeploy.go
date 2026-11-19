@@ -89,7 +89,7 @@ func (a *App) AppDeploy(ctx context.Context, req AppDeployRequest) (*AppDeployRe
 			TxID:      submit.TxID,
 			Confirmed: submit.Confirmed,
 		},
-		Warnings: warningsFromTransactionWriteNotices(submit.WriteNotices),
+		Warnings: submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	}
 
 	if req.Wait && submit.Confirmed {

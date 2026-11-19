@@ -177,5 +177,10 @@ func (e *Engine) SubmitPregroupedSigned(ctx context.Context, g *PregroupedSigned
 
 	var output bytes.Buffer
 	txIDs, err := signing.SubmitTransactionsWithContext(ctx, g.raw, e.AlgodClient, true, &output)
-	return &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}, errorWithSubmissionOutput(err, output.String())
+	result := &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}
+	if err != nil {
+		return result, errorWithSubmissionOutput(err, output.String())
+	}
+	result.AuthRefreshWarning = e.refreshAfterConfirmedSubmit(ctx, txns)
+	return result, nil
 }

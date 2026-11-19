@@ -36,7 +36,7 @@ func (a *App) SwitchNetwork(ctx context.Context, req SwitchNetworkRequest) (*Swi
 	}
 
 	oldNetwork := a.eng.GetNetwork()
-	if err := a.eng.SetNetwork(req.Network, algodClient); err != nil {
+	if err := a.eng.SetNetwork(ctx, req.Network, algodClient); err != nil {
 		return nil, err
 	}
 

@@ -133,21 +133,23 @@ func TestResolvedGenerationPrintsTheFeeLimitAndWarnings(t *testing.T) {
 	}
 }
 
-// The structured result of generate carries the signer's warnings as a list,
-// and no field when there are none.
+// The structured result of generate carries the signer's warnings as a list
+// of code and message objects, as every MCP result's warnings are, and no
+// field when there are none.
 func TestGeneratedKeyProjectionCarriesWarnings(t *testing.T) {
-	data, err := json.Marshal(generatedKeyProjection{
+	data, err := json.Marshal(projectGeneratedKey(&apshellapp.GenerateKeyCommandResult{
 		KeyType: "aplane.falcon1024.v1", Address: "ADDRESS", Parameters: map[string]string{"max_fee": "0"},
 		Warnings: []string{"Fee limit 0 is too low to pay alone.", "a second note"},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"key_type":"aplane.falcon1024.v1","address":"ADDRESS","parameters":{"max_fee":"0"},"warnings":["Fee limit 0 is too low to pay alone.","a second note"]}`
+	want := `{"key_type":"aplane.falcon1024.v1","address":"ADDRESS","parameters":{"max_fee":"0"},"warnings":[` +
+		`{"code":"signer_advice","message":"Fee limit 0 is too low to pay alone."},{"code":"signer_advice","message":"a second note"}]}`
 	if string(data) != want {
 		t.Fatalf("projection = %s, want %s", data, want)
 	}
-	quiet, err := json.Marshal(generatedKeyProjection{KeyType: "ed25519", Address: "ADDRESS"})
+	quiet, err := json.Marshal(projectGeneratedKey(&apshellapp.GenerateKeyCommandResult{KeyType: "ed25519", Address: "ADDRESS"}))
 	if err != nil {
 		t.Fatal(err)
 	}

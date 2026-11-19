@@ -111,9 +111,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 
 	signerClient := signerclient.NewSignerClient("http://" + signerSSHHTTPAuthority)
 	signerClient.Client = &http.Client{Transport: newSSHHTTPTransport(client, signerSSHHTTPAuthority)}
-	s.Mu.Lock()
-	signerClient.ProgressOut = s.SignerProgressOut
-	s.Mu.Unlock()
 	keysResp, err := signerClient.GetKeysWithContext(ctx)
 	if err != nil {
 		failed(err)

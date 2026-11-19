@@ -133,7 +133,7 @@ func (a *App) Rotate(ctx context.Context, req RotateRequest) (*RotateCommandResu
 		TxID:               submit.TxID,
 		Confirmed:          submit.Confirmed,
 		Output:             submit.Output,
-		Warnings:           warningsFromTransactionWriteNotices(submit.WriteNotices),
+		Warnings:           submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning),
 	}
 	if submit.Confirmed {
 		current, err := a.eng.RefreshAuthAddressWithContext(ctx, address)
