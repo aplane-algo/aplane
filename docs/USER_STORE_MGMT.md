@@ -573,14 +573,26 @@ confirmation, and a durable audit intent before any deletion.
 An in-place abandoned directory that cannot be safely quarantined requires the
 distinct `identity.generation.abandoned.discard` authorization. Discard refuses
 the selected generation, its rollback parent, and every sealed prior. Neither
-discard nor prune has a size limit.
+discard nor prune has a size limit. Such a directory can be newer state left
+behind by restoring an older store root, and it may hold the only copy of keys
+created since: copy it out of the store before discarding it. If it crossed a
+passphrase change, recovering those keys also needs the newer store root.
 
 Quarantine holds a generation of at most 65,536 files and directories,
 512 MiB in all, and 64 MiB for any one file. Every operation that commits a
-new generation (initialize, rebuild, restore and
-its rollback, passphrase change, policy apply and ASA set changes) refuses one larger than that before publishing
-anything, so a commit that fails part way always leaves something quarantine
-can hold. Prune the deleted archive, or delete keys, to get under the limit.
+new generation (initialize, rebuild, restore and its rollback, passphrase
+change, policy apply and ASA set changes) refuses one larger than that before
+publishing anything, so a commit that fails part way always leaves something
+quarantine can hold. A store already past the limit is refused at once, with
+the reason. To get under the limit, delete keys and then prune them from the
+deleted archive: deleting a key moves it into the deleted archive of the same
+generation, which shrinks nothing until it is pruned.
+
+The supported store size is 8,192 keys, each with a policy of its own, beside
+a full deleted archive. Key generation and import on a signer do not stop at
+that number, but a store well past it can reach the limit above, and from then
+on it keeps signing while passphrase change, policy apply, ASA set changes and
+restore are all refused until keys are deleted and pruned.
 
 A changepass interrupted before the root replacement may leave its successor
 quarantined. Retry is intentionally blocked until that non-authoritative entry

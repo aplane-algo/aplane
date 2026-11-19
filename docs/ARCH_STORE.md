@@ -654,9 +654,23 @@ above the documented count caps (8,192 cosigner credentials with their public
 sidecars, 8,192 per-key policy documents with their sidecars, a full deleted
 archive), and the byte limit leaves as much again as a full deleted archive
 for live state. Ordinary key mutations do not mint, so a selected generation
-can grow past the limits in place; its next mint is refused until it is
-pruned back, and if an older root is restored it stays where it is and is
-removed with abandoned discard.
+can grow past the limits in place; its next mint is refused until keys are
+deleted and pruned from the deleted archive. If an older root is restored, a
+formerly selected generation past the limits stays where it is, and only
+abandoned discard (below) removes it.
+
+**Supported store size.** The supported size is 8,192 keys, each with a
+policy document of its own, beside a full deleted archive: account keys on a
+signer, cosigner credentials on a cosigner (where 8,192 is also a hard cap).
+That fits the limits with room for key files of up to about 25 KB (Falcon key
+files are 11 to 24 KB) and policy documents of a few KB. Signer account keys
+have no hard cap: key generation and import add to the selected generation in
+place and do not check the limits. A store past them keeps signing, but every
+operation that commits a new generation (passphrase change, policy apply, ASA
+set changes, restore and its rollback) is refused, because its new generation
+would not fit quarantine. On a signer the byte limit binds somewhere between
+about 10,000 and 45,000 keys, depending on the key type, per-key policies and
+how full the deleted archive is.
 
 The staged-tree check is the authority. Before staging, a mint (and a
 passphrase change, before it seals) also measures the selected generation as
@@ -681,11 +695,18 @@ separate `identity.generation.abandoned.discard` action, explicit confirmation,
 and a durable intent audit. It refuses current, rollback-parent, and sealed
 generation state. Discard applies no size limit and refuses nothing inside its
 target, since it exists for the directories that broke the limits or the
-layout; it renames and removes, following no link.
+layout; it renames and removes, following no link. Such a directory can be
+newer state orphaned by restoring an older root, which reconciliation
+preserves and never deletes, holding the only copy of keys created after that
+root, so the operator copies it out of the store before discarding it. If
+it crossed a passphrase change, recovering those keys also needs the newer
+store root, as below.
 
 Eligible candidates are atomically renamed to
 `quarantine/generations/<gen-id>` and both parent directories are synced.
-Quarantine is bounded to eight generations and 1 GiB. Live pruning requires
+Quarantine is bounded to eight generations and 1 GiB, twice the candidate
+byte limit, so one maximum-sized candidate still leaves the next mint its
+reserve. Live pruning requires
 the stable `identity.generation.quarantine.prune` action, explicit
 confirmation, and durable intent audit before deletion. Like discard, prune
 applies no size limit.

@@ -27,12 +27,16 @@ import (
 // a crashed mint leaves behind can always be classified, and a generation
 // quarantine accepts can always be read back.
 //
-// Mint enforces the limits, so they are set to refuse no store the layout
-// otherwise allows in practice: the entry limit sits above every count cap the
-// store documents (8,192 cosigner credentials with their public sidecars,
-// 8,192 per-key policy documents with their sidecars, a full deleted
-// archive), and the byte limit leaves as much again as a full deleted archive
-// for live state.
+// Mint enforces the limits, so they sit above the store's documented count
+// caps: the entry limit covers 8,192 cosigner credentials with their public
+// sidecars, 8,192 per-key policy documents with their sidecars and a full
+// deleted archive together, and the byte limit leaves as much again as a full
+// deleted archive for live state. They do not cover every store: signer
+// account keys have no cap of their own, and key generation and import grow
+// the selected generation in place without this check. A store past the
+// limits keeps signing, but no new generation can be committed from it
+// (RequireSuccessorFits says why); docs/ARCH_STORE.md gives the supported
+// store size, which stays well inside them.
 //
 // The quarantine total is derived from the candidate byte limit, not set on
 // its own: requireMintableGenerationStore refuses a mint unless quarantine has
