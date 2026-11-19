@@ -1996,7 +1996,7 @@ This applies to:
 - **Import request**: `import_key.mnemonic` is a JSON string decoded as `protocol.SensitiveBytes`, like every other secret on the admin wire. The handler zeroes it on every exit path, including a refusal before the import runs.
 - **apadmin passphrase fields**: the login, unlock, backup export and confirm, restore, backup import and mnemonic export passphrases are byte buffers, never strings. `internal/secretbuf` grows them and zeroes every allocation they outgrow, and backspace zeroes the removed bytes. Each is zeroed once submitted, except that a login or unlock passphrase stays for another try until an attempt succeeds or ends in a serious error. Each is also zeroed when its form is left, when the admin session ends and at program shutdown, and each send works on its own copy, which belongs to the send command and is zeroed once that command has run, even when no client is connected and nothing is sent.
 - **appass**: its passphrase and confirmation entries are byte buffers grown through `internal/secretbuf`. A mismatched confirmation zeroes that entry, and leaving the form or ending the program zeroes both; the confirmed passphrase moves to the action, which zeroes it once done, along with the copy read back from `appass-systemd-creds` for the round-trip check.
-- **Key file payloads**: saving and loading a key hold its `private_key` and `recovery_entropy` hex text in zeroable buffers, never strings, and zero them once the payload's wire form is used (see Residual Copies for what encoding/json keeps).
+- **Key file payloads**: the payload's wire struct holds the hex text of a key's `private_key` and `recovery_entropy` in zeroable buffers, zeroed once it is used, on save and on load. A load still reads each value as a string in its canonical-JSON check (see Residual Copies for that and for what encoding/json keeps).
 - **Admin frames**: the signer zeroes each login and `initialize_store` frame once it is handled, a login frame with a wrong passphrase before the next attempt is read, and each frame of an authenticated admin session once its message is handled. A request whose decode fails after some fields were filled has every `SensitiveBytes` value it already decoded zeroed (`protocol.ZeroSensitive`), a pre-login `initialize_store` included. Every handler whose request carries a `SensitiveBytes` field (unlock, backup, backup import commit, store passphrase change, restore preview, restore, installed template import, key export and key import) zeroes it on every exit path, including a refusal before the work runs. On the client, both transports zero each frame they encode, the auth and unlock passphrase copies are zeroed after the send, and a request is encoded once (its ID is read from the envelope, not from a second encoding). The IPC transport's `Authenticate`, `AuthenticateOnly` and `Unlock` take the passphrase as bytes, so apadmin's batch workflows, `apadmin policy` and apapprover hand over the buffer they read and zero it, with no string copy on the way; apapprover zeroes its passphrase once the login is done.
 
 #### Residual Copies
@@ -2032,8 +2032,9 @@ when memory protection is enabled, until the runtime reuses or frees it.
   `json.Decoder` token, a string. The wire struct in
   `internal/keys/payload_codec.go` (`payloadWire`) holds both fields' hex text
   in buffers aplane owns (`secretHex`), zeroed once the wire struct is used,
-  and decodes it in place; only a value written with JSON escapes, which no
-  payload aplane writes contains, is decoded through a string. The decoded
+  and decodes it in place; only a value written with JSON escapes or holding
+  non-ASCII text, which no payload aplane writes contains, is decoded through
+  a string. The decoded
   `Payload` holds the key as bytes, zeroed when the payload is released.
 - **Exported recovery phrase.** The word encoders that turn a key into its
   recovery phrase return strings: algosdk's `mnemonic` package for Algorand
