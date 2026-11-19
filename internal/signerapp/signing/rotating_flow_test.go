@@ -1189,7 +1189,8 @@ func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
 	if rec, _ = m.Get("B"); !rec.Reused || len(rec.Leaves) != 2 || rec.TxID != "Q" {
 		t.Fatalf("live release after audited = %+v", rec)
 	}
-	// Records without a leaf list still dedupe by TxID.
+	// A record without a leaf list stands for leaf (0, 0) (latestLeaf), so
+	// it dedupes on that leaf and its TxID.
 	m.RecordAudited(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
 	m.Record(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
 	if rec, _ = m.Get("C"); rec.Reused || len(rec.Leaves) != 1 {

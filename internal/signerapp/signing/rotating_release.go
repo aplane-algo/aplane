@@ -82,7 +82,11 @@ func (r ReleaseRecord) LeafUsed(tree uint64, index uint32, txID string) bool {
 
 // LeafFor returns the leaf the stage already released txID on, if any: the
 // first listed when a retry after a lost history signed it on another leaf
-// as well, so the choice stays the same from one retry to the next.
+// as well. That is stable for a given history, not across sessions: after a
+// loss the memory lists only the retry's leaf, and the next clean restore
+// lists the log in order, with the first leaf first again. Either is safe,
+// because both leaves already signed this TxID and the hash-based signature
+// depends only on the leaf and the TxID, so re-signing reveals nothing new.
 func (r ReleaseRecord) LeafFor(txID string) (LeafRelease, bool) {
 	for _, l := range r.Leaves {
 		if l.TxID == txID {
@@ -627,6 +631,11 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 		// The messages omit the current round so they stay identical across
 		// passes and are logged once, not on every pass.
 		profile, _ := rotatingkey.Lookup(snapshot.KeyTypes[r.Account])
+		// The attempt count is the number of listed pairs of leaf and
+		// transaction, which is the leaves the stage has used: with intact
+		// history, one per distinct transaction. After a loss, one transaction
+		// signed on two leaves shows attempt 2. Without Reused every listed leaf
+		// is distinct, so the count never exceeds LeavesPerStage.
 		reuse := ""
 		if rec.Reused {
 			reuse = " (the stage has signed more than one transaction)"
