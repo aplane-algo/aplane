@@ -175,3 +175,43 @@ func TestSessionShutdownWaitsForTheCancelledCommand(t *testing.T) {
 		t.Fatalf("a line after Shutdown returned %v, want the session not initialized", err)
 	}
 }
+
+// waitForFile waits for path to exist: a shell command in flight made it.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never appeared", path)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A `!` command runs on the line's context: Shutdown, which cancels it,
+// returns at once rather than when the shell command would have ended.
+func TestSessionShutdownStopsAShellCommandInFlight(t *testing.T) {
+	session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	started := filepath.Join(t.TempDir(), "started")
+	returned := make(chan error, 1)
+	go func() {
+		_, _, err := session.ExecuteLineCaptured("!touch " + started + "; sleep 10")
+		returned <- err
+	}()
+	waitForFile(t, started)
+
+	begin := time.Now()
+	session.Shutdown()
+	if took := time.Since(begin); took > 2*time.Second {
+		t.Fatalf("Shutdown took %v with a shell command in flight, want it stopped", took)
+	}
+	if err := <-returned; err == nil || !strings.Contains(err.Error(), "shell command stopped") {
+		t.Fatalf("the shell command's line returned %v, want it stopped", err)
+	}
+}
