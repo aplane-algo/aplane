@@ -205,6 +205,7 @@ func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testi
 	}})
 	m := Model{
 		viewState: ViewCosignerImporting,
+		operation: pendingOperation{id: "cosigner-import-1", view: ViewCosignerImporting},
 		forms: formsState{
 			generateKeyType:       0,
 			genericLSigParams:     map[string]string{"cosigner_public_key": ""},
@@ -214,6 +215,7 @@ func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testi
 	}
 
 	next, _ := m.Update(CosignerImportResultMsg{
+		ID:      "cosigner-import-1",
 		Success: true,
 		Reference: CosignerReferenceInfo{
 			Name: "lab", ComponentKey: testWitnessID1, KeyType: "witness.v1",

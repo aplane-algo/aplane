@@ -128,7 +128,7 @@ func TestCosignerManagerRemovalDefaultsToCancelAndReportsResult(t *testing.T) {
 		t.Fatalf("explicit removal = view %v cmd nil=%v", next.viewState, cmd == nil)
 	}
 
-	nextModel, _ = next.Update(CosignerRemoveResultMsg{Success: true, Name: "west", Removed: true})
+	nextModel, _ = next.Update(CosignerRemoveResultMsg{ID: next.operation.id, Success: true, Name: "west", Removed: true})
 	next = nextModel.(Model)
 	if next.viewState != ViewCosignerReferences || next.cosigner.managerStatus != "Removed west" {
 		t.Fatalf("removal result = view %v status %q", next.viewState, next.cosigner.managerStatus)
@@ -138,12 +138,14 @@ func TestCosignerManagerRemovalDefaultsToCancelAndReportsResult(t *testing.T) {
 func TestManagerCosignerImportReturnsToManager(t *testing.T) {
 	m := Model{
 		viewState: ViewCosignerImporting,
+		operation: pendingOperation{id: "cosigner-import-1", view: ViewCosignerImporting},
 		cosigner: cosignerState{
 			returnView:   ViewCosignerReferences,
 			envelopeJSON: "sensitive public envelope",
 		},
 	}
 	nextModel, _ := m.Update(CosignerImportResultMsg{
+		ID:      "cosigner-import-1",
 		Success: true,
 		Reference: CosignerReferenceInfo{
 			Name:         "west",

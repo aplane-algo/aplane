@@ -87,7 +87,7 @@ func TestCosignerEnrollmentExportShowsJSONWithoutPath(t *testing.T) {
 	}
 
 	nextModel, cmd = next.Update(CosignerExportResultMsg{
-		Success: true, WitnessKeyID: reference.WitnessKeyID, EnvelopeJSON: string(witnessJSON),
+		ID: next.operation.id, Success: true, WitnessKeyID: reference.WitnessKeyID, EnvelopeJSON: string(witnessJSON),
 	})
 	next = nextModel.(Model)
 	if next.viewState != ViewCosignerExportJSON || cmd == nil {
@@ -246,12 +246,14 @@ func TestCosignerEnrollmentExportWritesOperatorPath(t *testing.T) {
 func TestCosignerEnrollmentExportRejectsInconsistentResponse(t *testing.T) {
 	m := Model{
 		viewState: ViewCosignerExporting,
+		operation: pendingOperation{id: "cosigner-export-1", view: ViewCosignerExporting},
 		cosigner: cosignerState{
 			exportWitnessID: testWitnessID1,
 			exportPath:      "unused.json",
 		},
 	}
 	nextModel, _ := m.Update(CosignerExportResultMsg{
+		ID:           "cosigner-export-1",
 		Success:      true,
 		WitnessKeyID: testWitnessID2,
 		EnvelopeJSON: `{}`,

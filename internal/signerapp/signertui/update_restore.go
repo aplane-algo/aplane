@@ -44,7 +44,7 @@ func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 				return m, nil
 			}
 			restoreCmd := m.sendRestoreBackupCmd(
-				m.restore.archivePath, addresses, m.restore.passphrase, true,
+				m.restore.archivePath, addresses, m.restore.passphrase, true, m.beginRestoreRequest("restore-backup"),
 			)
 			m.clearRestorePassphrase()
 			m.restore.passphraseError = ""
@@ -54,7 +54,8 @@ func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		}
 		m.restore.passphraseError = ""
 		m.restore.previewing = true
-		return m, tea.Batch(m.sendPreviewRestoreCmd(m.restore.archivePath, m.restore.passphrase), m.waitForMessageCmd())
+		id := m.beginRestoreRequest("preview-restore")
+		return m, tea.Batch(m.sendPreviewRestoreCmd(m.restore.archivePath, m.restore.passphrase, id), m.waitForMessageCmd())
 	case "backspace":
 		if len(m.restore.passphrase) > 0 {
 			m.restore.passphrase[len(m.restore.passphrase)-1] = 0
@@ -151,7 +152,7 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		restoreCmd := m.sendRestoreBackupCmd(
-			m.restore.archivePath, addresses, m.restore.passphrase, false,
+			m.restore.archivePath, addresses, m.restore.passphrase, false, m.beginRestoreRequest("restore-backup"),
 		)
 		m.clearRestorePassphrase()
 		m.restore.previewError = ""

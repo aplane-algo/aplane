@@ -302,7 +302,7 @@ func (m Model) sendBackupUndo() (tea.Model, tea.Cmd) {
 	m.restore.recoveryError = ""
 	m.restore.progressLabel = "Undoing Latest Restore"
 	m.viewState = ViewRestoring
-	return m, tea.Batch(m.sendRollbackRestoreCmd(), m.waitForMessageCmd())
+	return m, tea.Batch(m.sendRollbackRestoreCmd(m.beginRestoreRequest("rollback-restore")), m.waitForMessageCmd())
 }
 
 // handleRefusedBackupUndo returns a refused undo to the Backups page. It

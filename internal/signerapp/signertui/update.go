@@ -394,6 +394,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case CosignerImportResultMsg:
+		if !m.takeOperationReply(msg.ID) {
+			return m, m.waitForMessageCmd()
+		}
 		if !msg.Success {
 			m.clearCosignerImportEnvelope()
 			m.cosigner.importError = msg.Error
@@ -730,11 +733,25 @@ func (m *Model) beginOperation(view ViewState) string {
 	prefix := map[ViewState]string{
 		ViewGenerating: "gen", ViewImporting: "imp", ViewDeleting: "del",
 		ViewTemplateInstalling: "keytype", ViewBackingUp: "backup",
+		ViewCosignerImporting: "cosigner-import", ViewCosignerRemoving: "cosigner-remove",
+		ViewCosignerExporting: "cosigner-export",
 	}[view]
 	id := newRequestID(prefix)
 	m.operation = pendingOperation{id: id, view: view}
 	m.viewState = view
 	return id
+}
+
+// takeOperationReply reports whether id answers the operation the progress
+// screen on show waits on, and if so ends that wait. A reply for any other
+// request, or one that arrives after the screen moved on (a lock shows the
+// unlock screen), is not that operation's result and changes no screen.
+func (m *Model) takeOperationReply(id string) bool {
+	if id == "" || id != m.operation.id || m.viewState != m.operation.view {
+		return false
+	}
+	m.operation = pendingOperation{}
+	return true
 }
 
 // failOperationInProgress returns an untyped failure (an authorization
@@ -744,10 +761,9 @@ func (m *Model) beginOperation(view ViewState) string {
 // must name the operation's request: an error for any other request, such as
 // a background refresh, leaves the operation waiting for its own result.
 func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
-	if id == "" || id != m.operation.id || m.viewState != m.operation.view {
+	if !m.takeOperationReply(id) {
 		return m, false
 	}
-	m.operation = pendingOperation{}
 	switch m.viewState {
 	case ViewGenerating:
 		m.forms.generateError = err.Error()
@@ -767,6 +783,15 @@ func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
 	case ViewBackingUp:
 		m.backup.confirmError = err.Error()
 		m.viewState = ViewBackupConfirm
+	case ViewCosignerImporting:
+		m.cosigner.importError = err.Error()
+		m.viewState = ViewCosignerImportReview
+	case ViewCosignerRemoving:
+		m.cosigner.importError = err.Error()
+		m.viewState = ViewCosignerRemoveConfirm
+	case ViewCosignerExporting:
+		m.cosigner.exportError = err.Error()
+		m.viewState = ViewCosignerExportPath
 	default:
 		return m, false
 	}

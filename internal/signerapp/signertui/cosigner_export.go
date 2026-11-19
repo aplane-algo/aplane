@@ -117,9 +117,9 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			m.cosigner.exportPath = strings.TrimSpace(m.cosigner.exportPath)
 		}
 		m.cosigner.exportError = ""
-		m.viewState = ViewCosignerExporting
+		id := m.beginOperation(ViewCosignerExporting)
 		return m, tea.Batch(
-			m.sendExportCosignerPublicCmd(m.cosigner.exportWitnessID),
+			m.sendExportCosignerPublicCmd(m.cosigner.exportWitnessID, id),
 			m.waitForMessageCmd(),
 		)
 	}

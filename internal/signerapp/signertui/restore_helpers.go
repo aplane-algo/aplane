@@ -23,7 +23,42 @@ func (m *Model) clearRestorePassphrase() {
 	m.restore.passphrase = nil
 }
 
+// beginRestoreRequest names a new preview, restore, rollback or reconcile
+// request and returns the ID it must carry.
+func (m *Model) beginRestoreRequest(prefix string) string {
+	m.restore.pendingID = newRequestID(prefix)
+	return m.restore.pendingID
+}
+
+// failRestoreRequest handles an untyped failure (an authorization denial,
+// service unavailable, a send error) of the request beginRestoreRequest
+// named. A failure that names any other request, such as a background
+// refresh, is not the restore's and must not zero the passphrase the
+// preview step still needs.
+func (m Model) failRestoreRequest(err error) Model {
+	m.restore.pendingID = ""
+	if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
+		m.clearRestorePassphrase()
+		m.restore.previewing = false
+	}
+	if m.viewState != ViewRestoring {
+		m.lastError = err.Error()
+		return m
+	}
+	// The progress screen refuses Esc, so the failure must not strand the
+	// operator there. Route it the way typed failures are.
+	if m.signerState == signerRuntimeRecovery {
+		m.viewState = ViewStoreRecovery
+		m.restore.recoveryError = err.Error()
+		return m
+	}
+	m.lastError = err.Error()
+	m.viewState = ViewBackups
+	return m
+}
+
 func (m *Model) resetRestoreFlow() {
+	m.restore.pendingID = ""
 	m.clearRestorePassphrase()
 	m.restore.backups = nil
 	m.restore.backupsLoaded = false

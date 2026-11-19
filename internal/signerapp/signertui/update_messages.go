@@ -177,21 +177,6 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 		m.mnemonicExport.error = err.Error()
 		return m, nil
 	}
-	if m.viewState == ViewCosignerImporting {
-		m.cosigner.importError = err.Error()
-		m.viewState = ViewCosignerImportReview
-		return m, nil
-	}
-	if m.viewState == ViewCosignerRemoving {
-		m.cosigner.importError = err.Error()
-		m.viewState = ViewCosignerRemoveConfirm
-		return m, nil
-	}
-	if m.viewState == ViewCosignerExporting {
-		m.cosigner.exportError = err.Error()
-		m.viewState = ViewCosignerExportPath
-		return m, nil
-	}
 	if next, ok := m.failPendingPolicyExport(id, err); ok {
 		return next, nil
 	}
@@ -210,23 +195,8 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 	if next, ok := m.failOperationInProgress(id, err); ok {
 		return next, nil
 	}
-	if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
-		m.clearRestorePassphrase()
-		m.restore.previewing = false
-	}
-	if m.viewState == ViewRestoring {
-		// An untyped failure (authorization denial, service
-		// unavailable, a send error) must not strand the operator on
-		// the progress screen, where Esc refuses and only q quits.
-		// Route the same way typed failures do.
-		if m.signerState == signerRuntimeRecovery {
-			m.viewState = ViewStoreRecovery
-			m.restore.recoveryError = err.Error()
-			return m, nil
-		}
-		m.lastError = err.Error()
-		m.viewState = ViewBackups
-		return m, nil
+	if id != "" && id == m.restore.pendingID {
+		return m.failRestoreRequest(err), nil
 	}
 	m.lastError = err.Error()
 	return m, nil
@@ -372,7 +342,7 @@ func (m Model) handleRollbackRestoreResultMsg(msg RollbackRestoreResultMsg) (tea
 	m.backups.undoPending = false
 	m.restore.recoveryError = "Restore rollback completed; reconciling current generation"
 	m.viewState = ViewStoreRecovery
-	return m, tea.Batch(m.sendReconcileStoreCmd(), m.waitForMessageCmd())
+	return m, tea.Batch(m.sendReconcileStoreCmd(m.beginRestoreRequest("reconcile-store")), m.waitForMessageCmd())
 }
 
 func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.Model, tea.Cmd) {
@@ -574,6 +544,9 @@ func (m Model) handleKeyTypesMsg(msg KeyTypesMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleCosignerRemoveResultMsg(msg CosignerRemoveResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, m.waitForMessageCmd()
+	}
 	if !msg.Success {
 		m.cosigner.importError = msg.Error
 		if m.cosigner.importError == "" {
@@ -597,6 +570,9 @@ func (m Model) handleCosignerRemoveResultMsg(msg CosignerRemoveResultMsg) (tea.M
 }
 
 func (m Model) handleCosignerExportResultMsg(msg CosignerExportResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, m.waitForMessageCmd()
+	}
 	if !msg.Success {
 		m.cosigner.exportError = msg.Error
 		if m.cosigner.exportError == "" {

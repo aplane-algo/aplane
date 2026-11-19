@@ -200,7 +200,7 @@ func TestIPCClientSendBackupRestoreMessagesUseSensitivePassphraseWireString(t *t
 		}
 		previewLineCh <- line
 	}()
-	if err := client.SendPreviewRestore("aplane-backup.tar.gz", passphrase); err != nil {
+	if err := client.SendPreviewRestore("aplane-backup.tar.gz", passphrase, "preview-restore-1"); err != nil {
 		t.Fatalf("SendPreviewRestore() error = %v", err)
 	}
 	select {

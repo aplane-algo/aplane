@@ -259,6 +259,9 @@ type restoreState struct {
 	recoveryError string
 	// progressLabel names the operation ViewRestoring is waiting on.
 	progressLabel string
+	// pendingID names the latest preview, restore, rollback or reconcile
+	// request. An untyped failure is this flow's only when it names it.
+	pendingID string
 }
 
 // Focus positions shared by the restore preview and review screens. Committing
@@ -975,12 +978,14 @@ type CosignerReferencesMsg struct {
 }
 
 type CosignerImportResultMsg struct {
+	ID        string
 	Success   bool
 	Reference CosignerReferenceInfo
 	Error     string
 }
 
 type CosignerRemoveResultMsg struct {
+	ID      string
 	Success bool
 	Name    string
 	Removed bool
@@ -988,6 +993,7 @@ type CosignerRemoveResultMsg struct {
 }
 
 type CosignerExportResultMsg struct {
+	ID           string
 	Success      bool
 	WitnessKeyID string
 	EnvelopeJSON string

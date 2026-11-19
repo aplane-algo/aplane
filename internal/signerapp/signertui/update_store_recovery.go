@@ -26,12 +26,12 @@ func (m Model) handleStoreRecoveryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.restore.recoveryError = ""
 		m.restore.progressLabel = "Reconciling Store"
 		m.viewState = ViewRestoring
-		return m, tea.Batch(m.sendReconcileStoreCmd(), m.waitForMessageCmd())
+		return m, tea.Batch(m.sendReconcileStoreCmd(m.beginRestoreRequest("reconcile-store")), m.waitForMessageCmd())
 	case "x", "X":
 		m.restore.recoveryError = ""
 		m.restore.progressLabel = "Rolling Back Latest Credential Restore"
 		m.viewState = ViewRestoring
-		return m, tea.Batch(m.sendRollbackRestoreCmd(), m.waitForMessageCmd())
+		return m, tea.Batch(m.sendRollbackRestoreCmd(m.beginRestoreRequest("rollback-restore")), m.waitForMessageCmd())
 	case "b", "B":
 		return m.openBackups()
 	case "l", "L":

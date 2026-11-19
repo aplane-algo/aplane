@@ -469,9 +469,9 @@ func (m Model) submitCosignerImportReview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.cosigner.importError = ""
-	m.viewState = ViewCosignerImporting
+	id := m.beginOperation(ViewCosignerImporting)
 	return m, tea.Batch(
-		m.sendImportCosignerReferenceCmd(m.cosigner.importName, m.cosigner.envelopeJSON),
+		m.sendImportCosignerReferenceCmd(m.cosigner.importName, m.cosigner.envelopeJSON, id),
 		m.waitForMessageCmd(),
 	)
 }

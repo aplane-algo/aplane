@@ -270,8 +270,8 @@ func (m Model) handleCosignerRemoveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.C
 			m.viewState = ViewCosignerReferenceDetails
 			return m, nil
 		}
-		m.viewState = ViewCosignerRemoving
-		return m, tea.Batch(m.sendRemoveCosignerReferenceCmd(reference.Name), m.waitForMessageCmd())
+		id := m.beginOperation(ViewCosignerRemoving)
+		return m, tea.Batch(m.sendRemoveCosignerReferenceCmd(reference.Name, id), m.waitForMessageCmd())
 	}
 	return m, nil
 }

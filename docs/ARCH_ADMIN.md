@@ -1174,10 +1174,16 @@ signer locks. Disconnect, reconnect, reauthentication, displacement, and lock
 clear local popups too; persisted enrollment requests remain queued and are
 announced again on a later login.
 
-Each in-progress generate, import, delete, key-type install, or backup records
-its request ID. An untyped failure (an authorization denial, a send error, or a
-signer message the TUI cannot decode) whose ID names that request returns the
-operation to the screen it started from, as its own failure result would.
+Each in-progress generate, import, delete, key-type install, backup, or
+cosigner key import, removal, or export records its request ID. An untyped
+failure (an authorization denial, a send error, or a signer message the TUI
+cannot decode) whose ID names that request returns the operation to the screen
+it started from, as its own failure result would. A cosigner reply changes the
+screen only when it answers the request its progress screen still shows, so a
+reply arriving after a lock leaves the unlock screen in place. The restore flow
+records the ID of its latest preview, restore, rollback, or reconcile request
+the same way: only a failure naming that request clears the restore passphrase
+or leaves the restore progress screen.
 Progress screens ignore Esc, so nothing may strand them; `q` quits from
 every one of them (`isOperationInProgressView`). An error for any other
 request, such as a background refresh, leaves the operation waiting for its own
