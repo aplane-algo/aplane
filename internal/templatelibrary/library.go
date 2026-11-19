@@ -716,6 +716,7 @@ func parseGeneric(path string, data []byte) (ParsedTemplate, error) {
 		SourcePath:  path,
 		YAMLData:    append([]byte(nil), data...),
 	}
+	trimDescriptions(&parsed)
 	if err := checkTemplateText(parsed, nil); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("invalid generic template: %w", err)
 	}
@@ -744,10 +745,11 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 		SourcePath:  path,
 		YAMLData:    append([]byte(nil), data...),
 	}
+	trimDescriptions(&parsed)
 	var boundedArgs []lsigprovider.RuntimeArgDef
 	if spec.Bounded != nil {
 		for _, arg := range spec.Bounded.RuntimeArgs {
-			boundedArgs = append(boundedArgs, lsigprovider.RuntimeArgDef{Name: arg.Name, Label: arg.Label, Description: arg.Description})
+			boundedArgs = append(boundedArgs, lsigprovider.RuntimeArgDef{Name: arg.Name, Label: arg.Label, Description: descriptionText(arg.Description)})
 		}
 	}
 	if err := checkTemplateText(parsed, boundedArgs); err != nil {
@@ -756,13 +758,33 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 	return parsed, nil
 }
 
+// descriptionText is a template description as its author means it. Every
+// display field is one line of text, but a YAML block scalar (description: |
+// or >) ends its text with a line break, which is no part of it.
+func descriptionText(s string) string { return strings.TrimRight(s, "\n") }
+
+// trimDescriptions drops that line break from every description parsed holds,
+// so the library checks and lists the text without it. The template's YAML is
+// installed as written.
+func trimDescriptions(parsed *ParsedTemplate) {
+	parsed.Description = descriptionText(parsed.Description)
+	for i := range parsed.Parameters {
+		parsed.Parameters[i].Description = descriptionText(parsed.Parameters[i].Description)
+	}
+	for i := range parsed.RuntimeArgs {
+		parsed.RuntimeArgs[i].Description = descriptionText(parsed.RuntimeArgs[i].Description)
+	}
+}
+
 // checkTemplateText refuses a template whose display text holds a character
-// that does not print as itself: a control or format character, a
-// bidirectional one among them, or invalid UTF-8. That text is the author's,
-// and every client that lists the key type shows it: its name, description,
-// parameter labels and hints, choice values and defaults, and argument labels.
-// Admission only, as the checks above are: a store's own templates load
-// without it, and the screens that show them escape it.
+// that does not print as itself: a line break, another control or format
+// character, a bidirectional one among them, or invalid UTF-8. That text is
+// the author's, and every client that lists the key type shows it: its name,
+// description, parameter labels and hints, choice values and defaults, and
+// argument labels. Each is one line; a description's closing line break is
+// dropped before this (trimDescriptions). Admission only, as the checks above
+// are: a store's own templates load without it, and the screens that show
+// them escape it.
 func checkTemplateText(parsed ParsedTemplate, boundedArgs []lsigprovider.RuntimeArgDef) error {
 	type text struct{ field, value string }
 	texts := []text{{"display_name", parsed.DisplayName}, {"description", parsed.Description}}
@@ -782,7 +804,12 @@ func checkTemplateText(parsed ParsedTemplate, boundedArgs []lsigprovider.Runtime
 		texts = append(texts, text{at + "label", a.Label}, text{at + "description", a.Description})
 	}
 	for _, t := range texts {
-		if shown := termsafe.Line(t.value); shown != t.value {
+		shown := termsafe.Line(t.value)
+		switch {
+		case shown == t.value:
+		case strings.ContainsAny(t.value, "\r\n"):
+			return fmt.Errorf("%s must be one line of text but holds a line break, shown escaped: %s", termsafe.Line(t.field), shown)
+		default:
 			return fmt.Errorf("%s holds a character that does not print, shown escaped: %s", termsafe.Line(t.field), shown)
 		}
 	}
