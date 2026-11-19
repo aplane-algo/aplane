@@ -146,6 +146,5 @@ func newPresignPluginInstance(t *testing.T, acct crypto.Account, canonicalB64 st
 
 func setResult(resp *jsonrpc.Response, v interface{}) {
 	raw, _ := json.Marshal(v)
-	rm := json.RawMessage(raw)
-	resp.Result = &rm
+	resp.Result = json.RawMessage(raw)
 }

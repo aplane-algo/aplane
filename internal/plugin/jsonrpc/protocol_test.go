@@ -281,14 +281,19 @@ func TestResponseParseResult(t *testing.T) {
 			wantErr: true,
 			errMsg:  "no result in response",
 		},
+		{
+			name:    "null result",
+			result:  "null",
+			wantErr: true,
+			errMsg:  "null result in response",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp Response
 			if tt.result != "" {
-				raw := json.RawMessage(tt.result)
-				resp.Result = &raw
+				resp.Result = json.RawMessage(tt.result)
 			}
 
 			var got testResult
@@ -478,10 +483,9 @@ func TestExecuteResultUnsupportedLocalSignersJSONShape(t *testing.T) {
 
 func TestResponseJSONRoundTrip(t *testing.T) {
 	// Test successful response
-	resultData := json.RawMessage(`{"success":true}`)
 	original := Response{
 		Jsonrpc: Version,
-		Result:  &resultData,
+		Result:  json.RawMessage(`{"success":true}`),
 		ID:      1.0,
 	}
 

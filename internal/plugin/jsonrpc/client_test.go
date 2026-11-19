@@ -309,3 +309,48 @@ func TestDeliverResponseConcurrentWithFailPendingDoesNotPanic(t *testing.T) {
 		}
 	}
 }
+
+// TestCallWithTimeoutDeliversNullResult pins that a "result": null response
+// is a response: a caller that wants no value gets success at once, and a
+// caller that wants a value gets an error at once, never the call timeout.
+func TestCallWithTimeoutDeliversNullResult(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		result  interface{}
+		wantErr string
+	}{
+		{name: "no value wanted", result: nil},
+		{name: "value wanted", result: &ShutdownResult{}, wantErr: "null result"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader, writer := io.Pipe()
+			defer func() { _ = reader.Close() }()
+
+			client := NewClient(reader, &bytes.Buffer{})
+			client.Start()
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- client.CallWithTimeout(MethodShutdown, ShutdownParams{}, tc.result, 5*time.Second)
+			}()
+
+			time.Sleep(50 * time.Millisecond)
+			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}` + "\n"))
+
+			select {
+			case err := <-errCh:
+				if tc.wantErr == "" {
+					if err != nil {
+						t.Fatalf("CallWithTimeout() error = %v, want success", err)
+					}
+					return
+				}
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("CallWithTimeout() error = %v, want containing %q", err, tc.wantErr)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("CallWithTimeout() did not deliver a null result before the timeout")
+			}
+		})
+	}
+}

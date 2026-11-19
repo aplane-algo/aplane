@@ -117,7 +117,7 @@ func (c *Client) CallWithTimeout(method string, params interface{}, result inter
 		if resp.Error != nil {
 			return resp.Error
 		}
-		if result != nil && resp.Result != nil {
+		if result != nil {
 			return resp.ParseResult(result)
 		}
 		return nil
@@ -168,7 +168,8 @@ func (c *Client) readLoop() {
 			go c.handleInboundRequest(frame)
 			continue
 		}
-		if frame.Result == nil && frame.Error == nil {
+		// A response carries a result member (possibly null) or an error.
+		if len(frame.Result) == 0 && frame.Error == nil {
 			c.setLastError(fmt.Errorf("invalid JSON-RPC frame without method, result, or error"))
 			continue
 		}
@@ -195,13 +196,15 @@ func (c *Client) readLoop() {
 	c.failPending(ErrConnectionClosed)
 }
 
+// rpcFrame is one inbound line. Result is a non-pointer RawMessage so that a
+// "result": null member decodes to the bytes "null" rather than to nothing.
 type rpcFrame struct {
-	Jsonrpc string           `json:"jsonrpc"`
-	Method  string           `json:"method,omitempty"`
-	Params  json.RawMessage  `json:"params,omitempty"`
-	Result  *json.RawMessage `json:"result,omitempty"`
-	Error   *Error           `json:"error,omitempty"`
-	ID      interface{}      `json:"id,omitempty"`
+	Jsonrpc string          `json:"jsonrpc"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *Error          `json:"error,omitempty"`
+	ID      interface{}     `json:"id,omitempty"`
 }
 
 func (c *Client) handleInboundRequest(frame rpcFrame) {
@@ -243,8 +246,7 @@ func (c *Client) respondToInbound(id interface{}, result interface{}, rpcErr *Er
 		if err != nil {
 			response.Error = &Error{Code: InternalError, Message: fmt.Sprintf("failed to marshal callback result: %v", err)}
 		} else {
-			resultJSON := json.RawMessage(raw)
-			response.Result = &resultJSON
+			response.Result = json.RawMessage(raw)
 		}
 	}
 	if err := c.writeJSONLine(&response); err != nil {

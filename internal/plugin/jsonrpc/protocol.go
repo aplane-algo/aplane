@@ -5,6 +5,7 @@
 package jsonrpc
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -19,12 +20,14 @@ type Request struct {
 	ID      interface{} `json:"id"`
 }
 
-// Response represents a JSON-RPC response from plugin to apshell
+// Response represents a JSON-RPC response from plugin to apshell. Result
+// holds the raw "result" member, so a JSON null result is the four bytes
+// "null" and an absent member is empty.
 type Response struct {
-	Jsonrpc string           `json:"jsonrpc"`
-	Result  *json.RawMessage `json:"result,omitempty"`
-	Error   *Error           `json:"error,omitempty"`
-	ID      interface{}      `json:"id"`
+	Jsonrpc string          `json:"jsonrpc"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *Error          `json:"error,omitempty"`
+	ID      interface{}     `json:"id"`
 }
 
 // Error represents a JSON-RPC error
@@ -101,13 +104,18 @@ func (r *Request) ParseParams(v interface{}) error {
 	return decodeJSONValue(r.Params, v, "params")
 }
 
-// ParseResult unmarshals the result into the provided interface
+// ParseResult unmarshals the result into the provided interface. A null
+// result is refused: the caller asked for a value, and decoding null would
+// leave v at its zero value with no error.
 func (r *Response) ParseResult(v interface{}) error {
-	if r.Result == nil {
+	if len(r.Result) == 0 {
 		return fmt.Errorf("no result in response")
 	}
+	if bytes.Equal(bytes.TrimSpace(r.Result), []byte("null")) {
+		return fmt.Errorf("null result in response")
+	}
 
-	if err := json.Unmarshal(*r.Result, v); err != nil {
+	if err := json.Unmarshal(r.Result, v); err != nil {
 		return fmt.Errorf("failed to unmarshal result: %w", err)
 	}
 
