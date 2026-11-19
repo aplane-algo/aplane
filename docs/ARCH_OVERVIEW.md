@@ -1061,8 +1061,9 @@ state. Normal client routing lives in `endpoints.yaml` through
 to 12 `cosigner` endpoints. Endpoint records carry URL, identity file, and
 `known_hosts`; no credential, because the enrolled identity key is the
 credential; and no port beyond the one in the URL, because the
-node's SSH server forwards every channel to its own REST listener and the
-signer-role forward binds a free local port at connect time. Live cosigner-key discovery is operation-scoped
+node's SSH server forwards every channel to its own REST listener. Neither
+role opens a local port: HTTP travels over channels the client opens
+in-process. Live cosigner-key discovery is operation-scoped
 and is not stored in the registry. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apadmin endpoint export` and
 `apshell endpoints import`.

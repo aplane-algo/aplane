@@ -26,7 +26,7 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 
-	result, err := eng.ConnectWithTunnel("remote-b", "host", 22, 12345, "", "", nil, nil)
+	result, err := eng.ConnectWithTunnel("remote-b", "host", 22, "", "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -89,7 +89,7 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	}
 	eng.Connection = engconnect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
-	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, "", "")
+	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
 	eng.Connection.TunnelConnected = true
 	eng.Connection.ConnectionTarget = "remote-a"
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")

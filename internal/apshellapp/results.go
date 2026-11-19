@@ -356,12 +356,12 @@ func createdAppDetailsFromEngine(result *engine.AppDeployResult) *CreatedAppDeta
 
 // ConnectionDetails is the app-owned signer connection outcome.
 type ConnectionDetails struct {
-	Connected    bool
-	Target       string
-	Port         int
-	KeyCount     int
-	Locked       bool
-	ErrorMessage string
+	Connected        bool
+	AlreadyConnected bool
+	Target           string
+	KeyCount         int
+	Locked           bool
+	ErrorMessage     string
 }
 
 func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDetails {
@@ -369,12 +369,12 @@ func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDet
 		return nil
 	}
 	return &ConnectionDetails{
-		Connected:    result.Connected,
-		Target:       result.Target,
-		Port:         result.Port,
-		KeyCount:     result.KeyCount,
-		Locked:       result.Locked,
-		ErrorMessage: result.ErrorMessage,
+		Connected:        result.Connected,
+		AlreadyConnected: result.AlreadyConnected,
+		Target:           result.Target,
+		KeyCount:         result.KeyCount,
+		Locked:           result.Locked,
+		ErrorMessage:     result.ErrorMessage,
 	}
 }
 
@@ -721,7 +721,6 @@ func (e *failedItemsError) SubmissionFailures() []*signing.SubmissionError {
 // ConnectResult describes the outcome of a signer connection attempt.
 type ConnectResult struct {
 	Target           string
-	Port             int
 	KeyCount         int
 	Locked           bool
 	AlreadyConnected bool

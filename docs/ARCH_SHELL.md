@@ -193,7 +193,6 @@ internal/engine/
 │   ├── client.go          # Signer client construction and request helpers
 │   ├── lifecycle.go       # Connect/disconnect and tunnel lifecycle
 │   ├── cosigner_endpoint.go # Cosigner endpoint connection helpers
-│   ├── local_port.go      # Free loopback port selection for tunnels
 │   ├── signing.go         # Signer-facing plan/sign requests
 │   └── state.go           # Mutex-protected ConnectionState
 ├── connection.go          # Core-facing connection facade
@@ -670,15 +669,16 @@ canSign, isLsig := engine.CanSignForAddress(address)
 #### SSH Tunnel Connection
 
 `ConnectWithTunnel` is the product-facing remote connection path used by
-`apshell`. It creates or reuses a local tunnel to the signer HTTP API and
-populates the signer cache after connection.
+`apshell`. It opens, or reuses, an SSH connection to the signer, gives the
+signer client an HTTP transport that opens a channel to the signer's REST API
+for each connection, and populates the signer cache after connection. Nothing
+listens on the client machine.
 
 ```go
 result, err := engine.ConnectWithTunnel(
     target,      // display label, e.g. "host.example.com (ssh:1127)"
     host,        // "host.example.com"
     sshPort,     // 1127
-    localPort,   // free loopback port chosen by the caller
     identityFile,    // SSH private key path (optional, uses agent if empty); the enrolled key is the credential
     knownHostsPath,  // known_hosts file for SSH verification
     hostKeyApproval, // TOFU callback for unknown SSH host keys
@@ -1991,7 +1991,7 @@ because a plugin chooses its name and could otherwise pass as `cache`.
 | `error` | A failure nothing else reports | Recovered keepalive panic |
 | `warn` | The operator should know or act | Cache tampering, connection loss, key revocation, skipped plugin, failed plugin's last lines |
 | `info` | Routine detail | Plugin stderr, sandbox line, host key saved |
-| `debug` | Detail for diagnosing the client | Cache hits, forwarded-connection errors, response-close errors |
+| `debug` | Detail for diagnosing the client | Cache hits, SSH connection close errors, response-close errors |
 
 The default level is `warn`, except that `--mcp` starts at `info`, because its
 stderr is the host's log rather than a display. `APSHELL_DEBUG` starts any mode at

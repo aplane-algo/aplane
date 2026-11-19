@@ -7,8 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"time"
+	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -21,21 +20,29 @@ var ErrAlreadyConnected = errors.New("already connected")
 
 // Result reports the outcome of a remote signer connection attempt.
 type Result struct {
-	Connected    bool
-	Target       string
-	Port         int
-	KeyCount     int
-	Locked       bool
-	ErrorMessage string
+	Connected bool
+	// AlreadyConnected reports that the target was already connected and
+	// nothing new was opened.
+	AlreadyConnected bool
+	Target           string
+	KeyCount         int
+	Locked           bool
+	ErrorMessage     string
 }
 
-// ConnectWithTunnel establishes an SSH tunnel connection authenticated by the
-// client's enrolled key and verifies the signer answers over it.
+// signerSSHHTTPAuthority is the host the signer client's requests name. They
+// never leave the process: the transport carries each connection over an SSH
+// channel (DialSignerAPI), so nothing listens on this machine.
+const signerSSHHTTPAuthority = "signer.aplane.invalid:80"
+
+// ConnectWithTunnel establishes an SSH connection authenticated by the
+// client's enrolled key and verifies the signer answers over it. The signer
+// client opens an SSH channel for each HTTP connection; no local port is
+// opened, so another process on this machine cannot use the connection.
 func (s *ConnectionState) ConnectWithTunnel(
 	target string,
 	host string,
 	sshPort int,
-	localPort int,
 	identityFile string,
 	knownHostsPath string,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
@@ -44,7 +51,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 ) (*Result, error) {
 	alreadyConnected, currentTarget, inProgress := s.beginConnect(target)
 	if alreadyConnected {
-		return &Result{Connected: true, Target: target}, nil
+		return &Result{Connected: true, AlreadyConnected: true, Target: target}, nil
 	}
 	if inProgress {
 		if currentTarget == target {
@@ -62,17 +69,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 			s.clearPendingConnect(target)
 		}
 	}()
-	dialTimeout := s.portDialTimeout
-	if dialTimeout == nil {
-		dialTimeout = net.DialTimeout
-	}
-	conn, err := dialTimeout("tcp", fmt.Sprintf("localhost:%d", localPort), 100*time.Millisecond)
-	if err == nil {
-		_ = conn.Close()
-		return result, fmt.Errorf("port %d is already in use locally", localPort)
-	}
-
-	client := sshtunnel.NewClient(host, sshPort, localPort, identityFile, knownHostsPath)
+	client := sshtunnel.NewClient(host, sshPort, identityFile, knownHostsPath)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
 	}
@@ -95,13 +92,9 @@ func (s *ConnectionState) ConnectWithTunnel(
 		result.ErrorMessage = err.Error()
 		return result, fmt.Errorf("SSH auth failed: %w", err)
 	}
-	if err := client.StartPortForwarding(ctx); err != nil {
-		_ = client.Close()
-		result.ErrorMessage = err.Error()
-		return result, fmt.Errorf("failed to start port forwarding: %w", err)
-	}
 
-	signerClient := signerclient.NewSignerClient(fmt.Sprintf("http://localhost:%d", localPort))
+	signerClient := signerclient.NewSignerClient("http://" + signerSSHHTTPAuthority)
+	signerClient.Client = &http.Client{Transport: newSSHHTTPTransport(client, signerSSHHTTPAuthority)}
 	s.Mu.Lock()
 	signerClient.ProgressOut = s.SignerProgressOut
 	s.Mu.Unlock()
@@ -129,7 +122,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 	s.Mu.Unlock()
 
 	result.Connected = true
-	result.Port = localPort
 	result.KeyCount = keysResp.Count
 	result.Locked = keysResp.Locked
 	return result, nil
@@ -173,7 +165,7 @@ func (s *ConnectionState) RequestEnrollmentWithContext(
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
 	onEnrollmentStart func(string),
 ) (EnrollmentResult, error) {
-	client := sshtunnel.NewClient(host, sshPort, 0, identityFile, knownHostsPath)
+	client := sshtunnel.NewClient(host, sshPort, identityFile, knownHostsPath)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
 	}
@@ -189,6 +181,9 @@ func (s *ConnectionState) RequestEnrollmentWithContext(
 }
 
 func (s *ConnectionState) clearLocked() {
+	if s.SignerClient != nil && s.SignerClient.Client != nil {
+		s.SignerClient.Client.CloseIdleConnections()
+	}
 	s.SSHTunnelClient = nil
 	s.TunnelConnected = false
 	s.SignerClient = nil

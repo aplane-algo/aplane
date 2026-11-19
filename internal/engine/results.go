@@ -119,12 +119,12 @@ type RekeyResult struct {
 
 // ConnectionResult holds connection attempt outcome
 type ConnectionResult struct {
-	Connected    bool
-	Target       string
-	Port         int
-	KeyCount     int
-	Locked       bool // Signer is locked (keys not accessible until unlocked)
-	ErrorMessage string
+	Connected        bool
+	AlreadyConnected bool
+	Target           string
+	KeyCount         int
+	Locked           bool // Signer is locked (keys not accessible until unlocked)
+	ErrorMessage     string
 }
 
 // ParticipationResult holds consensus participation status for an account
