@@ -203,6 +203,9 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 }
 
 func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, m.waitForMessageCmd()
+	}
 	m = m.settleGenerateReview(msg)
 	if msg.Success {
 		m.lastError = ""
@@ -226,6 +229,9 @@ func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cm
 }
 
 func (m Model) handleDeleteResultMsg(msg DeleteResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, m.waitForMessageCmd()
+	}
 	if msg.Success {
 		m.lastError = ""
 		// Clear delete state and return to key list
@@ -378,6 +384,9 @@ func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.M
 }
 
 func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m, m.waitForMessageCmd()
+	}
 	if msg.Success {
 		m.lastError = ""
 		m.forms.importMnemonicInput.SetValue("")
@@ -392,9 +401,7 @@ func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.forms.importError = msg.Error
 		// Return to the form the import was sent from to show the error.
-		if m.viewState == ViewImporting {
-			m.viewState = m.importErrorView()
-		}
+		m.viewState = m.importErrorView()
 	}
 	return m, m.waitForMessageCmd()
 }

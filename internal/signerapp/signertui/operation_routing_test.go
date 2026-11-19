@@ -211,8 +211,74 @@ func TestPlainImportRunsAsAnOperation(t *testing.T) {
 	if got := next.(Model); got.viewState != ViewImportForm || got.forms.importError != "authorization denied" {
 		t.Fatalf("untyped failure: view %v error %q, want the import form", got.viewState, got.forms.importError)
 	}
-	next, _ = importing.Update(ImportResultMsg{Error: "invalid recovery phrase"})
+	next, _ = importing.Update(ImportResultMsg{ID: id, Error: "invalid recovery phrase"})
 	if got := next.(Model); got.viewState != ViewImportForm || got.forms.importError != "invalid recovery phrase" {
 		t.Fatalf("typed failure: view %v error %q, want the import form", got.viewState, got.forms.importError)
+	}
+}
+
+// An operation's result changes the screen only while its progress screen
+// still waits on it. A result arriving after a lock showed the unlock screen
+// leaves that screen in place; the operation's own result, decoded from the
+// wire with its request ID, still ends the wait.
+func TestOperationResultsApplyOnlyToTheirOwnProgressScreen(t *testing.T) {
+	for _, op := range []struct {
+		name     string
+		start    ViewState
+		progress ViewState
+		done     ViewState
+		reply    func(base protocol.BaseMessage) any
+	}{
+		{"generate", ViewGenerateForm, ViewGenerating, ViewGenerateDisplay, func(base protocol.BaseMessage) any {
+			base.Type = protocol.MsgTypeGenerateResult
+			return protocol.GenerateResultMessage{BaseMessage: base, Success: true, Address: "ADDR", KeyType: "ed25519"}
+		}},
+		{"import", ViewImportForm, ViewImporting, ViewImportDisplay, func(base protocol.BaseMessage) any {
+			base.Type = protocol.MsgTypeImportResult
+			return protocol.ImportResultMessage{BaseMessage: base, Success: true, Address: "ADDR", KeyType: "ed25519"}
+		}},
+		{"delete", ViewDeleteConfirm, ViewDeleting, ViewKeyList, func(base protocol.BaseMessage) any {
+			base.Type = protocol.MsgTypeDeleteResult
+			return protocol.DeleteResultMessage{BaseMessage: base, Success: true}
+		}},
+		{"backup", ViewBackupConfirm, ViewBackingUp, ViewBackupDisplay, func(base protocol.BaseMessage) any {
+			base.Type = protocol.MsgTypeBackupResult
+			return protocol.BackupResultMessage{BaseMessage: base, Success: true, ArchivePath: "aplane-backup.tar.gz"}
+		}},
+		{"key type install", ViewTemplateInstallConfirm, ViewTemplateInstalling, ViewTemplateLibrary, func(base protocol.BaseMessage) any {
+			base.Type = protocol.MsgTypeInstallLibraryTemplateResult
+			return protocol.InstallLibraryTemplateResultMessage{BaseMessage: base, Success: true, KeyType: "test.timed-policy.v1"}
+		}},
+		{"key type enable", ViewTemplateInstallConfirm, ViewTemplateInstalling, ViewTemplateLibrary, func(base protocol.BaseMessage) any {
+			base.Type = protocol.MsgTypeActivateKeyTypeResult
+			return protocol.ActivateKeyTypeResultMessage{BaseMessage: base, Success: true, KeyType: "aplane.ed25519.v1"}
+		}},
+		{"key type disable", ViewTemplateInstallConfirm, ViewTemplateInstalling, ViewTemplateLibrary, func(base protocol.BaseMessage) any {
+			base.Type = protocol.MsgTypeDeactivateKeyTypeResult
+			return protocol.DeactivateKeyTypeResultMessage{BaseMessage: base, Success: true, KeyType: "aplane.ed25519.v1", Removed: true}
+		}},
+	} {
+		t.Run(op.name, func(t *testing.T) {
+			m := Model{viewState: op.start, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked,
+				forms: formsState{importMnemonicInput: newImportMnemonicInput()}}
+			id := m.beginOperation(op.progress)
+			base := protocol.BaseMessage{ID: id}
+
+			locked := updateModel(t, m, SignerStatusMsg{State: "locked"})
+			if late := updateModel(t, locked, decodeSignerReply(t, op.reply(base))); late.viewState != ViewUnlock {
+				t.Fatalf("late %s result after a lock moved the unlock screen to view %v", op.name, late.viewState)
+			}
+
+			other := base
+			other.ID = id + "-other"
+			if stray := updateModel(t, m, decodeSignerReply(t, op.reply(other))); stray.viewState != op.progress {
+				t.Fatalf("a result for another request moved the %s progress screen to view %v", op.name, stray.viewState)
+			}
+
+			own := updateModel(t, m, decodeSignerReply(t, op.reply(base)))
+			if own.viewState != op.done || own.operation != (pendingOperation{}) {
+				t.Fatalf("its own result: view %v operation %+v, want view %v and the wait ended", own.viewState, own.operation, op.done)
+			}
+		})
 	}
 }

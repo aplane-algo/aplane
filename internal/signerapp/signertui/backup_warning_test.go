@@ -11,8 +11,10 @@ import (
 // A backup published without a durable directory entry says so on the
 // screen that reports it.
 func TestBackupCreatedScreenShowsTheDurabilityWarning(t *testing.T) {
-	m := updateModel(t, approvalTestModel(ViewBackupConfirm), BackupResultMsg{
-		Success: true, ArchivePath: "aplane-backup-20260428-010203.tar.gz",
+	m := approvalTestModel(ViewBackupConfirm)
+	id := m.beginOperation(ViewBackingUp)
+	m = updateModel(t, m, BackupResultMsg{
+		ID: id, Success: true, ArchivePath: "aplane-backup-20260428-010203.tar.gz",
 		Warning: "backup archive was published but directory durability could not be confirmed",
 	})
 	if m.viewState != ViewBackupDisplay {

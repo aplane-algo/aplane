@@ -183,8 +183,8 @@ func TestFinishedPresetLeavesTheNextFlowAlone(t *testing.T) {
 		t.Fatalf("view = %v, preset = %v, want the preset's parameter form", m.viewState, m.forms.boundaryPreset)
 	}
 	// Review and signing are covered elsewhere; this test needs only the outcome.
-	m.viewState = ViewGenerating
-	m = updateModel(t, m, GenerateResultMsg{Success: true, Address: "ADDR", KeyType: boundedHostKeyType})
+	id := m.beginOperation(ViewGenerating)
+	m = updateModel(t, m, GenerateResultMsg{ID: id, Success: true, Address: "ADDR", KeyType: boundedHostKeyType})
 	next, _ = m.handleGenerateDisplayKeys(enter)
 	m = next.(Model)
 	next, _ = m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})

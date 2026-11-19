@@ -32,12 +32,13 @@ func approvalTestModel(view ViewState) Model {
 // A result that arrives while an approval popup is open must not replace the
 // popup; answering returns to the screen the result selected.
 func TestSigningPopupStaysOnTopOfBackgroundResults(t *testing.T) {
-	m := approvalTestModel(ViewGenerating)
+	m := approvalTestModel(ViewGenerateForm)
+	id := m.beginOperation(ViewGenerating)
 	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
 	if m.viewState != ViewSigningPopup {
 		t.Fatalf("view after sign request = %v, want the signing popup", m.viewState)
 	}
-	m = updateModel(t, m, GenerateResultMsg{Success: true, Address: "ADDR", KeyType: "ed25519"})
+	m = updateModel(t, m, GenerateResultMsg{ID: id, Success: true, Address: "ADDR", KeyType: "ed25519"})
 	if m.viewState != ViewSigningPopup || m.signing.request == nil {
 		t.Fatalf("generate result replaced the signing popup: view %v", m.viewState)
 	}
@@ -141,14 +142,14 @@ func TestUntypedFailureLeavesProgressScreens(t *testing.T) {
 // submission while the first still runs.
 func TestUnrelatedErrorKeepsOperationInProgress(t *testing.T) {
 	m := approvalTestModel(ViewGenerateForm)
-	m.beginOperation(ViewGenerating)
+	operationID := m.beginOperation(ViewGenerating)
 	for _, id := range []string{"", "keys-1"} {
 		m = updateModel(t, m, ErrorMsg{ID: id, Error: errors.New("list keys failed")})
 		if m.viewState != ViewGenerating {
 			t.Fatalf("error for request %q left the generate progress screen: view %v", id, m.viewState)
 		}
 	}
-	m = updateModel(t, m, GenerateResultMsg{Success: true, Address: "ADDR", KeyType: "ed25519"})
+	m = updateModel(t, m, GenerateResultMsg{ID: operationID, Success: true, Address: "ADDR", KeyType: "ed25519"})
 	if m.viewState != ViewGenerateDisplay {
 		t.Fatalf("view after the generate result = %v, want the result", m.viewState)
 	}

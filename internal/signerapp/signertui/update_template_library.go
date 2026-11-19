@@ -204,8 +204,12 @@ func (m Model) ensureTemplateVisible() Model {
 }
 
 // finishLibraryAction applies the result of installing, enabling, or disabling
-// a KeyType Library entry.
-func (m Model) finishLibraryAction(success bool, status, errText, fallbackErr string) (tea.Model, tea.Cmd) {
+// a KeyType Library entry, when id names the request its progress screen
+// still waits on.
+func (m Model) finishLibraryAction(id string, success bool, status, errText, fallbackErr string) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(id) {
+		return m, m.waitForMessageCmd()
+	}
 	if !success {
 		m.library.installError = errText
 		if m.library.installError == "" {

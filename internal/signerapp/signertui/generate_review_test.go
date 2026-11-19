@@ -502,10 +502,17 @@ func TestReviewStartsOnCancelAndGeneratesOnlyFromGenerate(t *testing.T) {
 }
 
 func reviewedResult(address string, prepared PrepareGenerateResultMessage) (Model, GenerateResultMsg) {
-	m := Model{viewState: ViewGenerating, width: 80, height: 23, standalone: true}
+	m := awaitingGeneration(Model{width: 80, height: 23, standalone: true}, "reviewed")
 	m.forms.review = &prepared
 	m.forms.reviewedRequestID = "reviewed"
 	return m, GenerateResultMsg{ID: "reviewed", Success: true, Address: address, KeyType: prepared.KeyType}
+}
+
+// awaitingGeneration puts m on the generating screen, waiting on request id.
+func awaitingGeneration(m Model, id string) Model {
+	m.viewState = ViewGenerating
+	m.operation = pendingOperation{id: id, view: ViewGenerating}
+	return m
 }
 
 func TestReceiptNamesTheSavedAccountAndNeverOverwrites(t *testing.T) {
@@ -578,7 +585,7 @@ func TestFailedReviewCannotLabelALaterNativeAccount(t *testing.T) {
 	failed.Success, failed.Error = false, "signer refused"
 	next, _ := m.Update(failed)
 	m = next.(Model)
-	next, _ = m.Update(GenerateResultMsg{ID: "gen-2", Success: true, Address: "NATIVE", KeyType: "ed25519"})
+	next, _ = awaitingGeneration(m, "gen-2").Update(GenerateResultMsg{ID: "gen-2", Success: true, Address: "NATIVE", KeyType: "ed25519"})
 	m = next.(Model)
 	if m.forms.generatedAddress != "NATIVE" {
 		t.Fatalf("address = %q", m.forms.generatedAddress)

@@ -62,10 +62,12 @@ func TestBackupConfirmCancelReturnsToBackups(t *testing.T) {
 }
 
 func TestBackupResultSuccessShowsArchivePath(t *testing.T) {
-	m := Model{viewState: ViewBackingUp}
+	m := Model{viewState: ViewBackupConfirm}
+	id := m.beginOperation(ViewBackingUp)
 	archivePath := filepath.Join(t.TempDir(), "backups", "default", "backup.tar.gz")
 
 	next, _ := m.Update(BackupResultMsg{
+		ID:          id,
 		Success:     true,
 		ArchivePath: archivePath,
 	})

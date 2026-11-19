@@ -737,6 +737,7 @@ type PrepareGenerateResultMsg struct {
 
 // DeleteResultMsg is sent when key deletion completes
 type DeleteResultMsg struct {
+	ID      string
 	Success bool
 	Error   string
 }
@@ -794,6 +795,7 @@ type RevokeAllEnrolledKeysResultMsg struct {
 
 // BackupResultMsg is sent when signer-managed backup creation completes.
 type BackupResultMsg struct {
+	ID          string
 	Success     bool
 	ArchivePath string
 	Warning     string
@@ -838,6 +840,7 @@ type ReconcileStoreResultMsg struct {
 
 // ImportResultMsg is sent when key import completes
 type ImportResultMsg struct {
+	ID      string
 	Success bool
 	Address string
 	KeyType string
@@ -935,6 +938,7 @@ type LibraryTemplatesMsg struct {
 }
 
 type InstallLibraryTemplateResultMsg struct {
+	ID            string
 	Success       bool
 	KeyType       string
 	TemplateType  string
@@ -954,6 +958,7 @@ type ShowLibraryTemplateResultMsg struct {
 }
 
 type ActivateKeyTypeResultMsg struct {
+	ID            string
 	Success       bool
 	KeyType       string
 	AlreadyExists bool
@@ -961,6 +966,7 @@ type ActivateKeyTypeResultMsg struct {
 }
 
 type DeactivateKeyTypeResultMsg struct {
+	ID      string
 	Success bool
 	KeyType string
 	Removed bool

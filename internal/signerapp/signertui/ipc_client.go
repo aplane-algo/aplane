@@ -576,6 +576,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeBackupResult: decodeAs(func(backupResult BackupResultMessage) tea.Msg {
 		return BackupResultMsg{
+			ID:          backupResult.ID,
 			Success:     backupResult.Success,
 			ArchivePath: backupResult.ArchivePath,
 			Warning:     backupResult.Warning,
@@ -608,6 +609,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeDeleteResult: decodeAs(func(delResult DeleteResultMessage) tea.Msg {
 		return DeleteResultMsg{
+			ID:      delResult.ID,
 			Success: delResult.Success,
 			Error:   delResult.Error,
 		}
@@ -644,6 +646,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeImportResult: decodeAs(func(impResult ImportResultMessage) tea.Msg {
 		return ImportResultMsg{
+			ID:      impResult.ID,
 			Success: impResult.Success,
 			Address: impResult.Address,
 			KeyType: impResult.KeyType,
@@ -673,6 +676,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeInstallLibraryTemplateResult: decodeAs(func(result InstallLibraryTemplateResultMessage) tea.Msg {
 		return InstallLibraryTemplateResultMsg{
+			ID:            result.ID,
 			Success:       result.Success,
 			KeyType:       result.KeyType,
 			TemplateType:  result.TemplateType,
@@ -703,6 +707,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeActivateKeyTypeResult: decodeAs(func(result ActivateKeyTypeResultMessage) tea.Msg {
 		return ActivateKeyTypeResultMsg{
+			ID:            result.ID,
 			Success:       result.Success,
 			KeyType:       result.KeyType,
 			AlreadyExists: result.AlreadyExists,
@@ -711,6 +716,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeDeactivateKeyTypeResult: decodeAs(func(result DeactivateKeyTypeResultMessage) tea.Msg {
 		return DeactivateKeyTypeResultMsg{
+			ID:      result.ID,
 			Success: result.Success,
 			KeyType: result.KeyType,
 			Removed: result.Removed,

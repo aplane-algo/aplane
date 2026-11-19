@@ -224,6 +224,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleDeleteResultMsg(msg)
 
 	case BackupResultMsg:
+		if !m.takeOperationReply(msg.ID) {
+			return m, m.waitForMessageCmd()
+		}
 		if msg.Success {
 			m.lastError = ""
 			m.backup.archivePath = msg.ArchivePath
@@ -362,20 +365,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLibraryTemplatesMsg(msg)
 
 	case InstallLibraryTemplateResultMsg:
-		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, "Key type enable failed")
+		return m.finishLibraryAction(msg.ID, msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, "Key type enable failed")
 
 	case ShowLibraryTemplateResultMsg:
 		return m.handleShowLibraryTemplateResultMsg(msg)
 
 	case ActivateKeyTypeResultMsg:
-		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
+		return m.finishLibraryAction(msg.ID, msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
 
 	case DeactivateKeyTypeResultMsg:
 		status := displayKeyType(msg.KeyType) + " was already disabled"
 		if msg.Removed {
 			status = displayKeyType(msg.KeyType) + " " + libraryDeactivatePastTense()
 		}
-		return m.finishLibraryAction(msg.Success, status, msg.Error, libraryDeactivateFailure())
+		return m.finishLibraryAction(msg.ID, msg.Success, status, msg.Error, libraryDeactivateFailure())
 
 	case KeyTypesMsg:
 		return m.handleKeyTypesMsg(msg)
