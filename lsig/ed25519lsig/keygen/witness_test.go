@@ -66,7 +66,7 @@ func TestWitnessEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	if err := store.Unlock(passphrase); err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}
-	if err := store.Scan(nil); err != nil {
+	if err := store.Scan(); err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
 	km, err := store.Get(context.Background(), result.Address)

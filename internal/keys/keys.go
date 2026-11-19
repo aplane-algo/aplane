@@ -24,8 +24,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// ErrMissingLogicSigSaltCounter indicates a LogicSig key file predates the
-// off-curve address invariant and cannot be safely loaded.
+// ErrMissingLogicSigSaltCounter indicates a manual-counter LogicSig key file
+// without the salt_counter that records how its address was made off-curve.
 var ErrMissingLogicSigSaltCounter = errors.New("logic sig key file missing salt_counter")
 
 // ErrLogicSigAddressOnCurve indicates a stored LogicSig key file whose bytecode
@@ -119,10 +119,8 @@ func incompatibleKeyFormatErr(detail error) error {
 // avoiding the need to re-decrypt keys for /keys API or signing budget calculation.
 type KeyScanInfo struct {
 	KeyFile                string // Path to the key file
-	KeyType                string // Key type (ed25519, aplane.falcon1024.v1, timelock-v3, etc.)
+	KeyType                string // Key type (ed25519, aplane.falcon1024.v1, aplane.htlc.v1, etc.)
 	Category               string // Key category from the key file, if present
-	PQScheme               string
-	PQAddressSalt          *byte
 	LogicSigResources      *lsigresource.Profile
 	PublicKeyHex           string // Hex-encoded public key (for /keys API)
 	BaseKeyType            string // Base DSA key type used for signing metadata, if present
@@ -266,7 +264,7 @@ func ReadDecryptedKeyJSONWithKeyring(keyFile string, kr *crypto.Keyring) ([]byte
 // ScanKeysDirectoryWithKeyring scans the product store's keys subdirectory,
 // opening each credential with the keyring. Only term envelopes are read.
 func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +273,7 @@ func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (m
 
 // ScanKeysDirectoryWithKeyringActive is ScanKeysDirectoryWithKeyring
 // against an authenticated generation capability.
-func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
+func ScanKeysDirectoryWithKeyringActive(active storepaths.GenPaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
 	report, err := ScanKeysDirectoryWithKeyringReportActive(active, kr)
 	if err != nil {
 		return nil, err
@@ -286,7 +284,7 @@ func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypt
 // ScanKeysDirectoryWithKeyringReportActive scans an authenticated
 // generation's keys directory and returns structured warnings for key files
 // that were skipped.
-func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*KeyScanReport, error) {
+func ScanKeysDirectoryWithKeyringReportActive(active storepaths.GenPaths, kr *crypto.Keyring) (*KeyScanReport, error) {
 	return scanKeysDirectoryInternalReport(active, nil, func(keyFile string) ([]byte, error) {
 		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
 	})
@@ -298,7 +296,7 @@ func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr 
 // authenticated credential selection is healthy before replacing that exact
 // selection. Unexpected entries and public metadata are never excluded.
 func ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive(
-	active storepaths.ActivePaths,
+	active storepaths.GenPaths,
 	kr *crypto.Keyring,
 	excluded map[string]bool,
 ) (*KeyScanReport, error) {
@@ -310,7 +308,7 @@ func ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive(
 // scanKeysDirectoryInternalReport is the shared implementation for scanning
 // keys. The decryptFunc parameter lets the caller supply either passphrase or
 // keyring decryption.
-func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSelectors map[string]bool, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
+func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelectors map[string]bool, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
 	var warnings []KeyScanWarning
@@ -437,8 +435,6 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 			KeyFile:                keyFile,
 			KeyType:                keyType,
 			Category:               category,
-			PQScheme:               signingMeta.PQScheme,
-			PQAddressSalt:          cloneBytePtr(signingMeta.PQAddressSalt),
 			LogicSigResources:      logicSigResources,
 			PublicKeyHex:           publicKeyHex,
 			BaseKeyType:            signingMeta.BaseKeyType,

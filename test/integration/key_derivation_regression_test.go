@@ -117,7 +117,7 @@ func TestKeyDerivationRegression(t *testing.T) {
 			if tc.keyType == "aplane.falcon1024.v1" {
 				// Preserve the old address vector through internal seed derivation and
 				// encrypted restore, not a now-forbidden public mnemonic import.
-				seed, seedErr := bip39impl.NewHandler("aplane.falcon1024", 24).SeedFromMnemonic(strings.Fields(tc.mnemonic), "")
+				seed, seedErr := bip39impl.NewHandler("aplane.falcon1024").SeedFromMnemonic(strings.Fields(tc.mnemonic), "")
 				if seedErr != nil {
 					t.Fatal(seedErr)
 				}

@@ -56,7 +56,7 @@ func (r *REPLState) readApprovalResponse() (string, error) {
 }
 
 func (r *REPLState) readDeleteKeyResponse(address string) (string, error) {
-	return r.readPromptResponse("Delete key " + r.app().FormatAddress(address, "") + "? [y/N]: ")
+	return r.readPromptResponse("Delete key " + r.app().FormatAddress(address) + "? [y/N]: ")
 }
 
 func (r *REPLState) readPromptResponse(prompt string) (string, error) {

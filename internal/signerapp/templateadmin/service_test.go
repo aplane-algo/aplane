@@ -349,9 +349,9 @@ func TestRemoveInstalledTemplateReloadFailureLeavesArchivedState(t *testing.T) {
 	} else if ok {
 		t.Fatal("template state restored after reload failure, want removal retained")
 	}
-	active, err := genstore.ResolveActive(ir.KeyPaths())
+	active, err := genstore.Resolve(ir.KeyPaths())
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("Resolve() error = %v", err)
 	}
 	if _, err := os.Stat(active.DeletedKeyTypeTemplate(keyType)); err != nil {
 		t.Fatalf("archived template stat error = %v", err)

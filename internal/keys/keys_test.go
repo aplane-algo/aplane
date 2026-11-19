@@ -981,18 +981,18 @@ func contains(s, substr string) bool {
 
 func activeKeysDirForTest(t *testing.T, paths storepaths.Paths) string {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active.KeysDir()
 }
 
-func mustResolveActiveForTest(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
+func mustResolveActiveForTest(t *testing.T, paths storepaths.Paths) storepaths.GenPaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active
 }

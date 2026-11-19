@@ -14,47 +14,35 @@ import (
 	falconmnemonic "github.com/algorandfoundation/falcon-signatures/mnemonic"
 )
 
-// BIP39Handler is a generic BIP-39 mnemonic handler. It wraps the BIP-39
-// seed derivation provided by the falcon-signatures/mnemonic helper (which
-// is a standards-compliant BIP-39 implementation) and exposes it through
-// the aplane Handler interface. A single handler instance is parameterized
-// by family name and word count so key-type families that share the BIP-39
-// scheme can reuse one
-// implementation instead of each carrying a near-duplicate copy.
-//
-// Only the 24-word / 256-bit-entropy strength has been exercised in
-// production so far, but the entropy-size math is derived from the word
-// count, so 12/15/18/21-word handlers work too if we ever need them.
+// BIP39Handler is the Falcon BIP-39 mnemonic handler. It wraps the
+// falcon-signatures/mnemonic helper, which takes 24 BIP-39 words over 32
+// bytes of entropy and derives the Falcon seed from them, and exposes it
+// through the aplane Handler interface under the given family name.
 type BIP39Handler struct {
-	family    string
-	wordCount int
+	family string
 }
+
+// The falcon-signatures helper accepts only this strength.
+const (
+	wordCount    = 24
+	entropyBytes = 32
+)
 
 var _ mnemonic.Handler = (*BIP39Handler)(nil)
 
-// NewHandler returns a BIP-39 handler for the given family using the
-// specified word count. wordCount must be one of the BIP-39 valid sizes
-// (12, 15, 18, 21, 24).
-func NewHandler(family string, wordCount int) *BIP39Handler {
-	return &BIP39Handler{family: family, wordCount: wordCount}
+// NewHandler returns the BIP-39 handler for family.
+func NewHandler(family string) *BIP39Handler {
+	return &BIP39Handler{family: family}
 }
 
 func (h *BIP39Handler) RoutingFamily() string { return h.family }
 
-// entropyBytes returns the BIP-39 entropy size for the handler's word count.
-// Per BIP-39: entropyBits = wordCount * 32 / 3, and wordCount is always a
-// multiple of 3 for valid sizes, so the division is exact.
-func (h *BIP39Handler) entropyBytes() int {
-	return (h.wordCount * 32 / 3) / 8
-}
-
-// GenerateMnemonic generates a fresh BIP-39 mnemonic of the handler's
-// configured word count. Returns joined words, derived seed, and the
-// underlying entropy (useful for key files that want to re-export the
-// mnemonic later).
+// GenerateMnemonic generates a fresh 24-word BIP-39 mnemonic. Returns joined
+// words, derived seed, and the underlying entropy (useful for key files that
+// want to re-export the mnemonic later).
 // On every error path the fresh entropy is zeroed before it is dropped.
 func (h *BIP39Handler) GenerateMnemonic() (words string, seed []byte, entropy []byte, err error) {
-	entropy = make([]byte, h.entropyBytes())
+	entropy = make([]byte, entropyBytes)
 	if _, err := readEntropy(entropy); err != nil {
 		crypto.ZeroBytes(entropy)
 		return "", nil, nil, fmt.Errorf("failed to generate entropy: %w", err)
@@ -99,25 +87,5 @@ func (h *BIP39Handler) EntropyToMnemonic(entropy []byte) (string, error) {
 	return strings.Join(words, " "), nil
 }
 
-// MnemonicToEntropy converts BIP-39 words back to the underlying entropy
-// (used to store entropy in key files so the mnemonic can be re-exported).
-func (h *BIP39Handler) MnemonicToEntropy(words []string) ([]byte, error) {
-	entropy, err := falconmnemonic.MnemonicToEntropy(words)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive entropy from mnemonic: %w", err)
-	}
-	return entropy, nil
-}
-
-// ValidateWordCount checks the given count against the handler's configured
-// word count. Error messages carry the family name so users importing an
-// another key family does not see algorithm-specific error messages.
-func (h *BIP39Handler) ValidateWordCount(wordCount int) error {
-	if wordCount != h.wordCount {
-		return fmt.Errorf("%s requires exactly %d words, got %d", h.family, h.wordCount, wordCount)
-	}
-	return nil
-}
-
 // WordCount returns the expected word count for this handler.
-func (h *BIP39Handler) WordCount() int { return h.wordCount }
+func (h *BIP39Handler) WordCount() int { return wordCount }

@@ -925,11 +925,11 @@ func TestSweepKeyTypeNamespaceFlagsNoncanonicalFilenames(t *testing.T) {
 	}
 }
 
-func mustResolveActiveForTemplatesTest(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
+func mustResolveActiveForTemplatesTest(t *testing.T, paths storepaths.Paths) storepaths.GenPaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	return active
 }

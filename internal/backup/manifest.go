@@ -66,7 +66,7 @@ func WriteSealedManifest(
 	role noderole.Role,
 	createdAt time.Time,
 	exportPassphrase []byte,
-	hints ...map[string]RotatingStageHint,
+	hints map[string]RotatingStageHint,
 ) error {
 	if _, err := noderole.ParseRole(string(role)); err != nil {
 		return err
@@ -74,22 +74,17 @@ func WriteSealedManifest(
 	if len(exportPassphrase) == 0 {
 		return fmt.Errorf("sealing the backup manifest requires the export passphrase")
 	}
-	if createdAt.IsZero() {
-		createdAt = time.Now()
-	}
 	members, err := inventoryArchiveMembers(destDir)
 	if err != nil {
 		return err
 	}
 	manifest := Manifest{
-		Schema:         ManifestSchema,
-		SchemaVersion:  ManifestSchemaVersion,
-		SourceNodeRole: string(role),
-		CreatedAtUnix:  createdAt.UTC().Unix(),
-		Members:        members,
-	}
-	if len(hints) > 0 {
-		manifest.RotatingStageHints = hints[0]
+		Schema:             ManifestSchema,
+		SchemaVersion:      ManifestSchemaVersion,
+		SourceNodeRole:     string(role),
+		CreatedAtUnix:      createdAt.UTC().Unix(),
+		Members:            members,
+		RotatingStageHints: hints,
 	}
 	plaintext, err := json.Marshal(manifest)
 	if err != nil {

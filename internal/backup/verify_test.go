@@ -139,6 +139,7 @@ func sealTestArchiveManifest(t *testing.T, root string) {
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
 		[]byte("export-passphrase"),
+		nil,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}

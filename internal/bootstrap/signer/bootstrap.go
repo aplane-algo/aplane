@@ -29,10 +29,6 @@ func ResolveDataDir(dataDirFlag string) (string, error) {
 }
 
 // Load resolves apsigner startup state from flags and config.
-//
-// This is the composition root for signer data-dir/config/keystore setup. The
-// keystore path setter remains a transitional shim, but it is now owned by one
-// explicit bootstrap package instead of scattered across startup code.
 func Load(dataDirFlag string) (*Startup, error) {
 	dataDir, err := ResolveDataDir(dataDirFlag)
 	if err != nil {

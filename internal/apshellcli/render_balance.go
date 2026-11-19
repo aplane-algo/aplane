@@ -12,7 +12,7 @@ import (
 
 // showFullBalance shows ALGO + all ASA balances for an account.
 func (r *REPLState) showFullBalance(result *apshellapp.BalanceDetails) error {
-	r.printf("%s\n", r.app().FormatAddress(result.Address, ""))
+	r.printf("%s\n", r.app().FormatAddress(result.Address))
 
 	algoMeta, _ := r.app().ResolveAssetMetadata("algo")
 	r.printf("  ALGO: %s\n", asa.FormatDisplayAmount(result.AlgoBalance, algoMeta))
@@ -35,7 +35,7 @@ func (r *REPLState) showFullBalance(result *apshellapp.BalanceDetails) error {
 // showSingleAssetBalance shows balance for a specific asset.
 func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, meta asa.Metadata) error {
 	if meta.AssetID == 0 {
-		r.printf("%s: %s\n", r.app().FormatAddress(result.Address, ""), asa.DisplayString(asa.AmountFromRaw(result.AlgoBalance, meta)))
+		r.printf("%s: %s\n", r.app().FormatAddress(result.Address), asa.DisplayString(asa.AmountFromRaw(result.AlgoBalance, meta)))
 		return nil
 	}
 	asaID := meta.AssetID
@@ -48,12 +48,12 @@ func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, me
 				UnitName: asset.UnitName,
 				Decimals: asset.Decimals,
 			}
-			r.printf("%s: %s\n", r.app().FormatAddress(result.Address, ""), asa.DisplayString(asa.AmountFromRaw(asset.Amount, holdingMeta)))
+			r.printf("%s: %s\n", r.app().FormatAddress(result.Address), asa.DisplayString(asa.AmountFromRaw(asset.Amount, holdingMeta)))
 			return nil
 		}
 	}
 
-	r.printf("%s: 0 %s (not opted in)\n", r.app().FormatAddress(result.Address, ""), asa.DisplayRef(meta))
+	r.printf("%s: 0 %s (not opted in)\n", r.app().FormatAddress(result.Address), asa.DisplayRef(meta))
 	return nil
 }
 
@@ -90,7 +90,7 @@ func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetai
 
 		if found && (!holdersOnly || balanceRaw > 0) {
 			results = append(results, accountBalance{
-				name: r.app().FormatAddress(result.Address, ""),
+				name: r.app().FormatAddress(result.Address),
 				raw:  balanceRaw,
 			})
 			totalRaw += balanceRaw

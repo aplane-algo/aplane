@@ -1191,7 +1191,7 @@ func reloadKeysForTest(server *Signer) error {
 	}
 
 	ks := ir.KeyStore()
-	if err := ks.Scan(testPassphrase); err != nil {
+	if err := ks.Scan(); err != nil {
 		return fmt.Errorf("scan failed: %w", err)
 	}
 

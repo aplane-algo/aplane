@@ -78,7 +78,7 @@ func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte
 
 // SaveGenerationSidecarWithKeyring authenticates the immutable data-root node
 // role into one already-resolved generation.
-func SaveGenerationSidecarWithKeyring(active storepaths.ActivePaths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+func SaveGenerationSidecarWithKeyring(active storepaths.GenPaths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
 	return saveSidecarAtPath(active.NodeRoleIntegritySidecar(), roleBytes, kr, signedAt)
 }
 
@@ -105,7 +105,7 @@ func saveSidecarAtPath(sidecarPath string, roleBytes []byte, kr *apcrypto.Keyrin
 
 // LoadAndVerifyGenerationWithKeyring verifies the immutable data-root node
 // role against the sidecar in one already-resolved generation.
-func LoadAndVerifyGenerationWithKeyring(paths storepaths.Paths, active storepaths.ActivePaths, kr *apcrypto.Keyring) (Document, error) {
+func LoadAndVerifyGenerationWithKeyring(paths storepaths.Paths, active storepaths.GenPaths, kr *apcrypto.Keyring) (Document, error) {
 	return loadAndVerifyAtPath(paths, active.NodeRoleIntegritySidecar(), kr)
 }
 

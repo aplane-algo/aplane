@@ -120,20 +120,16 @@ func ApplyAuthorityPlaceholders(staged storepaths.GenPaths) error {
 // API whose caller already owns active-path resolution.
 func Active(t testing.TB, paths storepaths.Paths) storepaths.GenPaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
 		var bound storepaths.Paths
 		bound, err = BindDefault(paths)
 		if err == nil {
-			active, err = genstore.ResolveActive(bound)
+			active, err = genstore.Resolve(bound)
 		}
 	}
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
-	gen, ok := active.(storepaths.GenPaths)
-	if !ok {
-		t.Fatalf("ResolveActive returned %T, want GenPaths", active)
-	}
-	return gen
+	return active
 }

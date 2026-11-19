@@ -71,9 +71,9 @@ func TestPlainProgramRestoresAndSignsExistingCredentials(t *testing.T) {
 						t.Fatal(err)
 					}
 					kr := cryptotest.Keyring(t, testExportMasterKey)
-					restorer := NewRestorer(paths).WithNodeRole(noderole.RoleSigner)
-					if restoredType, err := restorer.RestoreKey(archiveDir, address, kr, passphrase); err != nil || restoredType != keyType {
-						t.Fatalf("RestoreKey() = %s, %v", restoredType, err)
+					restoredType, err := RestoreForRebuild(genstoretest.Active(t, paths), noderole.RoleSigner, archiveDir, address, kr, passphrase, nil)
+					if err != nil || restoredType != keyType {
+						t.Fatalf("RestoreForRebuild() = %s, %v", restoredType, err)
 					}
 					file := filepath.Join(genstoretest.Active(t, paths).KeysDir(), address+keys.AccountKeyExtension)
 					if _, err := os.Stat(file); err != nil {

@@ -36,7 +36,7 @@ func RegisterSigner() {
 					family.Name:            keygenOps,
 					"aplane.falcon1024.v1": keygenOps,
 				},
-				Mnemonic: bip39impl.NewHandler(family.Name, family.MnemonicWordCount),
+				Mnemonic: bip39impl.NewHandler(family.Name),
 			}},
 			Extra: []func(){
 				keygen.RegisterWitnessKeygen,

@@ -353,7 +353,7 @@ func TestYAMLTemplateAddressListCanonicalizesTEALByDefault(t *testing.T) {
 	}
 }
 
-func TestYAMLTemplateCompileUsesCallerContext(t *testing.T) {
+func TestYAMLTemplateCompileWithSaltUsesCallerContext(t *testing.T) {
 	tmpl := NewYAMLTemplate(&TemplateSpec{
 		BaseTemplateSpec: testBase(),
 		TemplateMode:     "generated",
@@ -366,9 +366,9 @@ func TestYAMLTemplateCompileUsesCallerContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, _, err = tmpl.Compile(ctx, nil, client)
+	_, err = tmpl.CompileWithSalt(ctx, nil, client)
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("Compile() error = %v, want context canceled", err)
+		t.Fatalf("CompileWithSalt() error = %v, want context canceled", err)
 	}
 }
 

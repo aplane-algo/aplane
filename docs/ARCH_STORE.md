@@ -299,10 +299,12 @@ Symlink and non-regular destinations are rejected. `fsutil` offers only the
 private-store and root-credential profiles.
 
 `internal/storeperm` owns read-only audit, stopped-service migration, and the
-startup permission contract. It keeps a private legacy group-shared profile
-used only to validate and migrate pre-migration trees. It inventories without following symlinks and
-reports unsafe ancestors, ownership, modes, hardlinks, and unexpected file
-types. Its public policies are opaque operation-specific values: production
+startup permission contract. Every audit checks one service-user-only policy
+(0700 directories and 0600 files, apart from the named install, binary and
+root-credential exceptions); migration treats the owner and mode findings it
+reports as the repairs to make. It inventories without following
+symlinks and reports unsafe ancestors, ownership, modes, hardlinks, and
+unexpected file types. Its public policies are opaque operation-specific values: production
 audit rejects every in-store socket, same-UID audit recognizes one exact live
 socket without relaxing ancestor checks, and migration alone receives a
 removable legacy socket. Migration validates the complete legacy inventory before mutation,

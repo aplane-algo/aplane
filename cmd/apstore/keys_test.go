@@ -21,7 +21,7 @@ import (
 func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		activePaths, kr := deriveTestStore(t, passphrase)
-		edResult, err := keymgmt.GenerateKey(activePaths, "ed25519", kr, nil)
+		edResult, err := keymgmt.GenerateKeyWithActivatedContext(context.Background(), activePaths, "ed25519", kr, nil, nil)
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}

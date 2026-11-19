@@ -154,7 +154,7 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 
 func reloadKeysForTest(ir *productruntime.Runtime, _ storepaths.Paths) error {
 	ks := ir.KeyStore()
-	if err := ks.Scan(nil); err != nil {
+	if err := ks.Scan(); err != nil {
 		return err
 	}
 	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
@@ -817,9 +817,9 @@ func TestServiceKeyTypesIncludesEnabledYAMLComposedProvider(t *testing.T) {
 
 func TestServiceKeyTypesForRuntimeReportsCorruptStateRecord(t *testing.T) {
 	ir := setupProductRuntime(t, false)
-	active, err := genstore.ResolveActive(ir.KeyPaths())
+	active, err := genstore.Resolve(ir.KeyPaths())
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	path := active.KeyTypeRecord("bad-rest-state-v1")
 	if err := os.WriteFile(path, []byte(`{bad`), 0o600); err != nil {

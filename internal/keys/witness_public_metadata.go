@@ -21,13 +21,13 @@ const WitnessPublicMetadataSuffix = witness.CosignerPublicReferenceExtension
 
 // WitnessPublicMetadataPathActive returns the public-only metadata sidecar
 // path for a signer-custodied witness key.
-func WitnessPublicMetadataPathActive(active storepaths.ActivePaths, witnessKeyID string) string {
+func WitnessPublicMetadataPathActive(active storepaths.GenPaths, witnessKeyID string) string {
 	return filepath.Join(active.KeysDir(), witnessKeyID+WitnessPublicMetadataSuffix)
 }
 
 // ReadWitnessPublicMetadataActive reads and validates a witness public
 // metadata sidecar. The boolean is false when the sidecar is absent.
-func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID string) (cosignerrefs.ExportEnvelope, bool, error) {
+func ReadWitnessPublicMetadataActive(active storepaths.GenPaths, witnessKeyID string) (cosignerrefs.ExportEnvelope, bool, error) {
 	witnessKeyID, err := witness.NormalizeID(witnessKeyID)
 	if err != nil {
 		return cosignerrefs.ExportEnvelope{}, false, err
@@ -78,7 +78,7 @@ func validateWitnessPublicMetadataFilename(path string) error {
 
 // WriteWitnessPublicMetadataFromKeyJSONActive is
 // WriteWitnessPublicMetadataFromKeyJSON against resolved active-store paths.
-func WriteWitnessPublicMetadataFromKeyJSONActive(active storepaths.ActivePaths, address string, keyJSON []byte) (string, bool, error) {
+func WriteWitnessPublicMetadataFromKeyJSONActive(active storepaths.GenPaths, address string, keyJSON []byte) (string, bool, error) {
 	payload, err := ParsePayload(keyJSON)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to parse key payload for witness public metadata: %w", err)
@@ -97,7 +97,7 @@ func WriteWitnessPublicMetadataFromKeyJSONActive(active storepaths.ActivePaths, 
 	return WitnessPublicMetadataPathActive(active, witnessKeyID), true, nil
 }
 
-func writeWitnessPublicMetadataFromPayload(active storepaths.ActivePaths, selector string, payload *Payload) error {
+func writeWitnessPublicMetadataFromPayload(active storepaths.GenPaths, selector string, payload *Payload) error {
 	if payload == nil || payload.Category != CategoryWitness || !witness.IsKeyType(payload.KeyType) {
 		return nil
 	}

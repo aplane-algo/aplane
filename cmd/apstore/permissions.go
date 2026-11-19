@@ -62,7 +62,7 @@ func cmdPermissions(args []string) error {
 		if err != nil {
 			return err
 		}
-		opts := storeperm.SharedMigrationOptions(dataDirectory, uid, gid, socketPath)
+		opts := storeperm.StoppedMigrationOptions(dataDirectory, uid, gid, socketPath)
 		result, err := storeperm.MigratePrivate(opts)
 		if err != nil {
 			return err
@@ -173,7 +173,7 @@ func cmdPermissionsConvertManaged(args []string) error {
 	if err != nil {
 		return err
 	}
-	result, err := storeperm.MigratePrivate(storeperm.SharedMigrationOptions(dataDirectory, uid, gid, socketPath))
+	result, err := storeperm.MigratePrivate(storeperm.StoppedMigrationOptions(dataDirectory, uid, gid, socketPath))
 	if err != nil {
 		return err
 	}

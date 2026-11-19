@@ -97,12 +97,9 @@ const (
 	// the daemon has no audit log (it could not be opened at startup);
 	// ResultCodeAuditWriteFailed because the request's intent could not be
 	// recorded in it.
-	ResultCodeAuditUnavailable         = "audit_unavailable"
-	ResultCodeAuditWriteFailed         = "audit_write_failed"
-	ResultCodeConfirmationRequired     = "confirmation_required"
-	ResultCodeInvalidBackupArchive     = "invalid_backup_archive"
-	ResultCodeBackupArchiveNotFound    = "backup_archive_not_found"
-	ResultCodeBackupArchiveUnavailable = "backup_archive_unavailable"
+	ResultCodeAuditUnavailable     = "audit_unavailable"
+	ResultCodeAuditWriteFailed     = "audit_write_failed"
+	ResultCodeConfirmationRequired = "confirmation_required"
 	// ResultCodeRecoveryBlocked reports an unlock that succeeded into
 	// recovery mode: the passphrase was right, but the store failed
 	// reconciliation or generation validation, so signing is blocked until

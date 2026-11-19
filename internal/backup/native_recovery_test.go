@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	nativereg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -30,12 +31,12 @@ func TestNativeFalconBackupPreservesRecoveryEntropy(t *testing.T) {
 		t.Fatal(err)
 	}
 	exported := t.TempDir()
-	if _, _, err := ExportKey(activePathsForBackupTest(t, source).KeysDir(), exported, generated.Address, kr, []byte("export-passphrase")); err != nil {
+	if err := ExportKey(activePathsForBackupTest(t, source).KeysDir(), exported, generated.Address, kr, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
 	dest := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
 	active := activePathsForBackupTest(t, dest)
-	_, err = NewRestorer(dest).WithActiveNamespace(active).RestoreKey(exported, generated.Address, kr, []byte("export-passphrase"))
+	_, err = RestoreForRebuild(active, noderole.RoleSigner, exported, generated.Address, kr, []byte("export-passphrase"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -313,7 +313,7 @@ namespaces exist only inside the generation authenticated by
 `store-root.enc`. The runtime boundary authenticates the root with
 `genstore.ResolveStoreRoot` (or `ResolveStoreRootWithKeyring`) and binds the
 result into `storepaths.Paths`; normal consumers then receive the bound
-active-generation capability from `genstore.Resolve` or `genstore.ResolveActive`.
+active-generation capability from `genstore.Resolve`.
 There is no public pointer or legacy active layout.
 
 ### Key Files

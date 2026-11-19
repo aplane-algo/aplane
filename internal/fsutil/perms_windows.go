@@ -7,10 +7,10 @@ package fsutil
 
 import "os"
 
-// FileOwnership reports no unix ownership on Windows: there are no unix
-// uids/gids, so the shared-group preservation logic is skipped and writes
-// always take the atomic-replace path. File protection comes from NTFS ACLs
-// on the user profile rather than unix permission bits.
+// FileOwnership reports no unix ownership on Windows, which has no unix
+// uids/gids; the storeperm ownership checks that use it are unix-only. File
+// protection comes from NTFS ACLs on the user profile rather than unix
+// permission bits.
 func FileOwnership(_ os.FileInfo) (uid, gid int, ok bool) {
 	return 0, 0, false
 }

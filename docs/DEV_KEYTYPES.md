@@ -726,7 +726,7 @@ Summary:
   plain hosts)
 
 Generic LogicSig templates implement `genericlsig.Template` (which extends
-`LSigProvider` with `GenerateTEAL` and `Compile`).
+`LSigProvider` with `GenerateTEAL` and `CompileWithSalt`).
 
 DSA providers implement `SigningProvider` and typically `AlgodConfigurable`.
 No LogicSig provider declares mnemonic import: it is native-only.

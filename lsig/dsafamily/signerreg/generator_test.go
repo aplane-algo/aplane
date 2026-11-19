@@ -446,7 +446,7 @@ func TestGenerateFromSeedDifferentSizes(t *testing.T) {
 
 // TestGenerateFromMnemonic verifies Falcon key generation from BIP-39 mnemonic
 func registerTestMnemonicHandler() {
-	mnemonicreg.Register(bip39impl.NewHandler("falcon1024", family.MnemonicWordCount))
+	mnemonicreg.Register(bip39impl.NewHandler("falcon1024"))
 }
 
 func TestGenerateFromMnemonic(t *testing.T) {
@@ -656,9 +656,9 @@ func TestKeyFileNaming(t *testing.T) {
 	}
 
 	// Verify file naming inside the active generation.
-	active, err := genstore.ResolveActive(paths)
+	active, err := genstore.Resolve(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	expectedFile := filepath.Join(active.KeysDir(), result.Address+".key")
 	if result.KeyFiles.PrivateFile != expectedFile {
@@ -815,7 +815,7 @@ func TestGenerateFromSeedFailsWhenTEALGenerationFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "template render failed") {
 		t.Fatalf("GenerateFromSeed() error = %v, want the TEAL generation failure", err)
 	}
-	active, resolveErr := genstore.ResolveActive(paths)
+	active, resolveErr := genstore.Resolve(paths)
 	if resolveErr != nil {
 		t.Fatal(resolveErr)
 	}

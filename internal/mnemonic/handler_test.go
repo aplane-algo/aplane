@@ -116,14 +116,6 @@ func (m *MockHandler) EntropyToMnemonic(entropy []byte) (string, error) {
 	return "mock mnemonic", nil
 }
 
-func (m *MockHandler) MnemonicToEntropy(_ []string) ([]byte, error) {
-	return nil, nil
-}
-
-func (m *MockHandler) ValidateWordCount(wordCount int) error {
-	return nil
-}
-
 func (m *MockHandler) WordCount() int {
 	return 12
 }
@@ -170,20 +162,6 @@ func TestHandlerInterface(t *testing.T) {
 		count := handler.WordCount()
 		if count <= 0 {
 			t.Errorf("WordCount should be positive, got %d", count)
-		}
-	})
-
-	t.Run("ValidateWordCount", func(t *testing.T) {
-		// Valid count should not error
-		err := handler.ValidateWordCount(handler.WordCount())
-		if err != nil {
-			t.Errorf("ValidateWordCount with correct count should not error: %v", err)
-		}
-
-		// Invalid count should error
-		err = handler.ValidateWordCount(999)
-		if err == nil {
-			t.Error("ValidateWordCount with wrong count should error")
 		}
 	})
 

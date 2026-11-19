@@ -67,7 +67,7 @@ type sidecar struct {
 
 // Load reads and authenticates the ASA set in one already-resolved
 // generation. A generation with neither file has an empty set.
-func Load(active storepaths.ActivePaths, kr *apcrypto.Keyring) (*asaset.Set, error) {
+func Load(active storepaths.GenPaths, kr *apcrypto.Keyring) (*asaset.Set, error) {
 	path, sidecarPath := active.ASASetPath(), active.ASASetIntegritySidecar()
 	fileExists, err := exists(path)
 	if err != nil {
@@ -106,7 +106,7 @@ func Load(active storepaths.ActivePaths, kr *apcrypto.Keyring) (*asaset.Set, err
 
 // Write stores set and its sidecar in one generation being built. The two
 // files are written as one durable set.
-func Write(active storepaths.ActivePaths, set *asaset.Set, kr *apcrypto.Keyring, signedAt time.Time) error {
+func Write(active storepaths.GenPaths, set *asaset.Set, kr *apcrypto.Keyring, signedAt time.Time) error {
 	data, err := set.Marshal()
 	if err != nil {
 		return err
@@ -145,9 +145,6 @@ func signSidecar(data []byte, kr *apcrypto.Keyring, signedAt time.Time) ([]byte,
 	header, err := sidecarSpec.Sign(data, kr)
 	if err != nil {
 		return nil, err
-	}
-	if signedAt.IsZero() {
-		signedAt = time.Now()
 	}
 	sum := sha256.Sum256(data)
 	return sidecarSpec.Marshal(&sidecar{Header: header, SetSHA256: hex.EncodeToString(sum[:]), SignedAtUnix: signedAt.UTC().Unix()})

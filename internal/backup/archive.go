@@ -122,12 +122,6 @@ const (
 	maxArchiveExtractedBytes = 1 << 30 // 1 GiB across all entries
 )
 
-// ExtractTarGzArchive extracts a tar.gz archive into destDir. Extracted
-// directories and files are owner-private regardless of archive mode bits so
-// validation residue is safe inside a private signer store. The archive is
-// opened with the same no-follow regular-file enforcement as the recover path,
-// and extraction is bounded (entry count and total decompressed size) so a
-// crafted archive cannot exhaust the disk.
 // requireExtractableArchive refuses to package a staged archive that
 // extraction would reject, so a backup is never written that cannot be
 // restored.
@@ -159,6 +153,12 @@ func requireExtractableArchive(stageDir string) error {
 	return nil
 }
 
+// ExtractTarGzArchive extracts a tar.gz archive into destDir. Extracted
+// directories and files are owner-private regardless of archive mode bits so
+// validation residue is safe inside a private signer store. The archive is
+// opened with the same no-follow regular-file enforcement as the recover path,
+// and extraction is bounded (entry count and total decompressed size) so a
+// crafted archive cannot exhaust the disk.
 func ExtractTarGzArchive(archivePath, destDir string) error {
 	file, err := openManagedBackupArchive(archivePath)
 	if err != nil {

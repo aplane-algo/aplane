@@ -12,25 +12,21 @@ import (
 
 // ProductAuthorizer is the complete authorization model for the
 // single-operator product. It has no mutable principal, group, grant, or target
-// graph: the product admin principal has one fixed action set, and each client
+// graph: the product admin principal has one fixed action set, and the client
 // role has one fixed action set. The fingerprint identifies a credential and
 // the role selects its permissions; neither is proof of authentication.
 type ProductAuthorizer struct {
 	allowed map[auth.Action]struct{}
-	roles   map[string]map[auth.Action]struct{}
+	client  map[auth.Action]struct{}
 }
 
 // NewProductSingleAuthorizer constructs the closed product authorization
-// boundary. The copied maps prevent callers from mutating the package-level
-// action definitions.
+// boundary.
 func NewProductSingleAuthorizer() *ProductAuthorizer {
-	a := &ProductAuthorizer{
+	return &ProductAuthorizer{
 		allowed: actionSet(ProductAllowedActions()),
-		roles: map[string]map[auth.Action]struct{}{
-			auth.RoleClient: actionSet(ClientAllowedActions()),
-		},
+		client:  actionSet(ClientAllowedActions()),
 	}
-	return a
 }
 
 func actionSet(actions []auth.Action) map[auth.Action]struct{} {
@@ -113,8 +109,8 @@ func (a *ProductAuthorizer) Authorize(_ context.Context, identity *auth.Identity
 	switch {
 	case identity.ID == auth.SystemProductAdminPrincipalID:
 		allowed = a.allowed
-	case strings.HasPrefix(identity.ID, auth.ClientPrincipalPrefix):
-		allowed = a.roles[identity.Role]
+	case strings.HasPrefix(identity.ID, auth.ClientPrincipalPrefix) && identity.Role == auth.RoleClient:
+		allowed = a.client
 	}
 	if allowed == nil {
 		return auth.ErrForbidden

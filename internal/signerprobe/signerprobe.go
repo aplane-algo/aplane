@@ -68,9 +68,3 @@ func Check(dataDir string, opts Options) (Result, error) {
 	}
 	return Result{IPCPath: ipcPath}, fmt.Errorf("dial signer IPC: %w", err)
 }
-
-func ResolveIPCPath(dataDir string) (string, error) {
-	return adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-		DataDir: dataDir, DataDirExplicit: true,
-	})
-}

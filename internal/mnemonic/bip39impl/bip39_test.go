@@ -5,12 +5,13 @@ package bip39impl
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
 
 func newTestBIP39Handler() *BIP39Handler {
-	return NewHandler("falcon1024", 24)
+	return NewHandler("falcon1024")
 }
 
 func TestBIP39Handler_Family(t *testing.T) {
@@ -24,42 +25,6 @@ func TestBIP39Handler_WordCount(t *testing.T) {
 	h := newTestBIP39Handler()
 	if h.WordCount() != 24 {
 		t.Errorf("WordCount() = %v, want 24", h.WordCount())
-	}
-}
-
-func TestBIP39Handler_ValidateWordCount(t *testing.T) {
-	h := newTestBIP39Handler()
-
-	tests := []struct {
-		name      string
-		wordCount int
-		wantErr   bool
-	}{
-		{"valid 24 words", 24, false},
-		{"too few 12", 12, true},
-		{"too few 23", 23, true},
-		{"too many 25", 25, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := h.ValidateWordCount(tt.wordCount)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateWordCount(%d) error = %v, wantErr %v", tt.wordCount, err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestBIP39Handler_ValidateWordCount_ErrorMessageCarriesFamily(t *testing.T) {
-	const family = "example-dsa"
-	h := NewHandler(family, 24)
-	err := h.ValidateWordCount(12)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), family) {
-		t.Errorf("error message should mention family %q, got %q", family, err.Error())
 	}
 }
 
@@ -195,8 +160,7 @@ func TestBIP39Handler_EntropyToMnemonic_Deterministic(t *testing.T) {
 }
 
 // GenerateMnemonic zeroes the fresh entropy when it fails after reading it.
-// A handler for a word count BIP-39 does not define (13 words, 17 bytes of
-// entropy) fails to turn the entropy into words.
+// The entropy reader fills the buffer and then reports a failure.
 func TestGenerateMnemonicZeroesEntropyOnFailure(t *testing.T) {
 	var read []byte
 	original := readEntropy
@@ -205,11 +169,11 @@ func TestGenerateMnemonicZeroesEntropyOnFailure(t *testing.T) {
 			b[i] = 0xA5
 		}
 		read = b
-		return len(b), nil
+		return len(b), errors.New("entropy source failed")
 	}
 	t.Cleanup(func() { readEntropy = original })
 
-	words, seed, entropy, err := NewHandler("falcon1024", 13).GenerateMnemonic()
+	words, seed, entropy, err := newTestBIP39Handler().GenerateMnemonic()
 	if err == nil || words != "" || seed != nil || entropy != nil {
 		t.Fatalf("GenerateMnemonic() = %q, %x, %x, %v; want a failure", words, seed, entropy, err)
 	}

@@ -113,9 +113,9 @@ func TestStorePassphraseRotationPreservesSigningAndPriorGeneration(t *testing.T)
 	}
 	assertPassphraseRejected(t, env, oldPass)
 	kr := mustOpenKeyring(t, env, newPass)
-	anchors := kr.HistoricalGenerationAnchors()
+	_, anchored := kr.HistoricalGenerationAnchor(before.GenerationID())
 	kr.Zero()
-	if len(anchors) == 0 {
+	if !anchored {
 		t.Fatal("completed rotation did not retain a historical generation anchor")
 	}
 	if err := env.stopSigner(); err != nil {

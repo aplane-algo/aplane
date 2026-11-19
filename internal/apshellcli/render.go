@@ -23,7 +23,7 @@ func renderKeys(r *REPLState, keys appresult.Keys) {
 		return
 	}
 	for _, k := range keys.Keys {
-		r.printf("%s [%s]%s\n", r.app().FormatAddress(k.Address, ""), r.app().FormatKeyTypeForDisplay(k.Address, k.KeyType), formatTemplateProvenanceStatusSuffix(k.TemplateProvenanceStatus))
+		r.printf("%s [%s]%s\n", r.app().FormatAddress(k.Address), r.app().FormatKeyTypeForDisplay(k.Address, k.KeyType), formatTemplateProvenanceStatusSuffix(k.TemplateProvenanceStatus))
 		if k.PolicyLabel != "" {
 			r.printf("  %s\n", k.PolicyLabel)
 		}

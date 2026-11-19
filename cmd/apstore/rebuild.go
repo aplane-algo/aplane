@@ -269,11 +269,7 @@ func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Rol
 
 	restored := 0
 	for _, address := range addresses {
-		keyType, err := backup.NewRestorer(keystorePaths()).
-			WithNodeRole(role).
-			WithLogger(logInfof).
-			WithActiveNamespace(staged).
-			RestoreActiveForRebuild(keysDir, address, kr, exportPassphrase)
+		keyType, err := backup.RestoreForRebuild(staged, role, keysDir, address, kr, exportPassphrase, logInfof)
 		if err != nil {
 			return fmt.Errorf("failed to rebuild %s: %w", address, err)
 		}
