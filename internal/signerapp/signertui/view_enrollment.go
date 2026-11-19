@@ -22,10 +22,11 @@ func (m Model) renderClientEnrollmentPopup() string {
 	rows := []string{
 		"Client Enrollment Request",
 		fmt.Sprintf("Client SSH key fingerprint: %s", req.SSHFingerprint),
-		fmt.Sprintf("Remote Addr: %s", req.RemoteAddr),
+		fmt.Sprintf("Remote Addr: %s", terminalSafe(req.RemoteAddr)),
 	}
 	if req.Label != "" {
-		rows = append(rows, fmt.Sprintf("Requested label: %s", req.Label))
+		// The label comes from the client, before the client is trusted.
+		rows = append(rows, fmt.Sprintf("Requested label: %s", terminalSafe(req.Label)))
 	}
 	var sb strings.Builder
 

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type cosignerSSHDialerFunc func(context.Context) (net.Conn, error)
@@ -41,6 +42,11 @@ func TestCosignerSSHHTTPTransportDoesNotDependOnDefaultTransportType(t *testing.
 	defer transport.CloseIdleConnections()
 	if transport.Proxy != nil {
 		t.Fatal("cosigner SSH HTTP transport inherited a proxy")
+	}
+	// The node's HTTP server closes idle connections after 120 seconds; the
+	// client must close them first.
+	if transport.IdleConnTimeout <= 0 || transport.IdleConnTimeout >= 120*time.Second {
+		t.Fatalf("IdleConnTimeout = %v, want a positive timeout under 120s", transport.IdleConnTimeout)
 	}
 }
 
@@ -96,7 +102,7 @@ func TestCosignerSSHHTTPTransportRejectsOtherDestinations(t *testing.T) {
 	}))
 	defer transport.CloseIdleConnections()
 	_, err := transport.DialContext(context.Background(), "tcp", "other.example:80")
-	if err == nil || !strings.Contains(err.Error(), "unexpected cosigner HTTP dial target") {
+	if err == nil || !strings.Contains(err.Error(), "unexpected node HTTP dial target") {
 		t.Fatalf("DialContext() error = %v, want restricted-target error", err)
 	}
 	if dialed {
@@ -152,4 +158,9 @@ func TestCosignerSSHLifetimeHonorsSetupCancellation(t *testing.T) {
 	if err := detach(); !errors.Is(err, context.Canceled) {
 		t.Fatalf("detach() error = %v, want context canceled", err)
 	}
+}
+
+// newCosignerSSHHTTPTransport is the transport a cosigner connection uses.
+func newCosignerSSHHTTPTransport(dialer sshAPIDialer) *http.Transport {
+	return newSSHHTTPTransport(dialer, cosignerSSHHTTPAuthority)
 }

@@ -292,7 +292,7 @@ func (r *restoreRun) commit(
 	})
 	if mintErr != nil {
 		visible, visibleErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
-		if errors.Is(mintErr, genstore.ErrStoreRootCommitDurabilityUnknown) ||
+		if genstore.RootCommitUncertain(mintErr) ||
 			(visibleErr == nil && visible.GenerationID() == generationID) {
 			r.committedGeneration = generationID
 			result.GenerationID = generationID
@@ -300,7 +300,7 @@ func (r *restoreRun) commit(
 			ir.SetRecovery()
 			return restoreFailure(
 				protocol.ResultCodeRestoreRollbackFailed,
-				"restore committed as generation %s but durability is unconfirmed; signing is blocked pending reconciliation: %v",
+				"restore may have committed as generation %s; signing is blocked pending reconciliation: %v",
 				generationID, mintErr,
 			)
 		}

@@ -356,12 +356,12 @@ func createdAppDetailsFromEngine(result *engine.AppDeployResult) *CreatedAppDeta
 
 // ConnectionDetails is the app-owned signer connection outcome.
 type ConnectionDetails struct {
-	Connected    bool
-	Target       string
-	Port         int
-	KeyCount     int
-	Locked       bool
-	ErrorMessage string
+	Connected        bool
+	AlreadyConnected bool
+	Target           string
+	KeyCount         int
+	Locked           bool
+	ErrorMessage     string
 }
 
 func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDetails {
@@ -369,12 +369,12 @@ func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDet
 		return nil
 	}
 	return &ConnectionDetails{
-		Connected:    result.Connected,
-		Target:       result.Target,
-		Port:         result.Port,
-		KeyCount:     result.KeyCount,
-		Locked:       result.Locked,
-		ErrorMessage: result.ErrorMessage,
+		Connected:        result.Connected,
+		AlreadyConnected: result.AlreadyConnected,
+		Target:           result.Target,
+		KeyCount:         result.KeyCount,
+		Locked:           result.Locked,
+		ErrorMessage:     result.ErrorMessage,
 	}
 }
 
@@ -683,17 +683,32 @@ type SweepCommandResult struct {
 	SummaryLines []string
 }
 
-// failedItemsError is a command's failure as a whole, a sweep in which every
-// item failed. Its text is msg alone. It reports its items' submission
+// failedItemsError is a command's failure as a whole, a non-atomic send or a
+// sweep in which every item failed. Its text is msg alone. It reports its items' submission
 // failures for appresult.SubmissionsFromError and wraps nothing: an item's
 // sentinel does not describe the whole, and the command's result already
 // shows each item's output.
 type failedItemsError struct {
 	msg      string
 	failures []*signing.SubmissionError
+	// unsubmitted says why each item that never reached algod failed, as
+	// "<from> -> <to>: <error>"; failures covers the others.
+	unsubmitted []string
 }
 
-var _ appresult.SubmissionFailures = (*failedItemsError)(nil)
+var (
+	_ appresult.SubmissionFailures  = (*failedItemsError)(nil)
+	_ appresult.UnsubmittedFailures = (*failedItemsError)(nil)
+)
+
+func (e *failedItemsError) UnsubmittedFailures() []string {
+	return e.unsubmitted
+}
+
+// unsubmittedFailure is one such item's reason as failedItemsError reports it.
+func unsubmittedFailure(from, to, reason string) string {
+	return from + " -> " + to + ": " + reason
+}
 
 func (e *failedItemsError) Error() string {
 	return e.msg
@@ -706,7 +721,6 @@ func (e *failedItemsError) SubmissionFailures() []*signing.SubmissionError {
 // ConnectResult describes the outcome of a signer connection attempt.
 type ConnectResult struct {
 	Target           string
-	Port             int
 	KeyCount         int
 	Locked           bool
 	AlreadyConnected bool
@@ -935,6 +949,9 @@ type NonAtomicSendResult struct {
 	LastError    string
 	FromCount    int
 	ToCount      int
+	// submissionFailures are the items' failed submissions, which an error
+	// for the send as a whole reports.
+	submissionFailures []*signing.SubmissionError
 }
 
 // AtomicSendResult describes the outcome of an atomic send flow.

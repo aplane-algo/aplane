@@ -83,10 +83,10 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 		Approval: &ApprovalService{
 			UserAutoApprove: userAutoApproveDefault(true),
 			HasClient:       func() bool { return true },
-			RequestSigningApproval: func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -296,5 +297,31 @@ func TestInitializeRequiresCandidateValidation(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.StoreRootPath()); !os.IsNotExist(err) {
 		t.Fatalf("refused Initialize() created a store root: %v", err)
+	}
+}
+
+// An initialization whose store root became visible but could not be made
+// durable may have committed: it keeps the node role file the new root's
+// generation needs, and says so, instead of reporting a store that may be
+// initialized as one that is not.
+func TestInitializeKeepsTheNodeRoleWhenItsCommitIsUncertain(t *testing.T) {
+	dataDir := t.TempDir()
+	paths := storepaths.NewPaths(dataDir)
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == paths.ProductDir() {
+			if _, err := os.Stat(paths.StoreRootPath()); err == nil {
+				return errors.New("simulated identity-directory sync failure")
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+	_, err := Initialize([]byte("init-passphrase"), Options{ValidateCandidate: acceptCandidate, DataDir: dataDir, Paths: paths})
+	fsutil.TestHook = nil
+	if err == nil || !strings.Contains(err.Error(), "may have committed") {
+		t.Fatalf("Initialize() error = %v, want the may-have-committed error", err)
+	}
+	if _, statErr := os.Stat(paths.NodeRolePath()); statErr != nil {
+		t.Fatalf("node role after an uncertain initialize: %v, want it kept", statErr)
 	}
 }

@@ -46,10 +46,73 @@ type RotatingLeaf struct {
 // history feeds both one-time leaf selection and release alerts. Entries
 // the log rotated past are absent, and malformed lines are skipped; missing
 // history can cause undetected leaf reuse after release memory is rebuilt.
+//
+// It is for a log no AuditLogger is writing: a rotation between two of its
+// opens would hide a whole file. The signer reads its own log with
+// AuditLogger.ReadRotatingReleases.
 func ReadRotatingReleases(path string) (map[string]RotatingRelease, error) {
+	files, err := openReleaseLogs(path)
+	if err != nil {
+		return nil, err
+	}
+	return readReleaseLogs(files)
+}
+
+// ReadRotatingReleases reads the release history of the log this logger
+// writes, as the package function does. It opens the current file and both
+// rotated files under the logger's mutex, which every rotation holds, so a
+// rotation cannot move a file between two opens and hide it: the three are
+// the log at one instant. The reads run after the mutex is released, so
+// audit writes are not held up; they read the open files, which a later
+// rotation's renames do not change, and see what was appended until then.
+func (a *AuditLogger) ReadRotatingReleases() (map[string]RotatingRelease, error) {
+	a.mu.Lock()
+	files, err := openReleaseLogs(a.path)
+	a.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return readReleaseLogs(files)
+}
+
+// afterReleaseLogOpen, when a test sets it, runs before each attempt to open
+// a further file once openReleaseLogs holds at least one open.
+var afterReleaseLogOpen func()
+
+// openReleaseLogs opens the audit log at path and its rotated predecessors,
+// oldest first. A file that does not exist is left out.
+func openReleaseLogs(path string) ([]*os.File, error) {
+	var files []*os.File
+	for _, name := range []string{path + ".2", path + ".1", path} {
+		if afterReleaseLogOpen != nil && len(files) > 0 {
+			afterReleaseLogOpen()
+		}
+		f, err := os.Open(name)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			for _, open := range files {
+				_ = open.Close()
+			}
+			return nil, err
+		}
+		files = append(files, f)
+	}
+	return files, nil
+}
+
+// readReleaseLogs reads files in order into the per-account history and
+// closes them.
+func readReleaseLogs(files []*os.File) (map[string]RotatingRelease, error) {
+	defer func() {
+		for _, f := range files {
+			_ = f.Close()
+		}
+	}()
 	acc := make(map[string]*releaseAccumulator)
-	for _, file := range []string{path + ".2", path + ".1", path} {
-		if err := readRotatingReleasesFrom(file, acc); err != nil {
+	for _, f := range files {
+		if err := readRotatingReleasesFrom(f, acc); err != nil {
 			return nil, err
 		}
 	}
@@ -85,15 +148,7 @@ func (a *releaseAccumulator) add(leaf RotatingLeaf) {
 	a.r.Leaves = append(a.r.Leaves, leaf)
 }
 
-func readRotatingReleasesFrom(file string, acc map[string]*releaseAccumulator) error {
-	f, err := os.Open(file)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
+func readRotatingReleasesFrom(f io.Reader, acc map[string]*releaseAccumulator) error {
 	reader := bufio.NewReaderSize(f, 64*1024)
 	for {
 		line, tooLong, err := readAuditLine(reader, maxReleaseLine)

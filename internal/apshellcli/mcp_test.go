@@ -211,7 +211,7 @@ func TestPluginRenderTextPrefersPresentationOverRawMessage(t *testing.T) {
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	renderPluginResult(state, result)
+	renderPluginResult(state, result, false)
 
 	got := out.String()
 	if !bytes.Contains(out.Bytes(), []byte("Reti Validators")) {

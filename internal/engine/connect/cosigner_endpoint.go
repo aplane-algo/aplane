@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -48,7 +49,8 @@ type CosignerSSHConfig struct {
 
 const cosignerSSHHTTPAuthority = "cosigner.aplane.invalid:80"
 
-type cosignerSSHDialer interface {
+// sshAPIDialer opens a channel to a node's REST API over an SSH connection.
+type sshAPIDialer interface {
 	DialSignerAPI(context.Context) (net.Conn, error)
 }
 
@@ -62,7 +64,7 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	// retained connection to that context would make the subsequent component call
 	// fail on an already-canceled connection.
 	sshCtx, cancelSSH, detachSetup := newCosignerSSHLifetime(ctx)
-	sshConnection := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, 0, cfg.IdentityFile, cfg.KnownHostsPath)
+	sshConnection := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, cfg.IdentityFile, cfg.KnownHostsPath)
 	if cfg.HostKeyApproval != nil {
 		sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
 	}
@@ -78,7 +80,7 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 		return nil, nil, fmt.Errorf("SSH setup canceled: %w", err)
 	}
 
-	transport := newCosignerSSHHTTPTransport(sshConnection)
+	transport := newSSHHTTPTransport(sshConnection, cosignerSSHHTTPAuthority)
 	client := signerclient.NewSignerClient("http://" + cosignerSSHHTTPAuthority)
 	client.Client = &http.Client{Transport: transport}
 	client.ProgressOut = cfg.ProgressOut
@@ -92,12 +94,21 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	}, nil
 }
 
-func newCosignerSSHHTTPTransport(dialer cosignerSSHDialer) *http.Transport {
+// sshHTTPIdleTimeout closes an idle connection before the node's HTTP server
+// does (its IdleTimeout is 120 seconds), as http.DefaultTransport's 90 seconds
+// did. A request sent on a connection the server is closing fails, and a POST
+// is not retried.
+const sshHTTPIdleTimeout = 90 * time.Second
+
+// newSSHHTTPTransport carries every HTTP connection to authority over an SSH
+// channel to the node's REST API, and refuses to dial anything else.
+func newSSHHTTPTransport(dialer sshAPIDialer, authority string) *http.Transport {
 	return &http.Transport{
 		ForceAttemptHTTP2: false,
+		IdleConnTimeout:   sshHTTPIdleTimeout,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if network != "tcp" || addr != cosignerSSHHTTPAuthority {
-				return nil, fmt.Errorf("unexpected cosigner HTTP dial target %s %s", network, addr)
+			if network != "tcp" || addr != authority {
+				return nil, fmt.Errorf("unexpected node HTTP dial target %s %s", network, addr)
 			}
 			return dialer.DialSignerAPI(ctx)
 		},

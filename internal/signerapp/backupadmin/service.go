@@ -79,6 +79,7 @@ func (s Service) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto
 		KeyCount:        result.KeyCount,
 		Addresses:       append([]string(nil), result.Addresses...),
 		Verified:        result.Verified,
+		Warning:         result.Warning,
 	}
 }
 

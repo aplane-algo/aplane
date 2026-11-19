@@ -190,9 +190,11 @@ Approve(k) ==
 \* key is already enrolled is refused (ErrAlreadyEnrolled): dropping it would
 \* leave the key usable with no record that the operator ever answered. The
 \* rejectedEnrolled disjunct is the EQ6 regression guard: FALSE because of
-\* the k \notin reg conjunct, flipped if that check is dropped.
+\* the k \notin reg conjunct, flipped if that check is dropped. The check
+\* reads the registry, so a registry left unsynced is re-published first,
+\* as for every operation that reads it.
 Reject(k) ==
-    /\ queueSynced
+    /\ queueSynced /\ regSynced
     /\ k \in queue
     /\ k \notin reg
     /\ rejectedEnrolled' = (rejectedEnrolled \/ (k \in reg))

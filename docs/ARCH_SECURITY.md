@@ -671,7 +671,7 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 ```
 ┌──────────┐                                          ┌────────────┐
 │  apshell │◄═══════ SSH Tunnel (encrypted) ═════════►│  apsigner  │
-│          │ :random ───── direct-tcpip channels ────►│ API conns  │
+│          │ in-process ── direct-tcpip channels ────►│ API conns  │
 └──────────┘                                          └────────────┘
      │
      └── HTTP through the tunnel; each request attributed to the connection's key
@@ -685,7 +685,11 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 **Connection properties:**
 - SSH provides transport encryption and client authentication
 - Host key verification prevents MITM (TOFU via known_hosts)
-- Random local port avoids conflicts
+- No port is opened on the client machine: the signer client opens a
+  channel for each HTTP connection from inside apshell, so no other process
+  can use apshell's connection. A process that can read the identity file or
+  use the SSH agent can still open a connection of its own with that key;
+  the identity file's permissions and the agent guard that
 - Authorization is evaluated per HTTP request against the client role
 
 **Configuration:**
@@ -1454,12 +1458,15 @@ Backup-audit semantics:
   `replace_existing`; durable-write failure aborts with no store mutation.
 - `CREDENTIAL_RESTORE_SUCCEEDED` and `CREDENTIAL_RESTORE_FAILED` carry the
   available archive SHA-256, operation ID, replacement option, and key count.
-- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` distinguishes a visible store-root
-  replacement whose directory-sync durability could not be confirmed; signing stays
+- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` distinguishes a store-root
+  replacement that may have landed but could not be confirmed (visible but
+  not confirmed durable, or not readable back); signing stays
   recovery-blocked until reconciliation confirms the root and reloads the
   visible generation.
 - `CREDENTIAL_RESTORE_ROLLBACK` records explicit rollback success or failure.
-  Failed attempts use `outcome:"failed"` and `reason`.
+  Failed attempts use `outcome:"failed"` and `reason`, with `generation_id`
+  when the rollback committed one; a rollback whose root commit could not be
+  confirmed uses `outcome:"commit_uncertain"`.
 
 Store-management audit semantics:
 

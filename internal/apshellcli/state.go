@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
@@ -68,6 +69,9 @@ type REPLState struct {
 	// runtimeMu serializes background signer-cache polling with command
 	// execution and readline completion, because client caches are mutable maps.
 	runtimeMu sync.Mutex
+	// commandRunning is set while the interactive REPL runs a command, which
+	// holds runtimeMu throughout; completion offers nothing then.
+	commandRunning atomic.Bool
 }
 
 // NewREPLState creates a new REPLState with initialized runtime and app layers.

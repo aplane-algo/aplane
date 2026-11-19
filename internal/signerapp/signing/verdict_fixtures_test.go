@@ -247,12 +247,12 @@ func (r *verdictRecorder) approvalService(known map[string]bool) *ApprovalServic
 		Console:         r,
 		KnownAddresses:  func() map[string]bool { return known },
 		HasClient:       func() bool { return true },
-		RequestSigningApprovalContext: func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromContextDecision(func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			r.prompted = true
 			return true, nil
-		},
+		}),
 	}
 }
 

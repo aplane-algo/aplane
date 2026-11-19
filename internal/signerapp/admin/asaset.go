@@ -243,9 +243,9 @@ func (s Service) mutateASASet(generationID *string, uncertain *bool, change func
 			*generationID = id
 			if mintErr != nil {
 				visible, visibleErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), kr)
-				if errors.Is(mintErr, genstore.ErrStoreRootCommitDurabilityUnknown) || (visibleErr == nil && visible.GenerationID() == id) {
+				if genstore.RootCommitUncertain(mintErr) || (visibleErr == nil && visible.GenerationID() == id) {
 					*uncertain = true
-					return asaError{"asa_commit_uncertain", fmt.Sprintf("the ASA set committed as generation %s but durability is unconfirmed; signing is blocked pending reconciliation: %v", id, mintErr)}
+					return asaError{"asa_commit_uncertain", fmt.Sprintf("the ASA set may have committed as generation %s; signing is blocked pending reconciliation: %v", id, mintErr)}
 				}
 				*generationID = ""
 				return fmt.Errorf("asa set change failed before commit: %w", mintErr)

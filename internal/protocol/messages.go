@@ -322,6 +322,7 @@ type BackupResultMessage struct {
 	KeyCount        int      `json:"key_count,omitempty"`
 	Addresses       []string `json:"addresses,omitempty"`
 	Verified        bool     `json:"verified,omitempty"`
+	Warning         string   `json:"warning,omitempty"`
 	Code            string   `json:"code,omitempty"`
 	Error           string   `json:"error,omitempty"`
 }
@@ -1362,8 +1363,8 @@ type ApplyPolicyMessage struct {
 }
 
 // ApplyPolicyResultMessage reports an apply. On success Policy is the new
-// active policy. CommitUncertain means the commit may be visible but its
-// durability is unconfirmed; signing is blocked pending reconciliation.
+// active policy. CommitUncertain means the commit may have landed but could
+// not be confirmed; signing is blocked pending reconciliation.
 type ApplyPolicyResultMessage struct {
 	BaseMessage
 	Success         bool                `json:"success"`
