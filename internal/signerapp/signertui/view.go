@@ -277,7 +277,7 @@ func (m Model) View() string {
 		header = m.renderAdminHeader()
 	}
 
-	return m.renderWindowLayout(header, content, footer, statusBar)
+	return terminalSafeScreen(m.renderWindowLayout(header, content, footer, statusBar))
 }
 
 // AdminTitle returns the role-specific operator-facing title for this admin UI.
@@ -332,7 +332,7 @@ func (m Model) adminHeaderMeta() string {
 	// The REST port is a loopback detail behind the SSH endpoint; the header
 	// shows only what a client needs.
 	if endpoint := m.adminEndpointDisplayURL(); endpoint != "" {
-		return "Endpoint: " + endpoint
+		return "Endpoint: " + terminalSafe(endpoint)
 	}
 	return ""
 }
@@ -650,7 +650,7 @@ func (m Model) renderStatusBar() string {
 
 	// Signer-raised alerts stay until the signer clears them.
 	for _, warning := range m.signerWarnings {
-		parts = append(parts, errorStyle.Render("ALERT: "+warning))
+		parts = append(parts, errorStyle.Render("ALERT: "+terminalSafe(warning)))
 	}
 
 	// A lost notification can be an approval request, so this stays for the session.
@@ -664,18 +664,18 @@ func (m Model) renderStatusBar() string {
 
 	// Notice if any
 	if m.lastNotice != "" {
-		parts = append(parts, statusConnectedStyle.Render(m.lastNotice))
+		parts = append(parts, statusConnectedStyle.Render(terminalSafe(m.lastNotice)))
 	}
 
 	// Warning if any
 	if m.lastWarning != "" {
-		parts = append(parts, warningStyle.Render("Warning: "+m.lastWarning))
+		parts = append(parts, warningStyle.Render("Warning: "+terminalSafe(m.lastWarning)))
 	}
 	settingAt := len(parts)
 
 	// Error if any
 	if m.lastError != "" {
-		parts = append(parts, errorStyle.Render("Error: "+m.lastError))
+		parts = append(parts, errorStyle.Render("Error: "+terminalSafe(m.lastError)))
 	}
 
 	// A setting update's in-effect warning belongs to the admin panel. It is
@@ -688,7 +688,7 @@ func (m Model) renderStatusBar() string {
 			room -= len(" | ")
 		}
 		if room >= minSettingWarningWidth {
-			parts = slices.Insert(parts, settingAt, warningStyle.Render(ellipsize(w, room)))
+			parts = slices.Insert(parts, settingAt, warningStyle.Render(ellipsize(terminalSafe(w), room)))
 		}
 	}
 

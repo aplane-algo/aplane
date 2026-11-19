@@ -89,7 +89,7 @@ func (r policyRow) label() string {
 	if r.key == policy.DefaultKey {
 		return "default"
 	}
-	return r.key
+	return terminalSafe(r.key)
 }
 
 func (m Model) openPolicies() (tea.Model, tea.Cmd) {
@@ -288,7 +288,7 @@ func (m Model) renderPolicies() string {
 		header.WriteString(subtitleStyle.Render("Loading policy..."))
 		return header.String()
 	case m.policies.err != "":
-		header.WriteString(subtitleStyle.Render("Policy unavailable: " + m.policies.err))
+		header.WriteString(subtitleStyle.Render("Policy unavailable: " + terminalSafe(m.policies.err)))
 		return header.String()
 	}
 	p := m.policies.policy
@@ -404,10 +404,10 @@ func (m Model) renderPolicyDocument() string {
 		if msg == "" {
 			msg = "document is unavailable"
 		}
-		sb.WriteString(subtitleStyle.Render("Document unavailable: " + msg))
+		sb.WriteString(subtitleStyle.Render("Document unavailable: " + terminalSafe(msg)))
 		return sb.String()
 	}
-	sb.WriteString(subtitleStyle.Render(ellipsize(doc.Key+"  sha256 "+doc.SHA256, width)))
+	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(doc.Key+"  sha256 "+doc.SHA256), width)))
 	sb.WriteString("\n\n")
 
 	lines := m.policyDocumentLines()
@@ -418,7 +418,9 @@ func (m Model) renderPolicyDocument() string {
 		sb.WriteString("\n")
 	}
 	for _, line := range lines[offset:end] {
-		sb.WriteString(ellipsize(line, width))
+		// The stored bytes can hold control and bidirectional characters in
+		// a string, which show as escapes.
+		sb.WriteString(ellipsize(terminalSafeLines(line), width))
 		sb.WriteString("\n")
 	}
 	if end < len(lines) {

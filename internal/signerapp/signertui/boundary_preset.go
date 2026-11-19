@@ -167,7 +167,7 @@ func (m Model) renderBoundaryPreset() string {
 	}
 	file := "Rules from a boundary file, with or without bounds."
 	if m.forms.boundaryFile != "" {
-		file = middleEllipsize(m.forms.boundaryFile, 60)
+		file = middleEllipsize(terminalSafe(m.forms.boundaryFile), 60)
 	}
 	row("Load boundary file", file)
 	sb.WriteString("\n")
@@ -175,7 +175,8 @@ func (m Model) renderBoundaryPreset() string {
 	sb.WriteString("\n")
 	if m.forms.generateError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(wrapText(m.forms.generateError, 64)))
+		// A boundary file's load error can quote the file.
+		sb.WriteString(errorStyle.Render(wrapText(terminalSafeLines(m.forms.generateError), 64)))
 		sb.WriteString("\n")
 	}
 	return m.renderPopup(72, sb.String())

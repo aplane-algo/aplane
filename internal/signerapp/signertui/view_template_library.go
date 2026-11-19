@@ -30,10 +30,10 @@ func (m Model) renderTemplateLibrary() string {
 	sb.WriteString("\n")
 
 	if m.library.installStatus != "" {
-		sb.WriteString(statusUnlockedStyle.Render(m.library.installStatus))
+		sb.WriteString(statusUnlockedStyle.Render(terminalSafe(m.library.installStatus)))
 		sb.WriteString("\n\n")
 	} else if m.library.installError != "" {
-		sb.WriteString(errorStyle.Render(m.library.installError))
+		sb.WriteString(errorStyle.Render(terminalSafe(m.library.installError)))
 		sb.WriteString("\n\n")
 	} else {
 		sb.WriteString(subtitleStyle.Render(m.templateLibrarySubtitle()))
@@ -107,29 +107,29 @@ func (m Model) renderTemplateDetails(tmpl LibraryTemplateInfo) string {
 	var sb strings.Builder
 
 	if tmpl.Invalid != "" {
-		sb.WriteString(errorStyle.Render("Invalid: " + tmpl.Invalid))
+		sb.WriteString(errorStyle.Render("Invalid: " + terminalSafe(tmpl.Invalid)))
 		sb.WriteString("\n")
 		return sb.String()
 	}
 	if tmpl.Conflict != "" {
-		sb.WriteString(errorStyle.Render("Conflict: " + tmpl.Conflict))
+		sb.WriteString(errorStyle.Render("Conflict: " + terminalSafe(tmpl.Conflict)))
 		sb.WriteString("\n")
 		return sb.String()
 	}
 
 	if tmpl.DisplayName != "" {
-		sb.WriteString(keyTypeStyle.Render(tmpl.DisplayName))
+		sb.WriteString(keyTypeStyle.Render(terminalSafe(tmpl.DisplayName)))
 		sb.WriteString("\n")
 	}
 	if tmpl.Description != "" {
-		sb.WriteString(subtitleStyle.Render(ellipsize(tmpl.Description, m.templateLibraryRowWidth())))
+		sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(tmpl.Description), m.templateLibraryRowWidth())))
 		sb.WriteString("\n")
 	}
 	if publisher := keyTypePublisher(tmpl.KeyType); publisher != "" {
 		sb.WriteString(fmt.Sprintf("Publisher: %s\n", publisher))
 	}
 	if tmpl.FileName != "" {
-		sb.WriteString(fmt.Sprintf("File: %s\n", tmpl.FileName))
+		sb.WriteString(fmt.Sprintf("File: %s\n", terminalSafe(tmpl.FileName)))
 	} else if isCompiledProviderLibraryEntry(tmpl) {
 		sb.WriteString("Source: built-in key type\n")
 	}
@@ -181,10 +181,10 @@ func renderCompiledProviderDetailsText(tmpl LibraryTemplateInfo) string {
 		sb.WriteString(fmt.Sprintf("Publisher: %s\n", publisher))
 	}
 	if tmpl.DisplayName != "" {
-		sb.WriteString(fmt.Sprintf("Display name: %s\n", tmpl.DisplayName))
+		sb.WriteString(fmt.Sprintf("Display name: %s\n", terminalSafe(tmpl.DisplayName)))
 	}
 	if tmpl.Description != "" {
-		sb.WriteString(fmt.Sprintf("Description: %s\n", tmpl.Description))
+		sb.WriteString(fmt.Sprintf("Description: %s\n", terminalSafe(tmpl.Description)))
 	}
 	body := templateDetailsBoxLines(tmpl)
 	if len(body) == 1 && body[0] == "" {
@@ -208,9 +208,9 @@ func templateParameterLines(params []protocol.TemplateParamInfo) []string {
 		if label == "" {
 			label = p.Name
 		}
-		lines = append(lines, fmt.Sprintf("%s (%s, %s)", label, p.Type, required))
+		lines = append(lines, terminalSafe(fmt.Sprintf("%s (%s, %s)", label, p.Type, required)))
 		if p.Description != "" {
-			lines = append(lines, "  "+p.Description)
+			lines = append(lines, "  "+terminalSafe(p.Description))
 		}
 	}
 	if len(lines) == 0 {
@@ -230,9 +230,9 @@ func templateSigningArgLines(args []protocol.TemplateArgInfo) []string {
 		if label == "" {
 			label = a.Name
 		}
-		lines = append(lines, fmt.Sprintf("%s (%s, %s)", label, a.Type, required))
+		lines = append(lines, terminalSafe(fmt.Sprintf("%s (%s, %s)", label, a.Type, required)))
 		if a.Description != "" {
-			lines = append(lines, "  "+a.Description)
+			lines = append(lines, "  "+terminalSafe(a.Description))
 		}
 	}
 	if len(lines) == 0 {
@@ -269,16 +269,16 @@ func (m Model) renderTemplateInstallConfirm() string {
 	}
 	sb.WriteString(templateDetailField("Source", libraryTypeLabel(*tmpl)))
 	if tmpl.DisplayName != "" {
-		sb.WriteString(templateDetailField("Name", tmpl.DisplayName))
+		sb.WriteString(templateDetailField("Name", terminalSafe(tmpl.DisplayName)))
 	}
 	if tmpl.Description != "" {
 		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render(wrapText(tmpl.Description, 64)))
+		sb.WriteString(subtitleStyle.Render(wrapText(terminalSafe(tmpl.Description), 64)))
 		sb.WriteString("\n")
 	}
 	if m.library.installError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.library.installError))
+		sb.WriteString(errorStyle.Render(terminalSafe(m.library.installError)))
 		sb.WriteString("\n")
 	}
 
@@ -347,7 +347,7 @@ func templateLibraryTitle(tmpl LibraryTemplateInfo) string {
 		return displayKeyType(tmpl.KeyType)
 	}
 	if tmpl.FileName != "" {
-		return tmpl.FileName
+		return terminalSafe(tmpl.FileName)
 	}
 	return "(unknown)"
 }

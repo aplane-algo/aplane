@@ -446,8 +446,9 @@ func (m Model) policyApplyReviewLines() []policyApplyReviewLine {
 	apply := m.policies.apply
 	width := m.policyApplyReviewWidth()
 	var out []policyApplyReviewLine
+	// The lines name the policy file and quote the check, as the form does.
 	add := func(line string, attention bool) {
-		for _, wrapped := range wrapIndentedLine(line, width) {
+		for _, wrapped := range wrapIndentedLine(terminalSafe(line), width) {
 			out = append(out, policyApplyReviewLine{text: wrapped, attention: attention})
 		}
 	}

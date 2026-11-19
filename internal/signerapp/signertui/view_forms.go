@@ -153,7 +153,7 @@ func (m Model) renderImportForm() string {
 
 	// Error message
 	if m.forms.importError != "" {
-		sb.WriteString(errorStyle.Render(m.forms.importError))
+		sb.WriteString(errorStyle.Render(terminalSafeLines(m.forms.importError)))
 		sb.WriteString("\n")
 	}
 
@@ -200,7 +200,7 @@ func (m Model) renderGenerateForm() string {
 
 	var errorLine string
 	if m.forms.generateError != "" {
-		errorLine = errorStyle.Render(m.forms.generateError) + "\n"
+		errorLine = errorStyle.Render(terminalSafeLines(m.forms.generateError)) + "\n"
 	}
 	selectedIndex := min(max(m.forms.generateKeyType, 0), max(len(descriptions)-1, 0))
 	footer := "\n\n" + errorLine
@@ -227,6 +227,7 @@ func (m Model) renderParameterModal(keyTypeIndex int, buttonVerb, errorMsg strin
 
 func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg string) string {
 	var sb strings.Builder
+	errorMsg = terminalSafeLines(errorMsg)
 
 	spec := m.paramSpecFor(keyType)
 	if spec == nil {
@@ -409,7 +410,7 @@ func (m Model) paramFieldLines(spec *paramSpec, paramDef lsigprovider.ParameterD
 		if isCosignerSelector {
 			currentValue = m.cosignerFieldDisplay(paramDef, currentValue)
 		}
-		lines := paramInputLines(currentValue)
+		lines := paramInputLines(terminalSafeLines(currentValue))
 		lines[len(lines)-1] += "_"
 		return lines
 	}
@@ -427,7 +428,7 @@ func (m Model) paramFieldLines(spec *paramSpec, paramDef lsigprovider.ParameterD
 	if isCosignerSelector {
 		value = m.cosignerFieldDisplay(paramDef, m.forms.genericLSigParams[paramDef.Name])
 	}
-	return paramInputLines(value)
+	return paramInputLines(terminalSafeLines(value))
 }
 
 // shownOption is the option a choice field will send: its value, or its default

@@ -27,10 +27,10 @@ func (m Model) renderRestorePassphrase() string {
 		sb.WriteString("\n")
 		for _, conflict := range m.restore.replaceConflicts {
 			sb.WriteString("  ")
-			sb.WriteString(conflict.Selector)
+			sb.WriteString(terminalSafe(conflict.Selector))
 			if conflict.KeyType != "" {
 				sb.WriteString(" [")
-				sb.WriteString(conflict.KeyType)
+				sb.WriteString(terminalSafe(conflict.KeyType))
 				sb.WriteString("]")
 			}
 			sb.WriteString("\n")
@@ -57,7 +57,7 @@ func (m Model) renderRestorePassphrase() string {
 
 	if m.restore.passphraseError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.restore.passphraseError))
+		sb.WriteString(errorStyle.Render(terminalSafeLines(m.restore.passphraseError)))
 		sb.WriteString("\n")
 	}
 
@@ -142,10 +142,10 @@ func (m Model) restorePreviewFooter() string {
 		for _, restoreErr := range m.restore.previewErrors {
 			sb.WriteString("  ")
 			if restoreErr.Address != "" {
-				sb.WriteString(restoreErr.Address)
+				sb.WriteString(terminalSafe(restoreErr.Address))
 				sb.WriteString(": ")
 			}
-			sb.WriteString(restoreErr.Error)
+			sb.WriteString(terminalSafeLines(restoreErr.Error))
 			sb.WriteString("\n")
 		}
 	}
@@ -160,7 +160,7 @@ func (m Model) restorePreviewFooter() string {
 
 	if m.restore.previewError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.restore.previewError))
+		sb.WriteString(errorStyle.Render(terminalSafeLines(m.restore.previewError)))
 		sb.WriteString("\n")
 	}
 	return sb.String()
@@ -213,7 +213,7 @@ func (m Model) renderRestoreDisplay() string {
 	)
 
 	if result.Error != "" {
-		lines = append(lines, "", errorStyle.Render(result.Error))
+		lines = append(lines, "", errorStyle.Render(terminalSafeLines(result.Error)))
 	}
 	lines = append(lines, "")
 
@@ -270,11 +270,13 @@ func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) stri
 	return fmt.Sprintf("%s%s%s", prefix, restorePreviewAddress(key, addressWidth), suffix)
 }
 
+// restoreArchiveLabel is the archive's file name, which whoever made or
+// renamed an imported archive chose.
 func restoreArchiveLabel(path string) string {
 	if path == "" {
 		return "(none)"
 	}
-	return filepath.Base(path)
+	return terminalSafe(filepath.Base(path))
 }
 
 func restoreSelectionMark(m Model, key RestoreKeyInfo) string {
@@ -314,12 +316,12 @@ func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, addressWi
 	if key.Error != "" {
 		// An error is free text: it takes what the key type does not need.
 		errorWidth := max(room-min(restoreKeyTypeWidth(key), restoreErrorKeyTypeWidth)-restoreColumnGap, 0)
-		flags += "  " + ellipsize(key.Error, errorWidth)
+		flags += "  " + ellipsize(terminalSafe(key.Error), errorWidth)
 		room = rowWidth - restoreRowLeadWidth - addressWidth - restoreColumnGap - utf8.RuneCountInString(flags)
 	}
 	keyType := "[" + ellipsizeMiddle(displayKeyType(key.KeyType), max(room-2, 0)) + "]"
 	address := restorePreviewAddress(key, addressWidth)
-	addressPad := max(addressWidth-utf8.RuneCountInString(ellipsizeMiddle(key.Address, addressWidth)), 0)
+	addressPad := max(addressWidth-utf8.RuneCountInString(ellipsizeMiddle(terminalSafe(key.Address), addressWidth)), 0)
 	flagPad := max(room-len(keyType), 0)
 
 	return prefix + restoreSelectionMark(m, key) + address + strings.Repeat(" ", addressPad) +
@@ -345,6 +347,8 @@ func restorePreviewFlags(key RestoreKeyInfo) string {
 	return suffix
 }
 
+// restorePreviewAddress shows a key's address, which an archive entry
+// supplies.
 func restorePreviewAddress(key RestoreKeyInfo, width int) string {
-	return formatKeyAddress(key.Address, key.KeyType, width, !key.AlreadyExists)
+	return formatKeyAddress(terminalSafe(key.Address), key.KeyType, width, !key.AlreadyExists)
 }

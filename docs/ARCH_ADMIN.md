@@ -1002,6 +1002,23 @@ admin-protocol client and does **not** route through `internal/engine` or the
 
 The implementation lives in `internal/signerapp/signertui/`.
 
+### Showing outside text
+
+Much of what the TUI shows was written by someone else: template YAML in the
+KeyType Library and, once a template is enabled, its names and labels on the
+Generate forms and Key Details; a boundary file's load error, which can quote the
+file; an imported archive's file name and entries; a policy file's name, the check's
+problems and the stored policy documents; and the daemon's errors. Any of it can hold
+terminal control sequences or bidirectional controls. A view escapes such text with
+`internal/termsafe` before it styles and lays it out (`terminalSafe` for one line,
+`terminalSafeLines` for a pager such as the library YAML, the TEAL viewer or a policy
+document, which keeps the lines), so each control character shows as its Go escape
+(`\x1b`, `\u202e`) and widths are measured as shown. `Model.View` then passes the whole
+screen through `termsafe.Screen`, which escapes the same characters but keeps the SGR
+styling sequences the TUI writes itself, so text a new screen forgets to escape still
+cannot clear the screen, move the cursor or set the title. It cannot tell SGR in such
+text from the TUI's own, which is why the views escape first.
+
 ### Choosing a generate flow
 
 The Generate form classifies the selected key type from the signer's inventory. A type

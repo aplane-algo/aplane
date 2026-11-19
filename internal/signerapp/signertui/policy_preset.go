@@ -112,7 +112,7 @@ func (m Model) renderPolicyPresetPick() string {
 	pick := m.policies.presetPick
 	target := "the node default"
 	if pick.row.key != policy.DefaultKey {
-		target = "key " + pick.row.key
+		target = "key " + terminalSafe(pick.row.key)
 	}
 	// Wrap to the terminal once its width is known; before the first
 	// resize there is nothing to fit.

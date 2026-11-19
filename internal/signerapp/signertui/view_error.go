@@ -8,7 +8,7 @@ import (
 )
 
 func (m Model) renderErrorView() string {
-	title := strings.TrimSpace(m.errorPopup.title)
+	title := terminalSafe(strings.TrimSpace(m.errorPopup.title))
 	if title == "" {
 		title = "Serious signer error"
 	}
@@ -21,7 +21,7 @@ func (m Model) renderErrorView() string {
 	var sb strings.Builder
 	sb.WriteString(errorStyle.Render(title))
 	sb.WriteString("\n\n")
-	sb.WriteString(wrapPlainText(message, bodyWidth))
+	sb.WriteString(wrapPlainText(terminalSafeLines(message), bodyWidth))
 	return m.renderPopup(92, sb.String())
 }
 
