@@ -115,13 +115,13 @@ func (m Model) WithNetworks(n policyauthor.Networks) Model {
 
 func (m Model) Init() tea.Cmd { return nil }
 
-// problemsFor returns the problems of file i shown as f (its edited
-// document, when it has one) and the workspace rules it breaks with every
-// other file's edits applied too.
-func (m Model) problemsFor(i int, f *policyauthor.File) []policyauthor.Problem {
-	ws := m.currentWS().With(i, f)
+// problemsFor returns the problems of file i as the screen shows it (its
+// edited document, when it has one) and the workspace rules it breaks with
+// every file's edits applied.
+func (m Model) problemsFor(i int) []policyauthor.Problem {
+	f := m.shownFile(i)
 	out := append([]policyauthor.Problem(nil), f.Problems...)
-	for _, p := range ws.Problems {
+	for _, p := range m.currentWS().Problems {
 		if p.Path == f.Path {
 			out = append(out, p)
 		}
@@ -163,7 +163,7 @@ func (m Model) unsaved() bool {
 func (m Model) open(i int) Model {
 	m.current = i
 	f := m.shown()
-	m.sections = policyauthor.Outline(f, m.problemsFor(i, f), m.lookup)
+	m.sections = policyauthor.Outline(f, m.problemsFor(i), m.lookup)
 	m.sectionCursor, m.fieldCursor, m.focus = 0, 0, paneOutline
 	m.screen = screenDocument
 	m.prompt = prompt{}

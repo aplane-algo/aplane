@@ -176,7 +176,7 @@ func countLabel(errors, warnings int) string {
 }
 
 func (m Model) counts(i int) (errors, warnings int) {
-	for _, p := range m.problemsFor(i, m.shownFile(i)) {
+	for _, p := range m.problemsFor(i) {
 		if p.Severity == policyauthor.SeverityError {
 			errors++
 		} else {

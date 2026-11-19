@@ -85,7 +85,7 @@ func (m Model) shown() *policyauthor.File {
 // relayout rebuilds the outline after an edit, keeping the cursors in range.
 func (m Model) relayout() Model {
 	f := m.shown()
-	m.sections = policyauthor.Outline(f, m.problemsFor(m.current, f), m.lookup)
+	m.sections = policyauthor.Outline(f, m.problemsFor(m.current), m.lookup)
 	m.sectionCursor = max(0, min(m.sectionCursor, len(m.sections)-1))
 	m.fieldCursor = max(0, min(m.fieldCursor, len(m.sections[m.sectionCursor].Fields)-1))
 	return m

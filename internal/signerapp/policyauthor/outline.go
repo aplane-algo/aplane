@@ -185,7 +185,6 @@ func (o *outliner) build() {
 	if root.Kind() != "object" {
 		var adds []AddAction
 		for _, role := range []noderole.Role{noderole.RoleSigner, noderole.RoleCosigner} {
-			role := role
 			adds = append(adds, AddAction{Label: "Replace the document with the shipped " + string(role) + " default", apply: func(*policy.Draft, string) (*policy.Draft, error) {
 				data, err := policy.EmbeddedDefault(role)
 				if err != nil {
