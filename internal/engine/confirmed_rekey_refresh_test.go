@@ -339,3 +339,59 @@ func TestAFailedRefreshAfterAConfirmedRekeyIsAWarning(t *testing.T) {
 		})
 	}
 }
+
+// A plugin group may rekey the plugin's own account, which the client does not
+// track: the refresh after a confirmed group leaves it out of the auth cache,
+// and refreshes only the client's own rekeying sender.
+func TestTheRefreshAfterAPluginGroupLeavesThePluginsAccountsAlone(t *testing.T) {
+	ctx := context.Background()
+	for name, submit := range map[string]func(*testing.T, *confirmedRekeyNet, *Engine) error{
+		"pregrouped-signed": func(t *testing.T, n *confirmedRekeyNet, eng *Engine) error {
+			pluginRekey := n.payment(t, n.plugin.Address, "plugin rekey")
+			pluginRekey.RekeyTo = n.target
+			txns := []types.Transaction{pluginRekey, n.rekey(t)}
+			keys := []crypto.Account{n.plugin, n.account}
+			groupID, err := crypto.ComputeGroupID(txns)
+			if err != nil {
+				t.Fatalf("compute group id: %v", err)
+			}
+			encoded := make([]string, len(txns))
+			for i := range txns {
+				txns[i].Group = groupID
+				_, raw, err := signing.SignTransactionWithKey(keys[i].PrivateKey, txns[i])
+				if err != nil {
+					t.Fatalf("sign txn %d: %v", i, err)
+				}
+				encoded[i] = base64.StdEncoding.EncodeToString(raw)
+			}
+			group, err := DecodePregroupedSigned(encoded)
+			if err != nil {
+				t.Fatalf("DecodePregroupedSigned() error = %v", err)
+			}
+			_, err = eng.SubmitPregroupedSigned(ctx, group)
+			return err
+		},
+		"presign-plan": func(t *testing.T, n *confirmedRekeyNet, eng *Engine) error {
+			pluginRekey := n.payment(t, n.plugin.Address, "plugin rekey")
+			pluginRekey.RekeyTo = n.target
+			txns := []types.Transaction{pluginRekey, n.rekey(t)}
+			refs := map[string]string{n.plugin.Address.String(): "plugin-ref"}
+			_, err := eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, nil, n.signPluginSlots, LsigArgs{})
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			n, eng := newConfirmedRekeyNet(t, false)
+			eng.AuthCache.AuthAddresses = map[string]string{n.account.Address.String(): ""}
+			if err := submit(t, n, eng); err != nil {
+				t.Fatalf("submission error = %v", err)
+			}
+			if got, ok := eng.AuthCache.GetAuthAddress(n.plugin.Address.String()); ok {
+				t.Fatalf("plugin account's auth cache entry = %q, want none", got)
+			}
+			if got, ok := eng.AuthCache.GetAuthAddress(n.account.Address.String()); !ok || got != n.target.String() {
+				t.Fatalf("auth cache entry after the rekey = (%q, %v), want (%q, true)", got, ok, n.target)
+			}
+		})
+	}
+}

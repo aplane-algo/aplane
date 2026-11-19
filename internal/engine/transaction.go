@@ -192,12 +192,23 @@ func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []t
 // a group, a transaction file, an atomic or prepared group, a rotating spend,
 // and the three plugin group modes. A transaction in submitted that rekeyed
 // its sender moved the sender's on-chain authorizer, so its auth-cache entry
-// is overwritten (refreshRekeyedSenders). The rekey has committed, so a failed
-// refresh is not an error: it is returned as the warning text the result
-// carries (AuthRefreshWarning), and `rekey refresh` mends the entry. It is ""
-// when nothing failed.
+// is overwritten (refreshRekeyedSenders). Only senders the client tracks are
+// refreshed: an account it knows (an alias or a signer key) or one the auth
+// cache already has an entry for. A plugin's own account, which a plugin
+// group may rekey, is neither, and gets no entry. The rekey has committed, so
+// a failed refresh is not an error: it is returned as the warning text the
+// result carries (AuthRefreshWarning), and `rekey refresh` mends the entry.
+// It is "" when nothing failed.
 func (e *Engine) refreshAfterConfirmedSubmit(ctx context.Context, submitted []types.Transaction) string {
-	if err := e.refreshRekeyedSenders(ctx, submitted); err != nil {
+	known := e.collectAllAddresses()
+	tracked := make([]types.Transaction, 0, len(submitted))
+	for _, txn := range submitted {
+		sender := txn.Sender.String()
+		if _, cached := e.AuthCache.GetAuthAddress(sender); cached || known[sender] {
+			tracked = append(tracked, txn)
+		}
+	}
+	if err := e.refreshRekeyedSenders(ctx, tracked); err != nil {
 		return err.Error()
 	}
 	return ""
