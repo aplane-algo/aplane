@@ -47,18 +47,25 @@ func (r *REPLState) runSend(args []string) (command.Result, error) {
 			return err
 		}, sendProjection{Cancelled: true})
 	}
-	if err != nil {
+	// A non-atomic send in which every item failed comes back with its
+	// result and an error, as a sweep does: the items are drawn, and the
+	// command fails.
+	if err != nil && result == nil {
 		return nil, err
 	}
 	simulated := r.app().IsSimulateEnabled()
-	return newShellCommandResult(func(w io.Writer) error {
+	commandResult, resultErr := newShellCommandResult(func(w io.Writer) error {
 		return r.withOutputResult(w, func() error {
 			if req.ConfirmLookalikes == nil {
 				r.renderWarnings(result.Warnings)
 			}
-			return r.renderSendResult(result)
+			return r.renderSendResult(result, simulated)
 		})
 	}, projectSendResult(result, simulated))
+	if resultErr != nil {
+		return nil, resultErr
+	}
+	return commandResult, err
 }
 
 // confirmLookalikes shows each recipient that looks like a known account and

@@ -139,7 +139,6 @@ type deletedKeyProjection struct {
 type connectionProjection struct {
 	Connected        bool   `json:"connected"`
 	Target           string `json:"target,omitempty"`
-	Port             int    `json:"port,omitempty"`
 	KeyCount         int    `json:"key_count,omitempty"`
 	Locked           bool   `json:"locked,omitempty"`
 	AlreadyConnected bool   `json:"already_connected,omitempty"`

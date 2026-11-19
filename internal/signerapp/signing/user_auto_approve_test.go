@@ -236,11 +236,11 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					UserAutoApprove: &auto,
 					KnownAddresses:  func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
 					HasClient:       func() bool { return true },
-					RequestSigningApprovalContext: func(_ context.Context, _, _, _, _ string, _, _ uint64, v []signerapproval.Violation, _ time.Duration) (bool, error) {
+					RequestSigningApprovalPrompt: promptFromContextDecision(func(_ context.Context, _, _, _, _ string, _, _ uint64, v []signerapproval.Violation, _ time.Duration) (bool, error) {
 						prompted = true
 						warnings = v
 						return true, nil
-					},
+					}),
 				}
 				svc := &Service{
 					Approval: approval, PolicyFor: fixedPolicy(shipped(tc.rekeys)),

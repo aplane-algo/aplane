@@ -4,6 +4,7 @@
 package adminserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -96,7 +97,7 @@ func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 
 	result := make(chan error, 1)
 	go func() {
-		response, err := ir.RequestSigningApprovalResponse("lock-pending", "A", "A", "desc", 0, 0, nil, time.Minute)
+		response, err := ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "lock-pending", Address: "A", TxnSender: "A", Description: "desc", FirstValid: 0, LastValid: 0}, time.Minute)
 		if err != nil {
 			result <- err
 			return

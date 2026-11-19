@@ -20,7 +20,8 @@ func IsArchivePath(path string) bool {
 	return strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz")
 }
 
-// CreateTarGzArchive packages the contents of srcDir into a tar.gz archive.
+// CreateTarGzArchive packages the contents of srcDir into a tar.gz archive at
+// destPath, which must not exist, and syncs the file.
 func CreateTarGzArchive(srcDir, destPath string) (err error) {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create archive parent directory: %w", err)
@@ -34,6 +35,11 @@ func CreateTarGzArchive(srcDir, destPath string) (err error) {
 		return fmt.Errorf("failed to create archive: %w", err)
 	}
 	defer func() {
+		// The writers above flushed into file by now; its bytes reach the
+		// disk before it is closed.
+		if err == nil {
+			err = file.Sync()
+		}
 		if cerr := file.Close(); err == nil && cerr != nil {
 			err = cerr
 		}

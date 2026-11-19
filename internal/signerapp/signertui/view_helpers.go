@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
@@ -524,15 +526,67 @@ func ellipsizeMiddle(s string, width int) string {
 	return string(runes[:prefixLen]) + "..." + string(runes[len(runes)-suffixLen:])
 }
 
-// detailsVisibleLines returns the number of visible lines for key details/TEAL view.
+// pagerWidth is the width a full-screen text pager draws in.
+func (m Model) pagerWidth() int {
+	if m.width < 20 {
+		return 80
+	}
+	return m.width
+}
+
+// pagerScrollFooter is a full-screen text pager's footer when its text does
+// not fit.
+const pagerScrollFooter = "Esc/q close | up/down/pgup/pgdown: Scroll"
+
+// pagerVisibleLines is how many lines of text a full-screen pager shows: the
+// window body under the pager's footer at its tallest (the footer names the
+// scroll keys only when the text does not fit, so the fit cannot be measured
+// under the footer it decides), less the rows of header drawn above the text
+// and a row for each scroll marker. The renderer and the key handler both
+// use it, so the furthest the keys scroll is the end of the text in view.
+func (m Model) pagerVisibleLines(header string) int {
+	if m.height <= 0 {
+		return 20
+	}
+	body := m.windowBodyHeightUnder(renderedBlockHeight(m.renderFooterText(pagerScrollFooter)))
+	if visible := body - strings.Count(header, "\n") - 2; visible > 1 {
+		return visible
+	}
+	return 1
+}
+
+// wrappedRows is how many rows s takes in a popup body width columns wide:
+// each of its lines wraps on its own, and an empty line is a row.
+func wrappedRows(s string, width int) int {
+	rows := 0
+	for _, line := range strings.Split(strings.TrimSuffix(s, "\n"), "\n") {
+		rows += max(1, renderedBlockHeight(lipgloss.NewStyle().Width(width).Render(line)))
+	}
+	return rows
+}
+
+// keyDetailsParametersHeading heads the parameters on Key Details.
+const keyDetailsParametersHeading = "═══ Parameters ═══\n\n"
+
+// detailsVisibleLines is how many parameter rows (detailsParameterRows) Key
+// Details shows: 5, 8 or 12 by terminal height, and never more than the
+// popup has room for under the rows drawn above and below them and the two
+// scroll markers.
 func (m Model) detailsVisibleLines() int {
-	if m.height > 30 {
-		return 12
+	lines := 8
+	switch {
+	case m.height > 30:
+		lines = 12
+	case m.height < 20:
+		lines = 5
 	}
-	if m.height < 20 {
-		return 5
+	if m.height <= 0 {
+		return lines
 	}
-	return 8
+	width := m.popupBodyWidth(keyDetailsPopupWidth)
+	room := m.popupContentHeight() - wrappedRows(m.keyDetailsHeader()+keyDetailsParametersHeading, width) -
+		wrappedRows(m.keyDetailsTrailer(), width) - 2
+	return max(1, min(lines, room))
 }
 
 // getPlaceholderForType returns a placeholder string for the given parameter type.

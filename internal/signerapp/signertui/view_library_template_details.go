@@ -11,12 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m Model) renderLibraryTemplateDetails() string {
-	width := m.width
-	if width < 20 {
-		width = 80
-	}
-
+// libraryTemplateDetailsHeader is what the YAML pager draws above the file.
+func (m Model) libraryTemplateDetailsHeader(width int) string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render(libraryDetailsTitle(m.library.detailsTemplateType, m.library.detailsKeyType, m.library.detailsInstalled)))
 	sb.WriteString("\n")
@@ -38,6 +34,13 @@ func (m Model) renderLibraryTemplateDetails() string {
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
+	return sb.String()
+}
+
+func (m Model) renderLibraryTemplateDetails() string {
+	width := m.pagerWidth()
+	var sb strings.Builder
+	sb.WriteString(m.libraryTemplateDetailsHeader(width))
 
 	switch {
 	case m.library.detailsLoading:
@@ -89,14 +92,7 @@ func libraryDetailsTitle(templateType, keyType string, installed bool) string {
 }
 
 func (m Model) libraryTemplateDetailsVisibleLines() int {
-	if m.height <= 0 {
-		return 20
-	}
-	visible := m.height - 7
-	if visible < 3 {
-		return 3
-	}
-	return visible
+	return m.pagerVisibleLines(m.libraryTemplateDetailsHeader(m.pagerWidth()))
 }
 
 func (m Model) handleLibraryTemplateDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -265,10 +265,10 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 			svc := &ApprovalService{
 				HasClient:      func() bool { return true },
 				KnownAddresses: func() map[string]bool { return nil },
-				RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+				RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 					got = violations
 					return true, nil
-				},
+				}),
 			}
 			req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: a["plain"].String()}, {TxnBytesHex: "00"}}}
 			if err := promptGroup(svc, req, plan, txns, describeAs("txn")); err != nil {
@@ -329,10 +329,10 @@ func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.S
 		UserAutoApprove: &auto,
 		Console:         &stringConsole{&h.approval},
 		HasClient:       func() bool { return true },
-		RequestSigningApprovalContext: func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromContextDecision(func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 			h.prompts++
 			return true, nil
-		},
+		}),
 	}
 	svc.Executor = &Executor{}
 	svc.GenerateTxnDescriptionFromTxn = describeAs("txn")

@@ -75,6 +75,65 @@ func TestCredentialRestoreDurabilityUnknownHasDistinctEvent(t *testing.T) {
 	}
 }
 
+// A rollback that may have committed is recorded as such, with the
+// generation its result names.
+func TestRestoreRollbackThatMayHaveCommittedNamesItsGeneration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.LogCredentialRestoreRollbackContext(adminserver.SessionContext{}, adminproto.RollbackRestoreResult{
+		OperationID:     "rollback-uncertain",
+		GenerationID:    "gen-1-12345678",
+		CommitUncertain: true,
+		Error:           "rollback may have committed as generation gen-1-12345678",
+	})
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry AuditEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		t.Fatalf("decode audit entry: %v\n%s", err, data)
+	}
+	if entry.Event != AuditCredentialRestoreRollback || entry.Outcome != "commit_uncertain" || entry.GenerationID != "gen-1-12345678" {
+		t.Fatalf("audit entry = %+v", entry)
+	}
+}
+
+// A rollback whose commit landed but whose reload failed is recorded as
+// failed, with its generation: the commit is not in doubt.
+func TestRestoreRollbackWhoseReloadFailedIsNotUncertain(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.LogCredentialRestoreRollbackContext(adminserver.SessionContext{}, adminproto.RollbackRestoreResult{
+		OperationID:  "rollback-reload-failed",
+		GenerationID: "gen-1-12345678",
+		Error:        "restore rollback committed as generation gen-1-12345678 but reload failed",
+	})
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry AuditEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		t.Fatalf("decode audit entry: %v\n%s", err, data)
+	}
+	if entry.Outcome != "failed" || entry.GenerationID != "gen-1-12345678" {
+		t.Fatalf("audit entry = %+v", entry)
+	}
+}
+
 func TestCosignerReferenceAuditIncludesWitnessKeyID(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	a, err := NewAuditLogger(path)

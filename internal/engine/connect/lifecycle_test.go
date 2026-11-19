@@ -5,10 +5,8 @@ package connect
 
 import (
 	"errors"
-	"net"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -19,7 +17,7 @@ func TestConnectWithTunnelReturnsConnectedWhenAlreadyConnectedToTarget(t *testin
 	state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	state.ConnectionTarget = "remote-a"
 
-	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, "", "", nil, nil, nil)
+	result, err := state.ConnectWithTunnel("remote-a", "host", 22, "", "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ConnectWithTunnel() error = %v", err)
 	}
@@ -33,7 +31,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state := NewState()
 		state.connectingTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel("remote-a", "host", 22, "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "connection to remote-a already in progress") {
 			t.Fatalf("error = %v, want same-target in-progress error", err)
 		}
@@ -43,7 +41,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state := NewState()
 		state.connectingTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-b", "host", 22, 12345, "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel("remote-b", "host", 22, "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "already connecting to remote-a") {
 			t.Fatalf("error = %v, want different-target in-progress error", err)
 		}
@@ -54,51 +52,17 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 		state.ConnectionTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-b", "host", 22, 12345, "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel("remote-b", "host", 22, "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "already connected to remote-a") {
 			t.Fatalf("error = %v, want already-connected error", err)
 		}
 	})
 }
 
-func TestConnectWithTunnelRejectsPortAlreadyInUse(t *testing.T) {
-	state := NewState()
-	state.portDialTimeout = func(network, address string, timeout time.Duration) (net.Conn, error) {
-		if network != "tcp" {
-			t.Fatalf("network = %q, want tcp", network)
-		}
-		if address != "localhost:14001" {
-			t.Fatalf("address = %q, want localhost:14001", address)
-		}
-		return stubConn{}, nil
-	}
-	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 14001, "", "", nil, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "already in use locally") {
-		t.Fatalf("error = %v, want port in use", err)
-	}
-	if result == nil || result.Target != "remote-a" {
-		t.Fatalf("result = %+v, want target remote-a", result)
-	}
-	if state.connectingTarget != "" {
-		t.Fatalf("connectingTarget = %q, want cleared", state.connectingTarget)
-	}
-}
-
-type stubConn struct{}
-
-func (stubConn) Read([]byte) (int, error)         { return 0, errors.New("unused") }
-func (stubConn) Write([]byte) (int, error)        { return 0, errors.New("unused") }
-func (stubConn) Close() error                     { return nil }
-func (stubConn) LocalAddr() net.Addr              { return &net.TCPAddr{} }
-func (stubConn) RemoteAddr() net.Addr             { return &net.TCPAddr{} }
-func (stubConn) SetDeadline(time.Time) error      { return nil }
-func (stubConn) SetReadDeadline(time.Time) error  { return nil }
-func (stubConn) SetWriteDeadline(time.Time) error { return nil }
-
 func TestDisconnectClearsStateAndInvokesCallback(t *testing.T) {
 	state := NewState()
 	state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
-	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, "", "")
+	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
 	state.TunnelConnected = true
 	cancelled := false
 	state.TunnelCancel = func() { cancelled = true }
@@ -138,7 +102,7 @@ func TestDisconnectReturnsNilWhenAlreadyDisconnected(t *testing.T) {
 func TestClearLockedResetsConnectionState(t *testing.T) {
 	state := NewState()
 	state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
-	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, "", "")
+	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
 	state.TunnelConnected = true
 	state.ConnectionTarget = "remote-a"
 	state.connectingTarget = "remote-b"

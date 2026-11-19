@@ -91,12 +91,36 @@ func TestConfiguredLiveAuditSocketPathUsesSameUIDConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := configuredLiveAuditSocketPath(root)
-	if err != nil {
-		t.Fatal(err)
+	got, unreadable, err := configuredLiveAuditSocketPath(root)
+	if err != nil || unreadable != nil {
+		t.Fatal(err, unreadable)
 	}
 	if got != socketPath {
 		t.Fatalf("configuredLiveAuditSocketPath() = %q, want %q", got, socketPath)
+	}
+}
+
+// A config.yaml the audit cannot read is a finding of the audit, not an
+// end to it: the default socket is checked instead, so the audit still
+// reports what else is wrong. One that reads but does not parse still fails.
+func TestConfiguredLiveAuditSocketPathReportsAnUnreadableConfig(t *testing.T) {
+	root := t.TempDir()
+	// A directory where the file should be cannot be read as a file, for any
+	// user, root included.
+	if err := os.Mkdir(filepath.Join(root, "config.yaml"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got, unreadable, err := configuredLiveAuditSocketPath(root)
+	if err != nil || unreadable == nil || got == "" {
+		t.Fatalf("configuredLiveAuditSocketPath() = %q, unreadable %v, error %v; want the default socket and a finding", got, unreadable, err)
+	}
+
+	invalid := t.TempDir()
+	if err := os.WriteFile(filepath.Join(invalid, "config.yaml"), []byte("ipc_path: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := configuredLiveAuditSocketPath(invalid); err == nil {
+		t.Fatal("configuredLiveAuditSocketPath() accepted a config.yaml that does not parse")
 	}
 }
 

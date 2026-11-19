@@ -37,11 +37,10 @@ func (m Model) viewFooterText() string {
 	case ViewMnemonicExport:
 		return "Esc: close recovery phrase"
 	case ViewTEALFullDisplay:
-		footer := "Esc/q close"
 		if len(strings.Split(m.details.teal, "\n")) > m.tealFullDisplayVisibleLines() {
-			footer += " | up/down/pgup/pgdown: Scroll"
+			return pagerScrollFooter
 		}
-		return footer
+		return "Esc/q close"
 	case ViewSigningPopup:
 		if m.reviewAvailable() {
 			// The review fills the window and draws its own keys line.
@@ -208,10 +207,9 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 }
 
 func (m Model) libraryTemplateDetailsFooterText() string {
-	footer := "Esc/q close"
 	if m.library.detailsContent != "" &&
 		len(strings.Split(m.library.detailsContent, "\n")) > m.libraryTemplateDetailsVisibleLines() {
-		footer += " | up/down/pgup/pgdown: Scroll"
+		return pagerScrollFooter
 	}
-	return footer
+	return "Esc/q close"
 }

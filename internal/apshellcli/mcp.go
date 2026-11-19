@@ -258,16 +258,8 @@ func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
 		state.CommandRegistry = state.initCommandRegistry()
 	}
 	registered, builtIn := state.CommandRegistry.Lookup(cmd.Name)
-	if builtIn {
-		policy := registered.Automation
-		if policy.Disposition == command.AutomationBlocked {
-			return mcp.NewToolResultError(fmt.Sprintf("command '%s' not available via MCP: %s", registered.Name, policy.Reason))
-		}
-		if policy.Guard != nil {
-			if err := policy.Guard(cmd.Args); err != nil {
-				return mcp.NewToolResultError(err.Error())
-			}
-		}
+	if refusal := mcpAutomationRefusal(state.CommandRegistry, cmd); refusal != nil {
+		return refusal
 	}
 
 	result, err := state.executeCommandResult(cmd)
@@ -288,6 +280,29 @@ func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
 	return mcpJSONTextResult(data)
 }
 
+// mcpAutomationRefusal is MCP's refusal of cmd under the automation policy
+// of the built-in command it names, or nil. One-shot simulate runs the
+// command its arguments name, so that command's policy applies as well.
+func mcpAutomationRefusal(registry *command.Registry, cmd Command) *mcp.CallToolResult {
+	registered, builtIn := registry.Lookup(cmd.Name)
+	if !builtIn {
+		return nil
+	}
+	policy := registered.Automation
+	if policy.Disposition == command.AutomationBlocked {
+		return mcp.NewToolResultError(fmt.Sprintf("command '%s' not available via MCP: %s", registered.Name, policy.Reason))
+	}
+	if policy.Guard != nil {
+		if err := policy.Guard(cmd.Args); err != nil {
+			return mcp.NewToolResultError(err.Error())
+		}
+	}
+	if registered.Name == "simulate" && len(cmd.Args) > 0 {
+		return mcpAutomationRefusal(registry, Command{Name: cmd.Args[0], Args: cmd.Args[1:]})
+	}
+	return nil
+}
+
 func mcpJSONTextResult(data []byte) *mcp.CallToolResult {
 	return mcp.NewToolResultText(string(data))
 }
@@ -297,20 +312,31 @@ func mcpJSONTextResult(data []byte) *mcp.CallToolResult {
 type mcpErrorJSON struct {
 	Error       string                 `json:"error"`
 	Submissions []appresult.Submission `json:"submissions"`
+	// Unsubmitted says why each item that never reached algod failed, for a
+	// command whose items all failed.
+	Unsubmitted []string `json:"unsubmitted,omitempty"`
 }
 
 // mcpErrorResult is a failed tool call whose first text content is text.
-// With submission outcomes, each outcome's sentence is appended to that text,
+// With submission outcomes, or items that failed before any submission, each
+// outcome's sentence and each such item's reason is appended to that text,
 // and a second text content holds mcpErrorJSON. Without, it is the text
-// alone, as before.
+// alone.
 func mcpErrorResult(text string, err error, submissions []appresult.Submission) *mcp.CallToolResult {
-	if len(submissions) == 0 {
+	unsubmitted := appresult.UnsubmittedFailuresFromError(err)
+	if len(submissions) == 0 && len(unsubmitted) == 0 {
 		return mcp.NewToolResultError(text)
 	}
 	for _, submission := range submissions {
 		text += "\n" + submission.Message
 	}
-	data, marshalErr := json.Marshal(mcpErrorJSON{Error: err.Error(), Submissions: submissions})
+	for _, reason := range unsubmitted {
+		text += "\n" + reason
+	}
+	if submissions == nil {
+		submissions = []appresult.Submission{}
+	}
+	data, marshalErr := json.Marshal(mcpErrorJSON{Error: err.Error(), Submissions: submissions, Unsubmitted: unsubmitted})
 	if marshalErr != nil {
 		return mcp.NewToolResultError(text)
 	}

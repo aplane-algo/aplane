@@ -70,7 +70,9 @@ waits for it; KU2 and KU3 cover that case.
   `performLockCleanup` in `internal/signerapp/productruntime/runtime.go`.
 - `EnterRecovery` and `LeaveRecovery` transcribe `SetRecovery` and
   `TryRecovery` from the unlocked state, and `PromoteRecoveryToUnlocked`, in
-  the same file. Recovery keeps the keyring: nothing drains and nothing is
+  the same file. `SetRecovery` does nothing on a locked signer, as
+  `EnterRecovery`'s guard requires: a store mutation that a lock overtook
+  calls it after the lock, and the signer stays locked. Recovery keeps the keyring: nothing drains and nothing is
   cleared. It ends the unlocked session: the session generation moves, and
   `productruntime`'s `SetRecovery` and `TryRecoveryUnlock` cancel the key
   uses that session handed out (`cancelKeyUses`), without waiting for them.
@@ -136,6 +138,11 @@ for each.
   too changes only what is recorded, and `SReturn` leaves it out.
 - A check and the release it guards are one step (`SReturn`, `EDeliver`), for
   the reason above.
+- `Wipe` is one step, but its `ClearKeys` waits, without a bound, for the
+  `FileKeyStore.WithKeyring` callbacks still using the keyring (admin
+  operations, not registered key uses), with `passphraseLock` held. The
+  model does not represent those callbacks; the keyring is detached first,
+  so the store reads as locked while it waits, and zeroed after they return.
 - Shutdown (`Runtime.EndKeyUses`, then `Runtime.Destroy`) is not modeled; the
   process exits right after it. `startup/lifecycle.go` skips the teardown when
   a request handler may still run. Otherwise `EndKeyUses` first makes
