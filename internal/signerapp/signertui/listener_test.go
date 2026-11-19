@@ -315,3 +315,21 @@ func TestListenerHandlesABurstInOrder(t *testing.T) {
 		}
 	}
 }
+
+// A wait started on a client already disconnected, as when Disconnect races
+// the next wait, delivers nothing and returns at once rather than blocking
+// on a queue nothing will fill.
+func TestListenOnADisconnectedClientReturnsAtOnce(t *testing.T) {
+	client := NewAdminClient(&queueConnector{})
+	client.Disconnect()
+	returned := make(chan tea.Msg, 1)
+	go func() { returned <- client.ListenForMessages()() }()
+	select {
+	case msg := <-returned:
+		if msg != nil {
+			t.Fatalf("a wait on a disconnected client delivered %#v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a wait on a disconnected client blocked")
+	}
+}

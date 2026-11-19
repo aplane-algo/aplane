@@ -929,7 +929,8 @@ func Unwrap(msg tea.Msg) tea.Msg {
 
 // ListenForMessages returns a tea.Cmd that waits for the next queued message
 // and delivers it as a listenerMsg, or nothing once the session's done
-// channel closes.
+// channel closes. On a client already disconnected (done is nil) there is
+// nothing to wait for: a wait there would block for good.
 func (c *IPCClient) ListenForMessages() tea.Cmd {
 	return func() tea.Msg {
 		for {
@@ -937,6 +938,9 @@ func (c *IPCClient) ListenForMessages() tea.Cmd {
 			done := c.done
 			currentSession := c.sessionID
 			c.mu.Unlock()
+			if done == nil {
+				return nil
+			}
 
 			select {
 			case queued := <-c.msgChan:
