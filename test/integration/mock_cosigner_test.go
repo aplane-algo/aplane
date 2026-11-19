@@ -79,7 +79,7 @@ func mockCosignerEndpoint(
 			var signature []byte
 			if keyType == witness.Ed25519V1 {
 				signature = stded25519.Sign(stded25519.PrivateKey(privateKey), msg[:])
-			} else if signature, err = signerops.New(nil).Sign(privateKey, msg[:]); err != nil {
+			} else if signature, err = signerops.New().Sign(privateKey, msg[:]); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}

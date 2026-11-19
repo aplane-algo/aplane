@@ -753,14 +753,14 @@ func canonicalFalconComponentPair(t *testing.T, fill byte) ([]byte, []byte) {
 	registerFalconComponentTestValidator.Do(func() {
 		witness.RegisterPairValidator(witness.Falcon1024V1, func(publicKey, privateKey []byte) error {
 			message := []byte("APLANE_COMPONENT_KEY_TEST_V1")
-			signature, err := signerops.New(nil).Sign(privateKey, message)
+			signature, err := signerops.New().Sign(privateKey, message)
 			if err != nil {
 				return err
 			}
 			return sigverify.Verify(sigconstruction.Falcon1024(), publicKey, message, signature)
 		})
 	})
-	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
+	publicKey, privateKey, err := signerops.New().GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}

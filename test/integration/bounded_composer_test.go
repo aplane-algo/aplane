@@ -367,7 +367,7 @@ type boundedExecutionAccount struct {
 // never reaches Layer 3.
 func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, recipient string) boundedExecutionAccount {
 	t.Helper()
-	ops := signerops.New(nil)
+	ops := signerops.New()
 	spendingPublicKey, spendingPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate bounded spending key: %v", err)
@@ -440,7 +440,7 @@ func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, t
 	}
 
 	txID := algocrypto.TransactionID(targetTxn)
-	spendingSignature, err := signerops.New(nil).Sign(account.spendingPrivateKey, txID)
+	spendingSignature, err := signerops.New().Sign(account.spendingPrivateKey, txID)
 	if err != nil {
 		t.Fatalf("sign bounded spending proof: %v", err)
 	}
@@ -483,7 +483,7 @@ func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, t
 func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
-		Ops: falconv1.NewFalconOps(nil), SaltStyle: lsigsalt.StylePushbytes,
+		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes,
 		TemplateMode: "generated",
 		TEALSuffix:   "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
 	})
@@ -492,7 +492,7 @@ func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProf
 func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
-		Ops: falconv1.NewFalconOps(nil), SaltStyle: lsigsalt.StylePushbytes, TemplateMode: "generated", Bounded: profile,
+		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes, TemplateMode: "generated", Bounded: profile,
 		Params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: composeddsa.BoundedInlineListMax}},
 		Layer3: &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})

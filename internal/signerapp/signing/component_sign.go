@@ -138,7 +138,7 @@ func signCosignerComponentMessage(keyType string, privateKey, msg []byte) ([]byt
 	}
 	switch keyType {
 	case witness.Falcon1024V1:
-		signature, err := signerops.New(nil).Sign(privateKey, msg)
+		signature, err := signerops.New().Sign(privateKey, msg)
 		if err != nil {
 			return nil, internal(fmt.Sprintf("failed to sign Falcon cosigner component message: %v", err))
 		}

@@ -50,8 +50,8 @@ func init() {
 	keytypecatalog.Register(clientreg.FalconPlainHostEntry())
 	// Also register the generator now that it's needed
 	keygenreg.Register(NewLogicSigGenerator("falcon1024", map[string]LogicSigKeygenOps{
-		"falcon1024":           signerops.New(nil),
-		"aplane.falcon1024.v1": signerops.New(nil),
+		"falcon1024":           signerops.New(),
+		"aplane.falcon1024.v1": signerops.New(),
 	}))
 }
 

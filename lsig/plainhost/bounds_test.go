@@ -28,7 +28,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
@@ -840,7 +839,7 @@ func TestFingerprintScopes(t *testing.T) {
 // A shape composes with its host's salt style, not the template schema's, so an
 // account and a plain key on the same spending key differ only by their bounds.
 func TestShapesFollowTheHostSaltStyle(t *testing.T) {
-	pushbytes, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(family.FalconBase), SaltStyle: lsigsalt.StylePushbytes})
+	pushbytes, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1263,7 +1263,6 @@ ExampleFalconHashlock = NewComposedFalcon(ComposedFalconConfig{
     FamilyName:  "aplane.falcon1024",
     Version:     1,
     DisplayName: "Falcon-1024 Hashlock",
-    Base:        family.FalconBase, // nil also defaults to family.FalconBase
     Params: []lsigprovider.ParameterDef{{
         Name: "hash", Type: "bytes", Required: true, MaxLength: 64,
         InputModes: []lsigprovider.InputMode{

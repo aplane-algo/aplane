@@ -41,7 +41,7 @@ func (f *Falcon1024V1) SetAlgodClient(client *algod.Client) {
 
 // KeyType returns the full identifier including version.
 func (f *Falcon1024V1) KeyType() string {
-	return "aplane.falcon1024.v1"
+	return family.KeyTypeV1
 }
 
 // RoutingFamily returns the algorithm family without version.
@@ -113,12 +113,11 @@ func (f *Falcon1024V1) DeriveLsigWithSalt(ctx context.Context, publicKey []byte,
 //	falcon_verify
 func newFalconV1Composed() *ComposedFalcon {
 	return NewComposedFalcon(ComposedFalconConfig{
-		KeyType:       "aplane.falcon1024.v1",
+		KeyType:       family.KeyTypeV1,
 		FamilyName:    family.Name,
 		Version:       1,
 		DisplayName:   "LogicSig Falcon-1024",
 		Description:   "Falcon-1024 signature scheme",
-		Base:          family.FalconBase,
 		SaltStyle:     lsigsalt.StyleAlgodAutoSalt,
 		OpcodeProfile: lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling),
 		// No TEALSuffix, no Params, no RuntimeArgs = pure Falcon-1024
@@ -185,13 +184,3 @@ var (
 	_ lsigprovider.LSigProvider    = (*Falcon1024V1)(nil)
 	_ lsigprovider.SigningProvider = (*Falcon1024V1)(nil)
 )
-
-var registerLogicSigDSAOnce sync.Once
-
-// RegisterLogicSigDSA registers Falcon1024V1 with the logicsigdsa registry.
-// This is idempotent and safe to call multiple times.
-func RegisterLogicSigDSA() {
-	registerLogicSigDSAOnce.Do(func() {
-		logicsigdsa.Register(&Falcon1024V1{})
-	})
-}

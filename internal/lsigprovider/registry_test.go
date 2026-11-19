@@ -14,8 +14,8 @@ import (
 )
 
 func init() {
-	// Register Falcon explicitly before querying the unified registry.
-	v1.RegisterLogicSigDSA()
+	// The raw Falcon-1024 LogicSig DSA, not the plain host production registers.
+	logicsigdsa.Register(&v1.Falcon1024V1{})
 }
 
 func TestFalcon1024V1Registration(t *testing.T) {

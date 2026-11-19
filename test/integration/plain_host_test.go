@@ -72,7 +72,7 @@ func newSpendingKey(t *testing.T, keyType string) ([]byte, []byte, stded25519.Pr
 		}
 		return public, private, private
 	}
-	public, private, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	public, private, err := signerops.New().GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate Falcon spending key: %v", err)
 	}
@@ -837,7 +837,7 @@ func meshHandOver(t *testing.T, network *harness.TestnetConfig, member string, c
 	}
 	var txid types.Digest
 	copy(txid[:], algocrypto.TransactionID(handover))
-	base, err := signerops.New(nil).Sign(current.userPrivateKey, txid[:])
+	base, err := signerops.New().Sign(current.userPrivateKey, txid[:])
 	if err != nil {
 		t.Fatalf("sign handover: %v", err)
 	}

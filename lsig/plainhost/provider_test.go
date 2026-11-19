@@ -35,7 +35,7 @@ type base struct {
 
 func bases(t *testing.T) []base {
 	t.Helper()
-	falcon, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(family.FalconBase), SaltStyle: lsigsalt.StyleAlgodAutoSalt})
+	falcon, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt})
 	if err != nil {
 		t.Fatal(err)
 	}

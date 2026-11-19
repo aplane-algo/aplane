@@ -182,7 +182,7 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
 
-	_, wrongCosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	_, wrongCosignerPrivateKey, err := signerops.New().GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("failed to generate wrong cosigner keypair: %v", err)
 	}
@@ -318,7 +318,7 @@ func newTestCosignerKey(t *testing.T, keyType string) (publicKey, privateKey []b
 		}
 		return public, private
 	}
-	public, private, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	public, private, err := signerops.New().GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate Falcon cosigner key: %v", err)
 	}
@@ -333,7 +333,7 @@ func signCosignerMessage(t *testing.T, keyType string, role message.Role, txid t
 	if keyType == witness.Ed25519V1 {
 		return stded25519.Sign(stded25519.PrivateKey(privateKey), msg[:])
 	}
-	signature, err := signerops.New(nil).Sign(privateKey, msg[:])
+	signature, err := signerops.New().Sign(privateKey, msg[:])
 	if err != nil {
 		t.Fatalf("failed to sign %s component message: %v", role, err)
 	}
@@ -468,7 +468,7 @@ func (a corridorExecutionAccount) signBase(t *testing.T, message []byte) []byte 
 	if a.edKey != nil {
 		return stded25519.Sign(a.edKey, message)
 	}
-	signature, err := signerops.New(nil).Sign(a.userPrivateKey, message)
+	signature, err := signerops.New().Sign(a.userPrivateKey, message)
 	if err != nil {
 		t.Fatalf("sign spending message: %v", err)
 	}

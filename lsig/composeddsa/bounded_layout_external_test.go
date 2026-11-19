@@ -45,7 +45,7 @@ func TestBoundedBaseSignatureLayoutsMatchPackedArguments(t *testing.T) {
 		ops       composeddsa.BoundedCapableDSAOps
 		signature []byte
 	}{
-		{name: "Falcon-1024", ops: falconv1.NewFalconOps(nil), signature: []byte{1}},
+		{name: "Falcon-1024", ops: falconv1.NewFalconOps(), signature: []byte{1}},
 		{name: "Ed25519", ops: ed25519v1.NewOps(), signature: make([]byte, 64)},
 		{name: "synthetic split signature", ops: splitSignatureOps{}, signature: make([]byte, 64)},
 	}
@@ -67,7 +67,7 @@ func TestBoundedBaseSignatureLayoutsMatchPackedArguments(t *testing.T) {
 			}
 		})
 	}
-	if got := falconv1.NewFalconOps(nil).SignatureArgLayout().MaxSizes[0]; got != family.MaxSignatureSize {
+	if got := falconv1.NewFalconOps().SignatureArgLayout().MaxSizes[0]; got != family.MaxSignatureSize {
 		t.Fatalf("Falcon max arg size = %d, want %d", got, family.MaxSignatureSize)
 	}
 }

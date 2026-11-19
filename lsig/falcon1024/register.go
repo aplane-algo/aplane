@@ -45,23 +45,22 @@ var (
 func RegisterClient() {
 	registerClientOnce.Do(func() {
 		dsafamily.RegisterClient(dsafamily.ClientRegistration{
-			Family:   family.Name,
 			Metadata: &FalconMetadata{},
 			KeyTypes: []dsafamily.KeyType{{
-				KeyType: "aplane.falcon1024.v1",
+				KeyType: family.KeyTypeV1,
 				// The plain host: the plain program with no parameters, and
 				// plain1 with a cosigner and an optional rekey-to list.
 				DSA: plainhost.MustWrap(&v1.Falcon1024V1{}, plainhost.Base{
-					Ops:       v1.NewFalconOps(family.FalconBase),
+					Ops:       v1.NewFalconOps(),
 					SaltStyle: lsigsalt.StyleAlgodAutoSalt,
 				}),
 			}},
 			Extra: []func(){func() {
 				composeddsa.RegisterBase(composeddsa.BaseRegistration{
-					BaseKeyType: "aplane.falcon1024.v1",
+					BaseKeyType: family.KeyTypeV1,
 					FamilyName:  family.Name,
 					Version:     1,
-					Ops:         v1.NewFalconOps(family.FalconBase),
+					Ops:         v1.NewFalconOps(),
 				})
 			}},
 		})

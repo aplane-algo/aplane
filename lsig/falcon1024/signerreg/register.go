@@ -22,8 +22,8 @@ var registerSignerOnce sync.Once
 // This is idempotent and safe to call multiple times.
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
-		signingOps := signerops.New(nil)
-		keygenOps := signerops.New(nil)
+		signingOps := signerops.New()
+		keygenOps := signerops.New()
 		dsafamilyreg.RegisterSigner(dsafamilyreg.SignerRegistration{
 			RegisterClient: falcon.RegisterClient,
 			SigningProvider: signing.NewLogicSigProvider(family.Name, map[string]signing.LogicSigSignerOps{

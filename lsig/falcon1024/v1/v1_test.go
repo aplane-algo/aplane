@@ -242,7 +242,7 @@ func TestFalcon1024V1_DeriveLsig_RequiresAlgod(t *testing.T) {
 	f := &Falcon1024V1{} // No algod client set
 
 	seed := make([]byte, 64)
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
@@ -264,7 +264,7 @@ func falconTestPublicKey(t *testing.T) []byte {
 	for i := range seed {
 		seed[i] = byte(i)
 	}
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}
@@ -287,7 +287,7 @@ func TestFalcon1024V1_DeriveLsig(t *testing.T) {
 		seed[i] = byte(i)
 	}
 
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestZeroSuffixMatchesStandardFalcon(t *testing.T) {
 		seed[i] = byte(i)
 	}
 
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pubKey, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestFalcon1024V1PlainSignatureBound(t *testing.T) {
 }
 
 func TestCatalogMatchesFalconSizes(t *testing.T) {
-	ops := NewFalconOps(nil)
+	ops := NewFalconOps()
 	if got := sigconstruction.Falcon1024().PublicKeySize(); got != ops.PublicKeySize() {
 		t.Fatalf("PublicKeySize() = %d, family says %d", got, ops.PublicKeySize())
 	}

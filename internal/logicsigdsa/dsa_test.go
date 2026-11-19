@@ -18,8 +18,8 @@ import (
 )
 
 func init() {
-	// Register Falcon LogicSigDSA for tests
-	v1.RegisterLogicSigDSA()
+	// The raw Falcon-1024 LogicSig DSA, not the plain host production registers.
+	logicsigdsa.Register(&v1.Falcon1024V1{})
 }
 
 func TestFalcon1024V1ImplementsInterface(t *testing.T) {
@@ -109,7 +109,7 @@ func TestFalcon1024V1GenerateAndDerive(t *testing.T) {
 	}
 
 	// Generate keypair
-	pub, priv, err := signerops.New(nil).GenerateKeypair(seed)
+	pub, priv, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -158,14 +158,14 @@ func TestFalcon1024V1Sign(t *testing.T) {
 	}
 
 	// Generate keypair
-	_, priv, err := signerops.New(nil).GenerateKeypair(seed)
+	_, priv, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
 
 	// Sign a message
 	message := []byte("test message for signing")
-	sig, err := signerops.New(nil).Sign(priv, message)
+	sig, err := signerops.New().Sign(priv, message)
 	if err != nil {
 		t.Fatalf("Sign failed: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestConfigureAlgodClient(t *testing.T) {
 		seed[i] = byte(i)
 	}
 
-	pub, _, err := signerops.New(nil).GenerateKeypair(seed)
+	pub, _, err := signerops.New().GenerateKeypair(seed)
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}

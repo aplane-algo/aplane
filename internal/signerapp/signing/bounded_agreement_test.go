@@ -994,7 +994,7 @@ func agLoad(t *testing.T) ([]*agTxn, []*agAccount) {
 			agFixture.err = err
 			return
 		}
-		falconPlain, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(falconfamily.FalconBase), SaltStyle: lsigsalt.StyleAlgodAutoSalt})
+		falconPlain, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt})
 		if err != nil {
 			agFixture.err = err
 			return

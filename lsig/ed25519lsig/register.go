@@ -41,7 +41,6 @@ var registerClientOnce sync.Once
 func RegisterClient() {
 	registerClientOnce.Do(func() {
 		dsafamily.RegisterClient(dsafamily.ClientRegistration{
-			Family:   FamilyName,
 			Metadata: metadata{},
 			KeyTypes: []dsafamily.KeyType{{
 				KeyType: KeyTypeV1,

@@ -6,6 +6,7 @@ package signing_test
 import (
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -13,10 +14,12 @@ import (
 )
 
 func init() {
-	// Register providers explicitly instead of using blank imports
-	v1.RegisterLogicSigDSA() // Must be called first - falcon signing depends on logicsigdsa.Get()
+	// Register providers explicitly instead of using blank imports. The raw
+	// Falcon-1024 LogicSig DSA goes first: falcon signing depends on
+	// logicsigdsa.Get().
+	logicsigdsa.Register(&v1.Falcon1024V1{})
 	signerreg.RegisterProvider()
-	falconOps := signerops.New(nil)
+	falconOps := signerops.New()
 	signing.Register(signing.NewLogicSigProvider("falcon1024", map[string]signing.LogicSigSignerOps{
 		"falcon1024":           falconOps,
 		"aplane.falcon1024.v1": falconOps,
