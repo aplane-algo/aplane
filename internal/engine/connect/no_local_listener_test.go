@@ -5,6 +5,7 @@ package connect
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -37,7 +38,7 @@ func TestConnectOpensNoLocalListener(t *testing.T) {
 	before := listeningSockets(t)
 
 	state := NewState()
-	result, err := state.ConnectWithTunnel("node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil, nil)
+	result, err := state.ConnectWithTunnel(context.Background(), "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ConnectWithTunnel() error = %v", err)
 	}
@@ -87,4 +88,36 @@ func listeningSockets(t *testing.T) map[string]bool {
 		_ = f.Close()
 	}
 	return listening
+}
+
+// The context a connect runs under bounds its setup only: the command that
+// connected ends, and with it its context, while the connection stays.
+func TestConnectionOutlivesTheContextItWasMadeUnder(t *testing.T) {
+	node := sshtest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: "A"}}})
+	}))
+	state := NewState()
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := state.ConnectWithTunnel(ctx, "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil, nil); err != nil {
+		t.Fatalf("ConnectWithTunnel() error = %v", err)
+	}
+	t.Cleanup(func() { _ = state.Disconnect(nil) })
+	cancel()
+	if _, err := state.SignerClient.GetKeys(); err != nil {
+		t.Fatalf("a request after the connecting context ended failed: %v", err)
+	}
+}
+
+// A connect whose context ends during setup fails and keeps nothing.
+func TestConnectEndsWithItsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	node := sshtest.Serve(t, http.NotFoundHandler())
+	state := NewState()
+	if _, err := state.ConnectWithTunnel(ctx, "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil, nil); err == nil {
+		t.Fatal("ConnectWithTunnel() under an ended context connected")
+	}
+	if state.SignerClient != nil || state.SSHTunnelClient != nil {
+		t.Fatal("the cancelled connect left a connection behind")
+	}
 }

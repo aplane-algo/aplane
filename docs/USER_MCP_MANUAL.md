@@ -642,7 +642,8 @@ each MCP server instance uses its own:
   Look the IDs up before retrying; nothing retries for you. Each outcome is
   reported once: in the error result's `submissions`, in a plugin result's
   `submissions`, or as `submission` on a `send`, `validate` or `sweep` item of
-  a successful result. The `js` tool reports every submission failure of the
+  a successful result. A `validate` result is a successful result even when
+  every item failed: read `failure_count` and each item's `error`. The `js` tool reports every submission failure of the
   run in `submissions`, including those the script caught, on a successful
   result too. When every item of a `send` or `sweep` failed, an item that
   never reached algod (a balance check, the signer refusing) has no

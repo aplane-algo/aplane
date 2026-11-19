@@ -6,6 +6,7 @@ package apshellcli
 // Core command definitions and transaction handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -138,7 +139,7 @@ func (r *REPLState) cmdOptout(args []string, _ interface{}) (command.Result, err
 func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, error) {
 	// Paste mode (no args) has interactive prompts
 	if len(args) == 0 {
-		return newTerminalCommandResult(nil), r.keyRegPasteMode()
+		return r.keyRegPasteMode()
 	}
 
 	cmdParams, err := shellrepl.ParseTakeCommand(args)
@@ -167,42 +168,7 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 	if err != nil {
 		return nil, err
 	}
-	simulated := r.app().IsSimulateEnabled()
-	return newShellCommandResult(func(w io.Writer) error {
-		return r.withOutput(w, func() {
-			r.renderSubmissionOutput(result.Output)
-			r.renderWarnings(result.Warnings)
-			statusMsg := "OFFLINE"
-			if mode == "online" {
-				statusMsg = "ONLINE in consensus"
-			}
-			r.printf("Marking %s %s using %s...\n", r.app().FormatAddress(result.Account, ""), statusMsg, result.SigningKeyType)
-			if !simulated {
-				r.printf("Key registration submitted: %s\n", result.TxID)
-			}
-			reportIncentiveEligibility(r, result, false)
-			if result.Confirmed {
-				switch mode {
-				case "online":
-					r.printf("\n%s is now ONLINE (participating in consensus)\n", r.app().FormatAddress(result.Account, ""))
-					r.printf("Participation valid from round %d to %d\n", result.VoteFirst, result.VoteLast)
-				case "offline":
-					r.printf("\n%s is now OFFLINE\n", r.app().FormatAddress(result.Account, ""))
-				}
-			} else {
-				switch mode {
-				case "online":
-					r.printf("\nWhen confirmed, %s will be marked ONLINE\n", r.app().FormatAddress(result.Account, ""))
-				case "offline":
-					r.printf("\nWhen confirmed, %s will be marked OFFLINE (temporary)\n", r.app().FormatAddress(result.Account, ""))
-				}
-			}
-		})
-	}, keyRegProjection{
-		Account: result.Account, Mode: result.Mode, TxID: result.TxID,
-		Confirmed: result.Confirmed, Simulated: simulated,
-		IncentiveRequested: result.IncentiveRequested, AlreadyIncentiveEligible: result.AlreadyIncentiveEligible,
-	})
+	return r.keyRegCommandResult(result, false)
 }
 
 // executeRegisteredCommand dispatches a built-in command without rendering its
@@ -279,13 +245,22 @@ func (e *unknownCommandError) Error() string {
 }
 
 // executeCommand dispatches a command and renders its human presentation.
+// An unknown command is said and is not an error: the prompt goes on.
 func (r *REPLState) executeCommand(cmd Command) error {
+	err := r.runCommand(cmd)
+	var unknown *unknownCommandError
+	if errors.As(err, &unknown) {
+		r.printf("Unknown command: %s\nType 'help' for available commands\n", unknown.name)
+		return nil
+	}
+	return err
+}
+
+// runCommand dispatches a command and renders its human presentation. An
+// unknown command is its *unknownCommandError, which a script stops on.
+func (r *REPLState) runCommand(cmd Command) error {
 	result, err := r.executeCommandResult(cmd)
 	if err != nil {
-		if unknown, ok := err.(*unknownCommandError); ok {
-			r.printf("Unknown command: %s\nType 'help' for available commands\n", unknown.name)
-			return nil
-		}
 		if result != nil {
 			if renderErr := result.RenderText(r.Out); renderErr != nil {
 				r.renderErrorSubmissionOutput(renderErr)

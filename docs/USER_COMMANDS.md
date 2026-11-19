@@ -349,7 +349,7 @@ keyreg alice online votekey=ABC... selkey=DEF... sproofkey=GHI... eligible=true
 
 **Incentive fee:** with `eligible=true` the command reads the account's eligibility from algod, and refuses the registration if algod can't answer. After the submission it prints `Incentive eligibility requested: 2 ALGO fee`, or `Already incentive eligible: no incentive fee paid` when the account was eligible already. The read is algod's current view, so two eligible registrations sent before the first confirms each pay the fee.
 
-**Paste Mode:** Running `keyreg` with no arguments enters interactive paste mode for the output of `goal account partkeyinfo`. It asks whether to request incentive eligibility, and the same fee rules apply.
+**Paste Mode:** Running `keyreg` with no arguments enters interactive paste mode for the output of `goal account partkeyinfo`. It asks whether to request incentive eligibility, and the same fee rules apply. It always waits for confirmation, up to 9 rounds, and prints what the argument form prints, the simulation under `simulate` included. If the wait fails after the node accepted the registration, the command fails but still prints `Key registration submitted: <txid>` first: the registration may yet confirm, so look that ID up before registering again.
 
 **Tip:** Copy-paste participation keys from `goal account partkeyinfo` output.
 
@@ -424,6 +424,11 @@ validate <account|@setname> [arg:[<account>:]<name>=<value>]
 |--------|-------------|
 | `arg:[<account>:]<name>=<value>` | LogicSig argument: for every validation transaction, or, with `<account>:`, for that account's only. See [LogicSig Arguments](#logicsig-arguments) |
 
+Each account's validation is reported on its own. When every one failed,
+the command fails after reporting them, which stops a script; when some
+passed, it succeeds. Through MCP the result lists each account's outcome
+either way.
+
 **Examples:**
 ```
 validate alice
@@ -448,6 +453,11 @@ balance [account|@all|@signers|@setname] [asset]
 |----------|-------------|
 | `<account>` | Optional address, alias, `@all`, `@signers`, or `@setname` (default: `@all`) |
 | `[asset]` | Optional: `algo`, `asa`, or specific ASA reference |
+
+`algo` may be written in any case (`ALGO`, `Algo`), here and in `holders`. An
+asset that does not resolve is refused, in the shell and through MCP. Through
+MCP, the balance of one account with no asset lists every holding in
+`assets`, as the shell shows them; with an ASA, only that asset's entry.
 
 **Aliases:** `bal`
 
@@ -1324,6 +1334,12 @@ Application update calls (`oncomp=update`) require both approval and clear
 program paths. Approval and clear program options are rejected for other
 on-completion modes.
 
+`app deploy` waits for confirmation (unless `nowait`) and then prints the
+created app's ID and address. If that lookup fails after the deploy
+confirmed, the command still succeeds: it warns and prints the deploy's
+transaction ID, and its MCP result has `app_lookup_error` in place of
+`app_id`. Find the app from the transaction ID rather than deploying again.
+
 **Examples:**
 ```
 app read info 123
@@ -1645,7 +1661,11 @@ jslist
 
 ### script
 
-Execute REPL commands from a file (one command per line).
+Execute REPL commands from a file (one command per line). Empty lines and
+lines starting with `#` are skipped. The script stops at the first line that
+fails, that names no command or plugin, or that starts with `!`: shell
+commands run only at the interactive prompt. `apshell --script <file>` then
+exits with status 1.
 
 ```
 script <file>
@@ -1699,7 +1719,10 @@ clear
 
 ## Shell Commands
 
-In an interactive shell session, execute shell commands by prefixing with `!`:
+At the interactive prompt, execute shell commands by prefixing with `!`. A
+script refuses them (see [script](#script)). In apconsole's shell pane, whose
+output the pane captures, Ctrl+C stops a shell command and every process it
+started; such a command cannot read the terminal:
 
 ```
 !ls

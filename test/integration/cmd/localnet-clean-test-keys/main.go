@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -120,7 +121,7 @@ type resolvedOptions struct {
 func connectFixtureClient(resolved resolvedOptions) (*signerclient.Client, func(), error) {
 	state := connect.NewState()
 	result, err := state.ConnectWithTunnel(
-		resolved.endpointURL, resolved.host, resolved.sshPort,
+		context.Background(), resolved.endpointURL, resolved.host, resolved.sshPort,
 		resolved.endpoint.IdentityFile, resolved.endpoint.KnownHostsPath,
 		nil, nil, nil,
 	)

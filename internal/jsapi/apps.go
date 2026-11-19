@@ -97,7 +97,9 @@ func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 	if opts.Wait && result.Confirmed {
 		created, err := a.engine.LookupCreatedApplication(a.Context(), result.TxID)
 		if err != nil {
-			panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error resolving created app: %v", err)))
+			// The deploy is confirmed: throwing would invite a second one.
+			out["app_lookup_error"] = err.Error()
+			return a.toJSObject(out)
 		}
 		out["app_id"] = created.AppID
 		out["app_address"] = created.AppAddress

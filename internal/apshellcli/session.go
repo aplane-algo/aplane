@@ -6,7 +6,7 @@ package apshellcli
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -14,15 +14,28 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
+var (
+	errSessionNotInitialized = errors.New("apshell session is not initialized")
+	errSessionShutDown       = errors.New("apshell session is shut down")
+)
+
 // Session is an embedded apshell command session for non-readline hosts.
+// execMu is held while a line runs and while the session shuts down, so
+// state, which Shutdown clears, is read under it.
 type Session struct {
 	state       *REPLState
 	stopPolling context.CancelFunc
 
-	execMu       sync.Mutex
-	activeMu     sync.Mutex
-	activeCancel context.CancelFunc
-	activeID     uint64
+	execMu   sync.Mutex
+	activeMu sync.Mutex
+	// active holds the cancel of every operation begun and not yet ended:
+	// the one running under execMu and any waiting for it. Cancel and
+	// Shutdown reach them all.
+	active   map[uint64]context.CancelFunc
+	activeID uint64
+	// closing is set, under activeMu, when Shutdown begins: nothing starts
+	// after it, so no operation can slip past Shutdown's cancel.
+	closing bool
 }
 
 // NewSession initializes apshell state without taking over terminal input or
@@ -43,25 +56,38 @@ func NewSession(network string, cfg config.Config, dataDir string, out io.Writer
 	}
 	return &Session{
 		state:       state,
-		stopPolling: state.startSignerStatusPolling(nil),
+		stopPolling: state.startSignerStatusPolling(),
 	}, nil
 }
 
 // StartupConnect runs the deferred signer connect that used to happen inside
 // NewSession. Output emitted during the attempt is captured and returned so
 // the caller (typically a TUI pane) can render it after the UI is up.
+//
+// The attempt runs on its own context, which Cancel and Shutdown reach, as a
+// line's does: a connect waiting on its SSH handshake or a host-key prompt
+// ends with it.
 func (s *Session) StartupConnect() (string, error) {
-	if s == nil || s.state == nil {
-		return "", fmt.Errorf("apshell session is not initialized")
+	if s == nil {
+		return "", errSessionNotInitialized
 	}
+	ctx, end, err := s.beginActive(context.Background())
+	if err != nil {
+		return "", err
+	}
+	defer end()
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
+	if err := s.startable(ctx); err != nil {
+		return "", err
+	}
+	defer s.state.bindCommandContext(ctx)()
 
 	var buf bytes.Buffer
 	previous := s.state.Out
 	s.state.SetOutput(&buf)
 	defer s.state.SetOutput(previous)
-	err := attemptStartupConnection(s.state)
+	err = attemptStartupConnection(s.state)
 	if err != nil {
 		s.state.printf("Warning: Signer verification failed: %v\n", err)
 		s.state.println("Signer not available (run 'connect' to retry)")
@@ -74,27 +100,30 @@ func (s *Session) ExecuteLine(raw string) (exit bool, err error) {
 	return s.ExecuteLineContext(context.Background(), raw)
 }
 
-// ExecuteLineContext parses and executes one apshell input line with a caller-owned context.
+// ExecuteLineContext parses and executes one apshell input line with a
+// caller-owned context. The line also ends with Cancel and Shutdown.
 func (s *Session) ExecuteLineContext(ctx context.Context, raw string) (exit bool, err error) {
-	if s == nil || s.state == nil {
-		return false, fmt.Errorf("apshell session is not initialized")
+	if s == nil {
+		return false, errSessionNotInitialized
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx, end, err := s.beginActive(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer end()
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
+	if err := s.startable(ctx); err != nil {
+		return false, err
+	}
 	return s.executeLineContext(ctx, raw)
 }
 
 func (s *Session) executeLineContext(ctx context.Context, raw string) (exit bool, err error) {
-	cleanupSignerCtx := s.state.app().BindSignerClientContext(ctx)
-	defer cleanupSignerCtx()
-	priorCtx := s.state.currentCommandCtx
-	s.state.currentCommandCtx = ctx
-	defer func() {
-		s.state.currentCommandCtx = priorCtx
-	}()
+	defer s.state.bindCommandContext(ctx)()
 
 	s.state.runtimeMu.Lock()
 	defer s.state.runtimeMu.Unlock()
@@ -110,7 +139,7 @@ func (s *Session) executeLineContext(ctx context.Context, raw string) (exit bool
 		return false, nil
 	}
 	if err := s.state.executeCommand(cmd); err != nil {
-		if err.Error() == "exit" {
+		if errors.Is(err, errQuit) {
 			return true, nil
 		}
 		return false, err
@@ -123,33 +152,25 @@ func (s *Session) executeLineContext(ctx context.Context, raw string) (exit bool
 
 // ExecuteLineCaptured executes one line and returns text emitted by apshell.
 func (s *Session) ExecuteLineCaptured(raw string) (output string, exit bool, err error) {
-	if s == nil || s.state == nil {
-		return "", false, fmt.Errorf("apshell session is not initialized")
+	if s == nil {
+		return "", false, errSessionNotInitialized
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, end, err := s.beginActive(context.Background())
+	if err != nil {
+		return "", false, err
+	}
+	defer end()
 
-	s.activeMu.Lock()
-	s.activeID++
-	activeID := s.activeID
-	s.activeCancel = cancel
-	s.activeMu.Unlock()
-	defer func() {
-		s.activeMu.Lock()
-		if s.activeID == activeID {
-			s.activeCancel = nil
-		}
-		s.activeMu.Unlock()
-	}()
-
-	previous := s.state.Out
-	var buf bytes.Buffer
 	s.execMu.Lock()
-	s.state.SetOutput(&buf)
-	defer func() {
-		s.state.SetOutput(previous)
-		s.execMu.Unlock()
-	}()
+	defer s.execMu.Unlock()
+	if err := s.startable(ctx); err != nil {
+		return "", false, err
+	}
+	state := s.state
+	previous := state.Out
+	var buf bytes.Buffer
+	state.SetOutput(&buf)
+	defer state.SetOutput(previous)
 
 	exit, err = s.executeLineContext(ctx, raw)
 	return strings.TrimRight(buf.String(), "\n"), exit, err
@@ -271,27 +292,104 @@ func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, strin
 	}
 }
 
-// Cancel interrupts the currently executing embedded command, if any.
+// beginActive makes the context of the operation about to run, a line or the
+// startup connect, from parent: Cancel and Shutdown cancel it until end is
+// called, whether it runs or still waits for execMu. Once Shutdown has begun
+// it refuses.
+func (s *Session) beginActive(parent context.Context) (ctx context.Context, end func(), err error) {
+	ctx, cancel := context.WithCancel(parent)
+	s.activeMu.Lock()
+	if s.closing {
+		s.activeMu.Unlock()
+		cancel()
+		return nil, nil, errSessionShutDown
+	}
+	if s.active == nil {
+		s.active = make(map[uint64]context.CancelFunc)
+	}
+	s.activeID++
+	activeID := s.activeID
+	s.active[activeID] = cancel
+	s.activeMu.Unlock()
+	return ctx, func() {
+		s.activeMu.Lock()
+		delete(s.active, activeID)
+		s.activeMu.Unlock()
+		cancel()
+	}, nil
+}
+
+// activeCancels returns the cancel of every active operation; closing also
+// marks the session closing in the same step, so none begins after.
+func (s *Session) activeCancels(closing bool) []context.CancelFunc {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	if closing {
+		s.closing = true
+	}
+	cancels := make([]context.CancelFunc, 0, len(s.active))
+	for _, cancel := range s.active {
+		cancels = append(cancels, cancel)
+	}
+	return cancels
+}
+
+// startable reports, under execMu, why an operation on ctx must not run:
+// Shutdown began or finished, or cancelled ctx while it waited for execMu.
+func (s *Session) startable(ctx context.Context) error {
+	if s.state == nil || s.isClosing() {
+		return errSessionShutDown
+	}
+	return ctx.Err()
+}
+
+func (s *Session) isClosing() bool {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	return s.closing
+}
+
+// bindCommandContext runs what follows, until the returned restore, on ctx:
+// the command context commands read and the signer client's requests.
+func (r *REPLState) bindCommandContext(ctx context.Context) (restore func()) {
+	cleanupSignerCtx := r.app().BindSignerClientContext(ctx)
+	priorCtx := r.currentCommandCtx
+	r.currentCommandCtx = ctx
+	return func() {
+		r.currentCommandCtx = priorCtx
+		cleanupSignerCtx()
+	}
+}
+
+// Cancel interrupts the executing embedded command, and any line waiting to
+// run after it. It reports whether there was one.
 func (s *Session) Cancel() bool {
 	if s == nil {
 		return false
 	}
-	s.activeMu.Lock()
-	cancel := s.activeCancel
-	s.activeMu.Unlock()
-	if cancel == nil {
-		return false
+	cancels := s.activeCancels(false)
+	for _, cancel := range cancels {
+		cancel()
 	}
-	cancel()
-	return true
+	return len(cancels) > 0
 }
 
-// Shutdown releases apshell runtime resources owned by the session.
+// Shutdown releases apshell runtime resources owned by the session. It
+// cancels every active operation, the running one and any waiting, and waits
+// for the running one to return first: it still uses the runtime, and the
+// state, while it unwinds.
 func (s *Session) Shutdown() {
-	if s == nil || s.state == nil {
+	if s == nil {
 		return
 	}
-	s.Cancel()
+	for _, cancel := range s.activeCancels(true) {
+		cancel()
+	}
+	s.execMu.Lock()
+	defer s.execMu.Unlock()
+	if s.state == nil {
+		return
+	}
 	if s.stopPolling != nil {
 		s.stopPolling()
 		s.stopPolling = nil

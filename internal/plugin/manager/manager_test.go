@@ -5,6 +5,7 @@ package manager
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -216,7 +217,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 		return inst, nil
 	}
 
-	if _, err := m.ExecuteCommand("plugin-a", "swap", nil, jsonrpc.Context{}); err == nil || !errors.Is(err, jsonrpc.ErrConnectionClosed) {
+	if _, err := m.ExecuteCommand(context.Background(), "plugin-a", "swap", nil, jsonrpc.Context{}); err == nil || !errors.Is(err, jsonrpc.ErrConnectionClosed) {
 		t.Fatalf("ExecuteCommand(first) error = %v, want connection closed", err)
 	}
 	if running := m.GetRunningPlugins(); len(running) != 0 {
@@ -227,7 +228,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 	}
 	waitForStoppedProcess(t, started[0].Process)
 
-	result, err := m.ExecuteCommand("plugin-a", "swap", nil, jsonrpc.Context{})
+	result, err := m.ExecuteCommand(context.Background(), "plugin-a", "swap", nil, jsonrpc.Context{})
 	if err != nil {
 		t.Fatalf("ExecuteCommand(retry) error = %v", err)
 	}

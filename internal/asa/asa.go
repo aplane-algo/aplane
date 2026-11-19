@@ -67,6 +67,12 @@ func BuiltinMetadataByRef(network, ref string) (Metadata, bool) {
 	return BuiltinMetadata(network, assetID)
 }
 
+// IsAlgoRef reports whether ref names ALGO, the network's own asset, rather
+// than an ASA: "algo" in any case.
+func IsAlgoRef(ref string) bool {
+	return strings.EqualFold(strings.TrimSpace(ref), "algo")
+}
+
 func (r Resolver) ResolveID(ref string) (uint64, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {

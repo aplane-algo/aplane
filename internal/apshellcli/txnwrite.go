@@ -4,7 +4,6 @@
 package apshellcli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -117,6 +116,9 @@ func executeSimulate(r *REPLState, args []string) (command.Result, error) {
 		Args:    args[1:],
 		RawArgs: strings.Join(args[1:], " "),
 	}
+	// The command's result is the simulation's: its renderer took the mode
+	// when the command ran, and it may have no machine projection, as a
+	// command with interactive prompts does.
 	result, err := r.executeCommandResult(cmd)
 	if err != nil {
 		return result, err
@@ -124,23 +126,7 @@ func executeSimulate(r *REPLState, args []string) (command.Result, error) {
 	if result == nil {
 		return nil, fmt.Errorf("simulated command returned no result")
 	}
-	data, err := result.MarshalMachine()
-	if err != nil {
-		return nil, err
-	}
-	if !json.Valid(data) {
-		return nil, fmt.Errorf("simulated command returned invalid JSON")
-	}
-	wrapped, err := newShellCommandJSONResult(func(w io.Writer) error {
-		return result.RenderText(w)
-	}, data)
-	if err != nil {
-		return nil, err
-	}
-	if terminal, ok := result.(interface{ terminalFailure() error }); ok {
-		wrapped.(*shellCommandResult).terminalErr = terminal.terminalFailure()
-	}
-	return wrapped, nil
+	return result, nil
 }
 
 func mustSetWriteModeOff(r *REPLState) appresult.Toggle {

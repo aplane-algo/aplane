@@ -5,23 +5,20 @@ package apshellcli
 
 import (
 	"context"
-	"errors"
 	"time"
-
-	"github.com/aplane-algo/aplane/internal/engine"
 )
 
-func (r *REPLState) startSignerStatusPolling(onCacheChanged func()) context.CancelFunc {
+func (r *REPLState) startSignerStatusPolling() context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
 	interval := r.app().Config.SignerStatusPollIntervalDuration()
 	if interval <= 0 {
 		return cancel
 	}
-	go r.runSignerStatusPoller(ctx, interval, onCacheChanged)
+	go r.runSignerStatusPoller(ctx, interval)
 	return cancel
 }
 
-func (r *REPLState) runSignerStatusPoller(ctx context.Context, interval time.Duration, onCacheChanged func()) {
+func (r *REPLState) runSignerStatusPoller(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -30,12 +27,12 @@ func (r *REPLState) runSignerStatusPoller(ctx context.Context, interval time.Dur
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			r.pollSignerStatus(ctx, interval, onCacheChanged)
+			r.pollSignerStatus(ctx, interval)
 		}
 	}
 }
 
-func (r *REPLState) pollSignerStatus(ctx context.Context, interval time.Duration, onCacheChanged func()) {
+func (r *REPLState) pollSignerStatus(ctx context.Context, interval time.Duration) {
 	if r == nil || r.App == nil || !r.app().IsConnected() {
 		return
 	}
@@ -50,14 +47,8 @@ func (r *REPLState) pollSignerStatus(ctx context.Context, interval time.Duration
 	r.runtimeMu.Lock()
 	defer r.runtimeMu.Unlock()
 
-	result, err := r.app().SyncSignerStatus(pollCtx)
-	if err != nil {
-		if errors.Is(err, engine.ErrNotConnected) {
-			return
-		}
-		return
-	}
-	if result != nil && (result.CacheRefreshed || result.CacheCleared) && onCacheChanged != nil {
-		onCacheChanged()
-	}
+	// A failed poll changes nothing, and the next one tries again. A cache
+	// the poll refreshed reaches completion at the next Tab, which builds its
+	// completer from the caches as they are then.
+	_, _ = r.app().SyncSignerStatus(pollCtx)
 }

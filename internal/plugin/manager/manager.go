@@ -595,8 +595,18 @@ func (i *Instance) reportHeldStderr() {
 	}
 }
 
-// ExecuteCommand executes a command on a plugin
-func (m *Manager) ExecuteCommand(pluginName, command string, args []string, context jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
+// abandonGrace is how long a plugin whose call was abandoned has to exit
+// once its stdin closes, so a stateful plugin can finish writing its own
+// state, before it is killed. It bounds how long a cancel waits.
+const abandonGrace = time.Second
+
+// ExecuteCommand executes a command on a plugin. It ends when ctx does, and
+// then stops the plugin, which is still running the abandoned command,
+// within abandonGrace. A ctx already ended starts no plugin.
+func (m *Manager) ExecuteCommand(ctx context.Context, pluginName, command string, args []string, pluginContext jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("command not run: %w", err)
+	}
 	// Start plugin if needed
 	instance, err := m.StartPlugin(pluginName)
 	if err != nil {
@@ -606,60 +616,84 @@ func (m *Manager) ExecuteCommand(pluginName, command string, args []string, cont
 	params := jsonrpc.ExecuteParams{
 		Command: command,
 		Args:    args,
-		Context: context,
+		Context: pluginContext,
 	}
 
 	var result jsonrpc.ExecuteResult
+	if err := m.call(ctx, pluginName, instance, jsonrpc.MethodExecute, params, &result); err != nil {
+		return nil, fmt.Errorf("command execution failed: %w", err)
+	}
+	return &result, nil
+}
+
+// call makes one call to a running instance within its manifest's timeout.
+// A failed call discards the instance; one abandoned because ctx ended stops
+// it within abandonGrace rather than waiting for it to finish what it was
+// asked.
+func (m *Manager) call(ctx context.Context, pluginName string, instance *Instance, method string, params, result interface{}) error {
 	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-
-	err = instance.Client.CallWithTimeout(jsonrpc.MethodExecute, params, &result, timeout)
-	if err != nil {
-		instance.reportHeldStderr()
-		m.discardInstance(pluginName, instance)
-		return nil, fmt.Errorf("command execution failed: %w", err)
+	err := instance.Client.CallContext(ctx, method, params, result, timeout)
+	if err == nil {
+		return nil
 	}
-
-	return &result, nil
+	instance.reportHeldStderr()
+	if ctx.Err() != nil {
+		m.abandonInstance(pluginName, instance)
+	} else {
+		m.discardInstance(pluginName, instance)
+	}
+	return err
 }
 
 // SignTransactions asks a running plugin to sign the canonical bytes for the slots
 // it owns (declared via ExecuteResult.PluginSigners), as part of the pre-sign
 // planning flow. It reuses the instance left running after ExecuteCommand, so the
-// plugin's signing material is never exported to APlane.
-func (m *Manager) SignTransactions(pluginName string, params jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
+// plugin's signing material is never exported to APlane. It ends when ctx does,
+// as ExecuteCommand does, and a ctx already ended starts no plugin.
+func (m *Manager) SignTransactions(ctx context.Context, pluginName string, params jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("plugin signTransactions not run: %w", err)
+	}
 	instance, err := m.StartPlugin(pluginName)
 	if err != nil {
 		return nil, err
 	}
 
 	var result jsonrpc.SignTransactionsResult
-	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-
-	if err := instance.Client.CallWithTimeout(jsonrpc.MethodSignTransactions, params, &result, timeout); err != nil {
-		instance.reportHeldStderr()
-		m.discardInstance(pluginName, instance)
+	if err := m.call(ctx, pluginName, instance, jsonrpc.MethodSignTransactions, params, &result); err != nil {
 		return nil, fmt.Errorf("plugin signTransactions failed: %w", err)
 	}
 	return &result, nil
 }
 
 func (m *Manager) discardInstance(pluginName string, instance *Instance) {
+	if m.forgetInstance(pluginName, instance) {
+		instance.Stop()
+	}
+}
+
+// abandonInstance is discardInstance for a plugin whose call was abandoned:
+// it gets abandonGrace, not Stop's few seconds, to exit before it is killed.
+func (m *Manager) abandonInstance(pluginName string, instance *Instance) {
+	if m.forgetInstance(pluginName, instance) {
+		instance.stop(abandonGrace)
+	}
+}
+
+// forgetInstance removes instance as pluginName's running instance, and
+// reports whether it was, and so is the caller's to stop.
+func (m *Manager) forgetInstance(pluginName string, instance *Instance) bool {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	current, ok := m.instances[pluginName]
 	if !ok || current != instance {
-		m.mu.Unlock()
-		return
+		return false
 	}
-
 	delete(m.instances, pluginName)
-	m.mu.Unlock()
-	instance.Stop()
+	return true
 }
 
 // StopPlugin stops a running plugin
@@ -712,8 +746,14 @@ func stopInstance(instance *Instance) {
 	instance.Stop()
 }
 
-// Stop terminates a plugin instance
+// Stop terminates a plugin instance, giving its process time to exit.
 func (i *Instance) Stop() {
+	i.stop(5 * time.Second)
+}
+
+// stop terminates the instance: its stdin closes, and its process is killed
+// if it has not exited within grace.
+func (i *Instance) stop(grace time.Duration) {
 	defer func() {
 		if i.stateLock != nil {
 			i.stateLock.Release()
@@ -737,7 +777,7 @@ func (i *Instance) Stop() {
 	select {
 	case <-done:
 		// Process exited cleanly
-	case <-time.After(5 * time.Second):
+	case <-time.After(grace):
 		// Force kill (best effort)
 		_ = i.Process.Process.Kill()
 		<-done

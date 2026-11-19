@@ -5,7 +5,6 @@ package cmdspec
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/asa"
 )
@@ -15,7 +14,7 @@ type AssetMetadataResolver interface {
 }
 
 func ResolveAssetMetadata(network, ref string, resolver AssetMetadataResolver) (asa.Metadata, error) {
-	if strings.EqualFold(strings.TrimSpace(ref), "algo") {
+	if asa.IsAlgoRef(ref) {
 		return asa.Metadata{
 			Network:  network,
 			AssetID:  0,

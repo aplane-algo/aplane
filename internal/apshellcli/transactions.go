@@ -50,13 +50,15 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 		return nil, err
 	}
 
-	result, err := r.app().Validate(r.commandContext(), apshellapp.ValidateRequest{
+	result, failed := r.app().Validate(r.commandContext(), apshellapp.ValidateRequest{
 		Account:  args[0],
 		LsigArgs: lsigArgs,
 	})
-	result, err = checkedValidateResult(result, err)
-	if err != nil {
-		return nil, err
+	if result == nil {
+		if failed == nil {
+			failed = fmt.Errorf("validate returned no result")
+		}
+		return nil, failed
 	}
 	simulated := r.app().IsSimulateEnabled()
 	projection := validateProjection{
@@ -69,7 +71,7 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 			Submission: item.Submission,
 		}
 	}
-	return newShellCommandResult(func(w io.Writer) error {
+	commandResult, err := newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
 			for idx, item := range result.Items {
 				if len(result.Items) > 1 {
@@ -92,16 +94,14 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 			}
 		})
 	}, projection)
-}
-
-func checkedValidateResult(result *apshellapp.ValidateCommandResult, err error) (*apshellapp.ValidateCommandResult, error) {
-	if result != nil {
-		return result, nil
-	}
 	if err != nil {
 		return nil, err
 	}
-	return nil, fmt.Errorf("validate returned no result")
+	// A validate in which every item failed fails after its items are
+	// drawn, which stops a script. MCP reads the structured result, each
+	// item's error and submission with it, and never this failure.
+	commandResult.(*shellCommandResult).terminalErr = failed
+	return commandResult, nil
 }
 
 // runClose handles the close command by parsing args, delegating workflow to

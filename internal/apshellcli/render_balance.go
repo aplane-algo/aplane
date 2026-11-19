@@ -34,18 +34,10 @@ func (r *REPLState) showFullBalance(result *apshellapp.BalanceDetails) error {
 }
 
 // showSingleAssetBalance shows balance for a specific asset.
-func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, assetRef string) error {
-	isAlgo := assetRef == "algo" || assetRef == "ALGO"
-
-	if isAlgo {
-		algoMeta, _ := r.app().ResolveAssetMetadata("algo")
-		r.printf("%s: %s\n", r.app().FormatAddress(result.Address, ""), asa.DisplayString(asa.AmountFromRaw(result.AlgoBalance, algoMeta)))
+func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, meta asa.Metadata) error {
+	if meta.AssetID == 0 {
+		r.printf("%s: %s\n", r.app().FormatAddress(result.Address, ""), asa.DisplayString(asa.AmountFromRaw(result.AlgoBalance, meta)))
 		return nil
-	}
-
-	meta, err := r.app().ResolveAssetMetadata(assetRef)
-	if err != nil {
-		return fmt.Errorf("unknown asset '%s': %w", assetRef, err)
 	}
 	asaID := meta.AssetID
 
@@ -62,31 +54,18 @@ func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, as
 		}
 	}
 
-	r.printf("%s: 0 %s (not opted in)\n", r.app().FormatAddress(result.Address, ""), assetRef)
+	r.printf("%s: 0 %s (not opted in)\n", r.app().FormatAddress(result.Address, ""), asa.DisplayRef(meta))
 	return nil
 }
 
 // showMultiAccountBalances shows balances across multiple accounts.
-// addresses: list of addresses to show balances for
-// assetRef: optional asset filter (empty = ALGO)
+// meta: the asset shown, ALGO when its AssetID is 0
 // holdersOnly: if true, only show accounts with non-zero balance
-func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetails, assetRef string, holdersOnly bool) error {
+func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetails, meta asa.Metadata, holdersOnly bool) error {
 	if len(balances) == 0 {
 		return fmt.Errorf("no accounts found")
 	}
-
-	isAlgo := assetRef == "" || assetRef == "algo" || assetRef == "ALGO"
-	var asaID uint64
-	meta, _ := r.app().ResolveAssetMetadata("algo")
-
-	if assetRef != "" && !isAlgo {
-		var err error
-		meta, err = r.app().ResolveAssetMetadata(assetRef)
-		if err != nil {
-			return fmt.Errorf("unknown asset '%s': %w", assetRef, err)
-		}
-		asaID = meta.AssetID
-	}
+	asaID := meta.AssetID
 
 	type accountBalance struct {
 		name string
@@ -99,10 +78,7 @@ func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetai
 		var balanceRaw uint64
 		found := false
 
-		if assetRef == "" {
-			balanceRaw = result.AlgoBalance
-			found = true
-		} else if isAlgo {
+		if asaID == 0 {
 			balanceRaw = result.AlgoBalance
 			found = true
 		} else {

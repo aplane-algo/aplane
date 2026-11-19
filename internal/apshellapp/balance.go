@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
@@ -74,6 +75,10 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 		if assetRef == "" {
 			assetRef = "algo"
 		}
+		asset, err := a.resolveShownAsset(assetRef)
+		if err != nil {
+			return nil, err
+		}
 		balances := make([]*BalanceDetails, 0, len(addresses))
 		for _, address := range addresses {
 			balanceResult, balanceErr := a.eng.GetBalance(ctx, address)
@@ -84,28 +89,43 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 		}
 		return &BalanceCommandResult{
 			Mode:           BalanceModeMulti,
-			AssetRef:       assetRef,
+			Asset:          asset,
 			AssetSpecified: assetSpecified,
 			Addresses:      addresses,
 			Balances:       balances,
 		}, nil
 	}
 
+	mode := BalanceModeSingleFull
+	var asset asa.Metadata
+	if assetSpecified {
+		mode = BalanceModeSingleAsset
+		var err error
+		if asset, err = a.resolveShownAsset(assetRef); err != nil {
+			return nil, err
+		}
+	}
+
 	balanceResult, err := a.eng.GetBalance(ctx, account)
 	if err != nil {
 		return nil, err
 	}
-	result := balanceDetailsFromEngine(balanceResult)
-
-	mode := BalanceModeSingleFull
-	if assetSpecified {
-		mode = BalanceModeSingleAsset
-	}
 
 	return &BalanceCommandResult{
 		Mode:           mode,
-		AssetRef:       assetRef,
+		Asset:          asset,
 		AssetSpecified: assetSpecified,
-		Single:         result,
+		Single:         balanceDetailsFromEngine(balanceResult),
 	}, nil
+}
+
+// resolveShownAsset resolves the asset a balance or holders command shows.
+// ALGO is named in any case; the shell shows it, and matches holdings, by
+// the result's AssetID alone.
+func (a *App) resolveShownAsset(ref string) (asa.Metadata, error) {
+	meta, err := a.ResolveAssetMetadata(ref)
+	if err != nil {
+		return asa.Metadata{}, fmt.Errorf("unknown asset '%s': %w", ref, err)
+	}
+	return meta, nil
 }

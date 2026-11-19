@@ -105,6 +105,9 @@ type argsFixture struct {
 	submitted atomic.Int32
 	// rejectsSubmit makes the node refuse what is submitted.
 	rejectsSubmit bool
+	// confirms makes the node report every pending transaction confirmed,
+	// having created no app.
+	confirms bool
 }
 
 func newArgsFixture(t *testing.T) *argsFixture {
@@ -191,6 +194,11 @@ func newArgsFixture(t *testing.T) *argsFixture {
 			}
 			f.submitted.Add(1)
 			_ = json.NewEncoder(w).Encode(map[string]string{"txId": "TESTTXID"})
+		case r.URL.Path == "/v2/status" && f.confirmsPending():
+			_ = json.NewEncoder(w).Encode(models.NodeStatus{LastRound: 1000})
+		case strings.HasPrefix(r.URL.Path, "/v2/transactions/pending/") && f.confirmsPending():
+			w.Header().Set("Content-Type", "application/msgpack")
+			_, _ = w.Write(msgpack.Encode(models.PendingTransactionInfoResponse{ConfirmedRound: 1001}))
 		default:
 			http.Error(w, "test node", http.StatusServiceUnavailable)
 		}
@@ -214,6 +222,12 @@ func newArgsFixture(t *testing.T) *argsFixture {
 	f.eng.SetCache.Sets = map[string][]string{"lsigs": {argsHTLC, argsHTLC2}}
 	f.app = New(f.eng, config.DefaultConfig(), t.TempDir())
 	return f
+}
+
+func (f *argsFixture) confirmsPending() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.confirms
 }
 
 // signAsTestSigner wraps each requested transaction as signed, when every

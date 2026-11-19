@@ -359,7 +359,7 @@ func (e *Core) GetHolders(ctx context.Context, assetRef string) (*HoldersResult,
 	}
 
 	// Determine if checking ALGO or ASA
-	isAlgo := assetRef == "" || assetRef == "algo" || assetRef == "ALGO"
+	isAlgo := assetRef == "" || asa.IsAlgoRef(assetRef)
 	var asaID uint64
 
 	if !isAlgo {

@@ -91,6 +91,10 @@ func (a *App) Holders(ctx context.Context, args []string) (*HoldersCommandResult
 	if len(args) == 1 {
 		assetRef = args[0]
 	}
+	asset, err := a.resolveShownAsset(assetRef)
+	if err != nil {
+		return nil, err
+	}
 
 	addresses, err := a.eng.ListAllAddresses()
 	if err != nil {
@@ -123,7 +127,7 @@ func (a *App) Holders(ctx context.Context, args []string) (*HoldersCommandResult
 	return &HoldersCommandResult{
 		Addresses: holders.Addresses,
 		Balances:  balances,
-		AssetRef:  assetRef,
+		Asset:     asset,
 		Warnings:  warnings,
 	}, nil
 }

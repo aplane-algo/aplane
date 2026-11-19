@@ -5,10 +5,13 @@ package apshellcli
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -91,5 +94,43 @@ func TestToggleSimulateAllowsExternalPluginCommandPath(t *testing.T) {
 	}
 	if repl.app().IsSimulateEnabled() {
 		t.Fatal("toggleSimulate(reti deposit) left simulate mode enabled")
+	}
+}
+
+// One-shot simulate hands back the command's own result. A transaction
+// command with interactive prompts, as keyreg's paste mode is, has no
+// machine projection; simulating it in the REPL runs and draws it and does
+// not end with "command has no machine result".
+func TestOneShotSimulateReturnsTheCommandsOwnResult(t *testing.T) {
+	repl := testREPLForSimulate(t)
+	var out bytes.Buffer
+	repl.SetOutput(&out)
+	var own command.Result
+	if err := repl.CommandRegistry.Register(&command.Command{
+		Name: "prompts", Category: command.CategoryTransaction, Automation: command.StructuredAutomation,
+		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+			simulated := repl.app().IsSimulateEnabled()
+			own = newTerminalCommandResult(func(w io.Writer) error {
+				_, err := fmt.Fprintf(w, "simulated: %v\n", simulated)
+				return err
+			})
+			return own, nil
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := executeSimulate(repl, []string{"prompts"})
+	if err != nil || result != own {
+		t.Fatalf("executeSimulate() = %v, %v; want the command's own result", result, err)
+	}
+	if err := repl.executeCommand(Command{Name: "simulate", Args: []string{"prompts"}}); err != nil {
+		t.Fatalf("simulate prompts: %v", err)
+	}
+	if got := out.String(); got != "simulated: true\n" {
+		t.Fatalf("output = %q, want the command drawn as simulated", got)
+	}
+	if repl.app().IsSimulateEnabled() {
+		t.Fatal("one-shot simulate left simulate mode on")
 	}
 }

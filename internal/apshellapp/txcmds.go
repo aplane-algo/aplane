@@ -141,7 +141,10 @@ func withIncentive(result *KeyRegCommandResult, prep *engine.TransactionPrepResu
 	return result
 }
 
-// Validate resolves and validates one account or address set via 0-ALGO self-send transactions.
+// Validate resolves and validates one account or address set via 0-ALGO
+// self-send transactions. When every validation failed, it returns the
+// result, each item with its error, and an error for the command as a whole;
+// a set in which some passed is the result alone.
 func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
 	addresses, err := cmdspec.ResolveAddressList([]string{req.Account}, resolver)
@@ -201,11 +204,8 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 
 	decorateValidateResult(result)
 
-	if result.FailureCount > 0 && result.SuccessCount == 0 {
-		return result, fmt.Errorf("%d validation(s) failed", result.FailureCount)
-	}
-	if result.FailureCount > 0 {
-		return result, fmt.Errorf("%d validation(s) failed", result.FailureCount)
+	if result.SuccessCount == 0 {
+		return result, fmt.Errorf("all %d validation(s) failed", result.FailureCount)
 	}
 	return result, nil
 }
@@ -385,7 +385,10 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 	}, prepResult), nil
 }
 
-// KeyRegFromPartKey prepares and submits online keyreg from parsed goal output.
+// KeyRegFromPartKey prepares and submits online keyreg from parsed goal
+// output, and waits for its confirmation. When the wait fails after algod
+// accepted the registration, which may still confirm, it returns the result,
+// with the transaction's ID and the output so far, beside the error.
 func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.ParsedInfo, incentiveEligible bool) (*KeyRegCommandResult, error) {
 	prepResult, err := a.eng.PrepareKeyReg(ctx, engine.KeyRegParams{
 		Account:           parsed.ParentAddress,
@@ -408,30 +411,28 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
 
-	confirmed := false
-	output := submit.Output
-	if !a.eng.GetSimulate() {
-		confirmation, err := a.eng.WaitForConfirmationResult(ctx, submit.TxID, 9)
-		if confirmation != nil {
-			output += confirmation.Output
-		}
-		if err != nil {
-			return nil, err
-		}
-		confirmed = true
-	}
-
-	return withIncentive(&KeyRegCommandResult{
+	result := withIncentive(&KeyRegCommandResult{
 		Account:        parsed.ParentAddress,
 		Mode:           "online",
 		VoteFirst:      parsed.VoteFirst,
 		VoteLast:       parsed.VoteLast,
 		SigningKeyType: prep.SigningContext.DisplayKeyType,
 		TxID:           submit.TxID,
-		Confirmed:      confirmed,
-		Output:         output,
+		Output:         submit.Output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, prepResult), nil
+	}, prepResult)
+	if a.eng.GetSimulate() {
+		return result, nil
+	}
+	confirmation, err := a.eng.WaitForConfirmationResult(ctx, submit.TxID, 9)
+	if confirmation != nil {
+		result.Output += confirmation.Output
+	}
+	if err != nil {
+		return result, fmt.Errorf("key registration failed: %w", signing.ConfirmationFailure([]string{submit.TxID}, err))
+	}
+	result.Confirmed = true
+	return result, nil
 }
 
 // ListRekeys returns all cached rekey relationships.

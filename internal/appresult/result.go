@@ -177,6 +177,10 @@ type AppDeploy struct {
 	Confirmed  bool   `json:"confirmed"`
 	AppID      uint64 `json:"app_id,omitempty"`
 	AppAddress string `json:"app_address,omitempty"`
+	// AppLookupError says why the app a confirmed deploy created could not
+	// be looked up, so AppID is missing. The deploy still succeeded: the app
+	// is found from TxID.
+	AppLookupError string `json:"app_lookup_error,omitempty"`
 }
 
 // AppCall is the canonical structured result for app call commands.

@@ -72,7 +72,7 @@ func TestMCPBalanceParsesAssetOnlyQueryLikeREPL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Balance() error = %v", err)
 	}
-	if result.Mode != apshellapp.BalanceModeMulti || result.AssetRef != "usdc" {
+	if result.Mode != apshellapp.BalanceModeMulti || result.Asset.AssetID != 10458941 {
 		t.Fatalf("Balance() = %#v, want multi-account usdc query", result)
 	}
 }

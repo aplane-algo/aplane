@@ -4,42 +4,65 @@
 package apshellcli
 
 import (
-	"errors"
+	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 )
 
-func TestCheckedValidateResultReturnsResolveError(t *testing.T) {
-	want := errors.New("failed to resolve account")
+// A validate in which every item failed fails the command: the REPL draws
+// each item and returns the failure, and a script stops on it. MCP keeps
+// the structured result, each item with its error and submission.
+func TestValidateWhoseItemsAllFailed(t *testing.T) {
+	f := newSubmitFixture(t, nodeRefusesSubmit)
+	var out bytes.Buffer
+	f.state.SetOutput(&out)
+	account := f.a.Address.String()
 
-	result, err := checkedValidateResult(nil, want)
-	if result != nil {
-		t.Fatalf("result = %#v, want nil", result)
+	err := f.state.executeCommand(Command{Name: "validate", Args: []string{account}})
+	if err == nil || err.Error() != "all 1 validation(s) failed" {
+		t.Fatalf("validate error = %v, want all 1 failed", err)
 	}
-	if !errors.Is(err, want) {
-		t.Fatalf("err = %v, want %v", err, want)
+	if !strings.Contains(out.String(), "✗ Failed:") {
+		t.Fatalf("the failed item was not drawn:\n%s", out.String())
+	}
+
+	err = f.state.runScript([]string{writeScript(t, "validate "+account, "simulate on")})
+	if err == nil || err.Error() != "script execution stopped at line 1" {
+		t.Fatalf("runScript() error = %v, want the script stopped at the validate", err)
+	}
+	if f.state.app().IsSimulateEnabled() {
+		t.Fatal("the script went on past the failed validate")
+	}
+
+	result := mcpExecuteCommand(f.state, Command{Name: "validate", Args: []string{account}})
+	if result.IsError {
+		t.Fatalf("MCP validate is an error result %q, want the structured result", mcpResultText(t, result))
+	}
+	var projection validateProjection
+	if err := json.Unmarshal([]byte(mcpResultText(t, result)), &projection); err != nil {
+		t.Fatal(err)
+	}
+	if projection.FailureCount != 1 || len(projection.Items) != 1 || projection.Items[0].Error == "" ||
+		projection.Items[0].Submission == nil || projection.Items[0].Submission.State != "rejected" {
+		t.Fatalf("MCP validate = %s, want the failed item with its submission", mcpResultText(t, result))
 	}
 }
 
-func TestCheckedValidateResultAcceptsPartialResultWithError(t *testing.T) {
-	want := &apshellapp.ValidateCommandResult{Input: "@set"}
+// A set in which some validations passed is not a failure of the command.
+func TestValidateWhoseItemsPartlyFailed(t *testing.T) {
+	f := newSubmitFixture(t, nodeConfirms)
+	foreign := crypto.GenerateAccount().Address.String() // the signer holds no key for it
+	f.eng.SetCache.Sets = map[string][]string{"pair": {f.a.Address.String(), foreign}}
+	var out bytes.Buffer
+	f.state.SetOutput(&out)
 
-	result, err := checkedValidateResult(want, errors.New("1 validation failed"))
-	if err != nil {
-		t.Fatalf("err = %v, want nil", err)
+	if err := f.state.executeCommand(Command{Name: "validate", Args: []string{"@pair"}}); err != nil {
+		t.Fatalf("validate @pair error = %v, want the command to succeed\n%s", err, out.String())
 	}
-	if result != want {
-		t.Fatalf("result = %#v, want %#v", result, want)
-	}
-}
-
-func TestCheckedValidateResultRejectsNilResultWithoutError(t *testing.T) {
-	result, err := checkedValidateResult(nil, nil)
-	if result != nil {
-		t.Fatalf("result = %#v, want nil", result)
-	}
-	if err == nil {
-		t.Fatal("err = nil, want error")
+	if text := out.String(); !strings.Contains(text, "Successful: 1/2") || !strings.Contains(text, "Failed: 1/2") {
+		t.Fatalf("validate @pair drew:\n%s\nwant one passed and one failed", text)
 	}
 }
