@@ -449,6 +449,9 @@ balance [account|@all|@signers|@setname] [asset]
 | `<account>` | Optional address, alias, `@all`, `@signers`, or `@setname` (default: `@all`) |
 | `[asset]` | Optional: `algo`, `asa`, or specific ASA reference |
 
+`algo` may be written in any case (`ALGO`, `Algo`), here and in `holders`. An
+asset that does not resolve is refused, in the shell and through MCP.
+
 **Aliases:** `bal`
 
 **Examples:**

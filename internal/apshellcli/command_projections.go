@@ -4,8 +4,6 @@
 package apshellcli
 
 import (
-	"fmt"
-
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/asa"
@@ -248,7 +246,10 @@ func projectPluginsResult(result *apshellapp.PluginsCommandResult) pluginsProjec
 	return projection
 }
 
-func projectMCPBalanceForAsset(app *apshellapp.App, result *apshellapp.BalanceDetails, assetRef string) appresult.MCPBalance {
+// projectMCPBalanceForAsset is an account's MCP balance in asset, nil for a
+// full balance: an ASA's entry alone, its 0 when not opted in, or for ALGO
+// none, the ALGO balance being the account's own.
+func projectMCPBalanceForAsset(result *apshellapp.BalanceDetails, asset *asa.Metadata) appresult.MCPBalance {
 	assets := make([]appresult.AssetBalanceView, len(result.Assets))
 	for i, asset := range result.Assets {
 		assets[i] = appresult.AssetBalanceView{
@@ -260,14 +261,11 @@ func projectMCPBalanceForAsset(app *apshellapp.App, result *apshellapp.BalanceDe
 		Address: result.Address, Alias: result.Alias, AlgoBalance: result.AlgoBalance,
 		AuthAddr: result.AuthAddr, MinBalance: result.MinBalance, Assets: assets,
 	})
-	if assetRef == "" || assetRef == "algo" || assetRef == "ALGO" {
+	if asset == nil || asset.AssetID == 0 {
 		projected.Assets = nil
 		return projected
 	}
-	meta, err := app.ResolveAssetMetadata(assetRef)
-	if err != nil {
-		return projected
-	}
+	meta := *asset
 	filtered := projected.Assets[:0]
 	for _, asset := range projected.Assets {
 		if asset.AssetID == meta.AssetID {
@@ -284,16 +282,9 @@ func projectMCPBalanceForAsset(app *apshellapp.App, result *apshellapp.BalanceDe
 	return projected
 }
 
-func (r *REPLState) projectHolders(result *apshellapp.HoldersCommandResult) (interface{}, error) {
-	isAlgo := result.AssetRef == "" || result.AssetRef == "algo" || result.AssetRef == "ALGO"
-	meta, _ := r.app().ResolveAssetMetadata("algo")
-	if !isAlgo {
-		var err error
-		meta, err = r.app().ResolveAssetMetadata(result.AssetRef)
-		if err != nil {
-			return nil, fmt.Errorf("unknown asset '%s': %w", result.AssetRef, err)
-		}
-	}
+func projectHolders(result *apshellapp.HoldersCommandResult) interface{} {
+	meta := result.Asset
+	isAlgo := meta.AssetID == 0
 	entries := make([]appresult.MCPHolderEntry, 0, len(result.Balances))
 	var totalRaw uint64
 	for _, balance := range result.Balances {
@@ -314,7 +305,7 @@ func (r *REPLState) projectHolders(result *apshellapp.HoldersCommandResult) (int
 		entries = append(entries, appresult.HolderEntryToMCP(balance.Address, balance.Alias, raw, meta.Decimals))
 		totalRaw += raw
 	}
-	return appresult.HoldersToMCP(meta.UnitName, meta.Decimals, entries, totalRaw), nil
+	return appresult.HoldersToMCP(meta.UnitName, meta.Decimals, entries, totalRaw)
 }
 
 type sendProjection struct {

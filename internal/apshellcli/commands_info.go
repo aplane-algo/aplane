@@ -197,25 +197,30 @@ func (r *REPLState) cmdBalance(args []string, _ interface{}) (command.Result, er
 	if err != nil {
 		return nil, err
 	}
+	// A full balance shows every holding; the other modes show one asset.
+	asset := &res.Asset
+	if res.Mode == apshellapp.BalanceModeSingleFull {
+		asset = nil
+	}
 	var projection interface{}
 	if res.Mode == apshellapp.BalanceModeMulti {
 		items := make([]appresult.MCPBalance, 0, len(res.Balances))
 		for _, balance := range res.Balances {
-			items = append(items, projectMCPBalanceForAsset(r.app(), balance, res.AssetRef))
+			items = append(items, projectMCPBalanceForAsset(balance, asset))
 		}
 		projection = items
 	} else {
-		projection = projectMCPBalanceForAsset(r.app(), res.Single, res.AssetRef)
+		projection = projectMCPBalanceForAsset(res.Single, asset)
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutputResult(w, func() error {
 			switch res.Mode {
 			case apshellapp.BalanceModeMulti:
-				return r.showMultiAccountBalances(res.Balances, res.AssetRef, false)
+				return r.showMultiAccountBalances(res.Balances, res.Asset, false)
 			case apshellapp.BalanceModeSingleFull:
 				return r.showFullBalance(res.Single)
 			case apshellapp.BalanceModeSingleAsset:
-				return r.showSingleAssetBalance(res.Single, res.AssetRef)
+				return r.showSingleAssetBalance(res.Single, res.Asset)
 			default:
 				return fmt.Errorf("unsupported balance mode: %s", res.Mode)
 			}
@@ -229,10 +234,7 @@ func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, er
 	if err != nil {
 		return nil, err
 	}
-	projection, err := r.projectHolders(result)
-	if err != nil {
-		return nil, err
-	}
+	projection := projectHolders(result)
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutputResult(w, func() error {
 			r.renderWarnings(result.Warnings)
@@ -240,7 +242,7 @@ func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, er
 				r.println("No accounts with non-zero balance found")
 				return nil
 			}
-			return r.showMultiAccountBalances(result.Balances, result.AssetRef, true)
+			return r.showMultiAccountBalances(result.Balances, result.Asset, true)
 		})
 	}, projection)
 }
