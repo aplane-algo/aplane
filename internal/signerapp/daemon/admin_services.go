@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storeadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -137,10 +138,15 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 
 // failedUnlock answers an unlock that failed with errMsg. A failure other
 // than a wrong passphrase, such as a store root that cannot be opened, is
-// logged with its cause.
+// logged with its cause; an unlock that lost a race to a lock or a store
+// maintenance is expected and logged below error.
 func failedUnlock(errMsg string) (bool, int, string, string) {
 	code := unlockFailureCode(errMsg)
-	if code == protocol.ErrCodeUnlockFailed {
+	switch {
+	case code != protocol.ErrCodeUnlockFailed:
+	case errMsg == signerruntime.LockedDuringUnlockMessage, errMsg == signerruntime.MaintenanceInProgressMessage:
+		logInfof("unlock did not complete: %s", errMsg)
+	default:
 		logErrorf("unlock failed: %s", errMsg)
 	}
 	return false, 0, errMsg, code

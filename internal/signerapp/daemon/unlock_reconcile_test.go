@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -287,5 +288,41 @@ func TestUnlockOfADamagedStoreRootIsNotAnInvalidPassphrase(t *testing.T) {
 	}
 	if err := svc.VerifyPassphrase(testPassphrase); err == nil || errors.Is(err, crypto.ErrInvalidPassphrase) {
 		t.Fatalf("VerifyPassphrase(damaged root) = %v, want a store-root failure, not a wrong passphrase", err)
+	}
+}
+
+// An unlock that lost a race to a lock or a store maintenance is expected and
+// is not logged as an error; a store root that cannot be opened is, and a
+// wrong passphrase is not logged at all.
+func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
+	var logs *syncBuffer
+	capture := func() {
+		logs = &syncBuffer{}
+		appLogger.SetOutput(logs)
+	}
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+
+	capture()
+	for _, msg := range []string{signerruntime.LockedDuringUnlockMessage, signerruntime.MaintenanceInProgressMessage} {
+		if _, _, _, code := failedUnlock(msg); code != protocol.ErrCodeUnlockFailed {
+			t.Fatalf("failedUnlock(%q) code = %q, want unlock_failed", msg, code)
+		}
+	}
+	if got := logs.String(); strings.Contains(got, "[ERROR]") || !strings.Contains(got, "[INFO] unlock did not complete") {
+		t.Fatalf("logs for lost unlock races = %q, want info lines only", got)
+	}
+
+	capture()
+	if _, _, _, code := failedUnlock(productruntime.InvalidPassphraseMessage); code != protocol.ErrCodeInvalidPassphrase {
+		t.Fatalf("failedUnlock(wrong passphrase) code = %q", code)
+	}
+	if got := logs.String(); got != "" {
+		t.Fatalf("logs for a wrong passphrase = %q, want none", got)
+	}
+
+	capture()
+	failedUnlock("store root could not be opened: parse store root: invalid character")
+	if got := logs.String(); !strings.Contains(got, "[ERROR] unlock failed: store root could not be opened") {
+		t.Fatalf("logs for a damaged store root = %q, want an error line with the cause", got)
 	}
 }
