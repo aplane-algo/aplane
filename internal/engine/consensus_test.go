@@ -82,10 +82,7 @@ func TestValidateAlgodConsensusAcceptsSupportedVersionsWithNilContext(t *testing
 func TestConsensusValidationReusesRecentSuggestedParams(t *testing.T) {
 	client, server, calls := countingConsensusTestAlgod(t, string(protocol.ConsensusV42))
 	defer server.Close()
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 
 	if _, err := eng.getSuggestedParamsWithFee(context.Background(), 0, false); err != nil {
 		t.Fatalf("getSuggestedParamsWithFee() error = %v", err)
@@ -101,10 +98,7 @@ func TestConsensusValidationReusesRecentSuggestedParams(t *testing.T) {
 func TestConsensusValidationRefreshesExpiredEntry(t *testing.T) {
 	client, server, calls := countingConsensusTestAlgod(t, string(protocol.ConsensusV42))
 	defer server.Close()
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 	if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
 		t.Fatalf("first activeAlgodNetwork() error = %v", err)
 	}
@@ -141,10 +135,7 @@ func TestSetNetworkInvalidatesConsensusValidation(t *testing.T) {
 	defer server1.Close()
 	client2, server2, calls2 := countingConsensusTestAlgod(t, string(protocol.ConsensusV42))
 	defer server2.Close()
-	eng, err := NewEngine("testnet", WithAlgodClient(client1))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithAlgodClient(client1))
 	if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
 		t.Fatalf("first activeAlgodNetwork() error = %v", err)
 	}
@@ -173,14 +164,11 @@ func TestSignAndSubmitTransactionsRejectsUnsupportedConsensusBeforeSigner(t *tes
 	}))
 	defer signerServer.Close()
 
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 	txn := presignTestTxn(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "prebuilt")
 
-	_, err = eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{txn}, false)
+	_, err := eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{txn}, false)
 	if err == nil || !strings.Contains(err.Error(), "network consensus") {
 		t.Fatalf("SignAndSubmitTransactions() error = %v, want unsupported-consensus rejection", err)
 	}
@@ -200,12 +188,9 @@ func TestGroupPlanningValidatesConsensusBeforeSigner(t *testing.T) {
 	}))
 	defer server.Close()
 
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
-	_, err = eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
+	_, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 		AuthAddress: "ADDR",
 		TxnBytesHex: txnutil.EncodeWithPrefixHex(presignTestTxn(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "plan")),
 	}})
@@ -238,10 +223,7 @@ func TestGroupPlanningForwardsAfterConsensusValidation(t *testing.T) {
 			}))
 			defer server.Close()
 
-			eng, err := NewEngine("test", WithAlgodClient(client))
-			if err != nil {
-				t.Fatalf("NewEngine() error = %v", err)
-			}
+			eng := NewEngine("test", WithAlgodClient(client))
 			eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
 			response, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 				AuthAddress: "ADDR",

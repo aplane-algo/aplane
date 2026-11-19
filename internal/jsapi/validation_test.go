@@ -19,10 +19,7 @@ import (
 // without requiring a connected engine.
 func TestArgumentValidation(t *testing.T) {
 	// Create minimal engine (not connected, but enough for API creation)
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	// Create API and register on runtime
 	vm := goja.New()
@@ -236,10 +233,7 @@ func TestArgumentValidation(t *testing.T) {
 
 // TestNegativeValueValidation tests that numeric functions reject negative values.
 func TestNegativeValueValidation(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -284,10 +278,7 @@ func TestNegativeValueValidation(t *testing.T) {
 }
 
 func TestAppCallRawAllowsZeroArgs(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -327,10 +318,7 @@ func TestAppCallRawAllowsZeroArgs(t *testing.T) {
 }
 
 func TestAppCallRawRejectsNonArrayArgs(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -339,17 +327,14 @@ func TestAppCallRawRejectsNonArrayArgs(t *testing.T) {
 	}
 
 	addr := types.Address{}.String()
-	_, err = vm.RunString(fmt.Sprintf(`appCallRaw(123, %q, "not-array")`, addr))
+	_, err := vm.RunString(fmt.Sprintf(`appCallRaw(123, %q, "not-array")`, addr))
 	if err == nil || !strings.Contains(err.Error(), "appCallRaw() appArgs: expected an array, got a string") {
 		t.Fatalf("expected non-array appArgs error, got %v", err)
 	}
 }
 
 func TestAppCallRefusesReferenceListsThatAreNotArrays(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -386,22 +371,19 @@ func TestAppCallRefusesReferenceListsThatAreNotArrays(t *testing.T) {
 
 	// Arrays, empty ones included, get the call past its options.
 	for _, options := range []string{`{apps: [], assets: [], boxes: []}`, `{apps: [1], assets: [2], boxes: ["text:b"]}`} {
-		_, err = vm.RunString(raw(options))
+		_, err := vm.RunString(raw(options))
 		if err == nil || !strings.Contains(err.Error(), engine.ErrNoAlgodClient.Error()) {
 			t.Fatalf("appCallRaw with %s: got %v, want %v", options, err, engine.ErrNoAlgodClient)
 		}
 	}
-	_, err = vm.RunString(abi(`[]`, `{apps: [], assets: [], boxes: []}`))
+	_, err := vm.RunString(abi(`[]`, `{apps: [], assets: [], boxes: []}`))
 	if err == nil || !strings.Contains(err.Error(), "appCall() error preparing transaction") {
 		t.Fatalf("appCall with empty lists: got %v, want the ABI file error", err)
 	}
 }
 
 func TestAppCallValidationRejectsEmptyABIPathAndEmptyBoxName(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -411,7 +393,7 @@ func TestAppCallValidationRejectsEmptyABIPathAndEmptyBoxName(t *testing.T) {
 
 	addr := types.Address{}.String()
 
-	_, err = vm.RunString(fmt.Sprintf(`appCall(123, "increment", "", %q, ["5"])`, addr))
+	_, err := vm.RunString(fmt.Sprintf(`appCall(123, "increment", "", %q, ["5"])`, addr))
 	if err == nil || !strings.Contains(err.Error(), "ABI path is required") {
 		t.Fatalf("expected empty ABI path error, got %v", err)
 	}
@@ -428,10 +410,7 @@ func TestAppCallValidationRejectsEmptyABIPathAndEmptyBoxName(t *testing.T) {
 
 // TestAlgoMicroalgosNoArgs tests that algo() and microalgos() require arguments.
 func TestAlgoMicroalgosNoArgs(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -472,10 +451,7 @@ func TestAlgoMicroalgosNoArgs(t *testing.T) {
 
 // TestAlgoValidConversions tests that algo() correctly converts values.
 func TestAlgoValidConversions(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -515,10 +491,7 @@ func TestAlgoValidConversions(t *testing.T) {
 // fractional microAlgos and non-integral / out-of-range base-unit amounts must
 // error rather than silently truncate or round to a wrong value.
 func TestAmountConversionsRejectImprecise(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	vm := goja.New()
 	api := NewAPI(eng, nil)
 	if err := api.RegisterAll(vm); err != nil {
@@ -556,10 +529,7 @@ func TestAmountConversionsRejectImprecise(t *testing.T) {
 
 // TestGetAsaId tests well-known asset lookup.
 func TestGetAsaId(t *testing.T) {
-	eng, err := engine.NewEngine("mainnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("mainnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)
@@ -607,10 +577,7 @@ func TestGetAsaId(t *testing.T) {
 // TestFunctionsReturnWithoutEngine tests that functions that don't require
 // engine connection work correctly.
 func TestFunctionsReturnWithoutEngine(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
 	api := NewAPI(eng, nil)

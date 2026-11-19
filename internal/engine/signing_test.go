@@ -15,7 +15,7 @@ import (
 )
 
 func TestBuildSigningContext_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, err := eng.BuildSigningContext(context.Background(), testAddr(1))
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)

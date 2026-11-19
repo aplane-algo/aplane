@@ -26,10 +26,7 @@ var (
 // check fails preparing its first transaction with engine.ErrNoAlgodClient.
 func newRepeatTestApp(t *testing.T) *App {
 	t.Helper()
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": repeatAlice,
 		"bob":   repeatBob,

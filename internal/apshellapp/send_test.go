@@ -22,17 +22,14 @@ import (
 )
 
 func TestPrepareSendRejectsManyToMany(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.SetCache.Sets = map[string][]string{
 		"senders": {"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"},
 		"rcvrs":   {"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"},
 	}
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.PrepareSend(context.Background(), SendRequest{
+	_, err := app.PrepareSend(context.Background(), SendRequest{
 		AmountText: "1",
 		AssetRef:   "algo",
 		FromRaw:    []string{"@senders"},
@@ -44,10 +41,7 @@ func TestPrepareSendRejectsManyToMany(t *testing.T) {
 }
 
 func TestPrepareSendSelectsAtomicToMultipleMode(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{}
 	eng.AliasCache.Aliases["alice"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	eng.SetCache.Sets = map[string][]string{
@@ -80,17 +74,14 @@ func TestPrepareSendSelectsAtomicToMultipleMode(t *testing.T) {
 }
 
 func TestExecuteSendUsesNonAtomicPath(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		"bob":   "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 	}
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.ExecuteSend(context.Background(), SendRequest{
+	_, err := app.ExecuteSend(context.Background(), SendRequest{
 		AmountText: "1",
 		AssetRef:   "algo",
 		FromRaw:    []string{"alice"},
@@ -102,10 +93,7 @@ func TestExecuteSendUsesNonAtomicPath(t *testing.T) {
 }
 
 func TestExecuteSendUsesAtomicPath(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 	}
@@ -117,7 +105,7 @@ func TestExecuteSendUsesAtomicPath(t *testing.T) {
 	}
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.ExecuteSend(context.Background(), SendRequest{
+	_, err := app.ExecuteSend(context.Background(), SendRequest{
 		AmountText: "1",
 		AssetRef:   "algo",
 		FromRaw:    []string{"alice"},
@@ -295,10 +283,7 @@ func TestCheckedSendTotal(t *testing.T) {
 // position getting its sender's, so giving them is no longer refused. A
 // target is checked against the senders: a receiver is not one.
 func TestPrepareSendResolvesLogicSigArgsOnAnAtomicSend(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	alice, bob, carol := types.Address{51}.String(), types.Address{52}.String(), types.Address{53}.String()
 	eng.AliasCache.Aliases = map[string]string{"alice": alice}
 	eng.SetCache.Sets = map[string][]string{"friends": {bob, carol}}
@@ -441,10 +426,7 @@ func batchesString(batches []*signerapi.SignBatch) string {
 // Running a send labels copies of its transactions, so the plan stays as it
 // was prepared.
 func TestNonAtomicSendLeavesThePlanAsPrepared(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	plan := &NonAtomicSendPlan{Amount: asa.Amount{Raw: 1_000_000}}
 	for i := 0; i < 3; i++ {

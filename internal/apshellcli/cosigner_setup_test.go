@@ -77,10 +77,7 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 	}, true); err != nil {
 		t.Fatal(err)
 	}
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -122,10 +119,7 @@ func TestReadRequiredSetupValuePreservesCase(t *testing.T) {
 
 func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 	dataDir := t.TempDir()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg := config.DefaultConfig()
 	var out bytes.Buffer
 	state := &REPLState{
@@ -151,17 +145,14 @@ func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 
 func TestCosignerSetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T) {
 	dataDir := t.TempDir()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg := config.DefaultConfig()
 	state := &REPLState{
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
 		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
 
-	_, err = state.cmdEndpoints([]string{
+	_, err := state.cmdEndpoints([]string{
 		"add", "ssh://127.0.0.1:1", "--alias", "field",
 	}, nil)
 	if err == nil {
@@ -261,10 +252,7 @@ func testCLIWitnessReference(t *testing.T) witness.PublicReference {
 
 func TestCosignerStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
 	dir := t.TempDir()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg := config.DefaultConfig()
 	state := &REPLState{App: apshellapp.New(eng, cfg, dir), DataDir: dir, AutoConfirm: true}
 	result, err := state.cmdCosigner([]string{"status"}, nil)
@@ -285,10 +273,7 @@ func TestCosignerStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
 
 func newEndpointsAddTestState(t *testing.T, dataDir string, out *bytes.Buffer) *REPLState {
 	t.Helper()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		t.Fatal(err)

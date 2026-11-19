@@ -379,10 +379,7 @@ type rekeyReviewFixture struct {
 
 func newRekeyReviewFixture(t *testing.T) rekeyReviewFixture {
 	t.Helper()
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	f := rekeyReviewFixture{
 		eng:    eng,
 		native: reviewTestAddress(20), rotating: reviewTestAddress(21), htlc: reviewTestAddress(22),
@@ -727,10 +724,7 @@ func TestReviewRefusesArgumentsForAPluginSignedSlotBeforeShowingIt(t *testing.T)
 	plugin := pluginTxn.Sender.String()
 	for name, token := range map[string]string{"untargeted": "arg:preimage=text:x", "for the plugin's account": "arg:" + plugin + ":preimage=text:x"} {
 		t.Run(name, func(t *testing.T) {
-			eng, err := newIsolatedTestEngine(t, "testnet")
-			if err != nil {
-				t.Fatalf("NewEngine() error = %v", err)
-			}
+			eng := newIsolatedTestEngine(t, "testnet")
 			var out bytes.Buffer
 			asked := false
 			state := &REPLState{
@@ -741,7 +735,7 @@ func TestReviewRefusesArgumentsForAPluginSignedSlotBeforeShowingIt(t *testing.T)
 			if err := cmdspec.AddLsigArg(&args, token); err != nil {
 				t.Fatal(err)
 			}
-			_, _, err = reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
+			_, _, err := reviewPluginTransactions(state, &jsonrpc.ExecuteResult{
 				Success:       true,
 				GroupMode:     jsonrpc.GroupModePresignPlan,
 				Transactions:  rawIntents(approvalTestPayment(7, 2, 1), pluginTxn),

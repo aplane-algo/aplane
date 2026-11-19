@@ -146,10 +146,7 @@ func TestCloseOutRequiresBaseMinBalance(t *testing.T) {
 	}
 
 	// 3. The client refuses before building anything.
-	eng, err := engine.NewEngine("localnet", engine.WithAlgodClient(testnet.Client))
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := engine.NewEngine("localnet", engine.WithAlgodClient(testnet.Client))
 	if _, _, err := eng.PrepareClose(ctx, engine.CloseAccountParams{From: sponsor.address.String(), CloseTo: funderAddr}); err == nil ||
 		!strings.Contains(err.Error(), "minimum balance requirement") {
 		t.Fatalf("PrepareClose error = %v, want the minimum balance preflight", err)

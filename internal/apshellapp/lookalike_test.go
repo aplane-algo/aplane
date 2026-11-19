@@ -24,10 +24,7 @@ func lookalikeAddresses() (real, fake string) {
 
 func lookalikeTestApp(t *testing.T, aliases map[string]string, held ...string) *App {
 	t.Helper()
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = aliases
 	eng.SignerCache.Keys = map[string]string{}
 	for _, address := range held {

@@ -36,10 +36,7 @@ func TestEndpointMachineProjectionOmitsCredentialPaths(t *testing.T) {
 func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := config.DefaultConfig()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	var out bytes.Buffer
 	state := &REPLState{
 		Out:               &out,
@@ -95,10 +92,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.DefaultConfig()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	state := &REPLState{
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
 		currentCommandCtx: context.Background(),
@@ -182,10 +176,7 @@ func TestRenderEndpointsListOmitsCachedCosignerInventory(t *testing.T) {
 func TestEndpointAliasCommandsSeeEndpointsAddedElsewhere(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := config.DefaultConfig()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	state := &REPLState{
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
 		currentCommandCtx: context.Background(),

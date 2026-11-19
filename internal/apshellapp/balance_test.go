@@ -26,10 +26,7 @@ import (
 const testAddress = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 
 func TestBalanceSingleAccountRequiresAlgod(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	res, err := app.Balance(context.Background(), BalanceRequest{Args: []string{testAddress, "algo"}})
@@ -42,10 +39,7 @@ func TestBalanceSingleAccountRequiresAlgod(t *testing.T) {
 }
 
 func TestBalanceRejectsTooManyArgs(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	if _, err := app.Balance(context.Background(), BalanceRequest{Args: []string{"a", "b", "c"}}); err == nil {
@@ -56,10 +50,7 @@ func TestBalanceRejectsTooManyArgs(t *testing.T) {
 // A set none of whose accounts can be queried is an error that names the
 // count and the first failure, not an empty listing: here there is no algod.
 func TestBalanceOfASetNoAccountOfWhichCanBeQueriedFails(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	cfg := config.DefaultConfig()
 	eng.SetCache.Sets = map[string][]string{
@@ -102,10 +93,7 @@ func balanceQueryApp(t *testing.T, aliases map[string]string, failing, failingAg
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AlgodClient = client
 	eng.AliasCache.Aliases = aliases
 	team := make([]string, 0, len(aliases))

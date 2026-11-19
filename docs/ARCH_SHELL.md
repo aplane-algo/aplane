@@ -306,10 +306,12 @@ Callers use those entry points or `internal/asa` directly rather than reaching i
 
 #### Functional Options Pattern
 
-The Engine uses functional options for configuration:
+A session's Engine comes from `NewInitializedEngine(network, cfg, dataDir)`,
+which loads the client caches from the data directory. `NewEngine` builds one
+from functional options, which tests use to set only the state they need:
 
 ```go
-eng, err := engine.NewEngine("testnet",
+eng := engine.NewEngine("testnet",
     engine.WithDataDir(dataDir),
     engine.WithAlgodClient(client),
     engine.WithASACache(asaCache),

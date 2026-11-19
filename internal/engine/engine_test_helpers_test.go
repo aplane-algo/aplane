@@ -129,7 +129,7 @@ func setupEngineWithMockAlgod(t *testing.T, transport *accountMockTransport) *En
 		}
 	}
 
-	eng, err := NewEngine("testnet",
+	eng := NewEngine("testnet",
 		WithAlgodClient(client),
 		WithCacheStore(cacheStore),
 		WithSignerCache(signerCache),
@@ -137,9 +137,6 @@ func setupEngineWithMockAlgod(t *testing.T, transport *accountMockTransport) *En
 		WithAuthCache(authCache),
 		WithSetCache(setCache),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 	return eng
 }
 

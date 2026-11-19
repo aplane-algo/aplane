@@ -11,10 +11,7 @@ import (
 )
 
 func TestStartupConnectDecisionNoDefaultEndpoint(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 
 	decision := app.StartupConnectDecision()
@@ -24,10 +21,7 @@ func TestStartupConnectDecisionNoDefaultEndpoint(t *testing.T) {
 }
 
 func TestStartupConnectDecisionWithDefaultSignerEndpoint(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	cfg := config.DefaultConfig()
 	cfg.Endpoints = config.ClientEndpointRegistry{

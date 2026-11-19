@@ -375,10 +375,7 @@ func TestConcurrentEndpointCreatesReportAppliedPlan(t *testing.T) {
 
 func newEndpointTestApp(t *testing.T, dataDir string) *App {
 	t.Helper()
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := engine.NewEngine("testnet")
 	return New(eng, config.DefaultConfig(), dataDir)
 }
 

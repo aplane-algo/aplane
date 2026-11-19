@@ -156,10 +156,7 @@ func newLsigArgsEngine(t *testing.T, keys []signerapi.KeyInfo, authAddrs map[str
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	f.eng, err = NewEngine("testnet", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	f.eng = NewEngine("testnet", WithAlgodClient(client))
 	f.eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 	return f
 }

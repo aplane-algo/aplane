@@ -18,14 +18,11 @@ import (
 // runJSScriptMode runs a JavaScript script file.
 func runJSScriptMode(network string, cfg config.Config, dataDir string, scriptPath string) {
 	// Initialize Engine
-	eng, err := engine.NewInitializedEngine(network, &cfg, dataDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to initialize engine: %v\n", err)
-		os.Exit(1)
-	}
+	eng := engine.NewInitializedEngine(network, &cfg, dataDir)
 
 	// Read script from file or stdin
 	var content []byte
+	var err error
 	if scriptPath == "-" {
 		content, err = io.ReadAll(os.Stdin)
 	} else {
@@ -49,11 +46,7 @@ func runJSScriptMode(network string, cfg config.Config, dataDir string, scriptPa
 // runJSExpression runs a single JavaScript expression.
 func runJSExpression(network string, cfg config.Config, dataDir string, expr string) {
 	// Initialize Engine
-	eng, err := engine.NewInitializedEngine(network, &cfg, dataDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to initialize engine: %v\n", err)
-		os.Exit(1)
-	}
+	eng := engine.NewInitializedEngine(network, &cfg, dataDir)
 
 	// Create runner and execute
 	runner := standaloneScriptRunner(eng, cfg, dataDir)

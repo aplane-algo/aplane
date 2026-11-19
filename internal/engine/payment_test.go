@@ -20,7 +20,7 @@ func testAddress(index int) types.Address {
 
 // TestPreparePayment_NoAlgodClient tests error when algod client is not configured
 func TestPreparePayment_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	// AlgodClient is nil by default
 
 	params := SendPaymentParams{
@@ -37,7 +37,7 @@ func TestPreparePayment_NoAlgodClient(t *testing.T) {
 
 // TestPrepareClose_NoAlgodClient tests error when algod client is not configured
 func TestPrepareClose_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	// AlgodClient is nil by default
 
 	params := CloseAccountParams{

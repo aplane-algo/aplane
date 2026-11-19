@@ -14,16 +14,13 @@ import (
 )
 
 func TestAppCallRawResolvesSender(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 	}
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 
-	_, err = app.AppCallRaw(context.Background(), AppCallRawRequest{
+	_, err := app.AppCallRaw(context.Background(), AppCallRawRequest{
 		AppID: 123,
 		From:  "alice",
 		Wait:  true,

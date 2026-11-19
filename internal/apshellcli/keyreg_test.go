@@ -144,10 +144,7 @@ func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *key
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	eng, err := engine.NewEngine("testnet", engine.WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 	eng.SignerCache.Keys = map[string]string{}
 	for address := range keys {

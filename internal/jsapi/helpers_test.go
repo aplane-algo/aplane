@@ -445,10 +445,7 @@ func TestToUint64Interface(t *testing.T) {
 // parseTxnOptions' {fee, wait} and a note, via JS runtime.
 func TestParseTxnOptions(t *testing.T) {
 	vm := goja.New()
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	api := NewAPI(eng, nil)
 	api.runtime = vm
 
@@ -563,10 +560,7 @@ func TestParseTxnOptions(t *testing.T) {
 // overloaded argument parsing. This calls the real method used by jsOptOut.
 func TestOptOutOverloadParsing(t *testing.T) {
 	vm := goja.New()
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	api := NewAPI(eng, nil)
 	api.runtime = vm
 

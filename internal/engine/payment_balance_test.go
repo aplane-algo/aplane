@@ -14,7 +14,7 @@ import (
 )
 
 func TestPreparePayment_NoAlgodClientError(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, _, err := eng.PreparePayment(context.Background(), SendPaymentParams{From: testAddr(1), To: testAddr(2), Amount: 1000})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
@@ -139,7 +139,7 @@ func TestPreparePayment_WithClose(t *testing.T) {
 }
 
 func TestPrepareClose_NoAlgodClientError(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, _, err := eng.PrepareClose(context.Background(), CloseAccountParams{From: testAddr(1), CloseTo: testAddr(2)})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)

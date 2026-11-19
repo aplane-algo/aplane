@@ -18,10 +18,7 @@ import (
 func testREPLForSimulate(t *testing.T) *REPLState {
 	t.Helper()
 
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 
 	repl := &REPLState{
 		App:     apshellapp.New(eng, config.DefaultConfig(), t.TempDir()),

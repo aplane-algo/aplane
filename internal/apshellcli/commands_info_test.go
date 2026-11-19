@@ -97,10 +97,7 @@ func TestCmdHelpShowsDetailedPluginCommandHelp(t *testing.T) {
 func newHelpTestState(t *testing.T, dataDir string) *REPLState {
 	t.Helper()
 
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 
 	state := &REPLState{
 		App:             apshellapp.New(eng, config.DefaultConfig(), dataDir),

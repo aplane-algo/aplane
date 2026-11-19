@@ -13,16 +13,13 @@ import (
 )
 
 func TestAppCallMethodResolvesSender(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 	}
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 
-	_, err = app.AppCallMethod(context.Background(), AppCallMethodRequest{
+	_, err := app.AppCallMethod(context.Background(), AppCallMethodRequest{
 		AppID:   123,
 		Method:  "foo()void",
 		ABIPath: "abi.json",

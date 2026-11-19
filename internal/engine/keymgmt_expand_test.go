@@ -29,14 +29,11 @@ func TestEngineGenerateKeyExpandsAddressListParams(t *testing.T) {
 	newKey := testAddr(32) // address the signer returns for the new key
 
 	aliasCache := cache.AliasCache{Aliases: map[string]string{"friend": friend}}
-	eng, err := NewEngine("testnet",
+	eng := NewEngine("testnet",
 		WithSignerCache(cache.NewSignerCache()),
 		WithCacheStore(cache.NewStore(t.TempDir())),
 		WithAliasCache(aliasCache),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 
 	var captured map[string]string
 	handler := func(req *http.Request) (*http.Response, error) {
@@ -73,7 +70,7 @@ func TestEngineGenerateKeyExpandsAddressListParams(t *testing.T) {
 	eng.Connection = &engconnect.ConnectionState{SignerClient: client}
 
 	// recipients given as a raw address + an alias, in unsorted order.
-	_, err = eng.GenerateKey(context.Background(), "test.generic-policy.v1",
+	_, err := eng.GenerateKey(context.Background(), "test.generic-policy.v1",
 		map[string]string{"recipients": addrB + ",friend"})
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)

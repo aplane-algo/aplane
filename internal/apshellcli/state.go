@@ -75,10 +75,7 @@ type REPLState struct {
 // NewREPLState creates a new REPLState with initialized runtime and app layers.
 // Shared client mechanics live in Engine; shell command use-cases live in apshellapp.
 func NewREPLState(network string, config *config.Config, dataDir string) (*REPLState, error) {
-	eng, err := engine.NewInitializedEngine(network, config, dataDir)
-	if err != nil {
-		return nil, err
-	}
+	eng := engine.NewInitializedEngine(network, config, dataDir)
 	_ = eng.StartClientCacheWatcher()
 
 	state := &REPLState{

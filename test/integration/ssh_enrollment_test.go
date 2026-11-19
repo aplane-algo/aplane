@@ -49,10 +49,7 @@ func TestRequestEnrollmentQueuesAndApprovalEnrolls(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	sshCfg := mustLoadClientSSHConfig(t)
 
 	var started string
@@ -134,13 +131,10 @@ func TestRequestEnrollmentTOFURejectsUnknownHost(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	_, err = eng.RequestEnrollmentWithContext(context.Background(),
+	_, err := eng.RequestEnrollmentWithContext(context.Background(),
 		sshCfg.Host,
 		sshCfg.Port,
 		sshCfg.IdentityFile,
@@ -224,10 +218,7 @@ func TestRequestEnrollmentOperatorRejects(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	sshCfg := mustLoadClientSSHConfig(t)
 	result, err := requestEnrollmentViaEngine(t, eng, sshCfg, nil)
 	if err != nil || !result.Pending {
@@ -265,10 +256,7 @@ func TestRequestEnrollmentPersistsAcrossRestart(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	sshCfg := mustLoadClientSSHConfig(t)
 	result, err := requestEnrollmentViaEngine(t, eng, sshCfg, nil)
 	if err != nil || !result.Pending {
@@ -403,10 +391,7 @@ func TestRequestEnrollmentDuplicateIsIdempotent(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	sshCfg := mustLoadClientSSHConfig(t)
 
 	hostApprovals := 0
@@ -573,10 +558,7 @@ func TestImportClientKeyPreEnrolls(t *testing.T) {
 	if err != nil || !strings.Contains(output, "Signer verified over SSH") {
 		t.Fatalf("expected a connection with the imported key: %v\noutput:\n%s", err, output)
 	}
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	if result, err := requestEnrollmentViaEngine(t, eng, mustLoadClientSSHConfig(t), nil); err != nil || result.Pending {
 		t.Fatalf("request for an imported key = %+v, %v, want already enrolled", result, err)
 	}
@@ -601,10 +583,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	defer ipcClient.Close()
 
 	_, clientCfg := mustLoadDefaultSignerEndpoint(t)
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 
 	result, err := requestEnrollmentViaEngineWithIdentity(t, eng, clientCfg, "", nil)
 	if err != nil || !result.Pending {
@@ -638,10 +617,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 
 	t.Setenv("SSH_AUTH_SOCK", "")
 	t.Setenv("SSH_AGENT_PID", "")
-	engNoAgent, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine for no-agent check: %v", err)
-	}
+	engNoAgent := engine.NewEngine(harness.IntegrationNetwork())
 	_, err = engNoAgent.RequestEnrollmentWithContext(context.Background(), clientCfg.Host, clientCfg.Port, "", clientCfg.KnownHostsPath, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected missing-agent enroll to fail")
@@ -665,10 +641,7 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	sshCfg := mustLoadClientSSHConfig(t)
 
 	result, err := requestEnrollmentViaEngine(t, eng, sshCfg, func(host, hostFingerprint string) (bool, error) {
@@ -815,14 +788,11 @@ func TestConnectFailsWhenKnownHostsPathMissingOrUnwritable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
+	eng := engine.NewEngine(harness.IntegrationNetwork())
 	sshCfg := mustLoadClientSSHConfig(t)
 	badKnownHostsPath := filepath.Join(nowriteDir, "subdir", "known_hosts")
 
-	_, err = eng.RequestEnrollmentWithContext(context.Background(),
+	_, err := eng.RequestEnrollmentWithContext(context.Background(),
 		sshCfg.Host,
 		sshCfg.Port,
 		sshCfg.IdentityFile,

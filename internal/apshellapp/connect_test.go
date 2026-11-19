@@ -15,14 +15,11 @@ import (
 // Connect fails closed on an identity file that does not exist, before any
 // network activity.
 func TestConnectRequiresIdentityFile(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	dataDir := t.TempDir()
 	app := New(eng, config.DefaultConfig(), dataDir)
-	_, err = app.Connect(context.Background(), ConnectRequest{
+	_, err := app.Connect(context.Background(), ConnectRequest{
 		Host:           "localhost",
 		SSHPort:        1,
 		IdentityFile:   dataDir + "/missing_id",
@@ -34,10 +31,7 @@ func TestConnectRequiresIdentityFile(t *testing.T) {
 }
 
 func TestDisconnectNoOpWhenNotConnected(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	res, err := app.Disconnect(context.Background())
@@ -50,13 +44,10 @@ func TestDisconnectNoOpWhenNotConnected(t *testing.T) {
 }
 
 func TestConnectConfiguredRequiresDefaultSignerEndpoint(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.ConnectConfigured(context.Background(), nil, nil)
+	_, err := app.ConnectConfigured(context.Background(), nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no default signer endpoint") {
 		t.Fatalf("ConnectConfigured() error = %v, want missing default endpoint error", err)
 	}

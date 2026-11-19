@@ -20,10 +20,7 @@ import (
 )
 
 func TestMCPRunsOnlyAvailablePluginCommands(t *testing.T) {
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 
 	pm := pluginmanager.NewManager()
 	var started []*pluginmanager.Instance
