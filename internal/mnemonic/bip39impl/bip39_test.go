@@ -4,6 +4,7 @@
 package bip39impl
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -190,5 +191,29 @@ func TestBIP39Handler_EntropyToMnemonic_Deterministic(t *testing.T) {
 
 	if mnemonic1 != mnemonic2 {
 		t.Error("EntropyToMnemonic() should be deterministic")
+	}
+}
+
+// GenerateMnemonic zeroes the fresh entropy when it fails after reading it.
+// A handler for a word count BIP-39 does not define (13 words, 17 bytes of
+// entropy) fails to turn the entropy into words.
+func TestGenerateMnemonicZeroesEntropyOnFailure(t *testing.T) {
+	var read []byte
+	original := readEntropy
+	readEntropy = func(b []byte) (int, error) {
+		for i := range b {
+			b[i] = 0xA5
+		}
+		read = b
+		return len(b), nil
+	}
+	t.Cleanup(func() { readEntropy = original })
+
+	words, seed, entropy, err := NewHandler("falcon1024", 13).GenerateMnemonic()
+	if err == nil || words != "" || seed != nil || entropy != nil {
+		t.Fatalf("GenerateMnemonic() = %q, %x, %x, %v; want a failure", words, seed, entropy, err)
+	}
+	if len(read) == 0 || !bytes.Equal(read, make([]byte, len(read))) {
+		t.Fatalf("entropy left as %x", read)
 	}
 }
