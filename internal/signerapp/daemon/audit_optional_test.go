@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"context"
+	"net/http"
 	"path/filepath"
 	"testing"
 
@@ -57,14 +58,17 @@ func TestChangeStorePassphraseWithoutAnAuditLog(t *testing.T) {
 	}
 }
 
-// A clean shutdown in that mode returns without a panic.
+// The plan Run hands RunLifecycle carries no logger in that mode, so a
+// clean shutdown returns without a panic.
 func TestLifecycleWithoutAnAuditLogShutsDownCleanly(t *testing.T) {
+	plan := (&Signer{}).lifecyclePlan(nil, &http.Server{}, nil, func() {})
+	if plan.AuditLog != nil {
+		t.Fatalf("lifecycle plan AuditLog = %#v, want nil", plan.AuditLog)
+	}
+	plan.Services = nil // the audit shutdown alone; no listeners
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := signerstartup.RunLifecycle(ctx, signerstartup.LifecyclePlan{
-		AuditLog: optionalAuditLog[signerstartup.ServerAuditLogger](nil),
-	})
-	if err != nil {
+	if err := signerstartup.RunLifecycle(ctx, plan); err != nil {
 		t.Fatalf("RunLifecycle() = %v, want nil", err)
 	}
 }

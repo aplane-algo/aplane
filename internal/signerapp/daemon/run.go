@@ -275,23 +275,33 @@ func Run(dataDir string) int {
 
 	// A service that fails to start or serve exits non-zero (RunLifecycle has
 	// already logged it); a shutdown signal exits 0.
-	runErr := signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
+	runErr := signerstartup.RunLifecycle(runCtx, server.lifecyclePlan(ir, httpServer, apiListener, cancelHTTPRequests))
+	if runErr != nil {
+		return 1
+	}
+	return 0
+}
+
+// lifecyclePlan is the signer process's lifecycle: the services RunLifecycle
+// starts and stops, in order, and the audit log it records the stop in.
+func (fs *Signer) lifecyclePlan(ir *productruntime.Runtime, httpServer *http.Server, apiListener *sshtunnel.APIListener, cancelHTTPRequests context.CancelFunc) signerstartup.LifecyclePlan {
+	return signerstartup.LifecyclePlan{
 		ProductRuntime:  ir,
 		ShutdownTimeout: 5 * time.Second,
-		AuditLog:        optionalAuditLog[signerstartup.ServerAuditLogger](auditLog),
+		AuditLog:        optionalAuditLog[signerstartup.ServerAuditLogger](fs.auditLog),
 		StartWatcher: func(product *productruntime.Runtime) {
 			product.EnsureKeyWatcher(startKeyWatcherForDir)
 		},
 		Services: []signerstartup.LifecycleService{
-			stageTableWorkerService(server),
+			stageTableWorkerService(fs),
 			{
 				Name: "IPC server",
 				Start: func(ctx context.Context, errs chan<- error) error {
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
-					if server.ipcServer != nil {
-						server.ipcServer.Stop()
+					if fs.ipcServer != nil {
+						fs.ipcServer.Stop()
 					}
 					return nil
 				},
@@ -302,7 +312,7 @@ func Run(dataDir string) int {
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
-					return server.stopSSHRuntime(ctx)
+					return fs.stopSSHRuntime(ctx)
 				},
 			},
 			{
@@ -338,11 +348,7 @@ func Run(dataDir string) int {
 		Error: func(msg string) {
 			logErrorf("%s", msg)
 		},
-	})
-	if runErr != nil {
-		return 1
 	}
-	return 0
 }
 
 // unlockAtStartup unlocks the store with the passphrase a helper or the test
