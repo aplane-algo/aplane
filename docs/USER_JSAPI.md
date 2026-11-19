@@ -781,7 +781,21 @@ same as `appCallRaw`.
 A method with an ARC-4 transaction argument (`txn`, `pay`, `axfer` and the
 other transaction types), a reference argument (`account`, `asset`,
 `application`), or more than 15 arguments is refused, with an error that
-names which of these it has. Build such a call with `appCallRaw()`.
+names which of these it has.
+
+`appCallRaw()` can build some of those calls by hand: a method whose only
+transaction argument is one `pay` from the caller to the app address (the
+`pay` option is that payment), reference arguments, and more than 15
+arguments. It cannot build any other transaction argument (`txn`, `axfer`,
+`appl`, `acfg`, `keyreg`, `afrz`), a `pay` to another receiver or from
+another sender, or more than one transaction argument, because it adds at
+most that one payment. `appArgs` then holds, in order: the method's 4-byte
+selector, then each argument in its ABI encoding, with the extra arguments
+packed into one tuple; a reference argument is a one-byte index into
+`accounts` (0 is the sender), `apps` (0 is the called app) or `assets`
+(from 0). How to compute the selector, write each encoding and pack the
+arguments is in the shell's [`app call raw`](USER_COMMANDS.md#app) notes;
+the same byte forms work here.
 
 | JavaScript value | Accepted for |
 |------------------|--------------|

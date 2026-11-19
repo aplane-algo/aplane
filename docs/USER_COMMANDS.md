@@ -1281,15 +1281,50 @@ Byte-oriented values such as app boxes, raw app args, and LogicSig `arg:`
 values accept the forms listed in [Byte Encodings](#byte-encodings). A
 `--pay` companion payment is sent by the same account as the call, so the
 call's [LogicSig arguments](#logicsig-arguments) reach both.
+
 `app call` builds a method's call from its value arguments only. A method
 with an ARC-4 transaction argument (`txn`, `pay`, `axfer` and the other
 transaction types), a reference argument (`account`, `asset`,
 `application`), or more than 15 arguments is refused when it is looked up,
-and the error names which of these it has. For such a method, build the
-call with `app call raw`, which sends its app arguments (`arg-raw=`, the
-method selector first) and references (`account=`, `asset=`, `app=`)
-exactly as given; `--pay` puts a payment to the app address just before the
-call.
+and the error names which of these it has.
+
+Some of those calls can be built by hand with `app call raw`, which sends
+its app arguments (`arg-raw=`) and references (`account=`, `app=`,
+`asset=`) exactly as given, and adds at most one transaction: a `--pay`
+payment from the caller to the app address, just before the call.
+
+| The method has | With `app call raw` |
+|---|---|
+| One `pay` argument, paid by the caller to the app address | Can be built: `--pay <microalgos>` is that payment |
+| `account`, `asset` or `application` arguments | Can be built |
+| More than 15 arguments | Can be built, packing the extra arguments by hand |
+| Any other transaction argument (`txn`, `axfer`, `appl`, `acfg`, `keyreg`, `afrz`), a `pay` to another receiver or from another sender, or more than one transaction argument | Cannot be built |
+
+For a call that can be built, the app arguments are, in order:
+
+- The method's 4-byte selector: the first 4 bytes of the SHA-512/256 hash of
+  the method's full signature, such as `transfer(account,uint64)void`. No
+  apshell command prints it. Compute it, for example with
+  `printf '%s' 'transfer(account,uint64)void' | openssl dgst -sha512-256 -r | cut -c1-8`,
+  which prints `8b4357d2`, and pass it as `arg-raw=hex:8b4357d2`.
+- Then one app argument for each method argument, in the method's order,
+  except the `pay` argument, which takes none: the `--pay` payment stands
+  for it.
+  - A value argument is its ABI encoding. `int:<n>` writes a `uint64` and
+    `addr:<address>` an `address`; write any other type in its ABI encoding
+    with `hex:`. A `string` or `byte[]` starts with its 2-byte length, so
+    `text:` is not its encoding.
+  - A reference argument is one byte, a `uint8` index into the call's
+    lists. For `account`, 0 is the sender and 1 is the first `account=`;
+    for `application`, 0 is the called app and 1 is the first `app=`; for
+    `asset`, 0 is the first `asset=`. Write it as `hex:00`, `hex:01`, and
+    so on.
+- With more than 15 such arguments, arguments 1 to 14 are app arguments 2
+  to 15, and arguments 15 and later go, ABI-encoded as one tuple, in the
+  16th app argument.
+
+For example, `transfer(account,uint64)void` sending 5000 to `bob`:
+`app call raw 123 from alice account=bob arg-raw=hex:8b4357d2 arg-raw=hex:01 arg-raw=int:5000`.
 
 An ABI argument (`--arg`) for a `uintN`, `byte` or `ufixedNxM` type must be a
 plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
