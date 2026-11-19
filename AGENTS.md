@@ -305,10 +305,19 @@ slips through, not the process.
 ## Security Guidelines
 
 ### Key Material
-- Zero sensitive data after use: `crypto.ZeroBytes(data)`
-- Use `crypto.SecureString` for passphrases
+- Reading a running signer's memory is outside the threat model. What is
+  defended is the process boundary: memory is locked against swap
+  (`mlockall()`) and core dumps are disabled. See "Process Memory Threat
+  Model" in `docs/ARCH_SECURITY.md`.
+- Hold secrets in buffers aplane owns: `[]byte`, `protocol.SensitiveBytes`,
+  or `internal/secretbuf` for input that grows. Zero them on every exit path
+  with `crypto.ZeroBytes(data)`, refusals and early returns included.
+- Do not turn a secret into a string to call a function aplane owns; give the
+  function a bytes parameter.
+- Zeroing is defence in depth, not a guarantee. Do not write a parser or
+  encoder only to avoid a copy a library makes. List the copy under "Residual
+  Copies" in `docs/ARCH_SECURITY.md` instead.
 - Never log key material or passphrases
-- Lock memory to prevent swap: `mlockall()`
 
 ### Authentication
 - HTTP: connection identity from the enrolled SSH key that opened the tunnel (no header credential)

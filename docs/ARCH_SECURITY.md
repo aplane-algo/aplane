@@ -1664,7 +1664,7 @@ This pipeline keeps handler code behind the `Authorizer` interface.
 | Key derivation | Argon2id (memory-hard, GPU-resistant) |
 | Encryption | AES-256-GCM (authenticated encryption) |
 | Socket security | `/run/apsigner` mode 0750, Unix socket mode 0660, strict non-writable parent validation |
-| Memory protection | `mlockall()` prevents swap when enabled successfully, keys zeroed after use (see below) |
+| Memory protection | `mlockall()` prevents swap when enabled successfully, core dumps disabled, secrets zeroed after use (see Process Memory Threat Model below) |
 | Single active admin session | Only one apadmin/apapprover admin connection at a time over IPC |
 
 ### Keyring Encryption
@@ -1929,13 +1929,62 @@ error rather than treating an incomplete drain as success. The clean shutdown
 destroy path stops watcher dispatch before draining key operations and zeroing
 the keyring.
 
+#### Process Memory Threat Model
+
+While it runs, the signer holds decrypted key material, term keys and
+passphrases in its memory. Reading the memory of a running signer is outside
+aplane's threat model. Anyone who can do that can read its keys, and aplane
+does not try to prevent it. That includes root on the host, a debugger
+attached to the process, and a hypervisor with access to the guest's memory.
+
+What aplane does defend is the boundary of that memory, so secrets never
+leave the process:
+
+- **Swap.** `mlockall()` locks every current and future page, so no page is
+  written to swap.
+- **Core dumps.** `RLIMIT_CORE` is set to 0, so a crash writes no memory image
+  to disk.
+- **Startup check.** `require_memory_protection: true` refuses to start unless
+  both measures took effect (see Memory Protection under Keyring Encryption).
+- **Process isolation.** The shipped systemd unit runs the signer as its own
+  `aplane` user, with `CAP_IPC_LOCK` and `LimitMEMLOCK=infinity` for the lock
+  and `NoNewPrivileges`. So only root and that user's own processes can read
+  its memory. Run the signer under a dedicated user wherever it is deployed.
+
+Within that boundary, aplane zeroes the secrets in buffers it owns once they
+are no longer needed. This is defence in depth, not a guarantee. It shortens
+how long a secret stays in memory, so a later leak finds less, but Go cannot
+promise that no copy remains:
+
+- **Strings.** Strings are immutable and cannot be wiped. Any API that takes
+  or returns a secret as a string leaves a copy behind.
+- **Library buffers.** Libraries keep buffers of their own that callers cannot
+  reach. Examples are encoding/json's pooled encoder buffer and a
+  `json.Decoder`'s input buffer.
+- **The runtime.** It copies a goroutine's stack when the stack grows, and it
+  does not clear memory it frees.
+
+Code follows four rules:
+
+- Hold secrets in buffers aplane owns: `[]byte`, `protocol.SensitiveBytes`,
+  or `internal/secretbuf` for input that grows. Zero them on every exit path,
+  refusals and early returns included.
+- Where an API comes in both forms, use the one that takes bytes. Do not turn
+  a secret into a string to call a function aplane owns; change the function
+  to take bytes.
+- Do not replace a library, or write a parser or encoder, only to avoid a copy
+  the library makes. Record the copy under Residual Copies instead.
+- A missed zeroing of a buffer aplane owns is a defect. A copy in a string a
+  library forces, or in a library's own buffer, is not, provided Residual
+  Copies lists it.
+
 #### Passphrase Zeroing Discipline
 
-Every code path that converts a passphrase string to `[]byte` zeros the byte slice after use:
+Code that handles a passphrase holds it as bytes and zeroes them on every exit
+path:
 
 ```go
-passphraseBytes := []byte(passphrase)
-defer crypto.ZeroBytes(passphraseBytes)
+defer crypto.ZeroBytes(passphrase)
 ```
 
 This applies to:
@@ -1952,10 +2001,10 @@ This applies to:
 #### Residual Copies
 
 Zeroing covers the buffers aplane owns. The copies below are made by code that
-takes strings or keeps its own buffers. aplane cannot clear them, and accepts
-them. They stay in process memory, which is excluded from core dumps and
-locked against swap when memory protection is enabled, until the runtime
-reuses or frees it.
+takes or returns strings, or keeps its own buffers. aplane cannot clear them,
+and accepts them under the Process Memory Threat Model above. They stay in
+process memory, which is excluded from core dumps and locked against swap
+when memory protection is enabled, until the runtime reuses or frees it.
 
 - **Imported recovery phrase.** apadmin's import form keeps the phrase in a
   `bubbles/textarea` model, which holds runes and makes a new string on every
@@ -1974,6 +2023,20 @@ reuses or frees it.
   The returned plaintext and the decoded term keys are zeroed; those two
   buffers are not. Hand-encoding and hand-decoding the fixed payload would
   remove them, at the cost of a second strict parser in modeled crypto code.
+- **Key file payloads.** A key file's payload is JSON, so the private key and
+  recovery entropy pass through encoding/json as hex text:
+  `json.MarshalIndent` on save, and a strict `json.Decoder` on load. Those
+  buffers keep copies, as for the store root. `internal/keys/payload_codec.go`
+  also holds the hex text in string fields of its wire struct (`payloadWire`).
+  A zeroable hex type would remove those copies, though not the library's.
+  The decoded `Payload` holds the key as bytes, zeroed when the payload is
+  released.
+- **Exported recovery phrase.** The word encoders that turn a key into its
+  recovery phrase return strings: algosdk's `mnemonic` package for Algorand
+  keys, and `falcon-signatures/mnemonic` for BIP-39 words. The export copies
+  the words into a byte buffer that is zeroed after delivery, but the
+  encoder's strings remain. apadmin then draws the phrase on screen as a
+  string, as it does every rendered value.
 - **Login frames.** The signer decodes an `auth` or `auth_only` frame with a
   strict `json.Decoder` (`DisallowUnknownFields`) so an unexpected field is
   refused. The decoder reads the frame, passphrase included, into an internal
@@ -2251,7 +2314,7 @@ token in clear; use an `https://` Indexer when a proxy is in the path.
 | Credential guessing | No shared secret exists; SSH public-key authentication only |
 | SSH key compromise | Per-key revocation closes the key's connections and refuses its next handshake; the key grants no admin capability |
 | Timing attacks | SSH signature verification; no secret comparison on the HTTP path |
-| Memory forensics | `mlockall()`, key zeroing, core dumps disabled |
+| Secrets leaving process memory | `mlockall()` keeps pages out of swap, core dumps disabled, zeroing shortens how long secrets stay in memory. Reading a running signer's memory is outside the threat model (see Process Memory Threat Model) |
 | Swap file leakage | Memory locking prevents swap (`require_memory_protection: true` enforces this) |
 | Socket hijacking | Permissions check, symlink rejection |
 | Blind signing | TxnBytesHex required, transaction verification |
@@ -2354,6 +2417,7 @@ Primary implementation files:
 - `internal/signerapp/daemon/audit_attribution.go`
 - `internal/signerapp/audit/audit.go`
 - `internal/signerapp/chainread/reader.go`, `lookup.go`
+- `internal/security/memory.go` (memory locking and core dumps), `internal/secretbuf/`, `internal/protocol/sensitive.go`
 
 Compatibility-bearing references:
 
