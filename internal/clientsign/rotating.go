@@ -31,13 +31,6 @@ import (
 // after the signer reports that the account moved or the window aged.
 const rotatingRetryAttempts = 3
 
-// RotatingOptions are the submit options of a rotating account transaction.
-// The client knows nothing about stages: it sends the transaction and shows
-// what the signer reports.
-type RotatingOptions struct {
-	SubmitOptions
-}
-
 // SignAndSubmitRotating runs the rotating1 flow for one transaction from a
 // rotating account: prepare, check the prepared group, simulate it unsigned,
 // then sign and submit exactly those bytes. Nothing is revealed before the
@@ -65,7 +58,7 @@ func SignAndSubmitRotating(
 	txn types.Transaction,
 	signerClient *signerclient.Client,
 	algodClient *algod.Client,
-	opts RotatingOptions,
+	opts SubmitOptions,
 ) ([]string, []types.Transaction, error) {
 	if signerClient == nil {
 		return nil, nil, fmt.Errorf("not connected to Signer")
@@ -132,7 +125,7 @@ func signAndSubmitRotatingOnce(
 	txn types.Transaction,
 	signerClient *signerclient.Client,
 	algodClient *algod.Client,
-	opts RotatingOptions,
+	opts SubmitOptions,
 	w io.Writer,
 	feeNotice *string,
 ) ([]string, []types.Transaction, error) {
@@ -173,7 +166,7 @@ func signAndSubmitRotatingOnce(
 		return simIDs, prepared, nil
 	}
 
-	signed, err := signerClient.SignRotatingWithContext(opts.Ctx, rotatingSignRequest(account, prep, opts.SubmitOptions))
+	signed, err := signerClient.SignRotatingWithContext(opts.Ctx, rotatingSignRequest(account, prep, opts))
 	if err != nil {
 		return nil, nil, err
 	}

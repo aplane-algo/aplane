@@ -10,26 +10,22 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/addressbook"
 	"github.com/aplane-algo/aplane/internal/asaset"
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
-// FormatTransactionSummary creates a human-readable summary of a transaction
-// If aliasCache is nil, uses short address format. If provided, shows aliases.
-func FormatTransactionSummary(txn types.Transaction, aliasCache *cache.AliasCache) string {
-	sender := txn.Sender.String()
-	senderFmt := formatAddress(sender, aliasCache)
+// formatTransactionSummary creates a human-readable summary of a transaction
+// with shortened addresses.
+func formatTransactionSummary(txn types.Transaction) string {
+	senderFmt := addressbook.FormatAddressShort(txn.Sender.String())
 
 	switch txn.Type {
 	case types.PaymentTx:
-		receiver := txn.Receiver.String()
-		receiverFmt := formatAddress(receiver, aliasCache)
+		receiverFmt := addressbook.FormatAddressShort(txn.Receiver.String())
 		return fmt.Sprintf("Payment: %s → %s (%s ALGO)",
 			senderFmt, receiverFmt, asaset.FormatFixed(uint64(txn.Amount), 6))
 
 	case types.AssetTransferTx:
-		receiver := txn.AssetReceiver.String()
-		receiverFmt := formatAddress(receiver, aliasCache)
+		receiverFmt := addressbook.FormatAddressShort(txn.AssetReceiver.String())
 		return fmt.Sprintf("Asset Transfer: %s → %s (Asset %d, Amount %d)",
 			senderFmt, receiverFmt, txn.XferAsset, txn.AssetAmount)
 
@@ -40,8 +36,7 @@ func FormatTransactionSummary(txn types.Transaction, aliasCache *cache.AliasCach
 		return fmt.Sprintf("Asset Config: %s (modifying asset %d)", senderFmt, txn.ConfigAsset)
 
 	case types.AssetFreezeTx:
-		target := txn.FreezeAccount.String()
-		targetFmt := formatAddress(target, aliasCache)
+		targetFmt := addressbook.FormatAddressShort(txn.FreezeAccount.String())
 		return fmt.Sprintf("Asset Freeze: %s (asset %d, target %s)",
 			senderFmt, txn.FreezeAsset, targetFmt)
 
@@ -63,9 +58,4 @@ func FormatTransactionSummary(txn types.Transaction, aliasCache *cache.AliasCach
 	default:
 		return fmt.Sprintf("Transaction: %s (type %s)", senderFmt, txn.Type)
 	}
-}
-
-// formatAddress formats an address with alias if available, otherwise shortened.
-func formatAddress(addr string, aliasCache *cache.AliasCache) string {
-	return addressbook.FormatAddressWithAlias(addr, aliasCache)
 }
