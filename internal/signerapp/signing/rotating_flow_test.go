@@ -1189,11 +1189,76 @@ func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
 	if rec, _ = m.Get("B"); !rec.Reused || len(rec.Leaves) != 2 || rec.TxID != "Q" {
 		t.Fatalf("live release after audited = %+v", rec)
 	}
-	// Records without a leaf list still dedupe by TxID.
+	// A record without a leaf list stands for leaf (0, 0) (latestLeaf), so
+	// it dedupes on that leaf and its TxID.
 	m.RecordAudited(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
 	m.Record(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
 	if rec, _ = m.Get("C"); rec.Reused || len(rec.Leaves) != 1 {
 		t.Fatalf("retry of an audited release = %+v", rec)
+	}
+}
+
+// A transaction a retry signed on a second leaf after a loss lists both
+// leaves wherever its releases meet: restored from the log, merged with the
+// memory, or recorded live. Both leaves are then used for every other
+// transaction, the retry keeps its first leaf, and a second leaf that was
+// another transaction's is reuse.
+func TestReleaseMemoryListsEveryLeafOfARetriedTransaction(t *testing.T) {
+	leaf := func(index uint32, txid string) LeafRelease {
+		return LeafRelease{Tree: 0, Index: index, TxID: txid}
+	}
+	spent := func(t *testing.T, rec ReleaseRecord, indexes ...uint32) {
+		t.Helper()
+		for _, i := range indexes {
+			if !rec.LeafUsed(0, i, "D") {
+				t.Fatalf("leaf %d not used for another transaction: %+v", i, rec.Leaves)
+			}
+		}
+	}
+
+	// Restored: the log holds A on 6 and, after a loss, A again on 5.
+	m := &ReleaseMemory{}
+	m.RecordAudited(ReleaseRecord{Account: "R", Stage: 2, TxID: "A", Leaves: []LeafRelease{leaf(6, "A"), leaf(5, "A")}})
+	rec, _ := m.Get("R")
+	spent(t, rec, 5, 6)
+	if rec.Reused || len(rec.Leaves) != 2 {
+		t.Fatalf("one transaction on two leaves = %+v, want both listed, not reused", rec)
+	}
+	if l, ok := rec.LeafFor("A"); !ok || l.Index != 6 {
+		t.Fatalf("LeafFor(A) = %+v, %v; want its first leaf, 6", l, ok)
+	}
+	// An identical retry adds nothing.
+	m.Record(ReleaseRecord{Account: "R", Stage: 2, TxID: "A", Leaves: []LeafRelease{leaf(6, "A")}})
+	if rec, _ = m.Get("R"); len(rec.Leaves) != 2 || rec.Reused {
+		t.Fatalf("identical retry = %+v", rec)
+	}
+
+	// Merged: memory holds B on 5; the log read at the same time holds A on 6
+	// and A's retry on 5, B's leaf.
+	m.Record(ReleaseRecord{Account: "M", Stage: 2, TxID: "B", Leaves: []LeafRelease{leaf(5, "B")}})
+	m.RecordAudited(ReleaseRecord{Account: "M", Stage: 2, TxID: "A", Leaves: []LeafRelease{leaf(6, "A"), leaf(5, "A")}})
+	rec, _ = m.Get("M")
+	spent(t, rec, 5, 6)
+	if !rec.Reused || len(rec.Leaves) != 3 {
+		t.Fatalf("merged retry on another transaction's leaf = %+v, want three listed and reused", rec)
+	}
+	// Merged the other way: memory holds A's retry on 5, which the log lacks.
+	m.Record(ReleaseRecord{Account: "N", Stage: 2, TxID: "A", Leaves: []LeafRelease{leaf(5, "A")}})
+	m.RecordAudited(ReleaseRecord{Account: "N", Stage: 2, TxID: "A", Leaves: []LeafRelease{leaf(6, "A")}})
+	rec, _ = m.Get("N")
+	spent(t, rec, 5, 6)
+	if rec.Reused || len(rec.Leaves) != 2 {
+		t.Fatalf("merged retry the log lacks = %+v", rec)
+	}
+
+	// Live: a release of a listed transaction on another leaf is recorded
+	// as the log records it.
+	m.RecordAudited(ReleaseRecord{Account: "L", Stage: 2, TxID: "B", Leaves: []LeafRelease{leaf(5, "B"), leaf(6, "A")}})
+	m.Record(ReleaseRecord{Account: "L", Stage: 2, TxID: "A", Leaves: []LeafRelease{leaf(5, "A")}})
+	rec, _ = m.Get("L")
+	spent(t, rec, 5, 6)
+	if !rec.Reused || len(rec.Leaves) != 3 || rec.TxID != "A" {
+		t.Fatalf("live retry on another transaction's leaf = %+v", rec)
 	}
 }
 

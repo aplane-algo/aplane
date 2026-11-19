@@ -2211,12 +2211,14 @@ interval: chain reads and paced derivation can stretch it). A release whose
 warning: that transaction can never confirm and the revealed keys still
 control the account. A release still within its window is a note. A read
 that shows the account past the release clears it; a stale read never
-erases a newer release. The record lists the stage's releases and their
-leaves, and a release that repeats a leaf over a different TxID marks the
-record as reused (a retry that re-records the same TxID does not), and the
-mark survives until the account moves past the stage; the audit reader
-applies the same rule across the entries it can see, so a reuse older than
-the retained log goes unreported. An earlier release from the same stage
+erases a newer release. The record lists the stage's releases, each pair
+of leaf and TxID once, so a TxID that a retry signed on a second leaf after
+the history was lost leaves both leaves used. A release that repeats a leaf
+over a different TxID marks the record as reused (an identical retry does
+not, nor does one TxID on two leaves), and the mark survives until the
+account moves past the stage; the audit reader applies the same rules
+across the entries it can see, so a reuse older than the retained log goes
+unreported. An earlier release from the same stage
 that expired while a newer one is still within its window is reported
 through the newer one: the stage is the same, and the newer transaction
 either lands and moves the account or expires and raises the warning, which

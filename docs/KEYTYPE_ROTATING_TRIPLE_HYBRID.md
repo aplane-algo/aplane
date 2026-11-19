@@ -477,6 +477,9 @@ replaces a later stage's history.
 - Releasing a second distinct transaction on the same leaf marks the stage
   reused and warns until the account moves past it. Multiple releases on distinct leaves show an attempt
   count without a reuse warning.
+- Every leaf a release names stays in the history. A transaction that a retry
+  signed on a second leaf, after the history was lost, keeps both leaves used,
+  and the retry is reuse if that leaf was another transaction's.
 
 ### 8.3 Stage table worker and recovery
 
