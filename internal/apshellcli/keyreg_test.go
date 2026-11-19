@@ -13,6 +13,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -47,6 +49,9 @@ type keyregNet struct {
 	eligible, ineligible crypto.Account
 	mu                   sync.Mutex
 	fees                 []uint64
+	// poolError, when set, is what the node says of every pending
+	// transaction, so a wait for a confirmation fails.
+	poolError string
 }
 
 func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *keyregNet) {
@@ -75,9 +80,19 @@ func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *key
 			_ = json.NewEncoder(w).Encode(map[string]string{"txId": "KEYREGTX"})
 		case r.URL.Path == "/v2/status":
 			_ = json.NewEncoder(w).Encode(models.NodeStatus{LastRound: 100})
+		case r.URL.Path == "/v2/transactions/simulate" && r.Method == http.MethodPost:
+			_, _ = io.Copy(io.Discard, r.Body)
+			group := models.SimulateTransactionGroupResult{TxnResults: make([]models.SimulateTransactionResult, 1)}
+			_ = json.NewEncoder(w).Encode(models.SimulateResponse{LastRound: 100, TxnGroups: []models.SimulateTransactionGroupResult{group}})
 		case strings.HasPrefix(r.URL.Path, "/v2/transactions/pending/"):
+			pending := models.PendingTransactionInfoResponse{ConfirmedRound: 101}
+			n.mu.Lock()
+			if n.poolError != "" {
+				pending = models.PendingTransactionInfoResponse{PoolError: n.poolError}
+			}
+			n.mu.Unlock()
 			w.Header().Set("Content-Type", "application/msgpack")
-			_, _ = w.Write(msgpack.Encode(models.PendingTransactionInfoResponse{ConfirmedRound: 101}))
+			_, _ = w.Write(msgpack.Encode(pending))
 		default:
 			http.NotFound(w, r)
 		}
@@ -138,7 +153,9 @@ func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *key
 	for address := range keys {
 		eng.SignerCache.Keys[address] = "ed25519"
 	}
-	return &REPLState{Out: out, App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}, n
+	state := &REPLState{Out: out, App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
+	state.CommandRegistry = state.initCommandRegistry()
+	return state, n
 }
 
 func (n *keyregNet) signedFees() []uint64 {
@@ -287,29 +304,16 @@ func TestKeyregPasteModeReportsTheIncentiveFee(t *testing.T) {
 			if tt.eligibleAccount {
 				account = n.eligible.Address.String()
 			}
-			lines := []string{
-				"Parent address:    " + account,
-				"Selection key:     1+bzBrUVQDWDqcv4Iuv9uRYLp4DPViih4x2MGmKcYus=",
-				"Voting key:        tAtM0mBYE1p5k5KaHOvFYho09qEUEGWzaZs1dmBFWVQ=",
-				"State proof key:   eS1o+ZVYZDkHBgFqhHAdF8Slyb190C+9aopj85xyUDB7342Pn02Fz2sUP+zGYC697vAWnZFT5SKExOG/PB+asQ==",
-				"Key dilution:      1733",
-				"First round:       1",
-				"Last round:        2000",
-				"", "",
-				tt.answer,
-			}
-			state.LineReaderContext = func(context.Context) (string, error) {
-				if len(lines) == 0 {
-					t.Fatal("read past the scripted input")
-				}
-				line := lines[0]
-				lines = lines[1:]
-				return line, nil
-			}
+			pastePartKeyInfo(t, state, account, tt.answer)
 
-			err := state.keyRegPasteMode()
+			result, err := state.keyRegPasteMode()
 			if tt.refuse != (err != nil) {
 				t.Fatalf("keyRegPasteMode() error = %v, refused = %v", err, tt.refuse)
+			}
+			if result != nil {
+				if err := result.RenderText(&out); err != nil {
+					t.Fatalf("RenderText() error = %v", err)
+				}
 			}
 			var want []string
 			if tt.want != "" {
@@ -322,6 +326,95 @@ func TestKeyregPasteModeReportsTheIncentiveFee(t *testing.T) {
 				t.Fatalf("the incentive line comes before the submission:\n%s", out.String())
 			}
 		})
+	}
+}
+
+// pastePartKeyInfo has the shell's prompts read goal's partkeyinfo output for
+// account, then answer the incentive eligibility question.
+func pastePartKeyInfo(t *testing.T, state *REPLState, account, answer string) {
+	t.Helper()
+	lines := []string{
+		"Parent address:    " + account,
+		"Selection key:     1+bzBrUVQDWDqcv4Iuv9uRYLp4DPViih4x2MGmKcYus=",
+		"Voting key:        tAtM0mBYE1p5k5KaHOvFYho09qEUEGWzaZs1dmBFWVQ=",
+		"State proof key:   eS1o+ZVYZDkHBgFqhHAdF8Slyb190C+9aopj85xyUDB7342Pn02Fz2sUP+zGYC697vAWnZFT5SKExOG/PB+asQ==",
+		"Key dilution:      1733",
+		"First round:       1",
+		"Last round:        2000",
+		"", "",
+		answer,
+	}
+	state.LineReaderContext = func(context.Context) (string, error) {
+		if len(lines) == 0 {
+			t.Fatal("read past the scripted input")
+		}
+		line := lines[0]
+		lines = lines[1:]
+		return line, nil
+	}
+}
+
+// Paste mode draws what the argument form draws: the submission's output
+// (the simulation, under simulate) and its warnings, such as a transaction
+// JSON that could not be written.
+func TestKeyregPasteModeDrawsTheSubmissionOutputAndWarnings(t *testing.T) {
+	t.Run("simulated", func(t *testing.T) {
+		var out bytes.Buffer
+		state, n := keyregShell(t, &out, false)
+		pastePartKeyInfo(t, state, n.ineligible.Address.String(), "n")
+
+		if err := state.executeCommand(Command{Name: "simulate", Args: []string{"keyreg"}}); err != nil {
+			t.Fatalf("simulate keyreg: %v\n%s", err, out.String())
+		}
+		if text := out.String(); !strings.Contains(text, "Simulating transaction") || strings.Contains(text, "Key registration submitted") {
+			t.Fatalf("output, want the simulation drawn and nothing submitted:\n%s", text)
+		}
+	})
+	t.Run("a transaction JSON not written", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		var out bytes.Buffer
+		state, n := keyregShell(t, &out, false)
+		if _, err := state.app().SetWriteMode(true); err != nil {
+			t.Fatal(err)
+		}
+		// A file where the transaction JSON directory was: nothing can be written.
+		if err := os.Remove(filepath.Join(dir, "txnjson")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "txnjson"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		pastePartKeyInfo(t, state, n.ineligible.Address.String(), "n")
+
+		if err := state.executeCommand(Command{Name: "keyreg"}); err != nil {
+			t.Fatalf("keyreg: %v\n%s", err, out.String())
+		}
+		text := out.String()
+		if !strings.Contains(text, "✓ Transaction(s) submitted") || !strings.Contains(text, "Warning: failed to write transaction JSON") {
+			t.Fatalf("output, want the submission and the write warning:\n%s", text)
+		}
+	})
+}
+
+// A pasted registration whose confirmation wait failed is drawn with its
+// transaction ID before the error, since it may still confirm.
+func TestKeyregPasteModeNamesTheRegistrationWhoseWaitFailed(t *testing.T) {
+	var out bytes.Buffer
+	state, n := keyregShell(t, &out, false)
+	n.poolError = "transaction dropped"
+	pastePartKeyInfo(t, state, n.ineligible.Address.String(), "n")
+
+	err := state.executeCommand(Command{Name: "keyreg"})
+	var failure *signing.SubmissionError
+	if !errors.As(err, &failure) || !failure.Submitted() || len(failure.TxIDs) != 1 {
+		t.Fatalf("keyreg error = %v, want the submitted registration's wait failure\n%s", err, out.String())
+	}
+	if !strings.Contains(err.Error(), "transaction dropped") {
+		t.Fatalf("error %q does not give the wait's reason", err)
+	}
+	if !strings.Contains(out.String(), "Key registration submitted: "+failure.TxIDs[0]) {
+		t.Fatalf("output does not name the registration %s:\n%s", failure.TxIDs[0], out.String())
 	}
 }
 
@@ -346,7 +439,7 @@ func TestKeyRegPasteModeUsesContextInteractiveLineReader(t *testing.T) {
 		},
 	}
 
-	err := state.keyRegPasteMode()
+	_, err := state.keyRegPasteMode()
 	if err == nil || !strings.Contains(err.Error(), "no input provided") {
 		t.Fatalf("keyRegPasteMode() error = %v, want no input", err)
 	}

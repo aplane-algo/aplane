@@ -5,6 +5,7 @@ package signing
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common"
@@ -66,6 +67,15 @@ func (e *SubmissionError) Submitted() bool {
 
 func submissionFailure(txIDs []string, state SubmissionState, answer *common.HTTPError, err error) error {
 	return &SubmissionError{TxIDs: append([]string(nil), txIDs...), State: state, Answer: answer, Err: err}
+}
+
+// ConfirmationFailure is the failure of the wait for a group that algod
+// accepted, txIDs its transactions in group order: a SubmissionSubmitted
+// SubmissionError whose Err is "confirmation failed: " wrapping err, the
+// wait's own error. A caller that waits on its own, after submitting
+// without a wait, reports the wait with it.
+func ConfirmationFailure(txIDs []string, err error) error {
+	return submissionFailure(txIDs, SubmissionSubmitted, nil, fmt.Errorf("confirmation failed: %w", err))
 }
 
 // algodAnswer returns the HTTP answer algod gave a call that failed, nil when

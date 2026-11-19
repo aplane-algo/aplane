@@ -385,7 +385,10 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 	}, prepResult), nil
 }
 
-// KeyRegFromPartKey prepares and submits online keyreg from parsed goal output.
+// KeyRegFromPartKey prepares and submits online keyreg from parsed goal
+// output, and waits for its confirmation. When the wait fails after algod
+// accepted the registration, which may still confirm, it returns the result,
+// with the transaction's ID and the output so far, beside the error.
 func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.ParsedInfo, incentiveEligible bool) (*KeyRegCommandResult, error) {
 	prepResult, err := a.eng.PrepareKeyReg(ctx, engine.KeyRegParams{
 		Account:           parsed.ParentAddress,
@@ -408,30 +411,28 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
 
-	confirmed := false
-	output := submit.Output
-	if !a.eng.GetSimulate() {
-		confirmation, err := a.eng.WaitForConfirmationResult(ctx, submit.TxID, 9)
-		if confirmation != nil {
-			output += confirmation.Output
-		}
-		if err != nil {
-			return nil, err
-		}
-		confirmed = true
-	}
-
-	return withIncentive(&KeyRegCommandResult{
+	result := withIncentive(&KeyRegCommandResult{
 		Account:        parsed.ParentAddress,
 		Mode:           "online",
 		VoteFirst:      parsed.VoteFirst,
 		VoteLast:       parsed.VoteLast,
 		SigningKeyType: prep.SigningContext.DisplayKeyType,
 		TxID:           submit.TxID,
-		Confirmed:      confirmed,
-		Output:         output,
+		Output:         submit.Output,
 		Warnings:       warningsFromTransactionWriteNotices(submit.WriteNotices),
-	}, prepResult), nil
+	}, prepResult)
+	if a.eng.GetSimulate() {
+		return result, nil
+	}
+	confirmation, err := a.eng.WaitForConfirmationResult(ctx, submit.TxID, 9)
+	if confirmation != nil {
+		result.Output += confirmation.Output
+	}
+	if err != nil {
+		return result, fmt.Errorf("key registration failed: %w", signing.ConfirmationFailure([]string{submit.TxID}, err))
+	}
+	result.Confirmed = true
+	return result, nil
 }
 
 // ListRekeys returns all cached rekey relationships.
