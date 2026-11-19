@@ -301,3 +301,20 @@ func TestLongReadErrorsWrapToTheWindow(t *testing.T) {
 	}
 }
 
+func TestRemainingDaemonErrorsAreEscaped(t *testing.T) {
+	refs := testCosignerReferences()
+	cosigner := Model{width: 100, height: 40, cosigner: cosignerState{references: refs, loaded: true, importError: "remove failed: " + clearScreen}}
+	cosigner.viewState = ViewCosignerReferenceDetails
+	assertNeutralized(t, "cosigner details", cosigner.renderCosignerReferenceDetails(), `remove failed: \x1b[2J`)
+	cosigner.viewState = ViewCosignerRemoveConfirm
+	assertNeutralized(t, "cosigner remove confirm", cosigner.renderCosignerRemoveConfirm(), `remove failed: \x1b[2J`)
+
+	auth := Model{width: 100, height: 40, connectionState: ConnectionConnected, auth: authState{passphraseError: "unlock failed: " + setTitle}}
+	assertNeutralized(t, "passphrase prompt", auth.renderPassphrasePrompt("Unlock", false), `unlock failed: \x1b]0;pwned\a`)
+
+	recovery := Model{width: 100, height: 40, restore: restoreState{recoveryError: "reconcile failed: " + rightToLeft}}
+	assertNeutralized(t, "store recovery", recovery.renderStoreRecovery(), `reconcile failed: \u202e`)
+
+	backup := Model{width: 100, height: 40, backup: backupState{confirmError: "backup failed: " + clearScreen}}
+	assertNeutralized(t, "backup confirm", backup.renderBackupConfirm(), `backup failed: \x1b[2J`)
+}

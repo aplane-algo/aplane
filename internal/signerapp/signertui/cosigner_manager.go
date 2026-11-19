@@ -374,7 +374,7 @@ func (m Model) renderCosignerReferenceDetails() string {
 		body.WriteString("Imported: " + reference.ImportedAt + "\n")
 	}
 	if m.cosigner.importError != "" {
-		body.WriteString("\n" + errorStyle.Render(m.cosigner.importError) + "\n")
+		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.cosigner.importError)) + "\n")
 	}
 	if m.cosigner.managerStatus != "" {
 		body.WriteString("\n" + subtitleStyle.Render(m.cosigner.managerStatus) + "\n")
@@ -430,7 +430,7 @@ func (m Model) renderCosignerRemoveConfirm() string {
 	body.WriteString(cancel + "  " + remove)
 	body.WriteString("\n")
 	if m.cosigner.importError != "" {
-		body.WriteString("\n" + errorStyle.Render(m.cosigner.importError) + "\n")
+		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.cosigner.importError)) + "\n")
 	}
 	return m.renderPopup(80, body.String())
 }

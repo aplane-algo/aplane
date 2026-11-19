@@ -60,7 +60,7 @@ func (m Model) renderBackupConfirm() string {
 
 	if m.backup.confirmError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.backup.confirmError))
+		sb.WriteString(errorStyle.Render(terminalSafeLines(m.backup.confirmError)))
 		sb.WriteString("\n")
 	}
 
