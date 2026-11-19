@@ -49,23 +49,11 @@ var productionSubcommands = map[string]productionCommandKind{
 	archiveSubcommand:     productionCatalog,
 }
 
-var testModeCommandNames = []string{
-	testModeListCommand,
-	testModeGenerateCommand,
-	testModeImportCommand,
-	testModeDeleteCommand,
-	testModeUnlockCommand,
-}
-
-func classifyProductionSubcommand(args []string) (productionCommandKind, bool) {
+// classifyProductionSubcommand returns the kind of the production command
+// args name, or 0 when they name none.
+func classifyProductionSubcommand(args []string) productionCommandKind {
 	if len(args) == 0 {
-		return 0, false
+		return 0
 	}
-	kind, ok := productionSubcommands[args[0]]
-	return kind, ok
-}
-
-func isProductionSubcommand(args []string) bool {
-	_, ok := classifyProductionSubcommand(args)
-	return ok
+	return productionSubcommands[args[0]]
 }

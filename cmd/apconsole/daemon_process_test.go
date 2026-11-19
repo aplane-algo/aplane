@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -295,8 +296,9 @@ func TestDaemonModelUpdatesExitedStatus(t *testing.T) {
 	if m.status != daemonStatusExited {
 		t.Fatalf("status = %s, want %s", m.status, daemonStatusExited)
 	}
-	if m.detail != "exit status 1" {
-		t.Fatalf("detail = %q", m.detail)
+	want := []string{"status: exited", "exit status 1", "apsigner exited: exit status 1"}
+	if got := m.lines[len(m.lines)-len(want):]; !slices.Equal(got, want) {
+		t.Fatalf("last lines = %q, want %q", got, want)
 	}
 }
 

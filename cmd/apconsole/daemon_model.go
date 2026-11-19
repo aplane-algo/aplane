@@ -11,8 +11,6 @@ import (
 
 type daemonModel struct {
 	status       daemonStatus
-	owned        bool
-	detail       string
 	lines        []string
 	events       <-chan daemonEvent
 	scrollOffset int
@@ -32,8 +30,6 @@ func newDaemonModel(info daemonInfo, events <-chan daemonEvent) daemonModel {
 	}
 	return daemonModel{
 		status: info.Status,
-		owned:  info.Owned,
-		detail: info.Detail,
 		lines:  append([]string(nil), lines...),
 		events: events,
 	}
@@ -71,7 +67,6 @@ func (m daemonModel) Update(msg tea.Msg) (daemonModel, tea.Cmd) {
 	case daemonLogMsg:
 		if msg.event.Status != "" {
 			m.status = msg.event.Status
-			m.detail = msg.event.Detail
 			m.appendLine("status: " + string(msg.event.Status))
 			if msg.event.Detail != "" {
 				m.appendLine(msg.event.Detail)

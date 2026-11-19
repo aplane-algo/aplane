@@ -12,11 +12,6 @@ import (
 
 var appLogger = cmdlog.New("apconsole")
 
-func logInfof(format string, args ...any) {
-	// apconsole is an interactive TUI; keep informational startup noise out of
-	// the terminal unless it is rendered inside the console itself.
-}
-
 // logWarnf logs a startup diagnostic through the pipeline. Printed directly, it
 // would be hidden as soon as the alternate screen opens; queued, it reaches the
 // shell pane.

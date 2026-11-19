@@ -102,12 +102,19 @@ func TestProductionAndTestmodeCommandCatalogsAreDisjoint(t *testing.T) {
 			t.Fatalf("production command %q has unroutable kind %d", command, kind)
 		}
 	}
+	testModeCommandNames := []string{
+		testModeListCommand,
+		testModeGenerateCommand,
+		testModeImportCommand,
+		testModeDeleteCommand,
+		testModeUnlockCommand,
+	}
 	for _, command := range testModeCommandNames {
 		if production[command] {
 			t.Fatalf("command %q is both production and testmode-only", command)
 		}
 	}
-	if !isProductionSubcommand([]string{"policy", "check"}) {
+	if classifyProductionSubcommand([]string{"policy", "check"}) != productionPolicy {
 		t.Fatal("policy command did not reach production dispatch")
 	}
 }
