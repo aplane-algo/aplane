@@ -141,7 +141,6 @@ func (a *App) ExecuteSend(ctx context.Context, req SendRequest) (*SendExecutionR
 			return nil, err
 		}
 		nonAtomicResult.FromCount = len(plan.FromAddresses)
-		nonAtomicResult.ToCount = len(plan.ToAddresses)
 		result.NonAtomic = nonAtomicResult
 		if nonAtomicResult.FailureCount > 0 && nonAtomicResult.SuccessCount == 0 {
 			var unsubmitted []string
@@ -225,11 +224,9 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 	}
 
 	return &NonAtomicSendPlan{
-		Amount:    plan.Amount,
-		Items:     items,
-		FromCount: len(plan.FromAddresses),
-		ToCount:   len(plan.ToAddresses),
-		LsigArgs:  plan.LsigArgs,
+		Amount:   plan.Amount,
+		Items:    items,
+		LsigArgs: plan.LsigArgs,
 	}, nil
 }
 
@@ -250,13 +247,12 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 	}
 
 	result := &AtomicSendPlan{
-		Mode:        plan.Mode,
-		Amount:      plan.Amount,
-		From:        plan.FromAddresses,
-		To:          plan.ToAddresses,
-		Wait:        plan.Wait,
-		GroupParams: groupParams,
-		LsigArgs:    plan.LsigArgs,
+		Mode:     plan.Mode,
+		Amount:   plan.Amount,
+		From:     plan.FromAddresses,
+		To:       plan.ToAddresses,
+		Wait:     plan.Wait,
+		LsigArgs: plan.LsigArgs,
 	}
 
 	switch plan.Mode {
@@ -569,28 +565,19 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 	}
 }
 
-// atomicGroupFees sums the fees the group will actually pay. The prepared
-// transactions are the source of truth: when UseFlatFee is off the engine
-// derives each fee from suggested params (per-byte, floored at the min fee),
-// which can exceed the flat reconstruction below. The reconstruction remains
-// as a fallback for plans validated without a prepared group.
+// atomicGroupFees sums the fees the prepared group will pay. They come from
+// the prepared transactions because, when UseFlatFee is off, the engine
+// derives each fee from suggested params (per-byte, floored at the min fee).
 func atomicGroupFees(plan *AtomicSendPlan) (uint64, bool) {
-	if plan.Prep != nil && plan.Prep.enginePrep != nil && len(plan.Prep.enginePrep.Transactions) > 0 {
-		var total uint64
-		for _, txn := range plan.Prep.enginePrep.Transactions {
-			fee := uint64(txn.Fee)
-			if total+fee < total {
-				return 0, false
-			}
-			total += fee
+	var total uint64
+	for _, txn := range plan.Prep.enginePrep.Transactions {
+		fee := uint64(txn.Fee)
+		if total+fee < total {
+			return 0, false
 		}
-		return total, true
+		total += fee
 	}
-	perTxnFee := signing.DefaultMinFee
-	if plan.GroupParams.UseFlatFee {
-		perTxnFee = plan.GroupParams.Fee
-	}
-	return checkedSendTotal(perTxnFee, len(plan.To))
+	return total, true
 }
 
 func checkedSendTotal(amount uint64, count int) (uint64, bool) {

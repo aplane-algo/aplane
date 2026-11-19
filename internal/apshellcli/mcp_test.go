@@ -70,10 +70,7 @@ func TestMCPBalanceParsesAssetOnlyQueryLikeREPL(t *testing.T) {
 }
 
 func TestMCPStructuredWriteReturnsJSON(t *testing.T) {
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
 
 	result := mcpExecuteCommand(state, Command{Name: "write", Args: []string{"on"}})
@@ -86,10 +83,7 @@ func TestMCPStructuredWriteReturnsJSON(t *testing.T) {
 }
 
 func TestMCPStructuredWritePrefersStructuredResultOverTextRendering(t *testing.T) {
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
 
 	textResult, err := execWrite(state, []string{"on"})
@@ -195,10 +189,7 @@ func TestPluginRenderTextPrefersPresentationOverRawMessage(t *testing.T) {
 		},
 	}}
 
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
 	var out bytes.Buffer
 	state.SetOutput(&out)
@@ -222,13 +213,10 @@ func TestPluginRenderTextPrefersPresentationOverRawMessage(t *testing.T) {
 
 func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *testing.T) {
 	store := cache.NewStore(t.TempDir())
-	eng, err := engine.NewEngine("testnet",
+	eng := engine.NewEngine("testnet",
 		engine.WithCacheStore(store),
 		engine.WithAliasCache(cache.LoadAliasCacheFromStore(store)),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
 	state.CommandRegistry = state.initCommandRegistry()
 

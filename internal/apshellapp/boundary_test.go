@@ -255,7 +255,7 @@ func TestSplitGenerateOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !options.HasBoundaryFile || options.BoundaryFile != "rules.yaml" || options.ResultFile != "out.json" {
+	if options.BoundaryFile != "rules.yaml" || options.ResultFile != "out.json" {
 		t.Fatalf("options = %+v", options)
 	}
 	if len(rest) != 2 || rest[0] != "recipients=A" || rest[1] != "boundary=42" {

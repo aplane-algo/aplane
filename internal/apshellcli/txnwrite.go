@@ -60,9 +60,9 @@ func execVerbose(r *REPLState, args []string) (toggleOutcome, error) {
 	}
 }
 
-// toggleSimulate enables/disables transaction simulation mode, or executes
+// cmdSimulate enables/disables transaction simulation mode, or executes
 // a one-shot simulated command: simulate send 5 algo from alice to bob
-func executeSimulate(r *REPLState, args []string) (command.Result, error) {
+func (r *REPLState) cmdSimulate(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) == 0 {
 		enabled := r.app().IsSimulateEnabled()
 		return newShellCommandResult(func(w io.Writer) error {

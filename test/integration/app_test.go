@@ -1603,15 +1603,12 @@ func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL str
 
 	cacheStore := cache.NewStore(t.TempDir())
 
-	eng, err := engine.NewEngine(harness.IntegrationNetwork(),
+	eng := engine.NewEngine(harness.IntegrationNetwork(),
 		engine.WithAlgodClient(algodClient),
 		engine.WithCacheStore(cacheStore),
 		engine.WithSignerCache(cache.NewSignerCache()),
 		engine.WithAuthCache(cache.NewAuthAddressCacheForStore(nil)),
 	)
-	if err != nil {
-		return nil, err
-	}
 
 	eng.Connection.SignerClient = util.NewSignerClient(signerURL)
 	if err := eng.EnsureSignerCache(context.Background()); err != nil {

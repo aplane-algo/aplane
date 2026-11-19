@@ -20,11 +20,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
 )
 
-func (r *REPLState) cmdHelp(args []string, ctx *command.Context) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runHelp(args, ctx)
+func (r *REPLState) cmdHelp(args []string, _ *command.Context) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runHelp(args)
 }
 
-func (r *REPLState) runHelp(args []string, _ *command.Context) error {
+func (r *REPLState) runHelp(args []string) error {
 	if len(args) == 0 {
 		command.ShowHelp(r.Out, r.CommandRegistry)
 		showPluginHelpSummary(r)

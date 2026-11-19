@@ -88,7 +88,7 @@ func TestPrepareGroupLeavesUngroupedAndPreservesMetadata(t *testing.T) {
 }
 
 func TestPreparePaymentAndMethodCall_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 
 	_, err := PreparePaymentMethodGroupWithContext(context.Background(), eng,
 		SendPaymentParams{

@@ -27,16 +27,19 @@ import (
 //   - js -help: print the JavaScript API reference
 //   - js <file.js>, js { code }, js <inline>, and multi-line mode
 func (r *REPLState) cmdJS(args []string, ctx *command.Context) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runJS(args, ctx)
+	return newTerminalCommandResult(nil), r.runJS(args, rawCommandArgs(ctx))
 }
 
-func (r *REPLState) runJS(args []string, ctx *command.Context) error {
-	// Get raw args from context (preserves quotes that ParseCommand strips)
-	rawArgs := ""
+// rawCommandArgs returns a command's arguments as typed, with the quotes
+// ParseCommand strips.
+func rawCommandArgs(ctx *command.Context) string {
 	if ctx != nil {
-		rawArgs = ctx.RawArgs
+		return ctx.RawArgs
 	}
+	return ""
+}
 
+func (r *REPLState) runJS(args []string, rawArgs string) error {
 	if len(args) > 0 && args[0] == "-help" {
 		r.println(strings.TrimRight(docassets.UserJSAPI, "\n"))
 		return nil
@@ -171,16 +174,15 @@ func (r *REPLState) readJSLines(lines []string, isEnd func(line string) bool) (_
 
 // cmdJSSave saves JavaScript code to a file in the data directory's scripts/ folder.
 // Usage: jssave [-f] <path> [-last | <javascript code>]
-func (r *REPLState) cmdJSSave(args []string, ctx *command.Context) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runJSSave(args, ctx)
+func (r *REPLState) cmdJSSave(_ []string, ctx *command.Context) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runJSSave(rawCommandArgs(ctx))
 }
 
-func (r *REPLState) runJSSave(_ []string, ctx *command.Context) error {
-	if ctx == nil || strings.TrimSpace(ctx.RawArgs) == "" {
+func (r *REPLState) runJSSave(rawArgs string) error {
+	raw := strings.TrimSpace(rawArgs)
+	if raw == "" {
 		return fmt.Errorf("usage: jssave [-f] <path> [-last | <javascript code>]")
 	}
-
-	raw := strings.TrimSpace(ctx.RawArgs)
 
 	overwrite := false
 	if strings.HasPrefix(raw, "-f ") {
@@ -213,11 +215,11 @@ func (r *REPLState) runJSSave(_ []string, ctx *command.Context) error {
 }
 
 // cmdJSList lists saved JavaScript scripts in the data directory's scripts/ folder.
-func (r *REPLState) cmdJSList(args []string, ctx *command.Context) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runJSList(args, ctx)
+func (r *REPLState) cmdJSList(_ []string, _ *command.Context) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runJSList()
 }
 
-func (r *REPLState) runJSList(_ []string, _ *command.Context) error {
+func (r *REPLState) runJSList() error {
 	entries, err := listJSScripts(r.DataDir)
 	if err != nil {
 		return err
@@ -275,8 +277,9 @@ func normalizeJSScriptPath(dataDir, scriptPath string) (string, error) {
 	return dest, nil
 }
 
-// saveJSScript writes code to an absolute path under dataDir/scripts/.
-// Returns the final absolute path written.
+// saveJSScript writes code to the path normalizeJSScriptPath resolves: a
+// bare name under dataDir/scripts/, or an absolute path as given. Returns the
+// absolute path written.
 func saveJSScript(dataDir, scriptPath, code string, overwrite bool) (string, error) {
 	dest, err := normalizeJSScriptPath(dataDir, scriptPath)
 	if err != nil {

@@ -161,7 +161,6 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 
 	result := &ValidateCommandResult{
 		Input: req.Account,
-		IsSet: len(req.Account) > 0 && req.Account[0] == '@',
 	}
 	for _, addr := range addresses {
 		item := ValidateItemResult{Address: addr}

@@ -115,10 +115,7 @@ func balanceQueryShell(t *testing.T, aliases map[string]string, failing map[stri
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	eng.AlgodClient = client
 	eng.AliasCache.Aliases = aliases
 	var out bytes.Buffer

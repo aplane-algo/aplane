@@ -21,16 +21,11 @@ import (
 
 // GetStatus returns the current engine status as structured data
 func (e *Engine) GetStatus() *StatusResult {
-	e.Connection.Mu.Lock()
+	isConnected, connectionTarget := e.Connection.Snapshot()
 	signingMode := "disconnected"
-	if e.Connection.TunnelConnected {
+	if isConnected {
 		signingMode = "remote"
-	} else if e.Connection.SignerClient != nil {
-		signingMode = "local"
 	}
-	isConnected := e.Connection.TunnelConnected || e.Connection.SignerClient != nil
-	connectionTarget := e.Connection.ConnectionTarget
-	e.Connection.Mu.Unlock()
 
 	asaCacheCount := 0
 	if e.AsaCache.Assets != nil {

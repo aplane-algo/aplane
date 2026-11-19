@@ -11,10 +11,7 @@ import (
 )
 
 func TestExecutionStateReflectsEngine(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.SetWriteMode(true)
 	eng.SetSimulate(true)
 
@@ -44,10 +41,7 @@ func TestConfigurePluginsUsesCurrentNetworkConfig(t *testing.T) {
 		"testnet": &config.AlgodNetworkConfig{Server: "https://testnet.example", Token: "test-token"},
 	}
 
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	plugins := &fakePluginRuntime{}
 	app := New(eng, cfg, t.TempDir())

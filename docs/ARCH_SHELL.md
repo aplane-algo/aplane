@@ -306,10 +306,12 @@ Callers use those entry points or `internal/asa` directly rather than reaching i
 
 #### Functional Options Pattern
 
-The Engine uses functional options for configuration:
+A session's Engine comes from `NewInitializedEngine(network, cfg, dataDir)`,
+which loads the client caches from the data directory. `NewEngine` builds one
+from functional options, which tests use to set only the state they need:
 
 ```go
-eng, err := engine.NewEngine("testnet",
+eng := engine.NewEngine("testnet",
     engine.WithDataDir(dataDir),
     engine.WithAlgodClient(client),
     engine.WithASACache(asaCache),
@@ -326,20 +328,17 @@ The Engine defines sentinel errors for common conditions:
 
 ```go
 var (
-    ErrNotConnected      = errors.New("not connected to Signer")
-    ErrInvalidAddress    = errors.New("invalid address or alias")
-    ErrInvalidAmount     = errors.New("invalid amount")
-    ErrInvalidAssetID    = errors.New("invalid asset ID")
-    ErrNoSigningKey      = errors.New("no signing key available for address")
-    ErrTransactionFailed = errors.New("transaction failed")
-    ErrAlreadyConnected  = errors.New("already connected")
-    ErrConnectionFailed  = errors.New("connection failed")
-    ErrInvalidNetwork    = errors.New("invalid network")
-    ErrSimulationFailed  = signing.ErrSimulationFailed
-    ErrSignerLocked      = errors.New("signer is locked — unlock via apadmin before signing")
-    ErrNoAlgodClient     = errors.New("algod client not configured")
-    ErrAliasNotFound     = errors.New("alias not found")
-    ErrSetNotFound       = errors.New("set not found")
+    ErrNotConnected     = errors.New("not connected to Signer")
+    ErrInvalidAddress   = errors.New("invalid address or alias")
+    ErrInvalidAssetID   = errors.New("invalid asset ID")
+    ErrNoSigningKey     = errors.New("no signing key available for address")
+    ErrAlreadyConnected = errors.New("already connected")
+    ErrInvalidNetwork   = errors.New("invalid network")
+    ErrSimulationFailed = signing.ErrSimulationFailed
+    ErrSignerLocked     = errors.New("signer is locked — unlock via apadmin before signing")
+    ErrNoAlgodClient    = errors.New("algod client not configured")
+    ErrAliasNotFound    = errors.New("alias not found")
+    ErrSetNotFound      = errors.New("set not found")
 )
 ```
 
@@ -363,7 +362,7 @@ type StatusResult struct {
     Network          string
     IsConnected      bool
     ConnectionTarget string
-    SigningMode      string // "local", "remote", "disconnected"
+    SigningMode      string // "remote", "disconnected"
     WriteMode        bool
     ASACacheCount    int
     AliasCacheCount  int
@@ -391,28 +390,12 @@ type AssetBalance struct {
     IsOptedIn bool
 }
 
-// TransactionResult holds the outcome of a single transaction
-type TransactionResult struct {
-    TxID           string
-    GroupID        string // for atomic groups
-    ConfirmedRound uint64
-    Fee            uint64
-    Sender         string
-    Receiver       string
-    Amount         uint64
-    AssetID        uint64 // 0 for ALGO
-    Note           string
-    WroteToFile    string // file path if write mode enabled
-}
-
-// ConnectionResult holds connection attempt outcome
+// ConnectionResult holds a successful connection's outcome
 type ConnectionResult struct {
-    Connected    bool
-    Target       string
-    Port         int
-    KeyCount     int
-    Locked       bool
-    ErrorMessage string
+    AlreadyConnected bool
+    Target           string
+    KeyCount         int
+    Locked           bool
 }
 
 // ParticipationResult holds consensus participation status for an account
@@ -665,8 +648,9 @@ err := engine.RefreshAuthCache(ctx)
 // IsRekeyed checks if address is rekeyed
 isRekeyed, authAddr := engine.IsRekeyed(address)
 
-// CanSignForAddress checks signing capability
-canSign, isLsig := engine.CanSignForAddress(address)
+// CanSignForAddressWithKind checks signing capability and the authorization
+// envelope the key type produces
+canSign, kind := engine.CanSignForAddressWithKind(address)
 ```
 
 ### Connection API
@@ -707,7 +691,7 @@ if engine.IsTunnelConnected() { ... }
 target := engine.GetConnectionTarget()
 
 // Disconnect
-err := engine.Disconnect()
+engine.Disconnect()
 
 // Ask the node to enroll this client's key; returns at once with the key's
 // SHA256 fingerprint and whether the request now waits for the operator
@@ -820,7 +804,6 @@ type ConnectionState struct {
     SignerClient     *signerclient.Client
     SSHTunnelClient  *sshtunnel.Client
     TunnelConnected  bool
-    TunnelCtx        context.Context
     TunnelCancel     context.CancelFunc
     ConnectionTarget string
     connectingTarget string
@@ -1921,7 +1904,7 @@ submission output, which lists the IDs, and nothing of the outcome.
 | `config` | Use the safe `status` command instead |
 | `script` | Issue commands individually or use `js` |
 | `enroll` | Client enrollment needs interactive host trust; run it in a real apshell |
-| `cosigner` | `cosigner status` and the forwarding alias `cosigner add` are unavailable through MCP; use apshell directly (guided setup is now `endpoints add`) |
+| `cosigner` | `cosigner status` is unavailable through MCP; use apshell directly |
 | `endpoints add` | Guided cosigner endpoint setup needs interactive host trust and an operator approval wait; other `endpoints` subcommands remain structured |
 | `clear`, `cls` | Terminal clearing has no machine meaning |
 | `quit`, `exit`, `q` | Use MCP disconnect instead |

@@ -36,15 +36,58 @@ func TestGetStatus(t *testing.T) {
 		t.Errorf("GetStatus() SigningMode = %v, want 'disconnected'", result.SigningMode)
 	}
 
-	// Test with APlane client (local mode)
 	eng.Connection.SignerClient = &util.Client{}
+	eng.Connection.ConnectionTarget = "ssh://signer"
 	result = eng.GetStatus()
 
 	if !result.IsConnected {
 		t.Error("GetStatus() should be connected with SignerClient")
 	}
-	if result.SigningMode != "local" {
-		t.Errorf("GetStatus() SigningMode = %v, want 'local'", result.SigningMode)
+	if result.SigningMode != "remote" {
+		t.Errorf("GetStatus() SigningMode = %v, want 'remote'", result.SigningMode)
+	}
+	if result.ConnectionTarget != "ssh://signer" {
+		t.Errorf("GetStatus() ConnectionTarget = %q, want ssh://signer", result.ConnectionTarget)
+	}
+}
+
+// A status read while the tunnel drops shows the connection and its target
+// from the same moment: never connected with no target, or a target while
+// disconnected. The goroutine sets and clears them under Mu, as
+// ConnectWithTunnel and the disconnect callback do.
+func TestGetStatusConnectionSnapshotIsConsistent(t *testing.T) {
+	eng := setupTestEngine(t)
+	client := &util.Client{}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		state := eng.Connection
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			state.Mu.Lock()
+			state.SignerClient, state.ConnectionTarget, state.TunnelConnected = client, "signer (ssh:1127)", true
+			state.Mu.Unlock()
+			state.Mu.Lock()
+			state.SignerClient, state.ConnectionTarget, state.TunnelConnected = nil, "", false
+			state.Mu.Unlock()
+		}
+	}()
+	defer func() {
+		close(stop)
+		wg.Wait()
+	}()
+
+	for i := 0; i < 20000; i++ {
+		status := eng.GetStatus()
+		if status.IsConnected != (status.ConnectionTarget != "") || status.IsConnected != (status.SigningMode == "remote") {
+			t.Fatalf("snapshot %d: connected = %v, target = %q, mode = %q; want one moment's connection", i, status.IsConnected, status.ConnectionTarget, status.SigningMode)
+		}
 	}
 }
 
@@ -93,9 +136,7 @@ func TestDisconnectClearsSignerCacheAndConnectedStatus(t *testing.T) {
 		"ADDR2": "aplane.falcon1024.v1",
 	}
 
-	if err := eng.Disconnect(); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	eng.Disconnect()
 	if eng.IsConnected() {
 		t.Fatal("engine should report disconnected after Disconnect()")
 	}

@@ -26,18 +26,28 @@ func TestBeginConnectRejectsConcurrentAttempt(t *testing.T) {
 	}
 }
 
+func TestSnapshotReportsConnectionAndTarget(t *testing.T) {
+	state := NewState()
+	if connected, target := state.Snapshot(); connected || target != "" {
+		t.Fatalf("Snapshot() = (%v, %q), want (false, \"\")", connected, target)
+	}
+	state.SignerClient = util.NewSignerClient("http://localhost:1")
+	state.ConnectionTarget = "remote"
+	if connected, target := state.Snapshot(); !connected || target != "remote" {
+		t.Fatalf("Snapshot() = (%v, %q), want (true, \"remote\")", connected, target)
+	}
+}
+
 func TestDisconnectInvokesCallbackOutsideLock(t *testing.T) {
 	state := NewState()
 	state.SignerClient = util.NewSignerClient("http://localhost:1")
 	state.ConnectionTarget = "remote"
 
 	done := make(chan struct{})
-	if err := state.Disconnect(func() {
+	state.Disconnect(func() {
 		_ = state.GetConnectionTarget()
 		close(done)
-	}); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	})
 
 	select {
 	case <-done:

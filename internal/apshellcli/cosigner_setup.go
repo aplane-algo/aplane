@@ -14,16 +14,13 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
-const cosignerUsage = "cosigner status | cosigner add ... (now: endpoints add)"
+const cosignerUsage = "cosigner status"
 
 const endpointsAddUsage = "endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]"
 
 // endpointsAddFileHint answers an operator who hands the client the cosigner's
 // key file, which belongs on the signer.
 const endpointsAddFileHint = "endpoints add takes the cosigner's URL (for example ssh://cosigner.example:1127), not a file; the cosigner's key file is imported on the signer with apadmin"
-
-// cosignerAddForwardNotice is printed when the former command name is used.
-const cosignerAddForwardNotice = "Note: 'cosigner add' is now 'endpoints add'; continuing."
 
 type cosignerSetupCLIOptions struct {
 	request apshellapp.CosignerSetupRequest
@@ -60,10 +57,6 @@ func (r *REPLState) cmdCosigner(args []string, _ *command.Context) (command.Resu
 				}
 			})
 		}, result.CosignerStatusResult)
-	}
-	if len(args) > 0 && args[0] == "add" {
-		r.println(cosignerAddForwardNotice)
-		return r.runEndpointsAdd(args[1:])
 	}
 	return nil, errors.New("usage: " + cosignerUsage)
 }

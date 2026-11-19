@@ -208,10 +208,7 @@ func newArgsFixture(t *testing.T) *argsFixture {
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	f.eng, err = engine.NewEngine("testnet", engine.WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	f.eng = engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	f.eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 	if _, err := f.eng.RefreshKeys(context.Background()); err != nil {
 		t.Fatalf("RefreshKeys() error = %v", err)

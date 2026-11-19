@@ -86,16 +86,13 @@ func newTempStoreEngine(t *testing.T) *engine.Engine {
 	t.Helper()
 
 	cacheStore := cache.NewStore(t.TempDir())
-	eng, err := engine.NewEngine("testnet",
+	eng := engine.NewEngine("testnet",
 		engine.WithCacheStore(cacheStore),
 		engine.WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
 		engine.WithSetCache(cache.LoadSetCacheFromStore(cacheStore)),
 		engine.WithSignerCache(cache.LoadSignerCacheFromStore(cacheStore)),
 		engine.WithAuthCache(cache.LoadAuthCacheFromStore(cacheStore, "testnet")),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 	return eng
 }
 

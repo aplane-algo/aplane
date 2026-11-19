@@ -38,7 +38,7 @@ func testFixturePath(t *testing.T, elems ...string) string {
 }
 
 func TestPrepareAppCallRaw_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 
 	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID: 123,
@@ -160,7 +160,7 @@ func TestEnsureAppReferences(t *testing.T) {
 }
 
 func TestPrepareAppCallMethod_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 
 	_, err := eng.PrepareAppCallMethod(context.Background(), MethodAppCallParams{
 		ABIPath: testFixturePath(t, "testapp", "aplane_test.json"),
@@ -359,15 +359,12 @@ func TestPrepareAppCallMethod_SuccessEncodesMethodAndPropagatesLsigArgs(t *testi
 func newAppCallTestEngine(t *testing.T, client *algod.Client, address string) *Engine {
 	t.Helper()
 
-	eng, err := NewEngine("testnet",
+	eng := NewEngine("testnet",
 		WithAlgodClient(client),
 		WithAliasCache(cache.AliasCache{Aliases: map[string]string{}}),
 		WithSignerCache(cache.NewSignerCache()),
 		WithAuthCache(cache.NewAuthAddressCacheForStore(nil)),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 
 	eng.SignerCache.AddAddress(address, "ed25519")
 	eng.AuthCache.AuthAddresses[address] = ""

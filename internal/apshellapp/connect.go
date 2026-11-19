@@ -11,7 +11,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/clientenroll"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/engine"
 	engineconnect "github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -37,7 +36,6 @@ type ConnectRequest struct {
 	SSHPort         int
 	IdentityFile    string
 	KnownHostsPath  string
-	EndpointName    string
 	HostKeyApproval sshtunnel.HostKeyApprovalHandler
 	OnDisconnect    func()
 }
@@ -92,11 +90,11 @@ func (a *App) Connect(ctx context.Context, req ConnectRequest) (*ConnectResult, 
 // ConnectConfigured establishes an SSH tunnel using the configured default endpoint.
 func (a *App) ConnectConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
 	registry := a.Config.ClientEndpointsOrDefault()
-	alias, endpoint, ok := registry.DefaultEndpoint()
+	_, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("no default signer endpoint in endpoints.yaml")
 	}
-	return a.connectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
+	return a.connectEndpoint(ctx, endpoint, hostKeyApproval, onDisconnect)
 }
 
 // ConnectEndpointAlias establishes an SSH tunnel to a configured endpoint alias.
@@ -105,7 +103,7 @@ func (a *App) ConnectEndpointAlias(ctx context.Context, alias string, hostKeyApp
 	if err != nil {
 		return nil, err
 	}
-	return a.connectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
+	return a.connectEndpoint(ctx, endpoint, hostKeyApproval, onDisconnect)
 }
 
 // SetIdentityCreatedHandler sets what happens when connecting generates a new SSH
@@ -122,7 +120,7 @@ func (a *App) configuredEndpoint(alias string) (config.ClientEndpointConfig, err
 	return endpoint, nil
 }
 
-func (a *App) connectEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
+func (a *App) connectEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
 	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return nil, err
@@ -132,7 +130,6 @@ func (a *App) connectEndpoint(ctx context.Context, alias string, endpoint config
 		SSHPort:         endpointSSH.Port,
 		IdentityFile:    endpointSSH.IdentityFile,
 		KnownHostsPath:  endpointSSH.KnownHostsPath,
-		EndpointName:    alias,
 		HostKeyApproval: hostKeyApproval,
 		OnDisconnect:    onDisconnect,
 	})
@@ -144,9 +141,7 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	if !wasConnected {
 		return &DisconnectResult{WasConnected: false}, nil
 	}
-	if err := a.eng.Disconnect(); err != nil {
-		return nil, err
-	}
+	a.eng.Disconnect()
 	return &DisconnectResult{
 		WasConnected: true,
 		Summary:      Summary{Message: "Tunnel disconnected"},
@@ -231,5 +226,3 @@ func decorateConnectResult(res *ConnectResult) {
 		res.RenderLines = append(res.RenderLines, fmt.Sprintf("✓ Loaded %d signing key(s)", res.KeyCount))
 	}
 }
-
-var _ = engine.ErrAlreadyConnected

@@ -589,10 +589,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		t.Fatalf("MakeClient() error = %v", err)
 	}
 
-	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 	engine.Simulate = true
 
@@ -666,13 +663,10 @@ func TestSignAndSubmitWithPluginSignersRejectsNilAlgodBeforeSigning(t *testing.T
 		presignTestTxn(t, pluginAccount.Address.String(), "plugin"),
 		presignTestTxn(t, managedAccount.Address.String(), "managed"),
 	}
-	engine, err := NewEngine("test")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test")
 	engine.Simulate = true
 	var pluginCalls atomic.Int32
-	_, err = engine.SignAndSubmitWithPluginSigners(
+	_, err := engine.SignAndSubmitWithPluginSigners(
 		context.Background(),
 		txns,
 		map[string]string{pluginAccount.Address.String(): "plugin-ref"},
@@ -700,12 +694,9 @@ func TestSignAndSubmitWithPluginSignersRejectsUnsupportedConsensusBeforePlanning
 	}
 	client, server := consensusTestAlgod(t, string(protocol.ConsensusV41), nil)
 	defer server.Close()
-	engine, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test", WithAlgodClient(client))
 	var pluginCalls atomic.Int32
-	_, err = engine.SignAndSubmitWithPluginSigners(
+	_, err := engine.SignAndSubmitWithPluginSigners(
 		context.Background(),
 		txns,
 		map[string]string{pluginAccount.Address.String(): "plugin-ref"},
@@ -780,10 +771,7 @@ func TestSignAndSubmitWithPluginSignersRefusesANonCanonicalPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 
 	var pluginCalls atomic.Int32
@@ -865,10 +853,7 @@ func TestSignAndSubmitWithPluginSignersRefusesAFeeRaiseOnAPluginSlot(t *testing.
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 
 	var pluginCalls atomic.Int32
@@ -956,10 +941,7 @@ func TestSignAndSubmitWithPluginSignersKeepsThePlanLinesWhenALaterStepFails(t *t
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	engine, err := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test", append(presignManagedCaches(managedAccount.Address.String()), WithAlgodClient(algodClient))...)
 	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 
 	result, err := engine.SignAndSubmitWithPluginSigners(

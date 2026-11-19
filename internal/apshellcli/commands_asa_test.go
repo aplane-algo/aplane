@@ -41,13 +41,12 @@ func TestCmdInfoShowsTheAssetsSupplyAndRoles(t *testing.T) {
 	}))
 	defer node.Close()
 
-	eng, err := newIsolatedTestEngine(t, "testnet")
+	eng := newIsolatedTestEngine(t, "testnet")
+	algodClient, err := algod.MakeClient(node.URL, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if eng.AlgodClient, err = algod.MakeClient(node.URL, ""); err != nil {
-		t.Fatal(err)
-	}
+	eng.AlgodClient = algodClient
 	eng.AsaCache = cache.LoadASACacheFromStore(eng.CacheStore, "testnet")
 	repl := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir()), DataDir: t.TempDir()}
 

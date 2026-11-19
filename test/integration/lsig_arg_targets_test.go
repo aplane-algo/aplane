@@ -202,10 +202,7 @@ func (env *lsigArgTargetEnv) balance(t *testing.T, address string) uint64 {
 // and the network.
 func (env *lsigArgTargetEnv) app(t *testing.T) *apshellapp.App {
 	t.Helper()
-	eng, err := engine.NewEngine(env.testnet.Network, engine.WithAlgodClient(env.testnet.Client))
-	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
-	}
+	eng := engine.NewEngine(env.testnet.Network, engine.WithAlgodClient(env.testnet.Client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(env.signerd.GetURL())
 	return apshellapp.New(eng, config.DefaultConfig(), t.TempDir())
 }

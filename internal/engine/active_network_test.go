@@ -109,11 +109,8 @@ func TestCheckActiveNetworkComparesEachTransactionsGenesis(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client, _, _ := networkTestAlgod(t, testnet, "testnet-v1.0")
-			eng, err := NewEngine("testnet", WithAlgodClient(client))
-			if err != nil {
-				t.Fatalf("NewEngine() error = %v", err)
-			}
-			err = eng.checkActiveNetwork(context.Background(), tt.txns)
+			eng := NewEngine("testnet", WithAlgodClient(client))
+			err := eng.checkActiveNetwork(context.Background(), tt.txns)
 			if len(tt.wants) == 0 {
 				if err != nil {
 					t.Fatalf("checkActiveNetwork() error = %v, want accepted", err)
@@ -135,12 +132,9 @@ func TestCheckActiveNetworkComparesEachTransactionsGenesis(t *testing.T) {
 // An algod that names no genesis cannot vouch for any transaction's network.
 func TestCheckActiveNetworkRefusesAnAlgodWithoutAGenesisHash(t *testing.T) {
 	client, _, _ := networkTestAlgod(t, nil, "")
-	eng, err := NewEngine("testnet", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithAlgodClient(client))
 	txn := networkTestTxn(t, crypto.GenerateAccount().Address.String(), make([]byte, 32), "")
-	err = eng.checkActiveNetwork(context.Background(), []types.Transaction{txn})
+	err := eng.checkActiveNetwork(context.Background(), []types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "algod reported a genesis hash of 0 bytes, want 32") {
 		t.Fatalf("checkActiveNetwork() error = %v, want the missing genesis refused", err)
 	}
@@ -152,10 +146,7 @@ func TestCheckActiveNetworkRefusesAnAlgodWithoutAGenesisHash(t *testing.T) {
 func TestCheckActiveNetworkReusesTheSuggestedParamsRead(t *testing.T) {
 	testnet := testGenesisHash(t, config.AlgorandTestnetGenesisHash)
 	client, paramsCalls, _ := networkTestAlgod(t, testnet, "testnet-v1.0")
-	eng, err := NewEngine("testnet", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithAlgodClient(client))
 	sp, err := eng.getSuggestedParamsWithFee(context.Background(), 0, false)
 	if err != nil {
 		t.Fatalf("getSuggestedParamsWithFee() error = %v", err)
@@ -169,8 +160,8 @@ func TestCheckActiveNetworkReusesTheSuggestedParamsRead(t *testing.T) {
 		if err := eng.checkActiveNetwork(context.Background(), []types.Transaction{txn}); err != nil {
 			t.Fatalf("checkActiveNetwork() error = %v", err)
 		}
-		if err := eng.validateAlgodConsensus(context.Background()); err != nil {
-			t.Fatalf("validateAlgodConsensus() error = %v", err)
+		if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
+			t.Fatalf("activeAlgodNetwork() error = %v", err)
 		}
 	}
 	if got := paramsCalls.Load(); got != 1 {
@@ -253,10 +244,7 @@ func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 			}))
 			t.Cleanup(signer.Close)
 			client, _, otherAlgodCalls := networkTestAlgod(t, testnet, "testnet-v1.0")
-			eng, err := NewEngine("testnet", WithAlgodClient(client))
-			if err != nil {
-				t.Fatalf("NewEngine() error = %v", err)
-			}
+			eng := NewEngine("testnet", WithAlgodClient(client))
 			eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 
 			// The refusal is reported as itself, not as a failure of a step
@@ -301,12 +289,9 @@ func TestGroupPlanningRefusesUndecodableRequestsBeforeSigner(t *testing.T) {
 			}))
 			t.Cleanup(signer.Close)
 			client, _, _ := networkTestAlgod(t, testnet, "testnet-v1.0")
-			eng, err := NewEngine("testnet", WithAlgodClient(client))
-			if err != nil {
-				t.Fatalf("NewEngine() error = %v", err)
-			}
+			eng := NewEngine("testnet", WithAlgodClient(client))
 			eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
-			_, err = eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{tt.request})
+			_, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{tt.request})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("RequestGroupPlanWithContext() error = %v, want %q", err, tt.want)
 			}

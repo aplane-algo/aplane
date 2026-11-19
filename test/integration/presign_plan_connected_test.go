@@ -82,10 +82,7 @@ func TestPresignPlanConnectedEngineSubmit(t *testing.T) {
 	}
 
 	// --- engine connected to the real apsigner + algod ---
-	eng, err := engine.NewEngine(cfg.Network, engine.WithAlgodClient(cfg.Client))
-	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
-	}
+	eng := engine.NewEngine(cfg.Network, engine.WithAlgodClient(cfg.Client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signerd.GetURL())
 	if !eng.IsConnected() {
 		t.Fatal("engine not connected to signer after wiring SignerClient")

@@ -108,10 +108,7 @@ func TestSignedTransactionsWarnWhenTheRefreshAfterARekeyFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	eng, err := engine.NewEngine("testnet", engine.WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 

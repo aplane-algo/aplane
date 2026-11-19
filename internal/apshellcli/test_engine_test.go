@@ -10,7 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
-func newIsolatedTestEngine(t *testing.T, network string) (*engine.Engine, error) {
+func newIsolatedTestEngine(t *testing.T, network string) *engine.Engine {
 	t.Helper()
 	store := cache.NewStore(t.TempDir())
 	return engine.NewEngine(network,

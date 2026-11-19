@@ -27,17 +27,17 @@ func (rt connectRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 func TestConnectionStateSignerClientErrorsWhenDisconnected(t *testing.T) {
 	state := NewState()
 
-	if _, err := state.GetKeys(); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("GetKeys() error = %v, want not connected", err)
+	if _, err := state.GetKeysWithContext(t.Context()); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("GetKeysWithContext() error = %v, want not connected", err)
 	}
-	if _, err := state.GetKeyTypes(); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("GetKeyTypes() error = %v, want not connected", err)
+	if _, err := state.GetKeyTypesWithContext(t.Context()); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("GetKeyTypesWithContext() error = %v, want not connected", err)
 	}
-	if _, err := state.GetSignerStatus(); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("GetSignerStatus() error = %v, want not connected", err)
+	if _, err := state.GetSignerStatusWithContext(t.Context()); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("GetSignerStatusWithContext() error = %v, want not connected", err)
 	}
-	if _, err := state.AdminGenerate("ed25519", nil); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("AdminGenerate() error = %v, want not connected", err)
+	if _, err := state.AdminGenerateWithContext(t.Context(), "ed25519", nil); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("AdminGenerateWithContext() error = %v, want not connected", err)
 	}
 	if _, err := state.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{}); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
 		t.Fatalf("RequestComponentsWithContext() error = %v, want not connected", err)
@@ -112,25 +112,25 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 
 	state := &ConnectionState{SignerClient: client}
 
-	keys, err := state.GetKeys()
+	keys, err := state.GetKeysWithContext(t.Context())
 	if err != nil || keys.Count != 1 {
-		t.Fatalf("GetKeys() = (%+v, %v), want count=1 nil", keys, err)
+		t.Fatalf("GetKeysWithContext() = (%+v, %v), want count=1 nil", keys, err)
 	}
-	keyTypes, err := state.GetKeyTypes()
+	keyTypes, err := state.GetKeyTypesWithContext(t.Context())
 	if err != nil || len(keyTypes.KeyTypes) != 1 {
-		t.Fatalf("GetKeyTypes() = (%+v, %v), want one key type nil", keyTypes, err)
+		t.Fatalf("GetKeyTypesWithContext() = (%+v, %v), want one key type nil", keyTypes, err)
 	}
-	identity, err := state.GetSignerStatus()
+	identity, err := state.GetSignerStatusWithContext(t.Context())
 	if err != nil || identity.KeysetRevision != 2 {
-		t.Fatalf("GetSignerStatus() = (%+v, %v), want revision=2 nil", identity, err)
+		t.Fatalf("GetSignerStatusWithContext() = (%+v, %v), want revision=2 nil", identity, err)
 	}
-	gen, err := state.AdminGenerate("ed25519", nil)
+	gen, err := state.AdminGenerateWithContext(t.Context(), "ed25519", nil)
 	if err != nil || gen.Address != "ADDR2" {
-		t.Fatalf("AdminGenerate() = (%+v, %v), want ADDR2 nil", gen, err)
+		t.Fatalf("AdminGenerateWithContext() = (%+v, %v), want ADDR2 nil", gen, err)
 	}
-	del, err := state.AdminDeleteKey("ADDR2")
+	del, err := state.AdminDeleteKeyWithContext(t.Context(), "ADDR2")
 	if err != nil || !del.Success {
-		t.Fatalf("AdminDeleteKey() = (%+v, %v), want success nil", del, err)
+		t.Fatalf("AdminDeleteKeyWithContext() = (%+v, %v), want success nil", del, err)
 	}
 	recovered, err := state.RotatingRecoverWithContext(t.Context(), signerapi.RotatingRecoverRequest{Account: "ADDR3", Action: "start", MaxStages: 9})
 	if err != nil || recovered.GrantID != 7 || recovered.Account != "ADDR3" || recovered.Recovery.MaxStages != 9 {

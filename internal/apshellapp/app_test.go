@@ -11,10 +11,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	cfg := config.DefaultConfig()
 	app := New(eng, cfg, "/tmp/apclient")

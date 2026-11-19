@@ -21,22 +21,16 @@ import (
 )
 
 func TestGetASAInfoRequiresAlgodClient(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 
-	_, err = eng.GetASAInfoWithContext(context.Background(), 10458941)
+	_, err := eng.GetASAInfoWithContext(context.Background(), 10458941)
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("GetASAInfoWithContext() error = %v, want ErrNoAlgodClient", err)
 	}
 }
 
 func TestCacheASAInitializesMap(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 
 	eng.cacheASA(&ASAInfo{
 		AssetID:  42,
@@ -54,31 +48,6 @@ func TestCacheASAInitializesMap(t *testing.T) {
 	}
 }
 
-func TestSaveASACachePersistsCurrentNetwork(t *testing.T) {
-	store := cache.NewStore(t.TempDir())
-	eng, err := NewEngine("testnet",
-		WithCacheStore(store),
-		WithASACache(cache.LoadASACacheFromStore(store, "testnet")),
-	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
-	eng.AsaCache.Assets[900001] = cache.ASAInfo{Name: "Persisted", UnitName: "PST", Decimals: 3}
-	if err := eng.SaveASACache(); err != nil {
-		t.Fatalf("SaveASACache() error = %v", err)
-	}
-
-	reloaded := cache.LoadASACacheFromStore(store, "testnet")
-	got, ok := reloaded.Assets[900001]
-	if !ok {
-		t.Fatal("persisted asset missing after reload")
-	}
-	if got.Name != "Persisted" || got.UnitName != "PST" || got.Decimals != 3 {
-		t.Fatalf("reloaded asset = %+v, want Persisted/PST/3", got)
-	}
-}
-
 func TestRemoveASAFromCachePersistsDeletion(t *testing.T) {
 	store := cache.NewStore(t.TempDir())
 	asaCache := cache.LoadASACacheFromStore(store, "testnet")
@@ -87,10 +56,7 @@ func TestRemoveASAFromCachePersistsDeletion(t *testing.T) {
 		t.Fatalf("SaveCache() error = %v", err)
 	}
 
-	eng, err := NewEngine("testnet", WithCacheStore(store), WithASACache(cache.LoadASACacheFromStore(store, "testnet")))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithCacheStore(store), WithASACache(cache.LoadASACacheFromStore(store, "testnet")))
 
 	if err := eng.RemoveASAFromCache(900002); err != nil {
 		t.Fatalf("RemoveASAFromCache() error = %v", err)
@@ -106,12 +72,9 @@ func TestRemoveASAFromCachePersistsDeletion(t *testing.T) {
 }
 
 func TestRemoveASAFromCacheRejectsMissingAsset(t *testing.T) {
-	eng, err := NewEngine("testnet", WithASACache(cache.ASACache{Assets: map[uint64]cache.ASAInfo{}}))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithASACache(cache.ASACache{Assets: map[uint64]cache.ASAInfo{}}))
 
-	err = eng.RemoveASAFromCache(999999)
+	err := eng.RemoveASAFromCache(999999)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -121,15 +84,12 @@ func TestRemoveASAFromCacheRejectsMissingAsset(t *testing.T) {
 }
 
 func TestListCachedASAsReturnsAllEntries(t *testing.T) {
-	eng, err := NewEngine("testnet", WithASACache(cache.ASACache{
+	eng := NewEngine("testnet", WithASACache(cache.ASACache{
 		Assets: map[uint64]cache.ASAInfo{
 			2: {Name: "Two", UnitName: "TWO", Decimals: 2},
 			1: {Name: "One", UnitName: "ONE", Decimals: 1},
 		},
 	}))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 
 	got := eng.ListCachedASAs()
 	if len(got) != 2 {
@@ -149,10 +109,7 @@ func TestClearASACachePersistsEmptyState(t *testing.T) {
 		t.Fatalf("SaveCache() error = %v", err)
 	}
 
-	eng, err := NewEngine("testnet", WithCacheStore(store), WithASACache(cache.LoadASACacheFromStore(store, "testnet")))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithCacheStore(store), WithASACache(cache.LoadASACacheFromStore(store, "testnet")))
 
 	count, err := eng.ClearASACache()
 	if err != nil {
@@ -196,14 +153,11 @@ func TestGetASAInfoForceRefreshFetchesFullMetadataAndCachesIt(t *testing.T) {
 	}
 	client := newAssetByIDMockAlgodClient(t, transport)
 
-	eng, err := NewEngine("testnet",
+	eng := NewEngine("testnet",
 		WithAlgodClient(client),
 		WithCacheStore(store),
 		WithASACache(cache.LoadASACacheFromStore(store, "testnet")),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 
 	info, err := eng.GetASAInfoWithContext(context.Background(), 12345, true)
 	if err != nil {
@@ -224,12 +178,9 @@ func TestGetASAInfoForceRefreshWrapsAlgodErrors(t *testing.T) {
 	transport := &assetByIDMockTransport{t: t, err: errors.New("algod boom")}
 	client := newAssetByIDMockAlgodClient(t, transport)
 
-	eng, err := NewEngine("testnet", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithAlgodClient(client))
 
-	_, err = eng.GetASAInfoWithContext(context.Background(), 99, true)
+	_, err := eng.GetASAInfoWithContext(context.Background(), 99, true)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

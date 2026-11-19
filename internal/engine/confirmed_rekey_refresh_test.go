@@ -61,10 +61,7 @@ func newConfirmedRekeyNet(t *testing.T, failAfterSubmit bool) (*confirmedRekeyNe
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	eng, err := NewEngine("testnet", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 	return n, eng
 }

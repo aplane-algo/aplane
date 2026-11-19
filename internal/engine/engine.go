@@ -36,98 +36,75 @@ type Engine struct {
 }
 
 // EngineOption is a functional option for configuring the Engine
-type EngineOption func(*Engine) error
+type EngineOption func(*Engine)
 
 // NewEngine creates a new Engine instance with the given network context token and options.
-func NewEngine(network string, opts ...EngineOption) (*Engine, error) {
+func NewEngine(network string, opts ...EngineOption) *Engine {
 	e := &Engine{
 		Core: &Core{
 			State:      clientstate.New(network),
 			Connection: connect.NewState(),
-			WriteMode:  false,
 		},
 	}
-
-	// Apply options
 	for _, opt := range opts {
-		if err := opt(e); err != nil {
-			return nil, err
-		}
+		opt(e)
 	}
-
-	return e, nil
+	return e
 }
 
 // WithDataDir sets the client data directory for shared-state locking.
 func WithDataDir(dataDir string) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.DataDir = dataDir
-		return nil
-	}
-}
-
-// WithEndpointRegistry sets the client-local signer and cosigner connection
-// profiles used by live endpoint discovery.
-func WithEndpointRegistry(registry config.ClientEndpointRegistry) EngineOption {
-	return func(e *Engine) error {
-		e.EndpointRegistry = registry.Clone()
-		return nil
 	}
 }
 
 // WithAlgodClient sets the algod client for blockchain queries
 func WithAlgodClient(client *algod.Client) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.AlgodClient = client
-		return nil
 	}
 }
 
 // WithCacheStore sets the cache store used for disk-backed client caches.
 func WithCacheStore(store *cache.Store) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.CacheStore = store
-		return nil
 	}
 }
 
 // WithASACache sets the ASA cache
 func WithASACache(cache cache.ASACache) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.AsaCache = cache
-		return nil
 	}
 }
 
 // WithAliasCache sets the alias cache
 func WithAliasCache(cache cache.AliasCache) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.AliasCache = cache
-		return nil
 	}
 }
 
 // WithSignerCache sets the signer cache
 func WithSignerCache(cache cache.SignerCache) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.SignerCache = cache
-		return nil
 	}
 }
 
 // WithAuthCache sets the auth address cache
 func WithAuthCache(cache cache.AuthAddressCache) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.AuthCache = cache
-		return nil
 	}
 }
 
 // WithSetCache sets the set cache
 func WithSetCache(cache cache.SetCache) EngineOption {
-	return func(e *Engine) error {
+	return func(e *Engine) {
 		e.SetCache = cache
-		return nil
 	}
 }
 

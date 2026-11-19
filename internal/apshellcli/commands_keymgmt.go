@@ -36,7 +36,7 @@ func (r *REPLState) cmdGenerate(args []string, _ *command.Context) (command.Resu
 	}
 
 	var result *apshellapp.GenerateKeyCommandResult
-	if options.HasBoundaryFile {
+	if options.BoundaryFile != "" {
 		if len(params) != 0 {
 			return nil, fmt.Errorf("a boundary file sets every parameter; remove the others")
 		}

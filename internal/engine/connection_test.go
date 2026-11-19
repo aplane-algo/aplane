@@ -19,10 +19,7 @@ import (
 )
 
 func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 
@@ -42,10 +39,7 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 }
 
 func TestHandleConnectionClosedResetsSignerCacheAndInvokesCallback(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
 	called := false
 	eng.handleConnectionClosed(func() { called = true })()
@@ -59,19 +53,14 @@ func TestHandleConnectionClosedResetsSignerCacheAndInvokesCallback(t *testing.T)
 }
 
 func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 	eng.Connection = engconnect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 	eng.SignerCache = cache.NewSignerCache()
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
 
-	if err := eng.Disconnect(); err != nil {
-		t.Fatalf("Disconnect() error = %v", err)
-	}
+	eng.Disconnect()
 	if eng.Connection.IsConnected() {
 		t.Fatal("engine should be disconnected")
 	}
@@ -83,10 +72,7 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 // An enrollment request is answered "pending" and nothing reconnects, so it
 // must leave a live tunnel and the signer cache alone.
 func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 	eng.Connection = engconnect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
@@ -95,7 +81,7 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
 
 	dir := t.TempDir()
-	_, err = eng.RequestEnrollmentWithContext(context.Background(), "127.0.0.1", 1, dir+"/id_ed25519", dir+"/known_hosts", "", nil, nil)
+	_, err := eng.RequestEnrollmentWithContext(context.Background(), "127.0.0.1", 1, dir+"/id_ed25519", dir+"/known_hosts", "", nil, nil)
 	if err == nil {
 		t.Fatal("expected enrollment request error, got nil")
 	}
@@ -108,10 +94,7 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 }
 
 func TestHandleConnectionClosedWithoutCallbackStillResetsCache(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 	eng.SignerCache.AddAddress(testAddr(2), "ed25519")
 
 	eng.handleConnectionClosed(nil)()
@@ -122,10 +105,7 @@ func TestHandleConnectionClosedWithoutCallbackStillResetsCache(t *testing.T) {
 }
 
 func TestSignerCacheConcurrentRefreshAndReadIsRaceSafe(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 	addr := testAddr(41)
 	keys := []signerapi.KeyInfo{{Address: addr, KeyType: "ed25519"}}
 
@@ -149,7 +129,7 @@ func TestSignerCacheConcurrentRefreshAndReadIsRaceSafe(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				_ = eng.SignerKeyCount()
-				_, _ = eng.CanSignForAddress(addr)
+				_, _ = eng.CanSignForAddressWithKind(addr)
 				_ = eng.GetStatus()
 				_, _ = eng.ListAllAddresses()
 				_ = eng.isSignable(addr)
@@ -161,10 +141,7 @@ func TestSignerCacheConcurrentRefreshAndReadIsRaceSafe(t *testing.T) {
 }
 
 func TestEnsureSignerCacheWithContextPropagatesCancellation(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 	client := signerclient.NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: keyMgmtRoundTripper{t: t, handler: func(req *http.Request) (*http.Response, error) {
 		<-req.Context().Done()
@@ -175,7 +152,7 @@ func TestEnsureSignerCacheWithContextPropagatesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = eng.EnsureSignerCache(ctx)
+	err := eng.EnsureSignerCache(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("EnsureSignerCache() error = %v, want context.Canceled", err)
 	}

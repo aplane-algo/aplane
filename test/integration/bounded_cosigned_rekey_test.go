@@ -111,10 +111,7 @@ func newCosignedNode(t *testing.T, cosignerKeyType string) *cosignedNode {
 		t.Fatalf("import cosigner reference: %v\n%s", err, output)
 	}
 
-	clientEngine, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	clientEngine := engine.NewEngine("testnet")
 	const alias = "integration-cosigned-route"
 	if _, err := apshellapp.New(clientEngine, config.DefaultConfig(), clientDataDir).EndpointCreateCosigner(context.Background(),
 		apshellapp.EndpointCreateCosignerRequest{Alias: alias, URL: cosigner.URL}); err != nil {
@@ -124,11 +121,8 @@ func newCosignedNode(t *testing.T, cosignerKeyType string) *cosignedNode {
 	if err != nil {
 		t.Fatalf("load cosigner endpoint: %v", err)
 	}
-	eng, err := engine.NewEngine(harness.IntegrationNetwork(),
+	eng := engine.NewEngine(harness.IntegrationNetwork(),
 		engine.WithAlgodClient(network.Client), engine.WithCacheStore(cache.NewStore(t.TempDir())))
-	if err != nil {
-		t.Fatalf("create engine: %v", err)
-	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signerd.GetURL())
 	eng.EndpointRegistry = registry
 	return &cosignedNode{

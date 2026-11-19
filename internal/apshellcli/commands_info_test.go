@@ -37,7 +37,7 @@ func TestCmdHelpIncludesDiscoveredPluginCommands(t *testing.T) {
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	if err := state.runHelp(nil, nil); err != nil {
+	if err := state.runHelp(nil); err != nil {
 		t.Fatalf("cmdHelp() error = %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestCmdHelpShowsDetailedPluginCommandHelp(t *testing.T) {
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	if err := state.runHelp([]string{"reti"}, nil); err != nil {
+	if err := state.runHelp([]string{"reti"}); err != nil {
 		t.Fatalf("cmdHelp(reti) error = %v", err)
 	}
 
@@ -97,10 +97,7 @@ func TestCmdHelpShowsDetailedPluginCommandHelp(t *testing.T) {
 func newHelpTestState(t *testing.T, dataDir string) *REPLState {
 	t.Helper()
 
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 
 	state := &REPLState{
 		App:             apshellapp.New(eng, config.DefaultConfig(), dataDir),

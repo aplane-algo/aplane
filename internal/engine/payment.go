@@ -141,12 +141,11 @@ type CloseAccountParams struct {
 
 // CloseAccountCheckResult contains validation results for a close operation.
 type CloseAccountCheckResult struct {
-	Balance      uint64   // Current ALGO balance in microAlgos
-	IsOnline     bool     // True if account is online (participating in consensus)
-	HasASAs      bool     // True if account holds any ASAs
-	ASACount     int      // Number of ASAs held
-	ASAIDs       []uint64 // List of ASA IDs held (for error reporting)
-	CloseToValid bool     // True if close-to address is valid
+	Balance  uint64   // Current ALGO balance in microAlgos
+	IsOnline bool     // True if account is online (participating in consensus)
+	HasASAs  bool     // True if account holds any ASAs
+	ASACount int      // Number of ASAs held
+	ASAIDs   []uint64 // List of ASA IDs held (for error reporting)
 }
 
 // PrepareClose validates and prepares an account close transaction
@@ -195,13 +194,6 @@ func (e *Engine) PrepareClose(ctx context.Context, params CloseAccountParams) (*
 	if err := validateCloseMinBalance(acctInfo.MinBalance); err != nil {
 		return nil, checkResult, err
 	}
-
-	// Validate close-to address exists (don't close to a non-existent account)
-	closeToAcct, err := e.AlgodClient.AccountInformation(params.CloseTo).Do(ctx)
-	if err != nil {
-		return nil, checkResult, fmt.Errorf("failed to get close-to account info: %w", err)
-	}
-	checkResult.CloseToValid = closeToAcct.Amount > 0 || params.CloseTo == params.From
 
 	// Build signing context (handles auth address lookup for rekeyed accounts)
 	signingCtx, err := e.BuildSigningContext(ctx, params.From)

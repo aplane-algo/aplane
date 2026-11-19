@@ -40,8 +40,8 @@ type Session struct {
 
 // NewSession initializes apshell state without taking over terminal input or
 // touching the network. Callers that want auto-connect (TUI hosts, REPL-like
-// embeddings) must install any UI-routed handlers (e.g. SetHostKeyApproval)
-// and then call StartupConnect.
+// embeddings) must install any UI-routed handlers (e.g.
+// SetHostKeyApprovalContext) and then call StartupConnect.
 func NewSession(network string, cfg config.Config, dataDir string, out io.Writer) (*Session, error) {
 	state, err := NewREPLState(network, &cfg, dataDir)
 	if err != nil {
@@ -93,33 +93,6 @@ func (s *Session) StartupConnect() (string, error) {
 		s.state.println("Signer not available (run 'connect' to retry)")
 	}
 	return strings.TrimRight(buf.String(), "\n"), err
-}
-
-// ExecuteLine parses and executes one apshell input line.
-func (s *Session) ExecuteLine(raw string) (exit bool, err error) {
-	return s.ExecuteLineContext(context.Background(), raw)
-}
-
-// ExecuteLineContext parses and executes one apshell input line with a
-// caller-owned context. The line also ends with Cancel and Shutdown.
-func (s *Session) ExecuteLineContext(ctx context.Context, raw string) (exit bool, err error) {
-	if s == nil {
-		return false, errSessionNotInitialized
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ctx, end, err := s.beginActive(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer end()
-	s.execMu.Lock()
-	defer s.execMu.Unlock()
-	if err := s.startable(ctx); err != nil {
-		return false, err
-	}
-	return s.executeLineContext(ctx, raw)
 }
 
 func (s *Session) executeLineContext(ctx context.Context, raw string) (exit bool, err error) {
@@ -212,7 +185,7 @@ func (s *Session) Prompt() string {
 
 // History returns persisted apshell history entries in oldest-to-newest order.
 func (s *Session) History() []string {
-	return loadHistoryFile(historyFilePath(), historyLimit)
+	return loadHistoryFile(historyFilePath())
 }
 
 // RecordHistory persists one apshell command history entry.
@@ -220,18 +193,10 @@ func (s *Session) RecordHistory(line string) {
 	appendHistoryFile(historyFilePath(), line)
 }
 
-// SetHostKeyApproval injects a custom SSH host key approval handler. TUI hosts
-// call this after creating the bubbletea program so that unknown host prompts
-// are routed through the UI instead of blocking on stdin.
-func (s *Session) SetHostKeyApproval(fn func(host, fingerprint string) (bool, error)) {
-	if s == nil || s.state == nil {
-		return
-	}
-	s.state.HostKeyApproval = fn
-}
-
-// SetHostKeyApprovalContext installs a host-key prompt that is dismissed when
-// the active command context is canceled.
+// SetHostKeyApprovalContext routes unknown SSH host prompts through an
+// embedding host's UI instead of stdin. TUI hosts call it after creating the
+// bubbletea program. The prompt is dismissed when the active command context
+// is canceled.
 func (s *Session) SetHostKeyApprovalContext(fn func(context.Context, string, string) (bool, error)) {
 	if s == nil || s.state == nil {
 		return
@@ -250,29 +215,9 @@ func (s *Session) SetProgressLine(fn func(string)) {
 	s.state.ProgressLine = fn
 }
 
-// SetInteractiveLinePrompt routes command-time line prompts through an embedding
-// host. TUI hosts use this for approval prompts because they own stdin.
-func (s *Session) SetInteractiveLinePrompt(fn func(prompt string) (string, error)) {
-	if s == nil || s.state == nil || fn == nil {
-		return
-	}
-	var mu sync.Mutex
-	prompt := ""
-	s.state.SetPrompt = func(p string) {
-		mu.Lock()
-		prompt = p
-		mu.Unlock()
-	}
-	s.state.LineReader = func() (string, error) {
-		mu.Lock()
-		p := prompt
-		mu.Unlock()
-		return fn(p)
-	}
-}
-
-// SetInteractiveLinePromptContext is the cancellation-aware prompt adapter
-// for embedded hosts that own terminal input.
+// SetInteractiveLinePromptContext routes command-time line prompts through an
+// embedding host that owns terminal input. A pending prompt ends when the
+// active command context is canceled.
 func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, string) (string, error)) {
 	if s == nil || s.state == nil || fn == nil {
 		return

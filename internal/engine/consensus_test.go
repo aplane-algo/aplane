@@ -82,16 +82,13 @@ func TestValidateAlgodConsensusAcceptsSupportedVersionsWithNilContext(t *testing
 func TestConsensusValidationReusesRecentSuggestedParams(t *testing.T) {
 	client, server, calls := countingConsensusTestAlgod(t, string(protocol.ConsensusV42))
 	defer server.Close()
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 
 	if _, err := eng.getSuggestedParamsWithFee(context.Background(), 0, false); err != nil {
 		t.Fatalf("getSuggestedParamsWithFee() error = %v", err)
 	}
-	if err := eng.validateAlgodConsensus(context.Background()); err != nil {
-		t.Fatalf("validateAlgodConsensus() error = %v", err)
+	if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
+		t.Fatalf("activeAlgodNetwork() error = %v", err)
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("SuggestedParams calls = %d, want 1", got)
@@ -101,18 +98,15 @@ func TestConsensusValidationReusesRecentSuggestedParams(t *testing.T) {
 func TestConsensusValidationRefreshesExpiredEntry(t *testing.T) {
 	client, server, calls := countingConsensusTestAlgod(t, string(protocol.ConsensusV42))
 	defer server.Close()
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	if err := eng.validateAlgodConsensus(context.Background()); err != nil {
-		t.Fatalf("first validateAlgodConsensus() error = %v", err)
+	eng := NewEngine("test", WithAlgodClient(client))
+	if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
+		t.Fatalf("first activeAlgodNetwork() error = %v", err)
 	}
 	eng.consensusValidation.mu.Lock()
 	eng.consensusValidation.validatedAt = time.Now().Add(-consensusValidationReuseWindow)
 	eng.consensusValidation.mu.Unlock()
-	if err := eng.validateAlgodConsensus(context.Background()); err != nil {
-		t.Fatalf("second validateAlgodConsensus() error = %v", err)
+	if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
+		t.Fatalf("second activeAlgodNetwork() error = %v", err)
 	}
 	if got := calls.Load(); got != 2 {
 		t.Fatalf("SuggestedParams calls = %d, want 2", got)
@@ -125,7 +119,7 @@ func TestConsensusValidationAcrossProtocolUpgrades(t *testing.T) {
 	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43, protocol.ConsensusFuture} {
 		transport.txParams.ConsensusVersion = string(version)
 		eng.consensusValidation.validatedAt = time.Now().Add(-consensusValidationReuseWindow - time.Second)
-		err := eng.validateAlgodConsensus(context.Background())
+		_, err := eng.activeAlgodNetwork(context.Background())
 		if version == protocol.ConsensusFuture {
 			if err == nil || !strings.Contains(err.Error(), "supported contracts: v42 and v43") {
 				t.Fatalf("unknown upgrade error = %v, want unsupported consensus", err)
@@ -141,18 +135,15 @@ func TestSetNetworkInvalidatesConsensusValidation(t *testing.T) {
 	defer server1.Close()
 	client2, server2, calls2 := countingConsensusTestAlgod(t, string(protocol.ConsensusV42))
 	defer server2.Close()
-	eng, err := NewEngine("testnet", WithAlgodClient(client1))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	if err := eng.validateAlgodConsensus(context.Background()); err != nil {
-		t.Fatalf("first validateAlgodConsensus() error = %v", err)
+	eng := NewEngine("testnet", WithAlgodClient(client1))
+	if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
+		t.Fatalf("first activeAlgodNetwork() error = %v", err)
 	}
 	if err := eng.SetNetwork(context.Background(), "mainnet", client2); err != nil {
 		t.Fatalf("SetNetwork() error = %v", err)
 	}
-	if err := eng.validateAlgodConsensus(context.Background()); err != nil {
-		t.Fatalf("second validateAlgodConsensus() error = %v", err)
+	if _, err := eng.activeAlgodNetwork(context.Background()); err != nil {
+		t.Fatalf("second activeAlgodNetwork() error = %v", err)
 	}
 	if got := calls1.Load(); got != 1 {
 		t.Fatalf("first algod SuggestedParams calls = %d, want 1", got)
@@ -173,14 +164,11 @@ func TestSignAndSubmitTransactionsRejectsUnsupportedConsensusBeforeSigner(t *tes
 	}))
 	defer signerServer.Close()
 
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 	txn := presignTestTxn(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "prebuilt")
 
-	_, err = eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{txn}, false)
+	_, err := eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{txn}, false)
 	if err == nil || !strings.Contains(err.Error(), "network consensus") {
 		t.Fatalf("SignAndSubmitTransactions() error = %v, want unsupported-consensus rejection", err)
 	}
@@ -200,12 +188,9 @@ func TestGroupPlanningValidatesConsensusBeforeSigner(t *testing.T) {
 	}))
 	defer server.Close()
 
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
-	_, err = eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
+	_, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 		AuthAddress: "ADDR",
 		TxnBytesHex: txnutil.EncodeWithPrefixHex(presignTestTxn(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "plan")),
 	}})
@@ -238,10 +223,7 @@ func TestGroupPlanningForwardsAfterConsensusValidation(t *testing.T) {
 			}))
 			defer server.Close()
 
-			eng, err := NewEngine("test", WithAlgodClient(client))
-			if err != nil {
-				t.Fatalf("NewEngine() error = %v", err)
-			}
+			eng := NewEngine("test", WithAlgodClient(client))
 			eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
 			response, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 				AuthAddress: "ADDR",

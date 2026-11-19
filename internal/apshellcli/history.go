@@ -29,8 +29,10 @@ func historyFilePath() string {
 	return filepath.Join(homeDir, ".apshell_history")
 }
 
-func loadHistoryFile(path string, limit int) []string {
-	if path == "" || limit == 0 {
+// loadHistoryFile returns the last historyLimit entries of the history file
+// at path.
+func loadHistoryFile(path string) []string {
+	if path == "" {
 		return nil
 	}
 	file, err := os.Open(path)
@@ -48,8 +50,8 @@ func loadHistoryFile(path string, limit int) []string {
 		}
 		entries = append(entries, line)
 	}
-	if limit > 0 && len(entries) > limit {
-		entries = entries[len(entries)-limit:]
+	if len(entries) > historyLimit {
+		entries = entries[len(entries)-historyLimit:]
 	}
 	return entries
 }

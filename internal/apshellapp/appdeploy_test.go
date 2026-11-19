@@ -16,16 +16,13 @@ import (
 )
 
 func TestAppDeployResolvesSender(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 	}
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 
-	_, err = app.AppDeploy(context.Background(), AppDeployRequest{
+	_, err := app.AppDeploy(context.Background(), AppDeployRequest{
 		From:         "alice",
 		ApprovalPath: "approval.teal",
 		ClearPath:    "clear.teal",

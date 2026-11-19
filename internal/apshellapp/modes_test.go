@@ -15,10 +15,7 @@ import (
 )
 
 func TestSetWriteModeEnablesDirectoryAndState(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -46,10 +43,7 @@ func TestSetWriteModeEnablesDirectoryAndState(t *testing.T) {
 }
 
 func TestSetVerboseAndSimulateMode(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	app.SetVerboseMode(true)

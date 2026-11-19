@@ -28,9 +28,8 @@ const (
 
 // GenerateOptions are the apshell-side choices taken out of generate's arguments.
 type GenerateOptions struct {
-	BoundaryFile    string
-	HasBoundaryFile bool
-	ResultFile      string
+	BoundaryFile string
+	ResultFile   string
 }
 
 // SplitGenerateOptions takes apshell's own flags out of generate's arguments,
@@ -68,10 +67,10 @@ func SplitGenerateOptions(args []string) (GenerateOptions, []string, error) {
 		}
 		switch name {
 		case GenerateFlagBoundaryFile:
-			if options.HasBoundaryFile {
+			if options.BoundaryFile != "" {
 				return GenerateOptions{}, nil, fmt.Errorf("%s is given twice", name)
 			}
-			options.BoundaryFile, options.HasBoundaryFile = value, true
+			options.BoundaryFile = value
 		case GenerateFlagResultFile:
 			if options.ResultFile != "" {
 				return GenerateOptions{}, nil, fmt.Errorf("%s is given twice", name)

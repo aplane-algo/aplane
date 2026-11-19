@@ -8,7 +8,7 @@ type StatusResult struct {
 	Network          string
 	IsConnected      bool
 	ConnectionTarget string
-	SigningMode      string // "local", "remote", "disconnected"
+	SigningMode      string // "remote", "disconnected"
 	WriteMode        bool
 	ASACacheCount    int
 	AliasCacheCount  int
@@ -81,50 +81,12 @@ type ASAInfo struct {
 	URL           string
 }
 
-// TransactionResult holds the outcome of a single transaction
-type TransactionResult struct {
-	TxID           string
-	GroupID        string // for atomic groups
-	ConfirmedRound uint64
-	Fee            uint64
-	Sender         string
-	Receiver       string // may be empty for non-payment
-	Amount         uint64
-	AssetID        uint64 // 0 for ALGO
-	Note           string
-	WroteToFile    string // file path if write mode enabled
-}
-
-// SendResult holds results for send operations (may be multiple txns)
-type SendResult struct {
-	Transactions []TransactionResult
-	TotalFee     uint64
-	IsAtomic     bool
-}
-
-// SignResult holds the result of signing a transaction
-type SignResult struct {
-	TxID        string
-	SignedBlob  []byte
-	WroteToFile string
-}
-
-// RekeyResult holds rekey operation data
-type RekeyResult struct {
-	Address     string
-	OldAuthAddr string
-	NewAuthAddr string
-	TxID        string
-}
-
-// ConnectionResult holds connection attempt outcome
+// ConnectionResult holds a successful connection's outcome
 type ConnectionResult struct {
-	Connected        bool
 	AlreadyConnected bool
 	Target           string
 	KeyCount         int
 	Locked           bool // Signer is locked (keys not accessible until unlocked)
-	ErrorMessage     string
 }
 
 // ParticipationResult holds consensus participation status for an account
@@ -138,20 +100,6 @@ type ParticipationResult struct {
 	VoteLastValid     uint64
 	VoteKeyDilution   uint64
 	IncentiveEligible bool
-}
-
-// AliasResult holds the result of an alias operation
-type AliasResult struct {
-	Name    string
-	Address string
-	Created bool // true if new, false if updated
-}
-
-// SetResult holds the result of a set operation
-type SetResult struct {
-	Name      string
-	Addresses []string
-	Created   bool // true if new, false if updated
 }
 
 // GenerateKeyResult holds the result of key generation

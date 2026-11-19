@@ -9,7 +9,7 @@ import (
 )
 
 func TestPrepareAppDeploy_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 
 	_, err := eng.PrepareAppDeploy(context.Background(), AppDeployParams{
 		From: "alice",

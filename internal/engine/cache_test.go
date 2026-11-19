@@ -39,15 +39,12 @@ func setupTestEngine(t *testing.T) *Engine {
 	_ = os.Chdir(tmpDir)
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
-	eng, err := NewEngine("testnet",
+	eng := NewEngine("testnet",
 		WithAliasCache(cache.AliasCache{Aliases: make(map[string]string)}),
 		WithSetCache(cache.SetCache{Sets: make(map[string][]string)}),
 		WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
 		WithAuthCache(cache.AuthAddressCache{AuthAddresses: make(map[string]string)}),
 	)
-	if err != nil {
-		t.Fatalf("Failed to create engine: %v", err)
-	}
 
 	return eng
 }
@@ -585,7 +582,7 @@ func TestAddAliasPreservesConcurrentDiskUpdates(t *testing.T) {
 	cacheStore := cache.NewStore(tmpDir)
 
 	newEngine := func() *Engine {
-		eng, err := NewEngine("testnet",
+		eng := NewEngine("testnet",
 			WithDataDir(tmpDir),
 			WithCacheStore(cacheStore),
 			WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
@@ -593,9 +590,6 @@ func TestAddAliasPreservesConcurrentDiskUpdates(t *testing.T) {
 			WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
 			WithAuthCache(cache.NewAuthAddressCacheForStore(cacheStore)),
 		)
-		if err != nil {
-			t.Fatalf("NewEngine() error = %v", err)
-		}
 		return eng
 	}
 
@@ -626,7 +620,7 @@ func TestInterleavedAliasAndSetWritesPreserveSharedStoreState(t *testing.T) {
 	cacheStore := cache.NewStore(tmpDir)
 
 	newEngine := func() *Engine {
-		eng, err := NewEngine("testnet",
+		eng := NewEngine("testnet",
 			WithDataDir(tmpDir),
 			WithCacheStore(cacheStore),
 			WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
@@ -634,9 +628,6 @@ func TestInterleavedAliasAndSetWritesPreserveSharedStoreState(t *testing.T) {
 			WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
 			WithAuthCache(cache.NewAuthAddressCacheForStore(cacheStore)),
 		)
-		if err != nil {
-			t.Fatalf("NewEngine() error = %v", err)
-		}
 		return eng
 	}
 
@@ -677,7 +668,7 @@ func TestMultipleEnginesConvergeOnSharedStoreAfterReload(t *testing.T) {
 	cacheStore := cache.NewStore(tmpDir)
 
 	newEngine := func() *Engine {
-		eng, err := NewEngine("testnet",
+		eng := NewEngine("testnet",
 			WithDataDir(tmpDir),
 			WithCacheStore(cacheStore),
 			WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
@@ -685,9 +676,6 @@ func TestMultipleEnginesConvergeOnSharedStoreAfterReload(t *testing.T) {
 			WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
 			WithAuthCache(cache.NewAuthAddressCacheForStore(cacheStore)),
 		)
-		if err != nil {
-			t.Fatalf("NewEngine() error = %v", err)
-		}
 		return eng
 	}
 
@@ -742,7 +730,7 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 	cacheStore := cache.NewStore(tmpDir)
 
 	newEngine := func() *Engine {
-		eng, err := NewEngine("testnet",
+		eng := NewEngine("testnet",
 			WithDataDir(tmpDir),
 			WithCacheStore(cacheStore),
 			WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
@@ -750,9 +738,6 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 			WithSignerCache(cache.LoadSignerCacheFromStore(cacheStore)),
 			WithAuthCache(cache.NewAuthAddressCacheForStore(cacheStore)),
 		)
-		if err != nil {
-			t.Fatalf("NewEngine() error = %v", err)
-		}
 		return eng
 	}
 
@@ -809,10 +794,7 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 }
 
 func TestCanSignForAddressRejectsUnknownCachedKeyType(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := NewEngine("testnet")
 	address := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: address, KeyType: ""}}); err != nil {
 		t.Fatal(err)

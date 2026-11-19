@@ -128,10 +128,7 @@ func scriptedPluginShell(t *testing.T, results ...map[string]any) (*REPLState, *
 // scriptedPluginShellWithAlgod is scriptedPluginShell on an algod.
 func scriptedPluginShellWithAlgod(t *testing.T, client *algod.Client, results ...map[string]any) (*REPLState, *scriptedPlugin) {
 	t.Helper()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	eng.AlgodClient = client
 	return scriptedPluginShellOnEngine(t, eng, results...)
 }

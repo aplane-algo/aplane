@@ -69,16 +69,6 @@ func (e *Core) ASAResolver() asa.Resolver {
 	return asa.NewResolver(e.Network, &e.AsaCache, e.AlgodClient)
 }
 
-// SaveASACache persists the ASA cache to disk for the current network.
-func (e *Engine) SaveASACache() error {
-	return e.withClientDataLock(func() error {
-		if e.DataDir != "" {
-			e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, e.Network)
-		}
-		return e.AsaCache.SaveCacheLocked(e.Network)
-	})
-}
-
 func (e *Engine) AddASAToCache(ctx context.Context, assetID uint64) (*ASAInfo, error) {
 	info, err := e.GetASAInfoWithContext(ctx, assetID)
 	if err != nil {

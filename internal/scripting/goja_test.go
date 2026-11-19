@@ -24,10 +24,7 @@ func (scriptingPluginExecutor) ExecutePlugin(name string, args []string) (bool, 
 func newRunnerForTest(t *testing.T) *GojaRunner {
 	t.Helper()
 
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	return NewGojaRunner(eng)
 }
 

@@ -60,7 +60,6 @@ var (
 	// this error is observed.
 	errCosignerDiscoveryHostKeyMismatch = errors.New("cosigner endpoint SSH host key mismatch")
 
-	errCosignerEndpointAuth   = errors.New("cosigner endpoint auth")
 	errCosignerEndpointConfig = errors.New("cosigner endpoint config")
 )
 
@@ -219,7 +218,6 @@ func (s *Signer) probeCosignerEndpoints(ctx context.Context) ([]string, []*cosig
 	states := make([]*cosignerEndpointProbeResult, len(aliases))
 	var hostKeyMismatch error
 	for result := range results {
-		result := result
 		states[result.index] = &result
 		if errors.Is(result.err, connect.ErrSSHHostKeyMismatch) {
 			hostKeyMismatch = fmt.Errorf("%w at endpoint %q", errCosignerDiscoveryHostKeyMismatch, result.alias)
@@ -262,45 +260,39 @@ func incompleteCosignerDiscoveryError(aliases []string, states []*cosignerEndpoi
 	)
 }
 
-func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (*signerclient.Client, func(), string, error) {
+func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (*signerclient.Client, func(), error) {
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("%w: invalid endpoint URL: %v", errCosignerEndpointConfig, err)
+		return nil, nil, fmt.Errorf("%w: invalid endpoint URL: %v", errCosignerEndpointConfig, err)
+	}
+	if parsed.Scheme != "ssh" {
+		return nil, nil, fmt.Errorf("%w: unsupported endpoint URL scheme %q", errCosignerEndpointConfig, parsed.Scheme)
 	}
 
-	switch parsed.Scheme {
-	case "ssh":
-		sshPort := config.DefaultSSHPort
-		if parsed.Port() != "" {
-			port, err := strconv.Atoi(parsed.Port())
-			if err != nil || port <= 0 || port > 65535 {
-				return nil, nil, "", fmt.Errorf("%w: invalid SSH port %q", errCosignerEndpointConfig, parsed.Port())
-			}
-			sshPort = port
+	sshPort := config.DefaultSSHPort
+	if parsed.Port() != "" {
+		port, err := strconv.Atoi(parsed.Port())
+		if err != nil || port <= 0 || port > 65535 {
+			return nil, nil, fmt.Errorf("%w: invalid SSH port %q", errCosignerEndpointConfig, parsed.Port())
 		}
-		client, cleanup, err := connect.ConnectCosignerWithSSH(ctx, connect.CosignerSSHConfig{
-			Host:            parsed.Hostname(),
-			SSHPort:         sshPort,
-			IdentityFile:    endpoint.IdentityFile,
-			KnownHostsPath:  endpoint.KnownHostsPath,
-			HostKeyApproval: s.hostKeyApproval,
-			IdentityCreated: s.identityCreatedHandler(),
-		})
-		if err != nil {
-			return nil, nil, "", err
-		}
-		return client, cleanup, endpoint.URL, nil
-	default:
-		return nil, nil, "", fmt.Errorf("%w: unsupported endpoint URL scheme %q", errCosignerEndpointConfig, parsed.Scheme)
+		sshPort = port
 	}
+	return connect.ConnectCosignerWithSSH(ctx, connect.CosignerSSHConfig{
+		Host:            parsed.Hostname(),
+		SSHPort:         sshPort,
+		IdentityFile:    endpoint.IdentityFile,
+		KnownHostsPath:  endpoint.KnownHostsPath,
+		HostKeyApproval: s.hostKeyApproval,
+		IdentityCreated: s.identityCreatedHandler(),
+	})
 }
 
 func (s *Signer) probeConfiguredCosignerEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
-	client, cleanup, source, err := s.connectConfiguredCosignerEndpoint(ctx, endpoint)
+	client, cleanup, err := s.connectConfiguredCosignerEndpoint(ctx, endpoint)
 	if err != nil {
 		return nil, nil, classifyCosignerDiscoveryConnectError(err)
 	}
-	resolved := &resolvedCosignerEndpoint{client: client, source: source, cleanup: cleanup}
+	resolved := &resolvedCosignerEndpoint{client: client, source: endpoint.URL, cleanup: cleanup}
 	keys, err := resolved.client.GetKeysWithContext(ctx)
 	if err != nil {
 		resolved.close()
@@ -481,8 +473,6 @@ func warnSkippedCosignerEndpoints(w io.Writer, states []*cosignerEndpointProbeRe
 
 func classifyCosignerDiscoveryConnectError(err error) error {
 	switch {
-	case errors.Is(err, errCosignerEndpointAuth):
-		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 	case errors.Is(err, errCosignerEndpointConfig):
 		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
 	case errors.Is(err, connect.ErrSSHKeyNotEnrolled):

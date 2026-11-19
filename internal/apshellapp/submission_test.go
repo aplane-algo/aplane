@@ -32,10 +32,7 @@ import (
 )
 
 func TestSignFileRejectsInvalidFile(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	if _, err := app.SignFile(context.Background(), SignFileRequest{
@@ -47,10 +44,7 @@ func TestSignFileRejectsInvalidFile(t *testing.T) {
 }
 
 func TestSignFileLoadsTransactionsBeforeSubmission(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.json")
@@ -59,7 +53,7 @@ func TestSignFileLoadsTransactionsBeforeSubmission(t *testing.T) {
 	}
 
 	app := New(eng, config.DefaultConfig(), dir)
-	_, err = app.SignFile(context.Background(), SignFileRequest{
+	_, err := app.SignFile(context.Background(), SignFileRequest{
 		FilePath: path,
 		Wait:     true,
 	})
@@ -69,13 +63,10 @@ func TestSignFileLoadsTransactionsBeforeSubmission(t *testing.T) {
 }
 
 func TestSubmitPluginTransactionsRequiresConnection(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	err = checkAndSubmit(context.Background(), app, &jsonrpc.ExecuteResult{}, nil)
+	err := checkAndSubmit(context.Background(), app, &jsonrpc.ExecuteResult{}, nil)
 	if err == nil || err.Error() != "not connected to signer" {
 		t.Fatalf("SubmitPluginTransactions() error = %v, want not connected", err)
 	}
@@ -171,10 +162,7 @@ func newPluginRekeyFixture(t *testing.T, keys []signerapi.KeyInfo) *pluginRekeyF
 	if err != nil {
 		t.Fatalf("MakeClient() error = %v", err)
 	}
-	f.eng, err = engine.NewEngine("testnet", engine.WithAlgodClient(algodClient))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	f.eng = engine.NewEngine("testnet", engine.WithAlgodClient(algodClient))
 	f.eng.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 	f.app = New(f.eng, config.DefaultConfig(), t.TempDir())
 	return f

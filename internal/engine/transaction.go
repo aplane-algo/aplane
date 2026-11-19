@@ -321,14 +321,6 @@ func (e *Engine) WaitForConfirmationResult(ctx context.Context, txid string, rou
 	return &ConfirmationResult{Output: output.String()}, nil
 }
 
-// CanSignForAddress checks if we can sign for the given address.
-// Returns (canSign, isLsig). New callers that need to distinguish native
-// authorization kinds should use CanSignForAddressWithKind.
-func (e *Engine) CanSignForAddress(address string) (bool, bool) {
-	canSign, kind := e.CanSignForAddressWithKind(address)
-	return canSign, kind == algorithm.AuthorizationLogicSig
-}
-
 // CanSignForAddressWithKind checks whether the signer owns an address and
 // returns the authorization envelope its key type produces.
 func (e *Engine) CanSignForAddressWithKind(address string) (bool, algorithm.AuthorizationKind) {
