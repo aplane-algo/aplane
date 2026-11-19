@@ -840,6 +840,9 @@ func decodeAs[T any](convert func(T) tea.Msg) func([]byte) (tea.Msg, error) {
 	return func(raw []byte) (tea.Msg, error) {
 		var wire T
 		if err := json.Unmarshal(raw, &wire); err != nil {
+			// A decode can fail after filling some fields, such as a recovery
+			// phrase before a malformed later field; zero what it filled.
+			protocol.ZeroSensitive(&wire)
 			return nil, err
 		}
 		return convert(wire), nil
