@@ -298,3 +298,69 @@ func TestPruneQuarantinedRemovesWhatAccountingRefuses(t *testing.T) {
 		t.Fatalf("ListQuarantined() after prune = %#v, %v", records, err)
 	}
 }
+
+// A selected generation that grew past the limits in place is refused before
+// Mint stages anything, so the store pays for no copy or validation, and the
+// refusal says what to do.
+func TestMintRefusesAParentOverTheLimitsBeforeStaging(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	current, err := measureGenerationTree(paths.GenerationDir(testGenC), treeLimits{Entries: 1 << 20, FileBytes: 1 << 20, Bytes: 1 << 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withQuarantineCandidateLimits(t, treeLimits{Entries: current.Entries - 1, FileBytes: 1 << 20, Bytes: 1 << 20})
+	before := generationNames(t, paths)
+
+	staged := false
+	_, err = Mint(paths, MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            testGenD, Parent: testGenC, Integrity: testKeyring(t),
+		Operation: "test-activation", OperationID: "op-over", CreatedAt: time.Unix(1_753_500_900, 0),
+		Apply: func(storepaths.GenPaths) error {
+			staged = true
+			return nil
+		},
+	})
+	if err == nil || !strings.HasPrefix(err.Error(), "mint preflight: generation "+testGenC+" holds more than one generation may") ||
+		!strings.Contains(err.Error(), "prune them from the deleted archive") {
+		t.Fatalf("Mint error = %v, want the preflight refusal with its remedy", err)
+	}
+	if staged {
+		t.Fatal("Mint staged and applied before refusing an over-limit parent")
+	}
+	if after := generationNames(t, paths); strings.Join(after, ",") != strings.Join(before, ",") {
+		t.Fatalf("generations directory changed: %v, was %v", after, before)
+	}
+}
+
+// The preflight is never stricter than the staged-tree check for a mint that
+// adds nothing: a parent whose successor lands exactly on the entry limit,
+// with the outgoing seal already written, still mints.
+func TestMintPreflightCountsNeitherTheSealNorTwoManifests(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	parent := paths.GenerationPaths(testGenC)
+	// Measured before the seal: the successor copies this tree with its own
+	// manifest in place of the parent's.
+	current, err := measureGenerationTree(parent.Dir(), treeLimits{Entries: 1 << 20, FileBytes: 1 << 20, Bytes: 1 << 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSeal(parent, 1_753_500_800, testKeyring(t)); err != nil {
+		t.Fatal(err)
+	}
+	withQuarantineCandidateLimits(t, treeLimits{Entries: current.Entries, FileBytes: 1 << 20, Bytes: 1 << 20})
+
+	if _, err := Mint(paths, MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            testGenD, Parent: testGenC, Integrity: testKeyring(t),
+		OutgoingSealAlreadyWritten: true,
+		Operation:                  "test-activation", OperationID: "op-exact", CreatedAt: time.Unix(1_753_500_900, 0),
+	}); err != nil {
+		t.Fatalf("Mint at exactly the entry limit: %v", err)
+	}
+	if selectedForTest(t, paths).GenerationID() != testGenD {
+		t.Fatal("the mint at the limit did not commit")
+	}
+}

@@ -84,7 +84,9 @@ silently stop being load-bearing.
   (`internal/genstore/quarantine.go::measureGenerationTree`), sizes a
   candidate before classification reads it, sizes each quarantined
   generation in quarantine accounting, and sizes the staged tree in `Mint`
-  before publication, which refuses a tree that breaks it. A refused mint
+  before publication, which refuses a tree that breaks it; before staging,
+  `Mint` and `storepass.Rotate` also refuse a selected generation already
+  too large for a successor (`RequireSuccessorFits`). A refused mint
   never takes `Publish`, a behavior the model already has (a run that stays
   at `Init`), so the refusal adds and removes no modeled transition. The
   branch where classification refuses a candidate and leaves it in place

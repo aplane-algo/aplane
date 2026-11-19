@@ -397,6 +397,9 @@ func verifySuccessorMint(paths storepaths.Paths, req MintRequest) error {
 	if err := requireMintableGenerationStore(paths, req.Integrity); err != nil {
 		return fmt.Errorf("mint preflight: %w", err)
 	}
+	if err := RequireSuccessorFits(paths.GenerationPaths(req.Parent)); err != nil {
+		return fmt.Errorf("mint preflight: %w", err)
+	}
 	return nil
 }
 

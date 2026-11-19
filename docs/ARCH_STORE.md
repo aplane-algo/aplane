@@ -544,7 +544,9 @@ mint.
 The commit order is:
 
 1. acquire the store mutation lock and any maintenance fence;
-2. freshly authenticate the root and selected generation;
+2. freshly authenticate the root and selected generation, and refuse a
+   selected generation too large for any successor to fit the quarantine
+   candidate limits;
 3. create a private `.staging-<gen-id>` directory;
 4. independently copy the parent, or construct an authorized empty successor;
 5. apply the transaction and validate the complete namespace;
@@ -655,6 +657,15 @@ for live state. Ordinary key mutations do not mint, so a selected generation
 can grow past the limits in place; its next mint is refused until it is
 pruned back, and if an older root is restored it stays where it is and is
 removed with abandoned discard.
+
+The staged-tree check is the authority. Before staging, a mint (and a
+passphrase change, before it seals) also measures the selected generation as
+a successor would copy it, without its seal and with one manifest
+(`genstore.RequireSuccessorFits`), and refuses at once when that already
+breaks the rule, naming the remedy; an over-limit store is then not copied,
+re-encrypted and validated on every attempt. A mint that would itself shrink
+the generation is refused the same way. Deleting keys and then pruning them
+from the deleted archive, which do not mint, bring it back under.
 
 Available term validation is classification, not authority. Known-term checks
 are recorded as `verified` or `failed`; a member whose term is absent from the

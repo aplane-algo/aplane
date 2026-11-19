@@ -498,11 +498,55 @@ func quarantineUsage(paths storepaths.Paths) (int, int64, error) {
 	return len(entries), total, nil
 }
 
+// RequireSuccessorFits refuses, before anything is staged, a mint from parent
+// whose successor would break the quarantine candidate limits. Ordinary key
+// changes grow the selected generation in place without minting, so it can
+// pass the limits between mints. A successor carries everything parent holds
+// except its seal and its manifest, and writes a manifest of its own, so
+// parent measured that way is a lower bound on the staged tree of a mint that
+// adds nothing. Mint's check of the staged tree stays the authority; this
+// spares an over-limit store a full copy, re-encryption and validation on
+// every attempt, and says what to do.
+func RequireSuccessorFits(parent storepaths.GenPaths) error {
+	_, err := measureTree(parent.Dir(), quarantineCandidateLimits, func(path string) treeCount {
+		switch path {
+		case parent.SealPath():
+			return countNothing
+		case parent.ManifestPath():
+			return countEntryOnly
+		default:
+			return countPath
+		}
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"generation %s holds more than one generation may (%w); no new generation can be committed until it is back under the limit: delete keys and prune them from the deleted archive, or prune the deleted archive",
+			parent.GenerationID(), err,
+		)
+	}
+	return nil
+}
+
+// treeCount says what measureTree counts for one path.
+type treeCount int
+
+const (
+	countPath      treeCount = iota // the entry and, for a file, its bytes
+	countEntryOnly                  // the entry, not its bytes
+	countNothing                    // nothing
+)
+
 // measureGenerationTree counts every path below root and every regular file's
 // bytes, and refuses a tree that breaks limits, holds a symlink or an
 // irregular file, or is not itself a directory. It reads no file contents and
 // follows no link.
 func measureGenerationTree(root string, limits treeLimits) (treeUsage, error) {
+	return measureTree(root, limits, nil)
+}
+
+// measureTree is measureGenerationTree with count deciding, path by path,
+// what is counted; nil counts every path.
+func measureTree(root string, limits treeLimits, count func(path string) treeCount) (treeUsage, error) {
 	var usage treeUsage
 	info, err := os.Lstat(root)
 	if err != nil {
@@ -518,9 +562,19 @@ func measureGenerationTree(root string, limits treeLimits) (treeUsage, error) {
 		if path == root {
 			return nil
 		}
+		rule := countPath
+		if count != nil {
+			rule = count(path)
+		}
+		if rule == countNothing {
+			return nil
+		}
 		usage.Entries++
 		if usage.Entries > limits.Entries {
 			return fmt.Errorf("generation tree exceeds entry limit %d", limits.Entries)
+		}
+		if rule == countEntryOnly {
+			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
