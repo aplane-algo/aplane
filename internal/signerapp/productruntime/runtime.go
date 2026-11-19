@@ -566,7 +566,8 @@ func (ir *Runtime) RequestSigningApprovalPrompt(ctx context.Context, prompt sign
 	return c.RequestSigningApprovalPrompt(ctx, prompt, timeout)
 }
 
-// FailAllPendingApprovals fails all pending approval requests with the given reason.
+// FailAllPendingApprovals withdraws every prompt delivered to the apadmin
+// session that is ending (Coordinator.FailAllPendingRequests).
 func (ir *Runtime) FailAllPendingApprovals(reason string) {
 	if c := ir.approval.Load(); c != nil {
 		c.FailAllPendingRequests(reason)

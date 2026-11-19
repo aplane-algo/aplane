@@ -24,6 +24,9 @@ var (
 	// session a prompt was shown to disconnected or was displaced before
 	// answering it (FailAllPendingRequests). Nobody rejected the request.
 	ErrApproverGone = errors.New("the apadmin session it was shown to ended before answering")
+	// ErrApproverDisplaced is the ErrApproverGone of a displacement: another
+	// apadmin session replaced the one the prompt was shown to.
+	ErrApproverDisplaced = fmt.Errorf("%w: another apadmin session replaced it", ErrApproverGone)
 )
 
 const maxRememberedCanceledSignRequests = 1024
@@ -271,8 +274,10 @@ func cancellationError(reason string, ctxErr error) error {
 	switch reason {
 	case SignRequestCancelReasonSessionEnded:
 		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ErrSessionEnded)
-	case SignRequestCancelReasonApproverDisconnected, SignRequestCancelReasonApproverDisplaced:
-		return fmt.Errorf("%w: %w (%s)", ErrApprovalCanceled, ErrApproverGone, reason)
+	case SignRequestCancelReasonApproverDisconnected:
+		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ErrApproverGone)
+	case SignRequestCancelReasonApproverDisplaced:
+		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ErrApproverDisplaced)
 	case "":
 		if ctxErr == nil {
 			return ErrApprovalCanceled
@@ -606,13 +611,17 @@ func (c *Coordinator) notifySignRequestCanceled(requestID, reason string) {
 }
 
 // FailAllPendingRequests withdraws every prompt delivered to the apadmin
-// session that is ending: reason is SignRequestCancelReasonApproverDisconnected
-// or SignRequestCancelReasonApproverDisplaced. Each waiter ends with
-// ErrApproverGone, not a rejection: nobody answered the request, and it can be
-// sent again once an apadmin session is connected. Requests still queued for
-// the delivery turn are not affected; they go to the next session, or fail
-// because none is connected.
+// session that is ending: reason is SignRequestCancelReasonApproverDisplaced
+// for a displacement, and any other reason counts as
+// SignRequestCancelReasonApproverDisconnected. Each waiter ends with
+// ErrApproverGone (ErrApproverDisplaced for a displacement), not a rejection:
+// nobody answered the request, and it can be sent again. Requests still
+// queued for the delivery turn are not affected; they go to the next
+// session, or fail because none is connected.
 func (c *Coordinator) FailAllPendingRequests(reason string) {
+	if reason != SignRequestCancelReasonApproverDisplaced {
+		reason = SignRequestCancelReasonApproverDisconnected
+	}
 	c.pendingRequestsLock.Lock()
 	signRequests := c.pendingRequests
 	c.pendingRequests = make(map[string]chan SignResponse)

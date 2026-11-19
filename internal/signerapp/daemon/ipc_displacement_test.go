@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -256,6 +257,12 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	}
 	readAdminMessageType(t, oldClient, oldReader, protocol.MsgTypeDisplaced)
 	readAdminMessageType(t, newClient, newReader, protocol.MsgTypeStatus)
+	// Keep reading the replacement: the withdrawal's cancel notice is written
+	// to it, and an unread net.Pipe would hold that write.
+	if err := newClient.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = io.Copy(io.Discard, newReader) }()
 
 	select {
 	case err := <-approvalResult:

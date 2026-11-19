@@ -1190,10 +1190,11 @@ rejection whatever reason text it carries.
 When the apadmin session a prompt was shown to disconnects, or another
 session displaces it, before answering, the coordinator withdraws that prompt
 (`FailAllPendingRequests`, reason `approver_disconnected` or
-`approver_displaced`): nobody rejected the request. It answers `unavailable`
-("apadmin disconnected before answering the approval; send the request again
-once an apadmin session is connected"), as a request that finds no apadmin
-connected does, and is audited as `approval_withdrawn_apadmin_disconnected`.
+`approver_displaced`): nobody rejected the request. It answers `unavailable`,
+as a request that finds no apadmin connected does, with a message that names
+the disconnect or the replacement, and is audited as
+`approval_withdrawn_apadmin_disconnected` or
+`approval_withdrawn_apadmin_displaced`.
 Requests queued behind it are not withdrawn: they are shown to the next
 session, or fail because none is connected. A disconnect that also locks the
 signer (`lock_on_disconnect`) ends the session too, and a request that sees

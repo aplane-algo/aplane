@@ -1507,10 +1507,12 @@ owner counts.
 The signer owns one product `*productruntime.Runtime` directly. There is no live
 identity-decommission state or operation lease. Graceful shutdown stops and
 drains request servers before destroying runtime key state; key-session locks
-continue to protect signing authority access. Lock and shutdown end every
-approval wait as a session end (`Coordinator.EndSessionSignRequests`);
-disconnect and displacement withdraw the prompt on screen through the
-coordinator fail-all, which the client sees as a withdrawal, not a rejection.
+continue to protect signing authority access. A lock ends every approval wait
+as a session end (`Coordinator.EndSessionSignRequests`); at shutdown the HTTP
+server stops first and cancels its requests' contexts, which ends their waits
+as client cancellations. Disconnect and displacement withdraw the prompt on
+screen through the coordinator fail-all, which the client sees as a
+withdrawal, not a rejection.
 If a request server fails to stop, lifecycle records
 `SERVER_STOP_INCOMPLETE` with `outcome:"failed"` and the service error. A
 deadline error means a handler may still be running, so lifecycle leaves the

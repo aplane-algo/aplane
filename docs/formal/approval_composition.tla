@@ -127,8 +127,8 @@ ConsultRequired(v) == v \in {"Review", "DefaultReview"}
 ConsultedOutcomes == {"Approved", "Rejected", "TimedOut", "Canceled", "Failed"}
 
 \* Map a coordinator terminal outcome to the policy approval value. Every
-\* non-approve outcome -- operator reject, timeout, /sign/cancel, and fail-all
-\* (disconnect, displacement, or lock) -- maps to a
+\* non-approve outcome -- operator reject, timeout, /sign/cancel or a session
+\* end, and fail-all (disconnect or displacement) -- maps to a
 \* not-approved value; only Approved maps to "approve". This mapping is the
 \* refinement that makes policy_precedence's four-valued oracle sound.
 CoordToApproval(co) ==

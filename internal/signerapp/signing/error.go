@@ -73,6 +73,9 @@ func sessionEndedError() *ServiceError {
 // apadmin session it was shown to disconnected or was replaced before
 // answering. Nobody rejected it: like a request that finds no apadmin
 // connected, it is unavailable, and it can be sent again.
-func approverGoneError() *ServiceError {
+func approverGoneError(displaced bool) *ServiceError {
+	if displaced {
+		return unavailable("another apadmin session replaced the one showing the approval before it was answered; send the request again")
+	}
 	return unavailable("apadmin disconnected before answering the approval; send the request again once an apadmin session is connected")
 }

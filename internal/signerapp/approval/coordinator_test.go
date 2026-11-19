@@ -546,3 +546,33 @@ func waitForDeliveryQueueLength(t *testing.T, c *Coordinator, want int) {
 func isPromptID(id string) bool {
 	return strings.HasPrefix(id, "apv-") && len(id) == len("apv-")+32
 }
+
+// A displacement withdraws with ErrApproverDisplaced, and a reason the
+// coordinator does not know counts as a disconnect, so every fail-all is a
+// withdrawal the signing layer can name.
+func TestCoordinatorFailAllNamesDisplacementAndDefaultsToDisconnect(t *testing.T) {
+	for reason, want := range map[string]error{
+		SignRequestCancelReasonApproverDisplaced:    ErrApproverDisplaced,
+		SignRequestCancelReasonApproverDisconnected: ErrApproverGone,
+		"some free text": ErrApproverGone,
+	} {
+		sent := make(chan string, 1)
+		canceled := make(chan string, 1)
+		c := New(func() bool { return true }, func(req *SignRequest) bool { sent <- req.ID; return true },
+			func(msg *SignRequestCanceled) bool { canceled <- msg.Reason; return true })
+		done := make(chan error, 1)
+		go func() {
+			_, err := c.RequestSigningApproval("sign-1", "A", "A", "desc", 0, 0, nil, time.Second)
+			done <- err
+		}()
+		<-sent
+		c.FailAllPendingRequests(reason)
+		err := <-done
+		if !errors.Is(err, want) || (want == ErrApproverGone && errors.Is(err, ErrApproverDisplaced)) {
+			t.Fatalf("reason %q: err = %v, want %v", reason, err, want)
+		}
+		if got := <-canceled; got != SignRequestCancelReasonApproverDisplaced && got != SignRequestCancelReasonApproverDisconnected {
+			t.Fatalf("reason %q: cancel notice reason = %q, want a wire reason", reason, got)
+		}
+	}
+}

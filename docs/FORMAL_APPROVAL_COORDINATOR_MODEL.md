@@ -59,8 +59,10 @@ liveness configurations are all recorded in `formal/metrics*.json`.
   `TestCoordinatorFailAllClearsPendingMaps` and
   `TestCoordinatorFailAllUnblocksPendingRequest`.
 - `internal/signerapp/daemon/hub_test.go`: daemon-level fail-all forwarding.
-- `internal/signerapp/daemon/ipc.go`: displacement fails pending approvals
-  before changing the active operator session.
+- `internal/signerapp/daemon/ipc.go`: displacement withdraws pending
+  approvals right after promoting the replacement session and before
+  notifying and closing the displaced one, so the withdrawal's cancel notice
+  reaches the replacement.
 - `internal/signerapp/signing/service_test.go`:
   `TestSignGroupWithPlanStopsBeforeExecute` proves a rejected final-execution
   gate produces no signer output.
@@ -68,8 +70,7 @@ liveness configurations are all recorded in `formal/metrics*.json`.
 The end-to-end mapping from approval outcome to signing output is checked in
 [`formal/approval_composition.tla`](formal/approval_composition.tla). A
 `Failed` coordinator outcome is not approval and produces no signed output,
-independent of whether the production reason was disconnect, displacement,
-or lock.
+whether the production reason was disconnect or displacement.
 
 ## Run
 
