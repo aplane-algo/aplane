@@ -248,7 +248,10 @@ func GetSignerDataDir(flagValue string) string {
 // LoadServerConfig loads configuration from a YAML file in the data directory.
 // The dataDir parameter is required - use GetSignerDataDir() to resolve it.
 // Config file is expected at <dataDir>/config.yaml.
-// Returns default config if file doesn't exist or can't be read.
+// Returns the default config, with a warning, only when the file does not
+// exist. A file that exists but cannot be read is an error: running on
+// defaults would drop what it sets, require_memory_protection and a custom
+// IPC path among them, without anyone noticing.
 func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	defaults := DefaultServerConfig()
 
@@ -258,17 +261,13 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 
 	path := filepath.Join(dataDir, "config.yaml")
 
-	// Try to read config file
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: Config file not found: %s\n", path)
-		} else if os.IsPermission(err) {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: Permission denied reading config file: %s\n", path)
-		} else {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: Could not read config file %s: %v\n", path, err)
-		}
+	if os.IsNotExist(err) {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: Config file not found: %s\n", path)
 		return defaults, nil
+	}
+	if err != nil {
+		return ServerConfig{}, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	return parseServerConfig(dataDir, path, data, defaults)

@@ -175,6 +175,7 @@ func TestEnrollmentRequestsQueueBehindThePopup(t *testing.T) {
 // dropped from the popup queue; the signer's result settles the answer so
 // a genuinely new request for the same key shows afterwards.
 func TestAnsweredEnrollmentRequestIsNotShownAgain(t *testing.T) {
+	armImmediately(t)
 	m := approvalTestModel(ViewEnrolledClients)
 	m.clients.pending = []protocol.PendingEnrollmentInfo{{Fingerprint: "SHA256:one"}}
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
@@ -206,6 +207,7 @@ func TestAnsweredEnrollmentRequestIsNotShownAgain(t *testing.T) {
 // they are: a failure is never left on a status line they are not looking
 // at.
 func TestEnrollmentAnswerFromPopupIsReported(t *testing.T) {
+	armImmediately(t)
 	m := approvalTestModel(ViewKeyList)
 	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})

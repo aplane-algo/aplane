@@ -193,7 +193,6 @@ internal/engine/
 │   ├── client.go          # Signer client construction and request helpers
 │   ├── lifecycle.go       # Connect/disconnect and tunnel lifecycle
 │   ├── cosigner_endpoint.go # Cosigner endpoint connection helpers
-│   ├── local_port.go      # Free loopback port selection for tunnels
 │   ├── signing.go         # Signer-facing plan/sign requests
 │   └── state.go           # Mutex-protected ConnectionState
 ├── connection.go          # Core-facing connection facade
@@ -670,15 +669,16 @@ canSign, isLsig := engine.CanSignForAddress(address)
 #### SSH Tunnel Connection
 
 `ConnectWithTunnel` is the product-facing remote connection path used by
-`apshell`. It creates or reuses a local tunnel to the signer HTTP API and
-populates the signer cache after connection.
+`apshell`. It opens, or reuses, an SSH connection to the signer, gives the
+signer client an HTTP transport that opens a channel to the signer's REST API
+for each connection, and populates the signer cache after connection. Nothing
+listens on the client machine.
 
 ```go
 result, err := engine.ConnectWithTunnel(
     target,      // display label, e.g. "host.example.com (ssh:1127)"
     host,        // "host.example.com"
     sshPort,     // 1127
-    localPort,   // free loopback port chosen by the caller
     identityFile,    // SSH private key path (optional, uses agent if empty); the enrolled key is the credential
     knownHostsPath,  // known_hosts file for SSH verification
     hostKeyApproval, // TOFU callback for unknown SSH host keys
@@ -988,6 +988,13 @@ path. Keywords stay case-sensitive where the command handler compares them
 exactly: readline only appends the rest of a suggestion, so folding case would
 complete `RE` into a word the handler rejects.
 
+Completion runs under `runtimeMu`, which a running command holds for its whole
+run. A command's own prompts (an approval, pasted lines) read through the same
+readline instance and ask for an answer, not a command, so while the
+interactive REPL runs a command the completer offers nothing and takes no
+lock. Waiting for it there would never end, since the command is waiting for
+the line.
+
 ### Command Result Rendering
 
 Every registered handler returns a `command.Result`:
@@ -1008,7 +1015,9 @@ Machine projections in `command_projections.go` are explicit security
 allowlists. Plugin projection filters the reserved `localSigners` field.
 One-shot `simulate <transaction-command>` invokes the same result-bearing
 executor while simulation is temporarily forced and restores the prior mode
-with deferred cleanup.
+with deferred cleanup. The result is drawn after that, so a command reads
+the mode when it runs and passes it to its rendering; a renderer never asks
+for the mode itself.
 
 ### Command Dispatch
 
@@ -1792,11 +1801,13 @@ Each outcome's `message` says what happened:
 | `not_sent` | `Not sent: the context had ended before the submit call for transaction(s) <ids> was made, so nothing was sent.` |
 
 `execute` and `js` turn an error into an MCP error result through
-`mcpErrorResult`. An error with no outcome is its text alone, as before,
-even when the command returned a structured result with it. Otherwise the
-first text content is the error text, then one sentence for each outcome.
-The second text content is JSON with `error` and `submissions`; the
-command's structured result is not attached, so each outcome is reported
+`mcpErrorResult`. An error with no outcome and no unsubmitted item is its
+text alone, even when the command returned a structured result with it.
+Otherwise the first text content is the error text, then one sentence for
+each outcome and one `<from> -> <to>: <reason>` line for each item that
+failed before reaching algod. The second text content is JSON with `error`,
+`submissions` and, when there are such items, `unsubmitted`; the command's
+structured result is not attached, so each outcome is reported
 once:
 
 ```json
@@ -1814,17 +1825,26 @@ once:
 }
 ```
 
-The text names transaction IDs only, never transaction contents or argument
-values. Nothing retries.
+An outcome's sentence names transaction IDs only, never transaction contents
+or argument values. An unsubmitted item's reason is the item's own error text,
+as a partly successful send already reports it in `items[].error`: a balance
+check's amounts, or the signer's refusal. Nothing retries.
 
 Commands that report items record each item's outcome as `submission` on the
-item of their successful result: non-atomic `send`, `validate`, and a `sweep`
-in which some items succeeded. A `sweep` in which every item failed returns
-its result with an error whose text is `all N transaction(s) failed`. That
+item of their successful result: `validate`, and a non-atomic `send` or a
+`sweep` in which some items succeeded. A non-atomic `send` or a `sweep` in
+which every item failed, one item included, returns its result with an error
+whose text is `all N transaction(s) failed`, so the command fails: the REPL
+draws each item and then returns the error, which stops a script. That
 error wraps none of the items' errors, so no item's sentinel matches it and
 the REPL renders each item's submission output once, in the result; it
 reports the items' `SubmissionError`s as an `appresult.SubmissionFailures`,
-so its MCP error result lists each item's outcome in `submissions`. A plugin
+so its MCP error result lists each item's outcome in `submissions`. An item
+that failed before reaching algod (a balance check, the signer refusing or
+unreachable, a signing error) has no outcome; the error reports its reason
+as an `appresult.UnsubmittedFailures`, and the MCP error result appends one
+`<from> -> <to>: <reason>` line per such item to its text and lists them in
+`unsubmitted`, so the client can tell what to fix. A plugin
 step whose submission failed is still a plugin result (see
 [success:false Handling](#successfalse-handling)), with its outcome in
 `submissions`.
@@ -1859,8 +1879,11 @@ submission output, which lists the IDs, and nothing of the outcome.
 | `keyreg` (no args) | Paste mode requires interactive input |
 
 Policies are attached to primary registry commands after alias resolution, so
-aliases cannot bypass a block. Explicit `keyreg` arguments and non-`add`
-`endpoints` subcommands remain structured.
+aliases cannot bypass a block. One-shot `simulate <command>` runs the command
+it names, so `mcpAutomationRefusal` applies that command's policy as well:
+`simulate keyreg` is refused like `keyreg`, and so is a simulated command MCP
+blocks. Explicit `keyreg` arguments and non-`add` `endpoints` subcommands
+remain structured.
 
 ### stdout/stderr Separation
 
@@ -1968,7 +1991,7 @@ because a plugin chooses its name and could otherwise pass as `cache`.
 | `error` | A failure nothing else reports | Recovered keepalive panic |
 | `warn` | The operator should know or act | Cache tampering, connection loss, key revocation, skipped plugin, failed plugin's last lines |
 | `info` | Routine detail | Plugin stderr, sandbox line, host key saved |
-| `debug` | Detail for diagnosing the client | Cache hits, forwarded-connection errors, response-close errors |
+| `debug` | Detail for diagnosing the client | Cache hits, SSH connection close errors, response-close errors |
 
 The default level is `warn`, except that `--mcp` starts at `info`, because its
 stderr is the host's log rather than a display. `APSHELL_DEBUG` starts any mode at

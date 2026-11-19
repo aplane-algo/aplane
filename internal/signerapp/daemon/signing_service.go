@@ -20,6 +20,19 @@ type signingAudit interface {
 }
 
 func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLog signingAudit) *signersigning.Service {
+	// One request, one session: the request signs only while the signer is
+	// unlocked in the session it began in. A recovery and a reconcile while
+	// it waits for approval end that session as a lock does, so the request
+	// is refused rather than signed on a plan from before them. It is read
+	// before the policy snapshot below, and the caller builds the service
+	// before it takes the request's key session, so both belong to this
+	// session or the request is refused. A request that begins while the
+	// signer is not unlocked has no session: the one a recovery opens is
+	// unlocked again by its reconcile, after a policy snapshot taken now may
+	// have been replaced, so such a request is refused for good.
+	generation, unlocked := ir.UnlockedGeneration()
+	inSession := func() bool { return unlocked && ir.IsUnlockedIn(generation) }
+
 	// One request, one policy snapshot: every slot of this request resolves
 	// against the NodePolicy captured here, whatever reloads land later, and
 	// its approval prompts show amounts from the context it was loaded in.
@@ -36,11 +49,9 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},
 		GenerateTxnDescriptionFromTxn: describe,
-		IsUnlocked: func() bool {
-			return ir.IsUnlocked()
-		},
+		IsUnlocked:                    inSession,
 		BeforeExecute: func() (func(), *signersigning.ServiceError) {
-			if !ir.IsUnlocked() {
+			if !inSession() {
 				return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 			}
 			return func() {}, nil

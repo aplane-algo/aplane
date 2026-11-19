@@ -5,12 +5,15 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -201,7 +204,7 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 
 	approvalResult := make(chan error, 1)
 	go func() {
-		response, err := ir.RequestSigningApprovalResponse("displaced-prompt", "A", "A", "desc", 0, 0, nil, time.Minute)
+		response, err := ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "displaced-prompt", Address: "A", TxnSender: "A", Description: "desc", FirstValid: 0, LastValid: 0}, time.Minute)
 		if err != nil {
 			approvalResult <- err
 			return

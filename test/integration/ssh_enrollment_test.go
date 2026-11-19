@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,7 +114,7 @@ func TestRequestEnrollmentQueuesAndApprovalEnrolls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected apshell startup auto-connect to succeed: %v\noutput:\n%s", err, connectOutput)
 	}
-	if !strings.Contains(connectOutput, "Signer verified via tunnel") {
+	if !strings.Contains(connectOutput, "Signer verified over SSH") {
 		t.Fatalf("expected tunnel verification after approval, got output:\n%s", connectOutput)
 	}
 
@@ -208,7 +207,7 @@ func TestRequestEnrollmentQueuesWithoutOperatorAndReplaysAtLogin(t *testing.T) {
 
 	mustApproveEnrollmentViaIPC(t, ipcClient, want, "")
 	connectOutput, err := apshell.RunWithInput("quit\n")
-	if err != nil || !strings.Contains(connectOutput, "Signer verified via tunnel") {
+	if err != nil || !strings.Contains(connectOutput, "Signer verified over SSH") {
 		t.Fatalf("expected a connection after approval: %v\noutput:\n%s", err, connectOutput)
 	}
 }
@@ -296,7 +295,7 @@ func TestRequestEnrollmentPersistsAcrossRestart(t *testing.T) {
 
 	apshell := harness.NewApshellHarness(t)
 	output, err := apshell.RunWithInput("quit\n")
-	if err != nil || !strings.Contains(output, "Signer verified via tunnel") {
+	if err != nil || !strings.Contains(output, "Signer verified over SSH") {
 		t.Fatalf("expected a connection after approval: %v\noutput:\n%s", err, output)
 	}
 }
@@ -342,7 +341,7 @@ func TestConnectWithExistingTrustedHostSkipsTOFU(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected trusted-host connect to succeed: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "Signer verified via tunnel") {
+	if !strings.Contains(output, "Signer verified over SSH") {
 		t.Fatalf("expected successful trusted-host connect, got output:\n%s", output)
 	}
 	if strings.Contains(output, "[SSH] Unknown host") {
@@ -571,7 +570,7 @@ func TestImportClientKeyPreEnrolls(t *testing.T) {
 
 	apshell := harness.NewApshellHarness(t)
 	output, err := apshell.RunWithInput("quit\n")
-	if err != nil || !strings.Contains(output, "Signer verified via tunnel") {
+	if err != nil || !strings.Contains(output, "Signer verified over SSH") {
 		t.Fatalf("expected a connection with the imported key: %v\noutput:\n%s", err, output)
 	}
 	eng, err := engine.NewEngine(harness.IntegrationNetwork())
@@ -619,12 +618,10 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 		t.Fatalf("authorized_keys does not contain agent key:\n%s", readFileIfExists(t, env.AuthorizedKeysPath))
 	}
 
-	localPort := mustAvailableLocalPort(t)
 	connected, err := eng.ConnectWithTunnel(
 		fmt.Sprintf("%s:%d", clientCfg.Host, clientCfg.Port),
 		clientCfg.Host,
 		clientCfg.Port,
-		localPort,
 		"",
 		clientCfg.KnownHostsPath,
 		nil,
@@ -693,12 +690,10 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 		default:
 		}
 	}
-	localPort := mustAvailableLocalPort(t)
 	connected, err := eng.ConnectWithTunnel(
 		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
 		sshCfg.Host,
 		sshCfg.Port,
-		localPort,
 		sshCfg.IdentityFile,
 		sshCfg.KnownHostsPath,
 		nil,
@@ -730,12 +725,10 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 	}
 	requireEnrolledKeys(t, env, 0)
 
-	reconnectPort := mustAvailableLocalPort(t)
 	if _, err := eng.ConnectWithTunnel(
 		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
 		sshCfg.Host,
 		sshCfg.Port,
-		reconnectPort,
 		sshCfg.IdentityFile,
 		sshCfg.KnownHostsPath,
 		nil,
@@ -1142,17 +1135,6 @@ func stopSSHAgent(env sshAgentEnv) error {
 	)
 	_, err := cmd.CombinedOutput()
 	return err
-}
-
-func mustAvailableLocalPort(t *testing.T) int {
-	t.Helper()
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to allocate local port: %v", err)
-	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port
 }
 
 func removeIfExists(t *testing.T, path string) {

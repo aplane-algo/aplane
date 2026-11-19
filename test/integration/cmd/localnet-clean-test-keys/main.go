@@ -118,13 +118,9 @@ type resolvedOptions struct {
 // connectFixtureClient opens an SSH tunnel to the signer as the fixture's
 // enrolled client and returns a REST client over it.
 func connectFixtureClient(resolved resolvedOptions) (*signerclient.Client, func(), error) {
-	localPort, err := connect.FindAvailableLocalPort()
-	if err != nil {
-		return nil, nil, err
-	}
 	state := connect.NewState()
 	result, err := state.ConnectWithTunnel(
-		resolved.endpointURL, resolved.host, resolved.sshPort, localPort,
+		resolved.endpointURL, resolved.host, resolved.sshPort,
 		resolved.endpoint.IdentityFile, resolved.endpoint.KnownHostsPath,
 		nil, nil, nil,
 	)

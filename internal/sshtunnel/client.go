@@ -93,15 +93,15 @@ func (s *keepaliveStopSignal) stop() {
 // HostKeyApprovalTimeoutNotice, and return true if the server is trusted.
 type HostKeyApprovalHandler func(host string, fingerprint string) (bool, error)
 
-// Client represents an SSH tunnel client with public-key authentication and
-// mutual token proof.
+// Client is an SSH connection to a node, authenticated by the client's
+// enrolled key. It opens a channel to the node's REST API for each HTTP
+// connection (DialSignerAPI); nothing listens on this machine, so no other
+// local process can use the client's identity.
 type Client struct {
-	host      string // remote host
-	sshPort   int    // SSH port on remote host
-	localPort int    // local port to forward from (auto-selected)
+	host    string // remote host
+	sshPort int    // SSH port on remote host
 
 	sshClient *ssh.Client
-	listener  net.Listener
 	agentConn net.Conn
 
 	identityFile      string
@@ -126,7 +126,7 @@ type Client struct {
 const DisconnectReasonKeyRevoked = "key-revoked"
 
 // forwardedAPIAddress is the destination named in every direct-tcpip channel
-// request. The server (see handleDirectTCPIP) checks only that the address is
+// request. The server (see handleChannel) checks only that the address is
 // loopback and always dials its own REST listener, so the port here is
 // nominal: a client never chooses the remote port.
 const forwardedAPIAddress = "127.0.0.1:11270"
@@ -134,14 +134,12 @@ const forwardedAPIAddress = "127.0.0.1:11270"
 // NewClient creates a new SSH tunnel client.
 // host: remote host address
 // sshPort: SSH port on remote host
-// localPort: local port for tunnel (auto-selected by caller)
 // identityFile: path to SSH private key (optional; if empty, use SSH agent)
 // knownHostsPath: path to known_hosts file
-func NewClient(host string, sshPort, localPort int, identityFile, knownHostsPath string) *Client {
+func NewClient(host string, sshPort int, identityFile, knownHostsPath string) *Client {
 	return &Client{
 		host:           host,
 		sshPort:        sshPort,
-		localPort:      localPort,
 		identityFile:   identityFile,
 		knownHostsPath: knownHostsPath,
 		closeChan:      make(chan struct{}),
@@ -474,132 +472,7 @@ func expandUserPath(path string) string {
 	return path
 }
 
-// StartPortForwarding starts forwarding local port to remote port through the SSH tunnel
-func (c *Client) StartPortForwarding(ctx context.Context) error {
-	c.mu.Lock()
-	if !c.connected || c.sshClient == nil {
-		c.mu.Unlock()
-		return fmt.Errorf("not connected")
-	}
-	if c.listener != nil {
-		c.mu.Unlock()
-		return fmt.Errorf("port forwarding already started")
-	}
-	c.mu.Unlock()
-
-	// Listen on local port
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", c.localPort))
-	if err != nil {
-		return fmt.Errorf("failed to listen on local port %d: %w", c.localPort, err)
-	}
-
-	c.mu.Lock()
-	c.listener = listener
-	c.mu.Unlock()
-
-	// Start accepting connections
-	go c.acceptConnections(ctx)
-
-	return nil
-}
-
-// acceptConnections handles incoming local connections and forwards them through SSH
-func (c *Client) acceptConnections(ctx context.Context) {
-	var backoff time.Duration
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-c.closeChan:
-			return
-		default:
-		}
-
-		localConn, err := c.listener.Accept()
-		if err != nil {
-			select {
-			case <-c.closeChan:
-				return
-			default:
-			}
-			// Back off so a persistent Accept error (e.g. EMFILE) doesn't
-			// busy-spin a core; mirrors the server-side accept loop.
-			backoff = nextAcceptErrorBackoff(backoff)
-			select {
-			case <-ctx.Done():
-				return
-			case <-c.closeChan:
-				return
-			case <-time.After(backoff):
-			}
-			continue
-		}
-		backoff = 0
-
-		// Handle connection in goroutine
-		go c.handleConnection(localConn)
-	}
-}
-
-// handleConnection forwards a single local connection through the SSH tunnel
-func (c *Client) handleConnection(localConn net.Conn) {
-	defer func() {
-		if err := localConn.Close(); err != nil && !isExpectedCloseError(err) {
-			logger().Debug("failed to close local connection", "error", err)
-		}
-	}()
-
-	c.mu.Lock()
-	sshClient := c.sshClient
-	c.mu.Unlock()
-
-	if sshClient == nil {
-		return
-	}
-
-	// Open a channel to the node's REST API through the SSH connection.
-	remoteConn, err := sshClient.Dial("tcp", forwardedAPIAddress)
-	if err != nil {
-		logger().Debug("failed to dial remote port", "error", err)
-		return
-	}
-	defer func() {
-		if err := remoteConn.Close(); err != nil && !isExpectedCloseError(err) {
-			logger().Debug("failed to close remote connection", "error", err)
-		}
-	}()
-
-	// Bidirectional copy
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(remoteConn, localConn)
-		// Errors are expected when connection closes normally
-	}()
-
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(localConn, remoteConn)
-		// Errors are expected when connection closes normally
-	}()
-
-	wg.Wait()
-}
-
-// isExpectedCloseError returns true for errors that are normal during shutdown
-// (e.g., EOF or a closed network connection when the SSH client is torn down
-// before per-connection cleanup runs). The text fallback covers SSH-library
-// errors that embed the net string without wrapping net.ErrClosed.
-func isExpectedCloseError(err error) bool {
-	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-		return true
-	}
-	return strings.Contains(err.Error(), "use of closed network connection")
-}
-
-// Close closes the SSH connection and stops port forwarding
+// Close closes the SSH connection.
 func (c *Client) Close() error {
 	c.mu.Lock()
 
@@ -623,13 +496,6 @@ func (c *Client) Close() error {
 	var errs []error
 
 	c.mu.Lock()
-	if c.listener != nil {
-		if err := c.listener.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close listener: %w", err))
-		}
-		c.listener = nil
-	}
-
 	if c.sshClient != nil {
 		if err := c.sshClient.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close SSH client: %w", err))
@@ -682,9 +548,8 @@ func (c *Client) CheckConnection() error {
 	return nil
 }
 
-// DialSignerAPI opens one context-bounded SSH channel to the loopback signer
-// REST port configured for this client. Callers cannot select another remote
-// destination through this method.
+// DialSignerAPI opens one context-bounded SSH channel to the node's REST
+// API. Callers cannot select another remote destination through this method.
 func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("context is required")

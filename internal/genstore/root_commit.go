@@ -21,9 +21,20 @@ var (
 	// retry could overwrite the only evidence of which authority was selected.
 	ErrStoreRootCommitDurabilityUnknown = errors.New("store root commit durability is unknown")
 	// ErrStoreRootCommitStateUnknown means neither the old nor candidate exact
-	// root could be proven after a write failure.
+	// root could be proven after a write failure. The candidate may have
+	// landed, so callers enter recovery as for durability unknown.
 	ErrStoreRootCommitStateUnknown = errors.New("store root commit state is unknown")
 )
+
+// RootCommitUncertain reports whether err from a root commit leaves open that
+// the root now selects the candidate: the candidate is visible but its
+// durability is unknown, or the root could not be classified at all. The
+// caller enters recovery and reloads, as for a commit that landed, rather
+// than reporting a failure before commit.
+func RootCommitUncertain(err error) bool {
+	return errors.Is(err, ErrStoreRootCommitDurabilityUnknown) ||
+		errors.Is(err, ErrStoreRootCommitStateUnknown)
+}
 
 // CommitStoreRoot performs an ordinary generation selection. It takes a fresh
 // exact read after successor publication/sealing, authenticates its outgoing

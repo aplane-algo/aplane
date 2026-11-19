@@ -120,3 +120,74 @@ func TestSigningServiceShowsAmountsFromTheCapturedContext(t *testing.T) {
 		t.Fatalf("the route limit message after an ASA set change: %s", msg)
 	}
 }
+
+// A request signs only in the session it began in. A recovery and a
+// reconcile while it waits (for an approval, say) leave the signer unlocked
+// again, but in a new session, and the request is refused before it signs
+// rather than signed on a plan made before them. A lock and an unlock do the
+// same; a request begun afterwards signs.
+func TestSigningServiceRefusesAfterTheSessionItBeganInEnds(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		roundTrip func(ir *productruntime.Runtime)
+	}{
+		{"recovery and reconcile", func(ir *productruntime.Runtime) {
+			ir.SetRecovery()
+			if !ir.PromoteRecoveryToUnlocked() {
+				t.Fatal("reconcile did not promote the signer")
+			}
+		}},
+		{"lock and unlock", func(ir *productruntime.Runtime) {
+			ir.Lock()
+			ir.SetUnlocked()
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			signer := &Signer{config: &serverconfig.ServerConfig{}}
+			ir := productruntime.New(productruntime.Config{})
+			ir.SetPolicy(policy.DefaultConfig())
+			ir.SetUnlocked()
+
+			svc := signer.newSigningServiceWithAudit(ir, nil)
+			if !svc.IsUnlocked() {
+				t.Fatal("a request begun on an unlocked signer reads locked")
+			}
+			tc.roundTrip(ir)
+			if !ir.IsUnlocked() {
+				t.Fatal("the signer is not unlocked after the round trip")
+			}
+			if svc.IsUnlocked() {
+				t.Fatal("a request begun before the round trip still reads as signable")
+			}
+			if release, err := svc.BeforeExecute(); err == nil {
+				release()
+				t.Fatal("a request begun before the round trip may still execute")
+			}
+			if !signer.newSigningServiceWithAudit(ir, nil).IsUnlocked() {
+				t.Fatal("a request begun after the round trip cannot sign")
+			}
+		})
+	}
+}
+
+// A request that begins while the signer is in recovery has no session to
+// sign in, though the reconcile leaves the signer unlocked again: the policy
+// snapshot it took may since have been replaced.
+func TestSigningServiceBegunInRecoveryIsRefused(t *testing.T) {
+	signer := &Signer{config: &serverconfig.ServerConfig{}}
+	ir := productruntime.New(productruntime.Config{})
+	ir.SetPolicy(policy.DefaultConfig())
+	ir.SetUnlocked()
+	ir.SetRecovery()
+
+	svc := signer.newSigningServiceWithAudit(ir, nil)
+	if !ir.PromoteRecoveryToUnlocked() {
+		t.Fatal("reconcile did not promote the signer")
+	}
+	if svc.IsUnlocked() {
+		t.Fatal("a request begun in recovery reads as signable after the reconcile")
+	}
+	if !signer.newSigningServiceWithAudit(ir, nil).IsUnlocked() {
+		t.Fatal("a request begun after the reconcile cannot sign")
+	}
+}

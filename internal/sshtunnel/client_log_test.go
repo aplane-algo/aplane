@@ -46,7 +46,7 @@ func TestConnectionLossIsLoggedAsAWarning(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := captureLog(t)
-			client := NewClient("example.com", 22, 0, "", "")
+			client := NewClient("example.com", 22, "", "")
 			called := false
 			client.SetDisconnectCallback(func() { called = true })
 			client.connected = true
@@ -71,7 +71,7 @@ func TestConnectionLossIsLoggedAsAWarning(t *testing.T) {
 // reporting, because a plain remote close is only logged here.
 func TestConnectionLossIsReportedWithoutACallback(t *testing.T) {
 	out := captureLog(t)
-	client := NewClient("example.com", 22, 0, "", "")
+	client := NewClient("example.com", 22, "", "")
 	client.connected = true
 
 	client.handleDisconnect()
@@ -86,7 +86,7 @@ func TestConnectionLossIsReportedWithoutACallback(t *testing.T) {
 
 func TestConnectionLossIsReportedOnce(t *testing.T) {
 	out := captureLog(t)
-	client := NewClient("example.com", 22, 0, "", "")
+	client := NewClient("example.com", 22, "", "")
 	calls := 0
 	client.SetDisconnectCallback(func() { calls++ })
 	client.connected = true
@@ -103,7 +103,7 @@ func TestConnectionLossIsReportedOnce(t *testing.T) {
 // remote one would warn every time.
 func TestLocalCloseIsNotReportedAsARemoteClose(t *testing.T) {
 	out := captureLog(t)
-	client := NewClient("example.com", 22, 0, "", "")
+	client := NewClient("example.com", 22, "", "")
 	client.connected = true
 
 	if err := client.Close(); err != nil {
@@ -133,7 +133,7 @@ func TestConnectionErrorIsAWarningUnlessItIsAPlainClose(t *testing.T) {
 
 func TestLocalDisconnectIsNotReported(t *testing.T) {
 	out := captureLog(t)
-	client := NewClient("example.com", 22, 0, "", "")
+	client := NewClient("example.com", 22, "", "")
 	client.SetDisconnectCallback(func() {})
 
 	client.handleDisconnect() // Not connected.
@@ -146,7 +146,7 @@ func TestLocalDisconnectIsNotReported(t *testing.T) {
 func TestIdentityCreatedIsLoggedWithoutAHandler(t *testing.T) {
 	out := captureLog(t)
 	path := filepath.Join(t.TempDir(), "id")
-	client := NewClient("example.com", 22, 0, path, "")
+	client := NewClient("example.com", 22, path, "")
 
 	if _, err := client.generateIdentityKey(path); err != nil {
 		t.Fatalf("generateIdentityKey() error = %v", err)
@@ -162,7 +162,7 @@ func TestIdentityCreatedIsLoggedWithoutAHandler(t *testing.T) {
 
 func TestHandlerOwnsTheHostTrustPrompt(t *testing.T) {
 	out := captureLog(t)
-	client := NewClient("example.com", 22, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
+	client := NewClient("example.com", 22, "", filepath.Join(t.TempDir(), "known_hosts"))
 	client.SetHostKeyApprovalHandler(func(string, string) (bool, error) { return false, nil })
 	callback, err := client.hostKeyCallback()
 	if err != nil {

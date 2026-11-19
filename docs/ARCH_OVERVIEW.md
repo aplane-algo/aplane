@@ -680,7 +680,7 @@ behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/cosigned`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policytext`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
-| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/sigconstruction`, `internal/boundary`, `internal/lsigresource`, `lsig/`, `lsig/plainhost`, `lsig/rotatingfamily`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingtriplewotsc`, `internal/cosigner`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/sigconstruction`, `internal/boundary`, `internal/lsigresource`, `lsig/`, `lsig/plainhost`, `lsig/rotatingfamily`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingtriplewotsc`, `internal/cosigner`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/stagetable`, `internal/rotatingkey`, `internal/rotatingstage`, `internal/crypto/wotsc`, `internal/crypto/rotatinghybrid`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest`, `internal/productmode` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -1061,8 +1061,9 @@ state. Normal client routing lives in `endpoints.yaml` through
 to 12 `cosigner` endpoints. Endpoint records carry URL, identity file, and
 `known_hosts`; no credential, because the enrolled identity key is the
 credential; and no port beyond the one in the URL, because the
-node's SSH server forwards every channel to its own REST listener and the
-signer-role forward binds a free local port at connect time. Live cosigner-key discovery is operation-scoped
+node's SSH server forwards every channel to its own REST listener. Neither
+role opens a local port: HTTP travels over channels the client opens
+in-process. Live cosigner-key discovery is operation-scoped
 and is not stored in the registry. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apadmin endpoint export` and
 `apshell endpoints import`.
@@ -1482,9 +1483,11 @@ Store maintenance adds a product-store state fence in `Runtime.stateMu`.
 Beginning maintenance clears and locks the published key session before any
 root transition. Unlock and recovery attempts that start during the fence are
 rejected without loading authority; attempts already in flight lose on the
-generation check and clear anything they loaded. Only the matching successful
-maintenance token may republish after verified reload. Failure, a stale token,
-or a racing explicit lock leaves the runtime locked.
+generation check, lock the runtime and clear anything they loaded. Only the
+matching successful maintenance token may republish after verified reload,
+and only if the runtime was unlocked when the maintenance began. Failure, a
+stale token, or a racing lock leaves the runtime locked, and the maintenance
+then clears what it reloaded, since no later lock of a locked runtime would.
 
 The watcher is owned by the product runtime but is not tied to every lock
 transition:

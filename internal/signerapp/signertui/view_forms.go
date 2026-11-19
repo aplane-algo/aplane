@@ -83,6 +83,11 @@ func (m Model) renderBackupDisplay() string {
 	sb.WriteString("Archive:\n")
 	sb.WriteString(terminalSafe(m.backup.archivePath))
 	sb.WriteString("\n")
+	if m.backup.archiveWarning != "" {
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render("Warning: " + terminalSafe(m.backup.archiveWarning)))
+		sb.WriteString("\n")
+	}
 	return m.renderPopup(90, sb.String())
 }
 

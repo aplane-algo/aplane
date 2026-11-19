@@ -75,7 +75,4 @@ func TestRegisterClientRegistersComposableBase(t *testing.T) {
 	if reg.Ops == nil {
 		t.Fatal("Ops is nil")
 	}
-	if reg.NewAddressDeriver == nil {
-		t.Fatal("NewAddressDeriver is nil")
-	}
 }

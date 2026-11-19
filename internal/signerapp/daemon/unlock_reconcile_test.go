@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"errors"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 )
 
 // convertTestSignerToGenerational remains as a test-call-site compatibility
@@ -202,5 +205,54 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	ir.Lock()
 	if success, _, errMsg, code := svc.UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+}
+
+// A reconcile that fails enters recovery before it releases the store
+// mutation lock (RB2), not after: until then the runtime may still serve a
+// generation behind the store root, and another mutation could take the lock.
+func TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.runtime
+	ir.SetUnlocked()
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		return nil, errors.New("simulated reload failure")
+	})
+
+	// reconcileLocked is the work reconcileReloadAndPromote runs under the
+	// store mutation lock: the runtime must be in recovery when it returns,
+	// before the lock around it is released.
+	if _, err := server.adminServices().reconcileLocked(ir, true); err == nil {
+		t.Fatal("the reconcile succeeded though its reload failed")
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v when the locked work returned, want recovery", ir.GetState())
+	}
+
+	// Through the lock, the outcome is the same.
+	ir.SetUnlocked()
+	if _, err := server.adminServices().reconcileReloadAndPromote(ir, true); err == nil || !ir.IsRecovery() {
+		t.Fatalf("reconcile: err = %v, state = %v; want a failure and recovery", err, ir.GetState())
+	}
+}
+
+// The recovery-exit rescan after a restore or rollback leaves a lock that
+// came in before it alone: a failure there keeps the signer locked rather
+// than putting it back in recovery.
+func TestARecoveryExitRescanKeepsALockThatCameFirst(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.runtime
+	ir.SetRecovery()
+	ir.Lock()
+	if ir.GetState() != signerruntime.SignerStateLocked {
+		t.Fatalf("state = %v after Lock, want locked", ir.GetState())
+	}
+	if _, ok := server.adminServices().exitRecoveryIfReconciled(ir); ok {
+		t.Fatal("the rescan lifted recovery on a locked signer")
+	}
+	if ir.GetState() != signerruntime.SignerStateLocked {
+		t.Fatalf("state = %v after the rescan, want the lock kept", ir.GetState())
 	}
 }

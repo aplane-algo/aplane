@@ -84,7 +84,7 @@ func connectEnrolledClient(t *testing.T, srv *Server, set *enrolledSet, tmpDir, 
 	_ = tmpDir
 	_, pub, identityPath := generateClientIdentityFile(t, t.TempDir())
 	set.add(pub)
-	client := NewClient(host, port, 0, identityPath, knownHostsPath)
+	client := NewClient(host, port, identityPath, knownHostsPath)
 	before := srv.ActiveConnectionCount()
 	if err := client.ConnectWithKey(context.Background()); err != nil {
 		t.Fatalf("ConnectWithKey() error = %v", err)
@@ -240,7 +240,7 @@ func TestKeyRevokedDuringHandshakeIsRefused(t *testing.T) {
 	srv.testAfterAuthBeforeTrack = func() { set.remove(ssh.FingerprintSHA256(pub)) }
 	host, port, known := startServer(t, srv, tmpDir)
 
-	client := NewClient(host, port, 0, identityPath, known)
+	client := NewClient(host, port, identityPath, known)
 	// The SSH handshake itself succeeds; the server then refuses the
 	// connection, which the client observes as a prompt disconnect.
 	disconnected := make(chan struct{})

@@ -671,7 +671,7 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 ```
 ┌──────────┐                                          ┌────────────┐
 │  apshell │◄═══════ SSH Tunnel (encrypted) ═════════►│  apsigner  │
-│          │ :random ───── direct-tcpip channels ────►│ API conns  │
+│          │ in-process ── direct-tcpip channels ────►│ API conns  │
 └──────────┘                                          └────────────┘
      │
      └── HTTP through the tunnel; each request attributed to the connection's key
@@ -685,7 +685,11 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 **Connection properties:**
 - SSH provides transport encryption and client authentication
 - Host key verification prevents MITM (TOFU via known_hosts)
-- Random local port avoids conflicts
+- No port is opened on the client machine: the signer client opens a
+  channel for each HTTP connection from inside apshell, so no other process
+  can use apshell's connection. A process that can read the identity file or
+  use the SSH agent can still open a connection of its own with that key;
+  the identity file's permissions and the agent guard that
 - Authorization is evaluated per HTTP request against the client role
 
 **Configuration:**
@@ -1454,12 +1458,15 @@ Backup-audit semantics:
   `replace_existing`; durable-write failure aborts with no store mutation.
 - `CREDENTIAL_RESTORE_SUCCEEDED` and `CREDENTIAL_RESTORE_FAILED` carry the
   available archive SHA-256, operation ID, replacement option, and key count.
-- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` distinguishes a visible store-root
-  replacement whose directory-sync durability could not be confirmed; signing stays
+- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` distinguishes a store-root
+  replacement that may have landed but could not be confirmed (visible but
+  not confirmed durable, or not readable back); signing stays
   recovery-blocked until reconciliation confirms the root and reloads the
   visible generation.
 - `CREDENTIAL_RESTORE_ROLLBACK` records explicit rollback success or failure.
-  Failed attempts use `outcome:"failed"` and `reason`.
+  Failed attempts use `outcome:"failed"` and `reason`, with `generation_id`
+  when the rollback committed one; a rollback whose root commit could not be
+  confirmed uses `outcome:"commit_uncertain"`.
 
 Store-management audit semantics:
 
@@ -1757,30 +1764,49 @@ keyStore.WithKeyring(func(kr *crypto.Keyring) error {
 })
 ```
 
-`WithKeyring` acquires `cacheLock.RLock()` for the lifetime of the callback, so
+`WithKeyring` takes a counted reference to the keyring under
+`cacheLock.RLock()` and releases the lock before it runs the callback, so
 `ClearKeys()` cannot zero the keyring while a caller is using it. If the
 keystore is locked (`keyring == nil`) it returns an error immediately.
 
-The same RLock-through-operation pattern is used in `Get` and `Scan` (and by
-every `WithKeyring` callback) — any code path that uses the keyring holds
-`RLock` through the entire cryptographic operation. Because no copy of a term
-key is ever handed out, there is nothing to outlive the lock.
+The callback runs without the cache lock because it is the caller's code and
+it reads the store again: an admin service's key paths are the store's active
+paths, read under `cacheLock.RLock()`. A Go `RWMutex` read lock taken a second
+time by a goroutine that already holds one waits behind any writer queued
+between the two, so a lock's `ClearKeys` arriving during an admin operation
+used to deadlock the store, and with it signing, lock and shutdown.
 
-#### RLock / WLock Concurrency
+`Get`, `Scan` and `BindStoreRootSelection` call no outside code, and they keep
+the lock through their cryptographic operation. Because no copy of a term key
+is ever handed out, there is nothing to outlive either guard.
 
-`FileKeyStore.cacheLock` is a single `sync.RWMutex` guarding both the key cache and the keyring:
+#### Keyring Lifetime and the Cache Lock
 
-| Operation | Lock | Can overlap with |
-|-----------|------|------------------|
-| Keyring-backed decrypt, export, scan, store | `RLock` | Other `RLock` holders |
-| `ClearKeys()` | `WLock` | Nothing — blocks until all `RLock` holders finish |
-| `Unlock()` (open the keyring) | `WLock` | Nothing |
+`FileKeyStore.cacheLock` is a single `sync.RWMutex` guarding the key cache,
+the active generation and the keyring pointer with its count of callbacks:
 
-Multiple keyring-backed operations proceed concurrently under `RLock`. When
-the signer locks, `ClearKeys()` requests the exclusive `WLock` and blocks until
-every in-flight keyring reader finishes. This prevents term-key use after
-zeroing. Decrypted request-owned `KeyMaterial` can continue beyond key
-retrieval and is separately zeroed by the signing executor.
+| Operation | Guard | Can overlap with |
+|-----------|-------|------------------|
+| `Get`, `Scan` (decrypt under the lock) | `RLock` held throughout | Other `RLock` holders, and `WithKeyring` callbacks |
+| `WithKeyring` callback | Counted reference, no lock held | Everything except the zeroing of its keyring |
+| `ClearKeys()` | `WLock` to detach the keyring, then a wait for its callbacks | `WithKeyring` callbacks already running, until they return |
+| `Unlock()` (open the keyring) | `WLock` to install the new keyring, then the same wait for the old one | Callbacks still using the old keyring |
+
+Multiple keyring-backed operations proceed concurrently. When the signer
+locks, `ClearKeys()` takes the `WLock` (waiting only for the short `RLock`
+holders), detaches the keyring so the store reads as locked, releases the
+lock, waits for every `WithKeyring` callback still using that keyring, and
+then zeroes it. A new `WithKeyring` meanwhile is refused with
+`ErrStoreLocked` rather than queued. A callback may read the store or call
+`WithKeyring` again, but must not, on its own goroutine, call `ClearKeys`,
+`Unlock`, or anything that reaches them (a lock, a reload with a
+passphrase): they wait for the callback. A store mutation that a lock
+overtakes leaves the signer locked: `SetRecovery` does nothing on a locked
+signer, whose next unlock reconciles the store. `Unlock` of a store already unlocked
+publishes the new keyring at once and zeroes the old one the same way. This
+prevents term-key use after zeroing. Decrypted request-owned `KeyMaterial`
+can continue beyond key retrieval and is separately zeroed by the signing
+executor.
 
 #### Lock Path
 
@@ -1794,7 +1820,9 @@ Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
    - `keySession.Destroy()` — blocks until in-flight `GetKey` calls release the
      session; request-wide draining is owned by the request server lifecycle.
    - Reinitialize the key session with the same `keyStore`.
-   - `keyStore.ClearKeys()` — zeros every term key under `cacheLock.WLock`.
+   - `keyStore.ClearKeys()` — detaches the keyring under `cacheLock.WLock`,
+     waits for the `WithKeyring` callbacks still using it, and zeros every
+     term key.
 5. Release `passphraseLock`.
 6. Acquire `keysLock.WLock`, clear all identity key maps, release.
 7. Notify the admin hub that the signer identity is locked.
@@ -1855,9 +1883,9 @@ All service stops share one 5 s shutdown deadline.
    holds shutdown, after its stop record.
 
 A key user that still holds key material at the drain deadline decrypted its
-own copy under the read locks that `keySession.Destroy()` and `ClearKeys()`
-wait for, so the session and keyring are cleared under it without disturbing
-it, and any load it starts afterward fails as locked. Its copy is zeroed when
+own copy under the keystore's read lock (`Get`) or a counted reference
+(`WithKeyring`), both of which `keySession.Destroy()` and `ClearKeys()` wait
+for, so the session and keyring are cleared under it without disturbing it, and any load it starts afterward fails as locked. Its copy is zeroed when
 it releases or is reclaimed by the operating system at the exit that follows.
 `EndKeyUses` reports it, and lifecycle writes `SERVER_STOP_INCOMPLETE` instead of
 `SERVER_STOP` and leaves the audit log open for that user's final record (a
