@@ -9,9 +9,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/clientlog"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -127,5 +130,48 @@ func TestVerboseDoesNotChangeTheLogLevel(t *testing.T) {
 	}
 	if clientlog.Level() != slog.LevelWarn {
 		t.Fatalf("level = %v, verbose must stay separate", clientlog.Level())
+	}
+}
+
+// Shutdown while a command runs, as apconsole does when it quits, cancels
+// the command and returns only once it has unwound: the command's own
+// cleanup still reads the session's state.
+func TestSessionShutdownWaitsForTheCancelledCommand(t *testing.T) {
+	session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	state := session.state
+	started := make(chan struct{})
+	var unwound atomic.Bool
+	if err := state.CommandRegistry.Register(&command.Command{
+		Name: "waits", Category: command.CategoryInfo, Automation: command.StructuredAutomation,
+		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+			close(started)
+			<-state.commandContext().Done()
+			time.Sleep(50 * time.Millisecond) // the command takes a moment to unwind
+			unwound.Store(true)
+			return nil, state.commandContext().Err()
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	panicked := make(chan any, 1)
+	go func() {
+		defer func() { panicked <- recover() }()
+		_, _, _ = session.ExecuteLineCaptured("waits")
+	}()
+	<-started
+	session.Shutdown()
+	returnedAfterTheCommand := unwound.Load()
+	if p := <-panicked; p != nil {
+		t.Fatalf("the cancelled command panicked while it unwound: %v", p)
+	}
+	if !returnedAfterTheCommand {
+		t.Fatal("Shutdown returned before the cancelled command had unwound")
+	}
+	if _, _, err := session.ExecuteLineCaptured("status"); err == nil || err.Error() != "apshell session is not initialized" {
+		t.Fatalf("a line after Shutdown returned %v, want the session not initialized", err)
 	}
 }

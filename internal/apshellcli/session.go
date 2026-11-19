@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -15,7 +14,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
+var errSessionNotInitialized = errors.New("apshell session is not initialized")
+
 // Session is an embedded apshell command session for non-readline hosts.
+// execMu is held while a line runs and while the session shuts down, so
+// state, which Shutdown clears, is read under it.
 type Session struct {
 	state       *REPLState
 	stopPolling context.CancelFunc
@@ -52,11 +55,14 @@ func NewSession(network string, cfg config.Config, dataDir string, out io.Writer
 // NewSession. Output emitted during the attempt is captured and returned so
 // the caller (typically a TUI pane) can render it after the UI is up.
 func (s *Session) StartupConnect() (string, error) {
-	if s == nil || s.state == nil {
-		return "", fmt.Errorf("apshell session is not initialized")
+	if s == nil {
+		return "", errSessionNotInitialized
 	}
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
+	if s.state == nil {
+		return "", errSessionNotInitialized
+	}
 
 	var buf bytes.Buffer
 	previous := s.state.Out
@@ -77,14 +83,17 @@ func (s *Session) ExecuteLine(raw string) (exit bool, err error) {
 
 // ExecuteLineContext parses and executes one apshell input line with a caller-owned context.
 func (s *Session) ExecuteLineContext(ctx context.Context, raw string) (exit bool, err error) {
-	if s == nil || s.state == nil {
-		return false, fmt.Errorf("apshell session is not initialized")
+	if s == nil {
+		return false, errSessionNotInitialized
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
+	if s.state == nil {
+		return false, errSessionNotInitialized
+	}
 	return s.executeLineContext(ctx, raw)
 }
 
@@ -124,8 +133,8 @@ func (s *Session) executeLineContext(ctx context.Context, raw string) (exit bool
 
 // ExecuteLineCaptured executes one line and returns text emitted by apshell.
 func (s *Session) ExecuteLineCaptured(raw string) (output string, exit bool, err error) {
-	if s == nil || s.state == nil {
-		return "", false, fmt.Errorf("apshell session is not initialized")
+	if s == nil {
+		return "", false, errSessionNotInitialized
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -143,14 +152,16 @@ func (s *Session) ExecuteLineCaptured(raw string) (output string, exit bool, err
 		s.activeMu.Unlock()
 	}()
 
-	previous := s.state.Out
-	var buf bytes.Buffer
 	s.execMu.Lock()
-	s.state.SetOutput(&buf)
-	defer func() {
-		s.state.SetOutput(previous)
-		s.execMu.Unlock()
-	}()
+	defer s.execMu.Unlock()
+	if s.state == nil {
+		return "", false, errSessionNotInitialized
+	}
+	state := s.state
+	previous := state.Out
+	var buf bytes.Buffer
+	state.SetOutput(&buf)
+	defer state.SetOutput(previous)
 
 	exit, err = s.executeLineContext(ctx, raw)
 	return strings.TrimRight(buf.String(), "\n"), exit, err
@@ -287,12 +298,19 @@ func (s *Session) Cancel() bool {
 	return true
 }
 
-// Shutdown releases apshell runtime resources owned by the session.
+// Shutdown releases apshell runtime resources owned by the session. It
+// cancels a running command and waits for it to return first: the command
+// still uses the runtime, and the state, while it unwinds.
 func (s *Session) Shutdown() {
-	if s == nil || s.state == nil {
+	if s == nil {
 		return
 	}
 	s.Cancel()
+	s.execMu.Lock()
+	defer s.execMu.Unlock()
+	if s.state == nil {
+		return
+	}
 	if s.stopPolling != nil {
 		s.stopPolling()
 		s.stopPolling = nil
