@@ -11,13 +11,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"maps"
 	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -509,35 +510,6 @@ func (ir *Runtime) CancelSigningApproval(requestID, reason string) signerapprova
 		return c.CancelSignRequest(requestID, reason)
 	}
 	return signerapproval.SignRequestCancelResult{State: signerapproval.SignRequestCancelStateNotFound}
-}
-
-// RequestSigningApproval requests operator approval for a signing operation.
-func (ir *Runtime) RequestSigningApproval(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
-	response, err := ir.RequestSigningApprovalResponseContext(context.Background(), requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (ir *Runtime) RequestSigningApprovalResponse(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	return ir.RequestSigningApprovalResponseContext(context.Background(), requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-}
-
-func (ir *Runtime) RequestSigningApprovalContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
-	response, err := ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (ir *Runtime) RequestSigningApprovalResponseContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	c := ir.approval.Load()
-	if c == nil {
-		return signerapproval.SignResponse{}, fmt.Errorf("approval coordinator not initialized")
-	}
-	return c.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 }
 
 // RequestSigningApprovalPrompt shows prompt to the operator and waits for the

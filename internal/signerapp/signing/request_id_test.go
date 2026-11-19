@@ -65,10 +65,10 @@ func approvingCoordinator(t *testing.T) (*ApprovalService, *[]string) {
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return nil },
 		ApprovalWait:   func() time.Duration { return 10 * time.Second },
-		RequestSigningApprovalResponseContext: func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
+		RequestSigningApprovalPrompt: promptFromContextResponse(func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			requestIDs = append(requestIDs, requestID)
 			return coordinator.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-		},
+		}),
 	}, &requestIDs
 }
 
