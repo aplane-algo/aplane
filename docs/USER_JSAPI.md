@@ -79,9 +79,15 @@ Most transaction functions accept a final options object:
 {
   wait: true,          // default true
   fee: 1000,           // optional client base fee in microAlgos
-  note: "memo text"    // optional transaction note
+  note: "memo text"    // optional transaction note, where the function takes one
 }
 ```
+
+`note` is read by `send()`, `sendAsset()`, `appDeploy()`, `appCallRaw()` and
+`appCall()`. `optIn()`, `optOut()`, `rekey()`, `unrekey()` and `close()`
+build their transaction without a note and refuse the option. `atomicSend()`
+and `atomicSendAsset()` take a note on each payment or transfer object, not in
+the group options.
 
 When `fee` is supplied, the client uses it as a flat base fee. If omitted,
 normal client fee calculation is used. The signer adds its authorization

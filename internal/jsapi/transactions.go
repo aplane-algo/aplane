@@ -60,7 +60,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 	to := a.stringArg(call, 1)
 	amount := toUint64(a.runtime, call.Arguments[2])
 
-	opts := a.parseTxnOptions(call, 3, "send()")
+	opts := a.parseNotedTxnOptions(call, 3, "send()")
 
 	fromAddr, _, err := a.engine.ResolveAddress(from)
 	if err != nil {
@@ -176,7 +176,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 	assetID := toUint64(a.runtime, call.Arguments[2])
 	amount := toUint64(a.runtime, call.Arguments[3])
 
-	opts := a.parseTxnOptions(call, 4, "sendAsset()")
+	opts := a.parseNotedTxnOptions(call, 4, "sendAsset()")
 
 	fromAddr, _, err := a.engine.ResolveAddress(from)
 	if err != nil {

@@ -712,3 +712,28 @@ func TestFunctionsReturnWithoutEngine(t *testing.T) {
 		})
 	}
 }
+
+// TestTransactionsWithoutANoteRefuseTheNoteOption pins that a function whose
+// transaction carries no note refuses {note}, rather than accepting it and
+// sending the transaction without it. The refusal comes before any account
+// is resolved.
+func TestTransactionsWithoutANoteRefuseTheNoteOption(t *testing.T) {
+	for _, code := range []string{
+		`optIn("a", 1, {note: "x"})`,
+		`optOut("a", 1, {note: "x"})`,
+		`optOut("a", 1, "b", {note: "x"})`,
+		`rekey("a", "b", {note: "x"})`,
+		`unrekey("a", {note: "x"})`,
+		`close("a", "b", {note: "x"})`,
+		`atomicSend([{from: "a", to: "b", amount: 1}], {note: "x"})`,
+		`atomicSendAsset([{from: "a", to: "b", assetId: 1, amount: 1}], {note: "x"})`,
+	} {
+		t.Run(code, func(t *testing.T) {
+			_, vm, _ := newTestAPI(t)
+			_, err := vm.RunString(code)
+			if err == nil || !strings.Contains(err.Error(), `option "note" is not known`) {
+				t.Fatalf("%s: error = %v, want the note option refused", code, err)
+			}
+		})
+	}
+}

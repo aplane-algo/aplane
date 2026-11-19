@@ -381,26 +381,33 @@ type closeTxnOptions struct {
 	LsigArgs map[string][]byte
 }
 
-// parseTxnOptions extracts {fee, wait, note} from an optional options argument.
+// parseTxnOptions extracts {fee, wait} from an optional options argument.
 // argIndex is the position of the options argument in the call.
 // funcName is used for error messages.
 //
 // extraKeys names the other options the calling function reads from the same
-// object. Any key outside {fee, wait, note} and those is refused: an option
-// that is not read is an option that was ignored, such as {Fee: 0} or
-// {nowait: true}.
+// object. Any key outside {fee, wait} and those is refused: an option that is
+// not read is an option that was ignored, such as {Fee: 0}, {nowait: true},
+// or a note on a transaction the function builds without one.
 func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName string, extraKeys ...string) txnOptions {
 	opts := txnOptions{Wait: true}
 	m := a.objectArg(call, argIndex, funcName)
 	if m == nil {
 		return opts
 	}
-	a.refuseUnknownKeys(m, funcName+" option", append([]string{"fee", "wait", "note"}, extraKeys...)...)
+	a.refuseUnknownKeys(m, funcName+" option", append([]string{"fee", "wait"}, extraKeys...)...)
 	opts.Fee, opts.UseFlatFee = a.optionUint64(m, "fee", funcName)
 	if w, ok := a.optionBool(m, "wait", funcName); ok {
 		opts.Wait = w
 	}
-	if n, ok := a.optionString(m, "note", funcName); ok {
+	return opts
+}
+
+// parseNotedTxnOptions is parseTxnOptions for a function whose transaction
+// carries a note: it also reads {note}.
+func (a *API) parseNotedTxnOptions(call goja.FunctionCall, argIndex int, funcName string, extraKeys ...string) txnOptions {
+	opts := a.parseTxnOptions(call, argIndex, funcName, append([]string{"note"}, extraKeys...)...)
+	if n, ok := a.optionString(a.objectArg(call, argIndex, funcName), "note", funcName); ok {
 		opts.Note = n
 	}
 	return opts

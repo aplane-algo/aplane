@@ -439,7 +439,8 @@ func TestToUint64Interface(t *testing.T) {
 	}
 }
 
-// TestParseTxnOptions tests the parseTxnOptions helper via JS runtime.
+// TestParseTxnOptions tests the parseNotedTxnOptions helper, which reads
+// parseTxnOptions' {fee, wait} and a note, via JS runtime.
 func TestParseTxnOptions(t *testing.T) {
 	vm := goja.New()
 	eng, err := engine.NewEngine("testnet")
@@ -533,7 +534,7 @@ func TestParseTxnOptions(t *testing.T) {
 				}()
 			}
 
-			opts := api.parseTxnOptions(call, tt.argIndex, "test()")
+			opts := api.parseNotedTxnOptions(call, tt.argIndex, "test()")
 
 			if tt.wantPanic {
 				t.Error("expected panic but function returned normally")
