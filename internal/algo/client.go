@@ -23,7 +23,14 @@ import (
 // This is a ResponseHeaderTimeout — it does not limit body reads, only the wait
 // for the server to begin its response.
 const algodRequestTimeout = 30 * time.Second
-const confirmationPollInterval = 3 * time.Second
+
+// confirmationPollInterval is the confirmation wait's pace, about a round,
+// once algod's block waits stop bringing blocks. blockWaitTimeout bounds one
+// block wait. They are variables so tests can shorten them.
+var (
+	confirmationPollInterval = 3 * time.Second
+	blockWaitTimeout         = 10 * time.Second
+)
 
 // GetAlgodClientWithConfig returns an algod client using config settings.
 // Returns an error if config is nil or algod URL is not configured for the network.
@@ -132,13 +139,16 @@ func isDecimalDigits(s string) bool {
 	return true
 }
 
-// WaitForConfirmation waits up to maxRounds ledger rounds for txid to be
-// confirmed, printing a dot for each round it checks. Each check is followed
-// by a wait for the next block (StatusAfterBlock), so the budget counts the
-// ledger's rounds; when algod cannot say which round it is on, the wait is one
-// poll interval, about a round, and counts as one. A status check that fails
-// does not end the wait: the next round checks again, and the failure is
-// reported only if the budget runs out without a confirmation.
+// WaitForConfirmation checks up to maxRounds times, once a ledger round, for
+// txid to be confirmed, printing a dot for each check that algod answers.
+// Between checks it waits for the next block (StatusAfterBlock), each wait
+// bounded by blockWaitTimeout; once a wait brings no new block in time, as on
+// a dev-mode node that writes no block while nothing is sent, or algod cannot
+// say which round it is on, the rest of the wait polls on
+// confirmationPollInterval, about a round. Nothing is waited for after the
+// last check. A status check that fails does not end the wait: the next round
+// checks again, and the failure is reported only if the budget runs out
+// without a confirmation.
 func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid string, maxRounds uint64, w io.Writer) error {
 	if w == nil {
 		w = os.Stdout
@@ -147,7 +157,7 @@ func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid st
 
 	clock := newRoundClock(ctx, algodClient)
 	var lastErr error
-	for checked := uint64(0); checked < maxRounds; checked++ {
+	for checked := uint64(1); checked <= maxRounds; checked++ {
 		pendingTxn, _, err := algodClient.PendingTransactionInformation(txid).Do(ctx)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -173,6 +183,9 @@ func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid st
 			}
 		}
 
+		if checked == maxRounds {
+			break
+		}
 		if err := clock.next(ctx); err != nil {
 			_, _ = fmt.Fprintln(w)
 			return fmt.Errorf("confirmation canceled: %w", err)
@@ -186,47 +199,44 @@ func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid st
 	return fmt.Errorf("transaction timed out after %d rounds", maxRounds)
 }
 
-// roundClock paces a confirmation wait by the ledger's rounds.
+// roundClock paces a confirmation wait by the ledger's rounds while algod
+// brings a new block to each wait for one, and by confirmationPollInterval
+// from the first wait that does not.
 type roundClock struct {
 	client *algod.Client
 	round  uint64 // the last round algod reported
-	known  bool   // whether round is algod's answer
+	blocks bool   // round is algod's answer, and block waits still bring blocks
 }
 
 func newRoundClock(ctx context.Context, client *algod.Client) *roundClock {
 	clock := &roundClock{client: client}
-	clock.read(ctx)
+	if status, err := client.Status().Do(ctx); err == nil {
+		clock.round, clock.blocks = status.LastRound, true
+	}
 	return clock
 }
 
-// read asks algod for its last round.
-func (c *roundClock) read(ctx context.Context) {
-	status, err := c.client.Status().Do(ctx)
-	c.known = err == nil
-	if c.known {
-		c.round = status.LastRound
-	}
-}
-
-// next waits for the block after the last round algod reported. When algod
-// cannot say, it waits one poll interval instead and asks for the round
-// again. It returns an error only when ctx ends.
+// next waits for the block after the last round algod reported, for at most
+// blockWaitTimeout. A wait that fails or brings no new block in that time
+// turns the clock to polling: it and every later call wait one poll interval
+// instead. algod holds a block wait up to a minute, longer than the client's
+// response header timeout, so a node with no new block would otherwise cost
+// that long a round. It returns an error only when ctx ends.
 func (c *roundClock) next(ctx context.Context) error {
-	if c.known {
-		status, err := c.client.StatusAfterBlock(c.round).Do(ctx)
-		if err == nil {
+	if c.blocks {
+		waitCtx, cancel := context.WithTimeout(ctx, blockWaitTimeout)
+		status, err := c.client.StatusAfterBlock(c.round).Do(waitCtx)
+		cancel()
+		if err == nil && status.LastRound > c.round {
 			c.round = status.LastRound
 			return nil
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
+		c.blocks = false
 	}
-	if err := waitForConfirmationPoll(ctx, confirmationPollInterval); err != nil {
-		return err
-	}
-	c.read(ctx)
-	return nil
+	return waitForConfirmationPoll(ctx, confirmationPollInterval)
 }
 
 func waitForConfirmationPoll(ctx context.Context, delay time.Duration) error {
