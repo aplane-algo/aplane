@@ -274,9 +274,17 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	if _, err := kr.Open(priorEnvelope, crypto.AccountKeyContext("ACCOUNT")); err == nil {
 		t.Fatal("retired term retained ordinary current-state authority")
 	}
-	plaintext, err := genstore.OpenAnchoredEnvelope(prior, anchor, "keys/ACCOUNT.key", crypto.AccountKeyContext("ACCOUNT"), kr)
+	priorSeal, err := os.ReadFile(prior.SealPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	priorManifest, err := os.ReadFile(prior.ManifestPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err := genstore.OpenAnchoredEnvelopeBytes(prior, anchor, priorSeal, priorManifest, "keys/ACCOUNT.key", priorEnvelope, crypto.AccountKeyContext("ACCOUNT"), kr)
 	if err != nil || string(plaintext) != "account-secret" {
-		t.Fatalf("OpenAnchoredEnvelope() = %q, %v", plaintext, err)
+		t.Fatalf("OpenAnchoredEnvelopeBytes() = %q, %v", plaintext, err)
 	}
 	crypto.ZeroBytes(plaintext)
 	for _, retired := range []string{

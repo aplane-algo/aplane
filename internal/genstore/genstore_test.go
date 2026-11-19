@@ -240,20 +240,6 @@ func TestAnchoredHistoricalSealAndExactMemberOpen(t *testing.T) {
 	if err := ValidateAnchoredSealed(gen, anchor, multi); err != nil {
 		t.Fatalf("ValidateAnchoredSealed() error = %v", err)
 	}
-	plaintext, err := OpenAnchoredEnvelope(
-		gen,
-		anchor,
-		"keys/A.key",
-		crypto.AccountKeyContext("A"),
-		multi,
-	)
-	if err != nil {
-		t.Fatalf("OpenAnchoredEnvelope() error = %v", err)
-	}
-	defer crypto.ZeroBytes(plaintext)
-	if string(plaintext) != "historical credential" {
-		t.Fatalf("OpenAnchoredEnvelope() = %q", plaintext)
-	}
 	manifestBytes, err := os.ReadFile(gen.ManifestPath())
 	if err != nil {
 		t.Fatalf("ReadFile(manifest) error = %v", err)
@@ -275,14 +261,17 @@ func TestAnchoredHistoricalSealAndExactMemberOpen(t *testing.T) {
 		t.Fatalf("OpenAnchoredEnvelopeBytes() = %q", bufferPlaintext)
 	}
 	crypto.ZeroBytes(bufferPlaintext)
-	if _, err := OpenAnchoredEnvelope(
+	if _, err := OpenAnchoredEnvelopeBytes(
 		gen,
 		anchor,
+		sealBytes,
+		manifestBytes,
 		"keys/A.key",
+		sealed,
 		crypto.CosignerCredentialContext("A"),
 		multi,
 	); err == nil {
-		t.Fatal("OpenAnchoredEnvelope() accepted the wrong logical context")
+		t.Fatal("OpenAnchoredEnvelopeBytes() accepted the wrong logical context")
 	}
 
 	wrongAnchor := anchor
@@ -317,11 +306,17 @@ func TestAnchoredHistoricalSealAndExactMemberOpen(t *testing.T) {
 
 	mutated := slices.Clone(sealed)
 	mutated[len(mutated)-1] ^= 1
-	if err := os.WriteFile(filepath.Join(gen.KeysDir(), "A.key"), mutated, 0o660); err != nil {
-		t.Fatalf("WriteFile(mutated member) error = %v", err)
-	}
-	if _, _, err := ReadAnchoredBytes(gen, anchor, "keys/A.key", multi); err == nil {
-		t.Fatal("ReadAnchoredBytes() accepted member bytes not pinned by the anchored seal")
+	if _, err := OpenAnchoredEnvelopeBytes(
+		gen,
+		anchor,
+		sealBytes,
+		manifestBytes,
+		"keys/A.key",
+		mutated,
+		crypto.AccountKeyContext("A"),
+		multi,
+	); err == nil {
+		t.Fatal("OpenAnchoredEnvelopeBytes() accepted member bytes not pinned by the anchored seal")
 	}
 }
 

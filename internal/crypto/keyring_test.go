@@ -91,8 +91,8 @@ func TestSuccessorPreservesExistingAnchors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer successor.Zero()
-	if !slices.Equal(successor.HistoricalGenerationAnchors(), []HistoricalGenerationAnchor{first, second}) {
-		t.Fatalf("anchors = %+v", successor.HistoricalGenerationAnchors())
+	if !slices.Equal(successor.historicalAnchors, []HistoricalGenerationAnchor{first, second}) {
+		t.Fatalf("anchors = %+v", successor.historicalAnchors)
 	}
 }
 

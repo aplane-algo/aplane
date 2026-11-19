@@ -162,13 +162,6 @@ func NewKeyringFromTermKeys(currentTerm int64, terms map[int64][]byte) (*Keyring
 
 func (kr *Keyring) CurrentTerm() int64 { return kr.currentTerm }
 
-func (kr *Keyring) HistoricalGenerationAnchors() []HistoricalGenerationAnchor {
-	if kr == nil {
-		return nil
-	}
-	return slices.Clone(kr.historicalAnchors)
-}
-
 func (kr *Keyring) HistoricalGenerationAnchor(generationID string) (HistoricalGenerationAnchor, bool) {
 	if kr == nil {
 		return HistoricalGenerationAnchor{}, false
@@ -221,10 +214,6 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 		return nil, fmt.Errorf("term %d is not authorized for current state", term)
 	}
 	return openUnderTerm(sealed, kr.terms[term], term, ctx)
-}
-
-func (kr *Keyring) authorizesCurrentStateTerm(term int64) bool {
-	return kr != nil && term == kr.currentTerm
 }
 
 func (kr *Keyring) OpenHistoricalGenerationEnvelope(sealed []byte, ctx ObjectContext, expectedTerm int64) ([]byte, error) {

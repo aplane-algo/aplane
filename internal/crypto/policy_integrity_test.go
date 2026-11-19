@@ -21,8 +21,8 @@ func TestDerivePolicyIntegrityKey(t *testing.T) {
 	}
 	defer ZeroBytes(key2)
 
-	if len(key1) != PolicyIntegrityKeyLength {
-		t.Fatalf("derived key length = %d, want %d", len(key1), PolicyIntegrityKeyLength)
+	if len(key1) != integrityKeyLength {
+		t.Fatalf("derived key length = %d, want %d", len(key1), integrityKeyLength)
 	}
 	if !bytes.Equal(key1, key2) {
 		t.Fatal("derivation is not deterministic")
