@@ -122,8 +122,9 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 		// An uncertain commit may already be the visible root. Block signing
 		// first, then rebind the runtime to it, as restore does, so the
 		// keystore never trails the store and no request signs against the
-		// generation being replaced. Reload runs outside WithKeyring so the
-		// keystore cache lock cannot self-deadlock.
+		// generation being replaced. Reload runs outside WithKeyring: a
+		// reload can zero the keyring, which waits for the callbacks using
+		// it, this one included.
 		if outcome.Uncertain {
 			ir.SetRecovery()
 			_, _ = ir.Reload()

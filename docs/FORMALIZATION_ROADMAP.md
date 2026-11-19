@@ -809,6 +809,14 @@ the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
 
+Fixed 2026-11-18: recovery during a cleanup (the second open divergence
+above). `SetRecovery` now does nothing on a locked signer, a lock's cleanup
+in progress included, since `Lock` sets the state first; that is
+`EnterRecovery`'s guard, so the spec is unchanged. A store mutation that a
+lock overtook leaves the signer locked, which refuses signing and key writes
+as recovery does (RB2, RB3).
+`TestALockDuringAnAdminOperationUnderTheKeyringCompletes` pins it.
+
 Fixed 2026-11-18: the `ErrStoreRootCommitStateUnknown` edge (open since the
 RB4 and I10 divergences above). Policy apply, the ASA set, restore and
 rollback classified a root commit whose root could not be read back, or

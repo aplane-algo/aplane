@@ -94,7 +94,9 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   so only restore and rollback commit from recovery. A passphrase change
   withdraws signing up front (`BeginStoreMaintenance`) and a failure leaves
   the runtime locked rather than in recovery; locked refuses signing as
-  recovery does, so RB2 and RB3 hold for it in substance.
+  recovery does, so RB2 and RB3 hold for it in substance. The same holds for
+  a lock that lands during any mutation: `SetRecovery` does nothing on a
+  locked signer, whose keys the lock cleared, and it stays locked.
 - Recovery exit (`PromoteRecoveryToUnlocked`, the lock fence) is modeled as
   the successful reload lifting recovery; the race with a concurrent lock is
   a Go-level contract pinned by `internal/signerapp/runtime` tests.

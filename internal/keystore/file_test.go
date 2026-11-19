@@ -360,7 +360,7 @@ func TestFileKeyStore_Delete_Success(t *testing.T) {
 	defer cleanup()
 
 	store := NewAtomicFileKeyStoreForPaths(paths)
-	store.keyring = cryptotest.Keyring(t, testMasterKey)
+	store.setKeyringDirectlyForTest(cryptotest.Keyring(t, testMasterKey))
 	ctx := context.Background()
 
 	// Create test key
@@ -390,7 +390,7 @@ func TestFileKeyStore_Delete_NotFound(t *testing.T) {
 	defer cleanup()
 
 	store := NewAtomicFileKeyStoreForPaths(paths)
-	store.keyring = cryptotest.Keyring(t, testMasterKey)
+	store.setKeyringDirectlyForTest(cryptotest.Keyring(t, testMasterKey))
 	ctx := context.Background()
 
 	err := store.Delete(ctx, "NONEXISTENT")
@@ -404,7 +404,7 @@ func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
 	defer cleanup()
 
 	store := NewAtomicFileKeyStoreForPaths(paths)
-	store.keyring = cryptotest.Keyring(t, testMasterKey)
+	store.setKeyringDirectlyForTest(cryptotest.Keyring(t, testMasterKey))
 	ctx := context.Background()
 
 	addr := "DELETEFAIL12345"

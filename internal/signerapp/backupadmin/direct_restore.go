@@ -110,7 +110,8 @@ func (r *restoreRun) mutate() (restoreErr error) {
 	prepareErr := ir.WithKeyring(r.loadAndCommit)
 	if prepareErr != nil {
 		// If publication may have occurred, reload the visible generation
-		// outside WithKeyring so the keystore cache lock cannot self-deadlock.
+		// outside WithKeyring: a reload can zero the keyring, which waits
+		// for the callbacks using it, this one included.
 		if r.committedGeneration != "" {
 			_, _ = ir.Reload()
 		}
