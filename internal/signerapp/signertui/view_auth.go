@@ -63,9 +63,11 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 	sb.WriteString("\n\n")
 
 	// Passphrase input
-	displayPass := m.auth.passphraseInput
-	if m.auth.passphraseMasked && len(displayPass) > 0 {
-		displayPass = strings.Repeat("*", len(displayPass))
+	// Shown in clear only when the operator unmasks it; that render copy
+	// cannot be zeroed.
+	displayPass := strings.Repeat("*", len(m.auth.passphraseInput))
+	if !m.auth.passphraseMasked {
+		displayPass = string(m.auth.passphraseInput)
 	}
 
 	sb.WriteString("Passphrase:\n")

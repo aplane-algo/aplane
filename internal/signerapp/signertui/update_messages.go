@@ -59,7 +59,7 @@ func (m Model) handleAuthResultMsg(msg AuthResultMsg) (tea.Model, tea.Cmd) {
 		// Server will send signer status next; key-type and template
 		// information arrives via the admin protocol (ListKeyTypes).
 		m.auth.passphraseError = ""
-		m.auth.passphraseInput = ""
+		m.clearAuthPassphrase()
 		m.resetActivityState()
 		// The signer may have restarted since that result.
 		m.admin.settingWarning = settingResultWarning{}
@@ -68,7 +68,7 @@ func (m Model) handleAuthResultMsg(msg AuthResultMsg) (tea.Model, tea.Cmd) {
 		// stay disconnected rather than retake its single login slot.
 		m.endAdminSession()
 		m.connectionState = ConnectionDisconnected
-		m.auth.passphraseInput = ""
+		m.clearAuthPassphrase()
 		m.auth.passphraseError = ""
 		m.auth.endedReason = loginTimeoutReason
 		return m, nil
@@ -80,7 +80,7 @@ func (m Model) handleAuthResultMsg(msg AuthResultMsg) (tea.Model, tea.Cmd) {
 		}
 		if isSeriousUnlockError(msg.Code) {
 			m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewAuth)
-			m.auth.passphraseInput = ""
+			m.clearAuthPassphrase()
 			m.auth.loggingIn = false
 		}
 	}
@@ -95,7 +95,7 @@ func (m Model) handleLocalIdleDisconnectedMsg(msg localIdleDisconnectedMsg) (tea
 	m.connectionState = ConnectionDisconnected
 	m.signerStatusKnown = false
 	m.viewState = ViewAuth
-	m.auth.passphraseInput = ""
+	m.clearAuthPassphrase()
 	m.auth.passphraseError = ""
 	m.auth.loggingIn = false
 	m.auth.endedReason = msg.Reason
@@ -127,7 +127,7 @@ func (m Model) handleUnlockResultMsg(msg UnlockResultMsg) (tea.Model, tea.Cmd) {
 	m.auth.loggingIn = false
 	if msg.Success {
 		m.auth.passphraseError = ""
-		m.auth.passphraseInput = ""
+		m.clearAuthPassphrase()
 		if msg.Code == protocol.ResultCodeRecoveryBlocked {
 			// Unlock succeeded into recovery mode; signing stays blocked
 			// until a strict reconcile/reload succeeds.
@@ -138,7 +138,7 @@ func (m Model) handleUnlockResultMsg(msg UnlockResultMsg) (tea.Model, tea.Cmd) {
 		m.auth.passphraseError = msg.Error
 		if isSeriousUnlockError(msg.Code) {
 			m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewUnlock)
-			m.auth.passphraseInput = ""
+			m.clearAuthPassphrase()
 			m.auth.loggingIn = false
 		}
 	}
@@ -433,8 +433,7 @@ func (m Model) applyBackupResult(msg BackupResultMsg) (tea.Model, tea.Cmd) {
 		m.lastError = ""
 		m.backup.archivePath = msg.ArchivePath
 		m.backup.archiveWarning = msg.Warning
-		m.backup.exportPassphrase = ""
-		m.backup.confirmPassphrase = ""
+		m.clearBackupPassphrases()
 		m.backup.confirmError = ""
 		m.viewState = ViewBackupDisplay
 	} else {

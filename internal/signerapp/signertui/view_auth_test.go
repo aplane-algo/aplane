@@ -71,14 +71,14 @@ func TestPassphraseEntryAcceptsLetterQ(t *testing.T) {
 		connectionState: ConnectionConnected,
 	}
 
-	model, _ := m.handlePassphraseKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, func(string) tea.Cmd { return nil })
+	model, _ := m.handlePassphraseKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, func([]byte) tea.Cmd { return nil })
 	updated := model.(Model)
 
 	if updated.quitting {
 		t.Fatal("typing 'q' on a passphrase screen must not quit")
 	}
-	if updated.auth.passphraseInput != "q" {
-		t.Fatalf("passphrase input = %q, want %q", updated.auth.passphraseInput, "q")
+	if string(updated.auth.passphraseInput) != "q" {
+		t.Fatalf("passphrase input = %q, want %q", []byte(updated.auth.passphraseInput), "q")
 	}
 }
 
@@ -88,7 +88,7 @@ func TestPassphraseEntryEscQuits(t *testing.T) {
 		connectionState: ConnectionConnected,
 	}
 
-	model, _ := m.handlePassphraseKeys(tea.KeyMsg{Type: tea.KeyEsc}, func(string) tea.Cmd { return nil })
+	model, _ := m.handlePassphraseKeys(tea.KeyMsg{Type: tea.KeyEsc}, func([]byte) tea.Cmd { return nil })
 	if !model.(Model).quitting {
 		t.Fatal("esc on a passphrase screen should quit")
 	}

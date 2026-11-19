@@ -138,10 +138,7 @@ func (m Model) handleBackupImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case importFocusPath:
 			imp.path = trimLastRune(imp.path)
 		case importFocusPassphrase:
-			if n := len(imp.passphrase); n > 0 {
-				imp.passphrase[n-1] = 0
-				imp.passphrase = imp.passphrase[:n-1]
-			}
+			imp.passphrase = trimSecretRune(imp.passphrase)
 		}
 		imp.err = ""
 		return m, nil
@@ -151,7 +148,9 @@ func (m Model) handleBackupImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case importFocusPath:
 			imp.path += string(msg.Runes)
 		case importFocusPassphrase:
-			imp.passphrase = append(imp.passphrase, string(msg.Runes)...)
+			for _, r := range msg.Runes {
+				imp.passphrase = appendSecretRune(imp.passphrase, r)
+			}
 		}
 		imp.err = ""
 	}

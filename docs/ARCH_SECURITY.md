@@ -1921,6 +1921,7 @@ This applies to:
 - **Export request**: the passphrase is zeroed after verification on every exit path; mutable mnemonic buffers and serialized responses are zeroed after delivery. Admin streams are read with `protocol.FrameReader` rather than `bufio.Reader`: it refills only when empty (bufio slides partial frames and leaves the originals behind), clears every consumed byte and outgrown line buffer, and so leaves the decoded frame as its only mutable copy. Dropped notifications are cleared, and closing a transport stream client clears raw frames still queued for a consumer that has stopped reading. apadmin clears the display on dismissal, timeout, lock, disconnect, and program shutdown (whatever ends it), clears recovery-phrase replies still queued when its session ends, and rejects stale replies. Go rendering/encoding can create transient immutable strings; cleanup does not promise erasure of terminal captures or every runtime copy.
 - **Startup auto-unlock** — `startPassphrase` from `TEST_PASSPHRASE` or `passphrase_command_argv` is zeroed immediately after the initial `ReloadWithPassphrase` call completes.
 - **Import request**: `import_key.mnemonic` is a JSON string decoded as `protocol.SensitiveBytes`, like every other secret on the admin wire. The handler zeroes it on every exit path, including a refusal before the import runs.
+- **apadmin passphrase fields**: the login, unlock, backup export and confirm, restore, backup import and mnemonic export passphrases are byte buffers, never strings. One helper grows them and zeroes every allocation they outgrow, and backspace zeroes the removed bytes. Each is zeroed once submitted, except that a login or unlock passphrase stays for another try until an attempt succeeds or ends in a serious error. Each is also zeroed when its form is left, when the admin session ends and at program shutdown, and each send works on its own copy, zeroed once sent.
 - **Admin frames**: the signer zeroes each frame of an authenticated admin session once its message is handled. On the client, both transports zero each frame they encode, the auth and unlock passphrase copies are zeroed after the send, and a request is encoded once (its ID is read from the envelope, not from a second encoding).
 
 #### Residual Copies
@@ -1948,6 +1949,8 @@ reuses or frees it.
   The returned plaintext and the decoded term keys are zeroed; those two
   buffers are not. Hand-encoding and hand-decoding the fixed payload would
   remove them, at the cost of a second strict parser in modeled crypto code.
+- **Typed keys.** bubbletea delivers every key press as a string, and the
+  login passphrase, when the operator unmasks it, is rendered as a string.
 - **Other admin messages.** encoding/json's pooled buffers likewise keep
   copies of passphrases and exported phrases that admin messages carry, and
   `SensitiveBytes.MarshalJSON` returns its encoding to the encoder, which drops

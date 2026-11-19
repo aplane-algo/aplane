@@ -19,7 +19,7 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 	m := Model{
 		viewState:       ViewAuth,
 		connectionState: ConnectionConnected,
-		auth:            authState{passphraseInput: "secret", passphraseError: "old error", passphraseMasked: true}, width: 80,
+		auth:            authState{passphraseInput: SensitiveBytes("secret"), passphraseError: "old error", passphraseMasked: true}, width: 80,
 		height: MinHeight,
 	}
 
@@ -31,7 +31,7 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 	if got.errorPopup.returnView != ViewAuth {
 		t.Fatalf("errorPopupReturnView = %v, want ViewAuth", got.errorPopup.returnView)
 	}
-	if got.auth.passphraseInput != "" {
+	if len(got.auth.passphraseInput) != 0 {
 		t.Fatal("passphraseInput retained after serious auth error")
 	}
 

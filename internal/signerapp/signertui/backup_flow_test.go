@@ -26,7 +26,7 @@ func TestBackupsPageNewOpensBackupConfirm(t *testing.T) {
 func TestBackupConfirmMatchingPassphrasesStartsBackup(t *testing.T) {
 	m := Model{
 		viewState: ViewBackupConfirm,
-		backup:    backupState{exportPassphrase: "export-passphrase", confirmPassphrase: "export-passphrase", confirmFocus: 1},
+		backup:    backupState{exportPassphrase: SensitiveBytes("export-passphrase"), confirmPassphrase: SensitiveBytes("export-passphrase"), confirmFocus: 1},
 	}
 
 	next, cmd := m.handleBackupConfirmKeys(tea.KeyMsg{Type: tea.KeyEnter})
@@ -45,7 +45,7 @@ func TestBackupConfirmMatchingPassphrasesStartsBackup(t *testing.T) {
 func TestBackupConfirmCancelReturnsToBackups(t *testing.T) {
 	m := Model{
 		viewState: ViewBackupConfirm,
-		backup:    backupState{exportPassphrase: "export-passphrase", confirmPassphrase: "export-passphrase", confirmError: "old error"},
+		backup:    backupState{exportPassphrase: SensitiveBytes("export-passphrase"), confirmPassphrase: SensitiveBytes("export-passphrase"), confirmError: "old error"},
 	}
 
 	next, cmd := m.handleBackupConfirmKeys(tea.KeyMsg{Type: tea.KeyEsc})
@@ -53,7 +53,7 @@ func TestBackupConfirmCancelReturnsToBackups(t *testing.T) {
 	if got.viewState != ViewBackups {
 		t.Fatalf("viewState = %v, want ViewBackups", got.viewState)
 	}
-	if got.backup.exportPassphrase != "" || got.backup.confirmPassphrase != "" || got.backup.confirmError != "" {
+	if len(got.backup.exportPassphrase) != 0 || len(got.backup.confirmPassphrase) != 0 || got.backup.confirmError != "" {
 		t.Fatalf("backup confirm state was not cleared: %+v", got)
 	}
 	if cmd != nil {

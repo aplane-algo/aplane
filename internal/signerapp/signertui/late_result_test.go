@@ -158,9 +158,9 @@ func TestHeldResultIsDiscardedWhenTheSessionEnds(t *testing.T) {
 	id := m.beginOperation(ViewBackingUp)
 	m = lockedDuring(t, m)
 	m = updateModel(t, m, fromListener(BackupResultMsg{ID: id, Success: true, ArchivePath: "aplane-backup.tar.gz"}))
-	m.backup.exportPassphrase, m.backup.confirmPassphrase = "typed", "typed"
+	m.backup.exportPassphrase, m.backup.confirmPassphrase = SensitiveBytes("typed"), SensitiveBytes("typed")
 	m = updateModel(t, m, localIdleDisconnectedMsg{Reason: localIdleDisconnectReason})
-	if m.heldResult != nil || m.backup.exportPassphrase != "" || m.backup.confirmPassphrase != "" {
-		t.Fatalf("held backup after an idle disconnect: held %v passphrases %q %q", m.heldResult != nil, m.backup.exportPassphrase, m.backup.confirmPassphrase)
+	if m.heldResult != nil || len(m.backup.exportPassphrase) != 0 || len(m.backup.confirmPassphrase) != 0 {
+		t.Fatalf("held backup after an idle disconnect: held %v passphrases %q %q", m.heldResult != nil, []byte(m.backup.exportPassphrase), []byte(m.backup.confirmPassphrase))
 	}
 }

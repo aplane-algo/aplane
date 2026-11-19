@@ -58,14 +58,13 @@ func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		return m, m.sendPreviewRestoreCmd(m.restore.archivePath, m.restore.passphrase, id)
 	case "backspace":
 		if len(m.restore.passphrase) > 0 {
-			m.restore.passphrase[len(m.restore.passphrase)-1] = 0
-			m.restore.passphrase = m.restore.passphrase[:len(m.restore.passphrase)-1]
+			m.restore.passphrase = trimSecretRune(m.restore.passphrase)
 			m.restore.passphraseError = ""
 		}
 		return m, nil
 	default:
 		if len(msg.String()) == 1 {
-			m.restore.passphrase = append(m.restore.passphrase, msg.String()...)
+			m.restore.passphrase = appendSecretText(m.restore.passphrase, msg.String())
 			m.restore.passphraseError = ""
 		}
 	}
