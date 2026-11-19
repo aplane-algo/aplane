@@ -178,3 +178,62 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 		t.Fatalf("stage 5 after an earlier stage's entry = %+v", r)
 	}
 }
+
+// After a loss, a retry of a transaction can sign on a second leaf, and that
+// leaf can be another transaction's. Every logged leaf is listed, so the
+// second leaf counts as used and a collision with another transaction is
+// reuse; an identical retry is still one release, and one transaction on two
+// leaves is not reuse.
+func TestReadRotatingReleasesListsEveryLeafOfARetriedTransaction(t *testing.T) {
+	attr := Attribution{RequesterPrincipal: "client-1", Transport: "http"}
+	read := func(t *testing.T, releases []RotatingLeaf) RotatingRelease {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "audit.log")
+		a, err := NewAuditLogger(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = a.Close() }()
+		for _, l := range releases {
+			if err := a.LogRotatingReleaseAttributed(attr, "ACCT", l.TxID, 4, 500, l.Tree, l.Index); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := ReadRotatingReleases(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got["ACCT"]
+	}
+	leaf := func(index uint32, txid string) RotatingLeaf {
+		return RotatingLeaf{Tree: 2, Index: index, TxID: txid, LastValid: 500}
+	}
+	listed := func(r RotatingRelease, want ...RotatingLeaf) bool {
+		if len(r.Leaves) != len(want) {
+			return false
+		}
+		for i := range want {
+			if r.Leaves[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	// B signed on leaf 5 and A, whose pick was also 5, on 6. A loss emptied
+	// the memory and A's retry picked 5: B's leaf, a second message on it.
+	r := read(t, []RotatingLeaf{leaf(5, "B"), leaf(6, "A"), leaf(5, "A")})
+	if !r.Reused || !listed(r, leaf(5, "B"), leaf(6, "A"), leaf(5, "A")) {
+		t.Fatalf("a retry on another transaction's leaf = %+v, want reused with all three listed", r)
+	}
+	if r.TxID != "A" || r.Index != 5 {
+		t.Fatalf("newest release = %s on %d, want A on 5", r.TxID, r.Index)
+	}
+
+	// B's entry rotated out: A on both leaves is not reuse, but both are
+	// spent, and an identical retry of A on 5 adds nothing.
+	r = read(t, []RotatingLeaf{leaf(6, "A"), leaf(5, "A"), leaf(5, "A")})
+	if r.Reused || !listed(r, leaf(6, "A"), leaf(5, "A")) {
+		t.Fatalf("one transaction on two leaves = %+v, want both listed, not reused", r)
+	}
+}

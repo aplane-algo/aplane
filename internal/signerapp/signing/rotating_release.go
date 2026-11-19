@@ -31,15 +31,19 @@ type ReleaseRecord struct {
 	NextAddr      types.Address
 	TxID          string
 	LastValid     uint64
-	// Leaves lists the distinct transactions remembered for this stage,
-	// oldest first, with the one-time leaf each signed with. Identical retries
-	// do not append another entry. It is empty for a StatelessHash record.
+	// Leaves lists the releases remembered for this stage, oldest first:
+	// each pair of one-time leaf and transaction once. An identical retry
+	// (the same transaction on the same leaf) does not append another entry;
+	// the same transaction on another leaf, which a retry signs once the
+	// history was lost, does, so that leaf counts as used too. It is empty
+	// for a StatelessHash record.
 	Leaves []LeafRelease
 	// Reused reports that two distinct transactions remembered for this
-	// stage signed with the same one-time leaf. Missing history can hide
-	// reuse. Record carries the flag until the account moves past the stage;
-	// the status reports it as a warning. StatelessHash records
-	// have neither leaf history nor a reuse flag.
+	// stage signed with the same one-time leaf. One transaction on two
+	// leaves is not reuse. Missing history can hide reuse. Record carries
+	// the flag until the account moves past the stage; the status reports it
+	// as a warning. StatelessHash records have neither leaf history nor a
+	// reuse flag.
 	Reused bool
 	// Seq orders records against chain observations: a record with a Seq
 	// above the Seq captured before a chain read was made after that read,
@@ -76,7 +80,9 @@ func (r ReleaseRecord) LeafUsed(tree uint64, index uint32, txID string) bool {
 	return false
 }
 
-// LeafFor returns the leaf the stage already released txID on, if any.
+// LeafFor returns the leaf the stage already released txID on, if any: the
+// first listed when a retry after a lost history signed it on another leaf
+// as well, so the choice stays the same from one retry to the next.
 func (r ReleaseRecord) LeafFor(txID string) (LeafRelease, bool) {
 	for _, l := range r.Leaves {
 		if l.TxID == txID {
@@ -86,6 +92,9 @@ func (r ReleaseRecord) LeafFor(txID string) (LeafRelease, bool) {
 	return LeafRelease{}, false
 }
 
+// leavesReused reports whether two listed releases share a leaf. The list
+// holds each release once (mergeLeaves, sameStageLeaves), so a leaf listed
+// twice signed two different transactions.
 func leavesReused(leaves []LeafRelease) bool {
 	seen := make(map[[2]uint64]bool, len(leaves))
 	for _, l := range leaves {
@@ -125,10 +134,11 @@ type ReleaseMemory struct {
 // Record adds a live release to the account's entry and stamps the entry
 // with the next sequence number. When the entry it replaces is from the
 // same stage, r inherits that entry's released leaves and adds its own
-// unless the same transaction is already listed (a retry is one release);
-// r is marked Reused when two listed releases share a leaf. A release from
-// an earlier stage than the entry's is not recorded: the entry stays as it
-// is (the audit log still holds the release).
+// unless the same transaction is already listed on the same leaf (an
+// identical retry is one release); r is marked Reused when two listed
+// releases share a leaf. A release from an earlier stage than the entry's is
+// not recorded: the entry stays as it is (the audit log still holds the
+// release).
 func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	m.record(r, false)
 }
@@ -206,22 +216,35 @@ func sameStageLeaves(r *ReleaseRecord, prev ReleaseRecord, incoming []LeafReleas
 	}
 	// A live release: one scan of the history, no copy.
 	leaves := prev.Leaves
-	if !listsTxID(leaves, incoming[0].TxID) {
+	if !listsRelease(leaves, incoming[0]) {
 		leaves = append(leaves, incoming[0])
 	}
 	return leaves
+}
+
+// releaseKey identifies one release: the leaf and the transaction it
+// signed. Leaf lists are deduped on it, as the audit reader dedupes the log,
+// so every leaf a stage signed with stays listed.
+type releaseKey struct {
+	tree  uint64
+	index uint32
+	txID  string
+}
+
+func (l LeafRelease) key() releaseKey {
+	return releaseKey{tree: l.Tree, index: l.Index, txID: l.TxID}
 }
 
 // mergeLeaves merges the remembered leaves with the audited list in linear
 // time, so the newer side's latest release ends the list: the audited
 // order first, then any remembered release the log lacks.
 func mergeLeaves(remembered, audited []LeafRelease) []LeafRelease {
-	listed := make(map[string]bool, len(remembered)+len(audited))
+	listed := make(map[releaseKey]bool, len(remembered)+len(audited))
 	out := make([]LeafRelease, 0, len(remembered)+len(audited))
 	for _, group := range [][]LeafRelease{audited, remembered} {
 		for _, l := range group {
-			if !listed[l.TxID] {
-				listed[l.TxID] = true
+			if k := l.key(); !listed[k] {
+				listed[k] = true
 				out = append(out, l)
 			}
 		}
@@ -229,9 +252,12 @@ func mergeLeaves(remembered, audited []LeafRelease) []LeafRelease {
 	return out
 }
 
-func listsTxID(leaves []LeafRelease, txID string) bool {
-	for _, l := range leaves {
-		if l.TxID == txID {
+// listsRelease reports whether leaves already lists l's release: the same
+// transaction on the same leaf.
+func listsRelease(leaves []LeafRelease, l LeafRelease) bool {
+	k := l.key()
+	for _, listed := range leaves {
+		if listed.key() == k {
 			return true
 		}
 	}

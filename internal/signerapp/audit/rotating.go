@@ -21,13 +21,16 @@ type RotatingRelease struct {
 	LastValid uint64
 	Tree      uint64
 	Index     uint32
-	// Leaves lists the stage's distinct transactions found in the retained
-	// log, in first-seen order, with the leaf each signed with. Identical
-	// retries do not append another entry.
+	// Leaves lists the stage's releases found in the retained log, in
+	// first-seen order: each pair of leaf and transaction once. An identical
+	// retry (the same transaction on the same leaf) does not append another
+	// entry. The same transaction on another leaf, which a retry signs once
+	// the history was lost, does: that leaf is spent too.
 	Leaves []RotatingLeaf
 	// Reused reports that two distinct transactions of the same stage signed
-	// with the same leaf. Entries the log has rotated past cannot be seen, so
-	// false means none was seen, not none was made.
+	// with the same leaf. One transaction on two leaves is not reuse: neither
+	// leaf signed a second message. Entries the log has rotated past cannot be
+	// seen, so false means none was seen, not none was made.
 	Reused bool
 }
 
@@ -124,23 +127,34 @@ func readReleaseLogs(files []*os.File) (map[string]RotatingRelease, error) {
 }
 
 // releaseAccumulator gathers one account's releases of its newest stage as
-// the log is read: the release itself, the transactions already listed and
-// the leaves already used, so each entry costs one map lookup and an
-// amortized append rather than a scan and a copy of the history.
+// the log is read: the release itself, the releases already listed and the
+// leaves already used, so each entry costs one map lookup and an amortized
+// append rather than a scan and a copy of the history.
 type releaseAccumulator struct {
-	r     RotatingRelease
-	txids map[string]bool
-	used  map[[2]uint64]bool
+	r      RotatingRelease
+	listed map[leafRelease]bool
+	used   map[[2]uint64]bool
+}
+
+// leafRelease is one release as the reader dedupes it: the leaf (tree and
+// index) and the transaction it signed.
+type leafRelease struct {
+	leaf [2]uint64
+	txID string
 }
 
 func (a *releaseAccumulator) add(leaf RotatingLeaf) {
 	a.r.TxID, a.r.LastValid, a.r.Tree, a.r.Index = leaf.TxID, leaf.LastValid, leaf.Tree, leaf.Index
-	if a.txids[leaf.TxID] {
-		// A retry of one transaction is one release.
+	k := [2]uint64{leaf.Tree, uint64(leaf.Index)}
+	rel := leafRelease{leaf: k, txID: leaf.TxID}
+	if a.listed[rel] {
+		// A retry of one transaction on its leaf is one release.
 		return
 	}
-	a.txids[leaf.TxID] = true
-	k := [2]uint64{leaf.Tree, uint64(leaf.Index)}
+	a.listed[rel] = true
+	// The pair is new, so a leaf already used was used by another
+	// transaction. The same transaction on a new leaf is listed and marks
+	// that leaf used without being reuse.
 	if a.used[k] {
 		a.r.Reused = true
 	}
@@ -181,9 +195,9 @@ func readRotatingReleasesFrom(f io.Reader, acc map[string]*releaseAccumulator) e
 		if !ok || a.r.Stage != *entry.RotatingStage {
 			// A later stage starts a fresh list; reuse is per stage.
 			a = &releaseAccumulator{
-				r:     RotatingRelease{Account: entry.TxnAuth, Stage: *entry.RotatingStage},
-				txids: make(map[string]bool),
-				used:  make(map[[2]uint64]bool),
+				r:      RotatingRelease{Account: entry.TxnAuth, Stage: *entry.RotatingStage},
+				listed: make(map[leafRelease]bool),
+				used:   make(map[[2]uint64]bool),
 			}
 			acc[entry.TxnAuth] = a
 		}

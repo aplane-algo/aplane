@@ -146,7 +146,11 @@ for each.
   reader keeps that promise (`readRotatingReleasesFrom`, which both
   `AuditLogger.ReadRotatingReleases` and the path-based reader use): an
   entry from an earlier stage, which a sign on a lagging chain read can log
-  after a later stage's, never replaces the later stage's list. `RestoreBegin` takes the
+  after a later stage's, never replaces the later stage's list, and the list
+  holds every logged pair of leaf and transaction once, as the model's
+  `<<leaf, tx>>` set does (`releaseAccumulator.add`). The memory merge
+  (`mergeLeaves`) and a live record dedupe on the same pair, as
+  `RestoreApply`'s and `Sign`'s unions do. `RestoreBegin` takes the
   log at one instant, and so does the signer's read
   (`AuditLogger.ReadRotatingReleases`): it opens the current file and both
   rotated ones under the logger's mutex, which every rotation holds, so a
@@ -179,6 +183,12 @@ for each.
 - Validity windows, expiry, the stage-table recovery grants, and the one-time
   warning text are not modeled; they change what the signer reports, not the
   leaf it picks.
+- The reuse flag (`Reused`) is not modeled, and the model claims nothing
+  once a loss has fired. A transaction listed on two leaves is such a case:
+  LF2 rules it out while nothing is lost, and after a loss a retry can sign
+  from a memory the loss emptied. A Go test runs it from the audit log
+  through the restore to the reuse warning and the next leaf choice
+  (`TestRestoreAfterLossesKeepsEveryLoggedLeaf`).
 - The state space is bounded by `MaxSeq` (the memory's record counter), so
   the claim is over executions with at most that many record events, not an
   unbounded history.

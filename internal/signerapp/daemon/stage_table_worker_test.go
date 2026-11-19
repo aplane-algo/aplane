@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
@@ -36,6 +37,7 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -743,6 +745,114 @@ func TestWorkerPublishesRotatingStatus(t *testing.T) {
 	rec, ok := server.rotatingReleases.Get(account.String())
 	if !ok || rec.Stage != 0 || rec.TxID != resp.TxID || rec.StageAddr != account || rec.NextAddr != stage1 {
 		t.Fatalf("rebuilt release memory = %+v, %v", rec, ok)
+	}
+}
+
+// TestRestoreAfterLossesKeepsEveryLoggedLeaf runs the two-loss case from
+// the audit log through the restore to the status pass and the leaf choice.
+// B signed on leaf L1, and A, whose pick was also L1, on L2. A loss emptied
+// the memory and A's retry picked L1 again, a second message on B's leaf.
+// A clean restore of that log must raise the reuse warning. Once B's entry
+// has rotated out as well, the log still shows A on L1, so a transaction D
+// whose pick is L1 must not sign on it a third time.
+func TestRestoreAfterLossesKeepsEveryLoggedLeaf(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	node := &mockAccountNode{}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		return algod.MakeClientWithTransport(serverURL, token, nil, node.transport())
+	}
+	account, _ := installRotatingKey(t, server)
+	node.set("", 100)
+	ir.Config().SetUserAutoApprove(true)
+	profile, ok := rotatingkey.Lookup(rotatingkey.RotatingTripleWotscV1)
+	if !ok || profile.StatelessHash {
+		t.Fatal("the test key type is not a leaf family")
+	}
+
+	// D is prepared first: L1 is the leaf its TxID picks.
+	gh, _ := base64.StdEncoding.DecodeString(testnetGenesisB64)
+	var genesis [32]byte
+	copy(genesis[:], gh)
+	spend := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: account, Fee: 1000, FirstValid: 100, LastValid: 200, GenesisHash: genesis},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: account},
+	}
+	prep, svcErr := server.newSigningServiceWithAudit(ir, &signingAuditLogger{log: server.auditLog}).PrepareRotatingWithContext(context.Background(), signerapi.RotatingPrepareRequest{
+		Account: account.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(spend),
+	}, ir.SnapshotKeySession())
+	if svcErr != nil {
+		t.Fatalf("prepare: %v", svcErr)
+	}
+	prepared, err := txnutil.DecodePrefixedHex(prep.Transactions[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	txID := algocrypto.TransactionID(prepared)
+	lo, _ := profile.LeafRange(0)
+	n := uint64(profile.LeavesPerStage)
+	tree := profile.TreeOf(0)
+	l1 := uint32(lo + uint64(txID[0])%n)
+	l2 := uint32(lo + (uint64(l1)-lo+1)%n)
+
+	type release struct {
+		txid  string
+		index uint32
+	}
+	// restoreLog makes a log holding releases the signer's audit log and
+	// restores the memory from it after an unlock.
+	restoreLog := func(t *testing.T, releases ...release) {
+		t.Helper()
+		auditLog, err := NewAuditLogger(filepath.Join(t.TempDir(), "audit.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = auditLog.Close() })
+		server.auditLog = auditLog
+		for _, r := range releases {
+			if err := (&signingAuditLogger{log: auditLog}).LogRotatingRelease(account.String(), r.txid, 0, 1000, tree, r.index); err != nil {
+				t.Fatal(err)
+			}
+		}
+		server.rotatingReleases.Reset()
+		if !server.rebuildReleaseMemory(context.Background(), ir, ir.LockGeneration()) {
+			t.Fatal("the restore did not finish")
+		}
+	}
+
+	// One loss: the retained log proves the reuse.
+	restoreLog(t, release{"B", l1}, release{"A", l2}, release{"A", l1})
+	if rec, _ := server.rotatingReleases.Get(account.String()); !rec.Reused || len(rec.Leaves) != 3 {
+		t.Fatalf("restored memory = %+v, want three releases and reused", rec)
+	}
+	node.set("", 150)
+	server.fillStageTables(context.Background(), ir)
+	if w := ir.RotatingAlerts(); len(w) != 1 || !strings.Contains(w[0], "has signed more than one transaction") {
+		t.Fatalf("warnings after restoring a log that shows reuse = %v (notes %v)", w, ir.RotatingNotes())
+	}
+
+	// A second loss: B's entry rotated out, A's two remain.
+	restoreLog(t, release{"A", l2}, release{"A", l1})
+	resp, svcErr := server.newSigningServiceWithAudit(ir, &signingAuditLogger{log: server.auditLog}).SignRotatingWithContext(context.Background(), signerapi.RotatingSignRequest{
+		Account: account.String(), Transactions: prep.Transactions,
+	}, ir.SnapshotKeySession())
+	if svcErr != nil {
+		t.Fatalf("sign: %v", svcErr)
+	}
+	rec, _ := server.rotatingReleases.Get(account.String())
+	signed, ok := rec.LeafFor(resp.TxID)
+	if !ok {
+		t.Fatalf("D's release not remembered: %+v", rec)
+	}
+	if signed.Index == l1 || signed.Index == l2 {
+		t.Fatalf("D signed on leaf %d; the log shows A on %d and %d", signed.Index, l2, l1)
+	}
+	if rec.Reused {
+		t.Fatalf("D's release on a free leaf marked as reuse: %+v", rec)
 	}
 }
 
