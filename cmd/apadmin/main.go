@@ -152,7 +152,7 @@ func main() {
 
 	// Check for test mode (only available in test builds with -tags testmode)
 	if isTestMode() {
-		runTestMode(config, positional)
+		runTestMode(ipcPath, positional)
 		return
 	}
 

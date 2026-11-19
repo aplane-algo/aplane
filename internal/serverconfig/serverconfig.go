@@ -251,7 +251,9 @@ func GetSignerDataDir(flagValue string) string {
 // Returns the default config, with a warning, only when the file does not
 // exist. A file that exists but cannot be read is an error: running on
 // defaults would drop what it sets, require_memory_protection and a custom
-// IPC path among them, without anyone noticing.
+// IPC path among them, without anyone noticing. The defaults are resolved
+// the same way a file's values are, so without a file the relative SSH host
+// key path still names a file in the data directory.
 func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	defaults := DefaultServerConfig()
 
@@ -264,7 +266,7 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: Config file not found: %s\n", path)
-		return defaults, nil
+		return normalizeServerConfig(dataDir, path, defaults, defaults)
 	}
 	if err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to read config file %s: %w", path, err)
@@ -295,6 +297,15 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 	if err := apconfig.UnmarshalKnownConfigFields(data, &config); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
+	return normalizeServerConfig(dataDir, path, config, defaults)
+}
+
+// normalizeServerConfig validates config, fills what it leaves unset from
+// defaults, derives the runtime network indexes, and resolves relative paths
+// against dataDir. A config read from a file and the defaults used when there
+// is none both pass through it, so they resolve alike. path names the config
+// file in messages.
+func normalizeServerConfig(dataDir, path string, config, defaults ServerConfig) (ServerConfig, error) {
 	config.SchemaVersion = apconfig.NormalizeConfigSchemaVersion(config.SchemaVersion)
 	if err := apconfig.ValidateConfigSchemaVersion("server config", config.SchemaVersion); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
@@ -323,9 +334,11 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 	if _, err := ParseApprovalWait(config.ApprovalWait); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid approval_wait in config: %w", err)
 	}
-	if config.IPCPath == "" && dataDir != "" {
-		config.IPCPath = filepath.Join(dataDir, "aplane.sock")
-	}
+	// An unset ipc_path stays empty: the admin IPC resolvers own its default
+	// and join a relative path to the data directory themselves, so joining
+	// it here too would name a socket under the data directory twice when
+	// the data directory is relative.
+
 	if config.TEALCompileNetwork == "" {
 		config.TEALCompileNetwork = defaults.TEALCompileNetwork
 	}

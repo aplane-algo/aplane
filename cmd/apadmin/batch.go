@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"strings"
 	"time"
@@ -202,9 +201,10 @@ func (c *testModeClient) DeleteKey(address string) error {
 	return nil
 }
 
-// runTestMode runs apadmin in test mode against the local IPC socket.
-func runTestMode(config serverconfig.ServerConfig, args []string) {
-	runTestSession(transport.NewIPC(config.IPCPath), args)
+// runTestMode runs apadmin in test mode against the resolved local IPC
+// socket.
+func runTestMode(ipcPath string, args []string) {
+	runTestSession(transport.NewIPC(ipcPath), args)
 }
 
 // runTestSession runs apadmin test mode over the local IPC transport.
