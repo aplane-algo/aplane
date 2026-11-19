@@ -995,6 +995,12 @@ interactive REPL runs a command the completer offers nothing and takes no
 lock. Waiting for it there would never end, since the command is waiting for
 the line.
 
+The completer readline gets at startup is the only one it ever has: it
+builds the completion tree at each Tab, from the network, plugins and caches
+as they are then, so a network switch or a signer cache the status poller
+refreshed needs no new completer. readline reads its configured completer
+on its own goroutine, so replacing it later would race with that read.
+
 ### Command Result Rendering
 
 Every registered handler returns a `command.Result`:

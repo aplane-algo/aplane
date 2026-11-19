@@ -47,7 +47,7 @@ func NewSession(network string, cfg config.Config, dataDir string, out io.Writer
 	}
 	return &Session{
 		state:       state,
-		stopPolling: state.startSignerStatusPolling(nil),
+		stopPolling: state.startSignerStatusPolling(),
 	}, nil
 }
 

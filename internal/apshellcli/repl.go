@@ -19,7 +19,7 @@ import (
 
 func startBasicREPL(state *REPLState) {
 	fmt.Println("Running in basic mode (no history/completion)")
-	stopPolling := state.startSignerStatusPolling(nil)
+	stopPolling := state.startSignerStatusPolling()
 	defer stopPolling()
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -95,9 +95,7 @@ func startREPL(network string, config config.Config, dataDir string) {
 	clientlog.SetSink(clientlog.WriterSink(rl.Stderr()))
 
 	state.bindInteractiveIO(rl)
-	stopPolling := state.startSignerStatusPolling(func() {
-		state.refreshCompleter(rl)
-	})
+	stopPolling := state.startSignerStatusPolling()
 	defer stopPolling()
 
 	// sigCh intercepts SIGINT during command execution so Ctrl-C
@@ -138,18 +136,6 @@ func startREPL(network string, config config.Config, dataDir string) {
 			continue
 		}
 		if cmd.Name == "" {
-			continue
-		}
-
-		if cmd.Name == "network" && len(cmd.Args) == 1 {
-			err := state.executeCommandWithInterrupt(cmd, sigCh)
-			if err != nil {
-				if errors.Is(err, errQuit) {
-					break
-				}
-				fmt.Printf("Error: %v\n", err)
-			}
-			state.refreshCompleter(rl)
 			continue
 		}
 

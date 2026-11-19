@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/command"
+
+	"github.com/chzyer/readline"
 )
 
 type offersOne struct{}
@@ -22,7 +24,7 @@ func (offersOne) Do([]rune, int) ([][]rune, int) { return [][]rune{[]rune("ice")
 // itself waiting for the line.
 func TestTabAtACommandsOwnPromptOffersNothing(t *testing.T) {
 	r := testREPLForSimulate(t)
-	completer := r.lockedCompleter(offersOne{})
+	completer := r.lockedCompleter(func() readline.AutoCompleter { return offersOne{} })
 
 	if got, _ := completer.Do([]rune("al"), 2); len(got) != 1 {
 		t.Fatalf("at the command prompt Tab offered %q, want the completer's one candidate", got)
@@ -55,6 +57,31 @@ func TestTabAtACommandsOwnPromptOffersNothing(t *testing.T) {
 	}
 	if got, _ := completer.Do([]rune("al"), 2); len(got) != 1 {
 		t.Fatalf("after the command Tab offered %q, want completion back at the command prompt", got)
+	}
+}
+
+// The completer readline is given at startup completes from the shell as it
+// is at each Tab, so nothing replaces it later: readline reads it on its own
+// goroutine, and a later write to its config would race with that read.
+func TestTabCompletesFromTheShellAsItIsAtTheTab(t *testing.T) {
+	r := testREPLForSimulate(t)
+	completer := r.newReadlineConfig().AutoComplete
+	completes := func(word string) bool {
+		line := []rune("network ")
+		candidates, _ := completer.Do(line, len(line))
+		for _, candidate := range candidates {
+			if strings.TrimSpace(string(candidate)) == word {
+				return true
+			}
+		}
+		return false
+	}
+	if completes("devnet7") {
+		t.Fatal("Tab offered a network that is not configured")
+	}
+	r.app().Config.NetworksAllowed = append(r.app().Config.NetworksAllowed, "devnet7")
+	if !completes("devnet7") {
+		t.Fatal("Tab did not offer the network configured after the completer was installed")
 	}
 }
 
