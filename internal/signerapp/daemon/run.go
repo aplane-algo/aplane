@@ -125,6 +125,9 @@ func Run(dataDir string) int {
 		return 1
 	}
 	startPassphrase := unlockPlan.Passphrase
+	// unlockAtStartup zeroes the passphrase once it is used; this covers each
+	// return before that, and zeroing twice is harmless.
+	defer crypto.ZeroBytes(startPassphrase)
 	startLocked := unlockPlan.StartLocked
 	passphraseSource := string(unlockPlan.Source)
 
