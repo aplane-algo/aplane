@@ -116,6 +116,11 @@ func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", file, err)
 	}
+	// The limit reads one byte past the cap only to see that a file is over
+	// it; parsing what was read would send the file without its tail.
+	if len(data) > maxPolicyFileBytes {
+		return nil, fmt.Errorf("%s is larger than %d bytes", file, maxPolicyFileBytes)
+	}
 	return validPolicyBytes(file, data)
 }
 
