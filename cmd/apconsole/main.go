@@ -5,12 +5,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -125,8 +126,7 @@ func main() {
 		// The private managed store prevents this operator process from reading
 		// node.yaml directly. Keep the shell fail-closed until authenticated
 		// admin settings identify the node as a signer.
-		startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, "", shellSession, shellStartup, false, nil, daemon)
-		return
+		os.Exit(startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, "", shellSession, shellStartup, false, nil, daemon))
 	}
 
 	startup, err := bootstrap.Load(startupCfg.SignerData)
@@ -181,7 +181,7 @@ func main() {
 		daemon.configNotices = len(startupCfg.Notices) > 0
 	}
 
-	startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
+	os.Exit(startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon))
 }
 
 // consoleLogs queues diagnostics for the shell pane. Its Close writes what the
@@ -217,7 +217,11 @@ func flagWasSet(name string) bool {
 	return wasSet
 }
 
-func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole string, shellSession *apshellcli.Session, shellStartup []string, shellEnabled bool, daemonProcess *daemonProcess, daemon daemonModel) {
+// startConsole runs the console program and returns the process exit code. It
+// never exits itself: main exits once the deferred calls here have stopped the
+// owned apsigner, shut the shell session down and restored stdio, whatever
+// ended the program.
+func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole string, shellSession *apshellcli.Session, shellStartup []string, shellEnabled bool, daemonProcess *daemonProcess, daemon daemonModel) int {
 	if shellSession != nil {
 		defer shellSession.Shutdown()
 	}
@@ -252,10 +256,6 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		}()
 	}
 
-	// Disable bubbletea's panic catching so a panic propagates here. We restore
-	// the terminal, write the stack trace to a log file (alt-screen mode would
-	// otherwise erase it on exit), and then re-panic so the trace also reaches
-	// stderr if anything is reading it.
 	model := newModelWithShell(
 		connector, shellExecutorForSession(shellSession), shellStartup,
 		daemon, shellEnabled, initialNodeRole,
@@ -268,10 +268,14 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		model.height = height
 	}
 
+	// Bubble Tea's panic catching stays on, and the guard turns a panic in a
+	// Cmd goroutine into a quit: whatever panics, the terminal is restored and
+	// the program ends, so the deferred calls above still run. The guard keeps
+	// the panic's stack for the report below.
+	guard, guarded := newPanicGuard(model)
 	p := tea.NewProgram(
-		model,
+		guarded,
 		tea.WithAltScreen(),
-		tea.WithoutCatchPanics(),
 		tea.WithInput(realStdin),
 		tea.WithOutput(realStdout),
 	)
@@ -305,36 +309,35 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 			}
 		})
 	}
-	defer func() {
-		r := recover()
-		if r == nil {
-			return
-		}
-		// realStderr is captured because os.Stderr is currently /dev/null
-		// (the redirect defer runs after this one in LIFO order).
-		// Leave alt screen and re-enable cursor before printing/exiting.
-		_, _ = fmt.Fprint(realStderr, "\x1b[?1049l\x1b[?25h")
-		_ = consoleLogs.Close(realStderr)
-		trace := debug.Stack()
-		path := writePanicTrace(dataDir, r, trace)
-		if path != "" {
-			_, _ = fmt.Fprintf(realStderr, "apconsole panic — stack trace written to %s\n", path)
-		}
-		_, _ = fmt.Fprintf(realStderr, "panic: %v\n\n%s", r, trace)
-		os.Exit(2)
-	}()
 	final, err := p.Run()
-	// Straight away: the code below can exit, and session shutdown can still log.
-	// Records from here on go directly to the terminal. stderr is the only channel
-	// left if this fails.
+	// Straight away: session shutdown can still log. Records from here on go
+	// directly to the terminal. stderr is the only channel left if this fails.
 	_ = consoleLogs.Close(realStderr)
 	// Whatever ended the program, release what an unfinished backup transfer
 	// in the signer pane holds (a staging file, an open archive, a passphrase).
-	shutdownSignerPane(final)
+	shutdownSignerPane(guard.finalModel(final))
+	if caught := guard.recorded(); caught != nil || errors.Is(err, tea.ErrProgramPanic) {
+		reportConsolePanic(realStderr, dataDir, caught)
+		return 2
+	}
 	if err != nil {
 		logErrorf("error running console: %v", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
+}
+
+// reportConsolePanic writes the panic's stack trace to a file, because the
+// terminal's scrollback may not keep it, and to stderr.
+func reportConsolePanic(stderr io.Writer, dataDir string, caught *consolePanic) {
+	if caught == nil {
+		_, _ = fmt.Fprintln(stderr, "apconsole panic: no stack trace recorded")
+		return
+	}
+	if path := writePanicTrace(dataDir, caught.value, caught.stack); path != "" {
+		_, _ = fmt.Fprintf(stderr, "apconsole panic — stack trace written to %s\n", path)
+	}
+	_, _ = fmt.Fprintf(stderr, "panic: %v\n\n%s", caught.value, caught.stack)
 }
 
 func shellExecutorForSession(session *apshellcli.Session) shellExecutor {
