@@ -1607,7 +1607,11 @@ lock that follows that disconnect is decided by the signer-owned
 the authentication view in the disconnected state, shows why, and reconnects
 only when the operator presses `c`. It does not reconnect automatically: a
 fresh connection would sit at the login screen holding the signer's single
-pre-auth slot and lock out every other admin client.
+pre-auth slot and lock out every other admin client. Only a connection that
+dropped without the signer ending it (a signer restart) reconnects on its
+own: `apadmin` retries from one second, doubling up to thirty, until a dial
+succeeds or the operator disconnects, and a failed dial leaves the dropped
+session's retry running.
 Disconnect, reconnect, reauthentication, and server lock notifications clear
 pending activity and idle state. Every end of an admin session (disconnect,
 reconnect, reauthentication, local idle disconnect, or displacement by another

@@ -84,16 +84,17 @@ func (c *IPCClient) Connect() error {
 		return nil
 	}
 
-	c.done = make(chan struct{})
-	c.sessionID++
-	sessionID := c.sessionID
-
+	// A new session begins only once the dial succeeds. A failed attempt
+	// leaves the session as it was, so a reconnect loop for it goes on
+	// retrying rather than finding its session superseded by nothing.
 	conn, err := c.connector.Connect()
 	if err != nil {
-		c.done = nil
 		c.mu.Unlock()
 		return err
 	}
+	c.done = make(chan struct{})
+	c.sessionID++
+	sessionID := c.sessionID
 
 	c.conn = conn
 	c.stream = transport.NewStreamClient(conn)
