@@ -665,6 +665,49 @@ func TestPolicyEditReportsPasteCutOffAtTheLineLimit(t *testing.T) {
 	}
 }
 
+// Only text that adds lines can have been cut short by the line limit. A
+// backspace or delete that joins two lines removes one on its own, and must
+// not report a paste or clear the check problems the operator is fixing.
+func TestPolicyEditJoiningLinesIsNotACutOffPaste(t *testing.T) {
+	m := cosignerPoliciesModel("default")
+	m.width, m.height = 120, 40
+	m = openEditorForKeyOnDefault(t, m)
+	m = setPolicyEditText(m, "{\n\"key\": \"default\"\n}")
+	m.policies.apply.problems = []string{"line 2: unknown field"}
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyCtrlHome}, {Type: tea.KeyDown}, {Type: tea.KeyHome}, {Type: tea.KeyBackspace}} {
+		next, _ := m.handlePolicyEditKeys(key)
+		m = next.(Model)
+	}
+	if got := policyEditText(m); got != "{\"key\": \"default\"\n}" {
+		t.Fatalf("backspace at the start of line 2 left %q, want the lines joined", got)
+	}
+	if m.policies.apply.err != "" || len(m.policies.apply.problems) != 1 {
+		t.Fatalf("joining two lines reported %q and left problems %v", m.policies.apply.err, m.policies.apply.problems)
+	}
+	next, _ := m.handlePolicyEditKeys(tea.KeyMsg{Type: tea.KeyDelete})
+	if got := next.(Model); got.policies.apply.err != "" {
+		t.Fatalf("delete that joins two lines reported %q", got.policies.apply.err)
+	}
+
+	// The text area turns every carriage return into a line break as well,
+	// so a cut-off paste of CRLF lines is reported too, and one that fits is
+	// not.
+	small := cosignerPoliciesModel("default")
+	small.width, small.height = 120, 40
+	small = openEditorForKeyOnDefault(t, small)
+	next, _ = small.handlePolicyEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("a\r\nb\rc")})
+	if got := next.(Model); got.policies.apply.err != "" {
+		t.Fatalf("small CRLF paste reported %q", got.policies.apply.err)
+	}
+	large := cosignerPoliciesModel("default")
+	large.width, large.height = 120, 40
+	large = openEditorForKeyOnDefault(t, large)
+	next, _ = large.handlePolicyEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune(strings.Repeat("x\r\n", policyEditMaxLines*3/4))})
+	if got := next.(Model); !strings.Contains(got.policies.apply.err, "was not inserted") {
+		t.Fatalf("CRLF paste past the line limit: lines %d err %q, want the cut-off reported", got.policies.apply.edit.input.LineCount(), got.policies.apply.err)
+	}
+}
+
 // Paste comes from the terminal as key input. The component's ctrl+v binding,
 // which would read this machine's clipboard through a helper program and
 // return an answer the view never receives, is off.

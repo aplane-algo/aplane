@@ -1590,7 +1590,9 @@ confirmed apply.
   10,000 without notice. A document is opened only if the editor holds all of
   it (compared as JSON, since the component normalizes whitespace); otherwise
   editing is refused in favor of export, edit, and load. A paste that is cut
-  off at that limit is reported.
+  off at that limit is reported; the check counts the line breaks the text
+  adds (each carriage return and newline, as the component does), so an edit
+  that removes a line, such as a backspace joining two, is not reported.
 - **Keys.** Every key except `ctrl+s` and `esc` goes to the text area, so the
   list's single-letter shortcuts are inert while editing. Paste is the
   terminal's own paste, which arrives as key input. The component's `ctrl+v`

@@ -270,11 +270,13 @@ func (m Model) handlePolicyEditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	input := m.sizedPolicyEditor()
 	linesBefore := input.LineCount()
-	pastedLines := strings.Count(string(msg.Runes), "\n")
+	breaks := lineBreaksTyped(msg)
 	var cmd tea.Cmd
 	edit.input, cmd = input.Update(msg)
 	switch {
-	case edit.input.LineCount() < linesBefore+pastedLines:
+	// Only text that adds lines can have been cut short. Other edits, such
+	// as a backspace that joins two lines, change the line count on their own.
+	case breaks > 0 && edit.input.LineCount() < linesBefore+breaks:
 		apply.problems = nil
 		apply.err = fmt.Sprintf("That paste would take the text past %d lines, so its end was not inserted. Check the end of the text.", policyEditMaxLines)
 	case edit.input.Length() >= policyreview.MaxPolicyBytes:
@@ -282,6 +284,17 @@ func (m Model) handlePolicyEditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		apply.err = fmt.Sprintf("The editor is full: a policy document is at most %d bytes.", policyreview.MaxPolicyBytes)
 	}
 	return m, cmd
+}
+
+// lineBreaksTyped counts the line breaks msg types, as the text area counts
+// them: it turns every carriage return and every newline into one, so "\r\n"
+// adds two. A key that is not text input types none.
+func lineBreaksTyped(msg tea.KeyMsg) int {
+	if msg.Type != tea.KeyRunes {
+		return 0
+	}
+	text := string(msg.Runes)
+	return strings.Count(text, "\n") + strings.Count(text, "\r")
 }
 
 // submitPolicyEdit sends the edited text to the daemon's policy check. Syntax
