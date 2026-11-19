@@ -1939,6 +1939,15 @@ reuses or frees it.
   algosdk's mnemonic functions take the phrase as a string and split it into
   word strings. Removing these copies would mean a zeroable text input in
   apadmin and a byte-based generator interface and mnemonic codec.
+- **Store-root term keys.** `internal/crypto/store_root.go` encodes the
+  keyring payload with `json.Marshal` and decodes it with a strict
+  `json.Decoder` (`decodeJSONStrict`), because unknown fields must be refused.
+  The marshal leaves the base64 text of every term key in encoding/json's
+  pooled encoder buffer, which goes back to its pool uncleared, and the decoder
+  copies the decrypted payload into an internal buffer that is never zeroed.
+  The returned plaintext and the decoded term keys are zeroed; those two
+  buffers are not. Hand-encoding and hand-decoding the fixed payload would
+  remove them, at the cost of a second strict parser in modeled crypto code.
 - **Other admin messages.** encoding/json's pooled buffers likewise keep
   copies of passphrases and exported phrases that admin messages carry, and
   `SensitiveBytes.MarshalJSON` returns its encoding to the encoder, which drops
