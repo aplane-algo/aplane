@@ -486,42 +486,43 @@ func TestLoadAuthCacheInvalidJSON(t *testing.T) {
 	_ = len(cache.AuthAddresses)
 }
 
-// TestBuildAuthCacheNilClient verifies handling of nil algod client
-func TestBuildAuthCacheNilClient(t *testing.T) {
-
+// TestQueryAuthAddressesNilClient verifies handling of nil algod client
+func TestQueryAuthAddressesNilClient(t *testing.T) {
 	addresses := map[string]bool{"ALICE_ADDR": true, "SIGNER_ADDR": true}
 
-	// Should not crash with nil client
-	cache := BuildAuthCacheFromStore(context.Background(), nil, nil, addresses, "testnet")
-
-	if cache.AuthAddresses == nil {
-		t.Fatal("Cache should be initialized")
-	}
-
-	// Without client, should return empty cache
-	if len(cache.AuthAddresses) != 0 {
-		t.Error("Cache should be empty when client is nil")
+	// Should not crash with nil client, and answers nothing
+	if answers := QueryAuthAddresses(context.Background(), nil, addresses); len(answers) != 0 {
+		t.Fatalf("answers = %v, want none without a client", answers)
 	}
 }
 
-// TestBuildAuthCacheEmptyInputs verifies handling of an empty address set
-func TestBuildAuthCacheEmptyInputs(t *testing.T) {
+// TestMergeAuthCacheIntoStoreEmptyOwned verifies that no known address
+// leaves an empty, initialized cache.
+func TestMergeAuthCacheIntoStoreEmptyOwned(t *testing.T) {
+	store := NewStore(t.TempDir())
+	existing := NewAuthAddressCacheForStore(store)
+	existing.AuthAddresses["GONE_ADDR"] = "GONE_AUTH"
+	if err := existing.SaveCache("testnet"); err != nil {
+		t.Fatalf("SaveCache(existing) error = %v", err)
+	}
 
-	// Should handle empty inputs gracefully
-	cache := BuildAuthCacheFromStore(context.Background(), nil, nil, map[string]bool{}, "testnet")
-
-	if cache.AuthAddresses == nil {
-		t.Fatal("Cache should be initialized")
+	cache := MergeAuthCacheIntoStore(store, "testnet", nil, map[string]bool{})
+	if cache.AuthAddresses == nil || len(cache.AuthAddresses) != 0 {
+		t.Fatalf("auth cache = %v, want initialized and empty", cache.AuthAddresses)
 	}
 }
 
-func TestBuildAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t *testing.T) {
+// A rebuild queries the owned addresses and merges the answers into the
+// cache on disk: an answer replaces its entry, an owned address with no
+// answer keeps its entry, and an address no longer owned is pruned.
+func TestQueryAndMergeAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t *testing.T) {
 	store := NewStore(t.TempDir())
 	network := "testnet"
 
 	existing := NewAuthAddressCacheForStore(store)
 	existing.AuthAddresses["STALE_ADDR"] = "STALE_AUTH"
 	existing.AuthAddresses["CURRENT_ADDR"] = "OLD_AUTH"
+	existing.AuthAddresses["UNANSWERED_ADDR"] = "KEPT_AUTH"
 	if err := existing.SaveCache(network); err != nil {
 		t.Fatalf("SaveCache(existing) error = %v", err)
 	}
@@ -530,29 +531,20 @@ func TestBuildAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t *testing
 		"CURRENT_ADDR": "FRESH_AUTH",
 	})
 
-	built := BuildAuthCacheFromStore(context.Background(), store, algodClient, map[string]bool{"CURRENT_ADDR": true}, network)
+	owned := map[string]bool{"CURRENT_ADDR": true, "UNANSWERED_ADDR": true}
+	answers := QueryAuthAddresses(context.Background(), algodClient, owned)
+	built := MergeAuthCacheIntoStore(store, network, answers, owned)
 
-	if got, ok := built.GetAuthAddress("STALE_ADDR"); ok {
-		t.Fatalf("stale auth cache entry = %q, want pruned", got)
-	}
-	gotAuth, ok := built.GetAuthAddress("CURRENT_ADDR")
-	if !ok {
-		t.Fatal("expected current auth cache entry after rebuild")
-	}
-	if gotAuth != "FRESH_AUTH" {
-		t.Fatalf("current auth cache value = %q, want FRESH_AUTH", gotAuth)
-	}
-
-	reloaded := LoadAuthCacheFromStore(store, network)
-	if got, ok := reloaded.GetAuthAddress("STALE_ADDR"); ok {
-		t.Fatalf("persisted stale auth cache entry = %q, want pruned", got)
-	}
-	gotAuth, ok = reloaded.GetAuthAddress("CURRENT_ADDR")
-	if !ok {
-		t.Fatal("expected persisted current auth cache entry after rebuild")
-	}
-	if gotAuth != "FRESH_AUTH" {
-		t.Fatalf("persisted current auth cache value = %q, want FRESH_AUTH", gotAuth)
+	for name, cache := range map[string]AuthAddressCache{"merged": built, "persisted": LoadAuthCacheFromStore(store, network)} {
+		if got, ok := cache.GetAuthAddress("STALE_ADDR"); ok {
+			t.Fatalf("%s stale auth cache entry = %q, want pruned", name, got)
+		}
+		if got, ok := cache.GetAuthAddress("CURRENT_ADDR"); !ok || got != "FRESH_AUTH" {
+			t.Fatalf("%s current auth cache entry = (%q, %v), want (FRESH_AUTH, true)", name, got, ok)
+		}
+		if got, ok := cache.GetAuthAddress("UNANSWERED_ADDR"); !ok || got != "KEPT_AUTH" {
+			t.Fatalf("%s unanswered auth cache entry = (%q, %v), want (KEPT_AUTH, true)", name, got, ok)
+		}
 	}
 }
 

@@ -183,22 +183,30 @@ func (e *Core) SetNetwork(ctx context.Context, network string, algodClient *algo
 
 // rebuildAuthCache rebuilds the active network's auth cache from algod, with
 // ctx, for every account the client knows: the alias book's and the signer's.
-// It runs under the client-data lock, as every auth-cache write does, so a
-// write another process makes is not lost; the alias book is reloaded under
-// it. The signer's addresses are copied under signerCacheMu, which is
-// released before algod is queried, so a tunnel disconnect, which resets the
-// signer cache from the tunnel's monitor goroutine, never waits on the
-// queries.
+// algod is queried first, holding no lock: the signer's addresses are copied
+// under signerCacheMu, released at once, so a tunnel disconnect, which resets
+// the signer cache from the tunnel's monitor goroutine, never waits on the
+// queries, and the client-data lock is not held across them, so another
+// apshell process on the same data directory is not kept from its own
+// writes. The answers are then merged under the client-data lock, as every
+// auth-cache write is: the alias book and the auth cache are reloaded under
+// it, so a write another process made meanwhile is kept, and entries for
+// addresses the client no longer knows are pruned. With no algod client,
+// the cache is loaded as it is on disk.
 func (e *Core) rebuildAuthCache(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if e.AlgodClient == nil {
+		e.AuthCache = cache.LoadAuthCacheFromStore(e.CacheStore, e.Network)
+		return nil
+	}
+	answers := cache.QueryAuthAddresses(ctx, e.AlgodClient, e.collectAllAddresses())
 	return e.withClientDataLock(func() error {
 		if e.DataDir != "" {
 			e.AliasCache = cache.LoadAliasCacheFromStore(e.CacheStore)
 		}
-		addresses := e.collectAllAddresses()
-		e.AuthCache = cache.BuildAuthCacheFromStore(ctx, e.CacheStore, e.AlgodClient, addresses, e.Network)
+		e.AuthCache = cache.MergeAuthCacheIntoStore(e.CacheStore, e.Network, answers, e.collectAllAddresses())
 		return nil
 	})
 }

@@ -50,61 +50,52 @@ func (cache *AuthAddressCache) SaveCache(network string) error {
 	return cache.persistCache(network)
 }
 
-// BuildAuthCacheFromStore rebuilds the network's auth-address cache in store
-// for addresses, the client's known accounts: each is queried on algod with
-// ctx, an entry for any other address is pruned, and the result is saved. An
-// address whose query fails keeps the entry it had on disk. Nil algodClient
-// returns the cache as loaded. The caller holds the client-data lock, so no
-// other process writes the file between the load and the save.
-func BuildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *algod.Client, addresses map[string]bool, network string) AuthAddressCache {
-	// Load existing cache from disk
-	cache := LoadAuthCacheFromStore(store, network)
-
+// QueryAuthAddresses asks algod, with ctx, for the auth address of each of
+// addresses. An account that signs for itself answers ""; an address whose
+// query fails, or every address when algodClient is nil, is left out. It
+// takes no lock: a caller queries first and then merges the answers under
+// the client-data lock (MergeAuthCacheIntoStore), so the queries never hold
+// that lock.
+func QueryAuthAddresses(ctx context.Context, algodClient *algod.Client, addresses map[string]bool) map[string]string {
+	answers := make(map[string]string, len(addresses))
 	if algodClient == nil {
-		return cache
+		return answers
 	}
-
-	if len(addresses) == 0 {
-		cache.ensureInitialized()
-		cache.AuthAddresses = make(map[string]string)
-		_ = cache.SaveCache(network)
-		return cache
-	}
-
-	Debug("building auth address cache", "network", network, "addresses", len(addresses))
-	updates := make(map[string]string, len(addresses))
+	Debug("querying auth addresses", "addresses", len(addresses))
 	for address := range addresses {
 		acctInfo, err := algodClient.AccountInformation(address).Do(ctx)
 		if err != nil {
-			// If account doesn't exist or query fails, skip it
 			continue
 		}
-
-		authAddr := acctInfo.AuthAddr
-		if authAddr == "" || authAddr == address {
-			// Not rekeyed, store empty string
-			updates[address] = ""
+		if authAddr := acctInfo.AuthAddr; authAddr != "" && authAddr != address {
+			answers[address] = authAddr
 		} else {
-			// Rekeyed, store auth address
-			updates[address] = authAddr
+			answers[address] = ""
 		}
 	}
+	return answers
+}
 
+// MergeAuthCacheIntoStore reloads the network's auth-address cache from
+// store, sets the entries answers gives, removes the entry of every address
+// not in owned, the client's known accounts, and saves the result. An owned
+// address with no answer keeps the entry it has on disk, which may be
+// another process's. The caller holds the client-data lock, so no other
+// process writes the file between the load and the save.
+func MergeAuthCacheIntoStore(store *Store, network string, answers map[string]string, owned map[string]bool) AuthAddressCache {
+	cache := LoadAuthCacheFromStore(store, network)
 	cache.ensureInitialized()
-	for address, authAddr := range updates {
+	for address, authAddr := range answers {
 		cache.AuthAddresses[address] = authAddr
 	}
 	for address := range cache.AuthAddresses {
-		if !addresses[address] {
+		if !owned[address] {
 			delete(cache.AuthAddresses, address)
 		}
 	}
-
-	// Save to disk
-	if saveErr := cache.SaveCache(network); saveErr != nil {
-		warnf("failed to save auth cache: %v", saveErr)
+	if err := cache.SaveCache(network); err != nil {
+		warnf("failed to save auth cache: %v", err)
 	}
-
 	return cache
 }
 

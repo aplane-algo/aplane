@@ -292,9 +292,9 @@ func authRebuildEngine(t *testing.T, dataDir, address string, client *algod.Clie
 	return eng
 }
 
-// A network switch rebuilds the auth cache under the client-data lock, as
-// every other auth-cache write does: while another holder has the lock, the
-// switch waits, so it cannot save over a write the holder makes.
+// A network switch saves the rebuilt auth cache under the client-data lock,
+// as every other auth-cache write does: while another holder has the lock,
+// the switch waits, so it cannot save over a write the holder makes.
 func TestSetNetworkRebuildsTheAuthCacheUnderTheClientDataLock(t *testing.T) {
 	dataDir := t.TempDir()
 	account, authorizer := testAddress(70).String(), testAddress(71).String()
@@ -321,9 +321,6 @@ func TestSetNetworkRebuildsTheAuthCacheUnderTheClientDataLock(t *testing.T) {
 		t.Fatalf("SetNetwork() returned (%v) while another holder had the client-data lock", err)
 	case <-time.After(200 * time.Millisecond):
 	}
-	if got := node.queries.Load(); got != 0 {
-		t.Errorf("algod account queries before the lock was free = %d, want 0", got)
-	}
 	close(release)
 	if err := <-holderDone; err != nil {
 		t.Fatalf("lock holder error = %v", err)
@@ -342,6 +339,89 @@ func TestSetNetworkRebuildsTheAuthCacheUnderTheClientDataLock(t *testing.T) {
 	saved := cache.LoadAuthCacheFromStore(cache.NewStore(dataDir), "testnet")
 	if got, ok := saved.GetAuthAddress(account); !ok || got != authorizer {
 		t.Fatalf("saved auth cache entry = (%q, %v), want (%q, true)", got, ok, authorizer)
+	}
+}
+
+// The auth-cache rebuild queries algod before it takes the client-data lock,
+// so another apshell process on the same data directory can write while the
+// queries run. The merge under the lock reloads the alias book and the auth
+// cache, so what that process wrote is kept: here an alias and its auth
+// entry, which the rebuild did not query. Both entry points share the
+// rebuild.
+func TestAuthCacheRebuildQueriesAlgodOutsideTheClientDataLock(t *testing.T) {
+	for name, rebuild := range map[string]func(*Engine, *algod.Client) error{
+		"SetNetwork": func(eng *Engine, client *algod.Client) error {
+			return eng.SetNetwork(context.Background(), "testnet", client)
+		},
+		"RefreshAuthCache": func(eng *Engine, _ *algod.Client) error {
+			return eng.RefreshAuthCache(context.Background())
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			account, authorizer := testAddress(74).String(), testAddress(75).String()
+			carol, carolAuth := testAddress(76).String(), testAddress(77).String()
+			node := &authRebuildNode{authAddr: authorizer, queried: make(chan struct{}, 1), gate: make(chan struct{})}
+			client := node.serve(t)
+			eng := authRebuildEngine(t, dataDir, account, client)
+			var once atomic.Bool
+			open := func() {
+				if once.CompareAndSwap(false, true) {
+					close(node.gate)
+				}
+			}
+			defer open()
+
+			rebuilt := make(chan error, 1)
+			go func() { rebuilt <- rebuild(eng, client) }()
+			select {
+			case <-node.queried:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the rebuild never queried algod")
+			}
+
+			// Another process adds an alias and its auth entry while the
+			// rebuild's query is still out.
+			wrote := make(chan error, 1)
+			go func() {
+				wrote <- clientdata.WithExclusiveLock(dataDir, func() error {
+					store := cache.NewStore(dataDir)
+					aliases := cache.LoadAliasCacheFromStore(store)
+					if aliases.Aliases == nil {
+						aliases.Aliases = map[string]string{}
+					}
+					aliases.Aliases["carol"] = carol
+					if err := aliases.SaveCacheLocked(); err != nil {
+						return err
+					}
+					auth := cache.LoadAuthCacheFromStore(store, "testnet")
+					auth.AuthAddresses[carol] = carolAuth
+					return auth.SaveCache("testnet")
+				})
+			}()
+			select {
+			case err := <-wrote:
+				if err != nil {
+					t.Fatalf("other process's write error = %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Error("another process could not take the client-data lock while the rebuild queried algod")
+				open()
+				if err := <-wrote; err != nil {
+					t.Fatalf("other process's write error = %v", err)
+				}
+			}
+			open()
+			if err := <-rebuilt; err != nil {
+				t.Fatalf("rebuild error = %v", err)
+			}
+			if got, ok := eng.AuthCache.GetAuthAddress(account); !ok || got != authorizer {
+				t.Fatalf("auth cache entry = (%q, %v), want (%q, true)", got, ok, authorizer)
+			}
+			if got, ok := eng.AuthCache.GetAuthAddress(carol); !ok || got != carolAuth {
+				t.Fatalf("other process's auth entry = (%q, %v), want (%q, true) kept", got, ok, carolAuth)
+			}
+		})
 	}
 }
 
