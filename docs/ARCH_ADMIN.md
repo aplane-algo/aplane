@@ -82,6 +82,9 @@ reason and waits for the operator to press `c`. A login the signer ends with
 `authentication_failed` or `unlock_failed` also closes the connection;
 `apadmin` reconnects, but keeps the error up over the new login until the
 operator dismisses it, so it is not mistaken for a passphrase to retype.
+When another session owns the signer, the reconnect is offered displacement
+first; the error stays up over that prompt as well, and dismissing it shows
+the displacement prompt, whose confirmation leads to the new login.
 
 Transport notes:
 

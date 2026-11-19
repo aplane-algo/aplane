@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"bufio"
 	"io"
 	"net"
 	"strings"
@@ -77,13 +78,19 @@ func TestAuthResultStoreRootFailureShowsBlockingPopup(t *testing.T) {
 
 // A login the signer ends with a serious error closes the connection, and
 // the client reconnects to a fresh login at once. The error stays up through
-// that reconnect, and dismissing it leads to the new login.
+// that reconnect, and dismissing it leads to the new login. When another
+// session owns the signer, the reconnect is offered displacement first: the
+// error stays up over that prompt too, and dismissing it leads to the prompt.
 func TestSeriousAuthErrorPopupSurvivesTheReconnect(t *testing.T) {
-	for _, tc := range []struct{ code, message string }{
-		{protocol.ErrCodeAuthenticationFailed, "the signer cannot open its store root; see the signer log"},
-		{protocol.ErrCodeUnlockFailed, "auth ok but unlock failed: failed to load keys"},
+	for _, tc := range []struct {
+		name, code, message string
+		ownerActive         bool
+	}{
+		{"authentication_failed", protocol.ErrCodeAuthenticationFailed, "the signer cannot open its store root; see the signer log", false},
+		{"unlock_failed", protocol.ErrCodeUnlockFailed, "auth ok but unlock failed: failed to load keys", false},
+		{"authentication_failed with an owner", protocol.ErrCodeAuthenticationFailed, "the signer cannot open its store root; see the signer log", true},
 	} {
-		t.Run(tc.code, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			firstClient, firstServer := net.Pipe()
 			secondClient, secondServer := net.Pipe()
 			defer func() { _ = secondServer.Close() }()
@@ -107,15 +114,34 @@ func TestSeriousAuthErrorPopupSurvivesTheReconnect(t *testing.T) {
 				}
 			}
 			m := Model{
+				adminClient:     client,
 				viewState:       ViewAuth,
 				connectionState: ConnectionConnected,
 				auth:            authState{passphraseInput: SensitiveBytes("secret"), passphraseMasked: true},
 				width:           80,
 				height:          MinHeight,
 			}
-			apply := func(msg tea.Msg) {
-				next, _ := m.Update(msg)
+			apply := func(msg tea.Msg) tea.Cmd {
+				next, cmd := m.Update(msg)
 				m = next.(Model)
+				return cmd
+			}
+			applyUntil := func(done func(tea.Msg) bool) {
+				for {
+					msg := waitForClientMsg(t, client, 2*time.Second)
+					apply(msg)
+					if done(msg) {
+						return
+					}
+				}
+			}
+			isAuthRequired := func(msg tea.Msg) bool { _, ok := msg.(AuthRequiredMsg); return ok }
+			wantPopupReturningTo := func(when string, view ViewState) {
+				t.Helper()
+				if m.viewState != ViewError || m.errorPopup.message != tc.message || m.errorPopup.returnView != view {
+					t.Fatalf("%s: viewState = %v, popup = %q returning to %v; want the error kept, returning to %v",
+						when, m.viewState, m.errorPopup.message, m.errorPopup.returnView, view)
+				}
 			}
 
 			go send(firstServer, AuthResultMessage{BaseMessage: BaseMessage{Type: MsgTypeAuthResult}, Code: tc.code, Error: tc.message})
@@ -124,23 +150,46 @@ func TestSeriousAuthErrorPopupSurvivesTheReconnect(t *testing.T) {
 				t.Fatalf("viewState after the auth result = %v, want the error popup", m.viewState)
 			}
 			// The signer ends the login and closes the connection; its next
-			// connection opens with auth_required.
+			// connection opens with auth_required, or with client_exists
+			// while another session owns the signer.
 			_ = firstServer.Close()
-			go send(secondServer, AuthRequiredMessage{BaseMessage: BaseMessage{Type: MsgTypeAuthRequired}})
-			for {
-				msg := waitForClientMsg(t, client, 2*time.Second)
-				apply(msg)
-				if _, ok := msg.(AuthRequiredMsg); ok {
-					break
+			if tc.ownerActive {
+				go send(secondServer, ClientExistsMessage{BaseMessage: BaseMessage{Type: MsgTypeClientExists}})
+				applyUntil(func(msg tea.Msg) bool { _, ok := msg.(ClientExistsMsg); return ok })
+				wantPopupReturningTo("after client_exists", ViewDisplaceConfirm)
+				apply(tea.KeyMsg{Type: tea.KeyEsc})
+				if m.viewState != ViewDisplaceConfirm || m.displaceConfirmFocus != 0 {
+					t.Fatalf("after dismissal: viewState = %v focus = %d, want the displacement prompt on Cancel", m.viewState, m.displaceConfirmFocus)
 				}
+				// Confirming displacement makes the signer start the login.
+				go func() {
+					line, err := bufio.NewReader(secondServer).ReadBytes('\n')
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					if base, err := protocol.ParseAdminBaseMessage(line); err != nil || base.Type != MsgTypeDisplaceConfirm {
+						t.Errorf("client sent %q (%v), want displace_confirm", line, err)
+						return
+					}
+					send(secondServer, AuthRequiredMessage{BaseMessage: BaseMessage{Type: MsgTypeAuthRequired}})
+				}()
+				if cmd := apply(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}); cmd != nil {
+					cmd()
+				}
+				applyUntil(isAuthRequired)
+				if m.viewState != ViewAuth {
+					t.Fatalf("after confirming displacement: viewState = %v, want the new login", m.viewState)
+				}
+				return
 			}
+
+			go send(secondServer, AuthRequiredMessage{BaseMessage: BaseMessage{Type: MsgTypeAuthRequired}})
+			applyUntil(isAuthRequired)
 			if connector.connectCount() != 2 {
 				t.Fatalf("connections = %d, want the reconnect", connector.connectCount())
 			}
-			if m.viewState != ViewError || m.errorPopup.message != tc.message || m.errorPopup.returnView != ViewAuth {
-				t.Fatalf("after the reconnect: viewState = %v, popup = %q returning to %v; want the error kept over the new login",
-					m.viewState, m.errorPopup.message, m.errorPopup.returnView)
-			}
+			wantPopupReturningTo("after the reconnect", ViewAuth)
 			if len(m.auth.passphraseInput) != 0 {
 				t.Fatal("passphrase retained across the reconnect")
 			}

@@ -292,8 +292,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ClientExistsMsg:
 		// Server says another client is already connected - show confirmation modal
-		m.viewState = ViewDisplaceConfirm
 		m.displaceConfirmFocus = 0 // Default to Cancel
+		if m.viewState == ViewError {
+			// As for auth_required: a serious error the last login ended
+			// on stays up, and dismissing it leads to this prompt.
+			m.errorPopup.returnView = ViewDisplaceConfirm
+			return m, nil
+		}
+		m.viewState = ViewDisplaceConfirm
 		return m, nil
 
 	case DisplacedMsg:
