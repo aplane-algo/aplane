@@ -188,12 +188,41 @@ type AuditEntry struct {
 	AssetID                 uint64   `json:"asset_id,omitempty"`
 }
 
+// auditFile is the audit log's open file. *os.File is the only one in
+// production; tests replace openAuditFile to inject write, sync and close
+// failures.
+type auditFile interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+	Stat() (os.FileInfo, error)
+}
+
+var (
+	openAuditFile = func(path string) (auditFile, error) {
+		file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, err
+		}
+		return file, nil
+	}
+	// renameAuditFile moves a log file during rotation; tests replace it.
+	renameAuditFile = os.Rename
+)
+
 // AuditLogger handles append-only audit logging
 type AuditLogger struct {
-	file    *os.File
+	file    auditFile
 	mu      sync.Mutex
 	path    string
 	written uint64
+	// partial records that the file ends partway through an entry (a write
+	// that stopped short, or a line an earlier run left torn), leaving a
+	// fragment with no newline: the next entry starts with one, so it is
+	// not merged into the fragment and lost with it.
+	partial bool
+	// closed is set by Close; nothing is written, or reopened, after it.
+	closed bool
 
 	authFailures       entryLimiter
 	cosignerRejections entryLimiter
@@ -221,7 +250,7 @@ type entryLimiter struct {
 func NewAuditLogger(path string) (*AuditLogger, error) {
 	// Open file in append-only mode, create if not exists
 	// Permissions: owner read/write only (0600)
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	file, err := openAuditFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audit log: %w", err)
 	}
@@ -231,7 +260,7 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 		written = uint64(info.Size())
 	}
 
-	logger := &AuditLogger{file: file, path: path, written: written}
+	logger := &AuditLogger{file: file, path: path, written: written, partial: endsMidLine(path, written)}
 	logger.authFailures.init(AuditAuthFailuresSuppressed, "authentication failures")
 	logger.cosignerRejections.init(AuditCosignerRejectionsSuppressed, "cosigner component rejections")
 	return logger, nil
@@ -315,6 +344,9 @@ func boundOperationID(id string) string {
 func (a *AuditLogger) Log(entry AuditEntry) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed {
+		return
+	}
 	entry = normalizeEntry(entry)
 
 	// Set timestamp if not provided
@@ -348,17 +380,55 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 		}
 	}
 
-	// Write with newline
-	if _, err := a.file.Write(line); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to write audit entry: %v\n", err)
-		return
+	if err := a.writeLineLocked(line); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
-	a.written += uint64(len(line))
+}
 
-	// Sync to disk immediately (important for audit trails)
-	if err := a.file.Sync(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to sync audit log: %v\n", err)
+// endsMidLine reports whether the file at path, of size bytes, ends without
+// a newline: a line an earlier run left torn by a crash or a full disk. The
+// logger's own handle is write-only, so the last byte is read separately.
+func endsMidLine(path string, size uint64) bool {
+	if size == 0 {
+		return false
 	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, int64(size)-1); err != nil {
+		return false
+	}
+	return last[0] != '\n'
+}
+
+// writeLineLocked appends line, one entry ending in a newline, and syncs it
+// to disk (important for audit trails). A write that stops partway leaves a
+// fragment with no newline; the next line then starts with one, so a later
+// entry, a durable rotating release among them, is never merged into the
+// fragment and dropped with it by the reader. Must be called with a.mu held.
+func (a *AuditLogger) writeLineLocked(line []byte) error {
+	if a.closed {
+		return fmt.Errorf("audit log is closed")
+	}
+	if a.partial {
+		line = append([]byte{'\n'}, line...)
+	}
+	n, err := a.file.Write(line)
+	a.written += uint64(n)
+	if err != nil {
+		if n > 0 {
+			a.partial = line[n-1] != '\n'
+		}
+		return fmt.Errorf("write audit entry: %w", err)
+	}
+	a.partial = false
+	if err := a.file.Sync(); err != nil {
+		return fmt.Errorf("sync audit log: %w", err)
+	}
+	return nil
 }
 
 // logDurable appends entry and reports failure instead of dropping it: the
@@ -369,6 +439,9 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 func (a *AuditLogger) logDurable(entry AuditEntry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed {
+		return fmt.Errorf("audit log is closed")
+	}
 	entry = normalizeEntry(entry)
 
 	if entry.Timestamp.IsZero() {
@@ -396,42 +469,51 @@ func (a *AuditLogger) logDurable(entry AuditEntry) error {
 		}
 	}
 
-	if _, err := a.file.Write(line); err != nil {
-		return fmt.Errorf("write audit entry: %w", err)
-	}
-	a.written += uint64(len(line))
-
-	if err := a.file.Sync(); err != nil {
-		return fmt.Errorf("sync audit log: %w", err)
-	}
-	return nil
+	return a.writeLineLocked(line)
 }
 
-// rotate archives the current log file and opens a fresh one.
+// rotate archives the current log file and opens a fresh one. A step that
+// fails stops the rotation with no history lost: the current file stays in
+// use and keeps growing, and the next entry tries again.
 // Must be called with a.mu held.
 func (a *AuditLogger) rotate() error {
-	if err := a.file.Close(); err != nil {
+	var err error
+	if a.file != nil {
+		err = a.file.Close()
+	}
+	// The handle is gone either way: if closing failed, the next write
+	// reopens the current file rather than writing to a closed one.
+	a.file = nil
+	if err != nil {
 		return fmt.Errorf("close current log: %w", err)
 	}
-	// Preserve previous backup before overwriting
-	if _, err := os.Stat(a.path + ".1"); err == nil {
-		_ = os.Rename(a.path+".1", a.path+".2")
+	// Keep the previous log. If it cannot be moved to .2, renaming the
+	// current file to .1 would destroy it, so the rotation stops here.
+	if _, err := os.Lstat(a.path + ".1"); err == nil {
+		if err := renameAuditFile(a.path+".1", a.path+".2"); err != nil {
+			a.reopenCurrent()
+			return fmt.Errorf("keep previous log: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		a.reopenCurrent()
+		return fmt.Errorf("inspect previous log: %w", err)
 	}
-	if err := os.Rename(a.path, a.path+".1"); err != nil {
+	if err := renameAuditFile(a.path, a.path+".1"); err != nil {
 		// Reopen the original path so logging can continue
 		a.reopenCurrent()
 		return fmt.Errorf("rename log: %w", err)
 	}
-	file, err := os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	file, err := openAuditFile(a.path)
 	if err != nil {
 		// The old log was already renamed away; restore it so the logger
 		// keeps a valid handle instead of writing to a closed file forever.
-		_ = os.Rename(a.path+".1", a.path)
+		_ = renameAuditFile(a.path+".1", a.path)
 		a.reopenCurrent()
 		return fmt.Errorf("open new log: %w", err)
 	}
 	a.file = file
 	a.written = 0
+	a.partial = false
 	return nil
 }
 
@@ -441,13 +523,20 @@ func (a *AuditLogger) rotate() error {
 // nil if the open itself fails (Log drops entries until recovery succeeds).
 // Must be called with a.mu held.
 func (a *AuditLogger) reopenCurrent() {
-	a.file, _ = os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	a.file = nil
 	a.written = 0
-	if a.file != nil {
-		if info, err := a.file.Stat(); err == nil {
-			a.written = uint64(info.Size())
-		}
+	if a.closed {
+		return
 	}
+	file, err := openAuditFile(a.path)
+	if err != nil {
+		return
+	}
+	a.file = file
+	if info, err := a.file.Stat(); err == nil {
+		a.written = uint64(info.Size())
+	}
+	a.partial = a.partial || endsMidLine(a.path, a.written)
 }
 
 // FlushSummaries writes the pending summaries of rate-limited entries without
@@ -469,7 +558,13 @@ func (a *AuditLogger) Close() error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.file.Close()
+	a.closed = true
+	if a.file == nil {
+		return nil
+	}
+	err := a.file.Close()
+	a.file = nil
+	return err
 }
 
 // Helper methods for common events
