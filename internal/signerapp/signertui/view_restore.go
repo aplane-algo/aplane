@@ -266,7 +266,7 @@ func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) stri
 	if key.HasPolicy {
 		suffix += "  policy"
 	}
-	addressWidth := keyAddressWidth(maxWidth, prefix, "", suffix)
+	addressWidth := keyAddressWidth(maxWidth, prefix, suffix)
 	return fmt.Sprintf("%s%s%s", prefix, restorePreviewAddress(key, addressWidth), suffix)
 }
 

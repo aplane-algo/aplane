@@ -374,21 +374,11 @@ func libraryActionVerb(tmpl LibraryTemplateInfo) string {
 	return "enable"
 }
 
-func libraryPastTense() string {
-	return keytypeux.AvailableToCreate
-}
-
-func libraryDeactivatePastTense() string {
-	return keytypeux.NotAvailableToCreate
-}
-
-func libraryActivateFailure() string {
-	return "Key type enable failed"
-}
-
-func libraryDeactivateFailure() string {
-	return "Key type disable failed"
-}
+// The error prefixes a failed key type enable or disable shows.
+const (
+	libraryEnableFailure  = "Key type enable failed"
+	libraryDisableFailure = "Key type disable failed"
+)
 
 func libraryEntryNoun(tmpl LibraryTemplateInfo) string {
 	if isCompiledProviderLibraryEntry(tmpl) {

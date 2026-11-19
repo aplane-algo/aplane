@@ -53,7 +53,8 @@ type IPCClient struct {
 	// (displacement or a login timeout); reconnecting would undo that.
 	serverEnded bool
 
-	// Reconnection state
+	// Reconnection state. reconnectDelay and maxDelay are set at construction
+	// (tests shorten them) and never change.
 	reconnecting   bool
 	reconnectDelay time.Duration
 	maxDelay       time.Duration
@@ -862,7 +863,7 @@ func (c *IPCClient) reconnect(sessionID uint64, done <-chan struct{}) {
 		return
 	}
 	c.reconnecting = true
-	delay := c.reconnectDelay
+	delay, maxDelay := c.reconnectDelay, c.maxDelay
 	c.mu.Unlock()
 
 	for {
@@ -894,10 +895,8 @@ func (c *IPCClient) reconnect(sessionID uint64, done <-chan struct{}) {
 		// Attempt connection
 		err := c.Connect()
 		if err == nil {
-			// Success - reset delay and exit
 			c.mu.Lock()
 			c.reconnecting = false
-			c.reconnectDelay = 1 * time.Second
 			newSessionID := c.sessionID
 			c.mu.Unlock()
 
@@ -905,14 +904,7 @@ func (c *IPCClient) reconnect(sessionID uint64, done <-chan struct{}) {
 			return
 		}
 
-		// Failed - increase delay with exponential backoff
-		c.mu.Lock()
-		delay = delay * 2
-		if delay > c.maxDelay {
-			delay = c.maxDelay
-		}
-		c.mu.Unlock()
-
+		delay = min(delay*2, maxDelay)
 	}
 }
 
@@ -1104,19 +1096,6 @@ func (c *IPCClient) SendListKeys() error {
 	return c.sendMessage(msg)
 }
 
-// SendGenerateKey sends a request to generate a new key
-func (c *IPCClient) SendGenerateKey(keyType, name string, id string) error {
-	msg := GenerateKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeGenerateKey,
-			ID:   id,
-		},
-		KeyType: keyType,
-		Name:    name,
-	}
-	return c.sendMessage(msg)
-}
-
 // SendBackup requests signer-managed creation of a backup archive. It zeroes
 // its copy of the passphrase once sent; the caller zeroes its own.
 func (c *IPCClient) SendBackup(exportPassphrase []byte, id string) error {
@@ -1193,16 +1172,16 @@ func (c *IPCClient) SendReconcileStore(id string) error {
 	}})
 }
 
-// SendGenerateKeyWithParams sends a request to generate a new key with parameters
-// Used for generic LogicSigs like timelock that require additional configuration
-func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[string]string, id string) error {
+// SendGenerateKey sends a request to generate a new key. params holds the
+// creation parameters of a parameterized key type, such as a generic LogicSig,
+// and is nil for any other.
+func (c *IPCClient) SendGenerateKey(keyType string, params map[string]string, id string) error {
 	msg := GenerateKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeGenerateKey,
 			ID:   id,
 		},
 		KeyType:    keyType,
-		Name:       name,
 		Parameters: params,
 	}
 	return c.sendMessage(msg)
@@ -1225,9 +1204,9 @@ func (m Model) sendListKeysCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListKeys() })
 }
 
-// SendGenerateKeyCmd returns a tea.Cmd that sends a generate key request
-func (m Model) sendGenerateKeyCmd(keyType, name, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKey(keyType, name, id) })
+// sendGenerateKeyCmd returns a tea.Cmd that sends a generate key request.
+func (m Model) sendGenerateKeyCmd(keyType string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKey(keyType, params, id) })
 }
 
 // sendBackupCmd returns a tea.Cmd that requests a backup. The command keeps
@@ -1306,11 +1285,6 @@ func reviewedGenerateMessage(review PrepareGenerateResultMessage, id string) Gen
 
 func (m Model) sendReviewedGenerateKeyCmd(review PrepareGenerateResultMessage, id string) tea.Cmd {
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendReviewedGenerateKey(review, id) })
-}
-
-// SendGenerateKeyWithParamsCmd returns a tea.Cmd that sends a generate key request with parameters
-func (m Model) sendGenerateKeyWithParamsCmd(keyType, name string, params map[string]string, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKeyWithParams(keyType, name, params, id) })
 }
 
 // SendDeleteKeyCmd returns a tea.Cmd that sends a delete key request

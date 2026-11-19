@@ -82,7 +82,7 @@ func TestKeyListCShortcutOpensEnrolledClients(t *testing.T) {
 	m := Model{viewState: ViewKeyList}
 	next, cmd := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	got := next.(Model)
-	if got.viewState != ViewEnrolledClients || !got.clients.loading || got.clients.returnView != ViewKeyList {
+	if got.viewState != ViewEnrolledClients || !got.clients.loading {
 		t.Fatalf("viewState = %v clients = %+v, want the enrolled clients screen loading", got.viewState, got.clients)
 	}
 	if cmd == nil {

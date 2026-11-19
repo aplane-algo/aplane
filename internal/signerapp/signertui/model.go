@@ -122,7 +122,6 @@ func signerRuntimeStateFromWire(state string) signerRuntimeState {
 type KeyInfo struct {
 	Address                  string
 	KeyType                  string // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
-	FilePath                 string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
 }
@@ -146,10 +145,9 @@ type PendingSignRequest struct {
 	Violations  []protocol.PolicyViolation
 	// Review is the request as data, or nil when the signer sent only text.
 	Review *protocol.Review
-	Mode   string // "dsa" (default) or "attach" for generic lsigs
 }
 
-// PendingEnrollmentRequest holds a token provisioning request waiting for approval
+// PendingEnrollmentRequest holds a client key enrollment request waiting for approval
 type PendingEnrollmentRequest struct {
 	ID             string
 	SSHFingerprint string
@@ -284,7 +282,7 @@ type formsState struct {
 	generatedWarningsOpen bool
 	generatedKeyType      string
 
-	importKeyType       int // 0 = ed25519, 1 = falcon1024
+	importKeyType       int // index into the import key-type list
 	importMnemonicInput textarea.Model
 	importError         string
 	importFocus         int // 0 = key type, 1 = mnemonic input, 2 = submit button
@@ -416,7 +414,6 @@ type clientsState struct {
 	selected     int // row over pending then keys
 	loading      bool
 	status       string
-	returnView   ViewState
 	confirmFocus int    // 0 = cancel, 1 = revoke
 	confirmAll   bool   // the dialog revokes every key
 	confirmKey   string // fingerprint the dialog revokes when confirmAll is false
@@ -506,7 +503,6 @@ type Model struct {
 	signerState       signerRuntimeState
 	signerStatusKnown bool // true once we've received a status from apsigner
 	keyCount          int
-	serverKeyTypes    []protocol.KeyTypeInfo
 
 	// Per-view sub-models
 	activity           activityState
@@ -690,9 +686,7 @@ type SignRequestCanceledMsg struct {
 	Reason string
 }
 
-// ClientEnrollmentCanceledMsg is sent when apsigner withdraws a delivered
-// client access request.
-// ClientEnrollmentRequestReceivedMsg is sent when a token provisioning request is received
+// ClientEnrollmentRequestReceivedMsg is sent when a client key enrollment request is received
 type ClientEnrollmentRequestReceivedMsg struct {
 	Request PendingEnrollmentRequest
 }

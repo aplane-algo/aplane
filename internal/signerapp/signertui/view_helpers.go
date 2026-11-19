@@ -381,12 +381,6 @@ func getImportKeyTypeCount() int {
 	return len(compiledImportKeyTypes())
 }
 
-// getExpectedWordCount returns the expected mnemonic word count for a key type index.
-func getExpectedWordCount(keyTypeIndex int) int {
-	keyType := getKeyTypeByIndex(keyTypeIndex)
-	return getExpectedWordCountForKeyType(keyType)
-}
-
 func getExpectedImportWordCount(keyTypeIndex int) int {
 	keyType := getImportKeyTypeByIndex(keyTypeIndex)
 	return getExpectedWordCountForKeyType(keyType)
@@ -505,11 +499,11 @@ func (m Model) tableWidth() int {
 	return MinWidth
 }
 
-func keyAddressWidth(rowWidth int, prefix, mark, suffix string) int {
+func keyAddressWidth(rowWidth int, prefix, suffix string) int {
 	if rowWidth <= 0 {
 		return 0
 	}
-	width := rowWidth - len(prefix) - len(mark) - len(suffix)
+	width := rowWidth - len(prefix) - len(suffix)
 	if width < 4 {
 		return 4
 	}

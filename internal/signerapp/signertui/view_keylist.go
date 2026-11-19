@@ -294,7 +294,7 @@ func (m Model) writeKeyRows(sb *strings.Builder, displayKeys, tabKeys []KeyInfo)
 		keyTypeSuffix := "  " + keyTypeText
 		line := fmt.Sprintf("%s%s  %s",
 			prefix,
-			formatKeyAddress(key.Address, key.KeyType, keyAddressWidth(m.width, prefix, "", keyTypeSuffix), true),
+			formatKeyAddress(key.Address, key.KeyType, keyAddressWidth(m.width, prefix, keyTypeSuffix), true),
 			styledKeyTypeWithTemplateProvenanceStatus(key.KeyType, key.TemplateProvenanceStatus),
 		)
 

@@ -31,7 +31,7 @@ func TestRecordUserActivityArmsLocalIdleTimer(t *testing.T) {
 	m.activity.sessionTimeout = time.Minute
 	now := time.Now()
 
-	got, cmd := m.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got, cmd := m.recordUserActivity(now)
 
 	if cmd == nil {
 		t.Fatal("recordUserActivity returned nil cmd, want local idle timer")
@@ -52,7 +52,7 @@ func TestRecordUserActivityIgnoresUnlockView(t *testing.T) {
 
 	unlock := activityReadyModel()
 	unlock.viewState = ViewUnlock
-	got, cmd := unlock.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	got, cmd := unlock.recordUserActivity(now)
 	if cmd != nil || !got.activity.lastInputAt.IsZero() {
 		t.Fatalf("unlock activity state = %+v cmd %v, want ignored", got, cmd)
 	}
@@ -64,7 +64,7 @@ func TestRecordUserActivityCountsSignResponseKeysAsLocalActivity(t *testing.T) {
 	m.activity.sessionTimeout = time.Minute
 	now := time.Now()
 
-	got, cmd := m.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	got, cmd := m.recordUserActivity(now)
 
 	if cmd == nil {
 		t.Fatal("sign response activity returned nil cmd, want local idle timer")
