@@ -18,16 +18,14 @@ import (
 // different target is active. Wrapped errors carry the current target.
 var ErrAlreadyConnected = errors.New("already connected")
 
-// Result reports the outcome of a remote signer connection attempt.
+// Result reports a successful remote signer connection.
 type Result struct {
-	Connected bool
 	// AlreadyConnected reports that the target was already connected and
 	// nothing new was opened.
 	AlreadyConnected bool
 	Target           string
 	KeyCount         int
 	Locked           bool
-	ErrorMessage     string
 }
 
 // signerSSHHTTPAuthority is the host the signer client's requests name. They
@@ -54,7 +52,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 ) (*Result, error) {
 	alreadyConnected, currentTarget, inProgress := s.beginConnect(target)
 	if alreadyConnected {
-		return &Result{Connected: true, AlreadyConnected: true, Target: target}, nil
+		return &Result{AlreadyConnected: true, Target: target}, nil
 	}
 	if inProgress {
 		if currentTarget == target {
@@ -66,9 +64,9 @@ func (s *ConnectionState) ConnectWithTunnel(
 		return nil, fmt.Errorf("%w to %s", ErrAlreadyConnected, currentTarget)
 	}
 
-	result := &Result{Target: target}
+	connected := false
 	defer func() {
-		if !result.Connected {
+		if !connected {
 			s.clearPendingConnect(target)
 		}
 	}()
@@ -94,32 +92,29 @@ func (s *ConnectionState) ConnectWithTunnel(
 	if err := client.ConnectWithKey(sshCtx); err != nil {
 		_ = detachSetup()
 		cancelSSH()
-		result.ErrorMessage = err.Error()
-		return result, fmt.Errorf("SSH auth failed: %w", err)
+		return nil, fmt.Errorf("SSH auth failed: %w", err)
 	}
 	if err := detachSetup(); err != nil {
 		cancelSSH()
 		_ = client.Close()
-		result.ErrorMessage = err.Error()
-		return result, fmt.Errorf("SSH setup canceled: %w", err)
+		return nil, fmt.Errorf("SSH setup canceled: %w", err)
 	}
-	failed := func(err error) {
+	failed := func() {
 		cancelSSH()
 		_ = client.Close()
-		result.ErrorMessage = err.Error()
 	}
 
 	signerClient := signerclient.NewSignerClient("http://" + signerSSHHTTPAuthority)
 	signerClient.Client = &http.Client{Transport: newSSHHTTPTransport(client, signerSSHHTTPAuthority)}
 	keysResp, err := signerClient.GetKeysWithContext(ctx)
 	if err != nil {
-		failed(err)
-		return result, fmt.Errorf("failed to verify connection: %w", err)
+		failed()
+		return nil, fmt.Errorf("failed to verify connection: %w", err)
 	}
 	if onKeys != nil {
 		if err := onKeys(keysResp.Keys); err != nil {
-			failed(err)
-			return result, fmt.Errorf("invalid signer key inventory: %w", err)
+			failed()
+			return nil, fmt.Errorf("invalid signer key inventory: %w", err)
 		}
 	}
 
@@ -128,22 +123,20 @@ func (s *ConnectionState) ConnectWithTunnel(
 	s.ConnectionTarget = target
 	s.SSHTunnelClient = client
 	s.TunnelConnected = true
-	s.TunnelCtx, s.TunnelCancel = sshCtx, cancelSSH
+	s.TunnelCancel = cancelSSH
 	s.connectingTarget = ""
 	s.Mu.Unlock()
 
-	result.Connected = true
-	result.KeyCount = keysResp.Count
-	result.Locked = keysResp.Locked
-	return result, nil
+	connected = true
+	return &Result{Target: target, KeyCount: keysResp.Count, Locked: keysResp.Locked}, nil
 }
 
 // Disconnect closes any active signer connection.
-func (s *ConnectionState) Disconnect(onDisconnect func()) error {
+func (s *ConnectionState) Disconnect(onDisconnect func()) {
 	s.Mu.Lock()
 	if s.SignerClient == nil {
 		s.Mu.Unlock()
-		return nil
+		return
 	}
 	if s.TunnelCancel != nil {
 		s.TunnelCancel()
@@ -156,7 +149,6 @@ func (s *ConnectionState) Disconnect(onDisconnect func()) error {
 	if onDisconnect != nil {
 		onDisconnect()
 	}
-	return nil
 }
 
 // EnrollmentResult is a node's answer to an enrollment request: the client
@@ -202,7 +194,6 @@ func (s *ConnectionState) clearLocked() {
 	s.TunnelConnected = false
 	s.SignerClient = nil
 	s.ConnectionTarget = ""
-	s.TunnelCtx = nil
 	s.TunnelCancel = nil
 	s.connectingTarget = ""
 }

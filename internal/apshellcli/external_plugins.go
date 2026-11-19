@@ -17,9 +17,9 @@ import (
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
 )
 
-// execPlugin runs an external plugin command and returns a structured result.
-// Used by MCP for structured JSON responses. Returns (nil, false) if the command
-// is not a plugin command.
+// execPlugin runs an external plugin command, for the REPL, scripts and MCP,
+// and returns a structured result. Returns (nil, false) if the command is not
+// a plugin command.
 func execPlugin(r *REPLState, cmdName string, args []string) (*PluginResult, bool) {
 	pluginArgs, lsigArgs, err := extractPluginLsigArgs(args)
 	if err != nil {

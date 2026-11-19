@@ -14,7 +14,7 @@ import (
 )
 
 func TestPrepareKeyReg_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{Account: testAddr(1), Mode: "online"})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)

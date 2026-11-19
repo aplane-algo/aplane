@@ -18,10 +18,7 @@ import (
 func testREPLForSimulate(t *testing.T) *REPLState {
 	t.Helper()
 
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 
 	repl := &REPLState{
 		App:     apshellapp.New(eng, config.DefaultConfig(), t.TempDir()),
@@ -32,8 +29,8 @@ func testREPLForSimulate(t *testing.T) *REPLState {
 	return repl
 }
 
-func executeSimulateForTest(r *REPLState, args []string) error {
-	result, err := executeSimulate(r, args)
+func simulateForTest(r *REPLState, args []string) error {
+	result, err := r.cmdSimulate(args, nil)
 	if err != nil {
 		return err
 	}
@@ -54,7 +51,7 @@ func TestToggleSimulateRejectsNonTransactionCommands(t *testing.T) {
 	}
 
 	for _, args := range tests {
-		err := executeSimulateForTest(repl, args)
+		err := simulateForTest(repl, args)
 		if err == nil {
 			t.Fatalf("toggleSimulate(%q) error = nil, want rejection", strings.Join(args, " "))
 		}
@@ -70,7 +67,7 @@ func TestToggleSimulateRejectsNonTransactionCommands(t *testing.T) {
 func TestToggleSimulateAllowsTransactionCommandPath(t *testing.T) {
 	repl := testREPLForSimulate(t)
 
-	err := executeSimulateForTest(repl, []string{"send"})
+	err := simulateForTest(repl, []string{"send"})
 	if err == nil {
 		t.Fatal("toggleSimulate(send) error = nil, want downstream send usage error")
 	}
@@ -85,7 +82,7 @@ func TestToggleSimulateAllowsTransactionCommandPath(t *testing.T) {
 func TestToggleSimulateAllowsExternalPluginCommandPath(t *testing.T) {
 	repl := testREPLForSimulate(t)
 
-	err := executeSimulateForTest(repl, []string{"reti", "deposit"})
+	err := simulateForTest(repl, []string{"reti", "deposit"})
 	if err == nil {
 		t.Fatal("toggleSimulate(reti deposit) error = nil, want downstream plugin error")
 	}
@@ -120,9 +117,9 @@ func TestOneShotSimulateReturnsTheCommandsOwnResult(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := executeSimulate(repl, []string{"prompts"})
+	result, err := repl.cmdSimulate([]string{"prompts"}, nil)
 	if err != nil || result != own {
-		t.Fatalf("executeSimulate() = %v, %v; want the command's own result", result, err)
+		t.Fatalf("cmdSimulate() = %v, %v; want the command's own result", result, err)
 	}
 	if err := repl.executeCommand(Command{Name: "simulate", Args: []string{"prompts"}}); err != nil {
 		t.Fatalf("simulate prompts: %v", err)

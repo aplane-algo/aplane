@@ -30,19 +30,6 @@ func (e *Engine) RotatingAccounts() []string {
 	return out
 }
 
-// SignerStatusLines returns the signer's authenticated status warnings and
-// notes, which include its rotating account alerts and in-flight releases.
-func (e *Engine) SignerStatusLines(ctx context.Context) (warnings, notes []string, err error) {
-	if !e.IsConnected() {
-		return nil, nil, ErrNotConnected
-	}
-	status, err := e.Connection.GetSignerStatusWithContext(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	return status.Warnings, status.Notes, nil
-}
-
 // SignerRotatingStatus returns the signer's per-account rotating status
 // from its last background pass, alongside the status warnings and notes.
 func (e *Engine) SignerRotatingStatus(ctx context.Context) (accounts []signerapi.RotatingAccountStatus, warnings, notes []string, err error) {

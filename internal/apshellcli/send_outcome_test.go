@@ -73,9 +73,9 @@ func TestSendThatWentThroughSucceeds(t *testing.T) {
 // restored before the result is drawn, so the drawing must not ask for it.
 func TestOneShotSimulateSendSaysItWasSimulated(t *testing.T) {
 	f := newSubmitFixture(t, nodeConfirms)
-	result, err := executeSimulate(f.state, []string{"send", "0.001", "algo", "from", f.a.Address.String(), "to", f.b.Address.String()})
+	result, err := f.state.cmdSimulate([]string{"send", "0.001", "algo", "from", f.a.Address.String(), "to", f.b.Address.String()}, nil)
 	if err != nil {
-		t.Fatalf("executeSimulate() error = %v", err)
+		t.Fatalf("cmdSimulate() error = %v", err)
 	}
 	if f.state.app().IsSimulateEnabled() {
 		t.Fatal("one-shot simulate left simulate mode on")

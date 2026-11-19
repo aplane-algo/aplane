@@ -1911,17 +1911,11 @@ validate_ed25519_cosigner() {
 }
 
 verify_guided_cosigner_setup() {
-    local out client_data add_command cosigner_ssh_port
+    local out client_data cosigner_ssh_port
 
     client_data="/home/$TEST_USER/aplane/apclient"
     cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
     [ -n "$cosigner_ssh_port" ] || die "could not read cosigner SSH port"
-    if [ "$RELEASE_INSTALL" = "1" ]; then
-        # A release may predate 'endpoints add'; 'cosigner add' works in both.
-        add_command="cosigner add"
-    else
-        add_command="endpoints add"
-    fi
 
     # The client is told the cosigner's address; the key file never reaches it.
     # The client key stays enrolled at the cosigner, so setup reconnects
@@ -1929,7 +1923,7 @@ verify_guided_cosigner_setup() {
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints delete local-cosigner\n' > /tmp/delete-cosigner-endpoint.script && \
         . $client_data/apenv.sh && \
         apshell -script /tmp/delete-cosigner-endpoint.script >/tmp/delete-cosigner-endpoint.log 2>&1 && \
-        echo '$add_command ssh://cosigner:$cosigner_ssh_port --alias local-cosigner' > /tmp/add-cosigner.script" \
+        echo 'endpoints add ssh://cosigner:$cosigner_ssh_port --alias local-cosigner' > /tmp/add-cosigner.script" \
         || die "endpoints delete did not remove the cosigner endpoint"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". $client_data/apenv.sh && \
         apshell -script /tmp/add-cosigner.script 2>&1")"; then

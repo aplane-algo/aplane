@@ -17,10 +17,7 @@ import (
 // them before signing, and the result rendered afterwards does not repeat
 // them.
 func TestRekeyLinesAreAnnouncedLiveAndNotRepeated(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	var live []string
 	r := &REPLState{
 		App:          apshellapp.New(eng, config.DefaultConfig(), t.TempDir()),

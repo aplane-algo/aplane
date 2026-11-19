@@ -114,7 +114,7 @@ func (r *REPLState) printEnrollmentWait(clientFingerprint string) {
 }
 
 // buildHostKeyApproval returns a TOFU host key approval handler for SSH connections.
-// In auto-confirm mode, unknown hosts are rejected. If a custom HostKeyApproval
+// In auto-confirm mode, unknown hosts are rejected. If a HostKeyApprovalContext
 // handler is set on the REPLState (e.g. by a TUI host), it is used instead of
 // prompting via stdin. Otherwise the user is prompted interactively.
 func buildHostKeyApproval(r *REPLState) sshtunnel.HostKeyApprovalHandler {
@@ -124,9 +124,6 @@ func buildHostKeyApproval(r *REPLState) sshtunnel.HostKeyApprovalHandler {
 		}
 		if r.HostKeyApprovalContext != nil {
 			return r.HostKeyApprovalContext(r.commandContext(), host, fingerprint)
-		}
-		if r.HostKeyApproval != nil {
-			return r.HostKeyApproval(host, fingerprint)
 		}
 		r.printf("\n[SSH] Unknown host: %s\n", host)
 		r.printf("[SSH] Host key fingerprint: %s\n", fingerprint)

@@ -91,10 +91,7 @@ func TestPregroupedSignedVerbatimSubmit(t *testing.T) {
 	}
 
 	// Submit verbatim — engine has an algod client but NO signer connection.
-	eng, err := engine.NewEngine(cfg.Network, engine.WithAlgodClient(cfg.Client))
-	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
-	}
+	eng := engine.NewEngine(cfg.Network, engine.WithAlgodClient(cfg.Client))
 	res, err := eng.SubmitPregroupedSigned(ctx, group)
 	if err != nil {
 		out := ""

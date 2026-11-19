@@ -144,7 +144,7 @@ func TestRunJSCodeForEachMode(t *testing.T) {
 			if tt.ctx != nil {
 				ctx = tt.ctx
 			}
-			if err := repl.runJS(tt.args, ctx); err != nil {
+			if err := repl.runJS(tt.args, rawCommandArgs(ctx)); err != nil {
 				t.Fatalf("runJS() error = %v", err)
 			}
 			if repl.Scripts.Runner == nil {
@@ -198,7 +198,7 @@ func TestRunJSRunsNothing(t *testing.T) {
 				withStdin(t, tt.stdin)
 			}
 			events := watchPrompt(t, repl)
-			err := repl.runJS(tt.args, &command.Context{RawArgs: tt.raw})
+			err := repl.runJS(tt.args, tt.raw)
 			checkPrompt(t, *events, tt.reader != nil)
 			if err != tt.wantErr {
 				t.Fatalf("runJS() error = %v, want %v", err, tt.wantErr)
@@ -223,7 +223,7 @@ func TestRunJSScriptFiles(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(scripts, "answer.js"), []byte("40 + 2"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := repl.runJS([]string{"answer.js", "extra"}, &command.Context{RawArgs: "answer.js extra"}); err != nil {
+		if err := repl.runJS([]string{"answer.js", "extra"}, "answer.js extra"); err != nil {
 			t.Fatalf("runJS() error = %v", err)
 		}
 		if got := repl.Scripts.LastCode; got != "40 + 2" {
@@ -232,7 +232,7 @@ func TestRunJSScriptFiles(t *testing.T) {
 	})
 	t.Run("a missing script is an error and runs nothing", func(t *testing.T) {
 		repl := testREPLForJS(t)
-		err := repl.runJS([]string{"missing.js"}, &command.Context{RawArgs: "missing.js"})
+		err := repl.runJS([]string{"missing.js"}, "missing.js")
 		if err == nil || !strings.HasPrefix(err.Error(), "failed to read script: ") || !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("runJS() error = %v, want a wrapped not-exist error", err)
 		}
@@ -242,7 +242,7 @@ func TestRunJSScriptFiles(t *testing.T) {
 	})
 	t.Run("braces win over a script name", func(t *testing.T) {
 		repl := testREPLForJS(t)
-		if err := repl.runJS([]string{"{'a.js'}"}, &command.Context{RawArgs: "{'a.js'}"}); err != nil {
+		if err := repl.runJS([]string{"{'a.js'}"}, "{'a.js'}"); err != nil {
 			t.Fatalf("runJS() error = %v", err)
 		}
 		if got := repl.Scripts.LastCode; got != "'a.js'" {
@@ -262,7 +262,7 @@ func TestRunJSPrintsItsResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) {
 			repl := testREPLForJS(t)
-			if err := repl.runJS(strings.Fields(tt.code), &command.Context{RawArgs: tt.code}); err != nil {
+			if err := repl.runJS(strings.Fields(tt.code), tt.code); err != nil {
 				t.Fatalf("runJS() error = %v", err)
 			}
 			if got := repl.Out.(*bytes.Buffer).String(); got != tt.want {
@@ -274,7 +274,7 @@ func TestRunJSPrintsItsResult(t *testing.T) {
 
 func TestRunJSHelpPrintsTheReferenceAndRunsNothing(t *testing.T) {
 	repl := testREPLForJS(t)
-	if err := repl.runJS([]string{"-help", "{"}, &command.Context{RawArgs: "-help {"}); err != nil {
+	if err := repl.runJS([]string{"-help", "{"}, "-help {"); err != nil {
 		t.Fatalf("runJS() error = %v", err)
 	}
 	if repl.Scripts.Runner != nil {
@@ -288,10 +288,10 @@ func TestRunJSHelpPrintsTheReferenceAndRunsNothing(t *testing.T) {
 // LastCode is the last code that ran without error; jssave -last saves it.
 func TestRunJSKeepsLastCodeWhenARunFails(t *testing.T) {
 	repl := testREPLForJS(t)
-	if err := repl.runJS([]string{"40", "+", "2"}, &command.Context{RawArgs: "40 + 2"}); err != nil {
+	if err := repl.runJS([]string{"40", "+", "2"}, "40 + 2"); err != nil {
 		t.Fatalf("runJS() error = %v", err)
 	}
-	if err := repl.runJS([]string{"throw", "1"}, &command.Context{RawArgs: "throw 1"}); err == nil {
+	if err := repl.runJS([]string{"throw", "1"}, "throw 1"); err == nil {
 		t.Fatal("runJS(throw 1) error = nil, want the script's error")
 	}
 	if got := repl.Scripts.LastCode; got != "40 + 2" {

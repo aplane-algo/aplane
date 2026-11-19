@@ -22,17 +22,14 @@ import (
 )
 
 func TestPrepareSendRejectsManyToMany(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.SetCache.Sets = map[string][]string{
 		"senders": {"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"},
 		"rcvrs":   {"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"},
 	}
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.PrepareSend(context.Background(), SendRequest{
+	_, err := app.PrepareSend(context.Background(), SendRequest{
 		AmountText: "1",
 		AssetRef:   "algo",
 		FromRaw:    []string{"@senders"},
@@ -44,10 +41,7 @@ func TestPrepareSendRejectsManyToMany(t *testing.T) {
 }
 
 func TestPrepareSendSelectsAtomicToMultipleMode(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{}
 	eng.AliasCache.Aliases["alice"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	eng.SetCache.Sets = map[string][]string{
@@ -80,17 +74,14 @@ func TestPrepareSendSelectsAtomicToMultipleMode(t *testing.T) {
 }
 
 func TestExecuteSendUsesNonAtomicPath(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		"bob":   "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 	}
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.ExecuteSend(context.Background(), SendRequest{
+	_, err := app.ExecuteSend(context.Background(), SendRequest{
 		AmountText: "1",
 		AssetRef:   "algo",
 		FromRaw:    []string{"alice"},
@@ -102,10 +93,7 @@ func TestExecuteSendUsesNonAtomicPath(t *testing.T) {
 }
 
 func TestExecuteSendUsesAtomicPath(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = map[string]string{
 		"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 	}
@@ -117,7 +105,7 @@ func TestExecuteSendUsesAtomicPath(t *testing.T) {
 	}
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.ExecuteSend(context.Background(), SendRequest{
+	_, err := app.ExecuteSend(context.Background(), SendRequest{
 		AmountText: "1",
 		AssetRef:   "algo",
 		FromRaw:    []string{"alice"},
@@ -159,6 +147,7 @@ func TestAtomicValidationNotesChecksAlgoGroupTotal(t *testing.T) {
 		Mode:   SendModeAtomicToMultiple,
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
+		Prep:   preparedGroupWithFees(3, 1000),
 		Checks: []BalanceCheckDetails{
 			{SufficientFunds: true, SenderBalance: 8_000_000},
 			{SufficientFunds: true, SenderBalance: 8_000_000},
@@ -194,6 +183,7 @@ func TestAtomicValidationNotesIncludesFees(t *testing.T) {
 		Mode:   SendModeAtomicToMultiple,
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
+		Prep:   preparedGroupWithFees(3, 1000),
 		Checks: []BalanceCheckDetails{
 			{SufficientFunds: true, SenderBalance: 15_001_000},
 			{SufficientFunds: true, SenderBalance: 15_001_000},
@@ -218,24 +208,16 @@ func TestAtomicValidationNotesIncludesFees(t *testing.T) {
 	}
 }
 
-// TestAtomicValidationNotesUsesPreparedFees pins that the prepared
-// transactions' actual fees are the source of truth over the GroupParams
-// reconstruction: when the engine computed higher per-byte fees from suggested
-// params (here 2000 each, 15.006 total), a balance that would clear the
-// min-fee reconstruction (15.004 > 15.003) is still rejected.
+// TestAtomicValidationNotesUsesPreparedFees pins that the group total uses
+// the prepared transactions' fees, not the min fee: when the engine computed
+// higher per-byte fees from suggested params (here 2000 each, 15.006 total), a
+// balance that covers three min fees (15.004 > 15.003) is still rejected.
 func TestAtomicValidationNotesUsesPreparedFees(t *testing.T) {
-	prep := &engine.AtomicPrepResult{
-		Transactions: make([]types.Transaction, 3),
-	}
-	for i := range prep.Transactions {
-		prep.Transactions[i].Fee = 2000
-	}
-
 	plan := &AtomicSendPlan{
 		Mode:   SendModeAtomicToMultiple,
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
-		Prep:   preparedAtomicGroupFromEngine(prep),
+		Prep:   preparedGroupWithFees(3, 2000),
 		Checks: []BalanceCheckDetails{
 			{SufficientFunds: true, SenderBalance: 15_004_000},
 			{SufficientFunds: true, SenderBalance: 15_004_000},
@@ -258,6 +240,15 @@ func TestAtomicValidationNotesUsesPreparedFees(t *testing.T) {
 	if _, err := atomicValidationNotes(plan); err != nil {
 		t.Fatalf("atomicValidationNotes() error = %v, want success once prepared fees are covered", err)
 	}
+}
+
+// preparedGroupWithFees is a prepared group of n transactions, each paying fee.
+func preparedGroupWithFees(n int, fee uint64) *PreparedAtomicGroup {
+	prep := &engine.AtomicPrepResult{Transactions: make([]types.Transaction, n)}
+	for i := range prep.Transactions {
+		prep.Transactions[i].Fee = types.MicroAlgos(fee)
+	}
+	return preparedAtomicGroupFromEngine(prep)
 }
 
 func TestCheckedSendTotal(t *testing.T) {
@@ -292,10 +283,7 @@ func TestCheckedSendTotal(t *testing.T) {
 // position getting its sender's, so giving them is no longer refused. A
 // target is checked against the senders: a receiver is not one.
 func TestPrepareSendResolvesLogicSigArgsOnAnAtomicSend(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	alice, bob, carol := types.Address{51}.String(), types.Address{52}.String(), types.Address{53}.String()
 	eng.AliasCache.Aliases = map[string]string{"alice": alice}
 	eng.SetCache.Sets = map[string][]string{"friends": {bob, carol}}
@@ -438,10 +426,7 @@ func batchesString(batches []*signerapi.SignBatch) string {
 // Running a send labels copies of its transactions, so the plan stays as it
 // was prepared.
 func TestNonAtomicSendLeavesThePlanAsPrepared(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet")
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	plan := &NonAtomicSendPlan{Amount: asa.Amount{Raw: 1_000_000}}
 	for i := 0; i < 3; i++ {

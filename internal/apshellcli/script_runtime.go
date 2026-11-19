@@ -33,18 +33,6 @@ func (r *REPLState) ensureJSRunner() {
 	}, pluginExecutor)
 }
 
-// ListPluginCommands returns all available plugin command names for dynamic registration.
-func (p *PluginExecutorAdapter) ListPluginCommands() []string {
-	if p.repl.app().Plugins == nil {
-		return nil
-	}
-	commands, err := p.repl.app().Plugins.ListCommands()
-	if err != nil {
-		return nil
-	}
-	return commands
-}
-
 // ExecutePlugin executes a plugin command for JS plugin(), including signing
 // and submitting any transactions and following the plugin's continuations.
 func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) (bool, string, interface{}, interface{}, error) {

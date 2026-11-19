@@ -392,11 +392,10 @@ carries anything more. apshell owns endpoint configuration, client enrollment,
 host trust, and live discovery, and is given the cosigner's address by the
 operator; apadmin does not access client state.
 
-The client-side `endpoints add <url>` workflow (formerly `cosigner add`, which
-still forwards to it) takes the cosigner's URL and never a key. The client
-stores only the route: it keeps no witness key and no key-to-endpoint mapping,
-so the unit it manages is a connection to a cosigner node, and a later key on
-the same node needs no client change.
+The client-side `endpoints add <url>` workflow takes the cosigner's URL and
+never a key. The client stores only the route: it keeps no witness key and no
+key-to-endpoint mapping, so the unit it manages is a connection to a cosigner
+node, and a later key on the same node needs no client change.
 
 Before prompting, the workflow resolves the destination and reuses a cosigner
 profile already configured for that URL; only a new profile needs a name, for

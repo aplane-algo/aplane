@@ -255,10 +255,7 @@ func TestSubmitPregroupedSignedRejectsUnsupportedConsensusBeforeBroadcast(t *tes
 	}
 	client, server := consensusTestAlgod(t, string(protocol.ConsensusV41), nil)
 	defer server.Close()
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("test", WithAlgodClient(client))
 
 	_, err = eng.SubmitPregroupedSigned(context.Background(), group)
 	if err == nil || !strings.Contains(err.Error(), "network consensus") {

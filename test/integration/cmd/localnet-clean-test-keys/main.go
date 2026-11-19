@@ -120,24 +120,19 @@ type resolvedOptions struct {
 // enrolled client and returns a REST client over it.
 func connectFixtureClient(resolved resolvedOptions) (*signerclient.Client, func(), error) {
 	state := connect.NewState()
-	result, err := state.ConnectWithTunnel(
+	if _, err := state.ConnectWithTunnel(
 		context.Background(), resolved.endpointURL, resolved.host, resolved.sshPort,
 		resolved.endpoint.IdentityFile, resolved.endpoint.KnownHostsPath,
 		nil, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, nil, fmt.Errorf("connect to signer %s as the fixture client: %w", resolved.endpointURL, err)
-	}
-	if result == nil || !result.Connected {
-		_ = state.Disconnect(nil)
-		return nil, nil, fmt.Errorf("signer %s did not establish a connection", resolved.endpointURL)
 	}
 	client := state.SignerClient
 	if client == nil {
-		_ = state.Disconnect(nil)
+		state.Disconnect(nil)
 		return nil, nil, fmt.Errorf("signer %s connected without a REST client", resolved.endpointURL)
 	}
-	return client, func() { _ = state.Disconnect(nil) }, nil
+	return client, func() { state.Disconnect(nil) }, nil
 }
 
 func resolveOptions(opts options) (resolvedOptions, error) {

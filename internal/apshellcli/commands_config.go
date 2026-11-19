@@ -71,10 +71,6 @@ func (r *REPLState) cmdLogLevel(args []string, _ interface{}) (command.Result, e
 	}, logLevelProjection(result))
 }
 
-func (r *REPLState) cmdSimulate(args []string, _ interface{}) (command.Result, error) {
-	return executeSimulate(r, args)
-}
-
 func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, error) {
 	var result *apshellapp.ConnectResult
 	var err error
@@ -104,13 +100,13 @@ func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, er
 	})
 }
 
-func (r *REPLState) cmdEnroll(args []string, ctx interface{}) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runEnroll(args, ctx)
+func (r *REPLState) cmdEnroll(args []string, _ interface{}) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runEnroll(args)
 }
 
 const enrollUsage = "enroll [--endpoint <alias>] [--label <text>]"
 
-func (r *REPLState) runEnroll(args []string, _ interface{}) error {
+func (r *REPLState) runEnroll(args []string) error {
 	alias, label, err := parseEnrollArgs(args)
 	if err != nil {
 		return err

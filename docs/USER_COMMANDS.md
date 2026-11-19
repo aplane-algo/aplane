@@ -1077,13 +1077,6 @@ endpoints add ssh://cosigner.example:1127 --alias cosigner-lab --dry-run
 
 ---
 
-### cosigner add
-
-Former name of [endpoints add](#endpoints-add). It still works, prints a
-one-line notice, and forwards its arguments unchanged.
-
----
-
 ### cosigner status
 
 Run `cosigner status` in apshell to inspect current cosigner connections and the

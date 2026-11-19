@@ -289,22 +289,6 @@ func (m *Manager) FindByName(name string) (*discovery.Plugin, error) {
 	return nil, fmt.Errorf("plugin not found: %s", name)
 }
 
-// ListCommands returns all commands from all plugins (uses cache).
-func (m *Manager) ListCommands() ([]string, error) {
-	plugins, err := m.DiscoverPluginsCached()
-	if err != nil {
-		return nil, err
-	}
-
-	var commands []string
-	for _, plugin := range plugins {
-		for _, cmd := range plugin.Manifest.Commands {
-			commands = append(commands, cmd.Name)
-		}
-	}
-	return commands, nil
-}
-
 // StartPlugin starts a plugin if not already running
 func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 	// Check if already running (read lock)

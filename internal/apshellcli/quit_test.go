@@ -16,11 +16,11 @@ func TestOnlyQuitEndsTheShell(t *testing.T) {
 	state, _ := scriptedPluginShell(t, failsWithExit)
 	state.CommandRegistry = state.initCommandRegistry()
 	session := &Session{state: state}
-	exit, err := session.ExecuteLine("wf go")
+	_, exit, err := session.ExecuteLineCaptured("wf go")
 	if exit || err == nil || err.Error() != "exit" {
 		t.Fatalf("a plugin failing with %q: exit = %v, error = %v; want the plugin's failure and the session going on", "exit", exit, err)
 	}
-	if exit, err := session.ExecuteLine("quit"); !exit || err != nil {
+	if _, exit, err := session.ExecuteLineCaptured("quit"); !exit || err != nil {
 		t.Fatalf("quit: exit = %v, error = %v; want the session ended", exit, err)
 	}
 

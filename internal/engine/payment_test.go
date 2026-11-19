@@ -20,7 +20,7 @@ func testAddress(index int) types.Address {
 
 // TestPreparePayment_NoAlgodClient tests error when algod client is not configured
 func TestPreparePayment_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	// AlgodClient is nil by default
 
 	params := SendPaymentParams{
@@ -37,7 +37,7 @@ func TestPreparePayment_NoAlgodClient(t *testing.T) {
 
 // TestPrepareClose_NoAlgodClient tests error when algod client is not configured
 func TestPrepareClose_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	// AlgodClient is nil by default
 
 	params := CloseAccountParams{
@@ -93,12 +93,11 @@ func TestCloseAccountParams_Defaults(t *testing.T) {
 // TestCloseAccountCheckResult_Fields tests CloseAccountCheckResult structure
 func TestCloseAccountCheckResult_Fields(t *testing.T) {
 	result := &CloseAccountCheckResult{
-		Balance:      1000000,
-		IsOnline:     false,
-		HasASAs:      true,
-		ASACount:     3,
-		ASAIDs:       []uint64{12345, 67890, 11111},
-		CloseToValid: true,
+		Balance:  1000000,
+		IsOnline: false,
+		HasASAs:  true,
+		ASACount: 3,
+		ASAIDs:   []uint64{12345, 67890, 11111},
 	}
 
 	if result.Balance != 1000000 {
@@ -121,9 +120,6 @@ func TestCloseAccountCheckResult_Fields(t *testing.T) {
 		t.Errorf("len(ASAIDs) = %d, want 3", len(result.ASAIDs))
 	}
 
-	if result.CloseToValid != true {
-		t.Error("CloseToValid should be true")
-	}
 }
 
 // TestBalanceCheckResult_Fields tests BalanceCheckResult structure

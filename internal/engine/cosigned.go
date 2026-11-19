@@ -92,13 +92,6 @@ func (e *Engine) DiscoverCosignerComponentKeys(ctx context.Context, endpoint con
 	return e.cosignedSigner().DiscoverCosignerComponentKeys(ctx, endpoint)
 }
 
-// DiscoverCosignerComponentKeysWithHostKeyApproval performs one explicit setup
-// probe that may confirm an unknown SSH host. Normal background discovery does
-// not install this callback and remains noninteractive.
-func (e *Engine) DiscoverCosignerComponentKeysWithHostKeyApproval(ctx context.Context, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler) ([]DiscoveredCosignerComponentKey, error) {
-	return e.cosignedSignerWithHostKeyApproval(approve).DiscoverCosignerComponentKeys(ctx, endpoint)
-}
-
 // CosignerEndpointInspection is the node role and cosigner key inventory one
 // endpoint reported during guided setup.
 type CosignerEndpointInspection = cosigned.EndpointInspection

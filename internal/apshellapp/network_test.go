@@ -50,10 +50,6 @@ func (f *fakePluginRuntime) FindByName(string) (*discovery.Plugin, error) {
 	return nil, nil
 }
 
-func (f *fakePluginRuntime) ListCommands() ([]string, error) {
-	return nil, nil
-}
-
 func (f *fakePluginRuntime) ExecuteCommand(context.Context, string, string, []string, jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
 	return nil, nil
 }
@@ -71,10 +67,7 @@ func TestSwitchNetworkUpdatesEngineAndPlugins(t *testing.T) {
 	cfg.Algod = config.AlgodConfig{
 		"mainnet": &config.AlgodNetworkConfig{Server: algod.URL, Token: "main-token"},
 	}
-	eng, err := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
-	if err != nil {
-		t.Fatalf("NewInitializedEngine() error = %v", err)
-	}
+	eng := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
 
 	plugins := &fakePluginRuntime{}
 	app := New(eng, cfg, "/tmp/apclient")
@@ -111,10 +104,7 @@ func TestSwitchNetworkRejectsUnsupportedConsensus(t *testing.T) {
 	cfg.Algod = config.AlgodConfig{
 		"mainnet": &config.AlgodNetworkConfig{Server: algod.URL},
 	}
-	eng, err := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
-	if err != nil {
-		t.Fatalf("NewInitializedEngine() error = %v", err)
-	}
+	eng := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
 	app := New(eng, cfg, "/tmp/apclient")
 
 	if _, err := app.SwitchNetwork(context.Background(), SwitchNetworkRequest{Network: "mainnet"}); err == nil {
@@ -150,10 +140,7 @@ func TestSwitchNetworkRejectsDisallowedNetwork(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.NetworksAllowed = []string{"testnet"}
-	eng, err := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
-	if err != nil {
-		t.Fatalf("NewInitializedEngine() error = %v", err)
-	}
+	eng := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
 	app := New(eng, cfg, "/tmp/apclient")
 
 	if _, err := app.SwitchNetwork(context.Background(), SwitchNetworkRequest{Network: "mainnet"}); err == nil {

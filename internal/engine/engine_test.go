@@ -43,43 +43,10 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewEngine(t *testing.T) {
-	tests := []struct {
-		name    string
-		network string
-		opts    []EngineOption
-		wantErr bool
-	}{
-		{
-			name:    "create with mainnet",
-			network: "mainnet",
-			opts:    nil,
-			wantErr: false,
-		},
-		{
-			name:    "create with testnet",
-			network: "testnet",
-			opts:    nil,
-			wantErr: false,
-		},
-		{
-			name:    "create with betanet",
-			network: "betanet",
-			opts:    nil,
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			eng, err := NewEngine(tt.network, tt.opts...)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("NewEngine() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if err == nil {
-				if eng.Network != tt.network {
-					t.Errorf("NewEngine() network = %v, want %v", eng.Network, tt.network)
-				}
+	for _, network := range []string{"mainnet", "testnet", "betanet"} {
+		t.Run("create with "+network, func(t *testing.T) {
+			if eng := NewEngine(network); eng.Network != network {
+				t.Errorf("NewEngine() network = %v, want %v", eng.Network, network)
 			}
 		})
 	}
@@ -91,10 +58,7 @@ func TestEngineWithOptions(t *testing.T) {
 		Aliases: map[string]string{"alice": "ABC123"},
 	}
 
-	eng, err := NewEngine("testnet", WithAliasCache(aliasCache))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithAliasCache(aliasCache))
 
 	if eng.AliasCache.Aliases["alice"] != "ABC123" {
 		t.Error("AliasCache not set correctly")
@@ -105,10 +69,7 @@ func TestEngineWithOptions(t *testing.T) {
 		Keys: map[string]string{"ABC123": "ed25519"},
 	}
 
-	eng, err = NewEngine("testnet", WithSignerCache(signerCache))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng = NewEngine("testnet", WithSignerCache(signerCache))
 
 	if eng.SignerCache.Keys["ABC123"] != "ed25519" {
 		t.Error("SignerCache not set correctly")
@@ -119,10 +80,7 @@ func TestEngineWithOptions(t *testing.T) {
 		Sets: map[string][]string{"validators": {"ADDR1", "ADDR2"}},
 	}
 
-	eng, err = NewEngine("testnet", WithSetCache(setCache))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng = NewEngine("testnet", WithSetCache(setCache))
 
 	if len(eng.SetCache.Sets["validators"]) != 2 {
 		t.Error("SetCache not set correctly")
@@ -130,7 +88,7 @@ func TestEngineWithOptions(t *testing.T) {
 }
 
 func TestSetNetwork(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 
 	tests := []struct {
 		name    string
@@ -184,14 +142,11 @@ func TestSetNetworkLoadsPerNetworkCachesWithoutBleedThrough(t *testing.T) {
 		t.Fatalf("failed to save mainnet auth cache: %v", err)
 	}
 
-	eng, err := NewEngine("testnet",
+	eng := NewEngine("testnet",
 		WithCacheStore(store),
 		WithASACache(cache.LoadASACacheFromStore(store, "testnet")),
 		WithAuthCache(cache.LoadAuthCacheFromStore(store, "testnet")),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 
 	if _, ok := eng.AsaCache.Assets[999001]; !ok {
 		t.Fatal("expected testnet-specific ASA cache entry at startup")
@@ -280,15 +235,12 @@ func authRebuildEngine(t *testing.T, dataDir, address string, client *algod.Clie
 	t.Helper()
 	signerCache := cache.NewSignerCache()
 	signerCache.AddAddress(address, "ed25519")
-	eng, err := NewEngine("testnet",
+	eng := NewEngine("testnet",
 		WithDataDir(dataDir),
 		WithCacheStore(cache.NewStore(dataDir)),
 		WithAlgodClient(client),
 		WithSignerCache(signerCache),
 	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
 	return eng
 }
 
@@ -557,7 +509,7 @@ func TestSetNetworkQueriesAlgodWithTheCallersContext(t *testing.T) {
 }
 
 func TestWriteMode(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 
 	// Default should be false
 	if eng.GetWriteMode() {
@@ -578,7 +530,7 @@ func TestWriteMode(t *testing.T) {
 }
 
 func TestGetNetwork(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 
 	if eng.GetNetwork() != "testnet" {
 		t.Errorf("GetNetwork() = %v, want testnet", eng.GetNetwork())

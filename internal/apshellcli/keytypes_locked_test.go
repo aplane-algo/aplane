@@ -35,10 +35,7 @@ func TestKeytypesNotesALockedSignersPartialList(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(body)
 	}))
 	t.Cleanup(signer.Close)
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 	repl := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir()), DataDir: t.TempDir()}
 	repl.SetOutput(&bytes.Buffer{})

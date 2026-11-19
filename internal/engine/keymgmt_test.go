@@ -28,10 +28,7 @@ func (rt keyMgmtRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 }
 
 func TestEngineKeyMgmtRequiresConnection(t *testing.T) {
-	eng, err := NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet")
 
 	if _, err := eng.ListKeyTypes(context.Background()); err != ErrNotConnected {
 		t.Fatalf("ListKeyTypes() error = %v, want ErrNotConnected", err)
@@ -232,10 +229,7 @@ func newConnectedEngineForKeyMgmtTest(t *testing.T, handler func(*http.Request) 
 
 func newConnectedEngineForKeyMgmtTestWithSignerCache(t *testing.T, signerCache cache.SignerCache, handler func(*http.Request) (*http.Response, error)) *Engine {
 	t.Helper()
-	eng, err := NewEngine("testnet", WithSignerCache(signerCache), WithCacheStore(cache.NewStore(t.TempDir())))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithSignerCache(signerCache), WithCacheStore(cache.NewStore(t.TempDir())))
 
 	client := signerclient.NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: keyMgmtRoundTripper{t: t, handler: handler}}

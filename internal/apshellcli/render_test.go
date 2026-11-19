@@ -16,10 +16,7 @@ import (
 
 func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 	cfg := config.DefaultConfig()
-	eng, err := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
-	if err != nil {
-		t.Fatalf("NewInitializedEngine() error = %v", err)
-	}
+	eng := engine.NewInitializedEngine("testnet", &cfg, t.TempDir())
 
 	var out bytes.Buffer
 	state := &REPLState{
@@ -55,10 +52,7 @@ func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 
 func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *testing.T) {
 	cfg := config.DefaultConfig()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 
 	var out bytes.Buffer
 	state := &REPLState{

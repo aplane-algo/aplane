@@ -77,10 +77,7 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 	}, true); err != nil {
 		t.Fatal(err)
 	}
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -89,11 +86,11 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
 		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
-	_, err = state.cmdCosigner([]string{
+	_, err = state.cmdEndpoints([]string{
 		"add", "ssh://new.example", "--alias", "field", "--replace",
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "review the replacement in interactive apshell") {
-		t.Fatalf("cmdCosigner() error = %v, want script replacement rejection", err)
+		t.Fatalf("cmdEndpoints() error = %v, want script replacement rejection", err)
 	}
 	registry, _, err := config.LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
@@ -122,17 +119,14 @@ func TestReadRequiredSetupValuePreservesCase(t *testing.T) {
 
 func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 	dataDir := t.TempDir()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg := config.DefaultConfig()
 	var out bytes.Buffer
 	state := &REPLState{
 		Out: &out, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
 		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
-	result, err := state.cmdCosigner([]string{
+	result, err := state.cmdEndpoints([]string{
 		"add", "ssh://cosigner.example", "--alias", "field", "--dry-run",
 	}, nil)
 	if err != nil {
@@ -151,21 +145,18 @@ func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 
 func TestCosignerSetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T) {
 	dataDir := t.TempDir()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg := config.DefaultConfig()
 	state := &REPLState{
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
 		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
 
-	_, err = state.cmdCosigner([]string{
+	_, err := state.cmdEndpoints([]string{
 		"add", "ssh://127.0.0.1:1", "--alias", "field",
 	}, nil)
 	if err == nil {
-		t.Fatal("cmdCosigner() error = nil, want the unreachable node's verification failure")
+		t.Fatal("cmdEndpoints() error = nil, want the unreachable node's verification failure")
 	}
 	endpoint, ok := state.App.Config.Endpoints.Endpoint("field")
 	if !ok || endpoint.URL != "ssh://127.0.0.1:1" {
@@ -261,10 +252,7 @@ func testCLIWitnessReference(t *testing.T) witness.PublicReference {
 
 func TestCosignerStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
 	dir := t.TempDir()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg := config.DefaultConfig()
 	state := &REPLState{App: apshellapp.New(eng, cfg, dir), DataDir: dir, AutoConfirm: true}
 	result, err := state.cmdCosigner([]string{"status"}, nil)
@@ -285,10 +273,7 @@ func TestCosignerStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
 
 func newEndpointsAddTestState(t *testing.T, dataDir string, out *bytes.Buffer) *REPLState {
 	t.Helper()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -398,24 +383,6 @@ func TestEndpointsAddRefusesSecondNameForConfiguredCosigner(t *testing.T) {
 	_, err := state.cmdEndpoints([]string{"add", "--endpoint", "ssh://cosigner.example:1127", "--alias", "second"}, nil)
 	if !errors.Is(err, apshellapp.ErrCosignerEndpointAlreadyConfigured) || !strings.Contains(err.Error(), "--alias treasury") {
 		t.Fatalf("cmdEndpoints() error = %v, want guidance to reuse treasury", err)
-	}
-}
-
-func TestCosignerAddForwardsToEndpointsAddWithNotice(t *testing.T) {
-	dataDir := t.TempDir()
-	var out bytes.Buffer
-	state := newEndpointsAddTestState(t, dataDir, &out)
-	result, err := state.cmdCosigner([]string{
-		"add", "--alias", "field", "--endpoint", "ssh://cosigner.example", "--dry-run",
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := result.RenderText(&out); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), cosignerAddForwardNotice) || !strings.Contains(out.String(), "Cosigner connection dry run:") {
-		t.Fatalf("output = %q, want the forwarding notice and the dry run", out.String())
 	}
 }
 

@@ -59,10 +59,7 @@ func beforeSubmitApp(t *testing.T) *App {
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	eng, err := engine.NewEngine("testnet", engine.WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	// The source accounts' keys are listed, but no signer is connected.
 	eng.SignerCache.Keys = map[string]string{beforeSubmitFrom: "ed25519", beforeSubmitAuth: "ed25519"}
 	return New(eng, config.DefaultConfig(), t.TempDir())

@@ -16,7 +16,7 @@ import (
 )
 
 func TestPrepareRekey_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: testAddr(1), To: testAddr(2)})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)

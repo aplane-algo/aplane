@@ -10,7 +10,7 @@ import (
 )
 
 func TestPrepareAtomicPayments_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, err := eng.PrepareAtomicPayments(context.Background(), []AtomicPaymentParams{{From: testAddr(1), To: testAddr(2), Amount: 1000}}, AtomicGroupParams{})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
@@ -29,7 +29,7 @@ func TestPrepareAtomicPayments_Empty(t *testing.T) {
 }
 
 func TestPrepareAtomicASATransfers_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, err := eng.PrepareAtomicASATransfers(context.Background(), []AtomicASAParams{{From: testAddr(1), To: testAddr(2), AssetID: 10, Amount: 1}}, AtomicGroupParams{})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)

@@ -337,18 +337,14 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
 	}
-	var removal config.StoredClientEndpointRemoval
 	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		var err error
-		removal, err = config.RemoveStoredClientEndpoint(a.DataDir, alias)
-		return err
+		return config.RemoveStoredClientEndpoint(a.DataDir, alias)
 	}); err != nil {
 		return nil, err
 	}
 	if err := a.reloadConfigAfterEndpointChange(); err != nil {
 		return nil, err
 	}
-	_ = removal
 	return &EndpointDeleteResult{
 		Alias:       alias,
 		RenderLines: []string{fmt.Sprintf("Deleted endpoint %s", alias)},

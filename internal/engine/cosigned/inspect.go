@@ -33,7 +33,7 @@ type EndpointInspection struct {
 // an endpoint-only handoff carries nothing else that distinguishes a cosigner
 // from a signer.
 func (s *Signer) InspectCosignerEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (EndpointInspection, error) {
-	client, cleanup, _, err := s.connectConfiguredCosignerEndpoint(ctx, endpoint)
+	client, cleanup, err := s.connectConfiguredCosignerEndpoint(ctx, endpoint)
 	if err != nil {
 		return EndpointInspection{}, classifyCosignerDiscoveryConnectError(err)
 	}

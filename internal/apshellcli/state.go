@@ -49,11 +49,9 @@ type REPLState struct {
 	// AutoConfirm skips interactive confirmation prompts (for MCP mode).
 	AutoConfirm bool
 
-	// HostKeyApproval overrides the default stdin-based TOFU prompt. Set by
-	// TUI hosts that own stdin and need to route approval through their UI.
-	HostKeyApproval func(host, fingerprint string) (bool, error)
-	// HostKeyApprovalContext is the cancellation-aware form used by embedded
-	// hosts. Standalone readline sessions continue to use HostKeyApproval.
+	// HostKeyApprovalContext overrides the default stdin-based TOFU prompt.
+	// Set by embedded hosts that own stdin and route approval through their
+	// UI.
 	HostKeyApprovalContext func(context.Context, string, string) (bool, error)
 
 	// ProgressLine, when non-nil, receives status lines emitted during
@@ -77,10 +75,7 @@ type REPLState struct {
 // NewREPLState creates a new REPLState with initialized runtime and app layers.
 // Shared client mechanics live in Engine; shell command use-cases live in apshellapp.
 func NewREPLState(network string, config *config.Config, dataDir string) (*REPLState, error) {
-	eng, err := engine.NewInitializedEngine(network, config, dataDir)
-	if err != nil {
-		return nil, err
-	}
+	eng := engine.NewInitializedEngine(network, config, dataDir)
 	_ = eng.StartClientCacheWatcher()
 
 	state := &REPLState{

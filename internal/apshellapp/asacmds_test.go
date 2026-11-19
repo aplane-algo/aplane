@@ -43,11 +43,8 @@ func TestASAInfoReadsTheFullAssetFromTheNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := engine.NewEngine("testnet", engine.WithAlgodClient(client),
+	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client),
 		engine.WithASACache(cache.LoadASACacheFromStore(cache.NewStore(t.TempDir()), "testnet")))
-	if err != nil {
-		t.Fatal(err)
-	}
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 
 	want := ASAInfoDetails{

@@ -35,10 +35,7 @@ func TestCosignedSignerCacheViewDelegation(t *testing.T) {
 	signerCache.SetLogicSigResourceProfile(addr, lsigresource.Profile{ProgramBytes: 1_500, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}})
 	signerCache.AddAddress(nativeFalconAddr, nativefalcon.KeyType)
 
-	eng, err := NewEngine("testnet", WithSignerCache(signerCache))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	eng := NewEngine("testnet", WithSignerCache(signerCache))
 	view := cosignedSignerCacheView{eng.Core}
 	if got, ok := view.AuthorizationKind(nativeFalconAddr); !ok || got != string(algorithm.AuthorizationNativePQ) {
 		t.Fatalf("AuthorizationKind(native Falcon) = %q/%v, want %s/true", got, ok, algorithm.AuthorizationNativePQ)

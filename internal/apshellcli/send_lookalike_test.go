@@ -21,10 +21,7 @@ import (
 // cancels it, and nothing is signed.
 func TestSendAndSweepAskBeforeSendingToALookalike(t *testing.T) {
 	real, fake := types.Address{1, 2, 3, 4}.String(), types.Address{1, 2, 3, 4, 9, 9, 9}.String()
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := newIsolatedTestEngine(t, "testnet")
 	eng.AliasCache.Aliases = map[string]string{"cold": real}
 	var out bytes.Buffer
 	var prompts []string

@@ -13,10 +13,7 @@ import (
 
 func TestAuthorizationFeeReserveUsesCompiledV42ResourceModel(t *testing.T) {
 	const address = "ADDR"
-	engine, err := NewEngine("test")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test")
 	engine.SignerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
 		ProgramBytes: 4_500,
 		Spend: &lsigresource.PathProfile{
@@ -39,10 +36,7 @@ func TestAuthorizationFeeReserveUsesCompiledV42ResourceModel(t *testing.T) {
 // over two transactions' 40,000), so it reserves two dummies' base fees.
 func TestAuthorizationFeeReserveCountsTheDummyProgramCost(t *testing.T) {
 	const address = "ADDR"
-	engine, err := NewEngine("test")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test")
 	engine.SignerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
 		ProgramBytes: 1_000,
 		Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 39_999},
@@ -59,10 +53,7 @@ func TestAuthorizationFeeReserveCountsTheDummyProgramCost(t *testing.T) {
 
 func TestAuthorizationFeeReserveUsesNativeFalconContribution(t *testing.T) {
 	const address = "ADDR"
-	engine, err := NewEngine("test")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test")
 	engine.SignerCache.AddAddress(address, "falcon1024")
 
 	got, err := engine.AuthorizationFeeReserve(address)
@@ -75,10 +66,7 @@ func TestAuthorizationFeeReserveUsesNativeFalconContribution(t *testing.T) {
 }
 
 func TestAuthorizationFeeReserveSkipsOrdinaryAccountWithoutAlgod(t *testing.T) {
-	engine, err := NewEngine("test")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test")
 	got, err := engine.AuthorizationFeeReserve("ADDR")
 	if err != nil || got != 0 {
 		t.Fatalf("AuthorizationFeeReserve() = %d, %v; want 0, nil", got, err)
@@ -91,10 +79,7 @@ func TestAuthorizationFeeReserveSkipsOrdinaryAccountWithoutAlgod(t *testing.T) {
 // account itself, which signs at any stage, still reserves its own profile's.
 func TestAuthorizationFeeReserveDoesNotReadTheAuthCache(t *testing.T) {
 	const account, stage = "ACCOUNT", "STAGE"
-	engine, err := NewEngine("test")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
+	engine := NewEngine("test")
 	engine.SignerCache.AddAddress(account, rotatingkey.RotatingTripleXmssV1)
 	engine.SignerCache.SetSigningFlowForAddress(account, signerapi.SigningFlowRotating1)
 	engine.SignerCache.SetLogicSigResourceProfile(account, lsigresource.Profile{

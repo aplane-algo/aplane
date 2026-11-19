@@ -52,7 +52,7 @@ func TestFindAssetHolding(t *testing.T) {
 }
 
 func TestPrepareOptIn_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, err := eng.PrepareOptIn(context.Background(), OptInParams{Account: testAddr(1), AssetID: 10})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
@@ -60,7 +60,7 @@ func TestPrepareOptIn_NoAlgodClient(t *testing.T) {
 }
 
 func TestPrepareOptOut_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, _, err := eng.PrepareOptOut(context.Background(), OptOutParams{Account: testAddr(1), AssetID: 10})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
@@ -68,7 +68,7 @@ func TestPrepareOptOut_NoAlgodClient(t *testing.T) {
 }
 
 func TestPrepareASATransfer_NoAlgodClient(t *testing.T) {
-	eng, _ := NewEngine("testnet")
+	eng := NewEngine("testnet")
 	_, _, err := eng.PrepareASATransfer(context.Background(), SendASAParams{From: testAddr(1), To: testAddr(2), AssetID: 10, Amount: 1})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)

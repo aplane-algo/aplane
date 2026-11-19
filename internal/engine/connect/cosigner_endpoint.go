@@ -6,7 +6,6 @@ package connect
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -42,7 +41,6 @@ type CosignerSSHConfig struct {
 	SSHPort         int
 	IdentityFile    string
 	KnownHostsPath  string
-	ProgressOut     io.Writer
 	HostKeyApproval sshtunnel.HostKeyApprovalHandler
 	IdentityCreated IdentityCreatedHandler
 }
@@ -83,7 +81,6 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	transport := newSSHHTTPTransport(sshConnection, cosignerSSHHTTPAuthority)
 	client := signerclient.NewSignerClient("http://" + cosignerSSHHTTPAuthority)
 	client.Client = &http.Client{Transport: transport}
-	client.ProgressOut = cfg.ProgressOut
 	var closeOnce sync.Once
 	return client, func() {
 		closeOnce.Do(func() {

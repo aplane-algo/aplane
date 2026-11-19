@@ -24,22 +24,12 @@ func (s *ConnectionState) signerClient() (*signerclient.Client, error) {
 	return s.SignerClient, nil
 }
 
-// GetKeys fetches the current signer key inventory.
-func (s *ConnectionState) GetKeys() (*signerclient.KeysResult, error) {
-	return s.GetKeysWithContext(context.Background())
-}
-
 func (s *ConnectionState) GetKeysWithContext(ctx context.Context) (*signerclient.KeysResult, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err
 	}
 	return client.GetKeysWithContext(ctx)
-}
-
-// GetKeyTypes fetches supported key types from Signer.
-func (s *ConnectionState) GetKeyTypes() (*signerapi.KeyTypesResponse, error) {
-	return s.GetKeyTypesWithContext(context.Background())
 }
 
 func (s *ConnectionState) GetKeyTypesWithContext(ctx context.Context) (*signerapi.KeyTypesResponse, error) {
@@ -50,11 +40,6 @@ func (s *ConnectionState) GetKeyTypesWithContext(ctx context.Context) (*signerap
 	return client.GetKeyTypesWithContext(ctx)
 }
 
-// GetSignerStatus fetches authenticated signer status and keyset revision from Signer.
-func (s *ConnectionState) GetSignerStatus() (*signerapi.StatusResponse, error) {
-	return s.GetSignerStatusWithContext(context.Background())
-}
-
 func (s *ConnectionState) GetSignerStatusWithContext(ctx context.Context) (*signerapi.StatusResponse, error) {
 	client, err := s.signerClient()
 	if err != nil {
@@ -63,22 +48,12 @@ func (s *ConnectionState) GetSignerStatusWithContext(ctx context.Context) (*sign
 	return client.GetStatusWithContext(ctx)
 }
 
-// AdminGenerate requests key generation from Signer.
-func (s *ConnectionState) AdminGenerate(keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
-	return s.AdminGenerateWithContext(context.Background(), keyType, params)
-}
-
 func (s *ConnectionState) AdminGenerateWithContext(ctx context.Context, keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err
 	}
 	return client.AdminGenerateWithContext(ctx, keyType, params)
-}
-
-// AdminDeleteKey requests key deletion from Signer.
-func (s *ConnectionState) AdminDeleteKey(address string) (*signerapi.AdminDeleteResponse, error) {
-	return s.AdminDeleteKeyWithContext(context.Background(), address)
 }
 
 func (s *ConnectionState) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
@@ -99,22 +74,12 @@ func (s *ConnectionState) RotatingRecoverWithContext(ctx context.Context, req si
 	return client.RotatingRecoverWithContext(ctx, req)
 }
 
-// RequestGroupPlan sends group planning requests to Signer.
-func (s *ConnectionState) RequestGroupPlan(requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
-	return s.RequestGroupPlanWithContext(context.Background(), requests)
-}
-
 func (s *ConnectionState) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err
 	}
 	return client.RequestGroupPlanWithContext(ctx, requests)
-}
-
-// RequestGroupSign sends group signing requests to Signer.
-func (s *ConnectionState) RequestGroupSign(requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
-	return s.RequestGroupSignWithContext(context.Background(), requests)
 }
 
 func (s *ConnectionState) RequestGroupSignWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {

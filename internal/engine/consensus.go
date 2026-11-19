@@ -77,11 +77,6 @@ func querySupportedAlgodConsensus(ctx context.Context, client *algod.Client) (ty
 	return params, nil
 }
 
-func (e *Core) validateAlgodConsensus(ctx context.Context) error {
-	_, err := e.activeAlgodNetwork(ctx)
-	return err
-}
-
 // activeAlgodNetwork checks that the active algod runs a reviewed consensus
 // contract and returns the network it serves. A read from the last
 // consensusValidationReuseWindow is reused, the one that fetched suggested

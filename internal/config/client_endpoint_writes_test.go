@@ -218,7 +218,7 @@ func TestUpsertStoredClientEndpointReportsDestinationChange(t *testing.T) {
 	if err != nil || !moved.DestinationChanged || !moved.Updated {
 		t.Fatalf("moved plan = %+v, %v", moved, err)
 	}
-	if _, err := RemoveStoredClientEndpoint(dataDir, "cos"); err != nil {
+	if err := RemoveStoredClientEndpoint(dataDir, "cos"); err != nil {
 		t.Fatalf("RemoveStoredClientEndpoint() error = %v", err)
 	}
 	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)

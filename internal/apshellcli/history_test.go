@@ -55,7 +55,7 @@ func TestHistoryFileIsOwnerOnly(t *testing.T) {
 		}
 		appendHistoryFile(earlier, "balance @all")
 		requireHistoryMode(t, earlier)
-		if got := loadHistoryFile(earlier, historyLimit); len(got) != 2 {
+		if got := loadHistoryFile(earlier); len(got) != 2 {
 			t.Fatalf("history = %q, want both entries", got)
 		}
 	})
@@ -87,7 +87,7 @@ func TestHistoryFileIsOwnerOnly(t *testing.T) {
 		}
 		newReadline(t, path)
 		requireHistoryMode(t, path)
-		if got := loadHistoryFile(path, -1); len(got) != 3 {
+		if got := loadHistoryFile(path); len(got) != 3 {
 			t.Fatalf("history = %q, want it rewritten to the last 3 entries", got)
 		}
 		if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {

@@ -4,11 +4,10 @@
 package engine
 
 import (
-	"fmt"
-
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/clientstate"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine/connect"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -21,8 +20,7 @@ import (
 //
 // If config is provided, algod client is created from config settings.
 // If config is nil or algod is not configured, AlgodClient will be nil.
-func NewInitializedEngine(network string, config *config.Config, dataDir string) (*Engine, error) {
-	// Create algod client for blockchain queries
+func NewInitializedEngine(network string, config *config.Config, dataDir string) *Engine {
 	// Non-fatal if this fails - some operations work without algod
 	// Caller can check if Engine.AlgodClient is nil if needed
 	var algodClient *algod.Client
@@ -30,25 +28,13 @@ func NewInitializedEngine(network string, config *config.Config, dataDir string)
 		algodClient, _ = algo.GetAlgodClientWithConfig(network, config)
 	}
 
-	state := clientstate.NewInitialized(network, dataDir, algodClient)
-
-	// Create engine with all caches
-	eng, err := NewEngine(network,
-		WithAlgodClient(algodClient),
-		WithDataDir(state.DataDir),
-		WithEndpointRegistry(configuredEndpointRegistry(config)),
-		WithCacheStore(state.CacheStore),
-		WithASACache(state.AsaCache),
-		WithAliasCache(state.AliasCache),
-		WithSignerCache(state.SignerCache),
-		WithAuthCache(state.AuthCache),
-		WithSetCache(state.SetCache),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create engine: %w", err)
+	return &Engine{
+		Core: &Core{
+			State:            clientstate.NewInitialized(network, dataDir, algodClient),
+			Connection:       connect.NewState(),
+			EndpointRegistry: configuredEndpointRegistry(config).Clone(),
+		},
 	}
-
-	return eng, nil
 }
 
 func configuredEndpointRegistry(cfg *config.Config) config.ClientEndpointRegistry {

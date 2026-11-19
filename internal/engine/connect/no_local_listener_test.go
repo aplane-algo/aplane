@@ -42,8 +42,8 @@ func TestConnectOpensNoLocalListener(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConnectWithTunnel() error = %v", err)
 	}
-	t.Cleanup(func() { _ = state.Disconnect(nil) })
-	if !result.Connected || result.KeyCount != 1 || requests.Load() != 1 {
+	t.Cleanup(func() { state.Disconnect(nil) })
+	if result.KeyCount != 1 || requests.Load() != 1 {
 		t.Fatalf("result = %+v after %d request(s), want a connection that read one key", result, requests.Load())
 	}
 	if _, err := state.SignerClient.GetKeys(); err != nil || requests.Load() != 2 {
@@ -101,7 +101,7 @@ func TestConnectionOutlivesTheContextItWasMadeUnder(t *testing.T) {
 	if _, err := state.ConnectWithTunnel(ctx, "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil, nil); err != nil {
 		t.Fatalf("ConnectWithTunnel() error = %v", err)
 	}
-	t.Cleanup(func() { _ = state.Disconnect(nil) })
+	t.Cleanup(func() { state.Disconnect(nil) })
 	cancel()
 	if _, err := state.SignerClient.GetKeys(); err != nil {
 		t.Fatalf("a request after the connecting context ended failed: %v", err)

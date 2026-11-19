@@ -334,14 +334,6 @@ type AppBoxesDetails struct {
 	Boxes []AppBoxNameDetails `json:"boxes"`
 }
 
-// SubmitSummary is the app-owned summary of a single submitted transaction.
-type SubmitSummary struct {
-	TxID      string
-	Confirmed bool
-	Output    string
-	Warnings  []Warning
-}
-
 // GroupSubmitSummary is the app-owned summary of a submitted group.
 type GroupSubmitSummary struct {
 	TxIDs     []string
@@ -377,12 +369,10 @@ func createdAppDetailsFromEngine(result *engine.AppDeployResult) *CreatedAppDeta
 
 // ConnectionDetails is the app-owned signer connection outcome.
 type ConnectionDetails struct {
-	Connected        bool
 	AlreadyConnected bool
 	Target           string
 	KeyCount         int
 	Locked           bool
-	ErrorMessage     string
 }
 
 func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDetails {
@@ -390,12 +380,10 @@ func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDet
 		return nil
 	}
 	return &ConnectionDetails{
-		Connected:        result.Connected,
 		AlreadyConnected: result.AlreadyConnected,
 		Target:           result.Target,
 		KeyCount:         result.KeyCount,
 		Locked:           result.Locked,
-		ErrorMessage:     result.ErrorMessage,
 	}
 }
 
@@ -403,7 +391,6 @@ func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDet
 type SwitchNetworkResult struct {
 	OldNetwork string
 	NewNetwork string
-	Warnings   []Warning
 	Summary    Summary
 }
 
@@ -495,11 +482,10 @@ type PluginExposedCommand struct {
 
 // PluginsCommandResult describes the semantic outcome of a plugins command.
 type PluginsCommandResult struct {
-	Mode     string
-	Plugin   *PluginCommandSummary
-	Plugins  []PluginCommandSummary
-	Summary  Summary
-	Warnings []Warning
+	Mode    string
+	Plugin  *PluginCommandSummary
+	Plugins []PluginCommandSummary
+	Summary Summary
 }
 
 // WarningCodeSignerAdvice is the code of a warning that carries the signer's
@@ -546,7 +532,6 @@ type ValidateItemResult struct {
 // ValidateCommandResult describes the semantic outcome of a validate command.
 type ValidateCommandResult struct {
 	Input        string
-	IsSet        bool
 	Items        []ValidateItemResult
 	SuccessCount int
 	FailureCount int
@@ -888,8 +873,6 @@ type EndpointDiscoverCosignersResult struct {
 
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
 type StartupConnectDecision struct {
-	EndpointName  string
-	HasSSHConfig  bool
 	Host          string
 	SSHPort       int
 	ShouldConnect bool
@@ -997,7 +980,6 @@ type NonAtomicSendResult struct {
 	FailureCount int
 	LastError    string
 	FromCount    int
-	ToCount      int
 	// submissionFailures are the items' failed submissions, which an error
 	// for the send as a whole reports.
 	submissionFailures []*signing.SubmissionError
