@@ -71,7 +71,8 @@ func GetConfigPath(dataDir string) string {
 // LoadConfig loads configuration from config.yaml in the data directory.
 // The dataDir parameter is required - use GetClientDataDir() to resolve it.
 // If dataDir is empty or file doesn't exist, returns default config.
-// Returns an error if the config is invalid (e.g., network not in networks_allowed)
+// Returns an error if the file exists but cannot be read, or if the config is
+// invalid (e.g., network not in networks_allowed).
 func LoadConfig(dataDir string) (Config, error) {
 	config, err := LoadConfigFromPath(GetConfigPath(dataDir))
 	if err != nil {
@@ -89,21 +90,20 @@ func LoadConfig(dataDir string) (Config, error) {
 
 // LoadConfigFromPath loads configuration from the specified path.
 // If path is empty, returns default config.
-// If the file doesn't exist, returns default config.
+// If the file doesn't exist, returns default config. A file that exists but
+// cannot be read is an error: the defaults allow every network, so running on
+// them would silently drop the file's networks_allowed.
 func LoadConfigFromPath(path string) (Config, error) {
 	if path == "" {
 		return DefaultConfig(), nil
 	}
 
-	// If config file doesn't exist, return defaults
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return DefaultConfig(), nil
-		}
-		// Other errors - log but return defaults
-		_, _ = fmt.Fprintf(os.Stderr, "Warning: Failed to read config file: %v\n", err)
+	if os.IsNotExist(err) {
 		return DefaultConfig(), nil
+	}
+	if err != nil {
+		return Config{}, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	// Start with defaults, then overlay config file values

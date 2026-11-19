@@ -147,7 +147,9 @@ With this configuration:
 - The `network` command can only switch to mainnet or testnet
 - Attempting to switch to localnet will fail unless `localnet` is added
 
-If `networks_allowed` is empty or omitted, all networks are allowed.
+If `networks_allowed` is empty or omitted, all networks are allowed. A client
+`config.yaml` that exists but cannot be read (permissions, a disk error) is an
+error, never the defaults, which would allow every network.
 
 ### Data Directory Setup
 
