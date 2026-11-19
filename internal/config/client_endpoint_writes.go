@@ -12,28 +12,30 @@ import (
 )
 
 // LoadStoredClientEndpointRegistry loads only endpoints.yaml.
-func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, bool, error) {
+func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) {
 	path := GetClientEndpointsPath(dataDir)
 	if path == "" {
-		return ClientEndpointRegistry{}, false, fmt.Errorf("data directory is required")
+		return ClientEndpointRegistry{}, fmt.Errorf("data directory is required")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return emptyClientEndpointRegistry(), false, nil
+			return emptyClientEndpointRegistry(), nil
 		}
-		return ClientEndpointRegistry{}, false, fmt.Errorf("failed to read %s: %w", path, err)
+		return ClientEndpointRegistry{}, fmt.Errorf("failed to read %s: %w", path, err)
 	}
 	registry, err := decodeClientEndpointRegistry(data)
 	if err != nil {
-		return ClientEndpointRegistry{}, false, fmt.Errorf("failed to parse %s: %w", path, err)
+		return ClientEndpointRegistry{}, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
-		return ClientEndpointRegistry{}, false, err
+		return ClientEndpointRegistry{}, err
 	}
-	return registry, true, nil
+	return registry, nil
 }
 
+// SaveStoredClientEndpointRegistry writes endpoints.yaml. Callers hold the
+// client-data lock.
 func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointRegistry) error {
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return err
@@ -63,15 +65,10 @@ type StoredClientEndpointUpsertPlan struct {
 	DestinationChanged bool
 }
 
-// StoredClientEndpointRemoval describes a completed endpoint deletion.
-type StoredClientEndpointRemoval struct {
-	Registry ClientEndpointRegistry
-}
-
 // PlanStoredClientEndpointUpsert validates one endpoint upsert and returns the
 // registry that would be written. It does not touch endpoints.yaml.
 func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpointConfig, replace bool) (StoredClientEndpointUpsertPlan, error) {
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
 		return StoredClientEndpointUpsertPlan{}, err
 	}
@@ -106,12 +103,6 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	return plan, nil
 }
 
-// ApplyStoredClientEndpointUpsert writes a previously planned endpoint
-// registry change. Callers hold the client-data lock.
-func ApplyStoredClientEndpointUpsert(dataDir string, plan StoredClientEndpointUpsertPlan) error {
-	return SaveStoredClientEndpointRegistry(dataDir, plan.Registry)
-}
-
 // ClientEndpointDestinationChanged reports whether next names a different
 // node than previous. A destination is the URL: the node's SSH server
 // forwards to its own REST listener, so no other field selects the service.
@@ -121,63 +112,44 @@ func ClientEndpointDestinationChanged(previous, next ClientEndpointConfig) bool 
 	return previousURL != nextURL
 }
 
-// UpsertStoredClientEndpoint adds one endpoint profile to endpoints.yaml. When
-// replace is false, conflicting existing aliases are rejected.
-func UpsertStoredClientEndpoint(dataDir, alias string, endpoint ClientEndpointConfig, replace bool) (ClientEndpointRegistry, error) {
-	plan, err := PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
-	if err != nil {
-		return ClientEndpointRegistry{}, err
-	}
-	if err := ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
-		return ClientEndpointRegistry{}, err
-	}
-	return plan.Registry, nil
-}
-
-func SetStoredClientEndpointDefault(dataDir, alias string) (ClientEndpointRegistry, error) {
+func SetStoredClientEndpointDefault(dataDir, alias string) error {
 	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return ClientEndpointRegistry{}, err
+		return err
 	}
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		return ClientEndpointRegistry{}, err
+		return err
 	}
 	endpoint, ok := registry.Endpoints[alias]
 	if !ok {
-		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+		return fmt.Errorf("endpoint alias %q is not defined", alias)
 	}
 	if endpoint.Role != ClientEndpointRoleSigner {
-		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q has role %q; default endpoint must have role %q", alias, endpoint.Role, ClientEndpointRoleSigner)
+		return fmt.Errorf("endpoint alias %q has role %q; default endpoint must have role %q", alias, endpoint.Role, ClientEndpointRoleSigner)
 	}
 	registry.Default = alias
-	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
-		return ClientEndpointRegistry{}, err
-	}
-	return registry, nil
+	return SaveStoredClientEndpointRegistry(dataDir, registry)
 }
 
 // RemoveStoredClientEndpoint removes an endpoint alias. Callers hold the
 // client-data lock. Nothing else is retired with the alias: the client's
 // credential is its SSH key, which no endpoint owns.
-func RemoveStoredClientEndpoint(dataDir, alias string) (StoredClientEndpointRemoval, error) {
+func RemoveStoredClientEndpoint(dataDir, alias string) error {
 	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return StoredClientEndpointRemoval{}, err
+		return err
 	}
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		return StoredClientEndpointRemoval{}, err
+		return err
 	}
 	if registry.Default == alias {
-		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is the default endpoint", alias)
+		return fmt.Errorf("endpoint alias %q is the default endpoint", alias)
 	}
 	if _, ok := registry.Endpoints[alias]; !ok {
-		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+		return fmt.Errorf("endpoint alias %q is not defined", alias)
 	}
 	delete(registry.Endpoints, alias)
-	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
-		return StoredClientEndpointRemoval{}, err
-	}
-	return StoredClientEndpointRemoval{Registry: registry}, nil
+	return SaveStoredClientEndpointRegistry(dataDir, registry)
 }
 
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {

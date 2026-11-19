@@ -4,7 +4,6 @@
 package canonical
 
 import (
-	"encoding/hex"
 	"errors"
 	"testing"
 
@@ -14,17 +13,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
-
-func TestGroupHashKnownVector(t *testing.T) {
-	got, err := GroupHash([][]byte{[]byte("TXone"), []byte("TXtwo")})
-	if err != nil {
-		t.Fatalf("GroupHash() error = %v", err)
-	}
-	const want = "b89b9181bb481333c7083713fdd98b3c7b34eee9bcace1fd899d20b508243ed7"
-	if hex.EncodeToString(got[:]) != want {
-		t.Fatalf("GroupHash() = %s, want %s", hex.EncodeToString(got[:]), want)
-	}
-}
 
 func TestDecodeGroupHexSingleton(t *testing.T) {
 	txn := types.Transaction{

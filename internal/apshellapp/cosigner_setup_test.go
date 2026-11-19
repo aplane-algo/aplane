@@ -42,7 +42,7 @@ func TestPrepareCosignerSetupReusesUnchangedCustomEndpoint(t *testing.T) {
 		IdentityFile:   "/custom/id",
 		KnownHostsPath: "/custom/known_hosts",
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", want, true); err != nil {
+	if _, err := upsertStoredClientEndpoint(dataDir, "field", want, true); err != nil {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
@@ -77,7 +77,7 @@ func TestPrepareCosignerSetupReusesUnchangedCustomEndpoint(t *testing.T) {
 
 func TestPrepareCosignerSetupMarksDestinationReplacement(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: "ssh://old.example:22",
 	}, true); err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestPrepareCosignerSetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T)
 			name: "signer alias",
 			prepare: func(t *testing.T) (*App, CosignerSetupRequest) {
 				dataDir := t.TempDir()
-				if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
+				if _, err := upsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 					t.Fatal(err)
 				}
 				return newEndpointTestApp(t, dataDir), CosignerSetupRequest{Alias: "primary", URL: "ssh://cosigner.example"}
@@ -149,7 +149,7 @@ func TestPrepareCosignerSetupSurfacesCosignerEndpointLimit(t *testing.T) {
 	dataDir := t.TempDir()
 	for i := 0; i < config.MaxClientCosignerEndpoints; i++ {
 		alias := fmt.Sprintf("cosigner-%02d", i)
-		if _, err := config.UpsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
+		if _, err := upsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
 			Role: config.ClientEndpointRoleCosigner, URL: fmt.Sprintf("ssh://cosigner-%02d.example", i),
 		}, true); err != nil {
 			t.Fatal(err)
@@ -172,7 +172,7 @@ func TestApplyCosignerSetupRejectsStaleReviewedAlias(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: "ssh://concurrent.example",
 	}, true); err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestApplyCosignerSetupRejectsStaleReviewedAlias(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "changed after review") {
 		t.Fatalf("ApplyCosignerSetupEndpoint() error = %v, want stale-review rejection", err)
 	}
-	registry, _, err := config.LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := config.LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

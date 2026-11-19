@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	ExportSchema = witness.PublicReferenceSchema
 	RecordSchema = "aplane.cosigner-public-key-ref.v2"
 
 	// ParamCosignerName is the generation parameter that selects an imported

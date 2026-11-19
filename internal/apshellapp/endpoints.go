@@ -315,8 +315,7 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	}
 	previousAlias, _, _ := cfg.Endpoints.DefaultEndpoint()
 	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		_, err := config.SetStoredClientEndpointDefault(a.DataDir, alias)
-		return err
+		return config.SetStoredClientEndpointDefault(a.DataDir, alias)
 	}); err != nil {
 		return nil, err
 	}
@@ -337,18 +336,14 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
 	}
-	var removal config.StoredClientEndpointRemoval
 	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		var err error
-		removal, err = config.RemoveStoredClientEndpoint(a.DataDir, alias)
-		return err
+		return config.RemoveStoredClientEndpoint(a.DataDir, alias)
 	}); err != nil {
 		return nil, err
 	}
 	if err := a.reloadConfigAfterEndpointChange(); err != nil {
 		return nil, err
 	}
-	_ = removal
 	return &EndpointDeleteResult{
 		Alias:       alias,
 		RenderLines: []string{fmt.Sprintf("Deleted endpoint %s", alias)},
@@ -362,7 +357,7 @@ func lockedEndpointUpsert(dataDir, alias string, endpoint config.ClientEndpointC
 		if err != nil {
 			return err
 		}
-		if err := config.ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
+		if err := config.SaveStoredClientEndpointRegistry(dataDir, plan.Registry); err != nil {
 			return err
 		}
 		applied = plan

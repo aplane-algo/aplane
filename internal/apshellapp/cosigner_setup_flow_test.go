@@ -181,7 +181,7 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		if err := app.RemoveCreatedCosignerConnection(plan); err != nil {
 			t.Fatal(err)
 		}
-		registry, _, err := config.LoadStoredClientEndpointRegistry(dataDir)
+		registry, err := config.LoadStoredClientEndpointRegistry(dataDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -343,7 +343,7 @@ func TestResolveCosignerSetupTargetReusesExistingConnectionOrSuggestsName(t *tes
 	})
 	t.Run("makes the suggestion unique", func(t *testing.T) {
 		dataDir := t.TempDir()
-		if _, err := config.UpsertStoredClientEndpoint(dataDir, "cosigner-example", config.ClientEndpointConfig{
+		if _, err := upsertStoredClientEndpoint(dataDir, "cosigner-example", config.ClientEndpointConfig{
 			Role: config.ClientEndpointRoleCosigner, URL: "ssh://elsewhere.example",
 		}, true); err != nil {
 			t.Fatal(err)
@@ -358,7 +358,7 @@ func TestResolveCosignerSetupTargetReusesExistingConnectionOrSuggestsName(t *tes
 	})
 	t.Run("reuses the connection already at that url", func(t *testing.T) {
 		dataDir := t.TempDir()
-		if _, err := config.UpsertStoredClientEndpoint(dataDir, "treasury", config.ClientEndpointConfig{
+		if _, err := upsertStoredClientEndpoint(dataDir, "treasury", config.ClientEndpointConfig{
 			Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example:1127",
 		}, true); err != nil {
 			t.Fatal(err)

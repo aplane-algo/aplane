@@ -10,9 +10,7 @@ package canonical
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"crypto/sha512"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -22,8 +20,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-const GroupHashDomainV1 = "APLANE_GROUP_V1"
-
 type Txn struct {
 	Index int
 	Raw   []byte
@@ -32,42 +28,12 @@ type Txn struct {
 }
 
 type Group struct {
-	Entries   []Txn
-	GroupHash [32]byte
-	GroupID   types.Digest
-}
-
-// GroupHash computes SHA-256 over the exact TX-prefixed transport bytes.
-func GroupHash(txPrefixed [][]byte) ([32]byte, error) {
-	var out [32]byte
-	if len(txPrefixed) == 0 {
-		return out, fmt.Errorf("group is empty")
-	}
-	if len(txPrefixed) > types.MaxTxGroupSize {
-		return out, fmt.Errorf("group size %d exceeds max %d", len(txPrefixed), types.MaxTxGroupSize)
-	}
-
-	h := sha256.New()
-	h.Write([]byte(GroupHashDomainV1))
-	var count [2]byte
-	binary.BigEndian.PutUint16(count[:], uint16(len(txPrefixed)))
-	h.Write(count[:])
-	for i, raw := range txPrefixed {
-		if len(raw) > int(^uint32(0)) {
-			return out, fmt.Errorf("transaction %d too large", i)
-		}
-		var lenBuf [4]byte
-		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(raw)))
-		h.Write(lenBuf[:])
-		h.Write(raw)
-	}
-	copy(out[:], h.Sum(nil))
-	return out, nil
+	Entries []Txn
+	GroupID types.Digest
 }
 
 // DecodeGroupHex decodes TX-prefixed transaction bytes, rejects
-// non-canonical msgpack encodings, checks group consistency, and returns the
-// off-chain group hash used for audit.
+// non-canonical msgpack encodings, and checks group consistency.
 func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 	if len(groupBytesHex) == 0 {
 		return nil, fmt.Errorf("group_bytes_hex is empty")
@@ -77,7 +43,6 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 	}
 
 	entries := make([]Txn, len(groupBytesHex))
-	raws := make([][]byte, len(groupBytesHex))
 	txns := make([]types.Transaction, len(groupBytesHex))
 	for i, rawHex := range groupBytesHex {
 		raw, err := hex.DecodeString(rawHex)
@@ -91,11 +56,10 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 		txid := sha512.Sum512_256(raw)
 		entries[i] = Txn{
 			Index: i,
-			Raw:   append([]byte(nil), raw...),
+			Raw:   raw,
 			Txn:   txn,
 			TxID:  txid,
 		}
-		raws[i] = raw
 		txns[i] = txn
 	}
 
@@ -103,14 +67,9 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	groupHash, err := GroupHash(raws)
-	if err != nil {
-		return nil, err
-	}
 	return &Group{
-		Entries:   entries,
-		GroupHash: groupHash,
-		GroupID:   groupID,
+		Entries: entries,
+		GroupID: groupID,
 	}, nil
 }
 
