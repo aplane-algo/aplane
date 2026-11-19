@@ -117,6 +117,14 @@ func (r *Runtime) WhileGeneration(generation uint64, fn func()) bool {
 	return true
 }
 
+// UnlockedGeneration returns the session generation and whether the signer
+// is unlocked in it, read together under the state lock.
+func (r *Runtime) UnlockedGeneration() (uint64, bool) {
+	r.stateMu.RLock()
+	defer r.stateMu.RUnlock()
+	return r.session, r.state == SignerStateUnlocked
+}
+
 // GetState returns the current signer state.
 func (r *Runtime) GetState() SignerState {
 	r.stateMu.RLock()

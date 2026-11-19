@@ -30,7 +30,8 @@ func (s Service) SignComponents(ctx context.Context, ir *productruntime.Runtime,
 		ctx, finish = ir.BeginSigningRequest(ctx, req.RequestID)
 		defer finish()
 	}
-	return s.Deps.NewSigningService(ir).SignComponentsWithContext(ctx, req, ir.SnapshotKeySession())
+	svc := s.Deps.NewSigningService(ir)
+	return svc.SignComponentsWithContext(ctx, req, ir.SnapshotKeySession())
 }
 
 func (s Service) Assemble(ctx context.Context, ir *productruntime.Runtime, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, *signersigning.ServiceError) {
@@ -45,8 +46,11 @@ func (s Service) Assemble(ctx context.Context, ir *productruntime.Runtime, req s
 		return nil, notConfigured("signing service")
 	}
 
+	// As for a sign: the service records the session before the keys are
+	// taken from it.
+	svc := s.Deps.NewSigningService(ir)
 	session := ir.SnapshotKeySession()
-	result, err := s.Deps.NewSigningService(ir).AssembleWithContext(ctx, req, session)
+	result, err := svc.AssembleWithContext(ctx, req, session)
 	if err != nil {
 		return nil, err
 	}

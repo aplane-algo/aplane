@@ -1625,6 +1625,19 @@ func (ir *Runtime) notifyLocked() {
 	}
 }
 
+// IsUnlockedIn reports whether the signer is unlocked in the session
+// generation names (LockGeneration): still unlocked, and not left and
+// re-entered since, by a lock or by a recovery and a reconcile.
+func (ir *Runtime) IsUnlockedIn(generation uint64) bool {
+	return ir.lockRuntime.WhileGeneration(generation, func() {})
+}
+
+// UnlockedGeneration returns the session generation and whether the signer
+// is unlocked in it, read together.
+func (ir *Runtime) UnlockedGeneration() (uint64, bool) {
+	return ir.lockRuntime.UnlockedGeneration()
+}
+
 // LockGeneration returns the lock runtime's session generation, advanced by
 // every lock and maintenance transition and by every entry into recovery from
 // the unlocked state. Per-session state is keyed by it.
