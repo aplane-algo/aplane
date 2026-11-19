@@ -27,6 +27,8 @@ type scriptedListener struct {
 	results   chan acceptResult
 	closed    chan struct{}
 	closeOnce sync.Once
+	// accepted, when set, receives once for each queued result Accept returns.
+	accepted chan struct{}
 }
 
 func newScriptedListener(results ...acceptResult) *scriptedListener {
@@ -43,6 +45,9 @@ func newScriptedListener(results ...acceptResult) *scriptedListener {
 func (l *scriptedListener) Accept() (net.Conn, error) {
 	select {
 	case r := <-l.results:
+		if l.accepted != nil {
+			l.accepted <- struct{}{}
+		}
 		return r.conn, r.err
 	case <-l.closed:
 		return nil, &net.OpError{Op: "accept", Net: "unix", Err: net.ErrClosed}
@@ -86,6 +91,47 @@ func TestIPCAcceptLoopSurvivesAFailedAccept(t *testing.T) {
 	case <-loopDone:
 	case <-time.After(ipcDisconnectTestTimeout):
 		t.Fatal("accept loop did not end after the listener closed")
+	}
+}
+
+// Stop during a backoff wait ends the loop at once, rather than when the
+// wait (up to a second) is over.
+func TestIPCAcceptLoopStopEndsABackoffAtOnce(t *testing.T) {
+	signer, cleanup := setupTestSigner(t)
+	t.Cleanup(cleanup)
+	server := NewIPCServer("", signer)
+	const failures = 5 // the fifth failure waits 400ms
+	emfile := &net.OpError{Op: "accept", Net: "unix", Err: os.NewSyscallError("accept", syscall.EMFILE)}
+	results := make([]acceptResult, failures)
+	for i := range results {
+		results[i] = acceptResult{err: emfile}
+	}
+	listener := newScriptedListener(results...)
+	listener.accepted = make(chan struct{}, failures)
+	server.listener = listener
+
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		server.acceptLoop()
+	}()
+	for i := 0; i < failures; i++ {
+		select {
+		case <-listener.accepted:
+		case <-time.After(ipcDisconnectTestTimeout):
+			t.Fatalf("accept loop stopped after %d failure(s)", i)
+		}
+	}
+
+	stopped := time.Now()
+	server.Stop()
+	select {
+	case <-loopDone:
+	case <-time.After(ipcDisconnectTestTimeout):
+		t.Fatal("accept loop did not end after Stop")
+	}
+	if waited := time.Since(stopped); waited > 200*time.Millisecond {
+		t.Fatalf("accept loop ended %s after Stop, want at once", waited)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,6 +27,11 @@ type IPCServer struct {
 	manager  *adminserver.SessionManager
 
 	preAuthTimeout time.Duration // 0 means preAuthLoginTimeout; settable in tests
+
+	// stopped is closed by Stop, so acceptLoop ends a backoff wait at once.
+	// A server built without NewIPCServer has none and waits it out.
+	stopped  chan struct{}
+	stopOnce sync.Once
 }
 
 const existingIPCProbeTimeout = 300 * time.Millisecond
@@ -36,6 +42,7 @@ func NewIPCServer(path string, signer *Signer) *IPCServer {
 		path:    path,
 		signer:  signer,
 		manager: adminserver.NewSessionManager(),
+		stopped: make(chan struct{}),
 	}
 }
 
@@ -113,6 +120,11 @@ func removeStaleIPCSocket(path string) error {
 
 // Stop closes the IPC server.
 func (s *IPCServer) Stop() {
+	s.stopOnce.Do(func() {
+		if s.stopped != nil {
+			close(s.stopped)
+		}
+	})
 	if s.listener != nil {
 		_ = s.listener.Close() // Best-effort cleanup
 	}
@@ -147,7 +159,11 @@ func (s *IPCServer) acceptLoop() {
 				logWarnf("IPC accept failed, retrying: %v", err)
 			}
 			backoff = nextIPCAcceptBackoff(backoff)
-			time.Sleep(backoff)
+			select {
+			case <-s.stopped:
+				return
+			case <-time.After(backoff):
+			}
 			continue
 		}
 		if backoff != 0 {
