@@ -189,10 +189,10 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 	svc := &ApprovalService{
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return nil },
-		RequestSigningApproval: func(_, _, _, text string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, text string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 			got, description = violations, text
 			return true, nil
-		},
+		}),
 	}
 	rekey := listTestRekey(listTestTarget)
 	item := &boundedPlanItem{

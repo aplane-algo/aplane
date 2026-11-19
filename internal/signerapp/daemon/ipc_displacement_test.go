@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -206,10 +207,10 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	approvalResult := make(chan error, 1)
 	go func() {
 		// Displacement withdraws the prompt shown to the old session: it
-		// ends as ErrApproverGone, not as a rejection.
-		response, err := ir.RequestSigningApprovalResponse("displaced-prompt", "A", "A", "desc", 0, 0, nil, time.Minute)
-		if !errors.Is(err, signerapproval.ErrApproverGone) || response.Approved {
-			approvalResult <- fmt.Errorf("response = %+v, err = %v; want the prompt withdrawn with ErrApproverGone", response, err)
+		// ends as ErrApproverDisplaced, not as a rejection.
+		response, err := ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "displaced-prompt", Address: "A", TxnSender: "A", Description: "desc"}, time.Minute)
+		if !errors.Is(err, signerapproval.ErrApproverDisplaced) || response.Approved {
+			approvalResult <- fmt.Errorf("response = %+v, err = %v; want the prompt withdrawn with ErrApproverDisplaced", response, err)
 			return
 		}
 		approvalResult <- nil

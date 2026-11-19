@@ -20,7 +20,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
@@ -722,7 +721,7 @@ func (o markerVerifierOps) BuildVerifyTEAL([]byte) (string, error)    { return o
 func TestFalconAllowlistTemplateUsesBoundedFixedAllowlist(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1", FamilyName: "falcon1024", Version: 1,
-		Ops: falconBoundaryTestOps{}, NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		Ops: falconBoundaryTestOps{},
 	})
 	spec, err := ParseTemplateSpec([]byte(FixedAllowlistFixtureYAML))
 	if err != nil {
@@ -770,9 +769,6 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 		FamilyName:  "falcon1024",
 		Version:     1,
 		Ops:         falconBoundaryTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver {
-			return testDeriver{}
-		},
 	})
 
 	spec, err := ParseTemplateSpec([]byte(MerkleAllowlistFixtureYAML))
@@ -874,9 +870,6 @@ func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 		FamilyName:  "falcon1024",
 		Version:     1,
 		Ops:         falconBoundaryTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver {
-			return testDeriver{}
-		},
 	})
 
 	spec, err := ParseTemplateSpec([]byte(FixedAllowlistFixtureYAML))

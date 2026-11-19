@@ -1,0 +1,226 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package productruntime
+
+import (
+	"errors"
+	"os"
+	"strings"
+	"testing"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+)
+
+// failSyncAndCorrupt makes the next directory sync fail and leaves the file
+// at path unreadable, as a disk fault can: the runtime cannot read back
+// what it tried to write.
+func failSyncAndCorrupt(t *testing.T, path string) {
+	t.Helper()
+	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
+		if op != fsutil.OpDirSync {
+			return nil
+		}
+		fsutil.TestHook = nil
+		if err := os.WriteFile(path, []byte("not a registry line\n"), 0o600); err != nil {
+			t.Error(err)
+		}
+		return errors.New("injected dir sync failure")
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+}
+
+// A registry the runtime cannot read back after a failed write refuses every
+// client, and is never written back from that empty view: a later change,
+// even an unauthenticated client's enrollment request, waits for the file to
+// be readable. The failed write is reported as applied but not durable, and
+// once the file reads again it holds what that write intended, whichever
+// registry the repair left there.
+func TestUnreadableRegistryIsNeverWrittenBackEmpty(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	kept, other, newcomer := testSSHKey(t), testSSHKey(t), testSSHKey(t)
+	if _, err := ir.EnrollAuthorizedKey(kept, "kept"); err != nil {
+		t.Fatal(err)
+	}
+	good, err := os.ReadFile(ir.AuthorizedKeysPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failSyncAndCorrupt(t, ir.AuthorizedKeysPath())
+	if enrolled, err := ir.EnrollAuthorizedKey(other, "other"); !enrolled || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("EnrollAuthorizedKey() whose file could not be read back = %v, %v; want applied and not durable", enrolled, err)
+	}
+	if ir.HasAuthorizedKey(kept) {
+		t.Fatal("an unreadable registry still grants a key")
+	}
+
+	if _, _, err := ir.QueueEnrollment(newcomer, "new", "10.0.0.9:1"); err == nil || !strings.Contains(err.Error(), "unreadable") {
+		t.Fatalf("QueueEnrollment() on an unreadable registry = %v, want a refusal naming it", err)
+	}
+	if data, _ := os.ReadFile(ir.AuthorizedKeysPath()); string(data) != "not a registry line\n" {
+		t.Fatalf("the unreadable registry was overwritten: %q", data)
+	}
+
+	// The operator repairs the file with the registry from before the failed
+	// write. The next change waits no longer, and the enrollment reported
+	// as applied holds.
+	if err := os.WriteFile(ir.AuthorizedKeysPath(), good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ir.EnrollAuthorizedKey(other, "other"); err != nil {
+		t.Fatalf("EnrollAuthorizedKey() after the repair = %v", err)
+	}
+	for name, key := range map[string]ssh.PublicKey{"kept": kept, "other": other} {
+		if !ir.HasAuthorizedKey(key) {
+			t.Fatalf("the %s key is not enrolled after the repair", name)
+		}
+	}
+}
+
+// The same for the enrollment queue: requests waiting in a queue file the
+// runtime cannot read back are not dropped by the next request.
+func TestUnreadableEnrollmentQueueIsNeverWrittenBackEmpty(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	waiting, second, third := testSSHKey(t), testSSHKey(t), testSSHKey(t)
+	if _, _, err := ir.QueueEnrollment(waiting, "waiting", "10.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	good, err := os.ReadFile(ir.PendingEnrollmentsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failSyncAndCorrupt(t, ir.PendingEnrollmentsPath())
+	if pending, _, err := ir.QueueEnrollment(second, "second", "10.0.0.2:1"); !pending || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("QueueEnrollment() whose file could not be read back = %v, %v; want queued and not durable", pending, err)
+	}
+	if _, _, err := ir.QueueEnrollment(third, "third", "10.0.0.3:1"); err == nil || !strings.Contains(err.Error(), "unreadable") {
+		t.Fatalf("QueueEnrollment() on an unreadable queue = %v, want a refusal naming it", err)
+	}
+	if data, _ := os.ReadFile(ir.PendingEnrollmentsPath()); string(data) != "not a registry line\n" {
+		t.Fatalf("the unreadable queue was overwritten: %q", data)
+	}
+
+	if err := os.WriteFile(ir.PendingEnrollmentsPath(), good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ir.QueueEnrollment(third, "third", "10.0.0.3:1"); err != nil {
+		t.Fatalf("QueueEnrollment() after the repair = %v", err)
+	}
+	fingerprints := map[string]bool{}
+	for _, entry := range ir.PendingEnrollments() {
+		fingerprints[entry.Fingerprint] = true
+	}
+	for name, key := range map[string]ssh.PublicKey{"waiting": waiting, "second": second, "third": third} {
+		if !fingerprints[ssh.FingerprintSHA256(key)] {
+			t.Fatalf("the %s request is not waiting after the repair (have %v)", name, fingerprints)
+		}
+	}
+}
+
+// A revocation whose registry file could not be read back is reported as
+// applied, so the caller closes the key's connections and audits it, and it
+// holds once the file reads again, even if the repair put back a registry
+// that still lists the key.
+func TestRevocationDuringAnUnreadableRegistryHolds(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	revokedKey, other := testSSHKey(t), testSSHKey(t)
+	if _, err := ir.EnrollAuthorizedKey(revokedKey, "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	good, err := os.ReadFile(ir.AuthorizedKeysPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failSyncAndCorrupt(t, ir.AuthorizedKeysPath())
+	if _, revoked, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(revokedKey)); !revoked || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("RevokeAuthorizedKey() = %v, %v; want revoked and not durable", revoked, err)
+	}
+	if err := os.WriteFile(ir.AuthorizedKeysPath(), good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ir.EnrollAuthorizedKey(other, "other"); err != nil {
+		t.Fatalf("EnrollAuthorizedKey() after the repair = %v", err)
+	}
+	if ir.HasAuthorizedKey(revokedKey) {
+		t.Fatal("the revoked key came back with the repaired file")
+	}
+	if !ir.HasAuthorizedKey(other) {
+		t.Fatal("the key enrolled after the repair is missing")
+	}
+}
+
+// Rejecting a request checks that its key is not enrolled, which needs the
+// registry: while the registry cannot be read the rejection waits, and the
+// request stays.
+func TestRejectWaitsForAnUnreadableRegistry(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	requester, other := testSSHKey(t), testSSHKey(t)
+	if _, _, err := ir.QueueEnrollment(requester, "laptop", "10.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	failSyncAndCorrupt(t, ir.AuthorizedKeysPath())
+	_, _ = ir.EnrollAuthorizedKey(other, "other")
+
+	if _, rejected, err := ir.RejectEnrollment(ssh.FingerprintSHA256(requester)); rejected || err == nil || !strings.Contains(err.Error(), "unreadable") {
+		t.Fatalf("RejectEnrollment() while the registry is unreadable = %v, %v; want a refusal naming it", rejected, err)
+	}
+	if len(ir.PendingEnrollments()) != 1 {
+		t.Fatalf("pending = %+v, want the request still waiting", ir.PendingEnrollments())
+	}
+}
+
+// A revocation reported made holds even when the write that would make it
+// durable fails again once the file reads: the runtime keeps refusing every
+// key, rather than serve the repaired file that still lists the revoked key,
+// until that write succeeds.
+func TestRevocationHoldsWhenItsRepublishFailsAgain(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	revokedKey, other := testSSHKey(t), testSSHKey(t)
+	if _, err := ir.EnrollAuthorizedKey(revokedKey, "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	good, err := os.ReadFile(ir.AuthorizedKeysPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	failSyncAndCorrupt(t, ir.AuthorizedKeysPath())
+	if _, revoked, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(revokedKey)); !revoked || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("RevokeAuthorizedKey() = %v, %v; want revoked and not durable", revoked, err)
+	}
+	if err := os.WriteFile(ir.AuthorizedKeysPath(), good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path := ir.AuthorizedKeysPath()
+	fsutil.TestHook = func(op fsutil.HookOp, target string) error {
+		if op == fsutil.OpRename && target == path {
+			fsutil.TestHook = nil
+			return errors.New("injected rename failure")
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+	if _, err := ir.EnrollAuthorizedKey(other, "other"); err == nil {
+		t.Fatal("EnrollAuthorizedKey() succeeded though the registry it depends on is not durable")
+	}
+	if ir.HasAuthorizedKey(revokedKey) {
+		t.Fatal("the revoked key came back when the re-publish failed again")
+	}
+
+	if _, err := ir.EnrollAuthorizedKey(other, "other"); err != nil {
+		t.Fatalf("EnrollAuthorizedKey() once the disk recovered = %v", err)
+	}
+	if ir.HasAuthorizedKey(revokedKey) || !ir.HasAuthorizedKey(other) {
+		t.Fatalf("revoked key enrolled = %v, other enrolled = %v; want false and true", ir.HasAuthorizedKey(revokedKey), ir.HasAuthorizedKey(other))
+	}
+	file, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(file), strings.Fields(string(ssh.MarshalAuthorizedKey(revokedKey)))[1]) {
+		t.Fatalf("authorized_keys still lists the revoked key (read error %v)", err)
+	}
+}

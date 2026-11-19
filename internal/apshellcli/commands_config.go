@@ -99,7 +99,7 @@ func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, er
 			return r.renderConnectResult(result)
 		})
 	}, connectionProjection{
-		Connected: true, Target: result.Target, Port: result.Port, KeyCount: result.KeyCount,
+		Connected: true, Target: result.Target, KeyCount: result.KeyCount,
 		Locked: result.Locked, AlreadyConnected: result.AlreadyConnected,
 	})
 }

@@ -8,22 +8,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
 
-// AddressDeriverFactory creates an address deriver for a composed template key type.
-type AddressDeriverFactory func(templateKeyType string) addressderive.Deriver
-
 // BaseRegistration describes a DSA provider that may be used as a composed
 // template base.
 type BaseRegistration struct {
-	BaseKeyType       string
-	FamilyName        string
-	Version           int
-	Ops               DSAOps
-	NewAddressDeriver AddressDeriverFactory
+	BaseKeyType string
+	FamilyName  string
+	Version     int
+	Ops         DSAOps
 }
 
 var baseRegistry = struct {
@@ -73,9 +68,6 @@ func normalizeBaseRegistration(reg BaseRegistration) (BaseRegistration, error) {
 	}
 	if reg.Ops == nil {
 		return BaseRegistration{}, fmt.Errorf("composeddsa: DSA ops are required for %s", reg.BaseKeyType)
-	}
-	if reg.NewAddressDeriver == nil {
-		return BaseRegistration{}, fmt.Errorf("composeddsa: address deriver factory is required for %s", reg.BaseKeyType)
 	}
 	if err := baseConstructionAgrees(reg.BaseKeyType, reg.Ops); err != nil {
 		return BaseRegistration{}, fmt.Errorf("composeddsa: %w", err)

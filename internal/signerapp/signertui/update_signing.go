@@ -15,10 +15,12 @@ import (
 
 const signingDetailsBoxHorizontalChrome = 4 // rounded border plus horizontal padding
 
-// approvalArmDelay is how long a newly shown signing request refuses approval.
+// approvalArmDelay is how long a newly shown signing or enrollment request
+// refuses approval.
 const approvalArmDelay = time.Second
 
-// signingNow is the clock for the arming delay; tests replace it.
+// signingNow is the clock for the arming delay of both popups; tests replace
+// it.
 var signingNow = time.Now
 
 // handleSigningPopupKeys handles keyboard input on signing popup

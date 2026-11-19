@@ -562,7 +562,7 @@ func TestCoordinatorFailAllNamesDisplacementAndDefaultsToDisconnect(t *testing.T
 			func(msg *SignRequestCanceled) bool { canceled <- msg.Reason; return true })
 		done := make(chan error, 1)
 		go func() {
-			_, err := c.RequestSigningApproval("sign-1", "A", "A", "desc", 0, 0, nil, time.Second)
+			_, err := c.RequestSigningApprovalPrompt(context.Background(), Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "desc"}, time.Second)
 			done <- err
 		}()
 		<-sent

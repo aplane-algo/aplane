@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"net"
 	"testing"
@@ -122,7 +123,7 @@ func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
-	approved, err := ir.RequestSigningApproval("req-timeout", "ADDR", "SENDER", "desc", 1, 2, nil, 10*time.Millisecond)
+	approved, err := approvalOutcome(ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "req-timeout", Address: "ADDR", TxnSender: "SENDER", Description: "desc", FirstValid: 1, LastValid: 2}, 10*time.Millisecond))
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
@@ -146,7 +147,7 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 
-	approved, err := ir.RequestSigningApproval("req-sign", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
+	approved, err := approvalOutcome(ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "req-sign", Address: "ADDR", TxnSender: "SENDER", Description: "desc", FirstValid: 1, LastValid: 2}, time.Second))
 	if err == nil {
 		t.Fatal("expected send failure, got nil")
 	}
@@ -230,7 +231,7 @@ func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 	var err error
 	go func() {
 		defer close(done)
-		approved, err = ir.RequestSigningApproval("req-disconnect", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
+		approved, err = approvalOutcome(ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "req-disconnect", Address: "ADDR", TxnSender: "SENDER", Description: "desc", FirstValid: 1, LastValid: 2}, time.Second))
 	}()
 
 	deadline := time.Now().Add(200 * time.Millisecond)
@@ -342,4 +343,12 @@ func (h *recordingAdminHub) NotifyEnrollmentChanged(n adminproto.EnrollmentChang
 func (h *recordingAdminHub) NotifyStatus(_ string, _ int, warnings []string) {
 	h.statusWarnings = append([]string(nil), warnings...)
 	h.statusCalled = true
+}
+
+// approvalOutcome is a prompt's answer as approved or not.
+func approvalOutcome(response signerapproval.SignResponse, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	return response.Approved, nil
 }

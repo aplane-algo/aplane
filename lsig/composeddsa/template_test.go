@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -27,11 +26,10 @@ func registerTemplateTestBase(t testing.TB, keyType string) {
 	}
 	familyName = strings.TrimSuffix(familyName, ".v1")
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       keyType,
-		FamilyName:        familyName,
-		Version:           1,
-		Ops:               testOps{construction: catalogConstruction(keyType)},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: keyType,
+		FamilyName:  familyName,
+		Version:     1,
+		Ops:         testOps{construction: catalogConstruction(keyType)},
 	})
 }
 
@@ -242,11 +240,10 @@ teal: |
 func TestComposedSchemaV2BuildsBoundedProvider(t *testing.T) {
 	baseKeyType := "test.template-bounded-base.v1"
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       baseKeyType,
-		FamilyName:        "template-bounded-base",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: baseKeyType,
+		FamilyName:  "template-bounded-base",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 
 	spec, err := ParseTemplateSpec([]byte(`
@@ -301,11 +298,10 @@ teal: |
 // parameter name cannot come back as an author parameter.
 func TestComposedSchemaV2RejectsAuthorDeclaredReservedBoundedParameter(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       "aplane.falcon1024.v1",
-		FamilyName:        "falcon1024",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: "aplane.falcon1024.v1",
+		FamilyName:  "falcon1024",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 2
@@ -429,11 +425,10 @@ teal: int 1
 
 func TestComposedSchemaV2BuildsBoundedCosignerProfile(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       "aplane.falcon1024.v1",
-		FamilyName:        "falcon1024",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: "aplane.falcon1024.v1",
+		FamilyName:  "falcon1024",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 2
@@ -480,11 +475,10 @@ teal: |
 
 func TestComposedSchemaV2RejectsInvalidBoundedCosigner(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       "aplane.falcon1024.v1",
-		FamilyName:        "falcon1024",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: "aplane.falcon1024.v1",
+		FamilyName:  "falcon1024",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 	registerTemplateTestBase(t, "test.non-falcon-bounded-cosigner.v1")
 	base := `
@@ -615,11 +609,10 @@ teal: |
 func TestComposedSchemaV2RequiresExplicitMaxFee(t *testing.T) {
 	baseKeyType := "test.template-missing-max-fee-base.v1"
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       baseKeyType,
-		FamilyName:        "template-missing-max-fee-base",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: baseKeyType,
+		FamilyName:  "template-missing-max-fee-base",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 2
@@ -650,11 +643,10 @@ teal: int 1
 func TestComposedSchemaV2RequiresRekeySetting(t *testing.T) {
 	baseKeyType := "test.template-rekey-setting-base.v1"
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       baseKeyType,
-		FamilyName:        "template-rekey-setting-base",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: baseKeyType,
+		FamilyName:  "template-rekey-setting-base",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 	template := func(block string) string {
 		return fmt.Sprintf(`
@@ -865,19 +857,15 @@ teal: |
 	if added := prepared.Register(); added {
 		t.Fatal("Register() = true, want false for existing provider")
 	}
-	if _, err := addressderive.Get(provider.KeyType()); err != nil {
-		t.Fatalf("address deriver was not registered for existing provider: %v", err)
-	}
 }
 
 func TestSemanticFingerprintIncludesBaseKeyType(t *testing.T) {
 	for _, keyType := range []string{"fingerprint-a-v1", "fingerprint-b-v1"} {
 		registerBaseForTest(t, BaseRegistration{
-			BaseKeyType:       keyType,
-			FamilyName:        "fingerprint-base",
-			Version:           1,
-			Ops:               testOps{},
-			NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+			BaseKeyType: keyType,
+			FamilyName:  "fingerprint-base",
+			Version:     1,
+			Ops:         testOps{},
 		})
 	}
 
@@ -913,7 +901,7 @@ teal: |
 func TestTemplateCommentDoesNotMoveTheFingerprint(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1", FamilyName: "falcon1024", Version: 1,
-		Ops: falconBoundaryTestOps{}, NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		Ops: falconBoundaryTestOps{},
 	})
 	plain := []byte(FixedAllowlistFixtureYAML)
 	commented := []byte("# DEPRECATED: a note for operators.\n# It is not part of the definition.\n" + FixedAllowlistFixtureYAML)
@@ -1040,11 +1028,10 @@ func TestComposedTemplateAdmissionRefusesArgumentsTheNetworkRefuses(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			baseKeyType := fmt.Sprintf("test.template-arg-limit-base%d.v1", i)
 			registerBaseForTest(t, BaseRegistration{
-				BaseKeyType:       baseKeyType,
-				FamilyName:        fmt.Sprintf("template-arg-limit-base%d", i),
-				Version:           1,
-				Ops:               argLimitTestOps{layout: tt.layout},
-				NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+				BaseKeyType: baseKeyType,
+				FamilyName:  fmt.Sprintf("template-arg-limit-base%d", i),
+				Version:     1,
+				Ops:         argLimitTestOps{layout: tt.layout},
 			})
 			requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 1
 template_type: composed
@@ -1077,11 +1064,10 @@ func TestComposedTemplateCountsASignatureForAnUndescribedBase(t *testing.T) {
 	} {
 		baseKeyType := fmt.Sprintf("test.template-arg-limit-plain-base%d.v1", i)
 		registerBaseForTest(t, BaseRegistration{
-			BaseKeyType:       baseKeyType,
-			FamilyName:        fmt.Sprintf("template-arg-limit-plain-base%d", i),
-			Version:           1,
-			Ops:               testOps{construction: sigconstruction.Falcon1024()},
-			NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+			BaseKeyType: baseKeyType,
+			FamilyName:  fmt.Sprintf("template-arg-limit-plain-base%d", i),
+			Version:     1,
+			Ops:         testOps{construction: sigconstruction.Falcon1024()},
 		})
 		requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 1
 template_type: composed
@@ -1107,11 +1093,10 @@ runtime_args:
 func TestComposedSchemaV2AdmissionRefusesTooManyArguments(t *testing.T) {
 	baseKeyType := "test.template-bounded-arg-count-base.v1"
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       baseKeyType,
-		FamilyName:        "template-bounded-arg-count-base",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: baseKeyType,
+		FamilyName:  "template-bounded-arg-count-base",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 	for _, tt := range []struct {
 		name        string
@@ -1163,11 +1148,10 @@ bounded:
 // slot takes past 255.
 func TestComposedSchemaV2NeverYieldsArgumentsTheNetworkRefuses(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       "aplane.falcon1024.v1",
-		FamilyName:        "falcon1024",
-		Version:           1,
-		Ops:               boundedTestOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: "aplane.falcon1024.v1",
+		FamilyName:  "falcon1024",
+		Version:     1,
+		Ops:         boundedTestOps{},
 	})
 	const cosigner = "  cosigner:\n    contract: cosigner1\n    required_on: [spend]\n"
 	for _, tt := range []struct {

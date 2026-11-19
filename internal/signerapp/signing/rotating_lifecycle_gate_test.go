@@ -974,11 +974,11 @@ func TestRotatingSignStopsAtARecoveryRoundTripDuringApproval(t *testing.T) {
 	f.svc.Approval = &ApprovalService{
 		UserAutoApprove: &off,
 		HasClient:       func() bool { return true },
-		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, _ string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 			asked = true
 			rt.SetRecovery()
 			return rt.PromoteRecoveryToUnlocked(), nil
-		},
+		}),
 	}
 	resp, err := f.sign(t, prep.Transactions)
 	if !asked || !rt.IsUnlocked() {

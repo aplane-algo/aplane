@@ -526,10 +526,10 @@ func TestOrdinarySignRejectsCosignedKeyBeforeApproval(t *testing.T) {
 				approvalCalled = true
 				return true
 			},
-			RequestSigningApproval: func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
-			},
+			}),
 		},
 		Executor: &Executor{},
 	}
@@ -561,10 +561,10 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 		Approval: &ApprovalService{
 			UserAutoApprove: userAutoApproveDefault(true),
 			HasClient:       func() bool { return true },
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -658,10 +658,10 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 						manualApprovalCalled = true
 						return false
 					},
-					RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+					RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 						manualApprovalCalled = true
 						return false, nil
-					},
+					}),
 				},
 				Executor:                      &Executor{},
 				GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -721,10 +721,10 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 				approvalPathCalled = true
 				return false
 			},
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalPathCalled = true
 				return false, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -785,11 +785,11 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 			KnownAddresses: func() map[string]bool {
 				return nil
 			},
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
 				return true, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -847,11 +847,11 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 		Approval: &ApprovalService{
 			HasClient:      func() bool { return true },
 			KnownAddresses: func() map[string]bool { return nil },
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				service.PolicyFor = fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign})
 				return true, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -925,11 +925,11 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 			UserAutoApprove: userAutoApproveDefault(false),
 			HasClient:       func() bool { return true },
 			KnownAddresses:  func() map[string]bool { return nil },
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
 				return true, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -998,10 +998,10 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 				approvalPathCalled = true
 				return false
 			},
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalPathCalled = true
 				return false, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -1111,10 +1111,10 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 				approvalPathCalled = true
 				return false
 			},
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalPathCalled = true
 				return false, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -1318,10 +1318,10 @@ func TestSignGroupWithPlanRejectsNetworkScopedAlgoLimit(t *testing.T) {
 	service := &Service{
 		Approval: &ApprovalService{
 			HasClient: func() bool { return true },
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -1561,12 +1561,12 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 		Approval: &ApprovalService{
 			HasClient:      func() bool { return true },
 			KnownAddresses: func() map[string]bool { return nil },
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotDescription = description
 				gotFirstValid = firstValid
 				gotLastValid = lastValid
 				return false, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -1642,10 +1642,10 @@ func TestSignGroupWithPlanSingleTxnPromptShowsTheSignersFeeRaise(t *testing.T) {
 				Approval: &ApprovalService{
 					HasClient:      func() bool { return true },
 					KnownAddresses: func() map[string]bool { return nil },
-					RequestSigningApproval: func(_, _, _, description string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+					RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, description string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 						gotDescription = description
 						return false, nil
-					},
+					}),
 				},
 				Executor:                      &Executor{},
 				GenerateTxnDescriptionFromTxn: describeAs("txn"),
@@ -1690,13 +1690,13 @@ func TestSignGroupWithPlanUsesIntersectedValidityWindowForGroups(t *testing.T) {
 		Approval: &ApprovalService{
 			HasClient:      func() bool { return true },
 			KnownAddresses: func() map[string]bool { return nil },
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotTxnSender = txnSender
 				gotDescription = description
 				gotFirstValid = firstValid
 				gotLastValid = lastValid
 				return false, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),

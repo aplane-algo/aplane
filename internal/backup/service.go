@@ -25,6 +25,9 @@ type ArchiveResult struct {
 	KeyCount        int
 	Addresses       []string
 	Verified        bool
+	// Warning reports a published archive whose directory entry could not
+	// be made durable.
+	Warning string
 }
 
 // CreateKeysArchiveRequest contains one managed backup creation snapshot.
@@ -132,33 +135,108 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err := requireExtractableArchive(stageDir); err != nil {
 		return nil, err
 	}
-	if err := CreateTarGzArchive(stageDir, req.ArchivePath); err != nil {
+	published, err := publishVerifiedArchive(stageDir, req.ArchivePath, req.ExportPassphrase)
+	if err != nil {
 		return nil, err
-	}
-	if err := os.Chmod(req.ArchivePath, fsutil.StoreFilePerm); err != nil {
-		return nil, fmt.Errorf("failed to set backup archive permissions: %w", err)
-	}
-	verifyReport, err := DeepVerifyBackupBytes(stageDir, req.ExportPassphrase)
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify backup archive: %w", err)
-	}
-	if verifyReport.FailedFiles > 0 {
-		return nil, fmt.Errorf("failed to verify backup archive: %d file(s) failed verification", verifyReport.FailedFiles)
-	}
-	archiveChecksum, archiveSize, err := FileSHA256(req.ArchivePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to checksum backup archive: %w", err)
 	}
 
 	return &ArchiveResult{
 		ArchivePath:     req.ArchivePath,
-		ArchiveChecksum: archiveChecksum,
-		ArchiveSize:     archiveSize,
+		ArchiveChecksum: published.checksum,
+		ArchiveSize:     published.size,
 		Checksums:       checksums,
 		KeyCount:        len(exported),
 		Addresses:       exported,
 		Verified:        true,
+		Warning:         published.warning,
 	}, nil
+}
+
+// PartialArchiveSuffix marks an archive still being written or verified.
+// The managed listing takes only .tar.gz and .tgz names, so a partial archive
+// is never listed as a backup; the daemon's startup sweep removes one a crash
+// left behind.
+const PartialArchiveSuffix = ".partial"
+
+// CreateValidationPrefix names the directory a new archive is extracted into
+// to verify it, inside the managed backup directory so the startup sweep
+// removes one a crash left behind.
+const CreateValidationPrefix = ".create-validation-"
+
+// beforeArchivePublish, when a test sets it, runs on the verified partial
+// archive just before it is renamed into place.
+var beforeArchivePublish func(partial string) error
+
+// publishedArchive is an archive given its managed name: its checksum and
+// size, and a warning when the directory entry could not be made durable.
+type publishedArchive struct {
+	checksum string
+	size     int64
+	warning  string
+}
+
+// publishVerifiedArchive packages stageDir as the archive at archivePath. It
+// writes and syncs the archive under a partial name beside it, verifies the
+// archive by extracting it and opening every credential and the sealed
+// manifest with the export passphrase, and only then renames it to its
+// managed name and syncs the directory. The caller holds the store mutation
+// lock, which every backup create and import takes, so the managed name it
+// found free is still free when it renames. Any failure before the rename
+// leaves nothing under either name. A directory sync that fails after it
+// leaves the complete, verified archive published, with a warning, as an
+// import does.
+func publishVerifiedArchive(stageDir, archivePath string, passphrase []byte) (publishedArchive, error) {
+	if _, err := os.Lstat(archivePath); err == nil {
+		return publishedArchive{}, fmt.Errorf("archive already exists: %s", archivePath)
+	} else if !os.IsNotExist(err) {
+		return publishedArchive{}, err
+	}
+	dir := filepath.Dir(archivePath)
+	partial := archivePath + PartialArchiveSuffix
+	// Only this function writes partial names, under the store mutation
+	// lock, so one already there is an earlier attempt's leftover.
+	_ = os.Remove(partial)
+	defer func() { _ = os.Remove(partial) }()
+	if err := CreateTarGzArchive(stageDir, partial); err != nil {
+		return publishedArchive{}, err
+	}
+	if err := os.Chmod(partial, fsutil.StoreFilePerm); err != nil {
+		return publishedArchive{}, fmt.Errorf("failed to set backup archive permissions: %w", err)
+	}
+
+	verifyDir, err := os.MkdirTemp(dir, CreateValidationPrefix+"*")
+	if err != nil {
+		return publishedArchive{}, fmt.Errorf("failed to create backup verification directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(verifyDir) }()
+	if err := ExtractTarGzArchive(partial, verifyDir); err != nil {
+		return publishedArchive{}, fmt.Errorf("failed to verify backup archive: %w", err)
+	}
+	verifyReport, err := DeepVerifyBackupBytes(verifyDir, passphrase)
+	if err != nil {
+		return publishedArchive{}, fmt.Errorf("failed to verify backup archive: %w", err)
+	}
+	if verifyReport.FailedFiles > 0 {
+		return publishedArchive{}, fmt.Errorf("failed to verify backup archive: %d file(s) failed verification", verifyReport.FailedFiles)
+	}
+	checksum, size, err := FileSHA256(partial)
+	if err != nil {
+		return publishedArchive{}, fmt.Errorf("failed to checksum backup archive: %w", err)
+	}
+	if beforeArchivePublish != nil {
+		if err := beforeArchivePublish(partial); err != nil {
+			return publishedArchive{}, err
+		}
+	}
+
+	if err := os.Rename(partial, archivePath); err != nil {
+		return publishedArchive{}, fmt.Errorf("failed to publish backup archive: %w", err)
+	}
+	published := publishedArchive{checksum: checksum, size: size}
+	if err := fsutil.SyncDir(dir); err != nil {
+		published.warning = fmt.Sprintf("backup archive was published but directory durability could not be confirmed: %v", err)
+	}
+	return published, nil
 }
 
 // FileSHA256 returns the SHA-256 checksum and size of path.

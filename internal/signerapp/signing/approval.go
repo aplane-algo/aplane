@@ -47,29 +47,22 @@ type DescribeTxnFunc func(txn types.Transaction) txnreview.Details
 type KnownAddressesFunc func() map[string]bool
 
 type HasClientFunc func() bool
-type RequestSigningApprovalFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
-type RequestSigningApprovalResponseFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
-type RequestSigningApprovalContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
-type RequestSigningApprovalResponseContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
 
-// RequestSigningApprovalPromptFunc shows a whole prompt, its review included.
-// The daemon supplies it; the four forms above carry the text alone.
+// RequestSigningApprovalPromptFunc shows a whole prompt, its review included,
+// to the operator and returns their answer. It is the one way a signing
+// prompt reaches the operator.
 type RequestSigningApprovalPromptFunc func(ctx context.Context, prompt signerapproval.Prompt, timeout time.Duration) (signerapproval.SignResponse, error)
 
 const defaultApprovalWait = 60 * time.Second
 
 type ApprovalService struct {
-	UserAutoApprove                       *bool
-	ApprovalWait                          func() time.Duration
-	AuditLog                              AuditRejectLogger
-	Console                               Console
-	KnownAddresses                        KnownAddressesFunc
-	HasClient                             HasClientFunc
-	RequestSigningApproval                RequestSigningApprovalFunc
-	RequestSigningApprovalResponse        RequestSigningApprovalResponseFunc
-	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
-	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
-	RequestSigningApprovalPrompt          RequestSigningApprovalPromptFunc
+	UserAutoApprove              *bool
+	ApprovalWait                 func() time.Duration
+	AuditLog                     AuditRejectLogger
+	Console                      Console
+	KnownAddresses               KnownAddressesFunc
+	HasClient                    HasClientFunc
+	RequestSigningApprovalPrompt RequestSigningApprovalPromptFunc
 	// Chain reads the review's accounts from the signer's node before an
 	// operator is asked. nil reads nothing.
 	Chain ReviewChain
@@ -135,28 +128,13 @@ func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID,
 		safe := review.Safe()
 		review = &safe
 	}
-	var response signerapproval.SignResponse
-	var err error
-	if s.RequestSigningApprovalPrompt != nil {
-		response, err = s.RequestSigningApprovalPrompt(ctx, signerapproval.Prompt{
-			RequestID: requestID, Address: address, TxnSender: txnSender, Description: description,
-			FirstValid: firstValid, LastValid: lastValid, Violations: violations, Review: review,
-		}, timeout)
-	} else if s.RequestSigningApprovalResponseContext != nil {
-		response, err = s.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	} else if s.RequestSigningApprovalContext != nil {
-		var approved bool
-		approved, err = s.RequestSigningApprovalContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-		response = signerapproval.SignResponse{ID: requestID, Approved: approved}
-	} else if s.RequestSigningApprovalResponse != nil {
-		response, err = s.RequestSigningApprovalResponse(requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	} else if s.RequestSigningApproval != nil {
-		var approved bool
-		approved, err = s.RequestSigningApproval(requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-		response = signerapproval.SignResponse{ID: requestID, Approved: approved}
-	} else {
+	if s.RequestSigningApprovalPrompt == nil {
 		return false, fmt.Errorf("signing approval callback not configured")
 	}
+	response, err := s.RequestSigningApprovalPrompt(ctx, signerapproval.Prompt{
+		RequestID: requestID, Address: address, TxnSender: txnSender, Description: description,
+		FirstValid: firstValid, LastValid: lastValid, Violations: violations, Review: review,
+	}, timeout)
 	if err != nil {
 		return false, err
 	}

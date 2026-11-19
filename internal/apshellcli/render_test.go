@@ -72,7 +72,7 @@ func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *test
 		TxIDs:   []string{"TX1"},
 	}}
 
-	renderPluginResult(state, result)
+	renderPluginResult(state, result, state.app().IsSimulateEnabled())
 
 	got := out.String()
 	if !strings.Contains(got, "Transaction(s) simulated successfully") {
@@ -94,7 +94,7 @@ func TestPluginFailureRenderPreservesSubmissionDiagnosticsWithoutDuplicatingErro
 		}},
 	}
 
-	renderPluginResult(state, result)
+	renderPluginResult(state, result, false)
 	got := out.String()
 	if !strings.Contains(got, "node diagnostic") || !strings.Contains(got, "partial submission") {
 		t.Fatalf("failure diagnostics missing: %q", got)
