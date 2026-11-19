@@ -97,7 +97,11 @@ the verified key fingerprint. A request carries no credential of its own.
 **Client Credential Details:**
 - Ed25519, ECDSA (P-256/384/521), or hardware-backed `sk-` Ed25519/ECDSA key
   at the endpoint's `identity_file` (default `$APCLIENT_DATA/.ssh/id_ed25519`,
-  mode 0600) or held by an SSH agent
+  mode 0600). A missing identity file is created on first use; when it cannot
+  be created, connecting and enrolling fail with the reason and never offer an
+  SSH agent's keys in its place, which could enroll a key never meant for
+  aplane. The tunnel client uses an SSH agent only when it is given no
+  identity file, which a configured endpoint always has
 - Enrolled once per node, either by an operator approving the client's
   `enroll` request or by the operator importing the public key;
   the node records it in `identities/default/.ssh/authorized_keys`
@@ -116,7 +120,7 @@ the verified key fingerprint. A request carries no credential of its own.
 **Client Key Handling:**
 
 Clients should:
-- Keep the private key owner-only (mode `0600`) or in an SSH agent
+- Keep the private key owner-only (mode `0600`)
 - Never copy one key to several machines; enroll each machine's own key
 - Report a suspected key compromise so the operator can revoke it
 

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -245,22 +246,29 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	return nil
 }
 
+// authMethod is the client's credential: the SSH agent's keys when it has no
+// identity file, otherwise the identity file, created when it is missing. The
+// identity file is the key the node enrolled, so failing to create it is an
+// error, never a switch to the agent's keys, which would offer (and could
+// enroll) a key the user never meant for aplane. When another process
+// created the file first, the key it wrote is used.
 func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, error) {
 	if c.identityFile == "" {
 		return c.agentAuthMethod(onSigned)
 	}
 	identityPath := expandUserPath(c.identityFile)
 	keyData, err := os.ReadFile(identityPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Auto-generate key if it doesn't exist
-			signer, genErr := c.generateIdentityKey(identityPath)
-			if genErr != nil {
-				// Fall back to SSH agent if key generation fails
-				return c.agentAuthMethod(onSigned)
-			}
+	if os.IsNotExist(err) {
+		signer, genErr := c.generateIdentityKey(identityPath)
+		if genErr == nil {
 			return ssh.PublicKeys(observeAuthSigner(signer, onSigned)), nil, nil
 		}
+		if !errors.Is(genErr, fs.ErrExist) {
+			return nil, nil, fmt.Errorf("create SSH identity %s: %w", identityPath, genErr)
+		}
+		keyData, err = os.ReadFile(identityPath)
+	}
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read SSH identity file %s: %w", identityPath, err)
 	}
 	signer, err := ssh.ParsePrivateKey(keyData)
