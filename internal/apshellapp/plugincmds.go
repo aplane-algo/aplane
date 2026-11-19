@@ -27,15 +27,25 @@ func validatePluginResult(result *jsonrpc.ExecuteResult) error {
 		return fmt.Errorf("plugin returned nil result")
 	}
 	if !result.Success && len(result.Transactions) > 0 {
-		return fmt.Errorf("plugin returned transactions with success=false")
+		return failedResultRefusal("transactions", result)
 	}
 	if !result.Success && result.Continuation != nil {
-		return fmt.Errorf("plugin returned continuation with success=false")
+		return failedResultRefusal("continuation", result)
 	}
 	if result.Continuation != nil && result.Continuation.Command == "" {
 		return fmt.Errorf("plugin continuation command is required")
 	}
 	return nil
+}
+
+// failedResultRefusal refuses a result that reports failure but carries what,
+// keeping the plugin's own message, when it gave one, so that the user still
+// sees why the plugin failed.
+func failedResultRefusal(what string, result *jsonrpc.ExecuteResult) error {
+	if result.Message == "" {
+		return fmt.Errorf("plugin returned %s with success=false", what)
+	}
+	return fmt.Errorf("plugin returned %s with success=false; it reported: %s", what, result.Message)
 }
 
 // ValidatePluginExecuteResult validates a plugin execute result using the app-owned rules.

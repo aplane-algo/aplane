@@ -104,31 +104,22 @@ func (a *App) Holders(ctx context.Context, args []string) (*HoldersCommandResult
 		return nil, fmt.Errorf("no accounts found (add aliases or connect to signer)")
 	}
 
+	// The balances shown are those GetHolders read to find the holders, so a
+	// holder cannot drop out between finding it and showing it.
 	holders, err := a.eng.GetHolders(ctx, assetRef)
 	if err != nil {
 		return nil, err
 	}
-	var warnings []Warning
-	if holders.QueryErrors > 0 {
-		warnings = append(warnings, Warning{
-			Code:    "holder_query_failed",
-			Message: fmt.Sprintf("%d account(s) could not be queried", holders.QueryErrors),
-		})
-	}
-	balances := make([]*BalanceDetails, 0, len(holders.Addresses))
-	for _, address := range holders.Addresses {
-		balance, balanceErr := a.eng.GetBalance(ctx, address)
-		if balanceErr != nil {
-			continue
-		}
-		balances = append(balances, balanceDetailsFromEngine(balance))
+	balances := make([]*BalanceDetails, len(holders.Balances))
+	for i, balance := range holders.Balances {
+		balances[i] = balanceDetailsFromEngine(balance)
 	}
 
 	return &HoldersCommandResult{
 		Addresses: holders.Addresses,
 		Balances:  balances,
 		Asset:     asset,
-		Warnings:  warnings,
+		Warnings:  a.balanceQueryWarnings(holders.Failures),
 	}, nil
 }
 

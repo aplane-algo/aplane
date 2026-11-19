@@ -100,9 +100,10 @@ authoritative source; this manual is the map.
   interactive shell. Interactive/process commands are rejected before they
   run; use the dedicated tool or workflow named in the error. A result's
   `warnings`, when it has any, is a list of objects, each with a `code` to
-  match on (for example `recipient_lookalike`, `auth_cache_refresh_failed`, or
-  `signer_advice` for the signer's notes on an account `generate` created) and
-  a `message`.
+  match on (for example `recipient_lookalike`, `auth_cache_refresh_failed`,
+  `balance_query_failed` for an account `balance` of a set or `holders` could
+  not query, or `signer_advice` for the signer's notes on an account
+  `generate` created) and a `message`.
 - **`js`** — when you need control flow, arithmetic on amounts, or a typed
   result object. The last expression is JSON-serialized into `value`; `print()`
   output is captured into `output`.
@@ -137,7 +138,7 @@ These return an error telling you the right path:
 | `@setname` | a user-defined set |
 | `@all` | all known accounts (aliases + signer keys) |
 | `@signers` | all accounts the connected signer can sign for |
-| `@holders(<asset>)` | dynamic set of holders of an asset |
+| `@holders(<asset>)` | dynamic set of holders of an asset; fails if any known account cannot be queried |
 | `[ a b c ]` | an inline group of addresses (shell only) |
 
 In the **JS API**, pass addresses/aliases as strings and sets as arrays — the

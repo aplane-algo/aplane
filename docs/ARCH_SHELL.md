@@ -150,7 +150,11 @@ The REPL/UI layer and `internal/apshellapp` are responsible for:
 - Expanding sets ("@validators" -> ["ADDR1", "ADDR2", ...])
 - Converting amounts ("1.5" ALGO -> 1500000 microAlgos)
 - Formatting output for display
-- Providing command history, tab completion, etc.
+- Providing command history, tab completion, etc. The history is
+  `~/.apshell_history`, owner-only (mode `0600`) whether readline or the
+  apconsole shell pane writes it (`internal/apshellcli/history.go`); with the
+  home directory unknown, history is off rather than written to the current
+  directory
 
 Shell ownership is layered:
 - `internal/apshellcli` owns command registry, command adapters, REPL/session
@@ -969,8 +973,12 @@ addrs, err := resolver.ResolveList([]string{"alice", "@team", "@signers"})
 
 `ResolveList` accepts a mix of aliases, raw addresses, user-defined `@setname`
 references, and the dynamic `@signers`/`@all`/`@holders(<asset>)` sets.
-`ResolveSingle` enforces a single result and returns `MultipleAddressError`
-when a set expands to more than one address.
+The engine's providers list each dynamic set sorted, so a command over one
+sees its accounts in the same order every time. `@holders(<asset>)` queries
+every known account and fails, naming each account it could not query,
+rather than leave out one that may hold the asset, since the set drives
+sends and sweeps. `ResolveSingle` enforces a single result and returns
+`MultipleAddressError` when a set expands to more than one address.
 
 ### Tab Completion
 

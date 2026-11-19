@@ -10,6 +10,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -283,7 +284,9 @@ func (e *Core) ApplyClientCacheUpdates() error {
 	})
 }
 
-// NewAddressResolver creates an AddressResolver with dynamic sets (@signers, @all, @holders) enabled.
+// NewAddressResolver creates an AddressResolver with dynamic sets (@signers,
+// @all, @holders) enabled. Each dynamic set lists its addresses sorted, so
+// every command over one sees its accounts in the same order every time.
 func (e *Core) NewAddressResolver() *addressbook.Resolver {
 	resolver := addressbook.NewResolver(&e.AliasCache, &e.SetCache)
 	return resolver.WithSignerProvider(func() []string {
@@ -292,6 +295,7 @@ func (e *Core) NewAddressResolver() *addressbook.Resolver {
 		for addr := range signers {
 			addresses = append(addresses, addr)
 		}
+		sort.Strings(addresses)
 		return addresses
 	}).WithAllProvider(func() []string {
 		return e.listAllAddressesCached()
@@ -299,10 +303,15 @@ func (e *Core) NewAddressResolver() *addressbook.Resolver {
 		// The resolver interface carries no context; resolution happens on the
 		// interactive command path where cancellation is not yet plumbed.
 		result, err := e.GetHolders(context.Background(), assetRef)
-		if result == nil {
+		if err != nil {
 			return nil, err
 		}
-		return result.Addresses, err
+		// The set drives sends and sweeps, so an account that could not be
+		// queried, and may hold the asset, fails it rather than dropping out.
+		if len(result.Failures) > 0 {
+			return nil, AccountsNotQueriedError(result.Failures)
+		}
+		return result.Addresses, nil
 	})
 }
 
@@ -321,16 +330,18 @@ func (e *Core) collectAllAddresses() map[string]bool {
 	return addressSet
 }
 
+// listAllAddressesCached is every known address, sorted.
 func (e *Core) listAllAddressesCached() []string {
 	addressSet := e.collectAllAddresses()
 	addresses := make([]string, 0, len(addressSet))
 	for addr := range addressSet {
 		addresses = append(addresses, addr)
 	}
+	sort.Strings(addresses)
 	return addresses
 }
 
-// ListAllAddresses returns all known addresses (aliases + signer keys).
+// ListAllAddresses returns all known addresses (aliases + signer keys), sorted.
 func (e *Core) ListAllAddresses() ([]string, error) {
 	if err := e.EnsureSignerCache(context.Background()); err != nil {
 		return nil, err

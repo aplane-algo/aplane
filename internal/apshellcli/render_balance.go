@@ -4,7 +4,6 @@
 package apshellcli
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
@@ -61,10 +60,8 @@ func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, me
 // showMultiAccountBalances shows balances across multiple accounts.
 // meta: the asset shown, ALGO when its AssetID is 0
 // holdersOnly: if true, only show accounts with non-zero balance
-func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetails, meta asa.Metadata, holdersOnly bool) error {
-	if len(balances) == 0 {
-		return fmt.Errorf("no accounts found")
-	}
+// unqueried: the accounts whose query failed, which the total leaves out
+func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetails, meta asa.Metadata, holdersOnly bool, unqueried int) {
 	asaID := meta.AssetID
 
 	type accountBalance struct {
@@ -106,7 +103,7 @@ func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetai
 		} else {
 			r.println("No accounts found")
 		}
-		return nil
+		return
 	}
 
 	sort.Slice(results, func(i, j int) bool {
@@ -117,6 +114,9 @@ func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetai
 		r.printf("%s: %s\n", ab.name, asa.DisplayString(asa.AmountFromRaw(ab.raw, meta)))
 	}
 
-	r.printf("\nTotal: %s across %d accounts\n", asa.DisplayString(asa.AmountFromRaw(totalRaw, meta)), len(results))
-	return nil
+	r.printf("\nTotal: %s across %d accounts", asa.DisplayString(asa.AmountFromRaw(totalRaw, meta)), len(results))
+	if unqueried > 0 {
+		r.printf(", leaving out %d that could not be queried", unqueried)
+	}
+	r.println()
 }

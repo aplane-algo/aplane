@@ -248,6 +248,105 @@ func TestJSPluginErrorInALaterStepIsAnError(t *testing.T) {
 	}
 }
 
+// A result that reports failure but carries transactions or a continuation
+// breaks the plugin contract and is refused before the loop sees it
+// (apshellapp's result check), on every entry, with the plugin's own message
+// kept in the refusal: its transactions are never
+// reviewed or sent and its continuation is not run, so a retry after the
+// failure cannot broadcast them again. Refused in a continuation step, only
+// the earlier steps' transactions were sent, and plugin() lists them.
+func TestPluginFailedResultIsNeitherSubmittedNorContinued(t *testing.T) {
+	type run struct {
+		state   *REPLState
+		plugin  *scriptedPlugin
+		sent    *atomic.Int32
+		prompts *int
+	}
+	shell := func(t *testing.T, confirmed int32, results ...map[string]any) run {
+		t.Helper()
+		client, sent := confirmationFailingAlgod(t, confirmed)
+		state, scripted := scriptedPluginShellWithAlgod(t, client, results...)
+		prompts := new(int)
+		state.AutoConfirm, state.LineReader = false, func() (string, error) { *prompts++; return "y", nil }
+		return run{state: state, plugin: scripted, sent: sent, prompts: prompts}
+	}
+	check := func(t *testing.T, r run, wantSent int) {
+		t.Helper()
+		if got := r.sent.Load(); got != int32(wantSent) {
+			t.Errorf("groups sent = %d, want %d", got, wantSent)
+		}
+		if *r.prompts != wantSent {
+			t.Errorf("review prompts = %d, want %d: the failed result must not be reviewed", *r.prompts, wantSent)
+		}
+		if got := len(r.plugin.executeCalls()); got != wantSent+1 {
+			t.Errorf("plugin executed %d step(s), want %d: the failed result's continuation must not run", got, wantSent+1)
+		}
+	}
+	paths := map[string]func(t *testing.T, r run) string{
+		"REPL": func(t *testing.T, r run) string {
+			err := r.state.runCommand(Command{Name: "wf", Args: []string{"start"}})
+			if err == nil {
+				t.Fatal("runCommand() succeeded, want the refusal")
+			}
+			return err.Error()
+		},
+		"MCP": func(t *testing.T, r run) string {
+			var got struct {
+				Success bool   `json:"success"`
+				Message string `json:"message"`
+			}
+			text := mcpResultText(t, mcpExecuteCommand(r.state, Command{Name: "wf", Args: []string{"start"}}))
+			if err := json.Unmarshal([]byte(text), &got); err != nil || got.Success {
+				t.Fatalf("MCP result = %s, want a failure", text)
+			}
+			return got.Message
+		},
+		"JS": func(t *testing.T, r run) string {
+			out, err := runScript(t, r.state, `JSON.stringify(plugin("wf", "start"))`)
+			if err == nil {
+				t.Fatalf("plugin() = %s, want an error", out)
+			}
+			return err.Error()
+		},
+	}
+	failures := map[string]struct {
+		refusal string
+		result  func(t *testing.T) map[string]any
+	}{
+		"transactions": {"plugin returned transactions with success=false; it reported: slippage exceeded", func(t *testing.T) map[string]any {
+			step, _ := pregroupedStep(t, "fallback", map[string]any{"command": "wf", "args": []string{"_retry"}})
+			step["success"], step["message"] = false, "slippage exceeded"
+			return step
+		}},
+		"continuation only": {"plugin returned continuation with success=false; it reported: not yet", func(*testing.T) map[string]any {
+			return map[string]any{"success": false, "message": "not yet", "continuation": map[string]any{"command": "wf", "args": []string{"_retry"}}}
+		}},
+	}
+	for name, failure := range failures {
+		for path, execute := range paths {
+			t.Run(name+"/first step/"+path, func(t *testing.T) {
+				r := shell(t, 0, failure.result(t))
+				if got := execute(t, r); !strings.Contains(got, failure.refusal) {
+					t.Fatalf("%s reported %q, want the refusal %q", path, got, failure.refusal)
+				}
+				check(t, r, 0)
+			})
+			t.Run(name+"/continuation step/"+path, func(t *testing.T) {
+				first, ids := pregroupedStep(t, "fund", map[string]any{"command": "wf", "args": []string{"_claim"}})
+				r := shell(t, 1, first, failure.result(t))
+				got := execute(t, r)
+				if !strings.Contains(got, failure.refusal) {
+					t.Fatalf("%s reported %q, want the refusal %q", path, got, failure.refusal)
+				}
+				if path == "JS" && !strings.Contains(got, "; this run produced transaction(s) "+strings.Join(ids, ", ")) {
+					t.Fatalf("plugin() error = %q, want the first step's IDs %v listed", got, ids)
+				}
+				check(t, r, 1)
+			})
+		}
+	}
+}
+
 // pluginTestGenesis is the network the confirmation-test algod serves.
 var pluginTestGenesis = bytes.Repeat([]byte{7}, 32)
 

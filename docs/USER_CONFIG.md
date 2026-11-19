@@ -76,8 +76,10 @@ connection to its REST handler with that identity attached. There is no API
 token and no HTTP authentication header. Older `token_file`, `signer_port`,
 and `local_port` keys are ignored on load and dropped by the next write.
 Default client keys and host trust live under `$APCLIENT_DATA/.ssh/`.
-Explicit endpoint paths may select other operator-controlled files; an SSH
-agent is also supported by the first-party tunnel client.
+Explicit endpoint paths may select other operator-controlled files. A missing
+identity file is created on first use; when it cannot be created, `connect`
+and `enroll` fail with the reason and never use an SSH agent's keys in its
+place.
 
 `signer_status_poll_interval` controls interactive apshell's background
 authenticated `/status` checks. The default is `"10s"`. Use a larger duration
@@ -1197,7 +1199,7 @@ or `apadmin clients import <file>`).
 | Property | Value |
 |----------|-------|
 | Private key | `$APCLIENT_DATA/.ssh/id_ed25519` (mode `0600`) |
-| Accepted types | Ed25519, ECDSA (P-256/384/521), hardware-backed `sk-` Ed25519/ECDSA |
+| Accepted types | Ed25519, ECDSA (P-256/384/521), unencrypted (the node also accepts hardware-backed `sk-` keys, which apshell cannot use) |
 | Host trust | `$APCLIENT_DATA/.ssh/known_hosts` |
 
 ### Revocation

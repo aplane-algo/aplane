@@ -1106,7 +1106,7 @@ through `genstore.Mint`; no live signer store is being mutated.
 | `default.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; `aplane.policy.v1` documents whose `role` must match the node |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
 | Enrolled client registry | authoritative access list | `identities/default/.ssh/authorized_keys`, daemon-written; a key listed here authenticates as `client:<fingerprint>` |
-| SSH private key | client secret | client-side private-key file or SSH agent key; the client's only credential |
+| SSH private key | client secret | client-side private-key file (an SSH agent key only for a tunnel client given no identity file); the client's only credential |
 | Backup export passphrase | secret | protects `.apb` payloads |
 | Audit log | sensitive operational record | mode `0600`; append/rotate |
 | Public cosigner reference | public metadata | generation input only; not endpoint trust or ownership proof |
@@ -1329,7 +1329,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Endpoint alias | local identifier | map key under `endpoints` | endpoint lookup by alias | `internal/config`, `internal/apshellapp` | ASCII letters, digits, `.`, `_`, `-`; aliases are local, not exported. |
 | Endpoint record | authoritative routing record | `endpoints.<alias>` | endpoint connection profile | `internal/config`, `internal/engine/connect` | `ssh://` URL; identity file and known hosts resolve relative to `APCLIENT_DATA`; unknown keys, the retired `signer_port`, `local_port`, and `token_file` among them, fail the load. |
 | Live cosigner inventory | routing metadata | authenticated `/keys` responses | operation-scoped route snapshot | `internal/engine/cosigned` | Keyed by embedded public key hex; never persisted and not ownership proof. |
-| Client SSH identity | client secret | `.ssh/id_ed25519` (endpoint `identity_file`) or an SSH agent key | SSH tunnel private key | `internal/sshtunnel`, `internal/engine/connect` | The client's only credential; enrolled per node through `enroll` (operator approval later) or operator import. |
+| Client SSH identity | client secret | `.ssh/id_ed25519` (endpoint `identity_file`); an SSH agent key only for a tunnel client given no identity file | SSH tunnel private key | `internal/sshtunnel`, `internal/engine/connect` | The client's only credential; enrolled per node through `enroll` (operator approval later) or operator import. Created on first use; a failure to create it is an error, not a switch to the agent's keys. |
 | Known hosts | trust store | `.ssh/known_hosts` or endpoint override | SSH host-key verification | `internal/sshtunnel`, `internal/clientenroll`, `cmd/apconsole` | Host trust is not imported through endpoint envelope. |
 | Client mutation lock | local coordination | `.apclient.lock` | cache/config mutation serialization | `internal/clientdata` (lock ownership), used by `internal/clientstate` and `internal/config` | Prevents concurrent local writers from corrupting client state. |
 | MCP config | client config | `.mcp.json`, `.codex/config.toml` | installed MCP command registration | installer, `cmd/apshell` | Installer preserves existing files and writes `.aplane-installer.new` templates when needed. |

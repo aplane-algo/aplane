@@ -459,6 +459,16 @@ asset that does not resolve is refused, in the shell and through MCP. Through
 MCP, the balance of one account with no asset lists every holding in
 `assets`, as the shell shows them; with an ASA, only that asset's entry.
 
+For a set (`@all`, `@signers`, `@setname`), an account whose balance query
+fails (a rate-limited or unreachable node) is a warning naming the account and
+the error, and the total says how many accounts it leaves out. Through MCP the
+result is `{ balances, warnings }`: `balances` lists the accounts that
+answered, and each failed account is a `balance_query_failed` warning. When no
+account of the set can be queried, or the set has no accounts, the command
+fails, in the shell and through MCP. `@holders(<asset>)` is an exception: a
+set that drives sends and sweeps must be complete, so it fails, naming each
+account it could not query.
+
 **Aliases:** `bal`
 
 **Examples:**
@@ -478,6 +488,10 @@ Show accounts with non-zero balance for an asset.
 ```
 holders [asset]
 ```
+
+An account whose query fails is a warning, as in `balance @all`, and the
+total leaves it out; through MCP each is a `balance_query_failed` warning in
+`warnings`. When no known account can be queried, the command fails.
 
 **Examples:**
 ```
@@ -888,9 +902,10 @@ importing its public key file in apadmin (`i` on Enrolled Clients) or with
 `apadmin clients import`. `endpoints public-key` prints the client's key in the
 form the operator needs, as often as you like, and never creates a key.
 
-The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
-hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
-Ed25519. RSA and DSA keys fail SSH authentication, for `enroll`
+The client SSH key must be an unencrypted Ed25519 or ECDSA (P-256/384/521)
+key file. The node also accepts hardware-backed `sk-` Ed25519/ECDSA keys from
+SSH clients that can use them, which apshell cannot. The default generated key
+is Ed25519. RSA and DSA keys fail SSH authentication, for `enroll`
 and `connect` alike, before any approval prompt.
 
 The positional one-off host form is no longer supported. Import or configure

@@ -79,7 +79,7 @@ func startREPL(network string, config config.Config, dataDir string) {
 	}
 	printInteractiveStartupConnectionStatus(state)
 
-	rl, err := readline.NewEx(state.newReadlineConfig())
+	rl, err := newReadlineWithPrivateHistory(state.newReadlineConfig())
 	if err != nil {
 		fmt.Printf("Failed to create readline instance, falling back to basic input: %v\n", err)
 		startBasicREPL(state)

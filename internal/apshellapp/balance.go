@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
@@ -67,8 +68,9 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 	}
 
 	if len(account) > 0 && account[0] == '@' {
-		resolver := a.eng.NewAddressResolver()
-		addresses, err := resolver.ResolveList([]string{account})
+		// A set with no accounts is an error, as for every command over a
+		// set, in the shell and through MCP alike.
+		addresses, err := cmdspec.ResolveAddressList([]string{account}, a.eng.NewAddressResolver())
 		if err != nil {
 			return nil, err
 		}
@@ -80,12 +82,20 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 			return nil, err
 		}
 		balances := make([]*BalanceDetails, 0, len(addresses))
+		var failures []engine.AccountQueryFailure
 		for _, address := range addresses {
 			balanceResult, balanceErr := a.eng.GetBalance(ctx, address)
 			if balanceErr != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil, ctxErr
+				}
+				failures = append(failures, engine.AccountQueryFailure{Address: address, Alias: a.eng.GetAliasForAddress(address), Err: balanceErr})
 				continue
 			}
 			balances = append(balances, balanceDetailsFromEngine(balanceResult))
+		}
+		if len(failures) == len(addresses) {
+			return nil, engine.NoAccountQueriedError(failures)
 		}
 		return &BalanceCommandResult{
 			Mode:           BalanceModeMulti,
@@ -93,6 +103,7 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 			AssetSpecified: assetSpecified,
 			Addresses:      addresses,
 			Balances:       balances,
+			Warnings:       a.balanceQueryWarnings(failures),
 		}, nil
 	}
 
@@ -128,4 +139,18 @@ func (a *App) resolveShownAsset(ref string) (asa.Metadata, error) {
 		return asa.Metadata{}, fmt.Errorf("unknown asset '%s': %w", ref, err)
 	}
 	return meta, nil
+}
+
+// balanceQueryWarnings are the failed queries of a read of several accounts,
+// one balance_query_failed warning for each account, naming it and the error,
+// so that the accounts shown and their total are known to leave it out.
+func (a *App) balanceQueryWarnings(failures []engine.AccountQueryFailure) []Warning {
+	var warnings []Warning
+	for _, failure := range failures {
+		warnings = append(warnings, Warning{
+			Code:    "balance_query_failed",
+			Message: fmt.Sprintf("could not query %s: %v", failure.Label(), failure.Err),
+		})
+	}
+	return warnings
 }

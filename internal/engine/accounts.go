@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
@@ -336,13 +337,53 @@ func (e *Engine) GetSignableAddresses() []string {
 	return signableAddresses
 }
 
-// HoldersResult returns addresses with non-zero balance plus query diagnostics.
+// HoldersResult is the accounts holding an asset: their addresses, the
+// balances GetHolders read to find them, in the same order, and the accounts
+// whose query failed, which it could not tell either way.
 type HoldersResult struct {
-	Addresses   []string
-	QueryErrors int
+	Addresses []string
+	Balances  []*BalanceResult
+	Failures  []AccountQueryFailure
 }
 
-// GetHolders returns addresses with non-zero balance of the specified asset.
+// AccountQueryFailure is an account whose algod account query failed, with
+// its alias, if it has one, to name it by.
+type AccountQueryFailure struct {
+	Address string
+	Alias   string
+	Err     error
+}
+
+// Label names the account as "alias (address)", or by its address alone when
+// it has no alias.
+func (f AccountQueryFailure) Label() string {
+	if f.Alias == "" {
+		return f.Address
+	}
+	return f.Alias + " (" + f.Address + ")"
+}
+
+// NoAccountQueriedError is the error of a read of several accounts in which
+// every account's query failed: the count and the first failure, which it
+// wraps. failures must not be empty.
+func NoAccountQueriedError(failures []AccountQueryFailure) error {
+	return fmt.Errorf("none of the %d account(s) could be queried: %s: %w", len(failures), failures[0].Label(), failures[0].Err)
+}
+
+// AccountsNotQueriedError is the error of a read of several accounts that must
+// be complete, in which some accounts' queries failed: it names each of them
+// and wraps the first failure. failures must not be empty.
+func AccountsNotQueriedError(failures []AccountQueryFailure) error {
+	labels := make([]string, len(failures))
+	for i, failure := range failures {
+		labels[i] = failure.Label()
+	}
+	return fmt.Errorf("could not query %d account(s), %s: %w", len(failures), strings.Join(labels, ", "), failures[0].Err)
+}
+
+// GetHolders returns the known accounts with a non-zero balance of the
+// specified asset, with the balances it read, and the accounts whose query
+// failed. It fails when no account could be queried, and when ctx ends.
 // assetRef can be "algo", an ASA ID, or an ASA unit name.
 func (e *Core) GetHolders(ctx context.Context, assetRef string) (*HoldersResult, error) {
 	if e.AlgodClient == nil {
@@ -371,30 +412,37 @@ func (e *Core) GetHolders(ctx context.Context, assetRef string) (*HoldersResult,
 	}
 
 	// Check each address for non-zero balance
-	var holders []string
-	var queryErrors int
+	holders := &HoldersResult{}
 	for _, addr := range addresses {
 		result, err := e.GetAccountBalanceRaw(ctx, addr)
 		if err != nil {
-			queryErrors++
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			holders.Failures = append(holders.Failures, AccountQueryFailure{Address: addr, Alias: e.AliasCache.GetAliasForAddress(addr), Err: err})
 			continue
 		}
 
-		if isAlgo {
-			if result.AlgoBalance > 0 {
-				holders = append(holders, addr)
-			}
-		} else {
+		holds := isAlgo && result.AlgoBalance > 0
+		if !isAlgo {
 			for _, asset := range result.Assets {
 				if asset.AssetID == asaID && asset.Amount > 0 {
-					holders = append(holders, addr)
+					holds = true
 					break
 				}
 			}
 		}
+		if holds {
+			result.Alias = e.AliasCache.GetAliasForAddress(addr)
+			holders.Addresses = append(holders.Addresses, addr)
+			holders.Balances = append(holders.Balances, result)
+		}
+	}
+	if len(holders.Failures) == len(addresses) {
+		return nil, NoAccountQueriedError(holders.Failures)
 	}
 
-	return &HoldersResult{Addresses: holders, QueryErrors: queryErrors}, nil
+	return holders, nil
 }
 
 // GetParticipationStatus returns the consensus participation status for an address

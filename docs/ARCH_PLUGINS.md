@@ -444,6 +444,14 @@ Called to run a specific command.
 - optional `pluginSigners`, required for every plugin-owned slot under
   `presign-plan`
 
+A result with `success: false` ends the run. It may carry `message`, `data`
+and `presentation`, but not `transactions` or a `continuation`: apshell refuses
+such a result, the first or a continuation's, before its review
+(`apshellapp/plugincmds.go::validatePluginResult`), so nothing it carries is
+reviewed or submitted and no further step runs. The refusal ends with the
+plugin's `message` ("...; it reported: <message>"), so the user still sees
+why the plugin failed.
+
 **Presentation Notes:**
 
 - `data` is the canonical machine-readable result payload.

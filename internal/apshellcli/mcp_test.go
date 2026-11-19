@@ -58,15 +58,7 @@ func TestMCPStructuredKeyregPasteBlocked(t *testing.T) {
 }
 
 func TestMCPBalanceParsesAssetOnlyQueryLikeREPL(t *testing.T) {
-	eng, err := newIsolatedTestEngine(t, "testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
-	state.CommandRegistry = state.initCommandRegistry()
-	if _, err := eng.AddAliasWithContext(context.Background(), "alice", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"); err != nil {
-		t.Fatalf("AddAlias() error = %v", err)
-	}
+	state, _, _ := balanceQueryShell(t, map[string]string{"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}, nil)
 
 	result, err := state.app().Balance(context.Background(), apshellapp.BalanceRequest{Args: []string{"usdc"}})
 	if err != nil {
