@@ -140,15 +140,7 @@ func (e *Engine) RefreshAuthCache(ctx context.Context) error {
 	}
 
 	cache.Debug("refreshing auth address cache", "network", e.Network)
-	return e.withClientDataLock(func() error {
-		if e.DataDir != "" {
-			e.AliasCache = cache.LoadAliasCacheFromStore(e.CacheStore)
-		}
-		e.signerCacheMu.RLock()
-		defer e.signerCacheMu.RUnlock()
-		e.AuthCache = cache.BuildAuthCacheFromStoreWithContext(ctx, e.CacheStore, e.AlgodClient, &e.AliasCache, &e.SignerCache, e.Network)
-		return nil
-	})
+	return e.rebuildAuthCache(ctx)
 }
 
 // IsRekeyed checks if an address is rekeyed and returns the auth address if so

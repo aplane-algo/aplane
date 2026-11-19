@@ -50,16 +50,13 @@ func (cache *AuthAddressCache) SaveCache(network string) error {
 	return cache.persistCache(network)
 }
 
-// BuildAuthCacheFromStore builds the auth cache using the provided store.
-func BuildAuthCacheFromStore(store *Store, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
-	return BuildAuthCacheFromStoreWithContext(context.Background(), store, algodClient, aliasCache, signerCache, network)
-}
-
-func BuildAuthCacheFromStoreWithContext(ctx context.Context, store *Store, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
-	return buildAuthCacheFromStore(ctx, store, algodClient, aliasCache, signerCache, network)
-}
-
-func buildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
+// BuildAuthCacheFromStore rebuilds the network's auth-address cache in store
+// for addresses, the client's known accounts: each is queried on algod with
+// ctx, an entry for any other address is pruned, and the result is saved. An
+// address whose query fails keeps the entry it had on disk. Nil algodClient
+// returns the cache as loaded. The caller holds the client-data lock, so no
+// other process writes the file between the load and the save.
+func BuildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *algod.Client, addresses map[string]bool, network string) AuthAddressCache {
 	// Load existing cache from disk
 	cache := LoadAuthCacheFromStore(store, network)
 
@@ -67,31 +64,16 @@ func buildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *alg
 		return cache
 	}
 
-	// Build superset of addresses to check: aliases + signer accounts
-	addressesToCheck := make(map[string]bool)
-
-	// Add all aliases
-	for _, addr := range aliasCache.Aliases {
-		addressesToCheck[addr] = true
-	}
-
-	// Add all signer accounts (if connected)
-	if signerCache != nil {
-		for addr := range signerCache.Keys {
-			addressesToCheck[addr] = true
-		}
-	}
-
-	if len(addressesToCheck) == 0 {
+	if len(addresses) == 0 {
 		cache.ensureInitialized()
 		cache.AuthAddresses = make(map[string]string)
 		_ = cache.SaveCache(network)
 		return cache
 	}
 
-	Debug("building auth address cache", "network", network, "addresses", len(addressesToCheck))
-	updates := make(map[string]string, len(addressesToCheck))
-	for address := range addressesToCheck {
+	Debug("building auth address cache", "network", network, "addresses", len(addresses))
+	updates := make(map[string]string, len(addresses))
+	for address := range addresses {
 		acctInfo, err := algodClient.AccountInformation(address).Do(ctx)
 		if err != nil {
 			// If account doesn't exist or query fails, skip it
@@ -113,7 +95,7 @@ func buildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *alg
 		cache.AuthAddresses[address] = authAddr
 	}
 	for address := range cache.AuthAddresses {
-		if !addressesToCheck[address] {
+		if !addresses[address] {
 			delete(cache.AuthAddresses, address)
 		}
 	}

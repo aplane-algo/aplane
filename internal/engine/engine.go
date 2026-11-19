@@ -161,8 +161,10 @@ func (e *Core) GetSimulate() bool {
 }
 
 // SetNetwork switches to a different Algorand network, updates the algod client,
-// and rebuilds the ASA and auth caches for the new network.
-func (e *Core) SetNetwork(network string, algodClient *algod.Client) error {
+// and rebuilds the ASA and auth caches for the new network, querying algod
+// with ctx. The switch does not fail on the auth cache: when it cannot be
+// rebuilt, the new network's cache is loaded as it is on disk.
+func (e *Core) SetNetwork(ctx context.Context, network string, algodClient *algod.Client) error {
 	if err := config.ValidateNetworkID(network); err != nil {
 		return fmt.Errorf("%w: %s", ErrInvalidNetwork, err)
 	}
@@ -171,14 +173,34 @@ func (e *Core) SetNetwork(network string, algodClient *algod.Client) error {
 	e.Network = network
 	e.AlgodClient = algodClient
 	e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, network)
-	// RLock covers the SignerCache read inside BuildAuthCacheFromStore against a
-	// concurrent disconnect reset; the cache assignments themselves are
-	// command-goroutine-confined (see clientstate.State).
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	e.AuthCache = cache.BuildAuthCacheFromStore(e.CacheStore, algodClient, &e.AliasCache, &e.SignerCache, network)
+	if err := e.rebuildAuthCache(ctx); err != nil {
+		cache.Debug("failed to rebuild auth cache", "network", network, "error", err)
+		e.AuthCache = cache.LoadAuthCacheFromStore(e.CacheStore, network)
+	}
 
 	return nil
+}
+
+// rebuildAuthCache rebuilds the active network's auth cache from algod, with
+// ctx, for every account the client knows: the alias book's and the signer's.
+// It runs under the client-data lock, as every auth-cache write does, so a
+// write another process makes is not lost; the alias book is reloaded under
+// it. The signer's addresses are copied under signerCacheMu, which is
+// released before algod is queried, so a tunnel disconnect, which resets the
+// signer cache from the tunnel's monitor goroutine, never waits on the
+// queries.
+func (e *Core) rebuildAuthCache(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return e.withClientDataLock(func() error {
+		if e.DataDir != "" {
+			e.AliasCache = cache.LoadAliasCacheFromStore(e.CacheStore)
+		}
+		addresses := e.collectAllAddresses()
+		e.AuthCache = cache.BuildAuthCacheFromStore(ctx, e.CacheStore, e.AlgodClient, addresses, e.Network)
+		return nil
+	})
 }
 
 // GetNetwork returns the current network

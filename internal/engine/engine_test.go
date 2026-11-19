@@ -4,10 +4,21 @@
 package engine
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/clientdata"
 )
 
 var testCacheStore *cache.Store
@@ -136,7 +147,7 @@ func TestSetNetwork(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := eng.SetNetwork(tt.network, nil)
+			err := eng.SetNetwork(context.Background(), tt.network, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("SetNetwork() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -195,7 +206,7 @@ func TestSetNetworkLoadsPerNetworkCachesWithoutBleedThrough(t *testing.T) {
 		t.Fatal("unexpected mainnet auth entry present in testnet cache")
 	}
 
-	if err := eng.SetNetwork("mainnet", nil); err != nil {
+	if err := eng.SetNetwork(context.Background(), "mainnet", nil); err != nil {
 		t.Fatalf("SetNetwork(mainnet) error = %v", err)
 	}
 	if _, ok := eng.AsaCache.Assets[999002]; !ok {
@@ -211,7 +222,7 @@ func TestSetNetworkLoadsPerNetworkCachesWithoutBleedThrough(t *testing.T) {
 		t.Fatal("unexpected testnet auth entry present after switching to mainnet")
 	}
 
-	if err := eng.SetNetwork("testnet", nil); err != nil {
+	if err := eng.SetNetwork(context.Background(), "testnet", nil); err != nil {
 		t.Fatalf("SetNetwork(testnet) error = %v", err)
 	}
 	if _, ok := eng.AsaCache.Assets[999001]; !ok {
@@ -225,6 +236,181 @@ func TestSetNetworkLoadsPerNetworkCachesWithoutBleedThrough(t *testing.T) {
 	}
 	if _, ok := eng.AuthCache.GetAuthAddress("ADDR_MAIN"); ok {
 		t.Fatal("unexpected mainnet auth entry present after switching back to testnet")
+	}
+}
+
+// authRebuildNode is an algod whose account queries report authAddr for
+// every account. When gate is set, each query first signals queried and then
+// waits for gate to close.
+type authRebuildNode struct {
+	authAddr string
+	queried  chan struct{}
+	gate     chan struct{}
+	queries  atomic.Int32
+}
+
+func (n *authRebuildNode) serve(t *testing.T) *algod.Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/v2/accounts/") {
+			http.NotFound(w, r)
+			return
+		}
+		n.queries.Add(1)
+		if n.gate != nil {
+			select {
+			case n.queried <- struct{}{}:
+			default:
+			}
+			<-n.gate
+		}
+		address := strings.TrimPrefix(r.URL.Path, "/v2/accounts/")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.Account{Address: address, AuthAddr: n.authAddr})
+	}))
+	t.Cleanup(server.Close)
+	client, err := algod.MakeClient(server.URL, "")
+	if err != nil {
+		t.Fatalf("algod.MakeClient() error = %v", err)
+	}
+	return client
+}
+
+func authRebuildEngine(t *testing.T, dataDir, address string, client *algod.Client) *Engine {
+	t.Helper()
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(address, "ed25519")
+	eng, err := NewEngine("testnet",
+		WithDataDir(dataDir),
+		WithCacheStore(cache.NewStore(dataDir)),
+		WithAlgodClient(client),
+		WithSignerCache(signerCache),
+	)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	return eng
+}
+
+// A network switch rebuilds the auth cache under the client-data lock, as
+// every other auth-cache write does: while another holder has the lock, the
+// switch waits, so it cannot save over a write the holder makes.
+func TestSetNetworkRebuildsTheAuthCacheUnderTheClientDataLock(t *testing.T) {
+	dataDir := t.TempDir()
+	account, authorizer := testAddress(70).String(), testAddress(71).String()
+	node := &authRebuildNode{authAddr: authorizer}
+	client := node.serve(t)
+	eng := authRebuildEngine(t, dataDir, account, client)
+
+	held, release := make(chan struct{}), make(chan struct{})
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- clientdata.WithExclusiveLock(dataDir, func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+
+	switched := make(chan error, 1)
+	go func() { switched <- eng.SetNetwork(context.Background(), "testnet", client) }()
+	select {
+	case err := <-switched:
+		close(release)
+		t.Fatalf("SetNetwork() returned (%v) while another holder had the client-data lock", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if got := node.queries.Load(); got != 0 {
+		t.Errorf("algod account queries before the lock was free = %d, want 0", got)
+	}
+	close(release)
+	if err := <-holderDone; err != nil {
+		t.Fatalf("lock holder error = %v", err)
+	}
+	select {
+	case err := <-switched:
+		if err != nil {
+			t.Fatalf("SetNetwork() error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("SetNetwork() did not finish after the lock was released")
+	}
+	if got, ok := eng.AuthCache.GetAuthAddress(account); !ok || got != authorizer {
+		t.Fatalf("auth cache entry = (%q, %v), want (%q, true)", got, ok, authorizer)
+	}
+	saved := cache.LoadAuthCacheFromStore(cache.NewStore(dataDir), "testnet")
+	if got, ok := saved.GetAuthAddress(account); !ok || got != authorizer {
+		t.Fatalf("saved auth cache entry = (%q, %v), want (%q, true)", got, ok, authorizer)
+	}
+}
+
+// The auth-cache rebuild copies the signer's addresses and lets go of the
+// signer cache before it queries algod, so a tunnel disconnect, which resets
+// the signer cache from the tunnel's monitor goroutine, does not wait for the
+// queries to finish. Both entry points share the rebuild.
+func TestAuthCacheRebuildLeavesTheSignerCacheFreeDuringQueries(t *testing.T) {
+	for name, rebuild := range map[string]func(*Engine, *algod.Client) error{
+		"SetNetwork": func(eng *Engine, client *algod.Client) error {
+			return eng.SetNetwork(context.Background(), "testnet", client)
+		},
+		"RefreshAuthCache": func(eng *Engine, _ *algod.Client) error {
+			return eng.RefreshAuthCache(context.Background())
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			node := &authRebuildNode{queried: make(chan struct{}, 1), gate: make(chan struct{})}
+			client := node.serve(t)
+			eng := authRebuildEngine(t, t.TempDir(), testAddress(72).String(), client)
+			var once atomic.Bool
+			open := func() {
+				if once.CompareAndSwap(false, true) {
+					close(node.gate)
+				}
+			}
+			defer open()
+
+			rebuilt := make(chan error, 1)
+			go func() { rebuilt <- rebuild(eng, client) }()
+			select {
+			case <-node.queried:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the rebuild never queried algod")
+			}
+
+			reset := make(chan struct{})
+			go func() {
+				eng.resetSignerCache(false)
+				close(reset)
+			}()
+			select {
+			case <-reset:
+			case <-time.After(2 * time.Second):
+				t.Error("a signer-cache reset waited on the rebuild's algod queries")
+			}
+			open()
+			if err := <-rebuilt; err != nil {
+				t.Fatalf("rebuild error = %v", err)
+			}
+			<-reset
+		})
+	}
+}
+
+// The rebuild queries algod with the caller's context: a cancelled one sends
+// no query, and the switch still completes.
+func TestSetNetworkQueriesAlgodWithTheCallersContext(t *testing.T) {
+	node := &authRebuildNode{}
+	client := node.serve(t)
+	eng := authRebuildEngine(t, t.TempDir(), testAddress(73).String(), client)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := eng.SetNetwork(ctx, "testnet", client); err != nil {
+		t.Fatalf("SetNetwork() error = %v", err)
+	}
+	if got := node.queries.Load(); got != 0 {
+		t.Fatalf("algod account queries with a cancelled context = %d, want 0", got)
 	}
 }
 

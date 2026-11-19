@@ -148,7 +148,7 @@ func TestSetNetworkInvalidatesConsensusValidation(t *testing.T) {
 	if err := eng.validateAlgodConsensus(context.Background()); err != nil {
 		t.Fatalf("first validateAlgodConsensus() error = %v", err)
 	}
-	if err := eng.SetNetwork("mainnet", client2); err != nil {
+	if err := eng.SetNetwork(context.Background(), "mainnet", client2); err != nil {
 		t.Fatalf("SetNetwork() error = %v", err)
 	}
 	if err := eng.validateAlgodConsensus(context.Background()); err != nil {

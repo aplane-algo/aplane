@@ -5,6 +5,7 @@ package cache
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -488,16 +489,10 @@ func TestLoadAuthCacheInvalidJSON(t *testing.T) {
 // TestBuildAuthCacheNilClient verifies handling of nil algod client
 func TestBuildAuthCacheNilClient(t *testing.T) {
 
-	aliasCache := &AliasCache{
-		Aliases: map[string]string{"alice": "ALICE_ADDR"},
-	}
-
-	signerCache := &SignerCache{
-		Keys: map[string]string{"SIGNER_ADDR": "ed25519"},
-	}
+	addresses := map[string]bool{"ALICE_ADDR": true, "SIGNER_ADDR": true}
 
 	// Should not crash with nil client
-	cache := BuildAuthCacheFromStore(nil, nil, aliasCache, signerCache, "testnet")
+	cache := BuildAuthCacheFromStore(context.Background(), nil, nil, addresses, "testnet")
 
 	if cache.AuthAddresses == nil {
 		t.Fatal("Cache should be initialized")
@@ -509,19 +504,11 @@ func TestBuildAuthCacheNilClient(t *testing.T) {
 	}
 }
 
-// TestBuildAuthCacheEmptyInputs verifies handling of empty alias/signer caches
+// TestBuildAuthCacheEmptyInputs verifies handling of an empty address set
 func TestBuildAuthCacheEmptyInputs(t *testing.T) {
 
-	emptyAliasCache := &AliasCache{
-		Aliases: map[string]string{},
-	}
-
-	emptySignerCache := &SignerCache{
-		Keys: map[string]string{},
-	}
-
 	// Should handle empty inputs gracefully
-	cache := BuildAuthCacheFromStore(nil, nil, emptyAliasCache, emptySignerCache, "testnet")
+	cache := BuildAuthCacheFromStore(context.Background(), nil, nil, map[string]bool{}, "testnet")
 
 	if cache.AuthAddresses == nil {
 		t.Fatal("Cache should be initialized")
@@ -539,17 +526,11 @@ func TestBuildAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t *testing
 		t.Fatalf("SaveCache(existing) error = %v", err)
 	}
 
-	aliasCache := &AliasCache{
-		Aliases: map[string]string{"alice": "CURRENT_ADDR"},
-	}
-	signerCache := &SignerCache{
-		Keys: map[string]string{},
-	}
 	algodClient := newBuildAuthCacheTestAlgodClient(t, map[string]string{
 		"CURRENT_ADDR": "FRESH_AUTH",
 	})
 
-	built := BuildAuthCacheFromStore(store, algodClient, aliasCache, signerCache, network)
+	built := BuildAuthCacheFromStore(context.Background(), store, algodClient, map[string]bool{"CURRENT_ADDR": true}, network)
 
 	if got, ok := built.GetAuthAddress("STALE_ADDR"); ok {
 		t.Fatalf("stale auth cache entry = %q, want pruned", got)

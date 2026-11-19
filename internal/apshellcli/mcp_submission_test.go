@@ -119,7 +119,7 @@ func newSubmitFixture(t *testing.T, mode string) *submitFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := eng.SetNetwork("testnet", client); err != nil {
+	if err := eng.SetNetwork(context.Background(), "testnet", client); err != nil {
 		t.Fatal(err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
