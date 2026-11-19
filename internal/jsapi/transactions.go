@@ -60,7 +60,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 	to := a.stringArg(call, 1)
 	amount := toUint64(a.runtime, call.Arguments[2])
 
-	opts := a.parseTxnOptions(call, 3, "send()")
+	opts := a.parseNotedTxnOptions(call, 3, "send()")
 
 	fromAddr, _, err := a.engine.ResolveAddress(from)
 	if err != nil {
@@ -151,7 +151,7 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 	for _, item := range result.Items {
 		items = append(items, map[string]interface{}{
 			"from":      item.From,
-			"amount":    item.Amount,
+			"amount":    jsUint(item.Amount),
 			"txid":      item.TxID,
 			"confirmed": item.Confirmed,
 			"skipped":   item.Skipped,
@@ -159,7 +159,7 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 		})
 	}
 	return a.runtime.ToValue(map[string]interface{}{
-		"asset":     result.AssetID,
+		"asset":     jsUint(result.AssetID),
 		"to":        result.To,
 		"simulated": result.Simulated,
 		"succeeded": result.Succeeded,
@@ -176,7 +176,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 	assetID := toUint64(a.runtime, call.Arguments[2])
 	amount := toUint64(a.runtime, call.Arguments[3])
 
-	opts := a.parseTxnOptions(call, 4, "sendAsset()")
+	opts := a.parseNotedTxnOptions(call, 4, "sendAsset()")
 
 	fromAddr, _, err := a.engine.ResolveAddress(from)
 	if err != nil {
@@ -400,9 +400,9 @@ func (a *API) jsParticipation(call goja.FunctionCall) goja.Value {
 		"voteKey":           result.VoteKey,
 		"selectionKey":      result.SelectionKey,
 		"stateProofKey":     result.StateProofKey,
-		"voteFirstValid":    result.VoteFirstValid,
-		"voteLastValid":     result.VoteLastValid,
-		"voteKeyDilution":   result.VoteKeyDilution,
+		"voteFirstValid":    jsUint(result.VoteFirstValid),
+		"voteLastValid":     jsUint(result.VoteLastValid),
+		"voteKeyDilution":   jsUint(result.VoteKeyDilution),
 		"incentiveEligible": result.IncentiveEligible,
 	})
 }

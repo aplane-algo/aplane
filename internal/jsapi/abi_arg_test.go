@@ -320,7 +320,9 @@ func TestJSOptionObjectsRefuseUnknownKeys(t *testing.T) {
 		if err != nil {
 			t.Fatalf("run %s: %v", options, err)
 		}
-		return jsError(func() { api.parseTxnOptions(goja.FunctionCall{Arguments: []goja.Value{v}}, 0, "send()", extra...) })
+		return jsError(func() {
+			api.parseNotedTxnOptions(goja.FunctionCall{Arguments: []goja.Value{v}}, 0, "send()", extra...)
+		})
 	}
 	for _, options := range []string{`{}`, `{fee: 2000, wait: false, note: "x"}`, `{note: undefined}`} {
 		if err := parse(options); err != nil {

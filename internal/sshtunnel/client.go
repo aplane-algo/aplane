@@ -4,6 +4,7 @@
 package sshtunnel
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -115,10 +116,12 @@ type Client struct {
 	closeChan chan struct{}
 
 	// Connection monitoring
-	keepaliveStop    *keepaliveStopSignal // Signal to stop keepalive goroutine
-	onDisconnect     func()               // Callback when connection dies
-	disconnectReason string               // Set by server before closing (e.g. "key-revoked")
-	interceptDone    chan struct{}        // Closed once the global-request interceptor has drained
+	keepaliveInterval time.Duration        // Tests may shorten keepaliveInterval
+	keepaliveTimeout  time.Duration        // Tests may shorten keepaliveReplyTimeout
+	keepaliveStop     *keepaliveStopSignal // Signal to stop keepalive goroutine
+	onDisconnect      func()               // Callback when connection dies
+	disconnectReason  string               // Set by server before closing (e.g. "key-revoked")
+	interceptDone     chan struct{}        // Closed once the global-request interceptor has drained
 }
 
 // DisconnectReasonKeyRevoked is the disconnect reason recorded when the server
@@ -138,12 +141,14 @@ const forwardedAPIAddress = "127.0.0.1:11270"
 // knownHostsPath: path to known_hosts file
 func NewClient(host string, sshPort int, identityFile, knownHostsPath string) *Client {
 	return &Client{
-		host:           host,
-		sshPort:        sshPort,
-		identityFile:   identityFile,
-		knownHostsPath: knownHostsPath,
-		closeChan:      make(chan struct{}),
-		keepaliveStop:  newKeepaliveStopSignal(),
+		host:              host,
+		sshPort:           sshPort,
+		identityFile:      identityFile,
+		knownHostsPath:    knownHostsPath,
+		closeChan:         make(chan struct{}),
+		keepaliveInterval: keepaliveInterval,
+		keepaliveTimeout:  keepaliveReplyTimeout,
+		keepaliveStop:     newKeepaliveStopSignal(),
 	}
 }
 
@@ -360,10 +365,27 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		}
 		existingCallback = callback
 	}
-	var approvalOnce sync.Once
+	// The callback runs at every key exchange of the connection, rekeys
+	// included, but known_hosts was read before the first one. So the host
+	// key the user approves is remembered here: a later exchange accepts that
+	// key and nothing else, and the user is asked at most once.
+	var (
+		approvalMu  sync.Mutex
+		prompted    bool
+		approvedKey []byte
+	)
 
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		fingerprint := ssh.FingerprintSHA256(key)
+
+		approvalMu.Lock()
+		defer approvalMu.Unlock()
+		if approvedKey != nil {
+			if bytes.Equal(key.Marshal(), approvedKey) {
+				return nil
+			}
+			return fmt.Errorf("%w for %s: the key changed after it was approved (possible MITM attack)", ErrHostKeyMismatch, hostname)
+		}
 
 		// Check against existing known_hosts if available
 		if existingCallback != nil {
@@ -392,12 +414,11 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		}
 
 		// Prompt user for approval (only once per connection attempt)
-		var approved bool
-		var approvalErr error
-		approvalOnce.Do(func() {
-			approved, approvalErr = handler(hostname, fingerprint)
-		})
-
+		if prompted {
+			return fmt.Errorf("host key rejected by user")
+		}
+		prompted = true
+		approved, approvalErr := handler(hostname, fingerprint)
 		if approvalErr != nil {
 			return fmt.Errorf("host key approval failed: %w", approvalErr)
 		}
@@ -410,6 +431,7 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 			return fmt.Errorf("failed to save host key: %w", err)
 		}
 		logger().Info("host key saved", "path", knownHostsPath)
+		approvedKey = key.Marshal()
 
 		return nil
 	}, nil
@@ -524,28 +546,6 @@ func (c *Client) IsConnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.connected
-}
-
-// CheckConnection actively tests the SSH connection by sending a keepalive
-func (c *Client) CheckConnection() error {
-	c.mu.Lock()
-	sshClient := c.sshClient
-	c.mu.Unlock()
-
-	if sshClient == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	// Try to send a keepalive request
-	_, _, err := sshClient.SendRequest("keepalive@openssh.com", true, nil)
-	if err != nil {
-		c.mu.Lock()
-		c.connected = false
-		c.mu.Unlock()
-		return fmt.Errorf("connection dead: %w", err)
-	}
-
-	return nil
 }
 
 // DialSignerAPI opens one context-bounded SSH channel to the node's REST
@@ -721,8 +721,10 @@ func enrollmentCommandLine(label string) string {
 
 // monitorConnection monitors the SSH connection and detects when it dies
 // It runs two detection mechanisms:
-// 1. SSH keepalive pings every 15 seconds
-// 2. Wait for SSH connection to close (detects server shutdown)
+//  1. SSH keepalive pings every keepaliveInterval; a ping with no reply within
+//     keepaliveTimeout closes the connection (detects a server that went
+//     silent: a partition, a suspended VM)
+//  2. Wait for SSH connection to close (detects server shutdown)
 func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, keepaliveStop *keepaliveStopSignal) {
 	// Start keepalive goroutine
 	keepaliveDone := make(chan struct{})
@@ -734,7 +736,7 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 				c.handleDisconnect()
 			}
 		}()
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(c.keepaliveInterval)
 		defer ticker.Stop()
 
 		for {
@@ -744,12 +746,32 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 			case <-keepaliveStop.done():
 				return
 			case <-ticker.C:
-				// Send keepalive request
-				_, _, err := sshClient.SendRequest("keepalive@openssh.com", true, nil)
-				if err != nil {
-					// Connection is dead
-					logger().Warn("keepalive failed", "error", err)
+				// SendRequest waits for the reply until the connection closes,
+				// which TCP may take many minutes to notice, so it runs aside
+				// and the reply is awaited under a timer, as the server's
+				// monitorClientConnection does. Closing the connection
+				// unblocks it.
+				replied := make(chan error, 1)
+				go func() {
+					_, _, err := sshClient.SendRequest("keepalive@openssh.com", true, nil)
+					replied <- err
+				}()
+				select {
+				case err := <-replied:
+					if err != nil {
+						// Connection is dead
+						logger().Warn("keepalive failed", "error", err)
+						c.handleDisconnect()
+						return
+					}
+				case <-time.After(c.keepaliveTimeout):
+					logger().Warn("no keepalive reply; closing the connection", "timeout", c.keepaliveTimeout)
+					_ = sshClient.Close()
 					c.handleDisconnect()
+					return
+				case <-ctx.Done():
+					return
+				case <-keepaliveStop.done():
 					return
 				}
 			}

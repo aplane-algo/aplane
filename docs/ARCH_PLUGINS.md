@@ -300,6 +300,12 @@ This one-way declaration cannot be satisfied by echoing host input. A plugin's
 semantic package version lives in its manifest `version` field and in
 `getInfo`, not in the initialize handshake.
 
+A response is a line with a `result` member or an `error` member. A
+`"result": null` is a response and completes the call at once. Every method
+below that documents a result object needs that object, so a null result
+fails the call with `null result in response`; the host ignores the result of
+`shutdown`, so a plugin may answer it with null.
+
 #### initialize
 
 Called once after the plugin starts.

@@ -346,7 +346,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 
 func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName string) appCallOptions {
 	opts := appCallOptions{
-		txnOptions:   a.parseTxnOptions(call, argIndex, funcName, "pay", "accounts", "apps", "assets", "boxes", "onCompletion"),
+		txnOptions:   a.parseNotedTxnOptions(call, argIndex, funcName, "pay", "accounts", "apps", "assets", "boxes", "onCompletion"),
 		OnCompletion: types.NoOpOC,
 	}
 	if len(call.Arguments) <= argIndex || goja.IsUndefined(call.Arguments[argIndex]) || goja.IsNull(call.Arguments[argIndex]) {
@@ -407,7 +407,7 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 
 func (a *API) parseAppDeployOptions(call goja.FunctionCall, argIndex int, funcName string) appDeployOptions {
 	opts := appDeployOptions{
-		txnOptions:       a.parseTxnOptions(call, argIndex, funcName, "approvalCompiled", "clearCompiled", "globalUint", "globalBytes", "localUint", "localBytes", "extraPages"),
+		txnOptions:       a.parseNotedTxnOptions(call, argIndex, funcName, "approvalCompiled", "clearCompiled", "globalUint", "globalBytes", "localUint", "localBytes", "extraPages"),
 		ApprovalCompiled: false,
 		ClearCompiled:    false,
 	}

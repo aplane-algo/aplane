@@ -17,22 +17,24 @@ import (
 )
 
 // jsAssetInfo returns information about an ASA.
-// assetInfo(assetId) - Returns full ASA metadata
+// assetInfo(assetId) - Returns full ASA metadata, read from the network: the
+// cache and the built-in metadata hold only the unit name, name and
+// decimals.
 func (a *API) jsAssetInfo(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "assetInfo() requires an assetId argument")
 	assetID := toUint64(a.runtime, call.Arguments[0])
 
-	info, err := a.engine.GetASAInfoWithContext(a.Context(), assetID)
+	info, err := a.engine.GetASAInfoWithContext(a.Context(), assetID, true)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("assetInfo() error: %v", err)))
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
-		"assetId":       info.AssetID,
+		"assetId":       jsUint(info.AssetID),
 		"unitName":      info.UnitName,
 		"name":          info.Name,
-		"decimals":      info.Decimals,
-		"total":         info.Total,
+		"decimals":      jsUint(info.Decimals),
+		"total":         jsUint(info.Total),
 		"creator":       info.Creator,
 		"manager":       info.Manager,
 		"reserve":       info.Reserve,
@@ -51,10 +53,10 @@ func (a *API) jsCachedAssets(call goja.FunctionCall) goja.Value {
 	result := make([]interface{}, len(assets))
 	for i, info := range assets {
 		result[i] = map[string]interface{}{
-			"assetId":  info.AssetID,
+			"assetId":  jsUint(info.AssetID),
 			"unitName": info.UnitName,
 			"name":     info.Name,
-			"decimals": info.Decimals,
+			"decimals": jsUint(info.Decimals),
 		}
 	}
 	return a.runtime.ToValue(result)
@@ -72,10 +74,10 @@ func (a *API) jsCacheAsset(call goja.FunctionCall) goja.Value {
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
-		"assetId":  info.AssetID,
+		"assetId":  jsUint(info.AssetID),
 		"unitName": info.UnitName,
 		"name":     info.Name,
-		"decimals": info.Decimals,
+		"decimals": jsUint(info.Decimals),
 	})
 }
 
@@ -126,5 +128,5 @@ func (a *API) jsGetAsaId(call goja.FunctionCall) goja.Value {
 		return goja.Null()
 	}
 
-	return a.runtime.ToValue(assetID)
+	return a.runtime.ToValue(jsUint(assetID))
 }

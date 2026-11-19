@@ -79,9 +79,15 @@ Most transaction functions accept a final options object:
 {
   wait: true,          // default true
   fee: 1000,           // optional client base fee in microAlgos
-  note: "memo text"    // optional transaction note
+  note: "memo text"    // optional transaction note, where the function takes one
 }
 ```
+
+`note` is read by `send()`, `sendAsset()`, `appDeploy()`, `appCallRaw()` and
+`appCall()`. `optIn()`, `optOut()`, `rekey()`, `unrekey()` and `close()`
+build their transaction without a note and refuse the option. `atomicSend()`
+and `atomicSendAsset()` take a note on each payment or transfer object, not in
+the group options.
 
 When `fee` is supplied, the client uses it as a flat base fee. If omitted,
 normal client fee calculation is used. The signer adds its authorization
@@ -94,6 +100,15 @@ decimal digits. Nothing is coerced: `null`, `undefined`, `''`, a boolean, and
 strings such as `'0x10'` or `'1e6'` are errors, and so is a whole number past
 `Number.MAX_SAFE_INTEGER`, which JavaScript has already rounded; pass a
 `BigInt` or a decimal string for those.
+
+Whole numbers come back by the same rule. One past `Number.MAX_SAFE_INTEGER`,
+such as the balance of a token with a large supply (`balance().assets`,
+`assetInfo().total`) or a large `uint` in app state, is returned as a
+`BigInt`, so it keeps its value and can be passed back as an amount, ID or
+ABI argument. Smaller numbers are ordinary numbers, so the type of a field
+can differ between two calls. A `BigInt` does not mix with numbers in
+arithmetic (`v + 1n`, not `v + 1`; `Number(v)` rounds it), and
+`JSON.stringify()` refuses one; use `String(v)` to print it.
 
 Where a name is expected (an address, alias, asset or method), `undefined`
 and `null` are errors, not the words "undefined" and "null". A list of
@@ -178,7 +193,7 @@ through normal signer approval and policy boundaries.
 | Function | Returns |
 |---|---|
 | `print(...values)` | Prints concatenated values; returns `undefined` |
-| `log(...values)` | Prints only when verbose mode is enabled; returns `undefined` |
+| `log(...values)` | Prints only when verbose mode is enabled (the shell's `verbose on`, or `setVerbose(true)`); returns `undefined` |
 | `network()` | Current network name |
 | `status()` | `{ network, connected, target, signingMode, writeMode, simulate }` |
 | `connected()` | Boolean signer connection state |
@@ -188,6 +203,10 @@ through normal signer approval and policy boundaries.
 | `setSimulate(enabled)` | Sets simulation mode |
 | `simulate()` | Boolean simulation mode state |
 | `waitForTx(txid, rounds = 5)` | Checks up to `rounds` times, about once a ledger round, for confirmation; a failed status check does not end the wait; returns `true` |
+
+Write, verbose and simulation mode are the shell's own modes: a script starts
+with the shell's settings, and any change it makes with `setWriteMode()`,
+`setVerbose()` or `setSimulate()` is undone when the script ends.
 
 Simulation mode requests ordinary executable signatures and normal signer
 approval, then routes the exact signed group from the client to algod
@@ -306,7 +325,7 @@ print(generated.address)
 
 | Function | Returns |
 |---|---|
-| `assetInfo(assetId)` | Full ASA metadata |
+| `assetInfo(assetId)` | Full ASA metadata, read from the network |
 | `cachedAssets()` | `[{ assetId, unitName, name, decimals }]` |
 | `cacheAsset(assetId)` | `{ assetId, unitName, name, decimals }` |
 | `uncacheAsset(assetId)` | `true` |
@@ -772,6 +791,25 @@ appCall(appId, method, abiPath, from, args, options = {})
 `args` is an array with one entry per method argument, converted by the
 argument's ABI type; anything other than an array is refused. Options are the
 same as `appCallRaw`.
+
+A method with an ARC-4 transaction argument (`txn`, `pay`, `axfer` and the
+other transaction types), a reference argument (`account`, `asset`,
+`application`), or more than 15 arguments is refused, with an error that
+names which of these it has.
+
+`appCallRaw()` can build some of those calls by hand: a method whose only
+transaction argument is one `pay` from the caller to the app address (the
+`pay` option is that payment), reference arguments, and more than 15
+arguments. It cannot build any other transaction argument (`txn`, `axfer`,
+`appl`, `acfg`, `keyreg`, `afrz`), a `pay` to another receiver or from
+another sender, or more than one transaction argument, because it adds at
+most that one payment. `appArgs` then holds, in order: the method's 4-byte
+selector, then each argument in its ABI encoding, with the extra arguments
+packed into one tuple; a reference argument is a one-byte index into
+`accounts` (0 is the sender), `apps` (0 is the called app) or `assets`
+(from 0). How to compute the selector, write each encoding and pack the
+arguments is in the shell's [`app call raw`](USER_COMMANDS.md#app) notes;
+the same byte forms work here.
 
 | JavaScript value | Accepted for |
 |------------------|--------------|

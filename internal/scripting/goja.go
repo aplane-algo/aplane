@@ -42,7 +42,7 @@ func NewGojaRunner(eng *engine.Engine) *GojaRunner {
 	}
 
 	// Create API with output wrapper (so SetOutput works after creation)
-	api := jsapi.NewAPI(eng, false, func(msg string) {
+	api := jsapi.NewAPI(eng, func(msg string) {
 		r.getOutput()(msg)
 	})
 	if err := api.RegisterAll(vm); err != nil {
@@ -232,7 +232,7 @@ func (r *GojaRunner) modeState() runnerModeState {
 	eng := r.api.Engine()
 	return runnerModeState{
 		writeMode: eng.GetWriteMode(),
-		verbose:   r.api.Verbose(),
+		verbose:   eng.GetVerbose(),
 		simulate:  eng.GetSimulate(),
 	}
 }

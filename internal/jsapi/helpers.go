@@ -4,6 +4,7 @@
 package jsapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -87,7 +88,7 @@ func makeAlgoFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 		if err != nil {
 			panic(vm.ToValue(fmt.Sprintf("algo() invalid amount: %v", err)))
 		}
-		return vm.ToValue(microAlgos)
+		return vm.ToValue(jsUint(microAlgos))
 	}
 }
 
@@ -100,7 +101,7 @@ func makeMicroalgosFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Valu
 		}
 
 		val := toUint64(vm, call.Arguments[0])
-		return vm.ToValue(val)
+		return vm.ToValue(jsUint(val))
 	}
 }
 
@@ -185,19 +186,85 @@ func (a *API) objectArg(call goja.FunctionCall, argIndex int, funcName string) m
 	return m
 }
 
-// toJSObject converts a Go value into a JSON-compatible JavaScript object.
+// toJSObject converts a Go value into a JSON-compatible JavaScript object,
+// keyed by the value's JSON field names. Its whole numbers go through
+// jsWhole, as every whole number the API returns does.
 func (a *API) toJSObject(v interface{}) goja.Value {
 	encoded, err := json.Marshal(v)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("failed to marshal JS object: %v", err)))
 	}
 
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
 	var decoded interface{}
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
+	if err := decoder.Decode(&decoded); err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("failed to unmarshal JS object: %v", err)))
 	}
+	converted, err := exactJSONNumbers(decoded)
+	if err != nil {
+		panic(a.runtime.ToValue(fmt.Sprintf("failed to convert JS object: %v", err)))
+	}
 
-	return a.runtime.ToValue(decoded)
+	return a.runtime.ToValue(converted)
+}
+
+// jsUint is a uint64 as the API returns it to a script; see jsWhole.
+func jsUint(v uint64) interface{} {
+	if v <= maxSafeJSInteger {
+		return int64(v)
+	}
+	return new(big.Int).SetUint64(v)
+}
+
+// jsWhole is a whole number as the API returns it to a script: a number when
+// JavaScript holds it exactly, and a *big.Int (a BigInt in the script) past
+// Number.MAX_SAFE_INTEGER, so it keeps its value and the API accepts it when
+// the script passes it back. A number would be rounded there: goja itself
+// turns an int64 past 2^53 into a float.
+func jsWhole(v *big.Int) interface{} {
+	if v.IsInt64() {
+		if i := v.Int64(); i >= -maxSafeJSInteger && i <= maxSafeJSInteger {
+			return i
+		}
+	}
+	return v
+}
+
+// exactJSONNumbers replaces each json.Number in a decoded JSON value, in
+// place: a whole number with jsWhole, and any other number with a float64.
+func exactJSONNumbers(v interface{}) (interface{}, error) {
+	switch value := v.(type) {
+	case json.Number:
+		if whole, ok := new(big.Int).SetString(value.String(), 10); ok {
+			return jsWhole(whole), nil
+		}
+		f, err := value.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("number %s: %w", value, err)
+		}
+		return f, nil
+	case map[string]interface{}:
+		for key, item := range value {
+			converted, err := exactJSONNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			value[key] = converted
+		}
+		return value, nil
+	case []interface{}:
+		for i, item := range value {
+			converted, err := exactJSONNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			value[i] = converted
+		}
+		return value, nil
+	default:
+		return v, nil
+	}
 }
 
 // toUint64 converts a Goja value to uint64.
@@ -381,26 +448,33 @@ type closeTxnOptions struct {
 	LsigArgs map[string][]byte
 }
 
-// parseTxnOptions extracts {fee, wait, note} from an optional options argument.
+// parseTxnOptions extracts {fee, wait} from an optional options argument.
 // argIndex is the position of the options argument in the call.
 // funcName is used for error messages.
 //
 // extraKeys names the other options the calling function reads from the same
-// object. Any key outside {fee, wait, note} and those is refused: an option
-// that is not read is an option that was ignored, such as {Fee: 0} or
-// {nowait: true}.
+// object. Any key outside {fee, wait} and those is refused: an option that is
+// not read is an option that was ignored, such as {Fee: 0}, {nowait: true},
+// or a note on a transaction the function builds without one.
 func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName string, extraKeys ...string) txnOptions {
 	opts := txnOptions{Wait: true}
 	m := a.objectArg(call, argIndex, funcName)
 	if m == nil {
 		return opts
 	}
-	a.refuseUnknownKeys(m, funcName+" option", append([]string{"fee", "wait", "note"}, extraKeys...)...)
+	a.refuseUnknownKeys(m, funcName+" option", append([]string{"fee", "wait"}, extraKeys...)...)
 	opts.Fee, opts.UseFlatFee = a.optionUint64(m, "fee", funcName)
 	if w, ok := a.optionBool(m, "wait", funcName); ok {
 		opts.Wait = w
 	}
-	if n, ok := a.optionString(m, "note", funcName); ok {
+	return opts
+}
+
+// parseNotedTxnOptions is parseTxnOptions for a function whose transaction
+// carries a note: it also reads {note}.
+func (a *API) parseNotedTxnOptions(call goja.FunctionCall, argIndex int, funcName string, extraKeys ...string) txnOptions {
+	opts := a.parseTxnOptions(call, argIndex, funcName, append([]string{"note"}, extraKeys...)...)
+	if n, ok := a.optionString(a.objectArg(call, argIndex, funcName), "note", funcName); ok {
 		opts.Note = n
 	}
 	return opts

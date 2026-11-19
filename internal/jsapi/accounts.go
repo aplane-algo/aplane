@@ -30,19 +30,19 @@ func (a *API) jsBalance(call goja.FunctionCall) goja.Value {
 	assets := make(map[string]interface{})
 	for _, asset := range result.Assets {
 		assets[fmt.Sprintf("%d", asset.AssetID)] = map[string]interface{}{
-			"amount":   asset.Amount,
+			"amount":   jsUint(asset.Amount),
 			"unitName": asset.UnitName,
-			"decimals": asset.Decimals,
+			"decimals": jsUint(asset.Decimals),
 			"frozen":   asset.IsFrozen,
 		}
 	}
 
 	return a.runtime.ToValue(map[string]interface{}{
-		"algo":       result.AlgoBalance,
+		"algo":       jsUint(result.AlgoBalance),
 		"assets":     assets,
 		"address":    result.Address,
 		"alias":      result.Alias,
-		"minBalance": result.MinBalance,
+		"minBalance": jsUint(result.MinBalance),
 		"authAddr":   result.AuthAddr,
 	})
 }

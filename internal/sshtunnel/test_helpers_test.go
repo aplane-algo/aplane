@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -56,4 +57,11 @@ func splitHostPort(t *testing.T, addr string) (string, int) {
 
 func hostWithPort(host string, port int) string {
 	return fmt.Sprintf("[%s]:%d", host, port)
+}
+
+// shortenClientKeepalive makes c ping every interval and give up on a reply
+// after timeout.
+func shortenClientKeepalive(c *Client, interval, timeout time.Duration) {
+	c.keepaliveInterval = interval
+	c.keepaliveTimeout = timeout
 }
