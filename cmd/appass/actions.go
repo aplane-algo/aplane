@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
@@ -21,6 +23,44 @@ import (
 )
 
 const systemdCredentialName = "aplane-passphrase"
+
+// commandTimeout bounds each external command an action runs. The working
+// screen ignores keys until the action is done, so a hung systemctl or
+// systemd-creds must end the action with an error rather than hold appass.
+// commandWaitDelay bounds the wait for its output once it is stopped. Tests
+// shorten both.
+var (
+	commandTimeout   = time.Minute
+	commandWaitDelay = 5 * time.Second
+)
+
+// boundedCommand returns the command name with args, stopped if it runs
+// longer than commandTimeout, and a finish function that releases it and
+// reports a stop as a timeout.
+func boundedCommand(name string, args ...string) (*exec.Cmd, func(error) error) {
+	timeout := commandTimeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = commandWaitDelay
+	return cmd, func(err error) error {
+		defer cancel()
+		if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("%s did not finish within %s and was stopped: %w", filepath.Base(name), timeout, err)
+		}
+		return err
+	}
+}
+
+// daemonReload makes systemd reread the unit appass just edited.
+func daemonReload() error {
+	cmd, finish := boundedCommand("systemctl", "daemon-reload")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := finish(cmd.Run()); err != nil {
+		return fmt.Errorf("daemon-reload failed: %w", err)
+	}
+	return nil
+}
 
 // errEmptyPassphrase refuses an auto-unlock secret that could never unlock
 // the store: the signer refuses an empty passphrase.
@@ -142,10 +182,11 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 		}
 	}()
 
-	cmd := exec.Command(passCredsBin, "write", tmpCredPath)
+	cmd, finish := boundedCommand(passCredsBin, "write", tmpCredPath)
 	cmd.Stdin = bytes.NewReader(passphrase)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
+	err = finish(err)
 	// out is the passphrase read back for the round-trip check.
 	defer clear(out)
 	if err != nil {
@@ -359,11 +400,8 @@ func removeLoadCredentialFromService() error {
 		return fmt.Errorf("writing service file: %w", err)
 	}
 
-	cmd := exec.Command("systemctl", "daemon-reload")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("daemon-reload failed: %w", err)
+	if err := daemonReload(); err != nil {
+		return err
 	}
 
 	return nil
@@ -411,11 +449,8 @@ func ensureLoadCredentialInService(credFile string) error {
 		return fmt.Errorf("writing service file: %w", err)
 	}
 
-	cmd := exec.Command("systemctl", "daemon-reload")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("daemon-reload failed: %w", err)
+	if err := daemonReload(); err != nil {
+		return err
 	}
 
 	return nil

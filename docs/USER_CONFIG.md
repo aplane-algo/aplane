@@ -657,6 +657,10 @@ sudo appass -d /var/lib/apsigner
 ```
 
 Inside the `appass` TUI, choose the desired passphrase handling mode and follow the prompts.
+While a mode change runs, `appass` shows a working screen and ignores keys
+until it finishes. Each external step (`appass-systemd-creds write`,
+`systemctl daemon-reload`) is stopped if it runs longer than a minute, and
+the change then ends on the result screen with that error.
 
 Use `appass` when you want to change startup unlock behavior. Use `apadmin` when the daemon is already running and you want to manage the live signer session.
 
