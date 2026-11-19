@@ -1113,7 +1113,6 @@ authorization architecture and invariants live in
 // internal/auth/authenticator.go
 type Authenticator interface {
     Authenticate(ctx context.Context, r *http.Request) (*Identity, error)
-    Method() string
 }
 
 type Identity struct {

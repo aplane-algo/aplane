@@ -42,12 +42,12 @@ func TestParseAcceptsOptionFreeLinesCommentsAndLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
-	if reg.Len() != 2 {
-		t.Fatalf("Len() = %d, want 2", reg.Len())
+	if len(reg.Entries()) != 2 {
+		t.Fatalf("entries = %d, want 2", len(reg.Entries()))
 	}
-	entry, ok := reg.Lookup(a)
+	entry, ok := reg.LookupFingerprint(ssh.FingerprintSHA256(a))
 	if !ok || entry.Label != "laptop" || entry.Fingerprint != ssh.FingerprintSHA256(a) {
-		t.Fatalf("Lookup(a) = %+v, %v", entry, ok)
+		t.Fatalf("LookupFingerprint(a) = %+v, %v", entry, ok)
 	}
 	if entry, ok := reg.LookupFingerprint(ssh.FingerprintSHA256(b)); !ok || entry.Label != "" {
 		t.Fatalf("LookupFingerprint(b) = %+v, %v", entry, ok)
@@ -86,11 +86,11 @@ func TestParseRejectsOptionsMalformedAndDuplicates(t *testing.T) {
 
 func TestParseEmptyAndNilRegistry(t *testing.T) {
 	reg, err := Parse(nil)
-	if err != nil || reg.Len() != 0 {
+	if err != nil || len(reg.Entries()) != 0 {
 		t.Fatalf("Parse(nil) = %v, %v", reg, err)
 	}
 	var none *Registry
-	if none.Len() != 0 || none.Has(testKey(t)) || none.Marshal() != nil {
+	if len(none.Entries()) != 0 || none.Has(testKey(t)) || none.Marshal() != nil {
 		t.Fatal("nil registry is not empty")
 	}
 }
@@ -99,11 +99,11 @@ func TestWithKeyIsIdempotentAndMarshalRoundTrips(t *testing.T) {
 	a, b := testKey(t), testKey(t)
 	reg, _ := Parse(nil)
 	reg, added := reg.WithKey(a, "laptop")
-	if !added || reg.Len() != 1 {
-		t.Fatalf("WithKey(a) added=%v len=%d", added, reg.Len())
+	if !added || len(reg.Entries()) != 1 {
+		t.Fatalf("WithKey(a) added=%v len=%d", added, len(reg.Entries()))
 	}
 	again, added := reg.WithKey(a, "other label")
-	if added || again.Len() != 1 || !bytes.Equal(again.Marshal(), reg.Marshal()) {
+	if added || len(again.Entries()) != 1 || !bytes.Equal(again.Marshal(), reg.Marshal()) {
 		t.Fatal("re-adding an enrolled key must change nothing")
 	}
 	reg, _ = reg.WithKey(b, "")
@@ -112,7 +112,7 @@ func TestWithKeyIsIdempotentAndMarshalRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse(Marshal()) error = %v", err)
 	}
-	if !bytes.Equal(parsed.Marshal(), reg.Marshal()) || parsed.Len() != 2 {
+	if !bytes.Equal(parsed.Marshal(), reg.Marshal()) || len(parsed.Entries()) != 2 {
 		t.Fatalf("round trip changed the registry:\n%s\n%s", reg.Marshal(), parsed.Marshal())
 	}
 	if want := keyLine(a, "laptop") + keyLine(b, ""); string(reg.Marshal()) != want {
@@ -127,10 +127,10 @@ func TestWithoutFingerprint(t *testing.T) {
 	reg, _ = reg.WithKey(b, "b")
 
 	removed, err := reg.WithoutFingerprint(ssh.FingerprintSHA256(a))
-	if err != nil || removed.Len() != 1 || removed.Has(a) || !removed.Has(b) {
+	if err != nil || len(removed.Entries()) != 1 || removed.Has(a) || !removed.Has(b) {
 		t.Fatalf("WithoutFingerprint(a) = %v, %v", removed, err)
 	}
-	if reg.Len() != 2 {
+	if len(reg.Entries()) != 2 {
 		t.Fatal("WithoutFingerprint mutated the receiver")
 	}
 	if _, err := reg.WithoutFingerprint("SHA256:nope"); !errors.Is(err, ErrNotEnrolled) {

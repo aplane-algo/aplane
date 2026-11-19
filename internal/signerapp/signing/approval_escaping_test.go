@@ -61,7 +61,7 @@ func signForEscapingTest(t *testing.T, req signerapi.GroupSignRequest, plan *Pla
 	describe := DescribeTxnFunc(txdesc.DetailTxn)
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(false),
+			UserAutoApprove: false,
 			HasClient:       func() bool { return true },
 			KnownAddresses:  func() map[string]bool { return nil },
 			Console:         got.console,
@@ -219,7 +219,7 @@ func TestReviewBannersPrintTheClientsTypeEscaped(t *testing.T) {
 	txn := types.Transaction{Type: hostileTxnType, Header: types.Header{Sender: types.Address{1}, Fee: 1000}}
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(false),
+			UserAutoApprove: false,
 			HasClient:       func() bool { return true },
 			KnownAddresses:  func() map[string]bool { return nil },
 			Console:         console,
@@ -285,7 +285,7 @@ func signHostileTypeForTest(t *testing.T, typ types.TxType, count int, autoAppro
 	console := &printedConsole{}
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(autoApprove),
+			UserAutoApprove: autoApprove,
 			HasClient:       func() bool { return true },
 			KnownAddresses:  func() map[string]bool { return nil },
 			Console:         console,

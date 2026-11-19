@@ -93,7 +93,7 @@ func newSigningFixtureFor(t testing.TB, kind rotatingTestType) (*rotatingFixture
 	f := newRotatingFixtureFor(t, kind)
 	audit := &recordingReleaseAudit{}
 	approve := true
-	f.svc.Approval = &ApprovalService{UserAutoApprove: &approve}
+	f.svc.Approval = &ApprovalService{UserAutoApprove: approve}
 	f.svc.GenerateTxnDescriptionFromTxn = describeAs("txn")
 	f.svc.PolicyFor = fixedPolicy(policy.DefaultConfig())
 	f.svc.AuditLog = audit
@@ -532,7 +532,7 @@ func TestRotatingSignShowsTheSpendsAppCallInfo(t *testing.T) {
 		off := false
 		var description string
 		f.svc.Approval = &ApprovalService{
-			UserAutoApprove: &off,
+			UserAutoApprove: off,
 			HasClient:       func() bool { return true },
 			RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 				description = desc
@@ -569,7 +569,7 @@ func TestRotatingSignPromptShowsThePreparedGroupAsChecked(t *testing.T) {
 	off := false
 	var description string
 	f.svc.Approval = &ApprovalService{
-		UserAutoApprove: &off,
+		UserAutoApprove: off,
 		HasClient:       func() bool { return true },
 		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 			description = desc
@@ -1133,7 +1133,7 @@ func TestRotatingRotationRekeyIsNotAWarning(t *testing.T) {
 	calls := 0
 	var seen []signerapproval.Violation
 	f2.svc.Approval = &ApprovalService{
-		UserAutoApprove: &off,
+		UserAutoApprove: off,
 		HasClient:       func() bool { return true },
 		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 			calls++

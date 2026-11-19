@@ -49,7 +49,6 @@ type Env struct {
 	Config   *serverconfig.ServerConfig
 	KeyPaths storepaths.Paths
 	HeldKeys map[string]bool // key selectors the node holds
-	Now      func() time.Time
 	Keyring  *crypto.Keyring
 	// ASASet is the node's ASA set, for the admission checks; nil skips them.
 	ASASet *asaset.Set
@@ -398,11 +397,8 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 	if candidate.SetSHA256() == current.SetSHA256() {
 		return evidence, nil
 	}
-	now := time.Now
-	if env.Now != nil {
-		now = env.Now
-	}
-	generationID, err := genstore.NewGenerationID(now())
+	now := time.Now()
+	generationID, err := genstore.NewGenerationID(now)
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -411,10 +407,10 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		Parent:       active.GenerationID(),
 		Operation:    Operation,
 		OperationID:  "policy-" + generationID,
-		CreatedAt:    now(),
+		CreatedAt:    now,
 		Integrity:    env.Keyring,
 		Apply: func(staged storepaths.GenPaths) error {
-			return writeChange(staged, env.Role, req, env.Keyring, now())
+			return writeChange(staged, env.Role, req, env.Keyring, now)
 		},
 		ValidateCandidate: func(staged storepaths.GenPaths) error {
 			return storevalidate.Candidate(storevalidate.Options{

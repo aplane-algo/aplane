@@ -1439,7 +1439,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 |------|----------|
 | `Signer.storeMutationLock` | Product key/template/config/policy mutation serialization |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-archive restore backoff limiter |
-| `Signer.sshRuntimeMu` | SSH runtime and server swaps |
+| `Signer.sshRuntimeMu` | SSH runtime swaps |
 | `Signer.rotatingLocks` | Per-account serialization of rotating signing |
 | `productruntime.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |

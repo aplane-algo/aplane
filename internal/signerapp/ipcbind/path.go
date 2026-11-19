@@ -21,12 +21,6 @@ const (
 	linuxUnixSocketPathMaxBytes = 107
 )
 
-// ValidateBindPath checks whether socketPath is safe to remove and bind.
-func ValidateBindPath(socketPath string) error {
-	_, err := ResolveBindPath(socketPath)
-	return err
-}
-
 // ResolveBindPath resolves trusted directory aliases and returns the canonical
 // socket path after validating both the alias chain and its target. Callers
 // must bind the returned path rather than traversing the original aliases

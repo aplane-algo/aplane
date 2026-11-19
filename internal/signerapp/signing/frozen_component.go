@@ -111,7 +111,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	if budgetErr != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(budgetErr)
 	}
-	feeInfo, feeErr := applyGroupFees(append([]types.Transaction(nil), allTxns...), budgets, resourcePlan, expectedDummies, lsigIndices, true)
+	feeInfo, feeErr := applyGroupFees(append([]types.Transaction(nil), allTxns...), budgets, resourcePlan, lsigIndices, true)
 	if feeErr != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(feeErr)
 	}

@@ -62,7 +62,7 @@ func (c chainReviewCase) prompt(t *testing.T) *signerapproval.Prompt {
 	var got *signerapproval.Prompt
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(c.autoApprove),
+			UserAutoApprove: c.autoApprove,
 			HasClient:       func() bool { return true },
 			KnownAddresses:  func() map[string]bool { return c.known },
 			RequestSigningApprovalPrompt: func(_ context.Context, prompt signerapproval.Prompt, _ time.Duration) (signerapproval.SignResponse, error) {

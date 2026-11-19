@@ -10,10 +10,10 @@ import (
 )
 
 // startKeyWatcherForDir starts a filesystem watcher on the given directories.
-// It calls reloadFn when qualifying .key, .template, or key type .json files change.
-// Directories that don't exist are silently skipped at startup but will be
-// picked up dynamically if created under a watched parent directory.
-// This function satisfies the identity.WatcherStartFunc signature.
+// It calls reloadFn when an account key, cosigner credential or template
+// changes, or the store root is replaced. Directories that don't exist are
+// silently skipped at startup but will be picked up dynamically if created
+// under a watched parent directory. It satisfies productruntime.WatcherStartFunc.
 func startKeyWatcherForDir(dirs []string, ctx context.Context, reloadFn func() error) error {
 	return filewatcher.Start(dirs, ctx, reloadFn, filewatcher.Options{
 		Infof: logInfof,

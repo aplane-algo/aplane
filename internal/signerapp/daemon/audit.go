@@ -11,59 +11,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/storeadmin"
 )
 
-type AuditEventType = signeraudit.AuditEventType
-type AuditEntry = signeraudit.AuditEntry
 type AuditLogger = signeraudit.AuditLogger
 
 type auditAttribution = signeraudit.Attribution
-
-const (
-	AuditSignRequest                      = signeraudit.AuditSignRequest
-	AuditPlanRequest                      = signeraudit.AuditPlanRequest
-	AuditSignApproved                     = signeraudit.AuditSignApproved
-	AuditSignRejected                     = signeraudit.AuditSignRejected
-	AuditSignFailed                       = signeraudit.AuditSignFailed
-	AuditAuthFailed                       = signeraudit.AuditAuthFailed
-	AuditAuthorizationDenied              = signeraudit.AuditAuthorizationDenied
-	AuditServerStart                      = signeraudit.AuditServerStart
-	AuditServerStop                       = signeraudit.AuditServerStop
-	AuditServerStopIncomplete             = signeraudit.AuditServerStopIncomplete
-	AuditKeyReload                        = signeraudit.AuditKeyReload
-	AuditSessionConnected                 = signeraudit.AuditSessionConnected
-	AuditSessionDisconnected              = signeraudit.AuditSessionDisconnected
-	AuditIdentityLocked                   = signeraudit.AuditIdentityLocked
-	AuditClientEnrollmentRequested        = signeraudit.AuditClientEnrollmentRequested
-	AuditClientEnrolled                   = signeraudit.AuditClientEnrolled
-	AuditClientEnrollmentRejected         = signeraudit.AuditClientEnrollmentRejected
-	AuditKeyGenerated                     = signeraudit.AuditKeyGenerated
-	AuditKeyDeleted                       = signeraudit.AuditKeyDeleted
-	AuditKeyImported                      = signeraudit.AuditKeyImported
-	AuditKeyRejected                      = signeraudit.AuditKeyRejected
-	AuditBackupCreated                    = signeraudit.AuditBackupCreated
-	AuditBackupFailed                     = signeraudit.AuditBackupFailed
-	AuditBackupRestorePreviewed           = signeraudit.AuditBackupRestorePreviewed
-	AuditBackupRestorePreviewFailed       = signeraudit.AuditBackupRestorePreviewFailed
-	AuditCredentialRestoreIntent          = signeraudit.AuditCredentialRestoreIntent
-	AuditCredentialRestoreSuccess         = signeraudit.AuditCredentialRestoreSuccess
-	AuditCredentialRestoreFailed          = signeraudit.AuditCredentialRestoreFailed
-	AuditCredentialRestoreUncertain       = signeraudit.AuditCredentialRestoreUncertain
-	AuditCredentialRestoreRollback        = signeraudit.AuditCredentialRestoreRollback
-	AuditStoreInitialized                 = signeraudit.AuditStoreInitialized
-	AuditStoreInitializeFailed            = signeraudit.AuditStoreInitializeFailed
-	AuditPassphraseChanged                = signeraudit.AuditPassphraseChanged
-	AuditPassphraseChangeFailed           = signeraudit.AuditPassphraseChangeFailed
-	AuditCosignerReferenceChanged         = signeraudit.AuditCosignerReferenceChanged
-	AuditBackupImported                   = signeraudit.AuditBackupImported
-	AuditBackupExportStarted              = signeraudit.AuditBackupExportStarted
-	AuditGenerationQuarantineIntent       = signeraudit.AuditGenerationQuarantineIntent
-	AuditGenerationQuarantined            = signeraudit.AuditGenerationQuarantined
-	AuditGenerationQuarantinePruneIntent  = signeraudit.AuditGenerationQuarantinePruneIntent
-	AuditGenerationQuarantinePruned       = signeraudit.AuditGenerationQuarantinePruned
-	AuditGenerationAbandonedDiscardIntent = signeraudit.AuditGenerationAbandonedDiscardIntent
-	AuditGenerationAbandonedDiscarded     = signeraudit.AuditGenerationAbandonedDiscarded
-	AuditDeletedArchivePruneIntent        = signeraudit.AuditDeletedArchivePruneIntent
-	AuditDeletedArchivePruned             = signeraudit.AuditDeletedArchivePruned
-)
 
 func NewAuditLogger(path string) (*AuditLogger, error) {
 	return signeraudit.NewAuditLogger(path)

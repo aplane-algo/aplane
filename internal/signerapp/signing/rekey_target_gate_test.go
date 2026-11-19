@@ -326,7 +326,7 @@ const stoppedAfterApproval = "test: stopped after approval"
 func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.SignerRekeys, auto bool) {
 	t.Helper()
 	svc.Approval = &ApprovalService{
-		UserAutoApprove: &auto,
+		UserAutoApprove: auto,
 		Console:         &stringConsole{&h.approval},
 		HasClient:       func() bool { return true },
 		RequestSigningApprovalPrompt: promptFromContextDecision(func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {

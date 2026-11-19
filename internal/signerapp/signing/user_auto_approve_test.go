@@ -77,7 +77,7 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 						foreign[1] = true
 						txns[1].RekeyTo = types.Address{4}
 					}
-					approval := &ApprovalService{UserAutoApprove: &auto, HasClient: func() bool { return false }}
+					approval := &ApprovalService{UserAutoApprove: auto, HasClient: func() bool { return false }}
 					svc := &Service{Approval: approval, PolicyFor: fixedPolicy(cfg)}
 					approvalCalls := 0
 					rule, err := svc.runApprovalGates(context.Background(), gateInput{
@@ -233,7 +233,7 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 				var console strings.Builder
 				prompted, approvalCalls := false, 0
 				approval := &ApprovalService{
-					UserAutoApprove: &auto,
+					UserAutoApprove: auto,
 					KnownAddresses:  func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
 					HasClient:       func() bool { return true },
 					RequestSigningApprovalPrompt: promptFromContextDecision(func(_ context.Context, _, _, _, _ string, _, _ uint64, v []signerapproval.Violation, _ time.Duration) (bool, error) {

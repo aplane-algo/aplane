@@ -102,25 +102,20 @@ func TestRuntimeNodePolicyResolvesPerKey(t *testing.T) {
 	ir := New(Config{})
 	def := policy.DefaultConfig()
 	def.MaxFeeMicroAlgos = 7000
-	ir.SetPolicy(def)
+	ir.SetVerifiedPolicyState(&policyruntime.NodePolicy{Default: def}, nil, nil)
 	if got := ir.NodePolicy().PolicyFor("ANY"); got == nil || got.MaxFeeMicroAlgos != 7000 {
 		t.Fatalf("PolicyFor() = %#v, want the default with max fee 7000", got)
-	}
-	// SetPolicy installs a copy: the caller's config is not shared.
-	def.MaxFeeMicroAlgos = 1
-	if ir.NodePolicy().PolicyFor("ANY").MaxFeeMicroAlgos != 7000 {
-		t.Fatal("the installed default shares the caller's config")
 	}
 
 	own := policy.DefaultConfig()
 	own.MaxFeeMicroAlgos = 5000
-	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: noderole.RoleCosigner, Default: def, Keys: map[string]*policy.Config{"K": own}})
+	ir.SetVerifiedPolicyState(&policyruntime.NodePolicy{Role: noderole.RoleCosigner, Default: def, Keys: map[string]*policy.Config{"K": own}}, nil, nil)
 	np := ir.NodePolicy()
 	if np.PolicyFor("K") != own || np.PolicyFor("OTHER") != def || !np.HasOwn("K") || np.HasOwn("OTHER") {
 		t.Fatal("PolicyFor did not select the key's own document and the default")
 	}
 
-	ir.SetNodePolicy(nil)
+	ir.SetVerifiedPolicyState(nil, nil, nil)
 	if ir.NodePolicy() != nil || ir.NodePolicy().PolicyFor("K") != nil {
 		t.Fatal("cleared policy is still visible")
 	}
@@ -373,19 +368,13 @@ func TestStoredConfigApply(t *testing.T) {
 	}
 }
 
-func TestStoredConfigApplyRejectsMode(t *testing.T) {
+func TestStoredConfigApplyDefault(t *testing.T) {
 	effective, err := (&StoredConfig{}).Apply(ConfigDefaults{})
 	if err != nil {
 		t.Fatalf("Apply(default) error = %v", err)
 	}
 	if effective.UserAutoApprove || effective.LockOnDisconnect || effective.SessionTimeout != 0 || effective.ApprovalWait != 0 {
 		t.Fatalf("default effective config = %#v, want zero-valued overlays", effective)
-	}
-
-	if _, err := (&StoredConfig{Mode: "cosigner"}).Apply(ConfigDefaults{}); err == nil {
-		t.Fatal("Apply(mode) error = nil")
-	} else if !strings.Contains(err.Error(), "runtime config mode is unsupported") {
-		t.Fatalf("Apply(mode) error = %q, want unsupported mode", err.Error())
 	}
 }
 
@@ -531,7 +520,7 @@ func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
 				t.Fatalf("LoadStoredConfig() error = %v", err)
 			}
 			if cfg.UserAutoApprove != nil || cfg.LockOnDisconnect != nil ||
-				cfg.PassphraseTimeout != "" || cfg.ApprovalWait != "" || cfg.Mode != "" {
+				cfg.PassphraseTimeout != "" || cfg.ApprovalWait != "" {
 				t.Fatalf("LoadStoredConfig() = %#v, want empty config", cfg)
 			}
 		})

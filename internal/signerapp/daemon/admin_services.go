@@ -863,9 +863,8 @@ func (s signerAdminServices) storeApp() storeadmin.Service {
 
 func (s signerAdminServices) keyApp() keyadmin.IPCService {
 	return keyadmin.IPCService{
-		Service:             s.signer.restService().Deps.KeyAdmin,
-		GenerateGenericLSig: s.signer.generateGenericLSigForRuntimeContext,
-		Logf:                logInfof,
+		Service: s.signer.restService().Deps.KeyAdmin,
+		Logf:    logInfof,
 	}
 }
 

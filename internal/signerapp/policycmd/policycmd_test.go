@@ -560,7 +560,9 @@ func TestTemplatePresetRole(t *testing.T) {
 	const testSignerKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
-	for _, runner := range []Runner{OnlineRunner{}, RescueRunner{}} {
+	for _, runner := range []interface {
+		Run(context.Context, Command, Streams) error
+	}{OnlineRunner{}, RescueRunner{}} {
 		var stdout bytes.Buffer
 		if err := runner.Run(context.Background(), Command{Verb: VerbTemplate, Preset: "self-only", Key: testSignerKey, PresetRole: "signer"}, Streams{Stdout: &stdout}); err != nil {
 			t.Fatal(err)

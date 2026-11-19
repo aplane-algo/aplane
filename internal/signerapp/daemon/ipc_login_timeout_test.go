@@ -29,6 +29,7 @@ func newLoginTimeoutTestServer(t *testing.T) *IPCServer {
 		preAuthTimeout: testLoginTimeout,
 	}
 	signer.ipcServer = server
+	signer.hub = signer.ipcServer
 	return server
 }
 

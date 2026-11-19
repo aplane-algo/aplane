@@ -243,7 +243,7 @@ var autoApprovedLine = regexp.MustCompile(`\[POLICY\] Txn auto-approved \(([^)]*
 func (r *verdictRecorder) approvalService(known map[string]bool) *ApprovalService {
 	off := false
 	return &ApprovalService{
-		UserAutoApprove: &off,
+		UserAutoApprove: off,
 		Console:         r,
 		KnownAddresses:  func() map[string]bool { return known },
 		HasClient:       func() bool { return true },

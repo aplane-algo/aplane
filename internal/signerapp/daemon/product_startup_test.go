@@ -133,32 +133,6 @@ func TestBuildProductRuntimeRejectsStaleDecommissionedConfig(t *testing.T) {
 	}
 }
 
-func TestBuildProductRuntimeRejectsStoredMode(t *testing.T) {
-	root := t.TempDir()
-	server := &Signer{
-		keyPaths: utilkeys.NewPaths(root),
-	}
-	cfg := serverconfig.DefaultServerConfig()
-	writeTestNodeRole(t, root, noderole.RoleSigner)
-
-	if err := productruntime.SaveStoredSetting(root, "mode", "cosigner"); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
-		DataDir:               root,
-		KeyPaths:              server.keyPaths,
-		Config:                &cfg,
-		DefaultSessionTimeout: 15 * time.Minute,
-	}, signerstartup.ProductBuildHooks{})
-	if err == nil {
-		t.Fatal("BuildProductRuntime() error = nil")
-	}
-	if !strings.Contains(err.Error(), "runtime config mode is unsupported") {
-		t.Fatalf("BuildProductRuntime() error = %q, want unsupported mode", err.Error())
-	}
-}
-
 func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{

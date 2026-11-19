@@ -111,11 +111,13 @@ func (s *Service) stageFillOptions(account string, opts StageFillOptions) StageF
 // StageTableReport is one account's outcome of a FillStageTables pass.
 type StageTableReport struct {
 	Account string
+	// Preparation is how far the account's next stage is prepared:
+	// unresolved, locating, preparing_successor or ready.
+	Preparation string
 	// Resolved reports whether the account's authorizer maps to a stage in
 	// the table. Stage is that stage when it does.
-	Preparation string
-	Resolved    bool
-	Stage       uint64
+	Resolved bool
+	Stage    uint64
 	// Class is the worker's reading of the observed authorizer (empty when
 	// the read failed). ClassHeldKey and ClassUnknown are both unresolved;
 	// only ClassUnknown is ever searched for.

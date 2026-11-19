@@ -76,7 +76,7 @@ func testRotatingKeyGenerationIsOptIn(t *testing.T, keyType string) {
 		}
 	}
 
-	resp, genErr := svc.Deps.KeyAdmin.GenerateKey(ctx, req.KeyType, req.Parameters, nil)
+	resp, genErr := svc.Deps.KeyAdmin.GenerateKey(ctx, req.KeyType, req.Parameters)
 	if genErr != nil {
 		t.Fatal(genErr)
 	}
@@ -95,7 +95,7 @@ func testRotatingKeyGenerationIsOptIn(t *testing.T, keyType string) {
 	}
 
 	// A configured network name resolves to its genesis hash.
-	local, localErr := svc.Deps.KeyAdmin.GenerateKey(ctx, req.KeyType, map[string]string{"network": "localnet"}, nil)
+	local, localErr := svc.Deps.KeyAdmin.GenerateKey(ctx, req.KeyType, map[string]string{"network": "localnet"})
 	if localErr != nil {
 		t.Fatalf("generate on configured network localnet: %v", localErr)
 	}

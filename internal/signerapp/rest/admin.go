@@ -19,7 +19,7 @@ func (s Service) AdminGenerate(ctx context.Context, ir *productruntime.Runtime, 
 		return signerapi.AdminGenerateResponse{}, err
 	}
 
-	result, err := s.Deps.KeyAdmin.GenerateKey(ctx, req.KeyType, req.Parameters, s.Deps.GenerateGenericLSig)
+	result, err := s.Deps.KeyAdmin.GenerateKey(ctx, req.KeyType, req.Parameters)
 	if err != nil {
 		return signerapi.AdminGenerateResponse{}, sanitizeKeyAdminError(err, "key generation failed")
 	}

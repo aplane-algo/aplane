@@ -153,7 +153,7 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 	audit := &auditRecorder{}
 	svc := Service{AuditLog: audit, Runtime: ir}
 
-	result, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	result, err := svc.GenerateKey(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %#v", err)
 	}
@@ -188,7 +188,7 @@ func TestServiceGenerateKeyCosignerComponent(t *testing.T) {
 			audit := &auditRecorder{}
 			svc := Service{AuditLog: audit, Runtime: ir}
 
-			result, err := svc.GenerateKey(context.Background(), keyType, nil, nil)
+			result, err := svc.GenerateKey(context.Background(), keyType, nil)
 			if err != nil {
 				t.Fatalf("GenerateKey(component) error = %#v", err)
 			}
@@ -283,7 +283,7 @@ teal: |
 
 	result, svcErr := (Service{Runtime: ir}).GenerateKey(context.Background(), keyType, map[string]string{
 		cosignerrefs.ParamCosignerName: "bounded-cosigner",
-	}, nil)
+	})
 	if svcErr != nil {
 		t.Fatalf("GenerateKey() error = %#v", svcErr)
 	}
@@ -301,7 +301,7 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
 
-	result, err := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil, nil)
+	result, err := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey(component in signer node) result = %#v, want nil", result)
 	}
@@ -311,7 +311,7 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 
 	ir = setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 	svc.Runtime = ir
-	result, err = svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	result, err = svc.GenerateKey(context.Background(), "ed25519", nil)
 	if result != nil {
 		t.Fatalf("GenerateKey(ed25519 in cosigner node) result = %#v, want nil", result)
 	}
@@ -324,13 +324,11 @@ func TestServiceGenerateKeyUsesMutationLock(t *testing.T) {
 	ir := setupProductRuntime(t)
 	lock := &recordingLock{}
 	svc := Service{
-		Runtime: ir,
-		MutationLock: func() Locker {
-			return lock
-		},
+		Runtime:      ir,
+		MutationLock: lock,
 	}
 
-	if _, err := svc.GenerateKey(context.Background(), "ed25519", nil, nil); err != nil {
+	if _, err := svc.GenerateKey(context.Background(), "ed25519", nil); err != nil {
 		t.Fatalf("GenerateKey() error = %#v", err)
 	}
 	if lock.locks != 1 || lock.unlocks != 1 || lock.held {
@@ -342,7 +340,7 @@ func TestServiceGenerateKeyRequiresKeyType(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
 
-	result, err := svc.GenerateKey(context.Background(), "", nil, nil)
+	result, err := svc.GenerateKey(context.Background(), "", nil)
 	if result != nil {
 		t.Fatalf("GenerateKey() result = %#v, want nil", result)
 	}
@@ -355,7 +353,7 @@ func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) 
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
 
-	result, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", nil, nil)
+	result, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", nil)
 	if result != nil {
 		t.Fatalf("GenerateKey() result = %#v, want nil", result)
 	}
@@ -381,7 +379,7 @@ func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
 		t.Fatalf("Delete() error = %v", err)
 	}
 
-	result, genErr := svc.GenerateKey(context.Background(), keyType, nil, nil)
+	result, genErr := svc.GenerateKey(context.Background(), keyType, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey() result = %#v, want nil", result)
 	}
@@ -421,10 +419,11 @@ teal: |
 	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 
 	called := false
-	result, genErr := svc.GenerateKey(context.Background(), keyType, nil, func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error) {
+	svc.GenerateGenericLSig = func(context.Context, string, map[string]string) (string, error) {
 		called = true
 		return "ADDR", nil
-	})
+	}
+	result, genErr := svc.GenerateKey(context.Background(), keyType, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey() result = %#v, want nil", result)
 	}
@@ -441,7 +440,7 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 	audit := &auditRecorder{}
 	svc := Service{AuditLog: audit, Runtime: ir}
 
-	genResult, genErr := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	genResult, genErr := svc.GenerateKey(context.Background(), "ed25519", nil)
 	if genErr != nil {
 		t.Fatalf("GenerateKey() error = %#v", genErr)
 	}
@@ -475,7 +474,7 @@ func TestServiceDeleteKeyRemovesCosignerComponentKey(t *testing.T) {
 	ir := setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 	svc := Service{Runtime: ir}
 
-	genResult, genErr := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil, nil)
+	genResult, genErr := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil)
 	if genErr != nil {
 		t.Fatalf("GenerateKey(component) error = %#v", genErr)
 	}
@@ -589,7 +588,7 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 	installServiceGenericTemplate(t, ir)
 	svc := Service{Runtime: ir}
 
-	generate := func(_ context.Context, _ *productruntime.Runtime, keyType string, params map[string]string) (string, error) {
+	svc.GenerateGenericLSig = func(_ context.Context, keyType string, params map[string]string) (string, error) {
 		if keyType != serviceGenericKeyType {
 			t.Fatalf("keyType = %q, want %s", keyType, serviceGenericKeyType)
 		}
@@ -599,7 +598,7 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 		return "ADDR", nil
 	}
 
-	result, err := svc.GenerateKey(context.Background(), serviceGenericKeyType, map[string]string{"owner": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}, generate)
+	result, err := svc.GenerateKey(context.Background(), serviceGenericKeyType, map[string]string{"owner": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"})
 	if err != nil {
 		t.Fatalf("GenerateKey(generic) error = %#v", err)
 	}
@@ -607,10 +606,10 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 		t.Fatalf("GenerateKey(generic) = %#v, want address ADDR keyType %s", result, serviceGenericKeyType)
 	}
 
-	badReq := func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error) {
+	svc.GenerateGenericLSig = func(context.Context, string, map[string]string) (string, error) {
 		return "", errors.New("boom")
 	}
-	if result, err := svc.GenerateKey(context.Background(), serviceGenericKeyType, map[string]string{"owner": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}, badReq); result != nil || err == nil || err.Kind != ErrorInternal {
+	if result, err := svc.GenerateKey(context.Background(), serviceGenericKeyType, map[string]string{"owner": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}); result != nil || err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("GenerateKey(generic error) = (%#v, %#v), want internal error", result, err)
 	}
 }
@@ -624,7 +623,7 @@ func TestServicePlainHostsCreateOnlyOnceEnabledAndTakeNoMnemonic(t *testing.T) {
 	t.Run("aplane.falcon1024.v1 by default", func(t *testing.T) {
 		ir := setupProductRuntime(t)
 		svc := Service{Runtime: ir, AuditLog: &auditRecorder{}}
-		if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil, nil); err != nil || result == nil {
+		if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil); err != nil || result == nil {
 			t.Fatalf("GenerateKey(aplane.falcon1024.v1) = %v, %v", result, err)
 		}
 		if result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", []byte("invalid phrase"), nil); result != nil || err == nil || !strings.Contains(err.Message, "mnemonic import not supported") {
@@ -643,7 +642,7 @@ func TestServicePlainHostsCreateOnlyOnceEnabledAndTakeNoMnemonic(t *testing.T) {
 				if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceCompiled, State: state}); err != nil {
 					t.Fatal(err)
 				}
-				result, err := svc.GenerateKey(context.Background(), keyType, nil, nil)
+				result, err := svc.GenerateKey(context.Background(), keyType, nil)
 				switch state {
 				case keytypestate.StateEnabled:
 					if err != nil || result == nil {
@@ -879,13 +878,13 @@ func TestServiceGenerateKeyResolvesThroughInstance(t *testing.T) {
 	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
 
-	_, err := svc.GenerateKey(context.Background(), keyType, map[string]string{"shape": "other"}, nil)
+	_, err := svc.GenerateKey(context.Background(), keyType, map[string]string{"shape": "other"})
 	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "unknown shape") {
 		t.Fatalf("GenerateKey(unknown shape) error = %#v", err)
 	}
 	// A cosigner the parameters ask for is resolved before the instance, and an
 	// unknown reference never falls back to an account without one.
-	_, err = svc.GenerateKey(context.Background(), keyType, map[string]string{"shape": "list", "cosigner": "missing"}, nil)
+	_, err = svc.GenerateKey(context.Background(), keyType, map[string]string{"shape": "list", "cosigner": "missing"})
 	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "not found") {
 		t.Fatalf("GenerateKey(unknown cosigner) error = %#v", err)
 	}
@@ -909,7 +908,7 @@ func TestServiceAsksTheCreationAdvisorOnce(t *testing.T) {
 			return err
 		},
 		"GenerateKey": func(params map[string]string) *Error {
-			_, err := svc.GenerateKey(context.Background(), keyType, params, nil)
+			_, err := svc.GenerateKey(context.Background(), keyType, params)
 			return err
 		},
 	}
@@ -1009,7 +1008,7 @@ func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
 
-	genResult, genErr := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	genResult, genErr := svc.GenerateKey(context.Background(), "ed25519", nil)
 	if genErr != nil {
 		t.Fatalf("GenerateKey() error = %#v", genErr)
 	}
@@ -1061,20 +1060,20 @@ func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) 
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
 	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, boundedmeta.CosignerPublicKeyParameter: strings.Repeat("41", boundedmeta.DefaultCosignerPublicKeySize)}
-	if _, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", cosigned, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+	if _, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", cosigned); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("GenerateKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}
 	if _, err := svc.ImportKey(context.Background(), "aplane.ed25519.v1", []byte(mnemonic), nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("ImportKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}
-	if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", cosigned, nil); err != nil || result.Address == "" {
+	if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", cosigned); err != nil || result.Address == "" {
 		t.Fatalf("GenerateKey(aplane.falcon1024.v1) on a new runtime = %+v, %#v; want the Falcon plain host enabled by default", result, err)
 	}
-	if _, err := svc.GenerateKey(context.Background(), "example.unknown.v1", nil, nil); err == nil || err.Message != "invalid key type: example.unknown.v1" {
+	if _, err := svc.GenerateKey(context.Background(), "example.unknown.v1", nil); err == nil || err.Message != "invalid key type: example.unknown.v1" {
 		t.Fatalf("GenerateKey(unknown) = %#v, want the invalid key type refusal", err)
 	}
 	for _, native := range []string{"ed25519", "falcon1024"} {
-		if result, err := svc.GenerateKey(context.Background(), native, nil, nil); err != nil || result.Address == "" {
+		if result, err := svc.GenerateKey(context.Background(), native, nil); err != nil || result.Address == "" {
 			t.Fatalf("GenerateKey(%s) on a new runtime = %+v, %#v; want the native key type enabled by default", native, result, err)
 		}
 	}

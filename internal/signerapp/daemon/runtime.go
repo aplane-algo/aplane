@@ -3,18 +3,6 @@
 
 package daemon
 
-import (
-	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
-)
-
-type SignerState = signerruntime.SignerState
-
-const (
-	SignerStateLocked   = signerruntime.SignerStateLocked
-	SignerStateUnlocked = signerruntime.SignerStateUnlocked
-	SignerStateRecovery = signerruntime.SignerStateRecovery
-)
-
 func (fs *Signer) hasAdminClient() bool {
 	hub := fs.adminHub()
 	if hub == nil {

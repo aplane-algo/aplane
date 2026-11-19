@@ -380,7 +380,7 @@ func TestApprovalTextFrozenGroupClaimsNoChange(t *testing.T) {
 		req := signerapi.GroupSignRequest{Requests: requests}
 		plan := &PlanResult{
 			DummiesNeeded:        1,
-			FeeInfo:              DummyFeeInfo{DummyFeeContribution: 1_000, ProgramFeeContribution: 30},
+			FeeInfo:              DummyFeeInfo{ProgramFeeContribution: 30},
 			LogicSigResourcePlan: lsigresource.Plan{ChargedProgramBytes: 300},
 			PassthroughIndices:   map[int]bool{},
 			ForeignIndices:       map[int]bool{1: len(requests) > 1},

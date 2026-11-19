@@ -238,7 +238,3 @@ type OnlineSession interface {
 	Unlock([]byte, time.Duration) (*protocol.UnlockResultMessage, error)
 	SendAndReceive(interface{}, time.Duration) ([]byte, error)
 }
-
-type Runner interface {
-	Run(context.Context, Command, Streams) error
-}

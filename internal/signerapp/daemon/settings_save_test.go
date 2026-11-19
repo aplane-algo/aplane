@@ -55,7 +55,7 @@ func TestSigningSeesAutoApproveByTheChangesDirection(t *testing.T) {
 				ir := server.productRuntime()
 				app := server.adminServices().adminApp()
 				signingSees := func() bool {
-					return *server.newApprovalServiceWithAudit(ir, nil).UserAutoApprove
+					return server.newApprovalServiceWithAudit(ir, nil).UserAutoApprove
 				}
 				update := func(v bool) error {
 					return app.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{

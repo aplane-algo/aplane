@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -61,7 +62,7 @@ func TestHandleSignReturnsForbiddenWhenKeySessionLocksMidRequest(t *testing.T) {
 	reqJSON, err := json.Marshal(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: genResp.Address,
-			TxnBytesHex: encodeTxnToHex(txn),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	})
 	if err != nil {

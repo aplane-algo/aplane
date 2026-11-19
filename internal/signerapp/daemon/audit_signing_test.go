@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -73,7 +74,7 @@ func TestAuditRecordsTheLogicSigGroupAsSigned(t *testing.T) {
 	}
 	body := func(requestID string) []byte {
 		data, err := json.Marshal(signerapi.GroupSignRequest{RequestID: requestID, Requests: []signerapi.SignRequest{{
-			AuthAddress: address, TxnBytesHex: encodeTxnToHex(requested),
+			AuthAddress: address, TxnBytesHex: txnutil.EncodeWithPrefixHex(requested),
 		}}})
 		if err != nil {
 			t.Fatal(err)
@@ -87,7 +88,7 @@ func TestAuditRecordsTheLogicSigGroupAsSigned(t *testing.T) {
 		t.Fatalf("/plan failed: %d: %s", planW.Code, planW.Body.String())
 	}
 	planned := readAuditEntries(t, path)
-	if len(planned) != 1 || planned[0].Event != AuditPlanRequest || planned[0].OperationID != "plan-1" || planned[0].TxnAuth != address {
+	if len(planned) != 1 || planned[0].Event != signeraudit.AuditPlanRequest || planned[0].OperationID != "plan-1" || planned[0].TxnAuth != address {
 		t.Fatalf("/plan entries = %+v, want one PLAN_REQUEST for the request", planned)
 	}
 
@@ -115,7 +116,7 @@ func TestAuditRecordsTheLogicSigGroupAsSigned(t *testing.T) {
 	}
 
 	entries := readAuditEntries(t, path)[1:]
-	if len(entries) != 2 || entries[0].Event != AuditSignRequest || entries[1].Event != AuditSignApproved {
+	if len(entries) != 2 || entries[0].Event != signeraudit.AuditSignRequest || entries[1].Event != signeraudit.AuditSignApproved {
 		t.Fatalf("/sign entries = %+v, want SIGN_REQUEST then SIGN_APPROVED", entries)
 	}
 	for _, entry := range entries {
@@ -177,7 +178,7 @@ func TestAuditRecordsARefusedSignAsRejected(t *testing.T) {
 	}
 	txn.RekeyTo = types.Address{7}
 	reqJSON, err := json.Marshal(signerapi.GroupSignRequest{RequestID: "refused-1", Requests: []signerapi.SignRequest{{
-		AuthAddress: genResp.Address, TxnBytesHex: encodeTxnToHex(txn),
+		AuthAddress: genResp.Address, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +190,7 @@ func TestAuditRecordsARefusedSignAsRejected(t *testing.T) {
 	}
 
 	entries := readAuditEntries(t, path)
-	if len(entries) != 2 || entries[0].Event != AuditSignRequest || entries[1].Event != AuditSignRejected {
+	if len(entries) != 2 || entries[0].Event != signeraudit.AuditSignRequest || entries[1].Event != signeraudit.AuditSignRejected {
 		t.Fatalf("entries = %+v, want SIGN_REQUEST then SIGN_REJECTED", entries)
 	}
 	if !strings.HasPrefix(entries[1].Reason, "policy_engine_rejected:") || entries[1].TxID != "" || entries[1].Fee != nil {
@@ -266,10 +267,10 @@ func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 	// wantRecord holds entry, for a refusal naming refused, to the planned
 	// position of group, signed by auth ("" for a position the signer does
 	// not sign, whose entry has no txn_auth).
-	wantRecord := func(t *testing.T, entry AuditEntry, group []types.Transaction, position, refused int, auth, operationID string) {
+	wantRecord := func(t *testing.T, entry signeraudit.AuditEntry, group []types.Transaction, position, refused int, auth, operationID string) {
 		t.Helper()
 		txn := group[position]
-		if entry.Event != AuditSignRejected || entry.Outcome != "rejected" || entry.OperationID != operationID ||
+		if entry.Event != signeraudit.AuditSignRejected || entry.Outcome != "rejected" || entry.OperationID != operationID ||
 			entry.TxnAuth != auth || entry.TxnSender != txn.Sender.String() || entry.Reason != reason(refused) {
 			t.Fatalf("rejection = %+v", entry)
 		}
@@ -296,7 +297,7 @@ func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 		signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: grouped, Sig: types.Signature{7}}))
 		wantRefused(t, post(t, server.handleSign, "/sign", signerapi.GroupSignRequest{RequestID: "refused-pt", Requests: []signerapi.SignRequest{{SignedTxnHex: signed}}}))
 		entries := readAuditEntries(t, path)
-		if len(entries) != 2 || entries[0].Event != AuditSignRequest {
+		if len(entries) != 2 || entries[0].Event != signeraudit.AuditSignRequest {
 			t.Fatalf("entries = %+v, want SIGN_REQUEST then one SIGN_REJECTED", entries)
 		}
 		wantRecord(t, entries[1], []types.Transaction{grouped}, 0, 0, "", "refused-pt")
@@ -307,8 +308,8 @@ func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 
 	t.Run("mixed, refused at the foreign position", func(t *testing.T) {
 		req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
-			{AuthAddress: signer, TxnBytesHex: encodeTxnToHex(payment)},
-			{TxnBytesHex: encodeTxnToHex(rekey)},
+			{AuthAddress: signer, TxnBytesHex: txnutil.EncodeWithPrefixHex(payment)},
+			{TxnBytesHex: txnutil.EncodeWithPrefixHex(rekey)},
 		}}
 		// /plan signs nothing and runs no signer invariant: it returns the
 		// group the later /sign refuses, which the entry names.
@@ -333,7 +334,7 @@ func TestAuditRecordsAValidTargetRefusalAtThePositionItNames(t *testing.T) {
 		req.RequestID = "refused-mixed"
 		wantRefused(t, post(t, server.handleSign, "/sign", req))
 		entries := readAuditEntries(t, path)
-		if len(entries) != 4 || entries[0].Event != AuditSignRequest || entries[1].Event != AuditSignRequest {
+		if len(entries) != 4 || entries[0].Event != signeraudit.AuditSignRequest || entries[1].Event != signeraudit.AuditSignRequest {
 			t.Fatalf("entries = %+v, want two SIGN_REQUEST then two SIGN_REJECTED", entries)
 		}
 		wantRecord(t, entries[2], planned, 0, 1, signer, "refused-mixed")
@@ -427,7 +428,7 @@ func testnetPayments(t *testing.T, sender string, count int) []types.Transaction
 
 // requestIDOf is the one operation_id every entry shares, failing if any
 // entry has none or another.
-func requestIDOf(t *testing.T, entries []AuditEntry) string {
+func requestIDOf(t *testing.T, entries []signeraudit.AuditEntry) string {
 	t.Helper()
 	if len(entries) == 0 {
 		t.Fatal("no entries")
@@ -456,7 +457,7 @@ func TestAnIDLessSignIsLoggedUnderTheIDItsPromptHas(t *testing.T) {
 	sign := func(txns []types.Transaction) <-chan *httptest.ResponseRecorder {
 		requests := make([]signerapi.SignRequest, len(txns))
 		for i, txn := range txns {
-			requests[i] = signerapi.SignRequest{AuthAddress: address, TxnBytesHex: encodeTxnToHex(txn)}
+			requests[i] = signerapi.SignRequest{AuthAddress: address, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}
 		}
 		body, err := json.Marshal(signerapi.GroupSignRequest{Requests: requests})
 		if err != nil {
@@ -492,7 +493,7 @@ func TestAnIDLessSignIsLoggedUnderTheIDItsPromptHas(t *testing.T) {
 		t.Fatalf("/sign failed: %d: %s", w.Code, w.Body.String())
 	}
 	approved := readAuditEntries(t, path)
-	if len(approved) != 4 || approved[0].Event != AuditSignRequest || approved[3].Event != AuditSignApproved {
+	if len(approved) != 4 || approved[0].Event != signeraudit.AuditSignRequest || approved[3].Event != signeraudit.AuditSignApproved {
 		t.Fatalf("entries = %+v, want two SIGN_REQUEST then two SIGN_APPROVED", approved)
 	}
 	approvedID := requestIDOf(t, approved)
@@ -506,7 +507,7 @@ func TestAnIDLessSignIsLoggedUnderTheIDItsPromptHas(t *testing.T) {
 	awaitPrompt(done)
 	pending := readAuditEntries(t, path)[len(approved):]
 	pendingID := requestIDOf(t, pending)
-	if pendingID == approvedID || pending[0].Event != AuditSignRequest {
+	if pendingID == approvedID || pending[0].Event != signeraudit.AuditSignRequest {
 		t.Fatalf("pending entries = %+v, want a SIGN_REQUEST under a new ID", pending)
 	}
 	if result := ir.CancelSigningApproval(pendingID, signerapproval.SignRequestCancelReasonClientCanceled); result.State != signerapproval.SignRequestCancelStateCanceled {
@@ -526,8 +527,8 @@ func TestAnIDLessPlanIsLoggedUnderOneID(t *testing.T) {
 
 	txns := testnetPayments(t, address, 2)
 	body, err := json.Marshal(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
-		{AuthAddress: address, TxnBytesHex: encodeTxnToHex(txns[0])},
-		{AuthAddress: address, TxnBytesHex: encodeTxnToHex(txns[1])},
+		{AuthAddress: address, TxnBytesHex: txnutil.EncodeWithPrefixHex(txns[0])},
+		{AuthAddress: address, TxnBytesHex: txnutil.EncodeWithPrefixHex(txns[1])},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -538,7 +539,7 @@ func TestAnIDLessPlanIsLoggedUnderOneID(t *testing.T) {
 		t.Fatalf("/plan failed: %d: %s", w.Code, w.Body.String())
 	}
 	entries := readAuditEntries(t, path)
-	if len(entries) != 2 || entries[0].Event != AuditPlanRequest || entries[1].Event != AuditPlanRequest {
+	if len(entries) != 2 || entries[0].Event != signeraudit.AuditPlanRequest || entries[1].Event != signeraudit.AuditPlanRequest {
 		t.Fatalf("entries = %+v, want two PLAN_REQUEST", entries)
 	}
 	requestIDOf(t, entries)
@@ -572,7 +573,7 @@ func TestAnIDLessComponentIsLoggedUnderTheIDItReturns(t *testing.T) {
 	var resp signerapi.ComponentResponse
 	decodeResponse(t, w, &resp)
 	entries := readAuditEntries(t, path)
-	if len(entries) != 2 || entries[0].Event != AuditSignApproved || entries[1].Event != AuditSignApproved {
+	if len(entries) != 2 || entries[0].Event != signeraudit.AuditSignApproved || entries[1].Event != signeraudit.AuditSignApproved {
 		t.Fatalf("entries = %+v, want a SIGN_APPROVED per target", entries)
 	}
 	if id := requestIDOf(t, entries); resp.RequestID == "" || id != resp.RequestID {

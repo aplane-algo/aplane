@@ -12,6 +12,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -66,7 +67,7 @@ func TestPlanAndSignSuccessResponseShapes(t *testing.T) {
 	reqJSON, err := json.Marshal(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: genResp.Address,
-			TxnBytesHex: encodeTxnToHex(txn),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	})
 	if err != nil {
@@ -145,7 +146,7 @@ func TestSignRejectsForeignModeWithStableErrorShape(t *testing.T) {
 
 	reqJSON, err := json.Marshal(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
-			TxnBytesHex: encodeTxnToHex(foreignTxn),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(foreignTxn),
 		}},
 	})
 	if err != nil {
@@ -265,7 +266,7 @@ func TestPlanRejectsMixedPassthroughAndForeignWithStableErrorShape(t *testing.T)
 				SignedTxnHex: encodeSignedTxnToHex(passthroughSigned),
 			},
 			{
-				TxnBytesHex: encodeTxnToHex(txnB),
+				TxnBytesHex: txnutil.EncodeWithPrefixHex(txnB),
 			},
 		},
 	})

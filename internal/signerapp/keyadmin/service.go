@@ -100,15 +100,18 @@ type Locker interface {
 
 type Service struct {
 	AuditLog     AuditLogger
-	MutationLock func() Locker
+	MutationLock Locker
 	Runtime      *productruntime.Runtime
+	// GenerateGenericLSig creates a generic LogicSig account. nil refuses
+	// generic LogicSig key types.
+	GenerateGenericLSig GenerateGenericLSigFunc
 	// NetworkGenesisHashes maps every network the signer knows, built-in or
 	// configured, to its base64 genesis hash. Rotating key generation uses it
 	// to accept a network name such as "localnet".
 	NetworkGenesisHashes func() map[string]string
 }
 
-type GenerateGenericLSigFunc func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error)
+type GenerateGenericLSigFunc func(ctx context.Context, keyType string, params map[string]string) (string, error)
 
 // resolvedCreation is a creation request after its references are resolved and
 // its instance selected.
@@ -182,13 +185,13 @@ type ReviewedValues struct {
 }
 
 // GenerateKey creates a key with no prior review. See GenerateReviewedKey.
-func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
-	return s.GenerateReviewedKey(ctx, keyType, params, ReviewedValues{}, generateGenericLSig)
+func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string) (*GenerateResult, *Error) {
+	return s.GenerateReviewedKey(ctx, keyType, params, ReviewedValues{})
 }
 
 // GenerateReviewedKey creates a key. A mismatch with reviewed means the definition
 // or the resolved request changed after the operator reviewed it.
-func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params map[string]string, reviewed ReviewedValues, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params map[string]string, reviewed ReviewedValues) (*GenerateResult, *Error) {
 	ir := s.Runtime
 	if ctx == nil {
 		ctx = context.Background()
@@ -227,10 +230,10 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 		return nil, err
 	}
 	if genericlsig.IsGenericLSigType(keyType) {
-		if generateGenericLSig == nil {
+		if s.GenerateGenericLSig == nil {
 			return nil, &Error{Kind: ErrorInternal, Message: "generic lsig generator not configured"}
 		}
-		address, err := generateGenericLSig(ctx, ir, keyType, params)
+		address, err := s.GenerateGenericLSig(ctx, keyType, params)
 		if err != nil {
 			return nil, mapGenerateError(err)
 		}
@@ -272,13 +275,6 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	}, nil
 }
 
-// resolveRotatingNetwork replaces a configured network name in the network
-// parameter with that network's genesis hash. The generator itself knows only
-// the built-in names, because it cannot see signer configuration.
-// unavailableKeyTypeError explains why keyType cannot create keys on this
-// node. A key type the binary carries, or a template the store has installed,
-// names the step that enables it; any other key type is unknown here. Only
-// the protocol-native key types are enabled by default.
 // checkGenerationAllowed decides whether keyType may create an account. It must
 // run under the mutation lock, on every creation route.
 func checkGenerationAllowed(paths storepaths.Paths, keyType string) *Error {
@@ -339,6 +335,10 @@ func (s Service) checkGenerationRequirements(creation *resolvedCreation) *Error 
 	return nil
 }
 
+// unavailableKeyTypeError explains why keyType cannot create keys on this
+// node. A key type the binary carries, or a template the store has installed,
+// names the step that enables it; any other key type is unknown here. Only
+// the protocol-native key types are enabled by default.
 func unavailableKeyTypeError(paths storepaths.Paths, keyType string) *Error {
 	if keytypecatalog.IsInternalOnly(keyType) {
 		return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf(
@@ -353,6 +353,9 @@ func unavailableKeyTypeError(paths storepaths.Paths, keyType string) *Error {
 	return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("invalid key type: %s", keyType)}
 }
 
+// resolveRotatingNetwork replaces a configured network name in the network
+// parameter with that network's genesis hash. The generator itself knows only
+// the built-in names, because it cannot see signer configuration.
 func (s Service) resolveRotatingNetwork(params map[string]string) map[string]string {
 	name := strings.TrimSpace(params[rotatingkey.RotatingNetworkParameter])
 	if name == "" || s.NetworkGenesisHashes == nil {
@@ -584,12 +587,8 @@ func (s Service) lockMutation() func() {
 	if s.MutationLock == nil {
 		return func() {}
 	}
-	lock := s.MutationLock()
-	if lock == nil {
-		return func() {}
-	}
-	lock.Lock()
-	return lock.Unlock
+	s.MutationLock.Lock()
+	return s.MutationLock.Unlock
 }
 
 func mapGenerateError(err error) *Error {

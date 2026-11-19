@@ -20,6 +20,7 @@ import (
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -49,8 +50,8 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 
 	logger.LogSignRequestAttributed(auditAttribution{}, "ADDR", "SENDER", "pay", "send 1 ALGO")
 	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.TxnRecord{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "send 1 ALGO"})
-	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
-	logger.LogSignFailed("ADDR", "SENDER", "key load error")
+	logger.LogSignRejectedAttributed(auditAttribution{}, "ADDR", "SENDER", "operator rejected", "")
+	logger.LogSignFailedAttributed(auditAttribution{}, "ADDR", "SENDER", "key load error")
 	logger.LogKeyReload(5)
 	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
 	logger.LogClientEnrolledContext(adminserver.SessionContext{}, "SHA256:abc", "laptop", "10.0.0.1")
@@ -85,11 +86,11 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 		}
 	}
 
-	var keyReload AuditEntry
+	var keyReload signeraudit.AuditEntry
 	if err := json.Unmarshal([]byte(lines[4]), &keyReload); err != nil {
 		t.Fatalf("decode key reload entry: %v", err)
 	}
-	if keyReload.Event != AuditKeyReload || keyReload.Principal != auth.SystemProductAdminPrincipalID || keyReload.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
+	if keyReload.Event != signeraudit.AuditKeyReload || keyReload.Principal != auth.SystemProductAdminPrincipalID || keyReload.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
 		t.Fatalf("key reload attribution = %#v", keyReload)
 	}
 }
@@ -109,8 +110,8 @@ func TestAuditKeyRejected(t *testing.T) {
 		t.Fatalf("entry count = %d, want 1", len(entries))
 	}
 	entry := entries[0]
-	if entry.Event != AuditKeyRejected || entry.Outcome != "rejected" {
-		t.Fatalf("entry event/outcome = %s/%s, want %s/rejected", entry.Event, entry.Outcome, AuditKeyRejected)
+	if entry.Event != signeraudit.AuditKeyRejected || entry.Outcome != "rejected" {
+		t.Fatalf("entry event/outcome = %s/%s, want %s/rejected", entry.Event, entry.Outcome, signeraudit.AuditKeyRejected)
 	}
 	if !strings.Contains(entry.Reason, "file=BAD.key") || !strings.Contains(entry.Reason, "logic_sig_salt_invalid") {
 		t.Fatalf("entry reason = %q", entry.Reason)
@@ -127,7 +128,7 @@ func TestAuditSigningAttributionFields(t *testing.T) {
 
 	logger.LogSignRequestAttributed(auditAttribution{}, "ADDR", "SENDER", "pay", "send 1 ALGO")
 	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.TxnRecord{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed"})
-	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
+	logger.LogSignRejectedAttributed(auditAttribution{}, "ADDR", "SENDER", "operator rejected", "")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 3 {
@@ -154,7 +155,7 @@ func TestAuditSigningPolicyRuleID(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	logger.LogSignApprovedAttributed(auditAttribution{}, signeraudit.TxnRecord{TxnAuth: "ADDR", TxnSender: "SENDER", TxnDetails: "txn signed", PolicyRuleID: "review_algo_payment_exceeded"})
-	logger.LogSignRejectedWithPolicyRule("ADDR", "SENDER", "operator rejected", "always_review_warnings")
+	logger.LogSignRejectedAttributed(auditAttribution{}, "ADDR", "SENDER", "operator rejected", "always_review_warnings")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 2 {
@@ -232,7 +233,7 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 		t.Fatalf("entry count = %d, want 1", len(entries))
 	}
 	entry := entries[0]
-	if entry.Event != AuditAuthorizationDenied || entry.Outcome != "denied" {
+	if entry.Event != signeraudit.AuditAuthorizationDenied || entry.Outcome != "denied" {
 		t.Fatalf("entry event/outcome = %q/%q, want authorization denied", entry.Event, entry.Outcome)
 	}
 	if entry.Principal != "alice-admin" || entry.RequesterPrincipal != "alice-admin" {
@@ -346,7 +347,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 	reqJSON, err := json.Marshal(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: genResp.Address,
-			TxnBytesHex: encodeTxnToHex(txn),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	})
 	if err != nil {
@@ -371,7 +372,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("entry count = %d, want 2", len(entries))
 	}
-	if entries[0].Event != AuditSignRequest || entries[1].Event != AuditSignApproved {
+	if entries[0].Event != signeraudit.AuditSignRequest || entries[1].Event != signeraudit.AuditSignApproved {
 		t.Fatalf("audit events = %q/%q, want request/approved", entries[0].Event, entries[1].Event)
 	}
 	for _, entry := range entries {
@@ -407,7 +408,7 @@ func TestAuditProcessLevelEventsOmitProductLocator(t *testing.T) {
 	}
 
 	for i, line := range lines {
-		var entry AuditEntry
+		var entry signeraudit.AuditEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("line %d: unmarshal error: %v", i, err)
 		}
@@ -421,7 +422,7 @@ func TestAuditProcessLevelEventsOmitProductLocator(t *testing.T) {
 		if _, ok := fields["target_identity_id"]; ok {
 			t.Errorf("line %d contains target_identity_id: %#v", i, fields)
 		}
-		if entry.Event == AuditServerStopIncomplete && (entry.Outcome != "failed" || entry.Reason == "") {
+		if entry.Event == signeraudit.AuditServerStopIncomplete && (entry.Outcome != "failed" || entry.Reason == "") {
 			t.Errorf("incomplete shutdown entry = %#v, want failed outcome and reason", entry)
 		}
 	}
@@ -475,41 +476,41 @@ func TestAuditKeyMutationEventsCarryAddressAndReason(t *testing.T) {
 		t.Fatalf("expected 3 audit entries, got %d", len(lines))
 	}
 
-	var generated AuditEntry
+	var generated signeraudit.AuditEntry
 	if err := json.Unmarshal([]byte(lines[0]), &generated); err != nil {
 		t.Fatal(err)
 	}
-	if generated.Event != AuditKeyGenerated || generated.TxnAuth != "ADDR1" || generated.Reason != "ed25519" {
+	if generated.Event != signeraudit.AuditKeyGenerated || generated.TxnAuth != "ADDR1" || generated.Reason != "ed25519" {
 		t.Fatalf("unexpected generated entry: %#v", generated)
 	}
 
-	var deleted AuditEntry
+	var deleted signeraudit.AuditEntry
 	if err := json.Unmarshal([]byte(lines[1]), &deleted); err != nil {
 		t.Fatal(err)
 	}
-	if deleted.Event != AuditKeyDeleted || deleted.TxnAuth != "ADDR2" || deleted.Reason != "ADDR2.key" {
+	if deleted.Event != signeraudit.AuditKeyDeleted || deleted.TxnAuth != "ADDR2" || deleted.Reason != "ADDR2.key" {
 		t.Fatalf("unexpected deleted entry: %#v", deleted)
 	}
 
-	var imported AuditEntry
+	var imported signeraudit.AuditEntry
 	if err := json.Unmarshal([]byte(lines[2]), &imported); err != nil {
 		t.Fatal(err)
 	}
-	if imported.Event != AuditKeyImported || imported.TxnAuth != "ADDR4" || imported.Reason != "ed25519" {
+	if imported.Event != signeraudit.AuditKeyImported || imported.TxnAuth != "ADDR4" || imported.Reason != "ed25519" {
 		t.Fatalf("unexpected imported entry: %#v", imported)
 	}
 }
 
-func readAuditEntries(t *testing.T, path string) []AuditEntry {
+func readAuditEntries(t *testing.T, path string) []signeraudit.AuditEntry {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	entries := make([]AuditEntry, 0, len(lines))
+	entries := make([]signeraudit.AuditEntry, 0, len(lines))
 	for i, line := range lines {
-		var entry AuditEntry
+		var entry signeraudit.AuditEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("line %d: unmarshal error: %v", i, err)
 		}

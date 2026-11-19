@@ -192,6 +192,7 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 		manager: adminserver.NewSessionManager(),
 	}
 	signer.ipcServer = ipcServer
+	signer.hub = signer.ipcServer
 
 	oldServer, oldClient := net.Pipe()
 	defer func() { _ = oldClient.Close() }()

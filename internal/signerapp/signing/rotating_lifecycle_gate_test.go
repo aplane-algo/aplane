@@ -972,7 +972,7 @@ func TestRotatingSignStopsAtARecoveryRoundTripDuringApproval(t *testing.T) {
 	prep := mustPrepare(t, f, f.spend(1000, 1100))
 	off, asked := false, false
 	f.svc.Approval = &ApprovalService{
-		UserAutoApprove: &off,
+		UserAutoApprove: off,
 		HasClient:       func() bool { return true },
 		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, _ string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 			asked = true

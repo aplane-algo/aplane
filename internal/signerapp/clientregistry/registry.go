@@ -22,11 +22,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ReservedOptionPrefix is held for future APlane options. Reserving it does
-// not make options under it acceptable to a version that does not implement
-// them.
-const ReservedOptionPrefix = "aplane-"
-
 // Entry is one enrolled key.
 type Entry struct {
 	Key ssh.PublicKey
@@ -129,14 +124,6 @@ func (r *Registry) add(key ssh.PublicKey, label string) {
 	})
 }
 
-// Len returns the number of enrolled keys.
-func (r *Registry) Len() int {
-	if r == nil {
-		return 0
-	}
-	return len(r.entries)
-}
-
 // Entries returns the enrolled keys in file order.
 func (r *Registry) Entries() []Entry {
 	if r == nil {
@@ -145,15 +132,6 @@ func (r *Registry) Entries() []Entry {
 	out := make([]Entry, len(r.entries))
 	copy(out, r.entries)
 	return out
-}
-
-// Lookup returns the entry for key, compared by canonical key bytes.
-func (r *Registry) Lookup(key ssh.PublicKey) (Entry, bool) {
-	idx, ok := r.indexOf(key)
-	if !ok {
-		return Entry{}, false
-	}
-	return r.entries[idx], true
 }
 
 // LookupFingerprint returns the entry whose key has the given SHA256

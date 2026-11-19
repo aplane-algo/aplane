@@ -328,7 +328,6 @@ func (m *ReleaseMemory) Clear(account string) {
 	delete(m.byAccount, account)
 }
 
-// Reset forgets every entry, as at lock.
 // Reset forgets every record and holds every account until the next
 // restore from the audit log begins (Restoring).
 func (m *ReleaseMemory) Reset() {

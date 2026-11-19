@@ -70,8 +70,7 @@ const (
 
 // classifyAuthorizer applies the ladder: stage 0, table, own inventory,
 // unknown. The stage 0 rule runs first because a self-bound account's own
-// address is also one this signer holds. (An exit record, once the rotating
-// exit exists, slots in between the table and the inventory.)
+// address is also one this signer holds.
 func classifyAuthorizer(table *stagetable.Table, account, authorizer types.Address, held map[string]bool) (uint64, AuthorizerClass) {
 	if stage, ok := resolveStage(table, account, authorizer); ok {
 		return stage, ClassStage

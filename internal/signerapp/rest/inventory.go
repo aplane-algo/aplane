@@ -595,9 +595,6 @@ func (s Service) KeyTypes(ir *productruntime.Runtime) (*signerapi.KeyTypesRespon
 	return &signerapi.KeyTypesResponse{KeyTypes: keyTypes}, nil
 }
 
-// rotatingKeyTypeInfo describes the rotating account key type. It has no
-// LogicSig provider: its program changes on every spend, so the signer owns
-// its derivation and signing through the rotating1 flow.
 // networkNames returns the networks the signer knows, sorted, for the
 // rotating key type's network choice.
 func (s Service) networkNames() []string {
@@ -612,6 +609,9 @@ func (s Service) networkNames() []string {
 	return names
 }
 
+// rotatingKeyTypeInfo describes the rotating account key type. It has no
+// LogicSig provider: its program changes on every spend, so the signer owns
+// its derivation and signing through the rotating1 flow.
 func rotatingKeyTypeInfo(info signerapi.KeyTypeInfo, networks []string) signerapi.KeyTypeInfo {
 	profile, _ := rotatingkey.Lookup(info.KeyType)
 	info.Family = profile.Family

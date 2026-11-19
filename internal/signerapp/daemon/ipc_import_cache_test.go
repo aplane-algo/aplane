@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 )
 
 const testImportMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon invest"
@@ -25,6 +26,7 @@ func TestIPCImportKeyBecomesVisibleAfterReload(t *testing.T) {
 
 	ipcServer := &IPCServer{signer: server}
 	server.ipcServer = ipcServer
+	server.hub = server.ipcServer
 
 	recorder := &recordingIPCConn{}
 	session := newBoundTestSession(ipcServer, recorder, server.productRuntime())
@@ -85,6 +87,7 @@ func TestIPCGenerateKeyBecomesVisibleImmediatelyAndAdminMutationsAreAudited(t *t
 
 	ipcServer := &IPCServer{signer: server}
 	server.ipcServer = ipcServer
+	server.hub = server.ipcServer
 
 	recorder := &recordingIPCConn{}
 	session := newBoundTestSession(ipcServer, recorder, server.productRuntime())
@@ -164,18 +167,18 @@ func TestIPCGenerateKeyBecomesVisibleImmediatelyAndAdminMutationsAreAudited(t *t
 		t.Fatalf("expected 6 audit entries, got %d", len(lines))
 	}
 
-	requiredEvents := map[AuditEventType]string{
-		AuditKeyGenerated: genResult.Address,
-		AuditKeyDeleted:   genResult.Address,
-		AuditKeyImported:  importResult.Address,
+	requiredEvents := map[signeraudit.AuditEventType]string{
+		signeraudit.AuditKeyGenerated: genResult.Address,
+		signeraudit.AuditKeyDeleted:   genResult.Address,
+		signeraudit.AuditKeyImported:  importResult.Address,
 	}
 	reloadCount := 0
 	for i, line := range lines {
-		var entry AuditEntry
+		var entry signeraudit.AuditEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("line %d: unmarshal error: %v", i, err)
 		}
-		if entry.Event == AuditKeyReload {
+		if entry.Event == signeraudit.AuditKeyReload {
 			reloadCount++
 			continue
 		}
@@ -236,6 +239,7 @@ func TestServeAdminMessagesZeroesHandledFrames(t *testing.T) {
 	defer cleanup()
 	ipcServer := &IPCServer{signer: server}
 	server.ipcServer = ipcServer
+	server.hub = server.ipcServer
 	session := newBoundTestSession(ipcServer, &recordingIPCConn{}, server.productRuntime())
 
 	importFrame, err := protocol.MarshalAdminMessage(protocol.ImportKeyMessage{

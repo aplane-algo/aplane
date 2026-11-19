@@ -76,7 +76,7 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 	assertNoKeys(t, service)
 
 	result, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters,
-		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
@@ -126,7 +126,7 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 		"grammar": {Fingerprint: "1:" + stale, BoundaryDigest: prepared.BoundaryDigest},
 		"digest":  {Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: stale},
 	} {
-		_, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters, reviewed, nil)
+		_, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters, reviewed)
 		if err == nil || !strings.Contains(err.Message, "changed after this request was reviewed") {
 			t.Fatalf("%s: GenerateReviewedKey() error = %#v", name, err)
 		}
@@ -139,7 +139,7 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	other[31] = 8
 	changed[plainhost.ParameterRecipients] = other.String()
 	_, err = service.GenerateReviewedKey(context.Background(), boundedHostKeyType, changed,
-		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 	if err == nil || !strings.Contains(err.Message, "changed after this request was reviewed") {
 		t.Fatalf("substituted recipient: GenerateReviewedKey() error = %#v", err)
 	}
@@ -187,7 +187,7 @@ func TestGenerationRequirements(t *testing.T) {
 				if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err == nil || !strings.Contains(err.Message, test.want) {
 					t.Fatalf("PrepareGenerateKey() error = %#v", err)
 				}
-				if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, test.want) {
+				if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params); err == nil || !strings.Contains(err.Message, test.want) {
 					t.Fatalf("GenerateKey() error = %#v", err)
 				}
 			}
@@ -213,7 +213,7 @@ func TestBoundsRefuseAnUnlockRound(t *testing.T) {
 		if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err == nil || !strings.Contains(err.Message, "unknown parameter") {
 			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
 		}
-		if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, "unknown parameter") {
+		if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params); err == nil || !strings.Contains(err.Message, "unknown parameter") {
 			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
 		}
 	}
@@ -229,7 +229,7 @@ func TestGenerationRequirementIsRecheckedAfterReview(t *testing.T) {
 	ir.Config().SetGenerationRequirements(true, false)
 	t.Cleanup(func() { ir.Config().SetGenerationRequirements(false, false) })
 	_, err = service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters,
-		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 	if err == nil || !strings.Contains(err.Message, "require_contained") {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
@@ -242,7 +242,7 @@ func TestGenerationRequirementsDoNotReachExpertTemplates(t *testing.T) {
 	ir.Config().SetGenerationRequirements(true, true)
 	service := Service{Runtime: ir}
 	// This template refuses rekeys but is not the general type; the settings must not care.
-	if _, err := service.GenerateKey(context.Background(), keyType, map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference}, nil); err != nil {
+	if _, err := service.GenerateKey(context.Background(), keyType, map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference}); err != nil {
 		t.Fatalf("GenerateKey() error = %#v", err)
 	}
 }
@@ -294,14 +294,14 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 	other[0], other[31] = 0x52, 1
 	changed[plainhost.ParameterRekeyTo] = other.String()
 	if _, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, changed,
-		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil); err == nil ||
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}); err == nil ||
 		!strings.Contains(err.Message, "changed after this request was reviewed") {
 		t.Fatalf("a substituted rekey-to address: GenerateReviewedKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
 
 	result, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters,
-		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}

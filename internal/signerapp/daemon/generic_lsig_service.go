@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 func (fs *Signer) genericLSigGenerator() keyadmin.GenericLSigGenerator {
@@ -19,6 +18,6 @@ func (fs *Signer) genericLSigGenerator() keyadmin.GenericLSigGenerator {
 	}
 }
 
-func (fs *Signer) generateGenericLSigForRuntimeContext(ctx context.Context, ir *productruntime.Runtime, keyType string, parameters map[string]string) (string, error) {
-	return fs.genericLSigGenerator().GenerateContext(ctx, ir, keyType, parameters)
+func (fs *Signer) generateGenericLSig(ctx context.Context, keyType string, parameters map[string]string) (string, error) {
+	return fs.genericLSigGenerator().GenerateContext(ctx, fs.productRuntime(), keyType, parameters)
 }

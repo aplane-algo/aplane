@@ -16,11 +16,9 @@ import (
 )
 
 type sshRuntime struct {
-	server     *sshtunnel.Server
-	stopper    sshRuntimeStopper
-	ctx        context.Context
-	cancel     context.CancelFunc
-	listenAddr string
+	server  *sshtunnel.Server
+	stopper sshRuntimeStopper
+	cancel  context.CancelFunc
 }
 
 type sshRuntimeStopper interface {
@@ -97,11 +95,9 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	logInfof("host key fingerprint: %s", sshServer.GetHostKeyFingerprint())
 
 	return &sshRuntime{
-		server:     sshServer,
-		stopper:    sshServer,
-		ctx:        sshCtx,
-		cancel:     sshCancel,
-		listenAddr: listenAddr,
+		server:  sshServer,
+		stopper: sshServer,
+		cancel:  sshCancel,
 	}, nil
 }
 
@@ -109,29 +105,26 @@ func (fs *Signer) setSSHRuntime(rt *sshRuntime) {
 	fs.sshRuntimeMu.Lock()
 	defer fs.sshRuntimeMu.Unlock()
 	fs.sshRuntime = rt
-	if rt == nil {
-		fs.sshServer = nil
-		return
-	}
-	fs.sshServer = rt.server
 }
 
 func (fs *Signer) currentSSHServer() *sshtunnel.Server {
 	fs.sshRuntimeMu.RLock()
 	defer fs.sshRuntimeMu.RUnlock()
-	return fs.sshServer
+	if fs.sshRuntime == nil {
+		return nil
+	}
+	return fs.sshRuntime.server
 }
 
 func (fs *Signer) stopSSHRuntime(ctx context.Context) error {
 	fs.sshRuntimeMu.Lock()
 	rt := fs.sshRuntime
 	fs.sshRuntime = nil
-	fs.sshServer = nil
 	fs.sshRuntimeMu.Unlock()
 
 	// Stop waits for listener/connection shutdown and may run code paths that
-	// consult the current SSH server. Keep it outside sshRuntimeMu so future
-	// live-restart paths cannot deadlock through currentSSHServer.
+	// consult the current SSH server, so it runs outside sshRuntimeMu, where
+	// it cannot deadlock through currentSSHServer.
 	return stopSSHRuntimeInstance(ctx, rt)
 }
 
@@ -144,11 +137,6 @@ func stopSSHRuntimeInstance(ctx context.Context, rt *sshRuntime) error {
 	}
 	if rt.stopper != nil {
 		return rt.stopper.StopContext(ctx)
-	}
-	// Preserve safe teardown for zero-value and older runtime holders that do
-	// not have the stopper seam populated.
-	if rt.server != nil {
-		return rt.server.StopContext(ctx)
 	}
 	return nil
 }
