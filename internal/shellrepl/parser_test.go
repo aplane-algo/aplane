@@ -1010,49 +1010,6 @@ func TestParseSweepCommand(t *testing.T) {
 	}
 }
 
-func TestFindKeyword(t *testing.T) {
-	tests := []struct {
-		name    string
-		args    []string
-		keyword string
-		want    int
-	}{
-		{
-			name:    "keyword found",
-			args:    []string{"1", "algo", "from", "alice", "to", "bob"},
-			keyword: "from",
-			want:    2,
-		},
-		{
-			name:    "keyword not found",
-			args:    []string{"1", "algo", "from", "alice"},
-			keyword: "to",
-			want:    -1,
-		},
-		{
-			name:    "case insensitive",
-			args:    []string{"1", "algo", "FROM", "alice"},
-			keyword: "from",
-			want:    2,
-		},
-		{
-			name:    "empty args",
-			args:    []string{},
-			keyword: "from",
-			want:    -1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := findKeyword(tt.args, tt.keyword)
-			if got != tt.want {
-				t.Errorf("findKeyword() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestParseAccountSet(t *testing.T) {
 	tests := []struct {
 		name       string

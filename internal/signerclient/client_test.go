@@ -335,7 +335,7 @@ func TestGetKeys_Success(t *testing.T) {
 
 func TestGetKeys_Locked(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		return mockResponse(403, `{"error":"signer is locked"}`), nil
+		return mockResponse(403, `{"error":"signer is locked","code":"locked"}`), nil
 	})
 
 	got, err := c.GetKeys()

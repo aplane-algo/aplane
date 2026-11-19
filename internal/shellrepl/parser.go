@@ -461,7 +461,7 @@ func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFla
 			}
 			*fee = feeVal
 			*useFlatFee = true
-		case strings.HasPrefix(arg, "arg:") && lsigArgs != nil:
+		case strings.HasPrefix(arg, "arg:"):
 			if err := cmdspec.AddLsigArg(lsigArgs, arg); err != nil {
 				return err
 			}
@@ -637,14 +637,4 @@ func parseSweepTrailingArgs(args []string, params *SweepParams) error {
 		}
 	}
 	return nil
-}
-
-// findKeyword returns the index of a keyword in args, or -1 if not found
-func findKeyword(args []string, keyword string) int {
-	for i, arg := range args {
-		if strings.ToLower(arg) == keyword {
-			return i
-		}
-	}
-	return -1
 }

@@ -712,14 +712,8 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 			}),
 		),
 
-		readline.PcItem("rekey",
-			readline.PcItem("list"),
-			readline.PcItem("refresh"),
-			readline.PcItemDynamic(func(line string) []string {
-				suggestions := []string{"list", "refresh", "to", "nowait"}
-				return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
-			}),
-		),
+		// Arguments are completed by completeRekey.
+		readline.PcItem("rekey"),
 
 		readline.PcItem("unrekey",
 			readline.PcItemDynamic(func(line string) []string {
@@ -783,25 +777,8 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 			}),
 		),
 
-		readline.PcItem("alias",
-			readline.PcItem("list"),
-			readline.PcItem("delete"),
-			readline.PcItem("remove"),
-			readline.PcItemDynamic(func(line string) []string {
-				parts := parseCompletableCommandLine(line).parts
-				aliasSubcommand := ""
-				if len(parts) >= 2 {
-					aliasSubcommand = strings.ToLower(parts[1])
-				}
-				if aliasSubcommand == "delete" || aliasSubcommand == "remove" {
-					return getAliasNames(aliasCache)
-				}
-				if len(parts) >= 2 {
-					return getAllAddresses(signerCache, aliasCache, ensureSignerCache)
-				}
-				return []string{"list", "delete", "remove"}
-			}),
-		),
+		// Arguments are completed by completeAlias.
+		readline.PcItem("alias"),
 
 		readline.PcItem("asa",
 			readline.PcItem("list"),

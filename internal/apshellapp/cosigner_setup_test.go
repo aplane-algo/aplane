@@ -247,7 +247,7 @@ func TestCompleteCosignerSetupReportsAdvertisedKeys(t *testing.T) {
 
 func TestCompleteCosignerSetupReportsLockedCosigner(t *testing.T) {
 	dataDir := t.TempDir()
-	server := newEndpointKeysStatusNode(t, 403, `{"error":"signer is locked"}`)
+	server := newEndpointKeysStatusNode(t, 403, `{"error":"signer is locked","code":"locked"}`)
 	writeLiveCosignerEndpoint(t, dataDir, "field", server)
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
