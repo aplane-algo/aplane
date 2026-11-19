@@ -16,9 +16,7 @@
 package stagetable
 
 import (
-	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -35,9 +33,8 @@ import (
 
 const (
 	magic         = "APSTAGES"
-	formatVersion = uint16(1)
+	formatVersion = uint16(2)
 	headerSize    = len(magic) + 2 + 32 + 32 + 8
-	addressSize   = 32
 	checksumSize  = sha256.Size
 )
 
@@ -84,15 +81,12 @@ type Table struct {
 // network is removed and the table starts empty; Open then returns the table
 // together with an error wrapping ErrDiscarded that says why, so the caller
 // can log it and continue. Any other error means the table is unusable.
-func Open(path string, selector types.Address, genesisHash []byte, keyTypes ...string) (*Table, error) {
+func Open(path string, selector types.Address, genesisHash []byte, keyType string) (*Table, error) {
 	if len(genesisHash) != 32 {
 		return nil, fmt.Errorf("stage table genesis hash must be 32 bytes, got %d", len(genesisHash))
 	}
-	t := &Table{path: path, selector: selector, index: make(map[types.Address]uint64), addrs: make(map[uint64]types.Address), verified: make(map[uint64]types.Address)}
+	t := &Table{path: path, selector: selector, keyType: keyType, index: make(map[types.Address]uint64), addrs: make(map[uint64]types.Address), verified: make(map[uint64]types.Address)}
 	copy(t.genesis[:], genesisHash)
-	if len(keyTypes) > 0 {
-		t.keyType = keyTypes[0]
-	}
 
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -126,9 +120,6 @@ func Open(path string, selector types.Address, genesisHash []byte, keyTypes ...s
 	}
 	return t, nil
 }
-
-// Path is the table's file.
-func (t *Table) Path() string { return t.path }
 
 // Len is the number of cached entries, not prefix coverage or a stage index.
 func (t *Table) Len() uint64 {
@@ -338,63 +329,6 @@ func (t *Table) close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.closed = true
-}
-
-func encode(selector types.Address, genesis [32]byte, addrs []types.Address) []byte {
-	buf := make([]byte, 0, headerSize+len(addrs)*addressSize+checksumSize)
-	buf = append(buf, magic...)
-	buf = binary.BigEndian.AppendUint16(buf, formatVersion)
-	buf = append(buf, selector[:]...)
-	buf = append(buf, genesis[:]...)
-	buf = binary.BigEndian.AppendUint64(buf, uint64(len(addrs)))
-	for _, a := range addrs {
-		buf = append(buf, a[:]...)
-	}
-	sum := sha256.Sum256(buf)
-	return append(buf, sum[:]...)
-}
-
-func decode(data []byte, selector types.Address, genesis [32]byte) ([]types.Address, error) {
-	if len(data) < headerSize+checksumSize {
-		return nil, errors.New("file too short")
-	}
-	body, sum := data[:len(data)-checksumSize], data[len(data)-checksumSize:]
-	if want := sha256.Sum256(body); !bytes.Equal(sum, want[:]) {
-		return nil, errors.New("checksum mismatch")
-	}
-	if string(body[:len(magic)]) != magic {
-		return nil, errors.New("bad magic")
-	}
-	off := len(magic)
-	if v := binary.BigEndian.Uint16(body[off:]); v != formatVersion {
-		return nil, fmt.Errorf("unsupported format version %d", v)
-	}
-	off += 2
-	if !bytes.Equal(body[off:off+32], selector[:]) {
-		return nil, errors.New("table belongs to another account")
-	}
-	off += 32
-	if !bytes.Equal(body[off:off+32], genesis[:]) {
-		return nil, errors.New("table belongs to another network")
-	}
-	off += 32
-	count := binary.BigEndian.Uint64(body[off:])
-	off += 8
-	// The file's own length bounds the allocation: a corrupt count that does
-	// not match it is rejected before anything is allocated.
-	if uint64(len(body)-off)/addressSize != count || uint64(len(body)-off)%addressSize != 0 {
-		return nil, errors.New("length does not match stage count")
-	}
-	addrs := make([]types.Address, count)
-	seen := make(map[types.Address]struct{}, count)
-	for i := range addrs {
-		copy(addrs[i][:], body[off+i*addressSize:])
-		if _, dup := seen[addrs[i]]; dup {
-			return nil, fmt.Errorf("stage %d repeats an earlier address", i)
-		}
-		seen[addrs[i]] = struct{}{}
-	}
-	return addrs, nil
 }
 
 // Verified reports a seed-derived mapping established in this process. Loaded

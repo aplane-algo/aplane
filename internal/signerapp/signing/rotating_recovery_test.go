@@ -697,7 +697,7 @@ func TestRecoveryGrantEndsWhenTheCredentialIsReplaced(t *testing.T) {
 	f.fill(t, opts)
 	first := f.state().Grant
 	// The table is discarded and reopened: a new credential generation.
-	if err := f.tables.Discard(f.table(t)); err != nil {
+	if err := f.tables.Delete(f.account.String()); err != nil {
 		t.Fatal(err)
 	}
 	r := f.fill(t, opts)

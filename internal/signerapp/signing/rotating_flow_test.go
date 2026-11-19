@@ -964,7 +964,8 @@ func (f *rotatingFixture) forgeSuccessor(t *testing.T, index uint64, addr types.
 			t.Fatal(err)
 		}
 	}
-	data, err := os.ReadFile(tb.Path())
+	path := storepaths.NewPaths(f.root).StageTablePath(f.account.String())
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -972,7 +973,7 @@ func (f *rotatingFixture) forgeSuccessor(t *testing.T, index uint64, addr types.
 	off := 8 + 2 + 32 + 32 + 8 + int(index)*40 + 8
 	copy(body[off:off+32], addr[:])
 	sum := sha256.Sum256(body)
-	if err := os.WriteFile(tb.Path(), append(body, sum[:]...), 0o600); err != nil {
+	if err := os.WriteFile(path, append(body, sum[:]...), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Drop the cached handle so the forged file is what gets opened.

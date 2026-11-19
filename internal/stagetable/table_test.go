@@ -28,6 +28,9 @@ var (
 	}()
 )
 
+// addressSize is the size of one stage address in the table file.
+const addressSize = 32
+
 func stageAddr(i uint64) types.Address {
 	var a types.Address
 	binary.BigEndian.PutUint64(a[:8], i+1)
@@ -54,7 +57,7 @@ func put(tb *Table, start uint64, addrs []types.Address) error {
 
 func openTest(t *testing.T, dir string) *Table {
 	t.Helper()
-	tb, err := Open(filepath.Join(dir, "a.stages"), testSelector, testGenesis)
+	tb, err := Open(filepath.Join(dir, "a.stages"), testSelector, testGenesis, "")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -72,7 +75,7 @@ func TestEmptyTableWhenFileMissing(t *testing.T) {
 	if _, ok := tb.Address(0); ok {
 		t.Fatal("empty table returned an address")
 	}
-	if _, err := os.Stat(tb.Path()); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(tb.path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Open created a file without any append")
 	}
 }
@@ -105,7 +108,7 @@ func TestAppendPersistsAndRoundTrips(t *testing.T) {
 	if stage, ok := reopened.Lookup(stageAddr(6)); !ok || stage != 6 {
 		t.Fatalf("reopened Lookup = %d, %v", stage, ok)
 	}
-	if info, err := os.Stat(tb.Path()); err != nil || info.Size() != int64(headerSize+7*40+len(`{"key_type":""}`)+checksumSize) {
+	if info, err := os.Stat(tb.path); err != nil || info.Size() != int64(headerSize+7*40+len(`{"key_type":""}`)+checksumSize) {
 		t.Fatalf("file size = %v, %v", info, err)
 	}
 }
@@ -133,14 +136,14 @@ func corruptAndReopen(t *testing.T, mutate func(data []byte) []byte) (*Table, er
 	if err := put(tb, 0, stageAddrs(0, 4)); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(tb.Path())
+	data, err := os.ReadFile(tb.path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(tb.Path(), mutate(data), 0o600); err != nil {
+	if err := os.WriteFile(tb.path, mutate(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return Open(tb.Path(), testSelector, testGenesis)
+	return Open(tb.path, testSelector, testGenesis, "")
 }
 
 func withChecksum(body []byte) []byte {
@@ -177,7 +180,7 @@ func TestCorruptTableIsDiscardedAndStartsEmpty(t *testing.T) {
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
-			tb, err := Open("", testSelector, testGenesis)
+			tb, err := Open("", testSelector, testGenesis, "")
 			_ = tb
 			_ = err
 			tb, err = corruptAndReopen(t, mutate)
@@ -196,7 +199,7 @@ func TestCorruptTableIsDiscardedAndStartsEmpty(t *testing.T) {
 			if tb == nil || tb.Len() != 0 {
 				t.Fatalf("discarded table not empty: %v", tb)
 			}
-			if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
+			if _, statErr := os.Stat(tb.path); !errors.Is(statErr, os.ErrNotExist) {
 				t.Fatal("unusable file was not removed")
 			}
 			// The empty table is usable again.
@@ -208,7 +211,7 @@ func TestCorruptTableIsDiscardedAndStartsEmpty(t *testing.T) {
 }
 
 func TestOpenRejectsBadGenesisLength(t *testing.T) {
-	if _, err := Open(filepath.Join(t.TempDir(), "x.stages"), testSelector, []byte{1, 2}); err == nil {
+	if _, err := Open(filepath.Join(t.TempDir(), "x.stages"), testSelector, []byte{1, 2}, ""); err == nil {
 		t.Fatal("short genesis accepted")
 	}
 }
@@ -253,27 +256,27 @@ func TestConcurrentRecordsSerialize(t *testing.T) {
 func TestStoreCachesAndDeletes(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	store := NewStore(paths)
-	tb, err := store.Table(testSelector, testGenesis, nil)
+	tb, err := store.Table(testSelector, testGenesis, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := store.Table(testSelector, testGenesis, nil)
+	again, err := store.Table(testSelector, testGenesis, nil, "")
 	if err != nil || again != tb {
 		t.Fatalf("store returned a different table (%v)", err)
 	}
 	if err := put(tb, 0, stageAddrs(0, 2)); err != nil {
 		t.Fatal(err)
 	}
-	if tb.Path() != paths.StageTablePath(testSelector.String()) {
-		t.Fatalf("table path %q", tb.Path())
+	if tb.path != paths.StageTablePath(testSelector.String()) {
+		t.Fatalf("table path %q", tb.path)
 	}
 	if err := store.Delete(testSelector.String()); err != nil {
 		t.Fatal(err)
 	}
-	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(tb.path); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("Delete left the file")
 	}
-	fresh, err := store.Table(testSelector, testGenesis, nil)
+	fresh, err := store.Table(testSelector, testGenesis, nil, "")
 	if err != nil || fresh == tb || fresh.Len() != 0 {
 		t.Fatalf("table after delete: %v, same=%v, len=%d", err, fresh == tb, fresh.Len())
 	}
@@ -295,11 +298,11 @@ func TestStoreReportsDiscardedTableOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewStore(paths)
-	tb, err := store.Table(testSelector, testGenesis, nil)
+	tb, err := store.Table(testSelector, testGenesis, nil, "")
 	if !errors.Is(err, ErrDiscarded) || tb == nil {
 		t.Fatalf("first open: %v, %v", tb, err)
 	}
-	if _, err := store.Table(testSelector, testGenesis, nil); err != nil {
+	if _, err := store.Table(testSelector, testGenesis, nil, ""); err != nil {
 		t.Fatalf("second open reported again: %v", err)
 	}
 }
@@ -346,7 +349,7 @@ func TestRecordToleratesOverlapAndRepairsMismatch(t *testing.T) {
 func TestDeleteClosesOpenHandlesSoFillsCannotRecreateTheFile(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	store := NewStore(paths)
-	tb, err := store.Table(testSelector, testGenesis, nil)
+	tb, err := store.Table(testSelector, testGenesis, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +366,7 @@ func TestDeleteClosesOpenHandlesSoFillsCannotRecreateTheFile(t *testing.T) {
 	if err := put(tb, 0, stageAddrs(0, 1)); !errors.Is(err, ErrClosed) {
 		t.Fatalf("AppendFrom on deleted table = %v, want ErrClosed", err)
 	}
-	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(tb.path); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("deleted table file was recreated")
 	}
 	// Reads still work on the stale handle; only writes are refused.
@@ -372,37 +375,12 @@ func TestDeleteClosesOpenHandlesSoFillsCannotRecreateTheFile(t *testing.T) {
 	}
 }
 
-func TestNoLifetimeStageCap(t *testing.T) {
-	// A count larger than the file supports is rejected by length, not by a
-	// fixed ceiling; a consistent large count is fine. The table imposes no
-	// limit on how many stages an account may reach.
-	body := []byte(magic)
-	body = binary.BigEndian.AppendUint16(body, formatVersion)
-	body = append(body, testSelector[:]...)
-	body = append(body, testGenesis...)
-	huge := binary.BigEndian.AppendUint64(append([]byte(nil), body...), 1<<40)
-	if _, err := decode(withChecksum(huge), testSelector, [32]byte(testGenesis)); err == nil {
-		t.Fatal("count without matching data accepted")
-	}
-	const n = (1 << 20) + 5
-	consistent := binary.BigEndian.AppendUint64(append([]byte(nil), body...), n)
-	consistent = append(consistent, make([]byte, n*addressSize)...)
-	// Make the addresses distinct so the duplicate check passes.
-	for i := uint64(0); i < n; i++ {
-		binary.BigEndian.PutUint64(consistent[headerSize+int(i)*addressSize:], i+1)
-	}
-	addrs, err := decode(withChecksum(consistent), testSelector, [32]byte(testGenesis))
-	if err != nil || uint64(len(addrs)) != n {
-		t.Fatalf("large consistent table: %d addrs, %v", len(addrs), err)
-	}
-}
-
 func TestTableRefusesAccountsWhoseKeyIsGone(t *testing.T) {
 	store := NewStore(storepaths.NewPaths(t.TempDir()))
 	present := true
 	isPresent := func() bool { return present }
 
-	tb, err := store.Table(testSelector, testGenesis, isPresent)
+	tb, err := store.Table(testSelector, testGenesis, isPresent, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,77 +394,16 @@ func TestTableRefusesAccountsWhoseKeyIsGone(t *testing.T) {
 	}
 	// A fill that paused before asking for its table is refused rather than
 	// handed a fresh writable handle.
-	if _, err := store.Table(testSelector, testGenesis, isPresent); !errors.Is(err, ErrNoKey) {
+	if _, err := store.Table(testSelector, testGenesis, isPresent, ""); !errors.Is(err, ErrNoKey) {
 		t.Fatalf("Table after delete = %v, want ErrNoKey", err)
 	}
-	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(tb.path); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("refused Table call recreated the file")
 	}
 	// A re-imported key starts over.
 	present = true
-	fresh, err := store.Table(testSelector, testGenesis, isPresent)
+	fresh, err := store.Table(testSelector, testGenesis, isPresent, "")
 	if err != nil || fresh.Len() != 0 {
 		t.Fatalf("table for re-imported key: len %d, err %v", fresh.Len(), err)
-	}
-}
-
-func TestDiscardRemovesTheTableAndAllowsAFreshOne(t *testing.T) {
-	store := NewStore(storepaths.NewPaths(t.TempDir()))
-	tb, err := store.Table(testSelector, testGenesis, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := put(tb, 0, stageAddrs(0, 3)); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Discard(tb); err != nil {
-		t.Fatal(err)
-	}
-	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatal("discarded file remains")
-	}
-	if err := put(tb, 3, stageAddrs(3, 4)); !errors.Is(err, ErrClosed) {
-		t.Fatalf("stale handle append = %v, want ErrClosed", err)
-	}
-	fresh, err := store.Table(testSelector, testGenesis, nil)
-	if err != nil || fresh == tb || fresh.Len() != 0 {
-		t.Fatalf("fresh table after discard: %v, same %v, len %d", err, fresh == tb, fresh.Len())
-	}
-}
-
-func TestDiscardOfAStaleHandleLeavesTheRebuiltTableAlone(t *testing.T) {
-	store := NewStore(storepaths.NewPaths(t.TempDir()))
-	old, err := store.Table(testSelector, testGenesis, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := put(old, 0, stageAddrs(0, 2)); err != nil {
-		t.Fatal(err)
-	}
-	// First mismatch detection discards; the worker rebuilds.
-	if err := store.Discard(old); err != nil {
-		t.Fatal(err)
-	}
-	rebuilt, err := store.Table(testSelector, testGenesis, nil)
-	if err != nil || rebuilt == old {
-		t.Fatalf("rebuilt table: %v, same %v", err, rebuilt == old)
-	}
-	if err := put(rebuilt, 0, stageAddrs(0, 3)); err != nil {
-		t.Fatal(err)
-	}
-	// A second detection that still holds the old handle must not delete
-	// the rebuilt cache.
-	if err := store.Discard(old); err != nil {
-		t.Fatal(err)
-	}
-	if _, statErr := os.Stat(rebuilt.Path()); statErr != nil {
-		t.Fatalf("rebuilt table file removed by a stale discard: %v", statErr)
-	}
-	again, err := store.Table(testSelector, testGenesis, nil)
-	if err != nil || again != rebuilt || again.Len() != 3 {
-		t.Fatalf("store lost the rebuilt table: %v, same %v, len %d", err, again == rebuilt, again.Len())
-	}
-	if err := put(rebuilt, 3, stageAddrs(3, 4)); err != nil {
-		t.Fatalf("rebuilt table unusable after stale discard: %v", err)
 	}
 }

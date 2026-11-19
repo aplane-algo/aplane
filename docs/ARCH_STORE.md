@@ -1588,9 +1588,8 @@ selector, 32-byte genesis, big-endian `uint64` entry count, sorted records
 of `(uint64 stage, 32-byte address)`, JSON metadata (`key_type`, optional
 `hint`), and SHA-256 over everything preceding the checksum. The reader caps
 files at 64 MiB and rejects invalid lengths, duplicate indices/addresses,
-overflow and wrong identity. Version 1 arrays are read as explicitly numbered
-entries and rewritten as version 2 on publication. Older binaries cannot
-read version 2 and can discard it, requiring stage rediscovery.
+overflow and wrong identity. A file of any other version is discarded like
+any other unusable table and rebuilt by stage rediscovery.
 
 The cache is sparse: its entry count is neither history coverage nor the
 next stage. A matching hint at 50,000 inserts that stage immediately, without

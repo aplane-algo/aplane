@@ -349,7 +349,7 @@ func TestFillStageTablesNeverMatchingAuthorizerIsNeverForeign(t *testing.T) {
 	// Progress is in the table, so a fresh Service over the same directory
 	// resumes rather than restarting.
 	reopened := stagetable.NewStore(storepaths.NewPaths(f.root))
-	tb, err := reopened.Table(f.account, rotatingTestGenesis, nil)
+	tb, err := reopened.Table(f.account, rotatingTestGenesis, nil, "")
 	if err != nil || tb.Len() != 9 {
 		t.Fatalf("reopened table len %d, err %v", tb.Len(), err)
 	}
@@ -406,7 +406,7 @@ func TestFillStageTablesReportsDiscardedTable(t *testing.T) {
 	}
 	// Corrupt the file and drop the store's cached copy so Open sees it.
 	f.svc.Rotating.Tables = stagetable.NewStore(storepaths.NewPaths(f.root))
-	if err := os.WriteFile(tb.Path(), []byte("corrupt"), 0o600); err != nil {
+	if err := os.WriteFile(storepaths.NewPaths(f.root).StageTablePath(f.account.String()), []byte("corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	r := f.fill(t, StageFillOptions{Horizon: 1})
@@ -488,7 +488,7 @@ func TestFillStageTablesStopsWhenTableDeletedMidPass(t *testing.T) {
 	if len(reports) != 1 || reports[0].Err == nil {
 		t.Fatalf("reports after delete = %+v, want an error", reports)
 	}
-	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(storepaths.NewPaths(f.root).StageTablePath(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("deleted table was recreated by the running fill")
 	}
 	fresh, err := f.tables.Table(f.account, rotatingTestGenesis, nil, f.kind.keyType)

@@ -40,7 +40,7 @@ func NewStore(paths storepaths.Paths) *Store {
 // ErrNoKey. A nil present skips the check. A discarded on-disk table is
 // reported through an error wrapping ErrDiscarded alongside the now-empty
 // table; callers log it and continue.
-func (s *Store) Table(selector types.Address, genesisHash []byte, present func() bool, keyTypes ...string) (*Table, error) {
+func (s *Store) Table(selector types.Address, genesisHash []byte, present func() bool, keyType string) (*Table, error) {
 	key := selector.String()
 	if err := storepaths.ValidateStageSelector(key); err != nil {
 		return nil, err
@@ -52,10 +52,6 @@ func (s *Store) Table(selector types.Address, genesisHash []byte, present func()
 	}
 	// An empty key type is no constraint: a caller that does not know it yet
 	// (a snapshot without the entry) must not close or rebind the table.
-	keyType := ""
-	if len(keyTypes) > 0 {
-		keyType = keyTypes[0]
-	}
 	if t, ok := s.tables[key]; ok {
 		if bytes.Equal(t.genesis[:], genesisHash) && t.bindKeyType(keyType) {
 			return t, nil
@@ -64,46 +60,12 @@ func (s *Store) Table(selector types.Address, genesisHash []byte, present func()
 		delete(s.tables, key)
 		s.epoch++
 	}
-	var bind []string
-	if keyType != "" {
-		bind = []string{keyType}
-	}
-	t, err := Open(s.paths.StageTablePath(key), selector, genesisHash, bind...)
+	t, err := Open(s.paths.StageTablePath(key), selector, genesisHash, keyType)
 	if t == nil {
 		return nil, err
 	}
 	s.tables[key] = t
 	return t, err
-}
-
-// Discard closes a table whose contents were found to disagree with the
-// seed and, if it is still the store's current table, removes its file so
-// the next Table call opens a fresh one that the worker rebuilds from stage
-// 0. A stale handle (one the store has already replaced, because another
-// caller discarded it first) is only closed: its file now belongs to the
-// replacement and must not be deleted out from under it. Unlike Delete this
-// is not about the key going away.
-func (s *Store) Discard(t *Table) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	t.close()
-	key := t.selector.String()
-	cur, ok := s.tables[key]
-	if !ok || cur != t {
-		return nil
-	}
-	delete(s.tables, key)
-	s.epoch++
-	if err := fsutil.RemoveDurable(t.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove stage table: %w", err)
-	}
-	return nil
-}
-
-// Path is where the table of the account with selector lives, whether or
-// not it exists.
-func (s *Store) Path(selector string) string {
-	return s.paths.StageTablePath(selector)
 }
 
 // Delete forgets and removes the table of the account with selector. It is

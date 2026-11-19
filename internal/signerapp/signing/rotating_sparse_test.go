@@ -213,7 +213,7 @@ func TestRecoveryGrantSurvivesInventoryReload(t *testing.T) {
 	store := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
 	account := types.Address{0xA1}
 	genesis := make([]byte, 32)
-	table, err := store.Table(account, genesis, nil)
+	table, err := store.Table(account, genesis, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestRecoveryGrantSurvivesInventoryReload(t *testing.T) {
 		t.Fatalf("operator grant not bound: %+v", g)
 	}
 	store.Invalidate()
-	after, err := store.Table(account, genesis, nil)
+	after, err := store.Table(account, genesis, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

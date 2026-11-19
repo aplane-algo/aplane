@@ -766,11 +766,7 @@ func resolveStage(table *stagetable.Table, account, authorizer types.Address) (u
 func extendUntil(ctx context.Context, table *stagetable.Table, derive stageDeriver, target types.Address, budget int, opts StageFillOptions) (bool, error) {
 	initialBudget := budget
 	for budget > 0 && ctx.Err() == nil {
-		var anchors []uint64
-		if opts.searchAnchor != nil {
-			anchors = []uint64{*opts.searchAnchor}
-		}
-		n := table.NextCandidate(anchors...)
+		n := table.NextCandidate(opts.searchAnchor)
 		if n == math.MaxUint64 {
 			return false, errors.New("stage space exhausted")
 		}
