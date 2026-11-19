@@ -81,7 +81,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 
 	var warning string
 	if state.cleanSystemdCreds {
-		if err := cleanupSystemdCreds(dataDir, isProdMode()); err != nil {
+		if err := cleanupSystemdCreds(dataDir, isLocal); err != nil {
 			warning = fmt.Sprintf("switched to passfile, but failed to remove old systemd-creds state: %v", err)
 		}
 	}
@@ -175,15 +175,14 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 }
 
 // executeClear removes auto-unlock configuration and associated files.
-func executeClear(dataDir string) (string, error) {
+// isLocal is the data directory's own mode, as for the other actions.
+func executeClear(dataDir string, isLocal bool) (string, error) {
 	if err := requireSignerStopped(dataDir); err != nil {
 		return "", err
 	}
 
-	prodMode := isProdMode()
-
 	// In systemd mode, require root.
-	if prodMode && os.Getuid() != 0 {
+	if !isLocal && os.Getuid() != 0 {
 		return "", fmt.Errorf("systemd mode: must be run as root (use sudo)")
 	}
 
@@ -211,7 +210,7 @@ func executeClear(dataDir string) (string, error) {
 		}
 	}
 	if state.cleanSystemdCreds {
-		if err := cleanupSystemdCreds(dataDir, prodMode); err != nil {
+		if err := cleanupSystemdCreds(dataDir, isLocal); err != nil {
 			warnings = append(warnings, fmt.Sprintf("failed to remove old systemd-creds state: %v", err))
 		}
 	}
@@ -273,8 +272,12 @@ func removePassphraseFile(identityDir string) error {
 	return nil
 }
 
-func cleanupSystemdCreds(dataDir string, prodMode bool) error {
-	if prodMode {
+// cleanupSystemdCreds removes the systemd-creds method's credential file and,
+// for a systemd-managed data directory, its line in the apsigner unit. A local
+// data directory has no unit of its own, so a unit on the host belongs to
+// another store and is left alone.
+func cleanupSystemdCreds(dataDir string, isLocal bool) error {
+	if !isLocal {
 		if err := removeLoadCredentialFromService(); err != nil {
 			return err
 		}
@@ -287,16 +290,6 @@ func cleanupSystemdCreds(dataDir string, prodMode bool) error {
 		}
 	}
 	return nil
-}
-
-// isProdMode returns true if a systemd service file exists.
-func isProdMode() bool {
-	for _, path := range candidateServiceFiles() {
-		if _, err := os.Stat(path); err == nil {
-			return true
-		}
-	}
-	return false
 }
 
 func lookupUserGroupIDs(username, groupname string) (int, int, error) {

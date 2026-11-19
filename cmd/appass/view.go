@@ -120,7 +120,7 @@ func (m Model) renderHomeView() string {
 
 	modeStr := "systemd service"
 	if m.isLocal {
-		modeStr = "local (no systemd service)"
+		modeStr = "local data directory"
 	}
 	sb.WriteString(labelStyle.Render("Mode:") + "            " + modeStr + "\n")
 	if !m.isLocal && !m.isRoot {

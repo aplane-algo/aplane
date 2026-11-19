@@ -232,49 +232,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.shell = shell
 			return m, cmd
 		}
-	case shellExecMsg:
-		if !m.shellEnabled() {
-			return m, nil
-		}
-		shell, cmd := m.shell.Update(msg)
-		m.shell = shell
-		return m, cmd
-	case shellHostKeyApprovalMsg:
-		if !m.shellEnabled() {
-			return m, nil
-		}
-		shell, cmd := m.shell.Update(msg)
-		m.shell = shell
-		return m, cmd
-	case shellLinePromptMsg:
-		if !m.shellEnabled() {
-			return m, nil
-		}
-		shell, cmd := m.shell.Update(msg)
-		m.shell = shell
-		return m, cmd
-	case shellStartupConnectMsg:
-		if !m.shellEnabled() {
-			return m, nil
-		}
-		shell, cmd := m.shell.Update(msg)
-		m.shell = shell
-		return m, cmd
-	case shellLogBatchMsg:
-		if !m.shellEnabled() {
-			return m, nil
-		}
-		shell, cmd := m.shell.Update(msg)
-		m.shell = shell
-		return m, cmd
-	case shellProgressLineMsg:
-		if !m.shellEnabled() {
-			return m, nil
-		}
-		shell, cmd := m.shell.Update(msg)
-		m.shell = shell
-		return m, cmd
-	case shellSpinnerTickMsg:
+	case shellExecMsg, shellHostKeyApprovalMsg, shellLinePromptMsg, shellPromptCanceledMsg,
+		shellStartupConnectMsg, shellLogBatchMsg, shellProgressLineMsg, shellSpinnerTickMsg:
+		// Shell messages belong to the shell pane whichever pane has focus.
 		if !m.shellEnabled() {
 			return m, nil
 		}

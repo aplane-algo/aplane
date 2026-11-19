@@ -369,3 +369,127 @@ func TestWaitForDaemonReadyIgnoresStaleSocketFile(t *testing.T) {
 		t.Fatalf("returned after %v on a stale socket file, want the %v timeout", elapsed, timeout)
 	}
 }
+
+// writeFakeDaemon writes a stand-in for apsigner that prints stdoutLines to
+// stdout and stderrLine to stderr in one burst each, creates marker, and then
+// runs tail. The output fits in the pipe buffers, so the process can exit
+// before the console has read any of it.
+func writeFakeDaemon(t *testing.T, stdoutLines []string, stderrLine, marker, tail string) string {
+	t.Helper()
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "stdout.txt")
+	if err := os.WriteFile(outPath, []byte(strings.Join(stdoutLines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n" +
+		"cat '" + outPath + "'\n" +
+		"echo '" + stderrLine + "' >&2\n" +
+		": > '" + marker + "'\n" +
+		tail + "\n"
+	bin := filepath.Join(dir, "apsigner")
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fake daemon never created %s", path)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// apsigner's last lines, most likely the reason it exited, must reach the
+// daemon pane even when the console reads them only after the process is
+// gone, and the exit event must come after them.
+func TestDaemonProcessDeliversAllOutputBeforeExitEvent(t *testing.T) {
+	stdoutLines := numberedLines("out", 300)
+	const fatal = "fatal: store is locked"
+	marker := filepath.Join(t.TempDir(), "exited")
+	bin := writeFakeDaemon(t, stdoutLines, fatal, marker, "exit 3")
+
+	dp, err := startDaemonProcess(bin, t.TempDir())
+	if err != nil {
+		t.Fatalf("startDaemonProcess: %v", err)
+	}
+	defer dp.Stop()
+
+	// Read nothing until the process has exited, so the readers fall behind.
+	waitForFile(t, marker)
+	time.Sleep(200 * time.Millisecond)
+
+	var lines []string
+	var exit *daemonEvent
+	deadline := time.After(5 * time.Second)
+	for exit == nil {
+		select {
+		case event := <-dp.events:
+			if event.Status == daemonStatusExited {
+				exit = &event
+				continue
+			}
+			lines = append(lines, event.Line)
+		case <-deadline:
+			t.Fatalf("no exit event; got %d lines", len(lines))
+		}
+	}
+	if exit.Detail != "exit status 3" {
+		t.Fatalf("exit detail = %q, want exit status 3", exit.Detail)
+	}
+	var gotStdout []string
+	sawFatal := false
+	for _, line := range lines {
+		switch {
+		case line == fatal:
+			sawFatal = true
+		case strings.HasPrefix(line, "out-"):
+			gotStdout = append(gotStdout, line)
+		default:
+			t.Fatalf("unexpected line before exit event: %q", line)
+		}
+	}
+	if !sawFatal {
+		t.Fatalf("stderr line %q lost; got %d lines", fatal, len(lines))
+	}
+	if strings.Join(gotStdout, "\n") != strings.Join(stdoutLines, "\n") {
+		t.Fatalf("stdout lines before exit event = %d, want all %d in order", len(gotStdout), len(stdoutLines))
+	}
+	select {
+	case <-dp.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("done not closed after the exit event")
+	}
+}
+
+// Once the console stops reading the daemon pane, Stop must still end a
+// daemon that left more output than the event buffer holds without waiting
+// out the kill timeout.
+func TestDaemonProcessStopDoesNotWaitOnUnreadOutput(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "printed")
+	bin := writeFakeDaemon(t, numberedLines("out", 300), "ready", marker, "exec sleep 30")
+
+	dp, err := startDaemonProcess(bin, t.TempDir())
+	if err != nil {
+		t.Fatalf("startDaemonProcess: %v", err)
+	}
+	waitForFile(t, marker)
+
+	start := time.Now()
+	dp.Stop()
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("Stop took %v, want the daemon to end on SIGTERM", elapsed)
+	}
+	select {
+	case <-dp.done:
+	default:
+		t.Fatal("done not closed after Stop returned")
+	}
+}

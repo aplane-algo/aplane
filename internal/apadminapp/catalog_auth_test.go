@@ -161,3 +161,37 @@ func TestCatalogAuthModeGrammar(t *testing.T) {
 		}
 	}
 }
+
+// CatalogReadsStdin must agree with Run on every accepted spelling, since
+// apadmin reads the passphrase from stdin unless it says the import does.
+func TestCatalogReadsStdin(t *testing.T) {
+	tests := []struct {
+		line string
+		want bool
+	}{
+		{"clients import -", true},
+		{"clients import - --label ops", true},
+		{"clients import --label ops -", true},
+		{"clients import --label=ops -", true},
+		{"clients import -label ops -", true},
+		{"clients import -- -", true},
+		{"cosigner import - lab", true},
+		{"clients import client.pub", false},
+		{"clients import --label ops client.pub", false},
+		{"clients import --label -", false},
+		{"clients import - extra", false},
+		{"clients import --bogus -", false},
+		{"cosigner import cosigner.json -", false},
+		{"cosigner import -", false},
+		{"cosigner import - lab extra", false},
+		{"template import -", false},
+		{"clients list", false},
+		{"clients", false},
+	}
+	for _, tt := range tests {
+		words := strings.Fields(tt.line)
+		if got := CatalogReadsStdin(words[0], words[1:]); got != tt.want {
+			t.Errorf("CatalogReadsStdin(%q) = %v, want %v", tt.line, got, tt.want)
+		}
+	}
+}

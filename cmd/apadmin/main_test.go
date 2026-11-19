@@ -77,6 +77,68 @@ func TestCatalogPassphraseUsesControllingTerminalForLocalStdinImport(t *testing.
 	_ = closer.Close()
 }
 
+// An import reading its input from stdin takes the passphrase from the
+// controlling terminal, whichever spelling of the command Run accepts, so the
+// piped public key is never read as the passphrase. Any other command reads
+// the passphrase from stdin.
+func TestCatalogPassphraseReservesStdinForEveryImportSpelling(t *testing.T) {
+	const pipedKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample client@example\n"
+	tests := []struct {
+		name         string
+		command      string
+		args         []string
+		wantReserved bool
+	}{
+		{name: "clients label after", command: "clients", args: []string{"import", "-", "--label", "ops"}, wantReserved: true},
+		{name: "clients label first", command: "clients", args: []string{"import", "--label", "ops", "-"}, wantReserved: true},
+		{name: "clients label equals first", command: "clients", args: []string{"import", "--label=ops", "-"}, wantReserved: true},
+		{name: "clients after double dash", command: "clients", args: []string{"import", "--", "-"}, wantReserved: true},
+		{name: "cosigner", command: "cosigner", args: []string{"import", "-", "lab"}, wantReserved: true},
+		{name: "clients from file", command: "clients", args: []string{"import", "--label", "ops", "client.pub"}},
+		{name: "cosigner named dash", command: "cosigner", args: []string{"import", "cosigner.json", "-"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("APSIGNER_PASSPHRASE", "")
+			tty, err := os.CreateTemp(t.TempDir(), "tty")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tty.WriteString("terminal-secret\n"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tty.Seek(0, io.SeekStart); err != nil {
+				t.Fatal(err)
+			}
+			originalOpen := openControllingTerminal
+			openControllingTerminal = func() (*os.File, error) { return tty, nil }
+			t.Cleanup(func() { openControllingTerminal = originalOpen })
+
+			stdin := strings.NewReader(pipedKey)
+			prompt := newAdminBatchPrompt(stdin, io.Discard)
+			secret, closer, err := catalogPassphrase(tt.command, tt.args, prompt, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if closer != nil {
+				_ = closer.Close()
+			}
+			if !tt.wantReserved {
+				if string(secret) != strings.TrimSpace(pipedKey) {
+					t.Fatalf("passphrase = %q, want the stdin line", secret)
+				}
+				return
+			}
+			if string(secret) != "terminal-secret" {
+				t.Fatalf("passphrase = %q, want the controlling terminal's", secret)
+			}
+			if stdin.Len() != len(pipedKey) {
+				t.Fatalf("stdin read before the import: %d of %d bytes left", stdin.Len(), len(pipedKey))
+			}
+		})
+	}
+}
+
 func TestCatalogPassphraseRejectsHeadlessLocalStdinImport(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "")
 	originalOpen := openControllingTerminal

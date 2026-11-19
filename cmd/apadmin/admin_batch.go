@@ -150,8 +150,7 @@ func catalogPassphrase(
 	prompt *adminBatchPrompt,
 	stderr io.Writer,
 ) ([]byte, io.Closer, error) {
-	stdinReserved := (command == "cosigner" || command == "clients") && cosignerImportUsesStdin(args)
-	if !stdinReserved {
+	if !apadminapp.CatalogReadsStdin(command, args) {
 		passphrase, err := prompt.passphrase()
 		return passphrase, nil, err
 	}
@@ -170,10 +169,6 @@ func catalogPassphrase(
 		return nil, nil, err
 	}
 	return passphrase, tty, nil
-}
-
-func cosignerImportUsesStdin(args []string) bool {
-	return len(args) >= 2 && args[0] == "import" && args[1] == "-"
 }
 
 func runStoreCommand(command string, args []string, globals adminBatchGlobalOptions, streams adminBatchStreams) int {
