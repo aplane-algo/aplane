@@ -4,13 +4,12 @@
 package command
 
 // InternalHandler wraps a result-bearing Go function as a command Handler.
-// The function receives args and a Context (which contains RawArgs, network info, etc.)
 type InternalHandler struct {
-	fn func(args []string, ctx interface{}) (Result, error)
+	fn func(args []string, ctx *Context) (Result, error)
 }
 
 // NewInternalHandler creates a handler for an internal result-bearing function.
-func NewInternalHandler(fn func([]string, interface{}) (Result, error)) *InternalHandler {
+func NewInternalHandler(fn func([]string, *Context) (Result, error)) *InternalHandler {
 	return &InternalHandler{fn: fn}
 }
 

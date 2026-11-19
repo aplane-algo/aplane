@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
-func (r *REPLState) cmdAlias(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdAlias(args []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().Alias(r.commandContext(), args)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (r *REPLState) renderAliasResult(result *apshellapp.AliasCommandResult) err
 	return fmt.Errorf("unsupported alias mode: %s", result.Mode)
 }
 
-func (r *REPLState) cmdSets(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdSets(args []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().Sets(r.commandContext(), args)
 	if err != nil {
 		return nil, err

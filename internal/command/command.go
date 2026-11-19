@@ -16,7 +16,7 @@ type Command struct {
 	Usage       string            // Usage string: "send to=<addr> amount=<val>"
 	Description string            // One-line description
 	LongHelp    string            // Multi-line detailed help (optional)
-	Category    string            // "Transaction Commands", "Setup", etc.
+	Category    string            // "Transaction Commands", "Information", etc.
 	IsPlugin    bool              // true = external plugin, false = internal
 	Handler     Handler           // Command execution handler
 	ArgSpecs    []cmdspec.ArgSpec // Argument completion specs (ordered by position)
@@ -70,16 +70,13 @@ func BlockedAutomation(reason string) AutomationPolicy {
 
 // Category constants for organizing commands
 const (
-	CategorySetup         = "Setup Commands"
-	CategoryTransaction   = "Transaction Commands"
-	CategoryAlias         = "Alias Management"
-	CategoryRekey         = "Rekey Management"
-	CategoryInfo          = "Information"
-	CategoryKeyMgmt       = "Key Management"
-	CategoryASA           = "ASA Management"
-	CategoryConfig        = "Configuration"
-	CategoryVariables     = "Variables"
-	CategoryAutomation    = "Automation"
-	CategoryRemote        = "Remote Signing"
-	CategoryOrchestration = "Orchestration" // For future expansion
+	CategoryTransaction = "Transaction Commands"
+	CategoryAlias       = "Alias Management"
+	CategoryRekey       = "Rekey Management"
+	CategoryInfo        = "Information"
+	CategoryKeyMgmt     = "Key Management"
+	CategoryASA         = "ASA Management"
+	CategoryConfig      = "Configuration"
+	CategoryAutomation  = "Automation"
+	CategoryRemote      = "Remote Signing"
 )

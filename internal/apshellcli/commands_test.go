@@ -257,7 +257,7 @@ func TestMustRegisterPanicsOnDuplicate(t *testing.T) {
 		Usage:       "test",
 		Description: "Test command",
 		Category:    command.CategoryInfo,
-		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+		Handler: command.NewInternalHandler(func([]string, *command.Context) (command.Result, error) {
 			return nil, nil
 		}),
 		Automation: command.StructuredAutomation,
@@ -302,18 +302,15 @@ func TestHelpSystemSmokeTest(t *testing.T) {
 // TestCommandCategoriesAreValid verifies all commands use known categories
 func TestCommandCategoriesAreValid(t *testing.T) {
 	validCategories := map[string]bool{
-		command.CategorySetup:         true,
-		command.CategoryTransaction:   true,
-		command.CategoryAlias:         true,
-		command.CategoryRekey:         true,
-		command.CategoryInfo:          true,
-		command.CategoryKeyMgmt:       true,
-		command.CategoryASA:           true,
-		command.CategoryConfig:        true,
-		command.CategoryVariables:     true,
-		command.CategoryAutomation:    true,
-		command.CategoryRemote:        true,
-		command.CategoryOrchestration: true,
+		command.CategoryTransaction: true,
+		command.CategoryAlias:       true,
+		command.CategoryRekey:       true,
+		command.CategoryInfo:        true,
+		command.CategoryKeyMgmt:     true,
+		command.CategoryASA:         true,
+		command.CategoryConfig:      true,
+		command.CategoryAutomation:  true,
+		command.CategoryRemote:      true,
 	}
 
 	r := &REPLState{}

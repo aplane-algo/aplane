@@ -26,13 +26,12 @@ import (
 // Supports:
 //   - js -help: print the JavaScript API reference
 //   - js <file.js>, js { code }, js <inline>, and multi-line mode
-func (r *REPLState) cmdJS(args []string, ctxRaw interface{}) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runJS(args, ctxRaw)
+func (r *REPLState) cmdJS(args []string, ctx *command.Context) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runJS(args, ctx)
 }
 
-func (r *REPLState) runJS(args []string, ctxRaw interface{}) error {
+func (r *REPLState) runJS(args []string, ctx *command.Context) error {
 	// Get raw args from context (preserves quotes that ParseCommand strips)
-	ctx, _ := ctxRaw.(*command.Context)
 	rawArgs := ""
 	if ctx != nil {
 		rawArgs = ctx.RawArgs
@@ -172,12 +171,11 @@ func (r *REPLState) readJSLines(lines []string, isEnd func(line string) bool) (_
 
 // cmdJSSave saves JavaScript code to a file in the data directory's scripts/ folder.
 // Usage: jssave [-f] <path> [-last | <javascript code>]
-func (r *REPLState) cmdJSSave(args []string, ctxRaw interface{}) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runJSSave(args, ctxRaw)
+func (r *REPLState) cmdJSSave(args []string, ctx *command.Context) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runJSSave(args, ctx)
 }
 
-func (r *REPLState) runJSSave(_ []string, ctxRaw interface{}) error {
-	ctx, _ := ctxRaw.(*command.Context)
+func (r *REPLState) runJSSave(_ []string, ctx *command.Context) error {
 	if ctx == nil || strings.TrimSpace(ctx.RawArgs) == "" {
 		return fmt.Errorf("usage: jssave [-f] <path> [-last | <javascript code>]")
 	}
@@ -215,11 +213,11 @@ func (r *REPLState) runJSSave(_ []string, ctxRaw interface{}) error {
 }
 
 // cmdJSList lists saved JavaScript scripts in the data directory's scripts/ folder.
-func (r *REPLState) cmdJSList(args []string, ctx interface{}) (command.Result, error) {
+func (r *REPLState) cmdJSList(args []string, ctx *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(nil), r.runJSList(args, ctx)
 }
 
-func (r *REPLState) runJSList(_ []string, _ interface{}) error {
+func (r *REPLState) runJSList(_ []string, _ *command.Context) error {
 	entries, err := listJSScripts(r.DataDir)
 	if err != nil {
 		return err

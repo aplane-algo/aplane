@@ -20,11 +20,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
 )
 
-func (r *REPLState) cmdHelp(args []string, ctx interface{}) (command.Result, error) {
+func (r *REPLState) cmdHelp(args []string, ctx *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(nil), r.runHelp(args, ctx)
 }
 
-func (r *REPLState) runHelp(args []string, _ interface{}) error {
+func (r *REPLState) runHelp(args []string, _ *command.Context) error {
 	if len(args) == 0 {
 		command.ShowHelp(r.Out, r.CommandRegistry)
 		showPluginHelpSummary(r)
@@ -121,7 +121,7 @@ func pluginHelpCommand(plugin *discovery.Plugin, pluginCmd manifest.Command) *co
 	}
 }
 
-func (r *REPLState) cmdStatus(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdStatus(_ []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().Status(r.commandContext())
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (r *REPLState) cmdStatus(_ []string, _ interface{}) (command.Result, error)
 	}, projection)
 }
 
-func (r *REPLState) cmdAccounts(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdAccounts(_ []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().Accounts(r.commandContext())
 	if err != nil {
 		return nil, err
@@ -192,7 +192,7 @@ func (r *REPLState) cmdAccounts(_ []string, _ interface{}) (command.Result, erro
 	}, appresult.AccountsToMCP(projected))
 }
 
-func (r *REPLState) cmdBalance(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdBalance(args []string, _ *command.Context) (command.Result, error) {
 	res, err := r.app().Balance(r.commandContext(), apshellapp.BalanceRequest{Args: args})
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func (r *REPLState) cmdBalance(args []string, _ interface{}) (command.Result, er
 }
 
 // cmdHolders shows accounts with non-zero balance of an asset
-func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdHolders(args []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().Holders(r.commandContext(), args)
 	if err != nil {
 		return nil, err
@@ -245,7 +245,7 @@ func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, er
 	}, projection)
 }
 
-func (r *REPLState) cmdParticipation(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdParticipation(args []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().Participation(r.commandContext(), args)
 	if err != nil {
 		return nil, err
@@ -296,7 +296,7 @@ func (r *REPLState) cmdParticipation(args []string, _ interface{}) (command.Resu
 	}, projection)
 }
 
-func (r *REPLState) cmdSigners(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdSigners(_ []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().Signers(r.commandContext())
 	if err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func (r *REPLState) cmdSigners(_ []string, _ interface{}) (command.Result, error
 	}, projectKeys(result.Keys))
 }
 
-func (r *REPLState) cmdKeytypes(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdKeytypes(_ []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().KeyTypes(r.commandContext())
 	if err != nil {
 		return nil, err
@@ -327,7 +327,7 @@ func (r *REPLState) cmdKeytypes(_ []string, _ interface{}) (command.Result, erro
 	}, result.KeyTypes)
 }
 
-func (r *REPLState) cmdClear(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdClear(_ []string, _ *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(func(w io.Writer) error {
 		_, err := fmt.Fprint(w, "\033[H\033[2J")
 		return err
@@ -339,7 +339,7 @@ func (r *REPLState) cmdClear(_ []string, _ interface{}) (command.Result, error) 
 // plugin's failure message could repeat.
 var errQuit = errors.New("exit")
 
-func (r *REPLState) cmdQuit(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdQuit(_ []string, _ *command.Context) (command.Result, error) {
 	r.println("Goodbye!")
 	_ = disconnectTunnel(r) // Best-effort cleanup on exit
 	return newTerminalCommandResult(nil), errQuit

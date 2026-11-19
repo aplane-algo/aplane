@@ -140,11 +140,7 @@ func TestRunJSCodeForEachMode(t *testing.T) {
 				withStdin(t, tt.stdin)
 			}
 			events := watchPrompt(t, repl)
-			var ctx interface{}
-			if tt.ctx != nil {
-				ctx = tt.ctx
-			}
-			if err := repl.runJS(tt.args, ctx); err != nil {
+			if err := repl.runJS(tt.args, tt.ctx); err != nil {
 				t.Fatalf("runJS() error = %v", err)
 			}
 			if repl.Scripts.Runner == nil {

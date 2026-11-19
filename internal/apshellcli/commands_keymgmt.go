@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 )
 
-func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdGenerate(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("usage: generate <key_type> [param=value ...] [--boundary <file>] [--result <file>]")
 	}
@@ -180,7 +180,7 @@ func renderResolvedGeneration(r *REPLState, result *apshellapp.GenerateKeyComman
 	}
 }
 
-func (r *REPLState) cmdDelete(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdDelete(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("usage: delete <address>")
 	}

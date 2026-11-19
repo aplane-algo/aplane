@@ -26,42 +26,42 @@ type Command struct {
 // Transaction command wrappers
 
 // cmdValidate handles the validate command, checking account status.
-func (r *REPLState) cmdValidate(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdValidate(args []string, _ *command.Context) (command.Result, error) {
 	return r.runValidate(args)
 }
 
 // cmdRekey handles the rekey command, changing an account's auth address.
-func (r *REPLState) cmdRekey(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdRekey(args []string, _ *command.Context) (command.Result, error) {
 	return r.runRekey(args)
 }
 
 // cmdUnrekey handles the unrekey command, resetting an account's auth address to itself.
-func (r *REPLState) cmdUnrekey(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdUnrekey(args []string, _ *command.Context) (command.Result, error) {
 	return r.runUnrekey(args)
 }
 
 // cmdSend handles the send command for ALGO or ASA transfers.
-func (r *REPLState) cmdSend(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdSend(args []string, _ *command.Context) (command.Result, error) {
 	return r.runSend(args)
 }
 
 // cmdSweep handles the sweep command, emptying an account or asset balance.
-func (r *REPLState) cmdSweep(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdSweep(args []string, _ *command.Context) (command.Result, error) {
 	return r.runSweep(args)
 }
 
 // cmdClose handles the close command, closing an account to another address.
-func (r *REPLState) cmdClose(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdClose(args []string, _ *command.Context) (command.Result, error) {
 	return r.runClose(args)
 }
 
 // cmdSign handles the sign command, signing transactions from a file.
-func (r *REPLState) cmdSign(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdSign(args []string, _ *command.Context) (command.Result, error) {
 	return r.runSign(args)
 }
 
 // cmdOptin handles the optin command for ASAs.
-func (r *REPLState) cmdOptin(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdOptin(args []string, _ *command.Context) (command.Result, error) {
 	params, err := shellrepl.ParseOptinCommand(args)
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func (r *REPLState) cmdOptin(args []string, _ interface{}) (command.Result, erro
 }
 
 // cmdOptout handles the optout command for ASAs.
-func (r *REPLState) cmdOptout(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdOptout(args []string, _ *command.Context) (command.Result, error) {
 	params, err := shellrepl.ParseOptoutCommand(args)
 	if err != nil {
 		return nil, err
@@ -136,7 +136,7 @@ func (r *REPLState) cmdOptout(args []string, _ interface{}) (command.Result, err
 }
 
 // cmdKeyreg handles the keyreg command for online/offline key registration.
-func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdKeyreg(args []string, _ *command.Context) (command.Result, error) {
 	// Paste mode (no args) has interactive prompts
 	if len(args) == 0 {
 		return r.keyRegPasteMode()
@@ -187,23 +187,7 @@ func (r *REPLState) executeRegisteredCommand(cmd Command) (command.Result, bool,
 		return nil, false, nil
 	}
 
-	// Build context for command execution
-	internal := &command.InternalContext{
-		REPLState: r, // Provide full REPLState access for internal commands
-	}
-
-	state := r.app().ExecutionState()
-	ctx := &command.Context{
-		Network:     state.Network,
-		IsConnected: state.IsConnected,
-		WriteMode:   state.WriteMode,
-		Simulate:    state.Simulate,
-		RawArgs:     cmd.RawArgs,
-		Internal:    internal,
-	}
-
-	// Execute command via registry
-	result, err := registeredCmd.Handler.Execute(cmd.Args, ctx)
+	result, err := registeredCmd.Handler.Execute(cmd.Args, &command.Context{RawArgs: cmd.RawArgs})
 	return result, true, err
 }
 

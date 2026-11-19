@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
-func (r *REPLState) cmdInfo(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdInfo(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("usage: info <asa-id>")
 	}
@@ -44,7 +44,7 @@ func (r *REPLState) cmdInfo(args []string, _ interface{}) (command.Result, error
 	}, projectASAInfo(info))
 }
 
-func (r *REPLState) cmdASA(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdASA(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("usage: asa <list|add|remove|clear> [args...]")
 	}

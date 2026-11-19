@@ -28,7 +28,7 @@ const endpointsUsage = "endpoints list | " +
 	"endpoints default <alias> | " +
 	"endpoints delete <alias>"
 
-func (r *REPLState) cmdNetwork(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdNetwork(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("usage: network <network>")
 	}
@@ -41,7 +41,7 @@ func (r *REPLState) cmdNetwork(args []string, _ interface{}) (command.Result, er
 	}, networkProjection{OldNetwork: result.OldNetwork, Network: result.NewNetwork})
 }
 
-func (r *REPLState) cmdWrite(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdWrite(args []string, _ *command.Context) (command.Result, error) {
 	result, err := execWrite(r, args)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func (r *REPLState) cmdWrite(args []string, _ interface{}) (command.Result, erro
 	}, toggleProjection(result))
 }
 
-func (r *REPLState) cmdVerbose(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdVerbose(args []string, _ *command.Context) (command.Result, error) {
 	result, err := execVerbose(r, args)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (r *REPLState) cmdVerbose(args []string, _ interface{}) (command.Result, er
 	}, toggleProjection(result))
 }
 
-func (r *REPLState) cmdLogLevel(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdLogLevel(args []string, _ *command.Context) (command.Result, error) {
 	result, err := execLogLevel(r, args)
 	if err != nil {
 		return nil, err
@@ -71,11 +71,11 @@ func (r *REPLState) cmdLogLevel(args []string, _ interface{}) (command.Result, e
 	}, logLevelProjection(result))
 }
 
-func (r *REPLState) cmdSimulate(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdSimulate(args []string, _ *command.Context) (command.Result, error) {
 	return executeSimulate(r, args)
 }
 
-func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdConnect(args []string, _ *command.Context) (command.Result, error) {
 	var result *apshellapp.ConnectResult
 	var err error
 	alias := ""
@@ -104,13 +104,13 @@ func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, er
 	})
 }
 
-func (r *REPLState) cmdEnroll(args []string, ctx interface{}) (command.Result, error) {
+func (r *REPLState) cmdEnroll(args []string, ctx *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(nil), r.runEnroll(args, ctx)
 }
 
 const enrollUsage = "enroll [--endpoint <alias>] [--label <text>]"
 
-func (r *REPLState) runEnroll(args []string, _ interface{}) error {
+func (r *REPLState) runEnroll(args []string, _ *command.Context) error {
 	alias, label, err := parseEnrollArgs(args)
 	if err != nil {
 		return err
@@ -145,7 +145,7 @@ func parseEnrollArgs(args []string) (alias, label string, err error) {
 	return alias, label, nil
 }
 
-func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdEndpoints(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("usage: %s", endpointsUsage)
 	}
@@ -344,11 +344,11 @@ func endpointRenderLinesResult(r *REPLState, lines []string, projection interfac
 	}, projection)
 }
 
-func (r *REPLState) cmdScript(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdScript(args []string, _ *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(nil), r.runScript(args)
 }
 
-func (r *REPLState) cmdConfig(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdConfig(_ []string, _ *command.Context) (command.Result, error) {
 	// Display current config
 	config.DisplayConfig(r.DataDir)
 	r.println("Note: Config is read-only. Edit config.yaml in the data directory manually.")
@@ -474,7 +474,7 @@ func yesNo(ok bool) string {
 	return "no"
 }
 
-func (r *REPLState) cmdPlugins(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdPlugins(args []string, _ *command.Context) (command.Result, error) {
 	result, err := r.app().PluginsInfo(r.commandContext(), args)
 	if err != nil {
 		return nil, err
