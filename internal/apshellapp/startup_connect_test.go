@@ -18,9 +18,6 @@ func TestStartupConnectDecisionNoDefaultEndpoint(t *testing.T) {
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 
 	decision := app.StartupConnectDecision()
-	if decision.HasSSHConfig {
-		t.Fatal("HasSSHConfig = true, want false")
-	}
 	if decision.ShouldConnect {
 		t.Fatal("ShouldConnect = true, want false")
 	}
@@ -46,10 +43,10 @@ func TestStartupConnectDecisionWithDefaultSignerEndpoint(t *testing.T) {
 	app := New(eng, cfg, t.TempDir())
 
 	decision := app.StartupConnectDecision()
-	if !decision.HasSSHConfig || !decision.ShouldConnect {
-		t.Fatalf("decision = %#v, want SSH config and connect", decision)
+	if !decision.ShouldConnect {
+		t.Fatalf("decision = %#v, want connect", decision)
 	}
-	if decision.Host != "signer.example" || decision.SSHPort != 1127 || decision.EndpointName != "primary" {
+	if decision.Host != "signer.example" || decision.SSHPort != 1127 {
 		t.Fatalf("decision = %#v", decision)
 	}
 }

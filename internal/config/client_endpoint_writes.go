@@ -63,11 +63,6 @@ type StoredClientEndpointUpsertPlan struct {
 	DestinationChanged bool
 }
 
-// StoredClientEndpointRemoval describes a completed endpoint deletion.
-type StoredClientEndpointRemoval struct {
-	Registry ClientEndpointRegistry
-}
-
 // PlanStoredClientEndpointUpsert validates one endpoint upsert and returns the
 // registry that would be written. It does not touch endpoints.yaml.
 func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpointConfig, replace bool) (StoredClientEndpointUpsertPlan, error) {
@@ -159,25 +154,22 @@ func SetStoredClientEndpointDefault(dataDir, alias string) (ClientEndpointRegist
 // RemoveStoredClientEndpoint removes an endpoint alias. Callers hold the
 // client-data lock. Nothing else is retired with the alias: the client's
 // credential is its SSH key, which no endpoint owns.
-func RemoveStoredClientEndpoint(dataDir, alias string) (StoredClientEndpointRemoval, error) {
+func RemoveStoredClientEndpoint(dataDir, alias string) error {
 	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return StoredClientEndpointRemoval{}, err
+		return err
 	}
 	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		return StoredClientEndpointRemoval{}, err
+		return err
 	}
 	if registry.Default == alias {
-		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is the default endpoint", alias)
+		return fmt.Errorf("endpoint alias %q is the default endpoint", alias)
 	}
 	if _, ok := registry.Endpoints[alias]; !ok {
-		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+		return fmt.Errorf("endpoint alias %q is not defined", alias)
 	}
 	delete(registry.Endpoints, alias)
-	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
-		return StoredClientEndpointRemoval{}, err
-	}
-	return StoredClientEndpointRemoval{Registry: registry}, nil
+	return SaveStoredClientEndpointRegistry(dataDir, registry)
 }
 
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {

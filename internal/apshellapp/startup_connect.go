@@ -11,18 +11,17 @@ import "github.com/aplane-algo/aplane/internal/config"
 // key is discovered as an authentication failure at connect time.
 func (a *App) StartupConnectDecision() *StartupConnectDecision {
 	registry := a.Config.ClientEndpointsOrDefault()
-	alias, endpoint, ok := registry.DefaultEndpoint()
-	decision := &StartupConnectDecision{EndpointName: alias}
+	_, endpoint, ok := registry.DefaultEndpoint()
+	decision := &StartupConnectDecision{}
 
 	if ok {
 		endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 		if err == nil {
-			decision.HasSSHConfig = true
+			decision.ShouldConnect = true
 			decision.Host = endpointSSH.Host
 			decision.SSHPort = endpointSSH.Port
 		}
 	}
 
-	decision.ShouldConnect = decision.HasSSHConfig
 	return decision
 }

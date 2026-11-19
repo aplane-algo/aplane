@@ -423,8 +423,7 @@ func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan) error {
 		if current != plan.Endpoint {
 			return fmt.Errorf("connection %q changed since setup; it was not removed", plan.Alias)
 		}
-		_, err = config.RemoveStoredClientEndpoint(a.DataDir, plan.Alias)
-		return err
+		return config.RemoveStoredClientEndpoint(a.DataDir, plan.Alias)
 	})
 	if err != nil {
 		return err

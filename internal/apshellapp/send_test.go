@@ -159,6 +159,7 @@ func TestAtomicValidationNotesChecksAlgoGroupTotal(t *testing.T) {
 		Mode:   SendModeAtomicToMultiple,
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
+		Prep:   preparedGroupWithFees(3, 1000),
 		Checks: []BalanceCheckDetails{
 			{SufficientFunds: true, SenderBalance: 8_000_000},
 			{SufficientFunds: true, SenderBalance: 8_000_000},
@@ -194,6 +195,7 @@ func TestAtomicValidationNotesIncludesFees(t *testing.T) {
 		Mode:   SendModeAtomicToMultiple,
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
+		Prep:   preparedGroupWithFees(3, 1000),
 		Checks: []BalanceCheckDetails{
 			{SufficientFunds: true, SenderBalance: 15_001_000},
 			{SufficientFunds: true, SenderBalance: 15_001_000},
@@ -218,24 +220,16 @@ func TestAtomicValidationNotesIncludesFees(t *testing.T) {
 	}
 }
 
-// TestAtomicValidationNotesUsesPreparedFees pins that the prepared
-// transactions' actual fees are the source of truth over the GroupParams
-// reconstruction: when the engine computed higher per-byte fees from suggested
-// params (here 2000 each, 15.006 total), a balance that would clear the
-// min-fee reconstruction (15.004 > 15.003) is still rejected.
+// TestAtomicValidationNotesUsesPreparedFees pins that the group total uses
+// the prepared transactions' fees, not the min fee: when the engine computed
+// higher per-byte fees from suggested params (here 2000 each, 15.006 total), a
+// balance that covers three min fees (15.004 > 15.003) is still rejected.
 func TestAtomicValidationNotesUsesPreparedFees(t *testing.T) {
-	prep := &engine.AtomicPrepResult{
-		Transactions: make([]types.Transaction, 3),
-	}
-	for i := range prep.Transactions {
-		prep.Transactions[i].Fee = 2000
-	}
-
 	plan := &AtomicSendPlan{
 		Mode:   SendModeAtomicToMultiple,
 		Amount: asa.Amount{Raw: 5_000_000},
 		To:     []string{"bob", "carol", "dave"},
-		Prep:   preparedAtomicGroupFromEngine(prep),
+		Prep:   preparedGroupWithFees(3, 2000),
 		Checks: []BalanceCheckDetails{
 			{SufficientFunds: true, SenderBalance: 15_004_000},
 			{SufficientFunds: true, SenderBalance: 15_004_000},
@@ -258,6 +252,15 @@ func TestAtomicValidationNotesUsesPreparedFees(t *testing.T) {
 	if _, err := atomicValidationNotes(plan); err != nil {
 		t.Fatalf("atomicValidationNotes() error = %v, want success once prepared fees are covered", err)
 	}
+}
+
+// preparedGroupWithFees is a prepared group of n transactions, each paying fee.
+func preparedGroupWithFees(n int, fee uint64) *PreparedAtomicGroup {
+	prep := &engine.AtomicPrepResult{Transactions: make([]types.Transaction, n)}
+	for i := range prep.Transactions {
+		prep.Transactions[i].Fee = types.MicroAlgos(fee)
+	}
+	return preparedAtomicGroupFromEngine(prep)
 }
 
 func TestCheckedSendTotal(t *testing.T) {

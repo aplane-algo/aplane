@@ -218,22 +218,19 @@ type PreparedSendItem struct {
 
 // NonAtomicSendPlan describes prepared non-atomic send execution.
 type NonAtomicSendPlan struct {
-	Amount    asa.Amount
-	Items     []PreparedSendItem
-	FromCount int
-	ToCount   int
-	LsigArgs  engine.LsigArgs
+	Amount   asa.Amount
+	Items    []PreparedSendItem
+	LsigArgs engine.LsigArgs
 }
 
 // AtomicSendPlan describes prepared atomic send execution.
 type AtomicSendPlan struct {
-	Mode        SendMode
-	Amount      asa.Amount
-	Prep        *PreparedAtomicGroup
-	Checks      []BalanceCheckDetails
-	From        []string
-	To          []string
-	Wait        bool
-	GroupParams engine.AtomicGroupParams
-	LsigArgs    engine.LsigArgs
+	Mode     SendMode
+	Amount   asa.Amount
+	Prep     *PreparedAtomicGroup
+	Checks   []BalanceCheckDetails
+	From     []string
+	To       []string
+	Wait     bool
+	LsigArgs engine.LsigArgs
 }
