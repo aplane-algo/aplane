@@ -223,17 +223,20 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "up", "k":
-		// Scroll up
-		if m.details.scrollOffset > 0 {
-			m.details.scrollOffset--
+		// Scroll up from the row shown, which a resize may have moved.
+		if offset := m.detailsScrollOffset(); offset > 0 {
+			m.details.scrollOffset = offset - 1
+		} else {
+			m.details.scrollOffset = 0
 		}
 		return m, nil
 
 	case "down", "j":
 		// Scroll down - calculate max offset based on content
 		maxVisibleLines := m.detailsVisibleLines()
-		// Parameters: count rendered lines so multi-line address lists scroll correctly.
-		itemCount := len(buildDetailsParameterLines(m.details.keyType, m.details.parameters))
+		// Parameters: count the rows drawn, so address lists and wrapped
+		// lines scroll correctly.
+		itemCount := len(m.detailsParameterRows())
 		visibleItems := maxVisibleLines
 
 		maxOffset := itemCount - visibleItems

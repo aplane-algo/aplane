@@ -4,8 +4,8 @@
 // Package falcon provides Falcon-1024 post-quantum signature support.
 //
 // This package provides a convenient single import for client-safe Falcon-1024
-// DSA metadata, LogicSig derivation, address derivation, and algorithm metadata.
-// Signer-side key generation, mnemonic handling, signing, and key processors
+// DSA metadata, LogicSig derivation, and algorithm metadata.
+// Signer-side key generation, mnemonic handling, and signing
 // are registered by lsig/falcon1024/signerreg.
 //
 // Usage:
@@ -24,12 +24,10 @@ package falcon
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
@@ -44,7 +42,6 @@ var (
 // Registration includes:
 // - LogicSigDSA metadata and derivation
 // - Algorithm metadata for display
-// - Pure address derivation
 func RegisterClient() {
 	registerClientOnce.Do(func() {
 		dsafamily.RegisterClient(dsafamily.ClientRegistration{
@@ -58,7 +55,6 @@ func RegisterClient() {
 					Ops:       v1.NewFalconOps(family.FalconBase),
 					SaltStyle: lsigsalt.StyleAlgodAutoSalt,
 				}),
-				AddressDeriver: falconkeys.GetFalconAddressDeriverForType("aplane.falcon1024.v1"),
 			}},
 			Extra: []func(){func() {
 				composeddsa.RegisterBase(composeddsa.BaseRegistration{
@@ -66,9 +62,6 @@ func RegisterClient() {
 					FamilyName:  family.Name,
 					Version:     1,
 					Ops:         v1.NewFalconOps(family.FalconBase),
-					NewAddressDeriver: func(templateKeyType string) addressderive.Deriver {
-						return falconkeys.GetFalconAddressDeriverForType(templateKeyType)
-					},
 				})
 			}},
 		})

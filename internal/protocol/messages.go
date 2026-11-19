@@ -322,6 +322,7 @@ type BackupResultMessage struct {
 	KeyCount        int      `json:"key_count,omitempty"`
 	Addresses       []string `json:"addresses,omitempty"`
 	Verified        bool     `json:"verified,omitempty"`
+	Warning         string   `json:"warning,omitempty"`
 	Code            string   `json:"code,omitempty"`
 	Error           string   `json:"error,omitempty"`
 }

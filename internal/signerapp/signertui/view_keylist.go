@@ -339,8 +339,23 @@ func wrapShortcutHint(hint string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderKeyDetails renders the key details modal
-func (m Model) renderKeyDetails() string {
+// keyDetailsPopupWidth is Key Details' popup width.
+const keyDetailsPopupWidth = 62
+
+// detailsParameterRows is the parameter lines as Key Details draws them: a
+// line wider than the popup is wrapped into several rows, so the pager and
+// its scroll keys count the rows on screen, not the lines.
+func (m Model) detailsParameterRows() []string {
+	width := m.popupBodyWidth(keyDetailsPopupWidth)
+	var rows []string
+	for _, line := range buildDetailsParameterLines(m.details.keyType, m.details.parameters) {
+		rows = append(rows, strings.Split(strings.TrimSuffix(wrapText(line, width), "\n"), "\n")...)
+	}
+	return rows
+}
+
+// keyDetailsHeader is what Key Details draws above the parameters.
+func (m Model) keyDetailsHeader() string {
 	var sb strings.Builder
 
 	sb.WriteString(titleStyle.Render("Key Details"))
@@ -357,7 +372,7 @@ func (m Model) renderKeyDetails() string {
 		if witness.IsKeyType(m.details.keyType) {
 			label = "Cosigner public key"
 		}
-		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, displayPublicKeyHex(m.details.publicKeyHex)), m.popupBodyWidth(62)))
+		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, displayPublicKeyHex(m.details.publicKeyHex)), m.popupBodyWidth(keyDetailsPopupWidth)))
 		sb.WriteString("\n")
 	}
 	if m.details.templateProvenanceNote != "" {
@@ -365,24 +380,53 @@ func (m Model) renderKeyDetails() string {
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
+	return sb.String()
+}
+
+// keyDetailsTrailer is what Key Details draws below the parameters.
+func (m Model) keyDetailsTrailer() string {
+	var sb strings.Builder
+	if m.details.mnemonicExportable {
+		sb.WriteString("m: Show recovery phrase\n")
+	}
+	// Show save status if present
+	if m.details.saveStatus != "" {
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render(m.details.saveStatus))
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// detailsScrollOffset is the first parameter row Key Details shows: the
+// stored offset, held within the rows there are. The rows depend on the
+// width, so an offset scrolled at another width may be past the end.
+func (m Model) detailsScrollOffset() int {
+	return max(0, min(m.details.scrollOffset, len(m.detailsParameterRows())-m.detailsVisibleLines()))
+}
+
+// renderKeyDetails renders the key details modal.
+func (m Model) renderKeyDetails() string {
+	var sb strings.Builder
+	sb.WriteString(m.keyDetailsHeader())
 
 	maxVisibleLines := m.detailsVisibleLines()
 
 	if len(m.details.parameters) > 0 {
 		// Parameters view (for generic LogicSigs)
-		sb.WriteString(keyTypeStyle.Render("═══ Parameters ═══"))
+		sb.WriteString(keyTypeStyle.Render(strings.TrimSuffix(keyDetailsParametersHeading, "\n\n")))
 		sb.WriteString("\n\n")
 
-		paramLines := buildDetailsParameterLines(m.details.keyType, m.details.parameters)
+		paramLines := m.detailsParameterRows()
 		totalParams := len(paramLines)
 		needsScroll := totalParams > maxVisibleLines
 
-		if needsScroll && m.details.scrollOffset > 0 {
+		startIdx := m.detailsScrollOffset()
+		if needsScroll && startIdx > 0 {
 			sb.WriteString(helpStyle.Render("  ▲ more above"))
 			sb.WriteString("\n")
 		}
 
-		startIdx := m.details.scrollOffset
 		endIdx := startIdx + maxVisibleLines
 		if endIdx > totalParams {
 			endIdx = totalParams
@@ -399,17 +443,8 @@ func (m Model) renderKeyDetails() string {
 		}
 	}
 
-	if m.details.mnemonicExportable {
-		sb.WriteString("m: Show recovery phrase\n")
-	}
-	// Show save status if present
-	if m.details.saveStatus != "" {
-		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render(m.details.saveStatus))
-		sb.WriteString("\n")
-	}
-
-	return m.renderPopup(62, sb.String())
+	sb.WriteString(m.keyDetailsTrailer())
+	return m.renderPopup(keyDetailsPopupWidth, sb.String())
 }
 
 func displayPublicKeyHex(publicKeyHex string) string {
@@ -421,10 +456,7 @@ func displayPublicKeyHex(publicKeyHex string) string {
 }
 
 func (m Model) renderTEALFullDisplay() string {
-	width := m.width
-	if width < 20 {
-		width = 80
-	}
+	width := m.pagerWidth()
 
 	lines := strings.Split(m.details.teal, "\n")
 	visibleLines := m.tealFullDisplayVisibleLines()
@@ -441,13 +473,7 @@ func (m Model) renderTEALFullDisplay() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("TEAL Source"))
-	sb.WriteString("\n")
-	if m.details.address != "" {
-		sb.WriteString(subtitleStyle.Render(ellipsize(m.details.address, width)))
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\n")
+	sb.WriteString(m.tealFullDisplayHeader(width))
 
 	if offset > 0 {
 		sb.WriteString(scrollMoreAboveLine(offset))
@@ -465,16 +491,19 @@ func (m Model) renderTEALFullDisplay() string {
 	return sb.String()
 }
 
+// tealFullDisplayHeader is what the TEAL pager draws above the source.
+func (m Model) tealFullDisplayHeader(width int) string {
+	var sb strings.Builder
+	sb.WriteString(titleStyle.Render("TEAL Source"))
+	sb.WriteString("\n")
+	if m.details.address != "" {
+		sb.WriteString(subtitleStyle.Render(ellipsize(m.details.address, width)))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
 func (m Model) tealFullDisplayVisibleLines() int {
-	if m.height <= 0 {
-		return 20
-	}
-	visible := m.height - 7
-	if m.details.address == "" {
-		visible++
-	}
-	if visible < 3 {
-		return 3
-	}
-	return visible
+	return m.pagerVisibleLines(m.tealFullDisplayHeader(m.pagerWidth()))
 }

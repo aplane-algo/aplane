@@ -225,7 +225,13 @@ The audit log rotates automatically when it reaches **10 MB**:
 
 Up to two rotated backups are retained (`audit.log.1` and `audit.log.2`).
 
-If rotation fails, logging continues to the current file.
+If rotation fails, logging continues to the current file, which keeps
+growing, and the next entry tries again. A rotation that cannot move
+`audit.log.1` aside stops there rather than renaming the current file over it,
+so no rotated history is lost to a failed step. If a write stops partway (a
+full disk), the next entry starts on a line of its own, so the fragment does
+not take that entry with it; a line an earlier run left torn by a crash or a
+full disk is detected when the log is opened, with the same effect.
 
 ### Entry size
 

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
@@ -34,19 +33,12 @@ func registerBaseForTest(t testing.TB, reg BaseRegistration) {
 	})
 }
 
-type testDeriver struct{}
-
-func (testDeriver) DeriveAddress(string, map[string]string) (string, error) {
-	return "addr", nil
-}
-
 func TestRegisterBaseAndLookupBase(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
-		BaseKeyType:       " TEST-BASE-v1 ",
-		FamilyName:        "test-base",
-		Version:           1,
-		Ops:               testOps{},
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: " TEST-BASE-v1 ",
+		FamilyName:  "test-base",
+		Version:     1,
+		Ops:         testOps{},
 	})
 
 	reg, ok := LookupBase("test-base-v1")
@@ -65,9 +57,6 @@ func TestRegisterBaseAndLookupBase(t *testing.T) {
 	if reg.Ops == nil {
 		t.Fatal("Ops is nil")
 	}
-	if reg.NewAddressDeriver == nil {
-		t.Fatal("NewAddressDeriver is nil")
-	}
 }
 
 func TestRegisterBaseRequiresOps(t *testing.T) {
@@ -77,10 +66,9 @@ func TestRegisterBaseRequiresOps(t *testing.T) {
 		}
 	}()
 	RegisterBase(BaseRegistration{
-		BaseKeyType:       "missing-ops-v1",
-		FamilyName:        "missing-ops",
-		Version:           1,
-		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		BaseKeyType: "missing-ops-v1",
+		FamilyName:  "missing-ops",
+		Version:     1,
 	})
 }
 
@@ -88,7 +76,6 @@ func TestRegisterBaseRequiresOps(t *testing.T) {
 // catalog name served by ops that render a different construction would create
 // accounts the signer checks against the wrong construction.
 func TestRegisterBaseRequiresOpsToRenderTheNamedConstruction(t *testing.T) {
-	deriver := func(string) addressderive.Deriver { return testDeriver{} }
 	t.Run("mismatch panics", func(t *testing.T) {
 		defer func() {
 			recovered := recover()
@@ -101,7 +88,7 @@ func TestRegisterBaseRequiresOpsToRenderTheNamedConstruction(t *testing.T) {
 		}()
 		RegisterBase(BaseRegistration{
 			BaseKeyType: "aplane.ed25519.v1", FamilyName: "aplane.ed25519", Version: 1,
-			Ops: testOps{construction: sigconstruction.Falcon1024()}, NewAddressDeriver: deriver,
+			Ops: testOps{construction: sigconstruction.Falcon1024()},
 		})
 	})
 	t.Run("ops with no construction under a catalog name panic", func(t *testing.T) {
@@ -112,19 +99,19 @@ func TestRegisterBaseRequiresOpsToRenderTheNamedConstruction(t *testing.T) {
 		}()
 		RegisterBase(BaseRegistration{
 			BaseKeyType: " APLANE.FALCON1024.V1 ", FamilyName: "aplane.falcon1024", Version: 1,
-			Ops: testOps{}, NewAddressDeriver: deriver,
+			Ops: testOps{},
 		})
 	})
 	t.Run("matching construction registers", func(t *testing.T) {
 		registerBaseForTest(t, BaseRegistration{
 			BaseKeyType: "aplane.ed25519.v1", FamilyName: "aplane.ed25519", Version: 1,
-			Ops: testOps{construction: sigconstruction.Ed25519()}, NewAddressDeriver: deriver,
+			Ops: testOps{construction: sigconstruction.Ed25519()},
 		})
 	})
 	t.Run("a name outside the catalog constrains nothing", func(t *testing.T) {
 		registerBaseForTest(t, BaseRegistration{
 			BaseKeyType: "test.uncataloged-base.v1", FamilyName: "uncataloged", Version: 1,
-			Ops: testOps{construction: sigconstruction.Falcon1024()}, NewAddressDeriver: deriver,
+			Ops: testOps{construction: sigconstruction.Falcon1024()},
 		})
 	})
 }

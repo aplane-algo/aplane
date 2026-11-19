@@ -141,10 +141,10 @@ func TestGroupReviewNamesAHeldPositionAndItsListedHandover(t *testing.T) {
 		svc := &ApprovalService{
 			HasClient:      func() bool { return true },
 			KnownAddresses: func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
-			RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 				got = violations
 				return true, nil
-			},
+			}),
 		}
 		if err := promptGroup(svc, req, plan, txns, describeAs("txn\n")); err != nil {
 			t.Fatal(err)
@@ -293,10 +293,10 @@ func TestGroupReviewDoesNotVouchForANamedAuthorizer(t *testing.T) {
 	svc := &ApprovalService{
 		HasClient:      func() bool { return true },
 		KnownAddresses: func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
-		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 			got = violations
 			return true, nil
-		},
+		}),
 	}
 	if err := promptGroup(svc, req, plan, txns, describeAs("txn\n")); err != nil {
 		t.Fatal(err)

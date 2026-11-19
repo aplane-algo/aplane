@@ -91,6 +91,7 @@ type BackupIdentityResult struct {
 	KeyCount        int
 	Addresses       []string
 	Verified        bool
+	Warning         string
 	Code            string
 	Error           string
 }

@@ -529,8 +529,11 @@ transaction type is one more entry in `fields` and needs no client change.
 - `backup`: `export_passphrase`, optional `addresses[]` ->
   `backup_result`: `success`, optional `archive_path`,
   `archive_checksum`, `archive_size`, `key_count`, `addresses[]`,
-  `verified`, `code`, `error`. Backup is all-or-nothing; a selected
-  credential that fails canonical validation fails the request.
+  `verified`, optional `warning`, `code`, `error`. Backup is all-or-nothing;
+  a selected credential that fails canonical validation fails the request.
+  `verified` means the archive itself was extracted and every payload and
+  the manifest opened. `warning` reports an archive published without a
+  durable directory entry, as `commit_backup_import_result` does.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`,
   `error`; each item has a basename-only compatibility `path`, file name,
   packaging metadata, checksum, and size; `created_at` is the archive file's
@@ -1258,7 +1261,10 @@ identifies the current screen. The enum has families for:
   client is waiting on the answer. A signing popup refuses approval for one
   second after it comes into view (rejection is immediate): a requester can
   withdraw a request and send another in its place, and a key pressed for the
-  first must not approve the second. `apapprover` reads whole lines, which the
+  first must not approve the second. The enrollment popup does the same, from
+  when each request comes into view, the next queued one included, and each
+  request opens with Reject focused whatever the focus was on the request
+  before it; the client's label and address are drawn escaped. `apapprover` reads whole lines, which the
   terminal buffers until Enter, so instead of a delay it shows each request
   with a fresh four-digit code and approves only `y <code>` for the request on
   screen
@@ -1604,7 +1610,11 @@ lock that follows that disconnect is decided by the signer-owned
 the authentication view in the disconnected state, shows why, and reconnects
 only when the operator presses `c`. It does not reconnect automatically: a
 fresh connection would sit at the login screen holding the signer's single
-pre-auth slot and lock out every other admin client.
+pre-auth slot and lock out every other admin client. Only a connection that
+dropped without the signer ending it (a signer restart) reconnects on its
+own: `apadmin` retries from one second, doubling up to thirty, until a dial
+succeeds or the operator disconnects, and a failed dial leaves the dropped
+session's retry running.
 Disconnect, reconnect, reauthentication, and server lock notifications clear
 pending activity and idle state. Every end of an admin session (disconnect,
 reconnect, reauthentication, local idle disconnect, or displacement by another

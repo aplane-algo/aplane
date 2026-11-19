@@ -66,6 +66,32 @@ func TestStoreBackupCreateAndList(t *testing.T) {
 	}
 }
 
+// A backup published without a durable directory entry says so in batch
+// mode too, as a backup import does.
+func TestStoreBackupCreatePrintsTheDurabilityWarning(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, result any) error {
+		if _, ok := message.(protocol.BackupMessage); !ok {
+			return errors.New("unexpected request")
+		}
+		*result.(*protocol.BackupResultMessage) = protocol.BackupResultMessage{
+			Success: true, ArchivePath: "backup.tar.gz", Verified: true,
+			Warning: "backup archive was published but directory durability could not be confirmed",
+		}
+		return nil
+	}}
+	var stdout, stderr bytes.Buffer
+	store := Store{
+		Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr},
+		ReadConfirmed: func(string, string) ([]byte, error) { return []byte("export-secret"), nil },
+	}
+	if err := store.RunBackup([]string{"create", "all"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "durability could not be confirmed") {
+		t.Fatalf("batch backup create did not print the warning: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 func TestStoreBackupExportVerifiesAndRefusesReplacement(t *testing.T) {
 	payload := []byte("managed backup bytes")
 	checksum := testSHA256(payload)

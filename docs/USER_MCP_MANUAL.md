@@ -644,7 +644,10 @@ each MCP server instance uses its own:
   `submissions`, or as `submission` on a `send`, `validate` or `sweep` item of
   a successful result. The `js` tool reports every submission failure of the
   run in `submissions`, including those the script caught, on a successful
-  result too.
+  result too. When every item of a `send` or `sweep` failed, an item that
+  never reached algod (a balance check, the signer refusing) has no
+  outcome: the error result lists its reason in `unsubmitted` instead, as
+  `<from> -> <to>: <reason>`, and repeats it in the text.
 - **Some commands require dedicated tools or a terminal.** Check the
   [blocked-command table](#commands-blocked-from-execute) before using `execute`.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /

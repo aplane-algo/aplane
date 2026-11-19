@@ -81,7 +81,7 @@ func TestClientDialSignerAPIUsesAuthenticatedDirectChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := NewClient(host, sshPort, 0, identityPath, knownHostsPath)
+	client := NewClient(host, sshPort, identityPath, knownHostsPath)
 	if err := client.ConnectWithKey(t.Context()); err != nil {
 		t.Fatal(err)
 	}
