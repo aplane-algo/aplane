@@ -1199,7 +1199,7 @@ or `apadmin clients import <file>`).
 | Property | Value |
 |----------|-------|
 | Private key | `$APCLIENT_DATA/.ssh/id_ed25519` (mode `0600`) |
-| Accepted types | Ed25519, ECDSA (P-256/384/521), hardware-backed `sk-` Ed25519/ECDSA |
+| Accepted types | Ed25519, ECDSA (P-256/384/521), unencrypted (the node also accepts hardware-backed `sk-` keys, which apshell cannot use) |
 | Host trust | `$APCLIENT_DATA/.ssh/known_hosts` |
 
 ### Revocation

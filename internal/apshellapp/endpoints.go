@@ -106,11 +106,8 @@ func (a *App) EndpointPublicKey(_ context.Context, alias string) (*EndpointPubli
 		}
 	}
 
+	// Loading endpoints gives each one an identity file.
 	identityFile := endpoint.IdentityFile
-	if identityFile == "" {
-		return nil, fmt.Errorf("endpoint %q has no identity file, so its key would come from an SSH agent; "+
-			"ssh-add -L lists the keys loaded there, which may not be the one this endpoint uses", alias)
-	}
 	key, err := sshtunnel.ReadIdentityPublicKey(identityFile)
 	switch {
 	case errors.Is(err, sshtunnel.ErrNoIdentityKey):

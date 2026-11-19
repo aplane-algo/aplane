@@ -274,7 +274,8 @@ func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, er
 	signer, err := ssh.ParsePrivateKey(keyData)
 	if err != nil {
 		if _, ok := err.(*ssh.PassphraseMissingError); ok {
-			return nil, nil, fmt.Errorf("SSH identity file %s is encrypted; use ssh-agent or an unencrypted key", identityPath)
+			return nil, nil, fmt.Errorf("the SSH key at %s is encrypted, so apshell can't use it; "+
+				"point the endpoint's identity_file at an unencrypted key", identityPath)
 		}
 		return nil, nil, fmt.Errorf("failed to parse SSH identity file %s: %w", identityPath, err)
 	}

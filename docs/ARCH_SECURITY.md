@@ -95,13 +95,16 @@ the verified key fingerprint. A request carries no credential of its own.
   client cannot hold a connection slot with keep-alive requests
 
 **Client Credential Details:**
-- Ed25519, ECDSA (P-256/384/521), or hardware-backed `sk-` Ed25519/ECDSA key
-  at the endpoint's `identity_file` (default `$APCLIENT_DATA/.ssh/id_ed25519`,
-  mode 0600). A missing identity file is created on first use; when it cannot
-  be created, connecting and enrolling fail with the reason and never offer an
-  SSH agent's keys in its place, which could enroll a key never meant for
-  aplane. The tunnel client uses an SSH agent only when it is given no
-  identity file, which a configured endpoint always has
+- An unencrypted Ed25519 or ECDSA (P-256/384/521) key at the endpoint's
+  `identity_file` (default `$APCLIENT_DATA/.ssh/id_ed25519`, mode 0600). The
+  node also accepts hardware-backed `sk-` Ed25519/ECDSA keys, but apshell's
+  tunnel client cannot use one: it signs with the key file, and
+  `ssh.ParsePrivateKey` does not read `sk-` key files. A missing identity
+  file is created on first use; when it cannot be created, connecting and
+  enrolling fail with the reason and never offer an SSH agent's keys in its
+  place, which could enroll a key never meant for aplane. The tunnel client
+  uses an SSH agent only when it is given no identity file, which a
+  configured endpoint always has
 - Enrolled once per node, either by an operator approving the client's
   `enroll` request or by the operator importing the public key;
   the node records it in `identities/default/.ssh/authorized_keys`
@@ -704,9 +707,9 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 - Host key verification prevents MITM (TOFU via known_hosts)
 - No port is opened on the client machine: the signer client opens a
   channel for each HTTP connection from inside apshell, so no other process
-  can use apshell's connection. A process that can read the identity file or
-  use the SSH agent can still open a connection of its own with that key;
-  the identity file's permissions and the agent guard that
+  can use apshell's connection. A process that can read the identity file
+  can still open a connection of its own with that key; the identity file's
+  permissions guard that
 - Authorization is evaluated per HTTP request against the client role
 
 **Configuration:**
@@ -1649,7 +1652,7 @@ This pipeline keeps handler code behind the `Authorizer` interface.
 
 | Property | Implementation |
 |----------|----------------|
-| Credential | Client SSH private key (Ed25519, ECDSA, or hardware-backed `sk-`); never transmitted |
+| Credential | Client SSH private key (Ed25519 or ECDSA for apshell; the node also accepts hardware-backed `sk-`); never transmitted |
 | Identity | SHA256 key fingerprint, attached to the API connection by the SSH server |
 | Registry | `identities/default/.ssh/authorized_keys`, daemon-written, strict parser, atomic publication |
 | Transport security | Loopback REST listener answers only `/health`; every authenticated request arrives through an SSH tunnel |

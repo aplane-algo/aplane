@@ -902,9 +902,10 @@ importing its public key file in apadmin (`i` on Enrolled Clients) or with
 `apadmin clients import`. `endpoints public-key` prints the client's key in the
 form the operator needs, as often as you like, and never creates a key.
 
-The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
-hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
-Ed25519. RSA and DSA keys fail SSH authentication, for `enroll`
+The client SSH key must be an unencrypted Ed25519 or ECDSA (P-256/384/521)
+key file. The node also accepts hardware-backed `sk-` Ed25519/ECDSA keys from
+SSH clients that can use them, which apshell cannot. The default generated key
+is Ed25519. RSA and DSA keys fail SSH authentication, for `enroll`
 and `connect` alike, before any approval prompt.
 
 The positional one-off host form is no longer supported. Import or configure

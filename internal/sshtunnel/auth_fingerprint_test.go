@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
@@ -268,4 +269,26 @@ func TestIdentityThatCannotBeCreatedIsAnError(t *testing.T) {
 		default:
 		}
 	})
+}
+
+// An encrypted identity file is refused with what to change: the endpoint's
+// identity_file, since a configured endpoint has no way to use an agent.
+func TestEncryptedIdentityFileNamesTheFix(t *testing.T) {
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("passphrase"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(identity, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = NewClient("example.com", 22, identity, filepath.Join(t.TempDir(), "known_hosts")).authMethod(nil)
+	want := "the SSH key at " + identity + " is encrypted, so apshell can't use it; point the endpoint's identity_file at an unencrypted key"
+	if err == nil || err.Error() != want {
+		t.Fatalf("authMethod() error = %v, want %q", err, want)
+	}
 }
