@@ -71,6 +71,11 @@ type dispatcher struct {
 	// changed. It stays apart from lifecycle, which discards what it can't buffer
 	// and carries the terminal events that drive reconnect.
 	notificationDrops chan struct{}
+
+	// afterTimeout, when set, runs in a request's goroutine once its timer
+	// has fired, before the timeout is handled. Tests use it to order a reply
+	// against the timeout.
+	afterTimeout func()
 }
 
 // maxAbandonedRequests bounds how many timed-out request IDs a strict
@@ -153,8 +158,13 @@ func (d *dispatcher) request(msg interface{}, timeout time.Duration) ([]byte, er
 
 	if err := d.conn.WriteJSON(msg); err != nil {
 		d.mu.Lock()
-		delete(d.pending, requestID)
+		withdrawn := d.withdrawLocked(requestID, waiter)
 		d.mu.Unlock()
+		if !withdrawn {
+			// A reply with this ID was matched to the waiter before the write
+			// failed; nothing reads it.
+			protocol.SensitiveBytes((<-waiter).raw).Zero()
+		}
 		return nil, err
 	}
 
@@ -171,21 +181,36 @@ func (d *dispatcher) request(msg interface{}, timeout time.Duration) ([]byte, er
 	case result := <-waiter:
 		return result.raw, result.err
 	case <-timer.C:
+		if d.afterTimeout != nil {
+			d.afterTimeout()
+		}
 		d.mu.Lock()
-		if _, waiting := d.pending[requestID]; !waiting {
+		if !d.withdrawLocked(requestID, waiter) {
 			// The read loop matched the reply, or failAll took the waiter,
 			// before the timeout was handled; the result is on its way.
 			d.mu.Unlock()
 			result := <-waiter
 			return result.raw, result.err
 		}
-		delete(d.pending, requestID)
 		if d.strictUnknownResponses {
 			d.abandonLocked(requestID)
 		}
 		d.mu.Unlock()
 		return nil, fmt.Errorf("timed out waiting for response to %s", requestID)
 	}
+}
+
+// withdrawLocked removes this request's waiter from pending and reports true.
+// It reports false when the waiter is no longer registered. Besides the
+// request itself, only the read loop, matching a reply, and failAll remove a
+// waiter, and both then send it a result. The entry under requestID may by
+// then belong to a later request reusing the ID; it is left alone.
+func (d *dispatcher) withdrawLocked(requestID string, waiter chan dispatchResult) bool {
+	if d.pending[requestID] != waiter {
+		return false
+	}
+	delete(d.pending, requestID)
+	return true
 }
 
 // abandonLocked records a timed-out request's ID, evicting the oldest past
