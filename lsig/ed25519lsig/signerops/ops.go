@@ -16,18 +16,21 @@ func New() *Ops {
 	return &Ops{}
 }
 
+// GenerateKeypair derives an Ed25519 key pair from a 32-byte seed or a 64-byte
+// private key. A 64-byte input is re-derived from its seed half, so its public
+// half is never trusted. The returned private key is the only copy this
+// function makes, and the caller zeroes it.
 func (o *Ops) GenerateKeypair(seed []byte) (publicKey, privateKey []byte, err error) {
 	var sk ed25519.PrivateKey
 	switch len(seed) {
 	case ed25519.SeedSize:
 		sk = ed25519.NewKeyFromSeed(seed)
 	case ed25519.PrivateKeySize:
-		sk = ed25519.PrivateKey(append([]byte(nil), seed...))
+		sk = ed25519.NewKeyFromSeed(seed[:ed25519.SeedSize])
 	default:
 		return nil, nil, fmt.Errorf("invalid Ed25519 seed length %d", len(seed))
 	}
-	pub := sk.Public().(ed25519.PublicKey)
-	return append([]byte(nil), pub...), append([]byte(nil), sk...), nil
+	return sk.Public().(ed25519.PublicKey), sk, nil
 }
 
 func (o *Ops) Sign(privateKey []byte, message []byte) ([]byte, error) {
