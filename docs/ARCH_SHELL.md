@@ -1845,7 +1845,12 @@ check's amounts, or the signer's refusal. Nothing retries.
 
 Commands that report items record each item's outcome as `submission` on the
 item of their successful result: `validate`, and a non-atomic `send` or a
-`sweep` in which some items succeeded. A non-atomic `send` or a `sweep` in
+`sweep` in which some items succeeded. A `validate` in which every item
+failed returns its result with an error whose text is `all N validation(s)
+failed`. The shell result carries that error as its terminal failure: the
+REPL draws each item and then returns it, which stops a script, while MCP,
+which reads the structured result alone, returns that result, each item's
+error and `submission` in it, and no error. A non-atomic `send` or a `sweep` in
 which every item failed, one item included, returns its result with an error
 whose text is `all N transaction(s) failed`, so the command fails: the REPL
 draws each item and then returns the error, which stops a script. That

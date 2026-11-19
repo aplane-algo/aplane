@@ -424,6 +424,11 @@ validate <account|@setname> [arg:[<account>:]<name>=<value>]
 |--------|-------------|
 | `arg:[<account>:]<name>=<value>` | LogicSig argument: for every validation transaction, or, with `<account>:`, for that account's only. See [LogicSig Arguments](#logicsig-arguments) |
 
+Each account's validation is reported on its own. When every one failed,
+the command fails after reporting them, which stops a script; when some
+passed, it succeeds. Through MCP the result lists each account's outcome
+either way.
+
 **Examples:**
 ```
 validate alice

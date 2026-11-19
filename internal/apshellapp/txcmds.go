@@ -141,7 +141,10 @@ func withIncentive(result *KeyRegCommandResult, prep *engine.TransactionPrepResu
 	return result
 }
 
-// Validate resolves and validates one account or address set via 0-ALGO self-send transactions.
+// Validate resolves and validates one account or address set via 0-ALGO
+// self-send transactions. When every validation failed, it returns the
+// result, each item with its error, and an error for the command as a whole;
+// a set in which some passed is the result alone.
 func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
 	addresses, err := cmdspec.ResolveAddressList([]string{req.Account}, resolver)
@@ -201,11 +204,8 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 
 	decorateValidateResult(result)
 
-	if result.FailureCount > 0 && result.SuccessCount == 0 {
-		return result, fmt.Errorf("%d validation(s) failed", result.FailureCount)
-	}
-	if result.FailureCount > 0 {
-		return result, fmt.Errorf("%d validation(s) failed", result.FailureCount)
+	if result.SuccessCount == 0 {
+		return result, fmt.Errorf("all %d validation(s) failed", result.FailureCount)
 	}
 	return result, nil
 }
