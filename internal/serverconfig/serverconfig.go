@@ -328,6 +328,11 @@ func normalizeServerConfig(dataDir, path string, config, defaults ServerConfig) 
 	if config.PassphraseTimeout == "" {
 		config.PassphraseTimeout = defaults.PassphraseTimeout
 	}
+	// A bad value is refused rather than read as 0, which would turn the
+	// admin idle timeout off.
+	if _, err := ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
+		return ServerConfig{}, fmt.Errorf("invalid passphrase_timeout in config: %w", err)
+	}
 	if config.ApprovalWait == "" {
 		config.ApprovalWait = defaults.ApprovalWait
 	}

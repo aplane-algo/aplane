@@ -123,6 +123,24 @@ func TestLoadServerConfigRejectsInvalidApprovalWait(t *testing.T) {
 	}
 }
 
+// An invalid passphrase_timeout is refused like an invalid approval_wait. It
+// was once read as 0, which turned the admin idle timeout off.
+func TestLoadServerConfigRejectsInvalidPassphraseTimeout(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"15mins", "-5m"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("passphrase_timeout: "+value+"\n"), 0o640); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		_, err := LoadServerConfig(dir)
+		if err == nil || !strings.Contains(err.Error(), "invalid passphrase_timeout") {
+			t.Fatalf("LoadServerConfig(passphrase_timeout: %s) error = %v, want invalid passphrase_timeout", value, err)
+		}
+	}
+}
+
 func TestLoadServerConfigSchemaVersion(t *testing.T) {
 	t.Parallel()
 

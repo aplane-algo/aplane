@@ -51,7 +51,7 @@ func LoadResolved(dataDir string) (*Startup, error) {
 
 	passphraseTimeout, err := serverconfig.ParsePassphraseTimeout(cfg.PassphraseTimeout)
 	if err != nil {
-		passphraseTimeout = 0
+		return nil, fmt.Errorf("invalid passphrase_timeout in config: %w", err)
 	}
 
 	return &Startup{

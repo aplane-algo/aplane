@@ -505,7 +505,10 @@ With a nonzero `passphrase_timeout`, `apadmin` disconnects after local keyboard
 inactivity. If `lock_on_disconnect` is `true`, that disconnect locks the signer.
 If `lock_on_disconnect` is `false`, the signer remains unlocked until manual
 lock, process stop, restart, or another explicit lock path. The time-based
-disconnect can be disabled by setting `passphrase_timeout: "0"`.
+disconnect can be disabled by setting `passphrase_timeout: "0"`. Any other
+value must be a Go duration such as `"15m"` or `"1h"`. One that is not (for
+example `15mins`) is refused when the file loads, so apsigner does not start;
+it never turns the timeout off.
 
 After an idle disconnect, `apadmin` shows the login screen in a disconnected
 state and reconnects only when you press `c`. Separately, the signer closes any

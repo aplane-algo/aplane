@@ -256,6 +256,10 @@ Validation:
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
   30 minutes. The default is `4m`. The product runtime configuration may
   override the process default.
+- `passphrase_timeout` must be `"0"` (no idle timeout) or parse as a
+  non-negative Go duration. The default is `15m`. A value that does not parse
+  fails the load, in `config.yaml` and in the product runtime configuration
+  alike; it is never read as `0`.
 - initialized signer data roots must contain root `node.yaml` with role
   `signer` or `cosigner`. New initialization defaults to `signer` unless a
   cosigner node is explicitly requested. Product runtime config `mode` is an

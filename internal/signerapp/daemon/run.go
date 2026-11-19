@@ -96,10 +96,6 @@ func Run(dataDir string) int {
 	config.IPCPath = resolvedIPCPath
 	startupOpts.Config = config
 	passphraseTimeout := startupOpts.PassphraseTimeout
-	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
-		logWarnf("invalid passphrase_timeout in config: %v, using default (0)", err)
-		_ = os.Stderr.Sync()
-	}
 
 	// Use config values for port settings
 	port := config.Endpoint.SignerPort
