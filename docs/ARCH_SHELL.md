@@ -1021,9 +1021,11 @@ Machine projections in `command_projections.go` are explicit security
 allowlists. Plugin projection filters the reserved `localSigners` field.
 One-shot `simulate <transaction-command>` invokes the same result-bearing
 executor while simulation is temporarily forced and restores the prior mode
-with deferred cleanup. The result is drawn after that, so a command reads
-the mode when it runs and passes it to its rendering; a renderer never asks
-for the mode itself.
+with deferred cleanup. It returns the command's own result, unwrapped, so a
+command without a machine projection (one with interactive prompts) is
+simulated in the REPL as it runs without simulate. The result is drawn after
+that, so a command reads the mode when it runs and passes it to its
+rendering; a renderer never asks for the mode itself.
 
 ### Command Dispatch
 
