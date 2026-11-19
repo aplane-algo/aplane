@@ -28,7 +28,8 @@ type Logger func(format string, args ...any)
 type RotateOptions struct {
 	Logf Logger
 	// ValidateCandidate applies signer semantic gates to the fresh-term staged
-	// successor before publication and store-root replacement.
+	// successor before publication and store-root replacement. It is
+	// required: without it Mint refuses the passphrase change.
 	ValidateCandidate func(staged storepaths.GenPaths, successor *crypto.Keyring) error
 
 	// AfterRootCommit updates passphrase helpers after the new cryptographic
@@ -140,6 +141,15 @@ func Rotate(
 		return result, err
 	}
 
+	// A caller without candidate validation hands Mint none, so Mint's own
+	// guard refuses the passphrase change.
+	var validateCandidate func(staged storepaths.GenPaths) error
+	if opts.ValidateCandidate != nil {
+		validateCandidate = func(staged storepaths.GenPaths) error {
+			return opts.ValidateCandidate(staged, successorKeyring)
+		}
+	}
+
 	logf(opts.Logf, "staging fresh-term successor %s", generationID)
 	_, mintErr := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:               generationID,
@@ -152,12 +162,7 @@ func Rotate(
 		OperationID:                "changepass-" + generationID,
 		RollbackCapability:         rollbackCapability,
 		CreatedAt:                  now,
-		ValidateCandidate: func(staged storepaths.GenPaths) error {
-			if opts.ValidateCandidate == nil {
-				return nil
-			}
-			return opts.ValidateCandidate(staged, successorKeyring)
-		},
+		ValidateCandidate:          validateCandidate,
 		AfterPublication: func() error {
 			return testcheckpoint.Reach("changepass.successor_published")
 		},
