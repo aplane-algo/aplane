@@ -1324,6 +1324,12 @@ Application update calls (`oncomp=update`) require both approval and clear
 program paths. Approval and clear program options are rejected for other
 on-completion modes.
 
+`app deploy` waits for confirmation (unless `nowait`) and then prints the
+created app's ID and address. If that lookup fails after the deploy
+confirmed, the command still succeeds: it warns and prints the deploy's
+transaction ID, and its MCP result has `app_lookup_error` in place of
+`app_id`. Find the app from the transaction ID rather than deploying again.
+
 **Examples:**
 ```
 app read info 123

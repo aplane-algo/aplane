@@ -1310,6 +1310,12 @@ After confirmed submission, the engine can also resolve the created
 application:
 - `LookupCreatedApplication(ctx, txID)`
 
+A deploy that confirmed succeeds even when that lookup fails, since failing
+it would invite a second deploy: `app deploy` returns its `tx_id` and
+`confirmed` with no `app_id`, sets `app_lookup_error` to the lookup's error
+and warns, and JavaScript `appDeploy()` returns the same fields instead of
+throwing.
+
 #### ABI-backed method calls
 
 ARC-4 method calls build on top of the raw path.
@@ -1795,8 +1801,7 @@ one outcome for each `SubmissionError` in the error, following wrapped and
 joined errors, and for each one an `appresult.SubmissionFailures` error
 reports. An error without one did not fail at a submit call or a
 confirmation wait. It says nothing about submissions that completed before
-the failure: earlier ones in the same script or plugin run, or a confirmed deploy
-whose created app `app deploy` then could not look up.
+the failure, such as earlier ones in the same script or plugin run.
 
 Each outcome's `message` says what happened:
 
