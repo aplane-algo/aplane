@@ -98,15 +98,15 @@ func (m Model) sendAppendBackupImportCmd(id, uploadID string, offset int64, data
 	})
 }
 
-// sendCommitBackupImportCmd sends the commit. It takes its own copy of the
-// passphrase and zeroes that copy after sending; the caller zeroes its own.
+// sendCommitBackupImportCmd sends the commit. The command keeps its own copy
+// of the passphrase and zeroes it once it has run; the caller zeroes its own.
 func (m Model) sendCommitBackupImportCmd(id, uploadID, fileName string, size int64, checksum string, passphrase []byte) tea.Cmd {
-	secret := protocol.SensitiveBytes(append([]byte(nil), passphrase...))
-	return m.backupRequestCmd(id, func(c *IPCClient) error {
-		defer secret.Zero()
-		return c.sendMessage(protocol.CommitBackupImportMessage{
-			BaseMessage: base(protocol.MsgTypeCommitBackupImport, id), UploadID: uploadID, FileName: fileName,
-			ExpectedSize: size, ExpectedSHA256: checksum, ExportPassphrase: secret,
+	return secretCmd(passphrase, func(p []byte) tea.Cmd {
+		return m.backupRequestCmd(id, func(c *IPCClient) error {
+			return c.sendMessage(protocol.CommitBackupImportMessage{
+				BaseMessage: base(protocol.MsgTypeCommitBackupImport, id), UploadID: uploadID, FileName: fileName,
+				ExpectedSize: size, ExpectedSHA256: checksum, ExportPassphrase: protocol.SensitiveBytes(p),
+			})
 		})
 	})
 }

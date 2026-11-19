@@ -37,10 +37,10 @@ const (
 type Session interface {
 	Dial() error
 	Close()
-	Authenticate(string, time.Duration) error
-	AuthenticateOnly(string, time.Duration) error
+	Authenticate([]byte, time.Duration) error
+	AuthenticateOnly([]byte, time.Duration) error
 	WaitForStatus(time.Duration) (*protocol.StatusMessage, error)
-	Unlock(string, time.Duration) (*protocol.UnlockResultMessage, error)
+	Unlock([]byte, time.Duration) (*protocol.UnlockResultMessage, error)
 	SendAndReceive(interface{}, time.Duration) ([]byte, error)
 }
 
@@ -52,7 +52,8 @@ type Client struct {
 }
 
 // Open dials and authenticates a batch session using the requested lock-state
-// behavior. It closes the transport on every failed setup path.
+// behavior. It closes the transport on every failed setup path. The caller
+// zeroes passphrase.
 func Open(session Session, passphrase []byte, mode AuthMode) (*Client, error) {
 	if session == nil {
 		return nil, fmt.Errorf("admin session is required")
@@ -70,14 +71,13 @@ func Open(session Session, passphrase []byte, mode AuthMode) (*Client, error) {
 		}
 	}()
 
-	secret := string(passphrase)
 	switch mode {
 	case AuthReadOnly:
-		if err := session.AuthenticateOnly(secret, DefaultTimeout); err != nil {
+		if err := session.AuthenticateOnly(passphrase, DefaultTimeout); err != nil {
 			return nil, fmt.Errorf("authenticate admin session: %w", err)
 		}
 	case AuthUnlock:
-		if err := session.Authenticate(secret, DefaultTimeout); err != nil {
+		if err := session.Authenticate(passphrase, DefaultTimeout); err != nil {
 			return nil, fmt.Errorf("authenticate admin session: %w", err)
 		}
 		status, err := session.WaitForStatus(DefaultTimeout)
@@ -85,7 +85,7 @@ func Open(session Session, passphrase []byte, mode AuthMode) (*Client, error) {
 			return nil, fmt.Errorf("read signer status: %w", err)
 		}
 		if status.State == "locked" {
-			result, err := session.Unlock(secret, DefaultTimeout)
+			result, err := session.Unlock(passphrase, DefaultTimeout)
 			if err != nil {
 				return nil, protocol.WithCode(protocol.ErrCodeUnlockFailed, fmt.Errorf("unlock signer: %w", err))
 			}

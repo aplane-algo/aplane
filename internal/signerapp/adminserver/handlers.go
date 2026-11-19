@@ -520,6 +520,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 }
 
 func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
+	defer msg.ExportPassphrase.Zero()
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
@@ -532,7 +533,6 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 	}
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
-	defer msg.ExportPassphrase.Zero()
 	result := s.backupServices.BackupIdentity(adminproto.BackupIdentityRequest{
 		ExportPassphrase: exportPassphrase,
 		Addresses:        append([]string(nil), msg.Addresses...),
@@ -721,6 +721,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 }
 
 func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
+	defer msg.ExportPassphrase.Zero()
 	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
@@ -733,7 +734,6 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 	}
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
-	defer msg.ExportPassphrase.Zero()
 	result := s.backupServices.PreviewRestore(adminproto.PreviewRestoreRequest{
 		ArchivePath:      msg.ArchivePath,
 		ExportPassphrase: exportPassphrase,
@@ -762,6 +762,7 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 }
 
 func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
+	defer msg.ExportPassphrase.Zero()
 	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
@@ -781,7 +782,6 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 			Code:        protocol.ResultCodeRestoreAuditFailed,
 			Error:       auditRefusalText("restore aborted", nil),
 		}))
-		msg.ExportPassphrase.Zero()
 		return
 	}
 	if err := audit.LogCredentialRestoreIntentDurableContext(
@@ -792,12 +792,10 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 			Code:        protocol.ResultCodeRestoreAuditFailed,
 			Error:       auditRefusalText("restore aborted", err),
 		}))
-		msg.ExportPassphrase.Zero()
 		return
 	}
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
-	defer msg.ExportPassphrase.Zero()
 	result := s.backupServices.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      msg.ID,
 		ArchivePath:      msg.ArchivePath,
@@ -942,6 +940,7 @@ func (s *Session) HandleShowLibraryTemplate(msg *protocol.ShowLibraryTemplateMes
 }
 
 func (s *Session) HandleImportInstalledTemplate(msg *protocol.ImportInstalledTemplateMessage) {
+	defer msg.TemplateYAML.Zero()
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}

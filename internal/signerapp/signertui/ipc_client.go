@@ -840,6 +840,9 @@ func decodeAs[T any](convert func(T) tea.Msg) func([]byte) (tea.Msg, error) {
 	return func(raw []byte) (tea.Msg, error) {
 		var wire T
 		if err := json.Unmarshal(raw, &wire); err != nil {
+			// A decode can fail after filling some fields, such as a recovery
+			// phrase before a malformed later field; zero what it filled.
+			protocol.ZeroSensitive(&wire)
 			return nil, err
 		}
 		return convert(wire), nil
@@ -1010,15 +1013,22 @@ func (m Model) sendUnlockCmd(passphrase []byte) tea.Cmd {
 
 // secretCmd gives build a copy of secret to send and returns a command that
 // runs the send and then zeroes the copy, so the caller can zero its own
-// buffer at once.
+// buffer at once. Every command that sends a secret is built through it: the
+// copy belongs to the returned command, not to the send closure inside it, so
+// it is zeroed even when that closure never runs, as when no client is
+// connected.
 func secretCmd(secret []byte, build func([]byte) tea.Cmd) tea.Cmd {
-	owned := cloneBytes(secret)
+	owned := newSecretCopy(secret)
 	send := build(owned)
 	return func() tea.Msg {
 		defer zeroBytes(owned)
 		return send()
 	}
 }
+
+// newSecretCopy makes the copy a secretCmd owns. Tests replace it to watch
+// that copy.
+var newSecretCopy = cloneBytes
 
 // sendSignResponseCmd returns a tea.Cmd that sends a sign response
 func (m Model) sendSignResponseCmd(requestID string, approved bool) tea.Cmd {
@@ -1232,20 +1242,16 @@ func (m Model) sendListBackupsCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListBackups() })
 }
 
+// sendPreviewRestoreCmd returns a tea.Cmd that requests a restore preview. The
+// command keeps its own copy of the passphrase and zeroes it once it has run.
 func (m Model) sendPreviewRestoreCmd(archivePath string, exportPassphrase []byte, id string) tea.Cmd {
-	passphrase := cloneBytes(exportPassphrase)
-	return func() tea.Msg {
-		defer zeroBytes(passphrase)
-		if m.adminClient == nil {
-			return sendFailedMsg{ID: id, Error: fmt.Errorf("not connected")}
-		}
-		if err := m.adminClient.SendPreviewRestore(archivePath, passphrase, id); err != nil {
-			return sendFailedMsg{ID: id, Error: err}
-		}
-		return nil
-	}
+	return secretCmd(exportPassphrase, func(p []byte) tea.Cmd {
+		return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendPreviewRestore(archivePath, p, id) })
+	})
 }
 
+// sendRestoreBackupCmd returns a tea.Cmd that requests a restore. The command
+// keeps its own copy of the passphrase and zeroes it once it has run.
 func (m Model) sendRestoreBackupCmd(
 	archivePath string,
 	addresses []string,
@@ -1253,20 +1259,12 @@ func (m Model) sendRestoreBackupCmd(
 	replaceExisting bool,
 	id string,
 ) tea.Cmd {
-	passphrase := cloneBytes(exportPassphrase)
 	selectedAddresses := append([]string(nil), addresses...)
-	return func() tea.Msg {
-		defer zeroBytes(passphrase)
-		if m.adminClient == nil {
-			return sendFailedMsg{ID: id, Error: fmt.Errorf("not connected")}
-		}
-		if err := m.adminClient.SendRestoreBackup(
-			archivePath, selectedAddresses, passphrase, replaceExisting, id,
-		); err != nil {
-			return sendFailedMsg{ID: id, Error: err}
-		}
-		return nil
-	}
+	return secretCmd(exportPassphrase, func(p []byte) tea.Cmd {
+		return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+			return c.SendRestoreBackup(archivePath, selectedAddresses, p, replaceExisting, id)
+		})
+	})
 }
 
 func (m Model) sendRollbackRestoreCmd(id string) tea.Cmd {

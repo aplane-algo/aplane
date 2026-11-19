@@ -1214,6 +1214,35 @@ func TestSessionPreAuthInitializeZeroesFrame(t *testing.T) {
 	}
 }
 
+// A pre-login initialize_store whose decode fails after its passphrase was
+// decoded (a later id of the wrong type) has that passphrase zeroed, and is
+// refused as an invalid request.
+func TestSessionPreAuthInitializeZeroesAPartlyDecodedPassphrase(t *testing.T) {
+	var decoded [][]byte
+	original := decodeInitializeStore
+	decodeInitializeStore = func(raw []byte) (protocol.InitializeStoreMessage, error) {
+		msg, err := original(raw)
+		decoded = append(decoded, msg.Passphrase)
+		return msg, err
+	}
+	t.Cleanup(func() { decodeInitializeStore = original })
+
+	conn := &queueConn{}
+	svc := &stubServices{}
+	session := NewSession(conn, SessionDeps{Product: svc}, OriginLocal)
+	raw := []byte(`{"kind":"request","type":"initialize_store","passphrase":"partly-decoded","id":7}`)
+	if got := session.handlePreAuthInitialize("init-1", raw); got != AuthOutcomeBootstrapHandled {
+		t.Fatalf("handlePreAuthInitialize() = %v", got)
+	}
+	if len(decoded) != 1 || len(decoded[0]) == 0 || !isZeroedFrame(decoded[0]) {
+		t.Fatalf("partly decoded passphrase left as %q", decoded)
+	}
+	var reply protocol.InitializeStoreResultMessage
+	if svc.initializeStoreCalls != 0 || len(conn.writes) != 1 || json.Unmarshal(conn.writes[0], &reply) != nil || reply.Code != protocol.ErrCodeInvalidRequest {
+		t.Fatalf("malformed initialize_store ran %d times, answered %q", svc.initializeStoreCalls, conn.writes)
+	}
+}
+
 // A request whose decode fails after its passphrase was decoded (here, a
 // later id of the wrong type) has that passphrase zeroed, and the request is
 // refused as before.

@@ -52,9 +52,14 @@ type dispatcher struct {
 	// released is set once the stream owner closed the stream: queued
 	// notifications will never be read, so the read loop clears any it still
 	// holds when it exits. readDone closes when the read loop exits.
-	released      bool
-	readDone      chan struct{}
-	pending       map[string]chan dispatchResult
+	released bool
+	readDone chan struct{}
+	pending  map[string]chan dispatchResult
+	// abandoned lists, oldest first, the IDs of strict-mode requests that
+	// timed out, so a late reply to one is dropped rather than failing the
+	// connection. A reply to any other unknown ID, or to an ID evicted from
+	// this bounded list, still fails it.
+	abandoned     []string
 	notifications chan Notification
 	lifecycle     chan LifecycleEvent
 
@@ -66,7 +71,16 @@ type dispatcher struct {
 	// changed. It stays apart from lifecycle, which discards what it can't buffer
 	// and carries the terminal events that drive reconnect.
 	notificationDrops chan struct{}
+
+	// afterTimeout, when set, runs in a request's goroutine once its timer
+	// has fired, before the timeout is handled. Tests use it to order a reply
+	// against the timeout.
+	afterTimeout func()
 }
+
+// maxAbandonedRequests bounds how many timed-out request IDs a strict
+// dispatcher remembers.
+const maxAbandonedRequests = 64
 
 type dispatchResult struct {
 	raw []byte
@@ -137,13 +151,20 @@ func (d *dispatcher) request(msg interface{}, timeout time.Duration) ([]byte, er
 		return nil, fmt.Errorf("duplicate pending request ID: %s", requestID)
 	}
 	d.pending[requestID] = waiter
+	// A new request with an abandoned request's ID owns the replies to it.
+	d.forgetAbandonedLocked(requestID)
 	shouldStart := !d.started
 	d.mu.Unlock()
 
 	if err := d.conn.WriteJSON(msg); err != nil {
 		d.mu.Lock()
-		delete(d.pending, requestID)
+		withdrawn := d.withdrawLocked(requestID, waiter)
 		d.mu.Unlock()
+		if !withdrawn {
+			// A reply with this ID was matched to the waiter before the write
+			// failed; nothing reads it.
+			protocol.SensitiveBytes((<-waiter).raw).Zero()
+		}
 		return nil, err
 	}
 
@@ -160,11 +181,57 @@ func (d *dispatcher) request(msg interface{}, timeout time.Duration) ([]byte, er
 	case result := <-waiter:
 		return result.raw, result.err
 	case <-timer.C:
+		if d.afterTimeout != nil {
+			d.afterTimeout()
+		}
 		d.mu.Lock()
-		delete(d.pending, requestID)
+		if !d.withdrawLocked(requestID, waiter) {
+			// The read loop matched the reply, or failAll took the waiter,
+			// before the timeout was handled; the result is on its way.
+			d.mu.Unlock()
+			result := <-waiter
+			return result.raw, result.err
+		}
+		if d.strictUnknownResponses {
+			d.abandonLocked(requestID)
+		}
 		d.mu.Unlock()
 		return nil, fmt.Errorf("timed out waiting for response to %s", requestID)
 	}
+}
+
+// withdrawLocked removes this request's waiter from pending and reports true.
+// It reports false when the waiter is no longer registered. Besides the
+// request itself, only the read loop, matching a reply, and failAll remove a
+// waiter, and both then send it a result. The entry under requestID may by
+// then belong to a later request reusing the ID; it is left alone.
+func (d *dispatcher) withdrawLocked(requestID string, waiter chan dispatchResult) bool {
+	if d.pending[requestID] != waiter {
+		return false
+	}
+	delete(d.pending, requestID)
+	return true
+}
+
+// abandonLocked records a timed-out request's ID, evicting the oldest past
+// maxAbandonedRequests.
+func (d *dispatcher) abandonLocked(requestID string) {
+	d.abandoned = append(d.abandoned, requestID)
+	if len(d.abandoned) > maxAbandonedRequests {
+		d.abandoned = d.abandoned[len(d.abandoned)-maxAbandonedRequests:]
+	}
+}
+
+// forgetAbandonedLocked removes requestID from the abandoned IDs and reports
+// whether it was there.
+func (d *dispatcher) forgetAbandonedLocked(requestID string) bool {
+	for i, id := range d.abandoned {
+		if id == requestID {
+			d.abandoned = append(d.abandoned[:i], d.abandoned[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 func (d *dispatcher) notificationsChan() <-chan Notification {
@@ -289,7 +356,20 @@ func (d *dispatcher) readLoop() {
 			continue
 		}
 
+		if base.Kind == protocol.MessageKindResponse && d.forgetAbandonedLocked(base.ID) {
+			// The reply to a request that already gave up waiting: its
+			// caller has its timeout error, and nothing reads this frame.
+			d.mu.Unlock()
+			protocol.SensitiveBytes(response).Zero()
+			slog.Warn("admin reply arrived after its request timed out; dropped",
+				"component", "transport",
+				"type", base.Type,
+				"id", base.ID)
+			continue
+		}
+
 		d.mu.Unlock()
+		protocol.SensitiveBytes(response).Zero()
 		d.failAll(dispatcherLifecycleProtocolError, fmt.Errorf("unexpected %s message without pending waiter: type=%s id=%s", base.Kind, base.Type, base.ID))
 		return
 	}

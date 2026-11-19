@@ -4,6 +4,7 @@
 package transport
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,15 +37,18 @@ func waitForStatus(conn adminProtocolConn, timeout time.Duration) (*protocol.Sta
 	return &status, nil
 }
 
-func authenticate(conn adminProtocolConn, passphrase string, timeout time.Duration) error {
+func authenticate(conn adminProtocolConn, passphrase []byte, timeout time.Duration) error {
 	return authenticateWithMode(conn, passphrase, timeout, false)
 }
 
-func authenticateOnly(conn adminProtocolConn, passphrase string, timeout time.Duration) error {
+func authenticateOnly(conn adminProtocolConn, passphrase []byte, timeout time.Duration) error {
 	return authenticateWithMode(conn, passphrase, timeout, true)
 }
 
-func authenticateWithMode(conn adminProtocolConn, passphrase string, timeout time.Duration, only bool) error {
+// authenticateWithMode runs the login handshake. The auth message carries its
+// own copy of the passphrase, zeroed once the handshake ends, and the frame
+// writer zeroes the encoding; the caller zeroes its own buffer.
+func authenticateWithMode(conn adminProtocolConn, passphrase []byte, timeout time.Duration, only bool) error {
 	conn.SetReadDeadline(timeout)
 	defer conn.ClearReadDeadline()
 
@@ -89,7 +93,7 @@ func authenticateWithMode(conn adminProtocolConn, passphrase string, timeout tim
 	}
 	authMsg := protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Type: authType},
-		Passphrase:      protocol.NewSensitiveBytes(passphrase),
+		Passphrase:      protocol.SensitiveBytes(bytes.Clone(passphrase)),
 		ProtocolVersion: ptrProtocolVersion(protocol.CurrentAdminProtocolVersion()),
 	}
 	defer authMsg.Passphrase.Zero()
@@ -125,13 +129,15 @@ func ptrProtocolVersion(v protocol.ProtocolVersion) *protocol.ProtocolVersion {
 	return &v
 }
 
-func unlockWithDispatcher(dispatcher *dispatcher, passphrase string, timeout time.Duration) (*protocol.UnlockResultMessage, error) {
+// unlockWithDispatcher sends an unlock request carrying its own copy of the
+// passphrase, zeroed once the request ends; the caller zeroes its own buffer.
+func unlockWithDispatcher(dispatcher *dispatcher, passphrase []byte, timeout time.Duration) (*protocol.UnlockResultMessage, error) {
 	msg := protocol.UnlockMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeUnlock,
 			ID:   fmt.Sprintf("unlock-%d", time.Now().UnixNano()),
 		},
-		Passphrase: protocol.NewSensitiveBytes(passphrase),
+		Passphrase: protocol.SensitiveBytes(bytes.Clone(passphrase)),
 	}
 	defer msg.Passphrase.Zero()
 

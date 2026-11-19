@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 
 	falconmnemonic "github.com/algorandfoundation/falcon-signatures/mnemonic"
@@ -51,24 +52,32 @@ func (h *BIP39Handler) entropyBytes() int {
 // configured word count. Returns joined words, derived seed, and the
 // underlying entropy (useful for key files that want to re-export the
 // mnemonic later).
+// On every error path the fresh entropy is zeroed before it is dropped.
 func (h *BIP39Handler) GenerateMnemonic() (words string, seed []byte, entropy []byte, err error) {
 	entropy = make([]byte, h.entropyBytes())
-	if _, err := rand.Read(entropy); err != nil {
+	if _, err := readEntropy(entropy); err != nil {
+		crypto.ZeroBytes(entropy)
 		return "", nil, nil, fmt.Errorf("failed to generate entropy: %w", err)
 	}
 
 	mnemonicWords, err := falconmnemonic.EntropyToMnemonic(entropy)
 	if err != nil {
+		crypto.ZeroBytes(entropy)
 		return "", nil, nil, fmt.Errorf("failed to generate mnemonic from entropy: %w", err)
 	}
 
 	seedArray, err := falconmnemonic.SeedFromMnemonic(mnemonicWords, "")
 	if err != nil {
+		crypto.ZeroBytes(entropy)
 		return "", nil, nil, fmt.Errorf("failed to generate seed from mnemonic: %w", err)
 	}
 
 	return strings.Join(mnemonicWords, " "), seedArray[:], entropy, nil
 }
+
+// readEntropy fills fresh mnemonic entropy. Tests replace it to watch the
+// buffer.
+var readEntropy = rand.Read
 
 // SeedFromMnemonic derives a BIP-39 seed from the given words. The
 // passphrase is the standard BIP-39 passphrase (may be empty).

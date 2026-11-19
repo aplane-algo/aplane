@@ -30,9 +30,9 @@ func TestDeepVerifyBackupValidStandaloneCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	sealTestArchiveManifest(t, root)
-	report, err := DeepVerifyBackup(root, "export-passphrase")
+	report, err := DeepVerifyBackupBytes(root, []byte("export-passphrase"))
 	if err != nil {
-		t.Fatalf("DeepVerifyBackup() error = %v", err)
+		t.Fatalf("DeepVerifyBackupBytes() error = %v", err)
 	}
 	if report.TotalFiles != 1 || report.ValidFiles != 1 || report.FailedFiles != 0 {
 		t.Fatalf("report = %+v", report)
@@ -46,7 +46,7 @@ func TestDeepVerifyBackupRejectsPlaintextPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	sealTestArchiveManifest(t, root)
-	report, err := DeepVerifyBackup(root, "export-passphrase")
+	report, err := DeepVerifyBackupBytes(root, []byte("export-passphrase"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestDeepVerifyBackupRejectsInternalBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	sealTestArchiveManifest(t, root)
-	report, err := DeepVerifyBackup(root, "export-passphrase")
+	report, err := DeepVerifyBackupBytes(root, []byte("export-passphrase"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestDeepVerifyBackupRejectsAddressMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	sealTestArchiveManifest(t, root)
-	report, err := DeepVerifyBackup(root, "export-passphrase")
+	report, err := DeepVerifyBackupBytes(root, []byte("export-passphrase"))
 	if err != nil {
 		t.Fatal(err)
 	}

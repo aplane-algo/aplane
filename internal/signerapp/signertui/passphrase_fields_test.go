@@ -165,3 +165,68 @@ func TestBackupConfirmPassphrasesAreZeroedOnSubmitAndEsc(t *testing.T) {
 		t.Fatalf("leaving the form left export %q confirm %q", export, confirm)
 	}
 }
+
+// watchSecretCopies records every copy secretCmd makes until the test ends.
+func watchSecretCopies(t *testing.T) *[][]byte {
+	t.Helper()
+	var copies [][]byte
+	original := newSecretCopy
+	newSecretCopy = func(secret []byte) []byte {
+		owned := original(secret)
+		copies = append(copies, owned)
+		return owned
+	}
+	t.Cleanup(func() { newSecretCopy = original })
+	return &copies
+}
+
+// Every command that sends a secret zeroes its copy when it runs with no
+// client connected, so the send closure inside it never runs.
+func TestSecretCommandsZeroTheirCopyWhenNotConnected(t *testing.T) {
+	m := Model{}
+	tests := []struct {
+		name  string
+		build func(passphrase []byte) tea.Cmd
+	}{
+		{"auth", m.sendAuthCmd},
+		{"unlock", m.sendUnlockCmd},
+		{"backup", func(p []byte) tea.Cmd { return m.sendBackupCmd(p, "backup-1") }},
+		{"preview restore", func(p []byte) tea.Cmd { return m.sendPreviewRestoreCmd("backup.tar.gz", p, "preview-1") }},
+		{"restore", func(p []byte) tea.Cmd {
+			return m.sendRestoreBackupCmd("backup.tar.gz", []string{"ADDR"}, p, false, "restore-1")
+		}},
+		{"commit backup import", func(p []byte) tea.Cmd {
+			return m.sendCommitBackupImportCmd("commit-1", "upload-1", "backup.tar.gz", 10, "checksum", p)
+		}},
+		{"export key", func(p []byte) tea.Cmd {
+			m := Model{viewState: ViewMnemonicExport}
+			m.mnemonicExport.passphrase = append([]byte(nil), p...)
+			_, cmd := m.handleMnemonicExportKeys(tea.KeyMsg{Type: tea.KeyEnter})
+			return cmd
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			copies := watchSecretCopies(t)
+			passphrase := []byte("command-secret")
+			cmd := tt.build(passphrase)
+			if cmd == nil {
+				t.Fatal("no command")
+			}
+			if msg, ok := cmd().(sendFailedMsg); !ok || msg.Error == nil {
+				t.Fatalf("command returned %#v, want a not-connected failure", msg)
+			}
+			if len(*copies) == 0 {
+				t.Fatal("the command made no copy of its secret through secretCmd")
+			}
+			for i, copied := range *copies {
+				if len(copied) == 0 || !allZero(copied) {
+					t.Fatalf("copy %d left as %q", i, copied)
+				}
+			}
+			if string(passphrase) != "command-secret" {
+				t.Fatalf("command changed the caller's buffer to %q", passphrase)
+			}
+		})
+	}
+}

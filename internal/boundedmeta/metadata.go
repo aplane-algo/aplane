@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -535,22 +537,60 @@ func ValidateSignatureLayout(layout SignatureArgLayout) error {
 // 0x prefix. The decoded byte length must lie within [minSize, maxSize];
 // pass equal bounds for an exact size, or maxSize <= 0 to skip the length
 // check. This is the single canonicality rule for bounded wire fields — the
-// helper binary, the signer, and the key codec all decode through it.
+// helper binary, the signer, and the key codec all decode through it, or
+// through DecodeCanonicalHexBytes, its form for a value held as bytes.
 func DecodeCanonicalHex(field, value string, minSize, maxSize int) ([]byte, error) {
-	if value == "" || value != strings.ToLower(value) {
+	text := []byte(value)
+	defer clear(text)
+	return DecodeCanonicalHexBytes(field, text, minSize, maxSize)
+}
+
+// DecodeCanonicalHexBytes is DecodeCanonicalHex for a value held as bytes, so
+// a secret need not become a string to be decoded. It only reads value, and
+// returns a new buffer.
+func DecodeCanonicalHexBytes(field string, value []byte, minSize, maxSize int) ([]byte, error) {
+	if len(value) == 0 || !unchangedByToLower(value) {
 		return nil, fmt.Errorf("%s must be non-empty lowercase hex", field)
 	}
-	decoded, err := hex.DecodeString(value)
+	decoded := make([]byte, hex.DecodedLen(len(value)))
+	n, err := hex.Decode(decoded, value)
 	if err != nil {
+		clear(decoded)
 		return nil, fmt.Errorf("invalid %s: %w", field, err)
 	}
+	decoded = decoded[:n]
 	if maxSize > 0 && (len(decoded) < minSize || len(decoded) > maxSize) {
+		clear(decoded)
 		if minSize == maxSize {
 			return nil, fmt.Errorf("%s length %d invalid (expected %d bytes)", field, len(decoded), maxSize)
 		}
 		return nil, fmt.Errorf("%s length %d invalid (expected %d-%d bytes)", field, len(decoded), minSize, maxSize)
 	}
 	return decoded, nil
+}
+
+// unchangedByToLower reports whether strings.ToLower would return value
+// unchanged, without making the lowercase copy: every rune is valid UTF-8
+// (ToLower replaces an invalid byte) and is its own lowercase.
+func unchangedByToLower(value []byte) bool {
+	for i := 0; i < len(value); {
+		if c := value[i]; c < utf8.RuneSelf {
+			if 'A' <= c && c <= 'Z' {
+				return false
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRune(value[i:])
+		if r == utf8.RuneError && size == 1 {
+			return false
+		}
+		if unicode.ToLower(r) != r {
+			return false
+		}
+		i += size
+	}
+	return true
 }
 
 func equalRekeyList(a, b *RekeyList) bool {

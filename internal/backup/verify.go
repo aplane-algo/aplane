@@ -34,10 +34,6 @@ type VerifyReport struct {
 	Results     []VerifyResult
 }
 
-func DeepVerifyBackup(backupDir, passphrase string) (*VerifyReport, error) {
-	return DeepVerifyBackupBytes(backupDir, []byte(passphrase))
-}
-
 // DeepVerifyBackupBytes authenticates the exact archive inventory and checks
 // that every member is a self-contained, canonical credential supported by
 // the source node role. Verification has no network or template dependency.

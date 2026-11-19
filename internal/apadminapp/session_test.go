@@ -4,6 +4,7 @@
 package apadminapp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -30,27 +31,32 @@ type fakeSession struct {
 	unlocks         int
 	requests        int
 	passphrase      string
+	// received keeps every passphrase slice the session was handed, uncopied.
+	received [][]byte
 }
 
 func (s *fakeSession) Dial() error { s.dialed++; return s.dialErr }
 func (s *fakeSession) Close()      { s.closed++ }
-func (s *fakeSession) Authenticate(passphrase string, _ time.Duration) error {
+func (s *fakeSession) Authenticate(passphrase []byte, _ time.Duration) error {
 	s.authenticated++
-	s.passphrase = passphrase
+	s.passphrase = string(passphrase)
+	s.received = append(s.received, passphrase)
 	return s.authErr
 }
-func (s *fakeSession) AuthenticateOnly(passphrase string, _ time.Duration) error {
+func (s *fakeSession) AuthenticateOnly(passphrase []byte, _ time.Duration) error {
 	s.authenticatedRO++
-	s.passphrase = passphrase
+	s.passphrase = string(passphrase)
+	s.received = append(s.received, passphrase)
 	return s.authOnlyErr
 }
 func (s *fakeSession) WaitForStatus(time.Duration) (*protocol.StatusMessage, error) {
 	s.statusReads++
 	return &s.status, s.statusErr
 }
-func (s *fakeSession) Unlock(passphrase string, _ time.Duration) (*protocol.UnlockResultMessage, error) {
+func (s *fakeSession) Unlock(passphrase []byte, _ time.Duration) (*protocol.UnlockResultMessage, error) {
 	s.unlocks++
-	s.passphrase = passphrase
+	s.passphrase = string(passphrase)
+	s.received = append(s.received, passphrase)
 	return &s.unlock, s.unlockErr
 }
 func (s *fakeSession) SendAndReceive(interface{}, time.Duration) ([]byte, error) {
@@ -93,6 +99,37 @@ func TestOpenUnlocksOnlyLockedRuntime(t *testing.T) {
 				t.Fatalf("session calls = %+v", session)
 			}
 		})
+	}
+}
+
+// Open hands the session the caller's passphrase bytes and makes no copy of
+// them, so the caller's zeroing clears every passphrase the login and the
+// unlock were given.
+func TestOpenLeavesNoPassphraseCopyBehind(t *testing.T) {
+	for _, mode := range []AuthMode{AuthReadOnly, AuthUnlock} {
+		session := &fakeSession{
+			status: protocol.StatusMessage{State: "locked"},
+			unlock: protocol.UnlockResultMessage{Success: true},
+		}
+		passphrase := []byte("secret")
+		client, err := Open(session, passphrase, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client.Close()
+		want := 1
+		if mode == AuthUnlock {
+			want = 2
+		}
+		if len(session.received) != want {
+			t.Fatalf("mode %d: session got %d passphrases, want %d", mode, len(session.received), want)
+		}
+		clear(passphrase)
+		for i, got := range session.received {
+			if !bytes.Equal(got, make([]byte, len("secret"))) {
+				t.Fatalf("mode %d: passphrase %d the session got is %q after the caller zeroed its own", mode, i, got)
+			}
+		}
 	}
 }
 

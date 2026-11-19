@@ -479,7 +479,7 @@ func (v *ApAdminHarness) ipcRequest(msg interface{}) ([]byte, error) {
 	}
 	defer ipcClient.Close()
 
-	if err := ipcClient.Authenticate(passphrase, 10*time.Second); err != nil {
+	if err := ipcClient.Authenticate([]byte(passphrase), 10*time.Second); err != nil {
 		return nil, fmt.Errorf("failed to authenticate signer IPC: %w", err)
 	}
 	status, err := ipcClient.WaitForStatus(10 * time.Second)
@@ -487,7 +487,7 @@ func (v *ApAdminHarness) ipcRequest(msg interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("failed to receive signer status over IPC: %w", err)
 	}
 	if status.State == "locked" {
-		result, err := ipcClient.Unlock(passphrase, ipcRequestTimeout)
+		result, err := ipcClient.Unlock([]byte(passphrase), ipcRequestTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unlock signer over IPC: %w", err)
 		}

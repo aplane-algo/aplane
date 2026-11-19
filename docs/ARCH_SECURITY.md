@@ -1991,12 +1991,13 @@ This applies to:
 
 - **IPC auth** — passphrase verified by unwrapping the keyring, then zeroed.
 - **Unlock** — passphrase used to unwrap the keyring, zeroed immediately after `passphraseLock` is released.
-- **Export request**: the passphrase is zeroed after verification on every exit path; mutable mnemonic buffers and serialized responses are zeroed after delivery. Admin streams are read with `protocol.FrameReader` rather than `bufio.Reader`: it refills only when empty (bufio slides partial frames and leaves the originals behind), clears every consumed byte and outgrown line buffer, and so leaves the decoded frame as its only mutable copy. Dropped notifications are cleared, and closing a transport stream client clears raw frames still queued for a consumer that has stopped reading. apadmin clears the display on dismissal, timeout, lock, disconnect, and program shutdown (whatever ends it), clears recovery-phrase replies still queued when its session ends, and rejects stale replies. Go rendering/encoding can create transient immutable strings; cleanup does not promise erasure of terminal captures or every runtime copy.
-- **Startup auto-unlock** — `startPassphrase` from `TEST_PASSPHRASE` or `passphrase_command_argv` is zeroed immediately after the initial `ReloadWithPassphrase` call completes.
+- **Export request**: the passphrase is zeroed after verification on every exit path; mutable mnemonic buffers and serialized responses are zeroed after delivery. Admin streams are read with `protocol.FrameReader` rather than `bufio.Reader`: it refills only when empty (bufio slides partial frames and leaves the originals behind), clears every consumed byte and outgrown line buffer, and so leaves the decoded frame as its only mutable copy. Dropped notifications are cleared, closing a transport stream client clears raw frames still queued for a consumer that has stopped reading, and apadmin zeroes the secrets of a reply whose decode fails after filling them (`protocol.ZeroSensitive`). apadmin clears the display on dismissal, timeout, lock, disconnect, and program shutdown (whatever ends it), clears recovery-phrase replies still queued when its session ends, and rejects stale replies. Go rendering/encoding can create transient immutable strings; cleanup does not promise erasure of terminal captures or every runtime copy.
+- **Startup auto-unlock** — `startPassphrase` from `TEST_PASSPHRASE` or `passphrase_command_argv` is zeroed immediately after the initial `ReloadWithPassphrase` call completes, and on every startup failure before that call.
 - **Import request**: `import_key.mnemonic` is a JSON string decoded as `protocol.SensitiveBytes`, like every other secret on the admin wire. The handler zeroes it on every exit path, including a refusal before the import runs.
-- **apadmin passphrase fields**: the login, unlock, backup export and confirm, restore, backup import and mnemonic export passphrases are byte buffers, never strings. `internal/secretbuf` grows them and zeroes every allocation they outgrow, and backspace zeroes the removed bytes. Each is zeroed once submitted, except that a login or unlock passphrase stays for another try until an attempt succeeds or ends in a serious error. Each is also zeroed when its form is left, when the admin session ends and at program shutdown, and each send works on its own copy, zeroed once sent.
+- **apadmin passphrase fields**: the login, unlock, backup export and confirm, restore, backup import and mnemonic export passphrases are byte buffers, never strings. `internal/secretbuf` grows them and zeroes every allocation they outgrow, and backspace zeroes the removed bytes. Each is zeroed once submitted, except that a login or unlock passphrase stays for another try until an attempt succeeds or ends in a serious error. Each is also zeroed when its form is left, when the admin session ends and at program shutdown, and each send works on its own copy, which belongs to the send command and is zeroed once that command has run, even when no client is connected and nothing is sent.
 - **appass**: its passphrase and confirmation entries are byte buffers grown through `internal/secretbuf`. A mismatched confirmation zeroes that entry, and leaving the form or ending the program zeroes both; the confirmed passphrase moves to the action, which zeroes it once done, along with the copy read back from `appass-systemd-creds` for the round-trip check.
-- **Admin frames**: the signer zeroes each login and `initialize_store` frame once it is handled, a login frame with a wrong passphrase before the next attempt is read, and each frame of an authenticated admin session once its message is handled. A request whose decode fails after some fields were filled has every `SensitiveBytes` value it already decoded zeroed (`protocol.ZeroSensitive`). On the client, both transports zero each frame they encode, the auth and unlock passphrase copies are zeroed after the send, and a request is encoded once (its ID is read from the envelope, not from a second encoding).
+- **Key file payloads**: the payload's wire struct holds the hex text of a key's `private_key` and `recovery_entropy` in zeroable buffers, zeroed once it is used, on save and on load. A load still reads each value as a string in its canonical-JSON check (see Residual Copies for that and for what encoding/json keeps).
+- **Admin frames**: the signer zeroes each login and `initialize_store` frame once it is handled, a login frame with a wrong passphrase before the next attempt is read, and each frame of an authenticated admin session once its message is handled. A request whose decode fails after some fields were filled has every `SensitiveBytes` value it already decoded zeroed (`protocol.ZeroSensitive`), a pre-login `initialize_store` included. Every handler whose request carries a `SensitiveBytes` field (unlock, backup, backup import commit, store passphrase change, restore preview, restore, installed template import, key export and key import) zeroes it on every exit path, including a refusal before the work runs. On the client, both transports zero each frame they encode, the auth and unlock passphrase copies are zeroed after the send, and a request is encoded once (its ID is read from the envelope, not from a second encoding). The IPC transport's `Authenticate`, `AuthenticateOnly` and `Unlock` take the passphrase as bytes, so apadmin's batch workflows, `apadmin policy` and apapprover hand over the buffer they read and zero it, with no string copy on the way; apapprover zeroes its passphrase once the login is done.
 
 #### Residual Copies
 
@@ -2026,11 +2027,15 @@ when memory protection is enabled, until the runtime reuses or frees it.
 - **Key file payloads.** A key file's payload is JSON, so the private key and
   recovery entropy pass through encoding/json as hex text:
   `json.MarshalIndent` on save, and a strict `json.Decoder` on load. Those
-  buffers keep copies, as for the store root. `internal/keys/payload_codec.go`
-  also holds the hex text in string fields of its wire struct (`payloadWire`).
-  A zeroable hex type would remove those copies, though not the library's.
-  The decoded `Payload` holds the key as bytes, zeroed when the payload is
-  released.
+  buffers keep copies, as for the store root, and the canonical-JSON check
+  before the decode (`validateCanonicalJSONObject`) reads each value as a
+  `json.Decoder` token, a string. The wire struct in
+  `internal/keys/payload_codec.go` (`payloadWire`) holds both fields' hex text
+  in buffers aplane owns (`secretHex`), zeroed once the wire struct is used,
+  and decodes it in place; only a value written with JSON escapes or holding
+  non-ASCII text, which no payload aplane writes contains, is decoded through
+  a string. The decoded
+  `Payload` holds the key as bytes, zeroed when the payload is released.
 - **Exported recovery phrase.** The word encoders that turn a key into its
   recovery phrase return strings: algosdk's `mnemonic` package for Algorand
   keys, and `falcon-signatures/mnemonic` for BIP-39 words. The export copies
@@ -2052,6 +2057,19 @@ when memory protection is enabled, until the runtime reuses or frees it.
   `SensitiveBytes.MarshalJSON` returns its encoding to the encoder, which drops
   it unzeroed. Writing each value straight into one exact-size buffer without
   HTML escaping keeps this to one copy per value.
+- **SSH private keys.** The client identity and the signer's host key are
+  OpenSSH key files. aplane zeroes the bytes it reads from them once parsed,
+  and, when it creates one, the raw Ed25519 key, the marshalled block and the
+  PEM it writes. `x/crypto/ssh` keeps its own copy of the key in the
+  `ssh.Signer` for as long as the signer lives, and its decoding and
+  `encoding/pem`'s growing encode buffer leave further copies. apconsole
+  reads the signer's host key only to derive its public half: no public key
+  file is stored, and reading the public key from the private key file's
+  header would need a hand-written parser.
+- **Passphrase helper output.** os/exec copies a helper's stdout from its
+  pipe into aplane's buffer through `io.Copy`, whose 32 KiB buffer holds the
+  passphrase and is dropped unzeroed. aplane's own buffer is fixed-size and
+  zeroed after use.
 - **Generated LogicSig and rotating keys.** Their seed is derived from a fresh
   mnemonic, so generation makes the words as strings; they go no further than
   the generator. Native key generation no longer makes words at all: an export
@@ -2090,7 +2108,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `["/
 - Exactly one trailing newline is stripped (not `TrimSpace` — leading/trailing spaces in passphrases are preserved)
 - Output prefixed with `base64:` or `hex:` is decoded accordingly
 - NUL bytes are rejected
-- stdout is capped at 8 KB; stderr is discarded (a misbehaving helper could leak secrets to stderr)
+- stdout is capped at 8 KB and collected in one buffer of that size, allocated once and zeroed after use, so it never grows and leaves no outgrown copy; stderr is discarded (a misbehaving helper could leak secrets to stderr)
 - stdout must close within one second of the helper exiting; a process the helper left holding it fails the run, whatever the exit status, since it could still write
 
 **Callers:**

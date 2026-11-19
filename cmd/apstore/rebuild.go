@@ -236,7 +236,7 @@ func selectRebuildNodeRole(
 }
 
 func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
-	report, err := backup.DeepVerifyBackup(sourceRoot, string(exportPassphrase))
+	report, err := backup.DeepVerifyBackupBytes(sourceRoot, exportPassphrase)
 	if err != nil {
 		return fmt.Errorf("failed to verify rebuild backup: %w", err)
 	}

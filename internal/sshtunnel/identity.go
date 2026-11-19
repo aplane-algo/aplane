@@ -33,7 +33,7 @@ type IdentityPublicKey struct {
 // only reads: unlike connecting, it never creates a missing key, and a failure
 // leaves the file as it was.
 func ReadIdentityPublicKey(identityFile string) (IdentityPublicKey, error) {
-	keyData, err := os.ReadFile(expandUserPath(identityFile))
+	keyData, err := readKeyFile(expandUserPath(identityFile))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return IdentityPublicKey{}, fmt.Errorf("%w: %s", ErrNoIdentityKey, identityFile)

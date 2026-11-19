@@ -87,29 +87,37 @@ type CanonicalPayloadMetadata struct {
 
 // payloadWire is the canonical JSON DTO for decrypted payload versions 1 and 2.
 // It remains private so durable JSON field ownership stays in this package.
+// Its secret fields are zeroable buffers, cleared with zeroSecrets once the
+// wire value is used.
 type payloadWire struct {
-	FormatVersion          *int                        `json:"format_version"`
-	Category               string                      `json:"category"`
-	KeyType                string                      `json:"key_type"`
-	PublicKeyHex           string                      `json:"public_key,omitempty"`
-	PrivateKeyHex          string                      `json:"private_key,omitempty"`
-	RecoveryEntropyHex     string                      `json:"recovery_entropy,omitempty"`
-	PQScheme               string                      `json:"pq_scheme,omitempty"`
-	PQAddressSalt          *byte                       `json:"pq_address_salt,omitempty"`
-	Parameters             map[string]string           `json:"parameters,omitempty"`
-	LogicSigBytecodeHex    string                      `json:"lsig_bytecode,omitempty"`
-	LogicSigDerivation     string                      `json:"lsig_derivation,omitempty"`
-	LogicSigOpcodeProfile  *lsigresource.OpcodeProfile `json:"lsig_opcode_profile,omitempty"`
-	SaltCounter            *byte                       `json:"salt_counter,omitempty"`
-	TEALSource             string                      `json:"teal_source,omitempty"`
-	SigningMetadataVersion int                         `json:"signing_metadata_version,omitempty"`
-	BaseKeyType            string                      `json:"base_key_type,omitempty"`
-	SigningArgs            []StoredSigningArg          `json:"signing_args,omitempty"`
-	BoundedAuthorization   *boundedmeta.Metadata       `json:"bounded_authorization,omitempty"`
-	TemplateFingerprint    string                      `json:"template_fingerprint,omitempty"`
-	GenesisHashHex         string                      `json:"genesis_hash,omitempty"`
-	ValidRekeyTarget       bool                        `json:"valid_rekey_target,omitempty"`
-	CreatedAt              string                      `json:"created_at"`
+	FormatVersion          *int                            `json:"format_version"`
+	Category               string                          `json:"category"`
+	KeyType                string                          `json:"key_type"`
+	PublicKeyHex           string                          `json:"public_key,omitempty"`
+	PrivateKeyHex          secretHex[privateKeyField]      `json:"private_key,omitempty"`
+	RecoveryEntropyHex     secretHex[recoveryEntropyField] `json:"recovery_entropy,omitempty"`
+	PQScheme               string                          `json:"pq_scheme,omitempty"`
+	PQAddressSalt          *byte                           `json:"pq_address_salt,omitempty"`
+	Parameters             map[string]string               `json:"parameters,omitempty"`
+	LogicSigBytecodeHex    string                          `json:"lsig_bytecode,omitempty"`
+	LogicSigDerivation     string                          `json:"lsig_derivation,omitempty"`
+	LogicSigOpcodeProfile  *lsigresource.OpcodeProfile     `json:"lsig_opcode_profile,omitempty"`
+	SaltCounter            *byte                           `json:"salt_counter,omitempty"`
+	TEALSource             string                          `json:"teal_source,omitempty"`
+	SigningMetadataVersion int                             `json:"signing_metadata_version,omitempty"`
+	BaseKeyType            string                          `json:"base_key_type,omitempty"`
+	SigningArgs            []StoredSigningArg              `json:"signing_args,omitempty"`
+	BoundedAuthorization   *boundedmeta.Metadata           `json:"bounded_authorization,omitempty"`
+	TemplateFingerprint    string                          `json:"template_fingerprint,omitempty"`
+	GenesisHashHex         string                          `json:"genesis_hash,omitempty"`
+	ValidRekeyTarget       bool                            `json:"valid_rekey_target,omitempty"`
+	CreatedAt              string                          `json:"created_at"`
+}
+
+// zeroSecrets clears the wire value's private key and recovery entropy.
+func (w *payloadWire) zeroSecrets() {
+	w.PrivateKeyHex.zero()
+	w.RecoveryEntropyHex.zero()
 }
 
 const (
@@ -332,6 +340,7 @@ func parsePayload(data []byte, verifyRecovery bool) (*Payload, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var wire payloadWire
+	defer wire.zeroSecrets()
 	if err := decoder.Decode(&wire); err != nil {
 		return nil, incompatibleKeyFormat("failed to decode canonical payload: %v", err)
 	}
@@ -365,8 +374,8 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		Category:               payload.Category,
 		KeyType:                payload.KeyType,
 		PublicKeyHex:           hex.EncodeToString(payload.PublicKey),
-		PrivateKeyHex:          hex.EncodeToString(payload.PrivateKey),
-		RecoveryEntropyHex:     hex.EncodeToString(payload.RecoveryEntropy),
+		PrivateKeyHex:          newSecretHex[privateKeyField](payload.PrivateKey),
+		RecoveryEntropyHex:     newSecretHex[recoveryEntropyField](payload.RecoveryEntropy),
 		PQScheme:               payload.PQScheme,
 		PQAddressSalt:          cloneBytePtr(payload.PQAddressSalt),
 		Parameters:             maps.Clone(payload.Parameters),
@@ -384,6 +393,7 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		ValidRekeyTarget:       payload.ValidRekeyTarget,
 		CreatedAt:              payload.CreatedAt.UTC().Format(time.RFC3339),
 	}
+	defer wire.zeroSecrets()
 	encoded, err := json.MarshalIndent(wire, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal canonical key payload: %w", err)
@@ -612,7 +622,7 @@ func payloadFromWire(wire payloadWire) (*Payload, error) {
 	if err != nil {
 		return nil, err
 	}
-	privateKey, err := decodeCanonicalHex("private_key", wire.PrivateKeyHex)
+	privateKey, err := wire.PrivateKeyHex.decode()
 	if err != nil {
 		return nil, err
 	}
@@ -631,7 +641,7 @@ func payloadFromWire(wire payloadWire) (*Payload, error) {
 		crypto.ZeroBytes(privateKey)
 		return nil, incompatibleKeyFormat("created_at must be canonical RFC3339 UTC")
 	}
-	recoveryEntropy, err := decodeCanonicalHex("recovery_entropy", wire.RecoveryEntropyHex)
+	recoveryEntropy, err := wire.RecoveryEntropyHex.decode()
 	if err != nil {
 		crypto.ZeroBytes(privateKey)
 		return nil, err
@@ -670,6 +680,18 @@ func decodeCanonicalHex(field, value string) ([]byte, error) {
 		return nil, nil
 	}
 	decoded, err := boundedmeta.DecodeCanonicalHex(field, value, 0, 0)
+	if err != nil {
+		return nil, incompatibleKeyFormat("%v", err)
+	}
+	return decoded, nil
+}
+
+// decodeCanonicalHexBytes is decodeCanonicalHex for a value held as bytes.
+func decodeCanonicalHexBytes(field string, value []byte) ([]byte, error) {
+	if len(value) == 0 {
+		return nil, nil
+	}
+	decoded, err := boundedmeta.DecodeCanonicalHexBytes(field, value, 0, 0)
 	if err != nil {
 		return nil, incompatibleKeyFormat("%v", err)
 	}

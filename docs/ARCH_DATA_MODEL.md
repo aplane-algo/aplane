@@ -362,7 +362,7 @@ Durable signing metadata includes:
   record (backup, restore, copy) carries it unchanged,
 - creation parameters and timestamps.
 
-The full field set is `payloadWireV1` in `internal/keys/payload_codec.go`.
+The full field set is `payloadWire` in `internal/keys/payload_codec.go`.
 
 Cosigned account keys are DSA LogicSig keys whose bounded metadata carries the
 cosigner overlay and whose stored bytecode embeds the cosigner public key, on a

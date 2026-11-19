@@ -233,9 +233,9 @@ type Backend interface {
 type OnlineSession interface {
 	Dial() error
 	Close()
-	Authenticate(string, time.Duration) error
+	Authenticate([]byte, time.Duration) error
 	WaitForStatus(time.Duration) (*protocol.StatusMessage, error)
-	Unlock(string, time.Duration) (*protocol.UnlockResultMessage, error)
+	Unlock([]byte, time.Duration) (*protocol.UnlockResultMessage, error)
 	SendAndReceive(interface{}, time.Duration) ([]byte, error)
 }
 

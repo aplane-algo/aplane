@@ -35,16 +35,17 @@ type Transport interface {
 	// WaitForStatus waits for initial status message.
 	WaitForStatus(timeout time.Duration) (*protocol.StatusMessage, error)
 
-	// Authenticate handles the IPC authentication handshake.
-	Authenticate(passphrase string, timeout time.Duration) error
+	// Authenticate handles the IPC authentication handshake. The caller
+	// zeroes passphrase; the transport zeroes every copy it makes.
+	Authenticate(passphrase []byte, timeout time.Duration) error
 
 	// AuthenticateOnly verifies and binds the admin session without changing
 	// the runtime's locked state. Requests remain subject to their normal
 	// authorization and runtime-state gates.
-	AuthenticateOnly(passphrase string, timeout time.Duration) error
+	AuthenticateOnly(passphrase []byte, timeout time.Duration) error
 
 	// Unlock sends an unlock request.
-	Unlock(passphrase string, timeout time.Duration) (*protocol.UnlockResultMessage, error)
+	Unlock(passphrase []byte, timeout time.Duration) (*protocol.UnlockResultMessage, error)
 }
 
 // Compile-time interface check
