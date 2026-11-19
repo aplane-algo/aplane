@@ -290,7 +290,7 @@ func writeLargeValidImportArchive(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "README.md"), padding, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+	if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase"), nil); err != nil {
 		t.Fatal(err)
 	}
 	archivePath := filepath.Join(t.TempDir(), "source.tar.gz")

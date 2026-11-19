@@ -4,8 +4,6 @@
 package backup
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -42,64 +40,58 @@ func ParseBackup(decryptedJSON []byte) ([]byte, error) {
 // ExportKey exports a single key file from the keystore to a standalone backup.
 // It decrypts the key with the store's keyring, then re-encrypts it with the
 // export passphrase using standalone encryption (envelope_version 2).
-// Returns the SHA256 checksum of the written key file and its size.
-func ExportKey(srcDir, destDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
+func ExportKey(srcDir, destDir, address string, kr *crypto.Keyring, exportPassphrase []byte) error {
 	source, err := resolveManagedCredentialFile(srcDir, address)
 	if err != nil {
-		return "", 0, err
+		return err
 	}
 	return exportManagedCredential(destDir, source, kr, exportPassphrase)
 }
 
-func exportManagedCredential(destDir string, source keys.ManagedCredentialFile, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
+func exportManagedCredential(destDir string, source keys.ManagedCredentialFile, kr *crypto.Keyring, exportPassphrase []byte) error {
 	destFile := filepath.Join(destDir, source.Selector+".apb")
 
 	// Read source key file
 	data, err := os.ReadFile(source.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", 0, fmt.Errorf("managed credential file not found: %s", source.Name)
+			return fmt.Errorf("managed credential file not found: %s", source.Name)
 		}
-		return "", 0, fmt.Errorf("failed to read managed credential: %w", err)
+		return fmt.Errorf("failed to read managed credential: %w", err)
 	}
 
 	ctx, err := source.Context()
 	if err != nil {
-		return "", 0, err
+		return err
 	}
 	plaintext, err := kr.Open(data, ctx)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to decrypt key: %w", err)
+		return fmt.Errorf("failed to decrypt key: %w", err)
 	}
 	defer crypto.ZeroBytes(plaintext)
 	if err := validateExportSource(source, plaintext); err != nil {
-		return "", 0, err
+		return err
 	}
 
 	// The portable authority is the complete managed credential payload. The
 	// destination owns templates and key-generation configuration.
 	payload, err := buildExportPayload(plaintext)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to build export payload for %s: %w", source.Selector, err)
+		return fmt.Errorf("failed to build export payload for %s: %w", source.Selector, err)
 	}
 	defer crypto.ZeroBytes(payload)
 
 	// Re-encrypt with standalone encryption
 	standaloneData, err := crypto.EncryptStandalone(payload, exportPassphrase)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to encrypt for export: %w", err)
+		return fmt.Errorf("failed to encrypt for export: %w", err)
 	}
 
 	// Write to destination
 	if err := os.WriteFile(destFile, standaloneData, 0600); err != nil {
-		return "", 0, fmt.Errorf("failed to write export file: %w", err)
+		return fmt.Errorf("failed to write export file: %w", err)
 	}
-
-	// Compute checksum of written key file
-	h := sha256.Sum256(standaloneData)
-	checksum := hex.EncodeToString(h[:])
-
-	return checksum, int64(len(standaloneData)), nil
+	return nil
 }
 
 func resolveManagedCredentialFile(srcDir, selector string) (keys.ManagedCredentialFile, error) {
@@ -160,19 +152,19 @@ func buildExportPayload(keyJSON []byte) ([]byte, error) {
 //
 // The backup is complete or fails: silently omitting damaged authority would
 // make the sealed archive inventory look complete when it is not.
-func ExportAllKeys(srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) (map[string]string, error) {
+func ExportAllKeys(srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) error {
 	managedFiles, err := keys.ScanManagedCredentialFiles(srcDir)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if len(managedFiles) == 0 {
-		return nil, fmt.Errorf("no managed credential files found in %s", srcDir)
+		return fmt.Errorf("no managed credential files found in %s", srcDir)
 	}
 	seenSelectors := make(map[string]string, len(managedFiles))
 	for _, file := range managedFiles {
 		if previous, ok := seenSelectors[file.Selector]; ok {
-			return nil, fmt.Errorf("ambiguous managed credential %s: %s and %s", file.Selector, previous, file.Name)
+			return fmt.Errorf("ambiguous managed credential %s: %s and %s", file.Selector, previous, file.Name)
 		}
 		seenSelectors[file.Selector] = file.Name
 	}
@@ -180,21 +172,16 @@ func ExportAllKeys(srcDir, destDir string, kr *crypto.Keyring, exportPassphrase 
 	// Create apb subdirectory in backup
 	keysDestDir := filepath.Join(destDir, "apb")
 	if err := os.MkdirAll(keysDestDir, 0750); err != nil {
-		return nil, fmt.Errorf("failed to create backup keys directory: %w", err)
+		return fmt.Errorf("failed to create backup keys directory: %w", err)
 	}
 
 	// Export each credential. A complete backup is fail-closed: silently
 	// omitting one damaged authority would make the archive's sealed inventory
 	// look complete even though the source store was not fully represented.
-	checksums := make(map[string]string)
 	for _, managedFile := range managedFiles {
-		selector := managedFile.Selector
-		checksum, _, err := exportManagedCredential(keysDestDir, managedFile, kr, exportPassphrase)
-		if err != nil {
-			return nil, fmt.Errorf("failed to export %s: %w", selector, err)
+		if err := exportManagedCredential(keysDestDir, managedFile, kr, exportPassphrase); err != nil {
+			return fmt.Errorf("failed to export %s: %w", managedFile.Selector, err)
 		}
-		checksums[selector] = checksum
 	}
-
-	return checksums, nil
+	return nil
 }

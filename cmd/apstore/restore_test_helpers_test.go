@@ -6,21 +6,21 @@ package main
 import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
-func restoreContextForTest() backup.Restorer {
-	paths := keystorePaths()
-	if bound, err := genstoretest.BindDefault(paths); err == nil {
-		paths = bound
-	}
-	return backup.NewRestorer(paths).WithLogger(logInfof).WithOverwrite(true)
-}
-
+// restoreKey restores one backup entry into the test store's active
+// generation, as a rebuild does.
 func restoreKey(keysDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, error) {
-	return restoreContextForTest().RestoreKey(keysDir, address, kr, exportPassphrase)
-}
-
-func restoreKeyMetadata(keyJSON []byte) (keyType string, address string, hasLogicSigBytecode bool, err error) {
-	return backup.RestoreKeyMetadata(keyJSON)
+	paths, err := genstoretest.BindDefault(keystorePaths())
+	if err != nil {
+		return "", err
+	}
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		return "", err
+	}
+	return backup.RestoreForRebuild(active, noderole.DefaultRole(), keysDir, address, kr, exportPassphrase, logInfof)
 }

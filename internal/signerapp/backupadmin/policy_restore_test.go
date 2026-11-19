@@ -76,7 +76,7 @@ func writeCosignerArchiveWithPolicy(t *testing.T, paths storepaths.Paths, name s
 			t.Fatal(err)
 		}
 	}
-	if err := backup.WriteSealedManifest(root, noderole.RoleCosigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+	if err := backup.WriteSealedManifest(root, noderole.RoleCosigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase"), nil); err != nil {
 		t.Fatal(err)
 	}
 	archivePath := backup.BuildManagedArchivePath(paths, name)

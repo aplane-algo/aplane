@@ -187,7 +187,7 @@ func TestStoreBackupImportUploadsCommitsAndAbortsOnFailure(t *testing.T) {
 	for _, failCommit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "commit", true: "abort"}[failCommit], func(t *testing.T) {
 			root := t.TempDir()
-			if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1, 0), []byte("export-secret")); err != nil {
+			if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1, 0), []byte("export-secret"), nil); err != nil {
 				t.Fatal(err)
 			}
 			archive := filepath.Join(t.TempDir(), "backup.tar.gz")

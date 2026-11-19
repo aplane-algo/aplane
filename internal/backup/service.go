@@ -21,7 +21,6 @@ type ArchiveResult struct {
 	ArchivePath     string
 	ArchiveChecksum string
 	ArchiveSize     int64
-	Checksums       map[string]string
 	KeyCount        int
 	Addresses       []string
 	Verified        bool
@@ -63,17 +62,14 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	activeKeysDir := activeStore.KeysDir()
 
 	keysDestDir := filepath.Join(stageDir, "apb")
-	checksums := make(map[string]string)
 	var exported []string
 	if len(req.Addresses) == 0 {
-		var err error
-		checksums, err = ExportAllKeys(
+		if err := ExportAllKeys(
 			activeKeysDir,
 			stageDir,
 			req.Keyring,
 			req.ExportPassphrase,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 		exported, err = ScanBackupFiles(keysDestDir)
@@ -88,17 +84,15 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 			if address == "" {
 				continue
 			}
-			checksum, _, err := ExportKey(
+			if err := ExportKey(
 				activeKeysDir,
 				keysDestDir,
 				address,
 				req.Keyring,
 				req.ExportPassphrase,
-			)
-			if err != nil {
+			); err != nil {
 				return nil, fmt.Errorf("failed to export %s: %w", address, err)
 			}
-			checksums[address] = checksum
 			exported = append(exported, address)
 		}
 		if len(exported) == 0 {
@@ -144,7 +138,6 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		ArchivePath:     req.ArchivePath,
 		ArchiveChecksum: published.checksum,
 		ArchiveSize:     published.size,
-		Checksums:       checksums,
 		KeyCount:        len(exported),
 		Addresses:       exported,
 		Verified:        true,

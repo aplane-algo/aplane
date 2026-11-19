@@ -89,20 +89,19 @@ func TestRestoreKeyWritesCredentialOnlyAndRequiresOverwrite(t *testing.T) {
 	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), payload, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	restorer := NewRestorer(paths).WithNodeRole(noderole.RoleSigner)
-	kr := cryptotest.Keyring(t, testExportMasterKey)
-	if _, err := restorer.RestoreKey(keysDir, address, kr, []byte("export-passphrase")); err != nil {
-		t.Fatal(err)
-	}
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
+		t.Fatal(err)
+	}
+	kr := cryptotest.Keyring(t, testExportMasterKey)
+	if _, err := RestoreForRebuild(active, noderole.RoleSigner, keysDir, address, kr, []byte("export-passphrase"), nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(active.KeysDir(), address+keys.AccountKeyExtension)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restorer.RestoreKey(keysDir, address, kr, []byte("export-passphrase")); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("second RestoreKey() error = %v", err)
+	if _, err := RestoreForRebuild(active, noderole.RoleSigner, keysDir, address, kr, []byte("export-passphrase"), nil); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("second RestoreForRebuild() error = %v", err)
 	}
 }
 
@@ -117,7 +116,7 @@ func writeCredentialArchiveForBackupTest(t *testing.T, paths storepaths.Paths, r
 	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), payload, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteSealedManifest(root, role, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+	if err := WriteSealedManifest(root, role, time.Unix(1_700_000_000, 0), []byte("export-passphrase"), nil); err != nil {
 		t.Fatal(err)
 	}
 	archive := BuildManagedArchivePath(paths, "credential-test")
@@ -277,7 +276,7 @@ func TestLoadManagedRestoreSetRejectsMissingRuntimeProvider(t *testing.T) {
 	if err := writeStandaloneBackupFile(filepath.Join(apbDir, selector+".apb"), payload, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase"), nil); err != nil {
 		t.Fatal(err)
 	}
 	archive := BuildManagedArchivePath(paths, "missing-provider")

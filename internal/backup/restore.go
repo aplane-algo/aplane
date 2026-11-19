@@ -65,54 +65,6 @@ type RestoreError struct {
 	Error   string
 }
 
-// Restorer is the narrow offline/rebuild adapter for credential-only backup
-// entries. Live restores use LoadManagedRestoreSet and a generation mint.
-type Restorer struct {
-	Paths          storepaths.Paths
-	NodeRole       noderole.Role
-	Overwrite      bool
-	Logf           RestoreLogger
-	ActiveOverride storepaths.ActivePaths
-}
-
-func NewRestorer(paths storepaths.Paths) Restorer {
-	return Restorer{Paths: paths}
-}
-
-func (r Restorer) WithLogger(logf RestoreLogger) Restorer {
-	r.Logf = logf
-	return r
-}
-
-func (r Restorer) WithNodeRole(role noderole.Role) Restorer {
-	r.NodeRole = role
-	return r
-}
-
-func (r Restorer) WithActiveNamespace(active storepaths.ActivePaths) Restorer {
-	r.ActiveOverride = active
-	return r
-}
-
-func (r Restorer) WithOverwrite(overwrite bool) Restorer {
-	r.Overwrite = overwrite
-	return r
-}
-
-func (r Restorer) nodeRole() noderole.Role {
-	if r.NodeRole == "" {
-		return noderole.DefaultRole()
-	}
-	return r.NodeRole
-}
-
-func (r Restorer) activeNamespace() (storepaths.ActivePaths, error) {
-	if r.ActiveOverride != nil {
-		return r.ActiveOverride, nil
-	}
-	return genstore.ResolveActive(r.Paths)
-}
-
 // ResolveBackupKeysDir returns the credential directory in an extracted
 // credential-backup archive.
 func ResolveBackupKeysDir(source string) string {
@@ -306,8 +258,18 @@ func PreviewRestoreWithNodeRole(
 	return preview, nil
 }
 
-func (r Restorer) RestoreKey(keysDir, selector string, kr *crypto.Keyring, exportPassphrase []byte) (string, error) {
-	entry, err := inspectCredentialBackupEntry(keysDir, selector, exportPassphrase, r.nodeRole())
+// RestoreForRebuild restores one credential-only backup entry, and the
+// policy the archive carries for it, into active. It is the offline rebuild
+// adapter; live restores use LoadManagedRestoreSet and a generation mint.
+func RestoreForRebuild(
+	active storepaths.ActivePaths,
+	role noderole.Role,
+	keysDir, selector string,
+	kr *crypto.Keyring,
+	exportPassphrase []byte,
+	logf RestoreLogger,
+) (string, error) {
+	entry, err := inspectCredentialBackupEntry(keysDir, selector, exportPassphrase, role)
 	if err != nil {
 		return "", err
 	}
@@ -315,45 +277,22 @@ func (r Restorer) RestoreKey(keysDir, selector string, kr *crypto.Keyring, expor
 	if err := validateCredentialRuntimeSupport(&entry); err != nil {
 		return "", err
 	}
-	active, err := r.activeNamespace()
-	if err != nil {
+	if err := ApplyCredentialEntry(active, entry, kr, false); err != nil {
 		return "", err
 	}
-	if err := ApplyCredentialEntry(active, entry, kr, r.Overwrite); err != nil {
-		return "", err
-	}
-	if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, r.nodeRole()); err != nil {
+	if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, role); err != nil {
 		return "", err
 	}
 	if entry.Policy != nil {
-		if err := ApplyPolicyEntry(active, r.nodeRole(), entry, kr); err != nil {
+		if err := ApplyPolicyEntry(active, role, entry, kr); err != nil {
 			return "", fmt.Errorf("restore policy for %s: %w", selector, err)
 		}
-		if r.Logf != nil {
-			r.Logf("restored policy: %s", selector)
+		if logf != nil {
+			logf("restored policy: %s", selector)
 		}
 	}
-	if r.Logf != nil {
-		r.Logf("restored credential: %s (%s)", entry.Selector, entry.KeyType)
+	if logf != nil {
+		logf("restored credential: %s (%s)", entry.Selector, entry.KeyType)
 	}
 	return entry.KeyType, nil
-}
-
-func (r Restorer) RestoreActiveForRebuild(keysDir, selector string, kr *crypto.Keyring, exportPassphrase []byte) (string, error) {
-	return r.RestoreKey(keysDir, selector, kr, exportPassphrase)
-}
-
-// RestoreKeyMetadata reads the canonical identity fields used by offline
-// restore validation.
-func RestoreKeyMetadata(keyJSON []byte) (keyType, selector string, hasLogicSigBytecode bool, err error) {
-	payload, err := keys.ParsePayload(keyJSON)
-	if err != nil {
-		return "", "", false, fmt.Errorf("parse credential: %w", err)
-	}
-	defer payload.ZeroSecrets()
-	selector, err = payload.Selector()
-	if err != nil {
-		return "", "", false, err
-	}
-	return payload.KeyType, selector, len(payload.LogicSigBytecode) > 0, nil
 }
