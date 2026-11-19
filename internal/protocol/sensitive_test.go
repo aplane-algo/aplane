@@ -83,3 +83,52 @@ func TestDecodeJSONStringBytesZeroesPartialValueOnError(t *testing.T) {
 		}
 	}
 }
+
+type zeroSensitiveInner struct {
+	Secret SensitiveBytes
+}
+
+type zeroSensitiveProbe struct {
+	BaseMessage
+	Top      SensitiveBytes
+	Nested   *zeroSensitiveInner
+	List     []zeroSensitiveInner
+	Fixed    [1]zeroSensitiveInner
+	ByName   map[string]SensitiveBytes
+	Any      any
+	Plain    []byte
+	internal SensitiveBytes
+}
+
+// ZeroSensitive reaches every SensitiveBytes in a value and leaves plain
+// bytes and unexported fields alone.
+func TestZeroSensitiveReachesNestedValues(t *testing.T) {
+	probe := zeroSensitiveProbe{
+		Top:      NewSensitiveBytes("top"),
+		Nested:   &zeroSensitiveInner{Secret: NewSensitiveBytes("nested")},
+		List:     []zeroSensitiveInner{{Secret: NewSensitiveBytes("list")}},
+		Fixed:    [1]zeroSensitiveInner{{Secret: NewSensitiveBytes("fixed")}},
+		ByName:   map[string]SensitiveBytes{"k": NewSensitiveBytes("map")},
+		Any:      NewSensitiveBytes("any"),
+		Plain:    []byte("plain"),
+		internal: NewSensitiveBytes("internal"),
+	}
+	ZeroSensitive(&probe)
+	for name, value := range map[string][]byte{
+		"top":    probe.Top,
+		"nested": probe.Nested.Secret,
+		"list":   probe.List[0].Secret,
+		"fixed":  probe.Fixed[0].Secret,
+		"map":    probe.ByName["k"],
+		"any":    probe.Any.(SensitiveBytes),
+	} {
+		if !bytes.Equal(value, make([]byte, len(value))) || len(value) == 0 {
+			t.Fatalf("%s left as %q", name, value)
+		}
+	}
+	if string(probe.Plain) != "plain" || string(probe.internal) != "internal" {
+		t.Fatalf("ZeroSensitive touched plain %q or unexported %q bytes", probe.Plain, probe.internal)
+	}
+	ZeroSensitive(nil)
+	ZeroSensitive((*zeroSensitiveProbe)(nil))
+}

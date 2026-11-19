@@ -6,6 +6,7 @@ package protocol
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -36,6 +37,54 @@ func (s SensitiveBytes) Clone() []byte {
 func (s SensitiveBytes) Zero() {
 	for i := range s {
 		s[i] = 0
+	}
+}
+
+// ZeroSensitive zeroes every SensitiveBytes value reachable from v through
+// pointers, interfaces, exported struct fields, arrays, slices and map values.
+// It is for a value that is being dropped, such as a message whose decode
+// failed after filling some of its fields.
+func ZeroSensitive(v any) {
+	zeroSensitiveValue(reflect.ValueOf(v))
+}
+
+var sensitiveBytesType = reflect.TypeFor[SensitiveBytes]()
+
+func zeroSensitiveValue(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if !v.IsNil() {
+			zeroSensitiveValue(v.Elem())
+		}
+	case reflect.Struct:
+		t := v.Type()
+		for i := range v.NumField() {
+			if t.Field(i).IsExported() {
+				zeroSensitiveValue(v.Field(i))
+			}
+		}
+	case reflect.Slice:
+		if v.Type() == sensitiveBytesType {
+			clear(v.Bytes())
+			return
+		}
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return
+		}
+		for i := range v.Len() {
+			zeroSensitiveValue(v.Index(i))
+		}
+	case reflect.Array:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return
+		}
+		for i := range v.Len() {
+			zeroSensitiveValue(v.Index(i))
+		}
+	case reflect.Map:
+		for iter := v.MapRange(); iter.Next(); {
+			zeroSensitiveValue(iter.Value())
+		}
 	}
 }
 

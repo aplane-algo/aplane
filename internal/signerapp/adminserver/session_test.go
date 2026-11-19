@@ -1172,3 +1172,27 @@ func TestSessionPreAuthInitializeZeroesFrame(t *testing.T) {
 		t.Fatalf("refused initialize frame left as %q", refused)
 	}
 }
+
+// A request whose decode fails after its passphrase was decoded (here, a
+// later id of the wrong type) has that passphrase zeroed, and the request is
+// refused as before.
+func TestDecodeRequestZeroesPartialDecodeOnError(t *testing.T) {
+	raw := []byte(`{"kind":"request","type":"unlock","passphrase":"partly-decoded","id":7}`)
+	msg, err := decodeRequest[protocol.UnlockMessage](raw)
+	if err == nil {
+		t.Fatal("decodeRequest accepted a numeric id")
+	}
+	if len(msg.Passphrase) == 0 || !isZeroedFrame(msg.Passphrase) {
+		t.Fatalf("partly decoded passphrase left as %q", []byte(msg.Passphrase))
+	}
+
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{Product: &stubServices{}}, OriginLocal)
+	if !session.Dispatch([]byte(`{"kind":"request","type":"unlock","id":"u","passphrase":7}`)) {
+		t.Fatal("Dispatch() did not handle a malformed unlock")
+	}
+	var refusal protocol.ErrorMessage
+	if len(conn.writes) != 1 || json.Unmarshal(conn.writes[0], &refusal) != nil || refusal.Code != protocol.ErrCodeInvalidRequest {
+		t.Fatalf("malformed unlock answered with %q", conn.writes)
+	}
+}
