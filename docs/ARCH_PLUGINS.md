@@ -161,7 +161,7 @@ This file is the entry point for any external plugin.
 | `version` | Yes | - | Semantic version (e.g., "1.0.0") |
 | `description` | Yes | - | Brief description of the plugin |
 | `author` | No | - | Plugin author |
-| `homepage` | No | - | Plugin homepage URL |
+| `homepage` | No | - | Plugin homepage URL (informational; apshell does not read it) |
 | `executable` | Yes | - | Path to executable (relative to plugin dir, or system command) |
 | `args` | No | `[]` | Command-line arguments to pass to the executable |
 | `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion); at least one is required |
@@ -197,8 +197,8 @@ configured algod, KMD, or indexer services they need.
 | `description` | Yes | Brief description shown in help |
 | `usage` | No | Usage string showing arguments |
 | `examples` | No | Array of example invocations |
-| `returns` | No | Human-readable description of the command result shape |
-| `category` | No | Category for help grouping |
+| `returns` | No | Human-readable description of the command result shape (informational; apshell does not read it) |
+| `category` | No | Informational; apshell does not read it, and help lists every plugin command under Plugin Commands |
 | `arg_specs` | No | Array of argument completion specs |
 
 **ArgSpec Fields (for `arg_specs` array):**
@@ -1041,8 +1041,8 @@ LogicSig pool-capacity formula, and the passthrough/foreign signing modes — se
 
 **Standard JSON-RPC Error Codes:**
 
-| Code | Constant | Description |
-|------|----------|-------------|
+| Code | Name | Description |
+|------|------|-------------|
 | -32700 | ParseError | Invalid JSON |
 | -32600 | InvalidRequest | Invalid request object |
 | -32601 | MethodNotFound | Method not found |
@@ -1051,8 +1051,8 @@ LogicSig pool-capacity formula, and the passthrough/foreign signing modes — se
 
 **Custom APlane Shell Error Codes:**
 
-| Code | Constant | Description |
-|------|----------|-------------|
+| Code | Name | Description |
+|------|------|-------------|
 | -32000 | PluginError | Generic plugin error |
 | -32001 | NetworkError | Network request failed |
 | -32002 | AuthenticationError | Authentication failed |

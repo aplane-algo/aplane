@@ -21,7 +21,6 @@ type ChecksumEntry struct {
 // ChecksumFile represents a parsed checksums.sha256 file
 type ChecksumFile struct {
 	Entries []ChecksumEntry
-	Path    string // Absolute path to the checksums file
 }
 
 // checksumLineRegex matches "<64-hex-chars>  <filename>" format
@@ -42,7 +41,6 @@ func LoadChecksums(pluginDir string) (*ChecksumFile, error) {
 	defer func() { _ = file.Close() }()
 
 	cf := &ChecksumFile{
-		Path:    checksumPath,
 		Entries: make([]ChecksumEntry, 0),
 	}
 

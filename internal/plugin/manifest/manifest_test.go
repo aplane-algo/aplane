@@ -37,7 +37,6 @@ func TestManifestValidate(t *testing.T) {
 				Version:        "1.0.0",
 				Description:    "A test plugin",
 				Author:         "Test Author",
-				Homepage:       "https://example.com",
 				Executable:     "test-plugin",
 				Args:           []string{"--mode", "production"},
 				Commands:       []Command{{Name: "cmd1", Description: "Command 1"}},
@@ -521,8 +520,6 @@ func TestCommandFields(t *testing.T) {
 				Description: "A complex command",
 				Usage:       "complex-cmd <arg1> [arg2]",
 				Examples:    []string{"complex-cmd foo", "complex-cmd foo bar"},
-				Returns:     "{ txid: string }",
-				Category:    "utility",
 			},
 		},
 	}
@@ -539,10 +536,6 @@ func TestCommandFields(t *testing.T) {
 		t.Errorf("Usage = %q, want %q", cmd.Usage, "complex-cmd <arg1> [arg2]")
 	case len(cmd.Examples) != 2:
 		t.Errorf("len(Examples) = %d, want 2", len(cmd.Examples))
-	case cmd.Returns != "{ txid: string }":
-		t.Errorf("Returns = %q, want %q", cmd.Returns, "{ txid: string }")
-	case cmd.Category != "utility":
-		t.Errorf("Category = %q, want %q", cmd.Category, "utility")
 	}
 }
 

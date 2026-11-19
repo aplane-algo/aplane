@@ -140,7 +140,7 @@ func scriptedPluginShellWithAlgod(t *testing.T, client *algod.Client, results ..
 func scriptedPluginShellOnEngine(t *testing.T, eng *engine.Engine, results ...map[string]any) (*REPLState, *scriptedPlugin) {
 	t.Helper()
 	scripted := &scriptedPlugin{results: results}
-	pm := pluginmanager.NewManager()
+	pm := pluginmanager.NewManagerWithDataDir("")
 	var started []*pluginmanager.Instance
 	pm.SetCachedPluginsForTest([]*discovery.Plugin{{
 		Manifest: &manifest.Manifest{

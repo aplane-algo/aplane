@@ -39,9 +39,6 @@ type Config struct {
 
 	// Env are the environment variables for the plugin
 	Env []string
-
-	// AllowNetwork permits network access (required for algod/indexer)
-	AllowNetwork bool
 }
 
 // ErrSandboxUnavailable is returned when sandboxing is required but not available
@@ -126,12 +123,8 @@ func buildLinuxCommand(cfg Config) (*exec.Cmd, error) {
 	args = append(args, "--unshare-uts")
 	args = append(args, "--unshare-cgroup")
 
-	// Network: share if allowed, otherwise unshare
-	if cfg.AllowNetwork {
-		args = append(args, "--share-net")
-	} else {
-		args = append(args, "--unshare-net")
-	}
+	// Plugins need the network to reach algod, KMD and indexer.
+	args = append(args, "--share-net")
 
 	// Die when parent dies (prevents orphaned sandboxed processes)
 	args = append(args, "--die-with-parent")
@@ -232,11 +225,9 @@ func generateSeatbeltProfile(cfg Config) string {
 	sb.WriteString("(allow process-fork)\n")
 	sb.WriteString("(allow process-exec*)\n\n")
 
-	// Network access
-	if cfg.AllowNetwork {
-		sb.WriteString("; Network access\n")
-		sb.WriteString("(allow network*)\n\n")
-	}
+	// Plugins need the network to reach algod, KMD and indexer.
+	sb.WriteString("; Network access\n")
+	sb.WriteString("(allow network*)\n\n")
 
 	// Mach operations (needed for basic process functionality)
 	sb.WriteString("; Mach IPC (required for process operation)\n")

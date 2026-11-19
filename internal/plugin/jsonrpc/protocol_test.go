@@ -70,193 +70,6 @@ func TestPluginSignerRejectsRetiredLogicSigSize(t *testing.T) {
 	}
 }
 
-func TestRequestValidate(t *testing.T) {
-	tests := []struct {
-		name    string
-		request Request
-		wantErr bool
-		errMsg  string
-	}{
-		{
-			name: "valid request with numeric id",
-			request: Request{
-				Jsonrpc: "2.0",
-				Method:  "execute",
-				ID:      1.0,
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid request with string id",
-			request: Request{
-				Jsonrpc: "2.0",
-				Method:  "execute",
-				ID:      "req-123",
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid notification (nil id)",
-			request: Request{
-				Jsonrpc: "2.0",
-				Method:  "shutdown",
-				ID:      nil,
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid jsonrpc version",
-			request: Request{
-				Jsonrpc: "1.0",
-				Method:  "execute",
-				ID:      1.0,
-			},
-			wantErr: true,
-			errMsg:  "invalid JSON-RPC version",
-		},
-		{
-			name: "empty jsonrpc version",
-			request: Request{
-				Jsonrpc: "",
-				Method:  "execute",
-				ID:      1.0,
-			},
-			wantErr: true,
-			errMsg:  "invalid JSON-RPC version",
-		},
-		{
-			name: "empty method",
-			request: Request{
-				Jsonrpc: "2.0",
-				Method:  "",
-				ID:      1.0,
-			},
-			wantErr: true,
-			errMsg:  "method is required",
-		},
-		{
-			name: "invalid id type (int)",
-			request: Request{
-				Jsonrpc: "2.0",
-				Method:  "execute",
-				ID:      123, // int, not float64
-			},
-			wantErr: true,
-			errMsg:  "invalid ID type",
-		},
-		{
-			name: "invalid id type (bool)",
-			request: Request{
-				Jsonrpc: "2.0",
-				Method:  "execute",
-				ID:      true,
-			},
-			wantErr: true,
-			errMsg:  "invalid ID type",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.request.Validate()
-
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got none")
-					return
-				}
-				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
-					t.Errorf("error = %q, want containing %q", err.Error(), tt.errMsg)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestRequestIsNotification(t *testing.T) {
-	tests := []struct {
-		name string
-		id   interface{}
-		want bool
-	}{
-		{"nil id is notification", nil, true},
-		{"numeric id is not notification", 1.0, false},
-		{"string id is not notification", "req-1", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := &Request{ID: tt.id}
-			if got := req.IsNotification(); got != tt.want {
-				t.Errorf("IsNotification() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestRequestParseParams(t *testing.T) {
-	type testParams struct {
-		Name  string `json:"name"`
-		Value int    `json:"value"`
-	}
-
-	tests := []struct {
-		name    string
-		params  interface{}
-		want    testParams
-		wantErr bool
-	}{
-		{
-			name:   "parse map params",
-			params: map[string]interface{}{"name": "test", "value": 42.0},
-			want:   testParams{Name: "test", Value: 42},
-		},
-		{
-			name:   "nil params",
-			params: nil,
-			want:   testParams{},
-		},
-		{
-			name:   "empty params",
-			params: map[string]interface{}{},
-			want:   testParams{},
-		},
-		{
-			name:   "parse raw message params",
-			params: json.RawMessage(`{"name":"raw","value":7}`),
-			want:   testParams{Name: "raw", Value: 7},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := &Request{Params: tt.params}
-			var got testParams
-			err := req.ParseParams(&got)
-
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got none")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
-			if got != tt.want {
-				t.Errorf("ParseParams() = %+v, want %+v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestResponseParseResult(t *testing.T) {
 	type testResult struct {
 		Success bool   `json:"success"`
@@ -336,10 +149,8 @@ func TestErrorCodes(t *testing.T) {
 		code int
 		want int
 	}{
-		{"ParseError", ParseError, -32700},
 		{"InvalidRequest", InvalidRequest, -32600},
 		{"MethodNotFound", MethodNotFound, -32601},
-		{"InvalidParams", InvalidParams, -32602},
 		{"InternalError", InternalError, -32603},
 	}
 
@@ -347,27 +158,6 @@ func TestErrorCodes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.code != tt.want {
 				t.Errorf("%s = %d, want %d", tt.name, tt.code, tt.want)
-			}
-		})
-	}
-
-	// Verify custom error codes are in valid range (-32000 to -32099)
-	customCodes := []struct {
-		name string
-		code int
-	}{
-		{"PluginError", PluginError},
-		{"NetworkError", NetworkError},
-		{"AuthenticationError", AuthenticationError},
-		{"InsufficientFunds", InsufficientFunds},
-		{"InvalidAddress", InvalidAddress},
-		{"TransactionFailed", TransactionFailed},
-	}
-
-	for _, tt := range customCodes {
-		t.Run(tt.name+" in range", func(t *testing.T) {
-			if tt.code > -32000 || tt.code < -32099 {
-				t.Errorf("%s = %d, want in range [-32099, -32000]", tt.name, tt.code)
 			}
 		})
 	}
@@ -509,7 +299,7 @@ func TestResponseJSONRoundTrip(t *testing.T) {
 	// Test error response
 	errorResp := Response{
 		Jsonrpc: Version,
-		Error:   &Error{Code: InvalidParams, Message: "missing required field"},
+		Error:   &Error{Code: MethodNotFound, Message: "method not found"},
 		ID:      2.0,
 	}
 
@@ -526,7 +316,7 @@ func TestResponseJSONRoundTrip(t *testing.T) {
 	if decodedErr.Error == nil {
 		t.Error("expected error in decoded response")
 	}
-	if decodedErr.Error.Code != InvalidParams {
-		t.Errorf("Error.Code = %d, want %d", decodedErr.Error.Code, InvalidParams)
+	if decodedErr.Error.Code != MethodNotFound {
+		t.Errorf("Error.Code = %d, want %d", decodedErr.Error.Code, MethodNotFound)
 	}
 }

@@ -23,7 +23,6 @@ type Manifest struct {
 	Version     string `json:"version"`
 	Description string `json:"description"`
 	Author      string `json:"author,omitempty"`
-	Homepage    string `json:"homepage,omitempty"`
 
 	// Executable information
 	Executable string   `json:"executable"`
@@ -46,8 +45,6 @@ type Command struct {
 	Description string            `json:"description"`
 	Usage       string            `json:"usage,omitempty"`
 	Examples    []string          `json:"examples,omitempty"`
-	Returns     string            `json:"returns,omitempty"`  // Documents return data structure for AI
-	Category    string            `json:"category,omitempty"` // "defi", "utility", etc.
 	ArgSpecs    []cmdspec.ArgSpec `json:"arg_specs,omitempty"`
 }
 

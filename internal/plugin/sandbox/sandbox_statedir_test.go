@@ -31,10 +31,9 @@ func TestBuildCommandLinuxStateDir(t *testing.T) {
 	}
 
 	withCmd, err := BuildCommand(Config{
-		PluginDir:    "/tmp/test-plugin",
-		StateDir:     "/tmp/test-data/plugin-state/foo",
-		ExecPath:     "/tmp/test-plugin/run.sh",
-		AllowNetwork: true,
+		PluginDir: "/tmp/test-plugin",
+		StateDir:  "/tmp/test-data/plugin-state/foo",
+		ExecPath:  "/tmp/test-plugin/run.sh",
 	})
 	if err != nil {
 		t.Fatalf("BuildCommand() error: %v", err)
@@ -48,9 +47,8 @@ func TestBuildCommandLinuxStateDir(t *testing.T) {
 	}
 
 	withoutCmd, err := BuildCommand(Config{
-		PluginDir:    "/tmp/test-plugin",
-		ExecPath:     "/tmp/test-plugin/run.sh",
-		AllowNetwork: true,
+		PluginDir: "/tmp/test-plugin",
+		ExecPath:  "/tmp/test-plugin/run.sh",
 	})
 	if err != nil {
 		t.Fatalf("BuildCommand() error: %v", err)

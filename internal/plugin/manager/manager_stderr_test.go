@@ -370,7 +370,7 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := installLogs(t, slog.LevelWarn)
-			m := NewManager()
+			m := NewManagerWithDataDir("")
 			m.cachedPlugins = []*discovery.Plugin{{
 				Manifest: &manifest.Manifest{
 					Name:     "mithras",

@@ -166,8 +166,8 @@ func TestCallbackReplyQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 func TestWriteFreesTheWriterBeforeItReturns(t *testing.T) {
 	c := NewClient(&bytes.Buffer{}, io.Discard)
 	for i := 0; i < 50000; i++ {
-		if err := c.Notify(context.Background(), CallbackLog, LogParams{Message: "x"}); err != nil {
-			t.Fatalf("Notify() error = %v", err)
+		if err := c.writeFrame(context.Background(), NewRequest(CallbackLog, LogParams{Message: "x"}, nil), 0); err != nil {
+			t.Fatalf("writeFrame() error = %v", err)
 		}
 		select {
 		case c.writeSlot <- struct{}{}:
@@ -201,7 +201,9 @@ func (w *slowWriter) Write(p []byte) (int, error) {
 func TestShutdownWaitsForAWriteAboutToFinish(t *testing.T) {
 	w := &slowWriter{delay: 30 * time.Millisecond, entered: make(chan struct{})}
 	c := NewClient(&bytes.Buffer{}, w)
-	go func() { _ = c.Notify(context.Background(), CallbackLog, LogParams{Message: "x"}) }()
+	go func() {
+		_ = c.writeFrame(context.Background(), NewRequest(CallbackLog, LogParams{Message: "x"}, nil), 0)
+	}()
 	<-w.entered
 	if err := c.Shutdown(200 * time.Millisecond); errors.Is(err, errWriterBusy) {
 		t.Fatalf("Shutdown() error = %v, want it sent", err)
@@ -209,7 +211,7 @@ func TestShutdownWaitsForAWriteAboutToFinish(t *testing.T) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if len(w.frames) != 2 || !strings.Contains(w.frames[1], MethodShutdown) {
-		t.Fatalf("frames written = %q, want the notification then the shutdown", w.frames)
+		t.Fatalf("frames written = %q, want the first frame then the shutdown", w.frames)
 	}
 }
 
@@ -230,8 +232,8 @@ func TestEndedContextSendsNothingAndKeepsTheClient(t *testing.T) {
 		name string
 		send func(*Client) error
 	}{
-		{name: "notification with an ended ctx", send: func(c *Client) error {
-			return c.Notify(ended, CallbackLog, LogParams{Message: "x"})
+		{name: "frame with an ended ctx", send: func(c *Client) error {
+			return c.writeFrame(ended, NewRequest(CallbackLog, LogParams{Message: "x"}, nil), 0)
 		}},
 		{name: "call with no time left", send: func(c *Client) error {
 			return c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 0)

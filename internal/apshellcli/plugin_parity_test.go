@@ -25,7 +25,7 @@ func TestPluginCommandAvailabilityMatchesShellAdapterAndMCP(t *testing.T) {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
-	pm := pluginmanager.NewManager()
+	pm := pluginmanager.NewManagerWithDataDir("")
 	var started []*pluginmanager.Instance
 	pm.SetCachedPluginsForTest([]*discovery.Plugin{
 		{

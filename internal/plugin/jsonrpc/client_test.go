@@ -267,12 +267,12 @@ func TestInboundSignTransactionCallbackFailsClosedWithoutHandler(t *testing.T) {
 	}
 }
 
-func TestNotifyWritesSingleJSONLineFrame(t *testing.T) {
+func TestWriteFrameWritesSingleJSONLineFrame(t *testing.T) {
 	writer := &recordingWriter{}
 	client := NewClient(&bytes.Buffer{}, writer)
 
-	if err := client.Notify(context.Background(), CallbackLog, LogParams{Level: "info", Message: "hello"}); err != nil {
-		t.Fatalf("Notify() error = %v", err)
+	if err := client.writeFrame(context.Background(), NewRequest(CallbackLog, LogParams{Level: "info", Message: "hello"}, nil), 0); err != nil {
+		t.Fatalf("writeFrame() error = %v", err)
 	}
 	if len(writer.writes) != 1 {
 		t.Fatalf("Write calls = %d, want 1", len(writer.writes))

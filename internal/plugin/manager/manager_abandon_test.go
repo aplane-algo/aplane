@@ -64,7 +64,7 @@ func silentPlugin(t *testing.T, script string) (inst *Instance, asked chan struc
 // and returns how long the call took.
 func abandon(t *testing.T, inst *Instance, asked chan struct{}) time.Duration {
 	t.Helper()
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.instances["silent"] = inst
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -103,7 +103,7 @@ func TestAbandonedPluginThatDoesNotExitIsKilledAfterTheGrace(t *testing.T) {
 
 // A call whose context has already ended starts no plugin process.
 func TestCancelledCallStartsNoPlugin(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.SetCachedPluginsForTest([]*discovery.Plugin{{Manifest: &manifest.Manifest{Name: "silent", Timeout: 30}}})
 	starts := 0
 	m.SetTestHooks(TestHooks{StartPluginInstance: func(*discovery.Plugin) (*Instance, error) {
