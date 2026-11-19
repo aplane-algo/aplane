@@ -828,3 +828,50 @@ runs grow to 3616 states at depth 18 and, deep, 5588 at depth 19, and every
 other key-use negative control still fails on its own property.
 Republication is not modeled; three Go tests pin it. `make formal-test` now
 has 37 runs, twenty-one of them negative controls.
+
+Aligned 2026-11-18: the recovery reconcile now enters recovery before it
+releases the store mutation lock, the order `BeginReload` and `ReloadFail`
+with `RecoveryBeforeRelease` transcribe. `ReconcileStore` used to call
+`SetRecovery` after `reconcileReloadAndPromote` had returned. The 2026-11-16
+review above settled that interval as harmless (a reconcile never moves the
+root, and every failed reload leaves the selected generation's cache or an
+empty one), and that still holds: this is a transcription alignment, not a
+safety fix. `reconcileLocked`, the locked work, enters recovery itself. The
+recovery-exit rescan after a restore or rollback passes
+`enterRecoveryOnFailure=false`: it starts in recovery, so a failure leaves
+it there, and a lock that came in meanwhile stands, as it does anyway now
+that `SetRecovery` leaves a locked signer locked (the "Recovery during a
+cleanup" fix below). A promotion refused after a clean reload enters no
+recovery. The spec is unchanged; RB2's row names `reconcileLocked`,
+`TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock` and
+`TestARecoveryExitRescanKeepsALockThatCameFirst`.
+
+Fixed 2026-11-18: recovery during a cleanup (the second open divergence
+above). `SetRecovery` now does nothing on a locked signer, a lock's cleanup
+in progress included, since `Lock` sets the state first; that is
+`EnterRecovery`'s guard, so the spec is unchanged. A store mutation that a
+lock overtook leaves the signer locked, which refuses signing and key writes
+as recovery does (RB2, RB3).
+`TestALockDuringAnAdminOperationUnderTheKeyringCompletes` pins it.
+
+Fixed 2026-11-18: the `ErrStoreRootCommitStateUnknown` edge (open since the
+RB4 and I10 divergences above). Policy apply, the ASA set, restore and
+rollback classified a root commit whose root could not be read back, or
+matched neither the old record nor the candidate, as a failure before
+commit, so a root that had landed was served from the old generation
+without recovery. They now treat it as uncertain
+(`genstore.RootCommitUncertain`), as for unconfirmed durability: recovery,
+and a reload where the caller already reloads. A passphrase change in that
+state still ends locked, and its error now says the new passphrase may be in
+effect. The spec is unchanged: `CommitRoot` already stands for every commit
+that may have moved the root. RB2's row names the four new tests.
+
+Changed 2026-11-18: `enrollment_queue.tla`'s `Reject` now requires the
+registry synced, as `RejectEnrollment` re-publishes a registry left unsynced
+before its already-enrolled check (`ensureRegistryDurableLocked`). The check
+read the runtime's registry, which after a failed publish whose file could
+not be read back was an empty placeholder, so the request of an enrolled key
+could be dropped (EQ6). That unreadable state stays outside the model; the
+companion describes how the code now handles it. The positive runs drop to
+2216 states at depth 11 and, deep, 11581 at depth 15; the negative control
+is unchanged.

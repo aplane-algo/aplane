@@ -66,7 +66,7 @@ func TestInstalledTemplateOutsideGenerationSupportKeepsTheStoreUsable(t *testing
 	}
 	composeddsa.RegisterBase(composeddsa.BaseRegistration{
 		BaseKeyType: unsupportedTemplateBase, FamilyName: "uncataloged-base", Version: 1,
-		Ops: falconBase.Ops, NewAddressDeriver: falconBase.NewAddressDeriver,
+		Ops: falconBase.Ops,
 	})
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)

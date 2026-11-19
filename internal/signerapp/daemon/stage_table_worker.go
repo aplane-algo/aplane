@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -134,7 +133,7 @@ func (fs *Signer) restoreReleases(ctx context.Context, ir *productruntime.Runtim
 	if fs.auditLog == nil {
 		return false
 	}
-	entries, err := signeraudit.ReadRotatingReleases(fs.auditLog.Path())
+	entries, err := fs.auditLog.ReadRotatingReleases()
 	if err != nil {
 		logWarnf("rotating release memory: could not read the audit log: %v", err)
 		return false

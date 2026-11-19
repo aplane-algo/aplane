@@ -59,7 +59,7 @@
   },
   {
     "spec": "enrollment_queue",
-    "distinct_states": 2340,
+    "distinct_states": 2216,
     "depth": 11
   },
   {

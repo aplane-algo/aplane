@@ -41,6 +41,25 @@ type SubmissionFailures interface {
 	SubmissionFailures() []*signing.SubmissionError
 }
 
+// UnsubmittedFailures is the same kind of error saying, in order, why each
+// item that never reached algod failed: a refusal by the signer, a balance
+// check or a signing error fails an item before any submission, so
+// SubmissionFailures has nothing to say about it.
+type UnsubmittedFailures interface {
+	error
+	UnsubmittedFailures() []string
+}
+
+// UnsubmittedFailuresFromError returns the reasons err gives for its items
+// that failed before any submission, or none.
+func UnsubmittedFailuresFromError(err error) []string {
+	var failures UnsubmittedFailures
+	if errors.As(err, &failures) {
+		return failures.UnsubmittedFailures()
+	}
+	return nil
+}
+
 // SubmissionsFromError returns, in order, the outcome of every submission err
 // carries through its wrapping, including the errors it joins and those a
 // SubmissionFailures reports: one for a command's own submission, one for

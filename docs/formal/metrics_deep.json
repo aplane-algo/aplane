@@ -44,7 +44,7 @@
   {
     "spec": "enrollment_queue",
     "cfg": "enrollment_queue_deep",
-    "distinct_states": 12168,
+    "distinct_states": 11581,
     "depth": 15
   },
   {

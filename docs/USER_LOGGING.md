@@ -99,8 +99,8 @@ Fields are omitted when empty.
 | `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
 | `CREDENTIAL_RESTORE_SUCCEEDED` | Credential restore committed and reloaded successfully |
 | `CREDENTIAL_RESTORE_FAILED` | Credential restore failed; a reload failure after commit enters recovery mode and requires explicit reconciliation or eligible rollback |
-| `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` is visible but durability is unconfirmed; signing remains recovery-blocked pending reconciliation |
-| `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded or failed |
+| `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` may have landed but could not be confirmed (visible but not confirmed durable, or not readable back); signing remains recovery-blocked pending reconciliation |
+| `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded, failed, or may have committed (`commit_uncertain`, with the generation) |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
@@ -225,7 +225,13 @@ The audit log rotates automatically when it reaches **10 MB**:
 
 Up to two rotated backups are retained (`audit.log.1` and `audit.log.2`).
 
-If rotation fails, logging continues to the current file.
+If rotation fails, logging continues to the current file, which keeps
+growing, and the next entry tries again. A rotation that cannot move
+`audit.log.1` aside stops there rather than renaming the current file over it,
+so no rotated history is lost to a failed step. If a write stops partway (a
+full disk), the next entry starts on a line of its own, so the fragment does
+not take that entry with it; a line an earlier run left torn by a crash or a
+full disk is detected when the log is opened, with the same effect.
 
 ### Entry size
 

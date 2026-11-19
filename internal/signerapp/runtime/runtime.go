@@ -161,10 +161,16 @@ func (r *Runtime) PromoteRecoveryToUnlocked() bool {
 // signer is unlocked again by the time it looks. Nothing is cleared, because
 // recovery administration needs the keyring; the on-lock callback does not
 // run.
+//
+// A locked signer stays locked. Its keyring is gone, so it has no recovery
+// to administer, and it signs nothing already; the unlock that follows
+// reconciles the store and enters recovery itself if the store needs it. A
+// store mutation a lock overtook calls this after the lock, and must not
+// turn the operator's lock into recovery.
 func (r *Runtime) SetRecovery() {
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
-	if r.activeMaintenanceID == 0 {
+	if r.activeMaintenanceID == 0 && r.state != SignerStateLocked {
 		r.enterRecoveryLocked()
 	}
 }

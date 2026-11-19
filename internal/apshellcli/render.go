@@ -99,7 +99,9 @@ type pluginHumanStep struct {
 	Warnings []apshellapp.Warning
 }
 
-func renderPluginResult(r *REPLState, pr *PluginResult) {
+// renderPluginResult draws a plugin's result. simulated is whether it ran in
+// simulate mode, read when it ran.
+func renderPluginResult(r *REPLState, pr *PluginResult, simulated bool) {
 	for _, step := range pr.humanSteps {
 		r.renderSubmissionOutput(step.Output)
 		r.renderWarnings(step.Warnings)
@@ -113,7 +115,7 @@ func renderPluginResult(r *REPLState, pr *PluginResult) {
 		r.println(pr.Message)
 	}
 	if len(pr.TxIDs) > 0 {
-		if r.app().IsSimulateEnabled() {
+		if simulated {
 			r.println("\n✓ Transaction(s) simulated successfully!")
 		} else {
 			r.println("\n✓ Transaction(s) submitted successfully!")

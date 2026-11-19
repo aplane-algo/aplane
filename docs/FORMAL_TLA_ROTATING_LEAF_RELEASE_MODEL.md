@@ -143,9 +143,19 @@ for each.
   count.
 - A restore reads the log once, at `RestoreBegin`; the audited release names
   the highest stage in the log with every leaf the log holds for it. The
-  reader keeps that promise (`audit.ReadRotatingReleases`): an entry from an
-  earlier stage, which a sign on a lagging chain read can log after a later
-  stage's, never replaces the later stage's list.
+  reader keeps that promise (`readRotatingReleasesFrom`, which both
+  `AuditLogger.ReadRotatingReleases` and the path-based reader use): an
+  entry from an earlier stage, which a sign on a lagging chain read can log
+  after a later stage's, never replaces the later stage's list. `RestoreBegin` takes the
+  log at one instant, and so does the signer's read
+  (`AuditLogger.ReadRotatingReleases`): it opens the current file and both
+  rotated ones under the logger's mutex, which every rotation holds, so a
+  rotation cannot move a file between two opens and hide it. It reads them
+  after the mutex is released and may see entries appended since, which are
+  releases the memory records live anyway: a sign from the session before
+  the restore, whose signature is withheld, or a stateless one. The model
+  adds no audit entry while a restore is armed; the code may, and these are
+  the entries it adds.
 - `Lock` cuts a restore in flight short. It also stands for recovery, which stops a
   restore the same way without moving the generation: the model has no generation
   to tell them apart. The lock-generation fence on the sign path stops a release, not a leaf choice, and is

@@ -101,7 +101,10 @@ Code anchors:
     moves to the next stage (rule 1 reads it under the lock).
   - Unlock/RestoreBegin/RestoreApply/RestoreFail/Lock transcribe
     ReleaseMemory.Reset/Restoring/RecordAudited/Restored/RestoredAll and
-    Service.RebuildReleaseMemory in rotating_release.go.
+    Service.RebuildReleaseMemory in rotating_release.go; RestoreBegin's
+    snapshot is AuditLogger.ReadRotatingReleases
+    (internal/signerapp/audit/rotating.go), which opens every log file under
+    the logger's mutex.
   - Recover is a recovery round trip in one step: SetRecovery from the
     unlocked state, a reconcile, and PromoteRecoveryToUnlocked
     (internal/signerapp/runtime/runtime.go), with the worker's Reset for the

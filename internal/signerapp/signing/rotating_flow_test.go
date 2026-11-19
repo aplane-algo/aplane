@@ -534,10 +534,10 @@ func TestRotatingSignShowsTheSpendsAppCallInfo(t *testing.T) {
 		f.svc.Approval = &ApprovalService{
 			UserAutoApprove: &off,
 			HasClient:       func() bool { return true },
-			RequestSigningApproval: func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 				description = desc
 				return true, nil
-			},
+			}),
 		}
 		call := f.spend(f.chain.round, f.chain.round+100)
 		call.Type = types.ApplicationCallTx
@@ -571,10 +571,10 @@ func TestRotatingSignPromptShowsThePreparedGroupAsChecked(t *testing.T) {
 	f.svc.Approval = &ApprovalService{
 		UserAutoApprove: &off,
 		HasClient:       func() bool { return true },
-		RequestSigningApproval: func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
 			description = desc
 			return true, nil
-		},
+		}),
 	}
 	prep := mustPrepare(t, f, f.spend(f.chain.round, f.chain.round+100))
 	if prep.Mutations == nil || prep.Mutations.TotalFeesDelta <= 0 {
@@ -1135,11 +1135,11 @@ func TestRotatingRotationRekeyIsNotAWarning(t *testing.T) {
 	f2.svc.Approval = &ApprovalService{
 		UserAutoApprove: &off,
 		HasClient:       func() bool { return true },
-		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+		RequestSigningApprovalPrompt: promptFromDecision(func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
 			calls++
 			seen = violations
 			return true, nil
-		},
+		}),
 	}
 	prep2 := mustPrepare(t, f2, f2.spend(f2.chain.round, f2.chain.round+100))
 	mustSign(t, f2, prep2.Transactions)

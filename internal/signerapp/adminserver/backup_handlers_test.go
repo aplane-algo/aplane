@@ -112,6 +112,9 @@ func TestRestoreBackupAbortsWhenDurableIntentFails(t *testing.T) {
 
 func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
+	// Recovery is entered from the unlocked state; a locked signer stays
+	// locked.
+	ir.SetUnlocked()
 	ir.SetRecovery()
 	svc := &stubServices{}
 	audit := &recordingCredentialRestoreAudit{}

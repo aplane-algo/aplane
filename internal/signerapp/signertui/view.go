@@ -554,6 +554,12 @@ func (m Model) constrainWindowBlock(body string, maxHeight int) string {
 }
 
 func (m Model) windowBodyHeight() int {
+	return m.windowBodyHeightUnder(renderedBlockHeight(m.renderWindowFooter()))
+}
+
+// windowBodyHeightUnder is the window body's height under a footer of
+// footerRows rows.
+func (m Model) windowBodyHeightUnder(footerRows int) int {
 	if m.height <= 0 {
 		return 0
 	}
@@ -561,7 +567,7 @@ func (m Model) windowBodyHeight() int {
 	if m.standalone {
 		headerHeight = 1
 	}
-	h := m.height - headerHeight - renderedBlockHeight(m.renderWindowFooter()) - renderedBlockHeight(m.renderStatusBar())
+	h := m.height - headerHeight - footerRows - renderedBlockHeight(m.renderStatusBar())
 	if h < 1 {
 		return 1
 	}
@@ -569,7 +575,12 @@ func (m Model) windowBodyHeight() int {
 }
 
 func (m Model) renderWindowFooter() string {
-	text := strings.TrimSpace(m.viewFooterText())
+	return m.renderFooterText(m.viewFooterText())
+}
+
+// renderFooterText draws footer text as the window footer does.
+func (m Model) renderFooterText(text string) string {
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}

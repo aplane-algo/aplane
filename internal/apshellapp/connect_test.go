@@ -64,9 +64,8 @@ func TestConnectConfiguredRequiresDefaultSignerEndpoint(t *testing.T) {
 
 func TestDecorateConnectResult(t *testing.T) {
 	result := &ConnectResult{
-		Port:     1234,
 		KeyCount: 2,
-		Summary:  Summary{Message: "Signer verified via tunnel at http://localhost:1234"},
+		Summary:  Summary{Message: "Signer verified over SSH at host (ssh:1127)"},
 	}
 
 	decorateConnectResult(result)
@@ -84,9 +83,8 @@ func TestDecorateConnectResult(t *testing.T) {
 
 func TestDecorateConnectResultOmitsLockedTranscriptLine(t *testing.T) {
 	result := &ConnectResult{
-		Port:    1234,
 		Locked:  true,
-		Summary: Summary{Message: "Signer verified via tunnel at http://localhost:1234"},
+		Summary: Summary{Message: "Signer verified over SSH at host (ssh:1127)"},
 	}
 
 	decorateConnectResult(result)
