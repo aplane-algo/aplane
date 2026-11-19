@@ -455,7 +455,9 @@ balance [account|@all|@signers|@setname] [asset]
 | `[asset]` | Optional: `algo`, `asa`, or specific ASA reference |
 
 `algo` may be written in any case (`ALGO`, `Algo`), here and in `holders`. An
-asset that does not resolve is refused, in the shell and through MCP.
+asset that does not resolve is refused, in the shell and through MCP. Through
+MCP, the balance of one account with no asset lists every holding in
+`assets`, as the shell shows them; with an ASA, only that asset's entry.
 
 **Aliases:** `bal`
 

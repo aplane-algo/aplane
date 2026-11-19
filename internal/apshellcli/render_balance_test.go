@@ -53,3 +53,31 @@ func TestBalanceOfAlgoInAnyCase(t *testing.T) {
 		t.Fatalf("MCP balance = %+v, want the ALGO balance and no asset entry", balance)
 	}
 }
+
+// A full balance of one account gives MCP every holding, as the shell shows
+// them, not the ALGO balance alone.
+func TestMCPFullBalanceHasEveryHolding(t *testing.T) {
+	f := newSubmitFixture(t, nodeConfirms) // a holds asset 77
+	var out bytes.Buffer
+	f.state.SetOutput(&out)
+	account := f.a.Address.String()
+
+	if err := f.state.executeCommand(Command{Name: "balance", Args: []string{account}}); err != nil {
+		t.Fatalf("balance: %v", err)
+	}
+	if !strings.Contains(out.String(), "TST") {
+		t.Fatalf("the shell drew:\n%s\nwant the TST holding", out.String())
+	}
+
+	result := mcpExecuteCommand(f.state, Command{Name: "balance", Args: []string{account}})
+	if result.IsError {
+		t.Fatalf("MCP balance failed: %s", mcpResultText(t, result))
+	}
+	var balance appresult.MCPBalance
+	if err := json.Unmarshal([]byte(mcpResultText(t, result)), &balance); err != nil {
+		t.Fatal(err)
+	}
+	if len(balance.Assets) != 1 || balance.Assets[0].AssetID != submitTestAsset {
+		t.Fatalf("MCP balance = %s, want the account's asset %d", mcpResultText(t, result), submitTestAsset)
+	}
+}

@@ -246,9 +246,10 @@ func projectPluginsResult(result *apshellapp.PluginsCommandResult) pluginsProjec
 	return projection
 }
 
-// projectMCPBalanceForAsset is an account's MCP balance in asset, nil for a
-// full balance: an ASA's entry alone, its 0 when not opted in, or for ALGO
-// none, the ALGO balance being the account's own.
+// projectMCPBalanceForAsset is an account's MCP balance in asset. A full
+// balance (asset nil) has every holding, as the shell shows it. An ASA has
+// its entry alone, at 0 when the account is not opted in; ALGO has none, the
+// ALGO balance being the account's own.
 func projectMCPBalanceForAsset(result *apshellapp.BalanceDetails, asset *asa.Metadata) appresult.MCPBalance {
 	assets := make([]appresult.AssetBalanceView, len(result.Assets))
 	for i, asset := range result.Assets {
@@ -261,7 +262,10 @@ func projectMCPBalanceForAsset(result *apshellapp.BalanceDetails, asset *asa.Met
 		Address: result.Address, Alias: result.Alias, AlgoBalance: result.AlgoBalance,
 		AuthAddr: result.AuthAddr, MinBalance: result.MinBalance, Assets: assets,
 	})
-	if asset == nil || asset.AssetID == 0 {
+	if asset == nil {
+		return projected
+	}
+	if asset.AssetID == 0 {
 		projected.Assets = nil
 		return projected
 	}
