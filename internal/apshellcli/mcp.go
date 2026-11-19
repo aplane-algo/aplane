@@ -297,20 +297,31 @@ func mcpJSONTextResult(data []byte) *mcp.CallToolResult {
 type mcpErrorJSON struct {
 	Error       string                 `json:"error"`
 	Submissions []appresult.Submission `json:"submissions"`
+	// Unsubmitted says why each item that never reached algod failed, for a
+	// command whose items all failed.
+	Unsubmitted []string `json:"unsubmitted,omitempty"`
 }
 
 // mcpErrorResult is a failed tool call whose first text content is text.
-// With submission outcomes, each outcome's sentence is appended to that text,
+// With submission outcomes, or items that failed before any submission, each
+// outcome's sentence and each such item's reason is appended to that text,
 // and a second text content holds mcpErrorJSON. Without, it is the text
-// alone, as before.
+// alone.
 func mcpErrorResult(text string, err error, submissions []appresult.Submission) *mcp.CallToolResult {
-	if len(submissions) == 0 {
+	unsubmitted := appresult.UnsubmittedFailuresFromError(err)
+	if len(submissions) == 0 && len(unsubmitted) == 0 {
 		return mcp.NewToolResultError(text)
 	}
 	for _, submission := range submissions {
 		text += "\n" + submission.Message
 	}
-	data, marshalErr := json.Marshal(mcpErrorJSON{Error: err.Error(), Submissions: submissions})
+	for _, reason := range unsubmitted {
+		text += "\n" + reason
+	}
+	if submissions == nil {
+		submissions = []appresult.Submission{}
+	}
+	data, marshalErr := json.Marshal(mcpErrorJSON{Error: err.Error(), Submissions: submissions, Unsubmitted: unsubmitted})
 	if marshalErr != nil {
 		return mcp.NewToolResultError(text)
 	}

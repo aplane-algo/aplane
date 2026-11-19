@@ -741,6 +741,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	}
 
 	var submissionFailures []*signing.SubmissionError
+	var unsubmitted []string
 	for _, fromAddress := range result.FromAddresses {
 		item, outcome, failure := a.sweepFrom(ctx, plan, fromAddress)
 		switch outcome {
@@ -752,6 +753,12 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		}
 		if failure != nil {
 			submissionFailures = append(submissionFailures, failure)
+		} else if outcome == sweepFailed {
+			reason := item.Error
+			if reason == "" {
+				reason = item.SimulationFailure
+			}
+			unsubmitted = append(unsubmitted, unsubmittedFailure(item.From, item.To, reason))
 		}
 		result.Items = append(result.Items, item)
 	}
@@ -760,8 +767,9 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 
 	if result.FailureCount > 0 && result.SuccessCount == 0 {
 		return result, &failedItemsError{
-			msg:      fmt.Sprintf("all %d transaction(s) failed", result.FailureCount),
-			failures: submissionFailures,
+			msg:         fmt.Sprintf("all %d transaction(s) failed", result.FailureCount),
+			failures:    submissionFailures,
+			unsubmitted: unsubmitted,
 		}
 	}
 	return result, nil

@@ -1008,7 +1008,9 @@ Machine projections in `command_projections.go` are explicit security
 allowlists. Plugin projection filters the reserved `localSigners` field.
 One-shot `simulate <transaction-command>` invokes the same result-bearing
 executor while simulation is temporarily forced and restores the prior mode
-with deferred cleanup.
+with deferred cleanup. The result is drawn after that, so a command reads
+the mode when it runs and passes it to its rendering; a renderer never asks
+for the mode itself.
 
 ### Command Dispatch
 
@@ -1792,11 +1794,13 @@ Each outcome's `message` says what happened:
 | `not_sent` | `Not sent: the context had ended before the submit call for transaction(s) <ids> was made, so nothing was sent.` |
 
 `execute` and `js` turn an error into an MCP error result through
-`mcpErrorResult`. An error with no outcome is its text alone, as before,
-even when the command returned a structured result with it. Otherwise the
-first text content is the error text, then one sentence for each outcome.
-The second text content is JSON with `error` and `submissions`; the
-command's structured result is not attached, so each outcome is reported
+`mcpErrorResult`. An error with no outcome and no unsubmitted item is its
+text alone, even when the command returned a structured result with it.
+Otherwise the first text content is the error text, then one sentence for
+each outcome and one `<from> -> <to>: <reason>` line for each item that
+failed before reaching algod. The second text content is JSON with `error`,
+`submissions` and, when there are such items, `unsubmitted`; the command's
+structured result is not attached, so each outcome is reported
 once:
 
 ```json
@@ -1814,17 +1818,26 @@ once:
 }
 ```
 
-The text names transaction IDs only, never transaction contents or argument
-values. Nothing retries.
+An outcome's sentence names transaction IDs only, never transaction contents
+or argument values. An unsubmitted item's reason is the item's own error text,
+as a partly successful send already reports it in `items[].error`: a balance
+check's amounts, or the signer's refusal. Nothing retries.
 
 Commands that report items record each item's outcome as `submission` on the
-item of their successful result: non-atomic `send`, `validate`, and a `sweep`
-in which some items succeeded. A `sweep` in which every item failed returns
-its result with an error whose text is `all N transaction(s) failed`. That
+item of their successful result: `validate`, and a non-atomic `send` or a
+`sweep` in which some items succeeded. A non-atomic `send` or a `sweep` in
+which every item failed, one item included, returns its result with an error
+whose text is `all N transaction(s) failed`, so the command fails: the REPL
+draws each item and then returns the error, which stops a script. That
 error wraps none of the items' errors, so no item's sentinel matches it and
 the REPL renders each item's submission output once, in the result; it
 reports the items' `SubmissionError`s as an `appresult.SubmissionFailures`,
-so its MCP error result lists each item's outcome in `submissions`. A plugin
+so its MCP error result lists each item's outcome in `submissions`. An item
+that failed before reaching algod (a balance check, the signer refusing or
+unreachable, a signing error) has no outcome; the error reports its reason
+as an `appresult.UnsubmittedFailures`, and the MCP error result appends one
+`<from> -> <to>: <reason>` line per such item to its text and lists them in
+`unsubmitted`, so the client can tell what to fix. A plugin
 step whose submission failed is still a plugin result (see
 [success:false Handling](#successfalse-handling)), with its outcome in
 `submissions`.
