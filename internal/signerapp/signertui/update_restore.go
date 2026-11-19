@@ -3,7 +3,11 @@
 
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/secretbuf"
+)
 
 // openBackups opens the Backups page and lists the repository.
 func (m Model) openBackups() (tea.Model, tea.Cmd) {
@@ -58,13 +62,13 @@ func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		return m, m.sendPreviewRestoreCmd(m.restore.archivePath, m.restore.passphrase, id)
 	case "backspace":
 		if len(m.restore.passphrase) > 0 {
-			m.restore.passphrase = trimSecretRune(m.restore.passphrase)
+			m.restore.passphrase = secretbuf.TrimRune(m.restore.passphrase)
 			m.restore.passphraseError = ""
 		}
 		return m, nil
 	default:
 		if len(msg.String()) == 1 {
-			m.restore.passphrase = appendSecretText(m.restore.passphrase, msg.String())
+			m.restore.passphrase = secretbuf.AppendText(m.restore.passphrase, msg.String())
 			m.restore.passphraseError = ""
 		}
 	}

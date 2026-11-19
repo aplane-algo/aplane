@@ -214,9 +214,11 @@ func (m Model) renderPassphraseView(prompt string, isConfirm bool) string {
 	sb.WriteString(prompt + ":\n")
 
 	// Masked/visible passphrase input
-	displayPass := m.passphraseInput
-	if m.passphraseMasked && len(displayPass) > 0 {
-		displayPass = strings.Repeat("*", len(displayPass))
+	// Shown in clear only when the operator unmasks it; that render copy
+	// cannot be zeroed.
+	displayPass := strings.Repeat("*", len(m.passphraseInput))
+	if !m.passphraseMasked {
+		displayPass = string(m.passphraseInput)
 	}
 
 	inputContent := displayPass + "_"

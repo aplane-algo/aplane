@@ -47,31 +47,6 @@ func assertOutgrownZeroed(t *testing.T, outgrown [][]byte) {
 
 const typedSecret = "correct horse battery staple"
 
-func TestGrowSecretZeroesOutgrownBuffer(t *testing.T) {
-	buf := appendSecretText(make([]byte, 0, 4), "abcd")
-	old := buf[:cap(buf)]
-	buf = appendSecretText(buf, "e")
-	if string(buf) != "abcde" || !allZero(old) {
-		t.Fatalf("grew to %q and left %q behind", buf, old)
-	}
-	buf = appendSecretRune(SensitiveBytes(buf), 'ä')
-	if string(buf) != "abcdeä" {
-		t.Fatalf("appendSecretRune = %q", buf)
-	}
-}
-
-func TestTrimSecretRuneZeroesRemovedRune(t *testing.T) {
-	buf := []byte("abä")
-	full := buf[:cap(buf)]
-	buf = trimSecretRune(buf)
-	if string(buf) != "ab" || !allZero(full[2:]) {
-		t.Fatalf("trimmed to %q, buffer %q", buf, full)
-	}
-	if got := trimSecretRune([]byte(nil)); len(got) != 0 {
-		t.Fatalf("trimSecretRune(nil) = %q", got)
-	}
-}
-
 // secretCmd's copy of the secret is zeroed once the command has run, and
 // the caller's buffer is left for the caller to zero.
 func TestSecretCmdZeroesItsCopyAfterRunning(t *testing.T) {

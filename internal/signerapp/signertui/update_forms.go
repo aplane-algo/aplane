@@ -19,6 +19,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/secretbuf"
 )
 
 // clearBackupPassphrases zeroes and drops the backup form's export and
@@ -63,18 +64,18 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, send
 	case "backspace":
 		if m.backup.confirmFocus == 0 {
-			m.backup.exportPassphrase = trimSecretRune(m.backup.exportPassphrase)
+			m.backup.exportPassphrase = secretbuf.TrimRune(m.backup.exportPassphrase)
 		} else {
-			m.backup.confirmPassphrase = trimSecretRune(m.backup.confirmPassphrase)
+			m.backup.confirmPassphrase = secretbuf.TrimRune(m.backup.confirmPassphrase)
 		}
 		m.backup.confirmError = ""
 		return m, nil
 	default:
 		if len(msg.String()) == 1 {
 			if m.backup.confirmFocus == 0 {
-				m.backup.exportPassphrase = appendSecretText(m.backup.exportPassphrase, msg.String())
+				m.backup.exportPassphrase = secretbuf.AppendText(m.backup.exportPassphrase, msg.String())
 			} else {
-				m.backup.confirmPassphrase = appendSecretText(m.backup.confirmPassphrase, msg.String())
+				m.backup.confirmPassphrase = secretbuf.AppendText(m.backup.confirmPassphrase, msg.String())
 			}
 			m.backup.confirmError = ""
 		}

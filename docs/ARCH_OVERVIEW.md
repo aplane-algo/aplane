@@ -631,7 +631,7 @@ aplane/
 │   ├── noderole/, keyclass/       # Durable signer node role and key-type classification gates
 │   ├── policy/                    # Signer and cosigner policy documents, compilation, and evaluation
 │   ├── appinput/, appspec/        # App command parsing and ABI spec handling
-│   └── fsutil/, theme/, cmdlog/, clientlog/, termsafe/, ...   # Focused support packages
+│   └── fsutil/, theme/, cmdlog/, clientlog/, termsafe/, secretbuf/, ...   # Focused support packages
 │
 ├── lsig/                          # LogicSig provider implementations
 │   ├── all.go                     # Built-in LogicSig registration aggregator
@@ -1247,6 +1247,9 @@ Important secret-handling contracts:
   decrypt the complete selected credential set so it can be validated before
   mutation; those plaintext buffers are explicitly zeroed after use,
 - key/session destruction zeros or invalidates in-memory sensitive state,
+- passphrases typed into apadmin and appass are byte buffers grown through
+  `internal/secretbuf`, which zeroes every allocation they outgrow; the copies
+  that cannot be zeroed are listed under "Residual Copies" in ARCH_SECURITY.md,
 - memory locking and core-dump disabling are best-effort unless configured as required.
 
 ### Session Semantics

@@ -4,8 +4,25 @@
 package main
 
 import (
+	"bytes"
+
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/secretbuf"
 )
+
+// clearPassphraseInput zeroes and drops the entry being typed.
+func (m *Model) clearPassphraseInput() {
+	clear(m.passphraseInput)
+	m.passphraseInput = nil
+}
+
+// clearPassphrases zeroes and drops both passphrase entries.
+func (m *Model) clearPassphrases() {
+	m.clearPassphraseInput()
+	clear(m.passphraseFirst)
+	m.passphraseFirst = nil
+}
 
 // Update handles all messages and key events.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -105,8 +122,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.dispatchAction(nil)
 		case "set-passfile", "set-systemd-creds":
 			m.currentAction = item.action
-			m.passphraseInput = ""
-			m.passphraseFirst = ""
+			m.clearPassphrases()
 			m.passphraseError = ""
 			m.passphraseMasked = true
 			m.viewState = ViewPassphraseInput
@@ -121,23 +137,25 @@ func (m Model) handlePassphraseInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.viewState = ViewHome
-		m.passphraseInput = ""
+		m.clearPassphrases()
 		m.passphraseError = ""
 		return m, nil
 
 	case "enter":
-		if m.passphraseInput == "" {
+		if len(m.passphraseInput) == 0 {
 			m.passphraseError = "Passphrase must not be empty"
 			return m, nil
 		}
+		// The first entry moves to passphraseFirst; nothing is copied.
+		clear(m.passphraseFirst)
 		m.passphraseFirst = m.passphraseInput
-		m.passphraseInput = ""
+		m.passphraseInput = nil
 		m.passphraseError = ""
 		m.viewState = ViewConfirmPassphrase
 
 	case "backspace":
 		if len(m.passphraseInput) > 0 {
-			m.passphraseInput = m.passphraseInput[:len(m.passphraseInput)-1]
+			m.passphraseInput = secretbuf.TrimRune(m.passphraseInput)
 			m.passphraseError = ""
 		}
 
@@ -146,7 +164,7 @@ func (m Model) handlePassphraseInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	default:
 		if len(msg.String()) == 1 {
-			m.passphraseInput += msg.String()
+			m.passphraseInput = secretbuf.AppendText(m.passphraseInput, msg.String())
 			m.passphraseError = ""
 		}
 	}
@@ -159,25 +177,25 @@ func (m Model) handleConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.viewState = ViewHome
-		m.passphraseInput = ""
-		m.passphraseFirst = ""
+		m.clearPassphrases()
 		m.passphraseError = ""
 		return m, nil
 
 	case "enter":
-		if m.passphraseInput != m.passphraseFirst {
+		if !bytes.Equal(m.passphraseInput, m.passphraseFirst) {
 			m.passphraseError = "Passphrases do not match"
-			m.passphraseInput = ""
+			m.clearPassphraseInput()
 			return m, nil
 		}
-		passphrase := []byte(m.passphraseInput)
-		m.passphraseInput = ""
-		m.passphraseFirst = ""
+		// The confirmed entry moves to the action, which zeroes it once done.
+		passphrase := m.passphraseInput
+		m.passphraseInput = nil
+		m.clearPassphrases()
 		return m.dispatchAction(passphrase)
 
 	case "backspace":
 		if len(m.passphraseInput) > 0 {
-			m.passphraseInput = m.passphraseInput[:len(m.passphraseInput)-1]
+			m.passphraseInput = secretbuf.TrimRune(m.passphraseInput)
 			m.passphraseError = ""
 		}
 
@@ -186,7 +204,7 @@ func (m Model) handleConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	default:
 		if len(msg.String()) == 1 {
-			m.passphraseInput += msg.String()
+			m.passphraseInput = secretbuf.AppendText(m.passphraseInput, msg.String())
 			m.passphraseError = ""
 		}
 	}
@@ -202,13 +220,15 @@ func (m Model) handleResultKeys() (tea.Model, tea.Cmd) {
 	return m, loadStatusCmd(m.dataDir, m.svcInfo, m.isLocal)
 }
 
-// dispatchAction runs the current action directly in-process.
+// dispatchAction runs the current action directly in-process. It owns
+// passphrase and zeroes it once the action has run.
 func (m Model) dispatchAction(passphrase []byte) (tea.Model, tea.Cmd) {
 	action := m.currentAction
 	dataDir := m.dataDir
 	svcInfo := m.svcInfo
 	isLocal := m.isLocal
 	return m, func() tea.Msg {
+		defer clear(passphrase)
 		var (
 			err     error
 			warning string

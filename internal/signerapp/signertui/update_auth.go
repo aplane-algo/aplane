@@ -3,7 +3,11 @@
 
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/secretbuf"
+)
 
 // clearAuthPassphrase zeroes and drops the login or unlock passphrase.
 func (m *Model) clearAuthPassphrase() {
@@ -45,7 +49,7 @@ func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func([]byte) tea.Cm
 			return m, m.reconnectCmd()
 		}
 		// Otherwise treat as regular character
-		m.auth.passphraseInput = appendSecretText(m.auth.passphraseInput, msg.String())
+		m.auth.passphraseInput = secretbuf.AppendText(m.auth.passphraseInput, msg.String())
 		m.auth.passphraseError = "" // Clear error on input
 
 	case "enter":
@@ -60,7 +64,7 @@ func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func([]byte) tea.Cm
 
 	case "backspace":
 		if len(m.auth.passphraseInput) > 0 {
-			m.auth.passphraseInput = trimSecretRune(m.auth.passphraseInput)
+			m.auth.passphraseInput = secretbuf.TrimRune(m.auth.passphraseInput)
 			m.auth.passphraseError = "" // Clear error on input
 		}
 
@@ -71,7 +75,7 @@ func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func([]byte) tea.Cm
 	default:
 		// Add character to passphrase input (only when connected)
 		if m.connectionState != ConnectionDisconnected && len(msg.String()) == 1 {
-			m.auth.passphraseInput = appendSecretText(m.auth.passphraseInput, msg.String())
+			m.auth.passphraseInput = secretbuf.AppendText(m.auth.passphraseInput, msg.String())
 			m.auth.passphraseError = "" // Clear error on input
 		}
 	}

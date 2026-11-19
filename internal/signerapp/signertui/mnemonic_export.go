@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/secretbuf"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -80,13 +81,13 @@ func (m Model) handleMnemonicExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return send()
 		}
 	case tea.KeyBackspace, tea.KeyCtrlH:
-		e.passphrase = trimSecretRune(e.passphrase)
+		e.passphrase = secretbuf.TrimRune(e.passphrase)
 	case tea.KeyRunes:
 		for _, r := range msg.Runes {
-			e.passphrase = appendSecretRune(e.passphrase, r)
+			e.passphrase = secretbuf.AppendRune(e.passphrase, r)
 		}
 	case tea.KeySpace:
-		e.passphrase = appendSecretRune(e.passphrase, ' ')
+		e.passphrase = secretbuf.AppendRune(e.passphrase, ' ')
 	}
 	return m, nil
 }

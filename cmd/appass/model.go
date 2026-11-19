@@ -51,10 +51,11 @@ type Model struct {
 	menuItems    []menuItem
 	selectedMenu int
 
-	// Passphrase input
-	passphraseInput  string
+	// Passphrase input. The entries are byte buffers, grown through
+	// secretbuf, so they can be zeroed; clearPassphrases zeroes both.
+	passphraseInput  []byte
 	passphraseMasked bool
-	passphraseFirst  string // stored first entry for confirmation
+	passphraseFirst  []byte // stored first entry for confirmation
 	passphraseError  string
 
 	// Current action being performed

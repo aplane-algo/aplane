@@ -136,6 +136,8 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 	cmd.Stdin = bytes.NewReader(passphrase)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
+	// out is the passphrase read back for the round-trip check.
+	defer clear(out)
 	if err != nil {
 		return "", fmt.Errorf("appass-systemd-creds write failed: %w", err)
 	}
