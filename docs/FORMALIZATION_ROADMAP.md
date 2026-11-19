@@ -809,6 +809,23 @@ the planner snapshot; if one does not, a cosigned rekey is refused, not
 passed. Stale and harmless: `signing/approval.go`'s fallback
 `defaultApprovalWait` is still 60 seconds.
 
+Aligned 2026-11-18: the recovery reconcile now enters recovery before it
+releases the store mutation lock, the order `BeginReload` and `ReloadFail`
+with `RecoveryBeforeRelease` transcribe. `ReconcileStore` used to call
+`SetRecovery` after `reconcileReloadAndPromote` had returned. The 2026-11-16
+review above settled that interval as harmless (a reconcile never moves the
+root, and every failed reload leaves the selected generation's cache or an
+empty one), and that still holds: this is a transcription alignment, not a
+safety fix. `reconcileLocked`, the locked work, enters recovery itself. The
+recovery-exit rescan after a restore or rollback passes
+`enterRecoveryOnFailure=false`: it starts in recovery, so a failure leaves
+it there, and a lock that came in meanwhile stands, as it does anyway now
+that `SetRecovery` leaves a locked signer locked (the "Recovery during a
+cleanup" fix below). A promotion refused after a clean reload enters no
+recovery. The spec is unchanged; RB2's row names `reconcileLocked`,
+`TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock` and
+`TestARecoveryExitRescanKeepsALockThatCameFirst`.
+
 Fixed 2026-11-18: recovery during a cleanup (the second open divergence
 above). `SetRecovery` now does nothing on a locked signer, a lock's cleanup
 in progress included, since `Lock` sets the state first; that is

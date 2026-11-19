@@ -312,9 +312,10 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	// bound before an uncertain store-root replacement, including when this attempt
 	// fails before promotion.
 	defer s.daemon.rearmWatcherAfterGenerationFlip(ir)
-	report, err := s.daemon.reconcileReloadAndPromote(ir)
+	report, err := s.daemon.reconcileReloadAndPromote(ir, true)
 	if err != nil {
-		ir.SetRecovery()
+		// reconcileReloadAndPromote entered recovery before it released the
+		// store mutation lock.
 		result.Code = protocol.ResultCodeRecoveryBlocked
 		result.Error = err.Error()
 		result.State = ir.GetState().String()
@@ -331,27 +332,30 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	return result
 }
 
+// errReconcileStateChanged reports a reconcile that reloaded cleanly but
+// found the runtime no longer in recovery when it went to promote it: a lock
+// or another session's unlock came first, and that state stands.
+var errReconcileStateChanged = errors.New("runtime state changed while store reconciliation completed")
+
 // reconcileReloadAndPromote keeps strict validation, key publication, and the
 // recovery-to-unlocked transition under one store mutation lock. This
 // prevents a concurrent admin mutation from landing between validation and
 // the runtime snapshot that authorizes signing.
-func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime) (*signertemplates.ReloadReport, error) {
+//
+// With enterRecoveryOnFailure (the explicit reconcile, which may start
+// unlocked), a reconcile that fails enters recovery before the lock is
+// released, the order recovery_binding.tla's ReloadFail with
+// RecoveryBeforeRelease transcribes (RB2). The recovery-exit rescan passes
+// false: it starts in recovery, so a failure leaves it there, and a lock
+// that came in meanwhile stands (SetRecovery leaves a locked signer locked
+// too, so this is belt and braces). A
+// promotion refused after a clean reload (errReconcileStateChanged) enters
+// no recovery either way.
+func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport
-	work := func() error {
-		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-			return s.reconcileGenerationsLocked(ir, kr)
-		}); err != nil {
-			return err
-		}
-		var err error
-		report, err = ir.Reload()
-		if err != nil {
-			return fmt.Errorf("current generation failed credential reload: %w", err)
-		}
-		if ir.IsRecovery() && !ir.PromoteRecoveryToUnlocked() {
-			return fmt.Errorf("runtime state changed while store reconciliation completed")
-		}
-		return nil
+	work := func() (err error) {
+		report, err = s.reconcileLocked(ir, enterRecoveryOnFailure)
+		return err
 	}
 	if s.signer == nil {
 		err := work()
@@ -359,6 +363,30 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtim
 	}
 	err := s.signer.withStoreMutation(work)
 	return report, err
+}
+
+// reconcileLocked is reconcileReloadAndPromote's work, run under the store
+// mutation lock; it enters recovery on failure itself, so that happens
+// before the lock is released.
+func (s signerAdminServices) reconcileLocked(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (report *signertemplates.ReloadReport, err error) {
+	defer func() {
+		if err != nil && enterRecoveryOnFailure && !errors.Is(err, errReconcileStateChanged) {
+			ir.SetRecovery()
+		}
+	}()
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		return s.reconcileGenerationsLocked(ir, kr)
+	}); err != nil {
+		return nil, err
+	}
+	report, err = ir.Reload()
+	if err != nil {
+		return nil, fmt.Errorf("current generation failed credential reload: %w", err)
+	}
+	if ir.IsRecovery() && !ir.PromoteRecoveryToUnlocked() {
+		return report, errReconcileStateChanged
+	}
+	return report, nil
 }
 
 // rearmWatcherAfterGenerationFlip rebinds the key watcher to the new current
@@ -376,7 +404,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 	// The rescan re-runs generational reconciliation and fail-closed
 	// validation of the selected generation; recovery only lifts when the
 	// committed state proves clean.
-	report, err := s.reconcileReloadAndPromote(ir)
+	report, err := s.reconcileReloadAndPromote(ir, false)
 	if err != nil {
 		logInfof("staying in recovery mode: signer store failed reconciliation rescan: %v", err)
 		return nil, false
