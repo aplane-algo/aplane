@@ -27,7 +27,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -52,6 +51,8 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //
 //	reloadLock() ->  passphraseLock  ->  keysLock
 //	reloadLock() ->  lsigprovider.registerMu
+//	keyUseMu     ->  signerruntime stateMu (read)
+//	signerruntime stateMu (read)  ->  rotatingStatusMu
 //
 // Per-lock scope:
 //
@@ -62,9 +63,15 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	                pointer. It is never nested with passphraseLock or keysLock;
 //	                reloadFromWatcher copies the callback out before releasing
 //	                watcherMu.
-//	policyMu        guards policyCfg/storedPolicyCfg and
-//	                cosignerPolicyCfg/storedCosignerPolicyCfg. Held alone.
-//	sshKeysMu       guards sshKeys. Held alone.
+//	policyMu        guards nodePolicy, asaSet and policyAlerts. Held alone.
+//	clientsMu       guards clients, pending and their unsynced and intended
+//	                markers. Held alone.
+//	keyUseMu        guards the key-use context and destroyed. KeyUseContext
+//	                and LockCancelContext read the lock state (IsUnlocked)
+//	                while holding it; every other holder takes it alone.
+//	rotatingStatusMu guards the published rotating status. PublishRotatingStatus
+//	                takes it inside WhileGeneration, under the state lock's
+//	                read side; every other holder takes it alone.
 //
 // Atomics:
 //
@@ -314,14 +321,6 @@ func (ir *Runtime) NodePolicy() *policyruntime.NodePolicy {
 	return ir.nodePolicy
 }
 
-// SetNodePolicy installs the node's verified policy as one atomic runtime
-// update. nil clears it, which rejects every request that needs policy.
-func (ir *Runtime) SetNodePolicy(p *policyruntime.NodePolicy) {
-	ir.policyMu.Lock()
-	defer ir.policyMu.Unlock()
-	ir.nodePolicy = p
-}
-
 // PolicyState returns the node's verified policy and ASA set (its operator's
 // confirmations; the built-ins are always known) read under one lock, so the
 // two always belong to the same unlock or reload. Both are nil before policy
@@ -355,16 +354,6 @@ func (ir *Runtime) PolicyAlerts() []string {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
 	return slices.Clone(ir.policyAlerts)
-}
-
-// SetPolicy installs a compiled policy as the node default without stored
-// documents. It exists for tests that inject policy directly.
-func (ir *Runtime) SetPolicy(cfg *policy.Config) {
-	if cfg == nil {
-		ir.SetNodePolicy(nil)
-		return
-	}
-	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: ir.nodeRole, Default: cfg.Clone()})
 }
 
 // --- Lock state ---
@@ -563,8 +552,6 @@ func (ir *Runtime) FailAllPendingApprovals(reason string) {
 func (ir *Runtime) Config() *RuntimeConfig {
 	return ir.runtimeCfg
 }
-
-// --- Token authority ---
 
 // --- Enrolled client keys ---
 
@@ -1121,7 +1108,7 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 	return snapshot
 }
 
-// KeySnapshot returns copies of the three key index maps only — callers that
+// KeySnapshot returns copies of the two key index maps only — callers that
 // need per-key metadata use KeyIndexSnapshot, which additionally deep-clones
 // it. Safe for concurrent use.
 func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string) {

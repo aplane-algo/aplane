@@ -311,7 +311,7 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 
 func TestPolicyRequestsFailClosedWithoutLoadedPolicy(t *testing.T) {
 	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
-	ir.SetNodePolicy(nil)
+	ir.SetVerifiedPolicyState(nil, nil, nil)
 	if view := svc.GetPolicy(); view.Success || view.Code != "policy_unavailable" {
 		t.Fatalf("GetPolicy() = %+v", view)
 	}

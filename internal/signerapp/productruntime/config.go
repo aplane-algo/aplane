@@ -80,7 +80,6 @@ type StoredConfig struct {
 	// saves; empty is DefaultTheme. It lives here, not in the process-global
 	// config.yaml, so a theme change never rewrites the operator's file.
 	Theme string `yaml:"theme,omitempty"`
-	Mode  string `yaml:"mode,omitempty"`
 	// These restrict new accounts of the per-key types, the plain hosts
 	// (aplane.falcon1024.v1, aplane.ed25519.v1), only. They do not reach existing accounts or
 	// separately enabled expert templates.
@@ -318,10 +317,6 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 			return EffectiveConfig{}, fmt.Errorf("invalid runtime approval_wait: %w", err)
 		}
 		effective.ApprovalWait = parsed
-	}
-
-	if c.Mode != "" {
-		return EffectiveConfig{}, fmt.Errorf("runtime config mode is unsupported in this release; use root node.yaml role")
 	}
 
 	return effective, nil

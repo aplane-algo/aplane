@@ -233,7 +233,7 @@ func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths st
 	if err != nil {
 		t.Fatal(err)
 	}
-	ir.SetNodePolicy(nodePolicy)
+	ir.SetVerifiedPolicyState(nodePolicy, nil, nil)
 }
 
 func testBackupIdentityRuntime() *productruntime.Runtime {

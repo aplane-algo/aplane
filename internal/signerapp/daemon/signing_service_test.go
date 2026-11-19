@@ -32,13 +32,13 @@ func TestNewSigningServiceForRuntimeCapturesPolicyAndUserAutoApproveSnapshot(t *
 	})
 	initialPolicy := policy.DefaultConfig()
 	initialPolicy.AlwaysReviewWarnings = true
-	ir.SetPolicy(initialPolicy)
+	ir.SetVerifiedPolicyState(&policyruntime.NodePolicy{Role: ir.NodeRole(), Default: initialPolicy}, nil, nil)
 
 	svc := signer.newSigningServiceWithAudit(ir, nil)
 
 	later := policy.DefaultConfig()
 	later.AutoApproveSelfNoOpTransfer = true
-	ir.SetPolicy(later)
+	ir.SetVerifiedPolicyState(&policyruntime.NodePolicy{Role: ir.NodeRole(), Default: later}, nil, nil)
 	ir.Config().SetUserAutoApprove(true)
 
 	if svc.PolicyFor == nil {
@@ -96,7 +96,7 @@ func TestSigningServiceShowsAmountsFromTheCapturedContext(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ir.SetNodePolicy(np)
+		ir.SetVerifiedPolicyState(np, nil, nil)
 		return genesis
 	}
 	ir := productruntime.New(productruntime.Config{NodeRole: noderole.RoleSigner})
@@ -145,7 +145,7 @@ func TestSigningServiceRefusesAfterTheSessionItBeganInEnds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			signer := &Signer{config: &serverconfig.ServerConfig{}}
 			ir := productruntime.New(productruntime.Config{})
-			ir.SetPolicy(policy.DefaultConfig())
+			ir.SetVerifiedPolicyState(&policyruntime.NodePolicy{Role: ir.NodeRole(), Default: policy.DefaultConfig()}, nil, nil)
 			ir.SetUnlocked()
 
 			svc := signer.newSigningServiceWithAudit(ir, nil)
@@ -176,7 +176,7 @@ func TestSigningServiceRefusesAfterTheSessionItBeganInEnds(t *testing.T) {
 func TestSigningServiceBegunInRecoveryIsRefused(t *testing.T) {
 	signer := &Signer{config: &serverconfig.ServerConfig{}}
 	ir := productruntime.New(productruntime.Config{})
-	ir.SetPolicy(policy.DefaultConfig())
+	ir.SetVerifiedPolicyState(&policyruntime.NodePolicy{Role: ir.NodeRole(), Default: policy.DefaultConfig()}, nil, nil)
 	ir.SetUnlocked()
 	ir.SetRecovery()
 
