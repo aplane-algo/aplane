@@ -738,10 +738,13 @@ func (m *Manager) GetRunningPlugins() []string {
 	return names
 }
 
+// stopInstance asks the plugin to shut down, then stops it. The request is not
+// sent if another frame is still being written to the plugin after a brief
+// wait, so a plugin that stopped reading its input cannot hold the stop up;
+// otherwise its write and its answer get five seconds.
 func stopInstance(instance *Instance) {
 	if instance.Client != nil {
-		var result jsonrpc.ShutdownResult
-		_ = instance.Client.CallWithTimeout(jsonrpc.MethodShutdown, jsonrpc.ShutdownParams{}, &result, 5*time.Second)
+		_ = instance.Client.Shutdown(5 * time.Second)
 	}
 	instance.Stop()
 }

@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,12 @@ import (
 const (
 	// passphraseCommandTimeout is the maximum time allowed for the passphrase command to complete.
 	passphraseCommandTimeout = 5 * time.Second
+
+	// passphraseOutputCloseWait is how long the helper's stdout may stay open
+	// after the helper exits or is killed. A process the helper started can
+	// hold it open, even from outside the helper's process group, for as long
+	// as that process lives.
+	passphraseOutputCloseWait = time.Second
 
 	// maxPassphraseOutputBytes is the maximum stdout size from the passphrase command (8 KB).
 	maxPassphraseOutputBytes = 8 * 1024
@@ -75,6 +82,10 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 	cmd := exec.Command(resolvedPath, args...) //nolint:gosec // validated above
 	cmd.Env = buildPassphraseEnv(cfg.Env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Wait returns once the helper has exited and stdout has closed; this
+	// bounds the second part, closing the pipe and failing with ErrWaitDelay
+	// if a successful helper left stdout held open.
+	cmd.WaitDelay = passphraseOutputCloseWait
 
 	// For "write" verb, pipe stdinData to the command's stdin
 	if len(stdinData) > 0 {
@@ -90,8 +101,9 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 	cmd.Stdout = lw
 
 	// Discard stderr — do not capture or propagate it, as a misbehaving helper
-	// could write sensitive content (passphrases, keys) to stderr.
-	cmd.Stderr = io.Discard
+	// could write sensitive content (passphrases, keys) to stderr. Nil is the
+	// null device, so there is no pipe for a lingering process to hold open.
+	cmd.Stderr = nil
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("passphrase_command_argv: failed to start: %w", err)
@@ -101,20 +113,39 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- cmd.Wait() }()
 
+	killGroup := func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	// A run that fails for any reason ends whatever the helper left in its
+	// process group, as the timeout always has.
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			killGroup()
+		}
+	}()
+
 	var runErr error
+	timedOut := false
 	select {
 	case runErr = <-waitDone:
 		// Process exited (success or failure)
 	case <-ctx.Done():
-		// Timeout: kill the entire process group
-		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-		<-waitDone // Wait for cmd.Wait to return after kill
-		return nil, fmt.Errorf("passphrase_command_argv: command timed out after %s", passphraseCommandTimeout)
+		// Timeout: kill the entire process group. Wait then returns within
+		// WaitDelay, even if a process outside the group holds stdout open.
+		timedOut = true
+		killGroup()
+		runErr = <-waitDone
 	}
 
-	if runErr != nil {
+	switch {
+	case errors.Is(runErr, exec.ErrWaitDelay):
+		// The helper exited 0, but a process it started still holds its stdout
+		// and could still write to it, so what was read is not its settled
+		// answer. Fail closed. (After a non-zero exit, Wait reports the exit
+		// status instead, and the run fails as any failed helper does.)
+		return nil, fmt.Errorf("passphrase_command_argv: helper exited, but a process it started kept its stdout open for %s afterwards; redirect background processes' output away from the helper's stdout", passphraseOutputCloseWait)
+	case timedOut:
+		return nil, fmt.Errorf("passphrase_command_argv: command timed out after %s", passphraseCommandTimeout)
+	case runErr != nil:
 		return nil, fmt.Errorf("passphrase_command_argv: command failed: %w", runErr)
 	}
 
@@ -156,6 +187,7 @@ func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byt
 		return nil, err
 	}
 
+	succeeded = true
 	return result, nil
 }
 

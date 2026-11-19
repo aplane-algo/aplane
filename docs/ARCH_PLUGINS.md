@@ -55,7 +55,9 @@ APlane Shell supports **external plugins** — standalone executables that run a
 4. **Initialization**: Plugin receives `initialize` call with network config
 5. **Execution**: Plugin processes `execute` calls for commands
 6. **Idle**: Plugin remains running between commands
-7. **Cleanup**: Plugin receives `shutdown` call when APlane Shell exits
+7. **Cleanup**: Plugin receives `shutdown` call when APlane Shell exits, then
+   has its stdin closed. The call is skipped if an earlier request is still
+   being written to its stdin after a brief wait
 
 ### Plugin Stderr
 
@@ -1477,7 +1479,9 @@ or
   custody
 
 **Resource Limits:**
-- Timeout enforcement (default 30s)
+- Timeout enforcement (default 30s). The timeout covers writing the request to
+  the plugin's stdin as well as waiting for the answer, so a plugin that stops
+  reading its stdin fails the call on time, and is stopped
 - Process cleanup on timeout or error
 - A command or signing call ends when the shell command that made it is
   cancelled (Ctrl+C at the shell, or apconsole quitting); the plugin, still

@@ -2021,6 +2021,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `["/
 - Output prefixed with `base64:` or `hex:` is decoded accordingly
 - NUL bytes are rejected
 - stdout is capped at 8 KB; stderr is discarded (a misbehaving helper could leak secrets to stderr)
+- stdout must close within one second of the helper exiting; a process the helper left holding it fails the run, whatever the exit status, since it could still write
 
 **Callers:**
 

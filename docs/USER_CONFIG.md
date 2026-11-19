@@ -1324,6 +1324,9 @@ For example, `passphrase_command_argv: ["/usr/local/bin/appass-file", "/etc/apla
 - `argv[0]` must be an absolute path; `unlock.yaml` paths are used as written
 - The binary must not be group/world-writable
 - `read` must exit 0 and produce non-empty stdout
+- A background process the helper starts must not keep its stdout open:
+  redirect it (for example `agent >/dev/null &`). The helper fails if its
+  stdout is still open one second after it exits
 - Exactly one trailing newline is stripped from output
 - Output may use `base64:` or `hex:` prefix for binary data
 - `write` is optional — helpers that only support `read` should exit non-zero on `write`
