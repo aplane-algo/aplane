@@ -172,7 +172,7 @@ func rekeyTransactionResult(r *REPLState, result *apshellapp.RekeyCommandResult,
 		})
 	}, rekeyProjection{
 		Mode: "transaction", From: result.From, To: result.To, TxID: result.TxID,
-		Confirmed: result.Confirmed, Simulated: simulated,
+		Confirmed: result.Confirmed, Simulated: simulated, Warnings: projectWarnings(result.Warnings),
 	})
 }
 

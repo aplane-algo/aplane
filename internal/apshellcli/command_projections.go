@@ -473,6 +473,27 @@ type rekeyProjection struct {
 	Simulated bool                    `json:"simulated,omitempty"`
 	Entries   []rekeyEntryProjection  `json:"entries,omitempty"`
 	Refreshed []authRefreshProjection `json:"refreshed,omitempty"`
+	// Warnings are the transaction's, auth_cache_refresh_failed among them
+	// when the auth cache could not be updated after a confirmed rekey.
+	Warnings []warningProjection `json:"warnings,omitempty"`
+}
+
+// warningProjection is one warning a command result carries, with the code
+// a client can match on.
+type warningProjection struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func projectWarnings(warnings []apshellapp.Warning) []warningProjection {
+	if len(warnings) == 0 {
+		return nil
+	}
+	projected := make([]warningProjection, len(warnings))
+	for i, warning := range warnings {
+		projected[i] = warningProjection{Code: warning.Code, Message: warning.Message}
+	}
+	return projected
 }
 
 type rekeyEntryProjection struct {

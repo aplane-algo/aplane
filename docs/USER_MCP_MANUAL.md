@@ -286,8 +286,13 @@ backups for all LogicSig accounts.
 
 > **Rekey refresh:** a confirmed rekey through any submission workflow (a
 > single transaction, a group, a transaction file, a plugin group, a rotating
-> spend) refreshes the affected client auth-cache entry automatically; a
-> refresh that fails is reported as an `auth_cache_refresh_failed` warning.
+> spend) refreshes the affected client auth-cache entry automatically. A
+> refresh that fails leaves the transaction confirmed and is reported as an
+> `auth_cache_refresh_failed` warning. Of the MCP results, only those of
+> `rekey` and `unrekey` carry it, in `warnings`, each entry with `code` and
+> `message`; for every other command it appears only in the shell's printed
+> output, not in the MCP result. JS `rekey()`, `unrekey()` and `sign()`
+> return its message as `authCacheWarning`.
 > Run `rekey refresh <addr>` after external changes, an unconfirmed
 > submission, or a reported refresh failure. See
 > [USER_COMMANDS.md](USER_COMMANDS.md#rekeying-commands).
