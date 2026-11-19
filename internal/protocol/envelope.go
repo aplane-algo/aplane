@@ -173,6 +173,12 @@ func ParseAdminBaseMessage(data []byte) (BaseMessage, error) {
 	}
 }
 
+// MarshalAdminMessage encodes an admin message, adding the kind its type
+// implies when it has none. The kind is appended to the encoded object rather
+// than added by decoding and encoding the message again, and the first
+// encoding is zeroed, so a message that carries a passphrase or a recovery
+// phrase leaves no copy of it here beyond the frame it returns, which the
+// caller zeroes. encoding/json's own pooled buffers still keep copies.
 func MarshalAdminMessage(v interface{}) ([]byte, error) {
 	data, err := marshalAdminJSON(v)
 	if err != nil {
@@ -181,6 +187,7 @@ func MarshalAdminMessage(v interface{}) ([]byte, error) {
 
 	var base BaseMessage
 	if err := json.Unmarshal(data, &base); err != nil {
+		SensitiveBytes(data).Zero()
 		return nil, err
 	}
 	if base.Type == "" || base.Kind != "" {
@@ -191,18 +198,33 @@ func MarshalAdminMessage(v interface{}) ([]byte, error) {
 	if !ok {
 		return data, nil
 	}
-
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(data, &object); err != nil {
-		return nil, err
-	}
-
-	kindBytes, err := marshalAdminJSON(inferred)
+	framed, err := appendObjectKind(data, inferred)
+	SensitiveBytes(data).Zero()
 	if err != nil {
 		return nil, err
 	}
-	object["kind"] = kindBytes
-	return marshalAdminJSON(object)
+	return framed, nil
+}
+
+// appendObjectKind returns a copy of the encoded object with a kind member
+// added last, so it overrides any empty kind the object already carries.
+func appendObjectKind(object []byte, kind MessageKind) ([]byte, error) {
+	if len(object) < 2 || object[0] != '{' || object[len(object)-1] != '}' {
+		return nil, fmt.Errorf("admin message with a type must encode as a JSON object")
+	}
+	kindJSON, err := json.Marshal(kind)
+	if err != nil {
+		return nil, err
+	}
+	const member = `"kind":`
+	out := make([]byte, 0, len(object)+1+len(member)+len(kindJSON))
+	out = append(out, object[:len(object)-1]...)
+	if len(object) > 2 {
+		out = append(out, ',')
+	}
+	out = append(out, member...)
+	out = append(out, kindJSON...)
+	return append(out, '}'), nil
 }
 
 // marshalAdminJSON encodes v without HTML escaping. Admin messages never reach

@@ -204,6 +204,12 @@ type BaseMessage struct {
 	ID   string      `json:"id"` // Unique request ID for correlation
 }
 
+// MessageID returns the correlation ID. Every message embeds BaseMessage, so
+// a sender can read the ID without encoding the message.
+func (b BaseMessage) MessageID() string {
+	return b.ID
+}
+
 // AuthRequiredMessage is sent by signer when a client connects
 // Client must respond with AuthMessage before any other operations
 type AuthRequiredMessage struct {

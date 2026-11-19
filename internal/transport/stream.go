@@ -46,14 +46,9 @@ func (c *StreamClient) Close() error {
 }
 
 func (c *StreamClient) WriteJSON(v interface{}) error {
-	data, err := protocol.MarshalAdminMessage(v)
-	if err != nil {
-		return err
-	}
-	defer protocol.SensitiveBytes(data).Zero()
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return protocol.WriteJSONLine(c.stream, data)
+	return writeAdminFrame(c.stream, v)
 }
 
 func (c *StreamClient) ReadMessage() ([]byte, error) {

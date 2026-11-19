@@ -80,10 +80,6 @@ func (c *IPCClient) ClearReadDeadline() {
 // WriteJSON sends a JSON message over the socket.
 // Each message is a single line terminated by newline.
 func (c *IPCClient) WriteJSON(v interface{}) error {
-	data, err := protocol.MarshalAdminMessage(v)
-	if err != nil {
-		return err
-	}
 	c.mu.Lock()
 	conn := c.conn
 	c.mu.Unlock()
@@ -92,7 +88,7 @@ func (c *IPCClient) WriteJSON(v interface{}) error {
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return protocol.WriteJSONLine(conn, data)
+	return writeAdminFrame(conn, v)
 }
 
 // ReadMessage reads a line-delimited JSON message from the socket.
