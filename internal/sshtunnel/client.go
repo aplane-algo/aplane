@@ -548,28 +548,6 @@ func (c *Client) IsConnected() bool {
 	return c.connected
 }
 
-// CheckConnection actively tests the SSH connection by sending a keepalive
-func (c *Client) CheckConnection() error {
-	c.mu.Lock()
-	sshClient := c.sshClient
-	c.mu.Unlock()
-
-	if sshClient == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	// Try to send a keepalive request
-	_, _, err := sshClient.SendRequest("keepalive@openssh.com", true, nil)
-	if err != nil {
-		c.mu.Lock()
-		c.connected = false
-		c.mu.Unlock()
-		return fmt.Errorf("connection dead: %w", err)
-	}
-
-	return nil
-}
-
 // DialSignerAPI opens one context-bounded SSH channel to the node's REST
 // API. Callers cannot select another remote destination through this method.
 func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
