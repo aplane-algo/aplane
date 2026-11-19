@@ -149,6 +149,7 @@ func main() {
 	configureAlgodOnDSAs(startup.Config)
 	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
 	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, daemonIPCPath, !*noStartDaemon)
+	watchConsoleSignals(daemonProcess)
 	if daemonStartup.Status == daemonStatusStarting {
 		waitForDaemonReady(ipcPath, daemonProcess, dialUnixSocketForDaemon, daemonReadyTimeout)
 	}
@@ -309,7 +310,9 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 			}
 		})
 	}
+	consolePhase.Store(consoleRunning)
 	final, err := p.Run()
+	consolePhase.Store(consoleShuttingDown)
 	// Straight away: session shutdown can still log. Records from here on go
 	// directly to the terminal. stderr is the only channel left if this fails.
 	_ = consoleLogs.Close(realStderr)

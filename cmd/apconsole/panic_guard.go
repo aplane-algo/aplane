@@ -78,7 +78,10 @@ func (g *panicGuard) finalModel(final tea.Model) tea.Model {
 
 // guardCmd wraps cmd, and the commands of a batch it returns, which Bubble Tea
 // runs in goroutines of their own. A panic in one is recorded and quits the
-// program.
+// program. The commands of a tea.Sequence cannot be reached (its message type
+// is unexported): Bubble Tea still catches a panic in one and the console
+// still exits 2 through its cleanup, but no stack is recorded. Nothing in the
+// console uses tea.Sequence; use tea.Batch, or extend this, before adding one.
 func (g *panicGuard) guardCmd(cmd tea.Cmd) tea.Cmd {
 	if cmd == nil {
 		return nil
