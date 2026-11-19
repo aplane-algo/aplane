@@ -1466,6 +1466,9 @@ or
 **Resource Limits:**
 - Timeout enforcement (default 30s)
 - Process cleanup on timeout or error
+- A command or signing call ends when the shell command that made it is
+  cancelled (Ctrl+C at the shell, or apconsole quitting); the plugin, still
+  working on the abandoned request, is killed at once
 
 **Integrity Verification:**
 - All plugins must include `checksums.sha256` with SHA256 hashes

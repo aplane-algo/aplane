@@ -42,7 +42,8 @@ import (
 )
 
 // scriptedPlugin answers each execute call with the next of its results and
-// records the parameters it was called with.
+// records the parameters it was called with. A result with "_hang" set is
+// never answered.
 type scriptedPlugin struct {
 	mu      sync.Mutex
 	results []map[string]any
@@ -103,6 +104,9 @@ func (p *scriptedPlugin) instance(t *testing.T, plugin *discovery.Plugin) *plugi
 				result = map[string]any{"success": false, "message": "no scripted result left"}
 				if n < len(p.results) {
 					result = p.results[n]
+				}
+				if result["_hang"] == true { // a command that never answers
+					continue
 				}
 			}
 			_ = enc.Encode(map[string]any{"jsonrpc": jsonrpc.Version, "id": req.ID, "result": result})

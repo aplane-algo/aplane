@@ -6,6 +6,7 @@ package jsonrpc
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,6 +75,16 @@ func (c *Client) Call(method string, params interface{}, result interface{}) err
 
 // CallWithTimeout makes a JSON-RPC call with a custom timeout
 func (c *Client) CallWithTimeout(method string, params interface{}, result interface{}, timeout time.Duration) error {
+	return c.CallContext(context.Background(), method, params, result, timeout)
+}
+
+// CallContext makes a JSON-RPC call that also ends when ctx does, returning
+// ctx's error wrapped. The peer is then still working on the request, and a
+// late answer is dropped.
+func (c *Client) CallContext(ctx context.Context, method string, params interface{}, result interface{}, timeout time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("request not sent: %w", err)
+	}
 	// Generate request ID
 	id := atomic.AddUint64(&c.requestID, 1)
 
@@ -124,6 +135,9 @@ func (c *Client) CallWithTimeout(method string, params interface{}, result inter
 
 	case <-time.After(timeout):
 		return fmt.Errorf("request timeout after %v", timeout)
+
+	case <-ctx.Done():
+		return fmt.Errorf("request abandoned: %w", ctx.Err())
 	}
 }
 

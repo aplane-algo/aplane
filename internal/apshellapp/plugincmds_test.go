@@ -203,7 +203,7 @@ func (r *recordingPluginRuntime) FindByCommand(string) (*discovery.Plugin, error
 	return r.plugin, nil
 }
 
-func (r *recordingPluginRuntime) ExecuteCommand(_, _ string, args []string, _ jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
+func (r *recordingPluginRuntime) ExecuteCommand(_ context.Context, _, _ string, args []string, _ jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
 	r.ran = append(r.ran, args)
 	return &jsonrpc.ExecuteResult{Success: true}, nil
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
+	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
 )
 
 func TestSessionPromptMatchesInteractivePrompt(t *testing.T) {
@@ -213,5 +214,49 @@ func TestSessionShutdownStopsAShellCommandInFlight(t *testing.T) {
 	}
 	if err := <-returned; err == nil || !strings.Contains(err.Error(), "shell command stopped") {
 		t.Fatalf("the shell command's line returned %v, want it stopped", err)
+	}
+}
+
+// A plugin command runs on the line's context: cancelling the line, as the
+// pane's Ctrl-C or Shutdown does, ends the plugin call at once and kills the
+// plugin, which is still running the abandoned command, rather than waiting
+// for the manifest's timeout.
+func TestSessionCancelStopsAPluginCommandInFlight(t *testing.T) {
+	for _, stop := range []string{"cancel", "shutdown"} {
+		t.Run(stop, func(t *testing.T) {
+			state, scripted := scriptedPluginShell(t, map[string]any{"_hang": true}) // the manifest's timeout is 5 s
+			state.CommandRegistry = state.initCommandRegistry()
+			session := &Session{state: state}
+			returned := make(chan error, 1)
+			go func() {
+				_, _, err := session.ExecuteLineCaptured("wf go")
+				returned <- err
+			}()
+			deadline := time.Now().Add(5 * time.Second)
+			for len(scripted.executeCalls()) == 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("the plugin was never called")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+
+			begin := time.Now()
+			if stop == "cancel" {
+				session.Cancel()
+				err := <-returned
+				if err == nil || !strings.Contains(err.Error(), "context canceled") {
+					t.Fatalf("the line returned %v, want the plugin call abandoned", err)
+				}
+				if running := state.App.Plugins.(*pluginmanager.Manager).GetRunningPlugins(); len(running) != 0 {
+					t.Fatalf("plugins %v still running after the abandoned call", running)
+				}
+			} else {
+				session.Shutdown()
+				<-returned
+			}
+			if took := time.Since(begin); took > 2*time.Second {
+				t.Fatalf("%s took %v with a plugin command in flight", stop, took)
+			}
+		})
 	}
 }

@@ -54,11 +54,11 @@ func (f *fakePluginRuntime) ListCommands() ([]string, error) {
 	return nil, nil
 }
 
-func (f *fakePluginRuntime) ExecuteCommand(string, string, []string, jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
+func (f *fakePluginRuntime) ExecuteCommand(context.Context, string, string, []string, jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
 	return nil, nil
 }
 
-func (f *fakePluginRuntime) SignTransactions(string, jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
+func (f *fakePluginRuntime) SignTransactions(context.Context, string, jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
 	return nil, nil
 }
 

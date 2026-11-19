@@ -5,6 +5,7 @@ package manager
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -351,7 +352,7 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 				m.initializePluginHook = func(*Instance, runtimeConfig) error { return nil }
 			},
 			run: func(m *Manager) error {
-				_, err := m.ExecuteCommand("mithras", "echo", nil, jsonrpc.Context{})
+				_, err := m.ExecuteCommand(context.Background(), "mithras", "echo", nil, jsonrpc.Context{})
 				return err
 			},
 		},
@@ -361,7 +362,7 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 				m.initializePluginHook = func(*Instance, runtimeConfig) error { return nil }
 			},
 			run: func(m *Manager) error {
-				_, err := m.SignTransactions("mithras", jsonrpc.SignTransactionsParams{})
+				_, err := m.SignTransactions(context.Background(), "mithras", jsonrpc.SignTransactionsParams{})
 				return err
 			},
 		},

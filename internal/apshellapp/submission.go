@@ -553,7 +553,7 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, group *P
 		for i, r := range reqs {
 			jr[i] = jsonrpc.SignTransactionRequest{Index: r.Index, Address: r.Address, SignerRef: r.SignerRef, Encoded: r.Encoded}
 		}
-		res, err := a.Plugins.SignTransactions(pluginName, jsonrpc.SignTransactionsParams{Requests: jr})
+		res, err := a.Plugins.SignTransactions(ctx, pluginName, jsonrpc.SignTransactionsParams{Requests: jr})
 		if err != nil {
 			return nil, err
 		}
