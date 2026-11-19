@@ -23,9 +23,9 @@ import (
 // client's enrolled key.
 // This method handles the tunnel setup and returns the result.
 // hostKeyApproval is called for TOFU when connecting to an unknown server (can be nil to reject unknown hosts).
-func (e *Core) ConnectWithTunnel(target string, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
+func (e *Core) ConnectWithTunnel(ctx context.Context, target string, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
 	result, err := e.Connection.ConnectWithTunnel(
-		target, host, sshPort, identityFile, knownHostsPath, hostKeyApproval,
+		ctx, target, host, sshPort, identityFile, knownHostsPath, hostKeyApproval,
 		e.populateSignerCache,
 		e.handleConnectionClosed(onDisconnect),
 	)

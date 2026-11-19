@@ -63,7 +63,7 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	// cancel their short per-endpoint probe context after /keys; binding the
 	// retained connection to that context would make the subsequent component call
 	// fail on an already-canceled connection.
-	sshCtx, cancelSSH, detachSetup := newCosignerSSHLifetime(ctx)
+	sshCtx, cancelSSH, detachSetup := newSSHLifetime(ctx)
 	sshConnection := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, cfg.IdentityFile, cfg.KnownHostsPath)
 	if cfg.HostKeyApproval != nil {
 		sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
@@ -115,7 +115,10 @@ func newSSHHTTPTransport(dialer sshAPIDialer, authority string) *http.Transport 
 	}
 }
 
-func newCosignerSSHLifetime(setupCtx context.Context) (context.Context, context.CancelFunc, func() error) {
+// newSSHLifetime returns the lifetime of an SSH connection set up under
+// setupCtx: it ends with setupCtx until detach is called, and after that
+// only with cancel. detach reports setupCtx's error if it ended first.
+func newSSHLifetime(setupCtx context.Context) (context.Context, context.CancelFunc, func() error) {
 	lifetimeCtx, cancel := context.WithCancel(context.Background())
 	stopSetupCancellation := context.AfterFunc(setupCtx, cancel)
 	detach := func() error {

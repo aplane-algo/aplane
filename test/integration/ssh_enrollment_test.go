@@ -619,6 +619,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	}
 
 	connected, err := eng.ConnectWithTunnel(
+		context.Background(),
 		fmt.Sprintf("%s:%d", clientCfg.Host, clientCfg.Port),
 		clientCfg.Host,
 		clientCfg.Port,
@@ -691,6 +692,7 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 		}
 	}
 	connected, err := eng.ConnectWithTunnel(
+		context.Background(),
 		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
 		sshCfg.Host,
 		sshCfg.Port,
@@ -726,6 +728,7 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 	requireEnrolledKeys(t, env, 0)
 
 	if _, err := eng.ConnectWithTunnel(
+		context.Background(),
 		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
 		sshCfg.Host,
 		sshCfg.Port,

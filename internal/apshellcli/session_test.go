@@ -5,6 +5,7 @@ package apshellcli
 
 import (
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -258,5 +259,55 @@ func TestSessionCancelStopsAPluginCommandInFlight(t *testing.T) {
 				t.Fatalf("%s took %v with a plugin command in flight", stop, took)
 			}
 		})
+	}
+}
+
+// The startup connect runs on a context Shutdown reaches: a connect waiting
+// on an SSH handshake the node never answers ends with it, rather than at
+// the handshake's 60 s timeout.
+func TestSessionShutdownStopsTheStartupConnect(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	accepted := make(chan net.Conn, 1)
+	go func() { // a node that takes the connection and never speaks SSH
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+	dir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Endpoints = config.ClientEndpointRegistry{Default: "node", Endpoints: map[string]config.ClientEndpointConfig{
+		"node": {Role: config.ClientEndpointRoleSigner, URL: "ssh://" + listener.Addr().String(),
+			IdentityFile: filepath.Join(dir, "id_ed25519"), KnownHostsPath: filepath.Join(dir, "known_hosts")},
+	}}
+	session, err := NewSession("testnet", cfg, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	returned := make(chan error, 1)
+	go func() {
+		_, err := session.StartupConnect()
+		returned <- err
+	}()
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() { _ = conn.Close() })
+	case err := <-returned:
+		t.Fatalf("StartupConnect() returned %v before reaching the node", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("StartupConnect() never reached the node")
+	}
+
+	begin := time.Now()
+	session.Shutdown()
+	if took := time.Since(begin); took > 2*time.Second {
+		t.Fatalf("Shutdown took %v with the startup connect in its handshake", took)
+	}
+	if err := <-returned; err == nil {
+		t.Fatal("the interrupted startup connect reported success")
 	}
 }

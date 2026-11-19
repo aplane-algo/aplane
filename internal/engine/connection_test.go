@@ -26,7 +26,7 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 
-	result, err := eng.ConnectWithTunnel("remote-b", "host", 22, "", "", nil, nil)
+	result, err := eng.ConnectWithTunnel(context.Background(), "remote-b", "host", 22, "", "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

@@ -672,10 +672,15 @@ canSign, isLsig := engine.CanSignForAddress(address)
 `apshell`. It opens, or reuses, an SSH connection to the signer, gives the
 signer client an HTTP transport that opens a channel to the signer's REST API
 for each connection, and populates the signer cache after connection. Nothing
-listens on the client machine.
+listens on the client machine. `ctx` bounds the setup (the TCP dial, the SSH
+handshake, a host-key prompt and the first `/keys` read), so cancelling the
+command that connects, or apconsole quitting during its startup connect,
+ends it; the connection it makes has its own lifetime, which `Disconnect`
+ends.
 
 ```go
 result, err := engine.ConnectWithTunnel(
+    ctx,         // the connecting command's context
     target,      // display label, e.g. "host.example.com (ssh:1127)"
     host,        // "host.example.com"
     sshPort,     // 1127

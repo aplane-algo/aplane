@@ -54,15 +54,22 @@ func NewSession(network string, cfg config.Config, dataDir string, out io.Writer
 // StartupConnect runs the deferred signer connect that used to happen inside
 // NewSession. Output emitted during the attempt is captured and returned so
 // the caller (typically a TUI pane) can render it after the UI is up.
+//
+// The attempt runs on its own context, which Cancel and Shutdown reach, as a
+// line's does: a connect waiting on its SSH handshake or a host-key prompt
+// ends with it.
 func (s *Session) StartupConnect() (string, error) {
 	if s == nil {
 		return "", errSessionNotInitialized
 	}
+	ctx, end := s.beginActive()
+	defer end()
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
 	if s.state == nil {
 		return "", errSessionNotInitialized
 	}
+	defer s.state.bindCommandContext(ctx)()
 
 	var buf bytes.Buffer
 	previous := s.state.Out
@@ -98,13 +105,7 @@ func (s *Session) ExecuteLineContext(ctx context.Context, raw string) (exit bool
 }
 
 func (s *Session) executeLineContext(ctx context.Context, raw string) (exit bool, err error) {
-	cleanupSignerCtx := s.state.app().BindSignerClientContext(ctx)
-	defer cleanupSignerCtx()
-	priorCtx := s.state.currentCommandCtx
-	s.state.currentCommandCtx = ctx
-	defer func() {
-		s.state.currentCommandCtx = priorCtx
-	}()
+	defer s.state.bindCommandContext(ctx)()
 
 	s.state.runtimeMu.Lock()
 	defer s.state.runtimeMu.Unlock()
@@ -136,21 +137,8 @@ func (s *Session) ExecuteLineCaptured(raw string) (output string, exit bool, err
 	if s == nil {
 		return "", false, errSessionNotInitialized
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	s.activeMu.Lock()
-	s.activeID++
-	activeID := s.activeID
-	s.activeCancel = cancel
-	s.activeMu.Unlock()
-	defer func() {
-		s.activeMu.Lock()
-		if s.activeID == activeID {
-			s.activeCancel = nil
-		}
-		s.activeMu.Unlock()
-	}()
+	ctx, end := s.beginActive()
+	defer end()
 
 	s.execMu.Lock()
 	defer s.execMu.Unlock()
@@ -280,6 +268,37 @@ func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, strin
 		p := prompt
 		mu.Unlock()
 		return fn(ctx, p)
+	}
+}
+
+// beginActive makes the context of the operation about to run, a line or the
+// startup connect: Cancel and Shutdown cancel it until end is called.
+func (s *Session) beginActive() (ctx context.Context, end func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.activeMu.Lock()
+	s.activeID++
+	activeID := s.activeID
+	s.activeCancel = cancel
+	s.activeMu.Unlock()
+	return ctx, func() {
+		s.activeMu.Lock()
+		if s.activeID == activeID {
+			s.activeCancel = nil
+		}
+		s.activeMu.Unlock()
+		cancel()
+	}
+}
+
+// bindCommandContext runs what follows, until the returned restore, on ctx:
+// the command context commands read and the signer client's requests.
+func (r *REPLState) bindCommandContext(ctx context.Context) (restore func()) {
+	cleanupSignerCtx := r.app().BindSignerClientContext(ctx)
+	priorCtx := r.currentCommandCtx
+	r.currentCommandCtx = ctx
+	return func() {
+		r.currentCommandCtx = priorCtx
+		cleanupSignerCtx()
 	}
 }
 

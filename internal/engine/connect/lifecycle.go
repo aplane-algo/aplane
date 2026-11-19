@@ -39,7 +39,10 @@ const signerSSHHTTPAuthority = "signer.aplane.invalid:80"
 // client's enrolled key and verifies the signer answers over it. The signer
 // client opens an SSH channel for each HTTP connection; no local port is
 // opened, so another process on this machine cannot use the connection.
+// ctx bounds the setup, which ends when it does; the connection, kept after
+// the command that made it, has a lifetime of its own that Disconnect ends.
 func (s *ConnectionState) ConnectWithTunnel(
+	ctx context.Context,
 	target string,
 	host string,
 	sshPort int,
@@ -87,10 +90,23 @@ func (s *ConnectionState) ConnectWithTunnel(
 		}
 	})
 
-	ctx := context.Background()
-	if err := client.ConnectWithKey(ctx); err != nil {
+	sshCtx, cancelSSH, detachSetup := newSSHLifetime(ctx)
+	if err := client.ConnectWithKey(sshCtx); err != nil {
+		_ = detachSetup()
+		cancelSSH()
 		result.ErrorMessage = err.Error()
 		return result, fmt.Errorf("SSH auth failed: %w", err)
+	}
+	if err := detachSetup(); err != nil {
+		cancelSSH()
+		_ = client.Close()
+		result.ErrorMessage = err.Error()
+		return result, fmt.Errorf("SSH setup canceled: %w", err)
+	}
+	failed := func(err error) {
+		cancelSSH()
+		_ = client.Close()
+		result.ErrorMessage = err.Error()
 	}
 
 	signerClient := signerclient.NewSignerClient("http://" + signerSSHHTTPAuthority)
@@ -98,16 +114,14 @@ func (s *ConnectionState) ConnectWithTunnel(
 	s.Mu.Lock()
 	signerClient.ProgressOut = s.SignerProgressOut
 	s.Mu.Unlock()
-	keysResp, err := signerClient.GetKeys()
+	keysResp, err := signerClient.GetKeysWithContext(ctx)
 	if err != nil {
-		_ = client.Close()
-		result.ErrorMessage = err.Error()
+		failed(err)
 		return result, fmt.Errorf("failed to verify connection: %w", err)
 	}
 	if onKeys != nil {
 		if err := onKeys(keysResp.Keys); err != nil {
-			_ = client.Close()
-			result.ErrorMessage = err.Error()
+			failed(err)
 			return result, fmt.Errorf("invalid signer key inventory: %w", err)
 		}
 	}
@@ -117,7 +131,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 	s.ConnectionTarget = target
 	s.SSHTunnelClient = client
 	s.TunnelConnected = true
-	s.TunnelCtx, s.TunnelCancel = context.WithCancel(context.Background())
+	s.TunnelCtx, s.TunnelCancel = sshCtx, cancelSSH
 	s.connectingTarget = ""
 	s.Mu.Unlock()
 
@@ -181,6 +195,9 @@ func (s *ConnectionState) RequestEnrollmentWithContext(
 }
 
 func (s *ConnectionState) clearLocked() {
+	if s.TunnelCancel != nil {
+		s.TunnelCancel()
+	}
 	if s.SignerClient != nil && s.SignerClient.Client != nil {
 		s.SignerClient.Client.CloseIdleConnections()
 	}
