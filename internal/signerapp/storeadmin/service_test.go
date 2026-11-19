@@ -5,15 +5,19 @@ package storeadmin
 
 import (
 	"context"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
+	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
@@ -176,6 +180,45 @@ func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
 				t.Fatalf("audit event = %#v, want product passphrase change failure", got)
 			}
 		})
+	}
+}
+
+// A current passphrase that does not open the store is invalid_passphrase. A
+// store whose selected generation is damaged fails the change under its own
+// code, so the operator is not told a right passphrase is wrong.
+func TestChangeStorePassphraseReportsADamagedStoreApartFromAWrongPassphrase(t *testing.T) {
+	dataDir := t.TempDir()
+	deps := &initializeTestDeps{dataDir: dataDir, paths: storepaths.NewPaths(dataDir)}
+	current := []byte("current-passphrase")
+	if _, err := storeinit.Initialize(append([]byte(nil), current...), storeinit.Options{
+		ValidateCandidate: func(storeinit.FirstGenerationCandidate) error { return nil },
+		DataDir:           dataDir,
+		Paths:             deps.paths,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active, kr, err := genstore.ResolveStoreRoot(deps.paths, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr.Zero()
+	if err := os.RemoveAll(active.Dir()); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Deps: deps, Runtime: testIdentityRuntime()}
+	change := func(currentPassphrase []byte) adminproto.ChangeStorePassphraseResult {
+		return service.ChangeStorePassphrase(context.Background(), adminproto.ChangeStorePassphraseRequest{
+			CurrentPassphrase: currentPassphrase,
+			NewPassphrase:     []byte("new-passphrase"),
+		})
+	}
+
+	if result := change([]byte("wrong-passphrase")); result.Success || result.Code != protocol.ErrCodeInvalidPassphrase {
+		t.Fatalf("change with a wrong passphrase = %#v, want invalid_passphrase", result)
+	}
+	result := change(current)
+	if result.Success || result.Code != protocol.ResultCodePassphraseChangeFailed || !strings.Contains(result.Error, "selected generation") {
+		t.Fatalf("change on a damaged store = %#v, want passphrase_change_failed naming the selected generation", result)
 	}
 }
 

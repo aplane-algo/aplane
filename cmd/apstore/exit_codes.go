@@ -29,6 +29,18 @@ const policyIntegrityFailedCode = "policy_integrity_failed"
 
 const apstoreCodeIPCUnavailable = "ipc_unavailable"
 
+// usageError is a malformed command line: a missing, unknown, duplicate or
+// invalid argument. It exits apstoreExitUsage, whatever its wording.
+type usageError struct {
+	message string
+}
+
+func (e usageError) Error() string { return e.message }
+
+func usageErrorf(format string, args ...any) error {
+	return usageError{message: fmt.Sprintf(format, args...)}
+}
+
 type codedError struct {
 	prefix  string
 	code    string
@@ -63,6 +75,10 @@ func exitCodeForError(err error) int {
 	if err == nil {
 		return apstoreExitOK
 	}
+	var usage usageError
+	if errors.As(err, &usage) {
+		return apstoreExitUsage
+	}
 	var coded codedError
 	if errors.As(err, &coded) {
 		return exitCodeForResultCode(coded.code)
@@ -70,11 +86,6 @@ func exitCodeForError(err error) int {
 	var protocolCoded *protocol.CodedError
 	if errors.As(err, &protocolCoded) {
 		return exitCodeForResultCode(protocolCoded.Code)
-	}
-
-	msg := strings.ToLower(err.Error())
-	if strings.HasPrefix(msg, "usage:") {
-		return apstoreExitUsage
 	}
 	return apstoreExitFailure
 }

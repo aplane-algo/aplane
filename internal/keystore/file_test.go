@@ -303,7 +303,7 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 	if err == nil {
 		t.Fatal("Get() error = nil, want decrypt failure")
 	}
-	if errors.Is(err, ErrInvalidPassphrase) {
+	if errors.Is(err, crypto.ErrInvalidPassphrase) {
 		t.Fatalf("Get() error = %v, should not be ErrInvalidPassphrase for key file corruption", err)
 	}
 }

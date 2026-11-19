@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
@@ -123,9 +122,6 @@ func Run(dataDir string) int {
 	startupInfo, unlockPlan, err := signerstartup.ValidateAndBuildUnlockPlan(startupOpts, runtime, os.Getenv("TEST_PASSPHRASE"))
 	if err != nil {
 		logErrorf("%v", err)
-		if strings.Contains(err.Error(), "passphrase from passphrase command does not match existing keystore") {
-			logErrorf("the unlock.yaml passphrase helper must return the same passphrase used to create the keystore")
-		}
 		return 1
 	}
 	startPassphrase := unlockPlan.Passphrase

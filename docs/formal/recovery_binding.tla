@@ -40,8 +40,8 @@ Code anchors:
     internal/genstore/store_root.go AuthenticateStoreRootSelection and
     ValidateStoreRootSelection.
   - Maintain transcribes internal/signerapp/daemon/admin_services.go
-    authenticatedSelection as used by ListDeletedArchive and
-    PruneDeletedArchive.
+    authenticatedSelection as used by ListDeletedArchive (under
+    withStoreInspection) and PruneDeletedArchive (under withStoreMutation).
   - Serve is a signing request or key write gated by the runtime state
     (internal/signerapp/runtime/runtime.go SetRecovery, IsRecovery; the
     IsUnlocked gate in internal/signerapp/rest/preconditions.go and
@@ -168,7 +168,8 @@ Serve ==
 \* Maintain is deleted-archive list or prune. With MaintenanceReadsRoot it
 \* authenticates the root itself and errors (no action) when the root does
 \* not authenticate; without it (the pre-fix code) it trusts the cached
-\* binding. Prune takes the mutation lock, so neither runs mid-mutation.
+\* binding. Prune takes the mutation lock and list takes it with TryLock
+\* (store_busy while it is held), so neither runs mid-mutation.
 Maintain ==
     /\ ~lockHeld
     /\ LET target == IF MaintenanceReadsRoot THEN root ELSE bound

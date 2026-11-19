@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,7 +25,7 @@ import (
 
 func cmdPolicy(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: apstore policy <check|verify|sign>")
+		return usageErrorf("usage: apstore policy <check|verify|sign>")
 	}
 	switch args[0] {
 	case "check":
@@ -34,7 +35,7 @@ func cmdPolicy(args []string) error {
 	case "sign":
 		return cmdPolicySign()
 	default:
-		return fmt.Errorf("usage: apstore policy <check|verify|sign>")
+		return usageErrorf("usage: apstore policy <check|verify|sign>")
 	}
 }
 
@@ -260,8 +261,14 @@ func readStore() (storepaths.GenPaths, *crypto.Keyring, error) {
 	fmt.Fprintln(os.Stderr)
 
 	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), passphrase)
+	if errors.Is(err, crypto.ErrInvalidPassphrase) {
+		return storepaths.GenPaths{}, nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: err.Error()}
+	}
 	if err != nil {
-		return storepaths.GenPaths{}, nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("store root verification failed: %v", err)}
+		// The passphrase may be right: the store root or its selected
+		// generation is damaged or unreadable, which verify or rebuild
+		// addresses, not another passphrase.
+		return storepaths.GenPaths{}, nil, fmt.Errorf("the store cannot be opened: %w", err)
 	}
 	return active, kr, nil
 }

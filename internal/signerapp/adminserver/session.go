@@ -247,6 +247,15 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		if err := s.productServices.VerifyPassphrase(passphraseBytes); err != nil {
 			zeroBytes(passphraseBytes)
 			protocol.SensitiveBytes(raw).Zero()
+			if !errors.Is(err, algocrypto.ErrInvalidPassphrase) {
+				// The store root is damaged or unreadable: no passphrase
+				// would pass, so the login ends instead of asking again.
+				// The cause stays in the signer log; a pre-auth reply
+				// carries none of it.
+				s.sendAuthResult(false, protocol.ErrCodeAuthenticationFailed,
+					"the signer cannot open its store root; see the signer log")
+				return AuthOutcomeFailed
+			}
 			s.sendAuthResult(false, protocol.ErrCodeInvalidPassphrase, "invalid passphrase")
 			continue
 		}

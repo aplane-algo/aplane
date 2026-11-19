@@ -179,6 +179,38 @@ func TestCatalogGenerationListRetriesIdentityBusy(t *testing.T) {
 	}
 }
 
+func TestCatalogArchiveListRetriesIdentityBusy(t *testing.T) {
+	now := time.Unix(100, 0)
+	attempt := 0
+	requester := &fakeRequester{handle: func(message, result any) error {
+		if _, ok := message.(protocol.ListDeletedArchiveMessage); !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		attempt++
+		out := result.(*protocol.DeletedArchiveListMessage)
+		if attempt == 1 {
+			out.Code = protocol.ResultCodeStoreBusy
+			out.Error = "product store mutation is in progress"
+		} else {
+			out.Entries = []protocol.DeletedArchiveEntry{{Path: "deleted/keys/A.key", EncodedBytes: 42}}
+			out.EntryCount = 1
+		}
+		return nil
+	}}
+	var stderr bytes.Buffer
+	catalog := Catalog{
+		Client: requester, Streams: Streams{Stderr: &stderr},
+		Now:   func() time.Time { return now },
+		Sleep: func(d time.Duration) { now = now.Add(d) },
+	}
+	if err := catalog.Run("archive", []string{"list"}); err != nil {
+		t.Fatal(err)
+	}
+	if attempt != 2 || !bytes.Contains(stderr.Bytes(), []byte("archived deleted/keys/A.key (42 bytes)")) {
+		t.Fatalf("attempts=%d stderr=%q", attempt, stderr.String())
+	}
+}
+
 func TestCatalogGenerationQuarantinePruneSendsExplicitSelection(t *testing.T) {
 	requester := &fakeRequester{handle: func(message, result any) error {
 		request, ok := message.(protocol.PruneGenerationQuarantineMessage)

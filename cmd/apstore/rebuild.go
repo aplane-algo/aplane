@@ -20,9 +20,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
+const rebuildUsage = "usage: apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]"
+
 func cmdRebuild(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]")
+		return usageErrorf("%s", rebuildUsage)
 	}
 	source := args[0]
 	var addresses []string
@@ -32,23 +34,23 @@ func cmdRebuild(args []string) error {
 		switch args[i] {
 		case "--address":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]")
+				return usageErrorf("%s", rebuildUsage)
 			}
 			addresses = append(addresses, args[i+1])
 			i++
 		case "--role":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]")
+				return usageErrorf("%s", rebuildUsage)
 			}
 			parsed, err := noderole.ParseRole(args[i+1])
 			if err != nil {
-				return fmt.Errorf("invalid rebuild role: %w", err)
+				return usageErrorf("invalid rebuild role: %v", err)
 			}
 			role = parsed
 			roleSet = true
 			i++
 		default:
-			return fmt.Errorf("unknown rebuild option: %s", args[i])
+			return usageErrorf("unknown rebuild option: %s", args[i])
 		}
 	}
 	return cmdRebuildFromBackup(source, addresses, role, roleSet)

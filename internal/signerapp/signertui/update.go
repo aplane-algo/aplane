@@ -114,9 +114,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
 		m.endAdminSession()
-		m.viewState = ViewAuth
 		m.clearAuthPassphrase()
 		m.auth.passphraseError = ""
+		if m.viewState == ViewError {
+			// A login the signer ended with a serious error closes the
+			// connection, and the reconnect's auth_required follows at
+			// once. The error stays up until the operator dismisses it,
+			// which leads to this new login.
+			m.errorPopup.returnView = ViewAuth
+			return m, nil
+		}
+		m.viewState = ViewAuth
 		return m, nil
 
 	case AuthResultMsg:
@@ -284,8 +292,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ClientExistsMsg:
 		// Server says another client is already connected - show confirmation modal
-		m.viewState = ViewDisplaceConfirm
 		m.displaceConfirmFocus = 0 // Default to Cancel
+		if m.viewState == ViewError {
+			// As for auth_required: a serious error the last login ended
+			// on stays up, and dismissing it leads to this prompt.
+			m.errorPopup.returnView = ViewDisplaceConfirm
+			return m, nil
+		}
+		m.viewState = ViewDisplaceConfirm
 		return m, nil
 
 	case DisplacedMsg:
@@ -712,9 +726,11 @@ func (m Model) handleErrorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // isSeriousUnlockError reports whether an auth/unlock failure is a server-side
 // fault that deserves a popup rather than the inline "try again" treatment a
 // wrong passphrase gets. apsigner codes every unlock failure: a wrong
-// passphrase is invalid_passphrase and anything else is unlock_failed.
+// passphrase is invalid_passphrase and anything else is unlock_failed. A
+// login the signer cannot check at all, such as one against a store root it
+// cannot open, is authentication_failed, and the signer ends that login.
 func isSeriousUnlockError(code string) bool {
-	return code == protocol.ErrCodeUnlockFailed
+	return code == protocol.ErrCodeUnlockFailed || code == protocol.ErrCodeAuthenticationFailed
 }
 
 // pendingOperation is the request an in-progress screen waits on.

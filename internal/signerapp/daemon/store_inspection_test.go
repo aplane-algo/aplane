@@ -134,6 +134,38 @@ func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 	}
 }
 
+// Deleted-archive listing is a read-only inspection like ListGenerations: it
+// does not read the archive while a store mutation holds the lock, as the
+// recovery_binding Maintain action's ~lockHeld guard requires, and answers
+// retryable store_busy at once instead.
+func TestListDeletedArchiveReturnsBusyDuringMutation(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- server.withStoreMutation(func() error {
+			close(started)
+			<-release
+			return nil
+		})
+	}()
+	<-started
+
+	result := server.adminServices().ListDeletedArchive()
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("withStoreMutation() error = %v", err)
+	}
+	if result.Code != protocol.ResultCodeStoreBusy || !strings.Contains(result.Error, "mutation is in progress") {
+		t.Fatalf("ListDeletedArchive() = %#v, want immediate store_busy result", result)
+	}
+	if listed := server.adminServices().ListDeletedArchive(); listed.Error != "" {
+		t.Fatalf("ListDeletedArchive() after the mutation = %#v, want a listing", listed)
+	}
+}
+
 func witnessPublicKeySizeForTest(t *testing.T) int {
 	t.Helper()
 	size, ok := witness.PublicKeySize(witness.Falcon1024V1)

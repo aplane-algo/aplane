@@ -494,7 +494,9 @@ before any validation or scan can fail, so a failed reload after a commit
 never leaves the runtime bound to the superseded, sealed generation. A root that no
 longer authenticates clears the binding. Deleted-archive list and prune, which
 run in recovery, read and authenticate the root themselves rather than trust
-the cached binding. Every post-commit failure enters recovery before the
+the cached binding, and neither runs during a store mutation: prune takes the
+store mutation lock, and list takes it without waiting, answering `store_busy`
+while a mutation holds it. Every post-commit failure enters recovery before the
 store mutation lock is released, and every in-place writer (key generate,
 import, and delete; template and key-type changes) rechecks under the lock
 that the runtime is still unlocked, so a request queued behind a failed
@@ -748,7 +750,8 @@ successor after apply. An over-limit selected generation blocks ordinary
 validation, mint, and passphrase change until pruned.
 
 `apadmin archive list` (`list_deleted_archive`) reports exact usage and the
-reserve warning. `apadmin archive prune --confirm <deleted/path>...`
+reserve warning; it is read-only and retries while a store mutation answers
+`store_busy`. `apadmin archive prune --confirm <deleted/path>...`
 (`prune_deleted_archive`) accepts only canonical
 `deleted/keys/*.key|*.cos`, `deleted/keytypes/*.template`, and
 `deleted/policies/*.json|*.json.hmac` selections. An archived policy document

@@ -805,10 +805,12 @@ func (c Catalog) runGenerationQuarantinePrune(args []string) error {
 
 func (c Catalog) runArchive(args []string) error {
 	if len(args) == 1 && args[0] == "list" {
-		var result protocol.DeletedArchiveListMessage
-		if err := c.Client.Request(protocol.ListDeletedArchiveMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListDeletedArchive, ID: c.requestID("archive-list")},
-		}, &result); err != nil {
+		result, err := requestInspectionWithRetry(c, func() any {
+			return protocol.ListDeletedArchiveMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListDeletedArchive, ID: c.requestID("archive-list")},
+			}
+		}, func(result *protocol.DeletedArchiveListMessage) string { return result.Code })
+		if err != nil {
 			return err
 		}
 		if result.Error != "" {

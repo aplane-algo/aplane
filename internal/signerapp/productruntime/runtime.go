@@ -433,10 +433,7 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 	ok, msg := ir.lockRuntime.TryRecovery(func() error {
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
-		if err := ir.keyStore.Unlock(passphrase); err != nil {
-			return errors.New(InvalidPassphraseMessage)
-		}
-		return nil
+		return unlockFailure(ir.keyStore.Unlock(passphrase))
 	})
 	if ok {
 		// As SetRecovery: a session that was unlocked until now is over.
@@ -1542,6 +1539,21 @@ func (ir *Runtime) StopKeyWatcher() {
 // constant to attach invalid_passphrase; see signerruntime.LockedDuringUnlockMessage.
 const InvalidPassphraseMessage = "invalid passphrase"
 
+// unlockFailure classifies a store-root open error for the lock runtime: a
+// passphrase that does not open the root becomes InvalidPassphraseMessage, and
+// any other failure (an unreadable or damaged root) keeps its cause, so it is
+// reported as a failed unlock rather than a wrong passphrase.
+func unlockFailure(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, crypto.ErrInvalidPassphrase):
+		return errors.New(InvalidPassphraseMessage)
+	default:
+		return fmt.Errorf("store root could not be opened: %w", err)
+	}
+}
+
 // ErrKeyUseInFlight reports a key user that still held its own copy of key
 // material when EndKeyUses stopped waiting for it.
 var ErrKeyUseInFlight = errors.New("a key use still held key material at the shutdown deadline")
@@ -1668,8 +1680,8 @@ func (ir *Runtime) LockGeneration() uint64 {
 
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 	return func() (int, error) {
-		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, ir.keyPaths.KeystoreMetadataDir()); err != nil {
-			return 0, errors.New(InvalidPassphraseMessage)
+		if err := unlockFailure(crypto.VerifyPassphraseWithStoreRoot(passphrase, ir.keyPaths.KeystoreMetadataDir())); err != nil {
+			return 0, err
 		}
 
 		if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {

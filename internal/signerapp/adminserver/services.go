@@ -14,6 +14,11 @@ import (
 
 type ProductServices interface {
 	ProductRuntime() *productruntime.Runtime
+	// VerifyPassphrase checks a login passphrase against the store root. A
+	// passphrase that does not open the root must be reported as an error
+	// wrapping crypto.ErrInvalidPassphrase: the login treats any other error
+	// as a store root it cannot open and ends instead of asking again, so an
+	// implementation that drops the sentinel ends the login on every typo.
 	VerifyPassphrase(passphrase []byte) error
 	UnlockIdentity(passphrase []byte) (bool, int, string, string)
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult

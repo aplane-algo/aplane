@@ -2554,11 +2554,11 @@ Additional compatibility-sensitive request failures:
 
 ### Error Model
 
-Internal sentinel errors include, for example, in `internal/keystore`:
+Internal sentinel errors include, for example:
 
-- `ErrKeyNotFound`
-- `ErrInvalidPassphrase`
-- `ErrStoreLocked`
+- `internal/keystore`: `ErrKeyNotFound`, `ErrStoreLocked`
+- `internal/crypto`: `ErrInvalidPassphrase`, the one store-root open failure
+  that means the passphrase does not open the store root
 
 Errors are wrapped with contextual `%w`. Signer services classify them with
 `errors.Is` into typed `ServiceError` kinds (`internal/signerapp/svcerr`), and

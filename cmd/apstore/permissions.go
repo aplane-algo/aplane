@@ -139,7 +139,7 @@ func canonicalSocketParent(socketPath string) (string, error) {
 }
 
 func permissionsUsageError() error {
-	return fmt.Errorf("usage: apstore permissions <preflight|audit|migrate|prepare-managed-root --uid UID --gid GID|convert-managed --uid UID --gid GID>")
+	return usageErrorf("usage: apstore permissions <preflight|audit|migrate|prepare-managed-root --uid UID --gid GID|convert-managed --uid UID --gid GID>")
 }
 
 func cmdPermissionsPrepareManagedRoot(args []string) error {
@@ -201,11 +201,11 @@ func parseManagedPrincipalFlags(name string, args []string) (int, int, error) {
 	}
 	uid, err := strconv.Atoi(*uidText)
 	if err != nil || uid <= 0 {
-		return 0, 0, fmt.Errorf("invalid managed service uid %q", *uidText)
+		return 0, 0, usageErrorf("invalid managed service uid %q", *uidText)
 	}
 	gid, err := strconv.Atoi(*gidText)
 	if err != nil || gid < 0 {
-		return 0, 0, fmt.Errorf("invalid managed service gid %q", *gidText)
+		return 0, 0, usageErrorf("invalid managed service gid %q", *gidText)
 	}
 	return uid, gid, nil
 }

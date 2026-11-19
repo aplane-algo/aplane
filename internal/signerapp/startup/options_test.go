@@ -4,6 +4,7 @@
 package startup
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -140,6 +141,65 @@ func TestBuildUnlockPlanUsesPassphraseCommand(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("passphrase helper marker: %v", err)
+	}
+}
+
+// A startup passphrase that does not open the store root is reported as one,
+// with the helper hint for an unlock.yaml helper. A store root that cannot be
+// opened at all keeps its cause and gets no passphrase hint.
+func TestBuildUnlockPlanReportsADamagedStoreRootApartFromAWrongPassphrase(t *testing.T) {
+	t.Parallel()
+
+	passphrase := "startup-passphrase"
+	newStore := func(t *testing.T, helperReturns string) *Options {
+		t.Helper()
+		root := t.TempDir()
+		paths := storepaths.NewPaths(root)
+		createAtomicStoreRootForOptionsTest(t, paths, []byte(passphrase))
+		helper, marker := writePassphraseHelper(t, root, helperReturns)
+		if err := unlockconfig.SaveUnlockConfig(root, &unlockconfig.UnlockConfig{PassphraseCommandArgv: []string{helper, marker}}); err != nil {
+			t.Fatalf("SaveUnlockConfig() error = %v", err)
+		}
+		return &Options{DataDir: root, Config: serverconfig.DefaultServerConfig(), Paths: paths}
+	}
+	damage := func(t *testing.T, opts *Options) {
+		t.Helper()
+		rootPath := filepath.Join(opts.Paths.KeystoreMetadataDir(), storepaths.StoreRootName)
+		if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sources := map[string]func(*Options, string) error{
+		"TEST_PASSPHRASE": func(opts *Options, p string) error {
+			_, err := BuildUnlockPlan(opts, true, p)
+			return err
+		},
+		"helper": func(opts *Options, _ string) error {
+			_, err := BuildUnlockPlan(opts, true, "")
+			return err
+		},
+	}
+	for name, build := range sources {
+		t.Run(name, func(t *testing.T) {
+			wrong := newStore(t, "wrong-passphrase")
+			err := build(wrong, "wrong-passphrase")
+			if !errors.Is(err, crypto.ErrInvalidPassphrase) {
+				t.Fatalf("BuildUnlockPlan(wrong passphrase) error = %v, want ErrInvalidPassphrase", err)
+			}
+			if name == "helper" && !strings.Contains(err.Error(), "the helper must return the store's current passphrase") {
+				t.Fatalf("BuildUnlockPlan(wrong helper passphrase) error = %v, want the helper hint", err)
+			}
+
+			damaged := newStore(t, passphrase)
+			damage(t, damaged)
+			err = build(damaged, passphrase)
+			if err == nil || errors.Is(err, crypto.ErrInvalidPassphrase) || !strings.Contains(err.Error(), "parse store root") {
+				t.Fatalf("BuildUnlockPlan(damaged root) error = %v, want the store root's own cause", err)
+			}
+			if strings.Contains(err.Error(), "helper must return") {
+				t.Fatalf("BuildUnlockPlan(damaged root) error = %v, carries the passphrase hint", err)
+			}
+		})
 	}
 }
 

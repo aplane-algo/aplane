@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storeadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -90,8 +91,16 @@ func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
 	return s.product
 }
 
+// VerifyPassphrase checks a login passphrase against the store root. A
+// failure other than a passphrase that does not open the root means the store
+// root is damaged or unreadable; its cause is logged here, because the login
+// reply carries none of it.
 func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
-	return crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
+	err := crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
+	if err != nil && !errors.Is(err, crypto.ErrInvalidPassphrase) {
+		logErrorf("admin login: the store root could not be opened: %v", err)
+	}
+	return err
 }
 
 func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
@@ -102,7 +111,7 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	if reconcileErr := s.reconcileGenerations(ir, passphrase); reconcileErr != nil {
 		success, errMsg := ir.TryRecoveryUnlock(passphrase)
 		if !success {
-			return false, 0, errMsg, unlockFailureCode(errMsg)
+			return failedUnlock(errMsg)
 		}
 		logWarnf("identity is recovery-blocked: %v", reconcileErr)
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
@@ -116,12 +125,31 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 		// the operator resolves the store from recovery mode.
 		recoverySuccess, recoveryErrMsg := ir.TryRecoveryUnlock(passphrase)
 		if !recoverySuccess {
-			return false, 0, recoveryErrMsg, unlockFailureCode(recoveryErrMsg)
+			return failedUnlock(recoveryErrMsg)
 		}
 		logWarnf("identity is recovery-blocked: %s", errMsg)
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
-	return success, keyCount, errMsg, unlockFailureCode(errMsg)
+	if !success {
+		return failedUnlock(errMsg)
+	}
+	return true, keyCount, "", ""
+}
+
+// failedUnlock answers an unlock that failed with errMsg. A failure other
+// than a wrong passphrase, such as a store root that cannot be opened, is
+// logged with its cause; an unlock that lost a race to a lock or a store
+// maintenance is expected and logged below error.
+func failedUnlock(errMsg string) (bool, int, string, string) {
+	code := unlockFailureCode(errMsg)
+	switch {
+	case code != protocol.ErrCodeUnlockFailed:
+	case errMsg == signerruntime.LockedDuringUnlockMessage, errMsg == signerruntime.MaintenanceInProgressMessage:
+		logInfof("unlock did not complete: %s", errMsg)
+	default:
+		logErrorf("unlock failed: %s", errMsg)
+	}
+	return false, 0, errMsg, code
 }
 
 // reconcileGenerations opens the authenticated root under the store mutation
@@ -629,13 +657,20 @@ func (s signerAdminServices) DiscardAbandonedGenerations(
 	return result
 }
 
+// ListDeletedArchive is a read-only inspection: like its siblings it does not
+// run during a store mutation, answering retryable store_busy instead.
 func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInventory {
 	ir := s.ProductRuntime()
-	active, err := authenticatedSelection(ir)
-	if err != nil {
-		return adminproto.DeletedArchiveInventory{Code: protocol.ResultCodeArchiveListFailed, Error: err.Error()}
-	}
-	entries, usage, err := genstore.ListDeletedArchive(active)
+	var entries []genstore.DeletedArchiveEntry
+	var usage genstore.DeletedArchiveUsage
+	err := s.withStoreInspection(func() error {
+		active, err := authenticatedSelection(ir)
+		if err != nil {
+			return err
+		}
+		entries, usage, err = genstore.ListDeletedArchive(active)
+		return err
+	})
 	result := adminproto.DeletedArchiveInventory{
 		Entries:    make([]adminproto.DeletedArchiveEntry, 0, len(entries)),
 		EntryCount: usage.Entries, EncodedBytes: usage.EncodedBytes, Warning: usage.Warning(),
@@ -644,8 +679,7 @@ func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInven
 		result.Entries = append(result.Entries, adminproto.DeletedArchiveEntry{Path: entry.Path, EncodedBytes: entry.EncodedBytes})
 	}
 	if err != nil {
-		result.Code = protocol.ResultCodeArchiveListFailed
-		result.Error = err.Error()
+		result.Code, result.Error = identityStoreInspectionError(err, protocol.ResultCodeArchiveListFailed)
 	}
 	return result
 }

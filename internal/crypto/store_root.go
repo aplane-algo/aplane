@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,16 @@ const (
 	storeRootGCMNonceBytes           = 12
 	storeRootGCMTagBytes             = 16
 )
+
+// ErrInvalidPassphrase reports that the passphrase does not open the store
+// root: it is empty, or the sealed keyring fails AEAD authentication under the
+// KEK derived from it. AEAD cannot tell a wrong passphrase from altered sealed
+// keyring bytes, so this is the one store-root failure callers may report as
+// a wrong passphrase. Every other failure (an unreadable, unparsable or
+// unsupported root, a failed selection MAC, a damaged selected generation) is
+// a damaged store, which callers report as such and never as a passphrase
+// to retry.
+var ErrInvalidPassphrase = errors.New("passphrase does not open the store root")
 
 // StoreRootSelection is the authenticated public projection of the one
 // generation/key-authority commit record. It carries no key material.
@@ -372,7 +383,7 @@ func sealStoreRootKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
 
 func openStoreRootKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	if len(passphrase) == 0 {
-		return nil, fmt.Errorf("opening the store root requires a passphrase")
+		return nil, fmt.Errorf("%w: opening the store root requires a passphrase", ErrInvalidPassphrase)
 	}
 	file, salt, nonce, ciphertext, err := decodeStoreRootKeyringHeader(encoded)
 	if err != nil {
@@ -397,7 +408,7 @@ func openStoreRootKeyring(encoded, passphrase []byte) (*Keyring, error) {
 		nonce,
 	))
 	if err != nil {
-		return nil, fmt.Errorf("failed to open store root keyring: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidPassphrase, err)
 	}
 	defer ZeroBytes(plaintext)
 
