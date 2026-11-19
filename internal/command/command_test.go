@@ -48,7 +48,6 @@ func TestCommand_Struct(t *testing.T) {
 func TestCategories(t *testing.T) {
 	// Verify category constants are defined
 	categories := []string{
-		CategorySetup,
 		CategoryTransaction,
 		CategoryAlias,
 		CategoryRekey,
@@ -56,10 +55,8 @@ func TestCategories(t *testing.T) {
 		CategoryKeyMgmt,
 		CategoryASA,
 		CategoryConfig,
-		CategoryVariables,
 		CategoryAutomation,
 		CategoryRemote,
-		CategoryOrchestration,
 	}
 
 	for _, cat := range categories {
@@ -84,7 +81,7 @@ func TestHandler_Execute(t *testing.T) {
 		},
 	}
 
-	ctx := &Context{Network: "testnet"}
+	ctx := &Context{RawArgs: "arg1 arg2"}
 	_, err := handler.Execute([]string{"arg1", "arg2"}, ctx)
 	if err != nil {
 		t.Errorf("Execute() error = %v", err)

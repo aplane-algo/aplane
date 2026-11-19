@@ -8,13 +8,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/refname"
 )
-
-// IsReservedSetName returns true if the name is reserved for dynamic sets.
-func IsReservedSetName(name string) bool {
-	return refname.IsDynamicSetName(name)
-}
 
 // SignerProvider returns signable addresses dynamically.
 type SignerProvider func() []string
@@ -35,35 +29,6 @@ type Resolver struct {
 	SignerProvider  SignerProvider
 	AllProvider     AllAddressesProvider
 	HoldersProvider HoldersProvider
-}
-
-// NewResolver creates a new resolver with the given caches.
-func NewResolver(aliasCache *cache.AliasCache, setCache *cache.SetCache) *Resolver {
-	return &Resolver{
-		AliasCache: aliasCache,
-		SetCache:   setCache,
-	}
-}
-
-// WithSignerProvider returns a copy of the resolver with a signer provider set.
-func (r *Resolver) WithSignerProvider(provider SignerProvider) *Resolver {
-	cp := *r
-	cp.SignerProvider = provider
-	return &cp
-}
-
-// WithAllProvider returns a copy of the resolver with an all-addresses provider set.
-func (r *Resolver) WithAllProvider(provider AllAddressesProvider) *Resolver {
-	cp := *r
-	cp.AllProvider = provider
-	return &cp
-}
-
-// WithHoldersProvider returns a copy of the resolver with a holders provider set.
-func (r *Resolver) WithHoldersProvider(provider HoldersProvider) *Resolver {
-	cp := *r
-	cp.HoldersProvider = provider
-	return &cp
 }
 
 // ResolveList resolves a list of inputs (aliases, addresses, or @setnames) to addresses.

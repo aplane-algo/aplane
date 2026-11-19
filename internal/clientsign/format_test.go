@@ -30,7 +30,7 @@ func TestFormatTransactionSummary_AppCall(t *testing.T) {
 		},
 	}
 
-	summary := FormatTransactionSummary(txn, nil)
+	summary := formatTransactionSummary(txn)
 	for _, want := range []string{
 		"App 123",
 		"OptIn",
@@ -49,7 +49,7 @@ func TestFormatTransactionSummary_PaymentIsExact(t *testing.T) {
 		Type:             types.PaymentTx,
 		PaymentTxnFields: types.PaymentTxnFields{Amount: 9_007_199_254_740_993},
 	}
-	if summary := FormatTransactionSummary(txn, nil); !strings.HasSuffix(summary, "(9007199254.740993 ALGO)") {
+	if summary := formatTransactionSummary(txn); !strings.HasSuffix(summary, "(9007199254.740993 ALGO)") {
 		t.Fatalf("summary = %q, want the exact amount", summary)
 	}
 }

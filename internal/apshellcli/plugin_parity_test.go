@@ -22,7 +22,7 @@ import (
 func TestMCPRunsOnlyAvailablePluginCommands(t *testing.T) {
 	eng := newIsolatedTestEngine(t, "testnet")
 
-	pm := pluginmanager.NewManager()
+	pm := pluginmanager.NewManagerWithDataDir("")
 	var started []*pluginmanager.Instance
 	pm.SetCachedPluginsForTest([]*discovery.Plugin{
 		{

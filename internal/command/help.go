@@ -16,7 +16,6 @@ func ShowHelp(w io.Writer, registry *Registry) {
 	categories := registry.ByCategory()
 
 	categoryOrder := []string{
-		CategorySetup,
 		CategoryTransaction,
 		CategoryAlias,
 		CategoryRekey,
@@ -24,10 +23,8 @@ func ShowHelp(w io.Writer, registry *Registry) {
 		CategoryKeyMgmt,
 		CategoryASA,
 		CategoryConfig,
-		CategoryVariables,
 		CategoryAutomation,
 		CategoryRemote,
-		CategoryOrchestration,
 	}
 
 	for _, category := range categoryOrder {

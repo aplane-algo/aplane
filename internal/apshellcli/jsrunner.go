@@ -71,7 +71,7 @@ func runJSExpression(network string, cfg config.Config, dataDir string, expr str
 // standaloneScriptRunner builds the runner for a script run outside the
 // REPL. The app builds it, so the script has what the shell's own runner
 // has, sweep() included; it has no plugins.
-func standaloneScriptRunner(eng *engine.Engine, cfg config.Config, dataDir string) scripting.Runner {
+func standaloneScriptRunner(eng *engine.Engine, cfg config.Config, dataDir string) *scripting.GojaRunner {
 	return apshellapp.New(eng, cfg, dataDir).Scripts.EnsureRunner(func(msg string) {
 		fmt.Println(msg)
 	}, nil)

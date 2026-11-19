@@ -15,7 +15,6 @@ import (
 const (
 	MethodInitialize = "initialize"
 	MethodExecute    = "execute"
-	MethodGetInfo    = "getInfo"
 	MethodShutdown   = "shutdown"
 )
 
@@ -266,20 +265,6 @@ type SignTransactionsResult struct {
 type SignedTxnEntry struct {
 	Index   int    `json:"index"`   // matches the request index
 	Encoded string `json:"encoded"` // base64 signed transaction msgpack
-}
-
-// GetInfoParams (empty for now, may extend later)
-type GetInfoParams struct{}
-
-// GetInfoResult provides plugin information
-type GetInfoResult struct {
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	Description string   `json:"description"`
-	Author      string   `json:"author,omitempty"`
-	Commands    []string `json:"commands"`
-	Networks    []string `json:"networks"`
-	Status      string   `json:"status"` // ready, busy, error
 }
 
 // ShutdownParams (empty for now)

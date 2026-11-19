@@ -446,7 +446,7 @@ func TestToUint64Interface(t *testing.T) {
 func TestParseTxnOptions(t *testing.T) {
 	vm := goja.New()
 	eng := engine.NewEngine("testnet")
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	api.runtime = vm
 
 	tests := []struct {
@@ -561,7 +561,7 @@ func TestParseTxnOptions(t *testing.T) {
 func TestOptOutOverloadParsing(t *testing.T) {
 	vm := goja.New()
 	eng := engine.NewEngine("testnet")
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	api.runtime = vm
 
 	tests := []struct {

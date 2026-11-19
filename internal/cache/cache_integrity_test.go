@@ -149,8 +149,8 @@ func TestSaveAndLoadSignedCacheRoundTrip(t *testing.T) {
 		"keys": []string{"ADDR1", "ADDR2"},
 		"flag": true,
 	}
-	if err := SaveSignedCache(filename, payload, key); err != nil {
-		t.Fatalf("SaveSignedCache() error = %v", err)
+	if err := saveSignedCache(filename, payload, key); err != nil {
+		t.Fatalf("saveSignedCache() error = %v", err)
 	}
 
 	var loaded map[string]any
@@ -176,8 +176,8 @@ func TestSaveSignedCacheWritesPayloadSchemaVersion(t *testing.T) {
 	}
 
 	payload := &testVersionedCachePayload{Value: "ok"}
-	if err := SaveSignedCache(filename, payload, key); err != nil {
-		t.Fatalf("SaveSignedCache() error = %v", err)
+	if err := saveSignedCache(filename, payload, key); err != nil {
+		t.Fatalf("saveSignedCache() error = %v", err)
 	}
 	if payload.SchemaVersion != cachePayloadSchemaVersion {
 		t.Fatalf("payload.SchemaVersion = %d, want %d", payload.SchemaVersion, cachePayloadSchemaVersion)
@@ -311,8 +311,8 @@ func TestLoadSignedCacheRejectsTampering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getOrCreateCacheKey() error = %v", err)
 	}
-	if err := SaveSignedCache(filename, map[string]string{"value": "original"}, key); err != nil {
-		t.Fatalf("SaveSignedCache() error = %v", err)
+	if err := saveSignedCache(filename, map[string]string{"value": "original"}, key); err != nil {
+		t.Fatalf("saveSignedCache() error = %v", err)
 	}
 
 	raw, err := os.ReadFile(filename)

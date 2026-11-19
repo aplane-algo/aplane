@@ -41,7 +41,7 @@ type cosignerSetupProjection struct {
 	DryRun            bool                            `json:"dry_run,omitempty"`
 }
 
-func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdCosigner(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) > 0 && args[0] == "status" {
 		if len(args) != 1 {
 			return nil, errors.New("usage: cosigner status")

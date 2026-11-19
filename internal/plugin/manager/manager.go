@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
@@ -98,11 +97,6 @@ type runtimeConfig struct {
 type TestHooks struct {
 	StartPluginInstance func(*discovery.Plugin) (*Instance, error)
 	InitializePlugin    func(*Instance) error
-}
-
-// NewManager creates a new plugin manager
-func NewManager() *Manager {
-	return NewManagerWithDataDir("")
 }
 
 // NewManagerWithDataDir creates a new plugin manager scoped to an apshell data dir.
@@ -208,13 +202,7 @@ func (m *Manager) SetConfig(network, algodURL, algodToken, indexerURL string) {
 	m.indexerURL = indexerURL
 }
 
-// DiscoverPlugins finds all available plugins (no caching, always fresh)
-func (m *Manager) DiscoverPlugins() ([]*discovery.Plugin, error) {
-	return m.discoverer.Discover()
-}
-
 // DiscoverPluginsCached returns cached plugin list, discovering if needed.
-// Use InvalidateCache() to force re-discovery on next call.
 func (m *Manager) DiscoverPluginsCached() ([]*discovery.Plugin, error) {
 	m.mu.RLock()
 	if m.cachedPlugins != nil {
@@ -239,13 +227,6 @@ func (m *Manager) DiscoverPluginsCached() ([]*discovery.Plugin, error) {
 	}
 	m.cachedPlugins = plugins
 	return plugins, nil
-}
-
-// InvalidateCache clears the cached plugin list, forcing re-discovery on next call.
-func (m *Manager) InvalidateCache() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.cachedPlugins = nil
 }
 
 // FindByCommand finds a plugin that provides the given command (uses cache).
@@ -386,13 +367,12 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 
 	// Build sandboxed command
 	sandboxCfg := sandbox.Config{
-		PluginName:   plugin.Manifest.Name,
-		PluginDir:    plugin.Dir,
-		StateDir:     stateDir,
-		ExecPath:     execPath,
-		Args:         plugin.Manifest.Args,
-		Env:          env,
-		AllowNetwork: true, // Plugins need algod/indexer access
+		PluginName: plugin.Manifest.Name,
+		PluginDir:  plugin.Dir,
+		StateDir:   stateDir,
+		ExecPath:   execPath,
+		Args:       plugin.Manifest.Args,
+		Env:        env,
 	}
 
 	cmd, err := sandbox.BuildCommand(sandboxCfg)
@@ -680,21 +660,6 @@ func (m *Manager) forgetInstance(pluginName string, instance *Instance) bool {
 	return true
 }
 
-// StopPlugin stops a running plugin
-func (m *Manager) StopPlugin(pluginName string) error {
-	m.mu.Lock()
-	instance, ok := m.instances[pluginName]
-	if !ok {
-		m.mu.Unlock()
-		return nil // Not running
-	}
-	delete(m.instances, pluginName)
-	m.mu.Unlock()
-
-	stopInstance(instance)
-	return nil
-}
-
 // StopAll stops all running plugins
 func (m *Manager) StopAll() {
 	m.mu.Lock()
@@ -771,14 +736,4 @@ func (i *Instance) stop(grace time.Duration) {
 	}
 
 	i.Client.Close()
-}
-
-// IsRunning checks if the plugin process is still running. It probes the
-// process with signal 0 rather than reading Process.ProcessState, which is
-// written by the Wait call in Stop and would race concurrent stops.
-func (i *Instance) IsRunning() bool {
-	if i.Process == nil || i.Process.Process == nil {
-		return false
-	}
-	return i.Process.Process.Signal(syscall.Signal(0)) == nil
 }

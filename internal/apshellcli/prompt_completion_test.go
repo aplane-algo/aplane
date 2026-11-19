@@ -33,7 +33,7 @@ func TestTabAtACommandsOwnPromptOffersNothing(t *testing.T) {
 	offered := make(chan [][]rune, 1)
 	if err := r.CommandRegistry.Register(&command.Command{
 		Name: "asks", Category: command.CategoryInfo, Automation: command.StructuredAutomation,
-		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+		Handler: command.NewInternalHandler(func([]string, *command.Context) (command.Result, error) {
 			got, _ := completer.Do([]rune("al"), 2) // Tab at the command's own prompt
 			offered <- got
 			return newTerminalCommandResult(nil), nil

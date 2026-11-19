@@ -363,7 +363,7 @@ func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
 	locked := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if locked {
-			http.Error(w, "signer is locked", http.StatusForbidden)
+			http.Error(w, `{"error":"signer is locked","code":"locked"}`, http.StatusForbidden)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{

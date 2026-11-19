@@ -79,10 +79,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		return nil, fmt.Errorf("enrollment queue: %w", err)
 	}
 
-	sshServer.SetProductHooks(sshtunnel.ProductHooks{
-		CheckKey:  productRuntime.HasAuthorizedKey,
-		EnrollKey: productRuntime.EnrollAuthorizedKey,
-	})
+	sshServer.SetProductHooks(sshtunnel.ProductHooks{CheckKey: productRuntime.HasAuthorizedKey})
 	if server.apiListener != nil {
 		sshServer.SetAPIHandoff(server.apiListener.Handoff)
 	}

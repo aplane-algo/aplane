@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 )
 
 func TestFindByCommandRejectsDuplicateProviders(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.cachedPlugins = []*discovery.Plugin{
 		{
 			Manifest: &manifest.Manifest{
@@ -42,7 +43,7 @@ func TestFindByCommandRejectsDuplicateProviders(t *testing.T) {
 }
 
 func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.cachedPlugins = []*discovery.Plugin{
 		{
 			Manifest: &manifest.Manifest{
@@ -72,26 +73,25 @@ func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
 		t.Fatal("StartPlugin() deadlocked while plugin startup read manager stderr state")
 	}
 
-	if err := m.StopPlugin("plugin-a"); err != nil {
-		t.Fatalf("StopPlugin() error = %v", err)
-	}
+	m.StopAll()
 }
 
-func TestStopPluginDoesNotHoldManagerLockDuringShutdown(t *testing.T) {
-	m := NewManager()
+func TestStopAllDoesNotHoldManagerLockDuringShutdown(t *testing.T) {
+	m := NewManagerWithDataDir("")
 	shutdownStarted := make(chan struct{})
 	releaseShutdown := make(chan struct{})
 	m.instances["plugin-a"] = newBlockingShutdownPluginInstance(t, shutdownStarted, releaseShutdown)
 
-	stopDone := make(chan error, 1)
+	stopDone := make(chan struct{})
 	go func() {
-		stopDone <- m.StopPlugin("plugin-a")
+		m.StopAll()
+		close(stopDone)
 	}()
 
 	select {
 	case <-shutdownStarted:
 	case <-time.After(2 * time.Second):
-		t.Fatal("StopPlugin() did not start plugin shutdown")
+		t.Fatal("StopAll() did not start plugin shutdown")
 	}
 
 	runningDone := make(chan []string, 1)
@@ -109,17 +109,14 @@ func TestStopPluginDoesNotHoldManagerLockDuringShutdown(t *testing.T) {
 
 	close(releaseShutdown)
 	select {
-	case err := <-stopDone:
-		if err != nil {
-			t.Fatalf("StopPlugin() error = %v", err)
-		}
+	case <-stopDone:
 	case <-time.After(2 * time.Second):
-		t.Fatal("StopPlugin() did not finish after shutdown response")
+		t.Fatal("StopAll() did not finish after shutdown response")
 	}
 }
 
 func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.cachedPlugins = []*discovery.Plugin{
 		{
 			Manifest: &manifest.Manifest{
@@ -164,23 +161,21 @@ func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T
 	if err != nil {
 		t.Fatalf("StartPlugin(retry) error = %v", err)
 	}
-	if inst == nil || !inst.IsRunning() {
+	if inst == nil || !processRunning(inst) {
 		t.Fatal("successful retry did not return a running instance")
 	}
 	if running := m.GetRunningPlugins(); len(running) != 1 || running[0] != "plugin-a" {
 		t.Fatalf("GetRunningPlugins() after retry = %#v, want [plugin-a]", running)
 	}
 
-	if err := m.StopPlugin("plugin-a"); err != nil {
-		t.Fatalf("StopPlugin() error = %v", err)
-	}
+	m.StopAll()
 	if running := m.GetRunningPlugins(); len(running) != 0 {
 		t.Fatalf("GetRunningPlugins() after stop = %#v, want empty", running)
 	}
 }
 
 func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.cachedPlugins = []*discovery.Plugin{
 		{
 			Manifest: &manifest.Manifest{
@@ -239,9 +234,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 		t.Fatalf("startPluginInstanceHook attempts = %d, want 2", attempt)
 	}
 
-	if err := m.StopPlugin("plugin-a"); err != nil {
-		t.Fatalf("StopPlugin() error = %v", err)
-	}
+	m.StopAll()
 }
 
 func TestInitializePluginRequiresPluginOwnedProtocolDeclaration(t *testing.T) {
@@ -287,7 +280,7 @@ func TestInitializePluginRequiresPluginOwnedProtocolDeclaration(t *testing.T) {
 			})
 			defer inst.Stop()
 
-			err := NewManager().initializePlugin(inst, runtimeConfig{network: "testnet"})
+			err := NewManagerWithDataDir("").initializePlugin(inst, runtimeConfig{network: "testnet"})
 			if got := <-seenHostProtocol; got {
 				t.Fatal("initialize request exposed a protocol token that legacy plugins could echo")
 			}
@@ -435,4 +428,14 @@ func waitForStoppedProcess(t *testing.T, cmd *exec.Cmd) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatal("plugin process did not stop after failed initialization cleanup")
+}
+
+// processRunning probes the plugin process with signal 0 rather than reading
+// Process.ProcessState, which is written by the Wait call in Stop and would
+// race concurrent stops.
+func processRunning(i *Instance) bool {
+	if i.Process == nil || i.Process.Process == nil {
+		return false
+	}
+	return i.Process.Process.Signal(syscall.Signal(0)) == nil
 }

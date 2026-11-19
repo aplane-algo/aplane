@@ -54,7 +54,7 @@ var ErrInvalidResponse = errors.New("invalid signer response")
 // auth/lock/config/server failures without matching message text.
 type HTTPStatusError struct {
 	StatusCode int
-	Code       string // stable wire code from ErrorResponse; empty on old servers
+	Code       string // stable wire code from ErrorResponse
 	Message    string
 }
 
@@ -66,16 +66,9 @@ func (e *HTTPStatusError) Error() string {
 }
 
 // IsLocked reports whether the signer rejected the request because the
-// keystore is locked. The message fallback covers servers that predate
-// wire error codes.
+// keystore is locked.
 func (e *HTTPStatusError) IsLocked() bool {
-	if e == nil {
-		return false
-	}
-	if e.Code != "" {
-		return e.Code == signerapi.ErrCodeLocked
-	}
-	return e.StatusCode == http.StatusForbidden && strings.Contains(strings.ToLower(e.Message), "locked")
+	return e != nil && e.Code == signerapi.ErrCodeLocked
 }
 
 // httpStatusError reads a non-2xx response body into a typed error carrying

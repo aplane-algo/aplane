@@ -106,9 +106,6 @@ func NewAPI(eng *engine.Engine, output func(string)) *API {
 func (a *API) Context() context.Context {
 	a.ctxMu.RLock()
 	defer a.ctxMu.RUnlock()
-	if a.ctx == nil {
-		return context.Background()
-	}
 	return a.ctx
 }
 
@@ -294,11 +291,11 @@ func (a *API) hostCall(name string, fn func(goja.FunctionCall) goja.Value) func(
 				return
 			}
 			if thrown := recover(); thrown != nil {
-				a.outputMsg(fmt.Sprintf("%s() ended after the script was interrupted, failing with: %s", name, thrownMessage(thrown)))
+				a.output(fmt.Sprintf("%s() ended after the script was interrupted, failing with: %s", name, thrownMessage(thrown)))
 				panic(thrown)
 			}
 			if returned != nil && !goja.IsUndefined(returned) && !goja.IsNull(returned) {
-				a.outputMsg(fmt.Sprintf("%s() ended after the script was interrupted, returning: %s", name, reportedValue(returned)))
+				a.output(fmt.Sprintf("%s() ended after the script was interrupted, returning: %s", name, reportedValue(returned)))
 			}
 		}()
 		return fn(call)
@@ -340,15 +337,6 @@ func reportedValue(v goja.Value) string {
 	return fmt.Sprintf("%s... (truncated: %d of %d bytes shown)", text[:cut], cut, len(text))
 }
 
-// output helper for internal use.
-func (a *API) outputMsg(msg string) {
-	if a.output != nil {
-		a.output(msg)
-	} else {
-		fmt.Println(msg)
-	}
-}
-
 // jsPrint outputs a message to the console.
 func (a *API) jsPrint(call goja.FunctionCall) goja.Value {
 	args := make([]interface{}, len(call.Arguments))
@@ -356,7 +344,7 @@ func (a *API) jsPrint(call goja.FunctionCall) goja.Value {
 		args[i] = arg.Export()
 	}
 	msg := fmt.Sprint(args...)
-	a.outputMsg(msg)
+	a.output(msg)
 	return goja.Undefined()
 }
 
@@ -370,7 +358,7 @@ func (a *API) jsLog(call goja.FunctionCall) goja.Value {
 		args[i] = arg.Export()
 	}
 	msg := fmt.Sprint(args...)
-	a.outputMsg("[debug] " + msg)
+	a.output("[debug] " + msg)
 	return goja.Undefined()
 }
 
@@ -411,7 +399,7 @@ func (a *API) jsWaitForTx(call goja.FunctionCall) goja.Value {
 
 	result, err := a.engine.WaitForConfirmationResult(a.Context(), txid, rounds)
 	if result != nil && result.Output != "" {
-		a.outputMsg(result.Output)
+		a.output(result.Output)
 	}
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("waitForTx() error: %v", err)))

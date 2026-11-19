@@ -13,12 +13,12 @@ import (
 
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
-	registry, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+	registry, err := upsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, false)
 	if err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
+		t.Fatalf("upsertStoredClientEndpoint(first) error = %v", err)
 	}
 	if registry.Default != "" {
 		t.Fatalf("Default = %q, want empty for first endpoint", registry.Default)
@@ -38,23 +38,23 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 
 func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, false); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
+		t.Fatalf("upsertStoredClientEndpoint(first) error = %v", err)
 	}
-	_, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+	_, err := upsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2224",
 	}, false)
 	if err == nil {
-		t.Fatal("UpsertStoredClientEndpoint(conflict) error = nil, want conflict")
+		t.Fatal("upsertStoredClientEndpoint(conflict) error = nil, want conflict")
 	}
 	if !strings.Contains(err.Error(), "already exists with different settings") {
 		t.Fatalf("conflict error = %v", err)
 	}
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
@@ -65,25 +65,25 @@ func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 
 func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223/",
 	}, false); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
+		t.Fatalf("upsertStoredClientEndpoint(first) error = %v", err)
 	}
 
-	_, err := UpsertStoredClientEndpoint(dataDir, "cosigner-copy", ClientEndpointConfig{
+	_, err := upsertStoredClientEndpoint(dataDir, "cosigner-copy", ClientEndpointConfig{
 		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true)
 	if err == nil {
-		t.Fatal("UpsertStoredClientEndpoint(duplicate URL) error = nil, want conflict")
+		t.Fatal("upsertStoredClientEndpoint(duplicate URL) error = nil, want conflict")
 	}
 	if !strings.Contains(err.Error(), "already belongs to alias") {
 		t.Fatalf("duplicate URL error = %v", err)
 	}
 
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
@@ -94,17 +94,17 @@ func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T
 
 func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "main", ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, "main", ClientEndpointConfig{
 		Role: ClientEndpointRoleSigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(signer) error = %v", err)
+		t.Fatalf("upsertStoredClientEndpoint(signer) error = %v", err)
 	}
-	if _, err := UpsertStoredClientEndpoint(dataDir, "local-cosigner", ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, "local-cosigner", ClientEndpointConfig{
 		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(cosigner same URL) error = %v", err)
+		t.Fatalf("upsertStoredClientEndpoint(cosigner same URL) error = %v", err)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestStoredClientEndpointRejectsRetiredSchemaVersions(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(contents), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := LoadStoredClientEndpointRegistry(dataDir); err == nil || !strings.Contains(err.Error(), "want 2") {
+		if _, err := LoadStoredClientEndpointRegistry(dataDir); err == nil || !strings.Contains(err.Error(), "want 2") {
 			t.Errorf("LoadStoredClientEndpointRegistry(%q) error = %v, want a schema_version rejection", contents, err)
 		}
 	}
@@ -135,7 +135,7 @@ endpoints:
 	if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	_, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err == nil || !strings.Contains(err.Error(), "field published_cosigners not found") {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v, want strict v2 rejection", err)
 	}
@@ -184,12 +184,12 @@ func TestStoredClientEndpointRejectsSelfForEveryRole(t *testing.T) {
 	for _, role := range []string{ClientEndpointRoleSigner, ClientEndpointRoleCosigner} {
 		t.Run(role, func(t *testing.T) {
 			dataDir := t.TempDir()
-			_, err := UpsertStoredClientEndpoint(dataDir, role, ClientEndpointConfig{
+			_, err := upsertStoredClientEndpoint(dataDir, role, ClientEndpointConfig{
 				Role: role,
 				URL:  "self",
 			}, false)
 			if err == nil || !strings.Contains(err.Error(), `url "self" is not supported`) {
-				t.Fatalf("UpsertStoredClientEndpoint() error = %v, want unsupported self URL", err)
+				t.Fatalf("upsertStoredClientEndpoint() error = %v, want unsupported self URL", err)
 			}
 		})
 	}
@@ -207,7 +207,7 @@ func TestUpsertStoredClientEndpointReportsDestinationChange(t *testing.T) {
 	if first.DestinationChanged || !first.Created {
 		t.Fatalf("first plan = %+v", first)
 	}
-	if err := ApplyStoredClientEndpointUpsert(dataDir, first); err != nil {
+	if err := SaveStoredClientEndpointRegistry(dataDir, first.Registry); err != nil {
 		t.Fatal(err)
 	}
 	same, err := PlanStoredClientEndpointUpsert(dataDir, "cos", ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://old.example"}, true)
@@ -221,7 +221,7 @@ func TestUpsertStoredClientEndpointReportsDestinationChange(t *testing.T) {
 	if err := RemoveStoredClientEndpoint(dataDir, "cos"); err != nil {
 		t.Fatalf("RemoveStoredClientEndpoint() error = %v", err)
 	}
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil || len(registry.Endpoints) != 0 {
 		t.Fatalf("registry after removal = %+v, %v", registry, err)
 	}
@@ -237,4 +237,16 @@ func TestStoredClientEndpointRejectsNonSSHSchemes(t *testing.T) {
 			t.Fatalf("PlanStoredClientEndpointUpsert(%s) error = %v, want ssh-only rejection", url, err)
 		}
 	}
+}
+
+// upsertStoredClientEndpoint plans and writes one endpoint upsert.
+func upsertStoredClientEndpoint(dataDir, alias string, endpoint ClientEndpointConfig, replace bool) (ClientEndpointRegistry, error) {
+	plan, err := PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
+	if err != nil {
+		return ClientEndpointRegistry{}, err
+	}
+	if err := SaveStoredClientEndpointRegistry(dataDir, plan.Registry); err != nil {
+		return ClientEndpointRegistry{}, err
+	}
+	return plan.Registry, nil
 }

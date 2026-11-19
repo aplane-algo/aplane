@@ -37,14 +37,6 @@ func (s *enrolledSet) hooks() ProductHooks {
 			defer s.mu.Unlock()
 			return s.keys[ssh.FingerprintSHA256(key)]
 		},
-		EnrollKey: func(key ssh.PublicKey, _ string) (bool, error) {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			fp := ssh.FingerprintSHA256(key)
-			added := !s.keys[fp]
-			s.keys[fp] = true
-			return added, nil
-		},
 	}
 }
 

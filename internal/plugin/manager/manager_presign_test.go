@@ -43,7 +43,7 @@ func TestPresignSignTransactionsRoundTrip(t *testing.T) {
 
 	inst := newPresignPluginInstance(t, acct, canonicalB64)
 
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.instances["presign"] = inst // inject so StartPlugin returns this instance
 
 	// execute -> draft + pluginSigners
@@ -105,7 +105,10 @@ func newPresignPluginInstance(t *testing.T, acct crypto.Account, canonicalB64 st
 		dec := json.NewDecoder(clientToServerReader)
 		enc := json.NewEncoder(serverToClientWriter)
 		for {
-			var req jsonrpc.Request
+			var req struct {
+				jsonrpc.Request
+				Params json.RawMessage `json:"params"`
+			}
 			if err := dec.Decode(&req); err != nil {
 				_ = clientToServerReader.Close()
 				_ = serverToClientWriter.Close()
@@ -124,7 +127,7 @@ func newPresignPluginInstance(t *testing.T, acct crypto.Account, canonicalB64 st
 				})
 			case jsonrpc.MethodSignTransactions:
 				var p jsonrpc.SignTransactionsParams
-				_ = req.ParseParams(&p)
+				_ = json.Unmarshal(req.Params, &p)
 				var out jsonrpc.SignTransactionsResult
 				for _, r := range p.Requests {
 					raw, _ := base64.StdEncoding.DecodeString(r.Encoded)
@@ -174,7 +177,7 @@ func TestSignTransactionsEndsWhenItsContextDoes(t *testing.T) {
 			close(asked)
 		}
 	}()
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	m.instances["presign"] = inst
 
 	ctx, cancel := context.WithCancel(context.Background())

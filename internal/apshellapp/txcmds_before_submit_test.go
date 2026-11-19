@@ -138,20 +138,20 @@ func TestCloseAnnouncesBeforeSigning(t *testing.T) {
 func TestScriptSweepRunsTheShellsSweep(t *testing.T) {
 	app := beforeSubmitApp(t)
 	runner := app.Scripts.EnsureRunner(func(string) {}, nil)
-	_, err := runner.Run(`sweep("no-such-alias", "` + beforeSubmitTo + `")`)
+	_, err := runner.RunWithContext(context.Background(), `sweep("no-such-alias", "`+beforeSubmitTo+`")`)
 	if err == nil || !strings.Contains(err.Error(), "failed to resolve source addresses") {
 		t.Fatalf("sweep() error = %v, want the shell sweep's own resolution error", err)
 	}
 
 	// Every transaction failing is raised, with the account's reason.
-	_, err = runner.Run(`sweep("` + beforeSubmitFrom + `", "` + beforeSubmitTo + `", {leaving: 1000000})`)
+	_, err = runner.RunWithContext(context.Background(), `sweep("`+beforeSubmitFrom+`", "`+beforeSubmitTo+`", {leaving: 1000000})`)
 	if err == nil || !strings.Contains(err.Error(), "all 1 transaction(s) failed") ||
 		!strings.Contains(err.Error(), beforeSubmitFrom+": ") {
 		t.Fatalf("sweep() error = %v, want every-transaction-failed with the account's reason", err)
 	}
 
 	// An account with nothing above what is to be left is skipped, not failed.
-	v, err := runner.Run(`const r = sweep("` + beforeSubmitFrom + `", "` + beforeSubmitTo + `", {leaving: 5000000}); r.succeeded + "|" + r.failed + "|" + r.items[0].skipped`)
+	v, err := runner.RunWithContext(context.Background(), `const r = sweep("`+beforeSubmitFrom+`", "`+beforeSubmitTo+`", {leaving: 5000000}); r.succeeded + "|" + r.failed + "|" + r.items[0].skipped`)
 	if err != nil {
 		t.Fatalf("sweep() error = %v", err)
 	}

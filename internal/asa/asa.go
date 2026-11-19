@@ -59,14 +59,6 @@ func BuiltinMetadata(network string, assetID uint64) (Metadata, bool) {
 	return metadataFromInfo(network, assetID, info, SourceBuiltin), true
 }
 
-func BuiltinMetadataByRef(network, ref string) (Metadata, bool) {
-	assetID, ok, err := asaregistry.ResolveReference(network, ref)
-	if err != nil || !ok {
-		return Metadata{}, false
-	}
-	return BuiltinMetadata(network, assetID)
-}
-
 // IsAlgoRef reports whether ref names ALGO, the network's own asset, rather
 // than an ASA: "algo" in any case.
 func IsAlgoRef(ref string) bool {

@@ -15,7 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/jsapi"
 )
 
-// GojaRunner implements Runner using the Goja JavaScript interpreter.
+// GojaRunner runs scripts in the Goja JavaScript interpreter.
 type GojaRunner struct {
 	vm             *goja.Runtime
 	api            *jsapi.API
@@ -54,11 +54,6 @@ func NewGojaRunner(eng *engine.Engine) *GojaRunner {
 	r.api = api
 
 	return r
-}
-
-// Run executes JavaScript code and returns the result.
-func (r *GojaRunner) Run(code string) (result Result, err error) {
-	return r.RunWithContext(context.Background(), code)
 }
 
 // RunWithContext executes JavaScript code and makes ctx available to host-side
@@ -167,13 +162,6 @@ func (r *GojaRunner) SetSweeper(sweeper jsapi.Sweeper) {
 	r.api.SetSweeper(sweeper)
 }
 
-// Interrupt stops the currently running script.
-// Safe to call from another goroutine (e.g., for timeout enforcement).
-// An interrupt that arrives between runs is discarded by the next run.
-func (r *GojaRunner) Interrupt() {
-	r.vm.Interrupt("script interrupted")
-}
-
 // interruptOnCancel interrupts the VM if ctx is cancelled while a run is in
 // progress. It clears any interrupt left from before the run, and the stop
 // function it returns waits for its watcher goroutine to exit and then clears
@@ -216,12 +204,6 @@ func interruptedError(ctxErr, scriptErr error) error {
 	return fmt.Errorf("script interrupted: %w; the script ended with: %w", ctxErr, scriptErr)
 }
 
-// Runtime returns the underlying Goja runtime.
-// Use sparingly - prefer the Runner interface for portability.
-func (r *GojaRunner) Runtime() *goja.Runtime {
-	return r.vm
-}
-
 type runnerModeState struct {
 	writeMode bool
 	verbose   bool
@@ -259,6 +241,3 @@ func (r *GojaRunner) emitStartupWarning() {
 		output(warning)
 	}
 }
-
-// Compile-time interface check
-var _ Runner = (*GojaRunner)(nil)

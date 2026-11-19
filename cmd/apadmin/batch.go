@@ -39,7 +39,7 @@ func isTestMode() bool {
 // `apadmin --test`. Once connected, it should communicate through
 // request/response helpers rather than mixing in raw reads.
 type testModeClient struct {
-	transport transport.Transport
+	transport *transport.IPCClient
 }
 
 func newTestModeClient() *testModeClient {
@@ -47,7 +47,7 @@ func newTestModeClient() *testModeClient {
 }
 
 // Connect establishes the connection using the provided transport.
-func (c *testModeClient) Connect(conn transport.Transport) error {
+func (c *testModeClient) Connect(conn *transport.IPCClient) error {
 	if err := conn.Dial(); err != nil {
 		return err
 	}
@@ -203,7 +203,7 @@ func runTestMode(ipcPath string, args []string) {
 }
 
 // runTestSession runs apadmin test mode over the local IPC transport.
-func runTestSession(conn transport.Transport, args []string) {
+func runTestSession(conn *transport.IPCClient, args []string) {
 	if len(args) == 0 {
 		printTestUsage()
 		os.Exit(1)

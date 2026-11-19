@@ -33,7 +33,7 @@ func executeConnectEndpointAlias(r *REPLState, alias string) (*apshellapp.Connec
 	return r.app().ConnectEndpointAlias(r.commandContext(), alias, hostKeyApproval, nil)
 }
 
-func (r *REPLState) cmdDisconnect(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdDisconnect(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) != 0 {
 		return nil, fmt.Errorf("usage: disconnect")
 	}

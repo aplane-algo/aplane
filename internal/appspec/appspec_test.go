@@ -183,7 +183,6 @@ func TestLoadRejectsOversizedStaticByteArray(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.json")
 	data, err := json.Marshal(Contract{
-		Name: "bad",
 		Methods: []Method{{
 			Name:    "set_box",
 			Args:    []MethodArg{{Name: "v", Type: "byte[999999999999999999999]"}},

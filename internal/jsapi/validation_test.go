@@ -23,7 +23,7 @@ func TestArgumentValidation(t *testing.T) {
 
 	// Create API and register on runtime
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestNegativeValueValidation(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestAppCallRawAllowsZeroArgs(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestAppCallRawRejectsNonArrayArgs(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestAppCallRefusesReferenceListsThatAreNotArrays(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestAppCallValidationRejectsEmptyABIPathAndEmptyBoxName(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestAlgoMicroalgosNoArgs(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestAlgoValidConversions(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestAlgoValidConversions(t *testing.T) {
 func TestAmountConversionsRejectImprecise(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -532,7 +532,7 @@ func TestGetAsaId(t *testing.T) {
 	eng := engine.NewEngine("mainnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}
@@ -580,7 +580,7 @@ func TestFunctionsReturnWithoutEngine(t *testing.T) {
 	eng := engine.NewEngine("testnet")
 
 	vm := goja.New()
-	api := NewAPI(eng, nil)
+	api := NewAPI(eng, func(string) {})
 	if err := api.RegisterAll(vm); err != nil {
 		t.Fatalf("failed to register API: %v", err)
 	}

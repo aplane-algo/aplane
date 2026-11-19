@@ -12,7 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
-func (r *REPLState) cmdApp(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdApp(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("usage: app read <info|global|local|box|boxes> | app call raw <app-id> from <account> | app deploy from <account>")
 	}

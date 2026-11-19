@@ -121,7 +121,7 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, args LsigArgs, opt
 	if rotating, err := e.rotatingSender(txns, opts); err != nil {
 		return nil, nil, err
 	} else if rotating {
-		return e.Connection.SignAndSubmitRotating(txns[0], e.AlgodClient, clientsign.RotatingOptions{SubmitOptions: opts})
+		return e.Connection.SignAndSubmitRotating(txns[0], e.AlgodClient, opts)
 	}
 	if gs := e.cosignedSigner(); gs.HasCosignedEffectiveSigner(txns) {
 		return gs.SignAndSubmitGroup(txns, opts)

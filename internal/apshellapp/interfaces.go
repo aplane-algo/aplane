@@ -26,5 +26,5 @@ type PluginRuntime interface {
 
 // ScriptRuntime is the narrow application-facing scripting boundary.
 type ScriptRuntime interface {
-	EnsureRunner(output func(string), pluginExecutor jsapi.PluginExecutor) scripting.Runner
+	EnsureRunner(output func(string), pluginExecutor jsapi.PluginExecutor) *scripting.GojaRunner
 }

@@ -315,8 +315,7 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	}
 	previousAlias, _, _ := cfg.Endpoints.DefaultEndpoint()
 	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		_, err := config.SetStoredClientEndpointDefault(a.DataDir, alias)
-		return err
+		return config.SetStoredClientEndpointDefault(a.DataDir, alias)
 	}); err != nil {
 		return nil, err
 	}
@@ -358,7 +357,7 @@ func lockedEndpointUpsert(dataDir, alias string, endpoint config.ClientEndpointC
 		if err != nil {
 			return err
 		}
-		if err := config.ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
+		if err := config.SaveStoredClientEndpointRegistry(dataDir, plan.Registry); err != nil {
 			return err
 		}
 		applied = plan

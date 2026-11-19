@@ -30,7 +30,7 @@ func (s *ConnectionState) SignAndSubmitGroup(
 func (s *ConnectionState) SignAndSubmitRotating(
 	txn types.Transaction,
 	algodClient *algod.Client,
-	opts clientsign.RotatingOptions,
+	opts clientsign.SubmitOptions,
 ) ([]string, []types.Transaction, error) {
 	client, err := s.signerClient()
 	if err != nil {

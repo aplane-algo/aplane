@@ -72,7 +72,7 @@ section.
 The admin protocol retains a second pre-auth message, `auth_only`, in the
 current v6.0 surface. `auth_only`
 (`internal/signerapp/adminserver/session.go` `AuthenticateOutcome`,
-`internal/transport/protocol_flow.go` `authenticateOnly`) verifies the
+`internal/transport/protocol_flow.go` `authenticateWithMode` with `only`) verifies the
 passphrase and binds the session runtime but never authorizes or invokes
 `identity.unlock`; `apadmin`'s read-only cosigner, generation-inventory, and
 endpoint-settings reads use it. `session_ownership.tla`'s `AuthSucceed`

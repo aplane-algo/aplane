@@ -54,7 +54,7 @@ type rotateRecoverProjection struct {
 
 // cmdRotate sends a rotate-only spend, reports rotating accounts, or asks
 // the signer to search for an account's live stage.
-func (r *REPLState) cmdRotate(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdRotate(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) >= 1 && args[0] == "status" {
 		if len(args) > 2 {
 			return nil, fmt.Errorf("usage: %s", rotateUsage)

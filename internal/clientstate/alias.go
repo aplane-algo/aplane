@@ -21,11 +21,8 @@ type AliasMutationResult struct {
 	OldAddress string
 }
 
-// RefreshAuthAddress refreshes the cached auth address for a specific account.
-func (s *State) RefreshAuthAddress(addr string) (string, error) {
-	return s.RefreshAuthAddressWithContext(context.Background(), addr)
-}
-
+// RefreshAuthAddressWithContext refreshes the cached auth address for a
+// specific account.
 func (s *State) RefreshAuthAddressWithContext(ctx context.Context, addr string) (string, error) {
 	var authAddr string
 	err := s.WithExclusiveLock(func() error {
@@ -37,11 +34,6 @@ func (s *State) RefreshAuthAddressWithContext(ctx context.Context, addr string) 
 		return err
 	})
 	return authAddr, err
-}
-
-// AddAlias persists an alias mutation into the client-side cache state.
-func (s *State) AddAlias(name, address string) (*AliasMutationResult, error) {
-	return s.AddAliasWithContext(context.Background(), name, address)
 }
 
 // AddAliasWithContext persists an alias mutation into the client-side cache

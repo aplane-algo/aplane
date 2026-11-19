@@ -88,7 +88,7 @@ func within(t *testing.T, limit time.Duration, what string, fn func() error) err
 // A plugin that stops reading its input fails the command at the manifest
 // timeout, and is stopped.
 func TestCommandToAPluginThatStopsReadingTimesOut(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	unreadingPlugin(t, m, 1)
 	err := within(t, 5*time.Second, "ExecuteCommand", func() error {
 		_, err := m.ExecuteCommand(context.Background(), "unreading", "work", nil, bigContext())
@@ -104,7 +104,7 @@ func TestCommandToAPluginThatStopsReadingTimesOut(t *testing.T) {
 
 // Cancelling the command reaches a plugin that stops reading its input.
 func TestCancelReachesAPluginThatStopsReading(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	entered := unreadingPlugin(t, m, 30)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -127,7 +127,7 @@ func TestCancelReachesAPluginThatStopsReading(t *testing.T) {
 // StopAll does not wait behind a request the plugin is not reading, and the
 // command that sent it ends with the stop.
 func TestStopAllDoesNotWaitForAStalledWrite(t *testing.T) {
-	m := NewManager()
+	m := NewManagerWithDataDir("")
 	entered := unreadingPlugin(t, m, 30)
 	commandErr := make(chan error, 1)
 	go func() {

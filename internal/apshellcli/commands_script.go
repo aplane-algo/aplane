@@ -26,15 +26,15 @@ import (
 // Supports:
 //   - js -help: print the JavaScript API reference
 //   - js <file.js>, js { code }, js <inline>, and multi-line mode
-func (r *REPLState) cmdJS(args []string, ctx interface{}) (command.Result, error) {
+func (r *REPLState) cmdJS(args []string, ctx *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(nil), r.runJS(args, rawCommandArgs(ctx))
 }
 
 // rawCommandArgs returns a command's arguments as typed, with the quotes
 // ParseCommand strips.
-func rawCommandArgs(ctx interface{}) string {
-	if c, ok := ctx.(*command.Context); ok && c != nil {
-		return c.RawArgs
+func rawCommandArgs(ctx *command.Context) string {
+	if ctx != nil {
+		return ctx.RawArgs
 	}
 	return ""
 }
@@ -174,7 +174,7 @@ func (r *REPLState) readJSLines(lines []string, isEnd func(line string) bool) (_
 
 // cmdJSSave saves JavaScript code to a file in the data directory's scripts/ folder.
 // Usage: jssave [-f] <path> [-last | <javascript code>]
-func (r *REPLState) cmdJSSave(_ []string, ctx interface{}) (command.Result, error) {
+func (r *REPLState) cmdJSSave(_ []string, ctx *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(nil), r.runJSSave(rawCommandArgs(ctx))
 }
 
@@ -215,7 +215,7 @@ func (r *REPLState) runJSSave(rawArgs string) error {
 }
 
 // cmdJSList lists saved JavaScript scripts in the data directory's scripts/ folder.
-func (r *REPLState) cmdJSList(_ []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdJSList(_ []string, _ *command.Context) (command.Result, error) {
 	return newTerminalCommandResult(nil), r.runJSList()
 }
 

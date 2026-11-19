@@ -1607,7 +1607,7 @@ func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL str
 		engine.WithAlgodClient(algodClient),
 		engine.WithCacheStore(cacheStore),
 		engine.WithSignerCache(cache.NewSignerCache()),
-		engine.WithAuthCache(cache.NewAuthAddressCache()),
+		engine.WithAuthCache(cache.NewAuthAddressCacheForStore(nil)),
 	)
 
 	eng.Connection.SignerClient = util.NewSignerClient(signerURL)

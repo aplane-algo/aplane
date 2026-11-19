@@ -142,7 +142,7 @@ func newPluginRekeyFixture(t *testing.T, keys []signerapi.KeyInfo) *pluginRekeyF
 			keys, locked := f.keys, f.locked
 			f.mu.Unlock()
 			if locked {
-				http.Error(w, "signer is locked", http.StatusForbidden)
+				http.Error(w, `{"error":"signer is locked","code":"locked"}`, http.StatusForbidden)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")

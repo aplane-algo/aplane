@@ -94,22 +94,7 @@ func TestResolveASAReferenceRefusesCachedAssetSharingBuiltinAlias(t *testing.T) 
 	}
 }
 
-func TestResolveBuiltinASAReferenceAndInfo(t *testing.T) {
-	if id, ok := ResolveBuiltinASAReference("testnet", "USDC"); !ok || id != 10458941 {
-		t.Fatalf("ResolveBuiltinASAReference(testnet, USDC) = (%d, %v), want (10458941, true)", id, ok)
-	}
-	if id, ok := ResolveBuiltinASAReference("mainnet", "akita"); !ok || id != 523683256 {
-		t.Fatalf("ResolveBuiltinASAReference(mainnet, akita) = (%d, %v), want (523683256, true)", id, ok)
-	}
-	if id, ok := ResolveBuiltinASAReference("testnet", "10458941"); !ok || id != 10458941 {
-		t.Fatalf("ResolveBuiltinASAReference(testnet, 10458941) = (%d, %v), want (10458941, true)", id, ok)
-	}
-	if _, ok := ResolveBuiltinASAReference("testnet", "not-a-builtin"); ok {
-		t.Fatal("unexpected builtin resolution for unknown asset")
-	}
-	if unit, ok := BuiltinASAUnitName("testnet", 10458941); !ok || unit != "USDC" {
-		t.Fatalf("BuiltinASAUnitName() = (%q, %v), want (USDC, true)", unit, ok)
-	}
+func TestBuiltinASAInfo(t *testing.T) {
 	if info, ok := BuiltinASAInfo("testnet", 10458941); !ok || info.Name != "USDC" {
 		t.Fatalf("BuiltinASAInfo() = (%+v, %v), want USDC", info, ok)
 	}

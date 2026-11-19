@@ -675,7 +675,7 @@ func TestSignAndSubmitRotatingRefreshesAgedWindowAndDefaultsContext(t *testing.T
 
 	txn := rotatingOriginal() // valid 1000-1100: long expired at round 5000
 	var out bytes.Buffer
-	txIDs, prepared, err := SignAndSubmitRotating(txn, signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Simulate: true, Out: &out}})
+	txIDs, prepared, err := SignAndSubmitRotating(txn, signerClient, algodClient, SubmitOptions{Simulate: true, Out: &out})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,7 +716,7 @@ func TestSignAndSubmitRotatingSubmitsCheckedSignedGroup(t *testing.T) {
 		})
 		var simulated []types.Transaction
 		algodClient := fakeAlgodWithSubmit(t, round, &simulated, submit)
-		_, _, err := SignAndSubmitRotating(rotatingOriginal(), signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Out: io.Discard}})
+		_, _, err := SignAndSubmitRotating(rotatingOriginal(), signerClient, algodClient, SubmitOptions{Out: io.Discard})
 		return answered, err
 	}
 	honest := func(prep *signerapi.RotatingPrepareResponse, txns []types.Transaction) *signerapi.RotatingSignResponse {
@@ -846,7 +846,7 @@ func TestSignAndSubmitRotatingRetries(t *testing.T) {
 		caller := txn
 		before := txnutil.EncodeWithPrefix(caller)
 		var out bytes.Buffer
-		_, _, err := SignAndSubmitRotating(caller, signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Out: &out}})
+		_, _, err := SignAndSubmitRotating(caller, signerClient, algodClient, SubmitOptions{Out: &out})
 		if !bytes.Equal(txnutil.EncodeWithPrefix(caller), before) {
 			t.Fatal("the caller's transaction was modified")
 		}
@@ -1074,7 +1074,7 @@ func TestSignAndSubmitRotatingDoesNotRepeatAnAmbiguousOutcome(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = io.WriteString(w, "{")
 			})
-			_, _, err := SignAndSubmitRotating(rotatingOriginal(), client, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Out: io.Discard}})
+			_, _, err := SignAndSubmitRotating(rotatingOriginal(), client, algodClient, SubmitOptions{Out: io.Discard})
 			if err == nil || prepares.Load() != 1 || signs.Load() != 1 {
 				t.Fatalf("err = %v, prepares = %d, signs = %d; want an error after one of each", err, prepares.Load(), signs.Load())
 			}

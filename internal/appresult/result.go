@@ -4,8 +4,6 @@
 package appresult
 
 import (
-	"encoding/json"
-
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
@@ -276,12 +274,6 @@ type ASAInfoView struct {
 	Freeze        string
 	Clawback      string
 	DefaultFrozen bool
-}
-
-// Marshal serializes a result payload and ignores encoding errors.
-func Marshal(v any) []byte {
-	data, _ := json.Marshal(v)
-	return data
 }
 
 // StatusToMCP projects an engine status result into the MCP status schema.

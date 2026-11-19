@@ -201,7 +201,10 @@ func TestPluginMarshalFiltersStructuredPayload(t *testing.T) {
 	}
 
 	payload.Data = FilterPluginData(payload.Data)
-	data := Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
 
 	var got map[string]any
 	if err := json.Unmarshal(data, &got); err != nil {

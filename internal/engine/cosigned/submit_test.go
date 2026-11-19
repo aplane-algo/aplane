@@ -403,7 +403,7 @@ func TestRequestCosignerComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":"signer is locked"}`, http.StatusForbidden)
+		http.Error(w, `{"error":"signer is locked","code":"locked"}`, http.StatusForbidden)
 	})
 	node := sshtest.Serve(t, mux)
 
@@ -562,7 +562,7 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 	if build != nil {
 		build(&signerCache)
 	}
-	authCache := cache.NewAuthAddressCache()
+	authCache := cache.NewAuthAddressCacheForStore(nil)
 	s := New(Deps{
 		Conn:      connect.NewState(),
 		AuthCache: &authCache,

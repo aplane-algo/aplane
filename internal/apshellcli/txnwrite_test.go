@@ -105,7 +105,7 @@ func TestOneShotSimulateReturnsTheCommandsOwnResult(t *testing.T) {
 	var own command.Result
 	if err := repl.CommandRegistry.Register(&command.Command{
 		Name: "prompts", Category: command.CategoryTransaction, Automation: command.StructuredAutomation,
-		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+		Handler: command.NewInternalHandler(func([]string, *command.Context) (command.Result, error) {
 			simulated := repl.app().IsSimulateEnabled()
 			own = newTerminalCommandResult(func(w io.Writer) error {
 				_, err := fmt.Fprintf(w, "simulated: %v\n", simulated)

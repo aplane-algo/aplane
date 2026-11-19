@@ -158,7 +158,7 @@ func (a *App) ResolveCosignerSetupTarget(req CosignerSetupRequest) (CosignerSetu
 	if target.URL == "" {
 		return CosignerSetupTarget{}, fmt.Errorf("%w; pass the cosigner URL", ErrCosignerEndpointURLRequired)
 	}
-	registry, _, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
+	registry, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
 	if err != nil {
 		return CosignerSetupTarget{}, err
 	}
@@ -231,7 +231,7 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return CosignerSetupPlan{}, fmt.Errorf("cosigner endpoint alias: %w", err)
 	}
-	registry, _, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
+	registry, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
 	if err != nil {
 		return CosignerSetupPlan{}, err
 	}
@@ -285,7 +285,7 @@ func (a *App) ApplyCosignerSetupEndpoint(plan CosignerSetupPlan, replace bool) (
 	}
 	var resolved config.ClientEndpointConfig
 	err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		registry, _, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
+		registry, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
 		if err != nil {
 			return err
 		}
@@ -304,7 +304,7 @@ func (a *App) ApplyCosignerSetupEndpoint(plan CosignerSetupPlan, replace bool) (
 		if !upsert.Created && !upsert.Updated {
 			return nil
 		}
-		return config.ApplyStoredClientEndpointUpsert(a.DataDir, upsert)
+		return config.SaveStoredClientEndpointRegistry(a.DataDir, upsert.Registry)
 	})
 	if err != nil {
 		return config.ClientEndpointConfig{}, err
@@ -412,7 +412,7 @@ func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan) error {
 		return fmt.Errorf("connection %q was not created by this setup run", plan.Alias)
 	}
 	err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		registry, _, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
+		registry, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
 		if err != nil {
 			return err
 		}

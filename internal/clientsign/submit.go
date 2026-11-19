@@ -11,7 +11,6 @@ import (
 	"io"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
@@ -104,7 +103,7 @@ func SignAndSubmitViaGroup(
 		}
 
 		if opts.Verbose {
-			_, _ = fmt.Fprintf(w, "  Transaction %d: %s → %s\n", i+1, sender[:8]+"...", FormatTransactionSummary(txn, nil))
+			_, _ = fmt.Fprintf(w, "  Transaction %d: %s → %s\n", i+1, sender[:8]+"...", formatTransactionSummary(txn))
 		}
 	}
 
@@ -147,7 +146,7 @@ func SignAndSubmitViaGroup(
 		}
 	}
 
-	signedObjects, submittedTxns, _, err := decodeSignedTransactionObjects(signedTxns)
+	signedObjects, submittedTxns, err := decodeSignedTransactionObjects(signedTxns)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -226,20 +225,18 @@ func DecodeSignedTxnToSubmit(raw []byte) (types.SignedTxn, error) {
 
 // decodeSignedTransactionObjects decodes the signer's returned bytes, which go
 // to the node as returned, with DecodeSignedTxnToSubmit.
-func decodeSignedTransactionObjects(signedTxns [][]byte) ([]types.SignedTxn, []types.Transaction, []string, error) {
+func decodeSignedTransactionObjects(signedTxns [][]byte) ([]types.SignedTxn, []types.Transaction, error) {
 	signedObjects := make([]types.SignedTxn, len(signedTxns))
 	txns := make([]types.Transaction, len(signedTxns))
-	txIDs := make([]string, len(signedTxns))
 	for i, signedBytes := range signedTxns {
 		signed, err := DecodeSignedTxnToSubmit(signedBytes)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("signed transaction at index %d: %w", i, err)
+			return nil, nil, fmt.Errorf("signed transaction at index %d: %w", i, err)
 		}
 		signedObjects[i] = signed
 		txns[i] = signed.Txn
-		txIDs[i] = sdkcrypto.GetTxID(signed.Txn)
 	}
-	return signedObjects, txns, txIDs, nil
+	return signedObjects, txns, nil
 }
 
 func writeSubmittedTransactions(

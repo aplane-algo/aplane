@@ -148,9 +148,8 @@ func TestFilterEnvEmpty(t *testing.T) {
 
 func TestGenerateSeatbeltProfile(t *testing.T) {
 	cfg := Config{
-		PluginDir:    "/opt/plugins/myplugin",
-		ExecPath:     "/opt/plugins/myplugin/run",
-		AllowNetwork: true,
+		PluginDir: "/opt/plugins/myplugin",
+		ExecPath:  "/opt/plugins/myplugin/run",
 	}
 
 	profile := generateSeatbeltProfile(cfg)
@@ -179,9 +178,9 @@ func TestGenerateSeatbeltProfile(t *testing.T) {
 		t.Error("profile should allow plugin directory")
 	}
 
-	// Should allow network when configured
+	// Should allow network
 	if !strings.Contains(profile, "(allow network*)") {
-		t.Error("profile should allow network when AllowNetwork=true")
+		t.Error("profile should allow network")
 	}
 
 	// Should allow file-read-metadata (required for HTTPS fetch / DNS stat calls)
@@ -201,37 +200,22 @@ func TestGenerateSeatbeltProfile(t *testing.T) {
 	}
 }
 
-func TestGenerateSeatbeltProfileNoNetwork(t *testing.T) {
-	cfg := Config{
-		PluginDir:    "/opt/plugins/myplugin",
-		ExecPath:     "/opt/plugins/myplugin/run",
-		AllowNetwork: false,
-	}
-
-	profile := generateSeatbeltProfile(cfg)
-
-	if strings.Contains(profile, "(allow network*)") {
-		t.Error("profile should NOT allow network when AllowNetwork=false")
-	}
-}
-
 func TestGenerateSeatbeltProfileEscapesPluginDir(t *testing.T) {
 	cfg := Config{
-		PluginDir:    `/tmp/plugin" ) (allow network*) ("`,
-		ExecPath:     "/tmp/plugin/run",
-		AllowNetwork: false,
+		PluginDir: `/tmp/plugin" ) (allow default) ("`,
+		ExecPath:  "/tmp/plugin/run",
 	}
 
 	profile := generateSeatbeltProfile(cfg)
 
-	if strings.Contains(profile, `(subpath "/tmp/plugin" ) (allow network*) ("`) {
+	if strings.Contains(profile, `(subpath "/tmp/plugin" ) (allow default) ("`) {
 		t.Fatal("profile should not interpolate raw plugin path")
 	}
 	if !strings.Contains(profile, strconv.Quote(cfg.PluginDir)) {
 		t.Fatal("profile should contain escaped plugin path literal")
 	}
-	if strings.Contains(profile, "\n(allow network*)\n") {
-		t.Fatal("profile should not gain network access from injected plugin path")
+	if strings.Contains(profile, "\n(allow default)\n") {
+		t.Fatal("profile should not gain a rule from an injected plugin path")
 	}
 }
 
@@ -246,11 +230,10 @@ func TestBuildCommandLinux(t *testing.T) {
 	}
 
 	cfg := Config{
-		PluginDir:    "/tmp/test-plugin",
-		ExecPath:     "/tmp/test-plugin/run.sh",
-		Args:         []string{"--foo", "bar"},
-		Env:          []string{"HOME=/home/test", "PATH=/usr/bin"},
-		AllowNetwork: true,
+		PluginDir: "/tmp/test-plugin",
+		ExecPath:  "/tmp/test-plugin/run.sh",
+		Args:      []string{"--foo", "bar"},
+		Env:       []string{"HOME=/home/test", "PATH=/usr/bin"},
 	}
 
 	cmd, err := BuildCommand(cfg)
@@ -275,9 +258,9 @@ func TestBuildCommandLinux(t *testing.T) {
 		t.Error("should mount plugin dir read-only")
 	}
 
-	// Should share network when allowed
+	// Should share network
 	if !strings.Contains(args, "--share-net") {
-		t.Error("should share network when AllowNetwork=true")
+		t.Error("should share network")
 	}
 
 	// Should include namespace isolation
@@ -296,35 +279,6 @@ func TestBuildCommandLinux(t *testing.T) {
 	// Should include plugin args after --
 	if !strings.Contains(args, "-- /tmp/test-plugin/run.sh --foo bar") {
 		t.Errorf("should include plugin command and args, got: %s", args)
-	}
-}
-
-func TestBuildCommandLinuxNoNetwork(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("Linux-only test")
-	}
-	if _, err := exec.LookPath("bwrap"); err != nil {
-		t.Skip("bubblewrap not installed")
-	}
-
-	cfg := Config{
-		PluginDir:    "/tmp/test-plugin",
-		ExecPath:     "/tmp/test-plugin/run.sh",
-		AllowNetwork: false,
-	}
-
-	cmd, err := BuildCommand(cfg)
-	if err != nil {
-		t.Fatalf("BuildCommand() error: %v", err)
-	}
-
-	args := strings.Join(cmd.Args, " ")
-
-	if !strings.Contains(args, "--unshare-net") {
-		t.Error("should unshare network when AllowNetwork=false")
-	}
-	if strings.Contains(args, "--share-net") {
-		t.Error("should NOT share network when AllowNetwork=false")
 	}
 }
 

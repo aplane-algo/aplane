@@ -60,10 +60,6 @@ func (c *StreamClient) SendAndReceive(msg interface{}, timeout time.Duration) ([
 	return c.dispatcher.request(msg, timeout)
 }
 
-func (c *StreamClient) SetReadDeadline(_ time.Duration) {}
-
-func (c *StreamClient) ClearReadDeadline() {}
-
 func (c *StreamClient) Notifications() <-chan Notification {
 	return c.dispatcher.notificationsChan()
 }

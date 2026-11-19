@@ -261,10 +261,10 @@ func TestEndpointDiscoverCosignersRejectsAuthenticationAndMalformedMetadata(t *t
 
 func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
+	if _, err := upsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example"}, true); err != nil {
+	if _, err := upsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example"}, true); err != nil {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
@@ -313,7 +313,7 @@ func TestConcurrentEndpointCreatesPreserveBothAliases(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	registry, _, err := config.LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := config.LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func writeEndpointEnvelope(t *testing.T, dir string) string {
 // with the node's client identity and pinned host key.
 func writeLiveCosignerEndpoint(t *testing.T, dir, alias string, node *sshtest.Node) {
 	t.Helper()
-	if _, err := config.UpsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: node.URL,
 		IdentityFile: node.IdentityFile, KnownHostsPath: node.KnownHostsPath,
 	}, true); err != nil {
@@ -410,7 +410,7 @@ func writeLiveCosignerEndpoint(t *testing.T, dir, alias string, node *sshtest.No
 // destinations that are not reachable or not live.
 func writeCosignerEndpointURL(t *testing.T, dir, alias, rawURL string) {
 	t.Helper()
-	if _, err := config.UpsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: rawURL,
 	}, true); err != nil {
 		t.Fatal(err)
@@ -531,4 +531,16 @@ func TestEndpointChangeReportsFailedConfigReload(t *testing.T) {
 	if _, ok := app.Config.Endpoints.Endpoint("cosigner"); ok {
 		t.Fatal("app adopted a config it could not reload")
 	}
+}
+
+// upsertStoredClientEndpoint plans and writes one endpoint upsert.
+func upsertStoredClientEndpoint(dataDir, alias string, endpoint config.ClientEndpointConfig, replace bool) (config.ClientEndpointRegistry, error) {
+	plan, err := config.PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
+	if err != nil {
+		return config.ClientEndpointRegistry{}, err
+	}
+	if err := config.SaveStoredClientEndpointRegistry(dataDir, plan.Registry); err != nil {
+		return config.ClientEndpointRegistry{}, err
+	}
+	return plan.Registry, nil
 }

@@ -36,7 +36,6 @@ const shutdownWriterWait = 100 * time.Millisecond
 
 // Client handles JSON-RPC communication with a plugin
 type Client struct {
-	reader  io.Reader
 	writer  io.Writer
 	scanner *bufio.Scanner
 
@@ -80,18 +79,12 @@ func NewClient(reader io.Reader, writer io.Writer) *Client {
 	scanner.Buffer(buf, maxScanTokenSize)
 
 	return &Client{
-		reader:    reader,
 		writer:    writer,
 		scanner:   scanner,
 		pending:   make(map[uint64]chan *Response),
 		writeSlot: make(chan struct{}, 1),
 		done:      make(chan struct{}),
 	}
-}
-
-// Call makes a JSON-RPC call and waits for the response
-func (c *Client) Call(method string, params interface{}, result interface{}) error {
-	return c.CallWithTimeout(method, params, result, 30*time.Second)
 }
 
 // CallWithTimeout makes a JSON-RPC call with a custom timeout
@@ -183,13 +176,6 @@ func (c *Client) call(ctx context.Context, method string, params interface{}, re
 		}
 		return context.Cause(callCtx)
 	}
-}
-
-// Notify sends a notification (no response expected). ctx bounds the write,
-// as a call's timeout does.
-func (c *Client) Notify(ctx context.Context, method string, params interface{}) error {
-	request := NewRequest(method, params, nil)
-	return c.writeFrame(ctx, request, 0)
 }
 
 // SetRequestHandler installs the handler used for plugin-initiated requests.
@@ -405,8 +391,6 @@ func normalizeResponseID(id interface{}) (uint64, error) {
 			return 0, fmt.Errorf("non-integral numeric id %v", v)
 		}
 		return uint64(v), nil
-	case uint64:
-		return v, nil
 	default:
 		return 0, fmt.Errorf("unsupported id type %T", id)
 	}

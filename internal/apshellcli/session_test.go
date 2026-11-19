@@ -148,7 +148,7 @@ func TestSessionShutdownWaitsForTheCancelledCommand(t *testing.T) {
 	var unwound atomic.Bool
 	if err := state.CommandRegistry.Register(&command.Command{
 		Name: "waits", Category: command.CategoryInfo, Automation: command.StructuredAutomation,
-		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+		Handler: command.NewInternalHandler(func([]string, *command.Context) (command.Result, error) {
 			close(started)
 			<-state.commandContext().Done()
 			time.Sleep(50 * time.Millisecond) // the command takes a moment to unwind
@@ -324,7 +324,7 @@ func TestSessionRefusesALineOnceShutdownBegins(t *testing.T) {
 	var ran atomic.Bool
 	if err := session.state.CommandRegistry.Register(&command.Command{
 		Name: "records", Category: command.CategoryInfo, Automation: command.StructuredAutomation,
-		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+		Handler: command.NewInternalHandler(func([]string, *command.Context) (command.Result, error) {
 			ran.Store(true)
 			return nil, nil
 		}),
@@ -393,7 +393,7 @@ func TestSessionShutdownCancelsEveryActiveLine(t *testing.T) {
 	t.Cleanup(func() { close(release) })
 	if err := state.CommandRegistry.Register(&command.Command{
 		Name: "waits", Category: command.CategoryInfo, Automation: command.StructuredAutomation,
-		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+		Handler: command.NewInternalHandler(func([]string, *command.Context) (command.Result, error) {
 			started <- struct{}{}
 			select {
 			case <-state.commandContext().Done():

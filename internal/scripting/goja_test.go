@@ -31,7 +31,7 @@ func newRunnerForTest(t *testing.T) *GojaRunner {
 func TestGojaRunnerRunValuesAndEmptyResults(t *testing.T) {
 	runner := newRunnerForTest(t)
 
-	result, err := runner.Run("1 + 2")
+	result, err := runner.RunWithContext(context.Background(), "1 + 2")
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -39,7 +39,7 @@ func TestGojaRunnerRunValuesAndEmptyResults(t *testing.T) {
 		t.Fatalf("Run(1+2) = %#v, want value 3", result)
 	}
 
-	result, err = runner.Run("({answer: 42})")
+	result, err = runner.RunWithContext(context.Background(), "({answer: 42})")
 	if err != nil {
 		t.Fatalf("Run(object) error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestGojaRunnerRunValuesAndEmptyResults(t *testing.T) {
 
 	for _, code := range []string{"undefined", "null"} {
 		t.Run(code, func(t *testing.T) {
-			got, err := runner.Run(code)
+			got, err := runner.RunWithContext(context.Background(), code)
 			if err != nil {
 				t.Fatalf("Run(%s) error = %v", code, err)
 			}
@@ -70,7 +70,7 @@ func TestGojaRunnerWrapsExceptionsAndSupportsOutputAndPlugins(t *testing.T) {
 	})
 	runner.SetPluginExecutor(scriptingPluginExecutor{})
 
-	result, err := runner.Run(`print("hi"); plugin("echo", "a", "b")`)
+	result, err := runner.RunWithContext(context.Background(), `print("hi"); plugin("echo", "a", "b")`)
 	if err != nil {
 		t.Fatalf("Run(plugin) error = %v", err)
 	}
@@ -85,7 +85,7 @@ func TestGojaRunnerWrapsExceptionsAndSupportsOutputAndPlugins(t *testing.T) {
 		t.Fatalf("plugin presentation = %#v, want title echo", obj["presentation"])
 	}
 
-	_, err = runner.Run(`throw new Error("boom")`)
+	_, err = runner.RunWithContext(context.Background(), `throw new Error("boom")`)
 	if err == nil {
 		t.Fatal("expected JS exception")
 	}
@@ -145,7 +145,7 @@ func TestGojaRunnerMixedOutputDoesNotBleedAcrossRuns(t *testing.T) {
 		output = append(output, msg)
 	})
 
-	first, err := runner.Run(`print("first"); ({step: 1})`)
+	first, err := runner.RunWithContext(context.Background(), `print("first"); ({step: 1})`)
 	if err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
@@ -159,7 +159,7 @@ func TestGojaRunnerMixedOutputDoesNotBleedAcrossRuns(t *testing.T) {
 
 	output = output[:0]
 
-	second, err := runner.Run(`print("second"); ({step: 2})`)
+	second, err := runner.RunWithContext(context.Background(), `print("second"); ({step: 2})`)
 	if err != nil {
 		t.Fatalf("second Run() error = %v", err)
 	}
@@ -177,13 +177,13 @@ func TestGojaRunnerMixedOutputDoesNotBleedAcrossRuns(t *testing.T) {
 
 func TestGojaRunnerRecoversNativePanics(t *testing.T) {
 	runner := newRunnerForTest(t)
-	if err := runner.Runtime().Set("explode", func() {
+	if err := runner.vm.Set("explode", func() {
 		panic("boom")
 	}); err != nil {
 		t.Fatalf("Set(explode) error = %v", err)
 	}
 
-	_, err := runner.Run(`explode()`)
+	_, err := runner.RunWithContext(context.Background(), `explode()`)
 	if err == nil {
 		t.Fatal("expected native panic to be recovered")
 	}
@@ -192,40 +192,15 @@ func TestGojaRunnerRecoversNativePanics(t *testing.T) {
 	}
 }
 
-func TestGojaRunnerInterrupt(t *testing.T) {
-	runner := newRunnerForTest(t)
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := runner.Run("for (;;) {}")
-		done <- err
-	}()
-
-	time.Sleep(20 * time.Millisecond)
-	runner.Interrupt()
-
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("expected interrupt error")
-		}
-		if !strings.Contains(err.Error(), "script interrupted") {
-			t.Fatalf("interrupt error = %q, want interruption message", err.Error())
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for interrupted script")
-	}
-}
-
 func TestGojaRunnerRestoresModeStateBetweenRuns(t *testing.T) {
 	runner := newRunnerForTest(t)
 
-	_, err := runner.Run(`setWriteMode(true); setSimulate(true); setVerbose(true); ({write: writeMode(), simulate: simulate()})`)
+	_, err := runner.RunWithContext(context.Background(), `setWriteMode(true); setSimulate(true); setVerbose(true); ({write: writeMode(), simulate: simulate()})`)
 	if err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
 
-	result, err := runner.Run(`({write: writeMode(), simulate: simulate()})`)
+	result, err := runner.RunWithContext(context.Background(), `({write: writeMode(), simulate: simulate()})`)
 	if err != nil {
 		t.Fatalf("second Run() error = %v", err)
 	}
@@ -245,7 +220,7 @@ func TestGojaRunnerUsesTheEnginesVerboseMode(t *testing.T) {
 	eng := runner.api.Engine()
 	eng.SetVerbose(true)
 
-	if _, err := runner.Run(`log("shown")`); err != nil {
+	if _, err := runner.RunWithContext(context.Background(), `log("shown")`); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if got := strings.Join(output, "\n"); !strings.Contains(got, "[debug] shown") {
@@ -255,7 +230,7 @@ func TestGojaRunnerUsesTheEnginesVerboseMode(t *testing.T) {
 		t.Fatal("engine verbose mode = false after a script run, want it kept on")
 	}
 
-	if _, err := runner.Run(`setVerbose(false)`); err != nil {
+	if _, err := runner.RunWithContext(context.Background(), `setVerbose(false)`); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if !eng.GetVerbose() {
@@ -276,7 +251,7 @@ func TestGojaRunnerEmitsStartupWarningOnce(t *testing.T) {
 		t.Fatalf("startup warning output = %#v, want single warning", output)
 	}
 
-	_, err := runner.Run("1 + 1")
+	_, err := runner.RunWithContext(context.Background(), "1 + 1")
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -382,12 +357,6 @@ func TestGojaRunnerCancelAfterCompletionIsANoOp(t *testing.T) {
 	}
 	cancel()
 
-	requireRunsNormally(t, runner)
-}
-
-func TestGojaRunnerDiscardsAnInterruptBetweenRuns(t *testing.T) {
-	runner := newRunnerForTest(t)
-	runner.Interrupt()
 	requireRunsNormally(t, runner)
 }
 

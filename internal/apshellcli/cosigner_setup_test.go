@@ -72,7 +72,7 @@ func TestEndpointsAddScriptRequiresURL(t *testing.T) {
 
 func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: "ssh://old.example",
 	}, true); err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "review the replacement in interactive apshell") {
 		t.Fatalf("cmdEndpoints() error = %v, want script replacement rejection", err)
 	}
-	registry, _, err := config.LoadStoredClientEndpointRegistry(dataDir)
+	registry, err := config.LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func newCLICosignerNode(t *testing.T, reference witness.PublicReference) *sshtes
 // node, with the node's client identity and pinned host key.
 func writeCLICosignerConnection(t *testing.T, dataDir, alias string, node *sshtest.Node) {
 	t.Helper()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: node.URL,
 		IdentityFile: node.IdentityFile, KnownHostsPath: node.KnownHostsPath,
 	}, true); err != nil {
@@ -318,7 +318,7 @@ func writeCLICosignerConnection(t *testing.T, dataDir, alias string, node *sshte
 // writeCLICosignerConnectionURL stores a cosigner connection by URL alone.
 func writeCLICosignerConnectionURL(t *testing.T, dataDir, alias, rawURL string) {
 	t.Helper()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
+	if _, err := upsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: rawURL,
 	}, true); err != nil {
 		t.Fatal(err)
@@ -395,4 +395,16 @@ func TestEndpointsAddIsBlockedForAutomationOnly(t *testing.T) {
 			t.Fatalf("guardAutomatedEndpoints(%v) error = %v, want allowed", args, err)
 		}
 	}
+}
+
+// upsertStoredClientEndpoint plans and writes one endpoint upsert.
+func upsertStoredClientEndpoint(dataDir, alias string, endpoint config.ClientEndpointConfig, replace bool) (config.ClientEndpointRegistry, error) {
+	plan, err := config.PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
+	if err != nil {
+		return config.ClientEndpointRegistry{}, err
+	}
+	if err := config.SaveStoredClientEndpointRegistry(dataDir, plan.Registry); err != nil {
+		return config.ClientEndpointRegistry{}, err
+	}
+	return plan.Registry, nil
 }
