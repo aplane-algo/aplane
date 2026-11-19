@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,22 +67,28 @@ def run_entry(jar: Path, entry: dict) -> list[str]:
     if expected_violation:
         label += f" [expects {expected_violation} violation]"
     print(f"Running TLC for {label}")
-    proc = subprocess.run(
-        [
-            "java",
-            "-XX:+UseParallelGC",
-            "-cp",
-            str(jar),
-            "tlc2.TLC",
-            "-cleanup",
-            "-noGenerateSpecTE",
-            "-config",
-            str(FORMAL_DIR / f"{cfg}.cfg"),
-            str(FORMAL_DIR / f"{spec}.tla"),
-        ],
-        capture_output=True,
-        text=True,
-    )
+    # TLC makes a tlc-<n> directory under java.io.tmpdir on every run and
+    # never removes it, so each `make formal-test` used to leave one per
+    # entry in /tmp. Give each run its own temporary directory and remove it
+    # afterwards.
+    with tempfile.TemporaryDirectory(prefix="aplane-tlc-") as java_tmp:
+        proc = subprocess.run(
+            [
+                "java",
+                "-XX:+UseParallelGC",
+                f"-Djava.io.tmpdir={java_tmp}",
+                "-cp",
+                str(jar),
+                "tlc2.TLC",
+                "-cleanup",
+                "-noGenerateSpecTE",
+                "-config",
+                str(FORMAL_DIR / f"{cfg}.cfg"),
+                str(FORMAL_DIR / f"{spec}.tla"),
+            ],
+            capture_output=True,
+            text=True,
+        )
     output = (proc.stdout + proc.stderr).replace(",", "")
     problems: list[str] = []
     if expected_violation:
