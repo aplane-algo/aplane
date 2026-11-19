@@ -3,7 +3,11 @@
 
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/keytypeux"
+)
 
 func (m Model) handleTemplateLibraryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -239,7 +243,7 @@ func (m Model) finishLibraryAction(id string, success bool, status, errText, fal
 
 func libraryEnabledStatus(keyType string, alreadyExists bool) string {
 	if alreadyExists {
-		return displayKeyType(keyType) + " was already " + libraryPastTense()
+		return displayKeyType(keyType) + " was already " + keytypeux.AvailableToCreate
 	}
-	return displayKeyType(keyType) + " " + libraryPastTense()
+	return displayKeyType(keyType) + " " + keytypeux.AvailableToCreate
 }

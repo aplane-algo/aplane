@@ -23,7 +23,7 @@ import (
 // ownedDaemon is the daemon model of an apsigner this console started, which
 // has a daemon pane.
 func ownedDaemon(lines int) daemonModel {
-	return daemonModel{status: daemonStatusReady, owned: true, events: make(chan daemonEvent), lines: make([]string, lines)}
+	return daemonModel{status: daemonStatusReady, events: make(chan daemonEvent), lines: make([]string, lines)}
 }
 
 func TestLayoutSplitAndZoom(t *testing.T) {
@@ -891,18 +891,6 @@ func TestPendingLinePromptEscClearsInputLine(t *testing.T) {
 	case got := <-resp:
 		t.Fatalf("unexpected prompt response after esc: %q", got)
 	default:
-	}
-}
-
-func TestPromptColorCodeForLipglossPreservesANSISGRColors(t *testing.T) {
-	if got := promptColorCodeForLipgloss("32"); got != "2" {
-		t.Fatalf("promptColorCodeForLipgloss(32) = %q, want 2", got)
-	}
-	if got := promptColorCodeForLipgloss("92"); got != "10" {
-		t.Fatalf("promptColorCodeForLipgloss(92) = %q, want 10", got)
-	}
-	if got := promptColorCodeForLipgloss("28"); got != "28" {
-		t.Fatalf("promptColorCodeForLipgloss(28) = %q, want unchanged 28", got)
 	}
 }
 

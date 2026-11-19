@@ -20,7 +20,7 @@ func TestSigningPopupTransactionDetailsFitsPopupWidth(t *testing.T) {
 			LastValid:   20,
 		}},
 	}
-	m.initSigningViewport(m.buildSigningViewportContent())
+	m.initSigningViewport()
 
 	view := m.renderSigningPopup()
 	for _, line := range strings.Split(view, "\n") {
@@ -49,7 +49,7 @@ func TestSigningPopupShowsTheValidityWindow(t *testing.T) {
 				FirstValid: tc.first, LastValid: tc.last,
 			}},
 		}
-		m.initSigningViewport(m.buildSigningViewportContent())
+		m.initSigningViewport()
 		if view := stripANSI(m.renderSigningPopup()); !strings.Contains(view, tc.want) {
 			t.Errorf("signing popup missing %q:\n%s", tc.want, view)
 		}

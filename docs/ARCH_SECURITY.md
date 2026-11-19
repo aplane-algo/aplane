@@ -2141,7 +2141,7 @@ writing `unlock.yaml`.
 
 **Bundled helpers:**
 
-- **`appass-file`** (dev-only) — Plaintext file helper. Stores the passphrase unencrypted on disk. Implements both `read` and `write`. **Not for production** — the passphrase is readable by anyone with access to the file.
+- **`appass-file`** (dev-only) — Plaintext file helper. Stores the passphrase unencrypted on disk. Implements both `read` and `write`; `write` echoes stdin without re-reading the file, so the read-back comparison does not cover it. **Not for production** — the passphrase is readable by anyone with access to the file.
 
 - **`appass-systemd-creds`** (production, Linux) — Encrypts the passphrase using `systemd-creds`, which binds the encrypted blob to the machine's TPM2 chip and/or host key. The credential file persists on disk across reboots but can only be decrypted on the same machine. Implements both `read` and `write` with round-trip verification. Requires **systemd 250+** (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+). Not available on Ubuntu 22.04 or earlier.
 

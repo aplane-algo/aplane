@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -953,20 +952,6 @@ func renderShellPromptRow(row string, rowOffset, promptLen, cursorOffset int, pr
 	return b.String()
 }
 
-func promptColorCodeForLipgloss(code string) string {
-	n, err := strconv.Atoi(code)
-	if err != nil {
-		return code
-	}
-	if n >= 30 && n <= 37 {
-		return strconv.Itoa(n - 30)
-	}
-	if n >= 90 && n <= 97 {
-		return strconv.Itoa(n - 90 + 8)
-	}
-	return code
-}
-
 func wrapShellRows(lines []string, width int) []string {
 	if width < 1 {
 		width = 1
@@ -979,7 +964,7 @@ func wrapShellRows(lines []string, width int) []string {
 			parts = []string{""}
 		}
 		for _, part := range parts {
-			rows = append(rows, fitLine(styleShellTranscriptRow(line, part), width))
+			rows = append(rows, fitLine(part, width))
 		}
 	}
 	return rows
@@ -1039,16 +1024,4 @@ func protectShellWrapBreaks(line, nonBreakingHyphen, nonBreakingSpace string) st
 	}
 
 	return b.String()
-}
-
-const (
-	apconsoleMissingTokenNotice    = "This client's SSH key is not enrolled at the signer. Run 'enroll' and approve it in the admin pane."
-	apconsoleMissingTokenPinkColor = "205"
-)
-
-func styleShellTranscriptRow(line, row string) string {
-	if line != apconsoleMissingTokenNotice {
-		return row
-	}
-	return "\x1b[38;5;" + apconsoleMissingTokenPinkColor + "m" + row + "\x1b[0m"
 }

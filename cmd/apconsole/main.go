@@ -414,5 +414,4 @@ func configureAlgodOnDSAs(config serverconfig.ServerConfig) {
 	}
 
 	logicsigdsa.ConfigureAlgodClient(client)
-	logInfof("TEAL compiler configured")
 }

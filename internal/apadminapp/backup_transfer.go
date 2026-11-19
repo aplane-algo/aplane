@@ -82,7 +82,6 @@ type BackupExportWriter struct {
 	tmp            *os.File
 	tmpPath        string
 	written        int64
-	finished       bool
 }
 
 // BeginBackupExport prepares to export the listed backup into
@@ -171,7 +170,6 @@ func (w *BackupExportWriter) Finish() (checksum string, warnings []string, err e
 	if err != nil {
 		return "", nil, err
 	}
-	w.finished = true
 	warnings = publication.Warnings
 	if err := fsutil.SyncDir(w.destinationDir); err != nil {
 		warnings = append(warnings, fmt.Sprintf("destination directory durability could not be confirmed: %v", err))

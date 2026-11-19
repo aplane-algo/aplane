@@ -29,7 +29,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	var activityCmd tea.Cmd
-	m, activityCmd = m.recordUserActivity(time.Now(), msg)
+	m, activityCmd = m.recordUserActivity(time.Now())
 	next, cmd := m.handleKeyPress(msg)
 	if got, ok := next.(Model); ok {
 		return got, tea.Batch(activityCmd, cmd)
@@ -576,7 +576,6 @@ func (m Model) handleKeyTypesMsg(msg KeyTypesMsg) (tea.Model, tea.Cmd) {
 	} else {
 		selectedGenerate := m.generateSelection()
 		selectedImport := getImportKeyTypeByIndex(m.forms.importKeyType)
-		m.serverKeyTypes = msg.KeyTypes
 		setServerKeyTypes(msg.KeyTypes)
 		m = m.reselectKeyTypes(selectedGenerate, selectedImport)
 		resumeEnrollment := false

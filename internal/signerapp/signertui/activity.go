@@ -19,8 +19,8 @@ const (
 	invalidPassphraseTimeoutWarningPrefix = "Invalid passphrase timeout from server: "
 )
 
-func (m Model) recordUserActivity(now time.Time, msg tea.KeyMsg) (Model, tea.Cmd) {
-	if !m.shouldTrackLocalIdle(msg) {
+func (m Model) recordUserActivity(now time.Time) (Model, tea.Cmd) {
+	if !m.canTrackLocalIdle() {
 		return m, nil
 	}
 
@@ -28,10 +28,6 @@ func (m Model) recordUserActivity(now time.Time, msg tea.KeyMsg) (Model, tea.Cmd
 	m.activity.idleDisconnectSent = false
 
 	return m, m.armLocalIdleTimer()
-}
-
-func (m Model) shouldTrackLocalIdle(_ tea.KeyMsg) bool {
-	return m.canTrackLocalIdle()
 }
 
 func (m Model) canTrackLocalIdle() bool {

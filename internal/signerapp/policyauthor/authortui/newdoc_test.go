@@ -214,10 +214,10 @@ func TestNewSignerDocumentOffersThePresets(t *testing.T) {
 		t.Fatalf("an unfilled preset is valid, or not flagged:\n%s", view(m))
 	}
 	found := false
-	for _, p := range m.problemsFor(m.current, m.shown()) {
+	for _, p := range m.problemsFor(m.current) {
 		found = found || p.Pointer == "/address_sets/destinations/0"
 	}
 	if !found {
-		t.Fatalf("no problem at the placeholder: %+v", m.problemsFor(m.current, m.shown()))
+		t.Fatalf("no problem at the placeholder: %+v", m.problemsFor(m.current))
 	}
 }

@@ -174,14 +174,14 @@ func (m Model) buildSigningViewportContent() string {
 }
 
 // initSigningViewport initializes the viewport for the signing popup description
-func (m *Model) initSigningViewport(content string) {
+func (m *Model) initSigningViewport() {
 	if m.reviewAvailable() {
 		m.refreshReview()
 		return
 	}
 	vpHeight, vpWidth := m.signingViewportDimensions()
 	m.signing.viewport = viewport.New(vpWidth, vpHeight)
-	m.signing.viewport.SetContent(wrapText(content, vpWidth))
+	m.signing.viewport.SetContent(wrapText(m.buildSigningViewportContent(), vpWidth))
 }
 
 // resizeSigningViewport updates the viewport dimensions and reflows content

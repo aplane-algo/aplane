@@ -371,7 +371,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// For parameterized LSigs, transition to parameter input modal
 		if spec := getParamSpecForKeyType(keyType); spec != nil {
-			m = m.initGenericLSigParams(m.forms.generateKeyType)
+			m = m.initGenericLSigParamsForKeyType(keyType)
 			m.forms.generateFocus = 0 // Start at first parameter
 			m.forms.generateError = ""
 			m.viewState = ViewGenerateParams
@@ -381,7 +381,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// For non-parameterized keys, generate immediately
 		m.forms.generateError = ""
 		id := m.beginOperation(ViewGenerating)
-		return m, m.sendGenerateKeyCmd(keyType, "", id)
+		return m, m.sendGenerateKeyCmd(keyType, nil, id)
 	}
 
 	return m, nil
@@ -697,13 +697,8 @@ func isASCIIText(input string) bool {
 	return true
 }
 
-// initGenericLSigParams initializes the parameter map for a generic LogicSig.
-// keyTypeIndex is the index into the key type list (use m.forms.generateKeyType or m.forms.importKeyType).
-func (m Model) initGenericLSigParams(keyTypeIndex int) Model {
-	keyType := getKeyTypeByIndex(keyTypeIndex)
-	return m.initGenericLSigParamsForKeyType(keyType)
-}
-
+// initGenericLSigParamsForKeyType initializes the parameter map for a generic
+// LogicSig of keyType.
 func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
 	// The form is built from empty values, never from an earlier form's.
 	previous := m.forms.genericLSigParams
@@ -799,7 +794,7 @@ func (m Model) getMaxVisibleParams() int {
 
 // appendToCurrentParam appends input to the currently focused parameter field.
 // It strips bracketed paste sequences and other non-printable characters.
-// Note: In ViewGenerateParams, focus 0..N-1 are parameters (not 1..N like before).
+// In ViewGenerateParams, focus 0..N-1 are the parameters.
 func (m Model) appendToCurrentParam(input string, params []lsigprovider.ParameterDef) Model {
 	if m.forms.genericLSigParams == nil {
 		// Safety fallback: determine key type index based on view state
@@ -812,7 +807,7 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 		m = m.initGenericLSigParamsForKeyType(keyType)
 	}
 
-	paramIdx := m.forms.generateFocus // Focus is now 0-indexed for params
+	paramIdx := m.forms.generateFocus
 	if paramIdx < 0 || paramIdx >= len(params) {
 		return m
 	}

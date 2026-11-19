@@ -89,15 +89,6 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // activateAdminRow acts on Enter on a settings row: it opens what the row
 // opens, toggles or cycles its value, or starts editing its text.
 func (m Model) activateAdminRow(row adminRow) (tea.Model, tea.Cmd) {
-	if row.action == "open_templates" {
-		m.library.selectedTemplate = 0
-		m.library.scrollOffset = 0
-		m.library.installError = ""
-		m.library.installStatus = ""
-		m.library.pendingTemplate = nil
-		m.viewState = ViewTemplateLibrary
-		return m, m.sendListLibraryTemplatesCmd()
-	}
 	if row.action == "open_policies" {
 		return m.openPolicies()
 	}

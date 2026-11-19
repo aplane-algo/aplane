@@ -15,7 +15,7 @@ import (
 // openEnrolledClients opens the enrolled-clients screen and asks the signer
 // for the waiting requests and the current registry.
 func (m Model) openEnrolledClients() (tea.Model, tea.Cmd) {
-	m.clients = clientsState{returnView: m.viewState, loading: true}
+	m.clients = clientsState{loading: true}
 	m.viewState = ViewEnrolledClients
 	return m.refreshClients()
 }
@@ -221,10 +221,7 @@ func (m Model) handleRevokeAllEnrolledKeysResult(msg RevokeAllEnrolledKeysResult
 func (m Model) handleEnrolledClientsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
-		m.viewState = m.clients.returnView
-		if m.viewState == 0 {
-			m.viewState = ViewAdminPanel
-		}
+		m.viewState = ViewKeyList
 		m.clients = clientsState{}
 		return m, nil
 	case "up", "k":

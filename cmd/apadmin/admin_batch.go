@@ -77,12 +77,12 @@ func (p *adminBatchPrompt) secret(message string, allowEnvironment bool) ([]byte
 	return secret, nil
 }
 
-func (p *adminBatchPrompt) confirmed(first, second string, allowEnvironment bool) ([]byte, error) {
-	secret, err := p.secret(first, allowEnvironment)
+func (p *adminBatchPrompt) confirmed(first, second string) ([]byte, error) {
+	secret, err := p.secret(first, false)
 	if err != nil {
 		return nil, err
 	}
-	confirmation, err := p.secret(second, allowEnvironment)
+	confirmation, err := p.secret(second, false)
 	if err != nil {
 		crypto.ZeroBytes(secret)
 		return nil, err
@@ -183,7 +183,7 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 	if command == changePassSubcommand {
 		current, err = prompt.secret("Enter current passphrase: ", false)
 		if err == nil {
-			next, err = prompt.confirmed("Enter new passphrase: ", "Confirm new passphrase: ", false)
+			next, err = prompt.confirmed("Enter new passphrase: ", "Confirm new passphrase: ")
 		}
 		if err == nil && bytes.Equal(current, next) {
 			err = fmt.Errorf("new passphrase must be different from current passphrase")
@@ -225,7 +225,7 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 			return prompt.secret(message, false)
 		},
 		ReadConfirmed: func(first, second string) ([]byte, error) {
-			return prompt.confirmed(first, second, false)
+			return prompt.confirmed(first, second)
 		},
 		Confirm: prompt.confirm,
 	}
@@ -262,7 +262,7 @@ func adminBatchExitCode(err error) int {
 		protocol.ResultCodeRestoreConflict,
 		protocol.ResultCodeRestoreRollbackDiverged:
 		return 5
-	case "verification_failed", "invalid_backup", "corrupt_archive", "bad_export_passphrase", "unsupported_backup_format":
+	case "verification_failed", "invalid_backup":
 		return 6
 	case protocol.ErrCodeInvalidMessageFormat,
 		protocol.ErrCodeInvalidAuthMessage,

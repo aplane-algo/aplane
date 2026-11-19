@@ -56,7 +56,6 @@ func (w *Workspace) StartingPoints(role noderole.Role) []StartingPoint {
 		if f.Document == nil || f.Role != role {
 			continue
 		}
-		f := f
 		out = append(out, StartingPoint{
 			Label:   "A copy of " + filepath.Base(f.Path),
 			Summary: "every field of that document, under the new key",
@@ -64,7 +63,6 @@ func (w *Workspace) StartingPoints(role noderole.Role) []StartingPoint {
 		})
 	}
 	for _, p := range policytext.Presets(role) {
-		p := p
 		out = append(out, StartingPoint{
 			Label:   "Preset " + p.Name,
 			Summary: p.Summary,

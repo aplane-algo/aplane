@@ -540,18 +540,8 @@ func TestGetExpectedWordCountUsesDSAProviderForFalconTemplates(t *testing.T) {
 		logicsigdsa.Register(provider)
 	}
 
-	index := -1
-	for i := 0; i < getKeyTypeCount(); i++ {
-		if getKeyTypeByIndex(i) == provider.keyType {
-			index = i
-			break
-		}
-	}
-	if index < 0 {
-		t.Fatalf("registered key type %q was not found in key type options", provider.keyType)
-	}
-	if got, want := getExpectedWordCount(index), 24; got != want {
-		t.Fatalf("getExpectedWordCount(%d) = %d, want %d", index, got, want)
+	if got, want := getExpectedWordCountForKeyType(provider.keyType), 24; got != want {
+		t.Fatalf("getExpectedWordCountForKeyType(%q) = %d, want %d", provider.keyType, got, want)
 	}
 }
 

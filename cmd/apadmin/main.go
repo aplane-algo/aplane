@@ -62,8 +62,7 @@ func main() {
 	flag.Parse()
 
 	positional := flag.Args()
-	kind, productionCommand := classifyProductionSubcommand(positional)
-	switch kind {
+	switch classifyProductionSubcommand(positional) {
 	case productionPolicy:
 		passed := make(map[string]bool)
 		flag.Visit(func(f *flag.Flag) { passed[f.Name] = true })
@@ -88,11 +87,6 @@ func main() {
 			os.Exit(code)
 		}
 		return
-	default:
-		if productionCommand {
-			logErrorf("unsupported production command kind %d", kind)
-			os.Exit(2)
-		}
 	}
 
 	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
@@ -124,32 +118,6 @@ func main() {
 		logErrorf("%v", err)
 		os.Exit(1)
 	}
-
-	// Plugin audit: Log all registered providers at startup
-	logInfof("APlane Signer")
-	logInfof("===================================")
-
-	// Check registered key generators
-	keyGens := keygen.GetRegisteredFamilies()
-	if len(keyGens) > 0 {
-		logInfof("key generators: %v", keyGens)
-	} else {
-		logWarnf("no key generators (check plugins.go)")
-	}
-
-	// Check registered mnemonic handlers
-	mnemonicFamilies := mnemonic.GetRegisteredFamilies()
-	if len(mnemonicFamilies) > 0 {
-		logInfof("mnemonic handlers: %v", mnemonicFamilies)
-	}
-
-	// Check algorithm metadata
-	algorithms := algorithm.GetRegisteredFamilies()
-	if len(algorithms) > 0 {
-		logInfof("algorithm metadata: %v", algorithms)
-	}
-
-	logInfof("-----------------------------------")
 
 	// Check for test mode (only available in test builds with -tags testmode)
 	if isTestMode() {
@@ -184,8 +152,6 @@ func validateFlagSpelling(args []string) error {
 
 // startTUI launches the Bubble Tea TUI application
 func startTUI(connector tui.AdminConnector) {
-	logInfof("starting apadmin TUI")
-
 	// Nothing may write to the terminal while the TUI owns it. Diagnostics wait
 	// for it to finish; the lost-notification count is shown live, in the TUI.
 	logs := clientlog.NewDeferred()
@@ -240,5 +206,4 @@ func configureAlgodOnDSAs(config serverconfig.ServerConfig) {
 	}
 
 	logicsigdsa.ConfigureAlgodClient(client)
-	logInfof("TEAL compiler configured")
 }

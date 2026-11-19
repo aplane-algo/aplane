@@ -111,21 +111,14 @@ func (c *testModeClient) ListKeys() ([]protocol.AdminKeyInfo, error) {
 	return result.Keys, nil
 }
 
-// GenerateKey generates a new key.
+// GenerateKey generates a new key of a canonical key type.
 func (c *testModeClient) GenerateKey(keyType string) (string, error) {
-	return c.GenerateKeyWithParams(keyType, nil)
-}
-
-// GenerateKeyWithParams generates a new key with creation parameters.
-func (c *testModeClient) GenerateKeyWithParams(keyType string, params map[string]string) (string, error) {
-	keyType = keytypecatalog.Canonicalize(keyType)
 	msg := protocol.GenerateKeyMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeGenerateKey,
 			ID:   fmt.Sprintf("gen-%d", time.Now().UnixNano()),
 		},
-		KeyType:    keyType,
-		Parameters: params,
+		KeyType: keyType,
 	}
 
 	response, err := c.request(msg, 30*time.Second)
@@ -145,9 +138,9 @@ func (c *testModeClient) GenerateKeyWithParams(keyType string, params map[string
 	return result.Address, nil
 }
 
-// ImportKeyWithParams imports a key from mnemonic with creation parameters.
+// ImportKeyWithParams imports a key of a canonical key type from mnemonic with
+// creation parameters.
 func (c *testModeClient) ImportKeyWithParams(keyType, mnemonic string, params map[string]string) (string, error) {
-	keyType = keytypecatalog.Canonicalize(keyType)
 	msg := protocol.ImportKeyMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeImportKey,
@@ -266,7 +259,7 @@ func executeTestCommand(client *testModeClient, args []string) {
 	case testModeDeleteCommand:
 		runTestDelete(client, cmdArgs)
 	case testModeUnlockCommand:
-		runTestUnlock(client)
+		runTestUnlock(cmdArgs)
 	default:
 		logErrorf("unknown command: %s", cmd)
 		printTestUsage()
@@ -330,12 +323,11 @@ func runTestImport(client *testModeClient, args []string) {
 	var params map[string]string
 	var words []string
 	for _, arg := range remaining {
-		if strings.Contains(arg, "=") && params != nil || strings.Contains(arg, "=") {
+		if name, value, ok := strings.Cut(arg, "="); ok {
 			if params == nil {
 				params = make(map[string]string)
 			}
-			parts := strings.SplitN(arg, "=", 2)
-			params[parts[0]] = parts[1]
+			params[name] = value
 		} else {
 			words = append(words, arg)
 		}
@@ -372,10 +364,10 @@ func runTestDelete(client *testModeClient, args []string) {
 	fmt.Printf("Deleted key: %s\n", address)
 }
 
-func runTestUnlock(client *testModeClient) {
-	// Check if --wait flag is set (keeps connection open)
+func runTestUnlock(args []string) {
+	// --wait keeps the connection open.
 	wait := false
-	for _, arg := range os.Args {
+	for _, arg := range args {
 		if arg == "--wait" {
 			wait = true
 			break
@@ -385,7 +377,6 @@ func runTestUnlock(client *testModeClient) {
 	fmt.Println("Signer unlocked")
 
 	if wait {
-		logInfof("keeping connection open (Ctrl+C to exit)")
 		// Block forever (or until Ctrl+C)
 		select {}
 	}

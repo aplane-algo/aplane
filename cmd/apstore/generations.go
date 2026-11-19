@@ -108,13 +108,6 @@ func parsePruneArgs(args []string) (pruneOptions, error) {
 	return opts, nil
 }
 
-func validateCurrentGenerationForContent(gen storepaths.GenPaths) error {
-	if err := genstore.ValidateCurrent(gen); err != nil {
-		return fmt.Errorf("refusing to prune: current generation failed validation: %w", err)
-	}
-	return nil
-}
-
 func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, active storepaths.GenPaths, kr *crypto.Keyring) error {
 	manager := signertemplates.NewManager(paths)
 	manager.ActivePaths = active
