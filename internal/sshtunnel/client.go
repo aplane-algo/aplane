@@ -116,10 +116,12 @@ type Client struct {
 	closeChan chan struct{}
 
 	// Connection monitoring
-	keepaliveStop    *keepaliveStopSignal // Signal to stop keepalive goroutine
-	onDisconnect     func()               // Callback when connection dies
-	disconnectReason string               // Set by server before closing (e.g. "key-revoked")
-	interceptDone    chan struct{}        // Closed once the global-request interceptor has drained
+	keepaliveInterval time.Duration        // Tests may shorten keepaliveInterval
+	keepaliveTimeout  time.Duration        // Tests may shorten keepaliveReplyTimeout
+	keepaliveStop     *keepaliveStopSignal // Signal to stop keepalive goroutine
+	onDisconnect      func()               // Callback when connection dies
+	disconnectReason  string               // Set by server before closing (e.g. "key-revoked")
+	interceptDone     chan struct{}        // Closed once the global-request interceptor has drained
 }
 
 // DisconnectReasonKeyRevoked is the disconnect reason recorded when the server
@@ -139,12 +141,14 @@ const forwardedAPIAddress = "127.0.0.1:11270"
 // knownHostsPath: path to known_hosts file
 func NewClient(host string, sshPort int, identityFile, knownHostsPath string) *Client {
 	return &Client{
-		host:           host,
-		sshPort:        sshPort,
-		identityFile:   identityFile,
-		knownHostsPath: knownHostsPath,
-		closeChan:      make(chan struct{}),
-		keepaliveStop:  newKeepaliveStopSignal(),
+		host:              host,
+		sshPort:           sshPort,
+		identityFile:      identityFile,
+		knownHostsPath:    knownHostsPath,
+		closeChan:         make(chan struct{}),
+		keepaliveInterval: keepaliveInterval,
+		keepaliveTimeout:  keepaliveReplyTimeout,
+		keepaliveStop:     newKeepaliveStopSignal(),
 	}
 }
 
@@ -739,8 +743,10 @@ func enrollmentCommandLine(label string) string {
 
 // monitorConnection monitors the SSH connection and detects when it dies
 // It runs two detection mechanisms:
-// 1. SSH keepalive pings every 15 seconds
-// 2. Wait for SSH connection to close (detects server shutdown)
+//  1. SSH keepalive pings every keepaliveInterval; a ping with no reply within
+//     keepaliveTimeout closes the connection (detects a server that went
+//     silent: a partition, a suspended VM)
+//  2. Wait for SSH connection to close (detects server shutdown)
 func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, keepaliveStop *keepaliveStopSignal) {
 	// Start keepalive goroutine
 	keepaliveDone := make(chan struct{})
@@ -752,7 +758,7 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 				c.handleDisconnect()
 			}
 		}()
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(c.keepaliveInterval)
 		defer ticker.Stop()
 
 		for {
@@ -762,12 +768,32 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 			case <-keepaliveStop.done():
 				return
 			case <-ticker.C:
-				// Send keepalive request
-				_, _, err := sshClient.SendRequest("keepalive@openssh.com", true, nil)
-				if err != nil {
-					// Connection is dead
-					logger().Warn("keepalive failed", "error", err)
+				// SendRequest waits for the reply until the connection closes,
+				// which TCP may take many minutes to notice, so it runs aside
+				// and the reply is awaited under a timer, as the server's
+				// monitorClientConnection does. Closing the connection
+				// unblocks it.
+				replied := make(chan error, 1)
+				go func() {
+					_, _, err := sshClient.SendRequest("keepalive@openssh.com", true, nil)
+					replied <- err
+				}()
+				select {
+				case err := <-replied:
+					if err != nil {
+						// Connection is dead
+						logger().Warn("keepalive failed", "error", err)
+						c.handleDisconnect()
+						return
+					}
+				case <-time.After(c.keepaliveTimeout):
+					logger().Warn("no keepalive reply; closing the connection", "timeout", c.keepaliveTimeout)
+					_ = sshClient.Close()
 					c.handleDisconnect()
+					return
+				case <-ctx.Done():
+					return
+				case <-keepaliveStop.done():
 					return
 				}
 			}

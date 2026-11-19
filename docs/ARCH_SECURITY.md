@@ -597,7 +597,10 @@ flow is reachable without credentials, and the queue it writes to is bounded:
   for the 60-second handshake timeout
 - The server sends each SSH client a keepalive every 15 seconds and closes a
   connection that does not reply within 30 seconds, so a client that keeps
-  TCP open but stops answering does not hold its connection indefinitely
+  TCP open but stops answering does not hold its connection indefinitely.
+  The client does the same in the other direction: a node that stops
+  answering (a network partition, a suspended VM) is reported disconnected
+  within about 45 seconds, not when TCP gives up
 - Each `enroll` connection may have at most 2 open session channels;
   further channels are rejected before they are accepted
 - A client must accept the enrollment response within 10 seconds; a client
