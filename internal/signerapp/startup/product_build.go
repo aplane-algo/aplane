@@ -83,6 +83,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 		LockOnDisconnect: opts.Config.ShouldLockOnDisconnect(),
 		SessionTimeout:   opts.DefaultSessionTimeout,
 		ApprovalWait:     defaultApprovalWait,
+		Theme:            productruntime.DefaultTheme,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve product config: %w", err)
@@ -118,6 +119,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 	})
 
 	ir.Config().SetGenerationRequirements(effectiveCfg.RequireContained, effectiveCfg.RequireCosigner)
+	ir.Config().SetTheme(effectiveCfg.Theme)
 	WireReloadFunc(ir, opts, hooks)
 	WireApprovalCoordinator(ir, hooks)
 	return ir, nil

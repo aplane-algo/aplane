@@ -134,10 +134,55 @@ const rotateArchivedPolicyKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI
 
 var rotateArchivedPolicy = []byte(policytest.MustDocument(noderole.RoleSigner, rotateArchivedPolicyKey, ""))
 
+// acceptCandidate is a candidate validation that accepts every successor,
+// for the tests about the rotation itself.
+func acceptCandidate(storepaths.GenPaths, *crypto.Keyring) error { return nil }
+
+// A passphrase change without candidate validation is refused before it
+// writes anything, the outgoing seal included. Rotate once handed Mint a
+// validation that accepted every successor when the caller gave none, so
+// Mint's guard could not fire and the change published an unvalidated
+// generation.
+func TestRotateRefusesWithoutCandidateValidation(t *testing.T) {
+	fixture := newRotateFixture(t)
+	newPassphrase := []byte("new-store-passphrase")
+	before, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{})
+	if err == nil || result.RootCommitted || !strings.Contains(err.Error(), "requires candidate validation") {
+		t.Fatalf("Rotate(no candidate validation) = %+v, %v; want the candidate validation refusal", result, err)
+	}
+	if sealed, err := genstore.HasSeal(fixture.paths.GenerationPaths(rotateFirstGeneration)); err != nil || sealed {
+		t.Fatalf("selected generation sealed after the refusal = %v, %v; want no seal written", sealed, err)
+	}
+	after, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("the refused passphrase change replaced the store root")
+	}
+	if _, kr, err := genstore.ResolveStoreRoot(fixture.paths, newPassphrase); err == nil {
+		kr.Zero()
+		t.Fatal("the new passphrase opens the store after the refusal")
+	}
+	entries, err := os.ReadDir(fixture.paths.GenerationsDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != rotateFirstGeneration {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("generations after the refusal = %v, want only %s", names, rotateFirstGeneration)
+	}
+}
+
 func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	fixture := newRotateFixture(t)
 	newPassphrase := []byte("new-store-passphrase")
-	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{})
+	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{ValidateCandidate: acceptCandidate})
 	if err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
@@ -256,7 +301,7 @@ func TestRotatePreRootFailureLeavesOldAuthorityAndQuarantinableSuccessor(t *test
 		return nil
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
-	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{})
+	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{ValidateCandidate: acceptCandidate})
 	fsutil.TestHook = nil
 	if err == nil || result.RootCommitted {
 		t.Fatalf("Rotate() = %+v, %v; want definite precommit failure", result, err)
@@ -284,7 +329,7 @@ func TestRotateWrongPassphraseAndDamagedAuthorityDoNotReplaceRoot(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Rotate(fixture.paths, []byte("wrong"), []byte("new"), RotateOptions{}); err == nil || !strings.Contains(err.Error(), "current passphrase") {
+	if _, err := Rotate(fixture.paths, []byte("wrong"), []byte("new"), RotateOptions{ValidateCandidate: acceptCandidate}); err == nil || !strings.Contains(err.Error(), "current passphrase") {
 		t.Fatalf("Rotate(wrong passphrase) error = %v", err)
 	}
 	after, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
@@ -294,7 +339,7 @@ func TestRotateWrongPassphraseAndDamagedAuthorityDoNotReplaceRoot(t *testing.T) 
 	if err := os.Remove(fixture.paths.GenerationPaths(rotateFirstGeneration).DefaultPolicyIntegritySidecar()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Rotate(fixture.paths, fixture.oldPassphrase, []byte("new"), RotateOptions{}); err == nil {
+	if _, err := Rotate(fixture.paths, fixture.oldPassphrase, []byte("new"), RotateOptions{ValidateCandidate: acceptCandidate}); err == nil {
 		t.Fatal("Rotate accepted damaged policy authority")
 	}
 	after, err = crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
@@ -306,7 +351,8 @@ func TestRotateWrongPassphraseAndDamagedAuthorityDoNotReplaceRoot(t *testing.T) 
 func TestRotateHelperFailureIsPostCommitWarning(t *testing.T) {
 	fixture := newRotateFixture(t)
 	result, err := Rotate(fixture.paths, fixture.oldPassphrase, []byte("new-passphrase"), RotateOptions{
-		AfterRootCommit: func() error { return errors.New("helper unavailable") },
+		ValidateCandidate: acceptCandidate,
+		AfterRootCommit:   func() error { return errors.New("helper unavailable") },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -334,7 +380,7 @@ func TestRotateWithAnUnreadableRootSaysTheNewPassphraseMayBeInEffect(t *testing.
 		return errors.New("simulated identity-directory sync failure")
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
-	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{})
+	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{ValidateCandidate: acceptCandidate})
 	fsutil.TestHook = nil
 	if err := os.Rename(aside, root); err != nil {
 		t.Fatal(err)
@@ -368,7 +414,7 @@ func TestRotateRefusesAnOverLimitGenerationBeforeSealing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = Rotate(fixture.paths, fixture.oldPassphrase, []byte("new-store-passphrase"), RotateOptions{})
+	_, err = Rotate(fixture.paths, fixture.oldPassphrase, []byte("new-store-passphrase"), RotateOptions{ValidateCandidate: acceptCandidate})
 	if err == nil || !strings.Contains(err.Error(), "holds more than one generation may") {
 		t.Fatalf("Rotate error = %v, want the size refusal", err)
 	}

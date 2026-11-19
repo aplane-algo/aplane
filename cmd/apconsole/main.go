@@ -145,7 +145,9 @@ func main() {
 		logErrorf("cannot resolve daemon IPC path: %v", err)
 		exitConsole(1)
 	}
-	theme.Init(startup.Config.Theme)
+	// Detect the terminal's background until the signer pane reports the
+	// theme saved in the signer's settings.
+	theme.Init("auto")
 	configureAlgodOnDSAs(startup.Config)
 	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
 	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, daemonIPCPath, !*noStartDaemon)

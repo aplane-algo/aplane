@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
-
-	"gopkg.in/yaml.v3"
 )
 
 // SSHServerConfig holds SSH server configuration for apsigner.
@@ -58,8 +56,6 @@ type ServerConfig struct {
 	RequireMemoryProtection bool `yaml:"require_memory_protection" description:"Fail startup if memory protection unavailable" default:"false"`
 	// Operator-default approval setting. Policy rules live in the store policy documents.
 	UserAutoApprove bool `yaml:"user_auto_approve" description:"Sign non-rejected requests without operator approval, including policy review requirements" default:"false"`
-	// Display settings
-	Theme string `yaml:"theme" description:"Signer-admin UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
 	// Rotating account settings.
 	Rotating RotatingConfig `yaml:"rotating" description:"Rotating account settings" default:"default rotating settings"`
 }
@@ -328,6 +324,11 @@ func normalizeServerConfig(dataDir, path string, config, defaults ServerConfig) 
 	if config.PassphraseTimeout == "" {
 		config.PassphraseTimeout = defaults.PassphraseTimeout
 	}
+	// A bad value is refused rather than read as 0, which would turn the
+	// admin idle timeout off.
+	if _, err := ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
+		return ServerConfig{}, fmt.Errorf("invalid passphrase_timeout in config: %w", err)
+	}
 	if config.ApprovalWait == "" {
 		config.ApprovalWait = defaults.ApprovalWait
 	}
@@ -414,55 +415,6 @@ func (c *ServerConfig) ShouldLockOnDisconnect() bool {
 		return true // Default: lock on disconnect for security
 	}
 	return *c.LockOnDisconnect
-}
-
-// ValidateHeadlessPolicy checks policy settings for headless operation.
-// Returns warnings (not errors) because automated passphrase retrieval does not preclude
-// human approval — an operator may connect via apadmin for manual approval.
-func ValidateHeadlessPolicy(config *ServerConfig) []string {
-	var warnings []string
-
-	warnings = append(warnings, "headless mode keeps the signer unlocked in memory until process exit or manual lock")
-
-	if !config.UserAutoApprove {
-		warnings = append(warnings, "headless mode with user_auto_approve:false: transactions will require manual approval via apadmin")
-	}
-
-	return warnings
-}
-
-// SaveSetting writes a single setting to config.yaml, preserving all other
-// fields in the file. Only the specified key is updated.
-func SaveSetting(dataDir, key string, value interface{}) error {
-	if dataDir == "" {
-		return fmt.Errorf("data directory not set")
-	}
-
-	path := filepath.Join(dataDir, "config.yaml")
-
-	existing := make(map[string]interface{})
-	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read config file: %w", err)
-	}
-	if len(data) > 0 {
-		if err := yaml.Unmarshal(data, &existing); err != nil {
-			return fmt.Errorf("failed to parse config file: %w", err)
-		}
-	}
-
-	existing[key] = value
-
-	out, err := yaml.Marshal(existing)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := apconfig.WriteConfigAtomic(path, out); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
 }
 
 // ParsePassphraseTimeout parses an admin idle timeout string into a time.Duration.

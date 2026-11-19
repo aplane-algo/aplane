@@ -6,6 +6,7 @@ package signer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,6 +31,23 @@ func TestLoadConfiguresKeystorePathAndTimeout(t *testing.T) {
 	}
 	if startup.Paths.Root() != tmpDir {
 		t.Fatalf("Paths.Root() = %q, want %q", startup.Paths.Root(), tmpDir)
+	}
+}
+
+// A passphrase_timeout that does not parse stops startup; it once started
+// the signer with the admin idle timeout off.
+func TestLoadRefusesAnInvalidPassphraseTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.yaml"), []byte("passphrase_timeout: 15mins\n"), 0600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	startup, err := Load(tmpDir)
+	if err == nil {
+		t.Fatalf("Load() = %+v, want an invalid passphrase_timeout error", startup)
+	}
+	if !strings.Contains(err.Error(), "invalid passphrase_timeout") {
+		t.Fatalf("Load() error = %v, want invalid passphrase_timeout", err)
 	}
 }
 

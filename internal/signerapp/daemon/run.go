@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signerstartuptemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -96,21 +97,9 @@ func Run(dataDir string) int {
 	config.IPCPath = resolvedIPCPath
 	startupOpts.Config = config
 	passphraseTimeout := startupOpts.PassphraseTimeout
-	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
-		logWarnf("invalid passphrase_timeout in config: %v, using default (0)", err)
-		_ = os.Stderr.Sync()
-	}
 
 	// Use config values for port settings
 	port := config.Endpoint.SignerPort
-
-	// Log the admin idle timeout mode
-	if passphraseTimeout == 0 {
-		logWarnf("admin idle timeout: disabled")
-		logWarnf("set passphrase_timeout in config to disconnect idle apadmin sessions")
-	} else {
-		logInfof("admin idle timeout: %s (disconnects idle apadmin sessions)", passphraseTimeout.String())
-	}
 
 	// Memory Security: Attempt to disable core dumps and lock memory
 	// Results are validated by ValidateStartup below
@@ -173,19 +162,6 @@ func Run(dataDir string) int {
 		logInfof("audit logging enabled (audit.log)")
 	}
 
-	// Log policy settings
-	logInfof("Policy settings:")
-	logInfof("  user_auto_approve: %v", config.UserAutoApprove)
-
-	// A passphrase helper in the product's unlock.yaml (appass) makes the
-	// runtime headless: it turns off lock-on-disconnect and the idle timeout,
-	// so say so. Otherwise warn about unusual interactive settings.
-	if unlockPlan.Source == signerstartup.UnlockSourcePassphraseCommand {
-		printUnlockConfigHeadlessWarnings(&config)
-	} else {
-		printInteractiveModeWarnings(&config)
-	}
-
 	authorizer := authz.NewProductSingleAuthorizer()
 
 	// Create the process root server (shared infrastructure only)
@@ -216,6 +192,7 @@ func Run(dataDir string) int {
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	logInfof("product runtime initialized")
+	printModeWarnings(ir)
 	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths)
 	if cleanupErr != nil {
 		logErrorf("failed to clean incomplete backup imports: %v", cleanupErr)
@@ -480,44 +457,51 @@ func printSecurityAudit(passphraseTimeout time.Duration, userAutoApprove bool, i
 	}
 }
 
-// printUnlockConfigHeadlessWarnings reports headless mode for a passphrase
-// helper configured in unlock.yaml, and settings in config.yaml it overrides.
-func printUnlockConfigHeadlessWarnings(config *serverconfig.ServerConfig) {
-	warnings := serverconfig.ValidateHeadlessPolicy(config)
-	if config.LockOnDisconnect != nil && *config.LockOnDisconnect {
-		warnings = append(warnings, "lock_on_disconnect:true is ignored while a passphrase helper is configured")
+// modeWarnings lists the settings in effect that an operator should hear
+// about at startup. It reads the product runtime's settings, not
+// config.yaml's: identities/default/config.yaml, where apadmin saves a
+// change, overlays config.yaml, and a passphrase helper (unlock.yaml, set by
+// appass) makes the runtime headless, which turns off lock-on-disconnect and
+// the idle timeout whatever either file sets. headless reports which.
+func modeWarnings(ir *productruntime.Runtime) (warnings []string, headless bool) {
+	cfg := ir.Config()
+	if ir.UnlockMethod() != unlockconfig.MethodNone {
+		warnings = append(warnings,
+			"headless mode keeps the signer unlocked in memory until process exit or manual lock",
+			"headless mode turns off lock_on_disconnect and passphrase_timeout, whatever the config files set")
+		if !cfg.UserAutoApprove() {
+			warnings = append(warnings, "headless mode with user_auto_approve:false: transactions will require manual approval via apadmin")
+		}
+		return warnings, true
 	}
-	if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
-		warnings = append(warnings, "passphrase_timeout:"+config.PassphraseTimeout+" is ignored while a passphrase helper is configured")
-	}
-	logWarnf("headless mode warnings:")
-	for _, w := range warnings {
-		logWarnf("  - %s", w)
-	}
-}
 
-// printInteractiveModeWarnings prints warnings for unusual configs in interactive mode.
-// These are not errors, just alerts that the user may have misconfigured something.
-func printInteractiveModeWarnings(config *serverconfig.ServerConfig) {
-	var warnings []string
-
-	// Warn if user auto-approve is enabled: every non-rejected transaction,
-	// including one that matches a review rule, signs without confirmation.
-	if config.UserAutoApprove {
+	// User auto-approve signs every non-rejected transaction, including one
+	// that matches a review rule, without confirmation.
+	if cfg.UserAutoApprove() {
 		warnings = append(warnings, "user_auto_approve:true - all non-rejected transactions, including review-rule matches, will be signed without confirmation")
 	}
-
-	// Warn if lock_on_disconnect is false - signer stays unlocked after admin leaves
-	if config.LockOnDisconnect != nil && !*config.LockOnDisconnect {
+	if !cfg.LockOnDisconnect() {
 		warnings = append(warnings, "lock_on_disconnect:false - signer stays unlocked when apadmin disconnects")
 	}
+	if cfg.SessionTimeout() == 0 {
+		warnings = append(warnings, "passphrase_timeout:0 - idle apadmin sessions are never disconnected")
+	}
+	return warnings, false
+}
 
-	// Print warnings if any
-	if len(warnings) > 0 {
+// printModeWarnings logs modeWarnings, if there are any.
+func printModeWarnings(ir *productruntime.Runtime) {
+	warnings, headless := modeWarnings(ir)
+	if len(warnings) == 0 {
+		return
+	}
+	if headless {
+		logWarnf("headless mode warnings:")
+	} else {
 		logWarnf("interactive mode warnings:")
-		for _, w := range warnings {
-			logWarnf("  - %s", w)
-		}
+	}
+	for _, w := range warnings {
+		logWarnf("  - %s", w)
 	}
 }
 

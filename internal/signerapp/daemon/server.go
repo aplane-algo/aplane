@@ -70,9 +70,7 @@ type Signer struct {
 	sshRuntime        *sshRuntime                        // SSH runtime holder for live listener restarts
 	sshRuntimeMu      sync.RWMutex                       // Protects sshRuntime and sshServer swaps
 	apiListener       *sshtunnel.APIListener             // Receives tunneled API channels for the HTTP server
-	config            *serverconfig.ServerConfig         // Server configuration (includes policy settings)
-	configMu          sync.RWMutex                       // Protects live-mutable ServerConfig fields.
-	configMutationMu  sync.Mutex                         // Serializes process-owned config.yaml mutations
+	config            *serverconfig.ServerConfig         // Server configuration, fixed after startup
 	storeHealth       signerrest.StoreHealthCache        // Bounds the unauthenticated /health store inspection
 	storeMutationLock sync.Mutex                         // Product key/template/config/policy mutation serialization
 	restoreAttemptMu  sync.Mutex                         // Protects restoreAttempts lazy initialization
@@ -90,34 +88,14 @@ type Signer struct {
 	stageFillMaxDeriv int                            // Tests bound derivations per unresolved account per pass; 0 is one batch
 }
 
-// Theme returns the current theme setting. Safe for concurrent use.
-func (fs *Signer) Theme() string {
-	fs.configMu.RLock()
-	defer fs.configMu.RUnlock()
-	return fs.config.Theme
-}
-
-// SetTheme updates the in-memory theme setting. Safe for concurrent use.
-func (fs *Signer) SetTheme(v string) {
-	fs.configMu.Lock()
-	fs.config.Theme = v
-	fs.configMu.Unlock()
-}
-
-// ConfigSnapshot returns an independent copy of the process config.
+// ConfigSnapshot returns an independent copy of the process config. Nothing
+// changes the config after startup; the copy keeps a caller from changing
+// it.
 func (fs *Signer) ConfigSnapshot() serverconfig.ServerConfig {
-	fs.configMu.RLock()
-	defer fs.configMu.RUnlock()
 	if fs.config == nil {
 		return serverconfig.ServerConfig{}
 	}
 	return fs.config.Clone()
-}
-
-func (fs *Signer) withProcessConfigMutation(fn func() error) error {
-	fs.configMutationMu.Lock()
-	defer fs.configMutationMu.Unlock()
-	return fn()
 }
 
 func (fs *Signer) withStoreMutation(fn func() error) error {

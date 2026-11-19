@@ -64,13 +64,13 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `teal_compile_network` | string | `testnet` | Network context token whose algod is used for TEAL compilation |
 | `require_memory_protection` | bool | `false` | Fail startup if memory protection unavailable |
 | `user_auto_approve` | bool | `false` | Sign non-rejected requests without operator approval, including policy review requirements |
-| `theme` | string | `auto` | Signer-admin UI theme: auto, dark, or light (auto detects terminal) |
 | `rotating` | object | default rotating settings | Rotating account settings |
 | `rotating.stage_horizon` | uint64 | `4096` | Requested stage address lookahead past the live stage; subject to family limits (SLH-DSA: at most 2) |
 | `rotating.recovery_max_stages` | uint64 | `1024` | How many stages past a rotating account's cached table the signer searches automatically, per account per unlock, for an authorizer it cannot place; 0 disables automatic search (operator recovery and request-time discovery still work) |
 | `rotating.recovery_timeout` | duration | `5m` | Cap on the derivation time one automatic rotating stage search may spend |
 
-Product-local `identities/default/config.yaml` contains settings only.
+Product-local `identities/default/config.yaml` contains settings only, among them
+the signer-admin UI `theme` (auto, dark, or light) that apadmin saves.
 Node role is stored separately in root `node.yaml`.
 
 ## Environment Variables

@@ -335,6 +335,7 @@ func TestStoredConfigApply(t *testing.T) {
 		LockOnDisconnect:  &lockOnDisconnect,
 		PassphraseTimeout: "45m",
 		ApprovalWait:      "10m",
+		Theme:             "light",
 	}
 
 	effective, err := cfg.Apply(ConfigDefaults{
@@ -342,6 +343,7 @@ func TestStoredConfigApply(t *testing.T) {
 		LockOnDisconnect: true,
 		SessionTimeout:   15 * time.Minute,
 		ApprovalWait:     5 * time.Minute,
+		Theme:            DefaultTheme,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -357,6 +359,17 @@ func TestStoredConfigApply(t *testing.T) {
 	}
 	if effective.ApprovalWait != 10*time.Minute {
 		t.Fatalf("approval wait = %s, want %s", effective.ApprovalWait, 10*time.Minute)
+	}
+	if effective.Theme != "light" {
+		t.Fatalf("theme = %q, want light", effective.Theme)
+	}
+
+	unset, err := (&StoredConfig{}).Apply(ConfigDefaults{Theme: DefaultTheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unset.Theme != DefaultTheme {
+		t.Fatalf("theme with none saved = %q, want %q", unset.Theme, DefaultTheme)
 	}
 }
 

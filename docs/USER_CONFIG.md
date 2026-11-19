@@ -356,8 +356,9 @@ starts. Without a top-level `config.yaml` it starts on the defaults and
 warns; one that exists but cannot be read (permissions, a disk error) stops
 it, rather than starting it on defaults that would drop what the file sets.
 An edit to either file while it runs takes effect at the next restart. A setting changed through `apadmin` takes effect while the signer
-runs and rewrites only its own key in the file, so other keys keep their
-values, a hand edit included (comments and key order are not kept).
+runs and rewrites only its own key in `identities/default/config.yaml`, so
+other keys keep their values, a hand edit included (comments and key order
+are not kept there). apsigner never writes the top-level `config.yaml`.
 
 ### Fields
 
@@ -369,6 +370,13 @@ change `user_auto_approve`, `lock_on_disconnect`, or `passphrase_timeout`
 through admin IPC, the signer writes it as a product-local override at
 `identities/default/config.yaml`. `approval_wait` is process/YAML-only; it is
 not part of the admin settings payload and cannot be changed through admin IPC.
+
+The color theme (`auto`, `dark` or `light`) chosen in the `apadmin` settings
+panel is saved only in `identities/default/config.yaml` as `theme`; the
+top-level `config.yaml` has no `theme` field and refuses one. If an earlier
+`apadmin` wrote a `theme:` line there, delete it: the load error names the
+field and says to remove it. `apadmin` and `apconsole` apply the saved theme
+once they connect, and detect the terminal's background until then.
 
 Node role is stored separately in the signer data root `node.yaml`. Standard
 installations initialize as signer nodes; product config does not carry a role
@@ -507,7 +515,10 @@ With a nonzero `passphrase_timeout`, `apadmin` disconnects after local keyboard
 inactivity. If `lock_on_disconnect` is `true`, that disconnect locks the signer.
 If `lock_on_disconnect` is `false`, the signer remains unlocked until manual
 lock, process stop, restart, or another explicit lock path. The time-based
-disconnect can be disabled by setting `passphrase_timeout: "0"`.
+disconnect can be disabled by setting `passphrase_timeout: "0"`. Any other
+value must be a Go duration such as `"15m"` or `"1h"`. One that is not (for
+example `15mins`) is refused when the file loads, so apsigner does not start;
+it never turns the timeout off.
 
 After an idle disconnect, `apadmin` shows the login screen in a disconnected
 state and reconnects only when you press `c`. Separately, the signer closes any
@@ -528,6 +539,11 @@ the product runtime in headless mode and the effective runtime behavior is:
 - passphrase timeout is disabled (`0`)
 - lock-on-disconnect is disabled
 
+The startup log's interactive or headless mode warnings, and its security
+configuration summary, report the settings in effect: the
+`identities/default/config.yaml` values, where `apadmin` saves a change,
+over `config.yaml`, with the headless overrides applied.
+
 #### Lock / Unlock Behavior Matrix
 
 | Passphrase mode | `passphrase_timeout` | `lock_on_disconnect` | While Admin app is connected | When Admin app closes/disconnects |
@@ -537,7 +553,7 @@ the product runtime in headless mode and the effective runtime behavior is:
 | `prompt` | `"0"` | `true` | Admin app stays connected until closed | Signer locks immediately |
 | `prompt` | `"0"` | `false` | Admin app stays connected until closed | Signer stays unlocked |
 | `passfile` / `systemd-creds` | `"0"` | effectively `false` | Signer starts unlocked and stays unlocked until stopped | Signer stays unlocked |
-| `passfile` / `systemd-creds` | nonzero | any | Invalid headless configuration; startup validation rejects it | Invalid headless configuration |
+| `passfile` / `systemd-creds` | nonzero | any | Ignored: the signer starts unlocked with no idle timeout and says so in its startup warnings | Signer stays unlocked |
 
 In this table, "Admin app" means `apadmin` or the embedded signer-admin panel
 inside `apconsole`. "Admin activity" means local keyboard interaction in the
@@ -642,6 +658,10 @@ sudo appass -d /var/lib/apsigner
 ```
 
 Inside the `appass` TUI, choose the desired passphrase handling mode and follow the prompts.
+While a mode change runs, `appass` shows a working screen and ignores keys
+until it finishes. Each external step (`appass-systemd-creds write`,
+`systemctl daemon-reload`) is stopped if it runs longer than a minute, and
+the change then ends on the result screen with that error.
 
 Use `appass` when you want to change startup unlock behavior. Use `apadmin` when the daemon is already running and you want to manage the live signer session.
 
@@ -1285,7 +1305,7 @@ In headless mode:
 2. Signing requests can skip manual review when `User Auto-Approve` is ON (`user_auto_approve: true`)
 3. The signer remains unlocked even without an admin connection
 
-Headless mode is intentionally long-lived: `passphrase_timeout` must be `0`, `lock_on_disconnect:true` is invalid, and the signer stays unlocked in memory until you stop it or lock it manually.
+Headless mode is intentionally long-lived: the signer stays unlocked in memory until you stop it or lock it manually. At startup it ignores a nonzero `passphrase_timeout` and `lock_on_disconnect: true`, from either config file, and says so in its headless mode warnings. While it runs, `apadmin` refuses to set either one.
 
 ### Use Cases
 

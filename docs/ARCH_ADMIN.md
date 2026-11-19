@@ -787,19 +787,22 @@ Writable admin settings:
 - `require_contained` and `require_cosigner`: restrict new
   accounts of the per-key types only, the plain hosts (`aplane.falcon1024.v1`,
   `aplane.ed25519.v1`), the plain program included
-- `theme`
+- `theme` (`auto`, `dark` or `light`; `auto` when none is saved): the
+  signer-admin UI theme. apadmin and apconsole apply it once connected and
+  detect the terminal's background before that.
 
 `update_admin_setting` validates the value before anything changes. The
 boolean settings (`user_auto_approve`, `lock_on_disconnect`,
 `require_contained`, `require_cosigner`) accept exactly `true` or `false`;
 any other value is refused with `code:"invalid_request"`. A valid value is
-saved durably to `identities/default/config.yaml` (root `config.yaml` for
-`theme`).
+saved durably to `identities/default/config.yaml`, `theme` included. The
+signer never writes the process-global root `config.yaml`, so its comments
+and key order stay as the operator wrote them.
 
-Both files are read when apsigner starts. A setting changed through
+The file is read when apsigner starts. A setting changed through
 `update_admin_setting` takes effect while the signer runs and rewrites only
 its own key in the file: the file's other keys keep their values (comments
-and key order are not kept). An edit to either file made while apsigner runs,
+and key order are not kept). An edit to the file made while apsigner runs,
 by hand or by another tool, takes effect at the next start; the running
 signer does not re-read it, and an update of another key leaves the edit in
 the file.
@@ -838,8 +841,7 @@ directory flush that follows the rename is best effort: a failed flush does
 not show that the change missed the disk, so the signer claims neither way.
 It writes one warning to its log, naming the setting and the flush error
 (it points at a failing disk), and answers success; nothing is sent to the
-client or written to the audit log. This holds for `theme` too, whose save
-of root `config.yaml` goes through the same durable write.
+client or written to the audit log.
 
 A restrictive value is unsaved from the moment it takes effect, before its
 save: the signer holds that, in memory only, and reports it in

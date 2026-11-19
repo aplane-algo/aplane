@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -112,11 +111,6 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 	}
 	_, err := keygen.SaveNewKey(s.keyPaths, payload, kr)
 	return err
-}
-
-// SaveServerSetting persists a single signer-owned config setting.
-func (s *Service) SaveServerSetting(dataDir, key string, value interface{}) error {
-	return serverconfig.SaveSetting(dataDir, key, value)
 }
 
 // SaveRuntimeSetting persists a single product-runtime setting.

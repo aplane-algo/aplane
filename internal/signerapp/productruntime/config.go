@@ -22,13 +22,14 @@ import (
 )
 
 // RuntimeConfig holds mutable settings for the product runtime. Process-global
-// settings (ports, SSH config, theme) remain on ServerConfig.
+// settings (ports, SSH config) remain on ServerConfig.
 type RuntimeConfig struct {
 	mu               sync.RWMutex
 	userAutoApprove  bool
 	lockOnDisconnect bool
 	sessionTimeout   time.Duration
 	approvalWait     time.Duration
+	theme            string
 
 	requireContained bool
 	requireCosigner  bool
@@ -40,6 +41,10 @@ type RuntimeConfig struct {
 	unsaved map[string]bool
 }
 
+// DefaultTheme is the signer-admin UI theme when none is saved: the admin
+// client detects the terminal's background.
+const DefaultTheme = "auto"
+
 // ConfigDefaults contains process-level defaults that the product overlay can
 // inherit at startup.
 type ConfigDefaults struct {
@@ -49,6 +54,7 @@ type ConfigDefaults struct {
 	ApprovalWait     time.Duration
 	RequireContained bool
 	RequireCosigner  bool
+	Theme            string
 }
 
 // EffectiveConfig contains the concrete product runtime settings.
@@ -59,6 +65,7 @@ type EffectiveConfig struct {
 	ApprovalWait     time.Duration
 	RequireContained bool
 	RequireCosigner  bool
+	Theme            string
 }
 
 // StoredConfig is the persisted product runtime configuration overlay.
@@ -69,7 +76,11 @@ type StoredConfig struct {
 	LockOnDisconnect  *bool  `yaml:"lock_on_disconnect,omitempty"`
 	PassphraseTimeout string `yaml:"passphrase_timeout,omitempty"`
 	ApprovalWait      string `yaml:"approval_wait,omitempty"`
-	Mode              string `yaml:"mode,omitempty"`
+	// Theme is the signer-admin UI theme (auto, dark or light) that apadmin
+	// saves; empty is DefaultTheme. It lives here, not in the process-global
+	// config.yaml, so a theme change never rewrites the operator's file.
+	Theme string `yaml:"theme,omitempty"`
+	Mode  string `yaml:"mode,omitempty"`
 	// These restrict new accounts of the per-key types, the plain hosts
 	// (aplane.falcon1024.v1, aplane.ed25519.v1), only. They do not reach existing accounts or
 	// separately enabled expert templates.
@@ -87,7 +98,22 @@ func NewRuntimeConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, ap
 		lockOnDisconnect: lockOnDisconnect,
 		sessionTimeout:   sessionTimeout,
 		approvalWait:     approvalWait,
+		theme:            DefaultTheme,
 	}
+}
+
+// Theme returns the signer-admin UI theme the admin clients apply.
+func (c *RuntimeConfig) Theme() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.theme
+}
+
+// SetTheme updates the signer-admin UI theme.
+func (c *RuntimeConfig) SetTheme(v string) {
+	c.mu.Lock()
+	c.theme = v
+	c.mu.Unlock()
 }
 
 // SetGenerationRequirements sets the per-key types' generation requirements.
@@ -272,6 +298,10 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	}
 	if c.RequireCosigner != nil {
 		effective.RequireCosigner = *c.RequireCosigner
+	}
+
+	if c.Theme != "" {
+		effective.Theme = c.Theme
 	}
 
 	if c.PassphraseTimeout != "" {

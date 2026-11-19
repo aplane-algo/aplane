@@ -20,6 +20,7 @@ const (
 	ViewHome              ViewState = iota // Status + menu
 	ViewPassphraseInput                    // First passphrase entry
 	ViewConfirmPassphrase                  // Confirm passphrase
+	ViewWorking                            // Action running; keys are ignored
 	ViewResult                             // Success/error after action
 )
 

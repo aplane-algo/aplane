@@ -104,7 +104,7 @@ func TestDeletedArchiveReleaseCapacity(t *testing.T) {
 
 	newPassphrase := []byte("capacity-test-new-passphrase")
 	changepassStart := time.Now()
-	if _, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+	if _, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{ValidateCandidate: acceptCandidate}); err != nil {
 		t.Fatal(err)
 	}
 	changepassDuration := time.Since(changepassStart)

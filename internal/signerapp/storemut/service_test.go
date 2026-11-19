@@ -21,7 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -182,30 +181,6 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	}
 }
 
-func TestSaveServerSettingPersistsConfigValue(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\nuser_auto_approve: false\n"), 0o640); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	svc := New(utilkeys.NewPaths(dir))
-	if err := svc.SaveServerSetting(dir, "theme", "dark"); err != nil {
-		t.Fatalf("SaveServerSetting() error = %v", err)
-	}
-
-	cfg, err := serverconfig.LoadServerConfig(dir)
-	if err != nil {
-		t.Fatalf("LoadServerConfig() error = %v", err)
-	}
-	if cfg.Theme != "dark" {
-		t.Fatalf("theme = %q, want %q", cfg.Theme, "dark")
-	}
-	if cfg.UserAutoApprove {
-		t.Fatal("user_auto_approve = true, want false")
-	}
-}
-
 func TestSaveProductSettingPersistsRuntimeConfigValue(t *testing.T) {
 	dir := t.TempDir()
 
@@ -214,6 +189,9 @@ func TestSaveProductSettingPersistsRuntimeConfigValue(t *testing.T) {
 		t.Fatalf("SaveRuntimeSetting() error = %v", err)
 	}
 	if err := svc.SaveRuntimeSetting(dir, "passphrase_timeout", "30m"); err != nil {
+		t.Fatalf("SaveRuntimeSetting() error = %v", err)
+	}
+	if err := svc.SaveRuntimeSetting(dir, "theme", "dark"); err != nil {
 		t.Fatalf("SaveRuntimeSetting() error = %v", err)
 	}
 
@@ -226,6 +204,9 @@ func TestSaveProductSettingPersistsRuntimeConfigValue(t *testing.T) {
 	}
 	if cfg.PassphraseTimeout != "30m" {
 		t.Fatalf("passphrase_timeout = %q, want %q", cfg.PassphraseTimeout, "30m")
+	}
+	if cfg.Theme != "dark" {
+		t.Fatalf("theme = %q, want %q", cfg.Theme, "dark")
 	}
 }
 

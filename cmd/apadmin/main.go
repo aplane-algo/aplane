@@ -113,8 +113,9 @@ func main() {
 		}
 		config = startup.Config
 	}
-	// Initialize color theme based on config
-	theme.Init(config.Theme)
+	// Detect the terminal's background until the signer reports the theme
+	// saved in its settings.
+	theme.Init("auto")
 
 	// Configure algod client on DSA providers for TEAL compilation
 	configureAlgodOnDSAs(config)

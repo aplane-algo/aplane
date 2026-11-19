@@ -5,9 +5,14 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func allZero(b []byte) bool {
@@ -107,5 +112,78 @@ func TestPassphraseEntriesAreZeroedOnMismatchEscAndExit(t *testing.T) {
 	m.clearPassphrases()
 	if !allZero(typed) {
 		t.Fatalf("clearing at exit left %q", typed)
+	}
+}
+
+// localPassfileModel is a local data directory's model with an appass-file
+// helper installed, ready for passphrase entry for set-passfile.
+func localPassfileModel(t *testing.T) (Model, string) {
+	t.Helper()
+	stubSignerStopped(t)
+	dataDir := t.TempDir()
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "appass-file"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc := &serviceInfo{BinDir: binDir, StoreUID: os.Geteuid(), StoreGID: os.Getegid()}
+	m := NewModel(dataDir, svc, true)
+	m.viewState = ViewPassphraseInput
+	m.currentAction = "set-passfile"
+	return m, dataDir
+}
+
+// While an action runs, keys do nothing. A second Enter on the confirm
+// screen once ran the action again, concurrently, with both entries already
+// cleared: the passphrase file ended up empty and appass reported success.
+// Esc then q could also quit with the action half done.
+func TestKeysAreIgnoredWhileAnActionRuns(t *testing.T) {
+	m, dataDir := localPassfileModel(t)
+	m, _ = typePassphrase(t, m, typedPassphrase)
+	m, _ = press(m, tea.KeyEnter)
+	m, _ = typePassphrase(t, m, typedPassphrase)
+	m, action := press(m, tea.KeyEnter)
+	if action == nil {
+		t.Fatal("confirming did not start the action")
+	}
+
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyEnter},
+		{Type: tea.KeyEsc},
+		{Type: tea.KeyRunes, Runes: []rune{'q'}},
+	} {
+		next, cmd := m.Update(key)
+		m = next.(Model)
+		if cmd != nil || m.quitting || m.viewState == ViewConfirmPassphrase || m.viewState == ViewHome {
+			t.Fatalf("%s while the action runs: started a command %v, quitting %v, view %v",
+				key, cmd != nil, m.quitting, m.viewState)
+		}
+	}
+
+	next, _ := m.Update(action())
+	m = next.(Model)
+	if m.viewState != ViewResult || m.resultError != "" {
+		t.Fatalf("after the action: view %v, error %q; want the success screen", m.viewState, m.resultError)
+	}
+	passphrasePath := filepath.Join(storepaths.NewPaths(dataDir).ProductDir(), "passphrase")
+	if got, err := os.ReadFile(passphrasePath); err != nil || string(got) != typedPassphrase {
+		t.Fatalf("passphrase file = %q, %v; want the confirmed passphrase", got, err)
+	}
+}
+
+// Neither setup action accepts an empty passphrase, which could never unlock
+// the store, whatever reaches it.
+func TestSetActionsRefuseAnEmptyPassphrase(t *testing.T) {
+	m, dataDir := localPassfileModel(t)
+	if _, err := executeSetPassfile(dataDir, nil, m.svcInfo, true); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("executeSetPassfile(empty) error = %v, want the empty passphrase refusal", err)
+	}
+	productDir := storepaths.NewPaths(dataDir).ProductDir()
+	for _, name := range []string{"passphrase", "unlock.yaml"} {
+		if _, err := os.Lstat(filepath.Join(productDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s after the refusal: %v, want none written", name, err)
+		}
+	}
+	if _, err := executeSetSystemcreds(dataDir, nil, m.svcInfo); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("executeSetSystemcreds(empty) error = %v, want the empty passphrase refusal", err)
 	}
 }

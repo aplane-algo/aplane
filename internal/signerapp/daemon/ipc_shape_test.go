@@ -253,7 +253,7 @@ func TestHandleUpdateAdminSettingPersistsProductStoreConfigSeparately(t *testing
 	defer cleanup()
 
 	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\nuser_auto_approve: false\n"), 0o640); err != nil {
+	if err := os.WriteFile(configPath, []byte("user_auto_approve: false\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 

@@ -33,9 +33,6 @@ type Deps interface {
 	DataDir() string
 	Config() *serverconfig.ServerConfig
 	KeyPaths() storepaths.Paths
-	Theme() string
-	SetTheme(v string)
-	WithProcessConfigMutation(fn func() error) error
 	WithStoreMutation(fn func() error) error
 	SSHInfo() SSHInfo
 	// Warnf logs an operator-facing warning to the signer's log.
@@ -88,7 +85,7 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 		TEALCompileNet:       cfg.TEALCompileNetwork,
 		EndpointAdvertiseURL: cfg.Endpoint.AdvertiseURL,
 		EndpointDisplayURL:   endpointDisplayURL(cfg, sshInfo),
-		Theme:                s.Deps.Theme(),
+		Theme:                icfg.Theme(),
 	}
 }
 
@@ -149,11 +146,6 @@ func primaryOutboundIPv4() string {
 }
 
 func (s Service) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error {
-	if req.Key == adminproto.AdminSettingTheme {
-		return s.Deps.WithProcessConfigMutation(func() error {
-			return s.updateAdminSettingLocked(req)
-		})
-	}
 	if req.Key == adminproto.AdminSettingSSHListenAddress || req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
 		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
@@ -229,7 +221,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		if v != "auto" && v != "dark" && v != "light" {
 			return fmt.Errorf("invalid theme %q (must be auto, dark, or light)", req.Value)
 		}
-		saveValue, publish = v, func() { s.Deps.SetTheme(v) }
+		saveValue, publish = v, func() { icfg.SetTheme(v) }
 	default:
 		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
@@ -241,16 +233,11 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 		publish()
 		icfg.SetUnsaved(req.Key, true)
 	}
-	// The save rewrites only this key: an edit to another key of the file
-	// made while the signer runs stays in the file and takes effect at the
-	// next start.
-	mut := storemut.New(s.Deps.KeyPaths())
-	var saveErr error
-	if req.Key == adminproto.AdminSettingTheme {
-		saveErr = mut.SaveServerSetting(s.Deps.DataDir(), req.Key, saveValue)
-	} else {
-		saveErr = mut.SaveRuntimeSetting(s.Deps.DataDir(), req.Key, saveValue)
-	}
+	// The save rewrites only this key of the product runtime config: an
+	// edit to another key of the file made while the signer runs stays in
+	// the file and takes effect at the next start. The process-global
+	// config.yaml is never written.
+	saveErr := storemut.New(s.Deps.KeyPaths()).SaveRuntimeSetting(s.Deps.DataDir(), req.Key, saveValue)
 	switch {
 	case saveErr == nil || errors.Is(saveErr, fsutil.ErrPublishedNotDurable):
 		// The new file is in place and is what the next start loads, so
