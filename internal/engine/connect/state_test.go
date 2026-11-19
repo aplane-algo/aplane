@@ -4,7 +4,6 @@
 package connect
 
 import (
-	"bytes"
 	"context"
 	"sync"
 	"testing"
@@ -12,32 +11,6 @@ import (
 
 	util "github.com/aplane-algo/aplane/internal/signerclient"
 )
-
-func TestSetSignerProgressWriterPersistsAcrossClients(t *testing.T) {
-	var progress bytes.Buffer
-
-	state := NewState()
-	state.SetSignerProgressWriter(&progress)
-
-	first := util.NewSignerClient("http://localhost:1")
-	state.SignerClient = first
-	state.SetSignerProgressWriter(&progress)
-
-	if first.ProgressOut != &progress {
-		t.Fatal("first signer client did not receive progress writer")
-	}
-
-	second := util.NewSignerClient("http://localhost:2")
-	state.SignerClient = second
-
-	client, err := state.signerClient()
-	if err != nil {
-		t.Fatalf("signerClient() error = %v", err)
-	}
-	if client.ProgressOut != &progress {
-		t.Fatal("replacement signer client did not inherit progress writer")
-	}
-}
 
 func TestBeginConnectRejectsConcurrentAttempt(t *testing.T) {
 	state := NewState()

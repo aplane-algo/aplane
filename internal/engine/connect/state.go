@@ -5,7 +5,6 @@ package connect
 
 import (
 	"context"
-	"io"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -16,15 +15,14 @@ import (
 type ConnectionState struct {
 	Mu sync.Mutex
 
-	SignerClient      *signerclient.Client
-	SignerProgressOut io.Writer
-	SSHTunnelClient   *sshtunnel.Client
-	TunnelConnected   bool
-	TunnelCtx         context.Context
-	TunnelCancel      context.CancelFunc
-	ConnectionTarget  string
-	connectingTarget  string
-	identityCreated   func(sshtunnel.IdentityCreated)
+	SignerClient     *signerclient.Client
+	SSHTunnelClient  *sshtunnel.Client
+	TunnelConnected  bool
+	TunnelCtx        context.Context
+	TunnelCancel     context.CancelFunc
+	ConnectionTarget string
+	connectingTarget string
+	identityCreated  func(sshtunnel.IdentityCreated)
 }
 
 // NewState creates an empty connection state.
@@ -66,17 +64,6 @@ func (s *ConnectionState) IdentityCreatedHandler() func(sshtunnel.IdentityCreate
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	return s.identityCreated
-}
-
-// SetSignerProgressWriter updates the output writer used by the current signer client
-// for approval/progress messages.
-func (s *ConnectionState) SetSignerProgressWriter(w io.Writer) {
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
-	s.SignerProgressOut = w
-	if s.SignerClient != nil {
-		s.SignerClient.ProgressOut = w
-	}
 }
 
 // BindSignerClientContext attaches a request context to the current signer

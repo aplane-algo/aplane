@@ -807,16 +807,15 @@ Connection state is protected by a mutex:
 
 ```go
 type ConnectionState struct {
-    Mu                sync.Mutex
-    SignerClient      *signerclient.Client
-    SignerProgressOut io.Writer
-    SSHTunnelClient   *sshtunnel.Client
-    TunnelConnected   bool
-    TunnelCtx         context.Context
-    TunnelCancel      context.CancelFunc
-    ConnectionTarget  string
-    connectingTarget  string
-    portDialTimeout   func(network, address string, timeout time.Duration) (net.Conn, error)
+    Mu               sync.Mutex
+    SignerClient     *signerclient.Client
+    SSHTunnelClient  *sshtunnel.Client
+    TunnelConnected  bool
+    TunnelCtx        context.Context
+    TunnelCancel     context.CancelFunc
+    ConnectionTarget string
+    connectingTarget string
+    portDialTimeout  func(network, address string, timeout time.Duration) (net.Conn, error)
 }
 
 func (e *Engine) IsConnected() bool {
@@ -1961,7 +1960,7 @@ Client programs produce four kinds of output, and each has one owner:
 |---|---|---|
 | Result | The answer to a command, or something the user must keep | Typed application result, rendered by the host (`r.Out`, `command.Result`) |
 | Prompt | Asks for a decision or input | The line reader, or the host's approval handler |
-| Progress | Status that matters while an operation runs | `ProgressLine`, `SignerProgressOut`, or a host callback |
+| Progress | Status that matters while an operation runs | `ProgressLine`, the signer client's `ProgressOut` (stdout when unset), or a host callback |
 | Log | Operational diagnostics | `log/slog`, through the handler the host installs |
 
 If a command's answer would be incomplete without a message, it is a result, and

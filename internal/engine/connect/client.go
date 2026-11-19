@@ -21,9 +21,6 @@ func (s *ConnectionState) signerClient() (*signerclient.Client, error) {
 	if s.SignerClient == nil {
 		return nil, ErrNotConnected
 	}
-	if s.SignerProgressOut != nil && s.SignerClient.ProgressOut == nil {
-		s.SignerClient.ProgressOut = s.SignerProgressOut
-	}
 	return s.SignerClient, nil
 }
 
