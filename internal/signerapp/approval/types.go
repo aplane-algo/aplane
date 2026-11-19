@@ -14,6 +14,9 @@ const (
 	SignRequestCancelReasonClientCanceled = protocol.SignRequestCancelReasonClientCanceled
 	SignRequestCancelReasonTimeout        = protocol.SignRequestCancelReasonTimeout
 	SignRequestCancelReasonSessionEnded   = protocol.SignRequestCancelReasonSessionEnded
+
+	SignRequestCancelReasonApproverDisconnected = protocol.SignRequestCancelReasonApproverDisconnected
+	SignRequestCancelReasonApproverDisplaced    = protocol.SignRequestCancelReasonApproverDisplaced
 )
 
 // SignRequestCancelState describes the result of a sign-request cancellation.

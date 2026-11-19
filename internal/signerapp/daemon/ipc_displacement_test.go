@@ -6,11 +6,14 @@ package daemon
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -201,13 +204,11 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 
 	approvalResult := make(chan error, 1)
 	go func() {
+		// Displacement withdraws the prompt shown to the old session: it
+		// ends as ErrApproverGone, not as a rejection.
 		response, err := ir.RequestSigningApprovalResponse("displaced-prompt", "A", "A", "desc", 0, 0, nil, time.Minute)
-		if err != nil {
-			approvalResult <- err
-			return
-		}
-		if response.Approved || response.Reason != "apadmin displaced" {
-			approvalResult <- fmt.Errorf("response = %+v, want rejected apadmin displaced response", response)
+		if !errors.Is(err, signerapproval.ErrApproverGone) || response.Approved {
+			approvalResult <- fmt.Errorf("response = %+v, err = %v; want the prompt withdrawn with ErrApproverGone", response, err)
 			return
 		}
 		approvalResult <- nil

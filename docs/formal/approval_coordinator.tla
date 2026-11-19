@@ -134,8 +134,9 @@ Cancel(r) ==
     /\ UNCHANGED <<badPendingAfterFailAll, orphanedDelivery>>
 
 \* OperatorDisconnect models the apadmin client dropping: FailAllPendingRequests
-\* fails the (single) delivered request and releases the turn. Later requests
-\* may still proceed.
+\* withdraws the (single) delivered request ("Failed": the client hears a
+\* withdrawal, ErrApproverGone, not a rejection) and releases the turn. Later
+\* requests may still proceed.
 OperatorDisconnect ==
     /\ DeliveredSet # {}
     /\ procState' = [r \in Requests |->
@@ -147,7 +148,8 @@ OperatorDisconnect ==
 
 \* Displace models a new apadmin client replacing the active one after the
 \* operator confirms displacement (daemon/ipc.go calls
-\* FailAllPendingApprovals("apadmin displaced") before DisplaceSession).
+\* FailAllPendingApprovals(SignRequestCancelReasonApproverDisplaced) before
+\* DisplaceSession).
 \* A delivered prompt was shown to the OLD client only -- the replacement
 \* has no way to render or answer it -- so it must be failed in the same
 \* step that the client is replaced. Otherwise the prompt is orphaned: it

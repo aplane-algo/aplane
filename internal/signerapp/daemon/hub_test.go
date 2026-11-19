@@ -245,11 +245,12 @@ func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 
-	signer.failAllPendingApprovals("disconnect")
+	signer.failAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisconnected)
 	<-done
 
-	if err != nil {
-		t.Fatalf("expected nil error after disconnect cleanup, got %v", err)
+	// A disconnect withdraws the prompt: nobody rejected it.
+	if !errors.Is(err, signerapproval.ErrApproverGone) {
+		t.Fatalf("error after disconnect cleanup = %v, want ErrApproverGone", err)
 	}
 	if approved {
 		t.Fatal("approved = true, want false")

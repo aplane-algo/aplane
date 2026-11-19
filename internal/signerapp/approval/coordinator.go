@@ -20,6 +20,10 @@ var (
 	// ended because the signer's session ended (EndSessionSignRequests):
 	// the request began in an earlier session epoch.
 	ErrSessionEnded = errors.New("the signer's session ended")
+	// ErrApproverGone accompanies ErrApprovalCanceled when the apadmin
+	// session a prompt was shown to disconnected or was displaced before
+	// answering it (FailAllPendingRequests). Nobody rejected the request.
+	ErrApproverGone = errors.New("the apadmin session it was shown to ended before answering")
 )
 
 const maxRememberedCanceledSignRequests = 1024
@@ -267,6 +271,8 @@ func cancellationError(reason string, ctxErr error) error {
 	switch reason {
 	case SignRequestCancelReasonSessionEnded:
 		return fmt.Errorf("%w: %w", ErrApprovalCanceled, ErrSessionEnded)
+	case SignRequestCancelReasonApproverDisconnected, SignRequestCancelReasonApproverDisplaced:
+		return fmt.Errorf("%w: %w (%s)", ErrApprovalCanceled, ErrApproverGone, reason)
 	case "":
 		if ctxErr == nil {
 			return ErrApprovalCanceled
@@ -599,6 +605,13 @@ func (c *Coordinator) notifySignRequestCanceled(requestID, reason string) {
 	})
 }
 
+// FailAllPendingRequests withdraws every prompt delivered to the apadmin
+// session that is ending: reason is SignRequestCancelReasonApproverDisconnected
+// or SignRequestCancelReasonApproverDisplaced. Each waiter ends with
+// ErrApproverGone, not a rejection: nobody answered the request, and it can be
+// sent again once an apadmin session is connected. Requests still queued for
+// the delivery turn are not affected; they go to the next session, or fail
+// because none is connected.
 func (c *Coordinator) FailAllPendingRequests(reason string) {
 	c.pendingRequestsLock.Lock()
 	signRequests := c.pendingRequests
@@ -607,6 +620,6 @@ func (c *Coordinator) FailAllPendingRequests(reason string) {
 	c.pendingRequestsLock.Unlock()
 
 	for id, ch := range signRequests {
-		trySendSignResponse(ch, SignResponse{ID: id, Approved: false, Reason: reason})
+		trySendSignResponse(ch, SignResponse{ID: id, Approved: false, Reason: reason, withdrawn: true})
 	}
 }

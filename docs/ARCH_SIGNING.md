@@ -1187,6 +1187,18 @@ again under the same ID belongs to the new session and is handled as new.
 Only the signer withdraws a request; an operator's rejection stays a
 rejection whatever reason text it carries.
 
+When the apadmin session a prompt was shown to disconnects, or another
+session displaces it, before answering, the coordinator withdraws that prompt
+(`FailAllPendingRequests`, reason `approver_disconnected` or
+`approver_displaced`): nobody rejected the request. It answers `unavailable`
+("apadmin disconnected before answering the approval; send the request again
+once an apadmin session is connected"), as a request that finds no apadmin
+connected does, and is audited as `approval_withdrawn_apadmin_disconnected`.
+Requests queued behind it are not withdrawn: they are shown to the next
+session, or fail because none is connected. A disconnect that also locks the
+signer (`lock_on_disconnect`) ends the session too, and a request that sees
+the session end first answers `locked` as above.
+
 ---
 
 ## Client Usage

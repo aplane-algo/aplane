@@ -844,3 +844,26 @@ func TestRequestSingleTxnApprovalWithdrawnBySessionEndAnswersLocked(t *testing.T
 		t.Fatalf("audit = %+v, want one approval_withdrawn_session_ended rejection", audit.rejected)
 	}
 }
+
+// A prompt withdrawn because the apadmin session it was shown to ended
+// answers unavailable, as a request that finds no apadmin connected does,
+// and is audited as withdrawn, not as an operator rejection.
+func TestRequestSingleTxnApprovalWithdrawnByApadminDisconnectAnswersUnavailable(t *testing.T) {
+	audit := &testAuditLogger{}
+	svc := &ApprovalService{
+		AuditLog:       audit,
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
+		RequestSigningApprovalPrompt: func(context.Context, signerapproval.Prompt, time.Duration) (signerapproval.SignResponse, error) {
+			return signerapproval.SignResponse{}, fmt.Errorf("%w: %w (%s)", signerapproval.ErrApprovalCanceled, signerapproval.ErrApproverGone, signerapproval.SignRequestCancelReasonApproverDisconnected)
+		},
+	}
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
+	err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "AUTH"}, []types.Transaction{txn}, "", nil)
+	if err == nil || err.Kind != ErrorUnavailable || strings.Contains(err.Message, "rejected") {
+		t.Fatalf("error = %+v, want an unavailable error that is not a rejection", err)
+	}
+	if len(audit.rejected) != 1 || audit.rejected[0].reason != "approval_withdrawn_apadmin_disconnected" {
+		t.Fatalf("audit = %+v, want one approval_withdrawn_apadmin_disconnected entry", audit.rejected)
+	}
+}

@@ -252,7 +252,7 @@ func TestCoordinatorFailAllClearsPendingMaps(t *testing.T) {
 	)
 	c.pendingRequests["sign-1"] = make(chan SignResponse, 1)
 
-	c.FailAllPendingRequests("disconnected")
+	c.FailAllPendingRequests(SignRequestCancelReasonApproverDisconnected)
 
 	if got := len(c.pendingRequests); got != 0 {
 		t.Fatalf("len(pendingRequests) = %d, want 0", got)
@@ -512,11 +512,11 @@ func TestCoordinatorFailAllUnblocksPendingRequest(t *testing.T) {
 		t.Fatalf("delivered request = %q, want a generated prompt ID", promptFail)
 	}
 
-	c.FailAllPendingRequests("disconnected")
+	c.FailAllPendingRequests(SignRequestCancelReasonApproverDisconnected)
 
 	result := <-resultCh
-	if result.err != nil {
-		t.Fatalf("RequestSigningApproval() error = %v, want nil", result.err)
+	if !errors.Is(result.err, ErrApproverGone) || !errors.Is(result.err, ErrApprovalCanceled) {
+		t.Fatalf("RequestSigningApproval() error = %v, want the prompt withdrawn (ErrApproverGone)", result.err)
 	}
 	if result.approved {
 		t.Fatal("RequestSigningApproval() approved = true, want false")

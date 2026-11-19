@@ -672,6 +672,18 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 			console.Sync()
 			return sessionEndedError()
 		}
+		if errors.Is(err, signerapproval.ErrApproverGone) {
+			for i, txReq := range req.Requests {
+				authAddr := txReq.AuthAddress
+				if plan.ForeignIndices[i] {
+					authAddr = ""
+				}
+				s.logSignRejected(authAddr, txns[i].Sender.String(), "approval_withdrawn_apadmin_disconnected", forceReviewRuleID)
+			}
+			console.Println("[X] GROUP APPROVAL WITHDRAWN: apadmin disconnected before answering")
+			console.Sync()
+			return approverGoneError()
+		}
 		if errors.Is(err, signerapproval.ErrApprovalTimeout) {
 			s.logGroupApprovalTimeout(req, plan, txns, forceReviewRuleID)
 		}
@@ -773,6 +785,12 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 			console.Println("[X] TXN APPROVAL WITHDRAWN: the signer's session ended")
 			console.Sync()
 			return sessionEndedError()
+		}
+		if errors.Is(err, signerapproval.ErrApproverGone) {
+			s.logSignRejected(txReq.AuthAddress, decodedSender, "approval_withdrawn_apadmin_disconnected", forceReviewRuleID)
+			console.Println("[X] TXN APPROVAL WITHDRAWN: apadmin disconnected before answering")
+			console.Sync()
+			return approverGoneError()
 		}
 		if errors.Is(err, signerapproval.ErrApprovalTimeout) {
 			s.logSignRejected(txReq.AuthAddress, decodedSender, "txn_approval_timeout", forceReviewRuleID)

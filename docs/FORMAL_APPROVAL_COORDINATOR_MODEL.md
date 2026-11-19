@@ -14,7 +14,9 @@ from `New` to `Queued` to `Delivered`, then to exactly one terminal state:
 
 The model includes operator decisions, timeout, cancellation, operator-client
 disconnect, and authenticated client displacement. Disconnect and displacement
-are modeled as reason-independent fail-all actions. A session end (a lock,
+are modeled as reason-independent fail-all actions; the model's `Failed`
+outcome is how the code answers them, a withdrawal (`ErrApproverGone`), not an
+operator rejection. A session end (a lock,
 an entry into recovery, the start of store maintenance, a losing unlock) is
 not a fail-all: `Coordinator.EndSessionSignRequests` ends every approval wait
 in flight, as `/sign/cancel` ends one, so each ends through the `Cancel`
