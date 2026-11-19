@@ -4,6 +4,7 @@
 package sshtunnel
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -360,10 +361,27 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		}
 		existingCallback = callback
 	}
-	var approvalOnce sync.Once
+	// The callback runs at every key exchange of the connection, rekeys
+	// included, but known_hosts was read before the first one. So the host
+	// key the user approves is remembered here: a later exchange accepts that
+	// key and nothing else, and the user is asked at most once.
+	var (
+		approvalMu  sync.Mutex
+		prompted    bool
+		approvedKey []byte
+	)
 
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		fingerprint := ssh.FingerprintSHA256(key)
+
+		approvalMu.Lock()
+		defer approvalMu.Unlock()
+		if approvedKey != nil {
+			if bytes.Equal(key.Marshal(), approvedKey) {
+				return nil
+			}
+			return fmt.Errorf("%w for %s: the key changed after it was approved (possible MITM attack)", ErrHostKeyMismatch, hostname)
+		}
 
 		// Check against existing known_hosts if available
 		if existingCallback != nil {
@@ -392,12 +410,11 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		}
 
 		// Prompt user for approval (only once per connection attempt)
-		var approved bool
-		var approvalErr error
-		approvalOnce.Do(func() {
-			approved, approvalErr = handler(hostname, fingerprint)
-		})
-
+		if prompted {
+			return fmt.Errorf("host key rejected by user")
+		}
+		prompted = true
+		approved, approvalErr := handler(hostname, fingerprint)
 		if approvalErr != nil {
 			return fmt.Errorf("host key approval failed: %w", approvalErr)
 		}
@@ -410,6 +427,7 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 			return fmt.Errorf("failed to save host key: %w", err)
 		}
 		logger().Info("host key saved", "path", knownHostsPath)
+		approvedKey = key.Marshal()
 
 		return nil
 	}, nil

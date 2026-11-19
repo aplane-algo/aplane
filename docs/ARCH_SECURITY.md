@@ -326,6 +326,10 @@ Client                                              Server
   │                                                      │
 ```
 
+The check runs at every key exchange, rekeys included. A key the user accepts
+is saved and remembered for the rest of that connection: a later exchange
+accepts that key without a second prompt and refuses any other as a mismatch.
+
 **Configuration:**
 - Client: the endpoint record's `known_hosts_path` in `$APCLIENT_DATA/endpoints.yaml` - where to store/verify server keys (default: `.ssh/known_hosts`, relative to `$APCLIENT_DATA`)
 - Server: `endpoint.ssh.host_key_path` - persistent host key (default: `.ssh/ssh_host_key`, relative to `$APSIGNER_DATA`)

@@ -157,6 +157,49 @@ func TestHostKeyApprovalIsPerCallback(t *testing.T) {
 	}
 }
 
+// TestHostKeyApprovalHoldsAcrossRekeys pins that a host key the user
+// approved is accepted at every later key exchange of the same connection,
+// as a rekey runs the callback again, and that any other key is refused
+// there without a second prompt.
+func TestHostKeyApprovalHoldsAcrossRekeys(t *testing.T) {
+	client := NewClient("example.com", 22, "", filepath.Join(t.TempDir(), "known_hosts"))
+	calls := 0
+	client.SetHostKeyApprovalHandler(func(string, string) (bool, error) {
+		calls++
+		return true, nil
+	})
+	newKey := func() ssh.PublicKey {
+		_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signer, err := ssh.NewSignerFromKey(privateKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return signer.PublicKey()
+	}
+	approvedKey, otherKey := newKey(), newKey()
+	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 22}
+
+	callback, err := client.hostKeyCallback()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := callback("example.com:22", remote, approvedKey); err != nil {
+		t.Fatalf("first key exchange error = %v", err)
+	}
+	if err := callback("example.com:22", remote, approvedKey); err != nil {
+		t.Fatalf("rekey with the approved key error = %v, want accepted", err)
+	}
+	if err := callback("example.com:22", remote, otherKey); !errors.Is(err, ErrHostKeyMismatch) {
+		t.Fatalf("rekey with another key error = %v, want ErrHostKeyMismatch", err)
+	}
+	if calls != 1 {
+		t.Fatalf("approval calls = %d, want 1 for one connection", calls)
+	}
+}
+
 func TestHostKeyCallbackReturnsTypedTrustErrors(t *testing.T) {
 	_, firstPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
