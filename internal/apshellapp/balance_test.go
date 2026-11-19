@@ -119,10 +119,16 @@ func balanceQueryApp(t *testing.T, aliases map[string]string, failing, failingAg
 
 // An account of a set or of @all whose balance query fails is a
 // balance_query_failed warning naming it and the error, not an account left
-// out in silence; every account whose query succeeded is listed.
+// out in silence; every account whose query succeeded is listed. The
+// warnings come in the set's order, which for @all is sorted, and when no
+// account can be queried the error names the first of them by its alias.
 func TestMultiAccountBalanceWarnsOfEveryFailedQuery(t *testing.T) {
 	alice, bob, carol := crypto.GenerateAccount().Address.String(), crypto.GenerateAccount().Address.String(), crypto.GenerateAccount().Address.String()
-	app := balanceQueryApp(t, map[string]string{"alice": alice, "bob": bob, "carol": carol}, map[string]bool{bob: true, carol: true}, nil)
+	aliases := map[string]string{"alice": alice, "bob": bob, "carol": carol}
+	label := map[string]string{bob: "bob (" + bob + ")", carol: "carol (" + carol + ")", alice: "alice (" + alice + ")"}
+	failed := []string{bob, carol}
+	sort.Strings(failed)
+	app := balanceQueryApp(t, aliases, map[string]bool{bob: true, carol: true}, nil)
 	for _, set := range []string{"@team", "@all"} {
 		res, err := app.Balance(context.Background(), BalanceRequest{Args: []string{set}})
 		if err != nil {
@@ -134,16 +140,33 @@ func TestMultiAccountBalanceWarnsOfEveryFailedQuery(t *testing.T) {
 		if len(res.Warnings) != 2 {
 			t.Fatalf("balance %s warnings = %+v, want one for bob and one for carol", set, res.Warnings)
 		}
-		for _, account := range []string{"bob (" + bob + ")", "carol (" + carol + ")"} {
-			found := false
-			for _, warning := range res.Warnings {
-				found = found || (warning.Code == "balance_query_failed" &&
-					strings.HasPrefix(warning.Message, "could not query "+account+": ") && strings.Contains(warning.Message, "rate limited"))
-			}
-			if !found {
-				t.Fatalf("balance %s warnings = %+v, want a balance_query_failed warning naming %s", set, res.Warnings, account)
+		for i, address := range failed {
+			warning := res.Warnings[i]
+			if warning.Code != "balance_query_failed" || !strings.HasPrefix(warning.Message, "could not query "+label[address]+": ") ||
+				!strings.Contains(warning.Message, "rate limited") {
+				t.Fatalf("balance %s warnings = %+v, want balance_query_failed warnings naming %v in order", set, res.Warnings, failed)
 			}
 		}
+	}
+
+	all := []string{alice, bob, carol}
+	sort.Strings(all)
+	app = balanceQueryApp(t, aliases, map[string]bool{alice: true, bob: true, carol: true}, nil)
+	want := "none of the 3 account(s) could be queried: " + label[all[0]] + ": "
+	for i := 0; i < 5; i++ {
+		if res, err := app.Balance(context.Background(), BalanceRequest{Args: []string{"@all"}}); err == nil || !strings.HasPrefix(err.Error(), want) {
+			t.Fatalf("balance @all = %+v, %v; want the error %q", res, err, want)
+		}
+	}
+}
+
+// A set with no accounts is an error, as for every command over a set: here
+// a stored set emptied by removing its last member.
+func TestBalanceOfAnEmptySetFails(t *testing.T) {
+	app := balanceQueryApp(t, map[string]string{"alice": crypto.GenerateAccount().Address.String()}, nil, nil)
+	app.eng.SetCache.Sets["team"] = []string{}
+	if res, err := app.Balance(context.Background(), BalanceRequest{Args: []string{"@team"}}); err == nil || err.Error() != "no addresses resolved" {
+		t.Fatalf("balance @team = %+v, %v; want the error for an empty set", res, err)
 	}
 }
 
@@ -171,7 +194,7 @@ func TestHoldersKeepsEveryHolderFound(t *testing.T) {
 	}
 
 	app = balanceQueryApp(t, map[string]string{"alice": alice}, map[string]bool{alice: true}, nil)
-	if res, err := app.Holders(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "none of the 1 account(s) could be queried: "+alice) {
+	if res, err := app.Holders(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "none of the 1 account(s) could be queried: alice ("+alice+"): ") {
 		t.Fatalf("Holders() = %+v, %v; want the failed query of every account as the error", res, err)
 	}
 }

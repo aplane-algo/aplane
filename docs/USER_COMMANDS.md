@@ -464,8 +464,10 @@ fails (a rate-limited or unreachable node) is a warning naming the account and
 the error, and the total says how many accounts it leaves out. Through MCP the
 result is `{ balances, warnings }`: `balances` lists the accounts that
 answered, and each failed account is a `balance_query_failed` warning. When no
-account of the set can be queried, the command fails, in the shell and through
-MCP.
+account of the set can be queried, or the set has no accounts, the command
+fails, in the shell and through MCP. `@holders(<asset>)` is an exception: a
+set that drives sends and sweeps must be complete, so it fails, naming each
+account it could not query.
 
 **Aliases:** `bal`
 

@@ -973,8 +973,12 @@ addrs, err := resolver.ResolveList([]string{"alice", "@team", "@signers"})
 
 `ResolveList` accepts a mix of aliases, raw addresses, user-defined `@setname`
 references, and the dynamic `@signers`/`@all`/`@holders(<asset>)` sets.
-`ResolveSingle` enforces a single result and returns `MultipleAddressError`
-when a set expands to more than one address.
+The engine's providers list each dynamic set sorted, so a command over one
+sees its accounts in the same order every time. `@holders(<asset>)` queries
+every known account and fails, naming each account it could not query,
+rather than leave out one that may hold the asset, since the set drives
+sends and sweeps. `ResolveSingle` enforces a single result and returns
+`MultipleAddressError` when a set expands to more than one address.
 
 ### Tab Completion
 

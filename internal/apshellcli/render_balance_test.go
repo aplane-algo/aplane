@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 // "Algo" names ALGO, as the resolver reads it, everywhere balances are
@@ -94,7 +95,7 @@ func TestMCPFullBalanceHasEveryHolding(t *testing.T) {
 // balanceQueryShell is a shell whose aliases name the accounts given, on an
 // algod that answers each account's query with 1 ALGO except for the
 // accounts in failing, whose queries fail.
-func balanceQueryShell(t *testing.T, aliases map[string]string, failing map[string]bool) (*REPLState, *bytes.Buffer) {
+func balanceQueryShell(t *testing.T, aliases map[string]string, failing map[string]bool) (*REPLState, *bytes.Buffer, *engine.Engine) {
 	t.Helper()
 	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		address, ok := strings.CutPrefix(r.URL.Path, "/v2/accounts/")
@@ -123,20 +124,25 @@ func balanceQueryShell(t *testing.T, aliases map[string]string, failing map[stri
 	var out bytes.Buffer
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir()), Out: &out}
 	state.CommandRegistry = state.initCommandRegistry()
-	return state, &out
+	return state, &out, eng
 }
 
 // An account balance @all or holders could not query is a warning in the
 // shell and a balance_query_failed warning in the MCP result, and the shell's
 // total says it leaves the account out. When no account can be queried, both
-// fail with the same error.
+// fail with the same error, which names the first account in sorted order.
+// An empty set fails both alike.
 func TestMultiAccountReadsReportFailedQueries(t *testing.T) {
 	alice, bob := crypto.GenerateAccount().Address.String(), crypto.GenerateAccount().Address.String()
 	aliases := map[string]string{"alice": alice, "bob": bob}
+	first := "alice (" + alice + ")"
+	if bob < alice {
+		first = "bob (" + bob + ")"
+	}
 	warning := "could not query bob (" + bob + "): "
 	for _, line := range []string{"balance @all", "holders"} {
 		t.Run(line, func(t *testing.T) {
-			state, out := balanceQueryShell(t, aliases, map[string]bool{bob: true})
+			state, out, _ := balanceQueryShell(t, aliases, map[string]bool{bob: true})
 			cmd, err := parseShellCommand(line)
 			if err != nil {
 				t.Fatal(err)
@@ -171,21 +177,34 @@ func TestMultiAccountReadsReportFailedQueries(t *testing.T) {
 			}
 		})
 		t.Run(line+" with no account queried", func(t *testing.T) {
-			state, _ := balanceQueryShell(t, aliases, map[string]bool{alice: true, bob: true})
+			state, _, _ := balanceQueryShell(t, aliases, map[string]bool{alice: true, bob: true})
 			cmd, err := parseShellCommand(line)
 			if err != nil {
 				t.Fatal(err)
 			}
-			// The first account queried, which the error names, is either.
-			const want = "none of the 2 account(s) could be queried: "
+			want := "none of the 2 account(s) could be queried: " + first + ": "
 			err = state.runCommand(cmd)
 			if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.Contains(err.Error(), "rate limited") {
 				t.Fatalf("%s: %v, want the error %q", line, err, want)
 			}
 			result := mcpExecuteCommand(state, cmd)
-			if text := mcpResultText(t, result); !result.IsError || !strings.HasPrefix(text, want) || !strings.Contains(text, "rate limited") {
-				t.Fatalf("MCP %s = %q (error %v), want the shell's error %q", line, text, result.IsError, want)
+			if text := mcpResultText(t, result); !result.IsError || text != err.Error() {
+				t.Fatalf("MCP %s = %q (error %v), want the shell's error %q", line, text, result.IsError, err)
 			}
 		})
 	}
+
+	t.Run("balance of an empty set", func(t *testing.T) {
+		state, _, eng := balanceQueryShell(t, aliases, nil)
+		eng.SetCache.Sets = map[string][]string{"team": {}}
+		cmd := Command{Name: "balance", Args: []string{"@team"}}
+		err := state.runCommand(cmd)
+		if err == nil {
+			t.Fatal("balance @team succeeded, want the empty set refused")
+		}
+		result := mcpExecuteCommand(state, cmd)
+		if text := mcpResultText(t, result); !result.IsError || text != err.Error() {
+			t.Fatalf("MCP balance @team = %q (error %v), want the shell's error %q", text, result.IsError, err)
+		}
+	})
 }

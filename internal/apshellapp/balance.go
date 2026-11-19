@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
@@ -67,8 +68,9 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 	}
 
 	if len(account) > 0 && account[0] == '@' {
-		resolver := a.eng.NewAddressResolver()
-		addresses, err := resolver.ResolveList([]string{account})
+		// A set with no accounts is an error, as for every command over a
+		// set, in the shell and through MCP alike.
+		addresses, err := cmdspec.ResolveAddressList([]string{account}, a.eng.NewAddressResolver())
 		if err != nil {
 			return nil, err
 		}
@@ -87,12 +89,12 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return nil, ctxErr
 				}
-				failures = append(failures, engine.AccountQueryFailure{Address: address, Err: balanceErr})
+				failures = append(failures, engine.AccountQueryFailure{Address: address, Alias: a.eng.GetAliasForAddress(address), Err: balanceErr})
 				continue
 			}
 			balances = append(balances, balanceDetailsFromEngine(balanceResult))
 		}
-		if len(failures) > 0 && len(failures) == len(addresses) {
+		if len(failures) == len(addresses) {
 			return nil, engine.NoAccountQueriedError(failures)
 		}
 		return &BalanceCommandResult{
@@ -147,7 +149,7 @@ func (a *App) balanceQueryWarnings(failures []engine.AccountQueryFailure) []Warn
 	for _, failure := range failures {
 		warnings = append(warnings, Warning{
 			Code:    "balance_query_failed",
-			Message: fmt.Sprintf("could not query %s: %v", a.accountLabel(failure.Address), failure.Err),
+			Message: fmt.Sprintf("could not query %s: %v", failure.Label(), failure.Err),
 		})
 	}
 	return warnings

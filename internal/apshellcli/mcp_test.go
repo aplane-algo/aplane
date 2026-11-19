@@ -58,7 +58,7 @@ func TestMCPStructuredKeyregPasteBlocked(t *testing.T) {
 }
 
 func TestMCPBalanceParsesAssetOnlyQueryLikeREPL(t *testing.T) {
-	state, _ := balanceQueryShell(t, map[string]string{"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}, nil)
+	state, _, _ := balanceQueryShell(t, map[string]string{"alice": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}, nil)
 
 	result, err := state.app().Balance(context.Background(), apshellapp.BalanceRequest{Args: []string{"usdc"}})
 	if err != nil {

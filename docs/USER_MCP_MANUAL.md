@@ -138,7 +138,7 @@ These return an error telling you the right path:
 | `@setname` | a user-defined set |
 | `@all` | all known accounts (aliases + signer keys) |
 | `@signers` | all accounts the connected signer can sign for |
-| `@holders(<asset>)` | dynamic set of holders of an asset |
+| `@holders(<asset>)` | dynamic set of holders of an asset; fails if any known account cannot be queried |
 | `[ a b c ]` | an inline group of addresses (shell only) |
 
 In the **JS API**, pass addresses/aliases as strings and sets as arrays — the

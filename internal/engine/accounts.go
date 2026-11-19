@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
@@ -345,17 +346,39 @@ type HoldersResult struct {
 	Failures  []AccountQueryFailure
 }
 
-// AccountQueryFailure is an account whose algod account query failed.
+// AccountQueryFailure is an account whose algod account query failed, with
+// its alias, if it has one, to name it by.
 type AccountQueryFailure struct {
 	Address string
+	Alias   string
 	Err     error
+}
+
+// Label names the account as "alias (address)", or by its address alone when
+// it has no alias.
+func (f AccountQueryFailure) Label() string {
+	if f.Alias == "" {
+		return f.Address
+	}
+	return f.Alias + " (" + f.Address + ")"
 }
 
 // NoAccountQueriedError is the error of a read of several accounts in which
 // every account's query failed: the count and the first failure, which it
 // wraps. failures must not be empty.
 func NoAccountQueriedError(failures []AccountQueryFailure) error {
-	return fmt.Errorf("none of the %d account(s) could be queried: %s: %w", len(failures), failures[0].Address, failures[0].Err)
+	return fmt.Errorf("none of the %d account(s) could be queried: %s: %w", len(failures), failures[0].Label(), failures[0].Err)
+}
+
+// AccountsNotQueriedError is the error of a read of several accounts that must
+// be complete, in which some accounts' queries failed: it names each of them
+// and wraps the first failure. failures must not be empty.
+func AccountsNotQueriedError(failures []AccountQueryFailure) error {
+	labels := make([]string, len(failures))
+	for i, failure := range failures {
+		labels[i] = failure.Label()
+	}
+	return fmt.Errorf("could not query %d account(s), %s: %w", len(failures), strings.Join(labels, ", "), failures[0].Err)
 }
 
 // GetHolders returns the known accounts with a non-zero balance of the
@@ -396,7 +419,7 @@ func (e *Core) GetHolders(ctx context.Context, assetRef string) (*HoldersResult,
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			holders.Failures = append(holders.Failures, AccountQueryFailure{Address: addr, Err: err})
+			holders.Failures = append(holders.Failures, AccountQueryFailure{Address: addr, Alias: e.AliasCache.GetAliasForAddress(addr), Err: err})
 			continue
 		}
 

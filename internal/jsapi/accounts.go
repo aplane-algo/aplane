@@ -11,10 +11,12 @@ package jsapi
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/dop251/goja"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 // jsBalance returns balance info for an address or alias.
@@ -285,6 +287,11 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", err)))
 	}
+	// An address list has no room for a warning, so an account that could
+	// not be queried, and may hold the asset, is an error, not left out.
+	if len(holdersResult.Failures) > 0 {
+		panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", engine.AccountsNotQueriedError(holdersResult.Failures))))
+	}
 
 	holders := holdersResult.Addresses
 	result := make([]interface{}, len(holders))
@@ -314,11 +321,22 @@ func (a *API) jsHoldersAmong(call goja.FunctionCall, arr []interface{}) goja.Val
 		holderSet[addr] = true
 	}
 
-	// Filter input addresses
+	// Filter input addresses. One of them that could not be queried, and may
+	// hold the asset, is an error, not left out; the failures of accounts
+	// the script did not ask about do not matter.
 	result := make([]interface{}, 0)
 	addresses, err := stringArray(arr)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("holders() addresses: %v", err)))
+	}
+	var unqueried []engine.AccountQueryFailure
+	for _, failure := range holdersResult.Failures {
+		if slices.Contains(addresses, failure.Address) {
+			unqueried = append(unqueried, failure)
+		}
+	}
+	if len(unqueried) > 0 {
+		panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", engine.AccountsNotQueriedError(unqueried))))
 	}
 	for _, addr := range addresses {
 		if holderSet[addr] {

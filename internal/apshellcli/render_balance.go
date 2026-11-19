@@ -4,7 +4,6 @@
 package apshellcli
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
@@ -62,10 +61,7 @@ func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, me
 // meta: the asset shown, ALGO when its AssetID is 0
 // holdersOnly: if true, only show accounts with non-zero balance
 // unqueried: the accounts whose query failed, which the total leaves out
-func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetails, meta asa.Metadata, holdersOnly bool, unqueried int) error {
-	if len(balances) == 0 {
-		return fmt.Errorf("no accounts found")
-	}
+func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetails, meta asa.Metadata, holdersOnly bool, unqueried int) {
 	asaID := meta.AssetID
 
 	type accountBalance struct {
@@ -107,7 +103,7 @@ func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetai
 		} else {
 			r.println("No accounts found")
 		}
-		return nil
+		return
 	}
 
 	sort.Slice(results, func(i, j int) bool {
@@ -123,5 +119,4 @@ func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetai
 		r.printf(", leaving out %d that could not be queried", unqueried)
 	}
 	r.println()
-	return nil
 }

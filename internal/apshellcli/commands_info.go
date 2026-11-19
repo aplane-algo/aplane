@@ -213,7 +213,8 @@ func (r *REPLState) cmdBalance(args []string, _ interface{}) (command.Result, er
 			switch res.Mode {
 			case apshellapp.BalanceModeMulti:
 				r.renderWarnings(res.Warnings)
-				return r.showMultiAccountBalances(res.Balances, res.Asset, false, len(res.Warnings))
+				r.showMultiAccountBalances(res.Balances, res.Asset, false, len(res.Warnings))
+				return nil
 			case apshellapp.BalanceModeSingleFull:
 				return r.showFullBalance(res.Single)
 			case apshellapp.BalanceModeSingleAsset:
@@ -233,13 +234,13 @@ func (r *REPLState) cmdHolders(args []string, _ interface{}) (command.Result, er
 	}
 	projection := projectHolders(result)
 	return newShellCommandResult(func(w io.Writer) error {
-		return r.withOutputResult(w, func() error {
+		return r.withOutput(w, func() {
 			r.renderWarnings(result.Warnings)
 			if len(result.Addresses) == 0 {
 				r.println("No accounts with non-zero balance found")
-				return nil
+				return
 			}
-			return r.showMultiAccountBalances(result.Balances, result.Asset, true, len(result.Warnings))
+			r.showMultiAccountBalances(result.Balances, result.Asset, true, len(result.Warnings))
 		})
 	}, projection)
 }
