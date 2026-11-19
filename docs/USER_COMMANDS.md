@@ -1281,6 +1281,16 @@ Byte-oriented values such as app boxes, raw app args, and LogicSig `arg:`
 values accept the forms listed in [Byte Encodings](#byte-encodings). A
 `--pay` companion payment is sent by the same account as the call, so the
 call's [LogicSig arguments](#logicsig-arguments) reach both.
+`app call` builds a method's call from its value arguments only. A method
+with an ARC-4 transaction argument (`txn`, `pay`, `axfer` and the other
+transaction types), a reference argument (`account`, `asset`,
+`application`), or more than 15 arguments is refused when it is looked up,
+and the error names which of these it has. For such a method, build the
+call with `app call raw`, which sends its app arguments (`arg-raw=`, the
+method selector first) and references (`account=`, `asset=`, `app=`)
+exactly as given; `--pay` puts a payment to the app address just before the
+call.
+
 An ABI argument (`--arg`) for a `uintN`, `byte` or `ufixedNxM` type must be a
 plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
 `1_000` and `null` are refused: they are not read as octal, hex, a grouped

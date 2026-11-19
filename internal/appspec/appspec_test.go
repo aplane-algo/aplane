@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,65 @@ func TestResolveMethodOverloadError(t *testing.T) {
 
 	if _, err := spec.ResolveMethod("x"); err == nil {
 		t.Fatal("ResolveMethod() error = nil, want overload error")
+	}
+}
+
+// TestResolveMethodRefusesCallsItCannotBuild pins that a method whose call
+// would be built wrong is refused when it is resolved, by name or by full
+// signature, with an error that names the unsupported ARC-4 feature: a
+// transaction argument, a reference argument, or more arguments than fit
+// without tuple packing. A method at the argument limit still resolves.
+func TestResolveMethodRefusesCallsItCannotBuild(t *testing.T) {
+	uints := func(n int) []MethodArg {
+		args := make([]MethodArg, n)
+		for i := range args {
+			args[i] = MethodArg{Name: fmt.Sprintf("a%d", i), Type: "uint64"}
+		}
+		return args
+	}
+	void := MethodReturn{Type: "void"}
+	spec := &Contract{Methods: []Method{
+		{Name: "deposit", Args: []MethodArg{{Name: "payment", Type: "pay"}, {Name: "memo", Type: "string"}}, Returns: void},
+		{Name: "anyTxn", Args: []MethodArg{{Name: "t", Type: "txn"}}, Returns: void},
+		{Name: "send", Args: []MethodArg{{Name: "to", Type: "account"}, {Name: "amount", Type: "uint64"}}, Returns: void},
+		{Name: "price", Args: []MethodArg{{Name: "asa", Type: "asset"}}, Returns: void},
+		{Name: "callApp", Args: []MethodArg{{Name: "app", Type: "application"}}, Returns: void},
+		{Name: "wide", Args: uints(16), Returns: void},
+		{Name: "full", Args: uints(15), Returns: void},
+	}}
+	for _, method := range spec.Methods {
+		if err := abi.VerifyMethodSignature(method.Signature()); err != nil {
+			t.Fatalf("test method %s is not a valid signature: %v", method.Signature(), err)
+		}
+	}
+
+	for _, tc := range []struct{ ref, want string }{
+		{"deposit", `argument "payment" has ARC-4 transaction type "pay"`},
+		{"anyTxn(txn)void", `transaction type "txn"`},
+		{"send", `argument "to" has ARC-4 reference type "account"`},
+		{"price", `reference type "asset"`},
+		{"callApp", `reference type "application"`},
+		{"wide", "has 16 arguments; more than 15 needs ARC-4 tuple packing"},
+	} {
+		if _, err := spec.ResolveMethod(tc.ref); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ResolveMethod(%q) error = %v, want one containing %q", tc.ref, err, tc.want)
+		}
+	}
+
+	method, err := spec.ResolveMethod("full")
+	if err != nil {
+		t.Fatalf("ResolveMethod(full) error = %v, want a 15-argument method resolved", err)
+	}
+	args := make([]string, 15)
+	for i := range args {
+		args[i] = "1"
+	}
+	encoded, err := method.EncodeArgs(args)
+	if err != nil {
+		t.Fatalf("EncodeArgs() error = %v", err)
+	}
+	if len(encoded) != 16 {
+		t.Fatalf("EncodeArgs() made %d app args, want 16", len(encoded))
 	}
 }
 

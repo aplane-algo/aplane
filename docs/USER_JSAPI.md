@@ -776,6 +776,11 @@ appCall(appId, method, abiPath, from, args, options = {})
 argument's ABI type; anything other than an array is refused. Options are the
 same as `appCallRaw`.
 
+A method with an ARC-4 transaction argument (`txn`, `pay`, `axfer` and the
+other transaction types), a reference argument (`account`, `asset`,
+`application`), or more than 15 arguments is refused, with an error that
+names which of these it has. Build such a call with `appCallRaw()`.
+
 | JavaScript value | Accepted for |
 |------------------|--------------|
 | number, `BigInt`, or a decimal string | `uintN`, `byte`, `ufixedNxM` |

@@ -96,7 +96,50 @@ func SignatureSelector(signature string) ([]byte, error) {
 	return sum[:4], nil
 }
 
+// ResolveMethod finds the method ref names, by name or by full signature,
+// and refuses one this package cannot build a call for (see
+// checkSupported).
 func (c *Contract) ResolveMethod(ref string) (*Method, error) {
+	method, err := c.findMethod(ref)
+	if err != nil {
+		return nil, err
+	}
+	if err := method.checkSupported(); err != nil {
+		return nil, err
+	}
+	return method, nil
+}
+
+// maxMethodArgs is the most method arguments that fit the application call's
+// 16 app args beside the selector. ARC-4 packs the 15th and later into one
+// tuple, which EncodeArgs does not do.
+const maxMethodArgs = 15
+
+// checkSupported refuses a method whose call EncodeArgs would build wrong:
+// one app arg per method argument, each encoded as an ABI value. A
+// transaction argument is a companion transaction in the group, not an app
+// arg, and a reference argument is an index into the call's accounts,
+// assets or applications; neither is an ABI value. Past maxMethodArgs the
+// call would carry more app args than algod accepts.
+func (m Method) checkSupported() error {
+	for _, arg := range m.Args {
+		switch {
+		case abi.IsTransactionType(arg.Type):
+			return fmt.Errorf("method %s: argument %q has ARC-4 transaction type %q; transaction arguments are not supported",
+				m.Signature(), arg.Name, arg.Type)
+		case abi.IsReferenceType(arg.Type):
+			return fmt.Errorf("method %s: argument %q has ARC-4 reference type %q; reference arguments (account, asset, application) are not supported",
+				m.Signature(), arg.Name, arg.Type)
+		}
+	}
+	if len(m.Args) > maxMethodArgs {
+		return fmt.Errorf("method %s has %d arguments; more than %d needs ARC-4 tuple packing of the rest, which is not supported",
+			m.Signature(), len(m.Args), maxMethodArgs)
+	}
+	return nil
+}
+
+func (c *Contract) findMethod(ref string) (*Method, error) {
 	if ref == "" {
 		return nil, fmt.Errorf("method name is required")
 	}

@@ -1313,6 +1313,16 @@ The ABI layer:
 - prepends the selector
 - delegates to the raw preparation path
 
+Each method argument becomes one app argument holding its ABI encoding.
+`appspec.ResolveMethod` refuses a method that this cannot express, with an
+error that names the ARC-4 feature it would need:
+- a transaction argument (`txn`, `pay`, `keyreg`, `acfg`, `axfer`, `afrz`,
+  `appl`), which ARC-4 places as a companion transaction in the group
+- a reference argument (`account`, `asset`, `application`), which ARC-4
+  encodes as an index into the call's reference arrays
+- more than 15 arguments, which ARC-4 fits into the 16 app arguments by
+  packing the 15th and later into one tuple
+
 The engine entrypoint is:
 - `PrepareAppCallMethod(ctx, params MethodAppCallParams)`
 
