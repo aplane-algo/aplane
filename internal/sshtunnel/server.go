@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -384,8 +385,10 @@ func loadOrGenerateHostKey(path string) (ssh.Signer, error) {
 		return nil, fmt.Errorf("host key path is empty")
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readKeyFile(path)
 	if err == nil {
+		// The signer keeps x/crypto/ssh's own copy of the key.
+		defer crypto.ZeroBytes(data)
 		if info, statErr := os.Stat(path); statErr == nil {
 			if info.Mode().Perm()&0077 != 0 {
 				return nil, fmt.Errorf("host key %s has insecure permissions %04o (expected 0600)", path, info.Mode().Perm())
@@ -402,16 +405,11 @@ func loadOrGenerateHostKey(path string) (ssh.Signer, error) {
 	}
 
 	// Generate Ed25519 key and persist it
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	pemBytes, signer, err := newEd25519KeyPEM()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate Ed25519 key: %w", err)
+		return nil, err
 	}
-
-	pemBlock, err := ssh.MarshalPrivateKey(privateKey, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode host key: %w", err)
-	}
-	pemBytes := pem.EncodeToMemory(pemBlock)
+	defer crypto.ZeroBytes(pemBytes)
 
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "" {
@@ -420,16 +418,46 @@ func loadOrGenerateHostKey(path string) (ssh.Signer, error) {
 		}
 	}
 
-	if err := writeNewPrivateKeyFile(path, pemBytes); err != nil {
+	if err := writeNewKeyFile(path, pemBytes); err != nil {
 		return nil, fmt.Errorf("failed to write host key %s: %w", path, err)
 	}
 
-	signer, err := ssh.NewSignerFromKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signer: %w", err)
-	}
-
 	return signer, nil
+}
+
+// Private key file I/O and key generation. Tests replace them to watch the
+// private key bytes aplane holds.
+var (
+	readKeyFile        = os.ReadFile
+	writeNewKeyFile    = writeNewPrivateKeyFile
+	generateEd25519Key = ed25519.GenerateKey
+)
+
+// newEd25519KeyPEM generates an Ed25519 key and returns it as an OpenSSH PEM
+// file, with a signer parsed from that file. The raw key and the marshalled
+// block are zeroed before it returns; the caller writes the PEM and then
+// zeroes it. The signer holds x/crypto/ssh's own copy of the key, apart from
+// every buffer zeroed here.
+func newEd25519KeyPEM() ([]byte, ssh.Signer, error) {
+	_, privateKey, err := generateEd25519Key(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate Ed25519 key: %w", err)
+	}
+	defer crypto.ZeroBytes(privateKey)
+
+	block, err := ssh.MarshalPrivateKey(privateKey, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encode private key: %w", err)
+	}
+	defer crypto.ZeroBytes(block.Bytes)
+	pemBytes := pem.EncodeToMemory(block)
+
+	signer, err := ssh.ParsePrivateKey(pemBytes)
+	if err != nil {
+		crypto.ZeroBytes(pemBytes)
+		return nil, nil, fmt.Errorf("failed to create signer: %w", err)
+	}
+	return pemBytes, signer, nil
 }
 
 func writeNewPrivateKeyFile(path string, pemBytes []byte) error {

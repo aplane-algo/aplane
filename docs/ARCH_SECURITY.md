@@ -2052,6 +2052,15 @@ when memory protection is enabled, until the runtime reuses or frees it.
   `SensitiveBytes.MarshalJSON` returns its encoding to the encoder, which drops
   it unzeroed. Writing each value straight into one exact-size buffer without
   HTML escaping keeps this to one copy per value.
+- **SSH private keys.** The client identity and the signer's host key are
+  OpenSSH key files. aplane zeroes the bytes it reads from them once parsed,
+  and, when it creates one, the raw Ed25519 key, the marshalled block and the
+  PEM it writes. `x/crypto/ssh` keeps its own copy of the key in the
+  `ssh.Signer` for as long as the signer lives, and its decoding and
+  `encoding/pem`'s growing encode buffer leave further copies. apconsole
+  reads the signer's host key only to derive its public half: no public key
+  file is stored, and reading the public key from the private key file's
+  header would need a hand-written parser.
 - **Passphrase helper output.** os/exec copies a helper's stdout from its
   pipe into aplane's buffer through `io.Copy`, whose 32 KiB buffer holds the
   passphrase and is dropped unzeroed. aplane's own buffer is fixed-size and

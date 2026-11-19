@@ -6,9 +6,6 @@ package sshtunnel
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -257,7 +255,7 @@ func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, er
 		return c.agentAuthMethod(onSigned)
 	}
 	identityPath := expandUserPath(c.identityFile)
-	keyData, err := os.ReadFile(identityPath)
+	keyData, err := readKeyFile(identityPath)
 	if os.IsNotExist(err) {
 		signer, genErr := c.generateIdentityKey(identityPath)
 		if genErr == nil {
@@ -266,11 +264,13 @@ func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, er
 		if !errors.Is(genErr, fs.ErrExist) {
 			return nil, nil, fmt.Errorf("create SSH identity %s: %w", identityPath, genErr)
 		}
-		keyData, err = os.ReadFile(identityPath)
+		keyData, err = readKeyFile(identityPath)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read SSH identity file %s: %w", identityPath, err)
 	}
+	// The signer keeps x/crypto/ssh's own copy of the key.
+	defer crypto.ZeroBytes(keyData)
 	signer, err := ssh.ParsePrivateKey(keyData)
 	if err != nil {
 		if _, ok := err.(*ssh.PassphraseMissingError); ok {
@@ -285,17 +285,11 @@ func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, er
 // generateIdentityKey creates a new Ed25519 key pair and saves it to the specified path.
 // Returns the signer for immediate use. ReadIdentityPublicKey gets the public key.
 func (c *Client) generateIdentityKey(path string) (ssh.Signer, error) {
-	pubKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	pemBytes, signer, err := newEd25519KeyPEM()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate Ed25519 key: %w", err)
+		return nil, err
 	}
-
-	// Marshal private key to OpenSSH format
-	pemBlock, err := ssh.MarshalPrivateKey(privateKey, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode private key: %w", err)
-	}
-	pemBytes := pem.EncodeToMemory(pemBlock)
+	defer crypto.ZeroBytes(pemBytes)
 
 	// Ensure directory exists
 	dir := filepath.Dir(path)
@@ -305,21 +299,11 @@ func (c *Client) generateIdentityKey(path string) (ssh.Signer, error) {
 		}
 	}
 
-	if err := writeNewPrivateKeyFile(path, pemBytes); err != nil {
+	if err := writeNewKeyFile(path, pemBytes); err != nil {
 		return nil, fmt.Errorf("failed to write private key: %w", err)
 	}
 
-	// Create signer
-	signer, err := ssh.NewSignerFromKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signer: %w", err)
-	}
-
-	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create SSH public key: %w", err)
-	}
-	c.announceIdentityCreated(IdentityCreated{Path: path, Fingerprint: ssh.FingerprintSHA256(sshPubKey)})
+	c.announceIdentityCreated(IdentityCreated{Path: path, Fingerprint: ssh.FingerprintSHA256(signer.PublicKey())})
 
 	return signer, nil
 }

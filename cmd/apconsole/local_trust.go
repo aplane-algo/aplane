@@ -16,11 +16,16 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 var localSignerHostKeyProbe = probeLoopbackSignerHostKey
+
+// readSignerHostKey reads the signer's SSH host key file. Tests replace it to
+// watch the bytes read.
+var readSignerHostKey = os.ReadFile
 
 const (
 	// localSignerProbeStartupWait is how long the probe keeps retrying a
@@ -49,6 +54,10 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 	if !isLoopbackSSHHost(host) {
 		return "", nil
 	}
+	knownHostsPath := endpoint.KnownHostsPath
+	if knownHostsPath == "" {
+		return "", nil
+	}
 
 	hostKey, err := loadSSHPublicKeyFromPrivateKey(signerCfg.Endpoint.SSH.HostKeyPath)
 	if err != nil {
@@ -62,10 +71,6 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 
 	address := knownHostAddress(host, sshPort)
 	line := knownhosts.Line([]string{address}, hostKey)
-	knownHostsPath := endpoint.KnownHostsPath
-	if knownHostsPath == "" {
-		return "", nil
-	}
 
 	if existing, err := os.ReadFile(knownHostsPath); err == nil {
 		for _, existingLine := range splitKnownHostLines(string(existing)) {
@@ -97,11 +102,16 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 	return fmt.Sprintf("trusted local signer SSH host key for %s", address), nil
 }
 
+// loadSSHPublicKeyFromPrivateKey returns the public half of the signer's SSH
+// host key. The file holds only the private key, so it is read and parsed,
+// and the bytes read are zeroed at once; the parsed signer's own copy is
+// x/crypto/ssh's.
 func loadSSHPublicKeyFromPrivateKey(path string) (ssh.PublicKey, error) {
-	data, err := os.ReadFile(path)
+	data, err := readSignerHostKey(path)
 	if err != nil {
 		return nil, err
 	}
+	defer crypto.ZeroBytes(data)
 	signer, err := ssh.ParsePrivateKey(data)
 	if err != nil {
 		return nil, err

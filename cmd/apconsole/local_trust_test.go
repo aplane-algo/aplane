@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -348,5 +349,38 @@ func TestTrustLocalSignerHostKeyDoesNotRetryOtherProbeErrors(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("probe calls = %d, want 1", calls)
+	}
+}
+
+// The console reads the signer's private host key only to derive its public
+// half, and zeroes the bytes it read once they are parsed.
+func TestLoadSSHPublicKeyZeroesTheHostKeyBytes(t *testing.T) {
+	path := writeTestSSHHostKey(t, t.TempDir())
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ssh.ParsePrivateKey(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var read []byte
+	prev := readSignerHostKey
+	readSignerHostKey = func(name string) ([]byte, error) {
+		data, err := prev(name)
+		read = data
+		return data, err
+	}
+	t.Cleanup(func() { readSignerHostKey = prev })
+
+	key, err := loadSSHPublicKeyFromPrivateKey(path)
+	if err != nil {
+		t.Fatalf("load host key: %v", err)
+	}
+	if !bytes.Equal(key.Marshal(), parsed.PublicKey().Marshal()) {
+		t.Fatal("loaded a different public key")
+	}
+	if len(read) == 0 || !bytes.Equal(read, make([]byte, len(read))) {
+		t.Fatal("the host key bytes read were left in memory")
 	}
 }
