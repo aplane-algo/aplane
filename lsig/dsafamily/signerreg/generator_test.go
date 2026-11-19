@@ -446,7 +446,7 @@ func TestGenerateFromSeedDifferentSizes(t *testing.T) {
 
 // TestGenerateFromMnemonic verifies Falcon key generation from BIP-39 mnemonic
 func registerTestMnemonicHandler() {
-	mnemonicreg.Register(bip39impl.NewHandler("falcon1024", family.MnemonicWordCount))
+	mnemonicreg.Register(bip39impl.NewHandler("falcon1024"))
 }
 
 func TestGenerateFromMnemonic(t *testing.T) {

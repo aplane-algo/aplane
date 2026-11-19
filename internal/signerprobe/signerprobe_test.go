@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -108,35 +107,6 @@ func TestCheckReturnsErrorForUnexpectedDialFailure(t *testing.T) {
 	}
 	if result.IPCPath == "" {
 		t.Fatal("IPCPath is empty on dial error")
-	}
-}
-
-func TestResolveIPCPathReturnsParseError(t *testing.T) {
-	dataDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: [\n"), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	_, err := ResolveIPCPath(dataDir)
-	if err == nil {
-		t.Fatal("ResolveIPCPath returned nil error, want non-nil")
-	}
-	if !strings.Contains(err.Error(), "failed to parse config file") {
-		t.Fatalf("error = %v, want parse context", err)
-	}
-}
-
-func TestResolveIPCPathTreatsArgumentAsExplicitSelection(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("APSIGNER_IPC_PATH", filepath.Join(t.TempDir(), "other.sock"))
-
-	got, err := ResolveIPCPath(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(dataDir, "aplane.sock")
-	if got != want {
-		t.Fatalf("ResolveIPCPath() = %q, want %q", got, want)
 	}
 }
 

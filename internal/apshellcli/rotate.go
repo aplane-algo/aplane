@@ -93,7 +93,7 @@ func (r *REPLState) cmdRotate(args []string, _ interface{}) (command.Result, err
 			r.printf("Rotate-only spend submitted: %s\n", result.TxID)
 			if result.Confirmed {
 				r.printf("Rotated %s: authorizer %s -> %s\n",
-					r.app().FormatAddress(result.Account, ""), result.PreviousAuthorizer, result.Authorizer)
+					r.app().FormatAddress(result.Account), result.PreviousAuthorizer, result.Authorizer)
 			}
 		})
 	}, rotateProjection{
@@ -167,7 +167,7 @@ func (r *REPLState) runRotateRecover(req apshellapp.RotateRecoverRequest) (comma
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
-			account := r.app().FormatAddress(result.Account, "")
+			account := r.app().FormatAddress(result.Account)
 			switch {
 			case result.Action == signerapi.RotatingRecoverActionCancel && result.GrantID == 0:
 				r.printf("%s: no recovery was running\n", account)
@@ -200,7 +200,7 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 				return
 			}
 			for _, status := range result.Accounts {
-				r.printf("%s\n  authorizer: %s\n", r.app().FormatAddress(status.Account, ""), status.Authorizer)
+				r.printf("%s\n  authorizer: %s\n", r.app().FormatAddress(status.Account), status.Authorizer)
 				renderSignerRotatingView(r, "  ", status.Signer, status.SignerViewDiffers)
 				if len(status.Alerts) == 0 {
 					r.printf("  alerts: none\n")

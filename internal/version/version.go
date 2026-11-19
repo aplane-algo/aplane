@@ -11,7 +11,7 @@ import (
 )
 
 // These variables are set at build time via -ldflags.
-// Example: go build -ldflags "-X aplane/internal/version.Version=1.0.0"
+// Example: go build -ldflags "-X github.com/aplane-algo/aplane/internal/version.Version=1.0.0"
 var (
 	// Version is the semantic version (e.g., "0.38.0" or "0.38.0-dev")
 	Version = "dev"

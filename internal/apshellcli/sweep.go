@@ -62,7 +62,7 @@ func (r *REPLState) runSweep(args []string) (command.Result, error) {
 			r.print(renderSweepLine(result.HeaderLine, result, r))
 			r.println("\n" + strings.Repeat("=", 60))
 			for i, item := range result.Items {
-				r.printf("\n[%d/%d] Processing %s...\n", i+1, len(result.Items), r.app().FormatAddress(item.From, ""))
+				r.printf("\n[%d/%d] Processing %s...\n", i+1, len(result.Items), r.app().FormatAddress(item.From))
 				if item.SkippedReason != "" {
 					r.printf("  - Skipping (%s)\n", item.SkippedReason)
 					continue
@@ -104,9 +104,9 @@ func renderSweepLines(lines []string, result *apshellapp.SweepCommandResult, r *
 func renderSweepLine(line string, result *apshellapp.SweepCommandResult, r *REPLState) string {
 	aliasedFrom := make([]string, 0, len(result.FromAddresses))
 	for _, addr := range result.FromAddresses {
-		aliasedFrom = append(aliasedFrom, r.app().FormatAddress(addr, ""))
+		aliasedFrom = append(aliasedFrom, r.app().FormatAddress(addr))
 	}
 	line = strings.ReplaceAll(line, "{from_addresses}", strings.Join(aliasedFrom, ", "))
-	line = strings.ReplaceAll(line, "{to}", r.app().FormatAddress(result.ToAddress, ""))
+	line = strings.ReplaceAll(line, "{to}", r.app().FormatAddress(result.ToAddress))
 	return line
 }

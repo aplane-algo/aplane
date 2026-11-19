@@ -51,8 +51,8 @@ func (r *REPLState) runRekey(args []string) (command.Result, error) {
 				}
 				for _, item := range result.Rekeys {
 					r.printf("%s\nauth: %s\n\n",
-						r.app().FormatAddress(item.Address, item.AuthAddress),
-						r.app().FormatAddress(item.AuthAddress, ""))
+						r.app().FormatAddress(item.Address),
+						r.app().FormatAddress(item.AuthAddress))
 				}
 			})
 		}, projection)
@@ -77,9 +77,9 @@ func (r *REPLState) runRekey(args []string) (command.Result, error) {
 			}}}
 			return newShellCommandResult(func(w io.Writer) error {
 				return r.withOutput(w, func() {
-					r.printf("✓ Auth cache refreshed for %s\n", r.app().FormatAddress(result.Address, ""))
+					r.printf("✓ Auth cache refreshed for %s\n", r.app().FormatAddress(result.Address))
 					if result.IsRekeyed {
-						r.printf("auth: %s\n", r.app().FormatAddress(result.AuthAddress, ""))
+						r.printf("auth: %s\n", r.app().FormatAddress(result.AuthAddress))
 					} else {
 						r.println("auth: self")
 					}
@@ -185,8 +185,8 @@ func renderRekeyLines(lines []string, result *apshellapp.RekeyCommandResult, r *
 }
 
 func formatRekeyResultLine(line string, result *apshellapp.RekeyCommandResult, r *REPLState) string {
-	line = strings.ReplaceAll(line, "{from}", r.app().FormatAddress(result.From, ""))
-	line = strings.ReplaceAll(line, "{to}", r.app().FormatAddress(result.To, ""))
-	line = strings.ReplaceAll(line, "{current_auth}", r.app().FormatAddress(result.CurrentAuthAddress, ""))
+	line = strings.ReplaceAll(line, "{from}", r.app().FormatAddress(result.From))
+	line = strings.ReplaceAll(line, "{to}", r.app().FormatAddress(result.To))
+	line = strings.ReplaceAll(line, "{current_auth}", r.app().FormatAddress(result.CurrentAuthAddress))
 	return line
 }

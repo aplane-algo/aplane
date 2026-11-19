@@ -48,7 +48,6 @@ func TestFormatAddressUsesAliasAndSignerColor(t *testing.T) {
 		testAliases{"ADDR1": "alice"},
 		testSigner{"AUTH1": "falcon"},
 		testAuth{"ADDR1": "AUTH1"},
-		"",
 		func(keyType string) string {
 			if keyType != "falcon" {
 				t.Fatalf("color formatter key type = %q, want falcon", keyType)
@@ -66,7 +65,7 @@ func TestFormatAddressMarksSignableWithoutColorFormatter(t *testing.T) {
 	SetColorSupported(false)
 	defer ResetColorSupport()
 
-	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "ed25519"}, nil, "", nil)
+	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "ed25519"}, nil, nil)
 	if got != "ADDR1 @" {
 		t.Fatalf("FormatAddress() = %q, want signable marker", got)
 	}
@@ -78,7 +77,7 @@ func TestFormatAddressMarksSignableWhenColorUnsupported(t *testing.T) {
 
 	// Formatter present (the normal production wiring) but terminal has no
 	// color support: the plain-text marker must still appear.
-	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "ed25519"}, nil, "",
+	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "ed25519"}, nil,
 		func(string) string { return "33" })
 	if got != "ADDR1 @" {
 		t.Fatalf("FormatAddress() = %q, want signable marker", got)
@@ -91,7 +90,7 @@ func TestFormatAddressMarksSignableForUnregisteredKeyType(t *testing.T) {
 
 	// Color supported, but the key type has no registered color: fall back
 	// to the plain-text marker rather than rendering indistinguishably.
-	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "mystery"}, nil, "",
+	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "mystery"}, nil,
 		func(string) string { return "" })
 	if got != "ADDR1 @" {
 		t.Fatalf("FormatAddress() = %q, want signable marker", got)
@@ -102,7 +101,7 @@ func TestFormatAddressNoMarkerForUnsignableAccount(t *testing.T) {
 	SetColorSupported(false)
 	defer ResetColorSupport()
 
-	got := FormatAddress("ADDR1", nil, testSigner{}, nil, "", nil)
+	got := FormatAddress("ADDR1", nil, testSigner{}, nil, nil)
 	if got != "ADDR1" {
 		t.Fatalf("FormatAddress() = %q, want plain address without marker", got)
 	}
@@ -116,7 +115,7 @@ func TestFormatAddressMarksARotatingAccountAtAnyStage(t *testing.T) {
 	auth := testAuth{"ROT": "STAGE7"}
 
 	SetColorSupported(true)
-	got := FormatAddress("ROT", nil, signer, auth, "", func(keyType string) string {
+	got := FormatAddress("ROT", nil, signer, auth, func(keyType string) string {
 		if keyType != "rotating" {
 			t.Fatalf("color formatter key type = %q, want the account's own", keyType)
 		}
@@ -129,12 +128,12 @@ func TestFormatAddressMarksARotatingAccountAtAnyStage(t *testing.T) {
 
 	SetColorSupported(false)
 	defer ResetColorSupport()
-	if got := FormatAddress("ROT", nil, signer, auth, "", nil); got != "ROT @" {
+	if got := FormatAddress("ROT", nil, signer, auth, nil); got != "ROT @" {
 		t.Fatalf("FormatAddress() = %q, want the signable marker", got)
 	}
 	// The same account held as an ordinary key, rekeyed to a stage it does
 	// not hold, is not signable.
-	if got := FormatAddress("ROT", nil, signer.testSigner, auth, "", nil); got != "ROT" {
+	if got := FormatAddress("ROT", nil, signer.testSigner, auth, nil); got != "ROT" {
 		t.Fatalf("FormatAddress() = %q, want no marker", got)
 	}
 }

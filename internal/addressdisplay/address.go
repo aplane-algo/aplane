@@ -28,18 +28,14 @@ type AuthLookup interface {
 }
 
 // FormatAddress formats an address with optional alias display.
-func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, auth AuthLookup, authAddress string, colorFormatter ColorFormatter) string {
+func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, auth AuthLookup, colorFormatter ColorFormatter) string {
 	effectiveSigningAddress := address
 
 	// A rotating account keeps its own key type: its stage address is in no
 	// cache.
-	if signer == nil || !signer.IsRotating(address) {
-		if authAddress != "" && authAddress != address {
-			effectiveSigningAddress = authAddress
-		} else if auth != nil {
-			if cachedAuthAddr, exists := auth.GetAuthAddress(address); exists && cachedAuthAddr != "" {
-				effectiveSigningAddress = cachedAuthAddr
-			}
+	if (signer == nil || !signer.IsRotating(address)) && auth != nil {
+		if cachedAuthAddr, exists := auth.GetAuthAddress(address); exists && cachedAuthAddr != "" {
+			effectiveSigningAddress = cachedAuthAddr
 		}
 	}
 

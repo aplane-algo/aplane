@@ -186,7 +186,7 @@ func (r *REPLState) cmdAccounts(_ []string, _ interface{}) (command.Result, erro
 			}
 			r.printf("Accounts (%d total):\n", len(result.Accounts))
 			for _, acct := range result.Accounts {
-				r.printf("  %s\n", r.app().FormatAddress(acct.Address, ""))
+				r.printf("  %s\n", r.app().FormatAddress(acct.Address))
 			}
 		})
 	}, appresult.AccountsToMCP(projected))
@@ -262,10 +262,10 @@ func (r *REPLState) cmdParticipation(args []string, _ interface{}) (command.Resu
 	}, result.IsRekeyed, result.AuthAddress)
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
-			r.printf("Account: %s\n", r.app().FormatAddress(participation.Address, ""))
+			r.printf("Account: %s\n", r.app().FormatAddress(participation.Address))
 			r.println()
 			if result.IsRekeyed {
-				r.printf("⚠️  Auth Address: %s (account is rekeyed)\n", r.app().FormatAddress(result.AuthAddress, ""))
+				r.printf("⚠️  Auth Address: %s (account is rekeyed)\n", r.app().FormatAddress(result.AuthAddress))
 				r.println()
 			}
 			r.println("Participation Status:")

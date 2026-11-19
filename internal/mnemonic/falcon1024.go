@@ -54,17 +54,6 @@ func (*NativeFalconHandler) EntropyToMnemonic(entropy []byte) (string, error) {
 	return algomnemonic.FromKey(entropy)
 }
 
-func (h *NativeFalconHandler) MnemonicToEntropy(words []string) ([]byte, error) {
-	return h.SeedFromMnemonic(words, "")
-}
-
-func (*NativeFalconHandler) ValidateWordCount(wordCount int) error {
-	if wordCount != nativefalcon.MnemonicWordCount {
-		return fmt.Errorf("native Falcon requires exactly %d words, got %d", nativefalcon.MnemonicWordCount, wordCount)
-	}
-	return nil
-}
-
 func (*NativeFalconHandler) WordCount() int { return nativefalcon.MnemonicWordCount }
 
 var registerNativeFalconHandlerOnce sync.Once

@@ -8,7 +8,7 @@
 // To add a new generic LogicSig template:
 // 1. Create a new package in lsig/<template>/
 // 2. Implement the Template interface
-// 3. Add registration in the provider package that calls genericlsig.Register()
+// 3. Add registration in the provider package that calls genericlsig.RegisterIfAbsent()
 // 4. Add the appropriate RegisterClient call to lsig/clientreg and the RegisterSigner call to lsig/signerreg
 package genericlsig
 
@@ -31,12 +31,5 @@ type Template interface {
 
 	// TEAL Generation
 	GenerateTEAL(params map[string]string) (string, error)
-	Compile(ctx context.Context, params map[string]string, algodClient *algod.Client) (bytecode []byte, address string, err error)
-	CompileWithSalt(ctx context.Context, params map[string]string, algodClient *algod.Client) (lsigsalt.FindResult, error)
-}
-
-// SaltedTemplate is implemented by templates that expose the
-// off-curve salt metadata used for deterministic key-file storage.
-type SaltedTemplate interface {
 	CompileWithSalt(ctx context.Context, params map[string]string, algodClient *algod.Client) (lsigsalt.FindResult, error)
 }

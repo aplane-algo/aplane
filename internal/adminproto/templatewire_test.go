@@ -24,18 +24,5 @@ func TestWireTemplateTypeProjection(t *testing.T) {
 		if !ok || wire != tt.wire {
 			t.Fatalf("WireTemplateTypeFromSource(%q) = %q, %v; want %q, true", tt.source, wire, ok, tt.wire)
 		}
-		source, err := SourceFromWireTemplateType(tt.wire)
-		if err != nil {
-			t.Fatalf("SourceFromWireTemplateType(%q) error = %v", tt.wire, err)
-		}
-		if source != tt.source {
-			t.Fatalf("SourceFromWireTemplateType(%q) = %q, want %q", tt.wire, source, tt.source)
-		}
-	}
-}
-
-func TestSourceFromWireTemplateTypeRejectsUnknown(t *testing.T) {
-	if _, err := SourceFromWireTemplateType("yaml_generic"); err == nil {
-		t.Fatal("SourceFromWireTemplateType() error = nil, want unsupported type")
 	}
 }

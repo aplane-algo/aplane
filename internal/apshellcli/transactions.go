@@ -75,7 +75,7 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 		return r.withOutput(w, func() {
 			for idx, item := range result.Items {
 				if len(result.Items) > 1 {
-					r.printf("[%d/%d] Validating %s\n", idx+1, len(result.Items), r.app().FormatAddress(item.Address, ""))
+					r.printf("[%d/%d] Validating %s\n", idx+1, len(result.Items), r.app().FormatAddress(item.Address))
 				}
 				r.renderSubmissionOutput(item.Output)
 				r.renderWarnings(item.Warnings)
@@ -147,8 +147,8 @@ func (r *REPLState) runClose(args []string) (command.Result, error) {
 func renderCloseLines(lines []string, result *apshellapp.CloseCommandResult, r *REPLState) []string {
 	rendered := make([]string, 0, len(lines))
 	for _, line := range lines {
-		line = strings.ReplaceAll(line, "{from}", r.app().FormatAddress(result.From, ""))
-		line = strings.ReplaceAll(line, "{to}", r.app().FormatAddress(result.CloseTo, ""))
+		line = strings.ReplaceAll(line, "{from}", r.app().FormatAddress(result.From))
+		line = strings.ReplaceAll(line, "{to}", r.app().FormatAddress(result.CloseTo))
 		rendered = append(rendered, line)
 	}
 	return rendered

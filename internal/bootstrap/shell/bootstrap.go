@@ -21,8 +21,7 @@ type Startup struct {
 
 // Load resolves apshell startup state from flags and config.
 //
-// This is the composition root for client-side path/config/cache setup. It keeps
-// startup behavior explicit while preserving current cache package semantics.
+// This is the composition root for client-side path/config/cache setup.
 func Load(dataDirFlag, networkFlag string) (*Startup, error) {
 	dataDir := apconfig.GetClientDataDir(dataDirFlag)
 	if dataDir == "" {

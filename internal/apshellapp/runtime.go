@@ -80,11 +80,11 @@ func (a *App) IsSimulateEnabled() bool {
 	return a.eng.GetSimulate()
 }
 
-// FormatAddress formats an address for display, with optional auth address
-// context. Presentation composition lives here in the UI application layer;
-// the caches it reads are engine state.
-func (a *App) FormatAddress(address, authAddress string) string {
-	return addressdisplay.FormatAddress(address, &a.eng.AliasCache, &a.eng.SignerCache, &a.eng.AuthCache, authAddress, algorithm.GetDisplayColor)
+// FormatAddress formats an address for display. Presentation composition
+// lives here in the UI application layer; the caches it reads are engine
+// state.
+func (a *App) FormatAddress(address string) string {
+	return addressdisplay.FormatAddress(address, &a.eng.AliasCache, &a.eng.SignerCache, &a.eng.AuthCache, algorithm.GetDisplayColor)
 }
 
 // FormatKeyTypeForDisplay formats the displayed key type using cached signer/native key metadata.

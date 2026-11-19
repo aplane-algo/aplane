@@ -78,19 +78,6 @@ func (h *Ed25519Handler) EntropyToMnemonic(_ []byte) (string, error) {
 	return "", ErrEntropyUnsupported
 }
 
-// MnemonicToEntropy is not supported for Ed25519/Algorand
-func (h *Ed25519Handler) MnemonicToEntropy(_ []string) ([]byte, error) {
-	return nil, ErrEntropyUnsupported
-}
-
-// ValidateWordCount checks if the word count is valid (25 for Ed25519/Algorand)
-func (h *Ed25519Handler) ValidateWordCount(wordCount int) error {
-	if wordCount != 25 {
-		return fmt.Errorf("ed25519 requires exactly 25 words, got %d", wordCount)
-	}
-	return nil
-}
-
 // WordCount returns the expected number of words (25 for Ed25519/Algorand)
 func (h *Ed25519Handler) WordCount() int {
 	return 25

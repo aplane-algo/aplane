@@ -103,7 +103,7 @@ func TestRequireAuthMissingCredentials(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
+	server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
 	})(w, r)
 
@@ -137,7 +137,7 @@ func TestRequireAuthInvalidCredentials(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
+			server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
 				t.Fatal("next handler should not be called")
 			})(w, tt.req())
 			if w.Code != http.StatusUnauthorized {
@@ -215,7 +215,7 @@ func TestRequireAuthRejectsNilIdentity(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
+	server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
 	})(w, r)
 
@@ -291,7 +291,7 @@ func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 	r := enrolledRequest(fingerprint, http.MethodGet, "/keys")
 
 	called := false
-	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
+	server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		ident := auth.IdentityFromContext(r.Context())
 		if ident == nil {
@@ -321,7 +321,7 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 
 	invalid := httptest.NewRecorder()
 	invalidRequest := enrolledRequest("SHA256:someone-else", http.MethodGet, "/keys")
-	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
+	server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("an unenrolled fingerprint must not authenticate")
 	})(invalid, invalidRequest)
 	if invalid.Code != http.StatusUnauthorized {
@@ -332,7 +332,7 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	server.authorizer = authorizer
 	w := httptest.NewRecorder()
 	r := enrolledRequest(fingerprint, http.MethodGet, "/keys")
-	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
+	server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
 		ident := auth.IdentityFromContext(r.Context())
 		if ident == nil || ident.ID != auth.ClientPrincipalPrefix+fingerprint {
 			t.Fatalf("authenticated principal = %#v", ident)

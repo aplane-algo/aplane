@@ -1999,9 +1999,9 @@ active namespace with `<AlgorandAddress>.key`. Physically, the active namespace
 is `identities/default/generations/<gen-id>/keys/`, selected by the store root.
 There is no root-level credential namespace or compatibility fallback.
 The full cosigner public key remains the verifier key embedded in cosigned
-account LogicSig bytecode. `internal/witness` owns identity and custodian/domain
-capabilities; whether an account is cosigned is read from its durable bounded
-metadata, not its key type.
+account LogicSig bytecode. `internal/witness` owns cosigner key identity;
+whether an account is cosigned is read from its durable bounded metadata, not
+its key type.
 
 ### Runtime Flow
 

@@ -36,41 +36,6 @@ func TestEd25519HandlerWordCount(t *testing.T) {
 	}
 }
 
-// TestEd25519HandlerValidateWordCount verifies word count validation
-func TestEd25519HandlerValidateWordCount(t *testing.T) {
-	handler := &Ed25519Handler{}
-
-	tests := []struct {
-		name      string
-		count     int
-		shouldErr bool
-	}{
-		{"valid 25 words", 25, false},
-		{"invalid 24 words", 24, true},
-		{"invalid 26 words", 26, true},
-		{"invalid 12 words", 12, true},
-		{"invalid 0 words", 0, true},
-		{"invalid negative", -1, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := handler.ValidateWordCount(tt.count)
-			if (err != nil) != tt.shouldErr {
-				t.Errorf("ValidateWordCount(%d): expected error=%v, got error=%v",
-					tt.count, tt.shouldErr, err != nil)
-			}
-
-			if tt.shouldErr && err != nil {
-				// Verify error message mentions the count
-				if !strings.Contains(err.Error(), "25") {
-					t.Errorf("Error should mention expected word count: %v", err)
-				}
-			}
-		})
-	}
-}
-
 // TestEd25519HandlerGenerateMnemonic verifies mnemonic generation
 func TestEd25519HandlerGenerateMnemonic(t *testing.T) {
 	handler := &Ed25519Handler{}

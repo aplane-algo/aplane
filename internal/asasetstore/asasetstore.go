@@ -146,9 +146,6 @@ func signSidecar(data []byte, kr *apcrypto.Keyring, signedAt time.Time) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	if signedAt.IsZero() {
-		signedAt = time.Now()
-	}
 	sum := sha256.Sum256(data)
 	return sidecarSpec.Marshal(&sidecar{Header: header, SetSHA256: hex.EncodeToString(sum[:]), SignedAtUnix: signedAt.UTC().Unix()})
 }
