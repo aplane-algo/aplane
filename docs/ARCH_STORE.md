@@ -125,14 +125,23 @@ Layout notes:
   `<data_dir>/backups/default/`; the archive contains `README.md`,
   `apb/*.apb` encrypted canonical credential payloads, `policies/*.apb`
   encrypted per-key policy documents, and `manifest.sealed` (see
-  [Backup and restore](#backup-and-restore))
+  [Backup and restore](#backup-and-restore)). A new archive is written and
+  synced as `<name>.tar.gz.partial`, which the listing ignores, verified by
+  extracting it into a `.create-validation-*` directory beside it and opening
+  every payload and the manifest with the export passphrase, checksummed,
+  then renamed to its managed name under the store mutation lock (never over
+  a file there) and its directory synced. A failure before the rename removes
+  it, so a backup that failed is never listed; a directory sync that fails
+  after it leaves the archive published with a warning, as an import does.
+  The daemon's startup sweep removes partial archives and verification
+  directories a crash left behind
 - imported backup archives are validated by the operator client, streamed to
   the daemon in bounded admin-protocol chunks, and atomically published under
   `<data_dir>/backups/default/`; exports stream bounded chunks in the other
   direction, so operators never need filesystem access to the private locker
 - the signer keeps no ASA cache: its asset metadata is the generation's ASA set (`asa_set.json`) plus the built-in table, published with the policy it was loaded with. A `cache/` directory (`.cache_key`, `<network>_asa_cache.json`) left by an earlier release is neither read nor written and can be deleted
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
-- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
+- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else (when the file could not be read back, the outcome on disk is unknown: the change is reported as applied and not durable, so it is audited and a revoked key's connections are closed; every key is refused meanwhile; and the next registry operation refuses until the file reads again and then publishes the registry the failed write intended, so the empty view that refuses every key is never written over the enrolled keys and what was reported is what the file ends up holding; if that publish fails too, every key stays refused until one succeeds. The commitment is held in memory only: a daemon restarted before it is written serves what the file holds, so a revocation reported in this state should be repeated after a restart. The enrollment queue follows the same rule), so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
 - `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
 
 ## Ownership and access
@@ -556,7 +565,9 @@ invalid first generation could otherwise only be repaired by hand.
 
 A failure before root replacement leaves the old root authoritative. A visible
 candidate after a replacement or directory-sync error is commit-uncertain and
-enters recovery; callers do not blindly retry. Once the one root rename is
+enters recovery; callers do not blindly retry. So is a root that cannot be
+read back after the error, or that matches neither the old record nor the
+candidate (`genstore.RootCommitUncertain`): the candidate may have landed. Once the one root rename is
 visible and directory-durable, there is no second witness or publication step.
 
 ### Passphrase and term rotation

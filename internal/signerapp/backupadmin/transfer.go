@@ -310,7 +310,9 @@ func (s Service) ReadBackupChunk(req adminproto.ReadBackupChunkRequest) adminpro
 	return adminproto.ReadBackupChunkResult{Success: true, FileName: fileName, Offset: req.Offset, Data: data[:n], EOF: req.Offset+int64(n) == after.Size()}
 }
 
-// CleanupIncompleteBackupImports durably removes unpublished upload residue.
+// CleanupIncompleteBackupImports durably removes unpublished upload residue,
+// and what an interrupted backup creation left: a partial archive and its
+// verification directory.
 // Callers serialize it with other store mutations once the daemon is live.
 func CleanupIncompleteBackupImports(paths storepaths.Paths) (int, error) {
 	return cleanupBackupImportResidue(paths, true)
@@ -335,8 +337,10 @@ func cleanupBackupImportResidue(paths storepaths.Paths, includeValidation bool) 
 		incompleteUpload := strings.HasPrefix(name, backupUploadPrefix) &&
 			!strings.HasPrefix(name, backupClaimPrefix) && strings.HasSuffix(name, ".part")
 		claimedUpload := includeValidation && strings.HasPrefix(name, backupClaimPrefix) && strings.HasSuffix(name, ".part")
-		validationDirectory := strings.HasPrefix(name, backupValidationPrefix)
-		if !incompleteUpload && !claimedUpload && (!includeValidation || !validationDirectory) {
+		validationDirectory := strings.HasPrefix(name, backupValidationPrefix) || strings.HasPrefix(name, backup.CreateValidationPrefix)
+		// A backup a crash interrupted before it was renamed into place.
+		partialArchive := includeValidation && strings.HasSuffix(name, backup.PartialArchiveSuffix) && backup.IsArchivePath(strings.TrimSuffix(name, backup.PartialArchiveSuffix))
+		if !incompleteUpload && !claimedUpload && !partialArchive && (!includeValidation || !validationDirectory) {
 			continue
 		}
 		path := filepath.Join(dir, name)
@@ -344,13 +348,13 @@ func cleanupBackupImportResidue(paths storepaths.Paths, includeValidation bool) 
 		if err != nil {
 			return removed, err
 		}
-		if (incompleteUpload || claimedUpload) && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
+		if (incompleteUpload || claimedUpload || partialArchive) && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
 			return removed, fmt.Errorf("incomplete backup upload is not a regular file: %s", path)
 		}
 		if validationDirectory && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
 			return removed, fmt.Errorf("backup validation residue is not a real directory: %s", path)
 		}
-		if incompleteUpload || claimedUpload {
+		if incompleteUpload || claimedUpload || partialArchive {
 			if err := fsutil.RemoveDurable(path); err != nil {
 				return removed, err
 			}

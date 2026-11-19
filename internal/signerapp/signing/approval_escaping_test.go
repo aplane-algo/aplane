@@ -65,11 +65,11 @@ func signForEscapingTest(t *testing.T, req signerapi.GroupSignRequest, plan *Pla
 			HasClient:       func() bool { return true },
 			KnownAddresses:  func() map[string]bool { return nil },
 			Console:         got.console,
-			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApprovalPrompt: promptFromDecision(func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				got.approvals++
 				got.address, got.sender, got.description = address, txnSender, description
 				return true, nil
-			},
+			}),
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describe,

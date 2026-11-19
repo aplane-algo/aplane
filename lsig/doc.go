@@ -40,8 +40,8 @@
 // # Inside a family or type
 //
 // The split is always client-safe versus signer-only. A DSA family keeps
-// constants, metadata and address derivation in packages the client may link
-// (falcon1024/family, falcon1024/keys) and private-key operations in
+// constants and metadata in packages the client may link
+// (falcon1024/family) and private-key operations in
 // packages only the signer links (falcon1024/family/ops, falcon1024/signerops).
 // A rotating type keeps the frozen stage program in stage/ (client-safe) and
 // derivation and signing in signerops/, built on rotatingfamily: stageprog

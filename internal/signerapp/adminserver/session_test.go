@@ -1009,7 +1009,7 @@ func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 		nil,
 	))
 	go func() {
-		response, err := ir.RequestSigningApprovalResponse("req-1", "ADDR", "SENDER", "desc", 0, 0, nil, time.Second)
+		response, err := ir.RequestSigningApprovalPrompt(context.Background(), signerapproval.Prompt{RequestID: "req-1", Address: "ADDR", TxnSender: "SENDER", Description: "desc"}, time.Second)
 		if err != nil {
 			got <- signerapproval.SignResponse{ID: "error", Reason: err.Error()}
 			return

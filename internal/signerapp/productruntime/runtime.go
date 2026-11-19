@@ -11,13 +11,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"maps"
 	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -148,8 +149,18 @@ type Runtime struct {
 	// crash. The next registry operation re-publishes it before doing
 	// anything else, so no retry is acknowledged on top of an unsynced file.
 	clientsUnsynced bool
-	// pendingUnsynced is the same marker for the enrollment queue file.
+	// clientsIntended is set when the registry file could not be read back
+	// after a failed publish. The outcome on disk is then unknown, so the
+	// change is reported as applied and this is the registry it intended.
+	// clients meanwhile is a placeholder that refuses every key and is
+	// never published; the next registry operation waits for the file to
+	// be readable and then publishes clientsIntended, so what was reported
+	// is what the file ends up holding.
+	clientsIntended *clientregistry.Registry
+	// pendingUnsynced and pendingIntended are the same markers for the
+	// enrollment queue file.
 	pendingUnsynced bool
+	pendingIntended *enrollqueue.Queue
 
 	// reloadFn performs template registration + key scan + snapshot publish.
 	// Injected by the process root after construction.
@@ -416,6 +427,10 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 		// As SetRecovery: a session that was unlocked until now is over.
 		ir.cancelKeyUses()
 	}
+	if !ok && msg == signerruntime.LockedDuringUnlockMessage {
+		// A lock overtook the attempt, which then locked the runtime.
+		ir.notifyLocked()
+	}
 	return ok, msg
 }
 
@@ -509,35 +524,6 @@ func (ir *Runtime) CancelSigningApproval(requestID, reason string) signerapprova
 		return c.CancelSignRequest(requestID, reason)
 	}
 	return signerapproval.SignRequestCancelResult{State: signerapproval.SignRequestCancelStateNotFound}
-}
-
-// RequestSigningApproval requests operator approval for a signing operation.
-func (ir *Runtime) RequestSigningApproval(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
-	response, err := ir.RequestSigningApprovalResponseContext(context.Background(), requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (ir *Runtime) RequestSigningApprovalResponse(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	return ir.RequestSigningApprovalResponseContext(context.Background(), requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-}
-
-func (ir *Runtime) RequestSigningApprovalContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
-	response, err := ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (ir *Runtime) RequestSigningApprovalResponseContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	c := ir.approval.Load()
-	if c == nil {
-		return signerapproval.SignResponse{}, fmt.Errorf("approval coordinator not initialized")
-	}
-	return c.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 }
 
 // RequestSigningApprovalPrompt shows prompt to the operator and waits for the
@@ -648,12 +634,13 @@ func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry)
 
 // publishRegistryLocked is publishRegistry with clientsMu held.
 func (ir *Runtime) publishRegistryLocked(mutate func(current *clientregistry.Registry) (next *clientregistry.Registry, changed bool, err error)) (bool, error) {
+	if err := ir.ensureRegistryDurableLocked(); err != nil {
+		return false, err
+	}
+	// Taken after the re-publish, which may have read the file again.
 	current := ir.clients
 	if current == nil {
 		current, _ = clientregistry.Parse(nil)
-	}
-	if err := ir.ensureRegistryDurableLocked(); err != nil {
-		return false, err
 	}
 	next, changed, err := mutate(current)
 	if err != nil {
@@ -684,6 +671,25 @@ func (ir *Runtime) ensureRegistryDurableLocked() error {
 	if !ir.clientsUnsynced {
 		return nil
 	}
+	if ir.clientsIntended != nil {
+		// What the runtime holds is the placeholder, not the registry:
+		// publishing it would write every enrolled key out of the file.
+		// Wait until the file reads again, then publish the registry the
+		// failed write intended, whichever of the two the file holds.
+		if _, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil {
+			return fmt.Errorf("registry is unreadable after an earlier failed write; repair %s: %w", ir.AuthorizedKeysPath(), err)
+		}
+		if err := clientregistry.Publish(ir.AuthorizedKeysPath(), ir.clientsIntended); err != nil {
+			// Not durable yet. Keep the commitment and keep refusing every
+			// key: adopting what the file holds now could undo a change
+			// that was reported made, a revocation included.
+			return fmt.Errorf("registry from an earlier failed write is still not durable: %w", err)
+		}
+		ir.clients = ir.clientsIntended
+		ir.clientsUnsynced = false
+		ir.clientsIntended = nil
+		return nil
+	}
 	current := ir.clients
 	if current == nil {
 		current, _ = clientregistry.Parse(nil)
@@ -703,14 +709,20 @@ func (ir *Runtime) publishRegistryFileLocked(reg *clientregistry.Registry) (appl
 		ir.clientsUnsynced = true
 		reloaded, loadErr := clientregistry.Load(ir.AuthorizedKeysPath())
 		if loadErr != nil {
+			// The file holds the old registry or reg, and which cannot be
+			// known: refuse every key until it can be read, and commit to
+			// reg, which the next registry operation publishes.
 			ir.clients, _ = clientregistry.Parse(nil)
-			return false, fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
+			ir.clientsIntended = reg
+			return true, fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
 		}
 		ir.clients = reloaded
+		ir.clientsIntended = nil
 		return bytes.Equal(reloaded.Marshal(), reg.Marshal()), err
 	}
 	ir.clients = reg
 	ir.clientsUnsynced = false
+	ir.clientsIntended = nil
 	return true, nil
 }
 
@@ -811,14 +823,19 @@ func (ir *Runtime) publishQueueFileLocked(next *enrollqueue.Queue) (applied bool
 		now := time.Now()
 		reloaded, loadErr := enrollqueue.Load(ir.PendingEnrollmentsPath(), now)
 		if loadErr != nil {
+			// As for the registry: commit to next, which the next queue
+			// operation publishes once the file reads again.
 			ir.pending = &enrollqueue.Queue{}
-			return false, fmt.Errorf("%w (queue unreadable after the failed publish, waiting requests dropped until it is repaired: %v)", err, loadErr)
+			ir.pendingIntended = next
+			return true, fmt.Errorf("%w (queue unreadable after the failed publish, waiting requests hidden until it is repaired: %v)", err, loadErr)
 		}
 		ir.pending = reloaded
+		ir.pendingIntended = nil
 		return bytes.Equal(reloaded.Marshal(), next.Pruned(now).Marshal()), err
 	}
 	ir.pending = next
 	ir.pendingUnsynced = false
+	ir.pendingIntended = nil
 	return true, nil
 }
 
@@ -829,6 +846,22 @@ func (ir *Runtime) publishQueueFileLocked(next *enrollqueue.Queue) (applied bool
 // when it was made.
 func (ir *Runtime) ensureQueueDurableLocked() error {
 	if !ir.pendingUnsynced {
+		return nil
+	}
+	if ir.pendingIntended != nil {
+		// As for the registry: the empty queue held is a placeholder, and
+		// publishing it would drop every waiting request from the file.
+		if _, err := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now()); err != nil {
+			return fmt.Errorf("enrollment queue is unreadable after an earlier failed write; repair %s: %w", ir.PendingEnrollmentsPath(), err)
+		}
+		if err := enrollqueue.Publish(ir.PendingEnrollmentsPath(), ir.pendingIntended); err != nil {
+			// As for the registry: keep the commitment rather than adopt
+			// what the file holds, which could bring back a cleared request.
+			return fmt.Errorf("enrollment queue from an earlier failed write is still not durable: %w", err)
+		}
+		ir.pending = ir.pendingIntended
+		ir.pendingUnsynced = false
+		ir.pendingIntended = nil
 		return nil
 	}
 	if _, err := ir.publishQueueFileLocked(ir.pendingLocked()); err != nil {
@@ -950,6 +983,11 @@ func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	if err := ir.ensureQueueDurableLocked(); err != nil {
+		return enrollqueue.Entry{}, false, err
+	}
+	// The already-enrolled check reads the registry, so it must be the
+	// registry and not the placeholder an unreadable file leaves.
+	if err := ir.ensureRegistryDurableLocked(); err != nil {
 		return enrollqueue.Entry{}, false, err
 	}
 	next, entry, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
@@ -1528,8 +1566,9 @@ func (ir *Runtime) refuseKeyUses() {
 //
 // Clearing them under a key user still registered (one EndKeyUses gave up on,
 // or any when Destroy runs alone) is safe: the user decrypted its own copy
-// (FileKeyStore.Get, WithKeyring) under the read lock that ClearKeys and the
-// session's Destroy wait for, so it keeps working on that copy, and any load
+// under the keystore's read lock (FileKeyStore.Get) or a counted reference
+// (WithKeyring), both of which ClearKeys and the session's Destroy wait for,
+// so it keeps working on that copy, and any load
 // it starts afterward fails as locked. Its copy is zeroed when it releases,
 // or reclaimed by the operating system at the process exit that follows.
 func (ir *Runtime) Destroy() {

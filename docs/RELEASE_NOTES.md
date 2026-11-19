@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apshell opens no local port to the signer
+
+- **Only apshell can use its connection to the signer.** `connect` used to
+  open a port on 127.0.0.1 and forward it over SSH, and any process on the
+  client machine could send requests through it under the client's enrolled
+  key. apshell now opens an SSH channel for each HTTP connection itself, as
+  cosigner connections already did, and nothing listens. Several clients,
+  on one machine or many, each still connect with their own key. `connect`
+  reports `Signer verified over SSH at <target>`, and its result no longer
+  carries a `port`.
+
 ## A split send numbers its requests
 
 - **A send to several recipients says which one is up.** Without `atomic`,

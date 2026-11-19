@@ -220,6 +220,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Success {
 			m.lastError = ""
 			m.backup.archivePath = msg.ArchivePath
+			m.backup.archiveWarning = msg.Warning
 			m.backup.exportPassphrase = ""
 			m.backup.confirmPassphrase = ""
 			m.backup.confirmError = ""

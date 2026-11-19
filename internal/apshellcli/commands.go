@@ -253,8 +253,9 @@ func (r *REPLState) executeCommandResult(cmd Command) (command.Result, error) {
 	if !isPlugin {
 		return nil, &unknownCommandError{name: cmd.Name}
 	}
+	simulated := r.app().IsSimulateEnabled()
 	result, err = newShellCommandResult(func(w io.Writer) error {
-		return r.withOutput(w, func() { renderPluginResult(r, pluginResult) })
+		return r.withOutput(w, func() { renderPluginResult(r, pluginResult, simulated) })
 	}, projectPluginResult(pluginResult))
 	if err != nil {
 		return nil, err

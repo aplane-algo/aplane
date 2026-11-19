@@ -68,6 +68,11 @@ func (m Model) keepApprovalOnTop(preferred ViewState) Model {
 		// the popup was already visible.
 		m.signing.shownAt = signingNow()
 	}
+	if popup == ViewClientEnrollmentPopup && preferred != ViewClientEnrollmentPopup {
+		// The same for an enrollment request that waited behind another
+		// popup or arrived over another screen.
+		m.enrollmentApproval.shownAt = signingNow()
+	}
 	if popup == ViewSigningPopup && m.viewState != popup {
 		// The screen under the popup has its own footer, and the popup's
 		// panes were sized while that one showed.

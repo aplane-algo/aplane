@@ -72,15 +72,24 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 	if err != nil {
 		return err
 	}
-	if err := run(ctx, command, streams, backend); err != nil {
-		return err
+	return finishRescue(run(ctx, command, streams, backend), backend.committed, guard.Normalize)
+}
+
+// finishRescue ends a rescue whose command returned runErr. A commit that
+// landed, or may have, leaves files a root-run rescue owns, so they are
+// normalized even when the command then reports a failure: an uncertain
+// commit, or a reload that failed after the commit.
+func finishRescue(runErr error, committed bool, normalize func() error) error {
+	if !committed {
+		return runErr
 	}
-	if backend.committed {
-		if err := guard.Normalize(); err != nil {
-			return fmt.Errorf("policy applied, but managed store ownership normalization failed: %w", err)
+	if err := normalize(); err != nil {
+		if runErr != nil {
+			return fmt.Errorf("%w; managed store ownership normalization also failed: %v", runErr, err)
 		}
+		return fmt.Errorf("policy applied, but managed store ownership normalization failed: %w", err)
 	}
-	return nil
+	return runErr
 }
 
 // offlineBackend serves policy requests from the store itself.
@@ -148,6 +157,12 @@ func (b *offlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequ
 func (b *offlineBackend) Apply(_ context.Context, req adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error) {
 	outcome, err := policyapply.Commit(b.env, req)
 	if err != nil {
+		if outcome.Uncertain {
+			// The root may name the new generation: normalize its
+			// ownership as for a commit, or a service-user daemon could
+			// not read what a root-run rescue may have published.
+			b.committed = true
+		}
 		return adminproto.ApplyPolicyResult{
 			Code: policyapply.Code(err, "policy_apply_failed"), Error: err.Error(),
 			Errors: outcome.Problems, CommitUncertain: outcome.Uncertain,

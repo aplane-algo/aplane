@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -430,10 +431,12 @@ func TestSendFromASetGivesEachSubmissionItsOwnArguments(t *testing.T) {
 		AmountText: "0", AssetRef: "algo", FromRaw: []string{"hl", "hl2", "nat"}, ToRaw: []string{"dest"}, Wait: true,
 		LsigArgs: words(t, "arg:hl:preimage=a", "arg:hl2:preimage=b"),
 	})
-	if err != nil {
-		t.Fatalf("ExecuteSend() error = %v", err)
+	// The test signer signs for none of these accounts, so every item fails
+	// after its request was sent, and the send fails as a whole.
+	if err == nil || err.Error() != "all 3 transaction(s) failed" {
+		t.Fatalf("ExecuteSend() error = %v, want all 3 failed", err)
 	}
-	if result.NonAtomic == nil || len(result.NonAtomic.Items) != 3 {
+	if result == nil || result.NonAtomic == nil || len(result.NonAtomic.Items) != 3 {
 		t.Fatalf("send result = %+v, want three items", result)
 	}
 	f.wantSent(t, false,
@@ -469,8 +472,10 @@ func TestSendFromASetLabelsEachRequestForTheSigner(t *testing.T) {
 			AmountText: "0", AssetRef: "algo", FromRaw: tc.from, ToRaw: []string{"dest"}, Wait: true,
 			LsigArgs: tc.args,
 		})
-		if err != nil {
-			t.Fatalf("%s: ExecuteSend() error = %v", tc.name, err)
+		// The test signer signs for none of these accounts: every item fails,
+		// and so does the send.
+		if want := fmt.Sprintf("all %d transaction(s) failed", len(tc.from)); err == nil || err.Error() != want || result == nil {
+			t.Fatalf("%s: ExecuteSend() = %v, %v; want the result and %q", tc.name, result != nil, err, want)
 		}
 		if tc.unfunded != "" {
 			if item := result.NonAtomic.Items[1]; !strings.Contains(item.Error, "insufficient balance") {

@@ -217,6 +217,7 @@ func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResu
 		KeyCount:        result.KeyCount,
 		Addresses:       append([]string(nil), result.Addresses...),
 		Verified:        result.Verified,
+		Warning:         result.Warning,
 		Code:            result.Code,
 		Error:           result.Error,
 	}

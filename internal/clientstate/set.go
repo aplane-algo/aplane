@@ -98,6 +98,11 @@ func (s *State) AddToSet(name string, inputs []string, resolve ResolveAddressFun
 	if err := refname.ValidateSet(name); err != nil {
 		return nil, err
 	}
+	// A set holds at least one address: adding none would create an empty
+	// one, which the shell's sets add already refuses.
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("must provide at least one address to add")
+	}
 	result := &SetMutationResult{}
 	err := s.WithExclusiveLock(func() error {
 		s.ReloadAliasCache()

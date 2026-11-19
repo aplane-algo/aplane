@@ -103,7 +103,7 @@ func TestEnrollmentFingerprintMatchesApprovedKey(t *testing.T) {
 			if err := os.WriteFile(known, []byte(line), 0600); err != nil {
 				t.Fatal(err)
 			}
-			client := NewClient(host, port, 0, identity, known)
+			client := NewClient(host, port, identity, known)
 			var displayed string
 			client.SetEnrollmentStartCallback(func(fingerprint string) { displayed = fingerprint })
 			result, err := client.RequestEnrollment(ctx, "")

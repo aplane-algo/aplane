@@ -36,16 +36,17 @@ func (s SignerState) String() string {
 // Runtime owns signer lock state.
 type Runtime struct {
 	state SignerState
-	// lockGen increments on every Lock and maintenance fence. TryUnlock and
-	// maintenance completion re-check it before publishing unlocked state, so
-	// a racing lock wins instead of leaving the runtime reporting unlocked
-	// over a destroyed key session.
+	// lockGen increments on every Lock, on every maintenance fence and its
+	// end without republication, and when an unlock attempt loses to a lock
+	// (lockForCleanupLocked). TryUnlock and maintenance completion re-check it
+	// before publishing unlocked state, so a racing lock wins instead of
+	// leaving the runtime reporting unlocked over a destroyed key session.
 	lockGen uint64
-	// session identifies the unlocked session: it advances whenever the
-	// signer leaves the unlocked state, by a Lock, a maintenance fence or an
-	// entry into recovery. It is kept apart from lockGen because recovery
-	// destroys nothing: an unlock that raced an entry into recovery has not
-	// lost to a lock, and must not run the lock's cleanup.
+	// session identifies the unlocked session: it advances on every change
+	// to lockGen and on an entry into recovery from the unlocked state. It is
+	// kept apart from lockGen because recovery destroys nothing: an unlock
+	// that raced an entry into recovery has not lost to a lock, and must not
+	// run the lock's cleanup.
 	session uint64
 	stateMu sync.RWMutex
 
@@ -68,6 +69,9 @@ type Runtime struct {
 type MaintenanceToken struct {
 	id      uint64
 	lockGen uint64
+	// fromUnlocked records that the runtime was unlocked when the
+	// maintenance began; only then may its end publish unlocked state.
+	fromUnlocked bool
 }
 
 // New creates a runtime owner initialized in the locked state.
@@ -85,9 +89,10 @@ func (r *Runtime) SetOnLock(fn func()) {
 }
 
 // LockGeneration returns the session generation: a counter that advances,
-// under the state mutex, on every Lock and BeginMaintenance transition and
-// on every entry into recovery from the unlocked state (SetRecovery,
-// TryRecovery). Two unlocked sessions never share a generation, and a
+// under the state mutex, on every Lock and BeginMaintenance transition, on a
+// maintenance that ends without republishing, on an unlock attempt that
+// loses to a lock, and on every entry into recovery from the unlocked state
+// (SetRecovery, TryRecovery). Two unlocked sessions never share a generation, and a
 // session ends whenever the signer leaves the unlocked state, so per-session
 // state can be keyed by it and a transition that was observed late cannot be
 // mistaken for the current one.
@@ -164,10 +169,16 @@ func (r *Runtime) PromoteRecoveryToUnlocked() bool {
 // signer is unlocked again by the time it looks. Nothing is cleared, because
 // recovery administration needs the keyring; the on-lock callback does not
 // run.
+//
+// A locked signer stays locked. Its keyring is gone, so it has no recovery
+// to administer, and it signs nothing already; the unlock that follows
+// reconciles the store and enters recovery itself if the store needs it. A
+// store mutation a lock overtook calls this after the lock, and must not
+// turn the operator's lock into recovery.
 func (r *Runtime) SetRecovery() {
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
-	if r.activeMaintenanceID == 0 {
+	if r.activeMaintenanceID == 0 && r.state != SignerStateLocked {
 		r.enterRecoveryLocked()
 	}
 }
@@ -212,6 +223,26 @@ func (r *Runtime) runCleanup(onLock func()) {
 	if onLock != nil {
 		onLock()
 	}
+}
+
+// lockForCleanupLocked locks the runtime as Lock does, so that a cleanup can
+// clear keys that were loaded outside a published session: the state locks,
+// lockGen and the session move, and the cleanup is counted. Two callers need
+// it. An unlock or recovery attempt that a lock overtook may have loaded
+// keys after that lock's cleanup ran, and another attempt may since have
+// published a session those keys now serve, or may publish one before this
+// cleanup runs; moving lockGen ends the one and makes the other lose too. A
+// maintenance that ends without republishing may have reloaded keys, which
+// no later Lock would clear, since the runtime is already locked. Clearing
+// can then never leave the runtime reading unlocked, or in recovery, with
+// nothing behind it. The caller holds stateMu for writing and runs the
+// returned callback with runCleanup after releasing it.
+func (r *Runtime) lockForCleanupLocked() func() {
+	r.state = SignerStateLocked
+	r.lockGen++
+	r.session++
+	r.beginCleanupLocked()
+	return r.onLock
 }
 
 // awaitCleanups waits until no on-lock cleanup is in progress and returns
@@ -266,6 +297,7 @@ func (r *Runtime) Lock() bool {
 // restore unlocked state only if no later Lock changed lockGen.
 func (r *Runtime) BeginMaintenance() MaintenanceToken {
 	r.stateMu.Lock()
+	fromUnlocked := r.state == SignerStateUnlocked
 	r.state = SignerStateLocked
 	r.lockGen++
 	r.session++
@@ -275,8 +307,9 @@ func (r *Runtime) BeginMaintenance() MaintenanceToken {
 	}
 	r.activeMaintenanceID = r.nextMaintenanceID
 	token := MaintenanceToken{
-		id:      r.activeMaintenanceID,
-		lockGen: r.lockGen,
+		id:           r.activeMaintenanceID,
+		lockGen:      r.lockGen,
+		fromUnlocked: fromUnlocked,
 	}
 	onLock := r.onLock
 	r.beginCleanupLocked()
@@ -287,26 +320,35 @@ func (r *Runtime) BeginMaintenance() MaintenanceToken {
 }
 
 // FinishMaintenance closes the maintenance fence. It restores unlocked state
-// only when the caller requests publication and no later Lock changed
-// lockGen. Failure and racing locks force the final state to locked. It waits
-// for a cleanup an earlier Lock left running, as an unlock does.
+// only when the caller requests publication, the runtime was unlocked when
+// the maintenance began, and no later Lock changed lockGen. Otherwise the
+// runtime ends locked, and the keys the maintenance may have reloaded are
+// cleared by a cleanup of its own (lockForCleanupLocked): the runtime is
+// already locked, so no later Lock would clear them. A lock that landed
+// before the maintenance began, after its caller checked the state, stays in
+// force. It waits for a cleanup an earlier Lock left running, as an unlock
+// does.
 func (r *Runtime) FinishMaintenance(
 	token MaintenanceToken,
 	republish bool,
 ) bool {
 	r.awaitCleanups(true)
-	defer r.stateMu.Unlock()
 	if token.id == 0 || r.activeMaintenanceID != token.id {
+		r.stateMu.Unlock()
 		return false
 	}
 	r.activeMaintenanceID = 0
 	if republish &&
+		token.fromUnlocked &&
 		r.lockGen == token.lockGen &&
 		r.state == SignerStateLocked {
 		r.state = SignerStateUnlocked
+		r.stateMu.Unlock()
 		return true
 	}
-	r.state = SignerStateLocked
+	onLock := r.lockForCleanupLocked()
+	r.stateMu.Unlock()
+	r.runCleanup(onLock)
 	return false
 }
 
@@ -330,8 +372,7 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 
 	r.stateMu.Lock()
 	if r.lockGen != gen || r.activeMaintenanceID != 0 {
-		onLock := r.onLock
-		r.beginCleanupLocked()
+		onLock := r.lockForCleanupLocked()
 		r.stateMu.Unlock()
 		r.runCleanup(onLock)
 		return false, LockedDuringUnlockMessage
@@ -343,8 +384,9 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 
 // TryUnlock runs the supplied unlock function and, on success, transitions to
 // unlocked - unless a Lock call raced the unlock function, in which case the
-// lock wins: the lock callback runs again to destroy whatever the unlock
-// function loaded, the state stays locked, and the unlock reports failure.
+// lock wins: the attempt locks the runtime (lockForCleanupLocked), the lock
+// callback runs again to destroy whatever the unlock function loaded, and the
+// unlock reports failure.
 //
 // It first waits for any lock cleanup in progress. A Lock moves lockGen and
 // then runs its cleanup outside the state mutex; an unlock that read lockGen
@@ -366,8 +408,7 @@ func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bo
 
 	r.stateMu.Lock()
 	if r.lockGen != gen || r.activeMaintenanceID != 0 {
-		onLock := r.onLock
-		r.beginCleanupLocked()
+		onLock := r.lockForCleanupLocked()
 		r.stateMu.Unlock()
 		r.runCleanup(onLock)
 		return false, 0, LockedDuringUnlockMessage

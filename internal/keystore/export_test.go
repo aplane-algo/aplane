@@ -13,23 +13,16 @@ func (f *FileKeyStore) setKeyringForTest(key []byte) error {
 	if err != nil {
 		return err
 	}
-	f.cacheLock.Lock()
-	defer f.cacheLock.Unlock()
-	if f.keyring != nil {
-		f.keyring.Zero()
-	}
-	f.keyring = kr
+	f.setKeyringDirectlyForTest(kr)
 	return nil
 }
 
 // setKeyringDirectlyForTest installs an already-open keyring.
 func (f *FileKeyStore) setKeyringDirectlyForTest(kr *crypto.Keyring) {
 	f.cacheLock.Lock()
-	defer f.cacheLock.Unlock()
-	if f.keyring != nil {
-		f.keyring.Zero()
-	}
-	f.keyring = kr
+	previous := f.replaceKeyringLocked(kr)
+	f.cacheLock.Unlock()
+	previous.zeroWhenUnused()
 }
 
 // keyringIsLoaded reports whether a keyring is resident.

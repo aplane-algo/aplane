@@ -10,24 +10,27 @@ import (
 	"github.com/aplane-algo/aplane/internal/asa"
 )
 
-func (r *REPLState) renderSendResult(result *apshellapp.SendExecutionResult) error {
+// renderSendResult draws a send. simulated is whether the send ran in
+// simulate mode, read when it ran: a one-shot simulate restores the mode
+// before the result is drawn.
+func (r *REPLState) renderSendResult(result *apshellapp.SendExecutionResult, simulated bool) error {
 	if result == nil {
 		return fmt.Errorf("send result is nil")
 	}
 
 	switch result.Mode {
 	case apshellapp.SendModeAtomicFromMultiple:
-		return r.renderAtomicFromMultipleSendResult(result)
+		return r.renderAtomicFromMultipleSendResult(result, simulated)
 	case apshellapp.SendModeAtomicToMultiple:
-		return r.renderAtomicToMultipleSendResult(result)
+		return r.renderAtomicToMultipleSendResult(result, simulated)
 	case apshellapp.SendModeNonAtomic:
-		return r.renderNonAtomicSendResult(result)
+		return r.renderNonAtomicSendResult(result, simulated)
 	default:
 		return fmt.Errorf("unsupported send mode: %s", result.Mode)
 	}
 }
 
-func (r *REPLState) renderNonAtomicSendResult(result *apshellapp.SendExecutionResult) error {
+func (r *REPLState) renderNonAtomicSendResult(result *apshellapp.SendExecutionResult, simulated bool) error {
 	nonAtomic := result.NonAtomic
 	if nonAtomic == nil {
 		return fmt.Errorf("non-atomic send result is nil")
@@ -48,9 +51,9 @@ func (r *REPLState) renderNonAtomicSendResult(result *apshellapp.SendExecutionRe
 				r.printf("\n[%d/%d] Sending to %s\n", idx+1, len(nonAtomic.Items), r.app().FormatAddress(item.To, ""))
 			}
 		}
-		r.renderSendItemResult(item, nonAtomic.Amount, result.Wait, result.Note)
+		r.renderSendItemResult(item, nonAtomic.Amount, result.Wait, result.Note, simulated)
 		if item.Error != "" {
-			if r.app().IsSimulateEnabled() {
+			if simulated {
 				r.printf("\n✗ Simulation failed: %v\n", item.Error)
 			} else {
 				r.printf("\n✗ Failed: %v\n", item.Error)
@@ -64,15 +67,12 @@ func (r *REPLState) renderNonAtomicSendResult(result *apshellapp.SendExecutionRe
 		if nonAtomic.FailureCount > 0 {
 			r.printf("Failed: %d/%d\n", nonAtomic.FailureCount, len(nonAtomic.Items))
 		}
-		if nonAtomic.FailureCount > 0 && nonAtomic.SuccessCount == 0 && nonAtomic.LastError != "" {
-			return fmt.Errorf("%s", nonAtomic.LastError)
-		}
 	}
 
 	return nil
 }
 
-func (r *REPLState) renderSendItemResult(item apshellapp.SendItemResult, amount asa.Amount, wait bool, note string) {
+func (r *REPLState) renderSendItemResult(item apshellapp.SendItemResult, amount asa.Amount, wait bool, note string, simulated bool) {
 	assetName := asa.DisplayRef(amount.Meta)
 	r.renderWarnings(item.Warnings)
 
@@ -86,7 +86,7 @@ func (r *REPLState) renderSendItemResult(item apshellapp.SendItemResult, amount 
 	if item.Error != "" {
 		return
 	}
-	if !r.app().IsSimulateEnabled() && item.TxID != "" {
+	if !simulated && item.TxID != "" {
 		r.printf("Transaction submitted: %s\n", item.TxID)
 	}
 	if wait && item.Confirmed {
@@ -95,7 +95,7 @@ func (r *REPLState) renderSendItemResult(item apshellapp.SendItemResult, amount 
 	}
 }
 
-func (r *REPLState) renderAtomicToMultipleSendResult(result *apshellapp.SendExecutionResult) error {
+func (r *REPLState) renderAtomicToMultipleSendResult(result *apshellapp.SendExecutionResult, simulated bool) error {
 	atomic := result.Atomic
 	if atomic == nil {
 		return fmt.Errorf("atomic send result is nil")
@@ -114,11 +114,11 @@ func (r *REPLState) renderAtomicToMultipleSendResult(result *apshellapp.SendExec
 		r.printf("  %d. Send %s %s to %s\n", i+1, amountStr, assetName, r.app().FormatAddress(to, ""))
 	}
 	r.println()
-	r.printAtomicSendResult(atomic)
+	r.printAtomicSendResult(atomic, simulated)
 	return nil
 }
 
-func (r *REPLState) renderAtomicFromMultipleSendResult(result *apshellapp.SendExecutionResult) error {
+func (r *REPLState) renderAtomicFromMultipleSendResult(result *apshellapp.SendExecutionResult, simulated bool) error {
 	atomic := result.Atomic
 	if atomic == nil {
 		return fmt.Errorf("atomic send result is nil")
@@ -141,14 +141,14 @@ func (r *REPLState) renderAtomicFromMultipleSendResult(result *apshellapp.SendEx
 	totalStr := asa.FormatDisplayAmount(totalUnits, atomic.Amount.Meta)
 	r.printf("Total received by %s: %s %s\n", r.app().FormatAddress(atomic.To[0], ""), totalStr, assetName)
 	r.println()
-	r.printAtomicSendResult(atomic)
+	r.printAtomicSendResult(atomic, simulated)
 	return nil
 }
 
-func (r *REPLState) printAtomicSendResult(result *apshellapp.AtomicSendResult) {
+func (r *REPLState) printAtomicSendResult(result *apshellapp.AtomicSendResult, simulated bool) {
 	r.renderSubmissionOutput(result.Output)
 	r.renderWarnings(result.Warnings)
-	if !r.app().IsSimulateEnabled() {
+	if !simulated {
 		r.printf("✓ Atomic transaction group submitted successfully\n")
 		r.printf("Group contains %d transaction(s)\n", len(result.TxIDs))
 		if len(result.TxIDs) > 0 {

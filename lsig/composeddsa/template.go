@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -478,14 +477,12 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 	if provider.KeyType() != keyType {
 		return templatepolicy.PreparedTemplateRegistration{}, fmt.Errorf("template key type %q does not match state key type %q", provider.KeyType(), keyType)
 	}
-	base, ok := LookupBase(spec.BaseKeyType)
-	if !ok {
+	if _, ok := LookupBase(spec.BaseKeyType); !ok {
 		return templatepolicy.PreparedTemplateRegistration{}, fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
 	return templatepolicy.PreparedTemplateRegistration{
 		Fingerprint: provider.CompatibilityFingerprint(),
 		Register: func() bool {
-			addressderive.Register(keyType, base.NewAddressDeriver(keyType))
 			return logicsigdsa.RegisterIfAbsent(&templateProvider{provider})
 		},
 	}, nil
