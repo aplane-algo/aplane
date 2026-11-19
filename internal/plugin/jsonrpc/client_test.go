@@ -5,6 +5,7 @@ package jsonrpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -270,7 +271,7 @@ func TestNotifyWritesSingleJSONLineFrame(t *testing.T) {
 	writer := &recordingWriter{}
 	client := NewClient(&bytes.Buffer{}, writer)
 
-	if err := client.Notify(CallbackLog, LogParams{Level: "info", Message: "hello"}); err != nil {
+	if err := client.Notify(context.Background(), CallbackLog, LogParams{Level: "info", Message: "hello"}); err != nil {
 		t.Fatalf("Notify() error = %v", err)
 	}
 	if len(writer.writes) != 1 {
