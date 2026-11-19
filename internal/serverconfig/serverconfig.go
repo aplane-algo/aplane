@@ -417,21 +417,6 @@ func (c *ServerConfig) ShouldLockOnDisconnect() bool {
 	return *c.LockOnDisconnect
 }
 
-// ValidateHeadlessPolicy checks policy settings for headless operation.
-// Returns warnings (not errors) because automated passphrase retrieval does not preclude
-// human approval — an operator may connect via apadmin for manual approval.
-func ValidateHeadlessPolicy(config *ServerConfig) []string {
-	var warnings []string
-
-	warnings = append(warnings, "headless mode keeps the signer unlocked in memory until process exit or manual lock")
-
-	if !config.UserAutoApprove {
-		warnings = append(warnings, "headless mode with user_auto_approve:false: transactions will require manual approval via apadmin")
-	}
-
-	return warnings
-}
-
 // ParsePassphraseTimeout parses an admin idle timeout string into a time.Duration.
 // Accepts formats like: "0" (disabled), "15m" (15 minutes), "1h" (1 hour).
 // Negative durations are rejected.

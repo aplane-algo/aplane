@@ -536,6 +536,11 @@ the product runtime in headless mode and the effective runtime behavior is:
 - passphrase timeout is disabled (`0`)
 - lock-on-disconnect is disabled
 
+The startup log's interactive or headless mode warnings, and its security
+configuration summary, report the settings in effect: the
+`identities/default/config.yaml` values, where `apadmin` saves a change,
+over `config.yaml`, with the headless overrides applied.
+
 #### Lock / Unlock Behavior Matrix
 
 | Passphrase mode | `passphrase_timeout` | `lock_on_disconnect` | While Admin app is connected | When Admin app closes/disconnects |
@@ -545,7 +550,7 @@ the product runtime in headless mode and the effective runtime behavior is:
 | `prompt` | `"0"` | `true` | Admin app stays connected until closed | Signer locks immediately |
 | `prompt` | `"0"` | `false` | Admin app stays connected until closed | Signer stays unlocked |
 | `passfile` / `systemd-creds` | `"0"` | effectively `false` | Signer starts unlocked and stays unlocked until stopped | Signer stays unlocked |
-| `passfile` / `systemd-creds` | nonzero | any | Invalid headless configuration; startup validation rejects it | Invalid headless configuration |
+| `passfile` / `systemd-creds` | nonzero | any | Ignored: the signer starts unlocked with no idle timeout and says so in its startup warnings | Signer stays unlocked |
 
 In this table, "Admin app" means `apadmin` or the embedded signer-admin panel
 inside `apconsole`. "Admin activity" means local keyboard interaction in the
