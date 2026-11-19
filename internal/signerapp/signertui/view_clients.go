@@ -27,8 +27,20 @@ func (m Model) renderEnrolledClients() string {
 	header.WriteString("\n")
 
 	labelWidth := m.clientLabelWidth()
+	// A list that failed says so instead of reading as empty; the rows
+	// shown are the last list read.
+	listFailed := func(what, err string) []string {
+		var rows []string
+		for _, line := range strings.Split(wrapPlainText(what+" could not be listed: "+terminalSafe(err), m.tableWidth()-2), "\n") {
+			rows = append(rows, "  "+errorStyle.Render(line))
+		}
+		return rows
+	}
 	lines := []string{fmt.Sprintf("Waiting for approval (%d)", len(m.clients.pending))}
-	if len(m.clients.pending) == 0 {
+	switch {
+	case m.clients.pendingListErr != "":
+		lines = append(lines, listFailed("Enrollment requests", m.clients.pendingListErr)...)
+	case len(m.clients.pending) == 0:
 		lines = append(lines, "  none. Clients request enrollment with: enroll")
 	}
 	selectedLine := 0
@@ -42,7 +54,10 @@ func (m Model) renderEnrolledClients() string {
 	}
 
 	lines = append(lines, "", fmt.Sprintf("Enrolled (%d)", len(m.clients.keys)))
-	if len(m.clients.keys) == 0 {
+	switch {
+	case m.clients.keysListErr != "":
+		lines = append(lines, listFailed("Enrolled client keys", m.clients.keysListErr)...)
+	case len(m.clients.keys) == 0:
 		lines = append(lines, "  no enrolled client keys")
 	}
 	for i, key := range m.clients.keys {

@@ -374,15 +374,17 @@ func (m Model) policyEditMessages() []policyApplyReviewLine {
 	if apply.busy != "" {
 		out = append(out, policyApplyReviewLine{text: apply.busy})
 	}
+	// The check's problems point at the operator's text, unknown keys and
+	// all, so they are escaped as the form escapes them.
 	if apply.err != "" {
-		for _, line := range strings.Split(wrapPlainText(apply.err, width), "\n") {
+		for _, line := range strings.Split(wrapPlainText(terminalSafeLines(apply.err), width), "\n") {
 			out = append(out, policyApplyReviewLine{text: line, attention: true})
 		}
 	}
 	// Problems are wrapped, not cut: the end of the line is the explanation.
 	shown := 0
 	for i, problem := range apply.problems {
-		wrapped := wrapIndentedLine(problem, width)
+		wrapped := wrapIndentedLine(terminalSafe(problem), width)
 		if shown > 0 && shown+len(wrapped) > policyEditMaxProblemLines {
 			out = append(out, policyApplyReviewLine{text: fmt.Sprintf("… and %d more; fix these and check again", len(apply.problems)-i)})
 			break
@@ -453,7 +455,7 @@ func policyTargetLabel(key string) string {
 	if key == policy.DefaultKey {
 		return "node default policy"
 	}
-	return "key " + key
+	return "key " + terminalSafe(key)
 }
 
 func (m Model) policyEditFooterText() string {

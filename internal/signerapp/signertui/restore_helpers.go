@@ -62,6 +62,7 @@ func (m *Model) resetRestoreFlow() {
 	m.clearRestorePassphrase()
 	m.restore.backups = nil
 	m.restore.backupsLoaded = false
+	m.restore.backupsListErr = ""
 	m.restore.selectedBackup = 0
 	m.restore.backupScrollOffset = 0
 	m.restore.archivePath = ""

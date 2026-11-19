@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -273,7 +274,7 @@ func (m Model) tryFormLines() []string {
 	t := m.try
 	f := m.shownFile(t.file)
 	lines := []string{
-		m.styles.title.Render("Try a transaction") + "  " + m.styles.subtle.Render(fmt.Sprintf("against %s (%s document %q, as edited)", m.caseDocument(t.file), f.Role, f.Key)),
+		m.styles.title.Render("Try a transaction") + "  " + m.styles.subtle.Render(fmt.Sprintf("against %s (%s document %q, as edited)", termsafe.Line(m.caseDocument(t.file)), f.Role, f.Key)),
 		"",
 	}
 	for i := 0; i < tryFieldCount; i++ {
@@ -446,19 +447,21 @@ func (m Model) openCases() Model {
 	var lines []string
 	switch {
 	case m.casesErr != "":
-		lines = append(lines, m.styles.err.Render(m.casesErr))
+		lines = append(lines, m.styles.err.Render(termsafe.Line(m.casesErr)))
 	case m.cases == nil || len(m.cases.Cases) == 0:
-		lines = append(lines, "No saved cases. Try a transaction with t, then keep its answer with ctrl+s.", "They are saved to "+path+".")
+		lines = append(lines, "No saved cases. Try a transaction with t, then keep its answer with ctrl+s.", "They are saved to "+termsafe.Line(path)+".")
 	default:
-		lines = append(lines, m.styles.subtle.Render(fmt.Sprintf("%s, run against the documents as edited (%s)", path, m.networks.Source)), "")
+		lines = append(lines, m.styles.subtle.Render(termsafe.Line(fmt.Sprintf("%s, run against the documents as edited (%s)", path, m.networks.Source))), "")
 		for _, r := range m.caseResults() {
+			// A case's name and its error come from the cases file.
+			name := termsafe.Line(r.Case.Name)
 			switch {
 			case r.Err != nil:
-				lines = append(lines, m.styles.err.Render("ERROR ")+r.Case.Name, "      "+r.Err.Error())
+				lines = append(lines, m.styles.err.Render("ERROR ")+name, "      "+termsafe.Line(r.Err.Error()))
 			case r.Passed:
-				lines = append(lines, m.styles.subtle.Render("ok    ")+r.Case.Name)
+				lines = append(lines, m.styles.subtle.Render("ok    ")+name)
 			default:
-				lines = append(lines, m.styles.err.Render("FAIL  ")+r.Case.Name,
+				lines = append(lines, m.styles.err.Render("FAIL  ")+name,
 					fmt.Sprintf("      got %s, want %s", expectLabel(policyauthor.ExpectOf(r.Got)), expectLabel(r.Case.Expect)))
 			}
 		}

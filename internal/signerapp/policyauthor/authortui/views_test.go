@@ -128,6 +128,63 @@ func TestCompareWithTheWorkspaceDefaultAndAPickedFile(t *testing.T) {
 	}
 }
 
+// Compare works on the workspace as edited, as the rest of the editor does: an
+// unsaved edit to the default is what a key document is compared with, and a
+// new default not yet saved is the workspace default.
+func TestCompareUsesTheWorkspaceAsEdited(t *testing.T) {
+	flat := func(m Model) string { return strings.Join(strings.Fields(strings.Join(m.page.lines, " ")), " ") }
+	m := sizedModel(t, map[string][]byte{
+		"default.json": fixture(t, "signer_default.json"),
+		"ops.json":     fixture(t, "signer_key_full.json"),
+	}, 160, 40)
+	m, _ = press(t, m, "down", "enter", "c")
+	if out := flat(m); m.screen != screenCompare || !strings.Contains(out, "/max_fee_microalgos") {
+		t.Fatalf("before the edit the fee caps differ:\n%s", out)
+	}
+
+	// Give the default the key document's fee cap, without saving.
+	m, _ = press(t, m, "esc", "esc", "up", "enter")
+	m = selectField(t, m, "/max_fee_microalgos")
+	m, _ = press(t, m, "enter")
+	m = typeText(t, clearInput(t, m), "0.01")
+	m, _ = press(t, m, "enter", "esc", "esc", "down", "enter", "c")
+	out := flat(m)
+	if m.screen != screenCompare || !strings.Contains(out, "compared with the workspace default (default.json), as edited and not saved") {
+		t.Fatalf("compare does not name the edited default:\n%s", out)
+	}
+	if strings.Contains(out, "/max_fee_microalgos") {
+		t.Fatalf("compare used the default as loaded, not as edited:\n%s", out)
+	}
+
+	// A new default, not yet saved, is the workspace default, and the picker
+	// shows it as edited.
+	ws, _ := workspace(t, map[string][]byte{"ops.json": fixture(t, "signer_key_full.json"), "ops2.json": fixture(t, "signer_key_full.json")})
+	next, _ := New(ws, nil, nil).Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	n := next.(Model)
+	n, _ = press(t, n, "n")
+	n = typeText(t, n, "default")
+	n, _ = press(t, n, "enter", "enter", "enter")
+	if n.screen != screenDocument || n.shown().Key != "default" {
+		t.Fatalf("new default: screen %v key %q", n.screen, n.shown().Key)
+	}
+	newName := baseName(n.file().Path)
+	n, _ = press(t, n, "esc")
+	for i := 0; !strings.Contains(view(n), "> ops.json"); i++ {
+		if i == len(n.ws.Files) {
+			t.Fatalf("no ops.json row to select (screen %v):\n%s", n.screen, view(n))
+		}
+		n, _ = press(t, n, "up")
+	}
+	n, _ = press(t, n, "enter", "c")
+	if out := flat(n); n.screen != screenCompare || !strings.Contains(out, "compared with the workspace default ("+newName+"), as edited and not saved") {
+		t.Fatalf("compare did not find the new default (screen %v):\n%s\n%s", n.screen, out, view(n))
+	}
+	n, _ = press(t, n, "o")
+	if out := view(n); n.screen != screenComparePick || !strings.Contains(out, "default  (edited, not saved)") || strings.Contains(out, "(no key)") {
+		t.Fatalf("picker does not show the new default as edited:\n%s", out)
+	}
+}
+
 func TestHelpAndPagesFitTheTerminal(t *testing.T) {
 	m := sizedModel(t, map[string][]byte{"default.json": fixture(t, "signer_default.json"), "ops.json": fixture(t, "signer_key_full.json")}, 60, 16)
 	m, _ = press(t, m, "down", "enter")

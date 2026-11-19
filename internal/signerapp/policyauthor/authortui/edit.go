@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -442,7 +443,7 @@ func (m Model) redo() Model {
 // promptLines renders the edit bar.
 func (m Model) promptLines() []string {
 	p := m.prompt
-	lines := []string{m.styles.title.Render(ansi.Truncate(p.title, m.width, "…"))}
+	lines := []string{m.styles.title.Render(ansi.Truncate(termsafe.Line(p.title), m.width, "…"))}
 	switch p.kind {
 	case promptChoice:
 		var parts []string
@@ -471,9 +472,9 @@ func (m Model) promptLines() []string {
 	}
 	lines = append(lines, m.assetPreviewLines()...)
 	if p.err != "" {
-		lines = append(lines, m.styles.err.Render(ansi.Truncate(p.err, m.width, "…")))
+		lines = append(lines, m.styles.err.Render(ansi.Truncate(termsafe.Line(p.err), m.width, "…")))
 	}
-	lines = append(lines, m.styles.subtle.Render(ansi.Truncate(p.hint, m.width, "…")))
+	lines = append(lines, m.styles.subtle.Render(ansi.Truncate(termsafe.Line(p.hint), m.width, "…")))
 	return lines
 }
 
@@ -495,7 +496,7 @@ func (m Model) assetPreviewLines() []string {
 		return nil
 	}
 	render := func(text string, problem bool) string {
-		text = ansi.Truncate(text, m.width, "…")
+		text = ansi.Truncate(termsafe.Line(text), m.width, "…")
 		if problem {
 			return m.styles.warn.Render(text)
 		}

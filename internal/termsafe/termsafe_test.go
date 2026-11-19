@@ -30,3 +30,29 @@ func TestEscaping(t *testing.T) {
 		})
 	}
 }
+
+func TestScreenKeepsStylingOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain text is unchanged", "a\n\tb", "a\n\tb"},
+		{"SGR styling is kept", "\x1b[1;38;5;12mtitle\x1b[0m\n\x1b[38:2:1:2:3mx\x1b[m", "\x1b[1;38;5;12mtitle\x1b[0m\n\x1b[38:2:1:2:3mx\x1b[m"},
+		{"clear screen", "a\x1b[2Jb", `a\x1b[2Jb`},
+		{"window title", "a\x1b]0;x\x07b", `a\x1b]0;x\ab`},
+		{"cursor movement", "\x1b[3;1H", `\x1b[3;1H`},
+		{"unterminated SGR", "a\x1b[1", `a\x1b[1`},
+		{"C1 control sequence introducer", "a\u009b2Jb", `a\u009b2Jb`},
+		{"bidirectional and format controls", "a\u202eb\u200bc", `a\u202eb\u200bc`},
+		{"carriage return", "a\rb", `a\rb`},
+		{"invalid UTF-8", "a\xffb", `a\xffb`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Screen(tt.in); got != tt.want {
+				t.Errorf("Screen(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

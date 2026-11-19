@@ -79,7 +79,7 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 
 	// Error message
 	if m.auth.passphraseError != "" {
-		sb.WriteString(errorStyle.Render(m.auth.passphraseError))
+		sb.WriteString(errorStyle.Render(terminalSafeLines(m.auth.passphraseError)))
 		sb.WriteString("\n\n")
 	}
 

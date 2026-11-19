@@ -47,6 +47,9 @@ func truncateLongHex(line string, maxLen int) string {
 // template declares only the public key, which the details leave out.
 const detailsCosignerParameter = "cosigner"
 
+// buildDetailsParameterLines lists a key's parameters. The values are what the
+// key was made with, typed by the operator or restored from an archive, and
+// the labels are its template's, so both are escaped.
 func buildDetailsParameterLines(keyType string, parameters map[string]string) []string {
 	var lines []string
 	if spec := getParamSpecForKeyType(keyType); spec != nil {
@@ -54,7 +57,7 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 			return def.Name == detailsCosignerParameter
 		})
 		if id, ok := parameters[detailsCosignerParameter]; ok && !declared {
-			lines = append(lines, "Cosigner: "+id, "")
+			lines = append(lines, "Cosigner: "+terminalSafe(id), "")
 		}
 		for _, paramDef := range spec.Params {
 			if value, ok := parameters[paramDef.Name]; ok {
@@ -67,7 +70,7 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 
 	// Sorted, so the lines and the scroll count keep their order between draws.
 	for _, key := range slices.Sorted(maps.Keys(parameters)) {
-		lines = append(lines, fmt.Sprintf("%s: %s", key, parameters[key]), "")
+		lines = append(lines, terminalSafe(fmt.Sprintf("%s: %s", key, parameters[key])), "")
 	}
 	return trimTrailingBlankLines(lines)
 }
@@ -76,19 +79,20 @@ func formatParameterDisplayLines(label, paramType, value string) []string {
 	if label == "" {
 		label = "Parameter"
 	}
+	label = terminalSafe(label)
 	if paramType != "address[]" {
-		return []string{fmt.Sprintf("%s: %s", label, value)}
+		return []string{fmt.Sprintf("%s: %s", label, terminalSafe(value))}
 	}
 
 	entries := splitAddressListValue(value)
 	if len(entries) == 0 {
-		return []string{fmt.Sprintf("%s: %s", label, value)}
+		return []string{fmt.Sprintf("%s: %s", label, terminalSafe(value))}
 	}
 
 	lines := make([]string, 0, len(entries)+1)
 	lines = append(lines, label+":")
 	for _, entry := range entries {
-		lines = append(lines, "  "+entry)
+		lines = append(lines, "  "+terminalSafe(entry))
 	}
 	return lines
 }
@@ -365,7 +369,7 @@ func (m Model) keyDetailsHeader() string {
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.details.keyType, m.details.templateProvenanceStatus)))
 	if m.details.policyLabel != "" {
-		sb.WriteString(fmt.Sprintf("Policy:  %s\n", m.details.policyLabel))
+		sb.WriteString(fmt.Sprintf("Policy:  %s\n", terminalSafe(m.details.policyLabel)))
 	}
 	if m.details.publicKeyHex != "" {
 		label := "Public key"
@@ -376,7 +380,7 @@ func (m Model) keyDetailsHeader() string {
 		sb.WriteString("\n")
 	}
 	if m.details.templateProvenanceNote != "" {
-		sb.WriteString(warningStyle.Render("Template mismatch: " + m.details.templateProvenanceNote))
+		sb.WriteString(warningStyle.Render("Template mismatch: " + terminalSafe(m.details.templateProvenanceNote)))
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
@@ -392,7 +396,7 @@ func (m Model) keyDetailsTrailer() string {
 	// Show save status if present
 	if m.details.saveStatus != "" {
 		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render(m.details.saveStatus))
+		sb.WriteString(subtitleStyle.Render(terminalSafe(m.details.saveStatus)))
 		sb.WriteString("\n")
 	}
 	return sb.String()
@@ -480,7 +484,9 @@ func (m Model) renderTEALFullDisplay() string {
 		sb.WriteString("\n")
 	}
 	for _, line := range lines[offset:end] {
-		sb.WriteString(ellipsize(truncateLongHex(line, 80), width))
+		// The program as its template wrote it, with every control and
+		// format character, bidirectional ones included, shown as an escape.
+		sb.WriteString(ellipsize(truncateLongHex(terminalSafeLines(strings.TrimSuffix(line, "\r")), 80), width))
 		sb.WriteString("\n")
 	}
 	if end < len(lines) {

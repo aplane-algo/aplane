@@ -241,8 +241,8 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 		return m, nil
 	}
 	apply.warnings = warnings
-	if m.policies.snapshot == "" || m.policies.loadedContext == nil {
-		apply.err = "The node's policy context is still loading; try again"
+	if problem := m.policyContextProblem(); problem != "" {
+		apply.err = problem
 		return m, nil
 	}
 	if apply.export != nil {
@@ -446,8 +446,9 @@ func (m Model) policyApplyReviewLines() []policyApplyReviewLine {
 	apply := m.policies.apply
 	width := m.policyApplyReviewWidth()
 	var out []policyApplyReviewLine
+	// The lines name the policy file and quote the check, as the form does.
 	add := func(line string, attention bool) {
-		for _, wrapped := range wrapIndentedLine(line, width) {
+		for _, wrapped := range wrapIndentedLine(terminalSafe(line), width) {
 			out = append(out, policyApplyReviewLine{text: wrapped, attention: attention})
 		}
 	}

@@ -94,6 +94,41 @@ teal: |
   int 1
   assert
 `
+	// A display name and an argument label that print as control sequences.
+	admissionGenericControlTextYAML = `schema_version: 1
+derivation_version: 3
+template_type: generic
+template_mode: generated
+publisher: test
+family: admission-generic-control-text
+version: 1
+display_name: "Admission \e[2J Text"
+valid_rekey_target: false
+max_opcode_cost: 20000
+teal: |
+  int 1
+  return
+`
+	admissionBoundedControlTextYAML = admissionBoundedHeader + `family: admission-bounded-control-text
+version: 1
+display_name: "Admission Bounded Control Text"
+valid_rekey_target: true
+max_opcode_cost: 20000
+bounded:
+  contract: bounded2
+  spend_effects: [pay]
+  max_fee: 10000
+  rekey: refused
+  runtime_args:
+    - name: blob
+      label: "Blob \u202e"
+      type: bytes
+      max_size: 32
+      required_on: [spend]
+teal: |
+  int 1
+  assert
+`
 	admissionBoundedReservedYAML = admissionBoundedHeader + `family: admission-bounded-reserved
 version: 1
 display_name: "Admission Bounded Reserved"
@@ -196,6 +231,16 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 			name: "bounded runtime argument over the size limit", keyType: "test.admission-bounded-oversized.v1",
 			templateType: templatestore.TemplateTypeComposed, yaml: admissionBoundedOversizedYAML,
 			wantInstall: "invalid composed template: runtime_arg blob is 5000 bytes: a LogicSig argument is at most 4096",
+		},
+		{
+			name: "generic display name with an escape sequence", keyType: "test.admission-generic-control-text.v1",
+			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericControlTextYAML,
+			wantInstall: `invalid generic template: display_name holds a character that does not print, shown escaped: Admission \x1b[2J Text`,
+		},
+		{
+			name: "bounded argument label with a right-to-left override", keyType: "test.admission-bounded-control-text.v1",
+			templateType: templatestore.TemplateTypeComposed, yaml: admissionBoundedControlTextYAML,
+			wantInstall: `invalid composed template: runtime_arg blob label holds a character that does not print, shown escaped: Blob \u202e`,
 		},
 		{
 			name: "bounded parameter with the reserved prefix", keyType: "test.admission-bounded-reserved.v1",

@@ -272,10 +272,10 @@ func (c *IPCClient) SendRejectEnrollment(fingerprint string) error {
 }
 
 // SendListPendingEnrollments asks for the waiting enrollment requests.
-func (c *IPCClient) SendListPendingEnrollments() error {
+func (c *IPCClient) SendListPendingEnrollments(id string) error {
 	return c.sendMessage(ListPendingEnrollmentsMessage{BaseMessage: BaseMessage{
 		Type: MsgTypeListPendingEnrollments,
-		ID:   fmt.Sprintf("pending-%d", time.Now().UnixNano()),
+		ID:   id,
 	}})
 }
 
@@ -1040,8 +1040,8 @@ func (m Model) sendRejectEnrollmentCmd(fingerprint string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRejectEnrollment(fingerprint) })
 }
 
-func (m Model) sendListPendingEnrollmentsCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListPendingEnrollments() })
+func (m Model) sendListPendingEnrollmentsCmd(id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendListPendingEnrollments(id) })
 }
 
 func (m Model) sendImportClientKeyCmd(publicKey, label string) tea.Cmd {
@@ -1321,10 +1321,10 @@ func (m Model) sendDeleteKeyCmd(address, id string) tea.Cmd {
 }
 
 // SendListEnrolledKeys asks for the enrolled client keys.
-func (c *IPCClient) SendListEnrolledKeys() error {
+func (c *IPCClient) SendListEnrolledKeys(id string) error {
 	return c.sendMessage(ListEnrolledKeysMessage{BaseMessage: BaseMessage{
 		Type: MsgTypeListEnrolledKeys,
-		ID:   fmt.Sprintf("clients-%d", time.Now().UnixNano()),
+		ID:   id,
 	}})
 }
 
@@ -1347,8 +1347,8 @@ func (c *IPCClient) SendRevokeAllEnrolledKeys() error {
 	}})
 }
 
-func (m Model) sendListEnrolledKeysCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListEnrolledKeys() })
+func (m Model) sendListEnrolledKeysCmd(id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendListEnrolledKeys(id) })
 }
 
 func (m Model) sendRevokeEnrolledKeyCmd(fingerprint string) tea.Cmd {
@@ -1467,11 +1467,11 @@ func (m Model) sendInstallLibraryTemplateCmd(keyType, templateType, id string) t
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendInstallLibraryTemplate(keyType, templateType, id) })
 }
 
-func (c *IPCClient) SendShowLibraryTemplate(keyType, templateType string) error {
+func (c *IPCClient) SendShowLibraryTemplate(keyType, templateType, id string) error {
 	msg := ShowLibraryTemplateMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeShowLibraryTemplate,
-			ID:   fmt.Sprintf("tmpl-show-library-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType:      keyType,
 		TemplateType: templateType,
@@ -1479,23 +1479,23 @@ func (c *IPCClient) SendShowLibraryTemplate(keyType, templateType string) error 
 	return c.sendMessage(msg)
 }
 
-func (c *IPCClient) SendShowInstalledTemplate(keyType string) error {
+func (c *IPCClient) SendShowInstalledTemplate(keyType, id string) error {
 	msg := ShowInstalledTemplateMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeShowInstalledTemplate,
-			ID:   fmt.Sprintf("tmpl-show-installed-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType: keyType,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendShowInstalledTemplateCmd(keyType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendShowInstalledTemplate(keyType) })
+func (m Model) sendShowInstalledTemplateCmd(keyType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendShowInstalledTemplate(keyType, id) })
 }
 
-func (m Model) sendShowLibraryTemplateCmd(keyType, templateType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendShowLibraryTemplate(keyType, templateType) })
+func (m Model) sendShowLibraryTemplateCmd(keyType, templateType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendShowLibraryTemplate(keyType, templateType, id) })
 }
 
 func (c *IPCClient) SendActivateKeyType(keyType string, id string) error {

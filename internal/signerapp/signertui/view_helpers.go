@@ -232,10 +232,10 @@ func getGenerateKeyTypeOptions() []string {
 func getKeyTypeSelectionLabel(keyType string) string {
 	if info, ok := findServerKeyType(keyType); ok {
 		if info.DisplayName != "" {
-			return info.DisplayName
+			return terminalSafe(info.DisplayName)
 		}
 		if info.Family != "" {
-			return info.Family
+			return terminalSafe(info.Family)
 		}
 		return displayKeyType(info.KeyType)
 	}
@@ -287,9 +287,9 @@ func (s *paramSpec) sectionAt(index int) (string, bool) {
 // optionLabel names value for the screen.
 func (s *paramSpec) optionLabel(name, value string) string {
 	if s == nil || s.OptionLabel == nil {
-		return value
+		return terminalSafe(value)
 	}
-	return s.OptionLabel(name, value)
+	return terminalSafe(s.OptionLabel(name, value))
 }
 
 func getParamSpecForKeyType(keyType string) *paramSpec {
@@ -299,9 +299,12 @@ func getParamSpecForKeyType(keyType string) *paramSpec {
 
 	if info, ok := findServerKeyType(keyType); ok && len(info.CreationParams) > 0 {
 		params := protocolParamInfosToDefs(info.CreationParams)
+		// A template's names and labels are its author's text, so the spec
+		// carries them escaped for every form and details screen that shows
+		// them.
 		return &paramSpec{
-			DisplayName: info.DisplayName,
-			Description: info.Description,
+			DisplayName: terminalSafe(info.DisplayName),
+			Description: terminalSafe(info.Description),
 			Params:      params,
 			Validate: func(values map[string]string) error {
 				normalized, err := lsigprovider.NormalizeCreationParams(values, params)
@@ -409,13 +412,16 @@ func getExpectedWordCountForKeyType(keyType string) int {
 	return 25 // default
 }
 
+// protocolParamInfosToDefs converts the daemon's parameter list for a form,
+// with its display text escaped. What a field sends, its name and options,
+// is kept as the template wrote it.
 func protocolParamInfosToDefs(params []protocol.TemplateParamInfo) []lsigprovider.ParameterDef {
 	defs := make([]lsigprovider.ParameterDef, len(params))
 	for i, p := range params {
 		defs[i] = lsigprovider.ParameterDef{
 			Name:        p.Name,
-			Label:       p.Label,
-			Description: p.Description,
+			Label:       terminalSafe(p.Label),
+			Description: terminalSafe(p.Description),
 			Type:        p.Type,
 			Required:    p.Required,
 			MaxLength:   p.MaxLength,
@@ -423,8 +429,8 @@ func protocolParamInfosToDefs(params []protocol.TemplateParamInfo) []lsigprovide
 			Options:     append([]string(nil), p.Options...),
 			MinItems:    p.MinItems,
 			MaxItems:    p.MaxItems,
-			Example:     p.Example,
-			Placeholder: p.Placeholder,
+			Example:     terminalSafe(p.Example),
+			Placeholder: terminalSafe(p.Placeholder),
 			Min:         p.Min,
 			Max:         p.Max,
 			Default:     p.Default,
@@ -441,7 +447,7 @@ func protocolInputModesToDefs(modes []protocol.InputModeInfo) []lsigprovider.Inp
 	for i, mode := range modes {
 		out[i] = lsigprovider.InputMode{
 			Name:       mode.Name,
-			Label:      mode.Label,
+			Label:      terminalSafe(mode.Label),
 			Transform:  mode.Transform,
 			ByteLength: mode.ByteLength,
 			InputType:  mode.InputType,

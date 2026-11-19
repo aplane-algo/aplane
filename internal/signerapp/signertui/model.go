@@ -233,6 +233,7 @@ type backupState struct {
 type restoreState struct {
 	backups             []BackupInfo
 	backupsLoaded       bool
+	backupsListErr      string // why the last list failed; a list that arrives clears it
 	selectedBackup      int
 	backupScrollOffset  int
 	archivePath         string
@@ -339,6 +340,7 @@ type cosignerChoice struct {
 type cosignerState struct {
 	references []CosignerReferenceInfo
 	loaded     bool
+	listErr    string // why the last list failed; a list that arrives clears it
 	choices    []cosignerChoice
 	selected   int
 	paramName  string
@@ -423,6 +425,14 @@ type clientsState struct {
 	importLabel  string
 	importFocus  int
 	importError  string
+
+	// pendingListID and keysListID name the latest list requests, so a
+	// failure of either is shown; pendingListErr and keysListErr hold it
+	// until that list arrives.
+	pendingListID  string
+	keysListID     string
+	pendingListErr string
+	keysListErr    string
 }
 
 // manualLockState is the manual signer-lock confirmation dialog.
@@ -467,6 +477,7 @@ type libraryState struct {
 	detailsContent       string
 	detailsScrollOffset  int
 	detailsLoading       bool
+	detailsRequestID     string // the read detailsLoading waits on
 	detailsError         string
 	detailsReturnView    ViewState
 }

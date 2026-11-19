@@ -22,7 +22,7 @@ func (m Model) renderStoreRecovery() string {
 	sb.WriteString("q  Quit\n")
 	if m.restore.recoveryError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.restore.recoveryError))
+		sb.WriteString(errorStyle.Render(terminalSafeLines(m.restore.recoveryError)))
 		sb.WriteString("\n")
 	}
 	return m.renderPopup(m.popupWidth(96), sb.String())

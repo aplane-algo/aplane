@@ -281,7 +281,16 @@ func (m Model) renderCosignerReferences() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Cosigner References"))
 	body.WriteString("\n\n")
-	if len(references) == 0 {
+	// A failed list says so: it is not an empty one.
+	if m.cosigner.listErr != "" {
+		body.WriteString(errorStyle.Render(wrapPlainText("Cosigner references could not be listed: "+terminalSafe(m.cosigner.listErr), m.tableWidth())) + "\n")
+		if len(references) > 0 {
+			body.WriteString(subtitleStyle.Render("Showing the last list read.") + "\n")
+		}
+	}
+	if len(references) == 0 && m.cosigner.listErr != "" {
+		body.WriteString(wrapPlainText("r lists them again.", m.tableWidth()) + "\n")
+	} else if len(references) == 0 {
 		body.WriteString(wrapPlainText("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.", m.tableWidth()) + "\n")
 	} else {
 		nameWidth, idWidth := m.cosignerReferenceColumns(references)
@@ -365,7 +374,7 @@ func (m Model) renderCosignerReferenceDetails() string {
 		body.WriteString("Imported: " + reference.ImportedAt + "\n")
 	}
 	if m.cosigner.importError != "" {
-		body.WriteString("\n" + errorStyle.Render(m.cosigner.importError) + "\n")
+		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.cosigner.importError)) + "\n")
 	}
 	if m.cosigner.managerStatus != "" {
 		body.WriteString("\n" + subtitleStyle.Render(m.cosigner.managerStatus) + "\n")
@@ -421,7 +430,7 @@ func (m Model) renderCosignerRemoveConfirm() string {
 	body.WriteString(cancel + "  " + remove)
 	body.WriteString("\n")
 	if m.cosigner.importError != "" {
-		body.WriteString("\n" + errorStyle.Render(m.cosigner.importError) + "\n")
+		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.cosigner.importError)) + "\n")
 	}
 	return m.renderPopup(80, body.String())
 }

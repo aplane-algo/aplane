@@ -393,8 +393,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CosignerReferencesMsg:
 		m.cosigner.loaded = true
 		if msg.Error != "" {
+			m.cosigner.listErr = msg.Error
 			m.lastError = msg.Error
+			if m.cosigner.managerStatus == "Refreshing..." {
+				m.cosigner.managerStatus = ""
+			}
 		} else {
+			m.cosigner.listErr = ""
 			m.cosigner.references = append([]CosignerReferenceInfo(nil), msg.References...)
 			m.clampCosignerManagerScroll(len(msg.References))
 			if m.viewState == ViewCosignerReferences && m.cosigner.managerStatus == "Refreshing..." {

@@ -371,7 +371,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 // parameters and arguments it takes.
 func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigProvider) {
 	info.DisplayName = provider.DisplayName()
-	info.Description = provider.Description()
+	info.Description = descriptionText(provider.Description())
 	if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
 		if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
 			info.SigningFlow = boundedSigningFlow(metadata)
@@ -396,7 +396,7 @@ func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigPro
 		info.CreationParams = append(info.CreationParams, signerapi.CreationParamInfo{
 			Name:        p.Name,
 			Label:       p.Label,
-			Description: p.Description,
+			Description: descriptionText(p.Description),
 			Type:        p.Type,
 			Required:    p.Required,
 			MaxLength:   p.MaxLength,
@@ -416,7 +416,7 @@ func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigPro
 		info.RuntimeArgs = append(info.RuntimeArgs, signerapi.RuntimeArgInfo{
 			Name:        a.Name,
 			Label:       a.Label,
-			Description: a.Description,
+			Description: descriptionText(a.Description),
 			Type:        a.Type,
 			Required:    a.Required,
 			ByteLength:  a.ByteLength,
@@ -424,6 +424,11 @@ func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigPro
 		})
 	}
 }
+
+// descriptionText is a description as a template's author means it: a YAML
+// block scalar (description: | or >) ends its text with a line break, which
+// install accepts and is no part of it. The installed YAML keeps it.
+func descriptionText(s string) string { return strings.TrimRight(s, "\n") }
 
 // boundaryGrammarProvider is a per-key type whose requests a boundary file
 // grammar describes.

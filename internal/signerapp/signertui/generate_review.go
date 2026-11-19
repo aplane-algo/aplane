@@ -309,7 +309,7 @@ func (m Model) renderGenerateReview() string {
 // details for the rest.
 func reviewWarningLine(warning string) string {
 	const suffix = " See details."
-	return "Warning: " + middleEllipsize(firstSentence(warning), reviewBodyWidth-len("Warning: ")-len(suffix)) + suffix
+	return "Warning: " + middleEllipsize(terminalSafe(firstSentence(warning)), reviewBodyWidth-len("Warning: ")-len(suffix)) + suffix
 }
 
 // firstSentence is a warning's first sentence, which the signer writes to stand
@@ -331,14 +331,16 @@ func (m Model) renderGenerateReviewDetails() string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("Review Details"))
 	sb.WriteString("\n\n")
+	// The signer's warnings and the parameter values, which a boundary
+	// file or the operator supplied, are escaped before they are wrapped.
 	field := func(label, value string) {
 		if value == "" {
 			return
 		}
-		sb.WriteString(label + ":\n  " + value + "\n")
+		sb.WriteString(terminalSafe(label) + ":\n  " + terminalSafeLines(value) + "\n")
 	}
 	for _, warning := range review.Warnings {
-		field("Warning", wrapText(warning, 64))
+		field("Warning", wrapText(terminalSafe(warning), 64))
 	}
 	field("Policy", review.Bounded.Layer3Policy)
 	field("Rekey protection", wrapText(reviewRekeyProtection(*review), 64))
@@ -351,19 +353,19 @@ func (m Model) renderGenerateReviewDetails() string {
 		field("Template fingerprint", review.ReviewFingerprint)
 	}
 	for _, name := range reviewDetailParameters(*review) {
-		field(name, wrapLongValue(review.Parameters[name]))
+		field(name, wrapLongValue(terminalSafe(review.Parameters[name])))
 	}
 	if recipients := recipientList(review.Parameters); len(recipients) > 0 {
 		sb.WriteString(fmt.Sprintf("Recipients (%d):\n", len(recipients)))
 		for _, recipient := range recipients {
-			sb.WriteString("  " + recipient + "\n")
+			sb.WriteString("  " + terminalSafe(recipient) + "\n")
 		}
 	}
 	if targets := rekeyToList(*review); len(targets) > 0 {
 		postQuantum, known := reviewSpendingKeyPostQuantum(*review)
 		sb.WriteString(fmt.Sprintf("Rekey-to addresses (%d):\n", len(targets)))
 		for _, target := range targets {
-			sb.WriteString("  " + target + "\n")
+			sb.WriteString("  " + terminalSafe(target) + "\n")
 			if note := m.rekeyTargetNote(target, postQuantum && known); note != "" {
 				sb.WriteString(indentLines(wrapText(note, 64), "    ") + "\n")
 			}

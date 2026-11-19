@@ -867,6 +867,23 @@ teal: |
   // strict mode: $variable constant references
 ```
 
+The text fields every client shows (`display_name`, `description`, each
+parameter's `label`, `description`, `example`, `placeholder`, `default`, options
+and input mode labels, and each runtime argument's `label` and `description`,
+bounded ones included) are single-line text, and must print as they are written.
+Install and import refuse a template whose text holds a line break, another
+control or format character (a bidirectional control or zero-width character
+among them), or invalid UTF-8; a YAML double-quoted string decodes `\e` and
+`\u` escapes into such characters. The one exception is the line break a YAML
+block scalar (`description: |` or `>`) ends a description with: it is dropped,
+so a one-line block scalar is accepted, and the library and the signer's key-type
+list show the description without it (the installed YAML keeps it as written).
+A description that still holds a line break, such as a `|` block of two lines,
+is refused; a `>` block folds its lines into one. The error names the field and
+shows the text escaped. The library lists such a file as invalid. It is an
+admission check (`checkTemplateText` in `internal/templatelibrary`): a template
+installed before it keeps loading, and apadmin shows its text escaped.
+
 `valid_rekey_target` is the key type author's declaration that an aplane key of
 this type may be the signing authority an account is rekeyed to, its own account
 included, subject to that key's own restrictions (its bounds, a cosigner, its

@@ -21,7 +21,7 @@ func (m Model) libraryTemplateDetailsHeader(width int) string {
 		sb.WriteString("\n")
 	}
 	if m.library.detailsSourcePath != "" {
-		sb.WriteString(subtitleStyle.Render(ellipsize(m.library.detailsSourcePath, width)))
+		sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(m.library.detailsSourcePath), width)))
 		sb.WriteString("\n")
 	}
 	if m.library.detailsSourceModTime > 0 {
@@ -30,7 +30,7 @@ func (m Model) libraryTemplateDetailsHeader(width int) string {
 		sb.WriteString("\n")
 	}
 	if m.library.detailsSourceSHA256 != "" {
-		sb.WriteString(subtitleStyle.Render("SHA-256: " + ellipsize(m.library.detailsSourceSHA256, width-9)))
+		sb.WriteString(subtitleStyle.Render("SHA-256: " + ellipsize(terminalSafe(m.library.detailsSourceSHA256), width-9)))
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
@@ -47,7 +47,7 @@ func (m Model) renderLibraryTemplateDetails() string {
 		sb.WriteString(subtitleStyle.Render("Loading..."))
 		return sb.String()
 	case m.library.detailsError != "" && m.library.detailsContent == "":
-		sb.WriteString(errorStyle.Render(m.library.detailsError))
+		sb.WriteString(errorStyle.Render(wrapPlainText(terminalSafeLines(m.library.detailsError), width)))
 		return sb.String()
 	}
 
@@ -70,7 +70,10 @@ func (m Model) renderLibraryTemplateDetails() string {
 		sb.WriteString("\n")
 	}
 	for _, line := range lines[offset:end] {
-		sb.WriteString(ellipsize(line, width))
+		// The file is shown as written, but every control and format
+		// character in it, bidirectional ones included, shows as an escape.
+		// A CRLF file's line ends are line ends.
+		sb.WriteString(ellipsize(terminalSafeLines(strings.TrimSuffix(line, "\r")), width))
 		sb.WriteString("\n")
 	}
 	if end < len(lines) {
@@ -112,6 +115,7 @@ func (m Model) handleLibraryTemplateDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.
 		m.library.detailsTemplateType = ""
 		m.library.detailsScrollOffset = 0
 		m.library.detailsLoading = false
+		m.library.detailsRequestID = ""
 		m.library.detailsReturnView = 0
 		return m, nil
 	case "up", "k":

@@ -17,12 +17,35 @@ import (
 func (m Model) openEnrolledClients() (tea.Model, tea.Cmd) {
 	m.clients = clientsState{returnView: m.viewState, loading: true}
 	m.viewState = ViewEnrolledClients
-	return m, m.refreshClientsCmd()
+	return m.refreshClients()
 }
 
-// refreshClientsCmd reloads both lists shown on the screen.
-func (m Model) refreshClientsCmd() tea.Cmd {
-	return tea.Batch(m.sendListPendingEnrollmentsCmd(), m.sendListEnrolledKeysCmd())
+// refreshClients reloads both lists shown on the screen, under new request
+// IDs, so a failure of either reaches the screen.
+func (m Model) refreshClients() (Model, tea.Cmd) {
+	m.clients.pendingListID = newRequestID("clients-pending")
+	m.clients.keysListID = newRequestID("clients-keys")
+	return m, tea.Batch(m.sendListPendingEnrollmentsCmd(m.clients.pendingListID), m.sendListEnrolledKeysCmd(m.clients.keysListID))
+}
+
+// failPendingClientsList shows the failure of the list request id names on
+// the screen, which otherwise stays on Loading or shows the list as empty.
+func (m Model) failPendingClientsList(id string, err error) (Model, bool) {
+	if id == "" {
+		return m, false
+	}
+	switch id {
+	case m.clients.pendingListID:
+		m.clients.pendingListID = ""
+		m.clients.pendingListErr = err.Error()
+	case m.clients.keysListID:
+		m.clients.keysListID = ""
+		m.clients.keysListErr = err.Error()
+		m.clients.loading = false
+	default:
+		return m, false
+	}
+	return m, true
 }
 
 // clientsRowCount is the number of selectable rows: pending requests first,
@@ -50,7 +73,7 @@ func (m *Model) clientsClampSelection() {
 // screen there is nothing to refresh; the screen loads afresh when opened.
 func (m Model) handleEnrollmentChanged() (tea.Model, tea.Cmd) {
 	if m.showsEnrolledClients() {
-		return m, m.refreshClientsCmd()
+		return m.refreshClients()
 	}
 	return m, nil
 }
@@ -73,6 +96,7 @@ func (m Model) showsEnrolledClients() bool {
 
 func (m Model) handlePendingEnrollmentsList(msg PendingEnrollmentsListMsg) (tea.Model, tea.Cmd) {
 	m.clients.pending = msg.Requests
+	m.clients.pendingListErr = ""
 	m.clientsClampSelection()
 	return m, nil
 }
@@ -80,6 +104,7 @@ func (m Model) handlePendingEnrollmentsList(msg PendingEnrollmentsListMsg) (tea.
 func (m Model) handleEnrolledKeysList(msg EnrolledKeysListMsg) (tea.Model, tea.Cmd) {
 	m.clients.keys = msg.Keys
 	m.clients.loading = false
+	m.clients.keysListErr = ""
 	m.clientsClampSelection()
 	return m, nil
 }
@@ -128,7 +153,7 @@ func (m Model) reportEnrollmentAnswer(
 	}
 	if m.viewState == ViewEnrolledClients {
 		m.clients.status = status(fingerprint)
-		return m, m.refreshClientsCmd()
+		return m.refreshClients()
 	}
 	var clearCmd tea.Cmd
 	if success {
@@ -157,7 +182,7 @@ func (m Model) handleImportClientKeyResult(msg ImportClientKeyResultMsg) (tea.Mo
 	if m.viewState == ViewImportClientKey {
 		m.viewState = ViewEnrolledClients
 	}
-	return m, m.refreshClientsCmd()
+	return m.refreshClients()
 }
 
 func (m Model) handleRevokeEnrolledKeyResult(msg RevokeEnrolledKeyResultMsg) (tea.Model, tea.Cmd) {
@@ -171,7 +196,7 @@ func (m Model) handleRevokeEnrolledKeyResult(msg RevokeEnrolledKeyResultMsg) (te
 		m.clients.status = "Revocation failed: " + msg.Error
 	}
 	m.clients.loading = true
-	return m, m.refreshClientsCmd()
+	return m.refreshClients()
 }
 
 func (m Model) handleRevokeAllEnrolledKeysResult(msg RevokeAllEnrolledKeysResultMsg) (tea.Model, tea.Cmd) {
@@ -185,7 +210,7 @@ func (m Model) handleRevokeAllEnrolledKeysResult(msg RevokeAllEnrolledKeysResult
 		m.clients.status = "Revocation failed: " + msg.Error
 	}
 	m.clients.loading = true
-	return m, m.refreshClientsCmd()
+	return m.refreshClients()
 }
 
 // handleEnrolledClientsKeys handles keyboard input on the enrolled-clients

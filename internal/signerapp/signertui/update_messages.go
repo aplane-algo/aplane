@@ -189,6 +189,15 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 	if next, ok := m.failPendingPolicyApply(id, err); ok {
 		return next, nil
 	}
+	if next, ok := m.failPendingPolicyView(id, err); ok {
+		return next, nil
+	}
+	if next, ok := m.failPendingLibraryDetails(id, err); ok {
+		return next, nil
+	}
+	if next, ok := m.failPendingClientsList(id, err); ok {
+		return next, nil
+	}
 	if next, ok := m.failOperationInProgress(id, err); ok {
 		return next, nil
 	}
@@ -540,6 +549,7 @@ func (m Model) handleShowLibraryTemplateResultMsg(msg ShowLibraryTemplateResultM
 		msg.KeyType == m.library.detailsKeyType &&
 		(m.library.detailsInstalled || msg.TemplateType == m.library.detailsTemplateType) {
 		m.library.detailsLoading = false
+		m.library.detailsRequestID = ""
 		if msg.Success {
 			m.library.detailsContent = string(msg.TemplateYAML)
 			m.library.detailsSourcePath = msg.SourcePath

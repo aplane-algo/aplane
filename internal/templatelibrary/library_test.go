@@ -1245,3 +1245,77 @@ func TestInstallParsedRejectsAChangedValidRekeyTargetDeclaration(t *testing.T) {
 		})
 	}
 }
+
+// The library's HTLC template with its text changed, as a shared copy of it
+// could be: a YAML double-quoted string decodes \e, \a and \u escapes. Each
+// change is refused, so the template cannot be installed or imported.
+func TestParseRefusesTemplateTextThatDoesNotPrint(t *testing.T) {
+	data, err := templates.ReadFile("aplane.htlc.v1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseYAML("htlc.yaml", data); err != nil {
+		t.Fatalf("the bundled template is refused: %v", err)
+	}
+	for _, tc := range []struct{ name, old, new, want string }{
+		{"display name with an escape sequence", `display_name: "HTLC"`, `display_name: "HTLC\e[2J"`,
+			`display_name holds a character that does not print, shown escaped: HTLC\x1b[2J`},
+		{"display name with a right-to-left override", `display_name: "HTLC"`, `display_name: "HTLC\u202e"`,
+			`display_name holds a character that does not print, shown escaped: HTLC\u202e`},
+		{"parameter label with a window title", `label: "Hash (SHA256)"`, `label: "Hash\e]0;x\a"`,
+			`parameter hash label holds a character that does not print, shown escaped: Hash\x1b]0;x\a`},
+		{"parameter description with a zero-width space", `description: "SHA256 hash`, `description: "SHA256\u200b hash`,
+			`parameter hash description holds a character that does not print`},
+		{"input mode label with a newline", `label: "Preimage"`, `label: "Pre\nimage"`,
+			`parameter hash input mode preimage label must be one line of text but holds a line break, shown escaped: Pre\nimage`},
+		{"description block scalar with two lines", `description: "Hash time-locked ALGO contract: recipient claims all with the preimage before timeout, refund address reclaims all after"`,
+			"description: |\n  Hash time-locked ALGO contract\n  for one payment",
+			`description must be one line of text but holds a line break, shown escaped: Hash time-locked ALGO contract\nfor one payment`},
+		{"runtime argument description with DEL", `description: "The secret that hashes`, `description: "The secret\x7f that hashes`,
+			`runtime_arg preimage description holds a character that does not print, shown escaped: The secret\x7f that hashes`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := strings.Replace(string(data), tc.old, tc.new, 1)
+			if changed == string(data) {
+				t.Fatalf("the template has no %q", tc.old)
+			}
+			if _, err := ParseYAML("htlc.yaml", []byte(changed)); err == nil || !strings.Contains(err.Error(), "invalid generic template: "+tc.want) {
+				t.Fatalf("ParseYAML() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A YAML block scalar ends a description with a line break, which is no part
+// of it: such a template is admitted, and the library lists the text without
+// the break.
+func TestParseAcceptsABlockScalarDescription(t *testing.T) {
+	data, err := templates.ReadFile("aplane.htlc.v1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := string(data)
+	for from, to := range map[string]string{
+		`description: "Hash time-locked ALGO contract: recipient claims all with the preimage before timeout, refund address reclaims all after"`: "description: |\n  Hash time-locked ALGO contract",
+		`    description: "SHA256 hash of the secret preimage (64 hex characters)"`:                                                               "    description: >\n      SHA256 hash of the\n      secret preimage",
+		`    description: "The secret that hashes to the stored hash, up to 64 bytes"`:                                                            "    description: |+\n      The secret\n\n",
+	} {
+		if !strings.Contains(changed, from) {
+			t.Fatalf("the template has no %q", from)
+		}
+		changed = strings.Replace(changed, from, to, 1)
+	}
+	parsed, err := ParseYAML("htlc.yaml", []byte(changed))
+	if err != nil {
+		t.Fatalf("ParseYAML() error = %v", err)
+	}
+	if parsed.Description != "Hash time-locked ALGO contract" {
+		t.Fatalf("description = %q", parsed.Description)
+	}
+	if got := parsed.Parameters[0].Description; got != "SHA256 hash of the secret preimage" {
+		t.Fatalf("parameter description = %q", got)
+	}
+	if got := parsed.RuntimeArgs[0].Description; got != "The secret" {
+		t.Fatalf("runtime argument description = %q", got)
+	}
+}
