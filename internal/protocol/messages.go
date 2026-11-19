@@ -893,11 +893,12 @@ type ExportResultMessage struct {
 	Error      string            `json:"error,omitempty"`
 }
 
-// ImportKeyMessage requests import of a key from mnemonic
+// ImportKeyMessage requests import of a key from mnemonic. Zero Mnemonic after
+// use.
 type ImportKeyMessage struct {
 	BaseMessage
 	KeyType    string            `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", etc.
-	Mnemonic   string            `json:"mnemonic"` // The recovery phrase
+	Mnemonic   SensitiveBytes    `json:"mnemonic"` // The recovery phrase
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 

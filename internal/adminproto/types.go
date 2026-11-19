@@ -717,10 +717,12 @@ type DeleteKeyResult struct {
 	Error   string
 }
 
-// ImportKeyRequest is the admin-domain request to import a key.
+// ImportKeyRequest is the admin-domain request to import a key. The caller
+// owns Mnemonic and zeroes it once ImportKey returns; the service keeps no
+// reference to it.
 type ImportKeyRequest struct {
 	KeyType    string
-	Mnemonic   string
+	Mnemonic   []byte
 	Parameters map[string]string
 }
 

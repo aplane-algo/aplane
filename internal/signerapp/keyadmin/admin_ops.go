@@ -111,7 +111,11 @@ func keyDetailsParameters(parameters map[string]string, metadata *boundedmeta.Me
 	return projected
 }
 
-func (s Service) ImportKey(ctx context.Context, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {
+// ImportKey imports a key from a recovery phrase. The caller owns mnemonic and
+// zeroes it after the call. The key generators and algosdk take the phrase as
+// a string, so an import that passes the checks below leaves one string copy
+// that cannot be zeroed (see "Residual Copies" in ARCH_SECURITY.md).
+func (s Service) ImportKey(ctx context.Context, keyType string, mnemonic []byte, params map[string]string) (*keymgmt.ImportResult, *Error) {
 	ir := s.Runtime
 	keyType = keytypecatalog.Canonicalize(keyType)
 	if ir == nil {
@@ -160,7 +164,7 @@ func (s Service) ImportKey(ctx context.Context, keyType, mnemonic string, params
 	var importResult *keymgmt.ImportResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var importErr error
-		importResult, importErr = mut.ImportKeyFromMnemonicWithActivated(keyType, mnemonic, mk, params, activated)
+		importResult, importErr = mut.ImportKeyFromMnemonicWithActivated(keyType, string(mnemonic), mk, params, activated)
 		return importErr
 	})
 	if err != nil {

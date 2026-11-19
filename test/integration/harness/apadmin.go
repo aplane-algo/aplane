@@ -357,7 +357,7 @@ func (v *ApAdminHarness) ImportKeyWithTypeAndParams(keyType, mnemonic string, pa
 			ID:   fmt.Sprintf("import-%d", time.Now().UnixNano()),
 		},
 		KeyType:    keyType,
-		Mnemonic:   mnemonic,
+		Mnemonic:   protocol.NewSensitiveBytes(mnemonic),
 		Parameters: params,
 	})
 	if err != nil {

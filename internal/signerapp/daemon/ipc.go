@@ -312,20 +312,24 @@ func (s *IPCServer) serveAdminMessages(session *adminserver.Session, adminConn a
 		if err != nil {
 			return
 		}
-
-		// Parse base message
-		base, err := protocol.ParseAdminBaseMessage(line)
-		if err != nil {
-			_ = session.SendError("", protocol.ErrCodeInvalidMessageFormat, "invalid message format")
-			continue
-		}
-
-		// Handle message based on type
-		if session.Dispatch(line) {
-			continue
-		}
-		_ = session.SendError(base.ID, protocol.ErrCodeUnknownMessageType, "unknown message type: "+base.Type)
+		serveAdminMessage(session, line)
+		// The frame may carry a passphrase or a recovery phrase. Handlers
+		// decode what they need into their own buffers, so it is not needed
+		// once the message is handled.
+		protocol.SensitiveBytes(line).Zero()
 	}
+}
+
+func serveAdminMessage(session *adminserver.Session, line []byte) {
+	base, err := protocol.ParseAdminBaseMessage(line)
+	if err != nil {
+		_ = session.SendError("", protocol.ErrCodeInvalidMessageFormat, "invalid message format")
+		return
+	}
+	if session.Dispatch(line) {
+		return
+	}
+	_ = session.SendError(base.ID, protocol.ErrCodeUnknownMessageType, "unknown message type: "+base.Type)
 }
 
 // HasClient returns true if an admin client is connected.

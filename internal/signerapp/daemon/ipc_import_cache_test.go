@@ -6,6 +6,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func TestIPCImportKeyBecomesVisibleAfterReload(t *testing.T) {
 			ID:   "import-1",
 		},
 		KeyType:  "ed25519",
-		Mnemonic: testImportMnemonic,
+		Mnemonic: protocol.NewSensitiveBytes(testImportMnemonic),
 	}
 
 	session.HandleImportKey(msg)
@@ -142,7 +143,7 @@ func TestIPCGenerateKeyBecomesVisibleImmediatelyAndAdminMutationsAreAudited(t *t
 			ID:   "import-1",
 		},
 		KeyType:  "ed25519",
-		Mnemonic: testImportMnemonic,
+		Mnemonic: protocol.NewSensitiveBytes(testImportMnemonic),
 	}
 	session.HandleImportKey(importMsg)
 
@@ -207,3 +208,54 @@ func (c *recordingIPCConn) RemoteAddr() net.Addr             { return nil }
 func (c *recordingIPCConn) SetDeadline(time.Time) error      { return nil }
 func (c *recordingIPCConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *recordingIPCConn) SetWriteDeadline(time.Time) error { return nil }
+
+// frameConn hands out admin frames and keeps them, so a test can see what the
+// server left in them.
+type frameConn struct {
+	frames [][]byte
+	next   int
+}
+
+func (c *frameConn) ReadMessage() ([]byte, error) {
+	if c.next >= len(c.frames) {
+		return nil, io.EOF
+	}
+	frame := c.frames[c.next]
+	c.next++
+	return frame, nil
+}
+func (c *frameConn) WriteMessage([]byte) error { return nil }
+func (c *frameConn) RemoteAddr() string        { return "test" }
+func (c *frameConn) Close() error              { return nil }
+
+// The server zeroes each admin frame once it is handled: an import frame
+// carries the recovery phrase, which the handler has decoded into its own
+// zeroed buffer by then. Unknown and malformed frames are zeroed too.
+func TestServeAdminMessagesZeroesHandledFrames(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ipcServer := &IPCServer{signer: server}
+	server.ipcServer = ipcServer
+	session := newBoundTestSession(ipcServer, &recordingIPCConn{}, server.productRuntime())
+
+	importFrame, err := protocol.MarshalAdminMessage(protocol.ImportKeyMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportKey, ID: "import-frame"},
+		KeyType:     "ed25519",
+		Mnemonic:    protocol.NewSensitiveBytes(testImportMnemonic),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &frameConn{frames: [][]byte{
+		importFrame,
+		[]byte(`{"kind":"request","type":"no_such_type","id":"unknown","secret":"x"}`),
+		[]byte(`not json`),
+	}}
+	ipcServer.serveAdminMessages(session, conn)
+
+	for i, frame := range conn.frames {
+		if !bytes.Equal(frame, make([]byte, len(frame))) {
+			t.Fatalf("frame %d left as %q after it was handled", i, frame)
+		}
+	}
+}

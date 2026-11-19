@@ -74,7 +74,7 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 				t.Fatalf("export reported %d words, want 25", result.WordCount)
 			}
 			other := Service{Runtime: setupProductRuntime(t)}
-			imported, err := other.ImportKey(context.Background(), keyType, string(exported.mnemonic), nil)
+			imported, err := other.ImportKey(context.Background(), keyType, bytes.Clone(exported.mnemonic), nil)
 			if err != nil {
 				t.Fatal(err)
 			}

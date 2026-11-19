@@ -1340,9 +1340,10 @@ func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map
 			ID:   id,
 		},
 		KeyType:    keyType,
-		Mnemonic:   mnemonic,
+		Mnemonic:   SensitiveBytes(mnemonic),
 		Parameters: params,
 	}
+	defer msg.Mnemonic.Zero()
 	return c.sendMessage(msg)
 }
 

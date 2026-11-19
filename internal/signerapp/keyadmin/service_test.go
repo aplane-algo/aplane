@@ -627,7 +627,7 @@ func TestServicePlainHostsCreateOnlyOnceEnabledAndTakeNoMnemonic(t *testing.T) {
 		if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil, nil); err != nil || result == nil {
 			t.Fatalf("GenerateKey(aplane.falcon1024.v1) = %v, %v", result, err)
 		}
-		if result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", "invalid phrase", nil); result != nil || err == nil || !strings.Contains(err.Message, "mnemonic import not supported") {
+		if result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", []byte("invalid phrase"), nil); result != nil || err == nil || !strings.Contains(err.Message, "mnemonic import not supported") {
 			t.Fatalf("ImportKey(aplane.falcon1024.v1) = %v, %v", result, err)
 		}
 	})
@@ -654,7 +654,7 @@ func TestServicePlainHostsCreateOnlyOnceEnabledAndTakeNoMnemonic(t *testing.T) {
 						t.Fatalf("GenerateKey(%s, disabled) = %v, %v", keyType, result, err)
 					}
 				}
-				if result, err := svc.ImportKey(context.Background(), keyType, "invalid phrase", nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, importRefusal) {
+				if result, err := svc.ImportKey(context.Background(), keyType, []byte("invalid phrase"), nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, importRefusal) {
 					t.Fatalf("ImportKey(%s, %s) = %v, %v", keyType, state, result, err)
 				}
 			}
@@ -672,7 +672,7 @@ func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	svc := Service{Runtime: ir}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil)
+	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", []byte(mnemonic), nil)
 	if result != nil {
 		t.Fatalf("ImportKey(disallowed node role) result = %#v, want nil", result)
 	}
@@ -687,7 +687,7 @@ func TestServiceImportKeyLockedReturnsLockedError(t *testing.T) {
 	svc := Service{Runtime: ir}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil)
+	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", []byte(mnemonic), nil)
 	if result != nil {
 		t.Fatalf("ImportKey(locked) result = %#v, want nil", result)
 	}
@@ -1064,7 +1064,7 @@ func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) 
 	if _, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", cosigned, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("GenerateKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}
-	if _, err := svc.ImportKey(context.Background(), "aplane.ed25519.v1", mnemonic, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+	if _, err := svc.ImportKey(context.Background(), "aplane.ed25519.v1", []byte(mnemonic), nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("ImportKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}
 	if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", cosigned, nil); err != nil || result.Address == "" {

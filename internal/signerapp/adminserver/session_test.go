@@ -104,6 +104,7 @@ type stubServices struct {
 	lastGenerateKeyContext context.Context
 	lastGenerateKey        adminproto.GenerateKeyRequest
 	lastImportKey          adminproto.ImportKeyRequest
+	lastImportMnemonic     []byte // a copy, taken while the service had the phrase
 	lastBackupRequest      adminproto.BackupIdentityRequest
 	lastDeleteBackup       adminproto.DeleteBackupRequest
 	lastInitializeStore    adminproto.InitializeStoreRequest
@@ -250,6 +251,7 @@ func (s *stubServices) DeleteKey(_ context.Context, req adminproto.DeleteKeyRequ
 func (s *stubServices) ImportKey(_ context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
 	s.importKeyCalls++
 	s.lastImportKey = req
+	s.lastImportMnemonic = append([]byte(nil), req.Mnemonic...)
 	return s.importKeyResult
 }
 func (s *stubServices) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
