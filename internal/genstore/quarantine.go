@@ -32,13 +32,20 @@ import (
 // store documents (8,192 cosigner credentials with their public sidecars,
 // 8,192 per-key policy documents with their sidecars, a full deleted
 // archive), and the byte limit leaves as much again as a full deleted archive
-// for live state. The quarantine total holds two maximum-sized candidates.
+// for live state.
+//
+// The quarantine total is derived from the candidate byte limit, not set on
+// its own: requireMintableGenerationStore refuses a mint unless quarantine has
+// room for one more maximum-sized candidate, so a total below the candidate
+// limit would refuse every mint. At twice the candidate limit (1 GiB today)
+// quarantine holds one maximum-sized candidate and still leaves the next
+// mint its reserve.
 const (
 	quarantineCandidateMaxEntries   = 65_536
 	quarantineCandidateMaxFileBytes = 64 << 20
 	quarantineCandidateMaxBytes     = 2 * DeletedArchiveMaxEncodedBytes
 	quarantineMaxGenerations        = 8
-	quarantineMaxBytes              = 1 << 30
+	quarantineMaxBytes              = 2 * quarantineCandidateMaxBytes
 	quarantineMaxPruneSelection     = 64
 )
 
