@@ -1192,7 +1192,11 @@ it started from, as its own failure result would. The operation's reply (its
 result, or for a generation also the `prepare_generate_key` reply) changes the
 screen only when it carries the request ID its progress screen still shows, so
 a reply arriving after a lock leaves the unlock screen in place and sends
-nothing further. The restore flow
+nothing further. A generate, import, or backup that succeeded all the same is
+not lost: its result is held and shown once the TUI is back on the key list of
+an unlocked signer, after unlocking or re-authenticating, so a bounded
+account's receipt can still be saved. A displacement or quitting discards it,
+and a late failure is dropped. The restore flow
 records the ID of its latest preview, restore, rollback, or reconcile request
 the same way: only a failure naming that request clears the restore passphrase
 or leaves the restore progress screen, and a preview reply is shown only while

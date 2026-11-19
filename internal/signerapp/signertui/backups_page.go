@@ -488,12 +488,14 @@ func confirmButtons(focus int, action string) string {
 // Shutdown releases what the model holds when the program exits: a revealed
 // recovery phrase or typed export passphrase, recovery-phrase replies still
 // queued on the admin client, an export's staging file, an import's open
-// archive and passphrase. An export already being verified and saved is left
+// archive and passphrase, a held late result (and the import form a held
+// import leaves filled). An export already being verified and saved is left
 // to finish; an upload in progress is left to the signer's cleanup of
 // abandoned uploads. The apadmin and apconsole binaries call it on the final
 // model, whatever ended the program (keyboard quit, signal, or the console).
 func (m Model) Shutdown() {
 	m.clearMnemonicExport()
+	m.discardHeldResult()
 	if m.adminClient != nil {
 		m.adminClient.Disconnect()
 	}

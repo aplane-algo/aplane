@@ -201,8 +201,13 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 
 func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
 	if !m.takeOperationReply(msg.ID) {
-		return m, nil
+		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
 	}
+	return m.applyGenerateResult(msg)
+}
+
+// applyGenerateResult shows a generation's result.
+func (m Model) applyGenerateResult(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
 	m = m.settleGenerateReview(msg)
 	if msg.Success {
 		m.lastError = ""
@@ -389,8 +394,13 @@ func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.M
 
 func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 	if !m.takeOperationReply(msg.ID) {
-		return m, nil
+		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
 	}
+	return m.applyImportResult(msg)
+}
+
+// applyImportResult shows an import's result.
+func (m Model) applyImportResult(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Success {
 		m.lastError = ""
 		m.forms.importMnemonicInput.SetValue("")
@@ -406,6 +416,30 @@ func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 		m.forms.importError = msg.Error
 		// Return to the form the import was sent from to show the error.
 		m.viewState = m.importErrorView()
+	}
+	return m, nil
+}
+
+func (m Model) handleBackupResultMsg(msg BackupResultMsg) (tea.Model, tea.Cmd) {
+	if !m.takeOperationReply(msg.ID) {
+		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
+	}
+	return m.applyBackupResult(msg)
+}
+
+// applyBackupResult shows a backup's result.
+func (m Model) applyBackupResult(msg BackupResultMsg) (tea.Model, tea.Cmd) {
+	if msg.Success {
+		m.lastError = ""
+		m.backup.archivePath = msg.ArchivePath
+		m.backup.archiveWarning = msg.Warning
+		m.backup.exportPassphrase = ""
+		m.backup.confirmPassphrase = ""
+		m.backup.confirmError = ""
+		m.viewState = ViewBackupDisplay
+	} else {
+		m.backup.confirmError = msg.Error
+		m.viewState = ViewBackupConfirm
 	}
 	return m, nil
 }

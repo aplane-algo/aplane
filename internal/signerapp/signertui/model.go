@@ -521,6 +521,10 @@ type Model struct {
 	browser            fileBrowserState // file browser over a path field, if open
 	backups            backupsPageState // the Backups page's own state
 
+	// heldResult is a generate, import or backup success that arrived after
+	// a lock took the operator off its progress screen; see holdLateSuccess.
+	heldResult tea.Msg
+
 	// Displace confirmation state
 	displaceConfirmFocus int // 0 = cancel, 1 = proceed
 

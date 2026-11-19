@@ -89,7 +89,8 @@ func (m Model) updateOnTop(msg tea.Msg) (Model, tea.Cmd) {
 		m.viewState = m.screenUnderApproval()
 	}
 	next, cmd := m.update(msg)
-	return next.(Model).keepApprovalOnTop(preferred), cmd
+	shown, heldCmd := next.(Model).showHeldResult()
+	return shown.keepApprovalOnTop(preferred), tea.Batch(cmd, heldCmd)
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -233,22 +234,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleDeleteResultMsg(msg)
 
 	case BackupResultMsg:
-		if !m.takeOperationReply(msg.ID) {
-			return m, nil
-		}
-		if msg.Success {
-			m.lastError = ""
-			m.backup.archivePath = msg.ArchivePath
-			m.backup.archiveWarning = msg.Warning
-			m.backup.exportPassphrase = ""
-			m.backup.confirmPassphrase = ""
-			m.backup.confirmError = ""
-			m.viewState = ViewBackupDisplay
-		} else {
-			m.backup.confirmError = msg.Error
-			m.viewState = ViewBackupConfirm
-		}
-		return m, nil
+		return m.handleBackupResultMsg(msg)
 
 	case BackupsListMsg:
 		return m.handleBackupsListed(msg), nil
@@ -305,6 +291,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DisplacedMsg:
 		// We've been displaced by another apadmin client
 		m.endAdminSession()
+		m.discardHeldResult()
 		m.connectionState = ConnectionDisconnected
 		m.lastError = msg.Reason
 		// Disconnected: Update starts no further wait, and nothing reconnects.
