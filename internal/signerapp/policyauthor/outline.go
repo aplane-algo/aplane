@@ -242,15 +242,16 @@ func (o *outliner) build() {
 	}))})
 
 	known["transaction_types"] = true
-	typeAdds := []AddAction{o.typeAdd(cosigner)}
-	if types := root.Member("transaction_types"); types.Exists() && types.Kind() != "object" {
-		typeAdds = nil
+	types := root.Member("transaction_types")
+	var typeAdds []AddAction
+	if !types.Exists() || types.Kind() == "object" {
+		typeAdds = append(typeAdds, o.typeAdd(cosigner))
 	}
-	if types := root.Member("transaction_types"); types.Kind() != "object" {
+	if types.Kind() != "object" {
 		typeAdds = append(typeAdds, replaceWith("Set transaction types to reject every type (\"*\": \"reject\")", "/transaction_types", `{"*": "reject"}`))
 	}
 	o.add(Section{ID: "types", Title: "Transaction types", Pointer: "/transaction_types",
-		Fields: o.transactionTypes(root.Member("transaction_types"), cosigner), Adds: typeAdds})
+		Fields: o.transactionTypes(types, cosigner), Adds: typeAdds})
 
 	known["limits"] = true
 	o.add(Section{ID: "limits", Title: "Limits", Pointer: "/limits", Fields: o.limits(root.Member("limits"), cosigner),

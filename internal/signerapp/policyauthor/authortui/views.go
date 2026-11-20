@@ -322,39 +322,7 @@ func (m Model) comparePickView() string {
 func (m Model) compareWith(j int) Model {
 	f := m.shown()
 	c := policyauthor.Compare(m.shownFile(j), f)
-	label := m.baselineLabel(j)
-	var lines []string
-	for _, line := range wrap(fmt.Sprintf("%s compared with %s, by %s", filepath.Base(f.Path), label, c.Mode), max(20, m.width-2)) {
-		lines = append(lines, m.styles.subtle.Render(line))
-	}
-	if c.Note != "" {
-		for _, line := range wrap(c.Note, max(20, m.width-2)) {
-			lines = append(lines, m.styles.subtle.Render(line))
-		}
-	}
-	lines = append(lines, "")
-	if c.Identical {
-		lines = append(lines, "No differences.")
-	}
-	if !c.Identical && len(c.Changes) == 0 && c.Note == "" {
-		lines = append(lines, "No differences in effect.")
-	}
-	for _, ch := range c.Changes {
-		effect := fmt.Sprintf("%-9s", ch.Effect)
-		switch ch.Effect {
-		case "loosened", "removed":
-			effect = m.styles.warn.Render(effect)
-		case "tightened":
-			effect = m.styles.label.Render(effect)
-		}
-		for i, line := range wrap(ch.Path+": "+ch.Summary, max(20, m.width-12)) {
-			if i == 0 {
-				lines = append(lines, effect+"  "+line)
-			} else {
-				lines = append(lines, strings.Repeat(" ", 11)+line)
-			}
-		}
-	}
+	lines := m.changeLines(c, filepath.Base(f.Path)+" compared with "+m.baselineLabel(j))
 	return m.openPage(screenCompare, "Compare", lines)
 }
 
