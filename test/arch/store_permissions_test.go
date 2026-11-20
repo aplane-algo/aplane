@@ -248,7 +248,7 @@ func TestEnvironmentAuditReadsInstalledLayouts(t *testing.T) {
 		writers = append(writers, shellFunction(t, installer, name))
 	}
 	apshellWritten := func(primaryPort int) string {
-		return fmt.Sprintf("schema_version: 2\ndefault: primary\nendpoints:\n"+
+		return fmt.Sprintf("schema_version: 2\nendpoints:\n"+
 			"    cos.a:\n        role: cosigner\n        url: ssh://localhost:2227\n"+
 			"    primary:\n        role: signer\n        url: ssh://127.0.0.1:%d\n", primaryPort)
 	}
