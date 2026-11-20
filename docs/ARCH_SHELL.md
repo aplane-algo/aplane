@@ -1019,7 +1019,7 @@ calls `MarshalMachine`. Renderers operate only on already-computed data and may
 be called repeatedly without network reads, signing, submission, or mutation.
 
 Machine projections in `command_projections.go` are explicit security
-allowlists. Plugin projection filters the reserved `localSigners` field.
+allowlists.
 One-shot `simulate <transaction-command>` invokes the same result-bearing
 executor while simulation is temporarily forced and restores the prior mode
 with deferred cleanup. It returns the command's own result, unwrapped, so a
@@ -1782,8 +1782,7 @@ JSON is rejected.
 
 Machine projections are allowlists. They omit secrets, authorization headers,
 credential paths, raw config, signed transaction bytes not deliberately in the
-contract, terminal-only render lines, and the plugin-reserved `localSigners`
-data field.
+contract, and terminal-only render lines.
 
 JSON results are returned as text containing JSON bytes via `mcp.NewToolResultText(string(data))`, not as typed JSON content objects.
 

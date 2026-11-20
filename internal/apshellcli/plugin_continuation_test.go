@@ -469,7 +469,7 @@ func TestJSPluginListsTheRunsTransactionIDsAfterAFailure(t *testing.T) {
 func TestPluginRunRecordOfAFailedRun(t *testing.T) {
 	project := func(t *testing.T, pr *PluginResult) map[string]any {
 		t.Helper()
-		data, err := json.Marshal(projectPluginResult(pr))
+		data, err := json.Marshal(pr.Plugin)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
@@ -687,20 +687,17 @@ func TestJSPluginReportsARekeyRuleRefusal(t *testing.T) {
 }
 
 // A read-only plugin command that returns an empty data object hands the
-// script an empty object, not undefined: only localSigners is removed.
+// script an empty object, not undefined.
 func TestJSPluginKeepsAnEmptyDataObject(t *testing.T) {
 	state, _ := scriptedPluginShell(t,
 		map[string]any{"success": true, "message": "status", "data": map[string]any{}},
-		map[string]any{"success": true, "message": "status", "data": map[string]any{"localSigners": []any{"X"}}},
 	)
-	for i := 0; i < 2; i++ {
-		out, err := runScript(t, state, `JSON.stringify(plugin("wf", "status").data)`)
-		if err != nil {
-			t.Fatalf("run %d: plugin() error = %v", i, err)
-		}
-		if out != "{}" {
-			t.Fatalf("run %d: plugin().data = %s, want {}", i, out)
-		}
+	out, err := runScript(t, state, `JSON.stringify(plugin("wf", "status").data)`)
+	if err != nil {
+		t.Fatalf("plugin() error = %v", err)
+	}
+	if out != "{}" {
+		t.Fatalf("plugin().data = %s, want {}", out)
 	}
 }
 
@@ -709,8 +706,8 @@ func TestJSPluginKeepsAnEmptyDataObject(t *testing.T) {
 // them up, the failing step's own IDs included; in simulate mode the
 // simulated ones are named as not sent and a failed simulation's own IDs are
 // not listed. Before any IDs, a cancel or the plugin's failure is still a
-// {success: false} result. A finished run reports every ID. A plugin's data
-// never carries localSigners, and an object stays an object.
+// {success: false} result. A finished run reports every ID. Before any IDs, a
+// plugin's data reaches the script as the plugin returned it.
 func TestJSPluginOutcome(t *testing.T) {
 	twoSteps := []appresult.PluginStep{{Message: "fund", TxIDs: []string{"T1"}}, {Message: "claim", TxIDs: []string{"T2", "T3"}}}
 	later := errors.New("continuation failed: plugin crashed")
@@ -748,12 +745,9 @@ func TestJSPluginOutcome(t *testing.T) {
 		{name: "first step fails", runErr: errors.New("not connected to signer"), wantErr: "not connected to signer"},
 		{name: "plugin's own failure, nothing produced", pr: PluginResult{Plugin: appresult.Plugin{Success: false, Message: "bad input"}},
 			wantMessage: "bad input"},
-		{name: "nothing produced, data filtered", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
-			Data: map[string]any{"amount": 1, "localSigners": []any{"X"}}}},
+		{name: "nothing produced, data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
+			Data: map[string]any{"amount": 1}}},
 			wantSuccess: true, wantMessage: "status", wantData: map[string]any{"amount": 1}},
-		{name: "nothing produced, only localSigners", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
-			Data: map[string]any{"localSigners": []any{"X"}}}},
-			wantSuccess: true, wantMessage: "status", wantData: map[string]any{}},
 		{name: "nothing produced, empty data", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "status",
 			Data: map[string]any{}}},
 			wantSuccess: true, wantMessage: "status", wantData: map[string]any{}},
@@ -763,7 +757,7 @@ func TestJSPluginOutcome(t *testing.T) {
 			Data: "plain"}},
 			wantSuccess: true, wantMessage: "status", wantData: "plain"},
 		{name: "one step", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "ok", TxIDs: []string{"T1"},
-			Data: map[string]any{"escrow": "E", "txids": "forged", "localSigners": []any{"X"}}}},
+			Data: map[string]any{"escrow": "E", "txids": "forged"}}},
 			wantSuccess: true, wantMessage: "ok", wantData: map[string]any{"escrow": "E", "txids": []string{"T1"}}},
 		{name: "two steps", pr: PluginResult{Plugin: appresult.Plugin{Success: true, Message: "claimed", Steps: twoSteps}},
 			wantSuccess: true, wantMessage: "claimed", wantData: map[string]any{"txids": []string{"T1", "T2", "T3"}, "steps": twoSteps}},

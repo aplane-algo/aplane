@@ -5,6 +5,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -62,11 +63,21 @@ func TestPluginProtocolIdentifier(t *testing.T) {
 	}
 }
 
-func TestPluginSignerRejectsRetiredLogicSigSize(t *testing.T) {
-	var signer PluginSigner
-	err := json.Unmarshal([]byte(`{"address":"A","kind":"plugin-callback","signerRef":"r","lsigSize":4000}`), &signer)
-	if err == nil || !strings.Contains(err.Error(), `field "lsigSize" is unsupported`) {
-		t.Fatalf("Unmarshal() error = %v, want retired lsigSize rejection", err)
+func TestPluginSignerDecodesItsDeclaration(t *testing.T) {
+	var signers []PluginSigner
+	err := json.Unmarshal([]byte(`[
+		{"address":"A","kind":"plugin-callback","signerRef":"r","lsigResources":{"programBytes":1,"argumentBytes":2,"maxOpcodeCost":3}},
+		{"address":"B","kind":"plugin-callback","signerRef":"s","pqScheme":"f1","unknown":true}
+	]`), &signers)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	want := []PluginSigner{
+		{Address: "A", Kind: PluginSignerKindCallback, SignerRef: "r", LsigResources: &PluginLogicSigResources{ProgramBytes: 1, ArgumentBytes: 2, MaxOpcodeCost: 3}},
+		{Address: "B", Kind: PluginSignerKindCallback, SignerRef: "s", PQScheme: "f1"},
+	}
+	if !reflect.DeepEqual(signers, want) {
+		t.Fatalf("decoded = %+v, want %+v", signers, want)
 	}
 }
 

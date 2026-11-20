@@ -6,7 +6,6 @@ package jsonrpc
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -205,27 +204,6 @@ type PluginSigner struct {
 	// PQScheme declares the native-PQ authorization the plugin will attach.
 	// It is mutually exclusive with LsigResources; "f1" is Falcon-1024.
 	PQScheme string `json:"pqScheme,omitempty"`
-}
-
-// UnmarshalJSON rejects the retired scalar LogicSig size declaration. Protocol
-// 1.0 plugins could otherwise echo the host-provided handshake version and have
-// encoding/json silently discard lsigSize, producing an under-budgeted group.
-func (s *PluginSigner) UnmarshalJSON(data []byte) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	if _, retired := fields["lsigSize"]; retired {
-		return fmt.Errorf("plugin signer field %q is unsupported by plugin protocol %s; use %q", "lsigSize", PluginProtocol, "lsigResources")
-	}
-
-	type wire PluginSigner
-	var decoded wire
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	*s = PluginSigner(decoded)
-	return nil
 }
 
 // PluginLogicSigResources keeps the three v42 consensus resources separate.
