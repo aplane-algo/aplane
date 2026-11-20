@@ -256,7 +256,7 @@ func ProtocolAppendBackupImportResultMessage(id string, result adminproto.Append
 }
 
 func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
-	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocolBackupInfo(result.Backup), Warning: result.Warning, Code: result.Code, Error: result.Error}
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocolBackupInfo(result.Backup), Warning: result.Warning, Skipped: protocolRestoreSkipped(result.Skipped), Code: result.Code, Error: result.Error}
 }
 
 func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {

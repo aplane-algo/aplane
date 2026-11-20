@@ -19,13 +19,17 @@ before it was renamed `enroll`.
   and `apstore rebuild` prints them. A damaged archive is still refused
   whole, as is naming a skipped key with `--address` and a restore with
   nothing left to restore.
-- **Verify still fails.** `apstore verify`, and the checks at backup create
-  and import, list every key a restore would skip and fail the archive, so
-  an import of an older backup with such a key is refused; `apstore rebuild`
-  restores the rest of it into a new store.
+- **Import takes such a backup.** `apadmin backup import` accepts a backup
+  holding a key a restore would skip, names each such key with the reason,
+  and a restore from it restores the rest. A damaged archive is still
+  refused.
+- **Verify still fails.** `apstore verify` answers whether every key would
+  restore: it lists every key a restore would skip and exits non-zero. A
+  backup this release creates is checked the same way, so it always
+  restores whole.
 - **Admin protocol.** `restore_preview` replaces `errors[]` and the per-key
-  `error` with `skipped[]` (`selector`, `reason`), and `restore_backup_result`
-  gains `skipped[]`. An archive holding a policy for no credential in it is
+  `error` with `skipped[]` (`selector`, `reason`); `restore_backup_result`
+  and `commit_backup_import_result` gain `skipped[]`. An archive holding a policy for no credential in it is
   now refused by restore as well as by verify.
 
 ## apshell opens no local port to the signer

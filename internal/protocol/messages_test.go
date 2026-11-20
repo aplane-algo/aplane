@@ -564,6 +564,24 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "commit_backup_import_result",
+			msg: CommitBackupImportResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeCommitBackupImportResult, ID: "backup-import-commit-1"},
+				Success:     true,
+				Backup:      BackupInfo{FileName: "backup.tar.gz", Size: 4096},
+				Skipped:     []RestoreSkipped{{Selector: "ADDR2", Reason: "failed to parse backup credential"}},
+			},
+			wantMap: map[string]any{
+				"type":    MsgTypeCommitBackupImportResult,
+				"id":      "backup-import-commit-1",
+				"success": true,
+				"backup":  map[string]any{"path": "", "file_name": "backup.tar.gz", "size": float64(4096)},
+				"skipped": []any{
+					map[string]any{"selector": "ADDR2", "reason": "failed to parse backup credential"},
+				},
+			},
+		},
+		{
 			name: "backups_list",
 			msg: BackupsListMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeBackupsList, ID: "backups-1"},

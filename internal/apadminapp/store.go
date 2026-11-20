@@ -323,7 +323,13 @@ func (s Store) backupImport(sourcePath string) error {
 	if commit.Warning != "" {
 		s.warn("backup import warning: %s", commit.Warning)
 	}
+	for _, skipped := range commit.Skipped {
+		s.warn("a restore will skip %s: %s", skipped.Selector, skipped.Reason)
+	}
 	s.info("backup imported: %s", name)
+	if len(commit.Skipped) > 0 {
+		s.warn("%d key(s) in the backup cannot be restored on this node; a restore will skip them", len(commit.Skipped))
+	}
 	s.info("size: %s", backup.FormatFileSize(size))
 	s.info("checksum: %s", checksum)
 	return nil

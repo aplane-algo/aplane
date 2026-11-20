@@ -191,3 +191,22 @@ func rebuildForTest(t *testing.T, active storepaths.GenPaths, role noderole.Role
 	}
 	return set.Entries[0].KeyType(), nil
 }
+
+// Creation stays strict: an archive a restore would not restore completely
+// is never published, though an import of it is accepted.
+func TestBackupCreationRefusesAnArchiveRestoreWouldSkip(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
+	archive := writeMixedArchiveForTest(t, paths)
+	archivePath := BuildManagedArchivePath(paths, "20260428-010204")
+	_, err := publishVerifiedArchive(archive.root, archivePath, admissionPassphrase)
+	want := "failed to verify backup archive: 1 of 2 credentials would be skipped by restore; first " + archive.bad + ": " + unknownFieldReason
+	if err == nil || err.Error() != want {
+		t.Fatalf("publishVerifiedArchive() error = %v, want %q", err, want)
+	}
+	for _, path := range []string{archivePath, archivePath + PartialArchiveSuffix} {
+		if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("refused backup left %s: %v", path, statErr)
+		}
+	}
+}

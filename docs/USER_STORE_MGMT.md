@@ -173,9 +173,10 @@ limited to 1 GiB and starting a new import replaces an incomplete prior
 transfer for the product store. The daemon
 verifies size, checksum, and archive structure and publishes the archive under
 `<signer-data>/backups/default/` only after the sealed inventory and every
-complete credential record validate: an archive holding a key this node's
-restore would skip is refused. To restore the rest of such an archive into a
-new store, use `apstore rebuild`.
+complete credential record check out. A damaged archive is refused. A key
+this node's restore would skip, such as one whose format or key type this
+release does not support, does not block the import: the import names each
+such key with the reason, and a restore from the archive restores the rest.
 LogicSig bytecode, argument contracts, and other durable signing metadata are
 carried by the credential itself, while templates are outside the backup
 contract.

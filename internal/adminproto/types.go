@@ -164,6 +164,9 @@ type CommitBackupImportResult struct {
 	Success bool
 	Backup  BackupInfo
 	Warning string
+	// Skipped lists the archived credentials a restore of the imported
+	// archive would skip, with the reason; they do not block the import.
+	Skipped []RestoreSkipped
 	Code    string
 	Error   string
 }

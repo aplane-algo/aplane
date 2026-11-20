@@ -419,8 +419,11 @@ type CommitBackupImportResultMessage struct {
 	Success bool       `json:"success"`
 	Backup  BackupInfo `json:"backup,omitempty"`
 	Warning string     `json:"warning,omitempty"`
-	Code    string     `json:"code,omitempty"`
-	Error   string     `json:"error,omitempty"`
+	// Skipped lists the archived credentials a restore of the imported
+	// archive would skip, with the reason; they do not block the import.
+	Skipped []RestoreSkipped `json:"skipped,omitempty"`
+	Code    string           `json:"code,omitempty"`
+	Error   string           `json:"error,omitempty"`
 }
 
 type AbortBackupImportMessage struct {

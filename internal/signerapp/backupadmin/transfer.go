@@ -172,9 +172,10 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 	if err != nil {
 		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
 	}
-	if err := report.Incomplete(); err != nil {
-		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
-	}
+	// A credential a restore would skip does not block the import: restore
+	// skips it as well, so the rest of the archive stays restorable. The
+	// result names each one.
+	skipped := projectSkippedEntries(report.Skipped)
 	if err := removeBackupValidationDirectory(sourceRoot); err != nil {
 		return commitImportError(fmt.Errorf("remove backup validation directory: %w", err), s.Deps.KeyPaths().Root())
 	}
@@ -214,7 +215,7 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 	if err != nil {
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
-	return adminproto.CommitBackupImportResult{Success: true, Backup: info, Warning: warning}
+	return adminproto.CommitBackupImportResult{Success: true, Backup: info, Warning: warning, Skipped: skipped}
 }
 
 func (s Service) claimBackupImport(dir, uploadID, fileName string, expectedSize int64) (string, error) {

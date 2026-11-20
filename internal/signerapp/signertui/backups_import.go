@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/secretbuf"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -323,7 +324,7 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 			imp.err = "Import failed: " + backupResultText(msg.Result.Error, "the signer refused the archive")
 			return m, nil
 		}
-		m.setBackupsStatus(importedStatus(imp.source.Name, msg.Result.Warning), false)
+		m.setBackupsStatus(importedStatus(imp.source.Name, msg.Result), false)
 		if m.viewState != ViewBackupImport {
 			return m, nil
 		}
@@ -337,7 +338,7 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 	if !msg.Result.Success {
 		m.setBackupsStatus("Import of "+name+" failed: "+backupResultText(msg.Result.Error, "the signer refused the archive"), true)
 	} else {
-		m.setBackupsStatus(importedStatus(name, msg.Result.Warning), false)
+		m.setBackupsStatus(importedStatus(name, msg.Result), false)
 	}
 	if m.viewState == ViewBackups {
 		next, cmd := m.refreshBackups()
@@ -346,10 +347,18 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 	return m, nil
 }
 
-func importedStatus(name, warning string) string {
+// importedStatus reports an import that committed, naming every key in it
+// a restore would skip, with the reason.
+func importedStatus(name string, result protocol.CommitBackupImportResultMessage) string {
 	status := "Imported " + name + ". Restoring from it is a separate step."
-	if warning != "" {
-		status += "\nWarning: " + warning
+	if result.Warning != "" {
+		status += "\nWarning: " + result.Warning
+	}
+	if len(result.Skipped) > 0 {
+		status += fmt.Sprintf("\n%d key(s) in it cannot be restored on this node; a restore will skip them:", len(result.Skipped))
+		for _, skipped := range result.Skipped {
+			status += "\n  " + skipped.Selector + ": " + skipped.Reason
+		}
 	}
 	return status
 }

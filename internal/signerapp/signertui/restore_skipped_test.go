@@ -156,3 +156,30 @@ func TestRestoreResultListsActivatedAndSkippedKeys(t *testing.T) {
 		t.Fatalf("a key both the preview and the restore skipped is listed twice:\n%s", view)
 	}
 }
+
+// An import whose archive holds keys a restore would skip names each one,
+// with the reason, on the Backups page, which keeps the minimum size.
+func TestBackupImportListsTheKeysARestoreWouldSkip(t *testing.T) {
+	m, commit := importToCommit(t)
+	reply := commitReply(commit, true, "", "")
+	reply.Result.Skipped = []protocol.RestoreSkipped{
+		{Selector: "BADADDR1", Reason: "failed to parse backup credential"},
+		{Selector: "BADADDR2", Reason: longSkipReason},
+	}
+	m, _ = update(t, m, reply)
+	if m.viewState != ViewBackups || m.backups.statusErr {
+		t.Fatalf("committed: view %v status %q", m.viewState, m.backups.status)
+	}
+	for _, want := range []string{
+		"Imported lab.tar.gz.", "2 key(s) in it cannot be restored on this node; a restore will skip them:",
+		"BADADDR1: failed to parse backup credential", "BADADDR2: " + longSkipReason,
+	} {
+		if !strings.Contains(m.backups.status, want) {
+			t.Fatalf("%q missing from the status %q", want, m.backups.status)
+		}
+	}
+	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{{FileName: "lab.tar.gz", Size: 100}}})
+	if view := squeezeForTest(fitsMinSizeForTest(t, m)); !strings.Contains(view, "BADADDR1: failed to parse backup credential") {
+		t.Fatalf("the Backups page does not show the skipped keys:\n%s", view)
+	}
+}

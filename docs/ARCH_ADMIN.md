@@ -573,9 +573,12 @@ transaction type is one more entry in `fields` and needs no client change.
   `append_backup_import` accepts at most 256 KiB at the exact next `offset`;
   cumulative uploaded bytes are capped at 1 GiB;
   `commit_backup_import` carries the sensitive `export_passphrase`, verifies
-  the declared size and SHA-256, authenticates the sealed manifest, deeply
-  validates every credential payload, and only then atomically publishes the
-  archive. Commit first renames the writable upload into a reserved immutable
+  the declared size and SHA-256, authenticates the sealed manifest, admits
+  every credential payload as a restore would, and only then atomically
+  publishes the archive. Archive-level damage refuses the import, as it
+  refuses a restore; a credential a restore would skip does not, and
+  `commit_backup_import_result` lists each one in `skipped[]` (`selector`,
+  `reason`). Commit first renames the writable upload into a reserved immutable
   claim while holding the store mutation lock. Hashing, extraction, and
   memory-hard credential verification run outside that lock; the lock is
   reacquired only to publish the validated claim. Validation extraction uses a
@@ -1381,7 +1384,8 @@ identifies the current screen. The enum has families for:
   - `x` export (`ViewBackupExport`) and `i` import (`ViewBackupImport`),
     driving the same file-side helpers as `apadmin backup export|import`
     (`internal/apadminapp/backup_transfer.go`) from response-driven state
-    machines, one request outstanding, matched by ID;
+    machines, one request outstanding, matched by ID; an import names on the
+    page each key in the archive a restore would skip, with the reason;
   - `d` delete (`ViewBackupDeleteConfirm`), focus on CANCEL, with a warning
     for the newest or the only backup;
   - `u` undo the latest restore (`ViewBackupUndoConfirm`), always offered:
