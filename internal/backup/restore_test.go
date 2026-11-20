@@ -144,16 +144,17 @@ func TestLoadManagedRestoreSetRejectsRoleMismatch(t *testing.T) {
 }
 
 func TestCredentialEntryZeroSecrets(t *testing.T) {
-	entry := CredentialEntry{keyJSON: []byte("secret")}
-	alias := entry.keyJSON
+	entry := CredentialEntry{credential: &admittedCredential{keyJSON: []byte("secret")}}
+	alias := entry.keyJSON()
+	copied := entry
 	entry.ZeroSecrets()
 	for i, value := range alias {
 		if value != 0 {
 			t.Fatalf("byte %d not zeroed", i)
 		}
 	}
-	if entry.keyJSON != nil {
-		t.Fatal("keyJSON retained after ZeroSecrets")
+	if entry.keyJSON() != nil || copied.keyJSON() != nil {
+		t.Fatal("key JSON retained after ZeroSecrets")
 	}
 }
 

@@ -28,45 +28,67 @@ import (
 // CredentialEntry is one archived credential as loadCredentialEntry admitted
 // it, prepared for destination installation. Its selector, canonical key JSON
 // and payload come from that one parse and are unexported, so an entry
-// cannot name a selector or category its credential does not have. keyJSON
-// contains private authority and must be cleared with ZeroSecrets. Policy is
-// the credential's archived policy document of its own, nil when the archive
-// carries none.
+// cannot name a selector or category its credential does not have. The key
+// JSON contains private authority and must be cleared with ZeroSecrets.
+// Policy is the credential's archived policy document of its own, nil when
+// the archive carries none.
 type CredentialEntry struct {
 	StageHint *RotatingStageHint
 	Policy    []byte
-	selector  string
-	keyJSON   []byte
+	// credential is shared by every copy of the entry, so clearing it
+	// through one copy clears it for all: restore applies the copies
+	// ClassifyRestoreSet returns, not the set's own entries.
+	credential *admittedCredential
+}
+
+// admittedCredential is what admitCredentialEntry established about one
+// credential.
+type admittedCredential struct {
+	selector string
+	keyJSON  []byte
 	// payload is the admitted payload with its secrets cleared: the
 	// category, key type, public key and genesis hash later steps read.
 	payload *keys.Payload
 }
 
 // Selector is the credential's canonical selector, derived from its payload.
-func (e *CredentialEntry) Selector() string { return e.selector }
+func (e *CredentialEntry) Selector() string {
+	if e.credential == nil {
+		return ""
+	}
+	return e.credential.selector
+}
 
 // Category is the credential's payload category.
 func (e *CredentialEntry) Category() string {
-	if e.payload == nil {
+	if e.credential == nil {
 		return ""
 	}
-	return e.payload.Category
+	return e.credential.payload.Category
 }
 
 // KeyType is the credential's key type.
 func (e *CredentialEntry) KeyType() string {
-	if e.payload == nil {
+	if e.credential == nil {
 		return ""
 	}
-	return e.payload.KeyType
+	return e.credential.payload.KeyType
+}
+
+// keyJSON is the canonical credential, nil once it was cleared.
+func (e *CredentialEntry) keyJSON() []byte {
+	if e.credential == nil {
+		return nil
+	}
+	return e.credential.keyJSON
 }
 
 func (e *CredentialEntry) ZeroSecrets() {
-	if e == nil {
+	if e == nil || e.credential == nil {
 		return
 	}
-	crypto.ZeroBytes(e.keyJSON)
-	e.keyJSON = nil
+	crypto.ZeroBytes(e.credential.keyJSON)
+	e.credential.keyJSON = nil
 }
 
 // RestoreSet is a fully authenticated and payload-validated archive selection.
@@ -258,7 +280,7 @@ func admitCredentialEntry(keyJSON []byte, selector string, role noderole.Role) (
 		crypto.ZeroBytes(canonical)
 		return CredentialEntry{}, err
 	}
-	return CredentialEntry{selector: derived, keyJSON: canonical, payload: payload}, nil
+	return CredentialEntry{credential: &admittedCredential{selector: derived, keyJSON: canonical, payload: payload}}, nil
 }
 
 // requireRuntimeSupport refuses a credential this runtime cannot use.
@@ -404,7 +426,7 @@ func ClassifyRestoreSet(
 			result.Pending = append(result.Pending, entry)
 			continue
 		}
-		equal := bytes.Equal(canonical, entry.keyJSON)
+		equal := bytes.Equal(canonical, entry.keyJSON())
 		crypto.ZeroBytes(canonical)
 		if equal {
 			result.Identical = append(result.Identical, entry)
@@ -507,9 +529,10 @@ func ApplyCredentialEntry(
 ) error {
 	// Only loadCredentialEntry fills an entry, so its selector and category
 	// are its payload's. An entry built by hand, or whose credential was
-	// cleared, has nothing to write.
-	if entry.payload == nil || len(entry.keyJSON) == 0 {
-		return fmt.Errorf("restore entry %q holds no admitted credential", entry.selector)
+	// cleared through any copy, has nothing to write.
+	keyJSON := entry.keyJSON()
+	if len(keyJSON) == 0 {
+		return fmt.Errorf("restore entry %q holds no admitted credential", entry.Selector())
 	}
 	selector, category := entry.Selector(), entry.Category()
 
@@ -539,7 +562,7 @@ func ApplyCredentialEntry(
 	if err != nil {
 		return err
 	}
-	encrypted, err := kr.Seal(entry.keyJSON, ctx)
+	encrypted, err := kr.Seal(keyJSON, ctx)
 	if err != nil {
 		return fmt.Errorf("encrypt restored credential: %w", err)
 	}
@@ -552,7 +575,7 @@ func ApplyCredentialEntry(
 	if category != keys.CategoryWitness {
 		_ = fsutil.RemoveDurable(keys.WitnessPublicMetadataPathActive(active, selector))
 	}
-	if err := keys.WriteWitnessPublicMetadataActive(active, selector, entry.payload); err != nil {
+	if err := keys.WriteWitnessPublicMetadataActive(active, selector, entry.credential.payload); err != nil {
 		return fmt.Errorf("write restored witness public metadata: %w", err)
 	}
 	return nil

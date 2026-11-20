@@ -46,7 +46,7 @@ func validatedRotatingHint(entry CredentialEntry, hints map[string]RotatingStage
 			return nil
 		}
 	}
-	if h.GenesisHash != hex.EncodeToString(entry.payload.GenesisHash) {
+	if h.GenesisHash != hex.EncodeToString(entry.credential.payload.GenesisHash) {
 		return nil
 	}
 	return &h

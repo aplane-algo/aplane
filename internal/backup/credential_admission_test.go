@@ -572,3 +572,40 @@ func TestApplyCredentialEntryRefusesAnEntryItDidNotLoad(t *testing.T) {
 		t.Fatalf("refused entries changed the keys directory: %q, want %q", after, before)
 	}
 }
+
+// Restore applies copies of the loaded entries: classification hands back
+// copies of the set's. Clearing the set clears every copy, so applying one
+// afterwards is refused and writes nothing.
+func TestApplyCredentialEntryRefusesACopyOfAClearedSet(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
+	active := activePathsForBackupTest(t, paths)
+	kr := cryptotest.Keyring(t, testExportMasterKey)
+	root, keysDir := newAdmissionArchive(t)
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	sealAdmissionMember(t, keysDir, address, keyJSON, admissionPassphrase)
+	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), admissionPassphrase, nil); err != nil {
+		t.Fatal(err)
+	}
+	managed := BuildManagedArchivePath(paths, "cleared-set")
+	if err := CreateTarGzArchive(root, managed); err != nil {
+		t.Fatal(err)
+	}
+	set, err := LoadManagedRestoreSet(paths, managed, nil, admissionPassphrase, noderole.RoleSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	classification, err := ClassifyRestoreSet(active, set, kr)
+	if err != nil || len(classification.Pending) != 1 {
+		t.Fatalf("ClassifyRestoreSet() = %+v, %v", classification, err)
+	}
+	set.ZeroSecrets()
+	before := keysDirFilesForTest(t, active, kr)
+	want := `restore entry "` + address + `" holds no admitted credential`
+	if err := ApplyCredentialEntry(active, classification.Pending[0], kr, true); err == nil || err.Error() != want {
+		t.Fatalf("ApplyCredentialEntry(copy of a cleared entry) error = %v, want %q", err, want)
+	}
+	if after := keysDirFilesForTest(t, active, kr); !maps.EqualFunc(after, before, func(a, b []byte) bool { return string(a) == string(b) }) {
+		t.Fatalf("refused entry changed the keys directory: %q, want %q", after, before)
+	}
+}
