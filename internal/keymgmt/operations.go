@@ -5,6 +5,7 @@ package keymgmt
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -284,6 +285,8 @@ type KeyFileInfo struct {
 	// MnemonicExportable reports whether the credential can reconstruct its
 	// recovery phrase (see keys.Payload.RecoveryPhraseAvailable).
 	MnemonicExportable bool
+	// DisplayTEAL is the stored TEAL source of a generic LogicSig, or empty.
+	DisplayTEAL string
 }
 
 // DetectKeyInfoFromFileWithKeyring reads a managed credential and returns
@@ -318,49 +321,13 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 		return nil, err
 	}
 	defer payload.ZeroSecrets()
-	meta := payload.Metadata()
 	return &KeyFileInfo{
-		Type:                 meta.KeyType,
-		PublicKeyHex:         meta.PublicKeyHex,
-		Parameters:           meta.Parameters,
-		TemplateFingerprint:  meta.TemplateFingerprint,
-		BoundedAuthorization: boundedmeta.Clone(meta.BoundedAuthorization),
+		Type:                 payload.KeyType,
+		PublicKeyHex:         hex.EncodeToString(payload.PublicKey),
+		Parameters:           payload.Parameters,
+		TemplateFingerprint:  payload.TemplateFingerprint,
+		BoundedAuthorization: payload.BoundedAuthorization,
 		MnemonicExportable:   payload.RecoveryPhraseAvailable(),
+		DisplayTEAL:          payload.TEALSource,
 	}, nil
-}
-
-// GetDisplayTEALWithKeyring returns the TEAL source code for generic
-// LogicSigs held in a managed credential.
-func GetDisplayTEALWithKeyring(keyFile string, kr *crypto.Keyring) (string, error) {
-	data, err := os.ReadFile(keyFile)
-	if err != nil {
-		return "", err
-	}
-	defer crypto.ZeroBytes(data)
-
-	if !crypto.IsEncrypted(data) {
-		return "", fmt.Errorf("key file must be encrypted")
-	}
-	ctx, err := keys.CredentialContextForFile(keyFile)
-	if err != nil {
-		return "", err
-	}
-	decrypted, err := kr.Open(data, ctx)
-	if err != nil {
-		return "", err
-	}
-	defer crypto.ZeroBytes(decrypted)
-
-	return parseDisplayTEAL(decrypted)
-}
-
-// parseDisplayTEAL extracts TEAL source from decrypted key file data.
-// Returns the stored TEAL source if available, empty string otherwise.
-func parseDisplayTEAL(data []byte) (string, error) {
-	payload, err := keys.ParseStoredPayload(data)
-	if err != nil {
-		return "", err
-	}
-	defer payload.ZeroSecrets()
-	return payload.TEALSource, nil
 }
