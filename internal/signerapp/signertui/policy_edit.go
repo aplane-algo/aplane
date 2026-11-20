@@ -125,8 +125,8 @@ func editablePolicyText(document string) string {
 	return strings.TrimRight(document, "\n")
 }
 
-// policyEditAvailable reports whether the policy summary is loaded and usable.
-func (m Model) policyEditAvailable() bool {
+// policySummaryReady reports whether the policy summary is loaded and usable.
+func (m Model) policySummaryReady() bool {
 	return !m.policies.loading && m.policies.err == "" && m.policies.policy.Success
 }
 
@@ -134,7 +134,7 @@ func (m Model) policyEditAvailable() bool {
 // without a document of its own opens on the node default with the key
 // filled in, fetched from the daemon so it is the node's current default.
 func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
-	if !m.policyEditAvailable() {
+	if !m.policySummaryReady() {
 		return m, nil
 	}
 	key := row.key
@@ -152,13 +152,13 @@ func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
 	m.policies.status = ""
 	m.viewState = ViewPolicyEdit
 	id := edit.pendingDocumentID
-	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) })
+	return m, m.sendGetPolicyDocumentCmd(fetchKey, "", id)
 }
 
 // openPolicyEditForDocument edits the document shown in the document view.
 func (m Model) openPolicyEditForDocument() (tea.Model, tea.Cmd) {
 	doc := m.policies.document
-	if !m.policyEditAvailable() || m.policies.docLoading || !doc.Success {
+	if !m.policySummaryReady() || m.policies.docLoading || !doc.Success {
 		return m, nil
 	}
 	if doc.Key != policy.DefaultKey && !m.policyKeyHeld(doc.Key) {
@@ -420,7 +420,7 @@ func (m Model) renderPolicyEdit() string {
 		sb.WriteString(subtitleStyle.Render("Loading document..."))
 		return sb.String()
 	}
-	sb.WriteString(subtitleStyle.Render(ellipsize(m.policyEditTargetLabel(), width)))
+	sb.WriteString(subtitleStyle.Render(ellipsize(policyTargetLabel(m.policies.apply.edit.key), width)))
 	sb.WriteString("\n")
 	hint := "Nothing is stored until the edit is checked, reviewed, and applied."
 	switch {
@@ -444,10 +444,6 @@ func (m Model) renderPolicyEdit() string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
-}
-
-func (m Model) policyEditTargetLabel() string {
-	return policyTargetLabel(m.policies.apply.edit.key)
 }
 
 // policyTargetLabel names the document a workflow acts on.

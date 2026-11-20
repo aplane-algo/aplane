@@ -201,7 +201,7 @@ func TestPoliciesViewShowsSignerDefaultAndErrors(t *testing.T) {
 		NodeRole:  "signer",
 		Documents: []protocol.PolicyDocumentInfoWire{defaultDocInfo},
 	})
-	if rows := m.policyRows(); len(rows) != 1 || rows[0].label() != "default" {
+	if rows := m.policyRows(); len(rows) != 1 || rows[0].key != policy.DefaultKey {
 		t.Fatalf("signer rows = %+v", rows)
 	}
 	opened := openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Key: policy.DefaultKey, Document: "{\n  \"key\": \"default\"\n}\n"})

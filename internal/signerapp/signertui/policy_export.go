@@ -58,7 +58,7 @@ func suggestedPolicyExportDir(now time.Time) string {
 }
 
 func (m Model) openPolicyExport() (tea.Model, tea.Cmd) {
-	if m.policies.loading || m.policies.err != "" || !m.policies.policy.Success {
+	if !m.policySummaryReady() {
 		return m, nil
 	}
 	m.policies.export = policyExportState{path: suggestedPolicyExportDir(time.Now())}
@@ -154,7 +154,7 @@ func (m Model) fetchNextPolicyExportDocument() (tea.Model, tea.Cmd) {
 	export.busy = fmt.Sprintf("Reading policy documents (%d of %d)...", total-len(export.queue), total)
 	export.pendingID = newRequestID("policy-export-doc")
 	id, snapshot := export.pendingID, export.snapshot
-	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocumentAt(key, snapshot, id) })
+	return m, m.sendGetPolicyDocumentCmd(key, snapshot, id)
 }
 
 // handlePolicyExportDocumentLoaded records one fetched document, then fetches
