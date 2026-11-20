@@ -36,6 +36,8 @@ const (
 	approvalKindClientEnrollment
 )
 
+// approvalRequest is one queued request: the pointer that matches kind is
+// always set, by decodeNotification.
 type approvalRequest struct {
 	kind              approvalKind
 	signRequest       *protocol.SignRequestMessage
@@ -43,10 +45,10 @@ type approvalRequest struct {
 }
 
 func (r approvalRequest) id() string {
-	switch {
-	case r.kind == approvalKindSign && r.signRequest != nil:
+	switch r.kind {
+	case approvalKindSign:
 		return r.signRequest.ID
-	case r.kind == approvalKindClientEnrollment && r.enrollmentRequest != nil:
+	case approvalKindClientEnrollment:
 		return r.enrollmentRequest.ID
 	}
 	return ""
@@ -351,10 +353,6 @@ func (a *approver) handleInput(input string) {
 // keeps it queued for a retry, while a refused answer (the request is no
 // longer waiting, or the registry write failed) is final and is shown.
 func (a *approver) answerEnrollment(req approvalRequest, respMsg any, approved bool) bool {
-	if a.answer == nil {
-		logErrorf("enrollment answers are not configured")
-		return false
-	}
 	raw, err := a.answer(respMsg)
 	if err != nil {
 		logErrorf("error delivering enrollment answer: %v", err)
@@ -582,9 +580,6 @@ func parseApprovalInput(input string) (approved bool, code, reason string, ok bo
 func buildApprovalResponse(req approvalRequest, approved bool, reason string) (interface{}, error) {
 	switch req.kind {
 	case approvalKindClientEnrollment:
-		if req.enrollmentRequest == nil {
-			return nil, fmt.Errorf("missing client enrollment request")
-		}
 		// The request waits in the signer's queue; the answer names the key.
 		if approved {
 			return protocol.ApproveEnrollmentMessage{
@@ -603,9 +598,6 @@ func buildApprovalResponse(req approvalRequest, approved bool, reason string) (i
 			Fingerprint: req.enrollmentRequest.SSHFingerprint,
 		}, nil
 	case approvalKindSign:
-		if req.signRequest == nil {
-			return nil, fmt.Errorf("missing sign request")
-		}
 		return protocol.SignResponseMessage{
 			BaseMessage: protocol.BaseMessage{
 				Type: protocol.MsgTypeSignResponse,

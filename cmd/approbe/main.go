@@ -59,8 +59,7 @@ func runSignerIPCPath(args []string, stdout, stderr io.Writer) int {
 	var honorIPCEnv bool
 	fs := flag.NewFlagSet("signer-ipc-path", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&dataDir, "d", "", "signer data directory")
-	fs.StringVar(&dataDir, "data-dir", "", "signer data directory")
+	dataDirSet := dataDirFlag(fs, &dataDir)
 	fs.BoolVar(&honorIPCEnv, "honor-ipc-env", false, "apply APSIGNER_IPC_PATH before data-directory discovery")
 	fs.Usage = func() {
 		writeln(stderr, "Usage: approbe signer-ipc-path -d <signer-data-dir> [--honor-ipc-env]")
@@ -76,17 +75,10 @@ func runSignerIPCPath(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return exitUnknown
 	}
-	dataDirExplicit := false
-	fs.Visit(func(selected *flag.Flag) {
-		if selected.Name == "d" || selected.Name == "data-dir" {
-			dataDirExplicit = true
-		}
-	})
-	if !dataDirExplicit || dataDir == "" {
+	if !dataDirSet() || dataDir == "" {
 		writeln(stderr, "Error: signer-ipc-path requires -d <signer-data-dir>")
 		return exitUnknown
 	}
-	dataDir = serverconfig.GetSignerDataDir(dataDir)
 	path, err := resolveSignerIPCPath(adminipc.ClientPathRequest{
 		DataDir: dataDir, DataDirExplicit: !honorIPCEnv,
 	})
@@ -106,8 +98,7 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("signer-running", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&dataDir, "d", "", "signer data directory")
-	fs.StringVar(&dataDir, "data-dir", "", "signer data directory")
+	dataDirSet := dataDirFlag(fs, &dataDir)
 	fs.StringVar(&ipcPath, "ipc-path", "", "admin IPC socket path")
 	fs.BoolVar(&quiet, "quiet", false, "suppress status output")
 	fs.DurationVar(&timeout, "timeout", signerprobe.DefaultTimeout, "IPC connection timeout")
@@ -125,17 +116,8 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return exitUnknown
 	}
-	dataDirExplicit := false
-	fs.Visit(func(selected *flag.Flag) {
-		if selected.Name == "d" || selected.Name == "data-dir" {
-			dataDirExplicit = true
-		}
-	})
-
-	dataDir = serverconfig.GetSignerDataDir(dataDir)
-
-	result, err := checkSigner(dataDir, signerprobe.Options{
-		Timeout: timeout, IPCPath: ipcPath, DataDirExplicit: dataDirExplicit,
+	result, err := checkSigner(serverconfig.GetSignerDataDir(dataDir), signerprobe.Options{
+		Timeout: timeout, IPCPath: ipcPath, DataDirExplicit: dataDirSet(),
 	})
 	if err != nil {
 		if result.IPCPath != "" {
@@ -153,6 +135,23 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 		return exitRunning
 	}
 	return exitStopped
+}
+
+// dataDirFlag registers -d and its long form --data-dir on fs, both setting
+// dataDir. The function it returns reports, once fs is parsed, whether either
+// was given.
+func dataDirFlag(fs *flag.FlagSet, dataDir *string) func() bool {
+	fs.StringVar(dataDir, "d", "", "signer data directory")
+	fs.StringVar(dataDir, "data-dir", "", "signer data directory")
+	return func() bool {
+		set := false
+		fs.Visit(func(selected *flag.Flag) {
+			if selected.Name == "d" || selected.Name == "data-dir" {
+				set = true
+			}
+		})
+		return set
+	}
 }
 
 func printUsage(w io.Writer) {
