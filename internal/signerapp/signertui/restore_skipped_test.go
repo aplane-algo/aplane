@@ -173,7 +173,7 @@ func TestBackupImportListsTheKeysARestoreWouldSkip(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Imported lab.tar.gz.", "A restore will skip 45 key(s) in it that this node cannot use:",
-		"BADADDR00: failed to parse backup credential", "BADADDR02: ", "and 42 more; the backup's preview lists them",
+		"BADADDR00: failed to parse backup credential", "BADADDR02: ", "and 42 more; the backup's preview lists up to 64",
 	} {
 		if !strings.Contains(m.backups.status, want) {
 			t.Fatalf("%q missing from the status %q", want, m.backups.status)

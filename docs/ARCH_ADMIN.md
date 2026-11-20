@@ -575,13 +575,14 @@ transaction type is one more entry in `fields` and needs no client change.
   `commit_backup_import` carries the sensitive `export_passphrase`, verifies
   the declared size and SHA-256, authenticates the sealed manifest, admits
   every credential payload for this node's role, and only then atomically
-  publishes the archive. Archive-level damage refuses the import, as it
-  refuses a restore, and so does an archive in which nothing would restore
-  on this node (`nothing to restore`, with `skipped[]`). A credential a
-  restore would skip does not, and `commit_backup_import_result` lists it in
-  `skipped[]` (`selector`, `reason`), with `skipped_omitted`; when the
-  archive was backed up from a node of another role, which a restore here
-  refuses, `source_node_role` names that role. Commit first renames the writable upload into a reserved immutable
+  publishes the archive. Archive-level damage refuses the import as
+  `invalid backup contents`, as it refuses a restore. An archive in which
+  nothing would restore on this node is refused too: a backup of another
+  node role as `this is a <role> backup; a <role> node cannot restore it`,
+  any other as `nothing to restore`, with `skipped[]`. A credential a
+  restore would skip does not refuse the import, and
+  `commit_backup_import_result` lists it in `skipped[]` (`selector`,
+  `reason`), with `skipped_omitted`. Commit first renames the writable upload into a reserved immutable
   claim while holding the store mutation lock. Hashing, extraction, and
   memory-hard credential verification run outside that lock; the lock is
   reacquired only to publish the validated claim. Validation extraction uses a
@@ -617,7 +618,8 @@ transaction type is one more entry in `fields` and needs no client change.
 - `restore_backup`: `archive_path`, optional `addresses[]`, sensitive
   `export_passphrase`, optional `replace_existing` ->
   `restore_backup_result`: `success`, operation ID, archive SHA-256,
-  generation ID, `restored[]`, `identical[]`, `conflicts[]`, `skipped[]`,
+  generation ID, `restored[]`, `restored_omitted`, `identical[]`,
+  `identical_omitted`, `conflicts[]`, `conflicts_omitted`, `skipped[]`,
   `skipped_omitted`, `key_count`, optional `policies_restored[]`, `code`,
   `error`. The server
   admits each selected credential, skips one it cannot admit (with its
@@ -630,12 +632,17 @@ transaction type is one more entry in `fields` and needs no client change.
   structure, size limits, a member that does not read or decrypt, a
   duplicate selector, an address the archive lacks) refuse the whole
   restore, as in [ARCH_STORE.md](ARCH_STORE.md#live-direct-restore).
-- `skipped[]` in a preview, restore or import result lists at most 64
-  credentials, with each `selector` cut at 128 bytes and each `reason` at
-  1 KiB (a cut ends `…(N bytes)`), and `skipped_omitted` counts the ones it
-  leaves out, so a reply fits one admin frame whatever the archive holds. A
-  failure's text names an archive member by its path in the archive, never
-  by where the daemon extracted it.
+- A reply's credential lists are bounded so it fits one admin frame
+  whatever the archive holds: `skipped[]` in a preview, restore or import
+  result, and `restored[]`, `identical[]` and `conflicts[]` in a restore
+  result, each list at most 64, and the matching `*_omitted` field counts
+  the rest. A skipped `selector` is cut at 128 bytes, and a skip or conflict
+  `reason`, and the skip reason a refusal quotes, at 1 KiB; an archive entry
+  name a refusal quotes is cut at 512 bytes. A cut ends `…(N bytes)`. A
+  preview's `keys[]` and `policies_restored[]` are not cut; they hold at
+  most one short entry per archived key. A failure's text names an archive
+  member by its path in the archive, never by where the daemon extracted
+  it, on preview, restore and import alike.
 - `rollback_restore` -> `rollback_restore_result`: `success`, operation
   ID, generation ID, key count, `code`, `error`. It applies only to the
   current clean rollback-eligible `credential-restore` generation; a rollback

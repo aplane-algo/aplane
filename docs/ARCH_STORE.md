@@ -2003,9 +2003,8 @@ Archive-level damage refuses the import, as it refuses a restore, and so
 does an archive in which nothing would restore on this node. A credential a
 restore would skip does not: restore skips it as well, so the rest of the
 archive stays restorable, and the import result names it with the reason.
-An archive backed up from a node of another role imports when some of its
-keys could be held here, and the result names its role, since a restore on
-this node refuses it whole. Client-side archive inspection is not an authorization
+A backup of another node role, none of whose keys this node can hold, is
+refused in one line that says so. Client-side archive inspection is not an authorization
 or integrity boundary. Commit is synchronous and can perform one memory-hard
 credential verification per archive member, so first-party clients allow up to
 30 minutes for that bounded request instead of applying the ordinary 30-second

@@ -349,8 +349,8 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 
 // importStatusSkips and importStatusKeyRunes keep an import's skipped keys
 // to a few lines of the Backups page, so the backup list stays in view at
-// the minimum window; the batch import and the backup's restore preview
-// list them all.
+// the minimum window. The batch import and the backup's restore preview
+// list up to 64 of them, with each reason in full, and count the rest.
 const (
 	importStatusSkips    = 3
 	importStatusKeyRunes = 70
@@ -372,7 +372,7 @@ func importedStatus(name string, result protocol.CommitBackupImportResultMessage
 		status += "\n  " + ellipsize(key+": "+terminalSafe(skipped.Reason), importStatusKeyRunes)
 	}
 	if more := len(result.Skipped) + result.SkippedOmitted - len(shown); more > 0 {
-		status += fmt.Sprintf("\n  and %d more; the backup's preview lists them", more)
+		status += fmt.Sprintf("\n  and %d more; the backup's preview lists up to 64", more)
 	}
 	return status
 }

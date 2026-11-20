@@ -23,8 +23,10 @@ before it was renamed `enroll`.
   holding a key a restore would skip, names such keys with the reason, and
   a restore from it restores the rest. The keys are checked for the
   importing node's role. A damaged archive is still refused, and so is one
-  with no key this node could restore, such as a cosigner's backup on a
-  signer.
+  with no key this node could restore; a cosigner's backup on a signer is
+  refused as "this is a cosigner backup; a signer node cannot restore it".
+  apadmin's batch output now escapes terminal controls in what the daemon
+  sends.
 - **What else changes.** A restore preview now fails whole when a member
   does not read or decrypt; it used to list that key with an error.
   `apstore rebuild --address` no longer examines the members it does not
@@ -38,10 +40,12 @@ before it was renamed `enroll`.
 - **Admin protocol.** `restore_preview` replaces `errors[]` and the per-key
   `error` with `skipped[]` (`selector`, `reason`); `restore_backup_result`
   and `commit_backup_import_result` gain `skipped[]`. Each lists at most 64,
-  with long reasons cut, and counts the rest in `skipped_omitted`;
-  `commit_backup_import_result` also gains `source_node_role` for an archive
-  of another role. An archive holding a policy for no credential in it is
-  now refused by restore as well as by verify.
+  with long reasons cut, and counts the rest in `skipped_omitted`.
+  `restore_backup_result` also lists at most 64 restored, identical and
+  conflicting keys, with `restored_omitted`, `identical_omitted` and
+  `conflicts_omitted`, so a reply always fits one admin frame. An archive
+  holding a policy for no credential in it is now refused by restore as
+  well as by verify.
 
 ## apshell opens no local port to the signer
 
