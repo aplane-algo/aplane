@@ -1214,18 +1214,18 @@ key is rejected during reload rather than published as a signable key.
 | Present but signer locked | Encrypted `.key` or `.cos` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
 | Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.cos` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
 | Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.cos`. | No; its presence fails reload into recovery. | Restore derives the canonical filename from validated payload category. |
-| Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse unless the destination node role allows that key class. |
-| Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore fails for that key unless support exists. |
+| Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore skips that key, and generation refuses it, unless the destination node role allows that key class. |
+| Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore skips that key unless support exists. |
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
 | Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. | Pure spends, spending-key rekeys, and listed rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable bounded metadata. |
 | Cosigned account key valid | DSA LogicSig key whose bounded metadata carries the cosigner overlay and whose bytecode embeds the cosigner public key (a plain or bounded host). | Only on signer nodes through the cosigned flow: bounded-base component, cosigner component (none for a listed rekey), local assembly. | Restores from stored bytecode and metadata. |
-| LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, an unsalted key (no `lsig_derivation`) omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
-| LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
-| LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
-| DSA key missing supported base provider | DSA LogicSig names a `base_key_type` not registered in the current binary. | No. | Restore fails for that key unless the base provider is supported. |
+| LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, an unsalted key (no `lsig_derivation`) omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan rejects it and verify fails. | Restore skips that key. |
+| LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan rejects it and verify fails. | Restore skips that key. |
+| LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore skips that key instead of reconstructing it from a template. |
+| DSA key missing supported base provider | DSA LogicSig names a `base_key_type` not registered in the current binary. | No. | Restore skips that key unless the base provider is supported. |
 | Template provenance unavailable | Key has no matching current template/provider fingerprint for comparison. | Yes, if key metadata is valid and node role allows it. | Warning/inventory note only. |
 | Template provenance conflict | Key's optional `template_fingerprint` differs from current local definition. | Yes, if key metadata is valid and node role allows it. | Warning/inventory note only. |
 
@@ -1237,8 +1237,8 @@ key is rejected during reload rather than published as a signable key.
 | Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential, recording the key type's `valid_rekey_target` declaration. | Credential becomes active after reload/scan. |
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.cos` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
-| Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
-| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes and restored keys' archived per-key policies only, replace `store-root.enc` once, then reload. | All selected credentials become active together; a definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
+| Restore preview | Managed archive and passphrase are valid and the source role matches. | Authenticate and admit complete credential payloads without mutation. | Reports the keys a restore would admit, with key types and destination presence, and the keys it would skip, with the reason. |
+| Restore apply | The archive authenticates, no credential the request names is skipped, at least one credential is admitted, and replacement conflicts are explicitly accepted. | Mint one generation containing the admitted credentials' changes and their archived per-key policies only, replace `store-root.enc` once, then reload. | All admitted credentials become active together; skipped ones are reported and never written. A definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
 | Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credentials, key-type state, and per-key policies while keeping the outgoing `default.json`, without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
 | Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files and content defects fail reload into recovery; role conflicts also fail closed. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
@@ -1862,11 +1862,11 @@ Lifecycle:
 | Key deletion | None. | Archives active key file. | Archived keys are not signable. |
 | Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
-| Restore preview | None. | None. | Decrypts and reports only, including node-role mismatch diagnostics. |
-| Restore apply | None. | Validates every selected complete credential, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind one `store-root.enc` replacement. | Destination default policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
+| Restore preview | None. | None. | Decrypts and reports only: the keys a restore would admit and the ones it would skip. A node-role mismatch refuses. |
+| Restore apply | None. | Admits each selected complete credential, skipping and reporting one it cannot admit, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind one `store-root.enc` replacement. | Destination default policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
 | Restore rollback | None. | Reconstructs the sealed parent of the latest clean rollback-eligible credential restore into a fresh generation. | A rollback generation is not itself eligible for another rollback. |
 | Restore reconcile | None. | Validates the visible generation after interrupted or uncertain completion. | Exits recovery mode only after clean validation and reload. |
-| Rebuild absent store | Writes root `node.yaml` from explicit `--role` or the authenticated manifest source role. | Restores selected keys into a new product store. | Manifest role is the default; `--role` overrides it; destination key-class gates remain authoritative. |
+| Rebuild absent store | Writes root `node.yaml` from explicit `--role` or the authenticated manifest source role. | Restores the selected keys it admits into a new product store, skipping and reporting the rest. | Manifest role is the default; `--role` overrides it; destination key-class gates remain authoritative. |
 | Store passphrase change | Mints a fresh term and generation, re-encrypts every term-encrypted generation member, renews integrity sidecars, and atomically replaces `store-root.enc`. | Re-encrypts keys. | Logical authority and state are unchanged; the old passphrase and term no longer authorize the current generation. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |
@@ -1997,8 +1997,9 @@ backup contract and no migration from earlier internal tags is provided.
 `apadmin backup import` asks the daemon to validate an external tar archive
 deeply before publishing it under `backups/default/`. The commit request
 carries the sensitive export passphrase; the daemon authenticates the archive
-inventory and validates every credential payload, then zeros the passphrase
-without persisting it. Client-side archive inspection is not an authorization
+inventory and deep-verifies it as below, then zeros the passphrase without
+persisting it. An archive with a credential restore would skip is refused,
+naming how many and the first. Client-side archive inspection is not an authorization
 or integrity boundary. Commit is synchronous and can perform one memory-hard
 credential verification per archive member, so first-party clients allow up to
 30 minutes for that bounded request instead of applying the ordinary 30-second
@@ -2019,17 +2020,21 @@ it must not report an ordinary retryable failure after the destination name is
 already live.
 
 `preview_restore` and `apadmin restore preview` authenticate the archive
-before revealing addresses or key types. Preview reports credential identity,
-destination presence, and validation errors; it performs no store mutation.
+before revealing addresses or key types. Preview admits every credential as a
+whole-archive restore would and reports each admitted credential's identity
+and destination presence, and each credential the restore would skip with the
+reason; it performs no store mutation. A preview with nothing left to restore
+still succeeds, so every reason is shown.
 Wrong-passphrase and unauthenticated failures share the restore rate limiter.
 Authenticated `list_backups`, `read_backup_chunk`, and `preview_restore`
 requests are accepted while the identity is either unlocked or
 recovery-blocked, allowing an operator to select, export, and inspect repair
 material without enabling signing. Locked identities remain rejected.
 
-`apstore verify` is fail-closed: an archive verification error or any invalid
-credential returns the stable local `verification_failed` code and a nonzero
-process exit.
+`apstore verify` is fail-closed: an archive-level failure, or any credential a
+restore would skip, returns the stable local `verification_failed` code and a
+nonzero process exit. It lists every credential a restore would skip, with the
+reason.
 
 ### Live direct restore
 
@@ -2038,9 +2043,9 @@ The current admin protocol exposes a direct credential restore:
 - `restore_backup`: archive path, optional selectors, export passphrase, and
   optional `replace_existing`
 - `restore_backup_result`: operation ID, archive SHA-256, resulting
-  generation, restored/identical/conflicting credentials, the keys whose
-  archived policy was installed (`policies_restored`), key count, stable code,
-  and error
+  generation, restored/identical/conflicting credentials, the credentials it
+  skipped with the reason (`skipped`), the keys whose archived policy was
+  installed (`policies_restored`), key count, stable code, and error
 - `rollback_restore`: rolls back only the latest clean, rollback-eligible
   credential restore
 - `reconcile_store`: validates/reconciles the visible generation and exits
@@ -2050,24 +2055,51 @@ These operations remain authorized by the stable `identity.restore` action.
 Restore, rollback, and reconciliation are callable while an authenticated
 identity is recovery-blocked so they can repair or resolve store damage.
 
-Restore validates the complete selected set before any write:
+Restore authenticates the archive and admits each selected credential before
+any write. Admission runs per credential: one the node cannot admit is skipped
+with its archived policy and reported with the reason, and the rest restore.
+Nothing is skipped silently: the preview, the `restore_backup_result`, the
+restore audit record (`skipped_keys`) and apadmin's restore screens list every
+skipped credential.
 
-- archive/member authentication and format bounds
-- payload/envelope versions and strict canonical decoding
+These failures refuse the whole restore before any write:
+
+- archive authentication or decryption of the sealed manifest
+- the manifest and archive structure: exact membership, and a policy with no
+  credential in the archive
+- archive and member size bounds, and a credential or policy member that does
+  not read or decrypt under the export passphrase (the manifest sealed its
+  digest, so it is damage to the archive)
+- source/destination node-role compatibility of the archive
+- a duplicate selector, or a selection (`addresses[]`) naming an address the
+  archive lacks
+- a selection naming a credential admission skips: an explicit request is
+  never narrowed
+- a restore with nothing left to restore
+
+A credential is skipped when its decrypted payload or archived policy fails
+admission:
+
+- payload/format versions and strict canonical decoding, such as an unknown
+  field
 - filename, selector, category, and key-type agreement
 - public/private-key and address consistency
 - LogicSig bytecode/address consistency and off-curve requirements
 - complete standalone signing metadata for LogicSig credentials
 - bounded-authorization consistency
-- source/destination node-role compatibility
+- whether the destination node role allows its key type
 - required destination runtime/provider support
-- duplicates and contradictory managed credential classes
+- its archived policy decoding as that key's document for the destination role
+
+A skipped credential repairs nothing: in recovery mode, destination damage
+that only its archived copy would have replaced still refuses the restore.
 
 Deep verify (at create, at import, and in `apstore verify`), restore preview
 and offline rebuild admit each credential through the loader restore uses, so
-a credential that verifies passes restore's per-credential checks and reports
-the same reason when it fails. Restore adds the selection, destination node
-role, and collision checks.
+they admit and skip exactly the credentials restore does and report the same
+reason. Verify still fails an archive with any credential a restore would
+skip, so a backup created on this release verifies completely. Restore adds
+the selection and collision checks.
 
 Destination collision classification compares canonical decrypted plaintext,
 not ciphertext. An identical credential is an idempotent no-op. A different
@@ -2076,8 +2108,8 @@ credential that cannot be decrypted or decoded is also a replaceable conflict,
 which permits an explicitly authorized restore to repair damage in recovery
 mode.
 
-After validation, restore mints exactly one generation. The parent generation
-is copied, selected credentials are applied into staged `keys/`, derived
+After admission, restore mints exactly one generation. The parent generation
+is copied, the admitted credentials are applied into staged `keys/`, derived
 witness public metadata is updated, the staged generation is validated and
 synced, the outgoing generation is sealed, and one durable store-root rename
 commits the operation. Archived per-key policy documents are applied in that
@@ -2123,12 +2155,16 @@ policy under which restored authority runs.
 path for an absent product store. Before its first prompt it refuses an existing
 identity directory or root `node.yaml`. It writes `node.yaml` before the mint and
 removes it again when the mint fails before commit; after an uncertain commit
-it keeps the file, since the root may select the new generation. It applies the same credential validation
-and credential-only semantics into a newly staged first generation. `--address` limits the rebuild to the
-selected credentials; without it every `.apb` payload is restored. The sealed
-manifest source role supplies the default role. An explicit `--role` overrides
-the manifest role, with a warning when the two differ. Credentials whose key
-class the chosen role forbids are rejected.
+it keeps the file, since the root may select the new generation. It loads its
+selection with the loader restore uses, before it asks for a store passphrase,
+and applies the admitted credentials and their policies into a newly staged
+first generation. `--address` limits the rebuild to the selected credentials;
+without it every `.apb` payload is admitted. Each credential it skips is
+printed with the reason. A rebuild that names a skipped credential, or has
+nothing left to rebuild, is refused before the store passphrase prompt and
+writes nothing. The sealed manifest source role supplies the default role. An
+explicit `--role` overrides the manifest role, with a warning when the two
+differ. Credentials whose key class the chosen role forbids are skipped.
 
 ## Source of truth
 

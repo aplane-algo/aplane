@@ -7,6 +7,27 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A restore skips a key it cannot use
+
+- **One key no longer blocks a whole restore.** A restore used to check the
+  whole selection before writing anything, so one key this release cannot
+  use (an older format, an unsupported or role-forbidden key type, a missing
+  provider) refused the whole backup. That key is now skipped with its
+  policy and reported with the reason, and the rest restore together as
+  before. `restore preview`, the restore result, the restore audit record
+  (`skipped_keys`) and apadmin's restore screens all list the skipped keys,
+  and `apstore rebuild` prints them. A damaged archive is still refused
+  whole, as is naming a skipped key with `--address` and a restore with
+  nothing left to restore.
+- **Verify still fails.** `apstore verify`, and the checks at backup create
+  and import, list every key a restore would skip and fail the archive, so
+  an import of an older backup with such a key is refused; `apstore rebuild`
+  restores the rest of it into a new store.
+- **Admin protocol.** `restore_preview` replaces `errors[]` and the per-key
+  `error` with `skipped[]` (`selector`, `reason`), and `restore_backup_result`
+  gains `skipped[]`. An archive holding a policy for no credential in it is
+  now refused by restore as well as by verify.
+
 ## apshell opens no local port to the signer
 
 - **Only apshell can use its connection to the signer.** `connect` used to

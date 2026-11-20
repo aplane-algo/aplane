@@ -83,6 +83,10 @@ apadmin restore apply this-backup.tar.gz --address <ADDRESS>
 ` + "```" + `
 
 You will be prompted for the export passphrase used to encrypt the backup.
+A key the destination cannot use, such as one of a key type it does not
+support, is listed by the preview and skipped by the restore with its policy;
+the other keys restore. Naming a skipped key with ` + "`--address`" + ` refuses the
+restore.
 The running signer daemon encrypts restored keys into the target keystore. For
 normal restore, credentials immediately operate under the destination's
 current policy and configuration. Use ` + "`--replace-existing`" + ` only when

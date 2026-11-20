@@ -46,6 +46,8 @@ Each line is a JSON object with the following fields:
 | `ssh_fingerprint` | string | On an SSH client's `SESSION_CONNECTED` and `SESSION_DISCONNECTED`: the SHA256 fingerprint of the client key that opened the connection (for an `enroll` connection, the key asking to be enrolled) |
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
+| `skipped_keys` | string[] | On a restore outcome or preview: the archived keys the node cannot admit, which the restore skipped (or would skip, or, on a refusal for them, would have skipped), at most 64 |
+| `skipped_keys_omitted` | int | Keys left out of `skipped_keys` |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
 | `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (the client's `request_id` when it sent one, else a random ID the signer minted; see [Signing](#signing)) |
 | `result_code` | string | Result code of a failed or uncertain policy or ASA set change |
@@ -95,7 +97,7 @@ Fields are omitted when empty.
 | `BACKUP_IMPORTED` | A deeply verified uploaded backup was published into managed storage |
 | `BACKUP_EXPORT_STARTED` | An authenticated client began reading a managed backup archive; a non-zero initial offset is still audited |
 | `BACKUP_FAILED` | A key backup failed through the authenticated admin surface |
-| `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface |
+| `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface; `key_count` counts the keys a restore would admit and `skipped_keys` names the ones it would skip |
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |
 | `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
 | `CREDENTIAL_RESTORE_SUCCEEDED` | Credential restore committed and reloaded successfully |
@@ -109,8 +111,8 @@ Fields are omitted when empty.
 | `COSIGNER_REFERENCE_CHANGED` | A product cosigner-reference catalog record was imported, promoted, or removed |
 
 Credential restore entries may include `archive_sha256`, `operation_id`,
-`replace_existing`, and `key_count`, in addition to normal session/
-principal/transport attribution.
+`replace_existing`, `key_count` (the keys restored), and `skipped_keys`, in
+addition to normal session/principal/transport attribution.
 
 ### Generation and Deleted-Archive Maintenance
 

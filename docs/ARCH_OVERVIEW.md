@@ -1249,8 +1249,9 @@ Important secret-handling contracts:
 - normal signing decrypts individual keys on demand rather than retaining a
   fully decrypted key inventory,
 - backup validation, direct restore, and offline rebuild may transiently
-  decrypt the complete selected credential set so it can be validated before
-  mutation; those plaintext buffers are explicitly zeroed after use,
+  decrypt the complete selected credential set so it can be admitted before
+  mutation; those plaintext buffers, a skipped credential's included, are
+  explicitly zeroed after use,
 - key/session destruction zeros or invalidates in-memory sensitive state,
 - passphrases typed into apadmin and appass are byte buffers grown through
   `internal/secretbuf`, which zeroes every allocation they outgrow; the copies
@@ -2307,8 +2308,9 @@ staged validation, sealing of the outgoing generation, the durable store-root
 replacement, reconciliation/quarantine of ambiguous attempts, reconstruction
 from authenticated history, and garbage collection of sealed priors. `internal/signerapp/backupadmin`
 owns live direct restore, explicit restore rollback, and recovery-mode
-reconciliation. A restore validates every selected credential before writing,
-then commits them by minting one generation behind a single durable store-root
+reconciliation. A restore admits each selected credential before writing,
+skipping and reporting one the node cannot admit, then commits the admitted
+ones by minting one generation behind a single durable store-root
 replacement. Incomplete staging is discarded; complete ambiguous publications
 are quarantined by reconciliation at unlock, never resumed or adopted.
 A commit with unconfirmed durability, or a rollback that fails after mutation

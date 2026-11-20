@@ -1237,7 +1237,10 @@ Audit entries carry attribution fields:
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
 - `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
-- `key_count`: key count for startup and reload events
+- `key_count`: key count for startup and reload events, the keys a restore
+  restored, and the keys a restore preview would admit
+- `skipped_keys`: the archived keys a restore or its preview skips because
+  the node cannot admit them, bounded like the other lists
 - `witness_key_id`: public witness authority affected by a cosigner-reference mutation
 - `client_label`: display label of the key in enrollment and revocation events
 - `closed_connections`: live connections closed by a key revocation

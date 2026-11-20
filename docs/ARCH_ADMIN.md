@@ -600,15 +600,29 @@ transaction type is one more entry in `fields` and needs no client change.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
   `restore_preview`: resolved archive path, optional `archive_created_at`
   (the creation time sealed in the authenticated manifest), `keys[]`,
-  `errors[]`, optional `code`, `error`. Each key reports address, key type, destination
-  presence, `has_policy`, and validation error. Preview never mutates the store and, like
-  `list_backups`, is available in unlocked or recovery state.
+  `skipped[]`, optional `code`, `error`. It classifies the whole archive as a
+  whole-archive restore would. Each key in `keys[]` is one the restore would
+  admit and reports address, key type, destination presence and
+  `has_policy`; each entry of `skipped[]` is one it would skip, with
+  `selector` and `reason`. A preview whose keys are all skipped still
+  succeeds, so every reason is shown; restore refuses it. Preview never
+  mutates the store and, like `list_backups`, is available in unlocked or
+  recovery state.
 - `restore_backup`: `archive_path`, optional `addresses[]`, sensitive
   `export_passphrase`, optional `replace_existing` ->
   `restore_backup_result`: `success`, operation ID, archive SHA-256,
-  generation ID, `restored[]`, `identical[]`, `conflicts[]`, `key_count`,
-  optional `policies_restored[]`, `code`, `error`. The server validates the whole set, then publishes one
-  `credential-restore` generation.
+  generation ID, `restored[]`, `identical[]`, `conflicts[]`, `skipped[]`,
+  `key_count`, optional `policies_restored[]`, `code`, `error`. The server
+  admits each selected credential, skips one it cannot admit (with its
+  archived policy) and lists it in `skipped[]` with `selector` and
+  `reason`, then publishes the admitted ones as one `credential-restore`
+  generation. A selection in `addresses[]` that names a skipped credential
+  is refused, never narrowed, and so is a restore with nothing left to
+  restore (`restore_failed`); `skipped[]` then lists what was or would have
+  been skipped. Archive-level failures (authentication, manifest and
+  structure, size limits, a member that does not read or decrypt, a
+  duplicate selector, an address the archive lacks) refuse the whole
+  restore, as in [ARCH_STORE.md](ARCH_STORE.md#live-direct-restore).
 - `rollback_restore` -> `rollback_restore_result`: `success`, operation
   ID, generation ID, key count, `code`, `error`. It applies only to the
   current clean rollback-eligible `credential-restore` generation; a rollback
@@ -1359,7 +1373,11 @@ identifies the current screen. The enum has families for:
     `ViewRestoreDisplay`): the view names the backup with its sealed creation
     time (`restore_preview`'s `archive_created_at`), warns when that differs
     from the time in its name by more than a minute, and marks a key the node
-    already holds "exists", never "same";
+    already holds "exists", never "same". The keys the restore would skip
+    are listed after the rest, counted in the header, never selectable, with
+    the highlighted one's reason below the list; a preview with nothing left
+    to restore says so on RESTORE. The result screen counts and lists the
+    skipped keys after the restored ones;
   - `x` export (`ViewBackupExport`) and `i` import (`ViewBackupImport`),
     driving the same file-side helpers as `apadmin backup export|import`
     (`internal/apadminapp/backup_transfer.go`) from response-driven state
