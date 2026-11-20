@@ -15,6 +15,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -163,7 +164,10 @@ func TestJavaScriptSignerQueries(t *testing.T) {
 	if !containsString(result.Signable, env.fundingAddr) || !containsString(result.Signable, addr) {
 		t.Fatalf("signableAddresses() = %#v, want funding and generated addresses", result.Signable)
 	}
-	if !result.Funding.CanSign || result.Funding.AuthorizationKind != "ed25519" {
+	// The funding account is whatever TEST_FUNDING_MNEMONIC imports as, Ed25519 or
+	// native Falcon; either way it is a signer-backed account that is not a LogicSig.
+	if kind := result.Funding.AuthorizationKind; !result.Funding.CanSign ||
+		(kind != string(algorithm.AuthorizationEd25519) && kind != string(algorithm.AuthorizationNativePQ)) {
 		t.Fatalf("canSignFor() = %#v, want signer-backed non-lsig account", result.Funding)
 	}
 }
