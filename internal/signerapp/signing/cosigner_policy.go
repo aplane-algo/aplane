@@ -86,6 +86,16 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if len(violations) > 0 {
 		return s.rejectCosignerComponentPolicy(plan, violations)
 	}
+	// External checks only refuse, and they judge only a request the policy
+	// would sign. This build cannot run them, so a document that has any
+	// signs nothing: passing the request would drop a refusal its operator
+	// asked for.
+	if len(cfg.ExternalChecks) > 0 {
+		check := cfg.ExternalChecks[0]
+		ruleID := policy.ExternalCheckRuleID(check.ID, policy.ExternalCheckUnavailableOutcome)
+		s.logCosignerRejections(plan, auditCosignerPolicyRejected+ruleID+": external checks are not available in this build", ruleID)
+		return forbidden(fmt.Sprintf("cosigner policy rejected request: external check %s refused: external checks are not available in this build (%s)", check.ID, ruleID))
+	}
 	return nil
 }
 

@@ -68,6 +68,24 @@ func TransferRoutingRouteRuleID(routeID, outcome string) string {
 	return fmt.Sprintf("transfer_policy:%s:%s", routeID, outcome)
 }
 
+// External check outcomes other than a rule that does not hold.
+const (
+	ExternalCheckUnavailableOutcome    = "unavailable"
+	ExternalCheckMissingFactOutcome    = "missing_fact"
+	ExternalCheckTokenNotSetOutcome    = "token_not_set"
+	ExternalCheckTooManyLookupsOutcome = "too_many_lookups"
+)
+
+// ExternalCheckRuleID builds the rule ID of an external check's refusal:
+// external_check:<check_id> when a rule does not hold, and
+// external_check:<check_id>:<outcome> when the check could not be judged.
+func ExternalCheckRuleID(checkID, outcome string) string {
+	if outcome == "" {
+		return "external_check:" + checkID
+	}
+	return "external_check:" + checkID + ":" + outcome
+}
+
 // TransactionTypeRuleID builds the rule ID for a transaction_types verdict
 // using the grammar transaction_type:<type>. The same ID is emitted at the
 // deny and review tiers; the phase that emits it says which.

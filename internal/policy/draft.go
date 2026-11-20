@@ -84,6 +84,13 @@ const (
 	ctxRekeyPolicy
 	ctxRekeyRules
 	ctxRekeyRule
+	ctxExternalSources
+	ctxExternalSource
+	ctxExternalToken
+	ctxExternalChecks
+	ctxExternalCheck
+	ctxExternalRules
+	ctxExternalRule
 )
 
 // canonicalFieldOrder lists, for each policy object, its fields in canonical
@@ -98,6 +105,7 @@ var canonicalFieldOrder = map[canonicalContext][]string{
 		"auto_approve_self_noop_transfer", "max_fee_microalgos",
 		"transaction_types", "limits", "address_sets", "asset_sets",
 		"transfer_policy", "rekey_policy",
+		"external_sources", "external_checks",
 	},
 	ctxTransferPolicy: {
 		"on_no_route", "close_on_no_route", "clawback_on_no_route",
@@ -110,6 +118,17 @@ var canonicalFieldOrder = map[canonicalContext][]string{
 	ctxThresholds:  {"review_above", "reject_above"},
 	ctxRekeyPolicy: {"allowed"},
 	ctxRekeyRule:   {"sender", "targets"},
+	ctxExternalSource: {
+		"base_url", "token", "timeout_ms", "max_response_bytes", "tls_spki_sha256",
+	},
+	ctxExternalToken: {"header", "prefix"},
+	ctxExternalCheck: {
+		"id", "description", "source", "scope", "networks", "movement_kinds",
+		"path", "query", "echo_pointer", "require",
+	},
+	ctxExternalRule: {
+		"pointer", "op", "number", "string", "bool", "numbers", "strings", "fact",
+	},
 }
 
 // childContext is the context of a member or item of a value in ctx.
@@ -123,6 +142,10 @@ func childContext(ctx canonicalContext, key string) canonicalContext {
 			return ctxTransferPolicy
 		case "rekey_policy":
 			return ctxRekeyPolicy
+		case "external_sources":
+			return ctxExternalSources
+		case "external_checks":
+			return ctxExternalChecks
 		}
 	case ctxLimits:
 		return ctxNetworkLimits
@@ -144,6 +167,20 @@ func childContext(ctx canonicalContext, key string) canonicalContext {
 		}
 	case ctxRekeyRules:
 		return ctxRekeyRule
+	case ctxExternalSources:
+		return ctxExternalSource
+	case ctxExternalSource:
+		if key == "token" {
+			return ctxExternalToken
+		}
+	case ctxExternalChecks:
+		return ctxExternalCheck
+	case ctxExternalCheck:
+		if key == "require" {
+			return ctxExternalRules
+		}
+	case ctxExternalRules:
+		return ctxExternalRule
 	}
 	return ctxGeneric
 }

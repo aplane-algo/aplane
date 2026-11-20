@@ -221,6 +221,10 @@ func TestCanonicalFieldOrderMatchesSchema(t *testing.T) {
 			props("cosignerLimits", "additionalProperties", "additionalProperties", "properties"))},
 		{ctxRekeyPolicy, union(props("rekeyPolicy", "properties"))},
 		{ctxRekeyRule, union(props("rekeyPolicy", "properties", "allowed", "items", "properties"))},
+		{ctxExternalSource, union(props("externalSources", "additionalProperties", "properties"))},
+		{ctxExternalToken, union(props("externalSources", "additionalProperties", "properties", "token", "properties"))},
+		{ctxExternalCheck, union(props("externalChecks", "items", "properties"))},
+		{ctxExternalRule, union(props("externalRule", "properties"))},
 	} {
 		got := union(canonicalFieldOrder[tt.ctx])
 		if len(tt.want) == 0 || !slices.Equal(got, tt.want) {
@@ -258,6 +262,18 @@ func TestCanonicalOrderWithEveryField(t *testing.T) {
 		return "0"
 	})
 	rekey := reversed(ctxRekeyPolicy, func(string) string { return "[" + reversed(ctxRekeyRule, scalar) + "]" })
+	source := reversed(ctxExternalSource, func(f string) string {
+		if f == "token" {
+			return reversed(ctxExternalToken, scalar)
+		}
+		return "0"
+	})
+	check := reversed(ctxExternalCheck, func(f string) string {
+		if f == "require" {
+			return "[" + reversed(ctxExternalRule, scalar) + "]"
+		}
+		return "0"
+	})
 	root := reversed(ctxRoot, func(f string) string {
 		switch f {
 		case "limits":
@@ -266,6 +282,10 @@ func TestCanonicalOrderWithEveryField(t *testing.T) {
 			return tp
 		case "rekey_policy":
 			return rekey
+		case "external_sources":
+			return `{"s": ` + source + `}`
+		case "external_checks":
+			return "[" + check + "]"
 		}
 		return "0"
 	})
@@ -289,7 +309,10 @@ func TestCanonicalOrderWithEveryField(t *testing.T) {
 		`transfer_policy on_no_route close_on_no_route clawback_on_no_route blocked_destinations routes ` +
 		`id description networks sources assets destinations asset_sources ` +
 		`limits mainnet algo review_above reject_above allow_close allow_clawback ` +
-		`rekey_policy allowed sender targets`
+		`rekey_policy allowed sender targets ` +
+		`external_sources s base_url token header prefix timeout_ms max_response_bytes tls_spki_sha256 ` +
+		`external_checks id description source scope networks movement_kinds path query echo_pointer ` +
+		`require pointer op number string bool numbers strings fact`
 	if got := strings.Join(keys, " "); got != want {
 		t.Fatalf("canonical key order:\n%s\nwant:\n%s", got, want)
 	}

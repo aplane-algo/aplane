@@ -30,6 +30,8 @@ func (d *PolicyV1) Compile(defaults *Config) (*Config, error) {
 	cfg.MaxFeeMicroAlgos = d.MaxFeeMicroAlgos
 	cfg.TransactionTypes = maps.Clone(d.TransactionTypes)
 	cfg.RekeyPolicy = nil
+	cfg.ExternalSources = d.ExternalSources
+	cfg.ExternalChecks = d.ExternalChecks
 	setConfigLimitsV1(cfg, d.Limits)
 	addressSets, assetSets := compileSetsV1(d.AddressSets, d.AssetSets)
 	var err error

@@ -169,7 +169,21 @@
         },
         "rekey_policy": {
           "$ref": "#/$defs/rekeyPolicy"
+        },
+        "external_sources": {
+          "$ref": "#/$defs/externalSources"
+        },
+        "external_checks": {
+          "$ref": "#/$defs/externalChecks"
         }
+      },
+      "dependentRequired": {
+        "external_sources": [
+          "external_checks"
+        ],
+        "external_checks": [
+          "external_sources"
+        ]
       }
     },
     "typeVerdict": {
@@ -656,6 +670,244 @@
     "description": {
       "type": "string",
       "maxLength": 1024
+    },
+    "externalSources": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 8,
+      "description": "REST sources the document's external checks look up, by name. A source's token is kept in the store with the key, never here.",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]*$",
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "base_url"
+        ],
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^https?://",
+            "description": "https with a host, or http to localhost or a loopback address. No user info, query or fragment."
+          },
+          "token": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "header"
+            ],
+            "description": "Present when the source needs a token: every lookup then needs one set for the key.",
+            "properties": {
+              "header": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$"
+              },
+              "prefix": {
+                "type": "string",
+                "maxLength": 32
+              }
+            }
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 10000,
+            "description": "Per lookup; absent means 2000."
+          },
+          "max_response_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1048576,
+            "description": "Answer size cap; absent means 65536."
+          },
+          "tls_spki_sha256": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+/]{43}=$"
+            },
+            "description": "Pinned server keys: the padded standard base64 SHA-256 of an acceptable SubjectPublicKeyInfo. https only."
+          }
+        }
+      }
+    },
+    "externalChecks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "Refuse-only checks run after the policy would sign. Every rule of every check must hold, and any failed lookup refuses the request.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source",
+          "scope",
+          "networks",
+          "path",
+          "require"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+            "maxLength": 64
+          },
+          "description": {
+            "$ref": "#/$defs/description"
+          },
+          "source": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+            "maxLength": 64
+          },
+          "scope": {
+            "enum": [
+              "request",
+              "transaction",
+              "movement"
+            ]
+          },
+          "networks": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "anyOf": [
+                {
+                  "const": "*"
+                },
+                {
+                  "$ref": "#/$defs/network"
+                }
+              ]
+            }
+          },
+          "movement_kinds": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "pay",
+                "pay_close",
+                "axfer",
+                "axfer_optin",
+                "asset_close",
+                "clawback"
+              ]
+            },
+            "description": "Scope movement only; absent means every kind."
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^/",
+            "description": "Appended to the source's base_url path. Literal URL path text with {fact} placeholders; no percent-encoding."
+          },
+          "query": {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "maxLength": 64
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          "echo_pointer": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^(/([^~]|~[01])*)?$",
+            "description": "RFC 6901 JSON Pointer into the answer; \"\" is the whole document."
+          },
+          "require": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/externalRule"
+            }
+          }
+        }
+      }
+    },
+    "externalRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pointer",
+        "op"
+      ],
+      "description": "The value at pointer, compared by op with the one operand. present and absent take none.",
+      "properties": {
+        "pointer": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(/([^~]|~[01])*)?$",
+          "description": "RFC 6901 JSON Pointer into the answer; \"\" is the whole document."
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "ne",
+            "lt",
+            "le",
+            "gt",
+            "ge",
+            "in",
+            "not_in",
+            "present",
+            "absent"
+          ]
+        },
+        "number": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "description": "A plain decimal of at most 40 digits."
+        },
+        "string": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "bool": {
+          "type": "boolean"
+        },
+        "numbers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+            "description": "A plain decimal of at most 40 digits."
+          }
+        },
+        "strings": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "fact": {
+          "type": "string",
+          "pattern": "^[a-z_]+$"
+        }
+      }
     }
   }
 }
