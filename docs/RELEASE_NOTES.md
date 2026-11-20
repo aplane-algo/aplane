@@ -7,6 +7,18 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Cosigner policy documents can describe external checks
+
+- **A cosigner document can name REST sources and checks over their
+  answers.** `external_sources` and `external_checks` say what to look up
+  for a request and what the JSON answer must hold before the cosigner
+  signs. Checks only refuse; they never allow what the policy rejects.
+  `apadmin policy`, `appolicy` and the schema accept, check, explain and
+  compare the two fields.
+- **No lookup runs yet.** Until it does, a cosigner refuses every request
+  governed by a document that has checks, with rule
+  `external_check:<id>:unavailable`, rather than sign without them.
+
 ## This release is new-install only
 
 - **The installer's minimum supported upgrade version is v0.52.0**, so an

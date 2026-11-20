@@ -21,7 +21,8 @@ admit; the verdict model below says what the accepted rules mean.
   [Rotating Account Interaction](#rotating-account-interaction)
 - Document format: [The Boundary](#the-boundary), [Role Domains](#role-domains),
   [Parsing](#parsing), [Terms](#terms), [Fields](#fields), [Routes](#routes),
-  [Limits](#limits), [Semantic Rules](#semantic-rules),
+  [Limits](#limits), [External Sources and Checks](#external-sources-and-checks),
+  [Semantic Rules](#semantic-rules),
   [Embedded Defaults](#embedded-defaults)
 - Storage and acceptance: [Storage](#storage),
   [Storage and Acceptance](#storage-and-acceptance)
@@ -706,6 +707,12 @@ matching sender-to-target edge. A cosigner key with no document of its own is
 governed by the default like any other key; under the shipped deny-all
 default every request is rejected with `transaction_type:<type>`.
 
+An external check refuses with `external_check:<check_id>` when one of its
+rules does not hold, and with `external_check:<check_id>:<outcome>` when it
+could not be judged, where `<outcome>` is `unavailable`, `missing_fact`,
+`token_not_set` or `too_many_lookups`. Today only `unavailable` is emitted:
+see [External Sources and Checks](#external-sources-and-checks).
+
 ## Transaction Scope
 
 For client signing, Always Deny, Always Review, and Always Approve rules
@@ -1030,6 +1037,8 @@ absent is an error, and an optional field that is absent means none.
 | `asset_sets` | sets | optional | optional | Named asset sets for routes |
 | `transfer_policy` | object | required | required | Transfer routing; see below |
 | `rekey_policy` | object | rejected | optional | `allowed: [{sender, targets}]` rekey edges |
+| `external_sources` | map | rejected | optional | REST sources by name; see [External Sources and Checks](#external-sources-and-checks) |
+| `external_checks` | list | rejected | optional | Refuse-only checks over the sources' JSON answers; set with `external_sources` or not at all |
 
 `transfer_policy`:
 
@@ -1133,6 +1142,155 @@ for its asset or the strictest threshold among its matching routes. An asset a
 route covers but its `limits` does not mention has no route-level threshold;
 document-level limits still apply to it.
 
+## External Sources and Checks
+
+A cosigner document may define **external checks**: REST lookups whose JSON
+answers must satisfy rules the document states, and the **sources** those
+lookups go to. A signer document carries neither field.
+
+Checks only refuse. They judge a request the policy would sign, and every
+rule of every check that applies must hold for it to be signed. They can
+never allow what the policy rejects. Any lookup that cannot be made or read
+refuses the request.
+
+**Status.** The format, its validation, the advisories and the diff are
+implemented (`internal/policy/external_checks_v1.go`,
+`external_checks_review.go`). No lookup runs yet. Until it does, the
+cosigner refuses every request governed by a document that has checks, with
+rule `external_check:<id>:unavailable`
+(`internal/signerapp/signing/cosigner_policy.go`), so no build signs a
+request its operator asked to have checked.
+
+```json
+"external_sources": {
+  "screening": {
+    "base_url": "https://screen.example.com/api",
+    "token": { "header": "Authorization", "prefix": "Bearer " },
+    "timeout_ms": 2000,
+    "max_response_bytes": 65536
+  },
+  "ops": { "base_url": "http://127.0.0.1:8650" }
+},
+"external_checks": [
+  {
+    "id": "screen-destination",
+    "source": "screening",
+    "scope": "movement",
+    "networks": ["mainnet"],
+    "movement_kinds": ["pay", "axfer"],
+    "path": "/v2/addresses/{destination}",
+    "query": { "chain": "algorand" },
+    "require": [
+      { "pointer": "/sanctioned", "op": "eq", "bool": false },
+      { "pointer": "/risk/score", "op": "le", "number": "30" }
+    ]
+  },
+  {
+    "id": "ops-switch",
+    "source": "ops",
+    "scope": "request",
+    "networks": ["*"],
+    "path": "/signing/{witness_key}",
+    "require": [ { "pointer": "/enabled", "op": "eq", "bool": true } ]
+  }
+]
+```
+
+### Sources
+
+`external_sources` maps a source name (`^[a-z0-9][a-z0-9_-]*$`, at most 64
+characters) to a source. A document has at most 8.
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `base_url` | URL, at most 512 characters | yes | Scheme, host, optional port and path prefix of every lookup |
+| `token` | object | no | Absent: no token is sent. Present: the key must have a token for this source |
+| `token.header` | header name, at most 64 characters | yes, in `token` | Header that carries the token |
+| `token.prefix` | printable ASCII, at most 32 characters | no | Written before the token, for example `"Bearer "` |
+| `timeout_ms` | whole number, 100 to 10000 | no | Per lookup; absent means 2000 |
+| `max_response_bytes` | whole number, 1 to 1048576 | no | Answer size cap; absent means 65536 |
+| `tls_spki_sha256` | list of 1 to 8 pins | no | Pinned server keys |
+
+- **`base_url`** is `https://` with a host, or `http://` when the host is
+  `localhost` or a loopback address literal. It has no user info, query or
+  fragment, and its path follows the literal path rule below.
+- **`token.header`** is none of the headers the cosigner sets itself: `Host`,
+  `Content-Length`, `Content-Type`, `Accept`, `Cache-Control`, `User-Agent`,
+  `X-Aplane-Request-Id`.
+- **A pin** is the padded standard base64 of the SHA-256 of an acceptable
+  server SubjectPublicKeyInfo: 32 bytes, written canonically. Pins are for
+  `https://` sources only.
+- **The token itself is never in the document.** A policy document is
+  exported and reviewed in plain text; a token is a secret kept with the key.
+
+### Checks
+
+`external_checks` lists at most 8 checks.
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `id` | `^[a-z0-9][a-z0-9_-]*$`, max 64 | yes | Unique within the document; appears in rule IDs |
+| `description` | string | no | Notes for reviewers |
+| `source` | source name | yes | A source of this document |
+| `scope` | `request` \| `transaction` \| `movement` | yes | What one lookup is for |
+| `networks` | `["*"]` or network list | yes | Networks the check applies to, as on routes |
+| `movement_kinds` | list of movement kinds | no; `movement` scope only | Kinds the check applies to; absent means every kind |
+| `path` | template, at most 512 characters | yes | Appended to the source's `base_url` path; starts with `/` |
+| `query` | map of name to template, at most 16 | no | Query parameters, written in name order |
+| `echo_pointer` | JSON Pointer | no | The answer must hold the lookup's request ID at this pointer |
+| `require` | list of 1 to 8 rules | yes | Every rule must hold |
+
+**Scopes and facts.** A check runs once per unit of its scope: once per
+component request, once per transaction the cosigner signs, or once per
+transfer movement of such a transaction, in the movement model of
+[Transfer Routing](#transfer-routing). Facts are the values a template or a
+rule can use. A scope has its own facts and those of the scopes above it.
+
+| Fact | Scope | Value |
+|------|-------|-------|
+| `network` | request | The group's network context token |
+| `witness_key` | request | The requested Witness Key ID |
+| `sender` | transaction | The transaction's sender address |
+| `txid` | transaction | The transaction ID |
+| `type` | transaction | The transaction type, for example `pay` |
+| `fee` | transaction | Fee in microAlgos (a number) |
+| `rekey_to` | transaction | The rekey target; absent when the transaction does not rekey |
+| `kind` | movement | `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, `clawback` |
+| `source` | movement | The movement's source account |
+| `asset_source` | movement | The account an asset is clawed back from; `clawback` only |
+| `destination` | movement | The movement's destination |
+| `asset` | movement | `algo` or `asa:<id>` |
+| `asset_id` | movement | `0` for ALGO, else the ASA ID (a number) |
+| `amount` | movement | Amount in base units (a number); absent on a close-out |
+
+No fact is free text: the note, application arguments and asset names are
+never facts, so a transaction cannot put arbitrary characters into a lookup.
+A unit that lacks a fact its check uses is refused.
+
+**Templates.** A template is literal text with `{fact}` placeholders, each a
+fact of the check's scope. Braces have no other use.
+
+- Literal text in `path` (and in a `base_url` path) is RFC 3986 path
+  characters and `/`, with no `%`, no `?` or `#`, no `.` or `..` segment and
+  no empty segment. Percent-encoding is refused so that no encoded `..` or
+  `/` can hide in a document.
+- A query parameter name matches `^[A-Za-z0-9._~-]+$`. A query value is at
+  most 256 characters and has no control characters.
+
+**Rules.** A rule compares the value at `pointer`, an RFC 6901 JSON Pointer
+into the answer, with one operand.
+
+| `op` | Operand | The value must be |
+|------|---------|-------------------|
+| `eq`, `ne` | `number`, `string`, `bool` or `fact` | Of the operand's type |
+| `lt`, `le`, `gt`, `ge` | `number`, or a `fact` that is a number | A JSON number |
+| `in`, `not_in` | `numbers` or `strings`, 1 to 64 entries | Of the list's element type |
+| `present`, `absent` | none | Present, or absent |
+
+A `number` operand is a decimal string of at most 40 digits, without
+exponent or leading zeros, as amounts are. A `string` operand is at most
+1024 bytes.
+
 ## Semantic Rules
 
 Checked at acceptance in addition to the schema:
@@ -1153,6 +1311,12 @@ Checked at acceptance in addition to the schema:
 8. `blocked_destinations` holds addresses only (no sets, `self`, or `*`).
 9. `rekey_policy` references only flat address sets; rekey edges are not
    network-scoped. `self` is not a `rekey_policy` sender.
+10. `external_sources` and `external_checks` appear together. Check IDs are
+    unique, every check names a source of the document, and every source is
+    used by a check.
+11. A check's templates and `fact` operands use only facts of its scope;
+    `movement_kinds` appears only with `scope: movement`; each rule's operand
+    fits its `op`.
 
 Errors report the JSON Pointer of the failing value, for example
 `/transfer_policy/routes/1/limits/mainnet/asa:31566704/reject_above`.
@@ -1178,6 +1342,9 @@ would change to resolve it:
 | `policy_scope:cosigner_type_without_routing` | A cosigner document allows a type other than `pay` or `axfer`; nothing but the type verdict stands behind it. A `"*": "allow"` is always reported, since it also covers any type a later release adds |
 | `policy_scope:rekey_policy_any_target` | A `rekey_policy` rule's targets include `*`, `reject_rekey` is false and `pay` is allowed; that sender may rekey to any address |
 | `policy_scope:route_close_to_any_address` | A route sets `allow_close` with a `*` destination, and a close-out it covers can pass (`reject_close_remainder` for ALGO, `reject_asset_close` for an ASA); any matching account may be closed out to any address, and the route's limits don't bound a close-out |
+| `external_check:fact_absent_for_covered_units` | A check uses a fact some of the units it covers never have, so it refuses every one of them: `amount` on a close-out kind, `asset_source` on a kind other than `clawback`, or `rekey_to`, which only a rekey has |
+| `external_check:network_without_route` | A check names a network no route covers, so no transfer there reaches it |
+| `external_check:plain_http_source` | A source is reached over plain `http://` on loopback; its answers and any token are not encrypted |
 
 ## Embedded Defaults
 
@@ -1724,6 +1891,9 @@ Implementation source of truth:
   embedded defaults that seed `default.json`.
 - `internal/policy/advisory.go`: non-blocking document advisories.
 - `internal/policy/diff_v1.go`: decoded-document differ.
+- `internal/policy/external_checks_v1.go`,
+  `internal/policy/external_checks_review.go`: a cosigner document's
+  external sources and checks, their advisories and their differences.
 - `internal/policy/store_v1.go`: policy document storage, sidecars, archive,
   and the policy-set digest.
 - `internal/signerapp/policyruntime`: `NodePolicy` load, compile, and

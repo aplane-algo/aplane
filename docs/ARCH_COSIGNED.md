@@ -852,6 +852,13 @@ rekey-to list `reject_rekey:true` does not stop a rekey to a listed address, and
 `rekey_policy` picks only cosigned-rekey targets. The list is the owner's
 standing statement, fixed in the program.
 
+A cosigner document may also define external checks: REST lookups whose
+JSON answers must satisfy rules the document states, run only on a request
+the policy would sign. They only refuse. The document format is accepted
+today, and no lookup runs yet: a request governed by a document that has
+checks is refused with `external_check:<id>:unavailable`. See
+[ARCH_POLICY.md](ARCH_POLICY.md#external-sources-and-checks).
+
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.
 
