@@ -34,13 +34,7 @@ func (l lazyReloadAuditLogger) LogKeyRejected(keyFile, reason string) {
 // test-constructed product runtimes.
 func (fs *Signer) productBuildHooks() signerstartup.ProductBuildHooks {
 	return signerstartup.ProductBuildHooks{
-		HasAdminClient: func() bool {
-			hub := fs.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.HasClient()
-		},
+		HasAdminClient: fs.hasAdminClient,
 		SendSignRequest: func(msg *signerapproval.SignRequest) bool {
 			hub := fs.adminHub()
 			if hub == nil {

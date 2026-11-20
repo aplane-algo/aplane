@@ -13,7 +13,6 @@ func (fs *Signer) newPlannerWithAudit(auditLog signersigning.AuditLogger) *signe
 	resolver := fs.genesisHashResolver()
 	return signersigning.NewPlanner(signerPlannerDeps{signer: fs}, signersigning.PlannerOptions{
 		AuditLog:               auditLog,
-		Console:                signerConsole{},
 		GenerateTxnDescription: fs.generateTransactionDescriptionFromTxn,
 		GenesisHashResolver:    resolver,
 	})

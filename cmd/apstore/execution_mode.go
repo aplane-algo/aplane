@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
@@ -39,7 +39,7 @@ func normalizeProductionStoreAfterRootMutation(command string) error {
 	if currentEUID() != 0 || !isOfflineMutatingCommand(command) {
 		return nil
 	}
-	prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
+	prodManaged, err := signerbootstrap.IsProductionManagedDataDir(dataDirectory)
 	if err != nil || !prodManaged {
 		return err
 	}
@@ -87,7 +87,7 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 	if isExternalFileOnlyCommand(args) {
 		return nil
 	}
-	prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDir)
+	prodManaged, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		return err
 	}

@@ -52,9 +52,26 @@ type LifecyclePlan struct {
 	// wait for key users before the keyring is zeroed. Zero means 5s.
 	ShutdownTimeout time.Duration
 	AuditLog        ServerAuditLogger
-	Info            func(string)
-	Warn            func(string)
-	Error           func(string)
+	// Info, Warn and Error log the lifecycle's messages; nil drops them.
+	Info  func(string)
+	Warn  func(string)
+	Error func(string)
+}
+
+// withLogDefaults is p with each nil log callback replaced by one that drops
+// the message.
+func (p LifecyclePlan) withLogDefaults() LifecyclePlan {
+	drop := func(string) {}
+	if p.Info == nil {
+		p.Info = drop
+	}
+	if p.Warn == nil {
+		p.Warn = drop
+	}
+	if p.Error == nil {
+		p.Error = drop
+	}
+	return p
 }
 
 // RunLifecycle owns service start, wait, shutdown ordering, audit shutdown,
@@ -62,6 +79,7 @@ type LifecyclePlan struct {
 // service start failure or serve failure that ended the run, after shutting
 // down, and nil when ctx ended it; the signer exits non-zero on an error.
 func RunLifecycle(ctx context.Context, plan LifecyclePlan) error {
+	plan = plan.withLogDefaults()
 	if plan.ProductRuntime != nil && plan.StartWatcher != nil && plan.ProductRuntime.IsUnlocked() {
 		plan.StartWatcher(plan.ProductRuntime)
 	}
@@ -78,9 +96,7 @@ func RunLifecycle(ctx context.Context, plan LifecyclePlan) error {
 			continue
 		}
 		if err := svc.Start(runCtx, errs); err != nil {
-			if plan.Error != nil {
-				plan.Error("failed to start " + svc.Name + ": " + err.Error())
-			}
+			plan.Error("failed to start " + svc.Name + ": " + err.Error())
 			endRun()
 			shutdownLifecycle(started, plan)
 			return fmt.Errorf("failed to start %s: %w", svc.Name, err)
@@ -91,14 +107,10 @@ func RunLifecycle(ctx context.Context, plan LifecyclePlan) error {
 	var runErr error
 	select {
 	case <-ctx.Done():
-		if plan.Info != nil {
-			plan.Info("shutdown signal received, cleaning up")
-		}
+		plan.Info("shutdown signal received, cleaning up")
 	case err := <-errs:
 		if err != nil {
-			if plan.Error != nil {
-				plan.Error("server error: " + err.Error())
-			}
+			plan.Error("server error: " + err.Error())
 			runErr = fmt.Errorf("server error: %w", err)
 		}
 	}
@@ -109,6 +121,7 @@ func RunLifecycle(ctx context.Context, plan LifecyclePlan) error {
 }
 
 func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
+	plan = plan.withLogDefaults()
 	timeout := plan.ShutdownTimeout
 	if timeout <= 0 {
 		timeout = 5 * time.Second
@@ -123,7 +136,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		if svc.Stop == nil {
 			continue
 		}
-		if plan.Info != nil && svc.Name != "" {
+		if svc.Name != "" {
 			plan.Info("shutting down " + svc.Name)
 		}
 		if err := svc.Stop(shutdownCtx); err != nil {
@@ -131,9 +144,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 			if errors.Is(err, context.DeadlineExceeded) {
 				handlersMayBeRunning = true
 			}
-			if plan.Warn != nil {
-				plan.Warn(svc.Name + " shutdown error: " + err.Error())
-			}
+			plan.Warn(svc.Name + " shutdown error: " + err.Error())
 		}
 	}
 
@@ -147,9 +158,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 			plan.AuditLog.LogServerStopIncomplete(strings.Join(shutdownErrors, "; "))
 			plan.AuditLog.FlushSummaries()
 		}
-		if plan.Warn != nil {
-			plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
-		}
+		plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
 		return
 	}
 
@@ -165,9 +174,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		if err != nil {
 			keyUseInFlight = true
 			shutdownErrors = append(shutdownErrors, "product runtime: "+err.Error())
-			if plan.Warn != nil {
-				plan.Warn("product runtime shutdown error: " + err.Error() + "; its copy is released at process exit")
-			}
+			plan.Warn("product runtime shutdown error: " + err.Error() + "; its copy is released at process exit")
 		}
 	}
 
@@ -190,17 +197,13 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 
 	// The keyring is zeroed whether or not every key user released.
 	if plan.ProductRuntime != nil {
-		if plan.Info != nil {
-			plan.Info("zeroing cached keys and the keyring")
-		}
+		plan.Info("zeroing cached keys and the keyring")
 		plan.ProductRuntime.Destroy()
 	}
 
-	if plan.Info != nil {
-		if len(shutdownErrors) == 0 {
-			plan.Info("shutdown complete")
-		} else {
-			plan.Info("shutdown finished incomplete: " + strings.Join(shutdownErrors, "; "))
-		}
+	if len(shutdownErrors) == 0 {
+		plan.Info("shutdown complete")
+	} else {
+		plan.Info("shutdown finished incomplete: " + strings.Join(shutdownErrors, "; "))
 	}
 }

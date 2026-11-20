@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
@@ -17,6 +19,7 @@ import (
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/security"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -55,7 +58,7 @@ func Run(dataDir string) int {
 		return 1
 	}
 
-	startupOpts, err := signerstartup.LoadOptions(dataDir)
+	startupOpts, err := bootstrap.LoadResolved(resolvedDataDir)
 	if err != nil {
 		logErrorf("%v", err)
 		logErrorf("use -d <path> or set APSIGNER_DATA environment variable")
@@ -104,7 +107,7 @@ func Run(dataDir string) int {
 	// Results are validated by ValidateStartup below
 	runtime := &signerstartup.RuntimeState{}
 
-	if err := disableCoreDumps(); err == nil {
+	if err := security.DisableCoreDumps(); err == nil {
 		runtime.CoreDumpsDisabled = true
 		logInfof("core dumps disabled")
 	}
@@ -112,7 +115,7 @@ func Run(dataDir string) int {
 	// Skip memory locking if DISABLE_MEMORY_LOCK is set (for testing)
 	if os.Getenv("DISABLE_MEMORY_LOCK") != "" {
 		runtime.MemoryLocked = false
-	} else if err := lockMemory(); err == nil {
+	} else if err := security.LockMemory(); err == nil {
 		runtime.MemoryLocked = true
 		logInfof("memory locked (keys will not swap to disk)")
 	}
@@ -129,7 +132,6 @@ func Run(dataDir string) int {
 	// return before that, and zeroing twice is harmless.
 	defer crypto.ZeroBytes(startPassphrase)
 	startLocked := unlockPlan.StartLocked
-	passphraseSource := string(unlockPlan.Source)
 
 	switch unlockPlan.Source {
 	case signerstartup.UnlockSourceIPC:
@@ -147,7 +149,6 @@ func Run(dataDir string) int {
 		logInfof("starting in UNLOCKED state (headless mode)")
 	}
 
-	// Scan keys directory (skip if starting locked - keys loaded after unlock)
 	if startLocked {
 		logInfof("keys will be loaded after unlock via apadmin TUI")
 	}
@@ -220,7 +221,7 @@ func Run(dataDir string) int {
 	// settings: a passphrase helper turns off lock-on-disconnect and the idle
 	// timeout whatever config.yaml says.
 	effective := ir.Config()
-	printSecurityAudit(effective.SessionTimeout(), effective.UserAutoApprove(), config.IPCPath, runtime.CoreDumpsDisabled, runtime.MemoryLocked, effective.LockOnDisconnect(), passphraseSource)
+	printSecurityAudit(effective.SessionTimeout(), effective.UserAutoApprove(), config.IPCPath, runtime.CoreDumpsDisabled, runtime.MemoryLocked, effective.LockOnDisconnect(), unlockPlan.Source)
 
 	// Log server start
 	keysSnapshot, _ := ir.KeySnapshot()
@@ -246,7 +247,7 @@ func Run(dataDir string) int {
 		return 1
 	}
 	server.setSSHRuntime(sshRuntime)
-	runCtx, stopSignals := signalContext()
+	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
 	// A service that fails to start or serve exits non-zero (RunLifecycle has
@@ -402,14 +403,14 @@ func ensureProviders() error {
 }
 
 // printSecurityAudit prints a consolidated security configuration summary
-func printSecurityAudit(passphraseTimeout time.Duration, userAutoApprove bool, ipcPath string, coreDumpsDisabled bool, memoryLocked bool, lockOnDisconnect bool, passphraseSource string) {
+func printSecurityAudit(passphraseTimeout time.Duration, userAutoApprove bool, ipcPath string, coreDumpsDisabled bool, memoryLocked bool, lockOnDisconnect bool, passphraseSource signerstartup.UnlockSource) {
 	logInfof("Security configuration:")
 
 	// Passphrase source status
 	switch passphraseSource {
-	case "passphrase_command":
+	case signerstartup.UnlockSourcePassphraseCommand:
 		logInfof("  passphrase_source: passphrase command (headless)")
-	case "TEST_PASSPHRASE":
+	case signerstartup.UnlockSourceTestPassphrase:
 		logWarnf("  passphrase_source: env var (testing)")
 	default:
 		logInfof("  passphrase_source: IPC unlock")
