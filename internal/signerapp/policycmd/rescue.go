@@ -26,16 +26,9 @@ var AcquireSharedStoreLock = storelock.AcquireShared
 // exclusive lock and commit through the same rules as the daemon.
 type RescueRunner struct{}
 
+// Run runs a validated command that needs the node, as OnlineRunner.Run
+// does.
 func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams) error {
-	if err := command.Validate(); err != nil {
-		return err
-	}
-	if command.NeedsNoNode() {
-		return WriteOfflineTemplate(command, streams)
-	}
-	if err := RejectRetiredEnvironment(); err != nil {
-		return err
-	}
 	if command.DataDir == "" {
 		return fmt.Errorf("signer data directory is required for policy rescue")
 	}

@@ -4,7 +4,6 @@
 package arch_test
 
 import (
-	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -73,52 +72,6 @@ func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 	}
 }
 
-func TestRetiredAppolicyPassphraseCannotBecomeCredentialSource(t *testing.T) {
-	path := filepath.Join("..", "..", "internal", "signerapp", "policycmd")
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		filename := filepath.Join(path, entry.Name())
-		parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, declaration := range retiredCredentialReaders(parsed) {
-			t.Errorf("%s:%s reads the retired APPOLICY_PASSPHRASE source", filepath.Base(filename), declaration)
-		}
-	}
-}
-
-func TestRetiredCredentialDetectorCatchesIdentifierAndLiteral(t *testing.T) {
-	source := `package policycmd
-import "os"
-const retiredPassphraseEnv = "APPOLICY_PASSPHRASE"
-var packageRead = os.Getenv(retiredPassphraseEnv)
-func RejectRetiredEnvironment() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
-func identifierRead() { _ = os.Getenv(retiredPassphraseEnv) }
-func literalRead() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
-`
-	parsed, err := parser.ParseFile(token.NewFileSet(), "mutation.go", source, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{"package declaration": true, "identifierRead": true, "literalRead": true}
-	for _, function := range retiredCredentialReaders(parsed) {
-		if !want[function] {
-			t.Errorf("unexpected retired credential reader %q", function)
-		}
-		delete(want, function)
-	}
-	for function := range want {
-		t.Errorf("detector missed retired credential reader %q", function)
-	}
-}
-
 func TestRescuePolicyOutputCannotBypassVerifiedStoreRead(t *testing.T) {
 	path := filepath.Join("..", "..", "internal", "signerapp", "policycmd", "rescue.go")
 	data, err := os.ReadFile(path)
@@ -128,59 +81,6 @@ func TestRescuePolicyOutputCannotBypassVerifiedStoreRead(t *testing.T) {
 	if strings.Contains(string(data), "os.ReadFile(") {
 		t.Error("rescue policy workflow reads output bytes outside OfflineStore verification")
 	}
-}
-
-func retiredCredentialReaders(parsed *ast.File) []string {
-	var readers []string
-	for _, decl := range parsed.Decls {
-		switch decl := decl.(type) {
-		case *ast.FuncDecl:
-			if decl.Body != nil && decl.Name.Name != "RejectRetiredEnvironment" && containsRetiredCredential(decl.Body) {
-				readers = append(readers, decl.Name.Name)
-			}
-		case *ast.GenDecl:
-			for _, spec := range decl.Specs {
-				value, ok := spec.(*ast.ValueSpec)
-				if ok && definesRetiredCredentialConstant(decl, value) {
-					continue
-				}
-				if containsRetiredCredential(spec) {
-					readers = append(readers, "package declaration")
-					break
-				}
-			}
-		}
-	}
-	return readers
-}
-
-func containsRetiredCredential(root ast.Node) bool {
-	found := false
-	ast.Inspect(root, func(node ast.Node) bool {
-		switch node := node.(type) {
-		case *ast.Ident:
-			found = found || node.Name == "retiredPassphraseEnv"
-		case *ast.BasicLit:
-			if node.Kind == token.STRING {
-				value, err := strconv.Unquote(node.Value)
-				found = found || err == nil && value == "APPOLICY_PASSPHRASE"
-			}
-		}
-		return !found
-	})
-	return found
-}
-
-func definesRetiredCredentialConstant(decl *ast.GenDecl, value *ast.ValueSpec) bool {
-	if decl.Tok != token.CONST || len(value.Names) != 1 || value.Names[0].Name != "retiredPassphraseEnv" || len(value.Values) != 1 {
-		return false
-	}
-	literal, ok := value.Values[0].(*ast.BasicLit)
-	if !ok || literal.Kind != token.STRING {
-		return false
-	}
-	decoded, err := strconv.Unquote(literal.Value)
-	return err == nil && decoded == "APPOLICY_PASSPHRASE"
 }
 
 func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {

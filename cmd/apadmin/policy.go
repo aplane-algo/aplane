@@ -24,17 +24,13 @@ func runPolicyCommand(ctx context.Context, args []string, globals adminBatchGlob
 		writePolicyError(streams.stderr, err)
 		return 2
 	}
-	if err := policycmd.RejectRetiredEnvironment(); err != nil {
-		writePolicyError(streams.stderr, err)
-		return 2
-	}
 	command.DataDir = globals.dataDir
 	ioStreams := policycmd.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr}
 
 	// template --embedded, --preset, and --list-presets print apadmin's own
 	// text: no store, socket, data directory, or passphrase takes part, so
 	// none is resolved. Every other template form prints the node's own
-	// default and needs the node.
+	// default and needs the node. The runners take only node commands.
 	if command.NeedsNoNode() {
 		if err := policycmd.WriteOfflineTemplate(command, ioStreams); err != nil {
 			writePolicyError(streams.stderr, err)
@@ -87,12 +83,6 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 		}
 		command.Verb = verb
 		args = args[1:]
-	}
-	for _, arg := range args {
-		switch arg {
-		case "--check", "--yaml", "--sha256", "--save", "--to-cosigner", "--online", "--target":
-			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (status, export, check, diff, apply, remove, or template)", arg)
-		}
 	}
 	fs := flag.NewFlagSet("apadmin policy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -179,6 +169,8 @@ apply and remove, and reject --ipc-path.
 	command.NodeContext = *nodeContext
 	command.NoNodeContext = *noNodeContext
 	command.Args = fs.Args()
+	// The one validation of the command: the runners and
+	// WriteOfflineTemplate take it as given.
 	if err := command.Validate(); err != nil {
 		return command, rescue, err
 	}

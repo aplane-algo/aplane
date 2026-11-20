@@ -27,13 +27,10 @@ var ErrPolicyInvalid = errors.New("policy is invalid")
 // shipped default for the role named by --embedded, or the preset named by
 // --preset for the role --role names (cosigner by default), as the starting
 // document for --key (or as the default itself); or, for --list-presets,
-// that role's presets. It needs no
-// node and no passphrase. Every other template form prints a node's own
-// default.
+// that role's presets. It needs no node and no passphrase, and takes a
+// command its caller validated. Every other template form prints a node's
+// own default.
 func WriteOfflineTemplate(command Command, streams Streams) error {
-	if err := command.Validate(); err != nil {
-		return err
-	}
 	if !command.NeedsNoNode() {
 		return fmt.Errorf("policy template --embedded signer|cosigner, --preset NAME, or --list-presets is required without a node")
 	}

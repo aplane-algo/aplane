@@ -228,7 +228,6 @@ func writePolicyFile(t *testing.T, name, content string) string {
 }
 
 func onlineEnv(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "secret")
 }
 
@@ -344,7 +343,6 @@ func TestOnlineAuthenticationFailureClosesSession(t *testing.T) {
 }
 
 func TestPolicyStatusAcceptsPipedPassphrase(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	originalOpenTTY := OpenTTY
 	t.Cleanup(func() { OpenTTY = originalOpenTTY })
@@ -367,7 +365,6 @@ func TestPolicyStatusAcceptsPipedPassphrase(t *testing.T) {
 // The login and unlock get the passphrase Run read, not copies of it, so
 // Run's zeroing clears every passphrase the session was handed.
 func TestOnlineRunLeavesNoPassphraseCopyBehind(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
 	session.status = "locked"
@@ -409,7 +406,6 @@ type countingReader struct{ calls int }
 func (r *countingReader) Read([]byte) (int, error) { r.calls++; return 0, io.EOF }
 
 func TestHeadlessApplyStdinFailsBeforeReadingDocument(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	originalOpenTTY := OpenTTY
 	t.Cleanup(func() { OpenTTY = originalOpenTTY })
@@ -427,7 +423,6 @@ func TestHeadlessApplyStdinFailsBeforeReadingDocument(t *testing.T) {
 }
 
 func TestRescueApplyWithoutIndependentPassphraseDoesNotConsumeDocument(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	originalOpenTTY := OpenTTY
 	t.Cleanup(func() { OpenTTY = originalOpenTTY })
@@ -440,26 +435,6 @@ func TestRescueApplyWithoutIndependentPassphraseDoesNotConsumeDocument(t *testin
 	}
 	if stdin.calls != 0 {
 		t.Fatalf("stdin read %d times before authentication", stdin.calls)
-	}
-}
-
-func TestRetiredPassphraseEnvironmentFailsBeforeSession(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "legacy-secret")
-	session := newFakeSession("signer")
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus}, Streams{Stderr: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "is retired") || session.dialCalls != 0 {
-		t.Fatalf("Run() error = %v, dials %d", err, session.dialCalls)
-	}
-}
-
-func TestRejectRetiredEnvironmentFailsClosedAtCredentialBoundary(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "legacy-secret")
-	if err := RejectRetiredEnvironment(); err == nil || !strings.Contains(err.Error(), retiredPassphraseEnv+" is retired") {
-		t.Fatalf("RejectRetiredEnvironment() error = %v, want retired credential rejection", err)
-	}
-	t.Setenv(retiredPassphraseEnv, "")
-	if err := RejectRetiredEnvironment(); err != nil {
-		t.Fatalf("RejectRetiredEnvironment() with empty variable error = %v", err)
 	}
 }
 
@@ -480,10 +455,9 @@ func TestProductionVerbCatalogIsUnique(t *testing.T) {
 // no passphrase, and needs no store. Every other template form prints the
 // node's own default and fails without a node rather than falling back.
 func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	var stdout bytes.Buffer
-	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Embedded: "signer"}, Streams{Stdout: &stdout}); err != nil {
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate, Embedded: "signer"}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
 	want, err := policytext.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
@@ -491,14 +465,17 @@ func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) 
 		t.Fatalf("embedded signer template = %q, %v", stdout.String(), err)
 	}
 	stdout.Reset()
-	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Embedded: "cosigner", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate, Embedded: "cosigner", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
 	if want, err = policytext.EmbeddedTemplate(noderole.RoleCosigner, testKeyA); err != nil || stdout.String() != want {
 		t.Fatalf("embedded cosigner template = %q, %v", stdout.String(), err)
 	}
-	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate}, Streams{}); err == nil {
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate}, Streams{}); err == nil {
 		t.Fatal("template without a node or --embedded succeeded")
+	}
+	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate}, Streams{}); err == nil {
+		t.Fatal("template without a node succeeded")
 	}
 
 	onlineEnv(t)
@@ -521,7 +498,7 @@ func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) 
 		"yes is for changes":    {Verb: VerbTemplate, Embedded: "signer", Yes: true},
 		"remove default":        {Verb: VerbRemove, Args: []string{policy.DefaultKey}},
 	} {
-		if err := (OnlineRunner{Session: session}).Run(context.Background(), command, Streams{}); err == nil {
+		if err := command.Validate(); err == nil {
 			t.Fatalf("%s: command accepted", name)
 		}
 	}
@@ -530,10 +507,9 @@ func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) 
 // template --preset and --list-presets, like --embedded, print apadmin's own
 // text with no node, store, or passphrase.
 func TestTemplatePresetNeedsNoNode(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	var stdout bytes.Buffer
-	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Preset: "self-only", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate, Preset: "self-only", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
 	want, err := policytext.PresetTemplate(noderole.RoleCosigner, "self-only", testKeyA)
@@ -541,7 +517,7 @@ func TestTemplatePresetNeedsNoNode(t *testing.T) {
 		t.Fatalf("preset template = %q, %v", stdout.String(), err)
 	}
 	stdout.Reset()
-	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, ListPresets: true}, Streams{Stdout: &stdout}); err != nil {
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate, ListPresets: true}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
 	for _, preset := range policytext.Presets(noderole.RoleCosigner) {
@@ -549,7 +525,7 @@ func TestTemplatePresetNeedsNoNode(t *testing.T) {
 			t.Fatalf("preset list misses %s:\n%s", preset.Name, stdout.String())
 		}
 	}
-	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Preset: "nope"}, Streams{Stdout: &stdout}); err == nil || !strings.Contains(err.Error(), "unknown cosigner policy preset") {
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate, Preset: "nope"}, Streams{Stdout: &stdout}); err == nil || !strings.Contains(err.Error(), "unknown cosigner policy preset") {
 		t.Fatalf("unknown preset error = %v", err)
 	}
 }
@@ -558,40 +534,33 @@ func TestTemplatePresetNeedsNoNode(t *testing.T) {
 // cosigner's, as before, and a signer-only name says which flag to add.
 func TestTemplatePresetRole(t *testing.T) {
 	const testSignerKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "")
-	for _, runner := range []interface {
-		Run(context.Context, Command, Streams) error
-	}{OnlineRunner{}, RescueRunner{}} {
-		var stdout bytes.Buffer
-		if err := runner.Run(context.Background(), Command{Verb: VerbTemplate, Preset: "self-only", Key: testSignerKey, PresetRole: "signer"}, Streams{Stdout: &stdout}); err != nil {
-			t.Fatal(err)
-		}
-		want, err := policytext.PresetTemplate(noderole.RoleSigner, "self-only", testSignerKey)
-		if err != nil || stdout.String() != want {
-			t.Fatalf("signer preset = %q, %v", stdout.String(), err)
-		}
-		stdout.Reset()
-		if err := runner.Run(context.Background(), Command{Verb: VerbTemplate, ListPresets: true, PresetRole: "signer"}, Streams{Stdout: &stdout}); err != nil {
-			t.Fatal(err)
-		}
-		if out := stdout.String(); !strings.Contains(out, "transfers-only") || strings.Contains(out, "capped-any") || !strings.Contains(out, "User Auto-Approve") {
-			t.Fatalf("signer preset list:\n%s", out)
-		}
-		err = runner.Run(context.Background(), Command{Verb: VerbTemplate, Preset: "transfers-only"}, Streams{Stdout: &stdout})
-		if err == nil || !strings.Contains(err.Error(), "unknown cosigner policy preset") || !strings.Contains(err.Error(), "add --role signer") {
-			t.Fatalf("a signer name without --role: %v", err)
-		}
-		err = runner.Run(context.Background(), Command{Verb: VerbTemplate, Preset: "capped-any", PresetRole: "signer"}, Streams{Stdout: &stdout})
-		if err == nil || !strings.Contains(err.Error(), "add --role cosigner") {
-			t.Fatalf("a cosigner name with --role signer: %v", err)
-		}
+	var stdout bytes.Buffer
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate, Preset: "self-only", Key: testSignerKey, PresetRole: "signer"}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := policytext.PresetTemplate(noderole.RoleSigner, "self-only", testSignerKey)
+	if err != nil || stdout.String() != want {
+		t.Fatalf("signer preset = %q, %v", stdout.String(), err)
+	}
+	stdout.Reset()
+	if err := WriteOfflineTemplate(Command{Verb: VerbTemplate, ListPresets: true, PresetRole: "signer"}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if out := stdout.String(); !strings.Contains(out, "transfers-only") || strings.Contains(out, "capped-any") || !strings.Contains(out, "User Auto-Approve") {
+		t.Fatalf("signer preset list:\n%s", out)
+	}
+	err = WriteOfflineTemplate(Command{Verb: VerbTemplate, Preset: "transfers-only"}, Streams{Stdout: &stdout})
+	if err == nil || !strings.Contains(err.Error(), "unknown cosigner policy preset") || !strings.Contains(err.Error(), "add --role signer") {
+		t.Fatalf("a signer name without --role: %v", err)
+	}
+	err = WriteOfflineTemplate(Command{Verb: VerbTemplate, Preset: "capped-any", PresetRole: "signer"}, Streams{Stdout: &stdout})
+	if err == nil || !strings.Contains(err.Error(), "add --role cosigner") {
+		t.Fatalf("a cosigner name with --role signer: %v", err)
 	}
 }
 
 func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
 	want := testSignerDoc
 	file := writePolicyFile(t, "default.json", want)
@@ -626,7 +595,6 @@ func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 // stores strict JSON, and export returns it without the comments.
 func TestRescueApplyStripsCommentsFromTheStoredDocument(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
 	want := testSignerDoc
 	commented := strings.Replace(want, "{\n", "{\n  // what the node signs under\n", 1)
@@ -663,7 +631,6 @@ func TestRescueApplyStripsCommentsFromTheStoredDocument(t *testing.T) {
 
 func TestRescueCosignerApplyAndRemovePerKey(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleCosigner)
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
 	files := []string{writePolicyFile(t, "a.json", testCosignerDoc(testKeyA)), writePolicyFile(t, "b.json", testCosignerDoc(testKeyB))}
 	var stderr bytes.Buffer
@@ -700,7 +667,6 @@ func TestRescueCosignerApplyAndRemovePerKey(t *testing.T) {
 
 func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
-	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
 	before := verifiedDefault(t, root, passphrase)
 	shared, err := storelock.AcquireShared(root)
