@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/appinput"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
@@ -64,35 +63,7 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 		}
 	}
 
-	if params.ApprovalPath == "" {
-		return nil, fmt.Errorf("missing approval program")
-	}
-	if params.ClearPath == "" {
-		return nil, fmt.Errorf("missing clear program")
-	}
 	return params, nil
-}
-
-// appDeployProgramOption is one spelling of a program option: which program
-// it sets, and how its value says whether the file is compiled.
-type appDeployProgramOption struct {
-	kind   string
-	source func(value string) appinput.ProgramSource
-}
-
-func programAs(compiled bool) func(string) appinput.ProgramSource {
-	return func(value string) appinput.ProgramSource {
-		return appinput.ProgramSource{Path: value, Compiled: compiled}
-	}
-}
-
-var appDeployProgramOptions = map[string]appDeployProgramOption{
-	"approval":      {"approval", appinput.DetectProgramSource},
-	"approval-teal": {"approval", programAs(false)},
-	"approval-bin":  {"approval", programAs(true)},
-	"clear":         {"clear", appinput.DetectProgramSource},
-	"clear-teal":    {"clear", programAs(false)},
-	"clear-bin":     {"clear", programAs(true)},
 }
 
 // appDeployUintOption is a numeric option: its width and where it is stored.
@@ -107,10 +78,6 @@ var appDeployUintOptions = map[string]appDeployUintOption{
 	"local-uint":   {64, func(p *appDeployArgs, v uint64) { p.LocalUint = v }},
 	"local-bytes":  {64, func(p *appDeployArgs, v uint64) { p.LocalBytes = v }},
 	"extra-pages":  {32, func(p *appDeployArgs, v uint64) { p.ExtraPages = uint32(v) }},
-	"fee": {64, func(p *appDeployArgs, v uint64) {
-		p.Fee = v
-		p.UseFlatFee = true
-	}},
 }
 
 // applyOption applies one argument after the account.
@@ -133,20 +100,10 @@ func (a *appDeployArgs) applyOption(seen cmdspec.SeenOptions, arg string) error 
 // applyNamedOption applies name=value when name is an option, and reports
 // whether it was one.
 func (a *appDeployArgs) applyNamedOption(seen cmdspec.SeenOptions, name, value string) (bool, error) {
-	if option, known := appDeployProgramOptions[name]; known {
-		return true, a.setProgram(seen, option.kind, option.source(value))
-	}
 	if option, known := appDeployUintOptions[name]; known {
 		return true, a.setUint(seen, name, value, option)
 	}
-	if name == "note" {
-		if err := seen.Once("note"); err != nil {
-			return true, err
-		}
-		a.Note = value
-		return true, nil
-	}
-	return false, nil
+	return applyAppTxnOption(&a.AppTxnOptions, seen, name, value)
 }
 
 // setUint parses and stores a numeric option, once.
@@ -159,26 +116,5 @@ func (a *appDeployArgs) setUint(seen cmdspec.SeenOptions, name, value string, op
 		return fmt.Errorf("invalid %s value: %s", name, value)
 	}
 	option.set(a, parsed)
-	return nil
-}
-
-// setProgram records the approval or clear program, once.
-func (a *appDeployArgs) setProgram(seen cmdspec.SeenOptions, kind string, source appinput.ProgramSource) error {
-	if source.Path == "" {
-		return fmt.Errorf("missing value for %s", kind)
-	}
-	if err := seen.Once(kind); err != nil {
-		return err
-	}
-	switch kind {
-	case "approval":
-		a.ApprovalPath = source.Path
-		a.ApprovalCompiled = source.Compiled
-	case "clear":
-		a.ClearPath = source.Path
-		a.ClearCompiled = source.Compiled
-	default:
-		return fmt.Errorf("unknown program kind: %s", kind)
-	}
 	return nil
 }

@@ -76,6 +76,9 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 			return nil, fmt.Errorf("invalid box %d name: box name must be non-empty", i+1)
 		}
 	}
+	if err := checkAppCallPrograms(params); err != nil {
+		return nil, err
+	}
 
 	signingCtx, err := e.BuildSigningContext(ctx, params.From)
 	if err != nil {
@@ -95,15 +98,7 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 	foreignApps := ensureAppReferences(params.AppID, params.ForeignApps, params.Boxes)
 	var approvalProgram []byte
 	var clearProgram []byte
-
-	switch params.OnCompletion {
-	case types.UpdateApplicationOC:
-		if params.Approval.Path == "" {
-			return nil, fmt.Errorf("missing approval program for app update")
-		}
-		if params.Clear.Path == "" {
-			return nil, fmt.Errorf("missing clear program for app update")
-		}
+	if params.OnCompletion == types.UpdateApplicationOC {
 		approvalProgram, err = e.loadAppProgram(ctx, params.Approval)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load approval program: %w", err)
@@ -111,10 +106,6 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 		clearProgram, err = e.loadAppProgram(ctx, params.Clear)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load clear program: %w", err)
-		}
-	default:
-		if params.Approval.Path != "" || params.Clear.Path != "" {
-			return nil, fmt.Errorf("approval and clear programs are only supported with oncomp=update")
 		}
 	}
 
@@ -148,6 +139,24 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 		SigningContext: signingCtx,
 		AppCallInfo:    &signerapi.AppCallInfo{Mode: "raw"},
 	}, nil
+}
+
+// checkAppCallPrograms holds the one rule for an app call's programs, for
+// every caller: an update carries both, and any other call carries neither.
+func checkAppCallPrograms(params RawAppCallParams) error {
+	if params.OnCompletion == types.UpdateApplicationOC {
+		if params.Approval.Path == "" {
+			return fmt.Errorf("missing approval program for app update")
+		}
+		if params.Clear.Path == "" {
+			return fmt.Errorf("missing clear program for app update")
+		}
+		return nil
+	}
+	if params.Approval.Path != "" || params.Clear.Path != "" {
+		return fmt.Errorf("approval and clear programs are only supported with oncomp=update")
+	}
+	return nil
 }
 
 func (e *Engine) PrepareAppCallMethod(ctx context.Context, params MethodAppCallParams) (*PreparedMethodAppCall, error) {

@@ -30,27 +30,76 @@ func newCommonAppCallOptions() commonAppCallOptions {
 	}
 }
 
+// appProgramOption is one spelling of a program option: which program it
+// sets, and how its value says whether the file is compiled.
+type appProgramOption struct {
+	kind   string
+	source func(value string) appinput.ProgramSource
+}
+
+func programAs(compiled bool) func(string) appinput.ProgramSource {
+	return func(value string) appinput.ProgramSource {
+		return appinput.ProgramSource{Path: value, Compiled: compiled}
+	}
+}
+
+var appProgramOptions = map[string]appProgramOption{
+	"approval":      {"approval", appinput.DetectProgramSource},
+	"approval-teal": {"approval", programAs(false)},
+	"approval-bin":  {"approval", programAs(true)},
+	"clear":         {"clear", appinput.DetectProgramSource},
+	"clear-teal":    {"clear", programAs(false)},
+	"clear-bin":     {"clear", programAs(true)},
+}
+
+// applyAppTxnOption applies name=value when name is a program, note or fee
+// option, which app call and app deploy share, and reports whether it was
+// one. Each is single-valued.
+func applyAppTxnOption(opts *apshellapp.AppTxnOptions, seen cmdspec.SeenOptions, name, value string) (bool, error) {
+	if option, known := appProgramOptions[name]; known {
+		return true, setAppProgram(opts, seen, option.kind, option.source(value))
+	}
+	if name != "note" && name != "fee" {
+		return false, nil
+	}
+	if err := seen.Once(name); err != nil {
+		return true, err
+	}
+	if name == "note" {
+		opts.Note = value
+		return true, nil
+	}
+	fee, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return true, fmt.Errorf("invalid fee value: %s", value)
+	}
+	opts.Fee = fee
+	opts.UseFlatFee = true
+	return true, nil
+}
+
+// setAppProgram records the approval or clear program, once.
+func setAppProgram(opts *apshellapp.AppTxnOptions, seen cmdspec.SeenOptions, kind string, source appinput.ProgramSource) error {
+	if source.Path == "" {
+		return fmt.Errorf("missing value for %s", kind)
+	}
+	if err := seen.Once(kind); err != nil {
+		return err
+	}
+	if kind == "approval" {
+		opts.ApprovalPath, opts.ApprovalCompiled = source.Path, source.Compiled
+	} else {
+		opts.ClearPath, opts.ClearCompiled = source.Path, source.Compiled
+	}
+	return nil
+}
+
 func parseCommonAppCallOption(args []string, i int, opts *commonAppCallOptions) (int, bool, error) {
 	arg := args[i]
-
-	setProgram := func(kind, value string, compiled bool) error {
-		if value == "" {
-			return fmt.Errorf("missing value for %s", kind)
+	if name, value, ok := strings.Cut(arg, "="); ok {
+		if handled, err := applyAppTxnOption(&opts.AppTxnOptions, opts.seen, name, value); handled {
+			return i, true, err
 		}
-		if err := opts.seen.Once(kind); err != nil {
-			return err
-		}
-		switch kind {
-		case "approval":
-			opts.ApprovalPath = value
-			opts.ApprovalCompiled = compiled
-		case "clear":
-			opts.ClearPath = value
-			opts.ClearCompiled = compiled
-		default:
-			return fmt.Errorf("unknown program kind: %s", kind)
-		}
-		return nil
 	}
 
 	switch {
@@ -122,37 +171,6 @@ func parseCommonAppCallOption(args []string, i int, opts *commonAppCallOptions) 
 		}
 		opts.OnCompletion = onComp
 		return i, true, nil
-	case strings.HasPrefix(arg, "approval-teal="):
-		return i, true, setProgram("approval", strings.TrimPrefix(arg, "approval-teal="), false)
-	case strings.HasPrefix(arg, "approval-bin="):
-		return i, true, setProgram("approval", strings.TrimPrefix(arg, "approval-bin="), true)
-	case strings.HasPrefix(arg, "approval="):
-		src := appinput.DetectProgramSource(strings.TrimPrefix(arg, "approval="))
-		return i, true, setProgram("approval", src.Path, src.Compiled)
-	case strings.HasPrefix(arg, "clear-teal="):
-		return i, true, setProgram("clear", strings.TrimPrefix(arg, "clear-teal="), false)
-	case strings.HasPrefix(arg, "clear-bin="):
-		return i, true, setProgram("clear", strings.TrimPrefix(arg, "clear-bin="), true)
-	case strings.HasPrefix(arg, "clear="):
-		src := appinput.DetectProgramSource(strings.TrimPrefix(arg, "clear="))
-		return i, true, setProgram("clear", src.Path, src.Compiled)
-	case strings.HasPrefix(arg, "note="):
-		if err := opts.seen.Once("note"); err != nil {
-			return i, true, err
-		}
-		opts.Note = strings.TrimPrefix(arg, "note=")
-		return i, true, nil
-	case strings.HasPrefix(arg, "fee="):
-		if err := opts.seen.Once("fee"); err != nil {
-			return i, true, err
-		}
-		feeVal, err := strconv.ParseUint(strings.TrimPrefix(arg, "fee="), 10, 64)
-		if err != nil {
-			return i, true, fmt.Errorf("invalid fee value: %s", strings.TrimPrefix(arg, "fee="))
-		}
-		opts.Fee = feeVal
-		opts.UseFlatFee = true
-		return i, true, nil
 	case strings.HasPrefix(arg, "arg:"):
 		return i, true, cmdspec.AddLsigArg(&opts.LsigArgs, arg)
 	default:
@@ -201,18 +219,6 @@ func parseRawAppCallArgs(args []string) (*apshellapp.AppCallRawRequest, error) {
 	}
 
 	params.AppCallOptions = common.AppCallOptions
-
-	if params.OnCompletion == types.UpdateApplicationOC {
-		if params.ApprovalPath == "" {
-			return nil, fmt.Errorf("app update requires approval=<path> or approval-bin=<path>")
-		}
-		if params.ClearPath == "" {
-			return nil, fmt.Errorf("app update requires clear=<path> or clear-bin=<path>")
-		}
-	} else if params.ApprovalPath != "" || params.ClearPath != "" {
-		return nil, fmt.Errorf("approval and clear programs are only valid with oncomp=update")
-	}
-
 	return params, nil
 }
 
@@ -286,17 +292,6 @@ func parseMethodAppCallArgs(args []string) (*apshellapp.AppCallMethodRequest, er
 	if params.From == "" {
 		return nil, fmt.Errorf("app call requires from <account>")
 	}
-	if params.OnCompletion == types.UpdateApplicationOC {
-		if params.ApprovalPath == "" {
-			return nil, fmt.Errorf("app update requires approval=<path> or approval-bin=<path>")
-		}
-		if params.ClearPath == "" {
-			return nil, fmt.Errorf("app update requires clear=<path> or clear-bin=<path>")
-		}
-	} else if params.ApprovalPath != "" || params.ClearPath != "" {
-		return nil, fmt.Errorf("approval and clear programs are only valid with oncomp=update")
-	}
-
 	return params, nil
 }
 

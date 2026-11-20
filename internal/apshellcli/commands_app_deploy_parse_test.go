@@ -69,6 +69,9 @@ func TestParseAppDeployArgsAccepts(t *testing.T) {
 			appDeployArgs{From: "alice", Wait: true, ApprovalPath: "a", ApprovalCompiled: true, ClearPath: "c.TEAL.bak", ClearCompiled: true}},
 		{"a LogicSig argument named like an option stays an argument", deployArgs("approval=a.teal", "clear=c.teal", "arg:fee=01", "arg:alice:approval=aa"),
 			appDeployArgs{From: "alice", Wait: true, ApprovalPath: "a.teal", ClearPath: "c.teal", LsigArgs: optionNamedLsigArgs}},
+		// engine.PrepareAppDeploy refuses a missing program, for every caller.
+		{"a missing program is left to the engine", deployArgs("approval=a.teal"),
+			appDeployArgs{From: "alice", Wait: true, ApprovalPath: "a.teal"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,11 +146,8 @@ func TestParseAppDeployArgsRefusals(t *testing.T) {
 		{"a repeated LogicSig argument", with("arg:preimage=00", "arg:preimage=11"), repeatedLsigArg.Error()},
 		{"a LogicSig argument without a value", with("arg:preimage"), valuelessLsigArg.Error()},
 
-		{"no approval program", deployArgs("clear=c.teal"), "missing approval program"},
-		{"no clear program", deployArgs("approval=a.teal"), "missing clear program"},
-		{"no programs at all", deployArgs(), "missing approval program"},
 		{"the first bad argument reports", deployArgs("bogus", "fee=x"), "unknown app deploy argument: bogus"},
-		{"a bad argument before a missing program", deployArgs("approval=a.teal", "fee=x"), "invalid fee value: x"},
+		{"a bad argument with a program missing", deployArgs("approval=a.teal", "fee=x"), "invalid fee value: x"},
 	}
 	// A repeat is reported before the repeated value is read, for every
 	// numeric option.

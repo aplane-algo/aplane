@@ -15,23 +15,29 @@ import (
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
-// AppCallOptions are the options both forms of app call take.
-type AppCallOptions struct {
-	PayAmount        uint64
-	Accounts         []string
-	ForeignApps      []uint64
-	AssetRefs        []cmdspec.AssetRef
-	Boxes            []types.AppBoxReference
-	OnCompletion     types.OnCompletion
+// AppTxnOptions are the program, note and fee options app call and app
+// deploy both take.
+type AppTxnOptions struct {
 	ApprovalPath     string
 	ApprovalCompiled bool
 	ClearPath        string
 	ClearCompiled    bool
 	Note             string
-	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
-	LsigArgs         cmdspec.LsigArgs
+}
+
+// AppCallOptions are the options both forms of app call take.
+type AppCallOptions struct {
+	PayAmount    uint64
+	Accounts     []string
+	ForeignApps  []uint64
+	AssetRefs    []cmdspec.AssetRef
+	Boxes        []types.AppBoxReference
+	OnCompletion types.OnCompletion
+	Wait         bool
+	LsigArgs     cmdspec.LsigArgs
+	AppTxnOptions
 }
 
 // AppCallRawRequest captures the parsed raw app call request.

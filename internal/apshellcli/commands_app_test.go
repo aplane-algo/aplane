@@ -228,13 +228,22 @@ func TestParseMethodAppCallArgs_WithLsigArgsAndUpdatePrograms(t *testing.T) {
 	}
 }
 
-func TestParseRawAppCallArgsUpdateRequiresPrograms(t *testing.T) {
-	_, err := parseRawAppCallArgs([]string{
-		"raw", "123", "from", "alice",
-		"oncomp=update",
-	})
-	if err == nil || err.Error() != "app update requires approval=<path> or approval-bin=<path>" {
-		t.Fatalf("expected missing-approval error, got %v", err)
+// TestParseAppCallArgsLeaveProgramRulesToEngine pins that the parsers do not
+// apply the oncomp=update program rules: engine.PrepareAppCallRaw does, for
+// every caller, before any network work.
+func TestParseAppCallArgsLeaveProgramRulesToEngine(t *testing.T) {
+	for _, rest := range [][]string{
+		{"oncomp=update"},
+		{"oncomp=update", "approval=/tmp/approval.teal"},
+		{"approval=/tmp/approval.teal"},
+		{"oncomp=optin", "clear=/tmp/clear.teal"},
+	} {
+		if _, err := parseRawAppCallArgs(append([]string{"raw", "123", "from", "alice"}, rest...)); err != nil {
+			t.Errorf("parseRawAppCallArgs(%v) error = %v, want the engine to decide", rest, err)
+		}
+		if _, err := parseMethodAppCallArgs(append([]string{"123", "increment", "--abi", "/tmp/test.json", "from", "alice"}, rest...)); err != nil {
+			t.Errorf("parseMethodAppCallArgs(%v) error = %v, want the engine to decide", rest, err)
+		}
 	}
 }
 
@@ -256,18 +265,6 @@ func TestParseRawAppCallArgsUpdatePrograms(t *testing.T) {
 	}
 	if params.ClearPath != "/tmp/clear.bin" || !params.ClearCompiled {
 		t.Fatalf("unexpected clear params: %+v", params)
-	}
-}
-
-func TestParseMethodAppCallArgsRejectsProgramsWithoutUpdate(t *testing.T) {
-	_, err := parseMethodAppCallArgs([]string{
-		"123", "increment",
-		"--abi", "/tmp/test.json",
-		"from", "alice",
-		"approval=/tmp/approval.teal",
-	})
-	if err == nil || err.Error() != "approval and clear programs are only valid with oncomp=update" {
-		t.Fatalf("expected non-update program error, got %v", err)
 	}
 }
 
