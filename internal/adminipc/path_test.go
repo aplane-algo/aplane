@@ -141,16 +141,17 @@ func TestResolveInStoreSocketPathUsesTheDefaultWhenNoneIsConfigured(t *testing.T
 	}
 }
 
-func TestResolveInStoreSocketPathIsEmptyForExternalCustomPath(t *testing.T) {
+func TestResolveInStoreSocketPathUsesTheDefaultForExternalCustomPath(t *testing.T) {
 	dataDir := t.TempDir()
 	external := filepath.Join(filepath.Dir(dataDir), "runtime", "custom.sock")
+	want := filepath.Join(dataDir, "aplane.sock")
 
 	got, err := ResolveInStoreSocketPath(dataDir, external)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "" {
-		t.Fatalf("ResolveInStoreSocketPath() = %q, want none", got)
+	if got != want {
+		t.Fatalf("ResolveInStoreSocketPath() = %q, want %q", got, want)
 	}
 }
 

@@ -158,11 +158,11 @@ func cmdPermissionsConvertManaged(args []string) error {
 	if _, err := storeperm.PreflightShared(dataDirectory); err != nil {
 		return err
 	}
-	socketPath, err := conversionSocketPath(dataDirectory)
+	opts, err := convertManagedMigrationOptions(uid, gid)
 	if err != nil {
 		return err
 	}
-	result, err := storeperm.MigratePrivate(storeperm.ConversionMigrationOptions(dataDirectory, uid, gid, socketPath))
+	result, err := storeperm.MigratePrivate(opts)
 	if err != nil {
 		return err
 	}
@@ -224,9 +224,28 @@ func configuredLiveAuditSocketPath(root string) (path string, unreadable error, 
 	return path, unreadable, nil
 }
 
-// conversionSocketPath resolves the socket the same-UID daemon of the store
-// being converted binds inside the store, or "" when its configuration puts
-// it elsewhere.
+// convertManagedMigrationOptions is the conversion policy for a same-UID
+// store. The systemd installer also converts a store that is already
+// managed; that one is repaired as permissions migrate repairs it, because
+// its managed daemon never binds inside the store.
+func convertManagedMigrationOptions(uid, gid int) (storeperm.MigrationOptions, error) {
+	managed, err := signerbootstrap.IsProductionManagedDataDir(dataDirectory)
+	if err != nil {
+		return storeperm.MigrationOptions{}, err
+	}
+	if managed {
+		return storeperm.RepairMigrationOptions(dataDirectory, uid, gid), nil
+	}
+	socketPath, err := conversionSocketPath(dataDirectory)
+	if err != nil {
+		return storeperm.MigrationOptions{}, err
+	}
+	return storeperm.ConversionMigrationOptions(dataDirectory, uid, gid, socketPath), nil
+}
+
+// conversionSocketPath resolves the in-store socket the same-UID daemon of
+// the store being converted left: the in-store path config.yaml names, or the
+// same-UID default when config.yaml names a path outside the store.
 func conversionSocketPath(root string) (string, error) {
 	cfg, err := serverconfig.LoadServerConfig(root)
 	if err != nil {

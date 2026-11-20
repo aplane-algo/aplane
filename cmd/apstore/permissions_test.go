@@ -184,7 +184,7 @@ func TestConversionSocketPathUsesCustomInStoreConfig(t *testing.T) {
 	}
 }
 
-func TestConversionSocketPathIsEmptyForExternalConfig(t *testing.T) {
+func TestConversionSocketPathUsesTheDefaultForExternalConfig(t *testing.T) {
 	root := t.TempDir()
 	external := filepath.Join(filepath.Dir(root), "runtime", "custom.sock")
 	config := []byte("ipc_path: " + external + "\n")
@@ -196,8 +196,8 @@ func TestConversionSocketPathIsEmptyForExternalConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "" {
-		t.Fatalf("conversionSocketPath() = %q, want none", got)
+	if want := filepath.Join(root, "aplane.sock"); got != want {
+		t.Fatalf("conversionSocketPath() = %q, want %q", got, want)
 	}
 }
 

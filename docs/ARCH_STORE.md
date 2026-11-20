@@ -176,7 +176,9 @@ beneath an owned private child without permitting a general writable-ancestor
 exception.
 An explicit custom socket for a systemd-managed signer must remain outside the
 store and its parent runtime directory must be service-user-owned and
-non-writable by group and other users.
+non-writable by group and other users. A same-UID store whose `config.yaml`
+places a custom socket inside the store can still be converted while stopped;
+the managed daemon then refuses that configuration until the socket is moved.
 
 All IPC bind paths use the same directory-chain trust rule. Directory aliases
 are resolved before validation and the daemon binds the canonical result. The
@@ -304,12 +306,15 @@ reports as the repairs to make. It inventories without following
 symlinks and reports unsafe ancestors, ownership, modes, hardlinks, and
 unexpected file types. Its public policies are opaque operation-specific values: production
 audit rejects every in-store socket, same-UID audit recognizes one exact live
-socket without relaxing ancestor checks, and conversion alone receives a
-removable socket: the one exact in-store path the same-UID daemon's
-`config.yaml` names, when it names one inside the store. Repair of a managed
-store (`permissions migrate` and post-root-mutation normalization) receives
-none and reads no `config.yaml`: a managed daemon never binds inside the store,
-so a socket there is refused like any unexpected object. Migration validates
+socket without relaxing ancestor checks, and conversion of a same-UID store
+alone receives a removable socket: the one exact in-store path its
+`config.yaml` names, or the same-UID default `<data-root>/aplane.sock` when
+`config.yaml` names a path outside the store, which a daemon run before that
+change left behind. Repair of a managed store (`permissions migrate`,
+post-root-mutation normalization, and `convert-managed` run again on a store
+that is already managed, as the systemd installer does) receives none and
+reads no `config.yaml`: a managed daemon never binds inside the store, so a
+socket there is refused like any unexpected object. Migration validates
 the complete inventory before mutation, removes the recognized socket, removes
 group access at the root first, repairs recognized objects through opened
 descriptors, syncs directories, and independently audits the private result. A
@@ -331,7 +336,7 @@ deliberately does not infer an owner from untrusted store metadata and does not
 create `.apstore.lock`.
 
 `apstore permissions convert-managed` then acquires the exclusive store lock,
-migrates and audits the legacy tree, and publishes root-controlled
+migrates and audits the same-UID tree, and publishes root-controlled
 `install/service-principal.json` followed by `.prod`. A busy store therefore
 fails before either managed marker appears. The marker is published last so a
 failed migration remains an unmarked local store.

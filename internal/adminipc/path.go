@@ -66,14 +66,19 @@ func ResolveDaemonPathForDataDir(dataDir, configured string) (string, bool, erro
 
 // ResolveInStoreSocketPath returns the one exact in-store socket that the
 // stopped conversion of a same-UID store may remove: the path its daemon
-// binds, when that is inside the store, and "" otherwise.
+// binds, when that is inside the store. When config names a path outside the
+// store, it is the same-UID default, which a daemon run before that config
+// change left behind.
 func ResolveInStoreSocketPath(dataDir, configured string) (string, error) {
 	configured = ResolveDaemonPath(dataDir, configured, false)
 	inside, err := pathWithin(dataDir, configured)
-	if err != nil || !inside {
+	if err != nil {
 		return "", err
 	}
-	return configured, nil
+	if inside {
+		return configured, nil
+	}
+	return filepath.Clean(filepath.Join(dataDir, "aplane.sock")), nil
 }
 
 func validateManagedDaemonPath(dataDir, resolved string, managed bool) error {

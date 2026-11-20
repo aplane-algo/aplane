@@ -144,9 +144,9 @@ func TestPermissionsConvertManagedRemovesTheLocalDaemonSocket(t *testing.T) {
 	}
 }
 
-// With the daemon's socket configured outside the store, conversion removes
-// no in-store socket: one at the default path is refused.
-func TestPermissionsConvertManagedRefusesAStoreSocketTheConfigDoesNotName(t *testing.T) {
+// A same-UID daemon run with the default socket, before config.yaml named a
+// path outside the store, left the default behind; conversion removes it.
+func TestPermissionsConvertManagedRemovesTheDefaultSocketWhenConfigNamesAnExternalPath(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("conversion of the test user's store; root publishes the metadata")
 	}
@@ -159,6 +159,30 @@ func TestPermissionsConvertManagedRefusesAStoreSocketTheConfigDoesNotName(t *tes
 	staleSocket(t, socket)
 
 	err := cmdPermissionsConvertManaged(convertManagedArgs())
+	if err != nil && !strings.Contains(err.Error(), "install metadata directory") {
+		t.Fatalf("cmdPermissionsConvertManaged() error = %v, want success or the root-only metadata step", err)
+	}
+	if _, statErr := os.Lstat(socket); !os.IsNotExist(statErr) {
+		t.Fatalf("conversion left the stale default socket: %v", statErr)
+	}
+}
+
+func convertManagedArgs() []string {
+	return []string{"--uid", strconv.Itoa(os.Getuid()), "--gid", strconv.Itoa(os.Getgid())}
+}
+
+// The systemd installer runs the conversion on every install, an already
+// managed store included. There it repairs as permissions migrate does: a
+// socket inside the store is refused, not removed.
+func TestPermissionsConvertManagedRepairsAnAlreadyManagedStoreAsMigrateDoes(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("conversion of the test user's store; root publishes the metadata")
+	}
+	root := permissionTestStore(t, true)
+	socket := filepath.Join(root, "aplane.sock")
+	staleSocket(t, socket)
+
+	err := cmdPermissionsConvertManaged(convertManagedArgs())
 	want := "refusing unsafe signer-store migration: " + socket + ": unexpected filesystem object type (type)"
 	if err == nil || err.Error() != want {
 		t.Fatalf("cmdPermissionsConvertManaged() error = %v, want %q", err, want)
@@ -166,8 +190,4 @@ func TestPermissionsConvertManagedRefusesAStoreSocketTheConfigDoesNotName(t *tes
 	if _, statErr := os.Lstat(socket); statErr != nil {
 		t.Fatalf("refused conversion removed the socket: %v", statErr)
 	}
-}
-
-func convertManagedArgs() []string {
-	return []string{"--uid", strconv.Itoa(os.Getuid()), "--gid", strconv.Itoa(os.Getgid())}
 }

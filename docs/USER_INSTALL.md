@@ -33,8 +33,8 @@ Command-line arguments take precedence over environment variables, and
 environment variables take precedence over prompts/defaults.
 Installer-generated `apenv.sh` files export `APLANE_INSTALL_ROOT`; systemd
 operator `apenv.sh` also exports `APLANE_BINDIR` and pairs `APSIGNER_DATA`
-with the daemon IPC path resolved by `approbe`: omitted and legacy in-store
-defaults relocate to `/run/apsigner/aplane.sock`, while a valid custom external
+with the daemon IPC path resolved by `approbe`: an omitted path, or one naming
+the in-store default, relocates to `/run/apsigner/aplane.sock`, while a valid custom external
 path is preserved. This lets clients reach a private managed store without
 reading it.
 The bootstrap wrapper also accepts `APLANE_VERSION`,
@@ -650,7 +650,7 @@ Eligible upgrades close the data-directory root, run the read-only
 `apstore permissions preflight`, then run `permissions migrate` and
 `permissions audit` before installing store-relative management content or
 restarting. Migration validates the complete
-legacy inventory before changing it, refuses symlinks, hardlinks, unexpected
+store inventory before changing it, refuses symlinks, hardlinks, unexpected
 object types, or unsafe ancestors, and clamps recognized signer state to the
 private ownership contract.
 
