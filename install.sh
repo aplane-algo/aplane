@@ -50,7 +50,10 @@ show_install_readme() {
     local note="$SCRIPT_DIR/install_readme.txt"
     [ -f "$note" ] || return 0
     local text
-    text="$(cat -- "$note")"
+    if ! text="$(cat -- "$note" 2>/dev/null)"; then
+        echo "Error: cannot read install_readme.txt at $note" >&2
+        exit 1
+    fi
     [[ "$text" == *[![:space:]]* ]] || return 0
     printf '==> Release notes for this installer (install_readme.txt)\n%s\n%s\n\n' \
         "$text" "================================================================================"

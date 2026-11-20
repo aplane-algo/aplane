@@ -548,9 +548,11 @@ root, or that an old install must be removed first. `install.sh` prints it
 before anything else, in every mode and for `--help` too, between a
 `==> Release notes for this installer (install_readme.txt)` header and a
 closing rule, and then carries on without waiting. Read it before you
-answer the installer's prompts; in an unattended install it is at the top of
-the log. An empty note prints nothing. If the note is there but cannot be
-read, the installer stops.
+answer the installer's prompts; in an unattended install it is the first
+thing install.sh writes to the log. When you choose systemd at the mode
+prompt and the installer re-runs itself under sudo, it shows the note again.
+An empty note prints nothing. If the note is there but cannot be read, the
+installer stops with `Error: cannot read install_readme.txt at <path>`.
 
 `install.sh --systemd` accepts an optional operator root path plus `--bindir`
 for a custom binary directory (default: `/usr/local/bin`):

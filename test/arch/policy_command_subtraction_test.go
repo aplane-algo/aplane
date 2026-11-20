@@ -227,8 +227,8 @@ func TestReleaseArchivesShipTheInstallReadme(t *testing.T) {
 // TestInstallerShowsTheInstallReadmeFirst runs install.sh from a scratch
 // archive root. The install_readme.txt beside it is the first thing it
 // prints, verbatim, before the usage and before an argument error; an empty
-// or absent note prints nothing, and one in the working directory is not
-// the archive's.
+// or absent note prints nothing, one that cannot be read stops it with only
+// an error, and one in the working directory is not the archive's.
 func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
 	bash, err := exec.LookPath("bash")
 	if err != nil {
@@ -241,27 +241,38 @@ func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
 	shown := "==> Release notes for this installer (install_readme.txt)\n" +
 		strings.TrimRight(note, "\n") + "\n" + strings.Repeat("=", 80) + "\n\n"
 	cases := []struct {
-		name    string
-		written bool
-		note    string
-		arg     string
-		code    int
-		want    string
+		name       string
+		written    bool
+		unreadable bool // want is then exactly the error naming the note
+		note       string
+		arg        string
+		code       int
+		want       string
 	}{
 		{name: "before the usage", written: true, note: note, arg: "--help", want: shown + "Usage:\n"},
 		{name: "before an argument error", written: true, note: note, arg: "--bogus", code: 2,
 			want: shown + "Error: unknown option: --bogus\n"},
 		{name: "empty", written: true, note: " \n\t\n", arg: "--help", want: "Usage:\n"},
 		{name: "absent", arg: "--help", want: "Usage:\n"},
+		{name: "unreadable", written: true, unreadable: true, note: note, arg: "--help", code: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.unreadable && os.Geteuid() == 0 {
+				t.Skip("root reads a mode 000 file")
+			}
 			archive, work := t.TempDir(), t.TempDir()
 			if err := os.WriteFile(filepath.Join(archive, "install.sh"), []byte(installer), 0o755); err != nil {
 				t.Fatal(err)
 			}
+			want := tc.want
 			if tc.written {
-				if err := os.WriteFile(filepath.Join(archive, "install_readme.txt"), []byte(tc.note), 0o644); err != nil {
+				mode := os.FileMode(0o644)
+				if tc.unreadable {
+					mode = 0
+					want = "Error: cannot read install_readme.txt at " + filepath.Join(archive, "install_readme.txt") + "\n"
+				}
+				if err := os.WriteFile(filepath.Join(archive, "install_readme.txt"), []byte(tc.note), mode); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -278,8 +289,8 @@ func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
 			if code := cmd.ProcessState.ExitCode(); code != tc.code {
 				t.Fatalf("install.sh %s exited %d (%v), want %d:\n%s", tc.arg, code, err, tc.code, out)
 			}
-			if !strings.HasPrefix(string(out), tc.want) {
-				t.Errorf("install.sh %s output does not start with\n%q\ngot\n%q", tc.arg, tc.want, out)
+			if !strings.HasPrefix(string(out), want) || tc.unreadable && string(out) != want {
+				t.Errorf("install.sh %s output does not start with\n%q\ngot\n%q", tc.arg, want, out)
 			}
 			if got := strings.Count(string(out), "==> Release notes"); got > 1 || strings.Contains(string(out), "not the archive's") {
 				t.Errorf("install.sh %s printed a note %d times or the working directory's note:\n%s", tc.arg, got, out)
