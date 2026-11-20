@@ -13,7 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadStoredClientEndpointRegistry loads only endpoints.yaml.
+// LoadStoredClientEndpointRegistry loads endpoints.yaml as it is stored, for
+// editing: SSH paths keep what the file says.
 func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) {
 	path := GetClientEndpointsPath(dataDir)
 	if path == "" {
@@ -62,7 +63,9 @@ type StoredClientEndpointUpsertPlan struct {
 	Created  bool
 	Updated  bool
 	// DestinationChanged reports that Alias already existed and now names a
-	// different node.
+	// different node. A destination is the URL: the node's SSH server
+	// forwards to its own REST listener, so no other field selects the
+	// service.
 	DestinationChanged bool
 }
 
@@ -90,7 +93,7 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}
 	plan := StoredClientEndpointUpsertPlan{Alias: alias}
-	plan.DestinationChanged = exists && ClientEndpointDestinationChanged(existing, normalized)
+	plan.DestinationChanged = exists && existing.URL != normalized.URL
 	registry.Endpoints[alias] = normalized
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return StoredClientEndpointUpsertPlan{}, err
@@ -100,15 +103,6 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	plan.Created = !exists
 	plan.Updated = exists && !storedClientEndpointsEqual(existing, normalized)
 	return plan, nil
-}
-
-// ClientEndpointDestinationChanged reports whether next names a different
-// node than previous. A destination is the URL: the node's SSH server
-// forwards to its own REST listener, so no other field selects the service.
-func ClientEndpointDestinationChanged(previous, next ClientEndpointConfig) bool {
-	previousURL := strings.TrimRight(strings.TrimSpace(previous.URL), "/")
-	nextURL := strings.TrimRight(strings.TrimSpace(next.URL), "/")
-	return previousURL != nextURL
 }
 
 // RemoveStoredClientEndpoint removes an endpoint alias. Callers hold the
@@ -132,7 +126,12 @@ func RemoveStoredClientEndpoint(dataDir, alias string) error {
 	return SaveStoredClientEndpointRegistry(dataDir, registry)
 }
 
+// normalizeStoredClientEndpointRegistry checks and canonicalizes a registry
+// that was loaded or is about to be saved: every endpoint, then at most one
+// signer endpoint and MaxClientCosignerEndpoints cosigner endpoints.
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {
+	// A loaded registry already passed the decode's schema check; this one
+	// is for a registry built in memory and handed to the save.
 	if registry.SchemaVersion == 0 {
 		registry.SchemaVersion = ClientEndpointSchemaVersion
 	}
@@ -149,8 +148,22 @@ func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) err
 		}
 		registry.Endpoints[alias] = normalized
 	}
-	if err := normalizeClientEndpointRegistryRoleState(registry); err != nil {
-		return err
+
+	signerAlias := ""
+	cosignerCount := 0
+	for alias, endpoint := range registry.Endpoints {
+		switch endpoint.Role {
+		case ClientEndpointRoleCosigner:
+			cosignerCount++
+		case ClientEndpointRoleSigner:
+			if signerAlias != "" {
+				return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAlias, alias)
+			}
+			signerAlias = alias
+		}
+	}
+	if cosignerCount > MaxClientCosignerEndpoints {
+		return fmt.Errorf("%s configures %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, cosignerCount, MaxClientCosignerEndpoints)
 	}
 	return nil
 }

@@ -271,8 +271,7 @@ func TestClientEndpointURLRules(t *testing.T) {
 	tests := []struct {
 		raw      string
 		wantURL  string
-		wantErr  string // the save path's error, after the alias prefix
-		loadErr  string // the load path's error when it differs
+		wantErr  string // after the alias prefix
 		wantHost string
 		wantPort int
 	}{
@@ -303,11 +302,7 @@ func TestClientEndpointURLRules(t *testing.T) {
 
 			dataDir := writeTestEndpointRegistry(t, fmt.Sprintf("schema_version: 2\nendpoints:\n  e:\n    role: cosigner\n    url: %q\n", tt.raw))
 			registry, err := LoadClientEndpointRegistry(dataDir)
-			loadErr := tt.wantErr
-			if tt.loadErr != "" {
-				loadErr = tt.loadErr
-			}
-			checkEndpointURLResult(t, "load", err, registry.Endpoints["e"].URL, tt.wantURL, loadErr)
+			checkEndpointURLResult(t, "load", err, registry.Endpoints["e"].URL, tt.wantURL, tt.wantErr)
 
 			if tt.wantErr != "" {
 				return

@@ -5,7 +5,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -57,42 +56,30 @@ func GetClientEndpointsPath(dataDir string) string {
 	return filepath.Join(dataDir, ClientEndpointsFile)
 }
 
-// LoadClientEndpointRegistry loads endpoints.yaml. Client signer routing lives
-// only in endpoints.yaml; config.yaml ssh settings are not a fallback.
+// LoadClientEndpointRegistry loads endpoints.yaml for use: it is the stored
+// registry with each endpoint's SSH paths defaulted and resolved against
+// dataDir. Client signer routing lives only in endpoints.yaml; config.yaml
+// ssh settings are not a fallback.
 func LoadClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) {
-	path := GetClientEndpointsPath(dataDir)
-	if path == "" {
+	if dataDir == "" {
 		return emptyClientEndpointRegistry(), nil
 	}
-	data, err := os.ReadFile(path)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return emptyClientEndpointRegistry(), nil
-		}
-		return ClientEndpointRegistry{}, fmt.Errorf("failed to read %s: %w", path, err)
-	}
-
-	stored, err := decodeClientEndpointRegistry(data)
-	if err != nil {
-		return ClientEndpointRegistry{}, fmt.Errorf("failed to parse %s: %w", path, err)
-	}
-	if stored.Endpoints == nil {
-		stored.Endpoints = map[string]ClientEndpointConfig{}
-	}
-	for alias, endpoint := range stored.Endpoints {
-		if err := ValidateClientEndpointAlias(alias); err != nil {
-			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
-		}
-		normalized, err := normalizeClientEndpointConfig(dataDir, endpoint)
-		if err != nil {
-			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
-		}
-		stored.Endpoints[alias] = normalized
-	}
-	if err := normalizeClientEndpointRegistryRoleState(&stored); err != nil {
 		return ClientEndpointRegistry{}, err
 	}
-	return stored, nil
+	for alias, endpoint := range registry.Endpoints {
+		if endpoint.IdentityFile == "" {
+			endpoint.IdentityFile = ".ssh/id_ed25519"
+		}
+		if endpoint.KnownHostsPath == "" {
+			endpoint.KnownHostsPath = ".ssh/known_hosts"
+		}
+		endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
+		endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
+		registry.Endpoints[alias] = endpoint
+	}
+	return registry, nil
 }
 
 func emptyClientEndpointRegistry() ClientEndpointRegistry {
@@ -126,30 +113,6 @@ func ValidateClientEndpointRole(role string) error {
 	default:
 		return fmt.Errorf("unsupported role %q (expected %q or %q)", role, ClientEndpointRoleSigner, ClientEndpointRoleCosigner)
 	}
-}
-
-func normalizeClientEndpointConfig(dataDir string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
-	endpoint.Role = strings.TrimSpace(endpoint.Role)
-	if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
-		return endpoint, err
-	}
-	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
-	if endpoint.URL == "" {
-		return endpoint, fmt.Errorf("url is required")
-	}
-	if _, _, err := endpointrefs.ParseURL(endpoint.URL); err != nil {
-		return endpoint, err
-	}
-
-	if endpoint.IdentityFile == "" {
-		endpoint.IdentityFile = ".ssh/id_ed25519"
-	}
-	if endpoint.KnownHostsPath == "" {
-		endpoint.KnownHostsPath = ".ssh/known_hosts"
-	}
-	endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
-	endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
-	return endpoint, nil
 }
 
 // ClientEndpointSSHHostPort returns the SSH host and port of an endpoint,
@@ -212,30 +175,6 @@ func (c Config) ClientEndpointsOrDefault() ClientEndpointRegistry {
 		return c.Endpoints.Clone()
 	}
 	return emptyClientEndpointRegistry()
-}
-
-func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) error {
-	signerAlias := ""
-	cosignerCount := 0
-	for alias, endpoint := range registry.Endpoints {
-		if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
-			return fmt.Errorf("endpoint %q: %w", alias, err)
-		}
-		if endpoint.Role == ClientEndpointRoleCosigner {
-			cosignerCount++
-		}
-		if endpoint.Role != ClientEndpointRoleSigner {
-			continue
-		}
-		if signerAlias != "" {
-			return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAlias, alias)
-		}
-		signerAlias = alias
-	}
-	if cosignerCount > MaxClientCosignerEndpoints {
-		return fmt.Errorf("%s configures %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, cosignerCount, MaxClientCosignerEndpoints)
-	}
-	return nil
 }
 
 // decodeClientEndpointRegistry reads endpoints.yaml, which must carry the
